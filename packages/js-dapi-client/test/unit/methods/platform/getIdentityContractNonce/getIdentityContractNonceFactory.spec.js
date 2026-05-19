@@ -27,8 +27,8 @@ describe('getIdentityContractNonceFactory', () => {
 
   beforeEach(async function beforeEach() {
     nonce = BigInt(1);
-    identityId = Buffer.alloc(32).fill(0);
-    contractId = Buffer.alloc(32).fill(1);
+    identityId = new Uint8Array(32);
+    contractId = new Uint8Array(32).fill(1);
 
     metadataFixture = getMetadataFixture();
     proofFixture = getProofFixture();

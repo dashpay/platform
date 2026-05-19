@@ -13,6 +13,7 @@ const InvalidResponseError = require('../../../../../lib/methods/platform/respon
 const getProofFixture = require('../../../../../lib/test/fixtures/getProofFixture');
 const Proof = require('../../../../../lib/methods/platform/response/Proof');
 const Metadata = require('../../../../../lib/methods/platform/response/Metadata');
+const { bytesToHex, hexToBytes } = require('../../../../../lib/utils/bytes');
 
 describe('GetProtocolVersionUpgradeVoteStatusResponse', () => {
   let getProtocolVersionUpgradeVoteStatus;
@@ -23,7 +24,7 @@ describe('GetProtocolVersionUpgradeVoteStatusResponse', () => {
 
   beforeEach(async () => {
     metadataFixture = getMetadataFixture();
-    versionSignalFixture = new VersionSignalClass(Buffer.alloc(32).toString('hex'), 1);
+    versionSignalFixture = new VersionSignalClass(bytesToHex(new Uint8Array(32)), 1);
     proofFixture = getProofFixture();
 
     const {
@@ -42,7 +43,7 @@ describe('GetProtocolVersionUpgradeVoteStatusResponse', () => {
       new GetProtocolVersionUpgradeVoteStatusResponseV0()
         .setVersions(new VersionSignals()
           .setVersionSignalsList([new VersionSignal()
-            .setProTxHash(Buffer.from(versionSignalFixture.getProTxHash(), 'hex'))
+            .setProTxHash(hexToBytes(versionSignalFixture.getProTxHash()))
             .setVersion(versionSignalFixture.getVersion()),
           ]))
         .setMetadata(metadata),
@@ -125,9 +126,9 @@ describe('GetProtocolVersionUpgradeVoteStatusResponse', () => {
 
     const proof = getProtocolVersionUpgradeVoteStatus.getProof();
     expect(proof).to.be.an.instanceOf(Proof);
-    expect(proof.getGrovedbProof()).to.deep.equal(proofFixture.merkleProof);
-    expect(proof.getQuorumHash()).to.deep.equal(proofFixture.quorumHash);
-    expect(proof.getSignature()).to.deep.equal(proofFixture.signature);
+    expect(proof.getGrovedbProof()).to.deep.equal(new Uint8Array(proofFixture.merkleProof));
+    expect(proof.getQuorumHash()).to.deep.equal(new Uint8Array(proofFixture.quorumHash));
+    expect(proof.getSignature()).to.deep.equal(new Uint8Array(proofFixture.signature));
     expect(proof.getRound()).to.deep.equal(proofFixture.round);
   });
 

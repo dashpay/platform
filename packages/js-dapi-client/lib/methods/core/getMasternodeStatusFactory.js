@@ -5,6 +5,7 @@ const {
     CorePromiseClient,
   },
 } = require('@dashevo/dapi-grpc');
+const { base64ToBytes } = require('../../utils/bytes');
 
 /**
  * @param {GrpcTransport} grpcTransport
@@ -34,7 +35,7 @@ function getMasternodeStatusFactory(grpcTransport) {
     responseObject.status = Object.keys(GetMasternodeStatusResponse.Status)
       .find((key) => GetMasternodeStatusResponse.Status[key] === responseObject.status);
 
-    responseObject.proTxHash = Buffer.from(responseObject.proTxHash, 'base64');
+    responseObject.proTxHash = base64ToBytes(responseObject.proTxHash);
 
     return responseObject;
   }

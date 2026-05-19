@@ -14,6 +14,7 @@ const ServerError = require('../errors/response/ServerError');
 const InvalidRequestError = require('../errors/response/InvalidRequestError');
 const InvalidRequestDPPError = require('../errors/response/InvalidRequestDPPError');
 const InternalServerError = require('./errors/InternalServerError');
+const { base64ToBytes } = require('../../utils/bytes');
 
 const INVALID_REQUEST_CODES = [
   GrpcErrorCodes.INVALID_ARGUMENT,
@@ -57,10 +58,13 @@ async function createGrpcTransportError(grpcError, dapiAddress) {
 
   const metadata = parseMetadata(grpcError.metadata) || {};
 
-  // Error data
+  // Error data — grpc-js passes raw bytes; grpc-web passes a base64 string.
+  // Original Buffer.from(x, 'base64') silently passed through bytes; reproduce that.
   const driveErrorData = metadata['drive-error-data-bin'];
   if (driveErrorData) {
-    const encodedData = Buffer.from(driveErrorData, 'base64');
+    const encodedData = typeof driveErrorData === 'string'
+      ? base64ToBytes(driveErrorData)
+      : new Uint8Array(driveErrorData);
     data = cbor.decode(encodedData);
   }
 
@@ -70,10 +74,12 @@ async function createGrpcTransportError(grpcError, dapiAddress) {
     code = Number(driveErrorCode);
   }
 
-  // Error stack
+  // Error stack — same dual-format handling as driveErrorData above.
   const driveErrorStack = metadata['stack-bin'];
   if (driveErrorStack) {
-    const encodedStack = Buffer.from(driveErrorStack, 'base64');
+    const encodedStack = typeof driveErrorStack === 'string'
+      ? base64ToBytes(driveErrorStack)
+      : new Uint8Array(driveErrorStack);
     data.stack = cbor.decode(encodedStack);
   }
 
@@ -124,7 +130,10 @@ async function createGrpcTransportError(grpcError, dapiAddress) {
       throw new Error(`Can't deserialize consensus error ${code}: serialized data is missing`);
     }
 
-    const consensusErrorBytes = Buffer.from(consensusErrorString, 'base64');
+    // grpc-js passes raw bytes; grpc-web passes a base64 string. Handle both.
+    const consensusErrorBytes = typeof consensusErrorString === 'string'
+      ? base64ToBytes(consensusErrorString)
+      : new Uint8Array(consensusErrorString);
     const consensusError = deserializeConsensusError(consensusErrorBytes);
 
     delete data.serializedError;

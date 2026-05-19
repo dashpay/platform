@@ -17,8 +17,8 @@ function getIdentitiesContractKeysFactory(grpcTransport) {
   /**
    * Fetch the identities by public key hashes
    * @typedef {getIdentitiesContractKeys}
-   * @param {Buffer[]} identitiesIds
-   * @param {Buffer} contractId
+   * @param {Uint8Array[]} identitiesIds
+   * @param {Uint8Array} contractId
    * @param {IdentityPublicKey.PURPOSES[]} keyPurposes
    * @param {string | null} documentTypeName
    * @param {DAPIClientOptions & {prove: boolean}} [options]
@@ -36,17 +36,16 @@ function getIdentitiesContractKeysFactory(grpcTransport) {
 
     // eslint-disable-next-line no-param-reassign
     identitiesIds = identitiesIds.map((id) => {
-      if (Buffer.isBuffer(id)) {
-        // eslint-disable-next-line no-param-reassign
-        id = Buffer.from(id);
+      if (id instanceof Uint8Array) {
+        return new Uint8Array(id);
       }
 
       return id;
     });
 
-    if (Buffer.isBuffer(contractId)) {
+    if (contractId instanceof Uint8Array) {
       // eslint-disable-next-line no-param-reassign
-      contractId = Buffer.from(contractId);
+      contractId = new Uint8Array(contractId);
     }
 
     getIdentitiesContractKeysRequest.setV0(

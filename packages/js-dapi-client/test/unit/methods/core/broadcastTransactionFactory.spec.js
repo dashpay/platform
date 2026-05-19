@@ -25,7 +25,7 @@ describe('broadcastTransactionFactory', () => {
       grpcTransportMock,
     );
 
-    transaction = Buffer.from('transaction');
+    transaction = new TextEncoder().encode('transaction');
     id = '4f46066bd50cc2684484407696b7949e82bd906ea92c040f59a97cba47ed8176';
   });
 

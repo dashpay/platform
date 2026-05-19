@@ -13,6 +13,8 @@ const cbor = require('cbor');
 const waitForStateTransitionResultFactory = require('../../../../../lib/methods/platform/waitForStateTransitionResult/waitForStateTransitionResultFactory');
 const getMetadataFixture = require('../../../../../lib/test/fixtures/getMetadataFixture');
 
+const encoder = new TextEncoder();
+
 describe('waitForStateTransitionResultFactory', () => {
   let grpcTransportMock;
   let options;
@@ -22,7 +24,7 @@ describe('waitForStateTransitionResultFactory', () => {
   let metadataFixture;
 
   beforeEach(function beforeEach() {
-    hash = Buffer.from('hash');
+    hash = encoder.encode('hash');
     metadataFixture = getMetadataFixture();
 
     const metadata = new ResponseMetadata();
@@ -86,9 +88,9 @@ describe('waitForStateTransitionResultFactory', () => {
   it('should return response with proof', async () => {
     const proof = new Proof();
 
-    proof.setGrovedbProof(Buffer.from('merkleProof'));
-    proof.setQuorumHash(Buffer.from('quorumHash'));
-    proof.setSignature(Buffer.from('signature'));
+    proof.setGrovedbProof(encoder.encode('merkleProof'));
+    proof.setQuorumHash(encoder.encode('quorumHash'));
+    proof.setSignature(encoder.encode('signature'));
     proof.setRound(42);
 
     response.getV0().setProof(proof);
@@ -108,14 +110,14 @@ describe('waitForStateTransitionResultFactory', () => {
 
     expect(result.getError()).to.equal(undefined);
     expect(result.getProof()).to.be.deep.equal({
-      merkleProof: Buffer.from('merkleProof'),
-      quorumHash: Buffer.from('quorumHash'),
-      signature: Buffer.from('signature'),
+      merkleProof: encoder.encode('merkleProof'),
+      quorumHash: encoder.encode('quorumHash'),
+      signature: encoder.encode('signature'),
       round: 42,
     });
-    expect(result.getProof().getSignature()).to.deep.equal(Buffer.from('signature'));
-    expect(result.getProof().getGrovedbProof()).to.deep.equal(Buffer.from('merkleProof'));
-    expect(result.getProof().getQuorumHash()).to.deep.equal(Buffer.from('quorumHash'));
+    expect(result.getProof().getSignature()).to.deep.equal(encoder.encode('signature'));
+    expect(result.getProof().getGrovedbProof()).to.deep.equal(encoder.encode('merkleProof'));
+    expect(result.getProof().getQuorumHash()).to.deep.equal(encoder.encode('quorumHash'));
     expect(result.getProof().getRound()).to.deep.equal(42);
 
     const { WaitForStateTransitionResultRequestV0 } = WaitForStateTransitionResultRequest;
@@ -161,7 +163,7 @@ describe('waitForStateTransitionResultFactory', () => {
     expect(result.getError()).to.be.deep.equal({
       code: 2,
       message: 'Some error',
-      data: Buffer.from(data),
+      data: new Uint8Array(data),
     });
 
     const { WaitForStateTransitionResultRequestV0 } = WaitForStateTransitionResultRequest;

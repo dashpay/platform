@@ -56,7 +56,7 @@ describe('GetIdentityNonceResponse', () => {
 
   it('should return proof', () => {
     getIdentityNonceResponse = new GetIdentityNonceResponseClass(
-      Buffer.alloc(0),
+      new Uint8Array(0),
       new Metadata(metadataFixture),
       new Proof(proofFixture),
     );
@@ -64,7 +64,7 @@ describe('GetIdentityNonceResponse', () => {
     const IdentityNonce = getIdentityNonceResponse.getIdentityNonce();
     const proof = getIdentityNonceResponse.getProof();
 
-    expect(IdentityNonce).to.deep.equal(Buffer.alloc(0));
+    expect(IdentityNonce).to.deep.equal(new Uint8Array(0));
     expect(proof).to.be.an.instanceOf(Proof);
     expect(proof.getGrovedbProof()).to.deep.equal(proofFixture.merkleProof);
     expect(proof.getQuorumHash()).to.deep.equal(proofFixture.quorumHash);

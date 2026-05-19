@@ -4,6 +4,7 @@ const ChainStatus = require('./ChainStatus');
 const TimeStatus = require('./TimeStatus');
 const StateSyncStatus = require('./StateSyncStatus');
 const NetworkStatus = require('./NetworkStatus');
+const { bytesToHex } = require('../../../utils/bytes');
 
 class GetStatusResponse {
   /**
@@ -92,17 +93,17 @@ class GetStatusResponse {
       driveNextEpochProtocol,
     );
 
-    const nodeId = Buffer.from(v0.getNode().getId()).toString('hex');
-    const proTxHash = Buffer.from(v0.getNode().getProTxHash()).toString('hex');
+    const nodeId = bytesToHex(new Uint8Array(v0.getNode().getId()));
+    const proTxHash = bytesToHex(new Uint8Array(v0.getNode().getProTxHash()));
 
     const node = new NodeStatus(nodeId, proTxHash);
 
     const catchingUp = v0.getChain().getCatchingUp();
-    const latestBlockHash = Buffer.from(v0.getChain().getLatestBlockHash()).toString('hex');
-    const latestAppHash = Buffer.from(v0.getChain().getLatestAppHash()).toString('hex');
+    const latestBlockHash = bytesToHex(new Uint8Array(v0.getChain().getLatestBlockHash()));
+    const latestAppHash = bytesToHex(new Uint8Array(v0.getChain().getLatestAppHash()));
     const latestBlockHeight = BigInt(v0.getChain().getLatestBlockHeight());
-    const earliestBlockHash = Buffer.from(v0.getChain().getEarliestBlockHash()).toString('hex');
-    const earliestAppHash = Buffer.from(v0.getChain().getEarliestAppHash()).toString('hex');
+    const earliestBlockHash = bytesToHex(new Uint8Array(v0.getChain().getEarliestBlockHash()));
+    const earliestAppHash = bytesToHex(new Uint8Array(v0.getChain().getEarliestAppHash()));
     const earliestBlockHeight = BigInt(v0.getChain().getEarliestBlockHeight());
     const maxPeerBlockHeight = BigInt(v0.getChain().getMaxPeerBlockHeight());
     const coreChainLockedHeight = v0.getChain().getCoreChainLockedHeight();

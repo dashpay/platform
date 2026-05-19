@@ -113,9 +113,9 @@ describe('getIdentitiesContractKeysFactory', () => {
         new GetIdentitiesContractKeysRequestV0()
           .setProve(!!options.prove)
           .setIdentitiesIdsList(
-            [Buffer.from(identityFixtureA.getId()), Buffer.from(identityFixtureB.getId())],
+            [new Uint8Array(identityFixtureA.getId()), new Uint8Array(identityFixtureB.getId())],
           )
-          .setContractId(Buffer.from(contractId))
+          .setContractId(new Uint8Array(contractId))
           .setPurposesList([KeyPurpose.ENCRYPTION, KeyPurpose.DECRYPTION])
           .setDocumentTypeName('contactRequest'),
       );

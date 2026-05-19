@@ -36,7 +36,7 @@ describe('CoreMethodsFacade', () => {
       response.setTransactionId('4f46066bd50cc2684484407696b7949e82bd906ea92c040f59a97cba47ed8176');
       grpcTransportMock.request.resolves(response);
 
-      const transaction = Buffer.from('transaction');
+      const transaction = new TextEncoder().encode('transaction');
       await coreMethods.broadcastTransaction(transaction);
 
       expect(grpcTransportMock.request).to.be.calledOnce();
@@ -57,7 +57,7 @@ describe('CoreMethodsFacade', () => {
 
   describe('#getBlockByHash', () => {
     it('should get block by hash', async () => {
-      const block = Buffer.from('block');
+      const block = new TextEncoder().encode('block');
       const response = new GetBlockResponse();
       response.setBlock(block);
       grpcTransportMock.request.resolves(response);
@@ -70,7 +70,7 @@ describe('CoreMethodsFacade', () => {
 
   describe('#getBlockByHeight', () => {
     it('should get block by height', async () => {
-      const block = Buffer.from('block');
+      const block = new TextEncoder().encode('block');
       const response = new GetBlockResponse();
       response.setBlock(block);
       grpcTransportMock.request.resolves(response);
@@ -124,10 +124,10 @@ describe('CoreMethodsFacade', () => {
 
   describe('#getTransaction', () => {
     it('should get transaction', async () => {
-      const transaction = Buffer.from('transaction');
+      const transaction = new TextEncoder().encode('transaction');
       const response = new GetTransactionResponse();
       response.setTransaction(transaction);
-      response.setBlockHash(Buffer.from('blockHash'));
+      response.setBlockHash(new TextEncoder().encode('blockHash'));
       response.setHeight(1);
       response.setConfirmations(2);
 

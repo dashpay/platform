@@ -56,7 +56,7 @@ describe('GetIdentityContractNonceResponse', () => {
 
   it('should return proof', () => {
     getIdentityContractNonceResponse = new GetIdentityContractNonceResponseClass(
-      Buffer.alloc(0),
+      new Uint8Array(0),
       new Metadata(metadataFixture),
       new Proof(proofFixture),
     );
@@ -64,7 +64,7 @@ describe('GetIdentityContractNonceResponse', () => {
     const identityContractNonce = getIdentityContractNonceResponse.getIdentityContractNonce();
     const proof = getIdentityContractNonceResponse.getProof();
 
-    expect(identityContractNonce).to.deep.equal(Buffer.alloc(0));
+    expect(identityContractNonce).to.deep.equal(new Uint8Array(0));
     expect(proof).to.be.an.instanceOf(Proof);
     expect(proof.getGrovedbProof()).to.deep.equal(proofFixture.merkleProof);
     expect(proof.getQuorumHash()).to.deep.equal(proofFixture.quorumHash);

@@ -25,6 +25,7 @@ const getDataContractFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getD
 const getIdentityFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityFixture');
 
 const PlatformMethodsFacade = require('../../../../lib/methods/platform/PlatformMethodsFacade');
+const { hexToBytes, bytesToHex } = require('../../../../lib/utils/bytes');
 
 const { WaitForStateTransitionResultResponseV0 } = WaitForStateTransitionResultResponse;
 const { GetIdentityResponseV0 } = GetIdentityResponse;
@@ -164,8 +165,8 @@ describe('PlatformMethodsFacade', () => {
       grpcTransportMock.request.resolves(response);
 
       await platformMethods.getIdentitiesContractKeys([
-        Buffer.alloc(32).fill(1),
-      ], Buffer.alloc(32).fill(2), [KeyPurpose.ENCRYPTION]);
+        new Uint8Array(32).fill(1),
+      ], new Uint8Array(32).fill(2), [KeyPurpose.ENCRYPTION]);
 
       expect(grpcTransportMock.request).to.be.calledOnce();
     });
@@ -182,7 +183,7 @@ describe('PlatformMethodsFacade', () => {
       grpcTransportMock.request.resolves(response);
 
       await platformMethods.waitForStateTransitionResult(
-        Buffer.from('6f49655a2906852a38e473dd47574fb70b8b7c4e5cee9ea8e7da3f07b970c421', 'hex'),
+        hexToBytes('6f49655a2906852a38e473dd47574fb70b8b7c4e5cee9ea8e7da3f07b970c421'),
         false,
       );
 
@@ -218,8 +219,8 @@ describe('PlatformMethodsFacade', () => {
 
   describe('#getProtocolVersionUpgradeVoteStatus', () => {
     it('should get version upgrade votes status', async () => {
-      const startProTxHash = Buffer.alloc(32).fill('a').toString('hex');
-      const proTxHash = Buffer.alloc(32).fill('b').toString('hex');
+      const startProTxHash = bytesToHex(new Uint8Array(32).fill(0x61));
+      const proTxHash = bytesToHex(new Uint8Array(32).fill(0x62));
 
       const { VersionSignal, VersionSignals } = GetProtocolVersionUpgradeVoteStatusResponseV0;
 
@@ -277,7 +278,7 @@ describe('PlatformMethodsFacade', () => {
 
       grpcTransportMock.request.resolves(response);
 
-      await platformMethods.getIdentityContractNonce(Buffer.alloc(32), Buffer.alloc(32));
+      await platformMethods.getIdentityContractNonce(new Uint8Array(32), new Uint8Array(32));
 
       expect(grpcTransportMock.request).to.be.calledOnce();
     });
@@ -295,7 +296,7 @@ describe('PlatformMethodsFacade', () => {
 
       grpcTransportMock.request.resolves(response);
 
-      await platformMethods.getIdentityNonce(Buffer.alloc(32), Buffer.alloc(32));
+      await platformMethods.getIdentityNonce(new Uint8Array(32), new Uint8Array(32));
 
       expect(grpcTransportMock.request).to.be.calledOnce();
     });
@@ -309,13 +310,13 @@ describe('PlatformMethodsFacade', () => {
 
       response.setV0(
         new GetIdentityKeysResponseV0()
-          .setKeys(new Keys().setKeysBytesList([Buffer.alloc(41), Buffer.alloc(46)]))
+          .setKeys(new Keys().setKeysBytesList([new Uint8Array(41), new Uint8Array(46)]))
           .setMetadata(new ResponseMetadata()),
       );
 
       grpcTransportMock.request.resolves(response);
 
-      await platformMethods.getIdentityKeys(Buffer.alloc(32), [0, 1], 100, {});
+      await platformMethods.getIdentityKeys(new Uint8Array(32), [0, 1], 100, {});
 
       expect(grpcTransportMock.request).to.be.calledOnce();
     });

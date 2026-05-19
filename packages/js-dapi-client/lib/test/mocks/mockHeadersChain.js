@@ -1,6 +1,7 @@
 const X11 = require('wasm-x11-hash');
 const { BlockHeader, configure } = require('@dashevo/dashcore-lib');
 const { genesis } = require('@dashevo/dash-spv');
+const { hexToBytes } = require('../../utils/bytes');
 
 const getRoot = (network) => {
   switch (network) {
@@ -38,8 +39,8 @@ const mockHeadersChain = async (network, length, root) => {
   for (let i = 0; i < length - 1; i += 1) {
     const header = new BlockHeader({
       version: prevHeader.version,
-      prevHash: Buffer.from(prevHeader.hash, 'hex').reverse(),
-      merkleRoot: Buffer.alloc(32),
+      prevHash: hexToBytes(prevHeader.hash).reverse(),
+      merkleRoot: new Uint8Array(32),
       time: prevHeader.time + BLOCK_TIME,
       bits: prevHeader.bits,
       nonce: 3861367235,

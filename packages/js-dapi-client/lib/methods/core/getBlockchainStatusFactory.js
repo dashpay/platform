@@ -29,18 +29,18 @@ function getBlockchainStatusFactory(grpcTransport) {
 
     const responseObject = response.toObject();
 
-    // Respond with Buffers instead of base64 for binary fields
+    // Respond with Uint8Arrays instead of base64 for binary fields
 
     if (response.getChain()) {
       if (response.getChain()
         .getBestBlockHash()) {
-        responseObject.chain.bestBlockHash = Buffer.from(response.getChain()
+        responseObject.chain.bestBlockHash = new Uint8Array(response.getChain()
           .getBestBlockHash());
       }
 
       if (response.getChain()
         .getChainWork()) {
-        responseObject.chain.chainWork = Buffer.from(response.getChain()
+        responseObject.chain.chainWork = new Uint8Array(response.getChain()
           .getChainWork());
       }
     }

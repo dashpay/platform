@@ -7,6 +7,7 @@ const {
 
 const GetProtocolVersionUpgradeVoteStatusResponse = require('./GetProtocolVersionUpgradeVoteStatusResponse');
 const InvalidResponseError = require('../response/errors/InvalidResponseError');
+const { hexToBytes } = require('../../../utils/bytes');
 
 /**
  * @param {GrpcTransport} grpcTransport
@@ -31,7 +32,7 @@ function getProtocolVersionUpgradeVoteStatusFactory(grpcTransport) {
 
     getProtocolVersionUpgradeVoteStatusRequest.setV0(
       new GetProtocolVersionUpgradeVoteStatusRequestV0()
-        .setStartProTxHash(Buffer.from(startProTxHash, 'hex'))
+        .setStartProTxHash(hexToBytes(startProTxHash))
         .setCount(count)
         .setProve(!!options.prove),
     );

@@ -34,6 +34,7 @@ class GetIdentitiesContractKeysResponse extends AbstractResponse {
       const keysEntries = identitiesKeys.getEntriesList();
 
       identitiesKeysMap = keysEntries.reduce((acc, entry) => {
+        // wasm-dpp Identifier.from requires Node Buffer (not plain Uint8Array)
         const identityId = Identifier.from(Buffer.from(entry.getIdentityId())).toString();
         if (!acc[identityId]) {
           acc[identityId] = {};

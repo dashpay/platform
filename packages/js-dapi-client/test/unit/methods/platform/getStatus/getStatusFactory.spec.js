@@ -14,6 +14,7 @@ const ChainStatus = require('../../../../../lib/methods/platform/getStatus/Chain
 const NetworkStatus = require('../../../../../lib/methods/platform/getStatus/NetworkStatus');
 const StateSyncStatus = require('../../../../../lib/methods/platform/getStatus/StateSyncStatus');
 const TimeStatus = require('../../../../../lib/methods/platform/getStatus/TimeStatus');
+const { bytesToHex } = require('../../../../../lib/utils/bytes');
 
 describe('getStatusFactory', () => {
   let grpcTransportMock;
@@ -131,22 +132,22 @@ describe('getStatusFactory', () => {
       .to.equal(statusFixture.version.protocol.drive.nextEpoch);
 
     expect(nodeStatus).to.be.an.instanceOf(NodeStatus);
-    expect(nodeStatus.getNodeId()).to.equal(Buffer.from(statusFixture.node.id).toString('hex'));
-    expect(nodeStatus.getProTxHash()).to.equal(Buffer.from(statusFixture.node.proTxHash).toString('hex'));
+    expect(nodeStatus.getNodeId()).to.equal(bytesToHex(statusFixture.node.id));
+    expect(nodeStatus.getProTxHash()).to.equal(bytesToHex(statusFixture.node.proTxHash));
 
     expect(chainStatus).to.be.an.instanceOf(ChainStatus);
     expect(chainStatus.isCatchingUp())
       .to.equal(statusFixture.chain.catchingUp);
     expect(chainStatus.getLatestBlockHash())
-      .to.equal(Buffer.from(statusFixture.chain.latestBlockHash).toString('hex'));
+      .to.equal(bytesToHex(statusFixture.chain.latestBlockHash));
     expect(chainStatus.getLatestAppHash())
-      .to.equal(Buffer.from(statusFixture.chain.latestAppHash).toString('hex'));
+      .to.equal(bytesToHex(statusFixture.chain.latestAppHash));
     expect(chainStatus.getLatestBlockHeight())
       .to.equal(BigInt(statusFixture.chain.latestBlockHeight));
     expect(chainStatus.getEarliestBlockHash())
-      .to.equal(Buffer.from(statusFixture.chain.earliestBlockHash).toString('hex'));
+      .to.equal(bytesToHex(statusFixture.chain.earliestBlockHash));
     expect(chainStatus.getEarliestAppHash())
-      .to.equal(Buffer.from(statusFixture.chain.earliestAppHash).toString('hex'));
+      .to.equal(bytesToHex(statusFixture.chain.earliestAppHash));
     expect(chainStatus.getEarliestBlockHeight())
       .to.equal(BigInt(statusFixture.chain.earliestBlockHeight));
     expect(chainStatus.getMaxPeerBlockHeight())
@@ -227,22 +228,22 @@ describe('getStatusFactory', () => {
       .to.equal(statusFixture.version.protocol.drive.latest);
 
     expect(nodeStatus).to.be.an.instanceOf(NodeStatus);
-    expect(nodeStatus.getNodeId()).to.equal(Buffer.from(statusFixture.node.id).toString('hex'));
+    expect(nodeStatus.getNodeId()).to.equal(bytesToHex(statusFixture.node.id));
     expect(nodeStatus.getProTxHash()).to.be.null();
 
     expect(chainStatus).to.be.an.instanceOf(ChainStatus);
     expect(chainStatus.isCatchingUp())
       .to.equal(statusFixture.chain.catchingUp);
     expect(chainStatus.getLatestBlockHash())
-      .to.equal(Buffer.from(statusFixture.chain.latestBlockHash).toString('hex'));
+      .to.equal(bytesToHex(statusFixture.chain.latestBlockHash));
     expect(chainStatus.getLatestAppHash())
-      .to.equal(Buffer.from(statusFixture.chain.latestAppHash).toString('hex'));
+      .to.equal(bytesToHex(statusFixture.chain.latestAppHash));
     expect(chainStatus.getLatestBlockHeight())
       .to.equal(BigInt(statusFixture.chain.latestBlockHeight));
     expect(chainStatus.getEarliestBlockHash())
-      .to.equal(Buffer.from(statusFixture.chain.earliestBlockHash).toString('hex'));
+      .to.equal(bytesToHex(statusFixture.chain.earliestBlockHash));
     expect(chainStatus.getEarliestAppHash())
-      .to.equal(Buffer.from(statusFixture.chain.earliestAppHash).toString('hex'));
+      .to.equal(bytesToHex(statusFixture.chain.earliestAppHash));
     expect(chainStatus.getEarliestBlockHeight())
       .to.equal(BigInt(statusFixture.chain.earliestBlockHeight));
     expect(chainStatus.getMaxPeerBlockHeight())

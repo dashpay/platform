@@ -13,8 +13,8 @@ describe('GetTransactionResponse', () => {
 
   beforeEach(() => {
     response = {
-      transaction: Buffer.from('transaction'),
-      blockHash: Buffer.from('blockHash'),
+      transaction: new TextEncoder().encode('transaction'),
+      blockHash: new TextEncoder().encode('blockHash'),
       height: 10,
       confirmations: 42,
       instantLocked: true,
@@ -72,8 +72,8 @@ describe('GetTransactionResponse', () => {
     const instance = GetTransactionResponse.createFromProto(proto);
 
     expect(instance).to.be.an.instanceOf(GetTransactionResponse);
-    expect(instance.transaction).to.deep.equal(Buffer.from(proto.getTransaction()));
-    expect(instance.blockHash).to.deep.equal(Buffer.from(proto.getBlockHash()));
+    expect(instance.transaction).to.deep.equal(new Uint8Array(proto.getTransaction()));
+    expect(instance.blockHash).to.deep.equal(new Uint8Array(proto.getBlockHash()));
     expect(instance.height).to.deep.equal(proto.getHeight());
     expect(instance.confirmations).to.deep.equal(proto.getConfirmations());
     expect(instance.instantLocked).to.deep.equal(proto.getIsInstantLocked());

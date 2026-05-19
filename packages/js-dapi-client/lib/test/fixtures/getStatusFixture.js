@@ -1,3 +1,5 @@
+const { base64ToBytes } = require('../../utils/bytes');
+
 /**
  *
  */
@@ -22,16 +24,16 @@ function getStatusFixture() {
       },
     },
     node: {
-      id: new Uint8Array(Buffer.from('QbMI9zfKnjn2e1UxWJAxmKiMUW4=', 'base64')),
-      proTxHash: new Uint8Array(Buffer.from('s7V0hXG2D+mtEScV1qUXJdblpSqcOvX9NqFyTPUNhi8=', 'base64')),
+      id: base64ToBytes('QbMI9zfKnjn2e1UxWJAxmKiMUW4='),
+      proTxHash: base64ToBytes('s7V0hXG2D+mtEScV1qUXJdblpSqcOvX9NqFyTPUNhi8='),
     },
     chain: {
       catchingUp: false,
-      latestBlockHash: new Uint8Array(Buffer.from('mVDwGtY2oJSaLLgv3WpLp2dFDyFEtqhD4z1gl2OJceY=', 'base64')),
-      latestAppHash: new Uint8Array(Buffer.from('jHgEBK8aZ74TUKcUGN58EFzUNvNsLboOgYe6eH/JetU=', 'base64')),
+      latestBlockHash: base64ToBytes('mVDwGtY2oJSaLLgv3WpLp2dFDyFEtqhD4z1gl2OJceY='),
+      latestAppHash: base64ToBytes('jHgEBK8aZ74TUKcUGN58EFzUNvNsLboOgYe6eH/JetU='),
       latestBlockHeight: '94461',
-      earliestBlockHash: new Uint8Array(Buffer.from('CPoCwn7AOQujAeT8fj1+rbNQyBk+PmKgk2iXBuOiC/o=', 'base64')),
-      earliestAppHash: new Uint8Array(Buffer.from('vwzLnKBxugGubmegwJD5eAPSbVbWddzVExeBy8rI7I8=', 'base64')),
+      earliestBlockHash: base64ToBytes('CPoCwn7AOQujAeT8fj1+rbNQyBk+PmKgk2iXBuOiC/o='),
+      earliestAppHash: base64ToBytes('vwzLnKBxugGubmegwJD5eAPSbVbWddzVExeBy8rI7I8='),
       earliestBlockHeight: '1',
       maxPeerBlockHeight: '94461',
       coreChainLockedHeight: 1187358,

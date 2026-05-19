@@ -16,7 +16,7 @@ function getDataContractFactory(grpcTransport) {
   /**
    * Fetch Data Contract by id
    * @typedef {getDataContract}
-   * @param {Buffer} contractId
+   * @param {Uint8Array} contractId
    * @param {DAPIClientOptions & {prove: boolean}} [options]
    * @returns {Promise<GetDataContractResponse>}
    */
@@ -24,12 +24,12 @@ function getDataContractFactory(grpcTransport) {
     const { GetDataContractRequestV0 } = GetDataContractRequest;
     const getDataContractRequest = new GetDataContractRequest();
 
-    // need to convert objects inherited from Buffer to pure buffer as google protobuf
+    // need to convert objects inherited from Uint8Array to pure Uint8Array as google protobuf
     // doesn't support extended buffers
     // https://github.com/protocolbuffers/protobuf/blob/master/js/binary/utils.js#L1049
-    if (Buffer.isBuffer(contractId)) {
+    if (contractId instanceof Uint8Array) {
       // eslint-disable-next-line no-param-reassign
-      contractId = Buffer.from(contractId);
+      contractId = new Uint8Array(contractId);
     }
 
     getDataContractRequest.setV0(

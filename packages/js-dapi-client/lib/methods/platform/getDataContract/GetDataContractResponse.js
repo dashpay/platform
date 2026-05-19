@@ -3,7 +3,7 @@ const InvalidResponseError = require('../response/errors/InvalidResponseError');
 
 class GetDataContractResponse extends AbstractResponse {
   /**
-   * @param {Buffer} dataContract
+   * @param {Uint8Array} dataContract
    * @param {Metadata} metadata
    * @param {Proof} [proof]
    */
@@ -14,7 +14,7 @@ class GetDataContractResponse extends AbstractResponse {
   }
 
   /**
-   * @returns {Buffer}
+   * @returns {Uint8Array}
    */
   getDataContract() {
     return this.dataContract;
@@ -33,7 +33,7 @@ class GetDataContractResponse extends AbstractResponse {
     }
 
     return new GetDataContractResponse(
-      Buffer.from(dataContract),
+      new Uint8Array(dataContract),
       metadata,
       proof,
     );

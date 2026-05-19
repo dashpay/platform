@@ -14,7 +14,7 @@ describe('getBlockByHashFactory', () => {
   let block;
 
   beforeEach(function beforeEach() {
-    block = Buffer.from('block');
+    block = new TextEncoder().encode('block');
     const response = new GetBlockResponse();
     response.setBlock(block);
 
@@ -36,7 +36,7 @@ describe('getBlockByHashFactory', () => {
     const request = new GetBlockRequest();
     request.setHash(hash);
 
-    expect(result).to.be.instanceof(Buffer);
+    expect(result).to.be.instanceof(Uint8Array);
     expect(result).to.deep.equal(block);
     expect(grpcTransportMock.request).to.be.calledOnceWithExactly(
       CorePromiseClient,

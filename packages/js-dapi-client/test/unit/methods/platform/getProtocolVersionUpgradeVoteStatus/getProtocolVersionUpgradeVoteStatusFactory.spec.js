@@ -13,6 +13,7 @@ const VersionSignal = require('../../../../../lib/methods/platform/getProtocolVe
 const getMetadataFixture = require('../../../../../lib/test/fixtures/getMetadataFixture');
 const getProofFixture = require('../../../../../lib/test/fixtures/getProofFixture');
 const Proof = require('../../../../../lib/methods/platform/response/Proof');
+const { bytesToHex, hexToBytes } = require('../../../../../lib/utils/bytes');
 
 describe('getProtocolVersionUpgradeVoteStatusFactory', () => {
   let grpcTransportMock;
@@ -26,8 +27,8 @@ describe('getProtocolVersionUpgradeVoteStatusFactory', () => {
   let startProTxHash;
 
   beforeEach(async function beforeEach() {
-    startProTxHash = Buffer.alloc(32).fill('a').toString('hex');
-    versionSignalFixture = new VersionSignal(Buffer.alloc(32).toString('hex'), 1);
+    startProTxHash = bytesToHex(new Uint8Array(32).fill(0x61));
+    versionSignalFixture = new VersionSignal(bytesToHex(new Uint8Array(32)), 1);
 
     metadataFixture = getMetadataFixture();
     proofFixture = getProofFixture();
@@ -50,7 +51,7 @@ describe('getProtocolVersionUpgradeVoteStatusFactory', () => {
       new GetProtocolVersionUpgradeVoteStatusResponseV0()
         .setVersions(new VersionSignals()
           .setVersionSignalsList([new VersionSignalProto()
-            .setProTxHash(Buffer.from(versionSignalFixture.getProTxHash(), 'hex'))
+            .setProTxHash(hexToBytes(versionSignalFixture.getProTxHash()))
             .setVersion(versionSignalFixture.getVersion())]))
         .setMetadata(metadata),
     );
@@ -84,7 +85,7 @@ describe('getProtocolVersionUpgradeVoteStatusFactory', () => {
     const request = new GetProtocolVersionUpgradeVoteStatusRequest();
     request.setV0(
       new GetProtocolVersionUpgradeVoteStatusRequestV0()
-        .setStartProTxHash(Buffer.from(startProTxHash, 'hex'))
+        .setStartProTxHash(hexToBytes(startProTxHash))
         .setCount(1)
         .setProve(!!options.prove),
     );
@@ -124,7 +125,7 @@ describe('getProtocolVersionUpgradeVoteStatusFactory', () => {
     const request = new GetProtocolVersionUpgradeVoteStatusRequest();
     request.setV0(
       new GetProtocolVersionUpgradeVoteStatusRequestV0()
-        .setStartProTxHash(Buffer.from(startProTxHash, 'hex'))
+        .setStartProTxHash(hexToBytes(startProTxHash))
         .setCount(1)
         .setProve(!!options.ascending),
     );
@@ -148,9 +149,9 @@ describe('getProtocolVersionUpgradeVoteStatusFactory', () => {
       .to.deep.equal(metadataFixture.protocolVersion);
 
     expect(result.getProof()).to.be.an.instanceOf(Proof);
-    expect(result.getProof().getGrovedbProof()).to.deep.equal(proofFixture.merkleProof);
-    expect(result.getProof().getQuorumHash()).to.deep.equal(proofFixture.quorumHash);
-    expect(result.getProof().getSignature()).to.deep.equal(proofFixture.signature);
+    expect(result.getProof().getGrovedbProof()).to.deep.equal(new Uint8Array(proofFixture.merkleProof));
+    expect(result.getProof().getQuorumHash()).to.deep.equal(new Uint8Array(proofFixture.quorumHash));
+    expect(result.getProof().getSignature()).to.deep.equal(new Uint8Array(proofFixture.signature));
     expect(result.getProof().getRound()).to.deep.equal(proofFixture.round);
   });
 
@@ -165,7 +166,7 @@ describe('getProtocolVersionUpgradeVoteStatusFactory', () => {
     const request = new GetProtocolVersionUpgradeVoteStatusRequest();
     request.setV0(
       new GetProtocolVersionUpgradeVoteStatusRequestV0()
-        .setStartProTxHash(Buffer.from(startProTxHash, 'hex'))
+        .setStartProTxHash(hexToBytes(startProTxHash))
         .setCount(1)
         .setProve(!!options.ascending),
     );

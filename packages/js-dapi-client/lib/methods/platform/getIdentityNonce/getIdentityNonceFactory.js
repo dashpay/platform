@@ -16,7 +16,7 @@ function getIdentityNonceFactory(grpcTransport) {
   /**
    * Fetch the version upgrade votes status
    * @typedef {getIdentityNonce}
-   * @param {Buffer} identityId
+   * @param {Uint8Array} identityId
    * @param {DAPIClientOptions & {prove: boolean}} [options]
    * @returns {Promise<GetIdentityNonceResponse>}
    */
@@ -28,9 +28,9 @@ function getIdentityNonceFactory(grpcTransport) {
     // eslint-disable-next-line max-len
     const getIdentityNonceRequest = new GetIdentityNonceRequest();
 
-    if (Buffer.isBuffer(identityId)) {
+    if (identityId instanceof Uint8Array) {
       // eslint-disable-next-line no-param-reassign
-      identityId = Buffer.from(identityId);
+      identityId = new Uint8Array(identityId);
     }
 
     getIdentityNonceRequest.setV0(

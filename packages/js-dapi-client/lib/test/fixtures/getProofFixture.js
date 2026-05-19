@@ -1,15 +1,17 @@
+const { hexToBytes, base64ToBytes } = require('../../utils/bytes');
+
 /**
  * @returns {{
- *   merkleProof: Buffer,
- *   signature: Buffer,
- *   quorumHash: Buffer
+ *   merkleProof: Uint8Array,
+ *   signature: Uint8Array,
+ *   quorumHash: Uint8Array
  * }}
  */
 function getProofFixture() {
   return {
-    quorumHash: Buffer.from('AQEBAQEBAQEBAQEB', 'base64'),
-    signature: Buffer.from('AgICAgICAgICAgIC', 'base64'),
-    merkleProof: Buffer.from('0100000001f0faf5f55674905a68eba1be2f946e667c1cb5010101', 'hex'),
+    quorumHash: base64ToBytes('AQEBAQEBAQEBAQEB'),
+    signature: base64ToBytes('AgICAgICAgICAgIC'),
+    merkleProof: hexToBytes('0100000001f0faf5f55674905a68eba1be2f946e667c1cb5010101'),
     round: 42,
   };
 }
