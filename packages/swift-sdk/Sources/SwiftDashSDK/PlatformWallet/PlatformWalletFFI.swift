@@ -24,6 +24,18 @@ typealias FFIByteTuple20 = (
     UInt8, UInt8, UInt8, UInt8
 )
 
+/// 36-byte fixed tuple — used by the asset-lock persister to carry
+/// outpoints (32-byte raw txid + 4-byte little-endian vout). Matches
+/// the Rust-side `AssetLockEntryFFI.out_point` and the parallel
+/// removed-outpoint array on `on_persist_asset_locks_fn`.
+typealias FFIByteTuple36 = (
+    UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+    UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+    UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+    UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+    UInt8, UInt8, UInt8, UInt8
+)
+
 // MARK: - Mnemonic-resolver callback result codes
 
 /// Mirrors the Rust `mnemonic_resolver_result` constants in
