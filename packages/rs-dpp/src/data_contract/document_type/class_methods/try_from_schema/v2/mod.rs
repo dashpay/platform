@@ -453,3 +453,181 @@ impl DocumentType {
         .map(DocumentType::V2)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    //! Regression tests for the doctype-level `rangeAverageable`
+    //! contradiction guards added next to the per-index ones in
+    //! `index/mod.rs`. Mirror of
+    //! `test_index_try_from_range_averageable_with_explicit_range_*_false_rejected`
+    //! at the document-type-schema level: same vector (the explicit
+    //! `false` being silently flipped to `true`), same expected
+    //! rejection shape (`InvalidContractStructure` naming the
+    //! conflicting flag), but exercising the parser at
+    //! `DocumentTypeV2::try_from_schema` rather than at the per-index
+    //! `Index::try_from` boundary.
+    use super::*;
+    use platform_value::platform_value;
+
+    /// Build a minimal v2-shaped document-type schema with
+    /// `documentsAverageable: "score"` and the supplied
+    /// `rangeAverageable` / `rangeCountable` / `rangeSummable`
+    /// values. `score` is the canonical summable property
+    /// (integer with `minimum`/`maximum` bounding it inside `i64`,
+    /// listed in `required` — both invariants the structural
+    /// summable checks enforce).
+    fn build_schema(
+        range_averageable: Option<bool>,
+        range_countable: Option<bool>,
+        range_summable: Option<bool>,
+    ) -> Value {
+        let mut schema_map: Vec<(Value, Value)> = vec![
+            (
+                Value::Text("type".to_string()),
+                Value::Text("object".to_string()),
+            ),
+            (
+                Value::Text("properties".to_string()),
+                platform_value!({
+                    "score": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 100,
+                        "position": 0,
+                    },
+                }),
+            ),
+            (
+                Value::Text("required".to_string()),
+                Value::Array(vec![Value::Text("score".to_string())]),
+            ),
+            (
+                Value::Text("additionalProperties".to_string()),
+                Value::Bool(false),
+            ),
+            (
+                Value::Text(DOCUMENTS_AVERAGEABLE.to_string()),
+                Value::Text("score".to_string()),
+            ),
+        ];
+        if let Some(b) = range_averageable {
+            schema_map.push((Value::Text(RANGE_AVERAGEABLE.to_string()), Value::Bool(b)));
+        }
+        if let Some(b) = range_countable {
+            schema_map.push((Value::Text(RANGE_COUNTABLE.to_string()), Value::Bool(b)));
+        }
+        if let Some(b) = range_summable {
+            // The doctype-level meta schema declares
+            // `dependentRequired: { rangeSummable: ["documentsSummable"] }`
+            // — once `rangeSummable` is present (true OR false) the
+            // schema demands `documentsSummable` too. Since
+            // `documentsAverageable: "score"` already implies it (and
+            // any explicit `documentsSummable` must match per the
+            // parser's cross-check), add it redundantly so the schema
+            // passes meta validation when the test exercises a
+            // `rangeSummable` value at all. Same redundancy `grades`
+            // / `tip-jar` contract fixtures use.
+            schema_map.push((
+                Value::Text(DOCUMENTS_SUMMABLE.to_string()),
+                Value::Text("score".to_string()),
+            ));
+            schema_map.push((Value::Text(RANGE_SUMMABLE.to_string()), Value::Bool(b)));
+        }
+        Value::Map(schema_map)
+    }
+
+    fn parse(schema: Value) -> Result<DocumentTypeV2, ProtocolError> {
+        let platform_version = PlatformVersion::latest();
+        let config = DataContractConfig::default_for_version(platform_version)
+            .expect("default config available on latest platform version");
+        DocumentTypeV2::try_from_schema(
+            Identifier::new([1; 32]),
+            1,
+            config.version(),
+            "test_doc",
+            schema,
+            None,
+            &BTreeMap::new(),
+            &config,
+            true,
+            &mut vec![],
+            platform_version,
+        )
+    }
+
+    /// `documentsAverageable: "score" + rangeAverageable: true +
+    /// rangeCountable: false` — explicit-false on the count side
+    /// contradicts the shorthand. Must reject.
+    #[test]
+    fn doctype_range_averageable_with_explicit_range_countable_false_rejected() {
+        let schema = build_schema(Some(true), Some(false), None);
+        let result = parse(schema);
+        assert!(
+            result.is_err(),
+            "rangeAverageable: true + rangeCountable: false must be rejected"
+        );
+        let msg = format!("{:?}", result.unwrap_err());
+        assert!(
+            msg.contains("rangeAverageable") && msg.contains("rangeCountable"),
+            "error must reference both rangeAverageable and rangeCountable; got {msg}"
+        );
+    }
+
+    /// Sum-side analog: `rangeAverageable: true + rangeSummable: false`
+    /// — same contradiction shape, must reject.
+    #[test]
+    fn doctype_range_averageable_with_explicit_range_summable_false_rejected() {
+        let schema = build_schema(Some(true), None, Some(false));
+        let result = parse(schema);
+        assert!(
+            result.is_err(),
+            "rangeAverageable: true + rangeSummable: false must be rejected"
+        );
+        let msg = format!("{:?}", result.unwrap_err());
+        assert!(
+            msg.contains("rangeAverageable") && msg.contains("rangeSummable"),
+            "error must reference both rangeAverageable and rangeSummable; got {msg}"
+        );
+    }
+
+    /// `rangeAverageable: true + rangeCountable: true +
+    /// rangeSummable: true` — redundant-but-consistent explicit
+    /// `true` on both range axes must be accepted (the values
+    /// agree with the shorthand's promotion).
+    #[test]
+    fn doctype_range_averageable_with_redundant_explicit_range_true_accepted() {
+        let schema = build_schema(Some(true), Some(true), Some(true));
+        let v2 = parse(schema).expect(
+            "redundant-but-consistent explicit range flags must parse cleanly alongside \
+             rangeAverageable: true",
+        );
+        assert!(
+            v2.range_countable,
+            "rangeAverageable should leave range_countable true"
+        );
+        assert!(
+            v2.range_summable,
+            "rangeAverageable should leave range_summable true"
+        );
+    }
+
+    /// Canonical shorthand `documentsAverageable: "score" +
+    /// rangeAverageable: true` (no explicit `rangeCountable` /
+    /// `rangeSummable`) must succeed and silently promote both
+    /// range axes — the "default-false → silently promoted" path
+    /// that the explicit-false rejection guards have to leave
+    /// intact.
+    #[test]
+    fn doctype_range_averageable_alone_silently_promotes_range_axes() {
+        let schema = build_schema(Some(true), None, None);
+        let v2 = parse(schema).expect("canonical rangeAverageable shorthand must parse");
+        assert!(
+            v2.range_countable,
+            "rangeAverageable: true should promote range_countable when not explicit"
+        );
+        assert!(
+            v2.range_summable,
+            "rangeAverageable: true should promote range_summable when not explicit"
+        );
+    }
+}
