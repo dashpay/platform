@@ -22,18 +22,20 @@ use dpp::identity::signer::Signer;
 use dpp::prelude::Identifier;
 use dpp::state_transition::address_funds_transfer_transition::AddressFundsTransferTransition;
 use dpp::version::PlatformVersion;
+use key_wallet::gap_limit::DIP17_GAP_LIMIT;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use key_wallet::Network;
 use platform_wallet::wallet::persister::NoPlatformPersistence;
 use platform_wallet::wallet::platform_addresses::InputSelection;
 use platform_wallet::{PlatformWallet, PlatformWalletError, PlatformWalletManager};
+use simple_signer::signer::SimpleSigner;
 
 use super::signer::SeedBackedIdentitySigner;
 
 use super::bank::{core_send, BankWallet, CORE_TX_FEE_RESERVE};
 use super::bank_identity::BankIdentity;
 use super::registry::{EntryStatus, PersistentTestWalletRegistry, RegistryEntry, WalletSeedHash};
-use super::wallet_factory::TestWallet;
+use super::wallet_factory::{TestWallet, DEFAULT_ACCOUNT_INDEX_PUB, DEFAULT_KEY_CLASS_PUB};
 use super::{make_platform_signer, FrameworkError, FrameworkResult};
 
 /// Sweep gate: a wallet is only swept if its total balance can plausibly
@@ -220,6 +222,55 @@ pub async fn sweep_orphans(
     Ok(summary.swept_with_broadcast as usize)
 }
 
+/// Build a Platform-payment [`SimpleSigner`] keyed for every
+/// synced/generated address index in account `DEFAULT_ACCOUNT_INDEX_PUB`
+/// plus one `DIP17_GAP_LIMIT` forward window — the sweep-path mirror of
+/// `BankWallet::derive_pool_signer` (#557).
+///
+/// `wallet` must have completed `sync_balances()` so the managed
+/// account's `addresses` map reflects the on-chain funded pool. The
+/// sweep transfer uses `InputSelection::Explicit` + `ReduceOutput(0)`
+/// (no `auto_select_inputs`, no change branch), so the signing key set
+/// is exactly the synced funded inputs; the margin covers pool
+/// addresses generated but not yet balance-synced. Bounded — no
+/// run-time index advancement. Replaces the static `0..DIP17_GAP_LIMIT`
+/// `make_platform_signer` window that left drifted-index sweep inputs
+/// unsignable (#556/#559). No funded pool → plain gap-window fallback.
+async fn derive_sweep_pool_signer(
+    wallet: &Arc<PlatformWallet>,
+    seed_bytes: &[u8; 64],
+    network: Network,
+) -> FrameworkResult<SimpleSigner> {
+    let wallet_id = wallet.wallet_id();
+    let highest_index = {
+        let wm = wallet.wallet_manager().read().await;
+        let info = wm.get_wallet_info(&wallet_id).ok_or_else(|| {
+            FrameworkError::Cleanup("wallet missing from manager during sweep signer build".into())
+        })?;
+        info.core_wallet
+            .platform_payment_managed_account_at_index(DEFAULT_ACCOUNT_INDEX_PUB)
+            .map(|account| {
+                let synced_max = account.addresses.addresses.keys().copied().max();
+                let generated_max = account.addresses.highest_generated;
+                synced_max.into_iter().chain(generated_max).max()
+            })
+            .unwrap_or(None)
+    };
+
+    let ceiling = match highest_index {
+        Some(hi) => hi.saturating_add(DIP17_GAP_LIMIT),
+        None => return make_platform_signer(seed_bytes, network),
+    };
+    SimpleSigner::from_seed_for_platform_addresses(
+        seed_bytes,
+        network,
+        DEFAULT_ACCOUNT_INDEX_PUB,
+        DEFAULT_KEY_CLASS_PUB,
+        0..=ceiling,
+    )
+    .map_err(|err| FrameworkError::Wallet(format!("sweep pool signer: {err}")))
+}
+
 async fn sweep_one(
     manager: &Arc<PlatformWalletManager<NoPlatformPersistence>>,
     bank: &BankWallet,
@@ -251,7 +302,7 @@ async fn sweep_one(
         .sync_balances(None)
         .await
         .map_err(wallet_err)?;
-    let signer = make_platform_signer(&seed_bytes, network)?;
+    let signer = derive_sweep_pool_signer(&wallet, &seed_bytes, network).await?;
 
     let platform_version = PlatformVersion::latest();
     let dust_gate = min_input_amount(platform_version);
@@ -331,6 +382,12 @@ pub async fn teardown_one(
     test_wallet: &TestWallet,
 ) -> FrameworkResult<SweepReport> {
     test_wallet.sync_balances().await?;
+    let sweep_signer = derive_sweep_pool_signer(
+        test_wallet.platform_wallet(),
+        &test_wallet.seed_bytes(),
+        bank.network(),
+    )
+    .await?;
     let platform_version = PlatformVersion::latest();
     let dust_gate = min_input_amount(platform_version);
     // QA-004: hoist the address snapshot BEFORE the gate decision so both
@@ -353,7 +410,7 @@ pub async fn teardown_one(
         sweep_platform_addresses_with_candidates(
             candidates,
             test_wallet.platform_wallet(),
-            test_wallet.address_signer(),
+            &sweep_signer,
             bank.primary_receive_address(),
             &mut report,
         )
@@ -1149,5 +1206,65 @@ mod tests {
         assert!(leaky.has_failures());
         assert_eq!(leaky.broadcasts_succeeded, 0);
         assert!(leaky.had_funds_to_recover);
+    }
+
+    /// Regression guard for #556/#559: a sweep/funding signer MUST NOT
+    /// be the static `0..DIP17_GAP_LIMIT` window — a long-lived wallet
+    /// whose pool drifted past index 20 has funded addresses the static
+    /// signer holds no key for, so the sweep can't sign and funds bleed
+    /// one-way (the bank drain). Fails if anyone reintroduces
+    /// `make_platform_signer` (or any fixed-window signer) on a
+    /// sweep/funding path. Non-funded, deterministic — no bank/network.
+    #[test]
+    fn static_gap_window_signer_cannot_sign_drifted_index() {
+        let seed = [0x42u8; 64];
+        let net = Network::Testnet;
+        let drifted = DIP17_GAP_LIMIT + 5; // 25 — outside the static 0..20 window
+
+        // The pkh the production DIP-17 derivation assigns to the
+        // drifted index, taken from the same constructor the sweep now
+        // uses (single-index signer → its only key is that pkh).
+        let single = SimpleSigner::from_seed_for_platform_addresses(
+            &seed,
+            net,
+            DEFAULT_ACCOUNT_INDEX_PUB,
+            DEFAULT_KEY_CLASS_PUB,
+            [drifted],
+        )
+        .expect("derive single drifted-index signer");
+        let drifted_pkh: [u8; 20] = *single
+            .address_private_keys
+            .keys()
+            .next()
+            .expect("single-index signer has exactly one key");
+
+        // The OLD static-window signer (the #556/#559 bug) has NO key
+        // for the drifted index — this is precisely why the sweep
+        // failed and funds bled.
+        let static_signer = make_platform_signer(&seed, net).expect("build static-window signer");
+        assert!(
+            !static_signer
+                .address_private_keys
+                .contains_key(&drifted_pkh),
+            "static 0..DIP17_GAP_LIMIT signer must NOT key a drifted (idx={drifted}) \
+             address — if this passes, a fixed-window signer is back on a \
+             sweep/funding path and the bank will bleed (#556/#559)"
+        );
+
+        // The pool signer the sweep now builds (idx 0..=drifted) DOES
+        // key it — the S-1 fix recovers drifted-index funds.
+        let pool_signer = SimpleSigner::from_seed_for_platform_addresses(
+            &seed,
+            net,
+            DEFAULT_ACCOUNT_INDEX_PUB,
+            DEFAULT_KEY_CLASS_PUB,
+            0..=drifted,
+        )
+        .expect("build synced-pool signer");
+        assert!(
+            pool_signer.address_private_keys.contains_key(&drifted_pkh),
+            "synced-pool signer (0..={drifted}) MUST key the drifted address — \
+             the S-1 sweep fix depends on this"
+        );
     }
 }
