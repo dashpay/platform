@@ -285,12 +285,18 @@ impl SqlitePersister {
         wallet_id: WalletId,
         skip_backup: bool,
     ) -> Result<DeleteWalletReport, WalletStorageError> {
-        // Existence check FIRST — refusing on an unknown wallet must
-        // not waste a backup file. `.optional()?` propagates real SQL
-        // errors (busy / corrupt) instead of swallowing them.
+        // Drain-and-discard any buffered changeset FIRST so a later
+        // flush can't resurrect the wallet, and so the wallet counts as
+        // existing even when its only state is buffered. The buffered
+        // writes are intentionally void on delete — no `restore`.
+        let had_buffered = self.buffer.take_for_flush(&wallet_id)?.is_some();
+
+        // A wallet exists iff it was buffered OR persisted. Refusing on
+        // a truly-unknown wallet must not waste a backup file.
+        // `.optional()?` propagates real SQL errors (busy / corrupt).
         {
             let conn = self.conn()?;
-            let exists = conn
+            let exists_in_db = conn
                 .query_row(
                     "SELECT 1 FROM wallet_metadata WHERE wallet_id = ?1",
                     rusqlite::params![wallet_id.as_slice()],
@@ -298,7 +304,7 @@ impl SqlitePersister {
                 )
                 .optional()?
                 .is_some();
-            if !exists {
+            if !had_buffered && !exists_in_db {
                 return Err(WalletStorageError::WalletNotFound { wallet_id });
             }
         }
