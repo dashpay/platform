@@ -764,8 +764,9 @@ struct CreateIdentityView: View {
                 managedWallet: managedWallet,
                 network: network
             )
-        } else if selectedCoreAccount != nil {
+        } else if let account = selectedCoreAccount {
             submitCoreFunded(
+                account: account,
                 walletId: walletId,
                 identityIndex: identityIndex,
                 identityPubkeys: identityPubkeys,
@@ -905,11 +906,12 @@ struct CreateIdentityView: View {
         }
     }
 
-    /// Core / CoinJoin funded registration. Rust builds an asset-lock
-    /// transaction from BIP44 account #0's UTXOs (mempool `account_index = 0`
-    /// in `create_funded_asset_lock_proof`), broadcasts it, waits for
-    /// the instant-send lock, and submits the IdentityCreate state
-    /// transition.
+    /// Core BIP44-standard funded registration. Rust builds an
+    /// asset-lock transaction from the *selected* BIP44 standard
+    /// account's UTXOs (the picker is restricted to BIP44 standard
+    /// only — see `isFundingAccount` for the predicate), broadcasts
+    /// it, waits for the instant-send lock, and submits the
+    /// IdentityCreate state transition.
     ///
     /// Iter 3 swap (the previous iter-1 path was a single in-flight
     /// spinner inside this view): the FFI call moves to a
@@ -920,6 +922,7 @@ struct CreateIdentityView: View {
     /// `RegistrationProgressView` can be opened from the home /
     /// identities tab to follow the same controller through.
     private func submitCoreFunded(
+        account: PersistentAccount,
         walletId: Data,
         identityIndex: UInt32,
         identityPubkeys: [ManagedPlatformWallet.IdentityPubkey],
@@ -931,6 +934,11 @@ struct CreateIdentityView: View {
             submitError = .init(message: "Enter a positive amount.")
             return
         }
+
+        // Pinned at submit time so the async body captures a stable
+        // index rather than re-reading the (mutable) `PersistentAccount`
+        // row from another isolation domain.
+        let accountIndex = account.accountIndex
 
         isCreating = true
 
@@ -950,6 +958,7 @@ struct CreateIdentityView: View {
             body: {
                 let (identityId, _) = try await managedWallet.registerIdentityWithFunding(
                     amountDuffs: amountDuffs,
+                    accountIndex: accountIndex,
                     identityIndex: identityIndex,
                     identityPubkeys: identityPubkeys,
                     signer: signer
@@ -1200,18 +1209,23 @@ struct CreateIdentityView: View {
         return allAssetLocks.first { $0.persistentModelID == id }
     }
 
-    /// The currently-selected Core / CoinJoin account, if any. Used
-    /// for the Core-funded identity-creation path (Standard BIP44/BIP32
-    /// or CoinJoin). The Rust function `create_funded_asset_lock_proof`
-    /// reads UTXOs from BIP44 account #0 by convention; for a fresh
-    /// wallet this matches what the user has.
+    /// The currently-selected Core BIP44 standard account, if any.
+    /// Used for the Core-funded identity-creation path.
+    ///
+    /// Restricted to BIP44 standard accounts (`accountType == 0` AND
+    /// `standardTag == 0`) — the Rust side
+    /// (`create_funded_asset_lock_proof`) only supports BIP44 standard
+    /// today, so CoinJoin (`accountType == 1`) and BIP32
+    /// (`standardTag == 1`) are intentionally excluded as funding
+    /// sources for new-identity registration.
     private var selectedCoreAccount: PersistentAccount? {
         guard
             case .account(let persistentId) = fundingSelection,
             let account = allAccounts.first(where: {
                 $0.persistentModelID == persistentId
             }),
-            account.accountType == 0 || account.accountType == 1
+            account.accountType == 0,
+            account.standardTag == 0
         else {
             return nil
         }
@@ -1437,10 +1451,24 @@ struct CreateIdentityView: View {
         }
     }
 
-    /// Account types eligible to fund a new identity.
+    /// Accounts eligible to fund a new identity.
+    ///
+    /// Core funding restricted to **BIP44 standard** accounts only
+    /// (`accountType == 0 && standardTag == 0`). CoinJoin
+    /// (`accountType == 1`) and BIP32 standard accounts
+    /// (`accountType == 0 && standardTag == 1`) are intentionally
+    /// hidden — the Rust `create_funded_asset_lock_proof` path used
+    /// by `registerIdentityWithFunding` only handles BIP44 standard
+    /// today; surfacing the others would let the user pick a source
+    /// that silently funds from BIP44 #0 instead.
+    ///
+    /// PlatformPayment (`accountType == 14`) stays eligible — it
+    /// flows through `registerIdentityFromAddresses`, a separate
+    /// path that doesn't go through `create_funded_asset_lock_proof`.
     private static func isFundingAccount(_ account: PersistentAccount) -> Bool {
         switch account.accountType {
-        case 0, 1, 14: return true
+        case 0: return account.standardTag == 0
+        case 14: return true
         default: return false
         }
     }

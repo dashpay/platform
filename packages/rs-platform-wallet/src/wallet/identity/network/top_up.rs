@@ -30,6 +30,9 @@ impl IdentityWallet {
     ///
     /// * `identity_id` - The identifier of the identity to top up.
     /// * `amount_duffs` - Amount of Dash (in duffs) to add.
+    /// * `account_index` - BIP44 standard-account index to draw the
+    ///   funding UTXOs from. Only BIP44 standard accounts are
+    ///   supported today (CoinJoin / BIP32 are out of scope).
     /// * `asset_lock_signer` - External ECDSA signer that produces both
     ///   the funding-input P2PKH signatures during asset-lock build and
     ///   the consume-phase outer signature on the IdentityTopUp
@@ -39,6 +42,7 @@ impl IdentityWallet {
         &self,
         identity_id: &Identifier,
         amount_duffs: u64,
+        account_index: u32,
         asset_lock_signer: &AS,
         settings: Option<PutSettings>,
     ) -> Result<(), PlatformWalletError>
@@ -47,7 +51,10 @@ impl IdentityWallet {
     {
         self.top_up_identity_with_funding(
             identity_id,
-            IdentityFunding::FromWalletBalance { amount_duffs },
+            IdentityFunding::FromWalletBalance {
+                amount_duffs,
+                account_index,
+            },
             asset_lock_signer,
             settings,
         )

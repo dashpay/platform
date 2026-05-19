@@ -32,6 +32,13 @@ use rs_sdk_ffi::MnemonicResolverHandle;
 
 /// Register a new asset-lock-funded identity using an external signer.
 ///
+/// `account_index` selects which BIP44 *standard* account (by BIP44
+/// account index) the asset-lock funding UTXOs are drawn from. Only
+/// BIP44 standard accounts are supported today; the Swift UI is
+/// expected to filter the funding picker accordingly (CoinJoin / BIP32
+/// funding for new-identity registration is not yet wired through
+/// `create_funded_asset_lock_proof`).
+///
 /// # Safety
 /// - `signer_handle` must be a valid, non-destroyed `*mut SignerHandle`
 ///   produced by `dash_sdk_signer_create_with_ctx`. The caller retains
@@ -45,6 +52,7 @@ use rs_sdk_ffi::MnemonicResolverHandle;
 pub unsafe extern "C" fn platform_wallet_register_identity_with_funding_signer(
     wallet_handle: Handle,
     amount_duffs: u64,
+    account_index: u32,
     identity_index: u32,
     identity_pubkeys: *const IdentityPubkeyFFI,
     identity_pubkeys_count: usize,
@@ -97,7 +105,10 @@ pub unsafe extern "C" fn platform_wallet_register_identity_with_funding_signer(
             };
             identity_wallet
                 .register_identity_with_funding(
-                    IdentityFunding::FromWalletBalance { amount_duffs },
+                    IdentityFunding::FromWalletBalance {
+                        amount_duffs,
+                        account_index,
+                    },
                     identity_index,
                     keys_map,
                     identity_signer,

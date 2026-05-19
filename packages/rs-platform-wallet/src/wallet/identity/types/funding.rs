@@ -49,9 +49,21 @@ pub enum IdentityFunding {
     /// up), builds the asset-lock tx, broadcasts it, waits for an
     /// IS-lock proof, and falls back to ChainLock if the IS-lock times
     /// out (300s) or is rejected at Platform.
+    ///
+    /// `account_index` selects which BIP44 *standard* account (by
+    /// BIP44 account index) supplies the UTXOs. Only BIP44 standard
+    /// accounts are supported today — CoinJoin / BIP32 funding for
+    /// identity registration is out of scope and would require
+    /// additional plumbing in `create_funded_asset_lock_proof`.
     FromWalletBalance {
         /// Amount to lock (in duffs).
         amount_duffs: u64,
+        /// BIP44 standard-account index to draw the funding UTXOs from.
+        ///
+        /// Only BIP44 standard accounts (`AccountType::Standard` with
+        /// `StandardAccountTypeTag::Bip44`) are supported today;
+        /// CoinJoin / BIP32 are not.
+        account_index: u32,
     },
 
     /// Resume from a tracked asset lock identified by its outpoint

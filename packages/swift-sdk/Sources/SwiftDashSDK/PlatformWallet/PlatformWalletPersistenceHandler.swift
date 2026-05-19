@@ -2249,6 +2249,20 @@ public class PlatformWalletPersistenceHandler {
                     backgroundContext.delete(row)
                 }
 
+                // `loadCachedAssetLocksOnQueue` rehydrates these rows on
+                // the wallet-load path back into the Rust-side
+                // `unused_asset_locks` map so an in-flight registration
+                // can resume across an app kill. Without this cleanup,
+                // delete-then-reimport of the same wallet would
+                // resurrect stale Pending / Resumable asset-lock state
+                // that the user thought they had wiped.
+                let assetLockDescriptor = FetchDescriptor<PersistentAssetLock>(
+                    predicate: #Predicate<PersistentAssetLock> { $0.walletId == walletId }
+                )
+                for row in try backgroundContext.fetch(assetLockDescriptor) {
+                    backgroundContext.delete(row)
+                }
+
                 if let walletRow = walletRow {
                     backgroundContext.delete(walletRow)
                 }

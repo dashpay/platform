@@ -284,12 +284,15 @@ impl IdentityWallet {
         AS: ::key_wallet::signer::Signer + Send + Sync,
     {
         match funding {
-            IdentityFunding::FromWalletBalance { amount_duffs } => {
+            IdentityFunding::FromWalletBalance {
+                amount_duffs,
+                account_index,
+            } => {
                 match self
                     .asset_locks
                     .create_funded_asset_lock_proof(
                         amount_duffs,
-                        0,
+                        account_index,
                         funding_type,
                         identity_index,
                         asset_lock_signer,
