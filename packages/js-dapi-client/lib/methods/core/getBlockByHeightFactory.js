@@ -1,9 +1,11 @@
+import dapiGrpc from '@dashevo/dapi-grpc';
+
 const {
   v0: {
     GetBlockRequest,
     CorePromiseClient,
   },
-} = require('@dashevo/dapi-grpc');
+} = dapiGrpc;
 
 /**
  * @param {GrpcTransport} grpcTransport
@@ -36,4 +38,4 @@ function getBlockByHeightFactory(grpcTransport) {
   return getBlockByHeight;
 }
 
-module.exports = getBlockByHeightFactory;
+export default getBlockByHeightFactory;

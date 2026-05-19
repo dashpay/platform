@@ -1,8 +1,7 @@
-const DAPIClient = require('./DAPIClient');
-
-const NotFoundError = require('./transport/GrpcTransport/errors/NotFoundError');
-const BlockHeadersProvider = require('./BlockHeadersProvider/BlockHeadersProvider');
-const bytes = require('./utils/bytes');
+import DAPIClient from './DAPIClient.js';
+import NotFoundError from './transport/GrpcTransport/errors/NotFoundError.js';
+import BlockHeadersProvider from './BlockHeadersProvider/BlockHeadersProvider.js';
+import * as bytes from './utils/bytes.js';
 
 DAPIClient.Errors = {
   NotFoundError,
@@ -11,4 +10,5 @@ DAPIClient.Errors = {
 DAPIClient.BlockHeadersProvider = BlockHeadersProvider;
 DAPIClient.bytes = bytes;
 
-module.exports = DAPIClient;
+export default DAPIClient;
+export { NotFoundError, BlockHeadersProvider, bytes };

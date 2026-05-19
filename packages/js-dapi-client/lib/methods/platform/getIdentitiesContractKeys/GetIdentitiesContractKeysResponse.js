@@ -1,5 +1,7 @@
-const { Identifier } = require('@dashevo/wasm-dpp');
-const AbstractResponse = require('../response/AbstractResponse');
+import wasmDpp from '@dashevo/wasm-dpp';
+import AbstractResponse from '../response/AbstractResponse.js';
+
+const { Identifier } = wasmDpp;
 
 class GetIdentitiesContractKeysResponse extends AbstractResponse {
   /**
@@ -62,4 +64,4 @@ class GetIdentitiesContractKeysResponse extends AbstractResponse {
   }
 }
 
-module.exports = GetIdentitiesContractKeysResponse;
+export default GetIdentitiesContractKeysResponse;

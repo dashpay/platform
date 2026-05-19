@@ -1,9 +1,9 @@
-const EventEmitter = require('events');
-const { expect } = require('chai');
+import EventEmitter from 'events';
+import { expect } from 'chai';
 
-const ReconnectableStream = require('../../../lib/transport/ReconnectableStream');
-const wait = require('../../../lib/utils/wait');
-const logger = require('../../../lib/logger');
+import ReconnectableStream from '../../../lib/transport/ReconnectableStream.js';
+import wait from '../../../lib/utils/wait.js';
+import logger from '../../../lib/logger/index.js';
 
 describe('ReconnectableStream', () => {
   let reconnectableStream;

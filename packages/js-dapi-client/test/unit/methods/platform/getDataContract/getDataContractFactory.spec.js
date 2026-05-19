@@ -1,3 +1,10 @@
+import dapiGrpc from '@dashevo/dapi-grpc';
+import getDataContractFixture from '@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture.js';
+import getDataContractFactory from '../../../../../lib/methods/platform/getDataContract/getDataContractFactory.js';
+import getMetadataFixture from '../../../../../lib/test/fixtures/getMetadataFixture.js';
+import getProofFixture from '../../../../../lib/test/fixtures/getProofFixture.js';
+import ProofClass from '../../../../../lib/methods/platform/response/Proof.js';
+
 const {
   v0: {
     PlatformPromiseClient,
@@ -6,14 +13,7 @@ const {
     ResponseMetadata,
     Proof,
   },
-} = require('@dashevo/dapi-grpc');
-
-const getDataContractFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture');
-
-const getDataContractFactory = require('../../../../../lib/methods/platform/getDataContract/getDataContractFactory');
-const getMetadataFixture = require('../../../../../lib/test/fixtures/getMetadataFixture');
-const getProofFixture = require('../../../../../lib/test/fixtures/getProofFixture');
-const ProofClass = require('../../../../../lib/methods/platform/response/Proof');
+} = dapiGrpc;
 
 describe('getDataContractFactory', () => {
   let grpcTransportMock;

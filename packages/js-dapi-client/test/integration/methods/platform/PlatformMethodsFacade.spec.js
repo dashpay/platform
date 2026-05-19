@@ -1,3 +1,12 @@
+import dapiGrpc from '@dashevo/dapi-grpc';
+import wasmDpp from '@dashevo/wasm-dpp';
+
+import getDataContractFixture from '@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture.js';
+import getIdentityFixture from '@dashevo/wasm-dpp/lib/test/fixtures/getIdentityFixture.js';
+
+import PlatformMethodsFacade from '../../../../lib/methods/platform/PlatformMethodsFacade.js';
+import { hexToBytes, bytesToHex } from '../../../../lib/utils/bytes.js';
+
 const {
   v0: {
     ResponseMetadata,
@@ -17,15 +26,9 @@ const {
     WaitForStateTransitionResultResponse,
     KeyPurpose,
   },
-} = require('@dashevo/dapi-grpc');
+} = dapiGrpc;
 
-const { DashPlatformProtocol } = require('@dashevo/wasm-dpp');
-
-const getDataContractFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture');
-const getIdentityFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityFixture');
-
-const PlatformMethodsFacade = require('../../../../lib/methods/platform/PlatformMethodsFacade');
-const { hexToBytes, bytesToHex } = require('../../../../lib/utils/bytes');
+const { DashPlatformProtocol } = wasmDpp;
 
 const { WaitForStateTransitionResultResponseV0 } = WaitForStateTransitionResultResponse;
 const { GetIdentityResponseV0 } = GetIdentityResponse;

@@ -17,4 +17,4 @@ function getBlockHashFactory(jsonRpcTransport) {
   return getBlockHash;
 }
 
-module.exports = getBlockHashFactory;
+export default getBlockHashFactory;

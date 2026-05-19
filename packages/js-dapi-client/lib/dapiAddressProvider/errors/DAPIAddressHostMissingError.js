@@ -1,4 +1,4 @@
-const DAPIClientError = require('../../errors/DAPIClientError');
+import DAPIClientError from '../../errors/DAPIClientError.js';
 
 class DAPIAddressHostMissingError extends DAPIClientError {
   constructor() {
@@ -6,4 +6,4 @@ class DAPIAddressHostMissingError extends DAPIClientError {
   }
 }
 
-module.exports = DAPIAddressHostMissingError;
+export default DAPIAddressHostMissingError;

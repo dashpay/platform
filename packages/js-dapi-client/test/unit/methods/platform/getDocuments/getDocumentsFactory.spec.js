@@ -1,5 +1,15 @@
-const cbor = require('cbor');
-const { Identifier } = require('@dashevo/wasm-dpp');
+import cbor from 'cbor';
+import wasmDpp from '@dashevo/wasm-dpp';
+import dapiGrpc from '@dashevo/dapi-grpc';
+import getDocumentsFixture from '@dashevo/wasm-dpp/lib/test/fixtures/getDocumentsFixture.js';
+import generateRandomIdentifier from '@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync.js';
+import getDocumentsFactory from '../../../../../lib/methods/platform/getDocuments/getDocumentsFactory.js';
+import getMetadataFixture from '../../../../../lib/test/fixtures/getMetadataFixture.js';
+import getProofFixture from '../../../../../lib/test/fixtures/getProofFixture.js';
+import Proof from '../../../../../lib/methods/platform/response/Proof.js';
+import { hexToBytes } from '../../../../../lib/utils/bytes.js';
+
+const { Identifier } = wasmDpp;
 
 const {
   v0: {
@@ -9,15 +19,7 @@ const {
     ResponseMetadata,
     Proof: ProofResponse,
   },
-} = require('@dashevo/dapi-grpc');
-
-const getDocumentsFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDocumentsFixture');
-
-const generateRandomIdentifier = require('@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync');
-const getDocumentsFactory = require('../../../../../lib/methods/platform/getDocuments/getDocumentsFactory');
-const getMetadataFixture = require('../../../../../lib/test/fixtures/getMetadataFixture');
-const getProofFixture = require('../../../../../lib/test/fixtures/getProofFixture');
-const Proof = require('../../../../../lib/methods/platform/response/Proof');
+} = dapiGrpc;
 
 describe('getDocumentsFactory', () => {
   let grpcTransportMock;

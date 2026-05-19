@@ -1,20 +1,22 @@
-const { Metadata, parseMetadata } = require('@dashevo/dapi-grpc');
-const GrpcError = require('@dashevo/grpc-common/lib/server/error/GrpcError');
-const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
+import dapiGrpc from '@dashevo/dapi-grpc';
+import GrpcError from '@dashevo/grpc-common/lib/server/error/GrpcError.js';
+import GrpcErrorCodes from '@dashevo/grpc-common/lib/server/error/GrpcErrorCodes.js';
 
-const {
-  ProtocolVersionParsingError,
-} = require('@dashevo/wasm-dpp');
+import wasmDpp from '@dashevo/wasm-dpp';
 
-const cbor = require('cbor');
-const createGrpcTransportError = require('../../../../lib/transport/GrpcTransport/createGrpcTransportError');
-const DAPIAddress = require('../../../../lib/dapiAddressProvider/DAPIAddress');
-const NotFoundError = require('../../../../lib/transport/GrpcTransport/errors/NotFoundError');
-const InvalidRequestError = require('../../../../lib/transport/errors/response/InvalidRequestError');
-const InternalServerError = require('../../../../lib/transport/GrpcTransport/errors/InternalServerError');
-const ServerError = require('../../../../lib/transport/errors/response/ServerError');
-const InvalidRequestDPPError = require('../../../../lib/transport/errors/response/InvalidRequestDPPError');
-const ResponseError = require('../../../../lib/transport/errors/response/ResponseError');
+import cbor from 'cbor';
+import createGrpcTransportError from '../../../../lib/transport/GrpcTransport/createGrpcTransportError.js';
+import DAPIAddress from '../../../../lib/dapiAddressProvider/DAPIAddress.js';
+import NotFoundError from '../../../../lib/transport/GrpcTransport/errors/NotFoundError.js';
+import InvalidRequestError from '../../../../lib/transport/errors/response/InvalidRequestError.js';
+import InternalServerError from '../../../../lib/transport/GrpcTransport/errors/InternalServerError.js';
+import ServerError from '../../../../lib/transport/errors/response/ServerError.js';
+import InvalidRequestDPPError from '../../../../lib/transport/errors/response/InvalidRequestDPPError.js';
+import ResponseError from '../../../../lib/transport/errors/response/ResponseError.js';
+import { bytesToBase64 } from '../../../../lib/utils/bytes.js';
+
+const { Metadata, parseMetadata } = dapiGrpc;
+const { ProtocolVersionParsingError } = wasmDpp;
 
 describe('createGrpcTransportError', () => {
   let dapiAddress;
@@ -28,13 +30,13 @@ describe('createGrpcTransportError', () => {
     };
 
     metadata = new Metadata();
-    // grpc-js expects Buffer
+    // grpc-js expects bytes
     let driveErrorDataBin = cbor.encode(errorData);
 
     // and grpc-web expects base64 string
     // TODO: remove when we switch to single grpc implementation for both Node and Web
     if (typeof window !== 'undefined') {
-      driveErrorDataBin = driveErrorDataBin.toString('base64');
+      driveErrorDataBin = bytesToBase64(driveErrorDataBin);
     }
 
     metadata.set('drive-error-data-bin', driveErrorDataBin);
@@ -107,13 +109,13 @@ describe('createGrpcTransportError', () => {
       'Internal error',
     );
 
-    // grpc-js expects Buffer
+    // grpc-js expects bytes
     let stackBin = cbor.encode(errorWithStack.stack);
 
     // and grpc-web expects string
     // TODO: remove when we switch to single grpc implementation for both Node and Web
     if (typeof window !== 'undefined') {
-      stackBin = stackBin.toString('base64');
+      stackBin = bytesToBase64(stackBin);
     }
     metadata.set('stack-bin', stackBin);
 
@@ -154,13 +156,13 @@ describe('createGrpcTransportError', () => {
   });
 
   it('should return InvalidRequestDPPError', async () => {
-    // grpc-js expects Buffer
+    // grpc-js expects bytes
     let serializedError = new ProtocolVersionParsingError('test').serialize();
 
     // and grpc-web expects string
     // TODO: remove when we switch to single grpc implementation for both Node and Web
     if (typeof window !== 'undefined') {
-      serializedError = serializedError.toString('base64');
+      serializedError = bytesToBase64(serializedError);
     }
     metadata.set('dash-serialized-consensus-error-bin', serializedError);
 

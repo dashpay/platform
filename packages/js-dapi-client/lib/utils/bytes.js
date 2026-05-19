@@ -8,7 +8,7 @@ function assertBytes(value, name) {
   }
 }
 
-function hexToBytes(hex) {
+export function hexToBytes(hex) {
   if (typeof hex !== 'string') {
     throw new TypeError('hex must be a string');
   }
@@ -25,12 +25,12 @@ function hexToBytes(hex) {
   return out;
 }
 
-function bytesToHex(bytes) {
+export function bytesToHex(bytes) {
   assertBytes(bytes, 'bytes');
   return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-function base64ToBytes(b64) {
+export function base64ToBytes(b64) {
   if (typeof b64 !== 'string') {
     throw new TypeError('b64 must be a string');
   }
@@ -42,7 +42,7 @@ function base64ToBytes(b64) {
   return out;
 }
 
-function bytesToBase64(bytes) {
+export function bytesToBase64(bytes) {
   assertBytes(bytes, 'bytes');
   let bin = '';
   for (let i = 0; i < bytes.length; i += 1) {
@@ -51,7 +51,7 @@ function bytesToBase64(bytes) {
   return btoa(bin);
 }
 
-function concatBytes(arrays) {
+export function concatBytes(arrays) {
   if (!Array.isArray(arrays)) {
     throw new TypeError('concatBytes expects an array');
   }
@@ -67,7 +67,7 @@ function concatBytes(arrays) {
   return out;
 }
 
-function bytesEqual(a, b) {
+export function bytesEqual(a, b) {
   assertBytes(a, 'a');
   assertBytes(b, 'b');
   if (a.length !== b.length) return false;
@@ -76,12 +76,3 @@ function bytesEqual(a, b) {
   }
   return true;
 }
-
-module.exports = {
-  hexToBytes,
-  bytesToHex,
-  base64ToBytes,
-  bytesToBase64,
-  concatBytes,
-  bytesEqual,
-};

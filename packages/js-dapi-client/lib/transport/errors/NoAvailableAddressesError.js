@@ -1,4 +1,4 @@
-const DAPIClientError = require('../../errors/DAPIClientError');
+import DAPIClientError from '../../errors/DAPIClientError.js';
 
 class NoAvailableAddressesError extends DAPIClientError {
   constructor() {
@@ -6,4 +6,4 @@ class NoAvailableAddressesError extends DAPIClientError {
   }
 }
 
-module.exports = NoAvailableAddressesError;
+export default NoAvailableAddressesError;

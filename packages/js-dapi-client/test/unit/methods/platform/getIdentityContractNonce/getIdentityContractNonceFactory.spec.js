@@ -1,3 +1,9 @@
+import dapiGrpc from '@dashevo/dapi-grpc';
+import getIdentityContractNonceFactory from '../../../../../lib/methods/platform/getIdentityContractNonce/getIdentityContractNonceFactory.js';
+import getMetadataFixture from '../../../../../lib/test/fixtures/getMetadataFixture.js';
+import getProofFixture from '../../../../../lib/test/fixtures/getProofFixture.js';
+import Proof from '../../../../../lib/methods/platform/response/Proof.js';
+
 const {
   v0: {
     PlatformPromiseClient,
@@ -6,12 +12,7 @@ const {
     ResponseMetadata,
     Proof: ProofResponse,
   },
-} = require('@dashevo/dapi-grpc');
-
-const getIdentityContractNonceFactory = require('../../../../../lib/methods/platform/getIdentityContractNonce/getIdentityContractNonceFactory');
-const getMetadataFixture = require('../../../../../lib/test/fixtures/getMetadataFixture');
-const getProofFixture = require('../../../../../lib/test/fixtures/getProofFixture');
-const Proof = require('../../../../../lib/methods/platform/response/Proof');
+} = dapiGrpc;
 
 describe('getIdentityContractNonceFactory', () => {
   let grpcTransportMock;

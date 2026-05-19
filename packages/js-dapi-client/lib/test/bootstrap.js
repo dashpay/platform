@@ -1,16 +1,21 @@
-const { expect, use } = require('chai');
-const sinon = require('sinon');
-const sinonChai = require('sinon-chai');
-const dirtyChai = require('dirty-chai');
-const chaiAsPromised = require('chai-as-promised');
-const { default: loadDpp } = require('@dashevo/wasm-dpp');
+import chai from 'chai';
+import sinon from 'sinon';
+import sinonChai from 'sinon-chai';
+import dirtyChai from 'dirty-chai';
+import chaiAsPromised from 'chai-as-promised';
+import loadDpp from '@dashevo/wasm-dpp';
 
-use(sinonChai);
-use(chaiAsPromised);
-use(dirtyChai);
+chai.use(sinonChai);
+chai.use(chaiAsPromised);
+chai.use(dirtyChai);
 
-exports.mochaHooks = {
-  beforeAll: loadDpp,
+export const mochaHooks = {
+  // wasm-dpp is CJS; under NodeNext the default may resolve to the namespace
+  // object instead of the callable. Unwrap defensively.
+  beforeAll: async () => {
+    const load = loadDpp.default ?? loadDpp;
+    return load();
+  },
 
   beforeEach() {
     if (!this.sinon) {
@@ -25,4 +30,4 @@ exports.mochaHooks = {
   },
 };
 
-global.expect = expect;
+global.expect = chai.expect;

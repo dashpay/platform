@@ -1,4 +1,4 @@
-const RetriableResponseError = require('../../errors/response/RetriableResponseError');
+import RetriableResponseError from '../../errors/response/RetriableResponseError.js';
 
 class InternalServerError extends RetriableResponseError {
   /**
@@ -17,4 +17,4 @@ class InternalServerError extends RetriableResponseError {
   }
 }
 
-module.exports = InternalServerError;
+export default InternalServerError;

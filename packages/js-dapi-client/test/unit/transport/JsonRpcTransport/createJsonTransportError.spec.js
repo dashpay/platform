@@ -1,10 +1,10 @@
-const DAPIAddress = require('../../../../lib/dapiAddressProvider/DAPIAddress');
-const WrongHttpCodeError = require('../../../../lib/transport/JsonRpcTransport/errors/WrongHttpCodeError');
-const createJsonTransportError = require('../../../../lib/transport/JsonRpcTransport/createJsonTransportError');
-const ServerError = require('../../../../lib/transport/errors/response/ServerError');
-const JsonRpcError = require('../../../../lib/transport/JsonRpcTransport/errors/JsonRpcError');
-const ResponseError = require('../../../../lib/transport/errors/response/ResponseError');
-const RetriableResponseError = require('../../../../lib/transport/errors/response/RetriableResponseError');
+import DAPIAddress from '../../../../lib/dapiAddressProvider/DAPIAddress.js';
+import WrongHttpCodeError from '../../../../lib/transport/JsonRpcTransport/errors/WrongHttpCodeError.js';
+import createJsonTransportError from '../../../../lib/transport/JsonRpcTransport/createJsonTransportError.js';
+import ServerError from '../../../../lib/transport/errors/response/ServerError.js';
+import JsonRpcError from '../../../../lib/transport/JsonRpcTransport/errors/JsonRpcError.js';
+import ResponseError from '../../../../lib/transport/errors/response/ResponseError.js';
+import RetriableResponseError from '../../../../lib/transport/errors/response/RetriableResponseError.js';
 
 describe('createJsonTransportError', () => {
   let dapiAddress;

@@ -1,12 +1,14 @@
+import dapiGrpc from '@dashevo/dapi-grpc';
+
+import GetProtocolVersionUpgradeStateResponse from './GetProtocolVersionUpgradeStateResponse.js';
+import InvalidResponseError from '../response/errors/InvalidResponseError.js';
+
 const {
   v0: {
     PlatformPromiseClient,
     GetProtocolVersionUpgradeStateRequest,
   },
-} = require('@dashevo/dapi-grpc');
-
-const GetProtocolVersionUpgradeStateResponse = require('./GetProtocolVersionUpgradeStateResponse');
-const InvalidResponseError = require('../response/errors/InvalidResponseError');
+} = dapiGrpc;
 
 /**
  * @param {GrpcTransport} grpcTransport
@@ -59,4 +61,4 @@ function getProtocolVersionUpgradeStateFactory(grpcTransport) {
   return getProtocolVersionUpgradeState;
 }
 
-module.exports = getProtocolVersionUpgradeStateFactory;
+export default getProtocolVersionUpgradeStateFactory;

@@ -1,12 +1,13 @@
+import dapiGrpc from '@dashevo/dapi-grpc';
+import GetIdentityByPublicKeyHashResponse from './GetIdentityByPublicKeyHashResponse.js';
+import InvalidResponseError from '../response/errors/InvalidResponseError.js';
+
 const {
   v0: {
     PlatformPromiseClient,
     GetIdentityByPublicKeyHashRequest,
   },
-} = require('@dashevo/dapi-grpc');
-
-const GetIdentityByPublicKeyHashResponse = require('./GetIdentityByPublicKeyHashResponse');
-const InvalidResponseError = require('../response/errors/InvalidResponseError');
+} = dapiGrpc;
 
 /**
  * @param {GrpcTransport} grpcTransport
@@ -16,7 +17,7 @@ function getIdentityByPublicKeyHashFactory(grpcTransport) {
   /**
    * Fetch the identity by public key hash
    * @typedef {getIdentityByPublicKeyHash}
-   * @param {Buffer} publicKeyHash
+   * @param {Uint8Array} publicKeyHash
    * @param {DAPIClientOptions & {prove: boolean}} [options]
    * @returns {Promise<GetIdentityByPublicKeyHashResponse>}
    */
@@ -61,4 +62,4 @@ function getIdentityByPublicKeyHashFactory(grpcTransport) {
   return getIdentityByPublicKeyHash;
 }
 
-module.exports = getIdentityByPublicKeyHashFactory;
+export default getIdentityByPublicKeyHashFactory;

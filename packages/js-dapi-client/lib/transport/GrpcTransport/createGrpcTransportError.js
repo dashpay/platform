@@ -1,20 +1,20 @@
-const cbor = require('cbor');
+import cbor from 'cbor';
 
-const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
-const { parseMetadata } = require('@dashevo/dapi-grpc');
+import GrpcErrorCodes from '@dashevo/grpc-common/lib/server/error/GrpcErrorCodes.js';
+import dapiGrpc from '@dashevo/dapi-grpc';
 
-const {
-  deserializeConsensusError,
-} = require('@dashevo/wasm-dpp');
-const { default: loadWasmDpp } = require('@dashevo/wasm-dpp');
-const NotFoundError = require('./errors/NotFoundError');
-const TimeoutError = require('./errors/TimeoutError');
-const ResponseError = require('../errors/response/ResponseError');
-const ServerError = require('../errors/response/ServerError');
-const InvalidRequestError = require('../errors/response/InvalidRequestError');
-const InvalidRequestDPPError = require('../errors/response/InvalidRequestDPPError');
-const InternalServerError = require('./errors/InternalServerError');
-const { base64ToBytes } = require('../../utils/bytes');
+import wasmDpp from '@dashevo/wasm-dpp';
+import NotFoundError from './errors/NotFoundError.js';
+import TimeoutError from './errors/TimeoutError.js';
+import ResponseError from '../errors/response/ResponseError.js';
+import ServerError from '../errors/response/ServerError.js';
+import InvalidRequestError from '../errors/response/InvalidRequestError.js';
+import InvalidRequestDPPError from '../errors/response/InvalidRequestDPPError.js';
+import InternalServerError from './errors/InternalServerError.js';
+import { base64ToBytes } from '../../utils/bytes.js';
+
+const { parseMetadata } = dapiGrpc;
+const { deserializeConsensusError, default: loadWasmDpp } = wasmDpp;
 
 const INVALID_REQUEST_CODES = [
   GrpcErrorCodes.INVALID_ARGUMENT,
@@ -149,4 +149,4 @@ async function createGrpcTransportError(grpcError, dapiAddress) {
   );
 }
 
-module.exports = createGrpcTransportError;
+export default createGrpcTransportError;

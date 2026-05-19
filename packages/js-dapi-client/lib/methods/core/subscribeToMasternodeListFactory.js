@@ -1,9 +1,11 @@
+import dapiGrpc from '@dashevo/dapi-grpc';
+
 const {
   v0: {
     MasternodeListRequest,
     CorePromiseClient,
   },
-} = require('@dashevo/dapi-grpc');
+} = dapiGrpc;
 
 /**
  * @param {GrpcTransport} grpcTransport
@@ -43,4 +45,4 @@ function subscribeToMasternodeListFactory(grpcTransport) {
  * @typedef {object} subscribeToMasternodeListOptions
  */
 
-module.exports = subscribeToMasternodeListFactory;
+export default subscribeToMasternodeListFactory;

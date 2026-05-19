@@ -1,3 +1,8 @@
+import dapiGrpc from '@dashevo/dapi-grpc';
+import wrappersPb from 'google-protobuf/google/protobuf/wrappers_pb.js';
+import GetIdentityKeysResponse from './GetIdentityKeysResponse.js';
+import InvalidResponseError from '../response/errors/InvalidResponseError.js';
+
 const {
   v0: {
     PlatformPromiseClient,
@@ -6,14 +11,11 @@ const {
     SpecificKeys,
     AllKeys,
   },
-} = require('@dashevo/dapi-grpc');
+} = dapiGrpc;
 
-const { UInt32Value } = require('google-protobuf/google/protobuf/wrappers_pb');
+const { UInt32Value } = wrappersPb;
 
 const { GetIdentityKeysRequestV0 } = GetIdentityKeysRequest;
-
-const GetIdentityKeysResponse = require('./GetIdentityKeysResponse');
-const InvalidResponseError = require('../response/errors/InvalidResponseError');
 
 /**
  * @param {GrpcTransport} grpcTransport
@@ -84,4 +86,4 @@ function getIdentityKeysFactory(grpcTransport) {
   return getIdentityKeys;
 }
 
-module.exports = getIdentityKeysFactory;
+export default getIdentityKeysFactory;

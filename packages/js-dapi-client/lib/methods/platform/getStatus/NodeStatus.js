@@ -23,4 +23,4 @@ class NodeStatus {
   }
 }
 
-module.exports = NodeStatus;
+export default NodeStatus;

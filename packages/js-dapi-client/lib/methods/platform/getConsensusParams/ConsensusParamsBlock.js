@@ -33,4 +33,4 @@ class ConsensusParamsBlock {
   }
 }
 
-module.exports = ConsensusParamsBlock;
+export default ConsensusParamsBlock;

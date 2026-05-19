@@ -86,4 +86,4 @@ class StateSyncStatus {
   }
 }
 
-module.exports = StateSyncStatus;
+export default StateSyncStatus;

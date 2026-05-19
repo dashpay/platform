@@ -1,7 +1,8 @@
-const X11 = require('wasm-x11-hash');
-const { BlockHeader, configure } = require('@dashevo/dashcore-lib');
-const { genesis } = require('@dashevo/dash-spv');
-const { hexToBytes } = require('../../utils/bytes');
+import X11 from 'wasm-x11-hash';
+import dashcore from '@dashevo/dashcore-lib';
+const { BlockHeader, configure } = dashcore;
+import { genesis } from '@dashevo/dash-spv';
+import { hexToBytes } from '../../utils/bytes.js';
 
 const getRoot = (network) => {
   switch (network) {
@@ -53,4 +54,4 @@ const mockHeadersChain = async (network, length, root) => {
   return chain;
 };
 
-module.exports = mockHeadersChain;
+export default mockHeadersChain;

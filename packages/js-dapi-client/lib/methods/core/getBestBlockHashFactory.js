@@ -17,4 +17,4 @@ function getBestBlockHashFactory(jsonRpcTransport) {
   return getBestBlockHash;
 }
 
-module.exports = getBestBlockHashFactory;
+export default getBestBlockHashFactory;

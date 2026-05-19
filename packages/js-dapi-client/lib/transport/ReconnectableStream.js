@@ -1,6 +1,6 @@
-const EventEmitter = require('events');
-const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
-const wait = require('../utils/wait');
+import EventEmitter from 'events';
+import GrpcErrorCodes from '@dashevo/grpc-common/lib/server/error/GrpcErrorCodes.js';
+import wait from '../utils/wait.js';
 
 /**
  * @typedef ReconnectableStreamOptions
@@ -315,4 +315,4 @@ class ReconnectableStream extends EventEmitter {
 
 ReconnectableStream.EVENTS = EVENTS;
 
-module.exports = ReconnectableStream;
+export default ReconnectableStream;

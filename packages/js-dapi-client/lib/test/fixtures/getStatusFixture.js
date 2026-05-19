@@ -1,4 +1,4 @@
-const { base64ToBytes } = require('../../utils/bytes');
+import { base64ToBytes } from '../../utils/bytes.js';
 
 /**
  *
@@ -62,4 +62,4 @@ function getStatusFixture() {
   };
 }
 
-module.exports = getStatusFixture;
+export default getStatusFixture;

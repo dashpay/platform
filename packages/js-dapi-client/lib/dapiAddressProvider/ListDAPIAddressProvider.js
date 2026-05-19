@@ -1,5 +1,6 @@
+import networks from '@dashevo/dashcore-lib/lib/networks.js';
+
 const sample = (arr) => arr[Math.floor(Math.random() * arr.length)];
-const networks = require('@dashevo/dashcore-lib/lib/networks');
 
 class ListDAPIAddressProvider {
   /**
@@ -94,4 +95,4 @@ class ListDAPIAddressProvider {
   }
 }
 
-module.exports = ListDAPIAddressProvider;
+export default ListDAPIAddressProvider;

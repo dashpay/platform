@@ -1,15 +1,15 @@
-const broadcastTransactionFactory = require('./broadcastTransactionFactory');
-const getBestBlockHashFactory = require('./getBestBlockHashFactory');
-const getBestBlockHeightFactory = require('./getBestBlockHeightFactory');
-const getBlockByHashFactory = require('./getBlockByHashFactory');
-const getBlockByHeightFactory = require('./getBlockByHeightFactory');
-const getBlockHashFactory = require('./getBlockHashFactory');
-const getBlockchainStatusFactory = require('./getBlockchainStatusFactory');
-const getMasternodeStatusFactory = require('./getMasternodeStatusFactory');
-const getTransactionFactory = require('./getTransaction/getTransactionFactory');
-const subscribeToTransactionsWithProofsFactory = require('./subscribeToTransactionsWithProofsFactory');
-const subscribeToBlockHeadersWithChainLocksFactory = require('./subscribeToBlockHeadersWithChainLocksFactory');
-const subscribeToToMasternodeListFactory = require('./subscribeToMasternodeListFactory');
+import broadcastTransactionFactory from './broadcastTransactionFactory.js';
+import getBestBlockHashFactory from './getBestBlockHashFactory.js';
+import getBestBlockHeightFactory from './getBestBlockHeightFactory.js';
+import getBlockByHashFactory from './getBlockByHashFactory.js';
+import getBlockByHeightFactory from './getBlockByHeightFactory.js';
+import getBlockHashFactory from './getBlockHashFactory.js';
+import getBlockchainStatusFactory from './getBlockchainStatusFactory.js';
+import getMasternodeStatusFactory from './getMasternodeStatusFactory.js';
+import getTransactionFactory from './getTransaction/getTransactionFactory.js';
+import subscribeToTransactionsWithProofsFactory from './subscribeToTransactionsWithProofsFactory.js';
+import subscribeToBlockHeadersWithChainLocksFactory from './subscribeToBlockHeadersWithChainLocksFactory.js';
+import subscribeToToMasternodeListFactory from './subscribeToMasternodeListFactory.js';
 
 class CoreMethodsFacade {
   /**
@@ -38,4 +38,4 @@ class CoreMethodsFacade {
   }
 }
 
-module.exports = CoreMethodsFacade;
+export default CoreMethodsFacade;

@@ -1,5 +1,13 @@
-const generateRandomIdentifier = require('@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync');
-const getIdentityFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityFixture');
+import generateRandomIdentifier from '@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync.js';
+import getIdentityFixture from '@dashevo/wasm-dpp/lib/test/fixtures/getIdentityFixture.js';
+import dapiGrpc from '@dashevo/dapi-grpc';
+import GetIdentitiesContractKeysResponseClass from '../../../../../lib/methods/platform/getIdentitiesContractKeys/GetIdentitiesContractKeysResponse.js';
+import getMetadataFixture from '../../../../../lib/test/fixtures/getMetadataFixture.js';
+import InvalidResponseError from '../../../../../lib/methods/platform/response/errors/InvalidResponseError.js';
+import getProofFixture from '../../../../../lib/test/fixtures/getProofFixture.js';
+import Proof from '../../../../../lib/methods/platform/response/Proof.js';
+import Metadata from '../../../../../lib/methods/platform/response/Metadata.js';
+
 const {
   v0: {
     GetIdentitiesContractKeysResponse,
@@ -7,14 +15,7 @@ const {
     KeyPurpose,
     Proof: ProofResponse,
   },
-} = require('@dashevo/dapi-grpc');
-
-const GetIdentitiesContractKeysResponseClass = require('../../../../../lib/methods/platform/getIdentitiesContractKeys/GetIdentitiesContractKeysResponse');
-const getMetadataFixture = require('../../../../../lib/test/fixtures/getMetadataFixture');
-const InvalidResponseError = require('../../../../../lib/methods/platform/response/errors/InvalidResponseError');
-const getProofFixture = require('../../../../../lib/test/fixtures/getProofFixture');
-const Proof = require('../../../../../lib/methods/platform/response/Proof');
-const Metadata = require('../../../../../lib/methods/platform/response/Metadata');
+} = dapiGrpc;
 
 describe('GetIdentitiesContractKeysResponse', () => {
   let getIdentitiesContractKeysResponse;

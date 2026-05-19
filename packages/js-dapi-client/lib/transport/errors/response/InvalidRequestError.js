@@ -1,7 +1,7 @@
-const ResponseError = require('./ResponseError');
+import ResponseError from './ResponseError.js';
 
 class InvalidRequestError extends ResponseError {
 
 }
 
-module.exports = InvalidRequestError;
+export default InvalidRequestError;

@@ -1,8 +1,8 @@
-const SimplifiedMNListEntry = require('@dashevo/dashcore-lib/lib/deterministicmnlist/SimplifiedMNListEntry');
+import SimplifiedMNListEntry from '@dashevo/dashcore-lib/lib/deterministicmnlist/SimplifiedMNListEntry.js';
 
-const DAPIAddress = require('../../../lib/dapiAddressProvider/DAPIAddress');
+import DAPIAddress from '../../../lib/dapiAddressProvider/DAPIAddress.js';
 
-const SimplifiedMasternodeListDAPIAddressProvider = require('../../../lib/dapiAddressProvider/SimplifiedMasternodeListDAPIAddressProvider');
+import SimplifiedMasternodeListDAPIAddressProvider from '../../../lib/dapiAddressProvider/SimplifiedMasternodeListDAPIAddressProvider.js';
 
 describe('SimplifiedMasternodeListDAPIAddressProvider', () => {
   let smlDAPIAddressProvider;

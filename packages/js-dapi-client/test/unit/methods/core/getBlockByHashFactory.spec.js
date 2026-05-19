@@ -1,12 +1,13 @@
+import dapiGrpc from '@dashevo/dapi-grpc';
+import getBlockByHashFactory from '../../../../lib/methods/core/getBlockByHashFactory.js';
+
 const {
   v0: {
     GetBlockRequest,
     GetBlockResponse,
     CorePromiseClient,
   },
-} = require('@dashevo/dapi-grpc');
-
-const getBlockByHashFactory = require('../../../../lib/methods/core/getBlockByHashFactory');
+} = dapiGrpc;
 
 describe('getBlockByHashFactory', () => {
   let getBlockByHash;

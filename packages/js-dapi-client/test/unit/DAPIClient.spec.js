@@ -1,9 +1,9 @@
-const DAPIClient = require('../../lib/DAPIClient');
-const CoreMethodsFacade = require('../../lib/methods/core/CoreMethodsFacade');
-const PlatformMethodsFacade = require('../../lib/methods/platform/PlatformMethodsFacade');
-const SimplifiedMasternodeListDAPIAddressProvider = require('../../lib/dapiAddressProvider/SimplifiedMasternodeListDAPIAddressProvider');
-const ListDAPIAddressProvider = require('../../lib/dapiAddressProvider/ListDAPIAddressProvider');
-const BlockHeadersProvider = require('../../lib/BlockHeadersProvider/BlockHeadersProvider');
+import DAPIClient from '../../lib/DAPIClient.js';
+import CoreMethodsFacade from '../../lib/methods/core/CoreMethodsFacade.js';
+import PlatformMethodsFacade from '../../lib/methods/platform/PlatformMethodsFacade.js';
+import SimplifiedMasternodeListDAPIAddressProvider from '../../lib/dapiAddressProvider/SimplifiedMasternodeListDAPIAddressProvider.js';
+import ListDAPIAddressProvider from '../../lib/dapiAddressProvider/ListDAPIAddressProvider.js';
+import BlockHeadersProvider from '../../lib/BlockHeadersProvider/BlockHeadersProvider.js';
 
 describe('DAPIClient', () => {
   let options;

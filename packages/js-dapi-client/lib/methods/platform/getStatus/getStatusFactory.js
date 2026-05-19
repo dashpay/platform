@@ -1,12 +1,14 @@
+import dapiGrpc from '@dashevo/dapi-grpc';
+
+import InvalidResponseError from '../response/errors/InvalidResponseError.js';
+import GetStatusResponse from './GetStatusResponse.js';
+
 const {
   v0: {
     PlatformPromiseClient,
     GetStatusRequest,
   },
-} = require('@dashevo/dapi-grpc');
-
-const InvalidResponseError = require('../response/errors/InvalidResponseError');
-const GetStatusResponse = require('./GetStatusResponse');
+} = dapiGrpc;
 
 /**
  * @param {GrpcTransport} grpcTransport
@@ -63,4 +65,4 @@ function getStatusFactory(grpcTransport) {
   return getStatus;
 }
 
-module.exports = getStatusFactory;
+export default getStatusFactory;

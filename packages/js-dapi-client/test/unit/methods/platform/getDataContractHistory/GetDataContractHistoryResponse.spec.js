@@ -1,18 +1,19 @@
-const getDataContractFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture');
+import getDataContractFixture from '@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture.js';
+import dapiGrpc from '@dashevo/dapi-grpc';
+import GetDataContractHistoryResponseClass from '../../../../../lib/methods/platform/getDataContractHistory/GetDataContractHistoryResponse.js';
+import getMetadataFixture from '../../../../../lib/test/fixtures/getMetadataFixture.js';
+import getProofFixture from '../../../../../lib/test/fixtures/getProofFixture.js';
+import InvalidResponseError from '../../../../../lib/methods/platform/response/errors/InvalidResponseError.js';
+import Proof from '../../../../../lib/methods/platform/response/Proof.js';
+import Metadata from '../../../../../lib/methods/platform/response/Metadata.js';
+
 const {
   v0: {
     GetDataContractHistoryResponse,
     ResponseMetadata,
     Proof: ProofResponse,
   },
-} = require('@dashevo/dapi-grpc');
-
-const GetDataContractHistoryResponseClass = require('../../../../../lib/methods/platform/getDataContractHistory/GetDataContractHistoryResponse');
-const getMetadataFixture = require('../../../../../lib/test/fixtures/getMetadataFixture');
-const getProofFixture = require('../../../../../lib/test/fixtures/getProofFixture');
-const InvalidResponseError = require('../../../../../lib/methods/platform/response/errors/InvalidResponseError');
-const Proof = require('../../../../../lib/methods/platform/response/Proof');
-const Metadata = require('../../../../../lib/methods/platform/response/Metadata');
+} = dapiGrpc;
 
 describe('GetDataContractHistoryResponse', () => {
   let getDataContractHistoryResponse;

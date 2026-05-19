@@ -1,9 +1,9 @@
-const logger = require('../../logger');
+import logger from '../../logger/index.js';
 
-const MaxRetriesReachedError = require('../errors/response/MaxRetriesReachedError');
-const NoAvailableAddressesForRetryError = require('../errors/response/NoAvailableAddressesForRetryError');
-const NoAvailableAddressesError = require('../errors/NoAvailableAddressesError');
-const RetriableResponseError = require('../errors/response/RetriableResponseError');
+import MaxRetriesReachedError from '../errors/response/MaxRetriesReachedError.js';
+import NoAvailableAddressesForRetryError from '../errors/response/NoAvailableAddressesForRetryError.js';
+import NoAvailableAddressesError from '../errors/NoAvailableAddressesError.js';
+import RetriableResponseError from '../errors/response/RetriableResponseError.js';
 
 class JsonRpcTransport {
   /**
@@ -127,4 +127,4 @@ class JsonRpcTransport {
   }
 }
 
-module.exports = JsonRpcTransport;
+export default JsonRpcTransport;

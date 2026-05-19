@@ -1,10 +1,10 @@
-const VersionStatus = require('./VersionStatus');
-const NodeStatus = require('./NodeStatus');
-const ChainStatus = require('./ChainStatus');
-const TimeStatus = require('./TimeStatus');
-const StateSyncStatus = require('./StateSyncStatus');
-const NetworkStatus = require('./NetworkStatus');
-const { bytesToHex } = require('../../../utils/bytes');
+import VersionStatus from './VersionStatus.js';
+import NodeStatus from './NodeStatus.js';
+import ChainStatus from './ChainStatus.js';
+import TimeStatus from './TimeStatus.js';
+import StateSyncStatus from './StateSyncStatus.js';
+import NetworkStatus from './NetworkStatus.js';
+import { bytesToHex } from '../../../utils/bytes.js';
 
 class GetStatusResponse {
   /**
@@ -164,4 +164,4 @@ class GetStatusResponse {
   }
 }
 
-module.exports = GetStatusResponse;
+export default GetStatusResponse;

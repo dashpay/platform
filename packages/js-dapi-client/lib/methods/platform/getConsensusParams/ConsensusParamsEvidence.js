@@ -33,4 +33,4 @@ class ConsensusParamsEvidence {
   }
 }
 
-module.exports = ConsensusParamsEvidence;
+export default ConsensusParamsEvidence;

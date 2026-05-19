@@ -1,4 +1,4 @@
-const EventEmitter = require('events');
+import EventEmitter from 'events';
 
 class BlockHeadersWithChainLocksStreamMock extends EventEmitter {
   constructor(sinon) {
@@ -51,4 +51,4 @@ class BlockHeadersWithChainLocksStreamMock extends EventEmitter {
   }
 }
 
-module.exports = BlockHeadersWithChainLocksStreamMock;
+export default BlockHeadersWithChainLocksStreamMock;

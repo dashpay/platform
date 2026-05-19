@@ -1,5 +1,5 @@
-const BlockHeadersProvider = require('../../../lib/BlockHeadersProvider/BlockHeadersProvider');
-const createBlockHeadersProviderFromOptions = require('../../../lib/BlockHeadersProvider/createBlockHeadersProviderFromOptions');
+import BlockHeadersProvider from '../../../lib/BlockHeadersProvider/BlockHeadersProvider.js';
+import createBlockHeadersProviderFromOptions from '../../../lib/BlockHeadersProvider/createBlockHeadersProviderFromOptions.js';
 
 describe('#createBlockHeadersProviderFromOptions', () => {
   const coreMethodsMock = {};

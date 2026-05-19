@@ -2,7 +2,7 @@ class ErrorResult {
   /**
    * @param {number} code
    * @param {string} message
-   * @param {Buffer|undefined} data
+   * @param {Uint8Array|undefined} data
    */
   constructor(code, message, data) {
     this.code = code;
@@ -25,11 +25,11 @@ class ErrorResult {
   }
 
   /**
-   * @returns {Buffer|undefined}
+   * @returns {Uint8Array|undefined}
    */
   getData() {
     return this.data;
   }
 }
 
-module.exports = ErrorResult;
+export default ErrorResult;

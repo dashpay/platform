@@ -1,4 +1,4 @@
-const ResponseError = require('./ResponseError');
+import ResponseError from './ResponseError.js';
 
 class InvalidRequestDPPError extends ResponseError {
   /**
@@ -21,4 +21,4 @@ class InvalidRequestDPPError extends ResponseError {
   }
 }
 
-module.exports = InvalidRequestDPPError;
+export default InvalidRequestDPPError;

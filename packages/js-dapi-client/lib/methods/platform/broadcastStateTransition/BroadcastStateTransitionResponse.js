@@ -7,4 +7,4 @@ class BroadcastStateTransitionResponse {
   }
 }
 
-module.exports = BroadcastStateTransitionResponse;
+export default BroadcastStateTransitionResponse;

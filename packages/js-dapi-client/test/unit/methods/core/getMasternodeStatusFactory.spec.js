@@ -1,12 +1,13 @@
+import dapiGrpc from '@dashevo/dapi-grpc';
+import getMasternodeStatusFactory from '../../../../lib/methods/core/getMasternodeStatusFactory.js';
+
 const {
   v0: {
     GetMasternodeStatusRequest,
     GetMasternodeStatusResponse,
     CorePromiseClient,
   },
-} = require('@dashevo/dapi-grpc');
-
-const getMasternodeStatusFactory = require('../../../../lib/methods/core/getMasternodeStatusFactory');
+} = dapiGrpc;
 
 describe('getMasternodeStatusFactory', () => {
   let getMasternodeStatus;

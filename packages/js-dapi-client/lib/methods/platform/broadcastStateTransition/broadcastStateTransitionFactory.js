@@ -1,11 +1,13 @@
+import dapiGrpc from '@dashevo/dapi-grpc';
+import BroadcastStateTransitionResponse from './BroadcastStateTransitionResponse.js';
+import InvalidResponseError from '../response/errors/InvalidResponseError.js';
+
 const {
   v0: {
     BroadcastStateTransitionRequest,
     PlatformPromiseClient,
   },
-} = require('@dashevo/dapi-grpc');
-const BroadcastStateTransitionResponse = require('./BroadcastStateTransitionResponse');
-const InvalidResponseError = require('../response/errors/InvalidResponseError');
+} = dapiGrpc;
 
 /**
  * @param {GrpcTransport} grpcTransport
@@ -15,7 +17,7 @@ function broadcastStateTransitionFactory(grpcTransport) {
   /**
    * Broadcast State Transaction
    * @typedef {broadcastStateTransition}
-   * @param {Buffer} stateTransition
+   * @param {Uint8Array} stateTransition
    * @param {DAPIClientOptions} [options]
    * @returns {Promise<!BroadcastStateTransitionResponse>}
    */
@@ -53,4 +55,4 @@ function broadcastStateTransitionFactory(grpcTransport) {
   return broadcastStateTransition;
 }
 
-module.exports = broadcastStateTransitionFactory;
+export default broadcastStateTransitionFactory;

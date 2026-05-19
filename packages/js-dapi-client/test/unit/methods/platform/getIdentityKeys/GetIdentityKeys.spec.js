@@ -1,17 +1,18 @@
+import dapiGrpc from '@dashevo/dapi-grpc';
+import GetIdentityKeysResponseClass from '../../../../../lib/methods/platform/getIdentityKeys/GetIdentityKeysResponse.js';
+import getMetadataFixture from '../../../../../lib/test/fixtures/getMetadataFixture.js';
+import InvalidResponseError from '../../../../../lib/methods/platform/response/errors/InvalidResponseError.js';
+import getProofFixture from '../../../../../lib/test/fixtures/getProofFixture.js';
+import Proof from '../../../../../lib/methods/platform/response/Proof.js';
+import Metadata from '../../../../../lib/methods/platform/response/Metadata.js';
+
 const {
   v0: {
     GetIdentityKeysResponse,
     ResponseMetadata,
     Proof: ProofResponse,
   },
-} = require('@dashevo/dapi-grpc');
-
-const GetIdentityKeysResponseClass = require('../../../../../lib/methods/platform/getIdentityKeys/GetIdentityKeysResponse');
-const getMetadataFixture = require('../../../../../lib/test/fixtures/getMetadataFixture');
-const InvalidResponseError = require('../../../../../lib/methods/platform/response/errors/InvalidResponseError');
-const getProofFixture = require('../../../../../lib/test/fixtures/getProofFixture');
-const Proof = require('../../../../../lib/methods/platform/response/Proof');
-const Metadata = require('../../../../../lib/methods/platform/response/Metadata');
+} = dapiGrpc;
 
 describe('GetIdentityKeysResponse', () => {
   let getIdentityKeysResponse;

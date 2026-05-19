@@ -1,4 +1,4 @@
-const { hexToBytes, base64ToBytes } = require('../../utils/bytes');
+import { hexToBytes, base64ToBytes } from '../../utils/bytes.js';
 
 /**
  * @returns {{
@@ -16,4 +16,4 @@ function getProofFixture() {
   };
 }
 
-module.exports = getProofFixture;
+export default getProofFixture;

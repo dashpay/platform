@@ -1,12 +1,13 @@
+import dapiGrpc from '@dashevo/dapi-grpc';
+import GetDataContractResponse from './GetDataContractResponse.js';
+import InvalidResponseError from '../response/errors/InvalidResponseError.js';
+
 const {
   v0: {
     PlatformPromiseClient,
     GetDataContractRequest,
   },
-} = require('@dashevo/dapi-grpc');
-
-const GetDataContractResponse = require('./GetDataContractResponse');
-const InvalidResponseError = require('../response/errors/InvalidResponseError');
+} = dapiGrpc;
 
 /**
  * @param {GrpcTransport} grpcTransport
@@ -69,4 +70,4 @@ function getDataContractFactory(grpcTransport) {
   return getDataContract;
 }
 
-module.exports = getDataContractFactory;
+export default getDataContractFactory;

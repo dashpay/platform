@@ -1,7 +1,7 @@
-const RetriableResponseError = require('./RetriableResponseError');
+import RetriableResponseError from './RetriableResponseError.js';
 
 class ServerError extends RetriableResponseError {
 
 }
 
-module.exports = ServerError;
+export default ServerError;

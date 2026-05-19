@@ -1,20 +1,20 @@
-const EventEmitter = require('events');
+import EventEmitter from 'events';
 
-const GrpcTransport = require('./transport/GrpcTransport/GrpcTransport');
-const JsonRpcTransport = require('./transport/JsonRpcTransport/JsonRpcTransport');
+import GrpcTransport from './transport/GrpcTransport/GrpcTransport.js';
+import JsonRpcTransport from './transport/JsonRpcTransport/JsonRpcTransport.js';
 
-const CoreMethodsFacade = require('./methods/core/CoreMethodsFacade');
-const PlatformMethodsFacade = require('./methods/platform/PlatformMethodsFacade');
+import CoreMethodsFacade from './methods/core/CoreMethodsFacade.js';
+import PlatformMethodsFacade from './methods/platform/PlatformMethodsFacade.js';
 
-const createDAPIAddressProviderFromOptions = require('./dapiAddressProvider/createDAPIAddressProviderFromOptions');
-const requestJsonRpc = require('./transport/JsonRpcTransport/requestJsonRpc');
-const createGrpcTransportError = require('./transport/GrpcTransport/createGrpcTransportError');
-const createJsonTransportError = require('./transport/JsonRpcTransport/createJsonTransportError');
+import createDAPIAddressProviderFromOptions from './dapiAddressProvider/createDAPIAddressProviderFromOptions.js';
+import requestJsonRpc from './transport/JsonRpcTransport/requestJsonRpc.js';
+import createGrpcTransportError from './transport/GrpcTransport/createGrpcTransportError.js';
+import createJsonTransportError from './transport/JsonRpcTransport/createJsonTransportError.js';
 
-const BlockHeadersProvider = require('./BlockHeadersProvider/BlockHeadersProvider');
-const createBlockHeadersProviderFromOptions = require('./BlockHeadersProvider/createBlockHeadersProviderFromOptions');
+import BlockHeadersProvider from './BlockHeadersProvider/BlockHeadersProvider.js';
+import createBlockHeadersProviderFromOptions from './BlockHeadersProvider/createBlockHeadersProviderFromOptions.js';
 
-const logger = require('./logger');
+import logger from './logger/index.js';
 
 const EVENTS = {
   ERROR: 'error',
@@ -120,4 +120,4 @@ DAPIClient.EVENTS = EVENTS;
  * @property {BlockHeadersProviderOptions} [blockHeadersProviderOptions]
  */
 
-module.exports = DAPIClient;
+export default DAPIClient;

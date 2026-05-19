@@ -1,3 +1,11 @@
+import dapiGrpc from '@dashevo/dapi-grpc';
+import wrappersPb from 'google-protobuf/google/protobuf/wrappers_pb.js';
+import getEpochsInfoFactory from '../../../../../lib/methods/platform/getEpochsInfo/getEpochsInfoFactory.js';
+import EpochInfo from '../../../../../lib/methods/platform/getEpochsInfo/EpochInfo.js';
+import getMetadataFixture from '../../../../../lib/test/fixtures/getMetadataFixture.js';
+import getProofFixture from '../../../../../lib/test/fixtures/getProofFixture.js';
+import Proof from '../../../../../lib/methods/platform/response/Proof.js';
+
 const {
   v0: {
     PlatformPromiseClient,
@@ -6,15 +14,9 @@ const {
     ResponseMetadata,
     Proof: ProofResponse,
   },
-} = require('@dashevo/dapi-grpc');
+} = dapiGrpc;
 
-const { UInt32Value } = require('google-protobuf/google/protobuf/wrappers_pb');
-
-const getEpochsInfoFactory = require('../../../../../lib/methods/platform/getEpochsInfo/getEpochsInfoFactory');
-const EpochInfo = require('../../../../../lib/methods/platform/getEpochsInfo/EpochInfo');
-const getMetadataFixture = require('../../../../../lib/test/fixtures/getMetadataFixture');
-const getProofFixture = require('../../../../../lib/test/fixtures/getProofFixture');
-const Proof = require('../../../../../lib/methods/platform/response/Proof');
+const { UInt32Value } = wrappersPb;
 
 describe('getEpochsInfoFactory', () => {
   let grpcTransportMock;

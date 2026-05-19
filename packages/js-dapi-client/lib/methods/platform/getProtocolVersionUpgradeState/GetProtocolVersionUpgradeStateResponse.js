@@ -1,6 +1,6 @@
-const AbstractResponse = require('../response/AbstractResponse');
-const VersionEntry = require('./VersionEntry');
-const InvalidResponseError = require('../response/errors/InvalidResponseError');
+import AbstractResponse from '../response/AbstractResponse.js';
+import VersionEntry from './VersionEntry.js';
+import InvalidResponseError from '../response/errors/InvalidResponseError.js';
 
 class GetProtocolVersionUpgradeStateResponse extends AbstractResponse {
   /**
@@ -53,4 +53,4 @@ class GetProtocolVersionUpgradeStateResponse extends AbstractResponse {
   }
 }
 
-module.exports = GetProtocolVersionUpgradeStateResponse;
+export default GetProtocolVersionUpgradeStateResponse;

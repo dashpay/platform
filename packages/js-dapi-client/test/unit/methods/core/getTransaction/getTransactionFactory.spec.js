@@ -1,13 +1,14 @@
+import dapiGrpc from '@dashevo/dapi-grpc';
+import getTransactionFactory from '../../../../../lib/methods/core/getTransaction/getTransactionFactory.js';
+import GetTransactionResponse from '../../../../../lib/methods/core/getTransaction/GetTransactionResponse.js';
+
 const {
   v0: {
     GetTransactionRequest,
     GetTransactionResponse: ProtoGetTransactionResponse,
     CorePromiseClient,
   },
-} = require('@dashevo/dapi-grpc');
-
-const getTransactionFactory = require('../../../../../lib/methods/core/getTransaction/getTransactionFactory');
-const GetTransactionResponse = require('../../../../../lib/methods/core/getTransaction/GetTransactionResponse');
+} = dapiGrpc;
 
 describe('getTransactionFactory', () => {
   let getTransaction;

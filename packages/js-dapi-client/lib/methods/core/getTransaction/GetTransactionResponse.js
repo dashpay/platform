@@ -1,4 +1,4 @@
-const InvalidResponseError = require('../../platform/response/errors/InvalidResponseError');
+import InvalidResponseError from '../../platform/response/errors/InvalidResponseError.js';
 
 class GetTransactionResponse {
   /**
@@ -85,4 +85,4 @@ class GetTransactionResponse {
   }
 }
 
-module.exports = GetTransactionResponse;
+export default GetTransactionResponse;

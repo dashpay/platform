@@ -1,5 +1,5 @@
-const ListDAPIAddressProvider = require('../../../lib/dapiAddressProvider/ListDAPIAddressProvider');
-const DAPIAddress = require('../../../lib/dapiAddressProvider/DAPIAddress');
+import ListDAPIAddressProvider from '../../../lib/dapiAddressProvider/ListDAPIAddressProvider.js';
+import DAPIAddress from '../../../lib/dapiAddressProvider/DAPIAddress.js';
 
 describe('ListDAPIAddressProvider', () => {
   let listDAPIAddressProvider;

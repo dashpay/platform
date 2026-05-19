@@ -1,12 +1,14 @@
+import dapiGrpc from '@dashevo/dapi-grpc';
+import getConsensusParamsFactory from '../../../../../lib/methods/platform/getConsensusParams/getConsensusParamsFactory.js';
+import InvalidResponseError from '../../../../../lib/methods/platform/response/errors/InvalidResponseError.js';
+
 const {
   v0: {
     PlatformPromiseClient,
     GetConsensusParamsResponse,
     GetConsensusParamsRequest,
   },
-} = require('@dashevo/dapi-grpc');
-const getConsensusParamsFactory = require('../../../../../lib/methods/platform/getConsensusParams/getConsensusParamsFactory');
-const InvalidResponseError = require('../../../../../lib/methods/platform/response/errors/InvalidResponseError');
+} = dapiGrpc;
 
 const {
   GetConsensusParamsRequestV0,

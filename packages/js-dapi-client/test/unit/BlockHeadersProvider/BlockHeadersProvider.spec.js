@@ -1,11 +1,13 @@
-const EventEmitter = require('events');
-const { expect } = require('chai');
+import EventEmitter from 'events';
+import { expect } from 'chai';
 
-const { SPVError } = require('@dashevo/dash-spv');
+import dashSpv from '@dashevo/dash-spv';
 
-const BlockHeadersProvider = require('../../../lib/BlockHeadersProvider/BlockHeadersProvider');
-const BlockHeadersReader = require('../../../lib/BlockHeadersProvider/BlockHeadersReader');
-const getHeadersFixture = require('../../../lib/test/fixtures/getHeadersFixture');
+import BlockHeadersProvider from '../../../lib/BlockHeadersProvider/BlockHeadersProvider.js';
+import BlockHeadersReader from '../../../lib/BlockHeadersProvider/BlockHeadersReader.js';
+import getHeadersFixture from '../../../lib/test/fixtures/getHeadersFixture.js';
+
+const { SPVError } = dashSpv;
 
 describe('BlockHeadersProvider - unit', () => {
   let blockHeadersProvider;

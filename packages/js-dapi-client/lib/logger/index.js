@@ -39,4 +39,4 @@ function build(level = LOG_LEVEL, prefix = '') {
   return logger;
 }
 
-module.exports = build();
+export default build();

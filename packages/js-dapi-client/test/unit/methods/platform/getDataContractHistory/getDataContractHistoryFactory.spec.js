@@ -1,4 +1,12 @@
-const { UInt32Value } = require('google-protobuf/google/protobuf/wrappers_pb');
+import wrappersPb from 'google-protobuf/google/protobuf/wrappers_pb.js';
+import dapiGrpc from '@dashevo/dapi-grpc';
+import getDataContractFixture from '@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture.js';
+import getDataContractHistoryFactory from '../../../../../lib/methods/platform/getDataContractHistory/getDataContractHistoryFactory.js';
+import getMetadataFixture from '../../../../../lib/test/fixtures/getMetadataFixture.js';
+import getProofFixture from '../../../../../lib/test/fixtures/getProofFixture.js';
+import ProofClass from '../../../../../lib/methods/platform/response/Proof.js';
+
+const { UInt32Value } = wrappersPb;
 
 const {
   v0: {
@@ -8,25 +16,16 @@ const {
     ResponseMetadata,
     Proof,
   },
-} = require('@dashevo/dapi-grpc');
+} = dapiGrpc;
 
 const {
-  v0: {
-    GetDataContractHistoryResponse: {
-      GetDataContractHistoryResponseV0: {
-        DataContractHistory,
-        DataContractHistoryEntry,
-      },
+  GetDataContractHistoryResponse: {
+    GetDataContractHistoryResponseV0: {
+      DataContractHistory,
+      DataContractHistoryEntry,
     },
   },
-} = require('@dashevo/dapi-grpc');
-
-const getDataContractFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture');
-
-const getDataContractHistoryFactory = require('../../../../../lib/methods/platform/getDataContractHistory/getDataContractHistoryFactory');
-const getMetadataFixture = require('../../../../../lib/test/fixtures/getMetadataFixture');
-const getProofFixture = require('../../../../../lib/test/fixtures/getProofFixture');
-const ProofClass = require('../../../../../lib/methods/platform/response/Proof');
+} = dapiGrpc.v0;
 
 describe('getDataContractHistoryFactory', () => {
   let grpcTransportMock;

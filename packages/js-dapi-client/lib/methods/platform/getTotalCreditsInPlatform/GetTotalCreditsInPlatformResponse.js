@@ -1,5 +1,5 @@
-const AbstractResponse = require('../response/AbstractResponse');
-const InvalidResponseError = require('../response/errors/InvalidResponseError');
+import AbstractResponse from '../response/AbstractResponse.js';
+import InvalidResponseError from '../response/errors/InvalidResponseError.js';
 
 class GetTotalCreditsInPlatformResponse extends AbstractResponse {
   /**
@@ -43,4 +43,4 @@ class GetTotalCreditsInPlatformResponse extends AbstractResponse {
   }
 }
 
-module.exports = GetTotalCreditsInPlatformResponse;
+export default GetTotalCreditsInPlatformResponse;

@@ -51,4 +51,4 @@ class EpochInfo {
   }
 }
 
-module.exports = EpochInfo;
+export default EpochInfo;

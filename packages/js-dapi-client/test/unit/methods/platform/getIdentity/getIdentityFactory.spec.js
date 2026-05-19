@@ -1,3 +1,10 @@
+import dapiGrpc from '@dashevo/dapi-grpc';
+import getIdentityFixture from '@dashevo/wasm-dpp/lib/test/fixtures/getIdentityFixture.js';
+import getIdentityFactory from '../../../../../lib/methods/platform/getIdentity/getIdentityFactory.js';
+import getMetadataFixture from '../../../../../lib/test/fixtures/getMetadataFixture.js';
+import getProofFixture from '../../../../../lib/test/fixtures/getProofFixture.js';
+import Proof from '../../../../../lib/methods/platform/response/Proof.js';
+
 const {
   v0: {
     PlatformPromiseClient,
@@ -6,14 +13,7 @@ const {
     ResponseMetadata,
     Proof: ProofResponse,
   },
-} = require('@dashevo/dapi-grpc');
-
-const getIdentityFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityFixture');
-
-const getIdentityFactory = require('../../../../../lib/methods/platform/getIdentity/getIdentityFactory');
-const getMetadataFixture = require('../../../../../lib/test/fixtures/getMetadataFixture');
-const getProofFixture = require('../../../../../lib/test/fixtures/getProofFixture');
-const Proof = require('../../../../../lib/methods/platform/response/Proof');
+} = dapiGrpc;
 
 describe('getIdentityFactory', () => {
   let grpcTransportMock;
