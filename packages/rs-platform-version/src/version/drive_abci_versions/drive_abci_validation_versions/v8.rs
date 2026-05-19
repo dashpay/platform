@@ -125,7 +125,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V8: DriveAbciValidationVersions =
                 // so per-transition fee_results accumulated inside
                 // `try_into_action_v0` are billed to the user. v0 preserves the
                 // legacy dropped-local-ctx behavior for PROTOCOL_VERSION_11
-                // chain replay. See B7 in docs/paid-error-fee-audit.md.
+                // chain replay.
                 transform_into_action: 1,
                 // PROTOCOL_VERSION_12 (v3.1 hard fork): per-transition
                 // failure paths in `transform_document_transition` now emit

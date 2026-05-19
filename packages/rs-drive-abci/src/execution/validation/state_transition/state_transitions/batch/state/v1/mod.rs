@@ -14,8 +14,7 @@ use crate::platform_types::platform::PlatformStateRef;
 /// `execution_context` into `try_into_action_v0` so per-transition
 /// fee_results accumulated by the transformer
 /// (`try_from_borrowed_*_with_contract_lookup`) are billed to the user
-/// instead of being dropped via a local ctx. See B7 in
-/// `docs/paid-error-fee-audit.md`.
+/// instead of being dropped via a local ctx.
 ///
 /// The transformer body (`try_into_action_v0` and all helpers in
 /// `transformer/v0/mod.rs`) is intentionally still at `_v0` per the

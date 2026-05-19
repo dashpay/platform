@@ -3667,25 +3667,24 @@ mod token_burn_tests {
         assert_eq!(total_supply, Some(103000));
     }
 
-    /// Regression test for B7 (paid-error-fee-audit.md): the batch
-    /// transformer's `execution_context` was previously a local that got
-    /// dropped on return, silently discarding every `add_operation` call
-    /// from per-transition `try_from_borrowed_*_with_contract_lookup`.
+    /// Pins the confirmer-step processing fee for a token group burn.
     ///
-    /// Token group actions are the cleanest demonstration site: the
-    /// **confirmer** step (action_is_proposer=false) triggers three drive
-    /// reads inside `try_from_borrowed_base_transition_with_contract_lookup`
-    /// — `fetch_action_is_closed`, `fetch_action_id_signers_power_and_add_operations`,
-    /// `fetch_active_action_info_and_add_operations` — accumulated into a
-    /// `FeeResult` that was then added to the dropped local ctx.
+    /// The confirmer (action_is_proposer=false) triggers three drive reads
+    /// inside `try_from_borrowed_base_transition_with_contract_lookup`:
+    /// `fetch_action_is_closed`,
+    /// `fetch_action_id_signers_power_and_add_operations`,
+    /// `fetch_active_action_info_and_add_operations`. Their cost is
+    /// accumulated into a `FeeResult` and added to the
+    /// `execution_context`.
     ///
-    /// This test pins the post-B7-fix fee (PROTOCOL_VERSION_12+, where
-    /// `transform_into_action` field bumped 0 → 1 in V8). The same scenario
-    /// run with `transform_into_action: 0` would produce a lower fee equal
-    /// to the difference of the three dropped group reads — see the audit
-    /// doc for the diagnostic procedure.
+    /// Under `transform_into_action: 1` (PROTOCOL_VERSION_12+) the outer
+    /// `execution_context` is threaded through the transformer, so this
+    /// fee_result reaches the user's bill. Under v0 (PROTOCOL_VERSION_11
+    /// and below) the fee_result lands in a dropped local ctx — verified
+    /// empirically by toggling the version field and re-running this test
+    /// (see commit message of the version bump for the recorded delta).
     #[tokio::test]
-    async fn test_token_burn_group_action_confirmer_fee_b7() {
+    async fn test_token_burn_group_action_confirmer_fee_includes_transformer_reads() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -3731,8 +3730,10 @@ mod token_burn_tests {
 
         add_tokens_to_identity(&platform, token_id, identity1.id(), 100000);
 
-        // Step 1: identity1 proposes the burn — action_is_proposer=true, no
-        // transformer-phase group reads, no B7-affected fee.
+        // Step 1: identity1 proposes the burn — action_is_proposer=true, so
+        // `try_from_borrowed_base_transition_with_contract_lookup` skips the
+        // group-action drive reads (the only path that adds non-empty
+        // fee_results inside the transformer).
         let propose_transition = BatchTransition::new_token_burn_transition(
             token_id,
             identity1.id(),
@@ -3778,7 +3779,7 @@ mod token_burn_tests {
 
         // Step 2: identity2 confirms the burn — action_is_proposer=false.
         // The confirmer's `try_from_borrowed_base_transition_with_contract_lookup`
-        // does the three group-action drive reads whose cost B7 now bills.
+        // does the three group-action drive reads whose cost we now bill.
         let action_id = TokenBurnTransition::calculate_action_id_with_fields(
             token_id.as_bytes(),
             identity1.id().as_bytes(),
@@ -3837,13 +3838,13 @@ mod token_burn_tests {
             .unwrap()
             .expect("expected to commit confirmer burn");
 
-        // B7 assertion: pin the confirmer's fee, which now includes the
-        // three group-action read costs that B7 previously dropped via the
-        // local execution_context.
+        // Pin the confirmer's fee, which now includes the three
+        // group-action read costs previously dropped via the local
+        // execution_context.
         //
-        // Empirical values captured during B7 development:
-        //   * `transform_into_action: 0` (pre-B7, dropped local ctx): 4_288_420
-        //   * `transform_into_action: 1` (post-B7, threaded outer ctx): 4_319_240
+        // Empirical values captured during development:
+        //   * `transform_into_action: 0` (legacy, dropped local ctx): 4_288_420
+        //   * `transform_into_action: 1` (current, threaded outer ctx): 4_319_240
         //   * delta = 30_820 credits = the three transformer-phase reads
         //     (fetch_action_is_closed +
         //      fetch_action_id_signers_power_and_add_operations +
@@ -3852,7 +3853,7 @@ mod token_burn_tests {
         assert_eq!(
             confirmer_result.aggregated_fees().processing_fee,
             4_319_240,
-            "B7: confirmer step must bill the three group-action drive reads"
+            "confirmer step must bill the three group-action drive reads"
         );
     }
 }

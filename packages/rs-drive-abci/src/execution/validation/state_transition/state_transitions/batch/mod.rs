@@ -80,8 +80,9 @@ impl StateTransitionActionTransformer for BatchTransition {
             // Preserved verbatim for chain replay.
             0 => self.transform_into_action_v0(&platform.into(), block_info, validation_mode, tx),
             // PROTOCOL_VERSION_12+: `_v1` threads the outer execution_context
-            // into the transformer so per-transition fees are billed. See B7
-            // in docs/paid-error-fee-audit.md.
+            // into the transformer so per-transition fees accumulated by
+            // `try_from_borrowed_*_with_contract_lookup` are billed to the
+            // user instead of being dropped via a local ctx.
             1 => self.transform_into_action_v1(
                 &platform.into(),
                 block_info,
