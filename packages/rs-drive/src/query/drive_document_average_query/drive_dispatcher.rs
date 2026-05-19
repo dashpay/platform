@@ -428,16 +428,36 @@ impl Drive {
             return Ok(DocumentAverageResponse::Proof(proof));
         }
 
-        // Point-lookup AVG: `Aggregate` + Equal/In on a count+sum
-        // index (whose `summable.is_some()` AND `countable.is_countable()`)
-        // OR doctype-level documentsSummable + documentsCountable
-        // for the empty-where case (which is the fast path above —
+        // Point-lookup AVG: Equal/In on a count+sum index (whose
+        // `summable.is_some()` AND `countable.is_countable()`) OR
+        // doctype-level documentsSummable + documentsCountable for
+        // the empty-where case (handled by the fast path above —
         // this arm handles the non-empty-where Equal/In shape).
-        // Server uses sum's `execute_point_lookup_sum_with_proof`
-        // against an index whose terminator value trees are count-
-        // sum-bearing; the verifier extracts
-        // `count_sum_value_or_default()` from each element.
-        if !has_range && matches!(request.mode, AverageMode::Aggregate) {
+        //
+        // Accepts both `Aggregate` (caller wants one aggregate row
+        // collapsed across all matched In branches — folded
+        // client-side by `DocumentAverage`) and `GroupByIn` (caller
+        // wants per-In-branch entries — `DocumentSplitAverages`
+        // shape). The grovedb-side proof is identical: one walk
+        // through the point-lookup `subquery` per In key emits one
+        // count-sum-bearing element per branch.
+        //
+        // Mirrors the sum router's resolved-mode table
+        // (`mode_detection/v0/mod.rs`) which maps both
+        // `(SumMode::Aggregate, !range, _, true)` and
+        // `(SumMode::GroupByIn, !range, _, true)` to
+        // `DocumentSumMode::PointLookupProof`. Before adding
+        // `GroupByIn` here the SDK could ask drive for a no-range
+        // GroupByIn AVG proof, drive would 500 with `Unsupported`,
+        // and the SDK's `verify_point_lookup_count_and_sum_proof`
+        // arm (gated on the same resolved mode) would never get
+        // proof bytes to verify.
+        if !has_range
+            && matches!(
+                request.mode,
+                AverageMode::Aggregate | AverageMode::GroupByIn
+            )
+        {
             let index = find_summable_index_for_where_clauses(
                 request.document_type.indexes(),
                 &request.where_clauses,
@@ -978,5 +998,133 @@ mod tests {
             msg.contains("exceeds max_query_limit"),
             "error must name the rejected limit; got: {msg}"
         );
+    }
+
+    /// AVG no-range `GroupByIn` + prove MUST hit the point-lookup
+    /// arm and emit proof bytes — the sum router resolves this
+    /// shape to `DocumentSumMode::PointLookupProof` and the SDK
+    /// helper at `verify_point_lookup_count_and_sum_proof` is the
+    /// matching verifier. Before the fix this fell through every
+    /// arm in `execute_document_average_prove` and returned
+    /// `QuerySyntaxError::Unsupported`, leaving the SDK unable to
+    /// finish what it had already started: encode + dispatch a
+    /// valid AVG `GroupByIn` request.
+    ///
+    /// This regression test pins both halves of the contract:
+    ///   1. The server returns proof bytes (no fallthrough error).
+    ///   2. The proof bytes are bincode-decodable as a `GroveDBProof`
+    ///      (sanity-check that it's a real point-lookup payload
+    ///      rather than an empty placeholder).
+    #[test]
+    fn no_range_group_by_in_avg_prove_routes_to_point_lookup() {
+        use grovedb::operations::proof::GroveDBProof;
+
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        // A `summable + countable` (non-range) index is what the
+        // point-lookup AVG arm walks. Build a `widget` doctype with
+        // `byColor` index: `summable: "amount" + countable:
+        // "countable"`. (No rangeSummable / rangeCountable — those
+        // are for the range arms.)
+        let factory = DataContractFactory::new(PROTOCOL_VERSION_V12).expect("create factory");
+        let document_schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "color":  {"type": "string",  "position": 0, "maxLength": 32},
+                "amount": {"type": "integer", "position": 1, "minimum": 0, "maximum": 1000},
+            },
+            "required": ["color", "amount"],
+            "indices": [{
+                "name": "byColor",
+                "properties": [{"color": "asc"}],
+                "summable":  "amount",
+                "countable": "countable",
+            }],
+            "additionalProperties": false,
+        });
+        let schemas = platform_value!({ "widget": document_schema });
+        let data_contract = factory
+            .create_with_value_config(
+                dpp::tests::utils::generate_random_identifier_struct(),
+                0,
+                schemas,
+                None,
+                None,
+            )
+            .expect("create data contract")
+            .data_contract_owned();
+
+        drive
+            .apply_contract(
+                &data_contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("apply contract");
+
+        insert_widget(&drive, &data_contract, 0, "red", 5);
+        insert_widget(&drive, &data_contract, 1, "red", 7);
+        insert_widget(&drive, &data_contract, 2, "green", 3);
+
+        let document_type = data_contract
+            .document_type_for_name("widget")
+            .expect("widget");
+        let drive_config = DriveConfig::default();
+
+        // GroupByIn shape: `color IN ["red", "green"]`, no range,
+        // no order. The router maps this to PointLookupProof and
+        // the dispatcher must hand back proof bytes (NOT
+        // QuerySyntaxError::Unsupported).
+        let color_in = WhereClause {
+            field: "color".to_string(),
+            operator: WhereOperator::In,
+            value: Value::Array(vec![
+                Value::Text("red".to_string()),
+                Value::Text("green".to_string()),
+            ]),
+        };
+        let request = DocumentAverageRequest {
+            contract: &data_contract,
+            document_type,
+            sum_property: "amount".to_string(),
+            where_clauses: vec![color_in],
+            order_clauses: Vec::new(),
+            mode: AverageMode::GroupByIn,
+            limit: None,
+            prove: true,
+            drive_config: &drive_config,
+        };
+
+        let response = drive
+            .execute_document_average_request(request, None, platform_version)
+            .expect(
+                "no-range GroupByIn AVG + prove must hit the point-lookup arm \
+                 (router resolves this shape to DocumentSumMode::PointLookupProof); \
+                 a failure here means execute_document_average_prove regressed to \
+                 the pre-fix gap that rejected this combination with Unsupported",
+            );
+        let proof_bytes = match response {
+            DocumentAverageResponse::Proof(p) => p,
+            other => panic!("expected Proof response, got {:?}", other),
+        };
+        assert!(
+            !proof_bytes.is_empty(),
+            "non-empty proof bytes expected from point-lookup AVG path"
+        );
+
+        // Decode as a GroveDBProof — sanity-checks that it's a real
+        // payload rather than a placeholder. Verification (root-hash
+        // recomputation) is exercised end-to-end in the SDK
+        // FromProof tests; the dispatcher-level test here just pins
+        // the routing decision.
+        let bincode_config = bincode::config::standard()
+            .with_big_endian()
+            .with_no_limit();
+        let _: (GroveDBProof, _) = bincode::decode_from_slice(&proof_bytes, bincode_config)
+            .expect("proof bytes must bincode-decode as a GroveDBProof");
     }
 }
