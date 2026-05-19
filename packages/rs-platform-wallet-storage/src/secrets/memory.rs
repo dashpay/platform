@@ -21,10 +21,11 @@ use super::store::SecretStore;
 use super::validate::{validated_label, WalletId};
 
 /// A `HashMap`-backed [`SecretStore`] for tests. No persistence, no
-/// encryption.
+/// encryption. Stored values sit in [`SecretBytes`] so even test
+/// memory zeroizes on drop (SEC-REQ-2.3.2).
 #[derive(Default)]
 pub struct MemoryStore {
-    map: Mutex<HashMap<(WalletId, String), Vec<u8>>>,
+    map: Mutex<HashMap<(WalletId, String), SecretBytes>>,
 }
 
 impl MemoryStore {
@@ -38,7 +39,10 @@ impl SecretStore for MemoryStore {
     fn put(&self, wallet_id: WalletId, label: &str, bytes: &[u8]) -> Result<(), SecretStoreError> {
         let label = validated_label(label)?;
         let mut map = self.map.lock().expect("MemoryStore mutex poisoned");
-        map.insert((wallet_id, label.to_string()), bytes.to_vec());
+        map.insert(
+            (wallet_id, label.to_string()),
+            SecretBytes::from_slice(bytes),
+        );
         Ok(())
     }
 
@@ -51,7 +55,7 @@ impl SecretStore for MemoryStore {
         let map = self.map.lock().expect("MemoryStore mutex poisoned");
         Ok(map
             .get(&(wallet_id, label.to_string()))
-            .map(|v| SecretBytes::from_slice(v)))
+            .map(|v| SecretBytes::from_slice(v.expose_secret())))
     }
 
     fn delete(&self, wallet_id: WalletId, label: &str) -> Result<(), SecretStoreError> {
@@ -110,6 +114,23 @@ mod tests {
             s.get(wid(2), "seed").unwrap().unwrap().expose_secret(),
             &[2]
         );
+    }
+
+    // The store must hold a zeroize-on-drop wrapper, not a bare
+    // `Vec<u8>` (SEC-REQ-2.3.2 / Marvin QA-002): the value type must
+    // run `Drop`.
+    const _: () = {
+        assert!(std::mem::needs_drop::<SecretBytes>());
+    };
+
+    #[test]
+    fn stored_value_is_zeroizing_wrapper() {
+        let s = MemoryStore::new();
+        s.put(wid(1), "seed", &[0xAB; 32]).unwrap();
+        let map = s.map.lock().unwrap();
+        // This binding only compiles if the value type is `SecretBytes`.
+        let v: &SecretBytes = map.get(&(wid(1), "seed".to_string())).unwrap();
+        assert_eq!(v.expose_secret(), &[0xAB; 32]);
     }
 
     #[test]
