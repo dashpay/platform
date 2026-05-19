@@ -2717,6 +2717,17 @@ public class PlatformWalletPersistenceHandler {
             entry.utxos = utxoBuf.map { UnsafePointer($0) }
             entry.utxos_count = UInt(utxoCount)
 
+            let (poolBuf, poolCount, poolErrored) = buildCoreAddressPoolBuffer(
+                accounts: sortedAccounts,
+                allocation: allocation
+            )
+            if poolErrored {
+                allocation.release()
+                return (nil, 0, true)
+            }
+            entry.core_address_pools = poolBuf.map { UnsafePointer($0) }
+            entry.core_address_pools_count = UInt(poolCount)
+
             // Tracked asset-lock rows. The Rust side rehydrates these
             // into `unused_asset_locks` so an in-flight registration
             // that was killed mid-flight can resume from the latest
@@ -2904,6 +2915,85 @@ public class PlatformWalletPersistenceHandler {
             return (nil, 0, false)
         }
         allocation.utxoArrays.append((buf, written))
+        return (buf, written, false)
+    }
+
+    /// Build a contiguous `[AccountAddressPoolFFI]` buffer for one
+    /// wallet's persisted core address pools
+    private func buildCoreAddressPoolBuffer(
+        accounts: [PersistentAccount],
+        allocation: LoadAllocation
+    ) -> (UnsafeMutablePointer<AccountAddressPoolFFI>?, Int, Bool) {
+        var groups: [(account: PersistentAccount, poolTypeTag: UInt8, rows: [PersistentCoreAddress])] = []
+        for account in accounts {
+            if account.coreAddresses.isEmpty { continue }
+            var byPool: [UInt8: [PersistentCoreAddress]] = [:]
+            for addr in account.coreAddresses {
+                byPool[addr.poolTypeTag, default: []].append(addr)
+            }
+            for (tag, rows) in byPool.sorted(by: { $0.key < $1.key }) {
+                groups.append((account, tag, rows))
+            }
+        }
+        if groups.isEmpty {
+            return (nil, 0, false)
+        }
+
+        let buf = UnsafeMutablePointer<AccountAddressPoolFFI>.allocate(capacity: groups.count)
+        var written = 0
+        for group in groups {
+            let account = group.account
+            guard let typeTagByte = UInt8(exactly: account.accountType) else {
+                NSLog(
+                    "[persistor-load:swift] aborting load: address-pool account row has accountType %u out of UInt8 range",
+                    account.accountType
+                )
+                buf.deallocate()
+                return (nil, 0, true)
+            }
+
+            // Inner CoreAddressEntryFFI array — one row per address.
+            let rowBuf = UnsafeMutablePointer<CoreAddressEntryFFI>.allocate(
+                capacity: group.rows.count
+            )
+            for (j, row) in group.rows.enumerated() {
+                var e = CoreAddressEntryFFI()
+                copyBytes(row.publicKey, into: &e.public_key)
+                e.has_public_key = (row.publicKey.count == 33)
+                e.pool_type_tag = group.poolTypeTag
+                e.address_index = row.addressIndex
+                e.is_used = row.isUsed
+                e.balance = row.balance
+                e.address_base58 = UnsafePointer(
+                    duplicateCString(row.address, allocation: allocation)
+                )
+                e.derivation_path = UnsafePointer(
+                    duplicateCString(row.derivationPath, allocation: allocation)
+                )
+                rowBuf[j] = e
+            }
+            allocation.coreAddressEntryArrays.append((rowBuf, group.rows.count))
+
+            var spec = AccountSpecFFI()
+            spec.type_tag = typeTagByte
+            spec.standard_tag = account.standardTag
+            spec.index = account.accountIndex
+            spec.registration_index = account.registrationIndex
+            spec.key_class = account.keyClass
+            copyBytes(account.userIdentityId, into: &spec.user_identity_id)
+            copyBytes(account.friendIdentityId, into: &spec.friend_identity_id)
+            spec.account_xpub_bytes = nil
+            spec.account_xpub_bytes_len = 0
+
+            var pool = AccountAddressPoolFFI()
+            pool.account = spec
+            pool.pool_type_tag = group.poolTypeTag
+            pool.addresses_ptr = UnsafePointer(rowBuf)
+            pool.addresses_count = UInt(group.rows.count)
+            buf[written] = pool
+            written += 1
+        }
+        allocation.coreAddressPoolArrays.append((buf, written))
         return (buf, written, false)
     }
 
@@ -3516,6 +3606,11 @@ private final class LoadAllocation {
     /// so the next chain-lock event can cascade-promote them. The
     /// `tx_bytes` buffer each row references lives in `scalarBuffers`.
     var unresolvedAssetLockTxRecordArrays: [(UnsafeMutablePointer<UnresolvedAssetLockTxRecordFFI>, Int)] = []
+    /// Per-wallet `AccountAddressPoolFFI` arrays, the persisted core
+    /// address pools
+    var coreAddressPoolArrays: [(UnsafeMutablePointer<AccountAddressPoolFFI>, Int)] = []
+    /// Inner `CoreAddressEntryFFI` arrays, one per pool entry above.
+    var coreAddressEntryArrays: [(UnsafeMutablePointer<CoreAddressEntryFFI>, Int)] = []
 
     func release() {
         if let entries = entries {
@@ -3564,6 +3659,14 @@ private final class LoadAllocation {
             ptr.deallocate()
         }
         for (ptr, count) in unresolvedAssetLockTxRecordArrays {
+            ptr.deinitialize(count: count)
+            ptr.deallocate()
+        }
+        for (ptr, count) in coreAddressEntryArrays {
+            ptr.deinitialize(count: count)
+            ptr.deallocate()
+        }
+        for (ptr, count) in coreAddressPoolArrays {
             ptr.deinitialize(count: count)
             ptr.deallocate()
         }
