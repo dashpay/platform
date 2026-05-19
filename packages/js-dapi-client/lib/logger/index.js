@@ -1,80 +1,33 @@
-const util = require('util');
-const winston = require('winston');
+const LOG_LEVEL = (typeof process !== 'undefined' && process.env && process.env.LOG_LEVEL) || 'silent';
 
-// TODO: Refactor to use params instead on envs
+const LEVELS = {
+  silent: -1, error: 0, warn: 1, info: 2, verbose: 3, debug: 4, silly: 5,
+};
 
-const LOG_LEVEL = process.env.LOG_LEVEL || 'silent';
-const LOG_TO_FILE = process.env.LOG_WALLET_TO_FILE || 'false';
+const cache = {};
 
-// Log levels:
-//   error    0
-//   warn     1
-//   info     2  (default)
-//   verbose  3
-//   debug    4
-//   silly    5
+function build(level = LOG_LEVEL, prefix = '') {
+  const threshold = LEVELS[level] != null ? LEVELS[level] : LEVELS.silent;
+  const noop = () => {};
+  const fmt = prefix ? (...a) => [prefix, ...a] : (...a) => a;
 
-const loggers = {};
-
-const createLogger = (formats = [], id = '') => {
-  const format = winston.format.combine(
-    {
-      transform: (info) => {
-        const args = info[Symbol.for('splat')];
-        const result = { ...info };
-        if (args) {
-          result.message = util.format(info.message, ...args);
-        }
-        return result;
-      },
+  const logger = {
+    error: threshold >= 0 ? (...a) => console.error(...fmt(...a)) : noop,
+    warn: threshold >= 1 ? (...a) => console.warn(...fmt(...a)) : noop,
+    info: threshold >= 2 ? (...a) => console.info(...fmt(...a)) : noop,
+    verbose: threshold >= 3 ? (...a) => console.debug(...fmt(...a)) : noop,
+    debug: threshold >= 4 ? (...a) => console.debug(...fmt(...a)) : noop,
+    silly: threshold >= 5 ? (...a) => console.debug(...fmt(...a)) : noop,
+    getForId(id, overrideLevel) {
+      const effective = overrideLevel || level;
+      const key = `${id}\0${effective}`;
+      if (!cache[key]) {
+        cache[key] = build(effective, `[DAPIClient: ${id}]`);
+      }
+      return cache[key];
     },
-    ...formats,
-    winston.format.colorize(),
-    winston.format.printf(({
-      level, message,
-    }) => `${level}: ${message}`),
-  );
+  };
+  return logger;
+}
 
-  const transports = [
-    new winston.transports.Console({
-      format,
-      silent: LOG_LEVEL === 'silent',
-    }),
-  ];
-
-  if (LOG_TO_FILE === 'true' && typeof window === 'undefined') {
-    transports.push(
-      new winston.transports.File({
-        filename: `wallet${id !== '' ? `_${id}` : ''}`,
-        format,
-        silent: LOG_LEVEL === 'silent',
-      }),
-    );
-  }
-
-  return winston.createLogger({
-    level: LOG_LEVEL,
-    transports,
-  });
-};
-
-const logger = createLogger();
-
-logger.getForId = (id) => {
-  if (!loggers[id]) {
-    const format = {
-      transform: (info) => {
-        const message = `[DAPIClient: ${id}] ${info.message}`;
-        return { ...info, message };
-      },
-    };
-
-    loggers[id] = createLogger([format], id);
-  }
-
-  return loggers[id];
-};
-
-logger.verbose(`Logger uses "${LOG_LEVEL}" level`, { level: LOG_LEVEL });
-
-module.exports = logger;
+module.exports = build();
