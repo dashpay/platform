@@ -59,6 +59,18 @@ chrono = { version = "0.4", default-features = false, features = [
 ], optional = true }
 sha2 = { version = "0.10", optional = true }
 
+# Secret-storage deps (gated by the `secrets` feature). RustSec-clean
+# pins (Smythe §7); `aes-gcm` is deliberately omitted. `keyring`'s
+# library is `keyring-core` + per-platform store crates (the `keyring`
+# crate itself is sample/CLI). Verified to build under MSRV 1.92.
+argon2 = { version = "=0.5.3", optional = true }
+chacha20poly1305 = { version = "=0.10.1", optional = true }
+zeroize = { version = "=1.8.2", features = ["derive"], optional = true }
+subtle = { version = "=2.6.1", optional = true }
+getrandom = { version = "0.2", optional = true }
+region = { version = "=3.0.2", optional = true }
+keyring-core = { version = "=1.0.0", optional = true }
+
 # CLI deps (gated by the `cli` feature)
 clap = { version = "4", features = ["derive"], optional = true }
 humantime = { version = "2", optional = true }
@@ -66,6 +78,23 @@ serde_json = { version = "1", optional = true }
 tracing-subscriber = { version = "0.3", features = [
     "env-filter",
 ], optional = true }
+
+# Per-platform OS-keyring credential stores (the keyring-core 4.x split:
+# `keyring-core` is the API, these provide the backends). Gated by
+# `secrets` via `dep:`. Target-specific tables MUST follow all
+# `[dependencies]` entries.
+[target.'cfg(any(target_os = "linux", target_os = "freebsd"))'.dependencies]
+linux-keyutils-keyring-store = { version = "=1.0.0", optional = true }
+dbus-secret-service-keyring-store = { version = "=1.0.0", features = [
+    "crypto-rust",
+    "vendored",
+], optional = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+apple-native-keyring-store = { version = "=1.0.0", optional = true }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-native-keyring-store = { version = "=1.0.0", optional = true }
 
 [dev-dependencies]
 proptest = "1"
@@ -76,6 +105,7 @@ filetime = "0.2"
 tracing-test = { version = "0.2", features = ["no-env-filter"] }
 serial_test = "3"
 platform-wallet-storage = { path = ".", features = ["sqlite", "cli", "__test-helpers"] }
+tempfile = "3"
 
 [features]
 default = ["sqlite", "cli"]
@@ -104,10 +134,26 @@ cli = [
     "dep:serde_json",
     "dep:tracing-subscriber",
 ]
-# Future `SecretStore` submodule. Slot is reserved; the module is not
-# implemented in this build — enabling the feature today is a no-op
-# beyond a `// pub mod secrets;` marker in `src/lib.rs`.
-secrets = []
+# `SecretStore` submodule (`platform_wallet_storage::secrets`):
+# zeroizing secret wrappers + Keyring / EncryptedFile backends. Opt-in;
+# never enabled by `default`. Pulls only RustSec-clean pinned crypto.
+secrets = [
+    "dep:argon2",
+    "dep:chacha20poly1305",
+    "dep:zeroize",
+    "dep:subtle",
+    "dep:getrandom",
+    "dep:region",
+    "dep:keyring-core",
+    "dep:linux-keyutils-keyring-store",
+    "dep:dbus-secret-service-keyring-store",
+    "dep:apple-native-keyring-store",
+    "dep:windows-native-keyring-store",
+]
+# Exposes `secrets::MemoryStore` (in-RAM test double). Double-underscore
+# prefix = Cargo's "MUST NOT enable from downstream" convention; keeps
+# the test store unreachable from production builds (SEC-REQ-2.3.1).
+__secrets-test-helpers = ["secrets"]
 # Exposes `lock_conn_for_test` / `config_for_test` accessors on
 # `SqlitePersister` so this crate's own integration tests can probe
 # the write connection. The double-underscore prefix follows Cargo's

@@ -23,7 +23,9 @@
 
 #[cfg(feature = "sqlite")]
 pub mod sqlite;
-// pub mod secrets;   // reserved — future SecretStore submodule.
+
+#[cfg(feature = "secrets")]
+pub mod secrets;
 
 // Convenience re-exports kept under the crate root so embedders don't
 // have to spell out the `::sqlite::` middle segment for the common
@@ -53,4 +55,20 @@ const _: () = {
 fn _object_safety_check(persister: SqlitePersister) {
     let _: std::sync::Arc<dyn platform_wallet::changeset::PlatformWalletPersistence> =
         std::sync::Arc::new(persister);
+}
+
+// `SecretStore` must be object-safe and its error `Send + Sync`, so a
+// backend can be held behind `Arc<dyn SecretStore>` and its errors
+// crossed between threads / FFI.
+#[cfg(feature = "secrets")]
+#[allow(dead_code)]
+const fn _secrets_send_sync_check<T: Send + Sync>() {}
+#[cfg(feature = "secrets")]
+const _: () = {
+    _secrets_send_sync_check::<secrets::SecretStoreError>();
+};
+#[cfg(all(feature = "secrets", any(test, feature = "__secrets-test-helpers")))]
+#[allow(dead_code)]
+fn _secret_store_object_safety_check(store: secrets::MemoryStore) {
+    let _: std::sync::Arc<dyn secrets::SecretStore> = std::sync::Arc::new(store);
 }
