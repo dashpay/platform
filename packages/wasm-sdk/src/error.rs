@@ -95,6 +95,14 @@ impl WasmSdkError {
     /// scaffolded API. `api_name` is the JS-facing method name (e.g.
     /// `"getDocumentsAverage"`) — keep the message short so JS callers
     /// can branch on `kind` rather than message-match.
+    ///
+    /// `#[allow(dead_code)]` because all the previously-scaffolded
+    /// SUM/AVG bindings now have real implementations; kept as a
+    /// constructor for future scaffolded APIs so the
+    /// `WasmSdkErrorKind::NotImplemented` variant (still serialized
+    /// in [`WasmSdkErrorKind::Display`] at the bottom of this file)
+    /// has a single canonical construction site.
+    #[allow(dead_code)]
     pub(crate) fn not_implemented(api_name: impl Into<String>) -> Self {
         let api = api_name.into();
         Self::new(

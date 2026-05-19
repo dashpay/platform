@@ -11,7 +11,7 @@ use dash_sdk::platform::documents::document_query::DocumentQuery;
 use dash_sdk::platform::Fetch;
 use dash_sdk::platform::FetchMany;
 use drive::query::{OrderClause, WhereClause, WhereOperator};
-use drive_proof_verifier::DocumentSplitCounts;
+use drive_proof_verifier::{DocumentSplitAverages, DocumentSplitCounts, DocumentSplitSums};
 use js_sys::Map;
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
@@ -257,6 +257,77 @@ async fn parse_documents_count_query(
 
     Ok(base_query
         .with_select(SelectProjection::count_star())
+        .with_group_by_fields(group_by)
+        .with_limit(limit))
+}
+
+/// Parse a JS query object into a [`DocumentQuery`] configured for
+/// the SUM surface (`select = Sum(field)`, with `group_by` taken
+/// directly from the input). Sum analog of
+/// [`parse_documents_count_query`].
+///
+/// `sum_property` names the integer document property to aggregate;
+/// must match the doctype-level `documentsSummable` OR a per-index
+/// `summable: "<prop>"` declaration covering the where-clause shape
+/// (the server's index picker enforces this). Empty `sum_property`
+/// is rejected here — `SUM()` with no field has no meaning.
+async fn parse_documents_sum_query(
+    sdk: &WasmSdk,
+    query: DocumentsQueryJs,
+    sum_property: &str,
+) -> Result<DocumentQuery, WasmSdkError> {
+    if sum_property.is_empty() {
+        return Err(WasmSdkError::invalid_argument(
+            "sumProperty must be a non-empty string naming the integer document property \
+             to sum (matches the doctype's `documentsSummable` or a covering index's \
+             `summable: \"<prop>\"`)",
+        ));
+    }
+    let input: DocumentsQueryInput =
+        deserialize_required_query(query, "Query object is required", "documents sum query")?;
+
+    let group_by = input.group_by.clone().unwrap_or_default();
+    let limit = input.limit.unwrap_or(0);
+
+    let base_query = build_documents_query(sdk, input).await?;
+
+    Ok(base_query
+        .with_select(SelectProjection::sum(sum_property))
+        .with_group_by_fields(group_by)
+        .with_limit(limit))
+}
+
+/// Parse a JS query object into a [`DocumentQuery`] configured for
+/// the AVG surface (`select = Avg(field)`, with `group_by` taken
+/// directly from the input). Average analog of
+/// [`parse_documents_count_query`].
+///
+/// The `sum_property` arg names the integer property to average —
+/// AVG reuses the sum-tree indexes (no separate `averageable` flag
+/// is needed at parse time; the server's picker pairs `summable` +
+/// `countable` for the `(count, sum)` shape).
+async fn parse_documents_average_query(
+    sdk: &WasmSdk,
+    query: DocumentsQueryJs,
+    sum_property: &str,
+) -> Result<DocumentQuery, WasmSdkError> {
+    if sum_property.is_empty() {
+        return Err(WasmSdkError::invalid_argument(
+            "sumProperty must be a non-empty string naming the integer document property \
+             to average (matches the doctype's `documentsSummable` / \
+             `documentsAverageable`, or a covering index's `summable: \"<prop>\"`)",
+        ));
+    }
+    let input: DocumentsQueryInput =
+        deserialize_required_query(query, "Query object is required", "documents average query")?;
+
+    let group_by = input.group_by.clone().unwrap_or_default();
+    let limit = input.limit.unwrap_or(0);
+
+    let base_query = build_documents_query(sdk, input).await?;
+
+    Ok(base_query
+        .with_select(SelectProjection::avg(sum_property))
         .with_group_by_fields(group_by)
         .with_limit(limit))
 }
@@ -619,13 +690,11 @@ impl WasmSdk {
     /// bytes of the splitting property's value (same convention as
     /// count's per-In / per-distinct-range maps).
     ///
-    /// **Status**: skeleton — the `DocumentSplitSums::fetch`
-    /// `FromProof` impl in `drive-proof-verifier` currently returns
-    /// `Error::NotImplemented` until grovedb PR 670 lands the
-    /// `verify_aggregate_sum_query` primitive. The wasm wrapper is
-    /// here so JS / browser callers can encode against the stable
-    /// API surface; calls fail clean with the typed not-implemented
-    /// error until then.
+    /// `sumProperty` names the integer document property to
+    /// aggregate. Must match the doctype's `documentsSummable` OR a
+    /// covering index's `summable: "<prop>"` declaration — the
+    /// server's index picker rejects mismatches with a typed
+    /// request error.
     #[wasm_bindgen(
         js_name = "getDocumentsSum",
         unchecked_return_type = "Map<string, bigint>"
@@ -633,14 +702,11 @@ impl WasmSdk {
     pub async fn get_documents_sum(
         &self,
         query: DocumentsQueryJs,
-        _sum_property: String,
+        sum_property: String,
     ) -> Result<Map, WasmSdkError> {
-        let _ = query;
-        // Tracked in dashpay/platform#3684 — the Rust SDK fan-out
-        // (DocumentSplitSums::fetch + drive-side verifiers) is
-        // complete; only the WASM binding needs a parse-helper +
-        // JS-Map mapper analog of split_counts_to_js_map.
-        Err(WasmSdkError::not_implemented("getDocumentsSum"))
+        let sum_query = parse_documents_sum_query(self, query, &sum_property).await?;
+        let splits = DocumentSplitSums::fetch(self.as_ref(), sum_query).await?;
+        Ok(split_sums_to_js_map(splits))
     }
 
     #[wasm_bindgen(
@@ -650,13 +716,16 @@ impl WasmSdk {
     pub async fn get_documents_sum_with_proof_info(
         &self,
         query: DocumentsQueryJs,
-        _sum_property: String,
+        sum_property: String,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
-        let _ = query;
-        // Tracked in dashpay/platform#3684 — proof-info variant of
-        // the SUM fan-out.
-        Err(WasmSdkError::not_implemented(
-            "getDocumentsSumWithProofInfo",
+        let sum_query = parse_documents_sum_query(self, query, &sum_property).await?;
+        let (splits_opt, metadata, proof) =
+            DocumentSplitSums::fetch_with_metadata_and_proof(self.as_ref(), sum_query, None)
+                .await?;
+        let map = split_sums_to_js_map(splits_opt);
+
+        Ok(ProofMetadataResponseWasm::from_sdk_parts(
+            map, metadata, proof,
         ))
     }
 
@@ -672,10 +741,12 @@ impl WasmSdk {
     /// BigInt division for integer-truncated, etc.) — the server
     /// intentionally doesn't pre-divide.
     ///
-    /// **Status**: WASM binding is the only remaining gap — the
-    /// Rust SDK side (DocumentSplitAverages::fetch + drive-side
-    /// verifiers) is wired end-to-end. Tracked in
-    /// dashpay/platform#3684.
+    /// `sumProperty` names the integer document property to
+    /// average. AVG reuses the same `documentsSummable` /
+    /// `documentsAverageable` index machinery as SUM — no separate
+    /// `averageable` flag exists; the server pairs the named
+    /// property's `summable` index with a countable terminator to
+    /// produce the `(count, sum)` shape.
     #[wasm_bindgen(
         js_name = "getDocumentsAverage",
         unchecked_return_type = "Map<string, {count: bigint, sum: bigint}>"
@@ -683,13 +754,11 @@ impl WasmSdk {
     pub async fn get_documents_average(
         &self,
         query: DocumentsQueryJs,
-        _sum_property: String,
+        sum_property: String,
     ) -> Result<Map, WasmSdkError> {
-        let _ = query;
-        // Tracked in dashpay/platform#3684 — DocumentSplitAverages
-        // is wired in rs-sdk; the WASM binding needs the parse
-        // helper + a {count, sum} per-entry JS-Map mapper.
-        Err(WasmSdkError::not_implemented("getDocumentsAverage"))
+        let avg_query = parse_documents_average_query(self, query, &sum_property).await?;
+        let splits = DocumentSplitAverages::fetch(self.as_ref(), avg_query).await?;
+        Ok(split_averages_to_js_map(splits))
     }
 
     #[wasm_bindgen(
@@ -699,13 +768,16 @@ impl WasmSdk {
     pub async fn get_documents_average_with_proof_info(
         &self,
         query: DocumentsQueryJs,
-        _sum_property: String,
+        sum_property: String,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
-        let _ = query;
-        // Tracked in dashpay/platform#3684 — proof-info variant of
-        // the AVG fan-out.
-        Err(WasmSdkError::not_implemented(
-            "getDocumentsAverageWithProofInfo",
+        let avg_query = parse_documents_average_query(self, query, &sum_property).await?;
+        let (splits_opt, metadata, proof) =
+            DocumentSplitAverages::fetch_with_metadata_and_proof(self.as_ref(), avg_query, None)
+                .await?;
+        let map = split_averages_to_js_map(splits_opt);
+
+        Ok(ProofMetadataResponseWasm::from_sdk_parts(
+            map, metadata, proof,
         ))
     }
 }
@@ -725,6 +797,63 @@ fn split_counts_to_js_map(splits: Option<DocumentSplitCounts>) -> Map {
         for (key_bytes, count) in split_counts.into_flat_map() {
             let key: JsValue = hex::encode(key_bytes).into();
             map.set(&key, &JsValue::from(count));
+        }
+    }
+    map
+}
+
+/// Convert an `Option<DocumentSplitSums>` into a JS `Map<string, bigint>`.
+///
+/// Sum analog of [`split_counts_to_js_map`]. Same hex-encoded keys,
+/// same flat-map fork-merging via `DocumentSplitSums::into_flat_map`
+/// (which combines per-(in_key, key) entries into per-key sums for
+/// compound queries — callers needing the unmerged view should
+/// consume `DocumentSplitSums.0` directly).
+///
+/// Values are `i64` per grovedb's signed SumTree value type. `bigint`
+/// on the JS side preserves the full i64 range that `Number` can't —
+/// avoids the silent precision loss past `Number.MAX_SAFE_INTEGER`
+/// (2^53 - 1) that an `f64` conversion would introduce.
+fn split_sums_to_js_map(splits: Option<DocumentSplitSums>) -> Map {
+    let map = Map::new();
+    if let Some(split_sums) = splits {
+        for (key_bytes, sum) in split_sums.into_flat_map() {
+            let key: JsValue = hex::encode(key_bytes).into();
+            map.set(&key, &JsValue::from(sum));
+        }
+    }
+    map
+}
+
+/// Convert an `Option<DocumentSplitAverages>` into a JS `Map<string,
+/// {count: bigint, sum: bigint}>`.
+///
+/// Average analog of [`split_counts_to_js_map`]. Per-entry values
+/// are JS objects with `count` (`u64` → `bigint`) and `sum` (`i64`
+/// → `bigint`) fields; the JS caller divides with whichever
+/// representation it prefers (`Number(sum) / Number(count)` for
+/// f64-precision arithmetic, BigInt division for integer-truncated,
+/// or its own arbitrary-precision math). The server intentionally
+/// doesn't pre-divide — `count` and `sum` are independently
+/// load-bearing for downstream filters.
+///
+/// Hex-encoded keys + `into_flat_map` fork-merging match the count
+/// and sum helpers' conventions exactly.
+fn split_averages_to_js_map(splits: Option<DocumentSplitAverages>) -> Map {
+    let map = Map::new();
+    if let Some(split_averages) = splits {
+        for (key_bytes, (count, sum)) in split_averages.into_flat_map() {
+            let key: JsValue = hex::encode(key_bytes).into();
+            let entry = js_sys::Object::new();
+            // `unwrap` here is safe in WASM — `js_sys::Reflect::set`
+            // only fails on frozen targets, and a freshly-constructed
+            // Object is never frozen. Same pattern existing
+            // ProofMetadataResponseWasm uses internally.
+            js_sys::Reflect::set(&entry, &JsValue::from_str("count"), &JsValue::from(count))
+                .expect("set count on fresh Object");
+            js_sys::Reflect::set(&entry, &JsValue::from_str("sum"), &JsValue::from(sum))
+                .expect("set sum on fresh Object");
+            map.set(&key, &entry);
         }
     }
     map
