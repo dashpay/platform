@@ -164,6 +164,13 @@ mod tests {
         // other v1 addition (e.g. `documentsCountable` / `rangeCountable`)
         // is excluded so the v2 parser cannot revive it on pre-v12 contracts
         // and reinterpret a `NormalTree` as a count tree.
+        //
+        // `keywords` is a special case: it was erroneously placed on the v0
+        // document-type meta-schema by PR #2523 (its intended home is
+        // contract-level, `DataContractV1.keywords`). The v11→v12 migration
+        // deliberately strips it from stored bytes — see
+        // `strips_keywords_from_document_schema` — so it is excluded from
+        // the expected allowlist here even though it appears in v0.
         let v0_schema: serde_json::Value = serde_json::from_str(include_str!(
             "../../../../schema/meta_schemas/document/v0/document-meta.json"
         ))
@@ -175,6 +182,7 @@ mod tests {
             .expect("v0 meta-schema must have a 'properties' object")
             .keys()
             .map(|k| k.as_str())
+            .filter(|k| *k != "keywords")
             .collect();
 
         let allowlist: std::collections::BTreeSet<&str> =
