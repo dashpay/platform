@@ -516,24 +516,180 @@ impl<'a> DriveDocumentSumQuery<'a> {
         })
     }
 
-    /// Distinct-sum path query (per-key range walk). Stays a stub —
-    /// the full body mirrors count's `distinct_count_path_query`
-    /// (~280 lines) and is deferred to the focused follow-up; the
-    /// bench's load-bearing path is `aggregate_sum_path_query`.
+    /// Build the grovedb `PathQuery` for a per-distinct-key range-sum
+    /// proof / no-proof walk against this query's `rangeSummable`
+    /// index. Sum analog of count's `distinct_count_path_query` — the
+    /// path-query shape is structurally identical (range on the
+    /// terminator + outer `Key`s per `In` value on a prefix prop, if
+    /// any). The only difference is at proof-emission time:
+    /// the terminator's value tree is a `SumTree` (vs `CountTree` on
+    /// the count side), so grovedb emits `KVSum` ops instead of
+    /// `KVCount`. The path-query bytes the prover and verifier
+    /// reconstruct are the same on both sides.
+    ///
+    /// `left_to_right` flips both the outer Query (when there's an
+    /// `In` on prefix) and the subquery direction so the iteration
+    /// walks `(in_key, terminator_key)` tuples in the requested
+    /// order — descending on `left_to_right = false` walks the In
+    /// dimension lex-descending too, not just the inner range.
+    ///
+    /// Errors:
+    /// - No range where-clause / multiple range where-clauses
+    /// - Multiple In clauses on prefix props
+    /// - Non-Equal-non-In operator on a prefix prop
+    /// - Missing prefix clause
     pub fn distinct_sum_path_query(
         &self,
-        _limit: Option<u16>,
-        _left_to_right: bool,
-        _platform_version: &PlatformVersion,
+        limit: Option<u16>,
+        left_to_right: bool,
+        platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
-        Err(Error::Query(QuerySyntaxError::Unsupported(
-            "distinct_sum_path_query: full port deferred. Mirror count's \
-             `distinct_count_path_query` (~280 lines in \
-             drive_document_count_query/path_query.rs). The shape is identical \
-             except every terminator is a SumTree (was CountTree) and the merk \
-             ops the proof emits are KVSum instead of KVCount."
-                .to_string(),
-        )))
+        let range_clause = self
+            .where_clauses
+            .iter()
+            .find(|wc| is_range_operator(wc.operator))
+            .ok_or(Error::Query(
+                QuerySyntaxError::InvalidWhereClauseComponents(
+                    "distinct_sum_path_query requires a range where-clause",
+                ),
+            ))?;
+        let range_item = self.range_clause_to_query_item(range_clause, platform_version)?;
+
+        let prefix_props = &self.index.properties[..self.index.properties.len() - 1];
+        let terminator_name = &self
+            .index
+            .properties
+            .last()
+            .ok_or(Error::Query(
+                QuerySyntaxError::InvalidWhereClauseComponents(
+                    "range_summable index must have at least one property",
+                ),
+            ))?
+            .name;
+
+        let mut base_path: Vec<Vec<u8>> = vec![
+            vec![RootTree::DataContractDocuments as u8],
+            self.contract_id.to_vec(),
+            vec![1u8],
+            self.document_type_name.as_bytes().to_vec(),
+        ];
+
+        // `Some(keys)` once an In clause has been encountered on a
+        // prefix property. From that point on, subsequent Equal
+        // clauses go into `subquery_path_extension` rather than
+        // `base_path`. Only one In allowed (multiple Ins would
+        // multiply the fork count beyond what a single Query can
+        // express via `set_subquery_path`).
+        let mut in_outer_keys: Option<Vec<Vec<u8>>> = None;
+        let mut subquery_path_extension: Vec<Vec<u8>> = vec![];
+
+        for prop in prefix_props {
+            let clause = self
+                .where_clauses
+                .iter()
+                .find(|wc| wc.field == prop.name)
+                .ok_or(Error::Query(
+                    QuerySyntaxError::InvalidWhereClauseComponents(
+                        "distinct_sum_path_query: missing where clause for an index \
+                         prefix property",
+                    ),
+                ))?;
+
+            match clause.operator {
+                WhereOperator::Equal => {
+                    let serialized = self.document_type.serialize_value_for_key(
+                        prop.name.as_str(),
+                        &clause.value,
+                        platform_version,
+                    )?;
+                    if in_outer_keys.is_some() {
+                        subquery_path_extension.push(prop.name.as_bytes().to_vec());
+                        subquery_path_extension.push(serialized);
+                    } else {
+                        base_path.push(prop.name.as_bytes().to_vec());
+                        base_path.push(serialized);
+                    }
+                }
+                WhereOperator::In => {
+                    if in_outer_keys.is_some() {
+                        return Err(Error::Query(
+                            QuerySyntaxError::InvalidWhereClauseComponents(
+                                "distinct_sum_path_query: at most one `In` clause is supported \
+                                 on prefix properties",
+                            ),
+                        ));
+                    }
+                    // Path stops at the In-bearing prop's property-
+                    // name subtree; outer Query lives at that level.
+                    base_path.push(prop.name.as_bytes().to_vec());
+                    let in_values = clause.in_values().into_data_with_error()??;
+                    let mut keys: Vec<Vec<u8>> = in_values
+                        .iter()
+                        .map(|v| {
+                            self.document_type.serialize_value_for_key(
+                                prop.name.as_str(),
+                                v,
+                                platform_version,
+                            )
+                        })
+                        .collect::<Result<_, _>>()?;
+                    // Same sort + parity rationale as count's
+                    // `distinct_count_path_query` — see the long
+                    // docstring there. Prover and verifier share
+                    // this builder so the sort happens identically
+                    // on both sides; without it, descending walks
+                    // and pushed-limit pagination produce gibberish.
+                    keys.sort();
+                    in_outer_keys = Some(keys);
+                }
+                _ => {
+                    return Err(Error::Query(
+                        QuerySyntaxError::InvalidWhereClauseComponents(
+                            "distinct_sum_path_query: prefix properties must use `==` or `in`",
+                        ),
+                    ));
+                }
+            }
+        }
+
+        match in_outer_keys {
+            None => {
+                // Flat shape — path includes terminator, single
+                // range-only Query.
+                base_path.push(terminator_name.as_bytes().to_vec());
+                let mut query = Query::new_with_direction(left_to_right);
+                query.insert_item(range_item);
+                Ok(PathQuery::new(
+                    base_path,
+                    SizedQuery::new(query, limit, None),
+                ))
+            }
+            Some(keys) => {
+                // Compound shape — outer Query has one Key per In
+                // value at the In-bearing prop's property-name
+                // subtree. `subquery_path` carries any post-In
+                // Equal pairs + terminator. Subquery is the range
+                // item. `left_to_right` applies to both layers so
+                // descending iteration walks `(in_key_desc,
+                // key_desc)` tuples consistently.
+                let mut outer_query = Query::new_with_direction(left_to_right);
+                for key in keys {
+                    outer_query.insert_key(key);
+                }
+                subquery_path_extension.push(terminator_name.as_bytes().to_vec());
+
+                let mut subquery = Query::new_with_direction(left_to_right);
+                subquery.insert_item(range_item);
+
+                outer_query.set_subquery_path(subquery_path_extension);
+                outer_query.set_subquery(subquery);
+
+                Ok(PathQuery::new(
+                    base_path,
+                    SizedQuery::new(outer_query, limit, None),
+                ))
+            }
+        }
     }
 
     /// Build the grovedb `PathQuery` for a **carrier**

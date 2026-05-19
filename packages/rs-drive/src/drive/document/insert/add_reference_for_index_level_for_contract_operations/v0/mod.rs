@@ -139,14 +139,6 @@ impl Drive {
                     )),
                 }
             };
-        // TODO(sum-feature, cost): for the
-        // `DocumentEstimatedAverageSize` cost-only paths, swap
-        // `Element::required_item_space(...)` for
-        // `Element::required_item_with_sum_item_space(...)` when
-        // `sum_property_name.is_some()` so the fee estimate accounts
-        // for the extra `i64` per reference. Stateless-cost arms
-        // marked inline below.
-
         // unique indexes will be stored under key "0"
         // non-unique indices should have a tree at key "0" that has all elements based off of primary key
         if !index_type.index_type.is_unique() || any_fields_null {

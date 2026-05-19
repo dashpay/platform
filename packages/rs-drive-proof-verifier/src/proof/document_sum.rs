@@ -127,6 +127,35 @@ pub fn verify_point_lookup_sum_proof(
     Ok(entries)
 }
 
+/// Verify a per-distinct-key range-sum proof against a
+/// `rangeSummable: true` index and return the per-`(in_key, key)`
+/// sums.
+///
+/// Thin tenderdash-composition wrapper over
+/// [`DriveDocumentSumQuery::verify_distinct_sum_proof`]. Sum analog
+/// of count's
+/// [`super::document_count::verify_distinct_count_proof`]. Used by
+/// the prove path's `RangeDistinctProof` mode (GroupByRange /
+/// GroupByCompound + range + prove against a `rangeSummable: true`
+/// index).
+pub fn verify_distinct_sum_proof(
+    query: &DriveDocumentSumQuery,
+    proof: &Proof,
+    mtd: &ResponseMetadata,
+    limit: u16,
+    left_to_right: bool,
+    platform_version: &PlatformVersion,
+    provider: &dyn ContextProvider,
+) -> Result<Vec<SumEntry>, Error> {
+    let (root_hash, entries) = query
+        .verify_distinct_sum_proof(&proof.grovedb_proof, limit, left_to_right, platform_version)
+        .map_drive_error(proof, mtd)?;
+
+    verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+    Ok(entries)
+}
+
 /// Verify a **carrier** `AggregateSumOnRange` proof against a
 /// `rangeSummable: true` index and return the per-`In`-branch sums.
 ///

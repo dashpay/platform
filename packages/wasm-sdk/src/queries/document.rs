@@ -636,13 +636,10 @@ impl WasmSdk {
         _sum_property: String,
     ) -> Result<Map, WasmSdkError> {
         let _ = query;
-        // TODO(sum-feature): mirror `get_documents_count` body —
-        // build a `DocumentQuery` via `parse_documents_count_query`
-        // (or a parallel `parse_documents_sum_query` that injects
-        // `Select::Sum` + `field = sum_property` into the parsed
-        // query), then call `DocumentSplitSums::fetch` and map the
-        // result via a `split_sums_to_js_map` helper paralleling
-        // `split_counts_to_js_map`.
+        // Tracked in dashpay/platform#3684 — the Rust SDK fan-out
+        // (DocumentSplitSums::fetch + drive-side verifiers) is
+        // complete; only the WASM binding needs a parse-helper +
+        // JS-Map mapper analog of split_counts_to_js_map.
         Err(WasmSdkError::not_implemented("getDocumentsSum"))
     }
 
@@ -656,7 +653,8 @@ impl WasmSdk {
         _sum_property: String,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         let _ = query;
-        // TODO(sum-feature): mirror `get_documents_count_with_proof_info`.
+        // Tracked in dashpay/platform#3684 — proof-info variant of
+        // the SUM fan-out.
         Err(WasmSdkError::not_implemented(
             "getDocumentsSumWithProofInfo",
         ))
@@ -674,11 +672,10 @@ impl WasmSdk {
     /// BigInt division for integer-truncated, etc.) — the server
     /// intentionally doesn't pre-divide.
     ///
-    /// **Status**: skeleton — the `DocumentSplitAverages::fetch`
-    /// `FromProof` impl currently returns `Error::NotImplemented`
-    /// until grovedb PR 670 lands the
-    /// `verify_aggregate_count_and_sum_query` primitive. Same gating
-    /// as `getDocumentsSum`.
+    /// **Status**: WASM binding is the only remaining gap — the
+    /// Rust SDK side (DocumentSplitAverages::fetch + drive-side
+    /// verifiers) is wired end-to-end. Tracked in
+    /// dashpay/platform#3684.
     #[wasm_bindgen(
         js_name = "getDocumentsAverage",
         unchecked_return_type = "Map<string, {count: bigint, sum: bigint}>"
@@ -689,14 +686,9 @@ impl WasmSdk {
         _sum_property: String,
     ) -> Result<Map, WasmSdkError> {
         let _ = query;
-        // TODO(avg-feature): mirror `get_documents_sum` body once it
-        // lands. The shape:
-        //   1. Build a `DocumentQuery` via a `parse_documents_average_query`
-        //      that injects `Select::Avg` + `field = sum_property`.
-        //   2. Call `DocumentSplitAverages::fetch`.
-        //   3. Map the result via a `split_averages_to_js_map` helper
-        //      paralleling `split_sums_to_js_map` — emit
-        //      `{count: bigint, sum: bigint}` per entry.
+        // Tracked in dashpay/platform#3684 — DocumentSplitAverages
+        // is wired in rs-sdk; the WASM binding needs the parse
+        // helper + a {count, sum} per-entry JS-Map mapper.
         Err(WasmSdkError::not_implemented("getDocumentsAverage"))
     }
 
@@ -710,7 +702,8 @@ impl WasmSdk {
         _sum_property: String,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         let _ = query;
-        // TODO(avg-feature): mirror `get_documents_sum_with_proof_info`.
+        // Tracked in dashpay/platform#3684 — proof-info variant of
+        // the AVG fan-out.
         Err(WasmSdkError::not_implemented(
             "getDocumentsAverageWithProofInfo",
         ))

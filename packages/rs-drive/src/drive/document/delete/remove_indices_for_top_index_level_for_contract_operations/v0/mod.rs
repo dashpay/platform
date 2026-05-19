@@ -82,24 +82,15 @@ impl Drive {
 
         // next we need to store a reference to the document for each index
         for (name, sub_level) in index_level.sub_levels() {
-            // Property-name tree-type composition mirrors the
-            // insert side's top-level walker. See
-            // `add_indices_for_top_index_level_for_contract_operations_v0`
-            // for the four-way dispatch table.
-            let sub_level_info = sub_level.has_index_with_type();
-            let sub_level_range_countable = sub_level_info
+            let sub_level_range_countable = sub_level
+                .has_index_with_type()
                 .map(|info| info.range_countable)
                 .unwrap_or(false);
-            let sub_level_range_summable = sub_level_info
-                .map(|info| info.range_summable)
-                .unwrap_or(false);
-            let property_name_tree_type =
-                match (sub_level_range_countable, sub_level_range_summable) {
-                    (true, true) => TreeType::ProvableCountProvableSumTree,
-                    (true, false) => TreeType::ProvableCountTree,
-                    (false, true) => TreeType::ProvableSumTree,
-                    (false, false) => TreeType::NormalTree,
-                };
+            let property_name_tree_type = if sub_level_range_countable {
+                TreeType::ProvableCountTree
+            } else {
+                TreeType::NormalTree
+            };
 
             // at this point the contract path is to the contract documents
             // for each index the top index component will already have been added
@@ -167,13 +158,26 @@ impl Drive {
             index_path_info.push(document_top_field)?;
             // the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId/<ownerId>
 
+            // The recursive dispatcher takes `parent_value_tree_type:
+            // TreeType` (so v1's cost-estimation can distinguish sum-
+            // bearing parents from `NormalTree`). v0 of the top-level
+            // walker only ever sees pre-v3 contracts whose sub-levels
+            // collapse to `CountTree` (range_countable) or
+            // `NormalTree`. Round-tripping the bool through TreeType
+            // and back is bit-identical to v3.1-dev's behavior on the
+            // v0 recursive arm.
+            let parent_value_tree_type = if sub_level_range_countable {
+                TreeType::CountTree
+            } else {
+                TreeType::NormalTree
+            };
             self.remove_indices_for_index_level_for_contract_operations(
                 document_and_contract_info,
                 index_path_info,
                 sub_level,
                 any_fields_null,
                 all_fields_null,
-                sub_level_range_countable,
+                parent_value_tree_type,
                 &storage_flags,
                 previous_batch_operations,
                 estimated_costs_only_with_layer_info,

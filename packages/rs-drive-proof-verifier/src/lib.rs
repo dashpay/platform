@@ -26,6 +26,7 @@ pub use drive::query::SplitCountEntry;
 /// primitive. Client computes `avg = sum / count`.
 pub use proof::document_average::{
     verify_aggregate_count_and_sum_proof, verify_carrier_aggregate_count_and_sum_proof,
+    verify_distinct_count_and_sum_proof, verify_point_lookup_count_and_sum_proof,
     verify_primary_key_count_sum_tree_proof, DocumentAverage,
 };
 pub use proof::document_split_average::{DocumentSplitAverages, SplitAverageEntry};
@@ -34,8 +35,8 @@ pub use proof::document_split_average::{DocumentSplitAverages, SplitAverageEntry
 /// grovedb PR 670 dependency status.
 pub use proof::document_split_sum::{DocumentSplitSums, SplitSumEntry};
 pub use proof::document_sum::{
-    verify_aggregate_sum_proof, verify_carrier_aggregate_sum_proof, verify_point_lookup_sum_proof,
-    verify_primary_key_sum_tree_proof, DocumentSum,
+    verify_aggregate_sum_proof, verify_carrier_aggregate_sum_proof, verify_distinct_sum_proof,
+    verify_point_lookup_sum_proof, verify_primary_key_sum_tree_proof, DocumentSum,
 };
 // Re-export the rs-drive `SumEntry` + `AverageEntry` at the
 // proof-verifier crate root, paralleling `SplitCountEntry` above —

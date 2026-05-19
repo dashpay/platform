@@ -20,10 +20,12 @@ use dpp::{
     data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters},
 };
 use drive::query::drive_document_sum_query::index_picker::find_range_summable_index_for_where_clauses;
+use drive::query::drive_document_sum_query::index_picker::find_summable_index_for_where_clauses;
 use drive::query::drive_document_sum_query::{is_range_operator, DriveDocumentSumQuery};
 use drive::query::{SelectFunction, WhereOperator};
 use drive_proof_verifier::{
     verify_aggregate_count_and_sum_proof, verify_carrier_aggregate_count_and_sum_proof,
+    verify_distinct_count_and_sum_proof, verify_point_lookup_count_and_sum_proof,
     verify_primary_key_count_sum_tree_proof, AverageEntry,
 };
 
@@ -55,10 +57,8 @@ pub(super) fn assert_select_is_avg(
 /// Verify an AVG-shape proof and return per-branch `AverageEntry`s.
 ///
 /// Single source of truth for the AVG-proof dispatch. Mirrors the
-/// server-side dispatcher in
-/// [`drive::Drive::execute_document_average_request`]'s prove path
-/// (which itself mirrors the SUM dispatcher's prove-mode routing,
-/// minus the modes that don't have PCPS verifiers ready yet).
+/// server-side prove path in
+/// [`drive::Drive::execute_document_average_request`].
 ///
 /// Supported prove shapes:
 /// - **Empty where + `documentsCountable` + matching
@@ -75,11 +75,13 @@ pub(super) fn assert_select_is_avg(
 ///   `[in_field]`) → carrier-PCPS proof via
 ///   [`verify_carrier_aggregate_count_and_sum_proof`]. One entry
 ///   per present In branch, `in_key = <serialized In value>`.
-///
-/// Other prove shapes (GroupByRange distinct, In-only without
-/// range) are rejected as `RequestError` with a message naming the
-/// missing primitive — same gap the server-side dispatcher returns
-/// `Unsupported` for.
+/// - **`GroupByRange` / `GroupByCompound` + range +
+///   `rangeAverageable` index** → per-distinct-key AVG proof via
+///   [`verify_distinct_count_and_sum_proof`]. One entry per
+///   distinct in-range value (or per `(in_key, key)` for compound).
+/// - **Equal/`In` + no range on a summable + countable index** →
+///   point-lookup count-and-sum proof via
+///   [`verify_point_lookup_count_and_sum_proof`].
 pub(super) fn verify_average_query(
     request: DocumentQuery,
     response: GetDocumentsResponse,
@@ -140,10 +142,12 @@ pub(super) fn verify_average_query(
         .iter()
         .any(|wc| wc.operator == WhereOperator::In);
 
-    // Range AVG paths — both Aggregate (group_by=[]) and GroupByIn
-    // (group_by=[in_field]) route through the same PCPS index
-    // picker; the proof shape differs (single (count, sum) vs
-    // per-In (count, sum)).
+    // Range AVG paths — three modes:
+    // - Aggregate (group_by=[]) → single (count, sum) per proof
+    // - GroupByIn (group_by=[in_field]) → carrier per-In (count, sum)
+    // - GroupByRange / GroupByCompound (group_by=[range_field] or
+    //   [in_field, range_field]) → per-distinct-key (count, sum)
+    // All three need a `rangeAverageable`-eligible index.
     if has_range {
         let index = find_range_summable_index_for_where_clauses(
             document_type.indexes(),
@@ -167,6 +171,45 @@ pub(super) fn verify_average_query(
             where_clauses: request.where_clauses.clone(),
             sum_property,
         };
+
+        // Distinct mode discrimination: SQL `group_by` has a
+        // range-field first (with or without an In on prefix
+        // before it). Mirrors the SUM dispatcher's logic.
+        let group_by_first = request.group_by.first().map(String::as_str);
+        let distinct_mode = match group_by_first {
+            Some(field) => !is_in_field(&request.where_clauses, field),
+            None => false,
+        };
+
+        if distinct_mode {
+            let limit_u16 = if request.limit == 0 {
+                drive::config::DEFAULT_QUERY_LIMIT
+            } else {
+                u16::try_from(request.limit).map_err(|_| {
+                    drive_proof_verifier::Error::RequestError {
+                        error: format!(
+                            "limit {} exceeds u16::MAX for distinct AVG proof",
+                            request.limit
+                        ),
+                    }
+                })?
+            };
+            let left_to_right = request
+                .order_by_clauses
+                .first()
+                .map(|c| c.ascending)
+                .unwrap_or(true);
+            let entries = verify_distinct_count_and_sum_proof(
+                &sum_query,
+                proof,
+                mtd,
+                limit_u16,
+                left_to_right,
+                platform_version,
+                provider,
+            )?;
+            return Ok((Some(entries), mtd.clone(), proof.clone()));
+        }
 
         if !has_in {
             // Aggregate (group_by=[]) — single (count, sum) per
@@ -216,6 +259,44 @@ pub(super) fn verify_average_query(
         }
     }
 
+    // Point-lookup AVG: `Aggregate` + Equal/In + no range against
+    // a count+sum index (summable + countable terminator). The
+    // empty-where primary-key fast path is already handled above.
+    if matches!(request.select.function, SelectFunction::Avg)
+        && request.group_by.is_empty()
+        && !has_range
+    {
+        let index = find_summable_index_for_where_clauses(
+            document_type.indexes(),
+            &request.where_clauses,
+            &sum_property,
+        )
+        .filter(|idx| idx.countable.is_countable())
+        .ok_or_else(|| drive_proof_verifier::Error::RequestError {
+            error: "prove point-lookup AVG requires an index that declares BOTH \
+                    `summable: \"<prop>\"` AND a countable terminator (`countable: \
+                    \"countable\"` or `\"countableAllowingOffset\"`) whose properties \
+                    exactly match the where clause fields"
+                .to_string(),
+        })?;
+        let sum_query = DriveDocumentSumQuery {
+            document_type,
+            contract_id,
+            document_type_name: request.document_type_name.clone(),
+            index,
+            where_clauses: request.where_clauses.clone(),
+            sum_property,
+        };
+        let entries = verify_point_lookup_count_and_sum_proof(
+            &sum_query,
+            proof,
+            mtd,
+            platform_version,
+            provider,
+        )?;
+        return Ok((Some(entries), mtd.clone(), proof.clone()));
+    }
+
     Err(drive_proof_verifier::Error::RequestError {
         error: format!(
             "prove AVG: the (has_range = {}, has_in = {}, where_clauses.len() = {}) \
@@ -243,4 +324,14 @@ fn single_empty_key_entry(count: u64, sum: i64) -> Vec<AverageEntry> {
         count: Some(count),
         sum: Some(sum),
     }]
+}
+
+/// Whether the request's where clauses contain an `In` clause on
+/// the named field. Used to discriminate distinct vs carrier modes
+/// when the SQL-shape `group_by` is non-empty — distinct mode is
+/// "group_by on a range field" (no In on that field).
+fn is_in_field(where_clauses: &[drive::query::WhereClause], field: &str) -> bool {
+    where_clauses
+        .iter()
+        .any(|wc| wc.operator == WhereOperator::In && wc.field == field)
 }

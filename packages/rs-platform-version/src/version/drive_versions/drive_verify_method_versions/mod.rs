@@ -68,6 +68,9 @@ pub struct DriveVerifyDocumentSumMethodVersions {
     pub verify_primary_key_sum_tree_proof: FeatureVersion,
     pub verify_primary_key_count_sum_tree_proof: FeatureVersion,
     pub verify_point_lookup_sum_proof: FeatureVersion,
+    pub verify_distinct_sum_proof: FeatureVersion,
+    pub verify_distinct_count_and_sum_proof: FeatureVersion,
+    pub verify_point_lookup_count_and_sum_proof: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

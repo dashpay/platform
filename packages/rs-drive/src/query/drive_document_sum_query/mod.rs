@@ -24,14 +24,10 @@
 //! `documents_summable: "<x>"` (if set) also matches. See
 //! `book/src/drive/document-sum-trees.md` for the design rationale.
 //!
-//! Status: this module is part of the v3 sum-tree build-out that lands
-//! alongside grovedb PR 670. The bench at
+//! The bench at
 //! [`packages/rs-drive/benches/document_sum_worst_case.rs`](../../../../../benches/document_sum_worst_case.rs)
-//! targets these public types and dispatcher entry. Executors are
-//! skeletal — the public surface is complete enough that callers compile
-//! against it, but individual mode bodies are TODO-marked with
-//! references back to count's analog so a reviewer / implementer has a
-//! line-by-line template to follow.
+//! targets these public types and the dispatcher entry — Q1–Q9 from
+//! the chapter all roundtrip on the real Drive.
 
 #[cfg(feature = "server")]
 pub mod drive_dispatcher;

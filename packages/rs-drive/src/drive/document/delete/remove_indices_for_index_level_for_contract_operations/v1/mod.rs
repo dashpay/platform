@@ -28,28 +28,19 @@ use dpp::version::PlatformVersion;
 impl Drive {
     /// Removes indices for an index level and recurses.
     ///
-    /// `parent_value_tree_is_range_countable` mirrors the insert walker —
-    /// it tells us whether the value tree at `index_path_info` was stored
-    /// as a `CountTree` (because the IndexLevel that produced it terminates
-    /// a `range_countable` index). Cost estimation uses this to report the
-    /// correct tree variant for the layer being walked, so storage-cost
-    /// math matches what's actually on disk.
+    /// `parent_value_tree_type` carries the exact `TreeType` of the
+    /// value tree at `index_path_info` — `NormalTree` /
+    /// `CountTree` / `ProvableCountTree` / `SumTree` /
+    /// `ProvableSumTree` / `CountSumTree` / `ProvableCountSumTree` /
+    /// `ProvableCountProvableSumTree`. Used to emit a correct
+    /// `EstimatedLayerInformation` for the layer being walked, so
+    /// dry-run delete fees match applied delete fees on sum-bearing
+    /// indexes.
     ///
-    /// **v3 sum-tree caveat**: when the parent value tree was actually
-    /// inserted as a `SumTree` / `ProvableSumTree` / `CountSumTree` /
-    /// `ProvableCountSumTree` (because the IndexLevel that produced it
-    /// declares `summable`), this single-bool input under-reports the
-    /// layer's tree type for cost estimation — the bool only signals
-    /// count-side range-countability. The actual delete operations
-    /// remain correct (the per-element delete path runs through
-    /// [`Drive::remove_reference_for_index_level_for_contract_operations`]
-    /// which composes all four count+sum flags), but the
-    /// `EstimatedLayerInformation` emitted from this walker may
-    /// under-charge the fee for sum-bearing layers by a few bytes per
-    /// affected node. Fixing this requires a wrapper signature change
-    /// to pass either a richer enum or four bools; deferred to its own
-    /// PR. See also the matching note in
-    /// `add_indices_for_index_level_for_contract_operations_v1`.
+    /// (Pre-v3 callers funnel through the dispatcher which converts
+    /// the wider TreeType to a bool when routing to v0 — v0 stays
+    /// stuck in time at `parent_value_tree_is_range_countable:
+    /// bool`.)
     #[inline]
     #[allow(clippy::too_many_arguments)]
     pub(super) fn remove_indices_for_index_level_for_contract_operations_v1(
@@ -59,7 +50,7 @@ impl Drive {
         index_level: &IndexLevel,
         mut any_fields_null: bool,
         mut all_fields_null: bool,
-        parent_value_tree_is_range_countable: bool,
+        parent_value_tree_type: TreeType,
         storage_flags: &Option<&StorageFlags>,
         previous_batch_operations: &Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
@@ -72,18 +63,16 @@ impl Drive {
     ) -> Result<(), Error> {
         let sub_level_index_count = index_level.sub_levels().len() as u32;
 
-        let current_layer_tree_type = if parent_value_tree_is_range_countable {
-            TreeType::CountTree
-        } else {
-            TreeType::NormalTree
-        };
-
         if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
-            // On this level we will have a 0 and all the top index paths
+            // On this level we will have a 0 and all the top index paths.
+            // `parent_value_tree_type` carries the full TreeType the
+            // insert walker actually wrote, so sum-bearing layers
+            // emit `tree_type: SumTree` / `CountSumTree` / etc here
+            // — fixing the v0 collapse-to-NormalTree under-charge.
             estimated_costs_only_with_layer_info.insert(
                 index_path_info.clone().convert_to_key_info_path(),
                 EstimatedLayerInformation {
-                    tree_type: current_layer_tree_type,
+                    tree_type: parent_value_tree_type,
                     estimated_layer_count: ApproximateElements(sub_level_index_count + 1),
                     estimated_layer_sizes: AllSubtrees(
                         DEFAULT_HASH_SIZE_U8,
@@ -229,7 +218,7 @@ impl Drive {
                 sub_level,
                 any_fields_null,
                 all_fields_null,
-                sub_level_range_countable,
+                value_tree_type,
                 storage_flags,
                 previous_batch_operations,
                 estimated_costs_only_with_layer_info,

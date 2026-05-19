@@ -57,3 +57,27 @@ pub mod verify_primary_key_count_sum_tree_proof;
 /// serialized_in_value`). Absent branches are silently omitted
 /// because today's path query does not request absence proofs.
 pub mod verify_point_lookup_sum_proof;
+
+/// Per-distinct-key range-sum proof verification — sum analog of
+/// count's `verify_distinct_count_proof`. Walks the verified
+/// terminator SumTree elements and extracts each
+/// `sum_value_or_default()` as a per-`(in_key, key)` entry. Used
+/// by the prove path's `RangeDistinctProof` mode.
+pub mod verify_distinct_sum_proof;
+
+/// Point-lookup count+sum proof verification — AVG analog of
+/// `verify_point_lookup_sum_proof`. Extracts
+/// `count_sum_value_or_default()` from each verified terminator
+/// element. Used by the prove path's AVG point-lookup shape on a
+/// `documentsCountable + documentsSummable` doctype.
+pub mod verify_point_lookup_count_and_sum_proof;
+
+/// Per-distinct-key range-AVG proof verification — AVG analog of
+/// `verify_distinct_sum_proof`. Walks the verified terminator
+/// count-sum-bearing elements and extracts each
+/// `count_sum_value_or_default()` as a per-`(in_key, key)`
+/// `AverageEntry`. Requires the index to declare BOTH
+/// `rangeCountable: true` AND `rangeSummable: true` (i.e. a
+/// `rangeAverageable: true` index). Used by the prove path's
+/// `RangeDistinctProof` mode on the AVG surface.
+pub mod verify_distinct_count_and_sum_proof;

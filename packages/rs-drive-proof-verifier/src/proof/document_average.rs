@@ -29,6 +29,64 @@ use dpp::version::PlatformVersion;
 use drive::query::drive_document_average_query::AverageEntry;
 use drive::query::drive_document_sum_query::DriveDocumentSumQuery;
 
+/// Verify a grovedb point-lookup proof against a count-sum-bearing
+/// index terminator and return per-branch `(count, sum)` entries.
+/// AVG analog of [`super::document_sum::verify_point_lookup_sum_proof`].
+///
+/// Thin tenderdash-composition wrapper over
+/// [`DriveDocumentSumQuery::verify_point_lookup_count_and_sum_proof`].
+/// Used by the prove path's `Aggregate` + Equal/In + no range
+/// shape when the chosen index declares BOTH `summable: "<prop>"`
+/// AND a `countable` terminator.
+pub fn verify_point_lookup_count_and_sum_proof(
+    query: &DriveDocumentSumQuery,
+    proof: &Proof,
+    mtd: &ResponseMetadata,
+    platform_version: &PlatformVersion,
+    provider: &dyn ContextProvider,
+) -> Result<Vec<AverageEntry>, Error> {
+    let (root_hash, entries) = query
+        .verify_point_lookup_count_and_sum_proof(&proof.grovedb_proof, platform_version)
+        .map_drive_error(proof, mtd)?;
+
+    verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+    Ok(entries)
+}
+
+/// Verify a per-distinct-key range-AVG proof against an index that
+/// declares BOTH `rangeCountable: true` AND `rangeSummable: true`
+/// (a `rangeAverageable: true` index) and return per-`(in_key,
+/// key)` `(count, sum)` entries. AVG analog of
+/// [`super::document_sum::verify_distinct_sum_proof`].
+///
+/// Thin tenderdash-composition wrapper over
+/// [`DriveDocumentSumQuery::verify_distinct_count_and_sum_proof`].
+/// Used by the prove path's `GroupByRange` / `GroupByCompound` +
+/// range shape on the AVG surface.
+pub fn verify_distinct_count_and_sum_proof(
+    query: &DriveDocumentSumQuery,
+    proof: &Proof,
+    mtd: &ResponseMetadata,
+    limit: u16,
+    left_to_right: bool,
+    platform_version: &PlatformVersion,
+    provider: &dyn ContextProvider,
+) -> Result<Vec<AverageEntry>, Error> {
+    let (root_hash, entries) = query
+        .verify_distinct_count_and_sum_proof(
+            &proof.grovedb_proof,
+            limit,
+            left_to_right,
+            platform_version,
+        )
+        .map_drive_error(proof, mtd)?;
+
+    verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+    Ok(entries)
+}
+
 /// The `(count, sum)` pair across documents matching a query,
 /// verified from proof. Client computes `avg = sum / count` using
 /// whichever precision representation it wants.

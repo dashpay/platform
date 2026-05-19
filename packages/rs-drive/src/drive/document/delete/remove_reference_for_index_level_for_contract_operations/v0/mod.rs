@@ -95,19 +95,17 @@ impl Drive {
                 };
             let _ = (want_count, want_sum); // narrative parity with the dispatch table.
 
-            // TODO(sum-feature): on delete, the existing reference at
-            // `[..., 0, doc_id]` is an `Element::ItemWithSumItem(doc_id,
-            // amount_i64, flags)` when `want_sum`. Drive must NOT
-            // re-read the source document for the contribution
-            // (the document field's value may have drifted or the
-            // document itself may not be deserializable at delete
-            // time); instead the contribution is read from the
-            // reference element and subtracted from every ancestor
-            // sum tree via grovedb's normal delete propagation. The
-            // existing delete dispatcher does this implicitly via
-            // the reference's stored `i64` — no additional Drive
-            // work is required for sum decrement, only the insert
-            // path needs to write `ItemWithSumItem` correctly.
+            // Delete-side sum-decrement is implicit: when `want_sum`,
+            // the existing reference at `[..., 0, doc_id]` is an
+            // `Element::ItemWithSumItem(doc_id, amount_i64, flags)`
+            // (written by the insert path). The contribution is
+            // recovered from the reference element itself — Drive
+            // never re-reads the source document at delete time
+            // (the field's value may have drifted or the document
+            // may not be deserializable anymore). grovedb's normal
+            // delete propagation subtracts that `i64` from every
+            // ancestor sum tree, so no sum-specific delete logic is
+            // needed here.
 
             if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
             {

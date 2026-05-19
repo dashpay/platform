@@ -208,7 +208,7 @@ impl Drive {
                 sub_level,
                 any_fields_null,
                 all_fields_null,
-                sub_level_range_countable,
+                value_tree_type,
                 &storage_flags,
                 previous_batch_operations,
                 estimated_costs_only_with_layer_info,

@@ -12,7 +12,7 @@ use dpp::data_contract::document_type::IndexLevel;
 
 use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
-use grovedb::{EstimatedLayerInformation, TransactionArg};
+use grovedb::{EstimatedLayerInformation, TransactionArg, TreeType};
 use std::collections::HashMap;
 
 impl Drive {
@@ -23,20 +23,16 @@ impl Drive {
     /// * `index_path_info`: The index path info.
     /// * `index_level`: The index level.
     /// * `any_fields_null`: Indicator if any fields are null.
-    /// * `parent_value_tree_is_range_countable`: Mirror of the insert
-    ///   walker. Originally signaled "value tree is a CountTree (was
-    ///   inserted by a range_countable terminator)." v3 extended the
-    ///   insert-side dispatch to also produce SumTree /
-    ///   ProvableSumTree / CountSumTree / ProvableCountSumTree
-    ///   variants, but this single-bool input doesn't carry that
-    ///   information. Cost estimation for sum-bearing layers may
-    ///   under-charge by a few bytes per affected node as a result.
-    ///   See the matching docstring on
-    ///   `remove_indices_for_index_level_for_contract_operations_v1`
-    ///   for the full deferred-fix note (replacing the bool with a
-    ///   `TreeType` is a focused follow-up; the actual delete
-    ///   operations remain correct because the per-element delete
-    ///   path composes all four count+sum flags).
+    /// * `parent_value_tree_type`: Exact `TreeType` of the value tree
+    ///   at `index_path_info`. Lets v1's cost-estimation arm emit
+    ///   correct `EstimatedLayerInformation` for sum-bearing
+    ///   parents (`SumTree` / `ProvableSumTree` / `CountSumTree` /
+    ///   `ProvableCountSumTree` / `ProvableCountProvableSumTree`) —
+    ///   the previous single-bool input collapsed all those to
+    ///   `NormalTree`, under-charging dry-run delete fees. v0 only
+    ///   ever sees `CountTree` / `NormalTree` (pre-v3 contracts),
+    ///   so the dispatcher narrows the TreeType to a bool via
+    ///   `matches!(_, TreeType::CountTree)` before calling v0.
     /// * `storage_flags`: The storage flags.
     /// * `previous_batch_operations`: Previous batch operations to include.
     /// * `estimated_costs_only_with_layer_info`: Estimated costs with layer info.
@@ -56,7 +52,7 @@ impl Drive {
         index_level: &IndexLevel,
         any_fields_null: bool,
         all_fields_null: bool,
-        parent_value_tree_is_range_countable: bool,
+        parent_value_tree_type: TreeType,
         storage_flags: &Option<&StorageFlags>,
         previous_batch_operations: &Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
@@ -74,28 +70,35 @@ impl Drive {
             .delete
             .remove_indices_for_index_level_for_contract_operations
         {
-            0 => self.remove_indices_for_index_level_for_contract_operations_v0(
-                document_and_contract_info,
-                index_path_info,
-                index_level,
-                any_fields_null,
-                all_fields_null,
-                parent_value_tree_is_range_countable,
-                storage_flags,
-                previous_batch_operations,
-                estimated_costs_only_with_layer_info,
-                event_id,
-                transaction,
-                batch_operations,
-                platform_version,
-            ),
+            0 => {
+                // v0 is stuck in time and only ever sees pre-v3
+                // contracts whose value trees collapse to
+                // `NormalTree` / `CountTree`. Narrow to bool here.
+                let parent_value_tree_is_range_countable =
+                    matches!(parent_value_tree_type, TreeType::CountTree);
+                self.remove_indices_for_index_level_for_contract_operations_v0(
+                    document_and_contract_info,
+                    index_path_info,
+                    index_level,
+                    any_fields_null,
+                    all_fields_null,
+                    parent_value_tree_is_range_countable,
+                    storage_flags,
+                    previous_batch_operations,
+                    estimated_costs_only_with_layer_info,
+                    event_id,
+                    transaction,
+                    batch_operations,
+                    platform_version,
+                )
+            }
             1 => self.remove_indices_for_index_level_for_contract_operations_v1(
                 document_and_contract_info,
                 index_path_info,
                 index_level,
                 any_fields_null,
                 all_fields_null,
-                parent_value_tree_is_range_countable,
+                parent_value_tree_type,
                 storage_flags,
                 previous_batch_operations,
                 estimated_costs_only_with_layer_info,

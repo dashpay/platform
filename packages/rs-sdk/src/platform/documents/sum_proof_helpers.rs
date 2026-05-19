@@ -25,8 +25,8 @@ use drive::query::drive_document_sum_query::index_picker::{
 use drive::query::drive_document_sum_query::{is_range_operator, DriveDocumentSumQuery};
 use drive::query::{SelectFunction, WhereOperator};
 use drive_proof_verifier::{
-    verify_aggregate_sum_proof, verify_carrier_aggregate_sum_proof, verify_point_lookup_sum_proof,
-    verify_primary_key_sum_tree_proof, SumEntry,
+    verify_aggregate_sum_proof, verify_carrier_aggregate_sum_proof, verify_distinct_sum_proof,
+    verify_point_lookup_sum_proof, verify_primary_key_sum_tree_proof, SumEntry,
 };
 
 /// Validate that the caller-built [`DocumentQuery`] targets the
@@ -53,20 +53,18 @@ pub(super) fn assert_select_is_sum(
 /// Verify a SUM-shape proof and return per-branch `SumEntry`s.
 ///
 /// Mirrors the server-side `detect_sum_mode` routing in
-/// [`drive::query::drive_document_sum_query::drive_dispatcher`].
+/// [`drive::query::drive_document_sum_query::mode_detection`].
 /// Supported prove shapes:
 /// - **Empty where + matching `documentsSummable` doctype** →
 ///   primary-key SumTree direct read.
+/// - **`GroupByRange` / `GroupByCompound` + range, `rangeSummable`
+///   index** → per-distinct-key SUM proof (one entry per distinct
+///   in-range value, or per `(in_key, key)` for compound).
 /// - **Range, no `In`, summable index** → aggregate-sum proof.
 /// - **Equal/`In`, no range, summable index** → point-lookup
 ///   sum proof (one entry per resolved key).
 /// - **`In` + range, `rangeSummable` index** → carrier-aggregate
 ///   sum proof (one aggregate per In branch).
-///
-/// Other shapes (range-distinct on a `rangeSummable` index) are
-/// rejected as `RequestError` until the server-side
-/// `distinct_sum_path_query` is unstubbed and a matching
-/// verifier is added.
 pub(super) fn verify_sum_query(
     request: DocumentQuery,
     response: GetDocumentsResponse,
@@ -124,10 +122,11 @@ pub(super) fn verify_sum_query(
         .iter()
         .any(|wc| wc.operator == WhereOperator::In);
 
-    // Range SUM: aggregate (no In) or carrier (In on prefix +
-    // range on terminator). Both need a `rangeSummable: true`
-    // index; carrier additionally needs the In to land on a
-    // prefix property of that index.
+    // Range SUM: three flavors — distinct (per-key sums via
+    // `GroupByRange` / `GroupByCompound`), aggregate (single sum
+    // via `Aggregate` group_by=[]), or carrier (per-In aggregate
+    // via `GroupByIn` + In on prefix + range on terminator). All
+    // need a `rangeSummable: true` index.
     if has_range {
         let index = find_range_summable_index_for_where_clauses(
             document_type.indexes(),
@@ -148,6 +147,48 @@ pub(super) fn verify_sum_query(
             where_clauses: request.where_clauses.clone(),
             sum_property,
         };
+
+        // Distinct mode: GROUP BY on a range field (or compound
+        // (In, range)) — emits one entry per distinct in-range
+        // value (or per `(in_key, key)` for compound). Server
+        // routes via `execute_distinct_sum_with_proof`; verifier
+        // walks the proved terminator SumTree elements.
+        let group_by_first = request.group_by.first().map(String::as_str);
+        let distinct_mode = matches!(
+            group_by_first,
+            Some(field) if !is_in_field(&request.where_clauses, field)
+        );
+
+        if distinct_mode {
+            // Same limit-clamp pattern as the carrier arm below.
+            let limit_u16 = if request.limit == 0 {
+                drive::config::DEFAULT_QUERY_LIMIT
+            } else {
+                u16::try_from(request.limit).map_err(|_| {
+                    drive_proof_verifier::Error::RequestError {
+                        error: format!(
+                            "limit {} exceeds u16::MAX for distinct SUM proof",
+                            request.limit
+                        ),
+                    }
+                })?
+            };
+            let left_to_right = request
+                .order_by_clauses
+                .first()
+                .map(|c| c.ascending)
+                .unwrap_or(true);
+            let entries = verify_distinct_sum_proof(
+                &sum_query,
+                proof,
+                mtd,
+                limit_u16,
+                left_to_right,
+                platform_version,
+                provider,
+            )?;
+            return Ok((Some(entries), mtd.clone(), proof.clone()));
+        }
 
         if !has_in {
             let sum =
@@ -223,4 +264,14 @@ fn single_empty_key_entry(sum: i64) -> Vec<SumEntry> {
         key: Vec::new(),
         sum: Some(sum),
     }]
+}
+
+/// Whether the request's where clauses contain an `In` clause on
+/// the named field. Used to discriminate `GroupByIn` (In + range
+/// carrier) from `GroupByRange` (range-only distinct) when the
+/// SQL-shape `group_by` is non-empty.
+fn is_in_field(where_clauses: &[drive::query::WhereClause], field: &str) -> bool {
+    where_clauses
+        .iter()
+        .any(|wc| wc.operator == WhereOperator::In && wc.field == field)
 }
