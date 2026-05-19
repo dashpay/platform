@@ -84,6 +84,49 @@ impl PlatformAddressWallet {
     ///   this value on consensus-10506 to bypass Tenderdash's
     ///   invalid-tx hash cache; the caller's initial value is the
     ///   starting point.
+    ///
+    /// # Latency budget
+    ///
+    /// Worst-case wall time stacks at ~690s on the IS-rejection
+    /// branch:
+    /// - 300s IS-wait inside the resolver's
+    ///   `create_funded_asset_lock_proof` (`AssetLockManager`'s
+    ///   fixed window before falling back to ChainLock).
+    /// - 180s CL fallback (`CL_FALLBACK_TIMEOUT`) per `upgrade_to_chain_lock_proof` call.
+    /// - 210s CL-height retry budget (`CL_HEIGHT_RETRY_BUDGET`) per
+    ///   `submit_with_cl_height_retry` wrapper.
+    /// - Up to two passes through the submit wrapper on the
+    ///   IS-rejection path: one for the IS proof, one for the
+    ///   upgraded CL proof.
+    ///
+    /// Happy-path wall time on a healthy testnet is single-digit
+    /// seconds (IS-lock typically arrives within 3s of broadcast,
+    /// CL-height retry never fires).
+    ///
+    /// # Cancellation
+    ///
+    /// This function is NOT cancellation-safe. The two underlying
+    /// retry loops (`submit_with_cl_height_retry` and the
+    /// resolver's internal `wait_for_proof`) use
+    /// `tokio::time::sleep` / `tokio::sync::Notify` without
+    /// structured cancellation hooks. If the caller drops the
+    /// returned future:
+    /// - Any bumped `user_fee_increase` is lost; the next attempt
+    ///   starts from the caller-supplied value, which may hit
+    ///   Tenderdash's invalid-tx cache for the bumped variants.
+    /// - In-flight submitted state transitions remain in
+    ///   Tenderdash's mempool until they commit or expire.
+    /// - The tracked asset lock stays at its last-observed status
+    ///   (`Broadcast` / `InstantSendLocked` / `ChainLocked`) until
+    ///   either `consume_asset_lock` completes or the next resume
+    ///   advances it.
+    ///
+    /// The Swift `AddressFundingController.task` field deliberately
+    /// does not call `.cancel()` to avoid these partial-state
+    /// outcomes — the FFI call always runs to completion. UI
+    /// dismissal hides the progress view without aborting the
+    /// work; resume picks the lock back up via
+    /// `FromExistingAssetLock`.
     #[allow(clippy::too_many_arguments)]
     pub async fn fund_addresses_with_funding<S, AS>(
         &self,
@@ -226,16 +269,41 @@ impl PlatformAddressWallet {
             .await;
 
         if let Some(out_point) = tracked_out_point {
-            // Cleanup failure can only mean WalletNotFound (the wallet
-            // handle that just funded the addresses vanished). Surface
-            // as a warn — Platform DID accept the top-up, so
-            // propagating the error to the caller would be misleading.
+            // Platform DID accept the top-up — propagating an Err
+            // here would misreport the protocol outcome, since the
+            // caller's recipient(s) already have credits attested
+            // by the proof we just decoded. But: the lock row stays
+            // in non-Consumed status, which means it will surface
+            // in the Resumable Funding list and the user could try
+            // to fund it again — Platform would deterministically
+            // reject the duplicate ST with "lock already consumed".
+            //
+            // The expected failure mode is `WalletNotFound` (the
+            // wallet handle vanished between submit-success and
+            // this cleanup). Log that as a warn — the user-visible
+            // recovery path (Resume + Platform's deterministic
+            // rejection) is benign. Anything else is an unexpected
+            // invariant violation — log as `error` so it shows up
+            // in operational dashboards.
             if let Err(e) = self.asset_locks.consume_asset_lock(&out_point).await {
-                tracing::warn!(
-                    outpoint = %out_point,
-                    error = %e,
-                    "consume_asset_lock failed after successful Platform submit"
-                );
+                match &e {
+                    PlatformWalletError::WalletNotFound(_) => {
+                        tracing::warn!(
+                            outpoint = %out_point,
+                            error = %e,
+                            "consume_asset_lock: wallet handle vanished after successful Platform submit"
+                        );
+                    }
+                    _ => {
+                        tracing::error!(
+                            outpoint = %out_point,
+                            error = %e,
+                            "consume_asset_lock failed unexpectedly after successful Platform submit; \
+                             the lock row stays non-Consumed and will surface as Resumable. \
+                             A user Resume on it will be rejected by Platform with 'lock already consumed'."
+                        );
+                    }
+                }
             }
         }
 

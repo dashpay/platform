@@ -205,6 +205,25 @@ pub(crate) enum FundingResolution {
 /// identical-bytes resubmit would be silently dropped before reaching
 /// Platform's CheckTx.
 ///
+/// **Retry scope.** This wrapper retries ONLY consensus code 10506
+/// (CL-height-too-low). Every other `dash_sdk::Error` — including
+/// transient gRPC `UNAVAILABLE`, DAPI 502/503, RST_STREAM, TLS
+/// resets, DNS hiccups, mempool-full bounces — falls through
+/// immediately on the first attempt. The rationale: the DAPI client
+/// layer (`rs-dapi-client`) below the SDK already implements its own
+/// per-request retry + endpoint rotation for transport-level
+/// failures, so a second layer of generic retries here would
+/// over-retry (or worse, retry an ST submission that the lower
+/// layer already retried, against a different validator, leaving
+/// two in-flight copies). 10506 is uniquely retried at THIS layer
+/// because the fix requires a different `user_fee_increase` value —
+/// the lower layer can't know that.
+///
+/// If the underlying SDK starts surfacing a transient error class
+/// that the DAPI client doesn't already retry, widen this match
+/// rather than wrapping `submit_with_cl_height_retry` in a second
+/// generic-retry loop at the caller.
+///
 /// We don't pre-flight Platform's chain-lock tip — that's an unproven
 /// self-report and a malicious DAPI node could stall us indefinitely.
 /// Submit optimistically and react to Platform's deterministic CheckTx
