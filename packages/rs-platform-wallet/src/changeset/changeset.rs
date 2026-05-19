@@ -23,6 +23,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use dashcore::blockdata::transaction::{OutPoint, Transaction};
+use dashcore::ephemerealdata::chain_lock::ChainLock;
 use dashcore::ephemerealdata::instant_lock::InstantLock;
 use dashcore::Txid;
 
@@ -145,6 +146,19 @@ pub struct CoreChangeSet {
     /// here has no functional cost.
     #[cfg_attr(feature = "serde", serde(skip))]
     pub addresses_derived: Vec<key_wallet_manager::DerivedAddress>,
+
+    /// Highest chainlock the wallet has applied (mirrors
+    /// `WalletMetadata::last_applied_chain_lock`). Populated by the
+    /// `ChainLockProcessed` bridge arm so the persister can
+    /// roundtrip this field across app restarts — without persisting
+    /// it, `metadata.last_applied_chain_lock` starts as `None` on
+    /// every load and the asset-lock-resume metadata fallback
+    /// (`proof.rs`) can't fire until SPV re-applies a fresh CL.
+    ///
+    /// Monotonic-max on merge by `block_height` (a chainlock at a
+    /// lower height never overwrites a higher one — chain locks are
+    /// strictly forward-advancing per upstream's contract).
+    pub last_applied_chain_lock: Option<ChainLock>,
 }
 
 impl Merge for CoreChangeSet {
@@ -187,6 +201,20 @@ impl Merge for CoreChangeSet {
         // append only entries we haven't seen yet — preserves arrival
         // order so the persister's writes line up with the same
         // derivation order the wallet's pool sees.
+        // Chain-lock watermark: monotonic-max by `block_height`. A
+        // later changeset's chain lock at a higher (or equal) height
+        // wins; anything lower is ignored. `None` means "no update
+        // in this batch", same convention as `synced_height`.
+        if let Some(other_cl) = other.last_applied_chain_lock {
+            let take = self
+                .last_applied_chain_lock
+                .as_ref()
+                .is_none_or(|existing| other_cl.block_height >= existing.block_height);
+            if take {
+                self.last_applied_chain_lock = Some(other_cl);
+            }
+        }
+
         if !other.addresses_derived.is_empty() {
             let mut seen: std::collections::HashSet<(
                 key_wallet::account::AccountType,
@@ -214,6 +242,7 @@ impl Merge for CoreChangeSet {
             && self.last_processed_height.is_none()
             && self.synced_height.is_none()
             && self.addresses_derived.is_empty()
+            && self.last_applied_chain_lock.is_none()
     }
 }
 

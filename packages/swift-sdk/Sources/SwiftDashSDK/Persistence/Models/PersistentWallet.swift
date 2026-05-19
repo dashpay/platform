@@ -55,6 +55,16 @@ public final class PersistentWallet {
     public var syncedHeight: UInt32
     /// Timestamp of last sync (Unix seconds).
     public var lastSynced: UInt64
+    /// Bincode-serialised
+    /// `dashcore::ephemerealdata::chain_lock::ChainLock` carrying the
+    /// wallet's `WalletMetadata::last_applied_chain_lock` from the
+    /// previous session. Roundtripped across app launches so the
+    /// asset-lock-resume CL-from-metadata fallback in Rust's
+    /// `proof.rs` can fire on catch-up at launch without waiting
+    /// for SPV to re-apply a fresh ChainLock. `nil` when no
+    /// ChainLock has ever been observed for this wallet (fresh
+    /// wallet, or pre-feature row).
+    public var lastAppliedChainLockBytes: Data?
     /// User imported this wallet from an existing mnemonic (as
     /// opposed to generating a fresh one). Cosmetic flag that
     /// drives the "📥 Imported" badge; defaulted to `false` for
