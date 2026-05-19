@@ -35,7 +35,7 @@ pub mod drive_dispatcher;
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod index_picker;
 
-#[cfg(feature = "server")]
+#[cfg(any(feature = "server", feature = "verify"))]
 pub mod mode_detection;
 
 #[cfg(any(feature = "server", feature = "verify"))]

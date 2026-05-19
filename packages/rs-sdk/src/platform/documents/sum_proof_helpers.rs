@@ -7,6 +7,15 @@
 //! the entries into a single `i64`, [`DocumentSplitSums`] passes
 //! them through.
 //!
+//! Routing is driven by drive's resolved [`DocumentSumMode`] (via
+//! [`detect_sum_mode_from_inputs`]) rather than ad-hoc clause-shape
+//! heuristics — same approach as count. Without that, `group_by =
+//! [in_field]` with a co-present range clause could be silently
+//! answered with an aggregate-shape proof while the server emitted
+//! a carrier-shape proof, producing verification failures (or worse,
+//! silently-accepted mismatches if the byte shapes happened to
+//! overlap).
+//!
 //! [`DocumentSum`]: drive_proof_verifier::DocumentSum
 //! [`DocumentSplitSums`]: drive_proof_verifier::DocumentSplitSums
 
@@ -22,7 +31,8 @@ use dpp::{
 use drive::query::drive_document_sum_query::index_picker::{
     find_range_summable_index_for_where_clauses, find_summable_index_for_where_clauses,
 };
-use drive::query::drive_document_sum_query::{is_range_operator, DriveDocumentSumQuery};
+use drive::query::drive_document_sum_query::mode_detection::detect_sum_mode_from_inputs;
+use drive::query::drive_document_sum_query::{DocumentSumMode, DriveDocumentSumQuery, SumMode};
 use drive::query::{SelectFunction, WhereOperator};
 use drive_proof_verifier::{
     verify_aggregate_sum_proof, verify_carrier_aggregate_sum_proof, verify_distinct_sum_proof,
@@ -52,19 +62,32 @@ pub(super) fn assert_select_is_sum(
 
 /// Verify a SUM-shape proof and return per-branch `SumEntry`s.
 ///
-/// Mirrors the server-side `detect_sum_mode` routing in
-/// [`drive::query::drive_document_sum_query::mode_detection`].
-/// Supported prove shapes:
-/// - **Empty where + matching `documentsSummable` doctype** →
-///   primary-key SumTree direct read.
-/// - **`GroupByRange` / `GroupByCompound` + range, `rangeSummable`
-///   index** → per-distinct-key SUM proof (one entry per distinct
-///   in-range value, or per `(in_key, key)` for compound).
-/// - **Range, no `In`, summable index** → aggregate-sum proof.
-/// - **Equal/`In`, no range, summable index** → point-lookup
-///   sum proof (one entry per resolved key).
-/// - **`In` + range, `rangeSummable` index** → carrier-aggregate
-///   sum proof (one aggregate per In branch).
+/// Picks the verifier primitive by **drive's resolved
+/// [`DocumentSumMode`]** rather than a clause-shape heuristic, so
+/// the SDK's routing matches the server's exactly. Mirrors count's
+/// [`super::count_proof_helpers::verify_count_query`] approach.
+///
+/// **Routing**: build a [`SumMode`] from `(group_by,
+/// where_clauses)` matching the abci handler's `validate_and_route`
+/// logic, then call [`detect_sum_mode_from_inputs`] with
+/// `prove = true` to get the resolved [`DocumentSumMode`]. Branch
+/// by the resolved mode:
+///
+/// - [`DocumentSumMode::PointLookupProof`] (no range, with or
+///   without `In`) → [`verify_point_lookup_sum_proof`].
+///   Special-case: doctype-level `documentsSummable` + empty where
+///   → [`verify_primary_key_sum_tree_proof`].
+/// - [`DocumentSumMode::RangeProof`] (range, no In, no distinct) →
+///   [`verify_aggregate_sum_proof`] → single empty-key entry.
+/// - [`DocumentSumMode::RangeDistinctProof`] (range + distinct walk
+///   via `GroupByRange` / `GroupByCompound`) →
+///   [`verify_distinct_sum_proof`].
+/// - [`DocumentSumMode::RangeAggregateCarrierProof`] (`In + range +
+///   group_by = [in_field]` on the prove path) →
+///   [`verify_carrier_aggregate_sum_proof`].
+/// - `Total` / `PerInValue` / `RangeNoProof` are no-proof modes
+///   that should be unreachable here (`prove = true`); reject as
+///   `RequestError` if they bubble through.
 pub(super) fn verify_sum_query(
     request: DocumentQuery,
     response: GetDocumentsResponse,
@@ -89,10 +112,29 @@ pub(super) fn verify_sum_query(
     let contract_id = request.data_contract.id().to_buffer();
     let sum_property = request.select.field.clone();
 
+    // Resolve the SQL-shape `SumMode` the request implies. Same
+    // decision tree as `validate_and_route` in the abci handler —
+    // single source of truth would be nicer but the SDK can't
+    // depend on rs-drive-abci.
+    let sum_mode = resolve_sum_mode(&request.group_by, &request.where_clauses)?;
+
+    // Translate the SQL-shape mode + where-clause shape into the
+    // resolved `DocumentSumMode` the prover dispatched on. Driver-
+    // side detect_sum_mode_from_inputs is the single source of
+    // truth — the SDK calling it directly keeps the verifier in
+    // sync with whatever new prove-mode lands next.
+    let resolved_mode =
+        detect_sum_mode_from_inputs(&request.where_clauses, sum_mode, true, platform_version)
+            .map_err(|e| drive_proof_verifier::Error::RequestError {
+                error: format!("sum-mode detection failed: {e}"),
+            })?;
+
     // Empty-where SUM fast path: primary-key SumTree element direct
-    // read. Mirror of the server-side fast path in
-    // `execute_document_sum_point_lookup_proof`.
-    if request.where_clauses.is_empty()
+    // read. Lives outside `detect_sum_mode`'s output because the
+    // contract-level `documents_summable` flag isn't part of mode
+    // detection; pre-empt before falling through to PointLookupProof.
+    if matches!(resolved_mode, DocumentSumMode::PointLookupProof)
+        && request.where_clauses.is_empty()
         && document_type
             .documents_summable()
             .map(|p| p == sum_property)
@@ -113,22 +155,19 @@ pub(super) fn verify_sum_query(
         ));
     }
 
-    let has_range = request
-        .where_clauses
-        .iter()
-        .any(|wc| is_range_operator(wc.operator));
-    let has_in = request
-        .where_clauses
-        .iter()
-        .any(|wc| wc.operator == WhereOperator::In);
-
-    // Range SUM: three flavors — distinct (per-key sums via
-    // `GroupByRange` / `GroupByCompound`), aggregate (single sum
-    // via `Aggregate` group_by=[]), or carrier (per-In aggregate
-    // via `GroupByIn` + In on prefix + range on terminator). All
-    // need a `rangeSummable: true` index.
-    if has_range {
-        let index = find_range_summable_index_for_where_clauses(
+    // Pick the index the prover would have picked. Range modes
+    // need a `range_summable: true` index; everything else uses
+    // the regular `summable: "<prop>"` resolver. Mismatch here
+    // would produce a path-query different from the prover's, so
+    // the index lookup matches drive's dispatch.
+    let needs_range_index = matches!(
+        resolved_mode,
+        DocumentSumMode::RangeProof
+            | DocumentSumMode::RangeDistinctProof
+            | DocumentSumMode::RangeAggregateCarrierProof
+    );
+    let index = if needs_range_index {
+        find_range_summable_index_for_where_clauses(
             document_type.indexes(),
             &request.where_clauses,
             &sum_property,
@@ -138,29 +177,47 @@ pub(super) fn verify_sum_query(
                     property matches the range field and whose summable property \
                     matches the request's select `field`"
                 .to_string(),
-        })?;
-        let sum_query = DriveDocumentSumQuery {
-            document_type,
-            contract_id,
-            document_type_name: request.document_type_name.clone(),
-            index,
-            where_clauses: request.where_clauses.clone(),
-            sum_property,
-        };
+        })?
+    } else {
+        find_summable_index_for_where_clauses(
+            document_type.indexes(),
+            &request.where_clauses,
+            &sum_property,
+        )
+        .ok_or_else(|| drive_proof_verifier::Error::RequestError {
+            error: "prove SUM requires a `summable: \"<prop>\"` index whose properties \
+                    exactly match the where clause fields and whose summed property \
+                    matches the request's select `field`, or `documentsSummable: \
+                    \"<prop>\"` on the document type for unfiltered total sums"
+                .to_string(),
+        })?
+    };
+    let sum_query = DriveDocumentSumQuery {
+        document_type,
+        contract_id,
+        document_type_name: request.document_type_name.clone(),
+        index,
+        where_clauses: request.where_clauses.clone(),
+        sum_property,
+    };
 
-        // Distinct mode: GROUP BY on a range field (or compound
-        // (In, range)) — emits one entry per distinct in-range
-        // value (or per `(in_key, key)` for compound). Server
-        // routes via `execute_distinct_sum_with_proof`; verifier
-        // walks the proved terminator SumTree elements.
-        let group_by_first = request.group_by.first().map(String::as_str);
-        let distinct_mode = matches!(
-            group_by_first,
-            Some(field) if !is_in_field(&request.where_clauses, field)
-        );
-
-        if distinct_mode {
-            // Same limit-clamp pattern as the carrier arm below.
+    match resolved_mode {
+        DocumentSumMode::PointLookupProof => {
+            let entries =
+                verify_point_lookup_sum_proof(&sum_query, proof, mtd, platform_version, provider)?;
+            Ok((Some(entries), mtd.clone(), proof.clone()))
+        }
+        DocumentSumMode::RangeProof => {
+            let sum =
+                verify_aggregate_sum_proof(&sum_query, proof, mtd, platform_version, provider)?;
+            Ok((
+                Some(single_empty_key_entry(sum)),
+                mtd.clone(),
+                proof.clone(),
+            ))
+        }
+        DocumentSumMode::RangeDistinctProof => {
+            // Same limit-clamp pattern as the carrier arm.
             let limit_u16 = if request.limit == 0 {
                 drive::config::DEFAULT_QUERY_LIMIT
             } else {
@@ -187,18 +244,9 @@ pub(super) fn verify_sum_query(
                 platform_version,
                 provider,
             )?;
-            return Ok((Some(entries), mtd.clone(), proof.clone()));
+            Ok((Some(entries), mtd.clone(), proof.clone()))
         }
-
-        if !has_in {
-            let sum =
-                verify_aggregate_sum_proof(&sum_query, proof, mtd, platform_version, provider)?;
-            return Ok((
-                Some(single_empty_key_entry(sum)),
-                mtd.clone(),
-                proof.clone(),
-            ));
-        } else {
+        DocumentSumMode::RangeAggregateCarrierProof => {
             let limit_u16 = if request.limit == 0 {
                 None
             } else {
@@ -225,34 +273,80 @@ pub(super) fn verify_sum_query(
                 platform_version,
                 provider,
             )?;
-            return Ok((Some(entries), mtd.clone(), proof.clone()));
+            Ok((Some(entries), mtd.clone(), proof.clone()))
+        }
+        // `Total` / `PerInValue` / `RangeNoProof` are no-proof modes
+        // that detect_sum_mode_from_inputs returns only for
+        // `prove = false`. We pass `prove = true`, so reaching here
+        // would indicate a drive routing-table bug rather than a
+        // user error — surface it clearly.
+        DocumentSumMode::Total | DocumentSumMode::PerInValue | DocumentSumMode::RangeNoProof => {
+            Err(drive_proof_verifier::Error::RequestError {
+                error: format!(
+                "internal: detect_sum_mode_from_inputs returned no-proof mode {resolved_mode:?} \
+                 for prove=true — the routing table is internally inconsistent. \
+                 Please report this as a drive bug."
+            ),
+            })
         }
     }
+}
 
-    // Point-lookup SUM (Equal-only or In on terminator).
-    let index = find_summable_index_for_where_clauses(
-        document_type.indexes(),
-        &request.where_clauses,
-        &sum_property,
-    )
-    .ok_or_else(|| drive_proof_verifier::Error::RequestError {
-        error: "prove SUM requires a `summable: \"<prop>\"` index whose properties \
-                exactly match the where clause fields and whose summed property \
-                matches the request's select `field`, or `documentsSummable: \
-                \"<prop>\"` on the document type for unfiltered total sums"
-            .to_string(),
-    })?;
-    let sum_query = DriveDocumentSumQuery {
-        document_type,
-        contract_id,
-        document_type_name: request.document_type_name.clone(),
-        index,
-        where_clauses: request.where_clauses.clone(),
-        sum_property,
+/// Build the SQL-shape [`SumMode`] from `(group_by, where_clauses)`.
+/// Mirrors [`super::count_proof_helpers::resolve_count_mode`] —
+/// same SQL surface, same routing decision shape (`SumMode` is
+/// structurally identical to `CountMode`). Keeping the two
+/// resolvers in lock-step means a future SQL extension only has
+/// to land once in count + once in sum.
+fn resolve_sum_mode(
+    group_by: &[String],
+    where_clauses: &[drive::query::WhereClause],
+) -> Result<SumMode, drive_proof_verifier::Error> {
+    let is_in_field = |field: &str| {
+        where_clauses
+            .iter()
+            .any(|wc| wc.operator == WhereOperator::In && wc.field == field)
     };
-    let entries =
-        verify_point_lookup_sum_proof(&sum_query, proof, mtd, platform_version, provider)?;
-    Ok((Some(entries), mtd.clone(), proof.clone()))
+    let is_range_field = |field: &str| {
+        where_clauses.iter().any(|wc| {
+            drive::query::drive_document_sum_query::is_range_operator(wc.operator)
+                && wc.field == field
+        })
+    };
+    let unsupported = |feature: String| drive_proof_verifier::Error::RequestError {
+        error: format!("{feature} (see issue #3655 for the v1 wire surface follow-ups)"),
+    };
+    match group_by {
+        [] => Ok(SumMode::Aggregate),
+        [field] => {
+            if is_in_field(field) {
+                Ok(SumMode::GroupByIn)
+            } else if is_range_field(field) {
+                Ok(SumMode::GroupByRange)
+            } else {
+                Err(drive_proof_verifier::Error::RequestError {
+                    error: format!(
+                        "GROUP BY on field '{field}' which is not constrained by an `In` \
+                         or range where clause is not yet implemented (see issue #3655)"
+                    ),
+                })
+            }
+        }
+        [first, second] => {
+            if is_in_field(first) && is_range_field(second) {
+                Ok(SumMode::GroupByCompound)
+            } else {
+                Err(unsupported(
+                    "two-field GROUP BY outside the `(In, range)` compound shape \
+                     is not yet implemented"
+                        .to_string(),
+                ))
+            }
+        }
+        _ => Err(unsupported(
+            "GROUP BY with more than two fields is not yet implemented".to_string(),
+        )),
+    }
 }
 
 /// Wrap a single `i64` from an aggregate primitive (range-aggregate
@@ -264,14 +358,4 @@ fn single_empty_key_entry(sum: i64) -> Vec<SumEntry> {
         key: Vec::new(),
         sum: Some(sum),
     }]
-}
-
-/// Whether the request's where clauses contain an `In` clause on
-/// the named field. Used to discriminate `GroupByIn` (In + range
-/// carrier) from `GroupByRange` (range-only distinct) when the
-/// SQL-shape `group_by` is non-empty.
-fn is_in_field(where_clauses: &[drive::query::WhereClause], field: &str) -> bool {
-    where_clauses
-        .iter()
-        .any(|wc| wc.operator == WhereOperator::In && wc.field == field)
 }
