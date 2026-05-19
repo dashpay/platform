@@ -22,10 +22,13 @@ use dpp::system_data_contracts::dpns_contract;
 use dpp::system_data_contracts::dpns_contract::v1::document_types::domain::properties::{ALLOW_SUBDOMAINS,
                                                                                      DASH_ALIAS_IDENTITY_ID, DASH_UNIQUE_IDENTITY_ID, LABEL, NORMALIZED_LABEL, NORMALIZED_PARENT_DOMAIN_NAME, PREORDER_SALT, RECORDS};
 use dpp::util::strings::convert_to_homograph_safe_chars;
+use dpp::block::epoch::Epoch;
+use dpp::fee::fee_result::FeeResult;
 use dpp::version::PlatformVersion;
 use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use drive::query::{DriveDocumentQuery, InternalClauses, WhereClause, WhereOperator};
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContextMethodsV0;
+use crate::platform_types::platform_state::PlatformStateV0Methods;
 
 pub const MAX_PRINTABLE_DOMAIN_NAME_LENGTH: usize = 253;
 
@@ -103,6 +106,8 @@ pub(super) fn create_domain_data_trigger_v0(
     };
 
     let mut result = DataTriggerExecutionResult::default();
+    let mut accumulated_fee_result = FeeResult::default();
+    let epoch: &Epoch = context.platform.state.last_committed_block_epoch_ref();
 
     if !is_dry_run {
         if full_domain_name.len() > MAX_PRINTABLE_DOMAIN_NAME_LENGTH {
@@ -243,18 +248,22 @@ pub(super) fn create_domain_data_trigger_v0(
             block_time_ms: None,
         };
 
-        // todo: deal with cost of this operation
-        let documents = context
-            .platform
-            .drive
-            .query_documents(
-                drive_query,
-                None,
-                is_dry_run,
-                context.transaction,
-                Some(platform_version.protocol_version),
-            )?
-            .documents_owned();
+        // Pass `Some(epoch)` so query_documents computes the real cost
+        // (with `None` it short-circuits to 0). The cost is added to the
+        // accumulated FeeResult that the caller bills on
+        // `transform_into_action: 1`.
+        let parent_domain_outcome = context.platform.drive.query_documents(
+            drive_query,
+            Some(epoch),
+            is_dry_run,
+            context.transaction,
+            Some(platform_version.protocol_version),
+        )?;
+        accumulated_fee_result.checked_add_assign(FeeResult {
+            processing_fee: parent_domain_outcome.cost(),
+            ..Default::default()
+        })?;
+        let documents = parent_domain_outcome.documents_owned();
 
         if !is_dry_run {
             if documents.is_empty() {
@@ -266,7 +275,7 @@ pub(super) fn create_domain_data_trigger_v0(
 
                 result.add_error(err);
 
-                return Ok((result, dpp::fee::fee_result::FeeResult::default()));
+                return Ok((result, accumulated_fee_result));
             }
             let parent_domain = &documents[0];
 
@@ -279,7 +288,7 @@ pub(super) fn create_domain_data_trigger_v0(
 
                 result.add_error(err);
 
-                return Ok((result, dpp::fee::fee_result::FeeResult::default()));
+                return Ok((result, accumulated_fee_result));
             }
 
             if (!parent_domain
@@ -296,7 +305,7 @@ pub(super) fn create_domain_data_trigger_v0(
 
                 result.add_error(err);
 
-                return Ok((result, dpp::fee::fee_result::FeeResult::default()));
+                return Ok((result, accumulated_fee_result));
             }
         }
     }
@@ -334,21 +343,23 @@ pub(super) fn create_domain_data_trigger_v0(
         block_time_ms: None,
     };
 
-    // todo: deal with cost of this operation
-    let preorder_documents = context
-        .platform
-        .drive
-        .query_documents(
-            drive_query,
-            None,
-            is_dry_run,
-            context.transaction,
-            Some(platform_version.protocol_version),
-        )?
-        .documents_owned();
+    // Same pattern as the parent-domain query above — capture cost
+    // for the caller to bill.
+    let preorder_outcome = context.platform.drive.query_documents(
+        drive_query,
+        Some(epoch),
+        is_dry_run,
+        context.transaction,
+        Some(platform_version.protocol_version),
+    )?;
+    accumulated_fee_result.checked_add_assign(FeeResult {
+        processing_fee: preorder_outcome.cost(),
+        ..Default::default()
+    })?;
+    let preorder_documents = preorder_outcome.documents_owned();
 
     if is_dry_run {
-        return Ok((result, dpp::fee::fee_result::FeeResult::default()));
+        return Ok((result, accumulated_fee_result));
     }
 
     if preorder_documents.is_empty() {
@@ -363,7 +374,7 @@ pub(super) fn create_domain_data_trigger_v0(
         result.add_error(err)
     }
 
-    Ok((result, dpp::fee::fee_result::FeeResult::default()))
+    Ok((result, accumulated_fee_result))
 }
 
 #[cfg(test)]
