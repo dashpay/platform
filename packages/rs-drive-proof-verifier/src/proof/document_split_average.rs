@@ -7,13 +7,14 @@
 //! aggregate averages use [`super::document_average::DocumentAverage`]
 //! instead.
 //!
-//! **Status**: skeleton. See `document_average.rs` for the matching
-//! grovedb PR 670 dependency note.
-
-use crate::{ContextProvider, Error, FromProof};
-use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
-use dpp::dashcore::Network;
-use dpp::version::PlatformVersion;
+//! The generic `FromProof<Q>` impl below intentionally rejects
+//! calls (matching [`super::document_split_count::DocumentSplitCounts`]'s
+//! pattern). Real dispatch lives in the
+//! `FromProof<DocumentQuery>` impl in
+//! `rs-sdk/src/platform/documents/document_split_averages.rs`,
+//! which picks the right per-shape verifier (PCPS carrier-aggregate
+//! / primary-key direct read) based on the resolved
+//! `DocumentAverageMode`.
 
 /// A single verified `(in_key?, key, count, sum)` entry from an
 /// average query with `group_by`. Mirrors sum's `SplitSumEntry`
@@ -67,41 +68,6 @@ impl DocumentSplitAverages {
     }
 }
 
-#[allow(clippy::extra_unused_lifetimes)]
-impl<'dq, Q> FromProof<Q> for DocumentSplitAverages
-where
-    Q: Clone + 'dq,
-{
-    type Request = Q;
-    type Response = GetDocumentsResponse;
-
-    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
-        _request: I,
-        _response: O,
-        _network: Network,
-        _platform_version: &PlatformVersion,
-        _provider: &'a dyn ContextProvider,
-    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
-    where
-        Self: 'a,
-    {
-        // TODO(avg-feature): mirror `DocumentSplitSums::FromProof`'s
-        // implementation. The shape:
-        //   1. Match on response.result oneof for `AverageResults::entries`
-        //      or `Proof(p)`.
-        //   2. For `Proof(p)`, dispatch on the query mode to the
-        //      rs-drive `verify_*_count_and_sum_proof` helpers (carrier
-        //      / distinct variants), depending on the grovedb PR 670
-        //      proof primitives.
-        //   3. Verify tenderdash, map verified entries to
-        //      `Vec<SplitAverageEntry>`.
-        Err(Error::DriveError {
-            error: "DocumentSplitAverages::FromProof — not yet wired through this \
-                    higher-level SDK layer. The drive-side primitives are \
-                    available (verify_carrier_aggregate_count_and_sum_proof); plumbing \
-                    them up to FromProof is the pending SDK fan-out follow-up, same \
-                    as DocumentSplitSums."
-                .to_string(),
-        })
-    }
-}
+// No generic `FromProof<Q>` impl — callers reach this through
+// `FromProof<DocumentQuery> for DocumentSplitAverages` in
+// `rs-sdk/src/platform/documents/document_split_averages.rs`.

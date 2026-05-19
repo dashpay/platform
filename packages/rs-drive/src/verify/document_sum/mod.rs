@@ -12,6 +12,11 @@
 //! `GroveDb::verify_aggregate_count_and_sum_query_per_key` (grovedb
 //! PR #670 head `e98bab5f`).
 
+/// Single-aggregate-sum proof verification — sum analog of count's
+/// `verify_aggregate_count_proof`. Returns `(root_hash, i64 sum)`
+/// from one `AggregateSumOnRange` merk traversal.
+pub mod verify_aggregate_sum_proof;
+
 /// Carrier-aggregate-sum proof verification — sum-side analog of
 /// count's `verify_carrier_aggregate_count_proof`. Returns one
 /// `(in_key, i64)` per resolved In branch.
@@ -31,3 +36,24 @@ pub mod verify_carrier_aggregate_count_and_sum_proof;
 /// `avg = sum / count` locally, but the proof commits both metrics
 /// from the same in-range set in one root-hash-attested traversal.
 pub mod verify_aggregate_count_and_sum_proof;
+
+/// Direct read of the document type's primary-key `SumTree` element
+/// — sum analog of count's `verify_primary_key_count_tree_proof`.
+/// Returns `(root_hash, i64 sum)`. Used by the `documents_summable`
+/// fast path on empty-where SUM queries.
+pub mod verify_primary_key_sum_tree_proof;
+
+/// Direct read of the document type's primary-key count-sum-bearing
+/// element (CountSumTree / ProvableCountSumTree /
+/// ProvableCountProvableSumTree) — returns `(root_hash, u64 count,
+/// i64 sum)`. Used by the `documentsCountable + documentsSummable`
+/// fast path on empty-where AVG queries.
+pub mod verify_primary_key_count_sum_tree_proof;
+
+/// Point-lookup sum proof verification — sum analog of count's
+/// `verify_point_lookup_count_proof`. Returns one `SumEntry` per
+/// verified branch (Equal-only fully-covered: one entry with empty
+/// `key`; In-bearing: one entry per present In value with `key =
+/// serialized_in_value`). Absent branches are silently omitted
+/// because today's path query does not request absence proofs.
+pub mod verify_point_lookup_sum_proof;

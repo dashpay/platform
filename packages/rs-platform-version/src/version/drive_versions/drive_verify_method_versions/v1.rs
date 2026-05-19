@@ -27,9 +27,13 @@ pub const DRIVE_VERIFY_METHOD_VERSIONS_V1: DriveVerifyMethodVersions = DriveVeri
         verify_primary_key_count_tree_proof: 0,
     },
     document_sum: DriveVerifyDocumentSumMethodVersions {
+        verify_aggregate_sum_proof: 0,
         verify_carrier_aggregate_sum_proof: 0,
         verify_carrier_aggregate_count_and_sum_proof: 0,
         verify_aggregate_count_and_sum_proof: 0,
+        verify_primary_key_sum_tree_proof: 0,
+        verify_primary_key_count_sum_tree_proof: 0,
+        verify_point_lookup_sum_proof: 0,
     },
     identity: DriveVerifyIdentityMethodVersions {
         verify_full_identities_by_public_key_hashes: 0,

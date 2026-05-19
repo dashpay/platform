@@ -23,7 +23,7 @@
 #[cfg(feature = "server")]
 pub mod drive_dispatcher;
 
-#[cfg(any(feature = "server", feature = "verify"))]
+#[cfg(feature = "server")]
 use crate::query::{OrderClause, WhereClause};
 
 #[cfg(feature = "server")]

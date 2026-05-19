@@ -25,16 +25,20 @@
 //!   reuses it across both sub-calls so the atomicity guarantee
 //!   holds regardless of caller plumbing. The internal transaction
 //!   is rolled back at the end (read-only, never commits).
-//! - **Prove path**: not supported here — the on-wire bytes would be
-//!   two concatenated proofs whose verification semantics aren't
-//!   defined. Returns a typed `NotYetImplemented` so callers requesting
-//!   `prove=true` AVG can detect the gap and route to the future PCPS
-//!   path once it lands.
-//!
-//! When the PCPS executor lands, this dispatcher's no-prove paths can
-//! switch over without breaking the wire surface — the
-//! `DocumentAverageRequest` / `DocumentAverageResponse` shapes stay
-//! identical.
+//! - **Prove path**: dispatched to
+//!   [`Drive::execute_document_average_prove`] (defined below),
+//!   which routes to one of the PCPS / primary-key proof
+//!   executors based on `(mode, where_clauses)`:
+//!     - empty-where + `documentsCountable + documentsSummable`
+//!       doctype → primary-key count-sum tree direct read
+//!     - range AVG on a `rangeAverageable` index → PCPS
+//!       `AggregateCountAndSumOnRange` proof
+//!     - In + range AVG on a `rangeAverageable` index → carrier-PCPS
+//!       proof
+//!   Other prove shapes (GroupByRange distinct, In-only without
+//!   range) return `Unsupported` so callers can detect gaps
+//!   explicitly. The client verifies with the matching
+//!   `verify_*_count_and_sum_proof` helpers in `drive-proof-verifier`.
 
 use crate::drive::Drive;
 use crate::error::query::QuerySyntaxError;
@@ -45,7 +49,12 @@ use crate::query::drive_document_average_query::{
 use crate::query::drive_document_count_query::{
     CountMode, DocumentCountRequest, DocumentCountResponse,
 };
-use crate::query::drive_document_sum_query::{DocumentSumRequest, DocumentSumResponse, SumMode};
+use crate::query::drive_document_sum_query::index_picker::find_range_summable_index_for_where_clauses;
+use crate::query::drive_document_sum_query::{
+    is_range_operator, DocumentSumRequest, DocumentSumResponse, DriveDocumentSumQuery, SumMode,
+};
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
 
@@ -64,19 +73,7 @@ impl Drive {
         platform_version: &PlatformVersion,
     ) -> Result<DocumentAverageResponse, Error> {
         if request.prove {
-            // PCPS-based proof returning (count, sum) atomically is the
-            // planned future path. Composition would produce two
-            // concatenated proofs whose verification contract isn't
-            // defined; reject explicitly rather than fabricate bytes
-            // that no verifier knows how to consume.
-            return Err(Error::Query(QuerySyntaxError::Unsupported(
-                "execute_document_average_request with prove=true: proven averages \
-                 require grovedb's `AggregateCountAndSumOnRange` proof primitive (PR \
-                 670). The no-prove path composes count + sum executors directly and \
-                 works today — switch to prove=false to get the (count, sum) pair the \
-                 client divides."
-                    .to_string(),
-            )));
+            return self.execute_document_average_prove(request, transaction, platform_version);
         }
 
         // Map `AverageMode` → matching `CountMode` / `SumMode`. The
@@ -170,6 +167,176 @@ impl Drive {
                 ),
             )),
         }
+    }
+
+    /// Prove path of [`Self::execute_document_average_request`].
+    ///
+    /// Routes the `(where_clauses × mode)` pair to one of the
+    /// available PCPS / direct-read prove executors and returns
+    /// proof bytes the client verifies with the matching
+    /// `verify_*_count_and_sum_proof` helper. Other prove shapes
+    /// (range-distinct, point-lookup-AVG, carrier-AVG) are returned
+    /// as `Unsupported` with a message naming the gap — those need
+    /// either drive-side verifier additions or grovedb primitives
+    /// that aren't ready, so callers can detect the gap explicitly
+    /// rather than falling back to the no-prove path silently.
+    ///
+    /// Supported prove shapes today:
+    /// - `Aggregate` + empty where + doctype's primary key tree is a
+    ///   count-sum-bearing variant (`CountSumTree` /
+    ///   `ProvableCountSumTree` /
+    ///   `ProvableCountProvableSumTree`) — proves the primary-key
+    ///   element directly via `primary_key_sum_path_query`. Client
+    ///   verifies with `verify_primary_key_count_sum_tree_proof`.
+    /// - `Aggregate` + range clause on a PCPS-eligible index
+    ///   (`rangeCountable: true` AND `rangeSummable: true`) — proves
+    ///   via `execute_aggregate_count_and_sum_with_proof`. Client
+    ///   verifies with `verify_aggregate_count_and_sum_proof`.
+    /// - `GroupByIn` + In + range on a PCPS-eligible index — proves
+    ///   via `execute_carrier_aggregate_count_and_sum_with_proof`.
+    ///   Client verifies with
+    ///   `verify_carrier_aggregate_count_and_sum_proof`.
+    fn execute_document_average_prove(
+        &self,
+        request: DocumentAverageRequest,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<DocumentAverageResponse, Error> {
+        let contract_id = request.contract.id().to_buffer();
+        let document_type_name = request.document_type.name().to_string();
+        let has_range = request
+            .where_clauses
+            .iter()
+            .any(|wc| is_range_operator(wc.operator));
+        let order_by_ascending = request
+            .order_clauses
+            .first()
+            .map(|c| c.ascending)
+            .unwrap_or(true);
+
+        // Empty-where AVG fast path: prove the primary-key
+        // count-sum-bearing element directly when the doctype
+        // declares both `documentsCountable: true` (implied by
+        // having a CountSumTree primary key) and a matching
+        // `documents_summable`. The verifier extracts `(count,
+        // sum)` from one element.
+        if matches!(request.mode, AverageMode::Aggregate)
+            && request.where_clauses.is_empty()
+            && request.document_type.documents_countable()
+            && request
+                .document_type
+                .documents_summable()
+                .map(|p| p == request.sum_property)
+                .unwrap_or(false)
+        {
+            let path_query =
+                DriveDocumentSumQuery::primary_key_sum_path_query(contract_id, &document_type_name);
+            let proof = self
+                .grove
+                .get_proved_path_query(
+                    &path_query,
+                    None,
+                    transaction,
+                    &platform_version.drive.grove_version,
+                )
+                .unwrap()
+                .map_err(|e| Error::GroveDB(Box::new(e)))?;
+            return Ok(DocumentAverageResponse::Proof(proof));
+        }
+
+        // Range AVG: pick a PCPS-eligible index (range_countable
+        // AND range_summable) covering the where clauses. Mirror of
+        // sum's `find_range_summable_index_for_where_clauses` with
+        // an additional `range_countable` filter.
+        if has_range
+            && matches!(
+                request.mode,
+                AverageMode::Aggregate | AverageMode::GroupByIn
+            )
+        {
+            let index = find_range_summable_index_for_where_clauses(
+                request.document_type.indexes(),
+                &request.where_clauses,
+                &request.sum_property,
+            )
+            .filter(|idx| idx.range_countable)
+            .ok_or_else(|| {
+                Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(
+                    "prove AVG requires an index that declares BOTH `rangeCountable: \
+                     true` AND `rangeSummable: true` (a `rangeAverageable: true` \
+                     index is the shorthand) whose last property matches the range \
+                     field and whose summable property matches the request's \
+                     `sum_property`"
+                        .to_string(),
+                ))
+            })?;
+            let sum_query = DriveDocumentSumQuery {
+                document_type: request.document_type,
+                contract_id,
+                document_type_name,
+                index,
+                where_clauses: request.where_clauses.clone(),
+                sum_property: request.sum_property.clone(),
+            };
+
+            let proof = match request.mode {
+                AverageMode::Aggregate => sum_query.execute_aggregate_count_and_sum_with_proof(
+                    self,
+                    transaction,
+                    platform_version,
+                )?,
+                AverageMode::GroupByIn => {
+                    // Carrier-PCPS: one (count, sum) per In branch.
+                    // `limit` clamps the per-branch outer walk; same
+                    // contract as sum's
+                    // `RangeAggregateCarrierProof` arm.
+                    let limit_u16 = request
+                        .limit
+                        .map(|l| l.min(request.drive_config.max_query_limit as u32))
+                        .map(|l| {
+                            u16::try_from(l).map_err(|_| {
+                                Error::Query(QuerySyntaxError::Unsupported(format!(
+                                    "limit {} exceeds u16::MAX for carrier-aggregate \
+                                     count+sum (AVG) proof",
+                                    l
+                                )))
+                            })
+                        })
+                        .transpose()?;
+                    sum_query.execute_carrier_aggregate_count_and_sum_with_proof(
+                        self,
+                        limit_u16,
+                        order_by_ascending,
+                        transaction,
+                        platform_version,
+                    )?
+                }
+                _ => unreachable!("outer matches! gate filters out non-Aggregate/GroupByIn"),
+            };
+            return Ok(DocumentAverageResponse::Proof(proof));
+        }
+
+        // Other prove shapes (GroupByRange, GroupByCompound,
+        // point-lookup AVG without range, In+no-range AVG) need
+        // additional drive-side verifier work — most notably the
+        // distinct path query is itself still stubbed and a
+        // point-lookup AVG verifier would need to walk
+        // count-sum-bearing elements (mirror of the SUM
+        // point-lookup verifier but extracting both axes). Return
+        // `Unsupported` so callers can detect the gap explicitly.
+        Err(Error::Query(QuerySyntaxError::Unsupported(format!(
+            "execute_document_average_request prove=true: the (mode = {:?}, has_range \
+             = {}, where_clauses.len() = {}) combination is not yet supported on the \
+             prove path. Currently supported prove shapes: \
+             (Aggregate, empty-where, documentsCountable + documentsSummable doctype) \
+             via primary-key direct read; (Aggregate, range, rangeAverageable index) \
+             via PCPS aggregate; (GroupByIn, In + range, rangeAverageable index) via \
+             carrier-PCPS. Use prove=false for the composed count + sum path which \
+             covers every where-shape today.",
+            request.mode,
+            has_range,
+            request.where_clauses.len(),
+        ))))
     }
 }
 

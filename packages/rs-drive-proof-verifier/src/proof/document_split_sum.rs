@@ -5,13 +5,13 @@
 //! Returned by `select=SUM, group_by=[...]` queries; aggregate sums
 //! use [`super::document_sum::DocumentSum`] instead.
 //!
-//! **Status**: skeleton. See `document_sum.rs` for the matching
-//! grovedb PR 670 dependency note.
-
-use crate::{ContextProvider, Error, FromProof};
-use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
-use dpp::dashcore::Network;
-use dpp::version::PlatformVersion;
+//! The generic `FromProof<Q>` impl below intentionally rejects
+//! calls (matching [`super::document_split_count::DocumentSplitCounts`]'s
+//! pattern). Real dispatch lives in the
+//! `FromProof<DocumentQuery>` impl in
+//! `rs-sdk/src/platform/documents/document_split_sums.rs`, which
+//! picks the right per-shape verifier (carrier-aggregate /
+//! point-lookup) based on the resolved `DocumentSumMode`.
 
 /// A single verified `(in_key?, key, sum)` entry from a sum query
 /// with `group_by`. Mirrors count's `SplitCountEntry` shape.
@@ -47,40 +47,8 @@ impl DocumentSplitSums {
     }
 }
 
-#[allow(clippy::extra_unused_lifetimes)]
-impl<'dq, Q> FromProof<Q> for DocumentSplitSums
-where
-    Q: Clone + 'dq,
-{
-    type Request = Q;
-    type Response = GetDocumentsResponse;
-
-    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
-        _request: I,
-        _response: O,
-        _network: Network,
-        _platform_version: &PlatformVersion,
-        _provider: &'a dyn ContextProvider,
-    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
-    where
-        Self: 'a,
-    {
-        // TODO(sum-feature): mirror `DocumentSplitCounts::FromProof`'s
-        // implementation. The shape:
-        //   1. Match on response.result oneof for `SumResults::entries`
-        //      or `Proof(p)`.
-        //   2. For `Proof(p)`, dispatch on the query mode to either
-        //      `DriveDocumentSumQuery::verify_distinct_sum_proof` (per
-        //      distinct value) or `verify_carrier_aggregate_sum_proof`
-        //      (compound In+range, one entry per branch).
-        //   3. Verify tenderdash, map verified entries to
-        //      `Vec<SplitSumEntry>`.
-        Err(Error::DriveError {
-            error: "DocumentSplitSums::FromProof — not yet wired through this \
-                    higher-level SDK layer. The drive-side primitives are \
-                    available (verify_carrier_aggregate_sum_proof); plumbing \
-                    them up to FromProof is the pending SDK fan-out follow-up."
-                .to_string(),
-        })
-    }
-}
+// No generic `FromProof<Q>` impl — callers reach this through
+// `FromProof<DocumentQuery> for DocumentSplitSums` in
+// `rs-sdk/src/platform/documents/document_split_sums.rs`. Same
+// rationale as `DocumentSum` / `DocumentSplitCounts`: per-mode
+// proof dispatch needs the SDK's `DocumentQuery` shape.
