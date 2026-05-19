@@ -35,7 +35,7 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<DocumentSumResponse, Error> {
-        let resolved_mode = detect_sum_mode(&request)?;
+        let resolved_mode = super::mode_detection::detect_sum_mode(&request, platform_version)?;
 
         let contract_id = request.contract.id().to_buffer();
         let document_type_name = request.document_type.name().to_string();
@@ -197,79 +197,10 @@ impl Drive {
     }
 }
 
-/// Determine which executor to dispatch to based on the request's
-/// where-shape × mode × prove combination. Pure function; no I/O.
-///
-/// Returns `Err(WhereClauseOnNonIndexedProperty)` (via
-/// [`crate::error::query::QuerySyntaxError`]) if no covering index can
-/// be found — same strict-coverage contract count uses, with the
-/// addition that the request's `sum_property` must match the chosen
-/// index's `summable` declaration.
-pub fn detect_sum_mode(request: &DocumentSumRequest) -> Result<DocumentSumMode, Error> {
-    use crate::query::drive_document_sum_query::is_range_operator;
-
-    let has_range = request
-        .where_clauses
-        .iter()
-        .any(|wc| is_range_operator(wc.operator));
-    let has_in = request
-        .where_clauses
-        .iter()
-        .any(|wc| wc.operator == crate::query::WhereOperator::In);
-
-    // Cross-validate sum property name. The dispatcher rejects up front
-    // when the request's `sum_property` doesn't match the doctype-level
-    // `documents_summable` (when set) — saves the executor from having
-    // to re-check the invariant.
-    use dpp::data_contract::document_type::accessors::DocumentTypeV2Getters;
-    if let Some(doctype_sum) = request.document_type.documents_summable() {
-        if doctype_sum != request.sum_property {
-            return Err(Error::Drive(crate::error::drive::DriveError::NotSupported(
-                "request `sum_property` doesn't match the document type's \
-                 `documents_summable`. Sum trees aggregate `i64` per merk node; \
-                 mixing property names would produce a meaningless aggregation. \
-                 Define a separate index whose `summable: \"<the other name>\"` \
-                 covers the alternate aggregation surface.",
-            )));
-        }
-    }
-
-    Ok(match (request.mode, has_range, has_in, request.prove) {
-        // No range / no In / no-proof — Total fast path. Covers both
-        // empty-where (documents_summable) and Equal-only-fully-
-        // covered (summable index lookup) — the executor branches on
-        // where_clauses internally. Mirrors count's mapping.
-        (SumMode::Aggregate, false, false, false) => DocumentSumMode::Total,
-        // No range / has In / no-proof — per-In fan-out.
-        (SumMode::Aggregate, false, true, false) => DocumentSumMode::PerInValue,
-        (SumMode::Aggregate, true, _, false) => DocumentSumMode::RangeNoProof,
-        (SumMode::Aggregate, true, false, true) => DocumentSumMode::RangeProof,
-        // Aggregate + no-range + prove: routes to PointLookupProof for
-        // both empty-where (documents_summable fast path) AND Equal/In
-        // covered cases. The executor branches on `where_clauses`
-        // internally.
-        (SumMode::Aggregate, false, _, true) => DocumentSumMode::PointLookupProof,
-        // GroupByIn: no range — falls back to PerInValue (no-proof)
-        // or PointLookupProof (prove). Mirrors count's mapping.
-        (SumMode::GroupByIn, false, _, false) => DocumentSumMode::PerInValue,
-        (SumMode::GroupByIn, false, _, true) => DocumentSumMode::PointLookupProof,
-        // GroupByIn + range: the carrier-ACOR shape (count's
-        // RangeAggregateCarrierProof). Same routing on the sum side.
-        (SumMode::GroupByIn, true, true, true) => DocumentSumMode::RangeAggregateCarrierProof,
-        (SumMode::GroupByIn, true, _, false) => DocumentSumMode::RangeNoProof,
-        (SumMode::GroupByRange, true, _, true) => DocumentSumMode::RangeDistinctProof,
-        (SumMode::GroupByRange, true, _, false) => DocumentSumMode::RangeNoProof,
-        (SumMode::GroupByCompound, true, true, true) => DocumentSumMode::RangeAggregateCarrierProof,
-        (SumMode::GroupByCompound, true, true, false) => DocumentSumMode::RangeNoProof,
-        _ => {
-            return Err(Error::Drive(crate::error::drive::DriveError::NotSupported(
-                "sum-query dispatcher: where-shape × mode × prove combination is not \
-                 supported; see book/src/drive/document-sum-trees.md's `Choosing What \
-                 to Set` table for valid shapes.",
-            )));
-        }
-    })
-}
+// `detect_sum_mode` lives in the versioned
+// [`mode_detection`](super::mode_detection) module — the routing
+// table is consensus-relevant on the query surface and protocol
+// versions that change it must do so behind a method-version bump.
 
 /// Parse the wire-CBOR `Value::Array` shape into structured
 /// `Vec<WhereClause>`. Delegates to count's parser.

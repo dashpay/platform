@@ -25,15 +25,14 @@ pub trait DocumentTypePrimaryKeyTreeType {
     /// | ✓ | (✓) | – | – | `ProvableSumTree` |
     /// | – | ✓ | – | ✓ | `CountSumTree` |
     /// | – | ✓ | ✓ | (✓) | `ProvableCountSumTree` (per-node count, root-only sum) |
-    /// | ✓ | (✓) | ✓ | (✓) | `ProvableCountProvableSumTree` (per-node BOTH; grovedb PR 670) |
+    /// | ✓ | (✓) | ✓ | (✓) | `ProvableCountProvableSumTree` (per-node BOTH) |
     /// | ✓ | (✓) | – | ✓ | `ProvableCountProvableSumTree` (upgrades count to per-node) |
     ///
-    /// `ProvableCountSumTree` (pre-PR-670) and
-    /// `ProvableCountProvableSumTree` (PR 670) are distinct:
-    /// `ProvableCountSumTree` commits per-node counts but only a
-    /// root-level sum; `ProvableCountProvableSumTree` commits both
-    /// per-node. The full dispatch matrix in the v1 arm makes the
-    /// distinction explicit per-flag-combination.
+    /// `ProvableCountSumTree` and `ProvableCountProvableSumTree` are
+    /// distinct: the former commits per-node counts but only a
+    /// root-level sum; the latter commits both per-node. The full
+    /// dispatch matrix in the v1 arm makes the distinction explicit
+    /// per-flag-combination.
     fn primary_key_tree_type(&self, platform_version: &PlatformVersion) -> Result<TreeType, Error>;
 }
 
@@ -58,8 +57,8 @@ impl DocumentTypePrimaryKeyTreeType for DocumentTypeRef<'_> {
                 }
             }
             1 => {
-                // v1: count × sum composition over grovedb PR 670's
-                // expanded TreeType set. The four flags map to nine
+                // v1: count × sum composition over the expanded
+                // grovedb TreeType set. The four flags map to nine
                 // distinct cases per the dispatch table below — note
                 // the **per-axis** distinction between provable
                 // (per-node aggregation, range-queryable) and root-only
@@ -84,10 +83,9 @@ impl DocumentTypePrimaryKeyTreeType for DocumentTypeRef<'_> {
                 // because ProvableCountProvableSumTree is the only
                 // way to have a per-node sum aggregate.
                 //
-                // `ProvableCountProvableSumTree` is the PR 670
-                // newcomer — distinct from the existing
-                // `ProvableCountSumTree` (which carries per-node
-                // counts but only a *root-level* sum).
+                // `ProvableCountProvableSumTree` is distinct from
+                // `ProvableCountSumTree`: the latter carries per-node
+                // counts but only a *root-level* sum.
                 let rc = self.range_countable();
                 let dc = self.documents_countable();
                 let rs = self.range_summable();
