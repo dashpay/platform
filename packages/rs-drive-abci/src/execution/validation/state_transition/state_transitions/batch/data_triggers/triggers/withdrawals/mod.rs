@@ -4,6 +4,7 @@ use crate::execution::validation::state_transition::batch::data_triggers::{
     DataTriggerExecutionContext, DataTriggerExecutionResult,
 };
 use drive::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
+use dpp::fee::fee_result::FeeResult;
 use dpp::version::PlatformVersion;
 use crate::execution::validation::state_transition::batch::data_triggers::triggers::withdrawals::v0::delete_withdrawal_data_trigger_v0;
 
@@ -13,7 +14,7 @@ pub fn delete_withdrawal_data_trigger(
     document_transition: &DocumentTransitionAction,
     context: &DataTriggerExecutionContext<'_>,
     platform_version: &PlatformVersion,
-) -> Result<DataTriggerExecutionResult, Error> {
+) -> Result<(DataTriggerExecutionResult, FeeResult), Error> {
     match platform_version
         .drive_abci
         .validation_and_processing

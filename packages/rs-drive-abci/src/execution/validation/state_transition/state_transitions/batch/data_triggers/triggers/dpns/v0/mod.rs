@@ -49,7 +49,7 @@ pub(super) fn create_domain_data_trigger_v0(
     document_transition: &DocumentTransitionAction,
     context: &DataTriggerExecutionContext<'_>,
     platform_version: &PlatformVersion,
-) -> Result<DataTriggerExecutionResult, Error> {
+) -> Result<(DataTriggerExecutionResult, dpp::fee::fee_result::FeeResult), Error> {
     let data_contract_fetch_info = document_transition.base().data_contract_fetch_info();
     let data_contract = &data_contract_fetch_info.contract;
     let is_dry_run = context.state_transition_execution_context.in_dry_run();
@@ -266,7 +266,7 @@ pub(super) fn create_domain_data_trigger_v0(
 
                 result.add_error(err);
 
-                return Ok(result);
+                return Ok((result, dpp::fee::fee_result::FeeResult::default()));
             }
             let parent_domain = &documents[0];
 
@@ -279,7 +279,7 @@ pub(super) fn create_domain_data_trigger_v0(
 
                 result.add_error(err);
 
-                return Ok(result);
+                return Ok((result, dpp::fee::fee_result::FeeResult::default()));
             }
 
             if (!parent_domain
@@ -296,7 +296,7 @@ pub(super) fn create_domain_data_trigger_v0(
 
                 result.add_error(err);
 
-                return Ok(result);
+                return Ok((result, dpp::fee::fee_result::FeeResult::default()));
             }
         }
     }
@@ -348,7 +348,7 @@ pub(super) fn create_domain_data_trigger_v0(
         .documents_owned();
 
     if is_dry_run {
-        return Ok(result);
+        return Ok((result, dpp::fee::fee_result::FeeResult::default()));
     }
 
     if preorder_documents.is_empty() {
@@ -363,7 +363,7 @@ pub(super) fn create_domain_data_trigger_v0(
         result.add_error(err)
     }
 
-    Ok(result)
+    Ok((result, dpp::fee::fee_result::FeeResult::default()))
 }
 
 #[cfg(test)]
@@ -446,7 +446,7 @@ mod test {
             transaction: None,
         };
 
-        let result = create_domain_data_trigger_v0(
+        let (result, _fee_result) = create_domain_data_trigger_v0(
             &DocumentCreateTransitionAction::try_from_document_borrowed_create_transition_with_contract_lookup(&platform.drive, owner_id, None,
                                                                                                                document_create_transition, &BlockInfo::default(), 0, |_identifier| {
                     Ok(Arc::new(DataContractFetchInfo::dpns_contract_fixture(platform_version.protocol_version)))

@@ -38,7 +38,7 @@ pub(super) fn delete_withdrawal_data_trigger_v0(
     document_transition: &DocumentTransitionAction,
     context: &DataTriggerExecutionContext<'_>,
     platform_version: &PlatformVersion,
-) -> Result<DataTriggerExecutionResult, Error> {
+) -> Result<(DataTriggerExecutionResult, dpp::fee::fee_result::FeeResult), Error> {
     let data_contract_fetch_info = document_transition.base().data_contract_fetch_info();
     let data_contract = &data_contract_fetch_info.contract;
     let mut result = DataTriggerExecutionResult::default();
@@ -98,7 +98,7 @@ pub(super) fn delete_withdrawal_data_trigger_v0(
 
         result.add_error(err);
 
-        return Ok(result);
+        return Ok((result, dpp::fee::fee_result::FeeResult::default()));
     };
 
     let status: u8 = withdrawal
@@ -115,10 +115,10 @@ pub(super) fn delete_withdrawal_data_trigger_v0(
 
         result.add_error(err);
 
-        return Ok(result);
+        return Ok((result, dpp::fee::fee_result::FeeResult::default()));
     }
 
-    Ok(result)
+    Ok((result, dpp::fee::fee_result::FeeResult::default()))
 }
 
 #[cfg(test)]
@@ -326,7 +326,7 @@ mod tests {
             state_transition_execution_context: &transition_execution_context,
             transaction: None,
         };
-        let result = delete_withdrawal_data_trigger_v0(
+        let (result, _fee_result) = delete_withdrawal_data_trigger_v0(
             &document_transition,
             &data_trigger_context,
             platform_version,

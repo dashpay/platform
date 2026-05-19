@@ -14,7 +14,10 @@ use drive::state_transition_action::batch::BatchTransitionAction;
 use drive::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
 use crate::error::Error;
 use crate::error::execution::ExecutionError;
-use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
+use crate::execution::types::execution_operation::ValidationOperation;
+use crate::execution::types::state_transition_execution_context::{
+    StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
+};
 use crate::execution::validation::state_transition::batch::action_validation::document::document_create_transition_action::DocumentCreateTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_delete_transition_action::DocumentDeleteTransitionActionValidation;
 use crate::execution::validation::state_transition::batch::action_validation::document::document_purchase_transition_action::DocumentPurchaseTransitionActionValidation;
@@ -38,7 +41,6 @@ use crate::execution::validation::state_transition::state_transitions::batch::tr
 use crate::execution::validation::state_transition::ValidationMode;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
 
-mod data_triggers;
 pub mod fetch_contender;
 pub mod fetch_documents;
 
@@ -278,12 +280,44 @@ impl DocumentsBatchStateTransitionStateValidationV0 for BatchTransition {
                         owner_id: &self.owner_id(),
                         state_transition_execution_context: &state_transition_execution_context,
                     };
-                    let data_trigger_execution_result = document_transition
-                        .validate_with_data_triggers(
+                    let (data_trigger_execution_result, data_trigger_fee_result) =
+                        document_transition.validate_with_data_triggers(
                             &data_trigger_bindings,
                             &data_trigger_execution_context,
                             platform_version,
                         )?;
+
+                    // Bill the accumulated trigger drive-read cost on the
+                    // bumped `transform_into_action` gate, matching the same
+                    // gate used by the transformer-phase fee fixes. On v0 the
+                    // cost is discarded for chain replay reproducibility.
+                    match platform_version
+                        .drive_abci
+                        .validation_and_processing
+                        .state_transitions
+                        .batch_state_transition
+                        .transform_into_action
+                    {
+                        0 => {}
+                        1 => {
+                            execution_context.add_operation(
+                                ValidationOperation::PrecalculatedOperation(
+                                    data_trigger_fee_result,
+                                ),
+                            );
+                        }
+                        version => {
+                            return Err(Error::Execution(
+                                ExecutionError::UnknownVersionMismatch {
+                                    method:
+                                        "documents batch transition: data trigger fee billing"
+                                            .to_string(),
+                                    known_versions: vec![0, 1],
+                                    received: version,
+                                },
+                            ));
+                        }
+                    }
 
                     if !data_trigger_execution_result.is_valid() {
                         // If a state transition isn't valid because of data triggers we still need

@@ -3,6 +3,7 @@ use crate::execution::validation::state_transition::batch::data_triggers::{
 };
 use drive::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
 
+use dpp::fee::fee_result::FeeResult;
 use dpp::state_transition::batch_transition::batched_transition::document_transition_action_type::DocumentTransitionActionTypeGetter;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use dpp::version::PlatformVersion;
@@ -16,7 +17,7 @@ pub trait DataTriggerExecutor {
         data_trigger_bindings: &[DataTriggerBinding],
         context: &DataTriggerExecutionContext<'_>,
         platform_version: &PlatformVersion,
-    ) -> Result<DataTriggerExecutionResult, Error>;
+    ) -> Result<(DataTriggerExecutionResult, FeeResult), Error>;
 }
 
 impl DataTriggerExecutor for DocumentTransitionAction {
@@ -25,13 +26,17 @@ impl DataTriggerExecutor for DocumentTransitionAction {
         data_trigger_bindings: &[DataTriggerBinding],
         context: &DataTriggerExecutionContext,
         platform_version: &PlatformVersion,
-    ) -> Result<DataTriggerExecutionResult, Error> {
+    ) -> Result<(DataTriggerExecutionResult, FeeResult), Error> {
         let data_contract_id = self.base().data_contract_id();
         let document_type_name = self.base().document_type_name();
         let transition_action = self.action_type();
 
+        let mut aggregated_fee_result = FeeResult::default();
+
         // Match data triggers by action type, contract ID and document type name
-        // and then execute matched triggers until one of them returns invalid result
+        // and then execute matched triggers until one of them returns invalid result.
+        // Fees from every trigger that actually executed (including the one that
+        // returned invalid) are accumulated so the user pays for the work done.
         for data_trigger_binding in data_trigger_bindings {
             if !data_trigger_binding.is_matching(
                 &data_contract_id,
@@ -41,13 +46,16 @@ impl DataTriggerExecutor for DocumentTransitionAction {
                 continue;
             }
 
-            let result = data_trigger_binding.execute(self, context, platform_version)?;
+            let (result, fee_result) =
+                data_trigger_binding.execute(self, context, platform_version)?;
+
+            aggregated_fee_result.checked_add_assign(fee_result)?;
 
             if !result.is_valid() {
-                return Ok(result);
+                return Ok((result, aggregated_fee_result));
             }
         }
 
-        Ok(DataTriggerExecutionResult::default())
+        Ok((DataTriggerExecutionResult::default(), aggregated_fee_result))
     }
 }

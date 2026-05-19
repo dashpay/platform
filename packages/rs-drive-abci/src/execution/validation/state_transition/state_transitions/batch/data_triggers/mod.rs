@@ -6,6 +6,7 @@ use drive::state_transition_action::batch::batched_transition::document_transiti
 
 use crate::error::Error;
 use dpp::consensus::state::data_trigger::DataTriggerError;
+use dpp::fee::fee_result::FeeResult;
 use dpp::version::PlatformVersion;
 
 pub(super) use bindings::list::data_trigger_bindings_list;
@@ -17,11 +18,19 @@ mod context;
 mod executor;
 mod triggers;
 
+/// Data trigger function pointer.
+///
+/// Returns the validation result and the `FeeResult` for whatever drive
+/// reads (`query_documents`, `fetch_identity_balance`, etc.) the trigger
+/// performed. The caller (`DataTriggerExecutor::validate_with_data_triggers`)
+/// sums fees across all executed triggers and the outer batch-state
+/// validator decides whether to bill them via the `transform_into_action`
+/// version gate.
 type DataTrigger = fn(
     &DocumentTransitionAction,
     &DataTriggerExecutionContext<'_>,
     &PlatformVersion,
-) -> Result<DataTriggerExecutionResult, Error>;
+) -> Result<(DataTriggerExecutionResult, FeeResult), Error>;
 
 /// A type alias for a [SimpleValidationResult] with a [DataTriggerError] as the error type.
 ///

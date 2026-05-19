@@ -35,7 +35,7 @@ pub(super) fn create_contact_request_data_trigger_v0(
     document_transition: &DocumentTransitionAction,
     context: &DataTriggerExecutionContext<'_>,
     platform_version: &PlatformVersion,
-) -> Result<DataTriggerExecutionResult, Error> {
+) -> Result<(DataTriggerExecutionResult, dpp::fee::fee_result::FeeResult), Error> {
     let data_contract_fetch_info = document_transition.base().data_contract_fetch_info();
     let data_contract = &data_contract_fetch_info.contract;
     let mut result = DataTriggerExecutionResult::default();
@@ -68,7 +68,7 @@ pub(super) fn create_contact_request_data_trigger_v0(
 
         result.add_error(err);
 
-        return Ok(result);
+        return Ok((result, dpp::fee::fee_result::FeeResult::default()));
     }
 
     // TODO: Calculate fee operations
@@ -89,10 +89,10 @@ pub(super) fn create_contact_request_data_trigger_v0(
 
         result.add_error(err);
 
-        return Ok(result);
+        return Ok((result, dpp::fee::fee_result::FeeResult::default()));
     }
 
-    Ok(result)
+    Ok((result, dpp::fee::fee_result::FeeResult::default()))
 }
 
 #[cfg(test)]
@@ -184,7 +184,7 @@ mod test {
             transaction: None,
         };
 
-        let result = create_contact_request_data_trigger(
+        let (result, _fee_result) = create_contact_request_data_trigger(
             &DocumentCreateTransitionAction::try_from_document_borrowed_create_transition_with_contract_lookup(&platform.drive, *owner_id,  None, document_create_transition, &BlockInfo::default(), 0, |_identifier| {
                 Ok(Arc::new(DataContractFetchInfo::dashpay_contract_fixture(protocol_version)))
             }, platform_version).expect("expected to create action").0.into_data().expect("expected to be a valid transition").as_document_action().expect("expected document action"),
@@ -307,7 +307,7 @@ mod test {
 
         let _dashpay_identity_id = data_trigger_context.owner_id.to_owned();
 
-        let result = create_contact_request_data_trigger(
+        let (result, _fee_result) = create_contact_request_data_trigger(
             &DocumentCreateTransitionAction::try_from_document_borrowed_create_transition_with_contract_lookup(&platform.drive, owner_id, None, document_create_transition, &BlockInfo::default(), 0, |_identifier| {
                 Ok(Arc::new(DataContractFetchInfo::dashpay_contract_fixture(protocol_version)))
             }, platform_version).expect("expected to create action").0.into_data().expect("expected to be a valid transition").as_document_action().expect("expected document action"),
@@ -425,7 +425,7 @@ mod test {
 
         let _dashpay_identity_id = data_trigger_context.owner_id.to_owned();
 
-        let result = create_contact_request_data_trigger(
+        let (result, _fee_result) = create_contact_request_data_trigger(
             &DocumentCreateTransitionAction::try_from_document_borrowed_create_transition_with_contract_lookup(&platform.drive, owner_id, None, document_create_transition, &BlockInfo::default(), 0, |_identifier| {
                 Ok(Arc::new(DataContractFetchInfo::dashpay_contract_fixture(protocol_version)))
             }, platform_version).expect("expected to create action").0.into_data().expect("expected to be a valid transition").as_document_action().expect("expected document action"),
