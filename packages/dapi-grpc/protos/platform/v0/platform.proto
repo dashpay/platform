@@ -911,12 +911,18 @@ message GetDocumentsRequest {
     // `group_by` (empty → single, non-empty → per-group entries) —
     // same rule as today's `COUNT` routing.
     //
-    // **Server capability today**: only `DOCUMENTS` and
-    // `COUNT(*)` (empty `field`) are evaluated. `SUM` / `AVG`
-    // and `COUNT(field)` are wire-stable but rejected at routing
-    // time with `Unsupported("… is not yet implemented")` so the
+    // **Server capability today**: `DOCUMENTS`, `COUNT(*)` (empty
+    // `field`), `SUM(<field>)`, and `AVG(<field>)` are evaluated
+    // end-to-end (no-proof and proof paths route through the drive
+    // count / sum / average dispatchers). `COUNT(<field>)` (non-null
+    // value counting on a specific field), `MIN(<field>)`, and
+    // `MAX(<field>)` are wire-stable but rejected at routing time
+    // with `Unsupported("SELECT … is not yet implemented")` so the
     // surface is shipped first and execution lands later without
-    // another version bump.
+    // another version bump. MIN/MAX in particular wait on a grovedb
+    // primitive — there's no min/max aggregate on count or sum
+    // trees today, and the order-by-then-LIMIT-1 emulation has the
+    // wrong proof shape for the cryptographic verifier.
     message Select {
       enum Function {
         DOCUMENTS = 0;
@@ -1022,9 +1028,15 @@ message GetDocumentsRequest {
     //
     // **Currently rejected when `selects.len() > 1`** with
     // `Unsupported("multi-projection SELECT is not yet
-    // implemented")`. The single-projection cases (`DOCUMENTS`,
-    // `COUNT(*)`) are evaluated today; `SUM` / `AVG` / `MIN` /
-    // `MAX` are rejected at the per-function gate. When
+    // implemented")`. The single-projection cases `DOCUMENTS`,
+    // `COUNT(*)`, `SUM(<field>)`, and `AVG(<field>)` are evaluated
+    // end-to-end today and route through the drive count / sum /
+    // average dispatchers (see the `GetDocumentsResponseV1`
+    // docstring for the wire-shape table). `COUNT(<field>)`,
+    // `MIN(<field>)`, and `MAX(<field>)` remain rejected at the
+    // per-function gate — see the `Select` message-level docstring
+    // for the rationale (no grovedb min/max primitive; COUNT(field)
+    // needs a non-null counter walk that doesn't exist yet). When
     // multi-projection lands the response shape gains a parallel
     // `repeated AggregateValue values` field, so caller code
     // structured around `repeated Select` doesn't need to be
