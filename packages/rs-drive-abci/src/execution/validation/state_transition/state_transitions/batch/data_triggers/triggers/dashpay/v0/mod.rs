@@ -11,11 +11,9 @@ use drive::state_transition_action::batch::batched_transition::document_transiti
 use drive::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::DocumentCreateTransitionActionAccessorsV0;
 use dpp::system_data_contracts::dashpay_contract::v1::document_types::contact_request::properties
 ::{TO_USER_ID};
-use dpp::fee::fee_result::FeeResult;
 use dpp::version::PlatformVersion;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContextMethodsV0;
 use crate::execution::validation::state_transition::batch::data_triggers::{DataTriggerExecutionContext, DataTriggerExecutionResult};
-use crate::platform_types::platform_state::PlatformStateV0Methods;
 
 /// Creates a data trigger for handling contact request documents.
 ///
@@ -435,7 +433,7 @@ mod test {
 
         let _dashpay_identity_id = data_trigger_context.owner_id.to_owned();
 
-        let (result, _fee_result) = create_contact_request_data_trigger(
+        let (result, fee_result) = create_contact_request_data_trigger(
             &DocumentCreateTransitionAction::try_from_document_borrowed_create_transition_with_contract_lookup(&platform.drive, owner_id, None, document_create_transition, &BlockInfo::default(), 0, |_identifier| {
                 Ok(Arc::new(DataContractFetchInfo::dashpay_contract_fixture(protocol_version)))
             }, platform_version).expect("expected to create action").0.into_data().expect("expected to be a valid transition").as_document_action().expect("expected document action"),
@@ -446,6 +444,14 @@ mod test {
 
         assert!(!result.is_valid());
         let data_trigger_error = &result.errors[0];
+
+        // T3 regression pin: the trigger ran `fetch_identity_balance_with_costs`
+        // to check recipient existence — that fetch must produce a non-zero
+        // FeeResult so the caller can bill it on transform_into_action: 1.
+        assert!(
+            fee_result.processing_fee > 0,
+            "T3: fetch_identity_balance_with_costs must surface non-zero cost"
+        );
 
         assert!(matches!(
             data_trigger_error,

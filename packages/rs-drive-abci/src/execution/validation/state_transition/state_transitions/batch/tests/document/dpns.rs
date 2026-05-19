@@ -385,6 +385,16 @@ mod dpns_tests {
 
         assert_eq!(processing_result.valid_count(), 3);
 
+        // T1/T2 regression pin: the DPNS `create_domain_data_trigger`
+        // runs two `query_documents` calls per transition (parent-domain
+        // + preorder). The accumulated cost is billed via the trigger's
+        // returned `FeeResult` on `transform_into_action: 1`.
+        assert_eq!(
+            processing_result.aggregated_fees().processing_fee,
+            6_010_380, // 3 subdomain creates: T1 + T2 query costs billed per transition
+            "DPNS domain create fee must include T1 parent-domain + T2 preorder query costs"
+        );
+
         let mut order_by = IndexMap::new();
 
         order_by.insert(

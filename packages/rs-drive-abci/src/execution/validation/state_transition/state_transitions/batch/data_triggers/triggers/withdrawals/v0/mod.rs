@@ -20,7 +20,6 @@ use drive::state_transition_action::batch::batched_transition::document_transiti
 use dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
 use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use crate::execution::validation::state_transition::batch::data_triggers::{DataTriggerExecutionContext, DataTriggerExecutionResult};
-use crate::platform_types::platform_state::PlatformStateV0Methods;
 
 /// Creates a data trigger for handling deletion of withdrawal documents.
 ///
@@ -335,7 +334,7 @@ mod tests {
             state_transition_execution_context: &transition_execution_context,
             transaction: None,
         };
-        let (result, _fee_result) = delete_withdrawal_data_trigger_v0(
+        let (result, fee_result) = delete_withdrawal_data_trigger_v0(
             &document_transition,
             &data_trigger_context,
             platform_version,
@@ -349,6 +348,15 @@ mod tests {
         assert_eq!(
             error.to_string(),
             "withdrawal deletion is allowed only for COMPLETE statuses"
+        );
+
+        // T4 regression pin: the trigger ran `query_documents` to fetch the
+        // withdrawal — that query must surface a non-zero cost via the
+        // returned FeeResult so the caller can bill it on
+        // `transform_into_action: 1`.
+        assert!(
+            fee_result.processing_fee > 0,
+            "T4: query_documents must surface non-zero cost"
         );
     }
 }

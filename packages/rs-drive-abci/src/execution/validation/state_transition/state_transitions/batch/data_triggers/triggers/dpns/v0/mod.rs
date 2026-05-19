@@ -28,7 +28,6 @@ use dpp::version::PlatformVersion;
 use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use drive::query::{DriveDocumentQuery, InternalClauses, WhereClause, WhereOperator};
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContextMethodsV0;
-use crate::platform_types::platform_state::PlatformStateV0Methods;
 
 pub const MAX_PRINTABLE_DOMAIN_NAME_LENGTH: usize = 253;
 
