@@ -29,7 +29,7 @@ public enum LoggingPreferences {
         let preset = loadPreset()
         let enableSwiftVerbose: Bool
 
-        SDK.initializeSPVLogging(level: SDK.LogLevel.info, enableConsole: true, maxFiles: 5)
+        SDK.enableLogging(level: .info)
 
         switch preset {
         case .high:

@@ -283,6 +283,64 @@ impl Default for ContestedIndexInformation {
     }
 }
 
+/// What countable operations the index's tree supports.
+///
+/// - `NotCountable` — plain `NormalTree`. Counts on this index require enumerating
+///   documents (no fast path).
+/// - `Countable` — `CountTree`. The total count of documents under any covering
+///   equality / `In` prefix is an O(1) read (or O(distinct values) for partial
+///   prefixes).
+/// - `CountableAllowingOffset` — `ProvableCountTree`. Same total-count semantics
+///   as `Countable`, plus every internal node carries the count of its left and
+///   right subtrees, so future range / offset queries (e.g. "the next 50 items
+///   starting after key X") will be answerable in O(log n) without enumerating.
+///
+/// `CountableAllowingOffset` is strictly more capable than `Countable` but also
+/// strictly more expensive (every node carries count metadata, not just the
+/// root). Pick `Countable` when you only need totals; pick
+/// `CountableAllowingOffset` when you also need range/offset queries on this
+/// index.
+///
+/// **Note on `unique` indexes.** A unique index stores its terminal as a bare
+/// `Reference` at key `[0]` rather than wrapping it in a `CountTree`, so for
+/// documents whose indexed fields are *all* non-null the `countable` flag is a
+/// no-op at the storage level. It still does meaningful work for **null-bearing**
+/// entries: when a document has any null value among the indexed properties,
+/// insertion takes the same count-tree branch a non-unique index uses (because
+/// uniqueness can't be enforced on null), and the count tree at that path
+/// aggregates them. So `Countable` / `CountableAllowingOffset` on a unique index
+/// is meaningful exactly when at least one of the indexed properties is
+/// optional in the document schema. Counts on all-non-null exact matches still
+/// return the correct value (1 if present, 0 if not) because grovedb's
+/// `Element::count_value_or_default()` returns 1 for non-`CountTree` elements
+/// like `Reference`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
+#[cfg_attr(feature = "serde-conversion", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde-conversion", serde(rename_all = "camelCase"))]
+pub enum IndexCountability {
+    /// The index uses a plain `NormalTree` and does not support count fast paths.
+    #[default]
+    NotCountable,
+    /// The index uses a `CountTree` — total counts are O(1) via the root count.
+    Countable,
+    /// The index uses a `ProvableCountTree` — same as `Countable` plus per-node
+    /// counts that enable future O(log n) range / offset queries.
+    CountableAllowingOffset,
+}
+
+impl IndexCountability {
+    /// Returns true if this index supports count fast paths (either variant).
+    pub fn is_countable(&self) -> bool {
+        !matches!(self, Self::NotCountable)
+    }
+
+    /// Returns true if this index uses the provable variant (per-node counts,
+    /// enabling future range / offset support).
+    pub fn allows_offset(&self) -> bool {
+        matches!(self, Self::CountableAllowingOffset)
+    }
+}
+
 // Indices documentation:  https://dashplatform.readme.io/docs/reference-data-contracts#document-indices
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(feature = "serde-conversion", derive(Serialize, Deserialize))]
@@ -295,8 +353,26 @@ pub struct Index {
     pub null_searchable: bool,
     /// Contested indexes are useful when a resource is considered valuable
     pub contested_index: Option<ContestedIndexInformation>,
-    /// Enables countable operations on the index
-    pub countable: bool,
+    /// Whether and how the index supports count fast paths. See
+    /// [`IndexCountability`].
+    pub countable: IndexCountability,
+    /// Whether the index supports O(log n) count queries over a *range* of
+    /// values for the index's last property (the terminator). The flag
+    /// only affects the storage layout at the last property level — all
+    /// preceding (prefix) properties keep their default tree shape:
+    /// - The property-name tree at the *last* property (whose keys are
+    ///   that property's distinct values) is stored as a
+    ///   `ProvableCountTree`, so range queries over distinct values can
+    ///   be answered by walking the boundary in O(log n).
+    /// - Each value tree under it is stored as a `CountTree`, so the
+    ///   property-name aggregate sums per-value counts cleanly.
+    /// - Sibling continuations inside each value tree (compound-index
+    ///   suffixes) are wrapped with `Element::NonCounted` so their counts
+    ///   do not pollute the value tree's count.
+    ///
+    /// `range_countable: true` requires `countable` to be `Countable` or
+    /// `CountableAllowingOffset` (it's additive, not a replacement).
+    pub range_countable: bool,
 }
 
 impl Index {
@@ -471,7 +547,8 @@ impl TryFrom<&[(Value, Value)]> for Index {
         let mut name = None;
         let mut contested_index = None;
         let mut index_properties: Vec<IndexProperty> = Vec::new();
-        let mut countable = false;
+        let mut countable = IndexCountability::NotCountable;
+        let mut range_countable = false;
 
         for (key_value, value_value) in index_type_value_map {
             let key = key_value.to_str()?;
@@ -589,11 +666,44 @@ impl TryFrom<&[(Value, Value)]> for Index {
                     contested_index = Some(contested_index_information);
                 }
                 "countable" => {
-                    countable = value_value
-                        .as_bool()
-                        .ok_or(DataContractError::ValueWrongType(
-                            "countable value must be a boolean".to_string(),
-                        ))?;
+                    // Accept either:
+                    //   - boolean: `true` → Countable, `false` → NotCountable.
+                    //     This preserves v0 contracts (whose meta-schema enforces
+                    //     `"type": "boolean"`) and any v1 contracts written before
+                    //     the enum form was introduced.
+                    //   - string: one of `"notCountable"`, `"countable"`,
+                    //     `"countableAllowingOffset"` (camelCase, matching the
+                    //     `IndexCountability` serde rename rule).
+                    countable = match value_value {
+                        Value::Bool(true) => IndexCountability::Countable,
+                        Value::Bool(false) => IndexCountability::NotCountable,
+                        Value::Text(s) => match s.as_str() {
+                            "notCountable" => IndexCountability::NotCountable,
+                            "countable" => IndexCountability::Countable,
+                            "countableAllowingOffset" => IndexCountability::CountableAllowingOffset,
+                            other => {
+                                return Err(DataContractError::ValueWrongType(format!(
+                                    "countable value must be a boolean or one of \
+                                     \"notCountable\" / \"countable\" / \
+                                     \"countableAllowingOffset\"; got {:?}",
+                                    other
+                                )))
+                            }
+                        },
+                        _ => {
+                            return Err(DataContractError::ValueWrongType(
+                                "countable value must be a boolean or a string".to_string(),
+                            ))
+                        }
+                    };
+                }
+                "rangeCountable" => {
+                    range_countable =
+                        value_value
+                            .as_bool()
+                            .ok_or(DataContractError::ValueWrongType(
+                                "rangeCountable value must be a boolean".to_string(),
+                            ))?;
                 }
                 "properties" => {
                     let properties =
@@ -628,6 +738,20 @@ impl TryFrom<&[(Value, Value)]> for Index {
             ));
         }
 
+        // `rangeCountable` is additive on top of `countable`: it changes how
+        // the index's tree is laid out (property-name → ProvableCountTree,
+        // value level → CountTree, sibling continuations → NonCounted) so
+        // that range-count queries can be answered in O(log n). It is
+        // meaningless without the underlying countability.
+        if range_countable && !countable.is_countable() {
+            return Err(DataContractError::InvalidContractStructure(
+                "rangeCountable requires countable to be \"countable\" or \
+                 \"countableAllowingOffset\"; range-count queries only make \
+                 sense on a count-bearing index"
+                    .to_string(),
+            ));
+        }
+
         // if the index didn't have a name let's make one
         let name = name.unwrap_or_else(|| Alphanumeric.sample_string(&mut rand::thread_rng(), 24));
 
@@ -638,6 +762,7 @@ impl TryFrom<&[(Value, Value)]> for Index {
             null_searchable,
             contested_index,
             countable,
+            range_countable,
         })
     }
 }
@@ -691,7 +816,8 @@ mod tests {
             unique,
             null_searchable: true,
             contested_index: None,
-            countable: false,
+            countable: IndexCountability::NotCountable,
+            range_countable: false,
         }
     }
 

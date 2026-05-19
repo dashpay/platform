@@ -71,7 +71,7 @@ strum = { version = "0.26", features = ["derive"] }
 json-schema-compatibility-validator = { path = '../rs-json-schema-compatibility-validator', optional = true }
 once_cell = "1.19.0"
 tracing = { version = "0.1.41" }
-grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "8f25b20d04bfc0e8bdfb3870676d647a0d74918b", optional = true }
+grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "352c2f5504fba8795e8ed1056753bfd73c13b4cc", optional = true }
 
 [dev-dependencies]
 tokio = { version = "1.40", features = ["full"] }

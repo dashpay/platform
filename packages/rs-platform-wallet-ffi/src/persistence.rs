@@ -453,6 +453,32 @@ pub struct PersistenceCallbacks {
 unsafe impl Send for PersistenceCallbacks {}
 unsafe impl Sync for PersistenceCallbacks {}
 
+impl Default for PersistenceCallbacks {
+    fn default() -> Self {
+        Self {
+            context: std::ptr::null_mut(),
+            on_changeset_begin_fn: None,
+            on_changeset_end_fn: None,
+            on_store_fn: None,
+            on_flush_fn: None,
+            on_persist_address_balances_fn: None,
+            on_persist_wallet_changeset_fn: None,
+            on_persist_sync_state_fn: None,
+            on_persist_account_registrations_fn: None,
+            on_load_wallet_list_fn: None,
+            on_load_wallet_list_free_fn: None,
+            on_persist_wallet_metadata_fn: None,
+            on_persist_account_address_pools_fn: None,
+            on_persist_identities_fn: None,
+            on_persist_identity_keys_fn: None,
+            on_persist_token_balances_fn: None,
+            on_persist_contacts_fn: None,
+            on_get_core_tx_record_fn: None,
+            on_get_core_tx_record_free_fn: None,
+        }
+    }
+}
+
 /// In-memory persister that accumulates changesets and notifies via callbacks.
 pub struct FFIPersister {
     callbacks: PersistenceCallbacks,

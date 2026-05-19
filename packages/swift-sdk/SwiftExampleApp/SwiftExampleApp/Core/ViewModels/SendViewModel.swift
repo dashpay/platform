@@ -5,6 +5,7 @@ import SwiftDashSDK
 /// Available send flow types based on source and destination.
 enum SendFlow: Equatable {
     case coreToCore              // Standard L1 payment
+    case platformToPlatform      // Platform-address → platform-address transfer
     case platformToShielded      // Shield credits
     case shieldedToShielded      // Private transfer
     case shieldedToPlatform      // Unshield
@@ -13,6 +14,7 @@ enum SendFlow: Equatable {
     var displayName: String {
         switch self {
         case .coreToCore: return "Core Payment"
+        case .platformToPlatform: return "Platform Transfer"
         case .platformToShielded: return "Shield Credits"
         case .shieldedToShielded: return "Shielded Transfer"
         case .shieldedToPlatform: return "Unshield"
@@ -23,6 +25,7 @@ enum SendFlow: Equatable {
     var iconName: String {
         switch self {
         case .coreToCore: return "arrow.right"
+        case .platformToPlatform: return "arrow.right"
         case .platformToShielded: return "lock.shield"
         case .shieldedToShielded: return "arrow.left.arrow.right"
         case .shieldedToPlatform: return "lock.open"
@@ -33,6 +36,7 @@ enum SendFlow: Equatable {
     var estimatedFee: UInt64 {
         switch self {
         case .coreToCore: return 500_000             // ~0.005 DASH
+        case .platformToPlatform: return 100_000_000 // ~0.001 DASH in credits
         case .platformToShielded: return 200_000
         case .shieldedToShielded: return 300_000
         case .shieldedToPlatform: return 300_000
@@ -89,29 +93,28 @@ class SendViewModel: ObservableObject {
         self.network = network
     }
 
-    /// Parsed amount expressed in **L1 duffs** (1 DASH = 1e8). Right
-    /// for Core sends; *wrong* for Platform / shielded sends, which
-    /// use the credits scale (1 DASH = 1e11) instead. Use [`amountCredits`]
-    /// for those paths — picking duffs underpays them by 1000×.
-    var amountDuffs: UInt64? {
-        guard let double = Double(amountString), double > 0 else { return nil }
-        return UInt64(double * 100_000_000)
+    /// Amount in duffs (1 DASH = 1e8). Used by core/L1 flows.
+    /// Backed by `Decimal` parsing — typing 0.0001 deterministically
+    /// yields exactly 10_000 duffs, not 9_999 or 10_001 depending on
+    /// binary-float rounding.
+    var amount: UInt64? {
+        parseTokenAmount(amountString, decimals: 8)
     }
 
-    /// Parsed amount expressed in Platform / shielded **credits**
-    /// (1 DASH = 1e11). Used for any flow that touches the credits
-    /// ledger (`platformToShielded`, `shieldedToShielded`,
-    /// `shieldedToPlatform`, `shieldedToCore`).
+    /// Amount in platform credits (1 DASH = 1e11 credits). Used by
+    /// every flow that touches the credits ledger
+    /// (`platformToShielded`, `shieldedToShielded`,
+    /// `shieldedToPlatform`, `shieldedToCore`,
+    /// `platformToPlatform`). Same `Decimal`-backed parsing as
+    /// `amount`; the divisor difference is just the `decimals` arg.
     var amountCredits: UInt64? {
-        guard let double = Double(amountString), double > 0 else { return nil }
-        return UInt64(double * 100_000_000_000)
+        parseTokenAmount(amountString, decimals: 11)
     }
 
-    /// Backwards-compatibility shim — the original `amount` property
-    /// always returned duffs, so any leftover call site that hasn't
-    /// switched to the unit-explicit pair stays correct for Core
-    /// flows.
-    var amount: UInt64? { amountDuffs }
+    /// Unit-explicit alias for [`amount`] — kept so the Core-side
+    /// shielded send flows that read `amountDuffs` stay self-documenting
+    /// (Core uses duffs; Platform / shielded use credits).
+    var amountDuffs: UInt64? { amount }
 
     var canSend: Bool {
         detectedFlow != nil && amountDuffs != nil && !isSending
@@ -132,6 +135,7 @@ class SendViewModel: ObservableObject {
             if shieldedBalance > 0 { sources.append(.shielded) }
             if platformBalance > 0 { sources.append(.platform) }
         case .platform:
+            if platformBalance > 0 { sources.append(.platform) }
             if shieldedBalance > 0 { sources.append(.shielded) }
         case .unknown:
             break
@@ -165,6 +169,8 @@ class SendViewModel: ObservableObject {
             detectedFlow = .shieldedToShielded
         case (.orchard, .platform):
             detectedFlow = .platformToShielded
+        case (.platform, .platform):
+            detectedFlow = .platformToPlatform
         case (.platform, .shielded):
             detectedFlow = .shieldedToPlatform
         default:
@@ -182,6 +188,10 @@ class SendViewModel: ObservableObject {
         platformState: AppState,
         wallet: PersistentWallet,
         coreWallet: ManagedCoreWallet?,
+        platformAddressWallet: ManagedPlatformAddressWallet?,
+        signer: KeychainSigner?,
+        senderAccountIndex: UInt32,
+        changeAddressRow: PersistentPlatformAddress?,
         modelContext: ModelContext
     ) async {
         guard let flow = detectedFlow else { return }
@@ -202,11 +212,113 @@ class SendViewModel: ObservableObject {
                     error = "Core wallet not available"
                     return
                 }
+                guard let amount = amount else { return }
                 let address = recipientAddress.trimmingCharacters(in: .whitespacesAndNewlines)
                 let _ = try core.sendToAddresses(
                     recipients: [(address: address, amountDuffs: amountDuffs)]
                 )
                 successMessage = "Payment sent"
+
+            case .platformToPlatform:
+                guard let addressWallet = platformAddressWallet else {
+                    error = "Platform address wallet not available"
+                    return
+                }
+                guard let signer = signer else {
+                    error = "Signer not available"
+                    return
+                }
+                guard case .platform(let payload) = detectedAddressType else {
+                    error = "Recipient is not a platform address"
+                    return
+                }
+                guard payload.count == 21 else {
+                    error = "Platform address must be 21 bytes (got \(payload.count))"
+                    return
+                }
+                guard let credits = amountCredits else {
+                    error = "Invalid amount"
+                    return
+                }
+                // Map bech32m wire byte → FFI storage discriminant.
+                // See rs-dpp/src/address_funds/platform_address.rs:41-47.
+                let bech32mByte = payload[0]
+                let ffiAddressType: UInt8
+                switch bech32mByte {
+                case 0xb0: ffiAddressType = 0  // P2PKH
+                case 0x80: ffiAddressType = 1  // P2SH
+                default:
+                    error = "Unknown platform address type byte 0x\(String(bech32mByte, radix: 16))"
+                    return
+                }
+                // The Rust FFI's `PlatformAddressFFI → PlatformAddress`
+                // conversion (rs-platform-wallet-ffi/src/platform_address_types.rs:42)
+                // only accepts P2PKH; sending to a P2SH platform address
+                // would surface a raw "Unsupported address type" string
+                // from Rust. Fail fast with a user-readable message.
+                guard ffiAddressType == 0 else {
+                    error = "P2SH platform addresses aren't supported yet. Use a P2PKH recipient."
+                    return
+                }
+                let hash = payload.subdata(in: 1..<21)
+                let output = ManagedPlatformAddressWallet.TransferOutput(
+                    addressType: ffiAddressType,
+                    hash: hash,
+                    credits: credits
+                )
+                // If the view passed a fresh unused HD address from the
+                // pool, use it as the dedicated change destination —
+                // matches the Receive screen's lowest-unused selection.
+                let change: ManagedPlatformAddressWallet.ChangeAddress? = changeAddressRow.map {
+                    ManagedPlatformAddressWallet.ChangeAddress(
+                        addressType: $0.addressType,
+                        hash: $0.addressHash
+                    )
+                }
+                let updated = try await addressWallet.transfer(
+                    accountIndex: senderAccountIndex,
+                    outputs: [output],
+                    changeAddress: change,
+                    signer: signer
+                )
+
+                // Belt-and-suspenders: apply the post-broadcast
+                // balances/nonces returned by `transfer` to SwiftData
+                // directly. The Rust side already pushes the same
+                // changeset through the persister, so this loop is
+                // idempotent (same hash → same balance/nonce), but
+                // doing it here too keeps the @Query-bound
+                // PersistentPlatformAddress rows fresh even if the
+                // persister callback ordering ever changes.
+                //
+                // Mirrors PlatformWalletPersistenceHandler.persistAddressBalances:
+                // fetch each row by `addressHash`, update the
+                // volatile fields, stamp `lastUpdated`. Every entry
+                // returned was touched by the transition, so
+                // `isUsed = true` unconditionally. Rows that aren't
+                // found are silently skipped — same defensive shape
+                // the BLAST handler uses.
+                for entry in updated {
+                    let entryHash = entry.hash
+                    let descriptor = FetchDescriptor<PersistentPlatformAddress>(
+                        predicate: #Predicate { $0.addressHash == entryHash }
+                    )
+                    guard let row = try? modelContext.fetch(descriptor).first else {
+                        continue
+                    }
+                    row.balance = entry.balance
+                    row.nonce = entry.nonce
+                    row.isUsed = true
+                    row.lastUpdated = Date()
+                }
+                do {
+                    try modelContext.save()
+                } catch {
+                    self.error = "Couldn't persist post-transfer balances: \(error.localizedDescription)"
+                    return
+                }
+
+                successMessage = "Platform transfer sent"
 
             case .shieldedToShielded:
                 // Shielded → Shielded: spend notes from this

@@ -87,21 +87,33 @@ impl PlatformAddressWallet {
     /// [`PlatformPaymentAddressProvider::from_persisted`] so xpubs,
     /// `found`, and `absent` are restored verbatim while `addresses`
     /// and `pending` are rebuilt from the live `AddressPool`.
+    ///
+    /// Also pushes each persisted balance back onto the matching
+    /// `ManagedPlatformAccount` via `set_address_credit_balance` so
+    /// the transfer/withdrawal `auto_select_inputs` paths see a
+    /// non-zero balance immediately after restore — without this,
+    /// they'd report "available 0 credits" until a fresh BLAST sync
+    /// round fired `on_address_found` for every known address.
+    /// Mirrors the `set_address_credit_balance(.., None)` shape in
+    /// [apply.rs](crate::wallet::apply): `None` for the key-source
+    /// argument because the gap-limit pool is already restored from
+    /// `account_state.addresses` inside `from_persisted`.
     pub async fn initialize_from_persisted(
         &self,
         persisted: crate::PlatformAddressSyncStartState,
     ) -> Result<(), PlatformWalletError> {
-        // Push the persisted address balances into the in-memory
-        // `ManagedPlatformAccount.address_balances` map so callers
-        // that read via `addresses_with_balances()` /
-        // `address_credit_balance()` see the same numbers the
-        // BLAST sync saved last session. Without this the
-        // in-memory map starts empty after a restart and stays
-        // that way until the first sync pass repopulates it —
-        // any spend that needs to enumerate funded addresses
-        // (e.g. `shielded_shield_from_account`) sees `available =
-        // 0` even though the wallet detail screen reports a real
-        // balance from SwiftData.
+        // Hydrate `account.address_credit_balance` BEFORE constructing
+        // the provider. `from_persisted` holds a read lock on
+        // `wallet_manager` for its duration, and Tokio's `RwLock` has
+        // no read→write upgrade — doing the write-lock dance first
+        // keeps both paths simple and avoids exposing a new public
+        // accessor on the provider.
+        //
+        // Required by spend paths that enumerate funded addresses
+        // (e.g. `shielded_shield_from_account`): without this, after
+        // a restart they read `available = 0` until the first BLAST
+        // sync repopulates the in-memory map, even though SwiftData
+        // reports a real balance to the UI.
         {
             let mut wm = self.wallet_manager.write().await;
             if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
@@ -110,7 +122,7 @@ impl PlatformAddressWallet {
                         .core_wallet
                         .platform_payment_managed_account_at_index_mut(*account_index)
                     {
-                        for (p2pkh, funds) in account_state.persisted_balances() {
+                        for (p2pkh, funds) in account_state.found() {
                             account.set_address_credit_balance(*p2pkh, funds.balance, None);
                         }
                     }
