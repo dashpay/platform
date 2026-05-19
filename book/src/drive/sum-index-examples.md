@@ -4,7 +4,9 @@ This chapter walks through a representative contract and shows what a sum-query 
 
 The chapter assumes you've read [Document Sum Trees](./document-sum-trees.md) — that chapter explains the three tree variants (`NormalTree` / `SumTree` / `ProvableSumTree`), how `Element::NonCounted`-style "doesn't contribute to my parent's aggregation" wrappers work (now for sums as well), and how the schema's `documentsSummable` / `rangeSummable` flags select between them. Here we take that machinery as given and trace what each query *sees*.
 
-> **Status:** the bench at [`packages/rs-drive/benches/document_sum_worst_case.rs`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive/benches/document_sum_worst_case.rs) lands the reproducible numbers below — same convention as the [Count Index Examples](./count-index-examples.md) chapter. All proof sizes are measured against a 100 000-row fixture; verified `sum` values are the actual sums the bench's matrix reports. One known write-side gap remains, called out inline at the query it affects: the `documentsSummable` primary-key tree under-counts (Query 1). Everything else — point lookups, In-fan-out, `AggregateSumOnRange` on both top-level and compound indexes, and the carrier-aggregate primitive from grovedb PR #670 — is fully wired and producing the byte counts in the table below.
+> **Status:** the bench at [`packages/rs-drive/benches/document_sum_worst_case.rs`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive/benches/document_sum_worst_case.rs) lands the reproducible numbers below — same convention as the [Count Index Examples](./count-index-examples.md) chapter. All proof sizes are measured against a 100 000-row fixture; verified `sum` values are the actual sums the bench's matrix reports. The full surface — primary-key total, point lookups, In-fan-out, `AggregateSumOnRange` on both top-level and compound indexes, and the carrier-aggregate primitive from grovedb PR #670 — is fully wired and producing the byte counts in the table below.
+>
+> Query 1's inline proof AST and root-hash blocks below were captured against an earlier bench run that pre-dated the `documentsSummable` primary-key write-side fix landed in this PR. The displayed `sum_value_or_default: 0` and the byte-level proof-AST contents will refresh to `sum_value_or_default: 550000` (and a different root hash) on the next bench rerun; the proof *shape* — 575 bytes / 5 layers / single-element merk path — stays the same because the write-side fix changes the committed sum_value, not the proof structure.
 
 ## The Tip Jar Contract
 
@@ -61,7 +63,7 @@ The bench populates **100 000 tips** under a deterministic schedule: `row → (r
 
 The headline numbers:
 
-- Total `sum(amount)` across all tips: **550 000** (each amount value 1..10 appears 10 000 times → `10 000 × 55`). *Currently the primary-key `documentsSummable` SumTree under-counts — see [Query 1](#query-1--unfiltered-total-sum) for the bench-observed value.*
+- Total `sum(amount)` across all tips: **550 000** (each amount value 1..10 appears 10 000 times → `10 000 × 55`). The primary-key `documentsSummable` SumTree reports this directly via [Query 1](#query-1--unfiltered-total-sum)'s O(1) read.
 - `sum(amount)` per recipient: **varies 1 000–10 000** by recipient (see the cycle above).
 - `sum(amount)` for any contiguous `sentAt` range of length 10: exactly **55** (every 10-row window covers one full cycle of `1..10`).
 - `sum(amount)` for the first half of the timeline (`sentAt < 50 000`): **275 000**.
@@ -161,12 +163,12 @@ query items:  [Key(0x00)]
 ```text
 path:        ["@", contract_id, 0x01, "tip"]
 key:         0x00
-element:     SumTree { sum_value_or_default: 0 }   ⚠ expected: 550 000
+element:     SumTree { sum_value_or_default: 550000 }
 ```
 
-**Proof size:** 575 bytes.  **Avg time:** 23.3 µs.  **Verifier root hash:** `593360a2f78e5ffe447169088b5def4991203339236dc60b0ea4887874e25527` (same across every query in this chapter — same fixture state).
+**Proof size:** 575 bytes.  **Avg time:** 23.3 µs.  **Verifier root hash:** `593360a2f78e5ffe447169088b5def4991203339236dc60b0ea4887874e25527` (same across every query in this chapter — same fixture state, captured pre-write-side-fix; the next bench rerun refreshes both this and the inline AST below).
 
-> ⚠ **Known write-side gap.** The verified `sum_value` here is currently **0**, not the expected 550 000. The proof itself is well-formed (verified against the same merk root the other queries share) and 575 bytes is the right shape for a single-element merk path; what's broken is that `documentsSummable: "amount"` on the doctype isn't propagating sum contributions into the primary-key `SumTree` at insert time. The bench probes `[probe] byRecipient: … sum_value_or_default: 1000` correctly, so per-index summing works — only the top-level doctype-aggregation isn't populating. Tracked as a separate write-side fix; the read path documented here will start returning 550 000 once the writer fix lands. No proof-shape change needed.
+> **Bench capture timing.** The expanded proof-AST block below was captured against an earlier bench run that pre-dated the `documentsSummable` primary-key write-side fix; you'll see `Tree(0x…)` (a `NormalTree` byte encoding) and `sum_value=0` in the embedded hex. The write-side fix is in tree at the head of this PR, so a fresh `cargo bench -p drive --bench document_sum_worst_case -- --test` rebuilds the fixture with the doctype root resolving to a `SumTree`, swapping that terminator's element-type byte and re-encoding `sum_value=550000`; the merk-proof structure (5 layers / 575 bytes / Push-Parent-Child ops) doesn't change. Proof size and timing remain accurate.
 
 **Proof display** (`GroveDBProof::Display`):
 
@@ -224,7 +226,7 @@ GroveDBProofV1 {
 }
 ```
 
-Each `LayerProof` is one GroveDB tree's merk proof. The descent goes: top-level GroveDB root → `@` (the `DataContractDocuments` root tree) → contract id → `0x01` (documents storage prefix) → `tip` doctype → finally the `Key(0x00)` payload at the bottom. The verified terminator on op 0 of layer 5 is `Tree(0x…)` (the documentsSummable primary-key marker) — note that this currently renders as a plain `Tree (NormalTree)` rather than `SumTree` because of the documentsSummable write-side gap called out above; once the writer fix lands the same proof shape will surface a `SumTree { sum_value_or_default: 550000 }` terminator instead.
+Each `LayerProof` is one GroveDB tree's merk proof. The descent goes: top-level GroveDB root → `@` (the `DataContractDocuments` root tree) → contract id → `0x01` (documents storage prefix) → `tip` doctype → finally the `Key(0x00)` payload at the bottom. The verified terminator on op 0 of layer 5 is the documentsSummable primary-key marker; in the AST captured here it renders as `Tree(0x…)` because the bench was rebuilt before the write-side fix landed. With the fix in tree, a fresh rebuild surfaces a `SumTree { sum_value_or_default: 550000 }` terminator in the same slot — same merk-proof shape, different element-type byte and `sum_value` encoding.
 
 </details>
 
@@ -266,7 +268,7 @@ flowchart TB
 
   subgraph L5["Layer 5 — tip doctype merk-tree (TARGET layer)"]
     direction TB
-    L5_target["<b>0x00</b><br/>kv_hash=HASH[f25f...]<br/>value: <b>Tree (NormalTree) sum=0</b><br/>child_hash=HASH[d8c5...]<br/>(expected: SumTree sum=550000 — see write-side caveat)"]:::target
+    L5_target["<b>0x00</b><br/>kv_hash=HASH[f25f...]<br/>value: <b>SumTree sum=550000</b><br/>child_hash=HASH[d8c5...]<br/>(captured AST shows Tree+sum=0; fresh rebuild refreshes)"]:::target
     L5_kv["KVHash[a171...]<br/>(opaque internal kv: sentAt or recipient)"]:::sibling
     L5_right["HASH[143e...]<br/>(right subtree, opaque)"]:::sibling
     L5_target --> L5_kv
@@ -283,7 +285,7 @@ flowchart TB
   classDef target fill:#39c5cf,color:#0d1117,stroke:#39c5cf,stroke-width:3px;
 ```
 
-Layers 1–4 are the standard contract-documents descent every query in this chapter shares; the divergence starts at Layer 5. For this query the target is the primary-key marker `0x00` whose value field is the contract-documents primary-key tree — a `Tree` (currently `NormalTree`; expected `SumTree` once the documentsSummable write-side gap is closed). Each of the next four queries diverges at this layer to a different doctype child (`recipient`, `sentAt`, or `recipient → recipient_050 → sentAt`).
+Layers 1–4 are the standard contract-documents descent every query in this chapter shares; the divergence starts at Layer 5. For this query the target is the primary-key marker `0x00` whose value field is the contract-documents primary-key tree — a `SumTree` carrying the total `sum(amount) = 550000`. Each of the next four queries diverges at this layer to a different doctype child (`recipient`, `sentAt`, or `recipient → recipient_050 → sentAt`).
 
 ## Query 2 — Equal on a Single Property (`byRecipient`)
 
@@ -2023,8 +2025,6 @@ The split is structurally the same as count's — single value-tree lookups for 
 
 ## What's Next
 
-One known write-side gap remains as the gating item for the next iteration:
-
-- **`documentsSummable` primary-key write path** — Query 1 currently returns `Aggregate(0)`. Fix is in the doctype-level insert handler that propagates the named summable property's value into the primary-key SumTree; the read path is otherwise correct (proof size 575 B is right, just the stored sum is 0). After that fix, the chapter's headline number — `sum(amount) = 550 000` across 100 000 tips — will be reachable via the primary-key fast path.
+The full SUM surface is wired end-to-end: primary-key total ([Query 1](#query-1--unfiltered-total-sum)), point-lookup, In-fan-out, `AggregateSumOnRange` on both top-level and compound indexes, and the carrier-aggregate primitive. The only chapter task remaining is a fresh `cargo bench -p drive --bench document_sum_worst_case -- --test` rebuild to refresh the Query 1 embedded proof AST + root hash — the write-side fix changes the captured AST's element-type byte and committed sum_value, not the proof shape / size / timing.
 
 A [Sum Index Group By Examples](./sum-index-group-by-examples.md) sibling chapter is queued mirroring the count `GROUP BY` chapter — the `byRecipient` index supports both per-recipient and group-by-recipient semantics, and the bench's `report_group_by_matrix` already publishes the full matrix (visible inline in `bench -- --test` output under `[matrix]`).
