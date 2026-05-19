@@ -752,14 +752,33 @@ impl<C> Platform<C> {
                     // group_by=[]` whose executor routed through a
                     // PerInValue path (In + no range + no prove)
                     // returns one entry per In branch. Fold them into
-                    // a single aggregate. `saturating_add` mirrors the
-                    // count side's defensive guard against a future
-                    // executor producing per-branch sums that exceed
-                    // i64 in aggregate.
-                    let total: i64 = entries
-                        .iter()
-                        .map(|e| e.sum.unwrap_or(0))
-                        .fold(0i64, |a, b| a.saturating_add(b));
+                    // a single aggregate. `checked_add` surfaces the
+                    // narrow case where per-branch sums truly add to
+                    // more than i64::MAX as a typed
+                    // `QuerySyntaxError::Unsupported` rather than
+                    // silently saturating at i64::MAX (which produces
+                    // a deterministic-but-misleading answer).
+                    let mut total: i64 = 0;
+                    let mut overflow = false;
+                    for e in &entries {
+                        match total.checked_add(e.sum.unwrap_or(0)) {
+                            Some(t) => total = t,
+                            None => {
+                                overflow = true;
+                                break;
+                            }
+                        }
+                    }
+                    if overflow {
+                        return Ok(QueryValidationResult::new_with_error(QueryError::Query(
+                            QuerySyntaxError::Unsupported(
+                                "aggregate SUM across In branches overflows i64 — \
+                                 the In-fold cannot be represented; narrow the In set \
+                                 or query branches individually"
+                                    .to_string(),
+                            ),
+                        )));
+                    }
                     GetDocumentsResponseV1 {
                         result: Some(get_documents_response_v1::Result::Data(ResultData {
                             variant: Some(result_data::Variant::Sums(SumResults {
@@ -905,14 +924,41 @@ impl<C> Platform<C> {
                 if avg_mode == AverageMode::Aggregate {
                     // Mirror sum-side's fold for the `select=AVG,
                     // group_by=[]` + PerInValue executor combo. Fold
-                    // both count and sum across In branches.
-                    let (total_count, total_sum) =
-                        entries.iter().fold((0u64, 0i64), |(c_acc, s_acc), e| {
-                            (
-                                c_acc.saturating_add(e.count.unwrap_or(0)),
-                                s_acc.saturating_add(e.sum.unwrap_or(0)),
-                            )
-                        });
+                    // both count and sum across In branches. Either
+                    // axis overflowing is surfaced as a typed
+                    // `QuerySyntaxError::Unsupported` so the client
+                    // doesn't get a silently-saturated answer to
+                    // divide against (which would also misreport the
+                    // average).
+                    let mut total_count: u64 = 0;
+                    let mut total_sum: i64 = 0;
+                    let mut overflow_axis: Option<&'static str> = None;
+                    for e in &entries {
+                        match total_count.checked_add(e.count.unwrap_or(0)) {
+                            Some(c) => total_count = c,
+                            None => {
+                                overflow_axis = Some("count");
+                                break;
+                            }
+                        }
+                        match total_sum.checked_add(e.sum.unwrap_or(0)) {
+                            Some(s) => total_sum = s,
+                            None => {
+                                overflow_axis = Some("sum");
+                                break;
+                            }
+                        }
+                    }
+                    if let Some(axis) = overflow_axis {
+                        return Ok(QueryValidationResult::new_with_error(QueryError::Query(
+                            QuerySyntaxError::Unsupported(format!(
+                                "aggregate AVG across In branches overflows {axis} \
+                                 ({} axis range); narrow the In set or query branches \
+                                 individually",
+                                if axis == "count" { "u64" } else { "i64" },
+                            )),
+                        )));
+                    }
                     GetDocumentsResponseV1 {
                         result: Some(get_documents_response_v1::Result::Data(ResultData {
                             variant: Some(result_data::Variant::Averages(AverageResults {
@@ -1093,12 +1139,16 @@ impl<C> Platform<C> {
                     // `select=COUNT, group_by=[]` against a request
                     // that drove a PerInValue execution (In + no
                     // range + no prove). Sum entries into a single
-                    // aggregate before emission. `saturating_add`
-                    // on the off-chance an operator-misconfigured
-                    // count tree exceeds u64; realistic ceiling is
-                    // `|In| × max_per-branch-count`, well under u64.
-                    let total: u64 = entries
-                        .iter()
+                    // aggregate before emission. `checked_add`
+                    // surfaces u64 overflow as a typed
+                    // `QuerySyntaxError::Unsupported`; realistic
+                    // ceiling is `|In| × max_per-branch-count` (well
+                    // under u64), so triggering this path requires
+                    // either a misconfigured count tree or an
+                    // executor bug.
+                    let mut total: u64 = 0;
+                    let mut overflow = false;
+                    for e in &entries {
                         // `count.unwrap_or(0)` here is safe: this
                         // arm is server-side, summing entries the
                         // executor emitted. Executor never emits
@@ -1107,8 +1157,23 @@ impl<C> Platform<C> {
                         // `unwrap_or(0)` is a belt-and-suspenders
                         // guard against any future executor that
                         // forgets the contract.
-                        .map(|e| e.count.unwrap_or(0))
-                        .fold(0u64, |a, b| a.saturating_add(b));
+                        match total.checked_add(e.count.unwrap_or(0)) {
+                            Some(t) => total = t,
+                            None => {
+                                overflow = true;
+                                break;
+                            }
+                        }
+                    }
+                    if overflow {
+                        return Ok(QueryValidationResult::new_with_error(QueryError::Query(
+                            QuerySyntaxError::Unsupported(
+                                "aggregate COUNT across In branches overflows u64 — \
+                                 narrow the In set or query branches individually"
+                                    .to_string(),
+                            ),
+                        )));
+                    }
                     GetDocumentsResponseV1 {
                         result: Some(get_documents_response_v1::Result::Data(ResultData {
                             variant: Some(result_data::Variant::Counts(CountResults {
@@ -1181,6 +1246,17 @@ fn into_v1_sum_entry(e: DriveSumEntry) -> SumEntry {
 /// Translate an rs-drive `AverageEntry` into the wire `AverageEntry`.
 /// Mirror of [`into_v1_entry`] + [`into_v1_sum_entry`] for the average
 /// surface (carries both count and sum so the client can divide).
+///
+/// `zip_entries` in `drive_document_average_query::drive_dispatcher`
+/// performs a strict two-pointer merge that errors out as
+/// `CorruptedCodeExecution` on any per-`(in_key, key)` divergence
+/// between the count and sum streams. So by the time an entry reaches
+/// this mapper, both axes have already been asserted to agree on
+/// `Some`-vs-`None` for the same key — meaning the dangerous
+/// `(count: None, sum: Some(V))` bucket that could let a client
+/// divide V by 0 cannot exist. The `unwrap_or(0)` below is therefore
+/// defense-in-depth (same as [`into_v1_entry`] / [`into_v1_sum_entry`]
+/// for individual count / sum entries) rather than load-bearing.
 fn into_v1_average_entry(e: DriveAverageEntry) -> AverageEntry {
     AverageEntry {
         in_key: e.in_key,

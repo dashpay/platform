@@ -293,10 +293,20 @@ impl IndexLevel {
             (&self.has_index_with_type, &new.has_index_with_type)
         {
             if old_info.countable != new_info.countable {
-                return Some("(countable changed)".to_string());
+                // Include both ends so the contract author can see
+                // which countability tier shifted (e.g. NotCountable
+                // → Countable vs Countable → CountableAllowingOffset)
+                // rather than just learning *that* something changed.
+                return Some(format!(
+                    "(countable: {:?} -> {:?})",
+                    old_info.countable, new_info.countable,
+                ));
             }
             if old_info.range_countable != new_info.range_countable {
-                return Some("(range_countable changed)".to_string());
+                return Some(format!(
+                    "(range_countable: {} -> {})",
+                    old_info.range_countable, new_info.range_countable,
+                ));
             }
         }
 
@@ -328,10 +338,26 @@ impl IndexLevel {
             (&self.has_index_with_type, &new.has_index_with_type)
         {
             if old_info.summable != new_info.summable {
-                return Some("(summable changed)".to_string());
+                // Include the from→to summable property names so the
+                // author can see whether the change was an opt-in
+                // (None → Some("fee")), an opt-out, or a swap to a
+                // different property (Some("fee") → Some("amount")).
+                let fmt = |s: &Option<String>| {
+                    s.as_deref()
+                        .map(|p| format!("Some({:?})", p))
+                        .unwrap_or_else(|| "None".to_string())
+                };
+                return Some(format!(
+                    "(summable: {} -> {})",
+                    fmt(&old_info.summable),
+                    fmt(&new_info.summable),
+                ));
             }
             if old_info.range_summable != new_info.range_summable {
-                return Some("(range_summable changed)".to_string());
+                return Some(format!(
+                    "(range_summable: {} -> {})",
+                    old_info.range_summable, new_info.range_summable,
+                ));
             }
         }
 
@@ -763,7 +789,7 @@ mod tests {
             result.errors.as_slice(),
             [ConsensusError::BasicError(
                 BasicError::DataContractInvalidIndexDefinitionUpdateError(e)
-            )] if e.index_path() == "test -> (countable changed)"
+            )] if e.index_path() == "test -> (countable: NotCountable -> Countable)"
         );
     }
 
@@ -816,7 +842,7 @@ mod tests {
             result.errors.as_slice(),
             [ConsensusError::BasicError(
                 BasicError::DataContractInvalidIndexDefinitionUpdateError(e)
-            )] if e.index_path() == "test -> (countable changed)"
+            )] if e.index_path() == "test -> (countable: Countable -> NotCountable)"
         );
     }
 
@@ -907,7 +933,7 @@ mod tests {
             result.errors.as_slice(),
             [ConsensusError::BasicError(
                 BasicError::DataContractInvalidIndexDefinitionUpdateError(e)
-            )] if e.index_path() == "test -> (range_countable changed)"
+            )] if e.index_path() == "test -> (range_countable: false -> true)"
         );
     }
 
@@ -960,7 +986,7 @@ mod tests {
             result.errors.as_slice(),
             [ConsensusError::BasicError(
                 BasicError::DataContractInvalidIndexDefinitionUpdateError(e)
-            )] if e.index_path() == "test -> (range_countable changed)"
+            )] if e.index_path() == "test -> (range_countable: true -> false)"
         );
     }
 
@@ -1025,7 +1051,7 @@ mod tests {
             result.errors.as_slice(),
             [ConsensusError::BasicError(
                 BasicError::DataContractInvalidIndexDefinitionUpdateError(e)
-            )] if e.index_path() == "first -> second -> (range_countable changed)"
+            )] if e.index_path() == "first -> second -> (range_countable: false -> true)"
         );
     }
 
@@ -1090,7 +1116,7 @@ mod tests {
             result.errors.as_slice(),
             [ConsensusError::BasicError(
                 BasicError::DataContractInvalidIndexDefinitionUpdateError(e)
-            )] if e.index_path() == "first -> second -> (countable changed)"
+            )] if e.index_path() == "first -> second -> (countable: NotCountable -> Countable)"
         );
     }
 }

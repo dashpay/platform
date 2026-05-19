@@ -18,8 +18,13 @@
 //! reusing the proven SUM / COUNT executors:
 //!
 //! - **No-prove paths**: count + sum are read within the same
-//!   `transaction` snapshot, so they see identical state (no block-
-//!   boundary race, no off-by-one).
+//!   grovedb snapshot, so they see identical state (no block-
+//!   boundary race, no off-by-one). When the caller passes a
+//!   `TransactionArg::None` (the drive-abci query path), the
+//!   dispatcher opens a short-lived read transaction internally and
+//!   reuses it across both sub-calls so the atomicity guarantee
+//!   holds regardless of caller plumbing. The internal transaction
+//!   is rolled back at the end (read-only, never commits).
 //! - **Prove path**: not supported here — the on-wire bytes would be
 //!   two concatenated proofs whose verification semantics aren't
 //!   defined. Returns a typed `NotYetImplemented` so callers requesting
@@ -43,7 +48,6 @@ use crate::query::drive_document_count_query::{
 use crate::query::drive_document_sum_query::{DocumentSumRequest, DocumentSumResponse, SumMode};
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
-use std::collections::BTreeMap;
 
 #[cfg(feature = "server")]
 impl Drive {
@@ -111,10 +115,31 @@ impl Drive {
             drive_config: request.drive_config,
         };
 
-        let count_response =
-            self.execute_document_count_request(count_request, transaction, platform_version)?;
-        let sum_response =
-            self.execute_document_sum_request(sum_request, transaction, platform_version)?;
+        // Atomicity: both sub-reads must see the same grovedb root. If
+        // the caller didn't provide a transaction we open a short-lived
+        // read transaction here and reuse it across both executors so
+        // a concurrent block commit can't slip between the count and
+        // sum reads (the attacker-steerable race documented in the
+        // module-level docstring). The local transaction is read-only
+        // and dropped without commit at the end of this function.
+        let local_tx;
+        let effective_transaction: TransactionArg = if transaction.is_some() {
+            transaction
+        } else {
+            local_tx = self.grove.start_transaction();
+            Some(&local_tx)
+        };
+
+        let count_response = self.execute_document_count_request(
+            count_request,
+            effective_transaction,
+            platform_version,
+        )?;
+        let sum_response = self.execute_document_sum_request(
+            sum_request,
+            effective_transaction,
+            platform_version,
+        )?;
 
         // Combine. The two executors emit either Aggregate or Entries
         // (Proof is unreachable here since `prove=false` above). The
@@ -131,7 +156,7 @@ impl Drive {
             ) => Ok(DocumentAverageResponse::Entries(zip_entries(
                 count_entries,
                 sum_entries,
-            ))),
+            )?)),
             // Mismatched shapes — count executor and sum executor
             // disagreed on whether the result fits in a single row.
             // Should be impossible because they share the same mode
@@ -148,56 +173,186 @@ impl Drive {
     }
 }
 
-/// Zip per-`(in_key, key)` count entries and sum entries into average
-/// entries. Both inputs are emitted by the same executor family in the
-/// same `(in_key, key)` order, so a single pass works.
+/// Merge per-`(in_key, key)` count entries and sum entries into average
+/// entries via a strict two-pointer merge keyed on `(in_key, key)`.
 ///
-/// Defensive: if the two streams diverge on keys (executor bug), keys
-/// present only in one side get `None` for the other axis on the
-/// emitted `AverageEntry` so the wire layer can decide how to surface
-/// the inconsistency (clients see `Option<u64> count` and
-/// `Option<i64> sum`).
-/// `(in_key, key)` pair used to zip count and sum entries together.
-/// `in_key` is `Some` for compound (`In + range`) executor paths, `None`
-/// otherwise; `key` is the terminator value.
-#[cfg(feature = "server")]
-type EntryKey = (Option<Vec<u8>>, Vec<u8>);
-
+/// Both inputs are emitted by the same executor family with identical
+/// `where_clauses` / `order_clauses` / `mode` against the same grovedb
+/// snapshot, so they MUST emit the same set of keys in the same
+/// ascending `(in_key, key)` order. Any divergence (key on one side
+/// only, or different ordering) indicates an executor bug and is
+/// surfaced as `CorruptedCodeExecution` rather than silently zeroed at
+/// the wire layer — the previous defensive `None`-preservation pattern
+/// was indistinguishable from "this key matched zero documents but the
+/// sum is nonzero" once the wire mapping flattened `Option<u64>` →
+/// `u64`, which let attacker-timed inserts between the two reads
+/// produce a `count=0, sum=V` bucket that crashed naive `sum / count`
+/// clients with a divide-by-zero. With atomicity now enforced inside
+/// `execute_document_average_request` (see module docstring), the only
+/// remaining cause of divergence is a real executor bug — treating it
+/// as fatal is correct.
+///
+/// Output is always strictly ascending by `(in_key, key)` (same order
+/// the inputs are required to be in).
 #[cfg(feature = "server")]
 fn zip_entries(
     count_entries: Vec<crate::query::SplitCountEntry>,
     sum_entries: Vec<crate::query::SumEntry>,
-) -> Vec<AverageEntry> {
-    // Stream-merge by `(in_key, key)`. Both executors emit entries in
-    // ascending grovedb key order, so a sort/merge isn't needed in the
-    // happy path — but we keep the merge logic robust against future
-    // executor changes that might reorder.
-    let mut sum_by_key: BTreeMap<EntryKey, Option<i64>> = sum_entries
-        .into_iter()
-        .map(|e| ((e.in_key, e.key), e.sum))
-        .collect();
+) -> Result<Vec<AverageEntry>, Error> {
+    use crate::error::drive::DriveError;
 
-    let mut out = Vec::with_capacity(count_entries.len() + sum_by_key.len());
-    for ce in count_entries {
-        let key_pair = (ce.in_key, ce.key);
-        let sum = sum_by_key.remove(&key_pair);
-        out.push(AverageEntry {
-            in_key: key_pair.0,
-            key: key_pair.1,
-            count: ce.count,
-            sum: sum.unwrap_or(None),
-        });
+    let mut out = Vec::with_capacity(count_entries.len().max(sum_entries.len()));
+    let mut c_iter = count_entries.into_iter();
+    let mut s_iter = sum_entries.into_iter();
+    let mut next_c = c_iter.next();
+    let mut next_s = s_iter.next();
+
+    loop {
+        match (&next_c, &next_s) {
+            (Some(c), Some(s)) => {
+                let c_key = (&c.in_key, &c.key);
+                let s_key = (&s.in_key, &s.key);
+                match c_key.cmp(&s_key) {
+                    std::cmp::Ordering::Equal => {
+                        let c = next_c.take().expect("checked Some above");
+                        let s = next_s.take().expect("checked Some above");
+                        out.push(AverageEntry {
+                            in_key: c.in_key,
+                            key: c.key,
+                            count: c.count,
+                            sum: s.sum,
+                        });
+                        next_c = c_iter.next();
+                        next_s = s_iter.next();
+                    }
+                    std::cmp::Ordering::Less => {
+                        return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                            "average composition: count executor emitted a (in_key, key) the \
+                             sum executor didn't — both executors run identical inputs against \
+                             the same grovedb snapshot, so divergence indicates an executor bug",
+                        )));
+                    }
+                    std::cmp::Ordering::Greater => {
+                        return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                            "average composition: sum executor emitted a (in_key, key) the \
+                             count executor didn't — both executors run identical inputs against \
+                             the same grovedb snapshot, so divergence indicates an executor bug",
+                        )));
+                    }
+                }
+            }
+            (Some(_), None) => {
+                return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                    "average composition: count executor produced more entries than sum executor \
+                     — both executors run identical inputs against the same grovedb snapshot, \
+                     so divergence indicates an executor bug",
+                )));
+            }
+            (None, Some(_)) => {
+                return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                    "average composition: sum executor produced more entries than count executor \
+                     — both executors run identical inputs against the same grovedb snapshot, \
+                     so divergence indicates an executor bug",
+                )));
+            }
+            (None, None) => break,
+        }
     }
-    // Any sum-only keys (sum had entries the count side didn't —
-    // indicates an executor bug, but emit them with `count: None` so
-    // the wire layer can decide what to do).
-    for ((in_key, key), sum) in sum_by_key {
-        out.push(AverageEntry {
-            in_key,
-            key,
-            count: None,
-            sum,
-        });
+    Ok(out)
+}
+
+#[cfg(all(test, feature = "server"))]
+mod tests {
+    use super::*;
+    use crate::error::drive::DriveError;
+    use crate::query::{SplitCountEntry, SumEntry};
+
+    fn cc(in_key: Option<&[u8]>, key: &[u8], count: u64) -> SplitCountEntry {
+        SplitCountEntry {
+            in_key: in_key.map(|b| b.to_vec()),
+            key: key.to_vec(),
+            count: Some(count),
+        }
     }
-    out
+    fn ss(in_key: Option<&[u8]>, key: &[u8], sum: i64) -> SumEntry {
+        SumEntry {
+            in_key: in_key.map(|b| b.to_vec()),
+            key: key.to_vec(),
+            sum: Some(sum),
+        }
+    }
+
+    #[test]
+    fn zip_entries_merges_aligned_streams_in_ascending_order() {
+        let count_entries = vec![cc(None, b"a", 1), cc(None, b"b", 2), cc(None, b"c", 3)];
+        let sum_entries = vec![ss(None, b"a", 10), ss(None, b"b", 20), ss(None, b"c", 30)];
+        let out = zip_entries(count_entries, sum_entries).expect("aligned streams must merge");
+        assert_eq!(out.len(), 3);
+        assert_eq!(out[0].key, b"a");
+        assert_eq!(out[0].count, Some(1));
+        assert_eq!(out[0].sum, Some(10));
+        assert_eq!(out[2].key, b"c");
+        assert_eq!(out[2].count, Some(3));
+        assert_eq!(out[2].sum, Some(30));
+    }
+
+    #[test]
+    fn zip_entries_errors_when_count_has_an_extra_key() {
+        // count has `b` but sum doesn't — strict merge must reject.
+        let count_entries = vec![cc(None, b"a", 1), cc(None, b"b", 2)];
+        let sum_entries = vec![ss(None, b"a", 10)];
+        let err = zip_entries(count_entries, sum_entries)
+            .expect_err("divergent streams must surface as CorruptedCodeExecution");
+        assert!(
+            matches!(err, Error::Drive(DriveError::CorruptedCodeExecution(_))),
+            "expected CorruptedCodeExecution, got {err:?}",
+        );
+    }
+
+    #[test]
+    fn zip_entries_errors_when_sum_has_an_extra_key() {
+        let count_entries = vec![cc(None, b"a", 1)];
+        let sum_entries = vec![ss(None, b"a", 10), ss(None, b"b", 20)];
+        let err = zip_entries(count_entries, sum_entries)
+            .expect_err("divergent streams must surface as CorruptedCodeExecution");
+        assert!(
+            matches!(err, Error::Drive(DriveError::CorruptedCodeExecution(_))),
+            "expected CorruptedCodeExecution, got {err:?}",
+        );
+    }
+
+    #[test]
+    fn zip_entries_errors_when_streams_disagree_on_a_key_in_the_middle() {
+        // count has `b`, sum has `c` between the matching `a` and `d`.
+        let count_entries = vec![cc(None, b"a", 1), cc(None, b"b", 2), cc(None, b"d", 4)];
+        let sum_entries = vec![ss(None, b"a", 10), ss(None, b"c", 30), ss(None, b"d", 40)];
+        let err = zip_entries(count_entries, sum_entries)
+            .expect_err("middle-of-stream divergence must surface as CorruptedCodeExecution");
+        assert!(matches!(
+            err,
+            Error::Drive(DriveError::CorruptedCodeExecution(_))
+        ));
+    }
+
+    #[test]
+    fn zip_entries_handles_compound_in_key_ordering() {
+        // (Some("X"), "a") < (Some("X"), "b") < (Some("Y"), "a") in
+        // lexicographic order — verify the merge follows it.
+        let count_entries = vec![
+            cc(Some(b"X"), b"a", 1),
+            cc(Some(b"X"), b"b", 2),
+            cc(Some(b"Y"), b"a", 3),
+        ];
+        let sum_entries = vec![
+            ss(Some(b"X"), b"a", 10),
+            ss(Some(b"X"), b"b", 20),
+            ss(Some(b"Y"), b"a", 30),
+        ];
+        let out = zip_entries(count_entries, sum_entries).expect("aligned compound merge");
+        assert_eq!(out.len(), 3);
+        assert_eq!(out[0].in_key.as_deref(), Some(b"X".as_ref()));
+        assert_eq!(out[0].key, b"a");
+        assert_eq!(out[2].in_key.as_deref(), Some(b"Y".as_ref()));
+        assert_eq!(out[2].key, b"a");
+    }
 }

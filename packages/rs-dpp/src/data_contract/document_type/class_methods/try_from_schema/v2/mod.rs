@@ -305,100 +305,115 @@ impl DocumentTypeV2 {
         // that case every per-index `summable` must agree with all
         // other per-index `summable`s (the first one wins as the
         // canonical name).
-        if full_validation {
-            let mut canonical: Option<String> = documents_summable.clone();
-            for index in v2.indices.values() {
-                if let Some(index_sum_property) = &index.summable {
-                    match &canonical {
-                        Some(existing) if existing != index_sum_property => {
-                            return Err(ProtocolError::DataContractError(
-                                DataContractError::InvalidContractStructure(format!(
-                                    "all `summable` declarations on document type \"{}\" \
-                                     must name the same property; saw \"{}\" and \"{}\". \
-                                     Sum trees aggregate i64 per merk node and have no \
-                                     per-tree property tag — mixed sum properties would \
-                                     produce a meaningless aggregation.",
-                                    name, existing, index_sum_property,
-                                )),
-                            ));
-                        }
-                        None => canonical = Some(index_sum_property.clone()),
-                        _ => {}
+        //
+        // These checks are structural invariants of the on-disk
+        // grovedb sum-tree layout, NOT optional schema lints — mixed
+        // sum properties corrupt ancestor aggregation, U64 summable
+        // values silently overflow grovedb's `i64` SumValue at insert,
+        // and non-required summable properties silently underflow
+        // ancestor sums on delete. They run regardless of
+        // `full_validation` because this function sits on the
+        // untrusted-contract boundary (restore / migration /
+        // cache-warmup / future query-side parsing paths may pass
+        // `full_validation: false` against attacker-controlled
+        // contract bytes — admitting malformed contracts there would
+        // let SUM/AVG queries compute over meaningless state while
+        // still looking structurally valid). `flattened_properties`
+        // and `required_fields` are populated by the V1 parser on
+        // both validation paths so the lookups below are safe to
+        // execute unconditionally.
+        let mut canonical: Option<String> = documents_summable.clone();
+        for index in v2.indices.values() {
+            if let Some(index_sum_property) = &index.summable {
+                match &canonical {
+                    Some(existing) if existing != index_sum_property => {
+                        return Err(ProtocolError::DataContractError(
+                            DataContractError::InvalidContractStructure(format!(
+                                "all `summable` declarations on document type \"{}\" \
+                                 must name the same property; saw \"{}\" and \"{}\". \
+                                 Sum trees aggregate i64 per merk node and have no \
+                                 per-tree property tag — mixed sum properties would \
+                                 produce a meaningless aggregation.",
+                                name, existing, index_sum_property,
+                            )),
+                        ));
                     }
+                    None => canonical = Some(index_sum_property.clone()),
+                    _ => {}
                 }
             }
+        }
 
-            // Also verify the named property is `type: integer` and
-            // listed in `required`. The integer check goes through
-            // `v2.flattened_properties` (set by the V1 parser, which
-            // resolves $ref). The required check goes through
-            // `v2.required_fields`.
-            if let Some(prop_name) = &canonical {
-                let prop = v2.flattened_properties.get(prop_name).ok_or_else(|| {
-                    ProtocolError::DataContractError(DataContractError::InvalidContractStructure(
-                        format!(
-                            "summable property \"{}\" referenced by document type \"{}\" \
-                             does not exist on that document type",
-                            prop_name, name,
-                        ),
-                    ))
-                })?;
-                // U64 is intentionally NOT accepted: grovedb's sum-tree
-                // aggregates `i64`, so a u64 value > i64::MAX would
-                // overflow the aggregator silently. Authors who want
-                // unbounded positive integers as summable should set
-                // the schema's `maximum` explicitly to `i64::MAX`
-                // (9_223_372_036_854_775_807) — that bound forces the
-                // property-type inference at
-                // `property/mod.rs::find_unsigned_integer_type_for_max_value`
-                // through `find_integer_type_for_min_and_max_values`'s
-                // unsigned branch (still U64 today because max > U32),
-                // BUT we also reject U64 unconditionally here so the
-                // rule is enforced regardless of the inference path.
-                //
-                // The accepted list (I64 + I32/U32 + I16/U16 + I8/U8) is
-                // the set of integer types that fit losslessly into
-                // grovedb's i64 sum value. Without an explicit `maximum
-                // <= i64::MAX` on the property, no integer schema
-                // currently infers I64 — authors must add either
-                // `maximum: 9223372036854775807` or pick a smaller
-                // signed/unsigned type that's not U64.
-                if !matches!(
-                    prop.property_type,
-                    DocumentPropertyType::I64
-                        | DocumentPropertyType::I32
-                        | DocumentPropertyType::U32
-                        | DocumentPropertyType::I16
-                        | DocumentPropertyType::U16
-                        | DocumentPropertyType::I8
-                        | DocumentPropertyType::U8
-                ) {
-                    return Err(ProtocolError::DataContractError(
-                        DataContractError::InvalidContractStructure(format!(
-                            "summable property \"{}\" on document type \"{}\" must be an \
-                             integer type whose values fit in i64 (i8..i64 / u8..u32); got \
-                             {:?}. U64 is rejected because values above i64::MAX would \
-                             overflow grovedb's i64 sum aggregator. To use a positive-only \
-                             integer property as summable, either pick u8/u16/u32, OR set the \
-                             property's schema `maximum` to 9223372036854775807 (i64::MAX) \
-                             AND have it parse as i64 (today this requires a negative \
-                             `minimum` to force the signed inference branch; tracked as a \
-                             property-inference follow-up).",
-                            prop_name, name, prop.property_type,
-                        )),
-                    ));
-                }
-                if !v2.required_fields.contains(prop_name) {
-                    return Err(ProtocolError::DataContractError(
-                        DataContractError::InvalidContractStructure(format!(
-                            "summable property \"{}\" on document type \"{}\" must be \
-                             listed in the document type's `required` array; a missing \
-                             value at insert time would leave the reference with no sum \
-                             contribution and silently underflow ancestor sums on delete.",
-                            prop_name, name,
-                        )),
-                    ));
-                }
+        // Also verify the named property is `type: integer` and
+        // listed in `required`. The integer check goes through
+        // `v2.flattened_properties` (set by the V1 parser, which
+        // resolves $ref). The required check goes through
+        // `v2.required_fields`.
+        if let Some(prop_name) = &canonical {
+            let prop = v2.flattened_properties.get(prop_name).ok_or_else(|| {
+                ProtocolError::DataContractError(DataContractError::InvalidContractStructure(
+                    format!(
+                        "summable property \"{}\" referenced by document type \"{}\" \
+                         does not exist on that document type",
+                        prop_name, name,
+                    ),
+                ))
+            })?;
+            // U64 is intentionally NOT accepted: grovedb's sum-tree
+            // aggregates `i64`, so a u64 value > i64::MAX would
+            // overflow the aggregator silently. Authors who want
+            // unbounded positive integers as summable should set
+            // the schema's `maximum` explicitly to `i64::MAX`
+            // (9_223_372_036_854_775_807) — that bound forces the
+            // property-type inference at
+            // `property/mod.rs::find_unsigned_integer_type_for_max_value`
+            // through `find_integer_type_for_min_and_max_values`'s
+            // unsigned branch (still U64 today because max > U32),
+            // BUT we also reject U64 unconditionally here so the
+            // rule is enforced regardless of the inference path.
+            //
+            // The accepted list (I64 + I32/U32 + I16/U16 + I8/U8) is
+            // the set of integer types that fit losslessly into
+            // grovedb's i64 sum value. Without an explicit `maximum
+            // <= i64::MAX` on the property, no integer schema
+            // currently infers I64 — authors must add either
+            // `maximum: 9223372036854775807` or pick a smaller
+            // signed/unsigned type that's not U64.
+            if !matches!(
+                prop.property_type,
+                DocumentPropertyType::I64
+                    | DocumentPropertyType::I32
+                    | DocumentPropertyType::U32
+                    | DocumentPropertyType::I16
+                    | DocumentPropertyType::U16
+                    | DocumentPropertyType::I8
+                    | DocumentPropertyType::U8
+            ) {
+                return Err(ProtocolError::DataContractError(
+                    DataContractError::InvalidContractStructure(format!(
+                        "summable property \"{}\" on document type \"{}\" must be an \
+                         integer type whose values fit in i64 (i8..i64 / u8..u32); got \
+                         {:?}. U64 is rejected because values above i64::MAX would \
+                         overflow grovedb's i64 sum aggregator. To use a positive-only \
+                         integer property as summable, either pick u8/u16/u32, OR set the \
+                         property's schema `maximum` to 9223372036854775807 (i64::MAX) \
+                         AND have it parse as i64 (today this requires a negative \
+                         `minimum` to force the signed inference branch; tracked as a \
+                         property-inference follow-up).",
+                        prop_name, name, prop.property_type,
+                    )),
+                ));
+            }
+            if !v2.required_fields.contains(prop_name) {
+                return Err(ProtocolError::DataContractError(
+                    DataContractError::InvalidContractStructure(format!(
+                        "summable property \"{}\" on document type \"{}\" must be \
+                         listed in the document type's `required` array; a missing \
+                         value at insert time would leave the reference with no sum \
+                         contribution and silently underflow ancestor sums on delete.",
+                        prop_name, name,
+                    )),
+                ));
             }
         }
 
