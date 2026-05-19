@@ -121,14 +121,18 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             // transient mnemonic/seed bytes zeroized; never logged,
             // never in an error.
 
-            // Mint the managed-info skeleton from the seed-derived
+            // Mint the managed-info skeleton from the re-derived
             // wallet, then apply the keyless persisted core state
-            // (UTXOs, sync watermarks, last_applied_chain_lock,
-            // per-account balances). A silent zero balance here is a
-            // FAIL — `apply_persisted_core_state` recomputes the
-            // balance from the restored UTXO set.
+            // (UTXOs, sync watermarks, per-account balances). A wallet
+            // with persisted UTXOs but no funds account hard-fails here
+            // rather than reconstructing a silent zero balance.
             let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, birth_height);
-            super::rehydrate::apply_persisted_core_state(&mut wallet_info, &core_state);
+            if let Err(e) =
+                super::rehydrate::apply_persisted_core_state(&mut wallet_info, &core_state)
+            {
+                load_error = Some(e);
+                break 'load;
+            }
 
             // Flatten the (account → outpoint → lock) map.
             let mut tracked_asset_locks = BTreeMap::new();
@@ -166,14 +170,11 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             };
             inserted_in_manager.push(wallet_id);
 
-            if wallet_id != expected_wallet_id {
-                load_error = Some(PlatformWalletError::WalletCreation(format!(
-                    "Persisted wallet id {} does not match recomputed id {}",
-                    hex::encode(expected_wallet_id),
-                    hex::encode(wallet_id)
-                )));
-                break 'load;
-            }
+            // No post-insert id re-check: the constant-time
+            // `rehydrate_wallet` wrong-seed gate already proved
+            // `compute_wallet_id() == expected_wallet_id` before this
+            // wallet was built (a mismatch is the typed, fail-closed
+            // `WrongSeedForDatabase` raised above).
 
             let broadcaster = Arc::new(crate::broadcaster::SpvBroadcaster::new(Arc::clone(
                 &self.spv_manager,
