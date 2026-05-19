@@ -1,23 +1,13 @@
 use crate::error::Error;
-use crate::platform_types::platform::PlatformStateRef;
 use dpp::block::epoch::Epoch;
-use dpp::consensus::basic::document::{DataContractNotPresentError, InvalidDocumentTypeError};
-use dpp::consensus::basic::BasicError;
-use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use std::collections::btree_map::Entry;
-use std::collections::BTreeMap;
-
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
-
-use crate::platform_types::platform_state::PlatformStateV0Methods;
 use dpp::document::Document;
 use dpp::fee::fee_result::FeeResult;
 use dpp::platform_value::{Identifier, Value};
 use dpp::state_transition::batch_transition::batched_transition::document_transition::{
     DocumentTransition, DocumentTransitionV0Methods,
 };
-use dpp::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 use dpp::validation::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use drive::drive::document::query::query_contested_documents_storage::QueryContestedDocumentsOutcomeV0Methods;
@@ -28,112 +18,6 @@ use drive::query::drive_contested_document_query::{
     DriveContestedDocumentQuery, PrimaryContestedInternalClauses,
 };
 use drive::query::{DriveDocumentQuery, InternalClauses, WhereClause, WhereOperator};
-
-#[allow(dead_code)]
-#[deprecated(note = "This function is marked as unused.")]
-#[allow(deprecated)]
-pub(crate) fn fetch_documents_for_transitions(
-    platform: &PlatformStateRef,
-    document_transitions: &[&DocumentTransition],
-    epoch: &Epoch,
-    transaction: TransactionArg,
-    platform_version: &PlatformVersion,
-) -> Result<ConsensusValidationResult<Vec<Document>>, Error> {
-    let mut transitions_by_contracts_and_types: BTreeMap<
-        (&Identifier, &String),
-        Vec<&DocumentTransition>,
-    > = BTreeMap::new();
-
-    for document_transition in document_transitions {
-        let document_type = document_transition.base().document_type_name();
-        let data_contract_id = document_transition.base().data_contract_id_ref();
-
-        match transitions_by_contracts_and_types.entry((data_contract_id, document_type)) {
-            Entry::Vacant(v) => {
-                v.insert(vec![document_transition]);
-            }
-            Entry::Occupied(mut o) => o.get_mut().push(document_transition),
-        }
-    }
-
-    let validation_results_of_documents = transitions_by_contracts_and_types
-        .into_iter()
-        .map(|((contract_id, document_type_name), transitions)| {
-            fetch_documents_for_transitions_knowing_contract_id_and_document_type_name(
-                platform,
-                contract_id,
-                document_type_name,
-                transitions.as_slice(),
-                epoch,
-                transaction,
-                platform_version,
-            )
-        })
-        .collect::<Result<Vec<ConsensusValidationResult<Vec<Document>>>, Error>>()?;
-
-    let validation_result =
-        ConsensusValidationResult::flatten(validation_results_of_documents, platform_version)?;
-
-    Ok(validation_result)
-}
-
-#[allow(dead_code)]
-pub(crate) fn fetch_documents_for_transitions_knowing_contract_id_and_document_type_name(
-    platform: &PlatformStateRef,
-    contract_id: &Identifier,
-    document_type_name: &str,
-    transitions: &[&DocumentTransition],
-    epoch: &Epoch,
-    transaction: TransactionArg,
-    platform_version: &PlatformVersion,
-) -> Result<ConsensusValidationResult<Vec<Document>>, Error> {
-    let drive = platform.drive;
-    //todo: deal with fee result
-    //we only want to add to the cache if we are validating in a transaction
-    let add_to_cache_if_pulled = transaction.is_some();
-    let (_, contract_fetch_info) = drive.get_contract_with_fetch_info_and_fee(
-        contract_id.to_buffer(),
-        Some(platform.state.last_committed_block_epoch_ref()),
-        add_to_cache_if_pulled,
-        transaction,
-        platform_version,
-    )?;
-
-    let Some(contract_fetch_info) = contract_fetch_info else {
-        return Ok(ConsensusValidationResult::new_with_error(
-            BasicError::DataContractNotPresentError(DataContractNotPresentError::new(*contract_id))
-                .into(),
-        ));
-    };
-
-    let Some(document_type) = contract_fetch_info
-        .contract
-        .document_type_optional_for_name(document_type_name)
-    else {
-        return Ok(ConsensusValidationResult::new_with_error(
-            BasicError::InvalidDocumentTypeError(InvalidDocumentTypeError::new(
-                document_type_name.to_string(),
-                *contract_id,
-            ))
-            .into(),
-        ));
-    };
-    // This caller is `#[allow(dead_code)]`; the FeeResult is discarded
-    // here because it is currently unused. If this function gets revived,
-    // the caller will need to propagate the fee through the existing
-    // billing version-gate.
-    let (validation_result, _fee_result) =
-        fetch_documents_for_transitions_knowing_contract_and_document_type(
-            drive,
-            &contract_fetch_info.contract,
-            document_type,
-            transitions,
-            epoch,
-            transaction,
-            platform_version,
-        )?;
-    Ok(validation_result)
-}
 
 /// Returns the fetched documents plus the `FeeResult` for the underlying
 /// `query_documents` operation. The caller decides whether to bill the
