@@ -61,9 +61,10 @@ pub fn run_to(src: &Connection, dest: &Path) -> Result<(), WalletStorageError> {
 /// process. The caller (the persister's `restore_from_inner`) handles
 /// the pre-restore auto-backup gate.
 pub fn restore_from(dest_db_path: &Path, src_backup: &Path) -> Result<(), WalletStorageError> {
-    // 1. Validate source — opens read-only, runs PRAGMA integrity_check,
-    //    requires `refinery_schema_history`, and rejects future schema
-    //    versions.
+    // 1. Confirm the source is openable, then run a cheap pre-staging
+    //    integrity check. The authoritative schema-history / version
+    //    gate runs on the STAGED copy (step 5) so every check binds to
+    //    the exact bytes being persisted (TOCTOU-safe).
     let src = Connection::open_with_flags(
         src_backup,
         rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_URI,
@@ -72,38 +73,6 @@ pub fn restore_from(dest_db_path: &Path, src_backup: &Path) -> Result<(), Wallet
     run_integrity_check(&src, |report| WalletStorageError::IntegrityCheckFailed {
         report,
     })?;
-    let has_schema = src
-        .query_row(
-            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'refinery_schema_history'",
-            [],
-            |_| Ok(()),
-        )
-        .optional()?
-        .is_some();
-    if !has_schema {
-        return Err(WalletStorageError::SchemaHistoryMissing);
-    }
-    let max_supported = crate::sqlite::migrations::embedded_migrations()
-        .iter()
-        .map(|(v, _)| *v as i64)
-        .max()
-        .unwrap_or(0);
-    let source_version: Option<i64> = src
-        .query_row(
-            "SELECT MAX(version) FROM refinery_schema_history",
-            [],
-            |row| row.get(0),
-        )
-        .optional()?
-        .flatten();
-    if let Some(v) = source_version {
-        if v > max_supported {
-            return Err(WalletStorageError::SchemaVersionUnsupported {
-                found: v,
-                max_supported,
-            });
-        }
-    }
     drop(src);
 
     // 2. Try-lock the destination so we don't replace a DB another
@@ -164,6 +133,41 @@ pub fn restore_from(dest_db_path: &Path, src_backup: &Path) -> Result<(), Wallet
         run_integrity_check(&staged, |report| WalletStorageError::IntegrityCheckFailed {
             report,
         })?;
+        // Schema-history presence + max-version gate, bound to the
+        // staged bytes (not the first source handle) so a swap during
+        // the restore window can't slip a forward-version DB through.
+        let has_schema = staged
+            .query_row(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'refinery_schema_history'",
+                [],
+                |_| Ok(()),
+            )
+            .optional()?
+            .is_some();
+        if !has_schema {
+            return Err(WalletStorageError::SchemaHistoryMissing);
+        }
+        let max_supported = crate::sqlite::migrations::embedded_migrations()
+            .iter()
+            .map(|(v, _)| *v as i64)
+            .max()
+            .unwrap_or(0);
+        let source_version: Option<i64> = staged
+            .query_row(
+                "SELECT MAX(version) FROM refinery_schema_history",
+                [],
+                |row| row.get(0),
+            )
+            .optional()?
+            .flatten();
+        if let Some(v) = source_version {
+            if v > max_supported {
+                return Err(WalletStorageError::SchemaVersionUnsupported {
+                    found: v,
+                    max_supported,
+                });
+            }
+        }
     }
 
     // 6. Persist atomically over the destination.
