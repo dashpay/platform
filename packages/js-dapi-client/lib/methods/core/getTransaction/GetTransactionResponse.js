@@ -4,8 +4,8 @@ class GetTransactionResponse {
   /**
    *
    * @param {object} properties
-   * @param {Buffer} properties.transaction
-   * @param {Buffer} properties.blockHash
+   * @param {Uint8Array} properties.transaction
+   * @param {Uint8Array} properties.blockHash
    * @param {number} properties.height
    * @param {number} properties.confirmations
    * @param {boolean} properties.isInstantLocked
@@ -22,7 +22,7 @@ class GetTransactionResponse {
 
   /**
    * Get transaction
-   * @returns {Buffer}
+   * @returns {Uint8Array}
    */
   getTransaction() {
     return this.transaction;
@@ -30,7 +30,7 @@ class GetTransactionResponse {
 
   /**
    * Get block hash
-   * @returns {Buffer}
+   * @returns {Uint8Array}
    */
   getBlockHash() {
     return this.blockHash;
@@ -75,8 +75,8 @@ class GetTransactionResponse {
     }
 
     return new GetTransactionResponse({
-      transaction: Buffer.from(transactionBinaryArray),
-      blockHash: Buffer.from(proto.getBlockHash()),
+      transaction: new Uint8Array(transactionBinaryArray),
+      blockHash: new Uint8Array(proto.getBlockHash()),
       height: proto.getHeight(),
       confirmations: proto.getConfirmations(),
       isInstantLocked: proto.getIsInstantLocked(),

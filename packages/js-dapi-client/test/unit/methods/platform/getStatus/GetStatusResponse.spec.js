@@ -12,6 +12,7 @@ const ChainStatus = require('../../../../../lib/methods/platform/getStatus/Chain
 const NetworkStatus = require('../../../../../lib/methods/platform/getStatus/NetworkStatus');
 const StateSyncStatus = require('../../../../../lib/methods/platform/getStatus/StateSyncStatus');
 const TimeStatus = require('../../../../../lib/methods/platform/getStatus/TimeStatus');
+const { bytesToHex } = require('../../../../../lib/utils/bytes');
 
 describe('GetStatusResponse', () => {
   let getStatusResponse;
@@ -90,17 +91,17 @@ describe('GetStatusResponse', () => {
     );
 
     const node = new NodeStatus(
-      Buffer.from(statusFixture.node.id).toString('hex'),
-      Buffer.from(statusFixture.node.proTxHash).toString('hex'),
+      bytesToHex(statusFixture.node.id),
+      bytesToHex(statusFixture.node.proTxHash),
     );
 
     const chain = new ChainStatus(
       statusFixture.chain.catchingUp,
-      Buffer.from(statusFixture.chain.latestBlockHash).toString('hex'),
-      Buffer.from(statusFixture.chain.latestAppHash).toString('hex'),
+      bytesToHex(statusFixture.chain.latestBlockHash),
+      bytesToHex(statusFixture.chain.latestAppHash),
       BigInt(statusFixture.chain.latestBlockHeight),
-      Buffer.from(statusFixture.chain.earliestBlockHash).toString('hex'),
-      Buffer.from(statusFixture.chain.earliestAppHash).toString('hex'),
+      bytesToHex(statusFixture.chain.earliestBlockHash),
+      bytesToHex(statusFixture.chain.earliestAppHash),
       BigInt(statusFixture.chain.earliestBlockHeight),
       BigInt(statusFixture.chain.maxPeerBlockHeight),
       statusFixture.chain.coreChainLockedHeight,
@@ -219,22 +220,22 @@ describe('GetStatusResponse', () => {
       .to.equal(statusFixture.version.protocol.drive.nextEpoch);
 
     expect(nodeStatus).to.be.an.instanceOf(NodeStatus);
-    expect(nodeStatus.getNodeId()).to.equal(Buffer.from(statusFixture.node.id).toString('hex'));
-    expect(nodeStatus.getProTxHash()).to.equal(Buffer.from(statusFixture.node.proTxHash).toString('hex'));
+    expect(nodeStatus.getNodeId()).to.equal(bytesToHex(statusFixture.node.id));
+    expect(nodeStatus.getProTxHash()).to.equal(bytesToHex(statusFixture.node.proTxHash));
 
     expect(chainStatus).to.be.an.instanceOf(ChainStatus);
     expect(chainStatus.isCatchingUp())
       .to.equal(statusFixture.chain.catchingUp);
     expect(chainStatus.getLatestBlockHash())
-      .to.equal(Buffer.from(statusFixture.chain.latestBlockHash).toString('hex'));
+      .to.equal(bytesToHex(statusFixture.chain.latestBlockHash));
     expect(chainStatus.getLatestAppHash())
-      .to.equal(Buffer.from(statusFixture.chain.latestAppHash).toString('hex'));
+      .to.equal(bytesToHex(statusFixture.chain.latestAppHash));
     expect(chainStatus.getLatestBlockHeight())
       .to.equal(BigInt(statusFixture.chain.latestBlockHeight));
     expect(chainStatus.getEarliestBlockHash())
-      .to.equal(Buffer.from(statusFixture.chain.earliestBlockHash).toString('hex'));
+      .to.equal(bytesToHex(statusFixture.chain.earliestBlockHash));
     expect(chainStatus.getEarliestAppHash())
-      .to.equal(Buffer.from(statusFixture.chain.earliestAppHash).toString('hex'));
+      .to.equal(bytesToHex(statusFixture.chain.earliestAppHash));
     expect(chainStatus.getEarliestBlockHeight())
       .to.equal(BigInt(statusFixture.chain.earliestBlockHeight));
     expect(chainStatus.getMaxPeerBlockHeight())
@@ -297,22 +298,22 @@ describe('GetStatusResponse', () => {
       .to.equal(statusFixture.version.protocol.drive.latest);
 
     expect(nodeStatus).to.be.an.instanceOf(NodeStatus);
-    expect(nodeStatus.getNodeId()).to.equal(Buffer.from(statusFixture.node.id).toString('hex'));
-    expect(nodeStatus.getProTxHash()).to.equal(Buffer.from(statusFixture.node.proTxHash).toString('hex'));
+    expect(nodeStatus.getNodeId()).to.equal(bytesToHex(statusFixture.node.id));
+    expect(nodeStatus.getProTxHash()).to.equal(bytesToHex(statusFixture.node.proTxHash));
 
     expect(chainStatus).to.be.an.instanceOf(ChainStatus);
     expect(chainStatus.isCatchingUp())
       .to.equal(statusFixture.chain.catchingUp);
     expect(chainStatus.getLatestBlockHash())
-      .to.equal(Buffer.from(statusFixture.chain.latestBlockHash).toString('hex'));
+      .to.equal(bytesToHex(statusFixture.chain.latestBlockHash));
     expect(chainStatus.getLatestAppHash())
-      .to.equal(Buffer.from(statusFixture.chain.latestAppHash).toString('hex'));
+      .to.equal(bytesToHex(statusFixture.chain.latestAppHash));
     expect(chainStatus.getLatestBlockHeight())
       .to.equal(BigInt(statusFixture.chain.latestBlockHeight));
     expect(chainStatus.getEarliestBlockHash())
-      .to.equal(Buffer.from(statusFixture.chain.earliestBlockHash).toString('hex'));
+      .to.equal(bytesToHex(statusFixture.chain.earliestBlockHash));
     expect(chainStatus.getEarliestAppHash())
-      .to.equal(Buffer.from(statusFixture.chain.earliestAppHash).toString('hex'));
+      .to.equal(bytesToHex(statusFixture.chain.earliestAppHash));
     expect(chainStatus.getEarliestBlockHeight())
       .to.equal(BigInt(statusFixture.chain.earliestBlockHeight));
     expect(chainStatus.getMaxPeerBlockHeight())

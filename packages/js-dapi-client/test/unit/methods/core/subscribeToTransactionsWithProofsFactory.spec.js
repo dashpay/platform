@@ -13,6 +13,7 @@ const { EventEmitter } = require('events');
 const subscribeToTransactionsWithProofsFactory = require('../../../../lib/methods/core/subscribeToTransactionsWithProofsFactory');
 
 const DAPIClientError = require('../../../../lib/errors/DAPIClientError');
+const { hexToBytes } = require('../../../../lib/utils/bytes');
 
 describe('subscribeToTransactionsWithProofsFactory', () => {
   let subscribeToTransactionsWithProofs;
@@ -54,7 +55,7 @@ describe('subscribeToTransactionsWithProofsFactory', () => {
     request.setBloomFilter(bloomFilterMessage);
     request.setFromBlockHeight(options.fromBlockHeight);
     request.setCount(options.count);
-    request.setFromBlockHash(Buffer.from(options.fromBlockHash, 'hex'));
+    request.setFromBlockHash(hexToBytes(options.fromBlockHash));
 
     expect(grpcTransportMock.request).to.be.calledOnceWithExactly(
       CorePromiseClient,

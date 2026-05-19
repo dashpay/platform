@@ -28,7 +28,7 @@ describe('GetDocumentsResponse', () => {
     proofFixture = getProofFixture();
 
     serializedDocuments = documentsFixture
-      .map((document) => Buffer.from(JSON.stringify(document)));
+      .map((document) => new TextEncoder().encode(JSON.stringify(document)));
 
     const { GetDocumentsResponseV0 } = GetDocumentsResponse;
     proto = new GetDocumentsResponse();

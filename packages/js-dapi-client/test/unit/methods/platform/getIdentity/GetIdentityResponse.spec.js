@@ -58,7 +58,7 @@ describe('GetIdentityResponse', () => {
 
   it('should return proof', () => {
     getIdentityResponse = new GetIdentityResponseClass(
-      Buffer.alloc(0),
+      new Uint8Array(0),
       new Metadata(metadataFixture),
       new Proof(proofFixture),
     );
@@ -66,7 +66,7 @@ describe('GetIdentityResponse', () => {
     const identity = getIdentityResponse.getIdentity();
     const proof = getIdentityResponse.getProof();
 
-    expect(identity).to.deep.equal(Buffer.alloc(0));
+    expect(identity).to.deep.equal(new Uint8Array(0));
     expect(proof).to.be.an.instanceOf(Proof);
     expect(proof.getGrovedbProof()).to.deep.equal(proofFixture.merkleProof);
     expect(proof.getQuorumHash()).to.deep.equal(proofFixture.quorumHash);
@@ -104,7 +104,7 @@ describe('GetIdentityResponse', () => {
 
     getIdentityResponse = GetIdentityResponseClass.createFromProto(proto);
 
-    expect(getIdentityResponse.getIdentity()).to.deep.equal(Buffer.alloc(0));
+    expect(getIdentityResponse.getIdentity()).to.deep.equal(new Uint8Array(0));
 
     expect(getIdentityResponse.getMetadata().getHeight())
       .to.deep.equal(BigInt(metadataFixture.height));

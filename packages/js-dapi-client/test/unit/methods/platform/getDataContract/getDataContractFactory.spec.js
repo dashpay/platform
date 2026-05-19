@@ -118,7 +118,7 @@ describe('getDataContractFactory', () => {
       options,
     ]);
 
-    expect(result.getDataContract()).to.deep.equal(Buffer.alloc(0));
+    expect(result.getDataContract()).to.deep.equal(new Uint8Array(0));
 
     expect(result.getProof()).to.be.an.instanceOf(ProofClass);
     expect(result.getProof().getGrovedbProof()).to.deep.equal(proofFixture.merkleProof);
@@ -146,7 +146,7 @@ describe('getDataContractFactory', () => {
     const request = new GetDataContractRequest();
     request.setV0(
       new GetDataContractRequestV0()
-        .setId(contractId.toBuffer())
+        .setId(new Uint8Array(contractId.toBuffer()))
         .setProve(false),
     );
 

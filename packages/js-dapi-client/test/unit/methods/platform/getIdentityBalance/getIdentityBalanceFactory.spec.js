@@ -29,7 +29,7 @@ describe('getIdentityBalanceFactory', () => {
   beforeEach(async function beforeEach() {
     balance = BigInt(1337);
 
-    identityId = Buffer.alloc(32).fill(0);
+    identityId = new Uint8Array(32);
 
     metadataFixture = getMetadataFixture();
     proofFixture = getProofFixture();

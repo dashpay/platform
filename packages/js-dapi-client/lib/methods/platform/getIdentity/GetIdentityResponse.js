@@ -3,7 +3,7 @@ const InvalidResponseError = require('../response/errors/InvalidResponseError');
 
 class GetIdentityResponse extends AbstractResponse {
   /**
-   * @param {Buffer} identity
+   * @param {Uint8Array} identity
    * @param {Metadata} metadata
    * @param {Proof} [proof]
    */
@@ -14,7 +14,7 @@ class GetIdentityResponse extends AbstractResponse {
   }
 
   /**
-   * @returns {Buffer}
+   * @returns {Uint8Array}
    */
   getIdentity() {
     return this.identity;
@@ -33,7 +33,7 @@ class GetIdentityResponse extends AbstractResponse {
     }
 
     return new GetIdentityResponse(
-      Buffer.from(proto.getV0().getIdentity()),
+      new Uint8Array(proto.getV0().getIdentity()),
       metadata,
       proof,
     );

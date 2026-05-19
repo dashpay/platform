@@ -16,19 +16,19 @@ function getIdentityFactory(grpcTransport) {
   /**
    * Fetch the identity by id
    * @typedef {getIdentity}
-   * @param {Buffer} id
+   * @param {Uint8Array} id
    * @param {DAPIClientOptions & {prove: boolean}} [options]
    * @returns {Promise<GetIdentityResponse>}
    */
   async function getIdentity(id, options = {}) {
     const { GetIdentityRequestV0 } = GetIdentityRequest;
     const getIdentityRequest = new GetIdentityRequest();
-    // need to convert objects inherited from Buffer to pure buffer as google protobuf
+    // need to convert objects inherited from Uint8Array to pure Uint8Array as google protobuf
     // doesn't support extended buffers
     // https://github.com/protocolbuffers/protobuf/blob/master/js/binary/utils.js#L1049
-    if (Buffer.isBuffer(id)) {
+    if (id instanceof Uint8Array) {
       // eslint-disable-next-line no-param-reassign
-      id = Buffer.from(id);
+      id = new Uint8Array(id);
     }
 
     getIdentityRequest.setV0(

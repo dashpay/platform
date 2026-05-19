@@ -15,7 +15,7 @@ function getBlockByHashFactory(grpcTransport) {
    * @typedef {getBlockByHash}
    * @param {string} hash
    * @param {DAPIClientOptions} [options]
-   * @returns {Promise<null|Buffer>}
+   * @returns {Promise<null|Uint8Array>}
    */
   async function getBlockByHash(hash, options = {}) {
     const getBlockRequest = new GetBlockRequest();
@@ -29,7 +29,7 @@ function getBlockByHashFactory(grpcTransport) {
     );
     const blockBinaryArray = response.getBlock();
 
-    return Buffer.from(blockBinaryArray);
+    return new Uint8Array(blockBinaryArray);
   }
 
   return getBlockByHash;

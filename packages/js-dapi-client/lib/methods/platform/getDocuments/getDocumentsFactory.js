@@ -18,7 +18,7 @@ function getDocumentsFactory(grpcTransport) {
   /**
    * Fetch Documents from Drive
    * @typedef {getDocuments}
-   * @param {Buffer} contractId - Data Contract ID
+   * @param {Uint8Array} contractId - Data Contract ID
    * @param {string} type - Document type
    * @param {DAPIClientOptions & getDocumentsOptions & {prove: boolean}} [options]
    * @returns {Promise<GetDocumentsResponse>}
@@ -44,15 +44,16 @@ function getDocumentsFactory(grpcTransport) {
 
     const { GetDocumentsRequestV0 } = GetDocumentsRequest;
     const getDocumentsRequest = new GetDocumentsRequest();
-    // need to convert Identifier to pure buffer as google protobuf doesn't support extended buffers
+    // need to convert Identifier to pure Uint8Array as google protobuf doesn't support
+    // extended buffers
     // https://github.com/protocolbuffers/protobuf/blob/master/js/binary/utils.js#L1049
 
-    // need to convert objects inherited from Buffer to pure buffer as google protobuf
+    // need to convert objects inherited from Uint8Array to pure Uint8Array as google protobuf
     // doesn't support extended buffers
     // https://github.com/protocolbuffers/protobuf/blob/master/js/binary/utils.js#L1049
-    if (Buffer.isBuffer(contractId)) {
+    if (contractId instanceof Uint8Array) {
       // eslint-disable-next-line no-param-reassign
-      contractId = Buffer.from(contractId);
+      contractId = new Uint8Array(contractId);
     }
 
     getDocumentsRequest.setV0(

@@ -190,7 +190,7 @@ describe('getDataContractHistoryFactory', () => {
     const request = new GetDataContractHistoryRequest();
     request.setV0(
       new GetDataContractHistoryRequestV0()
-        .setId(contractId.toBuffer())
+        .setId(new Uint8Array(contractId.toBuffer()))
         .setLimit(new UInt32Value([10]))
         .setOffset(new UInt32Value([0]))
         .setStartAtMs('0')

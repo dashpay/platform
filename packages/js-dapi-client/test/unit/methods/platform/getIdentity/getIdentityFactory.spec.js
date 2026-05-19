@@ -72,7 +72,7 @@ describe('getIdentityFactory', () => {
     const request = new GetIdentityRequest();
     request.setV0(
       new GetIdentityRequestV0()
-        .setId(identityId.toBuffer())
+        .setId(new Uint8Array(identityId.toBuffer()))
         .setProve(false),
     );
 
@@ -107,7 +107,7 @@ describe('getIdentityFactory', () => {
     const request = new GetIdentityRequest();
     request.setV0(
       new GetIdentityRequestV0()
-        .setId(identityId.toBuffer())
+        .setId(new Uint8Array(identityId.toBuffer()))
         .setProve(true),
     );
 
@@ -118,7 +118,7 @@ describe('getIdentityFactory', () => {
       options,
     );
 
-    expect(result.getIdentity()).to.deep.equal(Buffer.alloc(0));
+    expect(result.getIdentity()).to.deep.equal(new Uint8Array(0));
 
     expect(result.getMetadata().getHeight())
       .to.deep.equal(BigInt(metadataFixture.height));
@@ -145,7 +145,7 @@ describe('getIdentityFactory', () => {
     const request = new GetIdentityRequest();
     request.setV0(
       new GetIdentityRequestV0()
-        .setId(identityId.toBuffer())
+        .setId(new Uint8Array(identityId.toBuffer()))
         .setProve(false),
     );
 

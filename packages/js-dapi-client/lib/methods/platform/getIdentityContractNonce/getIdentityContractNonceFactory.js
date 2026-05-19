@@ -16,8 +16,8 @@ function getIdentityContractNonceFactory(grpcTransport) {
   /**
    * Fetch the version upgrade votes status
    * @typedef {getIdentityContractNonce}
-   * @param {Buffer} identityId
-   * @param {Buffer} contractId
+   * @param {Uint8Array} identityId
+   * @param {Uint8Array} contractId
    * @param {DAPIClientOptions & {prove: boolean}} [options]
    * @returns {Promise<GetIdentityContractNonceResponse>}
    */
@@ -29,14 +29,14 @@ function getIdentityContractNonceFactory(grpcTransport) {
     // eslint-disable-next-line max-len
     const getIdentityContractNonceRequest = new GetIdentityContractNonceRequest();
 
-    if (Buffer.isBuffer(identityId)) {
+    if (identityId instanceof Uint8Array) {
       // eslint-disable-next-line no-param-reassign
-      identityId = Buffer.from(identityId);
+      identityId = new Uint8Array(identityId);
     }
 
-    if (Buffer.isBuffer(contractId)) {
+    if (contractId instanceof Uint8Array) {
       // eslint-disable-next-line no-param-reassign
-      contractId = Buffer.from(contractId);
+      contractId = new Uint8Array(contractId);
     }
 
     getIdentityContractNonceRequest.setV0(

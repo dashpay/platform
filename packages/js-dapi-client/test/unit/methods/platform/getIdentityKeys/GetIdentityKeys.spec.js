@@ -22,7 +22,7 @@ describe('GetIdentityKeysResponse', () => {
 
   beforeEach(async () => {
     metadataFixture = getMetadataFixture();
-    keys = [Buffer.alloc(41).fill(1), Buffer.alloc(48).fill(2), Buffer.alloc(55).fill(3)];
+    keys = [new Uint8Array(41).fill(1), new Uint8Array(48).fill(2), new Uint8Array(55).fill(3)];
     proofFixture = getProofFixture();
 
     const { GetIdentityKeysResponseV0 } = GetIdentityKeysResponse;
@@ -58,7 +58,7 @@ describe('GetIdentityKeysResponse', () => {
 
   it('should return proof', () => {
     getIdentityKeysResponse = new GetIdentityKeysResponseClass(
-      Buffer.alloc(0),
+      new Uint8Array(0),
       new Metadata(metadataFixture),
       new Proof(proofFixture),
     );
@@ -66,7 +66,7 @@ describe('GetIdentityKeysResponse', () => {
     const identityKeys = getIdentityKeysResponse.getIdentityKeys();
     const proof = getIdentityKeysResponse.getProof();
 
-    expect(identityKeys).to.deep.equal(Buffer.alloc(0));
+    expect(identityKeys).to.deep.equal(new Uint8Array(0));
     expect(proof).to.be.an.instanceOf(Proof);
     expect(proof.getGrovedbProof()).to.deep.equal(proofFixture.merkleProof);
     expect(proof.getQuorumHash()).to.deep.equal(proofFixture.quorumHash);

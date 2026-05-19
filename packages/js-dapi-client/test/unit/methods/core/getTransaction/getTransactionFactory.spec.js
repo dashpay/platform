@@ -20,8 +20,8 @@ describe('getTransactionFactory', () => {
   let isInstantLocked;
 
   beforeEach(function beforeEach() {
-    transaction = Buffer.from('transaction');
-    blockHash = Buffer.from('blockHash');
+    transaction = new TextEncoder().encode('transaction');
+    blockHash = new TextEncoder().encode('blockHash');
     height = 42;
     confirmations = 3;
     isChainLocked = true;

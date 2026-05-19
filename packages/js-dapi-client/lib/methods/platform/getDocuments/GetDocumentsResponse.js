@@ -2,7 +2,7 @@ const AbstractResponse = require('../response/AbstractResponse');
 
 class GetDocumentsResponse extends AbstractResponse {
   /**
-   * @param {Buffer[]} documents
+   * @param {Uint8Array[]} documents
    * @param {Metadata} metadata
    * @param {Proof} [proof]
    */
@@ -13,7 +13,7 @@ class GetDocumentsResponse extends AbstractResponse {
   }
 
   /**
-   * @returns {Buffer[]}
+   * @returns {Uint8Array[]}
    */
   getDocuments() {
     return this.documents;
@@ -30,7 +30,7 @@ class GetDocumentsResponse extends AbstractResponse {
 
     return new GetDocumentsResponse(
       documents !== undefined
-        ? documents.getDocumentsList().map((document) => Buffer.from(document)) : [],
+        ? documents.getDocumentsList().map((document) => new Uint8Array(document)) : [],
       metadata,
       proof,
     );
