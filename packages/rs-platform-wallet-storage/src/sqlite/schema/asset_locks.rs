@@ -134,9 +134,52 @@ pub fn load_state(
     Ok(out)
 }
 
-/// Return non-`Used` asset locks per wallet, bucketed by account
-/// index. Every status variant the changeset writes is considered
-/// "active": consumed locks leave via [`AssetLockChangeSet::removed`].
+/// The status-filtered rehydration feed: every asset lock for the
+/// wallet **except** terminal `Consumed` rows, bucketed by account
+/// index.
+///
+/// `consume_asset_lock` upserts a row with `status = 'consumed'` and
+/// never `DELETE`s it (post-#3634 the row persists forever for
+/// history). Feeding `Consumed` rows back into `unused_asset_locks`
+/// would resurrect a spent one-shot lock as actionable (A04/A08), so
+/// rehydration must read through this filter. The exclusion is at the
+/// SQL level (`status NOT IN ('consumed')`, `status` indexed — no
+/// full-scan regression); the historical rows stay on disk and remain
+/// visible via [`load_state`].
+///
+/// Hard-fail on the first decode error — like [`load_state`], a
+/// corrupt row aborts the read with a typed [`WalletStorageError`].
+pub fn load_unconsumed(
+    conn: &Connection,
+    wallet_id: &WalletId,
+) -> Result<AssetLocksByAccount, WalletStorageError> {
+    let mut stmt = conn.prepare(
+        "SELECT outpoint, account_index, lifecycle_blob \
+         FROM asset_locks WHERE wallet_id = ?1 AND status NOT IN ('consumed')",
+    )?;
+    let rows = stmt.query_map(params![wallet_id.as_slice()], |row| {
+        let op_bytes: Vec<u8> = row.get(0)?;
+        let account_index: i64 = row.get(1)?;
+        let blob_bytes: Vec<u8> = row.get(2)?;
+        Ok((op_bytes, account_index, blob_bytes))
+    })?;
+    let mut out: AssetLocksByAccount = BTreeMap::new();
+    for r in rows {
+        let (op_bytes, account_index, blob_bytes) = r?;
+        let (acct, outpoint, tracked) = decode_row(&op_bytes, account_index, &blob_bytes)?;
+        out.entry(acct).or_default().insert(outpoint, tracked);
+    }
+    Ok(out)
+}
+
+/// Return every asset lock for the wallet, bucketed by account index,
+/// **including** terminal `Consumed`.
+///
+/// Use [`load_unconsumed`] for the rehydration feed — this unfiltered
+/// view is for history / inspection only. (A `Consumed` lock survives
+/// consumption permanently on disk: `consume_asset_lock` upserts
+/// `status = 'consumed'` and does *not* route the entry through
+/// `AssetLockChangeSet::removed`, so it is never `DELETE`d.)
 ///
 /// Hard-fail on the first decode error — like [`load_state`], a
 /// corrupt row aborts the read with a typed [`WalletStorageError`].
