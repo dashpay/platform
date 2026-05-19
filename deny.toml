@@ -1,0 +1,39 @@
+# cargo-deny configuration — advisory gate for the workspace,
+# including the `secrets`-gated crypto dependencies of
+# `platform-wallet-storage` (SEC-REQ-4.7).
+#
+# `cargo deny` resolves the full `Cargo.lock`, so the pinned
+# `argon2` / `chacha20poly1305` / `zeroize` / `subtle` / `region` /
+# `keyring-core` + per-platform store crates are in scope regardless of
+# which features a given build enables. The CI invocation additionally
+# passes `--all-features` so feature-gated graphs are exercised too.
+
+[advisories]
+version = 2
+# Keep in sync with `.cargo/audit.toml`.
+ignore = ["RUSTSEC-2020-0071"]
+
+[bans]
+multiple-versions = "allow"
+
+[licenses]
+version = 2
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-DFS-2016",
+    "Unicode-3.0",
+    "Zlib",
+    "MPL-2.0",
+    "CC0-1.0",
+    "0BSD",
+]
+confidence-threshold = 0.8
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "allow"

@@ -17,3 +17,22 @@ jobs:
         uses: rustsec/audit-check@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+
+  rs-crates-deny-advisories:
+    name: cargo-deny advisories (incl. secrets feature)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      # `cargo audit` reads `Cargo.lock`, which already contains the
+      # `secrets`-gated crypto pins; `cargo deny` with `--all-features`
+      # additionally exercises the feature-conditional dependency graph
+      # so `platform-wallet-storage`'s `secrets` deps are advisory-
+      # checked even though `default` does not enable them
+      # (SEC-REQ-4.7).
+      - name: cargo-deny advisories
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check advisories
+          arguments: --all-features
