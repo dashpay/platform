@@ -27,6 +27,7 @@ struct WalletDetailView: View {
     @State private var showReceiveAddress = false
     @State private var showSendTransaction = false
     @State private var showWalletInfo = false
+    @State private var showFundPlatformAddress = false
 
     // Badge count for "View All Transactions". Transactions are no
     // longer wallet-scoped (the same on-chain tx can land in
@@ -93,6 +94,15 @@ struct WalletDetailView: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
+
+                Button {
+                    showFundPlatformAddress = true
+                } label: {
+                    Label("Fund L2", systemImage: "arrow.right.circle.fill")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .accessibilityIdentifier("walletDetail.fundPlatformAddressButton")
             }
             .padding(.horizontal)
 
@@ -175,6 +185,9 @@ struct WalletDetailView: View {
             WalletInfoView(wallet: wallet) {
                 dismiss()
             }
+        }
+        .sheet(isPresented: $showFundPlatformAddress) {
+            FundPlatformAddressView(wallet: wallet)
         }
         .onAppear { appUIState.showWalletsSyncDetails = false }
     }
