@@ -25,7 +25,6 @@ use std::sync::Arc;
 use dashcore::secp256k1::PublicKey;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::{IdentityPublicKey, KeyType};
-use dpp::prelude::AssetLockProof;
 use key_wallet::bip32::{ChildNumber, DerivationPath, ExtendedPrivKey, KeyDerivationType};
 use key_wallet::dip9::{
     IDENTITY_AUTHENTICATION_PATH_MAINNET, IDENTITY_AUTHENTICATION_PATH_TESTNET,
@@ -467,16 +466,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         })
     }
 
-    /// Extract the outpoint from an asset lock proof. Total over the
-    /// `AssetLockProof` enum — neither variant can fail to produce an
-    /// outpoint (Instant: derived from embedded tx + output index;
-    /// Chain: carried directly as `out_point`).
-    pub(super) fn out_point_from_proof(proof: &AssetLockProof) -> dashcore::OutPoint {
-        match proof {
-            AssetLockProof::Instant(instant) => {
-                dashcore::OutPoint::new(instant.transaction().txid(), instant.output_index())
-            }
-            AssetLockProof::Chain(chain) => chain.out_point,
-        }
-    }
+    // `out_point_from_proof` moved to `wallet::asset_lock::orchestration`
+    // as a free `pub(crate) fn` — used by every asset-lock-funded flow
+    // (identity register/top-up, platform-address funding).
 }
