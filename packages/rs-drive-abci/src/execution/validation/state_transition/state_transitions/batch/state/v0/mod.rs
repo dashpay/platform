@@ -61,21 +61,6 @@ pub(in crate::execution::validation::state_transition::state_transitions::batch)
         validation_mode: ValidationMode,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
-
-    /// PROTOCOL_VERSION_12+: same as v0 but threads the caller's
-    /// `execution_context` into `try_into_action_v0` so per-transition
-    /// fee_results accumulated by the transformer
-    /// (`try_from_borrowed_*_with_contract_lookup`) are billed to the
-    /// user instead of being dropped via a local ctx. See B7 in
-    /// docs/paid-error-fee-audit.md.
-    fn transform_into_action_v1(
-        &self,
-        platform: &PlatformStateRef,
-        block_info: &BlockInfo,
-        validation_mode: ValidationMode,
-        execution_context: &mut StateTransitionExecutionContext,
-        tx: TransactionArg,
-    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 }
 
 impl DocumentsBatchStateTransitionStateValidationV0 for BatchTransition {
@@ -353,25 +338,6 @@ impl DocumentsBatchStateTransitionStateValidationV0 for BatchTransition {
             validation_mode.should_validate_batch_valid_against_state(),
             tx,
             &mut execution_context,
-        )?;
-
-        Ok(validation_result.map(Into::into))
-    }
-
-    fn transform_into_action_v1(
-        &self,
-        platform: &PlatformStateRef,
-        block_info: &BlockInfo,
-        validation_mode: ValidationMode,
-        execution_context: &mut StateTransitionExecutionContext,
-        tx: TransactionArg,
-    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        let validation_result = self.try_into_action_v0(
-            platform,
-            block_info,
-            validation_mode.should_validate_batch_valid_against_state(),
-            tx,
-            execution_context,
         )?;
 
         Ok(validation_result.map(Into::into))

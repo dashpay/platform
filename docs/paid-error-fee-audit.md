@@ -255,10 +255,12 @@ Two function versions side-by-side; dispatch outside.
 
 | Branch site | v0 behavior (PV11, frozen — `transform_into_action: 0`) | v1 behavior (PV12, new — `transform_into_action: 1`) |
 |---|---|---|
-| `batch/mod.rs:57-84` `transform_into_action` | Match arm `0` → calls `transform_into_action_v0(...)` (no ctx) | Match arm `1` → calls `transform_into_action_v1(..., execution_context, ...)` |
-| `state/v0/mod.rs::transform_into_action_v0` | **Byte-identical to v3.1-dev original.** Creates local ctx, calls `try_into_action_v0`, drops local on return | Untouched |
-| `state/v0/mod.rs::transform_into_action_v1` | N/A | New function. Takes the outer `execution_context` and threads it into `try_into_action_v0` |
+| `batch/mod.rs::transform_into_action` (dispatcher) | Match arm `0` → calls `transform_into_action_v0(...)` (no ctx) | Match arm `1` → calls `transform_into_action_v1(..., execution_context, ...)` |
+| `batch/state/v0/mod.rs` — `DocumentsBatchStateTransitionStateValidationV0::transform_into_action_v0` | **Byte-identical to v3.1-dev original.** Creates local ctx, calls `try_into_action_v0`, drops local on return | Untouched |
+| `batch/state/v1/mod.rs` — `DocumentsBatchStateTransitionStateValidationV1::transform_into_action_v1` | N/A (new file) | New trait + impl. Takes the outer `execution_context` and threads it into `try_into_action_v0` |
 | Transformer add_operation calls inside `try_into_action_v0` (lines 586, 596, 606, 619, 629, 639, 649, 659, 669, 679, 689, 748, 819, 829, 894, 959) | Land in the local ctx that `_v0` drops | Land in the outer ctx that `_v1` threads → billed to the user |
+
+Each function version lives in its own directory (`state/v0/`, `state/v1/`) with its own trait — matches the pattern used by other versioned state-transition functions (e.g., `address_funding_from_asset_lock/transform_into_action/v0/`).
 
 The transformer body (`try_into_action_v0` and all its helpers in `transformer/v0/mod.rs`) is **unchanged** — same single function, called by both wrappers. Only the wrapper's choice of which ctx to pass differs.
 

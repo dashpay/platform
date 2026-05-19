@@ -33,6 +33,7 @@ use crate::rpc::core::CoreRPCLike;
 use crate::execution::validation::state_transition::batch::advanced_structure::v0::DocumentsBatchStateTransitionStructureValidationV0;
 use crate::execution::validation::state_transition::batch::identity_contract_nonce::v0::DocumentsBatchStateTransitionIdentityContractNonceV0;
 use crate::execution::validation::state_transition::batch::state::v0::DocumentsBatchStateTransitionStateValidationV0;
+use crate::execution::validation::state_transition::batch::state::v1::DocumentsBatchStateTransitionStateValidationV1;
 use crate::execution::validation::state_transition::processor::advanced_structure_with_state::StateTransitionStructureKnownInStateValidationV0;
 use crate::execution::validation::state_transition::processor::basic_structure::StateTransitionBasicStructureValidationV0;
 use crate::execution::validation::state_transition::processor::identity_nonces::StateTransitionIdentityNonceValidationV0;
