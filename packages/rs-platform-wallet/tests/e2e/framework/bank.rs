@@ -22,6 +22,7 @@ use dpp::prelude::AddressNonce;
 use dpp::util::hash::ripemd160_sha256;
 use dpp::version::PlatformVersion;
 use key_wallet::account::account_type::StandardAccountType;
+use key_wallet::gap_limit::DIP17_GAP_LIMIT;
 use key_wallet::{AccountType, ChildNumber, Network};
 use parking_lot::Mutex as SyncMutex;
 use platform_wallet::wallet::persister::NoPlatformPersistence;
@@ -278,7 +279,19 @@ impl BankWallet {
             "Bank wallet loaded",
         );
 
-        let signer = make_platform_signer(&seed_bytes, network)?;
+        // B-2: derive the bank's Platform signer from the synced funded
+        // pool, not a fixed `0..DIP17_GAP_LIMIT` window. The bank is a
+        // long-lived shared testnet wallet whose on-chain Platform-address
+        // pool has cycled well past the first gap window over the
+        // campaign's lifetime; a fixed-window signer holds no key for the
+        // higher-index funded addresses `auto_select_inputs` legitimately
+        // selects, which deterministically fails the 2nd sequential
+        // `fund_address` (see #556). `fund_address` uses
+        // `InputSelection::Auto`, which has no change branch and generates
+        // no new addresses mid-run, so the signing key set is fully
+        // determined by what `sync_balances` discovered plus the eager
+        // pool fill — bounded, no unbounded in-run drift.
+        let signer = Self::derive_pool_signer(&wallet, &seed_bytes, network).await?;
         Ok(Self {
             wallet,
             signer,
@@ -286,6 +299,55 @@ impl BankWallet {
             primary_receive_address,
             bank_floor_satisfied,
         })
+    }
+
+    /// Build the bank's Platform-payment [`SimpleSigner`] keyed for every
+    /// synced/generated address index in account `DEFAULT_ACCOUNT_INDEX_PUB`
+    /// plus one full forward gap window of margin.
+    ///
+    /// Indices come from the post-`sync_balances` managed account's
+    /// `addresses` map (every synced address) and `highest_generated` (the
+    /// eager `AddressPool::new` fill). The margin is `DIP17_GAP_LIMIT` — one
+    /// pool-advance unit, matching how the DIP-17 pool cycles in
+    /// gap-window-wide steps — covering pool addresses generated but not yet
+    /// balance-synced. Bounded because the bank-funding path
+    /// (`InputSelection::Auto`) creates no new change addresses at run time.
+    async fn derive_pool_signer(
+        wallet: &Arc<PlatformWallet>,
+        seed_bytes: &[u8; 64],
+        network: Network,
+    ) -> FrameworkResult<SimpleSigner> {
+        let wallet_id = wallet.wallet_id();
+        let highest_index = {
+            let wm = wallet.wallet_manager().read().await;
+            let info = wm.get_wallet_info(&wallet_id).ok_or_else(|| {
+                FrameworkError::Bank("bank wallet missing from manager after sync".into())
+            })?;
+            info.core_wallet
+                .platform_payment_managed_account_at_index(DEFAULT_ACCOUNT_INDEX_PUB)
+                .map(|account| {
+                    let synced_max = account.addresses.addresses.keys().copied().max();
+                    let generated_max = account.addresses.highest_generated;
+                    synced_max.into_iter().chain(generated_max).max()
+                })
+                .unwrap_or(None)
+        };
+
+        // `+ DIP17_GAP_LIMIT` forward margin; `0..=ceiling` also re-covers
+        // the eager `0..=gap_limit-1` fill. No funded pool → fall back to
+        // the plain gap window.
+        let ceiling = match highest_index {
+            Some(hi) => hi.saturating_add(DIP17_GAP_LIMIT),
+            None => return make_platform_signer(seed_bytes, network),
+        };
+        SimpleSigner::from_seed_for_platform_addresses(
+            seed_bytes,
+            network,
+            DEFAULT_ACCOUNT_INDEX_PUB,
+            DEFAULT_KEY_CLASS_PUB,
+            0..=ceiling,
+        )
+        .map_err(|err| FrameworkError::Wallet(format!("bank pool signer: {err}")))
     }
 
     /// Assert the bank has enough credits to run the test suite.

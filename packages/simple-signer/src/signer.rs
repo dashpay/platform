@@ -156,6 +156,29 @@ impl SimpleSigner {
         key_class: u32,
         gap_limit: u32,
     ) -> Result<Self, SimpleSignerError> {
+        Self::from_seed_for_platform_addresses(seed, network, account, key_class, 0..gap_limit)
+    }
+
+    /// Build a [`SimpleSigner`] populated with the DIP-17 platform-payment
+    /// keys for an explicit set of derivation `indices` under
+    /// `(account, key_class)`. Each `index` derives
+    /// `m/9'/coin_type'/17'/account'/key_class'/index`; the 20-byte
+    /// RIPEMD160(SHA256(pubkey)) hash is inserted into
+    /// [`Self::address_private_keys`].
+    ///
+    /// Use this over [`Self::from_seed_for_platform_address_account`] when
+    /// the address set is not the contiguous `0..gap_limit` window — e.g.
+    /// a long-lived wallet whose synced funded pool has cycled past the
+    /// first gap window. Duplicate indices are deduplicated by the
+    /// underlying key map. Returns the first derivation error encountered.
+    #[cfg(feature = "derive")]
+    pub fn from_seed_for_platform_addresses<I: IntoIterator<Item = u32>>(
+        seed: &[u8; 64],
+        network: key_wallet::Network,
+        account: u32,
+        key_class: u32,
+        indices: I,
+    ) -> Result<Self, SimpleSignerError> {
         use key_wallet::wallet::root_extended_keys::RootExtendedPrivKey;
         use key_wallet::{AccountType, ChildNumber};
 
@@ -169,7 +192,7 @@ impl SimpleSigner {
 
         let secp = Secp256k1::new();
         let mut signer = Self::default();
-        for index in 0..gap_limit {
+        for index in indices {
             let leaf = ChildNumber::from_normal_idx(index).map_err(|err| {
                 SimpleSignerError::InvalidIndex {
                     index,
