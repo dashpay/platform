@@ -191,6 +191,25 @@ pub(crate) fn load_state(
     Ok(state)
 }
 
+/// Build a keyless [`ContactChangeSet`] for one wallet — the
+/// rehydration feed the manager layers onto the restored managed
+/// identities. PUBLIC material only; `removed_*` are always empty
+/// (deletes never reach storage as rows). Fail-hard on a corrupt row,
+/// inherited from [`load_state`].
+pub fn load_changeset(
+    conn: &Connection,
+    wallet_id: &WalletId,
+) -> Result<ContactChangeSet, WalletStorageError> {
+    let records = load_state(conn, wallet_id)?;
+    Ok(ContactChangeSet {
+        sent_requests: records.sent_requests,
+        incoming_requests: records.incoming_requests,
+        established: records.established,
+        removed_sent: Default::default(),
+        removed_incoming: Default::default(),
+    })
+}
+
 fn decode_pair_key(a: &[u8], b: &[u8]) -> Result<(Identifier, Identifier), WalletStorageError> {
     let a32 = <[u8; 32]>::try_from(a)
         .map_err(|_| WalletStorageError::blob_decode("contacts.id column is not 32 bytes"))?;

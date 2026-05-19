@@ -60,6 +60,8 @@ impl PlatformWalletPersistence for FixedLoadPersister {
                             core_state: w.core_state.clone(),
                             identity_manager: Default::default(),
                             unused_asset_locks: Default::default(),
+                            contacts: Default::default(),
+                            identity_keys: Default::default(),
                         },
                     );
                 }
@@ -156,6 +158,8 @@ fn slice(seed: [u8; 64]) -> (WalletId, ClientWalletStartState) {
             core_state: CoreChangeSet::default(),
             identity_manager: Default::default(),
             unused_asset_locks: Default::default(),
+            contacts: Default::default(),
+            identity_keys: Default::default(),
         },
     )
 }
