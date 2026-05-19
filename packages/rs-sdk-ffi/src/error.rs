@@ -111,11 +111,13 @@ impl From<FFIError> for DashSDKError {
                 // substrings inside Drive messages (e.g., "data contract not found"
                 // emitted as a DriveInternalError would otherwise be misclassified
                 // as NotFound).
-                let (code, detailed_msg) = if matches!(
-                    sdk_err,
-                    dash_sdk::Error::DriveInternalError(_)
-                ) {
-                    (DashSDKErrorCode::DriveInternalError, error_str)
+                let (code, detailed_msg) = if let dash_sdk::Error::DriveInternalError(inner) =
+                    sdk_err
+                {
+                    // The DriveInternalError code already conveys the classification;
+                    // emit only the inner Drive message so downstream FFI consumers
+                    // don't double-render the "Drive internal error: " prefix.
+                    (DashSDKErrorCode::DriveInternalError, inner.clone())
                 } else if error_str.contains("timeout") || error_str.contains("Timeout") {
                     (DashSDKErrorCode::Timeout, error_str)
                 } else if error_str.contains("I/O error") || error_str.contains("connection") {
@@ -229,6 +231,21 @@ mod tests {
     fn drive_internal_error_plain_maps_to_drive_internal_error() {
         let err = dash_sdk::Error::DriveInternalError("storage layer constraint".to_string());
         assert_eq!(classify(err), DashSDKErrorCode::DriveInternalError);
+    }
+
+    #[test]
+    fn drive_internal_error_message_omits_redundant_variant_prefix() {
+        let err = dash_sdk::Error::DriveInternalError("storage layer constraint".to_string());
+        let dash_sdk_error: DashSDKError = FFIError::SDKError(err).into();
+        let message = unsafe {
+            let m = std::ffi::CStr::from_ptr(dash_sdk_error.message)
+                .to_string_lossy()
+                .into_owned();
+            let _ = CString::from_raw(dash_sdk_error.message);
+            m
+        };
+        assert_eq!(dash_sdk_error.code, DashSDKErrorCode::DriveInternalError);
+        assert_eq!(message, "storage layer constraint");
     }
 
     #[test]
