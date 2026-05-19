@@ -52,6 +52,7 @@ struct SwiftExampleAppApp: App {
     @State private var isInitialized = false
     @State private var bootstrapError: Error?
     @State private var bootstrapTask: Task<Void, Never>?
+    @State private var pendingWalletManagerNetwork: Network?
 
     /// Resolver that backs the platform-wallet-ffi `MnemonicResolverHandle`
     /// for shielded wallet binding. Reuses the default `WalletStorage`
@@ -131,46 +132,66 @@ struct SwiftExampleAppApp: App {
                 })) { _, _ in
                     rebindWalletScopedServices()
                 }
-                // Network switch: activate the per-network manager
-                // first (the store lazy-creates one configured with
-                // a fresh SDK if this is the first time we see this
-                // network), then rebind the wallet-scoped services
-                // against it. Order matters — `rebindWalletScopedServices`
-                // reads `walletManager.firstWallet`, which has to
-                // resolve to the new network's manager before it
-                // runs.
+                // Network switch: remember the requested network when
+                // the picker changes, but do not activate the wallet
+                // manager yet. `currentNetwork` publishes before
+                // AppState's async SDK rebuild finishes, so activating
+                // here would cache a manager configured with the
+                // previous network's SDK.
                 .onChange(of: platformState.currentNetwork) { _, newNetwork in
-                    activateManager(for: newNetwork)
-                    rebindWalletScopedServices()
+                    pendingWalletManagerNetwork = newNetwork
+                }
+                // Once AppState reports the SDK rebuild is complete,
+                // activate only the pending network-switch manager.
+                // Same-network SDK rebuilds (for example Docker/local
+                // endpoint toggles) are intentionally ignored here
+                // because WalletManagerStore caches managers by
+                // Network and cannot safely reconfigure an existing
+                // manager for a different SDK/backend.
+                .onChange(of: platformState.isSwitchingNetwork) { _, isSwitching in
+                    guard !isSwitching,
+                          let pendingNetwork = pendingWalletManagerNetwork,
+                          pendingNetwork == platformState.currentNetwork
+                    else { return }
+                    if activateManager(for: pendingNetwork) {
+                        pendingWalletManagerNetwork = nil
+                        rebindWalletScopedServices()
+                    }
                 }
         }
     }
 
     /// Lazy-create + cache a `PlatformWalletManager` for `network`,
-    /// configured against a freshly-built per-network SDK. No-ops on
-    /// the already-active network. Called from bootstrap and from
-    /// `currentNetwork.onChange`.
-    ///
-    /// The SDK is built locally rather than read from `platformState.sdk`
-    /// because the SwiftUI `.onChange` handler that calls this fires
-    /// synchronously the moment `currentNetwork` changes, while
-    /// `AppState.switchNetwork` rebuilds `platformState.sdk`
-    /// asynchronously — at this instant the shared SDK still points at
-    /// the previous network. `PlatformWalletManager` is network-locked
-    /// to its configure-time SDK for its lifetime and the cache is
-    /// never invalidated, so capturing the stale reference would
-    /// permanently bind the new network's manager to the previous
-    /// network's backend. Mirrors `WalletManagerStore.backgroundManager(for:)`.
+    /// configured against the SDK currently published by `AppState`.
+    /// No-ops on the already-active network. Called from bootstrap
+    /// and after a pending network change observes `isSwitchingNetwork`
+    /// drop, which guarantees the SDK has already been rebuilt for
+    /// the selected network.
     @MainActor
-    private func activateManager(for network: Network) {
+    private func activateManager(for network: Network) -> Bool {
+        guard let sdk = platformState.sdk else {
+            SDKLogger.error(
+                "Cannot activate wallet manager for \(network.displayName): "
+                    + "no SDK available (still bootstrapping?)"
+            )
+            return false
+        }
+        guard sdk.network == network else {
+            SDKLogger.error(
+                "Cannot activate wallet manager for \(network.displayName): "
+                    + "SDK is still bound to \(sdk.network.displayName)"
+            )
+            return false
+        }
         do {
-            let sdk = try SDK(network: network)
             try walletManagerStore.activate(network: network, sdk: sdk)
+            return true
         } catch {
             SDKLogger.error(
                 "Failed to activate wallet manager for "
                     + "\(network.displayName): \(error.localizedDescription)"
             )
+            return false
         }
     }
 
