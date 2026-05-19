@@ -1,14 +1,14 @@
-const { EventEmitter } = require('events');
-const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
-const {
+import { EventEmitter } from 'events';
+import GrpcErrorCodes from '@dashevo/grpc-common/lib/server/error/GrpcErrorCodes.js';
+import {
   createBloomFilter,
   parseRawTransactions,
   parseRawMerkleBlock,
   parseRawInstantLocks,
   getTxHashesFromMerkleBlock,
-} = require('./utils');
+} from './utils.js';
 
-const logger = require('../../../logger');
+import logger from '../../../logger/index.js';
 
 const EVENTS = {
   HISTORICAL_TRANSACTIONS: 'HISTORICAL_TRANSACTIONS',
@@ -500,4 +500,4 @@ class TransactionsReader extends EventEmitter {
 
 TransactionsReader.EVENTS = EVENTS;
 
-module.exports = TransactionsReader;
+export default TransactionsReader;

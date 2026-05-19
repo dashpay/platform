@@ -2,7 +2,7 @@
  * Get transaction from the store
  * @return {[Transaction]} transactions - All transaction in the store
  */
-module.exports = function getTransactions() {
+export default function getTransactions() {
   const chainStore = this.storage.getChainStore(this.network);
   const walletStore = this.storage.getWalletStore(this.walletId);
   const transactions = {};

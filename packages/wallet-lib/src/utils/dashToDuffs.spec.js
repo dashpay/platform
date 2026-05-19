@@ -1,6 +1,6 @@
-const {expect} = require('chai');
-const dashToDuffs = require('./dashToDuffs');
-const {duffsToDash} = require("./index");
+import {expect} from 'chai';
+import dashToDuffs from './dashToDuffs.js';
+import {duffsToDash} from './index.js';
 
 describe('Utils - dashToDuffs', function suite() {
   it('should correctly convert dash to duffs', () => {

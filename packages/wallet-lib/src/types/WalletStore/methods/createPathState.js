@@ -1,4 +1,4 @@
-const logger = require('../../../logger');
+import logger from '../../../logger/index.js';
 
 function createPathState(path) {
   logger.debug(`WalletStore - Creating path state ${path}`);
@@ -9,4 +9,4 @@ function createPathState(path) {
     });
   }
 }
-module.exports = createPathState;
+export default createPathState;

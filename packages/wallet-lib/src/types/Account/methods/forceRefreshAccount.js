@@ -13,4 +13,4 @@ function forceRefreshAccount() {
   });
   return true;
 }
-module.exports = forceRefreshAccount;
+export default forceRefreshAccount;

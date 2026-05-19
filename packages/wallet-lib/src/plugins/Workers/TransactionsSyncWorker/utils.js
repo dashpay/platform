@@ -1,7 +1,12 @@
+import dashcore from '@dashevo/dashcore-lib';
 const {
-  BloomFilter, Address, MerkleBlock, Transaction, InstantLock,
-} = require('@dashevo/dashcore-lib');
-const { BLOOM_FALSE_POSITIVE_RATE } = require('../../../CONSTANTS');
+  BloomFilter,
+  Address,
+  MerkleBlock,
+  Transaction,
+  InstantLock,
+} = dashcore;
+import { BLOOM_FALSE_POSITIVE_RATE } from '../../../CONSTANTS.js';
 
 /**
  * @param {string[]} addresses
@@ -104,7 +109,17 @@ const getTxHashesFromMerkleBlock = (merkleBlock) => merkleBlock
     return set;
   }, new Set());
 
-module.exports = {
+export {
+  createBloomFilter,
+  filterTransactionsForAddresses,
+  parseRawTransactions,
+  parseRawMerkleBlock,
+  parseRawInstantLocks,
+  getAddressesToSync,
+  getTxHashesFromMerkleBlock,
+};
+
+export default {
   createBloomFilter,
   filterTransactionsForAddresses,
   parseRawTransactions,

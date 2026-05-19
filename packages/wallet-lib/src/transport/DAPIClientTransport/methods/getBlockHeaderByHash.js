@@ -1,6 +1,6 @@
-const logger = require('../../../logger');
+import logger from '../../../logger/index.js';
 
-module.exports = async function getBlockHeaderByHash(blockHash) {
+export default async function getBlockHeaderByHash(blockHash) {
   logger.silly(`DAPIClient.getBlockHeaderByHash[${blockHash}]`);
 
   return (await this.getBlockByHash(blockHash)).header;

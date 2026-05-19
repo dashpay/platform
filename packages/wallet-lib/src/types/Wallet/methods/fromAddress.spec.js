@@ -1,8 +1,9 @@
-const { expect } = require('chai');
-const { PrivateKey } = require('@dashevo/dashcore-lib');
-const fromAddress = require('./fromAddress');
-const cR4t6eFixture = require('../../../../fixtures/cR4t6e_pk');
-const { WALLET_TYPES } = require('../../../CONSTANTS');
+import { expect } from 'chai';
+import dashcore from '@dashevo/dashcore-lib';
+const { PrivateKey } = dashcore;
+import fromAddress from './fromAddress.js';
+import cR4t6eFixture from '../../../../fixtures/cR4t6e_pk.json' with { type: 'json' };
+import { WALLET_TYPES } from '../../../CONSTANTS.js';
 const cR4t6ePublicKey = new PrivateKey(cR4t6eFixture.privateKey).toPublicKey();
 
 describe('Wallet - fromAddress', function suite() {

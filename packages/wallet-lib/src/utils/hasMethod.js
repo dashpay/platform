@@ -7,4 +7,4 @@
 function hasMethod(obj, methodName) {
   return !!obj && typeof obj[methodName] === 'function';
 }
-module.exports = hasMethod;
+export default hasMethod;

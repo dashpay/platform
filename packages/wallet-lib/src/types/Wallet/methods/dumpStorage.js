@@ -1,4 +1,4 @@
-const logger = require('../../../logger');
+import logger from '../../../logger/index.js';
 
 const defaultOptions = {
   log: false,
@@ -50,4 +50,4 @@ function dumpStorage(options) {
   return storageDump;
 }
 
-module.exports = dumpStorage;
+export default dumpStorage;

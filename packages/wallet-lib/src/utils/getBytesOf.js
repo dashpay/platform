@@ -1,4 +1,5 @@
-const { Script, Address } = require('@dashevo/dashcore-lib');
+import dashcore from '@dashevo/dashcore-lib';
+const { Script, Address } = dashcore;
 
 function getBytesOf(elem, type) {
   let BASE_BYTES = 0;
@@ -17,4 +18,4 @@ function getBytesOf(elem, type) {
       return false;
   }
 }
-module.exports = getBytesOf;
+export default getBytesOf;

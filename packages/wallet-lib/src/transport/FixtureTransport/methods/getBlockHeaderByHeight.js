@@ -1,3 +1,3 @@
-module.exports = async function getBlockHeaderByHeight(blockHeight) {
+export default async function getBlockHeaderByHeight(blockHeight) {
   return (await this.getBlockByHeight(blockHeight)).header;
 };

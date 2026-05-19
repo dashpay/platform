@@ -1,6 +1,6 @@
-const logger = require('../../../logger');
+import logger from '../../../logger/index.js';
 
-module.exports = async function getBlockchainStatus() {
+export default async function getBlockchainStatus() {
   logger.silly('DAPIClientTransport.getBlockchainStatus');
 
   return this.client.core.getBlockchainStatus();

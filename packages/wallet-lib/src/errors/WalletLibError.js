@@ -19,4 +19,4 @@ class WalletLibError extends Error {
   }
 }
 
-module.exports = WalletLibError;
+export default WalletLibError;

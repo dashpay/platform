@@ -1,9 +1,11 @@
-const EventEmitter = require('events');
+import EventEmitter from 'events';
 
+import dashcore from '@dashevo/dashcore-lib';
 const {
-  Transaction, BlockHeader,
-} = require('@dashevo/dashcore-lib');
-const CONSTANTS = require('../../CONSTANTS');
+  Transaction,
+  BlockHeader,
+} = dashcore;
+import CONSTANTS from '../../CONSTANTS.js';
 
 const SCHEMA = {
   lastSyncedHeaderHeight: 'number',
@@ -130,20 +132,31 @@ class ChainStore extends EventEmitter {
 
 ChainStore.prototype.SCHEMA = SCHEMA;
 
-ChainStore.prototype.considerTransaction = require('./methods/considerTransaction');
+import _ChainStore_considerTransaction from './methods/considerTransaction.js';
+ChainStore.prototype.considerTransaction = _ChainStore_considerTransaction;
 
-ChainStore.prototype.exportState = require('./methods/exportState');
-ChainStore.prototype.importState = require('./methods/importState');
+import _ChainStore_exportState from './methods/exportState.js';
+ChainStore.prototype.exportState = _ChainStore_exportState;
+import _ChainStore_importState from './methods/importState.js';
+ChainStore.prototype.importState = _ChainStore_importState;
 
-ChainStore.prototype.getAddress = require('./methods/getAddress');
-ChainStore.prototype.getAddresses = require('./methods/getAddresses');
+import _ChainStore_getAddress from './methods/getAddress.js';
+ChainStore.prototype.getAddress = _ChainStore_getAddress;
+import _ChainStore_getAddresses from './methods/getAddresses.js';
+ChainStore.prototype.getAddresses = _ChainStore_getAddresses;
 
-ChainStore.prototype.getBlockHeader = require('./methods/getBlockHeader');
-ChainStore.prototype.getInstantLock = require('./methods/getInstantLock');
-ChainStore.prototype.getTransaction = require('./methods/getTransaction');
+import _ChainStore_getBlockHeader from './methods/getBlockHeader.js';
+ChainStore.prototype.getBlockHeader = _ChainStore_getBlockHeader;
+import _ChainStore_getInstantLock from './methods/getInstantLock.js';
+ChainStore.prototype.getInstantLock = _ChainStore_getInstantLock;
+import _ChainStore_getTransaction from './methods/getTransaction.js';
+ChainStore.prototype.getTransaction = _ChainStore_getTransaction;
 
-ChainStore.prototype.importAddress = require('./methods/importAddress');
-ChainStore.prototype.importInstantLock = require('./methods/importInstantLock');
-ChainStore.prototype.importTransaction = require('./methods/importTransaction');
+import _ChainStore_importAddress from './methods/importAddress.js';
+ChainStore.prototype.importAddress = _ChainStore_importAddress;
+import _ChainStore_importInstantLock from './methods/importInstantLock.js';
+ChainStore.prototype.importInstantLock = _ChainStore_importInstantLock;
+import _ChainStore_importTransaction from './methods/importTransaction.js';
+ChainStore.prototype.importTransaction = _ChainStore_importTransaction;
 
-module.exports = ChainStore;
+export default ChainStore;

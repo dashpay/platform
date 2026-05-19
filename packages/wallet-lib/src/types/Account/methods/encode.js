@@ -1,4 +1,4 @@
-const cbor = require('cbor');
+import cbor from 'cbor';
 
 /**
  * Allow to canonical encode an input
@@ -12,4 +12,4 @@ const encode = function encode(method, data) {
       return cbor.encodeCanonical(data);
   }
 };
-module.exports = encode;
+export default encode;

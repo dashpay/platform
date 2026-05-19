@@ -9,4 +9,4 @@ function getForAddress(address) {
   return this.getForPath(path);
 }
 
-module.exports = getForAddress;
+export default getForAddress;

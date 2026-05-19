@@ -1,12 +1,14 @@
-const {expect} = require('chai');
-const {Transaction} = require('@dashevo/dashcore-lib');
-const {each} = require('lodash');
-const {WALLET_TYPES} = require('../CONSTANTS');
+import {expect} from 'chai';
+import dashcore from '@dashevo/dashcore-lib';
+const { Transaction } = dashcore;
+import lodash from 'lodash';
+const { each } = lodash;
+import {WALLET_TYPES} from '../CONSTANTS.js';
 
-const categorizeTransactions = require('./categorizeTransactions');
-const transactionsWithMetadataFixtures = require('../../fixtures/wallets/apart-trip-dignity/transactions-with-metadata.json');
-const expectedResults = require('../../fixtures/wallets/apart-trip-dignity/categorizeTransactions.expectedResults');
-const getFixtureHDAccountWithStorage = require("../../fixtures/wallets/apart-trip-dignity/getFixtureAccountWithStorage");
+import categorizeTransactions from './categorizeTransactions.js';
+import transactionsWithMetadataFixtures from '../../fixtures/wallets/apart-trip-dignity/transactions-with-metadata.json' with { type: 'json' };
+import expectedResults from '../../fixtures/wallets/apart-trip-dignity/categorizeTransactions.expectedResults.js';
+import getFixtureHDAccountWithStorage from '../../fixtures/wallets/apart-trip-dignity/getFixtureAccountWithStorage.js';
 
 const mockedHDAccount = getFixtureHDAccountWithStorage();
 

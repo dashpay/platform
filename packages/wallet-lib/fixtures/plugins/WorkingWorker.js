@@ -1,4 +1,4 @@
-const Worker = require('../../src/plugins/Worker');
+import Worker from '../../src/plugins/Worker.js';
 
 class WorkingWorker extends Worker {
   constructor() {
@@ -22,4 +22,4 @@ class WorkingWorker extends Worker {
     storage.workingWorkerPass += 1;
   }
 }
-module.exports = WorkingWorker;
+export default WorkingWorker;

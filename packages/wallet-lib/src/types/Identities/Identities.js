@@ -1,5 +1,5 @@
-const _ = require('lodash');
-const Wallet = require('../Wallet/Wallet');
+import _ from 'lodash';
+import Wallet from '../Wallet/Wallet.js';
 
 class Identities {
   constructor(wallet) {
@@ -14,8 +14,11 @@ class Identities {
   }
 }
 
-Identities.prototype.getIdentityHDKeyById = require('./methods/getIdentityHDKeyById');
-Identities.prototype.getIdentityHDKeyByIndex = require('./methods/getIdentityHDKeyByIndex');
-Identities.prototype.getIdentityIds = require('./methods/getIdentityIds');
+import _Identities_getIdentityHDKeyById from './methods/getIdentityHDKeyById.js';
+Identities.prototype.getIdentityHDKeyById = _Identities_getIdentityHDKeyById;
+import _Identities_getIdentityHDKeyByIndex from './methods/getIdentityHDKeyByIndex.js';
+Identities.prototype.getIdentityHDKeyByIndex = _Identities_getIdentityHDKeyByIndex;
+import _Identities_getIdentityIds from './methods/getIdentityIds.js';
+Identities.prototype.getIdentityIds = _Identities_getIdentityIds;
 
-module.exports = Identities;
+export default Identities;

@@ -1,6 +1,6 @@
-const EventEmitter = require('events');
-const NotFoundError = require('@dashevo/dapi-client/lib/transport/GrpcTransport/errors/NotFoundError');
-const getBlockchainStatus = require('../../transport/FixtureTransport/methods/getBlockchainStatus');
+import EventEmitter from 'events';
+import NotFoundError from '@dashevo/dapi-client/lib/transport/GrpcTransport/errors/NotFoundError.js';
+import getBlockchainStatus from '../../transport/FixtureTransport/methods/getBlockchainStatus.js';
 
 class TransportMock extends EventEmitter {
   constructor(sinon, transactionStreamMock) {
@@ -53,4 +53,4 @@ class TransportMock extends EventEmitter {
   }
 }
 
-module.exports = TransportMock;
+export default TransportMock;

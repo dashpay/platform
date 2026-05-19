@@ -1,7 +1,7 @@
-const _ = require('lodash');
-const { is } = require('../../utils');
-const { InvalidStrategy, UnknownStrategy } = require('../../errors');
-const buildInStrategies = require('../../utils/coinSelections/strategies');
+import _ from 'lodash';
+import { is } from '../../utils/index.js';
+import { InvalidStrategy, UnknownStrategy } from '../../errors/index.js';
+import buildInStrategies from '../../utils/coinSelections/strategies/index.js';
 
 const fromString = function fromString(strategyName) {
   if (!_.has(buildInStrategies, strategyName)) return new UnknownStrategy(`Unknown strategy ${strategyName}`);
@@ -18,4 +18,4 @@ const _loadStrategy = function _loadStrategy(arg) {
   throw new InvalidStrategy(arg);
 };
 
-module.exports = _loadStrategy;
+export default _loadStrategy;

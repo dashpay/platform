@@ -1,5 +1,6 @@
-const { uniq, each } = require('lodash');
-const { WALLET_TYPES } = require('../CONSTANTS');
+import lodash from 'lodash';
+const { uniq, each } = lodash;
+import { WALLET_TYPES } from '../CONSTANTS.js';
 
 const sortByNLockTime = (a, b) => (b.nLockTime - a.nLockTime);
 // Will filter out transaction that are not concerning us
@@ -55,4 +56,4 @@ function filterTransactions(accountStore, walletType, accountIndex, transactions
   return filteredTransactions.sort(sortByNLockTime);
 }
 
-module.exports = filterTransactions;
+export default filterTransactions;

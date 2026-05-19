@@ -1,7 +1,7 @@
-const {expect} = require('chai');
-const {WALLET_TYPES} = require('../CONSTANTS');
-const classifyAddresses = require('./classifyAddresses');
-const getFixtureHDAccountWithStorage = require("../../fixtures/wallets/apart-trip-dignity/getFixtureAccountWithStorage");
+import {expect} from 'chai';
+import {WALLET_TYPES} from '../CONSTANTS.js';
+import classifyAddresses from './classifyAddresses.js';
+import getFixtureHDAccountWithStorage from '../../fixtures/wallets/apart-trip-dignity/getFixtureAccountWithStorage.js';
 
 const mockedHDAccount = getFixtureHDAccountWithStorage();
 

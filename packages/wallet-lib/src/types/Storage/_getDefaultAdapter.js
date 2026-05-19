@@ -1,7 +1,7 @@
-const logger = require('../../logger');
-const InMem = require('../../adapters/InMem');
+import logger from '../../logger/index.js';
+import InMem from '../../adapters/InMem.js';
 
-module.exports = async function getDefaultAdapter() {
+export default async function getDefaultAdapter() {
   const isBrowser = (typeof document !== 'undefined');
   // eslint-disable-next-line no-undef
   const isReactNative = (typeof navigator !== 'undefined' && navigator.product === 'ReactNative');

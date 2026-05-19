@@ -1,8 +1,8 @@
-const WalletLibError = require('./WalletLibError');
+import WalletLibError from './WalletLibError.js';
 
 class ValidTransportLayerRequired extends WalletLibError {
   constructor(method) {
     super(`A transport layer is needed to perform a ${method}`);
   }
 }
-module.exports = ValidTransportLayerRequired;
+export default ValidTransportLayerRequired;

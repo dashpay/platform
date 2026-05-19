@@ -1,6 +1,6 @@
-const { expect } = require('chai');
-const getUnusedAddress = require('./getUnusedAddress');
-const getFixtureHDAccountWithStorage = require('../../../../fixtures/wallets/apart-trip-dignity/getFixtureAccountWithStorage');
+import { expect } from 'chai';
+import getUnusedAddress from './getUnusedAddress.js';
+import getFixtureHDAccountWithStorage from '../../../../fixtures/wallets/apart-trip-dignity/getFixtureAccountWithStorage.js';
 
 const mockedHDSelf = {
   ...getFixtureHDAccountWithStorage(),

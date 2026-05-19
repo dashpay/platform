@@ -1,6 +1,6 @@
-const _ = require('lodash');
-const { is } = require('../../../utils');
-const EVENTS = require('../../../EVENTS');
+import _ from 'lodash';
+import { is } from '../../../utils/index.js';
+import EVENTS from '../../../EVENTS.js';
 
 const defaultOpts = {
   index: 0,
@@ -35,4 +35,4 @@ async function getAccount(accountOpts = defaultOpts) {
   return acc[0] || this.createAccount(opts);
 }
 
-module.exports = getAccount;
+export default getAccount;

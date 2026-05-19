@@ -1,14 +1,15 @@
-const { expect } = require('chai');
-const { Networks } = require('@dashevo/dashcore-lib')
-const {
+import { expect } from 'chai';
+import dashcore from '@dashevo/dashcore-lib';
+const { Networks } = dashcore;
+import {
   generateNewMnemonic,
   seedToHDPrivateKey,
   mnemonicToHDPrivateKey,
   mnemonicToWalletId,
   mnemonicToSeed,
-} = require('./mnemonic');
-const is = require('./is');
-const knifeEasilyFixture = require("../../fixtures/knifeeasily");
+} from './mnemonic.js';
+import is from './is.js';
+import knifeEasilyFixture from '../../fixtures/knifeeasily.json' with { type: 'json' };
 
 const mnemonic1 = 'hole lesson insane entire dolphin scissors game dwarf polar ethics drip math';
 const mnemonic2 = 'woman forest output essay bleak satisfy era ordinary exotic source portion wire';

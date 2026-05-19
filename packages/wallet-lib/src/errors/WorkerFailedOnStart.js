@@ -1,4 +1,4 @@
-const WalletLibError = require('./WalletLibError');
+import WalletLibError from './WalletLibError.js';
 
 class WorkerFailedOnStart extends WalletLibError {
   /**
@@ -19,4 +19,4 @@ class WorkerFailedOnStart extends WalletLibError {
   }
 }
 
-module.exports = WorkerFailedOnStart;
+export default WorkerFailedOnStart;

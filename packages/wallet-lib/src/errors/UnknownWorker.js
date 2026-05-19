@@ -1,4 +1,4 @@
-const WalletLibError = require('./WalletLibError');
+import WalletLibError from './WalletLibError.js';
 
 class UnknownWorker extends WalletLibError {
   constructor(workerName) {
@@ -7,4 +7,4 @@ class UnknownWorker extends WalletLibError {
   }
 }
 
-module.exports = UnknownWorker;
+export default UnknownWorker;

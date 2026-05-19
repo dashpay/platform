@@ -1,76 +1,38 @@
-const util = require('util');
-const winston = require('winston');
+// Minimal console-based logger; mirrors the previous winston API
+// (error/warn/info/verbose/debug/silly + getForWallet) without external deps.
 
-const LOG_LEVEL = process.env.LOG_LEVEL || 'info';
-const LOG_TO_FILE = process.env.LOG_WALLET_TO_FILE || 'false';
+const LOG_LEVEL = (typeof process !== 'undefined' && process.env && process.env.LOG_LEVEL) || 'info';
 
-// Log levels:
-//   error    0
-//   warn     1
-//   info     2  (default)
-//   verbose  3
-//   debug    4
-//   silly    5
+const LEVELS = {
+  silent: -1, error: 0, warn: 1, info: 2, verbose: 3, debug: 4, silly: 5,
+};
 
-const loggers = {};
+const cache = {};
 
-const createLogger = (formats = [], walletId = '') => {
-  const format = winston.format.combine(
-    {
-      transform: (info) => {
-        const args = info[Symbol.for('splat')];
-        const result = { ...info };
-        if (args) {
-          result.message = util.format(info.message, ...args);
-        }
-        return result;
-      },
+function build(level = LOG_LEVEL, prefix = '') {
+  const threshold = LEVELS[level] != null ? LEVELS[level] : LEVELS.info;
+  const noop = () => {};
+  const fmt = prefix ? (...a) => [prefix, ...a] : (...a) => a;
+
+  const logger = {
+    error: threshold >= 0 ? (...a) => console.error(...fmt(...a)) : noop,
+    warn: threshold >= 1 ? (...a) => console.warn(...fmt(...a)) : noop,
+    info: threshold >= 2 ? (...a) => console.info(...fmt(...a)) : noop,
+    verbose: threshold >= 3 ? (...a) => console.debug(...fmt(...a)) : noop,
+    debug: threshold >= 4 ? (...a) => console.debug(...fmt(...a)) : noop,
+    silly: threshold >= 5 ? (...a) => console.debug(...fmt(...a)) : noop,
+    getForWallet(walletId) {
+      if (!cache[walletId]) {
+        cache[walletId] = build(level, `[Wallet: ${walletId}]`);
+      }
+      return cache[walletId];
     },
-    ...formats,
-    winston.format.colorize(),
-    winston.format.printf(({
-      level, message,
-    }) => `${level}: ${message}`),
-  );
+  };
+  return logger;
+}
 
-  const transports = [
-    new winston.transports.Console({
-      format,
-    }),
-  ];
+const logger = build();
 
-  if (LOG_TO_FILE === 'true' && typeof window === 'undefined') {
-    transports.push(
-      new winston.transports.File({
-        filename: `wallet${walletId !== '' ? `_${walletId}` : ''}`,
-        format,
-      }),
-    );
-  }
+logger.verbose(`Logger uses "${LOG_LEVEL}" level`);
 
-  return winston.createLogger({
-    level: LOG_LEVEL,
-    transports,
-  });
-};
-
-const logger = createLogger();
-
-logger.getForWallet = (walletId) => {
-  if (!loggers[walletId]) {
-    const format = {
-      transform: (info) => {
-        const message = `[Wallet: ${walletId}] ${info.message}`;
-        return { ...info, message };
-      },
-    };
-
-    loggers[walletId] = createLogger([format], walletId);
-  }
-
-  return loggers[walletId];
-};
-
-logger.verbose(`Logger uses "${LOG_LEVEL}" level`, { level: LOG_LEVEL });
-
-module.exports = logger;
+export default logger;

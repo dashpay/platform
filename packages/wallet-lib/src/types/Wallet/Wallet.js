@@ -1,11 +1,13 @@
-const { PrivateKey, Networks } = require('@dashevo/dashcore-lib');
+import dashcore from '@dashevo/dashcore-lib';
+const { PrivateKey, Networks } = dashcore;
 
-const EventEmitter = require('events');
-const _ = require('lodash');
-const Storage = require('../Storage/Storage');
-const {
+import EventEmitter from 'events';
+import _ from 'lodash';
+import Storage from '../Storage/Storage.js';
+import Identities from '../Identities/Identities.js';
+import {
   generateNewMnemonic,
-} = require('../../utils');
+} from '../../utils/index.js';
 
 const defaultOptions = {
   debug: false,
@@ -20,16 +22,16 @@ const defaultOptions = {
   waitForTxMetadataTimeout: 540000,
 };
 
-const fromMnemonic = require('./methods/fromMnemonic');
-const fromPrivateKey = require('./methods/fromPrivateKey');
-const fromPublicKey = require('./methods/fromPublicKey');
-const fromAddress = require('./methods/fromAddress');
-const fromSeed = require('./methods/fromSeed');
-const fromHDPublicKey = require('./methods/fromHDPublicKey');
-const fromHDPrivateKey = require('./methods/fromHDPrivateKey');
-const generateNewWalletId = require('./methods/generateNewWalletId');
+import fromMnemonic from './methods/fromMnemonic.js';
+import fromPrivateKey from './methods/fromPrivateKey.js';
+import fromPublicKey from './methods/fromPublicKey.js';
+import fromAddress from './methods/fromAddress.js';
+import fromSeed from './methods/fromSeed.js';
+import fromHDPublicKey from './methods/fromHDPublicKey.js';
+import fromHDPrivateKey from './methods/fromHDPrivateKey.js';
+import generateNewWalletId from './methods/generateNewWalletId.js';
 
-const createTransportFromOptions = require('../../transport/createTransportFromOptions');
+import createTransportFromOptions from '../../transport/createTransportFromOptions.js';
 
 /**
  * Instantiate a basic Wallet object,
@@ -194,20 +196,23 @@ class Wallet extends EventEmitter {
 
     this.accounts = [];
     this.interface = opts.interface;
-    // Suppressed global require to avoid cyclic dependencies
-    // eslint-disable-next-line global-require
-    const Identities = require('../Identities/Identities');
     this.identities = new Identities(this);
     this.savedBackup = false; // TODO: When true, we delete mnemonic from internals
   }
 }
 
-Wallet.prototype.createAccount = require('./methods/createAccount');
-Wallet.prototype.disconnect = require('./methods/disconnect');
-Wallet.prototype.getAccount = require('./methods/getAccount');
+import _Wallet_createAccount from './methods/createAccount.js';
+Wallet.prototype.createAccount = _Wallet_createAccount;
+import _Wallet_disconnect from './methods/disconnect.js';
+Wallet.prototype.disconnect = _Wallet_disconnect;
+import _Wallet_getAccount from './methods/getAccount.js';
+Wallet.prototype.getAccount = _Wallet_getAccount;
 Wallet.prototype.generateNewWalletId = generateNewWalletId;
-Wallet.prototype.exportWallet = require('./methods/exportWallet');
-Wallet.prototype.sweepWallet = require('./methods/sweepWallet');
-Wallet.prototype.dumpStorage = require('./methods/dumpStorage');
+import _Wallet_exportWallet from './methods/exportWallet.js';
+Wallet.prototype.exportWallet = _Wallet_exportWallet;
+import _Wallet_sweepWallet from './methods/sweepWallet.js';
+Wallet.prototype.sweepWallet = _Wallet_sweepWallet;
+import _Wallet_dumpStorage from './methods/dumpStorage.js';
+Wallet.prototype.dumpStorage = _Wallet_dumpStorage;
 
-module.exports = Wallet;
+export default Wallet;

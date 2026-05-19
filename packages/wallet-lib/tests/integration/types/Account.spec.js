@@ -1,17 +1,18 @@
-const chai = require('chai');
-const chaiAsPromised = require('chai-as-promised');
+import chai from 'chai';
+import chaiAsPromised from 'chai-as-promised';
 
+import dashcore from '@dashevo/dashcore-lib';
 const {
-    HDPrivateKey,
-    MerkleBlock,
-} = require('@dashevo/dashcore-lib');
+  HDPrivateKey,
+  MerkleBlock,
+} = dashcore;
 
-const TransactionsSyncWorker = require('../../../src/plugins/Workers/TransactionsSyncWorker/TransactionsSyncWorker');
+import TransactionsSyncWorker from '../../../src/plugins/Workers/TransactionsSyncWorker/TransactionsSyncWorker.js';
 
-const LocalForageAdapterMock = require('../../../src/test/mocks/LocalForageAdapterMock');
-const createTransactionInAccount = require('../../../src/test/mocks/createTransactionInAccount');
+import LocalForageAdapterMock from '../../../src/test/mocks/LocalForageAdapterMock.js';
+import createTransactionInAccount from '../../../src/test/mocks/createTransactionInAccount.js';
 
-const { Wallet } = require('../../../src');
+import { Wallet } from '../../../src/index.js';
 
 chai.use(chaiAsPromised);
 const { expect } = chai;

@@ -1,7 +1,7 @@
-const EventEmitter = require('events');
+import EventEmitter from 'events';
 
-const EVENTS = require('../EVENTS');
-const logger = require('../logger');
+import EVENTS from '../EVENTS.js';
+import logger from '../logger/index.js';
 
 /**
  * @abstract
@@ -61,4 +61,4 @@ class AbstractTransport extends EventEmitter {
   }
 }
 
-module.exports = AbstractTransport;
+export default AbstractTransport;

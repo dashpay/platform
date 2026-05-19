@@ -17,4 +17,4 @@ class LocalForageAdapterMock {
     return this.keys[key] ? JSON.parse(this.keys[key]) : null;
   }
 }
-module.exports = LocalForageAdapterMock;
+export default LocalForageAdapterMock;

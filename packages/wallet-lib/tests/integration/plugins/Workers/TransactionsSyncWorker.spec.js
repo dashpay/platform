@@ -1,15 +1,16 @@
 /* eslint-disable no-console */
-const { Transaction } = require('@dashevo/dashcore-lib');
-const { expect } = require('chai');
-const TransactionsSyncWorker = require('../../../../src/plugins/Workers/TransactionsSyncWorker/TransactionsSyncWorker');
-const createTransportFromOptions = require('../../../../src/transport/createTransportFromOptions');
-const TxStreamMock = require('../../../../src/test/mocks/TxStreamMock');
-const { Wallet } = require('../../../../src');
-const LocalForageAdapterMock = require('../../../../src/test/mocks/LocalForageAdapterMock');
-const { waitOneTick } = require('../../../../src/test/utils');
-const { mockMerkleBlock } = require('../../../../src/test/mocks/dashcore/block');
-const EVENTS = require('../../../../src/EVENTS');
-const { mockInstantLock } = require('../../../../src/test/mocks/dashcore/instantlock');
+import dashcore from '@dashevo/dashcore-lib';
+const { Transaction } = dashcore;
+import { expect } from 'chai';
+import TransactionsSyncWorker from '../../../../src/plugins/Workers/TransactionsSyncWorker/TransactionsSyncWorker.js';
+import createTransportFromOptions from '../../../../src/transport/createTransportFromOptions.js';
+import TxStreamMock from '../../../../src/test/mocks/TxStreamMock.js';
+import { Wallet } from '../../../../src/index.js';
+import LocalForageAdapterMock from '../../../../src/test/mocks/LocalForageAdapterMock.js';
+import { waitOneTick } from '../../../../src/test/utils.js';
+import { mockMerkleBlock } from '../../../../src/test/mocks/dashcore/block.js';
+import EVENTS from '../../../../src/EVENTS.js';
+import { mockInstantLock } from '../../../../src/test/mocks/dashcore/instantlock.js';
 
 describe('TransactionsSyncWorker', () => {
   const WALLET_HD_KEY = 'xprv9s21ZrQH143K4PgfRZPuYjYUWRZkGfEPuWTEUESMoEZLC274ntC4G49qxgZJEPgmujsmY52eVggtwZgJPrWTMXmbYgqDVySWg46XzbGXrSZ';

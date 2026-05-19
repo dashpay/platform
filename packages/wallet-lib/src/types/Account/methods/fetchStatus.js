@@ -1,4 +1,4 @@
-const { ValidTransportLayerRequired } = require('../../../errors');
+import { ValidTransportLayerRequired } from '../../../errors/index.js';
 
 /**
  * @return {Promise<Object>} status
@@ -11,4 +11,4 @@ async function fetchStatus() {
   return this.transport.getBlockchainStatus();
 }
 
-module.exports = fetchStatus;
+export default fetchStatus;

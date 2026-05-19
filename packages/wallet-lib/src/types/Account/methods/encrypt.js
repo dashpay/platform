@@ -1,4 +1,4 @@
-const AES = require('crypto-js/aes');
+import AES from 'crypto-js/aes.js';
 
 const encrypt = function encrypt(method, data, secret) {
   const str = typeof data === 'string' ? data : data.toString();
@@ -7,4 +7,4 @@ const encrypt = function encrypt(method, data, secret) {
       return AES.encrypt(str, secret).toString();
   }
 };
-module.exports = encrypt;
+export default encrypt;

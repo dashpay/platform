@@ -1,6 +1,6 @@
-const {
+import {
   UnknownWorker,
-} = require('../../../errors');
+} from '../../../errors/index.js';
 /**
  * Get a worker by it's name
  * @param {string} workerName
@@ -15,4 +15,4 @@ function getWorker(workerName) {
   throw new UnknownWorker(loweredWorkerName);
 }
 
-module.exports = getWorker;
+export default getWorker;

@@ -1,8 +1,9 @@
-const { Transaction } = require('@dashevo/dashcore-lib');
-const { expect } = require('chai');
-const ChainStore = require('./ChainStore');
-const fixtures1 = require('../../../fixtures/wallets/2a331817b9d6bf85100ef0/chain-store.json');
-const { mockHeadersChain } = require("../../test/mocks/dashcore/block");
+import dashcore from '@dashevo/dashcore-lib';
+const { Transaction } = dashcore;
+import { expect } from 'chai';
+import ChainStore from './ChainStore.js';
+import fixtures1 from '../../../fixtures/wallets/2a331817b9d6bf85100ef0/chain-store.json' with { type: 'json' };
+import { mockHeadersChain } from '../../test/mocks/dashcore/block.js';
 
 describe('ChainStore - class', () => {
   let testnetChainStore;

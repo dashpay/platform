@@ -1,4 +1,4 @@
-const WalletLibError = require('./WalletLibError');
+import WalletLibError from './WalletLibError.js';
 
 class InjectionToPluginUnallowed extends WalletLibError {
   constructor(currentPluginName, injectingPluginName) {
@@ -6,4 +6,4 @@ class InjectionToPluginUnallowed extends WalletLibError {
   }
 }
 
-module.exports = InjectionToPluginUnallowed;
+export default InjectionToPluginUnallowed;

@@ -1,5 +1,6 @@
-const crypto = require('crypto');
-const { Transaction, Script, PrivateKey } = require('@dashevo/dashcore-lib');
+import crypto from 'crypto';
+import dashcore from '@dashevo/dashcore-lib';
+const { Transaction, Script, PrivateKey } = dashcore;
 
 /**
  *
@@ -31,4 +32,5 @@ const transaction = {
   mockUtxo,
 };
 
-module.exports = transaction;
+export default transaction;
+export { mockUtxo };

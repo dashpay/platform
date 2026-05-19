@@ -1,6 +1,6 @@
-const logger = require('../../../logger');
+import logger from '../../../logger/index.js';
 
-module.exports = async function disconnect() {
+export default async function disconnect() {
   logger.silly('DAPIClientTransport.disconnect');
 
   return this.client.disconnect();

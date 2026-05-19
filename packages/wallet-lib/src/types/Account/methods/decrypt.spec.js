@@ -1,6 +1,6 @@
-const { expect } = require('chai');
-const cbor = require('cbor');
-const decrypt = require('./decrypt');
+import { expect } from 'chai';
+import cbor from 'cbor';
+import decrypt from './decrypt.js';
 
 const jsonObject = {
   string: 'string',

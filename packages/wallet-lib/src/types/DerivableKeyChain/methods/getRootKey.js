@@ -2,4 +2,4 @@ function getRootKey() {
   return this.rootKey;
 }
 
-module.exports = getRootKey;
+export default getRootKey;

@@ -1,5 +1,5 @@
-const Dashcore = require('@dashevo/dashcore-lib');
+import Dashcore from '@dashevo/dashcore-lib';
 
-module.exports = function getNetwork(network) {
+export default function getNetwork(network) {
   return Dashcore.Networks[network].toString() || Dashcore.Networks.testnet.toString();
 };

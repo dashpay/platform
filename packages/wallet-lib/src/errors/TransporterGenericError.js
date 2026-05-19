@@ -1,8 +1,8 @@
-const WalletLibError = require('./WalletLibError');
+import WalletLibError from './WalletLibError.js';
 
 class TransporterGenericError extends WalletLibError {
   constructor(act, reason) {
     super(`Unable to ${act}, reason: ${reason}`);
   }
 }
-module.exports = TransporterGenericError;
+export default TransporterGenericError;

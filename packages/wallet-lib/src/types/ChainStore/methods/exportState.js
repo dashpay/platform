@@ -1,4 +1,4 @@
-const { STORAGE } = require('../../../CONSTANTS');
+import { STORAGE } from '../../../CONSTANTS.js';
 
 function exportState() {
   const { state } = this;
@@ -55,4 +55,4 @@ function exportState() {
   return serializedState;
 }
 
-module.exports = exportState;
+export default exportState;

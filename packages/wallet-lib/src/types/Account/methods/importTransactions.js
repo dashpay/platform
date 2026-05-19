@@ -4,7 +4,7 @@
  * @param transactionsWithMayBeMetadata
  * @returns {{ addressesGenerated: number, mostRecentHeight: number }}
  */
-module.exports = function importTransactions(transactionsWithMayBeMetadata) {
+export default function importTransactions(transactionsWithMayBeMetadata) {
   const {
     storage,
     network,

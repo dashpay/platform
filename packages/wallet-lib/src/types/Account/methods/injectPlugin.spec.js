@@ -1,9 +1,9 @@
-const { expect } = require('chai');
-const EventEmitter = require('events');
-const FaultyWorker = require('../../../../fixtures/plugins/FaultyWorker');
-const WorkingWorker = require('../../../../fixtures/plugins/WorkingWorker');
-const injectPlugin = require('./injectPlugin');
-const expectThrowsAsync = require('../../../utils/expectThrowsAsync');
+import { expect } from 'chai';
+import EventEmitter from 'events';
+import FaultyWorker from '../../../../fixtures/plugins/FaultyWorker.js';
+import WorkingWorker from '../../../../fixtures/plugins/WorkingWorker.js';
+import injectPlugin from './injectPlugin.js';
+import expectThrowsAsync from '../../../utils/expectThrowsAsync.js';
 
 describe('Account - injectPlugin', function suite() {
   this.timeout(12000);

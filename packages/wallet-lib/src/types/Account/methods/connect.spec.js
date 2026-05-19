@@ -1,6 +1,6 @@
-const { expect } = require('chai');
-const connect = require('./connect');
-const DummyWorker = require('../../../../fixtures/DummyWorker');
+import { expect } from 'chai';
+import connect from './connect.js';
+import DummyWorker from '../../../../fixtures/DummyWorker.js';
 
 let transportConnected = false;
 const emitted = [];

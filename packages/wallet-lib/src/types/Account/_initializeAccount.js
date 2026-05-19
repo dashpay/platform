@@ -1,6 +1,6 @@
-const logger = require('../../logger');
-const EVENTS = require('../../EVENTS');
-const preparePlugins = require('./_preparePlugins');
+import logger from '../../logger/index.js';
+import EVENTS from '../../EVENTS.js';
+import preparePlugins from './_preparePlugins.js';
 
 // eslint-disable-next-line no-underscore-dangle
 async function _initializeAccount(account, userUnsafePlugins) {
@@ -67,4 +67,4 @@ async function _initializeAccount(account, userUnsafePlugins) {
   });
 }
 
-module.exports = _initializeAccount;
+export default _initializeAccount;

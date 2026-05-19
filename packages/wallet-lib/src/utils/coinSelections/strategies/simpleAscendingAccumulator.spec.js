@@ -1,7 +1,7 @@
-const { expect } = require('chai');
-const { simpleAscendingAccumulator } = require('./index');
-const getUTXOS = require('../../../types/Account/methods/getUTXOS');
-const duringDevelopStore = require('../../../../fixtures/duringdevelop-fullstore-snapshot-1549310417');
+import { expect } from 'chai';
+import { simpleAscendingAccumulator } from './index.js';
+import getUTXOS from '../../../types/Account/methods/getUTXOS.js';
+import duringDevelopStore from '../../../../fixtures/duringdevelop-fullstore-snapshot-1549310417.json' with { type: 'json' };
 
 describe('CoinSelection - Strategy - simpleAscendingAccumulator', () => {
   describe.skip('it should pass - requires FakeNet', ()=>{

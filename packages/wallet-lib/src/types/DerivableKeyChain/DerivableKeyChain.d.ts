@@ -1,5 +1,5 @@
 import {PrivateKey, Network} from "../types";
-import {HDPrivateKey, HDPublicKey, Address} from "@dashevo/dashcore-lib";
+import { HDPrivateKey, HDPublicKey, Address } from '@dashevo/dashcore-lib';
 import {Transaction} from "@dashevo/dashcore-lib/typings/transaction/Transaction";
 
 export declare namespace DerivableKeyChain {

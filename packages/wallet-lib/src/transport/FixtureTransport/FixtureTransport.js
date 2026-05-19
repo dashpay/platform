@@ -1,5 +1,5 @@
-const blocksData = require('./data/blocks/blocks');
-const AbstractTransport = require('../AbstractTransport');
+import blocksData from './data/blocks/blocks.js';
+import AbstractTransport from '../AbstractTransport.js';
 
 const bestBlockDataHeight = 21546;
 
@@ -55,17 +55,29 @@ class FixtureTransport extends AbstractTransport {
   }
 }
 
-FixtureTransport.prototype.getBestBlock = require('./methods/getBestBlock');
-FixtureTransport.prototype.getBestBlockHash = require('./methods/getBestBlockHash');
-FixtureTransport.prototype.getBestBlockHeader = require('./methods/getBestBlockHeader');
-FixtureTransport.prototype.getBestBlockHeight = require('./methods/getBestBlockHeight');
-FixtureTransport.prototype.getBlockByHash = require('./methods/getBlockByHash');
-FixtureTransport.prototype.getBlockByHeight = require('./methods/getBlockByHeight');
-FixtureTransport.prototype.getBlockHeaderByHash = require('./methods/getBlockHeaderByHash');
-FixtureTransport.prototype.getBlockHeaderByHeight = require('./methods/getBlockHeaderByHeight');
-FixtureTransport.prototype.getBlockchainStatus = require('./methods/getBlockchainStatus');
-FixtureTransport.prototype.getTransaction = require('./methods/getTransaction');
-FixtureTransport.prototype.sendTransaction = require('./methods/sendTransaction');
-FixtureTransport.prototype.subscribeToAddressesTransactions = require('./methods/subscribeToAddressesTransactions');
+import _FixtureTransport_getBestBlock from './methods/getBestBlock.js';
+FixtureTransport.prototype.getBestBlock = _FixtureTransport_getBestBlock;
+import _FixtureTransport_getBestBlockHash from './methods/getBestBlockHash.js';
+FixtureTransport.prototype.getBestBlockHash = _FixtureTransport_getBestBlockHash;
+import _FixtureTransport_getBestBlockHeader from './methods/getBestBlockHeader.js';
+FixtureTransport.prototype.getBestBlockHeader = _FixtureTransport_getBestBlockHeader;
+import _FixtureTransport_getBestBlockHeight from './methods/getBestBlockHeight.js';
+FixtureTransport.prototype.getBestBlockHeight = _FixtureTransport_getBestBlockHeight;
+import _FixtureTransport_getBlockByHash from './methods/getBlockByHash.js';
+FixtureTransport.prototype.getBlockByHash = _FixtureTransport_getBlockByHash;
+import _FixtureTransport_getBlockByHeight from './methods/getBlockByHeight.js';
+FixtureTransport.prototype.getBlockByHeight = _FixtureTransport_getBlockByHeight;
+import _FixtureTransport_getBlockHeaderByHash from './methods/getBlockHeaderByHash.js';
+FixtureTransport.prototype.getBlockHeaderByHash = _FixtureTransport_getBlockHeaderByHash;
+import _FixtureTransport_getBlockHeaderByHeight from './methods/getBlockHeaderByHeight.js';
+FixtureTransport.prototype.getBlockHeaderByHeight = _FixtureTransport_getBlockHeaderByHeight;
+import _FixtureTransport_getBlockchainStatus from './methods/getBlockchainStatus.js';
+FixtureTransport.prototype.getBlockchainStatus = _FixtureTransport_getBlockchainStatus;
+import _FixtureTransport_getTransaction from './methods/getTransaction.js';
+FixtureTransport.prototype.getTransaction = _FixtureTransport_getTransaction;
+import _FixtureTransport_sendTransaction from './methods/sendTransaction.js';
+FixtureTransport.prototype.sendTransaction = _FixtureTransport_sendTransaction;
+import _FixtureTransport_subscribeToAddressesTransactions from './methods/subscribeToAddressesTransactions.js';
+FixtureTransport.prototype.subscribeToAddressesTransactions = _FixtureTransport_subscribeToAddressesTransactions;
 
-module.exports = FixtureTransport;
+export default FixtureTransport;

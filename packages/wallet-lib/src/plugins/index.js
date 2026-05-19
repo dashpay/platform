@@ -1,6 +1,11 @@
-const Worker = require('./Worker');
-const StandardPlugin = require('./StandardPlugin');
+import Worker from './Worker.js';
+import StandardPlugin from './StandardPlugin.js';
 
-module.exports = {
+export {
+  StandardPlugin,
+  Worker,
+};
+
+export default {
   StandardPlugin, Worker,
 };

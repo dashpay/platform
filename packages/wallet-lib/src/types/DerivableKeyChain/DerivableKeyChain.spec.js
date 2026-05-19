@@ -1,7 +1,7 @@
-const Dashcore = require('@dashevo/dashcore-lib');
-const { expect } = require('chai');
-const DerivableKeyChain = require('./DerivableKeyChain');
-const { mnemonicToHDPrivateKey } = require('../../utils/mnemonic');
+import Dashcore from '@dashevo/dashcore-lib';
+import { expect } from 'chai';
+import DerivableKeyChain from './DerivableKeyChain.js';
+import { mnemonicToHDPrivateKey } from '../../utils/mnemonic.js';
 
 let derivableKeyChain;
 let derivableKeyChain2;
@@ -48,7 +48,7 @@ describe('DerivableKeyChain', function suite() {
     const contactUniqueId = '0xa137439f36d04a15474ff7423e4b904a14373fafb37a41db74c84f1dbb5c89b5';
 
     //  m/9'/5'/15'/0'/0x555d3854c910b7dee436869c4724bed2fe0784e198b8a39f02bbb49d8ebcfc3a'/0xa137439f36d04a15474ff7423e4b904a14373fafb37a41db74c84f1dbb5c89b5'/0
-    const DIP15ExtPubKey_0 = derivableKeyChain2.getDIP15ExtendedKey(userUniqueId, contactUniqueId, 0, 0, type='HDPublicKey');
+    const DIP15ExtPubKey_0 = derivableKeyChain2.getDIP15ExtendedKey(userUniqueId, contactUniqueId, 0, 0, 'HDPublicKey');
     expect(DIP15ExtPubKey_0.toString()).to.equal('xpub6LTkTQFSb8KMgMSz4B6sMZLpkQAY6wSTDprDkHDmLwWLpnjxazuxZn13FrSLKUafitsxuaaffM5a49P6aswhpppWUuYW6eFnwBXshR2W2eY');
     expect(DIP15ExtPubKey_0.publicKey.toString()).to.equal('038030c88ab0106e1f4af3b939db2bafc56f892554106f08da1ce1f9ef10f807bd')
 

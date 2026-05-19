@@ -1,6 +1,6 @@
-const EventEmitter = require('events');
-const TxStreamDataResponseMock = require('./TxStreamDataResponseMock');
-const { waitOneTick } = require('../utils');
+import EventEmitter from 'events';
+import TxStreamDataResponseMock from './TxStreamDataResponseMock.js';
+import { waitOneTick } from '../utils.js';
 
 class TxStreamMock extends EventEmitter {
   constructor(sinon) {
@@ -79,4 +79,4 @@ TxStreamMock.EVENTS = {
   error: 'error',
 };
 
-module.exports = TxStreamMock;
+export default TxStreamMock;

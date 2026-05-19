@@ -1,6 +1,6 @@
-const { expect } = require('chai');
-const createAccount = require('./createAccount');
-const { WALLET_TYPES } = require('../../../CONSTANTS');
+import { expect } from 'chai';
+import createAccount from './createAccount.js';
+import { WALLET_TYPES } from '../../../CONSTANTS.js';
 
 const exceptedException1 = 'getAccount expected index integer to be a property of accountOptions';
 

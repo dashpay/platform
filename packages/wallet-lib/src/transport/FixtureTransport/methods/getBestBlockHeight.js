@@ -1,3 +1,3 @@
-module.exports = async function getBestBlockHeight() {
+export default async function getBestBlockHeight() {
   return this.height;
 };

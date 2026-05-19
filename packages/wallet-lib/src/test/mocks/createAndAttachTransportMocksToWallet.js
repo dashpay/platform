@@ -1,9 +1,9 @@
-const DAPIClient = require('@dashevo/dapi-client');
+import DAPIClient from '@dashevo/dapi-client';
 
-const TxStreamMock = require('./TxStreamMock');
-const TransportMock = require('./TransportMock');
+import TxStreamMock from './TxStreamMock.js';
+import TransportMock from './TransportMock.js';
 
-module.exports = async function createAndAttachTransportMocksToWallet(wallet, sinon) {
+export default async function createAndAttachTransportMocksToWallet(wallet, sinon) {
   const txStreamMock = new TxStreamMock();
   const transportMock = new TransportMock(sinon, txStreamMock);
 

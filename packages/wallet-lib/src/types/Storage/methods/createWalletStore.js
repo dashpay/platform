@@ -1,4 +1,4 @@
-const WalletStore = require('../../WalletStore/WalletStore');
+import WalletStore from '../../WalletStore/WalletStore.js';
 
 const createWalletStore = function createWallet(walletId = 'squawk7700') {
   if (!this.wallets.has(walletId)) {
@@ -7,4 +7,4 @@ const createWalletStore = function createWallet(walletId = 'squawk7700') {
   }
   return false;
 };
-module.exports = createWalletStore;
+export default createWalletStore;

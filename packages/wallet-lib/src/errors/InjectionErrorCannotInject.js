@@ -1,4 +1,4 @@
-const WalletLibError = require('./WalletLibError');
+import WalletLibError from './WalletLibError.js';
 
 class InjectionErrorCannotInject extends WalletLibError {
   constructor(pluginName, reason) {
@@ -9,4 +9,4 @@ class InjectionErrorCannotInject extends WalletLibError {
   }
 }
 
-module.exports = InjectionErrorCannotInject;
+export default InjectionErrorCannotInject;

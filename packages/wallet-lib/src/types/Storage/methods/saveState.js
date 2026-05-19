@@ -1,5 +1,5 @@
-const { SAVE_STATE_SUCCESS, SAVE_STATE_FAILED } = require('../../../EVENTS');
-const CONSTANTS = require('../../../CONSTANTS');
+import { SAVE_STATE_SUCCESS, SAVE_STATE_FAILED } from '../../../EVENTS.js';
+import CONSTANTS from '../../../CONSTANTS.js';
 
 /**
  * Force persistence of the state to the adapter
@@ -49,4 +49,4 @@ const saveState = async function saveState() {
   }
   return false;
 };
-module.exports = saveState;
+export default saveState;

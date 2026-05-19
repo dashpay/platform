@@ -1,4 +1,4 @@
-const WalletLibError = require('./WalletLibError');
+import WalletLibError from './WalletLibError.js';
 
 class MempoolPropagationTimeoutError extends WalletLibError {
   /**
@@ -9,4 +9,4 @@ class MempoolPropagationTimeoutError extends WalletLibError {
   }
 }
 
-module.exports = MempoolPropagationTimeoutError;
+export default MempoolPropagationTimeoutError;

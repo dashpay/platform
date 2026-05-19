@@ -1,4 +1,4 @@
-const Worker = require('../src/plugins/Worker');
+import Worker from '../src/plugins/Worker.js';
 
 class DummyWorker extends Worker {
   constructor() {
@@ -15,4 +15,4 @@ class DummyWorker extends Worker {
     console.log('Dummy worker successfully did nothing');
   }
 }
-module.exports = DummyWorker;
+export default DummyWorker;

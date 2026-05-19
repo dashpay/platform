@@ -13,7 +13,7 @@ import {
     Plugins, RawTransaction, TransactionsMap, WalletObj, StatusInfo
 } from "../types";
 import { KeyChainStore } from "../KeyChainStore/KeyChainStore"
-import { InstantLock } from "@dashevo/dashcore-lib";
+import { InstantLock } from '@dashevo/dashcore-lib';
 import { Identities, Wallet} from "../../index";
 import { Transport } from "../../transport/Transport";
 import { BlockHeader } from "@dashevo/dashcore-lib/typings/block/BlockHeader";

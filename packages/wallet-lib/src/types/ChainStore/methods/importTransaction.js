@@ -1,5 +1,6 @@
-const { Transaction } = require('@dashevo/dashcore-lib');
-const is = require('../../../utils/is');
+import dashcore from '@dashevo/dashcore-lib';
+const { Transaction } = dashcore;
+import is from '../../../utils/is.js';
 
 function importTransaction(transaction, metadata = {}) {
   // Even if transaction is a transaction object, if manglized,
@@ -30,4 +31,4 @@ function importTransaction(transaction, metadata = {}) {
   return normalizedTransaction;
 }
 
-module.exports = importTransaction;
+export default importTransaction;

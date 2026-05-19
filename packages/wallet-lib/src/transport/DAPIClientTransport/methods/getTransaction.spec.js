@@ -1,8 +1,8 @@
-const { expect } = require('chai');
+import { expect } from 'chai';
 
-const DAPIClientTransport = require('../DAPIClientTransport');
-const NotFoundError = require('@dashevo/dapi-client/lib/transport/GrpcTransport/errors/NotFoundError');
-const GetTransactionResponse = require('@dashevo/dapi-client/lib/methods/core/getTransaction/GetTransactionResponse');
+import DAPIClientTransport from '../DAPIClientTransport.js';
+import NotFoundError from '@dashevo/dapi-client/lib/transport/GrpcTransport/errors/NotFoundError.js';
+import GetTransactionResponse from '@dashevo/dapi-client/lib/methods/core/getTransaction/GetTransactionResponse.js';
 
 describe('transports - DAPIClientTransport .getTransaction', function suite() {
   let fixture;

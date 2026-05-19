@@ -1,15 +1,15 @@
-const _ = require('lodash');
-const EventEmitter = require('events');
-const logger = require('../../logger');
-const { WALLET_TYPES, BIP44_ADDRESS_GAP } = require('../../CONSTANTS');
-const { is } = require('../../utils');
-const EVENTS = require('../../EVENTS');
-const Wallet = require('../Wallet/Wallet');
-const { simpleDescendingAccumulator } = require('../../utils/coinSelections/strategies');
-const {
+import _ from 'lodash';
+import EventEmitter from 'events';
+import logger from '../../logger/index.js';
+import { WALLET_TYPES, BIP44_ADDRESS_GAP } from '../../CONSTANTS.js';
+import { is } from '../../utils/index.js';
+import EVENTS from '../../EVENTS.js';
+import Wallet from '../Wallet/Wallet.js';
+import { simpleDescendingAccumulator } from '../../utils/coinSelections/strategies/index.js';
+import {
   TxMetadataTimeoutError,
   InstantLockTimeoutError,
-} = require('../../errors');
+} from '../../errors/index.js';
 
 function getNextUnusedAccountIndexForWallet(wallet) {
   if (wallet && wallet.accounts) {
@@ -43,12 +43,12 @@ const defaultOptions = {
 };
 
 /* eslint-disable no-underscore-dangle */
-const _initializeAccount = require('./_initializeAccount');
-const _addAccountToWallet = require('./_addAccountToWallet');
-const _loadStrategy = require('./_loadStrategy');
+import _initializeAccount from './_initializeAccount.js';
+import _addAccountToWallet from './_addAccountToWallet.js';
+import _loadStrategy from './_loadStrategy.js';
 
-const getNetwork = require('./_getNetwork');
-const getBIP44Path = require('./_getBIP44Path');
+import getNetwork from './_getNetwork.js';
+import getBIP44Path from './_getBIP44Path.js';
 
 class Account extends EventEmitter {
   constructor(wallet, opts = defaultOptions) {
@@ -401,39 +401,73 @@ class Account extends EventEmitter {
   }
 }
 
-Account.prototype.broadcastTransaction = require('./methods/broadcastTransaction');
-Account.prototype.connect = require('./methods/connect');
-Account.prototype.createTransaction = require('./methods/createTransaction');
-Account.prototype.decode = require('./methods/decode');
-Account.prototype.decrypt = require('./methods/decrypt');
-Account.prototype.disconnect = require('./methods/disconnect');
-Account.prototype.encode = require('./methods/encode');
-Account.prototype.encrypt = require('./methods/encrypt');
-Account.prototype.fetchStatus = require('./methods/fetchStatus');
-Account.prototype.forceRefreshAccount = require('./methods/forceRefreshAccount');
-Account.prototype.generateAddress = require('./methods/generateAddress');
-Account.prototype.getAddress = require('./methods/getAddress');
-Account.prototype.getAddresses = require('./methods/getAddresses');
-Account.prototype.getBlockHeader = require('./methods/getBlockHeader');
-Account.prototype.getConfirmedBalance = require('./methods/getConfirmedBalance');
-Account.prototype.getPlugin = require('./methods/getPlugin');
-Account.prototype.getPrivateKeys = require('./methods/getPrivateKeys');
-Account.prototype.getTotalBalance = require('./methods/getTotalBalance');
-Account.prototype.getTransaction = require('./methods/getTransaction');
-Account.prototype.getTransactionHistory = require('./methods/getTransactionHistory');
-Account.prototype.getTransactions = require('./methods/getTransactions');
-Account.prototype.getUnconfirmedBalance = require('./methods/getUnconfirmedBalance');
-Account.prototype.getUnusedAddress = require('./methods/getUnusedAddress');
-Account.prototype.getUnusedIdentityIndex = require('./methods/getUnusedIdentityIndex');
-Account.prototype.getUTXOS = require('./methods/getUTXOS');
-Account.prototype.getWorker = require('./methods/getWorker');
-Account.prototype.hasPlugins = require('./methods/hasPlugins');
-Account.prototype.injectPlugin = require('./methods/injectPlugin');
-Account.prototype.importTransactions = require('./methods/importTransactions');
-Account.prototype.createPathsForTransactions = require('./methods/createPathsForTransactions');
-Account.prototype.generateNewPaths = require('./methods/generateNewPaths');
-Account.prototype.addPathsToStore = require('./methods/addPathsToStore');
-Account.prototype.addDefaultPaths = require('./methods/addDefaultPaths');
-Account.prototype.sign = require('./methods/sign');
+import _Account_broadcastTransaction from './methods/broadcastTransaction.js';
+Account.prototype.broadcastTransaction = _Account_broadcastTransaction;
+import _Account_connect from './methods/connect.js';
+Account.prototype.connect = _Account_connect;
+import _Account_createTransaction from './methods/createTransaction.js';
+Account.prototype.createTransaction = _Account_createTransaction;
+import _Account_decode from './methods/decode.js';
+Account.prototype.decode = _Account_decode;
+import _Account_decrypt from './methods/decrypt.js';
+Account.prototype.decrypt = _Account_decrypt;
+import _Account_disconnect from './methods/disconnect.js';
+Account.prototype.disconnect = _Account_disconnect;
+import _Account_encode from './methods/encode.js';
+Account.prototype.encode = _Account_encode;
+import _Account_encrypt from './methods/encrypt.js';
+Account.prototype.encrypt = _Account_encrypt;
+import _Account_fetchStatus from './methods/fetchStatus.js';
+Account.prototype.fetchStatus = _Account_fetchStatus;
+import _Account_forceRefreshAccount from './methods/forceRefreshAccount.js';
+Account.prototype.forceRefreshAccount = _Account_forceRefreshAccount;
+import _Account_generateAddress from './methods/generateAddress.js';
+Account.prototype.generateAddress = _Account_generateAddress;
+import _Account_getAddress from './methods/getAddress.js';
+Account.prototype.getAddress = _Account_getAddress;
+import _Account_getAddresses from './methods/getAddresses.js';
+Account.prototype.getAddresses = _Account_getAddresses;
+import _Account_getBlockHeader from './methods/getBlockHeader.js';
+Account.prototype.getBlockHeader = _Account_getBlockHeader;
+import _Account_getConfirmedBalance from './methods/getConfirmedBalance.js';
+Account.prototype.getConfirmedBalance = _Account_getConfirmedBalance;
+import _Account_getPlugin from './methods/getPlugin.js';
+Account.prototype.getPlugin = _Account_getPlugin;
+import _Account_getPrivateKeys from './methods/getPrivateKeys.js';
+Account.prototype.getPrivateKeys = _Account_getPrivateKeys;
+import _Account_getTotalBalance from './methods/getTotalBalance.js';
+Account.prototype.getTotalBalance = _Account_getTotalBalance;
+import _Account_getTransaction from './methods/getTransaction.js';
+Account.prototype.getTransaction = _Account_getTransaction;
+import _Account_getTransactionHistory from './methods/getTransactionHistory.js';
+Account.prototype.getTransactionHistory = _Account_getTransactionHistory;
+import _Account_getTransactions from './methods/getTransactions.js';
+Account.prototype.getTransactions = _Account_getTransactions;
+import _Account_getUnconfirmedBalance from './methods/getUnconfirmedBalance.js';
+Account.prototype.getUnconfirmedBalance = _Account_getUnconfirmedBalance;
+import _Account_getUnusedAddress from './methods/getUnusedAddress.js';
+Account.prototype.getUnusedAddress = _Account_getUnusedAddress;
+import _Account_getUnusedIdentityIndex from './methods/getUnusedIdentityIndex.js';
+Account.prototype.getUnusedIdentityIndex = _Account_getUnusedIdentityIndex;
+import _Account_getUTXOS from './methods/getUTXOS.js';
+Account.prototype.getUTXOS = _Account_getUTXOS;
+import _Account_getWorker from './methods/getWorker.js';
+Account.prototype.getWorker = _Account_getWorker;
+import _Account_hasPlugins from './methods/hasPlugins.js';
+Account.prototype.hasPlugins = _Account_hasPlugins;
+import _Account_injectPlugin from './methods/injectPlugin.js';
+Account.prototype.injectPlugin = _Account_injectPlugin;
+import _Account_importTransactions from './methods/importTransactions.js';
+Account.prototype.importTransactions = _Account_importTransactions;
+import _Account_createPathsForTransactions from './methods/createPathsForTransactions.js';
+Account.prototype.createPathsForTransactions = _Account_createPathsForTransactions;
+import _Account_generateNewPaths from './methods/generateNewPaths.js';
+Account.prototype.generateNewPaths = _Account_generateNewPaths;
+import _Account_addPathsToStore from './methods/addPathsToStore.js';
+Account.prototype.addPathsToStore = _Account_addPathsToStore;
+import _Account_addDefaultPaths from './methods/addDefaultPaths.js';
+Account.prototype.addDefaultPaths = _Account_addDefaultPaths;
+import _Account_sign from './methods/sign.js';
+Account.prototype.sign = _Account_sign;
 
-module.exports = Account;
+export default Account;

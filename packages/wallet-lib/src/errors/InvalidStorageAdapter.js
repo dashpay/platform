@@ -1,8 +1,8 @@
-const WalletLibError = require('./WalletLibError');
+import WalletLibError from './WalletLibError.js';
 
 class InvalidStorageAdapter extends WalletLibError {
   constructor(reason) {
     super(`Invalid Storage Adapter : ${reason}`);
   }
 }
-module.exports = InvalidStorageAdapter;
+export default InvalidStorageAdapter;

@@ -1,6 +1,6 @@
-const logger = require('../../../logger');
+import logger from '../../../logger/index.js';
 
-module.exports = async function getBlockHeaderByHeight(blockHeight) {
+export default async function getBlockHeaderByHeight(blockHeight) {
   logger.silly(`DAPIClient.getBlockHeaderByHeight[${blockHeight}]`);
   return (await this.getBlockByHeight(blockHeight)).header;
 };

@@ -1,20 +1,21 @@
-const _ = require('lodash');
-const { expect } = require('chai');
-const { HDPrivateKey, Transaction } = require('@dashevo/dashcore-lib');
+import _ from 'lodash';
+import { expect } from 'chai';
+import dashcore from '@dashevo/dashcore-lib';
+const { HDPrivateKey, Transaction } = dashcore;
 
-const createTransaction = require('./createTransaction');
-const FixtureTransport = require('../../../transport/FixtureTransport/FixtureTransport');
+import createTransaction from './createTransaction.js';
+import FixtureTransport from '../../../transport/FixtureTransport/FixtureTransport.js';
 
-const getUTXOS = require('./getUTXOS');
-const getPrivateKeys = require('./getPrivateKeys');
-const getUnusedAddress = require('./getUnusedAddress');
+import getUTXOS from './getUTXOS.js';
+import getPrivateKeys from './getPrivateKeys.js';
+import getUnusedAddress from './getUnusedAddress.js';
 
-const getFixtureHDAccountWithStorage = require('../../../../fixtures/wallets/apart-trip-dignity/getFixtureAccountWithStorage');
+import getFixtureHDAccountWithStorage from '../../../../fixtures/wallets/apart-trip-dignity/getFixtureAccountWithStorage.js';
 
-const addressesFixtures = require('../../../../fixtures/addresses.json');
-const fixtureUTXOS = require('../../../transport/FixtureTransport/data/utxos/yQ1fb64aeLfgqFKyeV9Hg9KTaTq5ehHm22.json');
+import addressesFixtures from '../../../../fixtures/addresses.json' with { type: 'json' };
+import fixtureUTXOS from '../../../transport/FixtureTransport/data/utxos/yQ1fb64aeLfgqFKyeV9Hg9KTaTq5ehHm22.json' with { type: 'json' };
 
-const craftedGenerousMinerStrategy = require('../../../../fixtures/strategies/craftedGenerousMinerStrategy');
+import craftedGenerousMinerStrategy from '../../../../fixtures/strategies/craftedGenerousMinerStrategy.js';
 
 describe('Account - createTransaction', function suite() {
   this.timeout(10000);

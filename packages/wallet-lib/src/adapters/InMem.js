@@ -17,4 +17,4 @@ class InMem {
     return this.keys[key] || null;
   }
 }
-module.exports = InMem;
+export default InMem;

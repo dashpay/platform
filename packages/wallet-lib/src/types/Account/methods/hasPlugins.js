@@ -1,11 +1,11 @@
-const _ = require('lodash');
+import _ from 'lodash';
 /**
  * To any Plugins (StandardPlugins, Worker,...) will lookup in account for it's presence.
  *
  * @param {[Plugin]} searchedPlugins - Array of constructor or single plugin constructor
  * @return {{found:Boolean, results:[{name: string}]}} search - results with presents plugin
  */
-module.exports = function hasPlugins(searchedPlugins = []) {
+export default function hasPlugins(searchedPlugins = []) {
   const search = {
     found: false,
     results: [],

@@ -10,4 +10,4 @@ function addDefaultPaths() {
   this.addPathsToStore(defaultPaths, true);
 }
 
-module.exports = addDefaultPaths;
+export default addDefaultPaths;

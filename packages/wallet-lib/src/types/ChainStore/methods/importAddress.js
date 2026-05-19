@@ -1,4 +1,4 @@
-const sortTransactions = require('../../../utils/sortTransactions');
+import sortTransactions from '../../../utils/sortTransactions.js';
 
 function importAddress(address, reconsiderTransactions = true) {
   if (this.state.addresses.has(address.toString())) {
@@ -29,4 +29,4 @@ function importAddress(address, reconsiderTransactions = true) {
   }
 }
 
-module.exports = importAddress;
+export default importAddress;

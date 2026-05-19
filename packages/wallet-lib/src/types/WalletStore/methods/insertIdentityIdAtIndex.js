@@ -1,4 +1,4 @@
-const IdentityReplaceError = require('../../../errors/IndentityIdReplaceError');
+import IdentityReplaceError from '../../../errors/IndentityIdReplaceError.js';
 
 function insertIdentityIdAtIndex(identityId, identityIndex) {
   const existingId = this.getIdentityIdByIndex(identityIndex);
@@ -9,4 +9,4 @@ function insertIdentityIdAtIndex(identityId, identityIndex) {
 
   this.state.identities.set(identityIndex, identityId);
 }
-module.exports = insertIdentityIdAtIndex;
+export default insertIdentityIdAtIndex;

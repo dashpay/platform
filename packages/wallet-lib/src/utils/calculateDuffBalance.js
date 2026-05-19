@@ -5,7 +5,7 @@
  * @param type {{'confirmed','unconfirmed','total'}} Default: total. Calculate balance by utxo type.
  * @return {number} Balance in duff
  */
-module.exports = function calculateDuffBalance(addresses, chainStore, type = 'total') {
+export default function calculateDuffBalance(addresses, chainStore, type = 'total') {
   let totalSat = 0;
 
   addresses.forEach((address) => {

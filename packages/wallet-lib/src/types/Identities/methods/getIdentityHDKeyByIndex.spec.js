@@ -1,6 +1,6 @@
-const { expect } = require('chai');
+import { expect } from 'chai';
 
-const { Wallet, Identities } = require('../../../index');
+import { Wallet, Identities } from '../../../index.js';
 
 let mnemonic;
 let expectedIdentityHDKey0_0;

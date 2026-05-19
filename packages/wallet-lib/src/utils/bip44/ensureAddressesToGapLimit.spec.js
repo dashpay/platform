@@ -1,6 +1,6 @@
-const {expect} = require('chai');
-const ensureAddressesToGapLimit = require('./ensureAddressesToGapLimit');
-const {CONSTANTS} = require("../../index");
+import {expect} from 'chai';
+import ensureAddressesToGapLimit from './ensureAddressesToGapLimit.js';
+import {CONSTANTS} from '../../index.js';
 
 const walletStore = {
   addresses: {
