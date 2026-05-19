@@ -231,8 +231,26 @@ impl DocumentTypeV2 {
                         ));
                     }
                 }
-                let merged_range = range_countable || range_summable || range_averageable;
-                (true, Some(avg_prop.clone()), merged_range, merged_range)
+                // Promote each range axis independently: `rangeAverageable`
+                // (shorthand) sets BOTH; explicit `rangeCountable` /
+                // `rangeSummable` only set their own axis. Mirrors the
+                // per-index parser at `index/mod.rs` (search for
+                // `if range_averageable {`) — without this split, the
+                // shorthand `documentsAverageable + rangeSummable: true`
+                // would silently flip `range_countable` to true, which
+                // diverges from the longhand `documentsCountable +
+                // documentsSummable + rangeSummable: true` form
+                // (`range_countable` stays false there) and emits a
+                // different on-disk tree shape than the author asked
+                // for.
+                let merged_range_countable = range_countable || range_averageable;
+                let merged_range_summable = range_summable || range_averageable;
+                (
+                    true,
+                    Some(avg_prop.clone()),
+                    merged_range_countable,
+                    merged_range_summable,
+                )
             } else if range_averageable {
                 return Err(ProtocolError::DataContractError(
                     DataContractError::InvalidContractStructure(format!(
@@ -760,6 +778,145 @@ mod tests {
         assert!(
             v2.documents_summable.is_none(),
             "no summable flag set, documents_summable must be None"
+        );
+    }
+
+    /// Shorthand `documentsAverageable: "score"` with
+    /// `rangeSummable: true` (no `rangeAverageable`, no
+    /// `rangeCountable`) must desugar to the SAME
+    /// `(range_countable, range_summable)` pair as the longhand
+    /// form combining `documentsCountable: true`,
+    /// `documentsSummable: "score"`, and `rangeSummable: true`.
+    /// Specifically: `range_countable: false` (no caller asked for
+    /// it) and `range_summable: true`.
+    ///
+    /// Pre-fix, the doctype parser at `v2/mod.rs` merged the two
+    /// range axes together (computing
+    /// `range_countable || range_summable || range_averageable` for
+    /// BOTH outputs), so the shorthand silently flipped
+    /// `range_countable` to true. The longhand form leaves it
+    /// false. That asymmetry made shorthand semantically distinct
+    /// from its desugaring — emitting a different on-disk tree
+    /// shape on the count axis than the author asked for.
+    ///
+    /// Mirrors the per-index parser at `index/mod.rs` (search for
+    /// `if range_averageable {`), which only promotes both axes
+    /// when `rangeAverageable: true` is set.
+    #[test]
+    fn doctype_documents_averageable_with_range_summable_matches_longhand() {
+        // Shorthand: `documentsAverageable: "score" + rangeSummable: true`.
+        let shorthand_schema = build_schema(None, None, Some(true));
+        let shorthand =
+            parse(shorthand_schema).expect("shorthand + rangeSummable: true must parse");
+
+        // Longhand: explicit `documentsCountable: true + documentsSummable +
+        // rangeSummable: true`. `build_schema` doesn't model this — write
+        // the schema directly so the test is a faithful comparison.
+        let longhand_schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "score": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 100,
+                    "position": 0,
+                },
+            },
+            "required": ["score"],
+            "additionalProperties": false,
+            "documentsCountable": true,
+            "documentsSummable": "score",
+            "rangeSummable": true,
+        });
+        let longhand = parse(longhand_schema)
+            .expect("longhand documentsCountable + documentsSummable + rangeSummable must parse");
+
+        assert_eq!(
+            (
+                shorthand.documents_countable,
+                shorthand.documents_summable.clone(),
+                shorthand.range_countable,
+                shorthand.range_summable,
+            ),
+            (
+                longhand.documents_countable,
+                longhand.documents_summable.clone(),
+                longhand.range_countable,
+                longhand.range_summable,
+            ),
+            "shorthand `documentsAverageable + rangeSummable: true` must produce the same \
+             (documents_countable, documents_summable, range_countable, range_summable) tuple \
+             as the longhand `documentsCountable + documentsSummable + rangeSummable: true`. \
+             Pre-fix, the shorthand silently set range_countable=true while the longhand \
+             left it false."
+        );
+        assert!(
+            !shorthand.range_countable,
+            "neither form requested rangeCountable; expected range_countable=false but got \
+             true — the shorthand merge is leaking range_summable into the count axis"
+        );
+        assert!(
+            shorthand.range_summable,
+            "rangeSummable: true must carry through the shorthand desugar"
+        );
+    }
+
+    /// Sum-axis mirror of the test above: shorthand
+    /// `documentsAverageable + rangeCountable: true` must match the
+    /// longhand `documentsCountable + documentsSummable +
+    /// rangeCountable: true`. Pinning both directions so a future
+    /// refactor can't accidentally re-introduce the leak on only one
+    /// axis.
+    #[test]
+    fn doctype_documents_averageable_with_range_countable_matches_longhand() {
+        let shorthand_schema = build_schema(None, Some(true), None);
+        let shorthand =
+            parse(shorthand_schema).expect("shorthand + rangeCountable: true must parse");
+
+        let longhand_schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "score": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 100,
+                    "position": 0,
+                },
+            },
+            "required": ["score"],
+            "additionalProperties": false,
+            "documentsCountable": true,
+            "documentsSummable": "score",
+            "rangeCountable": true,
+        });
+        let longhand = parse(longhand_schema)
+            .expect("longhand documentsCountable + documentsSummable + rangeCountable must parse");
+
+        assert_eq!(
+            (
+                shorthand.documents_countable,
+                shorthand.documents_summable.clone(),
+                shorthand.range_countable,
+                shorthand.range_summable,
+            ),
+            (
+                longhand.documents_countable,
+                longhand.documents_summable.clone(),
+                longhand.range_countable,
+                longhand.range_summable,
+            ),
+            "shorthand `documentsAverageable + rangeCountable: true` must produce the same \
+             tuple as the longhand `documentsCountable + documentsSummable + rangeCountable: \
+             true`. Pre-fix the shorthand silently set range_summable=true."
+        );
+        assert!(
+            shorthand.range_countable,
+            "rangeCountable: true must carry through the shorthand desugar"
+        );
+        assert!(
+            !shorthand.range_summable,
+            "neither form requested rangeSummable; expected range_summable=false but got \
+             true — the shorthand merge is leaking range_countable into the sum axis"
         );
     }
 

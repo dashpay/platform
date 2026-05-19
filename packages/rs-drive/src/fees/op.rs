@@ -989,9 +989,50 @@ impl LowLevelDriveOperation {
             reference_path_type,
             max_reference_hop,
             flags,
-            // Drive only refreshes plain (counted) references; the
-            // non-counted/`ReferenceWithSumItem` variants added in grovedb
-            // are not used by platform.
+            // `non_counted: false` — Drive's index references contribute to
+            // count aggregates on `ProvableCountTree` / `CountTree` parents
+            // (and to count × sum aggregates on the dual-axis combined
+            // trees). The non-counted variant exists in grovedb for
+            // siblings-of-summable-only-trees that must not bump count
+            // aggregates; Drive never refreshes those.
+            false,
+            trust_refresh_reference,
+        ))
+    }
+
+    /// Sets `GroveOperation` for refresh of a
+    /// [`grovedb::Element::ReferenceWithSumItem`] at the given path and
+    /// key, **overriding** the carried sum with `sum_value`.
+    ///
+    /// Used by document-update paths on `summable` indexes: when the
+    /// summed property's value changes but the index keys do not, the
+    /// reference body stays the same but its sum contribution must be
+    /// rewritten so ancestor `SumTree` / `ProvableCountSumTree` /
+    /// `ProvableCountProvableSumTree` aggregates pick up the delta.
+    ///
+    /// Mirrors [`Self::refresh_reference_for_known_path_key_reference_info`]
+    /// but emits a grovedb `RefreshReference` op in
+    /// `SumItemReference*` mode instead of `PlainReference*` mode.
+    pub fn refresh_reference_with_sum_item_for_known_path_key_reference_info(
+        path: Vec<Vec<u8>>,
+        key: Vec<u8>,
+        reference_path_type: ReferencePathType,
+        max_reference_hop: MaxReferenceHop,
+        sum_value: i64,
+        flags: Option<ElementFlags>,
+        trust_refresh_reference: bool,
+    ) -> Self {
+        GroveOperation(QualifiedGroveDbOp::refresh_reference_with_sum_item_op(
+            path,
+            key,
+            reference_path_type,
+            max_reference_hop,
+            sum_value,
+            flags,
+            // `non_counted: false` — see the count-tree rationale on the
+            // plain-reference helper above. Same reasoning applies on the
+            // sum side: index references always contribute to ancestor
+            // count aggregates.
             false,
             trust_refresh_reference,
         ))
