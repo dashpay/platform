@@ -1,5 +1,5 @@
-const Storage = require('../../types/Storage/Storage');
-const LocalForageAdapterMock = require('./LocalForageAdapterMock');
+import Storage from '../../types/Storage/Storage.js';
+import LocalForageAdapterMock from './LocalForageAdapterMock.js';
 
 const defaultOptions = {
   withAdapter: false,
@@ -27,4 +27,4 @@ const mockStorage = async (opts = {}) => {
   return storage;
 };
 
-module.exports = mockStorage;
+export default mockStorage;

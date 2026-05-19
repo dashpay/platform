@@ -1,8 +1,8 @@
-const { expect } = require('chai');
-const getTotalBalance = require('./getTotalBalance');
-const getConfirmedBalance = require('./getConfirmedBalance');
-const getUnconfirmedBalance = require('./getUnconfirmedBalance');
-const getFixtureHDAccountWithStorage = require("../../../../fixtures/wallets/apart-trip-dignity/getFixtureAccountWithStorage");
+import { expect } from 'chai';
+import getTotalBalance from './getTotalBalance.js';
+import getConfirmedBalance from './getConfirmedBalance.js';
+import getUnconfirmedBalance from './getUnconfirmedBalance.js';
+import getFixtureHDAccountWithStorage from '../../../../fixtures/wallets/apart-trip-dignity/getFixtureAccountWithStorage.js';
 
 
 let mockedAccount;

@@ -21,4 +21,4 @@ function getIdentityHDKeyByIndex(identityIndex, keyIndex) {
     .deriveChild(keyIndex, true);
 }
 
-module.exports = getIdentityHDKeyByIndex;
+export default getIdentityHDKeyByIndex;

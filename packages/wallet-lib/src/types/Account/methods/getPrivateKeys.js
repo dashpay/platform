@@ -23,4 +23,4 @@ function getPrivateKeys(addressList) {
 
   return privKeys;
 }
-module.exports = getPrivateKeys;
+export default getPrivateKeys;

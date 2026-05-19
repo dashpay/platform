@@ -1,13 +1,13 @@
-const walletStoreMock = require('./wallet-store.json');
-const chainStoreMock = require('./chain-store.json');
-const Storage = require('../../../src/types/Storage/Storage');
-const { KeyChainStore, DerivableKeyChain } = require('../../../src/index');
-const createPathsForTransactions = require("../../../src/types/Account/methods/createPathsForTransactions");
-const addPathsToStore = require("../../../src/types/Account/methods/addPathsToStore");
-const generateNewPaths = require("../../../src/types/Account/methods/generateNewPaths");
-const addDefaultPaths = require("../../../src/types/Account/methods/addDefaultPaths");
+import walletStoreMock from './wallet-store.json' with { type: 'json' };
+import chainStoreMock from './chain-store.json' with { type: 'json' };
+import Storage from '../../../src/types/Storage/Storage.js';
+import { KeyChainStore, DerivableKeyChain } from '../../../src/index.js';
+import createPathsForTransactions from '../../../src/types/Account/methods/createPathsForTransactions.js';
+import addPathsToStore from '../../../src/types/Account/methods/addPathsToStore.js';
+import generateNewPaths from '../../../src/types/Account/methods/generateNewPaths.js';
+import addDefaultPaths from '../../../src/types/Account/methods/addDefaultPaths.js';
 
-module.exports = (opts = {}) => {
+export default (opts = {}) => {
     const { walletId } = walletStoreMock;
 
     const mockedAccount = {

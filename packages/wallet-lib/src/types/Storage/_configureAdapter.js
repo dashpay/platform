@@ -1,6 +1,6 @@
-const { InvalidStorageAdapter } = require('../../errors');
+import { InvalidStorageAdapter } from '../../errors/index.js';
 
-module.exports = async function configureAdapter(argAdapter) {
+export default async function configureAdapter(argAdapter) {
   let adapter;
   if (!argAdapter) throw new Error('Expected an adapter to configure');
   const argAdapterConstructorName = argAdapter.constructor.name;

@@ -1,4 +1,4 @@
-const { duffsToDash, calculateDuffBalance } = require('../../../utils');
+import { duffsToDash, calculateDuffBalance } from '../../../utils/index.js';
 
 /**
  * Return the total balance of unconfirmed utxo
@@ -17,4 +17,4 @@ function getUnconfirmedBalance(displayDuffs = true) {
   return (displayDuffs) ? totalSat : duffsToDash(totalSat);
 }
 
-module.exports = getUnconfirmedBalance;
+export default getUnconfirmedBalance;

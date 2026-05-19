@@ -1,4 +1,4 @@
-const EVENTS = require('../EVENTS');
+import EVENTS from '../EVENTS.js';
 
 /**
  *
@@ -45,4 +45,4 @@ async function fundWallet(faucetWallet, recipientWallet, amount) {
   return transaction.id;
 }
 
-module.exports = fundWallet;
+export default fundWallet;

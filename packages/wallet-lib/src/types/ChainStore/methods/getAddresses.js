@@ -2,4 +2,4 @@ function getAddresses() {
   return this.state.addresses;
 }
 
-module.exports = getAddresses;
+export default getAddresses;

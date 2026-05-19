@@ -1,6 +1,9 @@
+import dashcore from '@dashevo/dashcore-lib';
 const {
-  crypto, Transaction, Message,
-} = require('@dashevo/dashcore-lib');
+  crypto,
+  Transaction,
+  Message,
+} = dashcore;
 
 /**
  * Allow to sign any transaction or a transition object from a valid privateKeys list
@@ -26,4 +29,4 @@ function sign(object, privateKeys, sigType = crypto.Signature.SIGHASH_ALL) {
   }
   return obj;
 }
-module.exports = sign;
+export default sign;

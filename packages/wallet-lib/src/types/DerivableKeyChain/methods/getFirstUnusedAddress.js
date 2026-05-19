@@ -9,4 +9,4 @@ function getFirstUnusedAddress() {
     address: firstUnused.address.toString(),
   };
 }
-module.exports = getFirstUnusedAddress;
+export default getFirstUnusedAddress;

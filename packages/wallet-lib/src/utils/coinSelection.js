@@ -1,1 +1,1 @@
-module.exports = require('./coinSelections/index');
+export { default } from './coinSelections/index.js';

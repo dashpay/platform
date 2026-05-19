@@ -1,5 +1,6 @@
-const { each } = require('lodash');
-const logger = require('../logger');
+import lodash from 'lodash';
+const { each } = lodash;
+import logger from '../logger/index.js';
 
 const extendTransactionsWithMetadata = (transactions, transactionsMetadata) => {
   const transactionsWithMetadata = [];
@@ -20,4 +21,4 @@ const extendTransactionsWithMetadata = (transactions, transactionsMetadata) => {
   });
   return transactionsWithMetadata;
 };
-module.exports = extendTransactionsWithMetadata;
+export default extendTransactionsWithMetadata;

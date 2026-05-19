@@ -1,4 +1,4 @@
-const EVENTS = require('../../../EVENTS');
+import EVENTS from '../../../EVENTS.js';
 
 /**
  * Get a transaction from a provided txid
@@ -56,4 +56,4 @@ async function getTransaction(txid = null) {
   return { transaction, metadata };
 }
 
-module.exports = getTransaction;
+export default getTransaction;

@@ -1,7 +1,7 @@
-const { expect } = require('chai');
-const fromPrivateKey = require('./fromPrivateKey');
-const cR4t6eFixture = require('../../../../fixtures/cR4t6e_pk');
-const { WALLET_TYPES } = require('../../../CONSTANTS');
+import { expect } from 'chai';
+import fromPrivateKey from './fromPrivateKey.js';
+import cR4t6eFixture from '../../../../fixtures/cR4t6e_pk.json' with { type: 'json' };
+import { WALLET_TYPES } from '../../../CONSTANTS.js';
 
 describe('Wallet - fromPrivateKey', function suite() {
   this.timeout(10000);

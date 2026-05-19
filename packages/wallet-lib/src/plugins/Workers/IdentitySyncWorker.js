@@ -1,7 +1,8 @@
-const { default: loadDpp, Identity } = require('@dashevo/wasm-dpp');
-const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
+import loadDpp from '@dashevo/wasm-dpp';
+const { Identity } = loadDpp;
+import GrpcErrorCodes from '@dashevo/grpc-common/lib/server/error/GrpcErrorCodes.js';
 
-const Worker = require('../Worker');
+import Worker from '../Worker.js';
 
 /**
  * @property {number} gapLimit
@@ -27,8 +28,11 @@ class IdentitySyncWorker extends Worker {
 
   // eslint-disable-next-line
   async onStart() {
-    // Load DPP to make sure Identity and decodeProtocolEntity are available
-    await loadDpp();
+    // Load DPP to make sure Identity and decodeProtocolEntity are available.
+    // wasm-dpp is CJS; under NodeNext the default import may resolve to the
+    // module namespace object instead of the callable. Unwrap defensively.
+    const load = loadDpp.default ?? loadDpp;
+    await load();
   }
 
   async execute() {
@@ -116,4 +120,4 @@ class IdentitySyncWorker extends Worker {
   }
 }
 
-module.exports = IdentitySyncWorker;
+export default IdentitySyncWorker;

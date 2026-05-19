@@ -1,16 +1,16 @@
-const { expect } = require('chai');
-const Dashcore = require('@dashevo/dashcore-lib');
-const knifeMnemonic = require('../../../fixtures/knifeeasily');
-const fluidMnemonic = require('../../../fixtures/fluidDepth');
-const cR4t6ePrivateKey = require('../../../fixtures/cR4t6e_pk');
-const { WALLET_TYPES } = require('../../CONSTANTS');
-const { Account, EVENTS } = require('../../index');
-const EventEmitter = require('events');
-const inMem = require('../../adapters/InMem');
-const Storage = require('../Storage/Storage');
-const {mock} = require("sinon");
-const KeyChainStore = require("../KeyChainStore/KeyChainStore");
-const DerivableKeyChain = require("../DerivableKeyChain/DerivableKeyChain");
+import { expect } from 'chai';
+import Dashcore from '@dashevo/dashcore-lib';
+import knifeMnemonic from '../../../fixtures/knifeeasily.json' with { type: 'json' };
+import fluidMnemonic from '../../../fixtures/fluidDepth.json' with { type: 'json' };
+import cR4t6ePrivateKey from '../../../fixtures/cR4t6e_pk.json' with { type: 'json' };
+import { WALLET_TYPES } from '../../CONSTANTS.js';
+import { Account, EVENTS } from '../../index.js';
+import EventEmitter from 'events';
+import inMem from '../../adapters/InMem.js';
+import Storage from '../Storage/Storage.js';
+import {mock} from 'sinon';
+import KeyChainStore from '../KeyChainStore/KeyChainStore.js';
+import DerivableKeyChain from '../DerivableKeyChain/DerivableKeyChain.js';
 const blockHeader = new Dashcore.BlockHeader.fromObject({
   hash: '00000ac3a0c9df709260e41290d6902e5a4a073099f11fe8c1ce80aadc4bb331',
   version: 2,

@@ -1,6 +1,6 @@
-const { expect } = require('chai');
-const cbor = require('cbor');
-const decode = require('./decode');
+import { expect } from 'chai';
+import cbor from 'cbor';
+import decode from './decode.js';
 
 describe('Account - decode', function suite() {
   this.timeout(10000);

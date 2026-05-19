@@ -1,4 +1,4 @@
-const transactionsWithMetadataFixtures = require("./transactions-with-metadata.json");
+import transactionsWithMetadataFixtures from './transactions-with-metadata.json' with { type: 'json' };
 const expectedResultTx1 = {
   from: [
     {address: 'ygrRyPRf9vSHnP1ieoRRvY9THtFbTMc66e', addressType: "unknown"},
@@ -291,7 +291,7 @@ const expectedResultTx11 = {
   feeImpact: 394
 };
 
-module.exports = [
+export default [
   expectedResultTx1,
   expectedResultTx2,
   expectedResultTx3,

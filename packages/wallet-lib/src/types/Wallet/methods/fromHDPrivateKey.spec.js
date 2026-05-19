@@ -1,7 +1,7 @@
-const { expect } = require('chai');
-const fromHDPrivateKey = require('./fromHDPrivateKey');
-const knifeFixture = require('../../../../fixtures/knifeeasily');
-const { WALLET_TYPES } = require('../../../CONSTANTS');
+import { expect } from 'chai';
+import fromHDPrivateKey from './fromHDPrivateKey.js';
+import knifeFixture from '../../../../fixtures/knifeeasily.json' with { type: 'json' };
+import { WALLET_TYPES } from '../../../CONSTANTS.js';
 
 describe('Wallet - fromHDPrivateKey', function suite() {
   this.timeout(10000);

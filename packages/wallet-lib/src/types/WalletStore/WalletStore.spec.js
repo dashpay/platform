@@ -1,5 +1,5 @@
-const { expect } = require('chai');
-const WalletStore = require('./WalletStore');
+import { expect } from 'chai';
+import WalletStore from './WalletStore.js';
 
 let walletStore;
 describe('WalletStore - Class', ()=> {

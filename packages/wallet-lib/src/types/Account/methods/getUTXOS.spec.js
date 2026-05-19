@@ -1,7 +1,7 @@
-const { expect } = require('chai');
-const Dashcore = require('@dashevo/dashcore-lib');
-const getUTXOS = require('./getUTXOS');
-const getFixtureHDAccountWithStorage = require("../../../../fixtures/wallets/apart-trip-dignity/getFixtureAccountWithStorage");
+import { expect } from 'chai';
+import Dashcore from '@dashevo/dashcore-lib';
+import getUTXOS from './getUTXOS.js';
+import getFixtureHDAccountWithStorage from '../../../../fixtures/wallets/apart-trip-dignity/getFixtureAccountWithStorage.js';
 
 describe('Account - getUTXOS', function suite() {
   this.timeout(10000);

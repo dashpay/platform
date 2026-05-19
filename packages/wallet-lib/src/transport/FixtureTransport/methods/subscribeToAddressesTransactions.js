@@ -1,5 +1,5 @@
-const EVENTS = require('../../../EVENTS');
-const logger = require('../../../logger');
+import EVENTS from '../../../EVENTS.js';
+import logger from '../../../logger/index.js';
 // Artifact from previous optimisation made in SyncWorker plugin
 // Kept for reminder when Bloomfilters
 
@@ -49,7 +49,7 @@ function startExecutor() {
   this.state.executors.addresses = setInterval(() => executor.call(self), fastFetchThreshold);
 }
 
-module.exports = async function subscribeToAddressesTransactions(addressList) {
+export default async function subscribeToAddressesTransactions(addressList) {
   logger.silly(`FakeNet.subscribeToAddressesTransactions[${addressList}]`);
   if (!Array.isArray(addressList)) throw new Error('Expected array of addresses');
   const { executors, subscriptions, addressesTransactionsMap } = this.state;

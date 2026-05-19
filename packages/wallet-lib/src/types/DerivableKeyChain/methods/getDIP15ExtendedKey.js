@@ -23,4 +23,4 @@ function getDIP15ExtendedKey(userUniqueId, contactUniqueId, index = 0, accountIn
   return (type === 'HDPublicKey' ? extendedPrivateKey.hdPublicKey : extendedPrivateKey);
 }
 
-module.exports = getDIP15ExtendedKey;
+export default getDIP15ExtendedKey;

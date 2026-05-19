@@ -1,6 +1,6 @@
-const Worker = require('../../plugins/Worker');
+import Worker from '../../plugins/Worker.js';
 
-const sortPlugins = require('./_sortPlugins');
+import sortPlugins from './_sortPlugins.js';
 
 const preparePlugins = function preparePlugins(account, userUnsafePlugins) {
   return new Promise((resolve, reject) => {
@@ -41,4 +41,4 @@ const preparePlugins = function preparePlugins(account, userUnsafePlugins) {
   });
 };
 
-module.exports = preparePlugins;
+export default preparePlugins;

@@ -1,4 +1,4 @@
-const WalletLibError = require('./WalletLibError');
+import WalletLibError from './WalletLibError.js';
 
 class TransactionNotInStore extends WalletLibError {
   constructor(txid) {
@@ -6,4 +6,4 @@ class TransactionNotInStore extends WalletLibError {
   }
 }
 
-module.exports = TransactionNotInStore;
+export default TransactionNotInStore;

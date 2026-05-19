@@ -1,5 +1,5 @@
-const { expect } = require('chai');
-const feeCalculation = require('./feeCalculation');
+import { expect } from 'chai';
+import feeCalculation from './feeCalculation.js';
 
 describe('Utils - feeCalculation', function suite() {
   this.timeout(10000);

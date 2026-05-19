@@ -1,10 +1,10 @@
-const BlockHeadersProvider = require('@dashevo/dapi-client/lib/BlockHeadersProvider/BlockHeadersProvider');
-const ReconnectableStream = require('@dashevo/dapi-client/lib/transport/ReconnectableStream');
-const Worker = require('../../Worker');
-const logger = require('../../../logger');
-const TransactionsReader = require('./TransactionsReader');
-const { getAddressesToSync, getTxHashesFromMerkleBlock } = require('./utils');
-const EVENTS = require('../../../EVENTS');
+import BlockHeadersProvider from '@dashevo/dapi-client/lib/BlockHeadersProvider/BlockHeadersProvider.js';
+import ReconnectableStream from '@dashevo/dapi-client/lib/transport/ReconnectableStream.js';
+import Worker from '../../Worker.js';
+import logger from '../../../logger/index.js';
+import TransactionsReader from './TransactionsReader.js';
+import { getAddressesToSync, getTxHashesFromMerkleBlock } from './utils.js';
+import EVENTS from '../../../EVENTS.js';
 
 const STATES = {
   IDLE: 'STATE_IDLE',
@@ -687,4 +687,4 @@ class TransactionsSyncWorker extends Worker {
 
 TransactionsSyncWorker.STATES = STATES;
 
-module.exports = TransactionsSyncWorker;
+export default TransactionsSyncWorker;

@@ -1,4 +1,4 @@
-const { BIP44_TESTNET_ROOT_PATH, BIP44_LIVENET_ROOT_PATH } = require('../../../CONSTANTS');
+import { BIP44_TESTNET_ROOT_PATH, BIP44_LIVENET_ROOT_PATH } from '../../../CONSTANTS.js';
 
 /**
  * Return a safier root keys to derivate from
@@ -8,4 +8,4 @@ function getHardenedBIP44HDKey() {
   const pathRoot = (this.network.toString() === 'testnet') ? BIP44_TESTNET_ROOT_PATH : BIP44_LIVENET_ROOT_PATH;
   return this.getForPath(pathRoot).key;
 }
-module.exports = getHardenedBIP44HDKey;
+export default getHardenedBIP44HDKey;

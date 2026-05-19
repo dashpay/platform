@@ -1,19 +1,20 @@
 /* eslint-disable no-unused-expressions */
 
-const EventEmitter = require('events');
-const DAPIClient = require('@dashevo/dapi-client');
-const { Block } = require('@dashevo/dashcore-lib');
-const { expect } = require('chai');
-const logger = require('../../../logger');
+import EventEmitter from 'events';
+import DAPIClient from '@dashevo/dapi-client';
+import dashcore from '@dashevo/dashcore-lib';
+const { Block } = dashcore;
+import { expect } from 'chai';
+import logger from '../../../logger/index.js';
 
 const { BlockHeadersProvider } = DAPIClient;
 
-const BlockHeadersSyncWorker = require('./BlockHeadersSyncWorker');
+import BlockHeadersSyncWorker from './BlockHeadersSyncWorker.js';
 
-const { waitOneTick } = require('../../../test/utils');
+import { waitOneTick } from '../../../test/utils.js';
 
-const EVENTS = require('../../../EVENTS');
-const { mockHeadersChain } = require('../../../test/mocks/dashcore/block');
+import EVENTS from '../../../EVENTS.js';
+import { mockHeadersChain } from '../../../test/mocks/dashcore/block.js';
 
 describe('BlockHeadersSyncWorker', () => {
   let blockHeadersSyncWorker;

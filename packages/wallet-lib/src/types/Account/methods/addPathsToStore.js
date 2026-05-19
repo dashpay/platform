@@ -17,4 +17,4 @@ function addPathsToStore(paths, refreshUTXOState = true) {
   });
 }
 
-module.exports = addPathsToStore;
+export default addPathsToStore;

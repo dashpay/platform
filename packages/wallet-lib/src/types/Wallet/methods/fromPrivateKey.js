@@ -1,13 +1,13 @@
-const { is } = require('../../../utils');
-const DerivableKeyChain = require('../../DerivableKeyChain/DerivableKeyChain');
-const { WALLET_TYPES } = require('../../../CONSTANTS');
-const KeyChainStore = require('../../KeyChainStore/KeyChainStore');
+import { is } from '../../../utils/index.js';
+import DerivableKeyChain from '../../DerivableKeyChain/DerivableKeyChain.js';
+import { WALLET_TYPES } from '../../../CONSTANTS.js';
+import KeyChainStore from '../../KeyChainStore/KeyChainStore.js';
 
 /**
  * Will set a wallet to work with a mnemonic (keychain, walletType & HDPrivateKey)
  * @param privateKey
  */
-module.exports = function fromPrivateKey(privateKey, network) {
+export default function fromPrivateKey(privateKey, network) {
   if (!is.privateKey(privateKey)) throw new Error('Expected a valid private key (typeof PrivateKey or String)');
   this.walletType = WALLET_TYPES.PRIVATEKEY;
   this.mnemonic = null;

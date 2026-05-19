@@ -1,30 +1,57 @@
-const extendTransactionsWithMetadata = require('./extendTransactionsWithMetadata');
-const calculateTransactionFees = require('./calculateTransactionFees');
-const categorizeTransactions = require('./categorizeTransactions');
-const calculateDuffBalance = require('./calculateDuffBalance');
-const filterTransactions = require('./filterTransactions');
-const { hash, doubleSha256, sha256 } = require('./crypto');
-const { varIntSizeBytesFromLength } = require('./varInt');
-const classifyAddresses = require('./classifyAddresses');
-const feeCalculation = require('./feeCalculation');
-const coinSelection = require('./coinSelection');
-const fundWallet = require('./fundWallet');
-const dashToDuffs = require('./dashToDuffs');
-const duffsToDash = require('./duffsToDash');
-const getBytesOf = require('./getBytesOf');
-const hasMethod = require('./hasMethod');
-const hasProp = require('./hasProp');
-const is = require('./is');
+import extendTransactionsWithMetadata from './extendTransactionsWithMetadata.js';
+import calculateTransactionFees from './calculateTransactionFees.js';
+import categorizeTransactions from './categorizeTransactions.js';
+import calculateDuffBalance from './calculateDuffBalance.js';
+import filterTransactions from './filterTransactions.js';
+import { hash, doubleSha256, sha256 } from './crypto.js';
+import { varIntSizeBytesFromLength } from './varInt.js';
+import classifyAddresses from './classifyAddresses.js';
+import feeCalculation from './feeCalculation.js';
+import coinSelection from './coinSelection.js';
+import fundWallet from './fundWallet.js';
+import dashToDuffs from './dashToDuffs.js';
+import duffsToDash from './duffsToDash.js';
+import getBytesOf from './getBytesOf.js';
+import hasMethod from './hasMethod.js';
+import hasProp from './hasProp.js';
+import is from './is.js';
 
-const {
+import {
   generateNewMnemonic,
   mnemonicToHDPrivateKey,
   mnemonicToWalletId,
   seedToHDPrivateKey,
   mnemonicToSeed,
-} = require('./mnemonic');
+} from './mnemonic.js';
 
-module.exports = {
+export {
+  extendTransactionsWithMetadata,
+  varIntSizeBytesFromLength,
+  calculateTransactionFees,
+  categorizeTransactions,
+  mnemonicToHDPrivateKey,
+  calculateDuffBalance,
+  generateNewMnemonic,
+  seedToHDPrivateKey,
+  mnemonicToWalletId,
+  filterTransactions,
+  classifyAddresses,
+  mnemonicToSeed,
+  feeCalculation,
+  coinSelection,
+  doubleSha256,
+  dashToDuffs,
+  duffsToDash,
+  fundWallet,
+  getBytesOf,
+  hasMethod,
+  hasProp,
+  sha256,
+  hash,
+  is,
+};
+
+export default {
   extendTransactionsWithMetadata,
   varIntSizeBytesFromLength,
   calculateTransactionFees,

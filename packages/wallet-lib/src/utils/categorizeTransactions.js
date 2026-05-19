@@ -1,6 +1,7 @@
-const { each } = require('lodash');
-const classifyAddresses = require('./classifyAddresses');
-const { TRANSACTION_HISTORY_TYPES } = require('../CONSTANTS');
+import lodash from 'lodash';
+const { each } = lodash;
+import classifyAddresses from './classifyAddresses.js';
+import { TRANSACTION_HISTORY_TYPES } from '../CONSTANTS.js';
 
 // TODO: On a private key based wallet, as change and external is similar,
 //  we actually cannot differentiate correctly from an address_transfer
@@ -216,4 +217,4 @@ function categorizeTransactions(
   return categorizedTransactions;
 }
 
-module.exports = categorizeTransactions;
+export default categorizeTransactions;

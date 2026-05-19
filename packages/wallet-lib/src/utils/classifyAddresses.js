@@ -1,4 +1,4 @@
-const { WALLET_TYPES, BIP44_LIVENET_ROOT_PATH, BIP44_TESTNET_ROOT_PATH } = require('../CONSTANTS');
+import { WALLET_TYPES, BIP44_LIVENET_ROOT_PATH, BIP44_TESTNET_ROOT_PATH } from '../CONSTANTS.js';
 
 function classifyAddresses(walletStore, accountIndex, walletType, network = 'testnet') {
   const externalAddressesList = [];
@@ -46,4 +46,4 @@ function classifyAddresses(walletStore, accountIndex, walletType, network = 'tes
     miscAddressesList,
   };
 }
-module.exports = classifyAddresses;
+export default classifyAddresses;

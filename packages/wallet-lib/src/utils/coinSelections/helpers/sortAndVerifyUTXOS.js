@@ -25,4 +25,4 @@ const sort = {
 
 const sortAndVerifyUTXOS = (utxosList, opts) => sort.by(utxosList, opts);
 
-module.exports = sortAndVerifyUTXOS;
+export default sortAndVerifyUTXOS;

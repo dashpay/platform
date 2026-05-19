@@ -1,9 +1,9 @@
-const { expect } = require('chai');
+import { expect } from 'chai';
 
-const { Wallet } = require('../../src/index');
+import { Wallet } from '../../src/index.js';
 
-const { fundWallet } = require('../../src/utils');
-const { EVENTS } = require('../../src');
+import { fundWallet } from '../../src/utils/index.js';
+import { EVENTS } from '../../src/index.js';
 
 const seeds = process.env.DAPI_SEED
   .split(',');

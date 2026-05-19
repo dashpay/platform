@@ -1,4 +1,4 @@
-module.exports = function feeCalculation(type = 'standard') {
+export default function feeCalculation(type = 'standard') {
   const feeRate = {
     type: null,
     value: null,

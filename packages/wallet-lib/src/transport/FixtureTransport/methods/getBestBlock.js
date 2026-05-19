@@ -1,6 +1,6 @@
-const logger = require('../../../logger');
+import logger from '../../../logger/index.js';
 
-module.exports = async function getBestBlock() {
+export default async function getBestBlock() {
   logger.silly('FakeNet.getBestBlock');
   return this.getBlockByHash(await this.getBestBlockHash());
 };

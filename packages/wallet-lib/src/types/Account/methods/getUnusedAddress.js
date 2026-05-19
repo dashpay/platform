@@ -58,4 +58,4 @@ function getUnusedAddress(type = 'external', skip = 0) {
   return unused;
 }
 
-module.exports = getUnusedAddress;
+export default getUnusedAddress;

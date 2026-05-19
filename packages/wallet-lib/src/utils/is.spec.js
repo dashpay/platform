@@ -1,7 +1,8 @@
-const { Mnemonic, Networks, Address } = require('@dashevo/dashcore-lib');
-const { expect } = require('chai');
-const { is, generateNewMnemonic} = require("./index");
-const figureBridgeFixture = require("../../fixtures/figurebridge");
+import dashcore from '@dashevo/dashcore-lib';
+const { Mnemonic, Networks, Address } = dashcore;
+import { expect } from 'chai';
+import { is, generateNewMnemonic} from './index.js';
+import figureBridgeFixture from '../../fixtures/figurebridge.json' with { type: 'json' };
 
 describe('Utils - is', function suite() {
   it('should have is.num handle numbers', () => {

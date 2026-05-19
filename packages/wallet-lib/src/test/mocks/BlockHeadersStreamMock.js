@@ -1,4 +1,4 @@
-const EventEmitter = require('events');
+import EventEmitter from 'events';
 
 class BlockHeadersStreamMock extends EventEmitter {
   constructor() {
@@ -51,4 +51,4 @@ BlockHeadersStreamMock.EVENTS = {
   error: 'error',
 };
 
-module.exports = BlockHeadersStreamMock;
+export default BlockHeadersStreamMock;

@@ -1,4 +1,4 @@
-const WalletLibError = require('./WalletLibError');
+import WalletLibError from './WalletLibError.js';
 
 class InstantLockTimeoutError extends WalletLibError {
   /**
@@ -9,4 +9,4 @@ class InstantLockTimeoutError extends WalletLibError {
   }
 }
 
-module.exports = InstantLockTimeoutError;
+export default InstantLockTimeoutError;

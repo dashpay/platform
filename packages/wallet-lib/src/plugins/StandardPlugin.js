@@ -1,7 +1,9 @@
-const _ = require('lodash');
-const EventEmitter = require('events');
-const { InjectionToPluginUnallowed } = require('../errors');
-const { SAFE_FUNCTIONS, SAFE_PROPERTIES } = require('../CONSTANTS').INJECTION_LISTS;
+import _ from 'lodash';
+import EventEmitter from 'events';
+import { InjectionToPluginUnallowed } from '../errors/index.js';
+import { INJECTION_LISTS } from '../CONSTANTS.js';
+
+const { SAFE_FUNCTIONS, SAFE_PROPERTIES } = INJECTION_LISTS;
 
 const defaultOpts = {
   executeOnStart: false,
@@ -73,4 +75,4 @@ class StandardPlugin extends EventEmitter {
   }
 }
 
-module.exports = StandardPlugin;
+export default StandardPlugin;

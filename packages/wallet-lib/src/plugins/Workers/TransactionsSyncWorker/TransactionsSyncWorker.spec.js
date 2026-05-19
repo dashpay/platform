@@ -1,12 +1,13 @@
-const { expect } = require('chai');
-const EventEmitter = require('events');
-const { Transaction } = require('@dashevo/dashcore-lib');
-const TransactionsSyncWorker = require('./TransactionsSyncWorker');
-const TransactionsReader = require('./TransactionsReader');
-const { waitOneTick } = require('../../../test/utils');
-const { mockMerkleBlock } = require('../../../test/mocks/dashcore/block');
-const EVENTS = require('../../../EVENTS');
-const logger = require('../../../logger');
+import { expect } from 'chai';
+import EventEmitter from 'events';
+import dashcore from '@dashevo/dashcore-lib';
+const { Transaction } = dashcore;
+import TransactionsSyncWorker from './TransactionsSyncWorker.js';
+import TransactionsReader from './TransactionsReader.js';
+import { waitOneTick } from '../../../test/utils.js';
+import { mockMerkleBlock } from '../../../test/mocks/dashcore/block.js';
+import EVENTS from '../../../EVENTS.js';
+import logger from '../../../logger/index.js';
 
 describe('TransactionsSyncWorker', () => {
   let transactionsSyncWorker;

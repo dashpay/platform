@@ -1,5 +1,5 @@
-const { expect } = require('chai');
-const addAccountToWallet = require('./_addAccountToWallet');
+import { expect } from 'chai';
+import addAccountToWallet from './_addAccountToWallet.js';
 
 describe('Account - addAccountToWallet', function suite() {
   this.timeout(10000);

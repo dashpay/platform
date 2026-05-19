@@ -1,17 +1,18 @@
-const { has } = require('lodash');
-const InMem = require('../../../adapters/InMem');
-const configureAdapter = require('../_configureAdapter');
-const getDefaultAdapter = require('../_getDefaultAdapter');
-const { CONFIGURED } = require('../../../EVENTS');
-const logger = require('../../../logger');
-const CONSTANTS = require('../../../CONSTANTS');
+import lodash from 'lodash';
+const { has } = lodash;
+import InMem from '../../../adapters/InMem.js';
+import configureAdapter from '../_configureAdapter.js';
+import getDefaultAdapter from '../_getDefaultAdapter.js';
+import { CONFIGURED } from '../../../EVENTS.js';
+import logger from '../../../logger/index.js';
+import CONSTANTS from '../../../CONSTANTS.js';
 
 /**
  * To be called after instantialization as it contains all the async logic / test of adapters
  * @param opts
  * @return {Promise<void>}
  */
-module.exports = async function configure(opts = {}) {
+export default async function configure(opts = {}) {
   this.rehydrate = has(opts, 'rehydrate') ? opts.rehydrate : this.rehydrate;
   this.autosave = has(opts, 'autosave') ? opts.autosave : this.autosave;
   this.adapter = await configureAdapter((opts.adapter) ? opts.adapter : await getDefaultAdapter());

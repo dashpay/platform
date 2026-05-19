@@ -1,13 +1,14 @@
-const { Transaction } = require('@dashevo/dashcore-lib');
-const NotFoundError = require('@dashevo/dapi-client/lib/transport/GrpcTransport/errors/NotFoundError');
-const { is } = require('../../../utils');
-const logger = require('../../../logger');
+import dashcore from '@dashevo/dashcore-lib';
+const { Transaction } = dashcore;
+import NotFoundError from '@dashevo/dapi-client/lib/transport/GrpcTransport/errors/NotFoundError.js';
+import { is } from '../../../utils/index.js';
+import logger from '../../../logger/index.js';
 
 /**
  * @param {string} txid
  * @returns {Promise<null|Transaction>}
  */
-module.exports = async function getTransaction(txid) {
+export default async function getTransaction(txid) {
   logger.silly(`DAPIClient.getTransaction[${txid}]`);
   if (!is.txid(txid)) {
     throw new Error(`Received an invalid txid to fetch : ${txid}`);

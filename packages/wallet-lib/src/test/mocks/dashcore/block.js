@@ -1,6 +1,7 @@
-const X11 = require('wasm-x11-hash');
-const { BlockHeader, MerkleBlock, configure } = require('@dashevo/dashcore-lib');
-const { genesis } = require('@dashevo/dash-spv');
+import X11 from 'wasm-x11-hash';
+import dashcore from '@dashevo/dashcore-lib';
+const { BlockHeader, MerkleBlock, configure } = dashcore;
+import { genesis } from '@dashevo/dash-spv';
 
 const getRoot = (network) => {
   switch (network) {
@@ -82,7 +83,13 @@ const mockMerkleBlock = (txHashes, prevHeader, network = 'livenet') => {
   });
 };
 
-module.exports = {
+export {
+  mockHeadersChain,
+  mockHeader,
+  mockMerkleBlock,
+};
+
+export default {
   mockHeadersChain,
   mockHeader,
   mockMerkleBlock,

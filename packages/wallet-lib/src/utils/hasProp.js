@@ -6,4 +6,4 @@ function hasProp(obj, prop) {
   return {}.hasOwnProperty.call(obj, prop);
 }
 
-module.exports = hasProp;
+export default hasProp;

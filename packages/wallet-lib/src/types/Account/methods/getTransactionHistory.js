@@ -1,8 +1,9 @@
-const { each } = require('lodash');
-const {
+import lodash from 'lodash';
+const { each } = lodash;
+import {
   categorizeTransactions,
   // calculateTransactionFees,
-} = require('../../../utils');
+} from '../../../utils/index.js';
 
 const sortbyTimeDescending = (a, b) => (b.time - a.time);
 const sortByHeightDescending = (a, b) => (b.height - a.height);
@@ -81,4 +82,4 @@ function getTransactionHistory() {
   return transactionHistory.sort(sortbyTimeDescending);
 }
 
-module.exports = getTransactionHistory;
+export default getTransactionHistory;

@@ -1,7 +1,7 @@
 import { Mnemonic, PrivateKey, PublicKey, PublicAddress, Address, HDPublicKey, Network, Plugins } from "../types";
 import { Account } from "../Account/Account";
 import { Storage } from "../Storage/Storage";
-import { HDPrivateKey } from "@dashevo/dashcore-lib";
+import { HDPrivateKey } from '@dashevo/dashcore-lib';
 import { Transport } from "../../transport/Transport";
 
 export declare class Wallet {

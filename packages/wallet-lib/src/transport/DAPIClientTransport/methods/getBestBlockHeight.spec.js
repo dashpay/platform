@@ -1,8 +1,8 @@
-const { expect } = require('chai');
+import { expect } from 'chai';
 
-const DAPIClientTransport = require('../DAPIClientTransport');
+import DAPIClientTransport from '../DAPIClientTransport.js';
 
-const getBlockchainStatus = require('../../FixtureTransport/methods/getBlockchainStatus');
+import getBlockchainStatus from '../../FixtureTransport/methods/getBlockchainStatus.js';
 
 describe('transports - DAPIClientTransport - .getBestBlockHeight', function suite() {
   let fixture;

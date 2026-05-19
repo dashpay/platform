@@ -1,11 +1,11 @@
-const { mnemonicToWalletId } = require('../../../utils');
-const { WALLET_TYPES } = require('../../../CONSTANTS');
+import { mnemonicToWalletId } from '../../../utils/index.js';
+import { WALLET_TYPES } from '../../../CONSTANTS.js';
 
 /**
  * Generate a wallet id for a specific wallet based on it's (HD)privateKey
  * @return walletId
  */
-module.exports = function generateNewWalletId() {
+export default function generateNewWalletId() {
   const { walletType } = this;
   const errorMessageBase = 'Cannot generate a walletId';
   switch (walletType) {

@@ -79,4 +79,4 @@ function maybeLookAhead() {
     });
   return generatedPaths;
 }
-module.exports = maybeLookAhead;
+export default maybeLookAhead;

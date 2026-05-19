@@ -1,16 +1,16 @@
-const {
+import {
   mnemonicToHDPrivateKey,
   is,
-} = require('../../../utils');
-const DerivableKeyChain = require('../../DerivableKeyChain/DerivableKeyChain');
-const KeyChainStore = require('../../KeyChainStore/KeyChainStore');
-const { WALLET_TYPES } = require('../../../CONSTANTS');
+} from '../../../utils/index.js';
+import DerivableKeyChain from '../../DerivableKeyChain/DerivableKeyChain.js';
+import KeyChainStore from '../../KeyChainStore/KeyChainStore.js';
+import { WALLET_TYPES } from '../../../CONSTANTS.js';
 
 /**
  * Will set a wallet to work with a mnemonic (keychain, walletType & HDPrivateKey)
  * @param mnemonic
  */
-module.exports = function fromMnemonic(mnemonic, network, passphrase = '') {
+export default function fromMnemonic(mnemonic, network, passphrase = '') {
   if (!is.mnemonic(mnemonic)) {
     throw new Error('Expected a valid mnemonic (typeof String or Mnemonic)');
   }

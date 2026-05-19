@@ -1,7 +1,7 @@
-const { expect } = require('chai');
-const { EventEmitter } = require('events');
-const WorkerSpec = require('./Worker');
-const FaultyWorker = require('../../fixtures/plugins/FaultyWorker');
+import { expect } from 'chai';
+import { EventEmitter } from 'events';
+import WorkerSpec from './Worker.js';
+import FaultyWorker from '../../fixtures/plugins/FaultyWorker.js';
 
 describe('Plugins - Worker', function suite() {
   this.timeout(60000);

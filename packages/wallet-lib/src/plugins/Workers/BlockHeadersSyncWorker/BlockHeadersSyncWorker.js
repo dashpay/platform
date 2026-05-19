@@ -1,7 +1,7 @@
-const BlockHeadersProvider = require('@dashevo/dapi-client/lib/BlockHeadersProvider/BlockHeadersProvider');
-const Worker = require('../../Worker');
-const logger = require('../../../logger');
-const EVENTS = require('../../../EVENTS');
+import BlockHeadersProvider from '@dashevo/dapi-client/lib/BlockHeadersProvider/BlockHeadersProvider.js';
+import Worker from '../../Worker.js';
+import logger from '../../../logger/index.js';
+import EVENTS from '../../../EVENTS.js';
 
 const PROGRESS_UPDATE_INTERVAL = 1000;
 
@@ -391,4 +391,4 @@ class BlockHeadersSyncWorker extends Worker {
 BlockHeadersSyncWorker.MAX_HEADERS_TO_KEEP = MAX_HEADERS_TO_KEEP;
 BlockHeadersSyncWorker.STATES = STATES;
 
-module.exports = BlockHeadersSyncWorker;
+export default BlockHeadersSyncWorker;

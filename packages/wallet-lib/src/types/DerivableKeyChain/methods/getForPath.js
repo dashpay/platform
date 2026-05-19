@@ -36,4 +36,4 @@ function getForPath(path, opts = {}) {
   return data;
 }
 
-module.exports = getForPath;
+export default getForPath;

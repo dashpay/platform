@@ -1,9 +1,9 @@
-const { expect } = require('chai');
-const generateNewWalletId = require('./generateNewWalletId');
-const knifeMnemonic = require('../../../../fixtures/knifeeasily');
-const gatherSail = require('../../../../fixtures/gathersail');
-const cR4t6ePrivateKey = require('../../../../fixtures/cR4t6e_pk');
-const { WALLET_TYPES } = require('../../../CONSTANTS');
+import { expect } from 'chai';
+import generateNewWalletId from './generateNewWalletId.js';
+import knifeMnemonic from '../../../../fixtures/knifeeasily.json' with { type: 'json' };
+import gatherSail from '../../../../fixtures/gathersail.json' with { type: 'json' };
+import cR4t6ePrivateKey from '../../../../fixtures/cR4t6e_pk.json' with { type: 'json' };
+import { WALLET_TYPES } from '../../../CONSTANTS.js';
 
 describe('Wallet - generateNewWalletId', function suite() {
   this.timeout(10000);

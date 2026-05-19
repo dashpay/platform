@@ -43,4 +43,4 @@ class TxStreamDataResponseMock {
   }
 }
 
-module.exports = TxStreamDataResponseMock;
+export default TxStreamDataResponseMock;

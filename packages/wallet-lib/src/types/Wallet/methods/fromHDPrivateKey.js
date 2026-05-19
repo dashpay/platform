@@ -1,16 +1,17 @@
-const { HDPrivateKey } = require('@dashevo/dashcore-lib');
-const {
+import dashcore from '@dashevo/dashcore-lib';
+const { HDPrivateKey } = dashcore;
+import {
   is,
-} = require('../../../utils');
-const DerivableKeyChain = require('../../DerivableKeyChain/DerivableKeyChain');
-const KeyChainStore = require('../../KeyChainStore/KeyChainStore');
-const { WALLET_TYPES } = require('../../../CONSTANTS');
+} from '../../../utils/index.js';
+import DerivableKeyChain from '../../DerivableKeyChain/DerivableKeyChain.js';
+import KeyChainStore from '../../KeyChainStore/KeyChainStore.js';
+import { WALLET_TYPES } from '../../../CONSTANTS.js';
 
 /**
  * Will set a wallet to work with a seed (HDPrivateKey)
  * @param hdPrivateKey
  */
-module.exports = function fromHDPrivateKey(hdPrivateKey) {
+export default function fromHDPrivateKey(hdPrivateKey) {
   if (!is.HDPrivateKey(hdPrivateKey)) throw new Error('Expected a valid HDPrivateKey (typeof HDPrivateKey or String)');
   this.walletType = WALLET_TYPES.HDWALLET;
   this.mnemonic = null;

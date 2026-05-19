@@ -1,8 +1,8 @@
-const Dashcore = require('@dashevo/dashcore-lib');
-const { expect } = require('chai');
-const fromMnemonic = require('./fromMnemonic');
-const knifeFixture = require('../../../../fixtures/knifeeasily');
-const { WALLET_TYPES } = require('../../../CONSTANTS');
+import Dashcore from '@dashevo/dashcore-lib';
+import { expect } from 'chai';
+import fromMnemonic from './fromMnemonic.js';
+import knifeFixture from '../../../../fixtures/knifeeasily.json' with { type: 'json' };
+import { WALLET_TYPES } from '../../../CONSTANTS.js';
 
 describe('Wallet - fromMnemonic', function suite() {
   this.timeout(10000);

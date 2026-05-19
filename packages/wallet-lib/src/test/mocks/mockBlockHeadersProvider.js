@@ -1,4 +1,4 @@
-const DAPIClient = require('@dashevo/dapi-client');
+import DAPIClient from '@dashevo/dapi-client';
 
 const {
   BlockHeadersProvider,
@@ -37,4 +37,4 @@ const mockBlockHeadersProvider = (sinon, historicalStreams, continuousStream, he
   );
 };
 
-module.exports = mockBlockHeadersProvider;
+export default mockBlockHeadersProvider;

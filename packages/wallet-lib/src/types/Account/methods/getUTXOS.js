@@ -1,6 +1,7 @@
 /* eslint-disable no-continue, no-restricted-syntax */
-const { Address, Transaction } = require('@dashevo/dashcore-lib');
-const { COINBASE_MATURITY } = require('../../../CONSTANTS');
+import dashcore from '@dashevo/dashcore-lib';
+const { Address, Transaction } = dashcore;
+import { COINBASE_MATURITY } from '../../../CONSTANTS.js';
 
 /**
  * Return all the utxos
@@ -65,4 +66,4 @@ function getUTXOS(options = {
   return utxos.sort((a, b) => b.satoshis - a.satoshis);
 }
 
-module.exports = getUTXOS;
+export default getUTXOS;

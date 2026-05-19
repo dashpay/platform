@@ -1,15 +1,15 @@
-const Dashcore = require('@dashevo/dashcore-lib');
-const { is } = require('../../../utils');
-const DerivableKeyChain = require('../../DerivableKeyChain/DerivableKeyChain');
-const { WALLET_TYPES } = require('../../../CONSTANTS');
-const KeyChainStore = require('../../KeyChainStore/KeyChainStore');
+import Dashcore from '@dashevo/dashcore-lib';
+import { is } from '../../../utils/index.js';
+import DerivableKeyChain from '../../DerivableKeyChain/DerivableKeyChain.js';
+import { WALLET_TYPES } from '../../../CONSTANTS.js';
+import KeyChainStore from '../../KeyChainStore/KeyChainStore.js';
 
 const normalizeHDPubKey = (key) => (is.string(key) ? Dashcore.HDPublicKey(key) : key);
 /**
  * Will set a wallet to work with a on readonly mode from a HDPublicKey
  * @param HDPublicKey
  */
-module.exports = function fromHDPublicKey(_hdPublicKey) {
+export default function fromHDPublicKey(_hdPublicKey) {
   if (!is.HDPublicKey(_hdPublicKey)) throw new Error('Expected a valid HDPublicKey (typeof HDPublicKey or String)');
   this.walletType = WALLET_TYPES.HDPUBLIC;
   this.mnemonic = null;

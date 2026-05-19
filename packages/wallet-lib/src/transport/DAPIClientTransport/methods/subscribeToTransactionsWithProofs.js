@@ -1,9 +1,11 @@
+import dashcore from '@dashevo/dashcore-lib';
 const {
-  BloomFilter, Address,
-} = require('@dashevo/dashcore-lib');
-const logger = require('../../../logger');
+  BloomFilter,
+  Address,
+} = dashcore;
+import logger from '../../../logger/index.js';
 
-const { BLOOM_FALSE_POSITIVE_RATE } = require('../../../CONSTANTS');
+import { BLOOM_FALSE_POSITIVE_RATE } from '../../../CONSTANTS.js';
 
 /**
  * From a given addressList will create and submit a bloomfilter to DAPI
@@ -16,7 +18,7 @@ const { BLOOM_FALSE_POSITIVE_RATE } = require('../../../CONSTANTS');
  * @return {Promise<void>}
  */
 
-module.exports = async function subscribeToTransactionsWithProofs(
+export default async function subscribeToTransactionsWithProofs(
   addressList,
   opts = { fromBlockHeight: 1, count: 0 },
 ) {

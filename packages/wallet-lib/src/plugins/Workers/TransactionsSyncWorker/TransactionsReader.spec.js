@@ -1,12 +1,13 @@
-const { expect } = require('chai');
-const { Transaction, PrivateKey } = require('@dashevo/dashcore-lib');
+import { expect } from 'chai';
+import dashcore from '@dashevo/dashcore-lib';
+const { Transaction, PrivateKey } = dashcore;
 
-const TransactionsReader = require('./TransactionsReader');
-const TxStreamMock = require('../../../test/mocks/TxStreamMock');
-const { createBloomFilter } = require('./utils');
-const { mockMerkleBlock } = require('../../../test/mocks/dashcore/block');
-const { mockInstantLock } = require('../../../test/mocks/dashcore/instantlock');
-const { waitOneTick } = require('../../../test/utils');
+import TransactionsReader from './TransactionsReader.js';
+import TxStreamMock from '../../../test/mocks/TxStreamMock.js';
+import { createBloomFilter } from './utils.js';
+import { mockMerkleBlock } from '../../../test/mocks/dashcore/block.js';
+import { mockInstantLock } from '../../../test/mocks/dashcore/instantlock.js';
+import { waitOneTick } from '../../../test/utils.js';
 
 describe('TransactionsReader - unit', () => {
   let options;

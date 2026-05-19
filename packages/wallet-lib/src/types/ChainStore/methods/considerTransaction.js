@@ -1,5 +1,6 @@
-const { Transaction } = require('@dashevo/dashcore-lib');
-const EVENTS = require('../../../EVENTS');
+import dashcore from '@dashevo/dashcore-lib';
+const { Transaction } = dashcore;
+import EVENTS from '../../../EVENTS.js';
 
 const { Output } = Transaction;
 
@@ -93,4 +94,4 @@ function considerTransaction(transactionHash) {
   return processedAddressesForTx;
 }
 
-module.exports = considerTransaction;
+export default considerTransaction;

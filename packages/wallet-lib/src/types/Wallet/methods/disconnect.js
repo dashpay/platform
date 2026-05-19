@@ -14,4 +14,4 @@ async function disconnect() {
     }
   }
 }
-module.exports = disconnect;
+export default disconnect;

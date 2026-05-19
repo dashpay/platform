@@ -1,7 +1,7 @@
-const { expect } = require('chai');
-const getAccount = require('./getAccount');
-const { WALLET_TYPES } = require('../../../CONSTANTS');
-const expectThrowsAsync = require('../../../utils/expectThrowsAsync');
+import { expect } from 'chai';
+import getAccount from './getAccount.js';
+import { WALLET_TYPES } from '../../../CONSTANTS.js';
+import expectThrowsAsync from '../../../utils/expectThrowsAsync.js';
 
 const exceptedException1 = 'getAccount expected index integer to be a property of accountOptions';
 

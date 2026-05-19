@@ -1,21 +1,32 @@
-// Default winston transport requires setImmediate to work, so
-// polyfill included here. Making it work with webpack is rather tricky, so it is used as per
-// documentation: https://github.com/YuzuJS/setImmediate#usage
-require('setimmediate');
-const Account = require('./types/Account/Account');
-const ChainStore = require('./types/ChainStore/ChainStore');
-const Identities = require('./types/Identities/Identities');
-const DerivableKeyChain = require('./types/DerivableKeyChain/DerivableKeyChain');
-const KeyChainStore = require('./types/KeyChainStore/KeyChainStore');
-const Storage = require('./types/Storage/Storage');
-const Wallet = require('./types/Wallet/Wallet');
-const WalletStore = require('./types/WalletStore/WalletStore');
-const EVENTS = require('./EVENTS');
-const CONSTANTS = require('./CONSTANTS');
-const utils = require('./utils');
-const plugins = require('./plugins');
+import Account from './types/Account/Account.js';
+import ChainStore from './types/ChainStore/ChainStore.js';
+import Identities from './types/Identities/Identities.js';
+import DerivableKeyChain from './types/DerivableKeyChain/DerivableKeyChain.js';
+import KeyChainStore from './types/KeyChainStore/KeyChainStore.js';
+import Storage from './types/Storage/Storage.js';
+import Wallet from './types/Wallet/Wallet.js';
+import WalletStore from './types/WalletStore/WalletStore.js';
+import EVENTS from './EVENTS.js';
+import CONSTANTS from './CONSTANTS.js';
+import utils from './utils/index.js';
+import plugins from './plugins/index.js';
 
-module.exports = {
+export {
+  Account,
+  ChainStore,
+  Identities,
+  DerivableKeyChain,
+  KeyChainStore,
+  Storage,
+  Wallet,
+  WalletStore,
+  EVENTS,
+  CONSTANTS,
+  utils,
+  plugins,
+};
+
+export default {
   Account,
   ChainStore,
   Identities,

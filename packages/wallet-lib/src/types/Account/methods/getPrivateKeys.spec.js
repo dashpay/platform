@@ -1,5 +1,5 @@
-const { expect } = require('chai');
-const Dashcore = require('@dashevo/dashcore-lib');
+import { expect } from 'chai';
+import Dashcore from '@dashevo/dashcore-lib';
 
 
 describe('Account - getPrivateKeys', () => {

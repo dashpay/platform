@@ -1,6 +1,6 @@
-const { expect } = require('chai');
-const getTransaction = require('./getTransaction');
-const getFixtureHDAccountWithStorage = require("../../../../fixtures/wallets/apart-trip-dignity/getFixtureAccountWithStorage");
+import { expect } from 'chai';
+import getTransaction from './getTransaction.js';
+import getFixtureHDAccountWithStorage from '../../../../fixtures/wallets/apart-trip-dignity/getFixtureAccountWithStorage.js';
 
 let mockedAccount;
 let fetchTransactionInfoCalledNb = 0;

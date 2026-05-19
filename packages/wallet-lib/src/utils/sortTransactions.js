@@ -46,4 +46,4 @@ const sortTransactions = (txsWithMetadata) => {
     }, []);
 };
 
-module.exports = sortTransactions;
+export default sortTransactions;

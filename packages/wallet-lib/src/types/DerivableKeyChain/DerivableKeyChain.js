@@ -1,7 +1,8 @@
-const { Networks, HDPrivateKey, HDPublicKey } = require('@dashevo/dashcore-lib');
-const { PrivateKey, PublicKey } = require('@dashevo/dashcore-lib');
-const { doubleSha256 } = require('../../utils/crypto');
-const { mnemonicToHDPrivateKey } = require('../../utils/mnemonic');
+import dashcore from '@dashevo/dashcore-lib';
+const { Networks, HDPrivateKey, HDPublicKey } = dashcore;
+const { PrivateKey, PublicKey } = dashcore;
+import { doubleSha256 } from '../../utils/crypto.js';
+import { mnemonicToHDPrivateKey } from '../../utils/mnemonic.js';
 
 function generateKeyChainId(key) {
   const keyChainIdSuffix = doubleSha256(key.toString()).toString('hex').slice(0, 10);
@@ -90,18 +91,31 @@ class DerivableKeyChain {
     this.maybeLookAhead();
   }
 }
-DerivableKeyChain.prototype.getForPath = require('./methods/getForPath');
-DerivableKeyChain.prototype.getForAddress = require('./methods/getForAddress');
-DerivableKeyChain.prototype.getDIP15ExtendedKey = require('./methods/getDIP15ExtendedKey');
-DerivableKeyChain.prototype.getFirstUnusedAddress = require('./methods/getFirstUnusedAddress');
-DerivableKeyChain.prototype.getHardenedBIP44HDKey = require('./methods/getHardenedBIP44HDKey');
-DerivableKeyChain.prototype.getHardenedDIP9FeatureHDKey = require('./methods/getHardenedDIP9FeatureHDKey');
-DerivableKeyChain.prototype.getHardenedDIP15AccountKey = require('./methods/getHardenedDIP15AccountKey');
-DerivableKeyChain.prototype.getRootKey = require('./methods/getRootKey');
-DerivableKeyChain.prototype.getWatchedAddresses = require('./methods/getWatchedAddresses');
-DerivableKeyChain.prototype.getIssuedPaths = require('./methods/getIssuedPaths');
-DerivableKeyChain.prototype.maybeLookAhead = require('./methods/maybeLookAhead');
-DerivableKeyChain.prototype.markAddressAsUsed = require('./methods/markAddressAsUsed');
-DerivableKeyChain.prototype.sign = require('./methods/sign');
+import _DerivableKeyChain_getForPath from './methods/getForPath.js';
+DerivableKeyChain.prototype.getForPath = _DerivableKeyChain_getForPath;
+import _DerivableKeyChain_getForAddress from './methods/getForAddress.js';
+DerivableKeyChain.prototype.getForAddress = _DerivableKeyChain_getForAddress;
+import _DerivableKeyChain_getDIP15ExtendedKey from './methods/getDIP15ExtendedKey.js';
+DerivableKeyChain.prototype.getDIP15ExtendedKey = _DerivableKeyChain_getDIP15ExtendedKey;
+import _DerivableKeyChain_getFirstUnusedAddress from './methods/getFirstUnusedAddress.js';
+DerivableKeyChain.prototype.getFirstUnusedAddress = _DerivableKeyChain_getFirstUnusedAddress;
+import _DerivableKeyChain_getHardenedBIP44HDKey from './methods/getHardenedBIP44HDKey.js';
+DerivableKeyChain.prototype.getHardenedBIP44HDKey = _DerivableKeyChain_getHardenedBIP44HDKey;
+import _DerivableKeyChain_getHardenedDIP9FeatureHDKey from './methods/getHardenedDIP9FeatureHDKey.js';
+DerivableKeyChain.prototype.getHardenedDIP9FeatureHDKey = _DerivableKeyChain_getHardenedDIP9FeatureHDKey;
+import _DerivableKeyChain_getHardenedDIP15AccountKey from './methods/getHardenedDIP15AccountKey.js';
+DerivableKeyChain.prototype.getHardenedDIP15AccountKey = _DerivableKeyChain_getHardenedDIP15AccountKey;
+import _DerivableKeyChain_getRootKey from './methods/getRootKey.js';
+DerivableKeyChain.prototype.getRootKey = _DerivableKeyChain_getRootKey;
+import _DerivableKeyChain_getWatchedAddresses from './methods/getWatchedAddresses.js';
+DerivableKeyChain.prototype.getWatchedAddresses = _DerivableKeyChain_getWatchedAddresses;
+import _DerivableKeyChain_getIssuedPaths from './methods/getIssuedPaths.js';
+DerivableKeyChain.prototype.getIssuedPaths = _DerivableKeyChain_getIssuedPaths;
+import _DerivableKeyChain_maybeLookAhead from './methods/maybeLookAhead.js';
+DerivableKeyChain.prototype.maybeLookAhead = _DerivableKeyChain_maybeLookAhead;
+import _DerivableKeyChain_markAddressAsUsed from './methods/markAddressAsUsed.js';
+DerivableKeyChain.prototype.markAddressAsUsed = _DerivableKeyChain_markAddressAsUsed;
+import _DerivableKeyChain_sign from './methods/sign.js';
+DerivableKeyChain.prototype.sign = _DerivableKeyChain_sign;
 
-module.exports = DerivableKeyChain;
+export default DerivableKeyChain;

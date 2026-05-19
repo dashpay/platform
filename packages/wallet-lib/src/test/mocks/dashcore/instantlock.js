@@ -1,4 +1,5 @@
-const { InstantLock } = require('@dashevo/dashcore-lib');
+import dashcore from '@dashevo/dashcore-lib';
+const { InstantLock } = dashcore;
 
 function mockInstantLock(transactionHash) {
   return new InstantLock({
@@ -15,6 +16,10 @@ function mockInstantLock(transactionHash) {
   });
 }
 
-module.exports = {
+export {
+  mockInstantLock,
+};
+
+export default {
   mockInstantLock,
 };

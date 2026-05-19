@@ -12,4 +12,4 @@ function addKeyChain(keychain, opts = {}) {
   }
 }
 
-module.exports = addKeyChain;
+export default addKeyChain;

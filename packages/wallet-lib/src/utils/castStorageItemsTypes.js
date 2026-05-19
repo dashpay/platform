@@ -75,4 +75,4 @@ const castStorageItemsTypes = (originalItem, schema, path = '') => {
     return { ...acc, ...result };
   }, {});
 };
-module.exports = castStorageItemsTypes;
+export default castStorageItemsTypes;

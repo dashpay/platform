@@ -1,4 +1,4 @@
-const crypto = require('crypto');
+import crypto from 'crypto';
 
 function hash(alg, data) {
   return crypto.createHash(alg).update(data).digest();
@@ -12,7 +12,13 @@ function doubleSha256(data) {
   return sha256(sha256(data));
 }
 
-module.exports = {
+export {
+  hash,
+  doubleSha256,
+  sha256,
+};
+
+export default {
   hash,
   doubleSha256,
   sha256,

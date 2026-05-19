@@ -1,4 +1,4 @@
-const WalletLibError = require('./WalletLibError');
+import WalletLibError from './WalletLibError.js';
 
 class InvalidUTXO extends WalletLibError {
   constructor() {
@@ -6,4 +6,4 @@ class InvalidUTXO extends WalletLibError {
     super(message);
   }
 }
-module.exports = InvalidUTXO;
+export default InvalidUTXO;

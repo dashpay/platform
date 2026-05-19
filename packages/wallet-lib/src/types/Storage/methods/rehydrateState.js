@@ -1,8 +1,8 @@
-const { hasMethod } = require('../../../utils');
+import { hasMethod } from '../../../utils/index.js';
 
-const { REHYDRATE_STATE_FAILED, REHYDRATE_STATE_SUCCESS } = require('../../../EVENTS');
+import { REHYDRATE_STATE_FAILED, REHYDRATE_STATE_SUCCESS } from '../../../EVENTS.js';
 
-const logger = require('../../../logger');
+import logger from '../../../logger/index.js';
 
 /**
  * Fetch the state from the persistence adapter
@@ -49,4 +49,4 @@ const rehydrateState = async function rehydrateState() {
     }
   }
 };
-module.exports = rehydrateState;
+export default rehydrateState;

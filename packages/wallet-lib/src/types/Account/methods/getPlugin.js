@@ -1,6 +1,6 @@
-const {
+import {
   UnknownPlugin,
-} = require('../../../errors');
+} from '../../../errors/index.js';
 /**
  * Get a plugin by name
  * @param {string} pluginName
@@ -14,4 +14,4 @@ function getPlugin(pluginName) {
   }
   throw new UnknownPlugin(loweredPluginName);
 }
-module.exports = getPlugin;
+export default getPlugin;

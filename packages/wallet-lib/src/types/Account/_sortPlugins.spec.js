@@ -1,13 +1,13 @@
-const {expect} = require('chai');
-const {WALLET_TYPES} = require('../../CONSTANTS');
-const sortPlugins = require('./_sortPlugins');
+import {expect} from 'chai';
+import {WALLET_TYPES} from '../../CONSTANTS.js';
+import sortPlugins from './_sortPlugins.js';
 
-const TransactionsSyncWorker = require('../../plugins/Workers/TransactionsSyncWorker/TransactionsSyncWorker');
-const BlockHeadersSyncWorker = require('../../plugins/Workers/BlockHeadersSyncWorker/BlockHeadersSyncWorker');
-const ChainPlugin = require('../../plugins/Plugins/ChainPlugin');
-const IdentitySyncWorker = require('../../plugins/Workers/IdentitySyncWorker');
+import TransactionsSyncWorker from '../../plugins/Workers/TransactionsSyncWorker/TransactionsSyncWorker.js';
+import BlockHeadersSyncWorker from '../../plugins/Workers/BlockHeadersSyncWorker/BlockHeadersSyncWorker.js';
+import ChainPlugin from '../../plugins/Plugins/ChainPlugin.js';
+import IdentitySyncWorker from '../../plugins/Workers/IdentitySyncWorker.js';
 
-const Worker = require('./../../plugins/Worker');
+import Worker from './../../plugins/Worker.js';
 
 class dummyWorker extends Worker {
   constructor() {

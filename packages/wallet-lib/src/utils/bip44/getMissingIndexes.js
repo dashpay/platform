@@ -1,6 +1,6 @@
-const is = require('../is');
+import is from '../is.js';
 
-module.exports = function getMissingIndexes(paths, fromOrigin = true) {
+export default function getMissingIndexes(paths, fromOrigin = true) {
   if (!is.arr(paths)) return false;
 
   let sortedIndexes = [];

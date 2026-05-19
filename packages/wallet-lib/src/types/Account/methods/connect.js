@@ -2,7 +2,7 @@
  * This method will connect to all streams and workers available
  * @return {Boolean}
  */
-module.exports = function connect() {
+export default function connect() {
   if (this.transport && this.transport.connect) {
     this.transport.connect();
   }

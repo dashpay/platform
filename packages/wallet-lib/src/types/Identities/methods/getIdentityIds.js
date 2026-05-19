@@ -9,4 +9,4 @@ function getIdentityIds() {
     .filter(Boolean);
 }
 
-module.exports = getIdentityIds;
+export default getIdentityIds;

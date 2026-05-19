@@ -18,4 +18,4 @@ function generateNewPaths(addresses) {
   return issuedPaths;
 }
 
-module.exports = generateNewPaths;
+export default generateNewPaths;
