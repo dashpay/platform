@@ -98,21 +98,23 @@ impl Drive {
         // — the average's shape contract is "two reads of the same
         // grovedb snapshot, zipped after."
         //
-        // Architectural note (per maintainer feedback): a follow-up
-        // PR will collapse this into a single `DocumentCountSumRequest`
-        // + a unified `execute_document_count_and_sum_request` that
-        // walks grovedb once and reads both metrics from each visited
-        // PCPS element via `count_sum_value_or_default()`. The prove
-        // path at `execute_document_average_prove` below already does
-        // this (one PCPS walk yields both fields); the no-proof path
-        // currently double-walks. The refactor is non-trivial — it
-        // needs joint per-mode executors (Total / PerInValue /
-        // RangeNoProof) that don't exist yet on the no-proof side —
-        // and merits its own focused PR for review attention rather
-        // than getting bundled with the surface-wiring work in this
-        // PR. The current two-request shape is correct (the local
-        // transaction below guarantees atomicity); it just does more
-        // grovedb work than strictly necessary.
+        // Architectural follow-up: tracked at
+        // [dashpay/platform#3687](https://github.com/dashpay/platform/issues/3687).
+        // The two-sub-request shape will collapse into a single
+        // `DocumentCountSumRequest` + a unified
+        // `execute_document_count_and_sum_request` that walks
+        // grovedb once and reads both metrics from each visited PCPS
+        // element via `count_sum_value_or_default()`. The prove path
+        // at `execute_document_average_prove` below already does
+        // this (one PCPS walk yields both fields); the no-proof
+        // path currently double-walks. The current two-request
+        // shape is correct (the local transaction below guarantees
+        // atomicity); it just does more grovedb work than strictly
+        // necessary, and the dual-routing requires count's and sum's
+        // routing tables to stay in lock-step for AVG composition to
+        // work (already caught one routing divergence). Issue #3687
+        // captures the full scope including the four joint per-mode
+        // no-proof executors that need to land.
         let count_request = DocumentCountRequest {
             contract: request.contract,
             document_type: request.document_type,
