@@ -32,13 +32,6 @@ impl AddressFundingFromAssetLockTransitionMethodsV0 for AddressFundingFromAssetL
         user_fee_increase: UserFeeIncrease,
         _platform_version: &PlatformVersion,
     ) -> Result<StateTransition, ProtocolError> {
-        tracing::debug!("try_from_asset_lock_with_signer_and_private_key: Started");
-        tracing::debug!(
-            input_count = inputs.len(),
-            output_count = outputs.len(),
-            "try_from_asset_lock_with_signer_and_private_key"
-        );
-
         // Create the unsigned transition
         let mut address_funding_transition = AddressFundingFromAssetLockTransitionV0 {
             asset_lock_proof,
@@ -65,9 +58,6 @@ impl AddressFundingFromAssetLockTransitionMethodsV0 for AddressFundingFromAssetL
         }
         address_funding_transition.input_witnesses = input_witnesses;
 
-        tracing::debug!(
-            "try_from_asset_lock_with_signer_and_private_key: Successfully created transition"
-        );
         Ok(address_funding_transition.into())
     }
 
@@ -87,13 +77,6 @@ impl AddressFundingFromAssetLockTransitionMethodsV0 for AddressFundingFromAssetL
         S: Signer<PlatformAddress>,
         AS: ::key_wallet::signer::Signer,
     {
-        tracing::debug!("try_from_asset_lock_with_signers: Started");
-        tracing::debug!(
-            input_count = inputs.len(),
-            output_count = outputs.len(),
-            "try_from_asset_lock_with_signers"
-        );
-
         // Build the unsigned inner transition. The outer wrapper
         // signature and the per-input witnesses are both
         // `#[platform_signable(exclude_from_sig_hash)]`, so they
@@ -132,7 +115,6 @@ impl AddressFundingFromAssetLockTransitionMethodsV0 for AddressFundingFromAssetL
             .sign_with_core_signer(asset_lock_proof_path, asset_lock_signer)
             .await?;
 
-        tracing::debug!("try_from_asset_lock_with_signers: Successfully created transition");
         Ok(state_transition)
     }
 }
