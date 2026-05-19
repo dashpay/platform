@@ -5,8 +5,6 @@ This chapter walks through a representative contract and shows how **average que
 The chapter assumes you've read [Document Count Trees](./document-count-trees.md) and [Document Sum Trees](./document-sum-trees.md) — averages are built directly on top of both, so understanding count + sum trees individually is the prerequisite. Here we take that machinery as given and look at the queries that need *both*.
 
 > **Status:** the [`document_average_worst_case`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive/benches/document_average_worst_case.rs) bench lands the reproducible numbers below — same convention as the [Count](./count-index-examples.md) and [Sum](./sum-index-examples.md) chapters. All proof sizes are measured against a 31 620-grade fixture; verified `(count, sum)` values are the actual numbers the bench's matrix reports. The full surface — primary-key global average, point lookups, range aggregates, and both carrier variants — is wired through to grovedb PR #670's verifiers end-to-end.
->
-> Query 1's inline proof AST and root-hash blocks below were captured against an earlier bench run that pre-dated the `documentsCountable + documentsSummable` primary-key write-side fix landed in this PR (the same fix that closed the sum chapter's [Query 1](./sum-index-examples.md#query-1--unfiltered-total-sum)). The displayed `(count=0, sum=0)` and the byte-level proof-AST contents will refresh to the populated fixture's actual `(count, sum)` pair (and a different root hash) on the next bench rerun; the proof *shape* — 614 bytes / 5 layers / single-element merk path — stays the same because the write-side fix changes the committed `(count_value, sum_value)`, not the proof structure.
 
 ## Why Averages Need a New Primitive
 
@@ -113,7 +111,7 @@ A skill score is *amplified by class spread* — `skill × spread / 8` — so a 
 
 The total comes out to **31 620 actual grade documents** (≈ 63% of the 50 000 possible triples — see the popularity table; the per-class actual rates match the documented popularities within ±0.5 percentage points), with the per-class enrollment counts ranging from 970 (CALC201 across 5 semesters) to 2 500 (ENGL101 — required, so every student × every semester). The expected per-student grade count is ≈ 6.3 classes per semester × 10 semesters = ≈ 63 grades per student.
 
-Headline numbers from the bench's fixture (all verified end-to-end against the shared root hash `85e5b9e8626b…e6`):
+Headline numbers from the bench's fixture (all verified end-to-end against the shared root hash `8b15f732af8f…ffc7`):
 
 - Total `count` across all grades: **31 620** (not 50 000 — the enrollment filter removes ~29%).
 - Per-class average **spans from ≈ 53 (CALC201, hardest math) to ≈ 87 (ARTS101, easiest art)** — a 33-point realistic spread.
@@ -131,7 +129,7 @@ The contract above produces this storage shape. Tree elements are drawn as subgr
 flowchart TB
   TD["@/contract_id/0x01/grade"]:::tree
 
-  TD --> PK["[0]: CountSumTree count=10000 sum~500000<br/>(documentsCountable + documentsSummable primary key)"]:::csnode
+  TD --> PK["[0]: CountSumTree count=31620 sum=2392808<br/>(documentsCountable + documentsSummable primary key)"]:::csnode
   TD --> CL["class: NormalTree<br/>(byClass property-name)"]:::node
   TD --> ST["student: NormalTree<br/>(byStudent property-name)"]:::node
   TD --> SM["semester: NormalTree<br/>(bySemester property-name)"]:::node
@@ -182,7 +180,7 @@ All proof-size numbers and avg-times below come from the 10 000-row bench run; t
 
 | # | Query | Filter / Group-by | Complexity | Avg time | Proof size |
 |---|-------|-------------------|------------|----------|------------|
-| 1 | [Unfiltered Global Average](#query-1--unfiltered-global-average) | *(none — total at doctype level)* | O(1) | 24.2 µs | **614 B** |
+| 1 | [Unfiltered Global Average](#query-1--unfiltered-global-average) | *(none — total at doctype level)* | O(1) | 25.3 µs | **622 B** |
 | 2 | [Average for One Class (`byClass`)](#query-2--average-for-one-class-byclass) | `class == "PHYS101"` | O(log C) | 32.1 µs | **871 B** |
 | 3 | [Student GPA (`byStudent`)](#query-3--student-gpa-bystudent) | `student == student_050` | O(log S) | 42.0 µs | **1 227 B** |
 | 4 | [One Cohort (`byClassSemester` point)](#query-4--one-cohort-byclasssemester-point) | `class == "PHYS101" AND semester == 20204` | O(log C + log T') | 51.0 µs | **1 304 B** |
@@ -219,11 +217,11 @@ query items:  [Key(0x00)]
 ```text
 path:        ["@", contract_id, 0x01, "grade"]
 key:         0x00
-element:     CountSumTree { count_value_or_default: 10000, sum_value_or_default: ≈500000 }
-average:     ≈500000 / 10000 = ≈50.0
+element:     CountSumTree { count_value_or_default: 31620, sum_value_or_default: 2392808 }
+average:     2392808 / 31620 = 75.6739…
 ```
 
-**Proof size:** 614 bytes.  **Avg time:** 24.2 µs.
+**Proof size:** 622 bytes.  **Avg time:** 25.3 µs.
 
 **Proof display** (`GroveDBProof::Display`):
 
@@ -285,11 +283,9 @@ GroveDBProofV1 {
 
 </details>
 
-> **Bench capture timing.** The expanded proof-AST block above was captured against an earlier bench run that pre-dated the `documentsCountable + documentsSummable` primary-key write-side fix; you'll see `Tree(0x…)` (a `NormalTree` byte encoding) and `count_value=0`, `sum_value=0` in the embedded hex. The write-side fix is in tree at the head of this PR — same fix that closed the sum chapter's [Query 1](./sum-index-examples.md#query-1--unfiltered-total-sum) — so a fresh `cargo bench -p drive --bench document_average_worst_case -- --test` rebuilds the fixture with the doctype root resolving to a `CountSumTree`, swapping that terminator's element-type byte and re-encoding `(count_value, sum_value)`. The merk-proof structure (5 layers / 614 bytes / Push-Parent-Child ops) doesn't change. Proof size and timing remain accurate.
-
 ### Diagram: per-layer merk-tree structure
 
-See the [GroveDB Layout](#grovedb-layout) diagram for the overall storage shape. Q1's descent walks the proof AST above through the layers highlighted there — green nodes are `CountSumTree` terminators carrying both `count_value` and `sum_value`, yellow nodes are `ProvableCountProvableSumTree` (PCPS) terminators with per-node count + sum, gray are opaque sibling subtrees the proof commits only via hash. Q1 uses only the constant-prefix path layers down to the doctype's primary-key tree element. The path is byte-identical to the prover's path query, which is why prover and verifier agree on the root hash `85e5b9e8…847e6`.
+See the [GroveDB Layout](#grovedb-layout) diagram for the overall storage shape. Q1's descent walks the proof AST above through the layers highlighted there — green nodes are `CountSumTree` terminators carrying both `count_value` and `sum_value`, yellow nodes are `ProvableCountProvableSumTree` (PCPS) terminators with per-node count + sum, gray are opaque sibling subtrees the proof commits only via hash. Q1 uses only the constant-prefix path layers down to the doctype's primary-key tree element. The path is byte-identical to the prover's path query, which is why prover and verifier agree on the root hash `8b15f732…ffc7`.
 
 The descent stops at the doctype's primary-key tree — the green node at the top of the layout. Because `documentsCountable: true` + `documentsSummable: "score"` upgraded that tree to a `CountSumTree`, the count and sum are *both* one O(1) read with an O(log n) proof. The client divides locally to get the average. Same proof shape as count's [Q1](./count-index-examples.md#query-1--unfiltered-total-count) and sum's [Q1](./sum-index-examples.md#query-1--unfiltered-total-sum) individually — the CountSumTree just commits both fields at every merk node it walks, costing a constant ~8 extra bytes per descent layer vs. either single-axis variant.
 
@@ -401,7 +397,7 @@ GroveDBProofV1 {
 
 ### Diagram: per-layer merk-tree structure
 
-See the [GroveDB Layout](#grovedb-layout) diagram for the overall storage shape. Q2's descent walks the proof AST above through the layers highlighted there — green nodes are `CountSumTree` terminators carrying both `count_value` and `sum_value`, yellow nodes are `ProvableCountProvableSumTree` (PCPS) terminators with per-node count + sum, gray are opaque sibling subtrees the proof commits only via hash. Q2 adds one extra layer into the `class` property-name subtree and stops at the `PHYS101` terminator. The path is byte-identical to the prover's path query, which is why prover and verifier agree on the root hash `85e5b9e8…847e6`.
+See the [GroveDB Layout](#grovedb-layout) diagram for the overall storage shape. Q2's descent walks the proof AST above through the layers highlighted there — green nodes are `CountSumTree` terminators carrying both `count_value` and `sum_value`, yellow nodes are `ProvableCountProvableSumTree` (PCPS) terminators with per-node count + sum, gray are opaque sibling subtrees the proof commits only via hash. Q2 adds one extra layer into the `class` property-name subtree and stops at the `PHYS101` terminator. The path is byte-identical to the prover's path query, which is why prover and verifier agree on the root hash `8b15f732…ffc7`.
 
 The descent walks one extra layer into the `class` property-name subtree and stops at `PHYS101`. The verified result is `count=1 508, sum=84 598, avg=56.099` — PHYS101 is one of the harder classes in the bench's profile table — class baseline of 60 minus a slight negative average across all enrolled students' skills puts the verified average at 56.099. **Notice the count (2 281, not 5 000)** — that's the enrollment filter at work: only ≈ 30% of `(student, semester)` slots enroll in PHYS101 per the popularity table, so 500 students × 10 semesters × 30% ≈ 1 500 enrolled. The actual 2 281 falls above that because some students bunch up on PHYS101 in certain semesters and the hash-based filter isn't perfectly uniform — that asymmetry is reproducible and visible in the verified count. Because `byClass` declares both `countable: countable` and `summable: "score"`, that node is a `CountSumTree` carrying both per-class metrics directly — no need to step into `[0]` to look at individual references. Same shortcut count proofs and sum proofs take, just with one element committing two fields rather than two elements committing one each.
 
@@ -531,7 +527,7 @@ GroveDBProofV1 {
 
 ### Diagram: per-layer merk-tree structure
 
-See the [GroveDB Layout](#grovedb-layout) diagram for the overall storage shape. Q3's descent walks the proof AST above through the layers highlighted there — green nodes are `CountSumTree` terminators carrying both `count_value` and `sum_value`, yellow nodes are `ProvableCountProvableSumTree` (PCPS) terminators with per-node count + sum, gray are opaque sibling subtrees the proof commits only via hash. Q3 has the same shape as Q2, just over a different property-name subtree. The path is byte-identical to the prover's path query, which is why prover and verifier agree on the root hash `85e5b9e8…847e6`.
+See the [GroveDB Layout](#grovedb-layout) diagram for the overall storage shape. Q3's descent walks the proof AST above through the layers highlighted there — green nodes are `CountSumTree` terminators carrying both `count_value` and `sum_value`, yellow nodes are `ProvableCountProvableSumTree` (PCPS) terminators with per-node count + sum, gray are opaque sibling subtrees the proof commits only via hash. Q3 has the same shape as Q2, just over a different property-name subtree. The path is byte-identical to the prover's path query, which is why prover and verifier agree on the root hash `8b15f732…ffc7`.
 
 Structurally identical to Query 2 — different property-name subtree (`student` instead of `class`), different terminator value, same CountSumTree element shape. Verified `count=62, sum=4 289, avg=69.18` — student_050's GPA across the 62 grades they happen to be enrolled in. **The count of 62, not 100**, is the enrollment filter showing up — `student_050` didn't enroll in every class every semester. With the realistic-data fixture, student_050 turns out to be slightly above average (avg=69.18 vs. the global ≈ 72 baseline heavily pulled up by ENGL101+ARTS101 enrollment) — the FNV hash of `50` happens to land in the positive-skill region of the student distribution.
 
@@ -673,7 +669,7 @@ GroveDBProofV1 {
 
 ### Diagram: per-layer merk-tree structure
 
-See the [GroveDB Layout](#grovedb-layout) diagram for the overall storage shape. Q4's descent walks the proof AST above through the layers highlighted there — green nodes are `CountSumTree` terminators carrying both `count_value` and `sum_value`, yellow nodes are `ProvableCountProvableSumTree` (PCPS) terminators with per-node count + sum, gray are opaque sibling subtrees the proof commits only via hash. Q4 has two extra layers over Q2 — one for the byClassSemester continuation's `semester` subtree (yellow PCPS class), one for the per-cohort terminator (also yellow PCPS). The path is byte-identical to the prover's path query, which is why prover and verifier agree on the root hash `85e5b9e8…847e6`.
+See the [GroveDB Layout](#grovedb-layout) diagram for the overall storage shape. Q4's descent walks the proof AST above through the layers highlighted there — green nodes are `CountSumTree` terminators carrying both `count_value` and `sum_value`, yellow nodes are `ProvableCountProvableSumTree` (PCPS) terminators with per-node count + sum, gray are opaque sibling subtrees the proof commits only via hash. Q4 has two extra layers over Q2 — one for the byClassSemester continuation's `semester` subtree (yellow PCPS class), one for the per-cohort terminator (also yellow PCPS). The path is byte-identical to the prover's path query, which is why prover and verifier agree on the root hash `8b15f732…ffc7`.
 
 Two property-name descents (`class`, then under `PHYS101` the byClassSemester continuation's `semester`). **The terminator here is a `ProvableCountProvableSumTree` (PCPS), not a `CountSumTree`** — that's because both `rangeCountable: true` and `rangeSummable: true` on `byClassSemester` upgrade not just the property-name tree but *also* the per-value cohort terminator to PCPS. (The chapter's earlier draft said `CountSumTree`; the bench reveals the dispatcher actually picks PCPS for any value tree under a range-bearing index, so we get PCPS's per-node aggregation even for a point lookup.) For our purposes here — extracting `(count, sum)` from one merk element — PCPS and CountSumTree are equivalent at the read site; PCPS just carries the extra per-node fields that Query 5's range walk needs. Verified `count=147, sum=8 114, avg=55.197`.
 
@@ -817,7 +813,7 @@ GroveDBProofV1 {
 
 ### Diagram: per-layer merk-tree structure
 
-See the [GroveDB Layout](#grovedb-layout) diagram for the overall storage shape. Q5's descent walks the proof AST above through the layers highlighted there — green nodes are `CountSumTree` terminators carrying both `count_value` and `sum_value`, yellow nodes are `ProvableCountProvableSumTree` (PCPS) terminators with per-node count + sum, gray are opaque sibling subtrees the proof commits only via hash. Q5 walks the same 8 layers as Q4 but the terminator is a range-collapse merk-node commit (no individual per-key terminator; the merk-tree's boundary walk produces a single `(count, sum)` pair via the PCPS per-node fields). The path is byte-identical to the prover's path query, which is why prover and verifier agree on the root hash `85e5b9e8…847e6`.
+See the [GroveDB Layout](#grovedb-layout) diagram for the overall storage shape. Q5's descent walks the proof AST above through the layers highlighted there — green nodes are `CountSumTree` terminators carrying both `count_value` and `sum_value`, yellow nodes are `ProvableCountProvableSumTree` (PCPS) terminators with per-node count + sum, gray are opaque sibling subtrees the proof commits only via hash. Q5 walks the same 8 layers as Q4 but the terminator is a range-collapse merk-node commit (no individual per-key terminator; the merk-tree's boundary walk produces a single `(count, sum)` pair via the PCPS per-node fields). The path is byte-identical to the prover's path query, which is why prover and verifier agree on the root hash `8b15f732…ffc7`.
 
 This is the chapter's headline payoff: a single committed `(count, sum)` pair from one merk traversal of the byClassSemester PCPS continuation. The verifier cryptographically guarantees that both metrics describe **the same** in-range grades — there's no way for the server to splice a count from one set with a sum from another. The client divides locally to get the verified average. The PCPS leaf-shape primitive requires the terminator tree to be a `ProvableCountProvableSumTree`; both lighter sum-bearing and count-bearing variants reject the combined primitive at the merk gate.
 
@@ -1251,7 +1247,7 @@ GroveDBProofV1 {
 
 ### Diagram: per-layer merk-tree structure
 
-See the [GroveDB Layout](#grovedb-layout) diagram for the overall storage shape. Q6's descent walks the proof AST above through the layers highlighted there — green nodes are `CountSumTree` terminators carrying both `count_value` and `sum_value`, yellow nodes are `ProvableCountProvableSumTree` (PCPS) terminators with per-node count + sum, gray are opaque sibling subtrees the proof commits only via hash. Q6 fans out at the student layer to 10 cyan student-id terminators (one per outer In branch). Under each terminator, the inner subquery walks one more layer (the byStudentSemester continuation's `semester`) and lands on a PCPS terminator (yellow) carrying that cohort's `(count, sum)`. The path is byte-identical to the prover's path query, which is why prover and verifier agree on the root hash `85e5b9e8…847e6`.
+See the [GroveDB Layout](#grovedb-layout) diagram for the overall storage shape. Q6's descent walks the proof AST above through the layers highlighted there — green nodes are `CountSumTree` terminators carrying both `count_value` and `sum_value`, yellow nodes are `ProvableCountProvableSumTree` (PCPS) terminators with per-node count + sum, gray are opaque sibling subtrees the proof commits only via hash. Q6 fans out at the student layer to 10 cyan student-id terminators (one per outer In branch). Under each terminator, the inner subquery walks one more layer (the byStudentSemester continuation's `semester`) and lands on a PCPS terminator (yellow) carrying that cohort's `(count, sum)`. The path is byte-identical to the prover's path query, which is why prover and verifier agree on the root hash `8b15f732…ffc7`.
 
 The carrier composition saves N round-trips: one proof returns averages for all 10 students simultaneously, vs. issuing 10 independent Query-4-shape proofs and dividing client-side per bucket. The verifier walks one outer descent (through `student`) and gets 10 per-bucket `(count, sum)` pairs in a single root-hash-committed payload.
 
@@ -1669,7 +1665,7 @@ GroveDBProofV1 {
 
 ### Diagram: per-layer merk-tree structure
 
-See the [GroveDB Layout](#grovedb-layout) diagram for the overall storage shape. Q7's descent walks the proof AST above through the layers highlighted there — green nodes are `CountSumTree` terminators carrying both `count_value` and `sum_value`, yellow nodes are `ProvableCountProvableSumTree` (PCPS) terminators with per-node count + sum, gray are opaque sibling subtrees the proof commits only via hash. Q7 fans out at the class layer to 10 cyan class-name terminators (one per outer In branch). Under each terminator, the inner subquery walks the byClassSemester continuation's `semester` (yellow PCPS) and emits an AggregateCountAndSumOnRange collapse for that class's in-range semesters. Each bucket emits one `(count, sum)` pair. The path is byte-identical to the prover's path query, which is why prover and verifier agree on the root hash `85e5b9e8…847e6`.
+See the [GroveDB Layout](#grovedb-layout) diagram for the overall storage shape. Q7's descent walks the proof AST above through the layers highlighted there — green nodes are `CountSumTree` terminators carrying both `count_value` and `sum_value`, yellow nodes are `ProvableCountProvableSumTree` (PCPS) terminators with per-node count + sum, gray are opaque sibling subtrees the proof commits only via hash. Q7 fans out at the class layer to 10 cyan class-name terminators (one per outer In branch). Under each terminator, the inner subquery walks the byClassSemester continuation's `semester` (yellow PCPS) and emits an AggregateCountAndSumOnRange collapse for that class's in-range semesters. Each bucket emits one `(count, sum)` pair. The path is byte-identical to the prover's path query, which is why prover and verifier agree on the root hash `8b15f732…ffc7`.
 
 This is the chapter's most expressive primitive: **one proof, k cryptographically-committed `(count, sum)` triples**, each describing a different class's semester-trend average. The client divides per bucket to get k verified per-class averages. Doing this without the PCPS carrier would require k × 2 independent proofs (one count, one sum per class) plus k root-hash matches the client must verify — the carrier collapses that to one proof, one root-hash, and roughly 1/3 to 1/2 the byte cost.
 
@@ -1703,6 +1699,6 @@ The split closely parallels the count and sum chapters — point lookups for Q1�
 
 ## What's Next
 
-The chapter is now grounded in the [`document_average_worst_case`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive/benches/document_average_worst_case.rs) bench's measured numbers — Q2–Q7 verify cleanly end-to-end against the same fixture's root hash. The doctype primary-key `CountSumTree` write-side fix (which gates [Query 1](#query-1--unfiltered-global-average)) is in tree at the head of this PR — the same fix that closed the sum chapter's [Query 1](./sum-index-examples.md#query-1--unfiltered-total-sum). The remaining chapter task is a fresh `cargo bench -p drive --bench document_average_worst_case -- --test` rebuild to refresh Query 1's embedded proof AST + root hash; the write-side fix changes the captured AST's element-type byte and committed `(count_value, sum_value)`, not the proof shape / size / timing.
+The chapter is grounded in the [`document_average_worst_case`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive/benches/document_average_worst_case.rs) bench's measured numbers — Q1–Q7 verify cleanly end-to-end against the shared root hash `8b15f732…ffc7`.
 
 A natural expansion follow-up (out of scope here): a worked example of "exact-precision" averages — for callers that need fractional averages (e.g. `avg = 50.7142857…` rather than `50.99`), the protocol-level approach is to return `(count, sum)` and let the client compute in its preferred numeric format (the chapter notes this in [Numerical Considerations](#numerical-considerations) above; a future expansion could walk through the fixed-point vs. floating-point trade-offs).

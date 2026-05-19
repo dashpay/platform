@@ -5,8 +5,6 @@ This chapter walks through a representative contract and shows what a sum-query 
 The chapter assumes you've read [Document Sum Trees](./document-sum-trees.md) — that chapter explains the three tree variants (`NormalTree` / `SumTree` / `ProvableSumTree`), how `Element::NonCounted`-style "doesn't contribute to my parent's aggregation" wrappers work (now for sums as well), and how the schema's `documentsSummable` / `rangeSummable` flags select between them. Here we take that machinery as given and trace what each query *sees*.
 
 > **Status:** the bench at [`packages/rs-drive/benches/document_sum_worst_case.rs`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive/benches/document_sum_worst_case.rs) lands the reproducible numbers below — same convention as the [Count Index Examples](./count-index-examples.md) chapter. All proof sizes are measured against a 100 000-row fixture; verified `sum` values are the actual sums the bench's matrix reports. The full surface — primary-key total, point lookups, In-fan-out, `AggregateSumOnRange` on both top-level and compound indexes, and the carrier-aggregate primitive from grovedb PR #670 — is fully wired and producing the byte counts in the table below.
->
-> Query 1's inline proof AST and root-hash blocks below were captured against an earlier bench run that pre-dated the `documentsSummable` primary-key write-side fix landed in this PR. The displayed `sum_value_or_default: 0` and the byte-level proof-AST contents will refresh to `sum_value_or_default: 550000` (and a different root hash) on the next bench rerun; the proof *shape* — 575 bytes / 5 layers / single-element merk path — stays the same because the write-side fix changes the committed sum_value, not the proof structure.
 
 ## The Tip Jar Contract
 
@@ -126,7 +124,7 @@ Proof-size numbers below come from the 100 000-row bench run on the `byRecipient
 
 | # | Query | Filter | Complexity | Avg time | Proof size |
 |---|-------|--------|------------|----------|------------|
-| 1 | [Unfiltered Total Sum](#query-1--unfiltered-total-sum) | *(none — total at doctype level)* | O(1) | 23.3 µs | **575 B** |
+| 1 | [Unfiltered Total Sum](#query-1--unfiltered-total-sum) | *(none — total at doctype level)* | O(1) | 23.6 µs | **580 B** |
 | 2 | [Equal on a Single Property (`byRecipient`)](#query-2--equal-on-a-single-property-byrecipient) | `recipient == "recipient_050"` | O(log R) | 37.2 µs | **1 087 B** |
 | 3 | [Equal on a RangeSummable Property (`bySentAt`)](#query-3--equal-on-a-rangesummable-property-bysentat) | `sentAt == 50000` | O(log T) | 72.1 µs | **1 706 B** |
 | 4 | [Compound Equal-only (`byRecipientTime`)](#query-4--compound-equal-only-byrecipienttime) | `recipient == "recipient_050" AND sentAt == 50000` | O(log R + log T') | 71.8 µs | **1 937 B** |
@@ -134,7 +132,7 @@ Proof-size numbers below come from the 100 000-row bench run on the `byRecipient
 | 6 | [`In` on `bySentAt` (RangeSummable)](#query-6--in-on-bysentat-rangesummable) | `sentAt IN [0, 1]` | O(k · log T) | 81.2 µs (k=2) / 2 008 µs (k=100) | **1 756 B** (k=2) / **9 784 B** (k=100) |
 | 7 | [Range Query (`AggregateSumOnRange`)](#query-7--range-query-aggregatesumonrange) | `sentAt > 50000` | O(log T) | 102.0 µs | **3 102 B** |
 | 8 | [Compound `==` + Range (`byRecipientTime`)](#query-8--compound-equal-plus-range-byrecipienttime) | `recipient == "recipient_050" AND sentAt > 50000` | O(log R + log T') | 91.3 µs | **2 657 B** |
-| 9 | [Carrier-Aggregate (`In` + range)](#query-9--carrier-aggregate-in-plus-range) | `recipient IN [r000..r099] AND sentAt > 50000` (`group_by = [recipient, sentAt]`) | O(k · log T') | 11 669 µs (k=100) | **169 064 B** (k=100) |
+| 9 | [Carrier-Aggregate (`In` + range)](#query-9--carrier-aggregate-in-plus-range) | `recipient IN [r000..r099] AND sentAt > 50000` (`group_by = [recipient]`) | O(k · log T') | 11 507.9 µs (k=100) | **169 064 B** (k=100) |
 
 **Timing methodology**: median of 5 iterations after one warmup, measured against the bench's 100 000-row fixture on a warmed rocksdb cache. The figures reflect the drive-layer `execute_document_sum_request` call (executor + grovedb proof generation, no network or tenderdash signature compose). Reproduce with `cargo bench -p drive --bench document_sum_worst_case -- --test`; grep `µs` from stderr.
 
@@ -166,9 +164,7 @@ key:         0x00
 element:     SumTree { sum_value_or_default: 550000 }
 ```
 
-**Proof size:** 575 bytes.  **Avg time:** 23.3 µs.  **Verifier root hash:** `593360a2f78e5ffe447169088b5def4991203339236dc60b0ea4887874e25527` (same across every query in this chapter — same fixture state, captured pre-write-side-fix; the next bench rerun refreshes both this and the inline AST below).
-
-> **Bench capture timing.** The expanded proof-AST block below was captured against an earlier bench run that pre-dated the `documentsSummable` primary-key write-side fix; you'll see `Tree(0x…)` (a `NormalTree` byte encoding) and `sum_value=0` in the embedded hex. The write-side fix is in tree at the head of this PR, so a fresh `cargo bench -p drive --bench document_sum_worst_case -- --test` rebuilds the fixture with the doctype root resolving to a `SumTree`, swapping that terminator's element-type byte and re-encoding `sum_value=550000`; the merk-proof structure (5 layers / 575 bytes / Push-Parent-Child ops) doesn't change. Proof size and timing remain accurate.
+**Proof size:** 580 bytes.  **Avg time:** 23.6 µs.  **Verifier root hash:** `95aa74708738c5254c706bbca3245b520022aad949674822218094bca15671b6` (same across every query in this chapter — same fixture state).
 
 **Proof display** (`GroveDBProof::Display`):
 
@@ -401,7 +397,7 @@ GroveDBProofV1 {
 }
 ```
 
-Each `LayerProof` is one GroveDB tree's merk proof. The descent diverges from Q1 at layer 5: the `tip` doctype layer commits the `recipient` property-name subtree on op 1 (cyan-blue blue queried, valued `Tree(0x6263...)` — the merk root of byRecipient), then descends into layer 6, byRecipient itself. There the queried `recipient_050` key (`0x0000000000000032ffffffffffffffcd...`) is reached as op 9 of a 25-op merk path, and its value is `SumTree(73656e744174, 1000)` — the `73656e744174` bytes are ASCII for `"sentAt"` (the byRecipientTime continuation pointer, `NonCounted`-wrapped at storage so it contributes 0 to the parent SumTree), and the `1000` is the per-recipient sum_value for recipient_050 (1 000 tips × amount = 1 = 1 000). Verified root hash `593360a2…25527`.
+Each `LayerProof` is one GroveDB tree's merk proof. The descent diverges from Q1 at layer 5: the `tip` doctype layer commits the `recipient` property-name subtree on op 1 (cyan-blue blue queried, valued `Tree(0x6263...)` — the merk root of byRecipient), then descends into layer 6, byRecipient itself. There the queried `recipient_050` key (`0x0000000000000032ffffffffffffffcd...`) is reached as op 9 of a 25-op merk path, and its value is `SumTree(73656e744174, 1000)` — the `73656e744174` bytes are ASCII for `"sentAt"` (the byRecipientTime continuation pointer, `NonCounted`-wrapped at storage so it contributes 0 to the parent SumTree), and the `1000` is the per-recipient sum_value for recipient_050 (1 000 tips × amount = 1 = 1 000). Verified root hash `95aa7470…71b6`.
 
 </details>
 
@@ -592,7 +588,7 @@ GroveDBProofV1 {
 }
 ```
 
-Each `LayerProof` is one GroveDB tree's merk proof. Same first four layers as Q1/Q2; at layer 5 (the `tip` doctype) the descent takes the `sentAt` branch on op 3 (its value is `ProvableSumTree(800000000000ffff, 550000)` — a ProvableSumTree whose root-committed sum is 550 000, the full timeline sum) and descends into layer 6, bySentAt. Layer 6 is structurally different from Q2's byRecipient layer: every internal kv op is a `KVHashSum` (a hash *with* its subtree's `i64` sum), and every opaque subtree commit on the merk-boundary walk carries its own running sum (e.g. op 61's `KVHashSum(…, 550000)` is the full-tree root-commitment). The terminator on op 18 is `KVValueHashFeatureTypeWithChildHash(0x800000000000c350, SumTree(00, 1), …, ProvableSummedMerkNode(1), …)` — the `ProvableSummedMerkNode(1)` feature-type marks it as living inside a ProvableSumTree with its own contributing sum of 1, and `SumTree(00, 1)` is the per-timestamp value tree (sum_value_or_default = 1, since sentAt = 50 000 was assigned amount = (50000 % 10) + 1 = 1). Verified root hash `593360a2…25527`.
+Each `LayerProof` is one GroveDB tree's merk proof. Same first four layers as Q1/Q2; at layer 5 (the `tip` doctype) the descent takes the `sentAt` branch on op 3 (its value is `ProvableSumTree(800000000000ffff, 550000)` — a ProvableSumTree whose root-committed sum is 550 000, the full timeline sum) and descends into layer 6, bySentAt. Layer 6 is structurally different from Q2's byRecipient layer: every internal kv op is a `KVHashSum` (a hash *with* its subtree's `i64` sum), and every opaque subtree commit on the merk-boundary walk carries its own running sum (e.g. op 61's `KVHashSum(…, 550000)` is the full-tree root-commitment). The terminator on op 18 is `KVValueHashFeatureTypeWithChildHash(0x800000000000c350, SumTree(00, 1), …, ProvableSummedMerkNode(1), …)` — the `ProvableSummedMerkNode(1)` feature-type marks it as living inside a ProvableSumTree with its own contributing sum of 1, and `SumTree(00, 1)` is the per-timestamp value tree (sum_value_or_default = 1, since sentAt = 50 000 was assigned amount = (50000 % 10) + 1 = 1). Verified root hash `95aa7470…71b6`.
 
 </details>
 
@@ -796,7 +792,7 @@ GroveDBProofV1 {
 }
 ```
 
-Each `LayerProof` is one GroveDB tree's merk proof. Q4 is the deepest single-key sum proof in the chapter: 8 LayerProofs because the byRecipientTime descent walks `recipient → recipient_050 → sentAt → terminator`. Layers 1–5 mirror Q2's descent verbatim (root → @ → contract → 0x01 → tip → recipient). Layer 6 lands on `recipient_050` whose value is now plain `SumTree(73656e744174, 1000)` (no FeatureType wrapper because this proof descends *into* it rather than terminating there). Layer 7 is recipient_050's continuation merk-tree, a single-key tree whose only entry is the `sentAt` property name pointing at a **`NotSummed(ProvableSumTree(…, 1000))`** — the `NotSummed` wrapper is the storage-layer signal that this continuation's sum doesn't propagate up to recipient_050's own SumTree (the parent's 1 000 already aggregates the value-tree references; this continuation is just a sibling index, contributing 0). Layer 8 walks the byRecipientTime ProvableSumTree (37 ops, the same per-node sum-bearing shape as Q3's bySentAt) but does NOT terminate at `0x800000000000c350`: the queried sentAt-50000 key is absent under recipient_050 (since recipient_050 owns rows 50, 150, …, 99950, none of which are sentAt = 50000). The proof commits a complete merk path with no terminator op, which `verify_query` reports as an empty results vec (the verifier-side absence proof). Verified root hash `593360a2…25527`.
+Each `LayerProof` is one GroveDB tree's merk proof. Q4 is the deepest single-key sum proof in the chapter: 8 LayerProofs because the byRecipientTime descent walks `recipient → recipient_050 → sentAt → terminator`. Layers 1–5 mirror Q2's descent verbatim (root → @ → contract → 0x01 → tip → recipient). Layer 6 lands on `recipient_050` whose value is now plain `SumTree(73656e744174, 1000)` (no FeatureType wrapper because this proof descends *into* it rather than terminating there). Layer 7 is recipient_050's continuation merk-tree, a single-key tree whose only entry is the `sentAt` property name pointing at a **`NotSummed(ProvableSumTree(…, 1000))`** — the `NotSummed` wrapper is the storage-layer signal that this continuation's sum doesn't propagate up to recipient_050's own SumTree (the parent's 1 000 already aggregates the value-tree references; this continuation is just a sibling index, contributing 0). Layer 8 walks the byRecipientTime ProvableSumTree (37 ops, the same per-node sum-bearing shape as Q3's bySentAt) but does NOT terminate at `0x800000000000c350`: the queried sentAt-50000 key is absent under recipient_050 (since recipient_050 owns rows 50, 150, …, 99950, none of which are sentAt = 50000). The proof commits a complete merk path with no terminator op, which `verify_query` reports as an empty results vec (the verifier-side absence proof). Verified root hash `95aa7470…71b6`.
 
 </details>
 
@@ -953,7 +949,7 @@ GroveDBProofV1 {
 }
 ```
 
-Each `LayerProof` is one GroveDB tree's merk proof. Same 5-layer descent as Q2 (root → @ → contract → 0x01 → tip → recipient); the divergence is at the bottom layer where the proof reveals **two** `KVValueHashFeatureTypeWithChildHash` terminator ops back-to-back (op 0 for `recipient_000`, op 1 for `recipient_001`), each carrying its own `SumTree(73656e744174, …)` with per-recipient sum (1000 and 2000 respectively). The 24-op boundary walk that surrounds them is the same shape as Q2's — proving the two queried keys' positions inside byRecipient's ~100-entry merk-tree by committing the bracketing opaque siblings. Verified entries via `verify_query` are two `(path, key, SumTree { sum_value_or_default: … })` rows, one per In branch. Verified root hash `593360a2…25527`.
+Each `LayerProof` is one GroveDB tree's merk proof. Same 5-layer descent as Q2 (root → @ → contract → 0x01 → tip → recipient); the divergence is at the bottom layer where the proof reveals **two** `KVValueHashFeatureTypeWithChildHash` terminator ops back-to-back (op 0 for `recipient_000`, op 1 for `recipient_001`), each carrying its own `SumTree(73656e744174, …)` with per-recipient sum (1000 and 2000 respectively). The 24-op boundary walk that surrounds them is the same shape as Q2's — proving the two queried keys' positions inside byRecipient's ~100-entry merk-tree by committing the bracketing opaque siblings. Verified entries via `verify_query` are two `(path, key, SumTree { sum_value_or_default: … })` rows, one per In branch. Verified root hash `95aa7470…71b6`.
 
 </details>
 
@@ -1136,7 +1132,7 @@ GroveDBProofV1 {
 }
 ```
 
-Each `LayerProof` is one GroveDB tree's merk proof. Same first 5 layers as Q3 (the descent to bySentAt). The bottom layer reveals both queried timestamps as adjacent `KVValueHashFeatureTypeWithChildHash` terminator ops: op 0 for `sentAt=0` (`SumTree(00, 1)`, amount = 1) and op 1 for `sentAt=1` (`SumTree(00, 2)`, amount = 2). Each terminator's feature-type marker is `ProvableSummedMerkNode(n)` with `n` matching the per-node committed sum — this is the per-node-sum machinery that makes the surrounding bySentAt tree a ProvableSumTree. The 62-op boundary walk surrounds them with the same per-node sum-bearing structure as Q3, except now two leaves are revealed instead of one. Verified root hash `593360a2…25527`.
+Each `LayerProof` is one GroveDB tree's merk proof. Same first 5 layers as Q3 (the descent to bySentAt). The bottom layer reveals both queried timestamps as adjacent `KVValueHashFeatureTypeWithChildHash` terminator ops: op 0 for `sentAt=0` (`SumTree(00, 1)`, amount = 1) and op 1 for `sentAt=1` (`SumTree(00, 2)`, amount = 2). Each terminator's feature-type marker is `ProvableSummedMerkNode(n)` with `n` matching the per-node committed sum — this is the per-node-sum machinery that makes the surrounding bySentAt tree a ProvableSumTree. The 62-op boundary walk surrounds them with the same per-node sum-bearing structure as Q3, except now two leaves are revealed instead of one. Verified root hash `95aa7470…71b6`.
 
 </details>
 
@@ -1188,7 +1184,7 @@ query items:  AggregateSumOnRange(RangeAfter(serialize_value_for_key("sentAt", 5
 
 49 999 rows have `sentAt > 50 000` (the half-open `(50000, ∞)` range excludes `sentAt = 50000` itself). Per the fixture's `amount = (row % 10) + 1` schedule, rows 50 001..99 999 cycle through `[2, 3, 4, 5, 6, 7, 8, 9, 10, 1]` for 4 999 full cycles + a 9-element tail. The sum works out to `4 999 × 55 + (2 + 3 + … + 10) = 274 945 + 54 = 274 999`, which matches the verified value byte-for-byte.
 
-**Proof size:** 3 102 bytes.  **Avg time:** 102.0 µs.  **Verifier root hash:** `593360a2f78e5ffe447169088b5def4991203339236dc60b0ea4887874e25527`.
+**Proof size:** 3 102 bytes.  **Avg time:** 102.0 µs.  **Verifier root hash:** `95aa74708738c5254c706bbca3245b520022aad949674822218094bca15671b6`.
 
 **Proof display** (`GroveDBProof::Display`):
 
@@ -1318,7 +1314,7 @@ GroveDBProofV1 {
 }
 ```
 
-Each `LayerProof` is one GroveDB tree's merk proof. Layers 1–5 mirror Q3/Q6's bySentAt descent. The bottom layer (layer 6) is structurally distinct from every previous query: it contains **no `KVValueHashFeatureTypeWithChildHash` terminator ops** at all. Instead the proof reveals only the merk-boundary structure of the range (`HashWithSum` for opaque subtrees that the range straddles, `KVDigestSum` for boundary kvs whose subtree-sums the verifier needs to sum-up). The verifier's range collapse works by traversing the merk boundary and accumulating the `sum` fields on `HashWithSum` / `KVDigestSum` ops for nodes the range covers, producing a single aggregate `i64 = 274 999` along with the recomputed root hash. The op-numbered running sums in the proof above trace the merk's binary descent: op 0's `sum=180208` is the merk root's left subtree (= 180 214 minus the boundary kv at 0x…7fff with sum 360 430 partially adjusted), and op 61's `KVDigestSum(0x800000000000ffff, …, 550000)` is the full-tree's max-sentinel committing the full timeline sum 550 000. The `RangeAfter(serialize_value_for_key("sentAt", 50000)..)` query item picks out the right-half subtrees from sentAt = 50 001 forward; their cumulative sum is 274 999. Verified via `GroveDb::verify_aggregate_sum_query`, root hash `593360a2…25527`.
+Each `LayerProof` is one GroveDB tree's merk proof. Layers 1–5 mirror Q3/Q6's bySentAt descent. The bottom layer (layer 6) is structurally distinct from every previous query: it contains **no `KVValueHashFeatureTypeWithChildHash` terminator ops** at all. Instead the proof reveals only the merk-boundary structure of the range (`HashWithSum` for opaque subtrees that the range straddles, `KVDigestSum` for boundary kvs whose subtree-sums the verifier needs to sum-up). The verifier's range collapse works by traversing the merk boundary and accumulating the `sum` fields on `HashWithSum` / `KVDigestSum` ops for nodes the range covers, producing a single aggregate `i64 = 274 999` along with the recomputed root hash. The op-numbered running sums in the proof above trace the merk's binary descent: op 0's `sum=180208` is the merk root's left subtree (= 180 214 minus the boundary kv at 0x…7fff with sum 360 430 partially adjusted), and op 61's `KVDigestSum(0x800000000000ffff, …, 550000)` is the full-tree's max-sentinel committing the full timeline sum 550 000. The `RangeAfter(serialize_value_for_key("sentAt", 50000)..)` query item picks out the right-half subtrees from sentAt = 50 001 forward; their cumulative sum is 274 999. Verified via `GroveDb::verify_aggregate_sum_query`, root hash `95aa7470…71b6`.
 
 </details>
 
@@ -1511,7 +1507,7 @@ GroveDBProofV1 {
 }
 ```
 
-Each `LayerProof` is one GroveDB tree's merk proof. The first 7 layers mirror Q4's compound prefix descent: root → @ → contract → 0x01 → tip → recipient → recipient_050 (with the `NotSummed(ProvableSumTree)` continuation pointer at layer 7). Layer 8 is the `AggregateSumOnRange` collapse on byRecipientTime's continuation merk-tree — same structural shape as Q7's bottom layer (`HashWithSum` opaque subtree commits + `KVDigestSum` boundary kvs), but covering only the 1 000 sentAt entries under recipient_050 instead of the global 100 000. The verifier walks the merk boundary and accumulates `sum` fields for the right-half range (`RangeAfter`), yielding `sum = 500` (recipient_050 has 500 tips with `sentAt > 50000`, each contributing `amount = 1`). Note op 33's `KVDigestSum(0x800000000000c7ce, …, 1000)` is the max-sentinel committing recipient_050's full 1 000-tip sum; op 35's `HashWithSum(…, sum=488)` is the parent subtree commit on the right of the range floor. Verified via `GroveDb::verify_aggregate_sum_query`, root hash `593360a2…25527`.
+Each `LayerProof` is one GroveDB tree's merk proof. The first 7 layers mirror Q4's compound prefix descent: root → @ → contract → 0x01 → tip → recipient → recipient_050 (with the `NotSummed(ProvableSumTree)` continuation pointer at layer 7). Layer 8 is the `AggregateSumOnRange` collapse on byRecipientTime's continuation merk-tree — same structural shape as Q7's bottom layer (`HashWithSum` opaque subtree commits + `KVDigestSum` boundary kvs), but covering only the 1 000 sentAt entries under recipient_050 instead of the global 100 000. The verifier walks the merk boundary and accumulates `sum` fields for the right-half range (`RangeAfter`), yielding `sum = 500` (recipient_050 has 500 tips with `sentAt > 50000`, each contributing `amount = 1`). Note op 33's `KVDigestSum(0x800000000000c7ce, …, 1000)` is the max-sentinel committing recipient_050's full 1 000-tip sum; op 35's `HashWithSum(…, sum=488)` is the parent subtree commit on the right of the range floor. Verified via `GroveDb::verify_aggregate_sum_query`, root hash `95aa7470…71b6`.
 
 </details>
 
@@ -1541,13 +1537,13 @@ Q8 is smaller than Q7 (2 657 vs 3 102 bytes) for exactly one reason: the bottom 
 ```text
 select       = SUM(amount)
 where        = recipient IN ["recipient_000", "recipient_001", ..., "recipient_099"] AND sentAt > 50000
-group_by     = [recipient, sentAt]
+group_by     = [recipient]
 limit        = 100
 sum_property = "amount"
 prove        = true
 ```
 
-This is the **carrier-aggregate sum** shape: an `In` clause on the index's prefix property combined with a range on its terminator, returning **one sum per resolved In-bucket** rather than a single aggregate across all matches. Sum analog of count's [Range-Countable group-by carrier-aggregate](./count-index-examples.md#range-countable-group-by-carrier-aggregate). The primitive landed in [grovedb PR #670](https://github.com/dashpay/grovedb/pull/670) (head `e98bab5f`); the verifier is [`GroveDb::verify_aggregate_sum_query_per_key`](https://github.com/dashpay/grovedb/blob/e98bab5f/grovedb/src/operations/proof/aggregate_sum/mod.rs).
+This is the **carrier-aggregate sum** shape: an `In` clause on the index's prefix property combined with a range on its terminator, returning **one sum per resolved In-bucket** rather than a single aggregate across all matches. The `group_by = [recipient]` (not `[recipient, sentAt]`) routes through `SumMode::GroupByIn` — the routing table at [`mode_detection/v0/mod.rs`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive/src/query/drive_document_sum_query/mode_detection/v0/mod.rs) maps `(GroupByIn, In, range, prove) → RangeAggregateCarrierProof`, which is what the per-In-bucket aggregation needs. A `group_by = [recipient, sentAt]` (`GroupByCompound`) routes to `RangeDistinctProof` instead — per-`(in_key, range_key)` distinct walk, a different proof shape entirely. Sum analog of count's [Range-Countable group-by carrier-aggregate](./count-index-examples.md#range-countable-group-by-carrier-aggregate). The primitive landed in [grovedb PR #670](https://github.com/dashpay/grovedb/pull/670) (head `e98bab5f`); the verifier is [`GroveDb::verify_aggregate_sum_query_per_key`](https://github.com/dashpay/grovedb/blob/e98bab5f/grovedb/src/operations/proof/aggregate_sum/mod.rs).
 
 **Path query** (carrier-style: outer Query enumerates the In branches, subquery descends through the terminator's `AggregateSumOnRange`):
 
@@ -1562,7 +1558,7 @@ subquery items:      AggregateSumOnRange(RangeAfter(serialize_value_for_key("sen
 
 ```text
 (root_hash, entries) where entries =
-  [ ("recipient_000", 500 × 1  = 500),
+  [ ("recipient_000", 499 × 1  = 499),
     ("recipient_001", 500 × 2  = 1000),
     ("recipient_002", 500 × 3  = 1500),
     ...
@@ -1572,9 +1568,9 @@ subquery items:      AggregateSumOnRange(RangeAfter(serialize_value_for_key("sen
     ("recipient_099", 500 × 10 = 5000) ]
 ```
 
-(Per recipient, 500 of their 1 000 tips have `sentAt > 50 000`, and each recipient's per-doc amount is constant per the fixture's per-recipient cycle — so each outer-bucket sum is `500 × amount_for_recipient`.)
+(Per recipient, 500 of their 1 000 tips have `sentAt > 50 000`, and each recipient's per-doc amount is constant per the fixture's per-recipient cycle — so each outer-bucket sum is `500 × amount_for_recipient`. recipient_000 is the lone exception: the boundary timestamp `sentAt = 50 000` happens to be one of recipient_000's tips, so only **499** of recipient_000's tips satisfy `sentAt > 50 000`. The bench's verified entries lead with `("recipient_000", sum = 499)`.)
 
-**Proof size:** **169 064 bytes** (k=100 outer buckets). That's significantly larger than the non-carrier `In` shapes (Q5 12 064 B for k=100, Q6 9 784 B for k=100) because each of the 100 outer buckets walks an `AggregateSumOnRange` proof, whereas Q5/Q6 only commit a single-element value-tree `sum_value` per branch. The per-bucket marginal cost is ≈ 1 690 bytes (most of which is the inner range proof — the carrier composition itself adds only ≈ 100 bytes per outer Key versus the equivalent flat-In shape).  **Avg time:** 11 669 µs (k=100) — ≈ 117 µs per outer bucket, consistent with Q8's 91.3 µs single-bucket `AggregateSumOnRange` plus the carrier descent's per-outer-key cost.
+**Proof size:** **169 064 bytes** (k=100 outer buckets). That's significantly larger than the non-carrier `In` shapes (Q5 12 064 B for k=100, Q6 9 784 B for k=100) because each of the 100 outer buckets walks an `AggregateSumOnRange` proof, whereas Q5/Q6 only commit a single-element value-tree `sum_value` per branch. The per-bucket marginal cost is ≈ 1 690 bytes (most of which is the inner range proof — the carrier composition itself adds only ≈ 100 bytes per outer Key versus the equivalent flat-In shape).  **Avg time:** 11 507.9 µs (k=100) — ≈ 115 µs per outer bucket, consistent with Q8's 91.3 µs single-bucket `AggregateSumOnRange` plus the carrier descent's per-outer-key cost.
 
 **Proof display** (`GroveDBProof::Display`):
 
@@ -1918,7 +1914,7 @@ Each `LayerProof` is one GroveDB tree's merk proof. Q9 is the largest proof in t
 
 Note recipient_000 gets 499 not 500: `sentAt > 50000` excludes the boundary row (`sentAt = 50000`) which belongs to recipient_000 (row 50000 → recipient_(50000 % 100) = recipient_0), so its 500-row window loses one entry. Every other recipient is unaffected.
 
-Verified root hash `593360a2…25527`.
+Verified root hash `95aa7470…71b6`.
 
 </details>
 
@@ -2025,6 +2021,6 @@ The split is structurally the same as count's — single value-tree lookups for 
 
 ## What's Next
 
-The full SUM surface is wired end-to-end: primary-key total ([Query 1](#query-1--unfiltered-total-sum)), point-lookup, In-fan-out, `AggregateSumOnRange` on both top-level and compound indexes, and the carrier-aggregate primitive. The only chapter task remaining is a fresh `cargo bench -p drive --bench document_sum_worst_case -- --test` rebuild to refresh the Query 1 embedded proof AST + root hash — the write-side fix changes the captured AST's element-type byte and committed sum_value, not the proof shape / size / timing.
+The full SUM surface is wired end-to-end: primary-key total ([Query 1](#query-1--unfiltered-total-sum)), point-lookup, In-fan-out, `AggregateSumOnRange` on both top-level and compound indexes, and the carrier-aggregate primitive. All nine queries verify against the shared root hash `95aa7470…71b6`.
 
 A [Sum Index Group By Examples](./sum-index-group-by-examples.md) sibling chapter is queued mirroring the count `GROUP BY` chapter — the `byRecipient` index supports both per-recipient and group-by-recipient semantics, and the bench's `report_group_by_matrix` already publishes the full matrix (visible inline in `bench -- --test` output under `[matrix]`).

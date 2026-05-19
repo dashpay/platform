@@ -1528,13 +1528,24 @@ fn display_proofs(fixture: &SumBenchFixture, platform_version: &PlatformVersion)
     ];
 
     for case in cases {
-        // 1. Get the proof bytes via the drive dispatcher. The
-        // carrier-aggregate shape routes through `GroupByCompound`
-        // with a `limit` (mirroring the dispatcher contract); every
-        // other shape rides the basic `Aggregate` mode.
+        // 1. Get the proof bytes via the drive dispatcher.
+        //
+        // Carrier-aggregate shape uses `SumMode::GroupByIn` —
+        // `(GroupByIn, has_range, has_in, prove) →
+        // DocumentSumMode::RangeAggregateCarrierProof` per the
+        // routing table in
+        // `drive_document_sum_query/mode_detection/v0/mod.rs`.
+        // `GroupByCompound` is reserved for the per-`(in_key,
+        // range_key)` distinct walk (`RangeDistinctProof`), which
+        // is a different proof shape that
+        // `verify_aggregate_sum_query_per_key` (called below for
+        // the carrier branch) wouldn't accept. Pinning the
+        // GroupByIn mode here keeps the carrier-aggregate case's
+        // prover/verifier in lock-step; every other case rides
+        // the basic `Aggregate` mode.
         let (request_mode, request_limit) = match case.shape {
             Shape::CarrierAggregate { limit, .. } => {
-                (SumMode::GroupByCompound, limit.map(|l| l as u32))
+                (SumMode::GroupByIn, limit.map(|l| l as u32))
             }
             _ => (SumMode::Aggregate, None),
         };
