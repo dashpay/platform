@@ -591,6 +591,15 @@ impl TryFrom<&[(Value, Value)]> for Index {
         let mut contested_index = None;
         let mut index_properties: Vec<IndexProperty> = Vec::new();
         let mut countable = IndexCountability::NotCountable;
+        // Tracks whether `countable` was explicitly present in the
+        // input map (regardless of value). After the loop, the default
+        // `NotCountable` is indistinguishable from an explicit
+        // `countable: "notCountable"` on the parsed enum — we need
+        // this bit to know whether `averageable` may silently promote
+        // (omitted countable: yes) or must reject (explicit
+        // `notCountable`: contradiction with averageable's implied
+        // countability).
+        let mut countable_was_explicit = false;
         let mut range_countable = false;
         let mut summable: Option<String> = None;
         let mut range_summable = false;
@@ -728,6 +737,7 @@ impl TryFrom<&[(Value, Value)]> for Index {
                     //   - string: one of `"notCountable"`, `"countable"`,
                     //     `"countableAllowingOffset"` (camelCase, matching the
                     //     `IndexCountability` serde rename rule).
+                    countable_was_explicit = true;
                     countable = match value_value {
                         Value::Bool(true) => IndexCountability::Countable,
                         Value::Bool(false) => IndexCountability::NotCountable,
@@ -884,22 +894,27 @@ impl TryFrom<&[(Value, Value)]> for Index {
                     )));
                 }
             }
-            if matches!(countable, IndexCountability::NotCountable)
-                && !range_averageable
-                && !range_countable
-            {
-                // Promote `countable` because `averageable` implies it.
+            // `averageable` implies countable. Three cases:
+            //  1. `countable` not present in input → silently promote to
+            //     `Countable` (this is the canonical shorthand: write
+            //     just `averageable: "x"` to get countable + summable).
+            //  2. `countable` explicitly present and already countable
+            //     (`"countable"` / `"countableAllowingOffset"`) → no-op,
+            //     the author agreed.
+            //  3. `countable` explicitly present as `"notCountable"` (or
+            //     boolean `false`) → reject. The author actively said
+            //     "not countable" while also saying "averageable" — a
+            //     direct contradiction we surface rather than silently
+            //     override.
+            if !countable_was_explicit {
                 countable = IndexCountability::Countable;
             } else if !countable.is_countable() {
-                // `countable: NotCountable` was set explicitly while
-                // `averageable` is also set. We could promote silently
-                // but rejecting forces the author to remove the
-                // contradiction.
                 return Err(DataContractError::InvalidContractStructure(format!(
                     "averageable=\"{}\" implies the index must be countable, but `countable` \
-                     is set to a non-countable value. Remove the explicit `countable: \
-                     \"notCountable\"` (or set it to `\"countable\"` / \
-                     `\"countableAllowingOffset\"`).",
+                     is explicitly set to a non-countable value. Remove the explicit \
+                     `countable: \"notCountable\"` (or set it to `\"countable\"` / \
+                     `\"countableAllowingOffset\"`); averageable is shorthand for \
+                     countable + summable on the named property.",
                     avg_prop,
                 )));
             }
@@ -1586,6 +1601,108 @@ mod tests {
         ];
         let result = Index::try_from(index_map.as_slice());
         assert!(result.is_err(), "non-string/non-null summable must error");
+    }
+
+    /// Canonical shorthand `{averageable: "x", rangeAverageable: true}`
+    /// (no explicit `countable`) must succeed and desugar to all four
+    /// underlying flags. Regression test for an inversion in the
+    /// promotion logic where `range_averageable: true` blocked the
+    /// silent-promote path and forced the explicit-contradiction path,
+    /// rejecting the canonical shape.
+    #[test]
+    fn test_index_try_from_averageable_with_range_averageable_promotes_all_flags() {
+        let index_map: Vec<(Value, Value)> = vec![
+            (
+                Value::Text("properties".to_string()),
+                Value::Array(vec![Value::Map(vec![(
+                    Value::Text("score".to_string()),
+                    Value::Text("asc".to_string()),
+                )])]),
+            ),
+            (
+                Value::Text("averageable".to_string()),
+                Value::Text("score".to_string()),
+            ),
+            (
+                Value::Text("rangeAverageable".to_string()),
+                Value::Bool(true),
+            ),
+        ];
+        let index = Index::try_from(index_map.as_slice()).expect("canonical shorthand parses");
+        assert!(
+            index.countable.is_countable(),
+            "averageable promotes countable"
+        );
+        assert_eq!(index.summable.as_deref(), Some("score"));
+        assert!(
+            index.range_countable,
+            "rangeAverageable promotes range_countable"
+        );
+        assert!(
+            index.range_summable,
+            "rangeAverageable promotes range_summable"
+        );
+    }
+
+    /// `averageable` + explicit `countable: "notCountable"` is a direct
+    /// contradiction: the author wrote both "yes, averageable (which
+    /// implies countable)" and "no, not countable" in the same index.
+    /// Must reject. Regression test for the inversion that silently
+    /// promoted the explicit `notCountable` to `Countable`.
+    #[test]
+    fn test_index_try_from_averageable_with_explicit_not_countable_rejected() {
+        let index_map: Vec<(Value, Value)> = vec![
+            (
+                Value::Text("properties".to_string()),
+                Value::Array(vec![Value::Map(vec![(
+                    Value::Text("score".to_string()),
+                    Value::Text("asc".to_string()),
+                )])]),
+            ),
+            (
+                Value::Text("averageable".to_string()),
+                Value::Text("score".to_string()),
+            ),
+            (
+                Value::Text("countable".to_string()),
+                Value::Text("notCountable".to_string()),
+            ),
+        ];
+        let result = Index::try_from(index_map.as_slice());
+        assert!(
+            result.is_err(),
+            "averageable + explicit notCountable must be rejected"
+        );
+        let msg = format!("{:?}", result.unwrap_err());
+        assert!(
+            msg.contains("averageable") && msg.contains("countable"),
+            "error must reference both averageable and countable; got {msg}"
+        );
+    }
+
+    /// `averageable` alone (the simplest shorthand) must silently
+    /// promote `countable` (and set `summable`) without requiring the
+    /// author to also write `countable: "countable"`.
+    #[test]
+    fn test_index_try_from_averageable_alone_silently_promotes_countable() {
+        let index_map: Vec<(Value, Value)> = vec![
+            (
+                Value::Text("properties".to_string()),
+                Value::Array(vec![Value::Map(vec![(
+                    Value::Text("score".to_string()),
+                    Value::Text("asc".to_string()),
+                )])]),
+            ),
+            (
+                Value::Text("averageable".to_string()),
+                Value::Text("score".to_string()),
+            ),
+        ];
+        let index = Index::try_from(index_map.as_slice()).expect("averageable alone parses");
+        assert!(index.countable.is_countable());
+        assert_eq!(index.summable.as_deref(), Some("score"));
+        assert!(!index.range_countable);
+        assert!(!index.range_summable);
     }
 
     #[test]
