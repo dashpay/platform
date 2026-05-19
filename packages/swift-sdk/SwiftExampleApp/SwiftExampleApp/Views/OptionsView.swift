@@ -124,9 +124,25 @@ struct OptionsView: View {
                             Text(network.displayName).tag(network)
                         }
                     }
+                    // Disable + footer driven by the in-flight gate;
+                    // wrapped in a sub-view so the
+                    // `RegistrationCoordinator`'s `@Published`
+                    // mutations are observed reactively (a plain
+                    // `walletManager.registrationCoordinator.hasInFlightRegistrations`
+                    // read here wouldn't subscribe — the env object
+                    // is `walletManager`, not the coordinator).
                     .pickerStyle(SegmentedPickerStyle())
-                    .disabled(appState.isSwitchingNetwork)
+                    .modifier(
+                        NetworkPickerInFlightGate(
+                            coordinator: walletManager.registrationCoordinator,
+                            isSwitching: appState.isSwitchingNetwork
+                        )
+                    )
                     .accessibilityIdentifier("options.networkPicker")
+
+                    NetworkInFlightFooter(
+                        coordinator: walletManager.registrationCoordinator
+                    )
 
                     if appState.currentNetwork == .regtest {
                         // `useDockerSetup.didSet` (in AppState) drives the
@@ -645,6 +661,42 @@ struct FeatureRow: View {
             }
 
             Spacer()
+        }
+    }
+}
+
+/// ViewModifier wrapper that observes the
+/// `RegistrationCoordinator` so the picker's `.disabled(_:)` state
+/// updates reactively when registrations start or finish. A direct
+/// read of `coordinator.hasInFlightRegistrations` from the parent
+/// view's `body` would not subscribe to the coordinator's
+/// `@Published` changes — the env object is the wallet manager, not
+/// the coordinator hung off it.
+private struct NetworkPickerInFlightGate: ViewModifier {
+    @ObservedObject var coordinator: RegistrationCoordinator
+    let isSwitching: Bool
+
+    func body(content: Content) -> some View {
+        content.disabled(isSwitching || coordinator.hasInFlightRegistrations)
+    }
+}
+
+/// Inline footer telling the user why the network picker is grayed
+/// out. Visible only while at least one registration is in flight;
+/// observes the coordinator the same way `NetworkPickerInFlightGate`
+/// does so the footer disappears the moment the last registration
+/// terminates.
+private struct NetworkInFlightFooter: View {
+    @ObservedObject var coordinator: RegistrationCoordinator
+
+    var body: some View {
+        if coordinator.hasInFlightRegistrations {
+            Text(
+                "Network switching is disabled while an identity "
+                + "registration is in flight."
+            )
+            .font(.caption2)
+            .foregroundColor(.orange)
         }
     }
 }

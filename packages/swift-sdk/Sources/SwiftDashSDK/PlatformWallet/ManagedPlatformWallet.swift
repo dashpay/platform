@@ -2345,6 +2345,14 @@ extension ManagedPlatformWallet {
     /// `KeychainSigner`. Asset-lock proof is built Rust-side from
     /// `amountDuffs` (wallet must have spendable Core UTXOs).
     ///
+    /// `accountIndex` selects which BIP44 *standard* account (by
+    /// BIP44 account index) supplies the funding UTXOs. Only BIP44
+    /// standard accounts are supported today; the caller is
+    /// responsible for filtering its account picker accordingly —
+    /// CoinJoin / BIP32 funding for new-identity registration is not
+    /// yet wired through `create_funded_asset_lock_proof` on the Rust
+    /// side.
+    ///
     /// Caller MUST pre-derive `identityPubkeys` (typically via
     /// `dash_sdk_derive_identity_keys_from_mnemonic`) AND pre-persist
     /// each key's private material to the Keychain using
@@ -2355,6 +2363,7 @@ extension ManagedPlatformWallet {
     /// registered identity.
     public func registerIdentityWithFunding(
         amountDuffs: UInt64,
+        accountIndex: UInt32,
         identityIndex: UInt32,
         identityPubkeys: [ManagedPlatformWallet.IdentityPubkey],
         signer: KeychainSigner
@@ -2365,9 +2374,17 @@ extension ManagedPlatformWallet {
         let handle = self.handle
         let signerHandle = signer.handle
         let pubkeys = identityPubkeys
+        // Create a `MnemonicResolver` owned for the lifetime of the
+        // FFI call — Rust constructs a `MnemonicResolverCoreSigner`
+        // from this handle to sign the asset-lock proof's
+        // credit-spending signature on the IdentityCreate transition.
+        // The resolver's vtable callback fetches the mnemonic from
+        // Keychain, derives the priv key at the credit-output path,
+        // signs the digest, and zeroes — atomic per call. No priv
+        // key ever lives in Rust memory across operations.
+        let coreSigner = MnemonicResolver()
         return try await Task.detached(priority: .userInitiated) {
             () -> (Identifier, ManagedIdentity) in
-            _ = signer
             var idTuple: (
                 UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
                 UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
@@ -2380,24 +2397,162 @@ extension ManagedPlatformWallet {
             var outManagedHandle: Handle = NULL_HANDLE
             // Pin each pubkey buffer simultaneously via the existing
             // helper, then hand the assembled row array to the FFI.
+            //
+            // `withExtendedLifetime` is the canonical Swift idiom for
+            // "keep this ARC-managed object alive across an FFI call
+            // that captures a raw handle to it". `_ = signer` /
+            // `_ = coreSigner` is folklore; the optimizer may elide
+            // the discard in -O builds, releasing the resolver mid-
+            // FFI-call → use-after-free in the vtable callback.
             let pubkeyBuffers: [Data] = pubkeys.map { $0.pubkeyBytes }
-            let result = ManagedPlatformWallet.withPubkeyFFIArray(
-                pubkeys,
-                buffers: pubkeyBuffers
-            ) { ffiRowsPtr, ffiRowsCount in
-                platform_wallet_register_identity_with_funding_signer(
-                    handle,
-                    amountDuffs,
-                    identityIndex,
-                    ffiRowsPtr,
-                    UInt(ffiRowsCount),
-                    signerHandle,
-                    &idTuple,
-                    &outManagedHandle
-                )
+            let result = withExtendedLifetime((signer, coreSigner)) {
+                ManagedPlatformWallet.withPubkeyFFIArray(
+                    pubkeys,
+                    buffers: pubkeyBuffers
+                ) { ffiRowsPtr, ffiRowsCount in
+                    platform_wallet_register_identity_with_funding_signer(
+                        handle,
+                        amountDuffs,
+                        accountIndex,
+                        identityIndex,
+                        ffiRowsPtr,
+                        UInt(ffiRowsCount),
+                        signerHandle,
+                        coreSigner.handle,
+                        &idTuple,
+                        &outManagedHandle
+                    )
+                }
             }
             try result.check()
+            // Defend against an FFI contract violation: on Success
+            // `outManagedHandle` must be non-NULL. Wrapping
+            // `NULL_HANDLE` would push the failure to a later, harder-
+            // to-debug point (`ManagedIdentity.deinit` calling
+            // `managed_identity_destroy(NULL)` or any downstream FFI
+            // accessor crashing on a NULL slot).
+            guard outManagedHandle != NULL_HANDLE else {
+                throw PlatformWalletError.walletOperation(
+                    "FFI returned success but managed-identity handle was NULL"
+                )
+            }
             // Copy the 32-byte tuple into a Data via withUnsafeBytes.
+            let identityId = Swift.withUnsafeBytes(of: idTuple) { Data($0) }
+            return (identityId, ManagedIdentity(handle: outManagedHandle))
+        }.value
+    }
+
+    /// Resume identity registration from an existing tracked asset lock.
+    ///
+    /// Sibling to
+    /// [`registerIdentityWithFunding(amountDuffs:identityIndex:identityPubkeys:signer:)`]:
+    /// the wallet-balance variant builds a fresh asset-lock transaction;
+    /// this variant picks up a lock that's already tracked (status
+    /// `InstantSendLocked` / `ChainLocked`) and drives whatever stages
+    /// remain. Use case is crash recovery — a prior attempt left the
+    /// lock in storage but the IdentityCreate transition never landed,
+    /// and the user picks the lock from the
+    /// "Fund from unused Asset Lock" surface in `CreateIdentityView`.
+    ///
+    /// `outPointTxid` is the 32-byte raw txid (little-endian wire order,
+    /// same shape as `OutPointFFI.txid` on the Rust side and what
+    /// `PersistentAssetLock.outPointHex` reverses for display); the
+    /// caller is responsible for decoding back from the display-order
+    /// hex before passing in.
+    ///
+    /// Caller MUST pre-derive `identityPubkeys` (typically via
+    /// `dash_sdk_derive_identity_keys_from_mnemonic`) AND pre-persist
+    /// each key's private material to the Keychain using
+    /// `prePersistIdentityKeysForRegistration` BEFORE calling this —
+    /// same precondition as `registerIdentityWithFunding`.
+    ///
+    /// Returns `(identityId, ManagedIdentity)` for the freshly
+    /// registered identity.
+    public func resumeIdentityWithAssetLock(
+        outPointTxid: Data,
+        outPointVout: UInt32,
+        identityIndex: UInt32,
+        identityPubkeys: [ManagedPlatformWallet.IdentityPubkey],
+        signer: KeychainSigner
+    ) async throws -> (Identifier, ManagedIdentity) {
+        guard outPointTxid.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "outPointTxid must be exactly 32 bytes (was \(outPointTxid.count))"
+            )
+        }
+        guard !identityPubkeys.isEmpty else {
+            throw PlatformWalletError.invalidParameter("identityPubkeys is empty")
+        }
+        let handle = self.handle
+        let signerHandle = signer.handle
+        let pubkeys = identityPubkeys
+        // Same `MnemonicResolver` lifetime + vtable rationale as
+        // `registerIdentityWithFunding` — the credit-output private key
+        // is fetched per-call from Keychain, signed, zeroed; no priv
+        // key ever lives in Rust memory across operations.
+        let coreSigner = MnemonicResolver()
+        return try await Task.detached(priority: .userInitiated) {
+            () -> (Identifier, ManagedIdentity) in
+            var idTuple: (
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
+            ) = (
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            )
+            var outManagedHandle: Handle = NULL_HANDLE
+            var txidTuple: (
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
+            ) = (
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            )
+            outPointTxid.withUnsafeBytes { src in
+                Swift.withUnsafeMutableBytes(of: &txidTuple) { dst in
+                    dst.copyMemory(from: src)
+                }
+            }
+            var outPoint = OutPointFFI(txid: txidTuple, vout: outPointVout)
+            let pubkeyBuffers: [Data] = pubkeys.map { $0.pubkeyBytes }
+            // `withExtendedLifetime` pins `signer` and `coreSigner`
+            // through the closure body. The FFI call inside is
+            // synchronous (Rust uses `block_on_worker` under the
+            // hood), so the closure returns before the lifetime
+            // wrapper exits — invariant holds. If anyone refactors
+            // this to spawn an unawaited Task inside, the resolver
+            // could be dropped mid-flight and Rust would see a
+            // dangling pointer; keep the FFI call inline.
+            let result = withExtendedLifetime((signer, coreSigner)) {
+                ManagedPlatformWallet.withPubkeyFFIArray(
+                    pubkeys,
+                    buffers: pubkeyBuffers
+                ) { ffiRowsPtr, ffiRowsCount in
+                    platform_wallet_resume_identity_with_existing_asset_lock_signer(
+                        handle,
+                        &outPoint,
+                        identityIndex,
+                        ffiRowsPtr,
+                        UInt(ffiRowsCount),
+                        signerHandle,
+                        coreSigner.handle,
+                        &idTuple,
+                        &outManagedHandle
+                    )
+                }
+            }
+            try result.check()
+            // FFI contract: on Success `outManagedHandle` is non-NULL.
+            // Same defense as `registerIdentityWithFunding`.
+            guard outManagedHandle != NULL_HANDLE else {
+                throw PlatformWalletError.walletOperation(
+                    "FFI returned success but managed-identity handle was NULL"
+                )
+            }
             let identityId = Swift.withUnsafeBytes(of: idTuple) { Data($0) }
             return (identityId, ManagedIdentity(handle: outManagedHandle))
         }.value

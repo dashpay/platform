@@ -15,5 +15,5 @@ pub use dashpay::{
     ContactRequest, DashPayProfile, DashpayAddressMatch, EstablishedContact, PaymentDirection,
     PaymentEntry, PaymentStatus, ProfileUpdate,
 };
-pub use funding::{IdentityFunding, IdentityFundingMethod, TopUpFundingMethod};
+pub use funding::IdentityFunding;
 pub use key_storage::{DpnsNameInfo, IdentityStatus, KeyStorage, PrivateKeyData};

@@ -1019,36 +1019,7 @@ struct TransactionStorageListView: View {
                 }
             }
             ForEach(visible) { record in
-                NavigationLink(destination: TransactionStorageDetailView(record: record)) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(record.txidHex)
-                            .font(.system(.caption, design: .monospaced))
-                            .lineLimit(1).truncationMode(.middle)
-                        HStack(spacing: 8) {
-                            Text(record.directionName).font(.caption)
-                            // Only surface the type label when it
-                            // isn't the default Classic — saves a
-                            // line on the most-common row shape.
-                            let normalizedType =
-                                record.transactionType == "Standard"
-                                    ? "Classic Transaction"
-                                    : record.transactionType
-                            if normalizedType != "Classic Transaction" {
-                                Text(displayName(forType: normalizedType))
-                                    .font(.caption2)
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 2)
-                                    .background(Color.purple.opacity(0.15))
-                                    .foregroundColor(.purple)
-                                    .clipShape(Capsule())
-                            }
-                            Spacer()
-                            Text(record.formattedAmount)
-                                .font(.caption)
-                                .foregroundColor(record.netAmount >= 0 ? .green : .red)
-                        }
-                    }
-                }
+                transactionRow(record)
             }
         }
         .navigationTitle(
@@ -1071,6 +1042,46 @@ struct TransactionStorageListView: View {
                     "No Records",
                     systemImage: "arrow.left.arrow.right.circle"
                 )
+            }
+        }
+    }
+
+    /// Shared row builder for both sections ("Identity Funding" and
+    /// "Transactions"). Uses [`displayDirection`] so asset-lock rows
+    /// read as "Asset Lock" rather than the structurally-correct-but-
+    /// misleading "Internal" label.
+    @ViewBuilder
+    private func transactionRow(_ record: PersistentTransaction) -> some View {
+        NavigationLink(destination: TransactionStorageDetailView(record: record)) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(record.txidHex)
+                    .font(.system(.caption, design: .monospaced))
+                    .lineLimit(1).truncationMode(.middle)
+                HStack(spacing: 8) {
+                    Text(record.displayDirection).font(.caption)
+                    // Only surface the type label when it isn't the
+                    // default Classic — saves a line on the most-common
+                    // row shape. Asset-lock rows also get the badge so
+                    // the visual stays consistent if the user filters
+                    // away the Identity Funding section header.
+                    let normalizedType =
+                        record.transactionType == "Standard"
+                            ? "Classic Transaction"
+                            : record.transactionType
+                    if normalizedType != "Classic Transaction" {
+                        Text(displayName(forType: normalizedType))
+                            .font(.caption2)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.purple.opacity(0.15))
+                            .foregroundColor(.purple)
+                            .clipShape(Capsule())
+                    }
+                    Spacer()
+                    Text(record.formattedAmount)
+                        .font(.caption)
+                        .foregroundColor(record.netAmount >= 0 ? .green : .red)
+                }
             }
         }
     }
@@ -1602,6 +1613,67 @@ struct PendingInputStorageListView: View {
         }
         let txidHex = txid.reversed().map { String(format: "%02x", $0) }.joined()
         return "\(txidHex):\(vout)"
+    }
+}
+
+// MARK: - PersistentAssetLock
+
+/// Storage explorer surface for tracked asset locks. SwiftData-backed
+/// — every row is upserted by the Rust-side `on_persist_asset_locks_fn`
+/// callback as the lock advances through Built / Broadcast /
+/// InstantSendLocked / ChainLocked, and deleted when the registration
+/// consumes it. The same rows also drive `RegistrationProgressView`
+/// (iter 3 part 2).
+struct AssetLockStorageListView: View {
+    let network: Network
+    @Query(sort: [SortDescriptor(\PersistentAssetLock.updatedAt, order: .reverse)])
+    private var records: [PersistentAssetLock]
+
+    @Query private var allWallets: [PersistentWallet]
+
+    private var walletIdsOnNetwork: Set<Data> {
+        Set(allWallets.lazy
+            .filter { $0.networkRaw == network.rawValue }
+            .map(\.walletId))
+    }
+
+    private var scopedRecords: [PersistentAssetLock] {
+        let ids = walletIdsOnNetwork
+        return records.filter { ids.contains($0.walletId) }
+    }
+
+    var body: some View {
+        let visible = scopedRecords
+        List(visible) { record in
+            NavigationLink(destination: AssetLockStorageDetailView(record: record)) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(record.outPointHex)
+                        .font(.system(.caption, design: .monospaced))
+                        .lineLimit(1).truncationMode(.middle)
+                    HStack(spacing: 8) {
+                        Text(record.statusLabel)
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                        Spacer()
+                        Text("identity #\(record.identityIndexRaw)")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                        Text(record.updatedAt, style: .relative)
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+        }
+        .navigationTitle("Asset Locks (\(visible.count))")
+        .overlay {
+            if visible.isEmpty {
+                ContentUnavailableView(
+                    "No Asset Locks",
+                    systemImage: "lock.shield"
+                )
+            }
+        }
     }
 }
 
