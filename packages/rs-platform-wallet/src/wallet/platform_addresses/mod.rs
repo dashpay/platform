@@ -7,6 +7,7 @@ use dpp::fee::Credits;
 pub use dpp::prelude::AddressNonce;
 
 mod fund_from_asset_lock;
+mod fund_with_funding;
 pub(crate) mod provider;
 mod sync;
 mod transfer;

@@ -1,0 +1,350 @@
+//! Orchestrated platform-address funding from a Core asset lock.
+//!
+//! Mirrors `IdentityWallet::register_identity_with_funding` from the
+//! identity-side flow but credits Platform addresses with the asset
+//! lock's value via an `AddressFundingFromAssetLockTransition` instead
+//! of creating an identity.
+//!
+//! ## Pipeline
+//!
+//! 1. **Pre-flight** — exactly-one-`None`-recipient invariant
+//!    (matches [`PlatformAddressWallet::fund_from_asset_lock`]); each
+//!    address must belong to the supplied platform-payment account.
+//! 2. **Resolve funding** — delegate to the shared
+//!    [`AssetLockManager::resolve_funding_with_is_timeout_fallback`].
+//!    `FromWalletBalance` builds an asset-lock tx out of the
+//!    `AssetLockAddressTopUp` BIP44 family and waits for IS/CL;
+//!    `FromExistingAssetLock` resumes from a tracked outpoint.
+//! 3. **Submit** — `addresses.top_up_with_signers(...)` inside the
+//!    shared `submit_with_cl_height_retry` wrapper. IS→CL fallback
+//!    fires both on Core-side timeout (resolver returns `IsTimeout`)
+//!    and on Platform-side IS rejection
+//!    (`is_instant_lock_proof_invalid`).
+//! 4. **Bookkeeping + cleanup** — write each recipient's new credit
+//!    balance into `ManagedPlatformAccount` and emit a
+//!    `PlatformAddressChangeSet`; then `consume_asset_lock` the
+//!    tracked outpoint so the row is marked `Consumed` (terminal)
+//!    and dropped from the in-memory tracked-lock map.
+
+use crate::wallet::asset_lock::orchestration::{
+    out_point_from_proof, submit_with_cl_height_retry, AssetLockFunding, FundingResolution,
+    ResolvedFunding, CL_FALLBACK_TIMEOUT,
+};
+use crate::wallet::PlatformAddressWallet;
+use crate::{error::is_instant_lock_proof_invalid, PlatformAddressChangeSet, PlatformWalletError};
+use dash_sdk::platform::transition::put_settings::PutSettings;
+use dash_sdk::platform::transition::top_up_address::TopUpAddress;
+use dpp::address_funds::{AddressFundsFeeStrategy, PlatformAddress};
+use dpp::fee::Credits;
+use dpp::identity::signer::Signer;
+use drive_proof_verifier::types::AddressInfos;
+use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
+use key_wallet::PlatformP2PKHAddress;
+use std::collections::BTreeMap;
+
+impl PlatformAddressWallet {
+    /// Fund platform addresses from a Core L1 asset lock, with the
+    /// asset-lock proof signed by an external `key_wallet::signer::Signer`.
+    ///
+    /// This is the orchestrated entry point: it covers the full
+    /// build → broadcast → wait-for-IS-or-CL → submit-with-CL-retry →
+    /// IS→CL-fallback → consume pipeline. The host never sees the
+    /// asset-lock private key — both Core-side derivation (inside the
+    /// asset-lock manager) and ST-side signing
+    /// (`StateTransition::sign_with_core_signer`) go through
+    /// `asset_lock_signer`, which atomically derives + signs +
+    /// zeroises inside its trust boundary.
+    ///
+    /// # Arguments
+    ///
+    /// * `funding` — How to source the funding asset lock. `FromWalletBalance`
+    ///   builds a fresh asset lock from Core UTXOs; `FromExistingAssetLock`
+    ///   resumes from a tracked outpoint (after app relaunch or a stuck
+    ///   broadcast).
+    /// * `platform_account_index` — Platform payment account whose
+    ///   addresses receive credits. Used for both the membership
+    ///   pre-flight and the post-success balance write.
+    /// * `addresses` — Map from recipient `PlatformAddress` to optional
+    ///   amount in credits. Exactly one entry must be `None` — the
+    ///   remainder-after-fees-and-explicit-outputs recipient (the lock
+    ///   is consumed in full, so a remainder bucket is mandatory).
+    /// * `fee_strategy` — Per-step fee-deduction strategy applied to
+    ///   the address-funding transition.
+    /// * `address_signer` — Signs per-input `AddressWitness` for any
+    ///   additional inputs from existing platform addresses (today
+    ///   none — combining external inputs with an asset-lock proof is
+    ///   not exercised here, but `AddressFundingFromAssetLockTransitionV0`
+    ///   does allow it).
+    /// * `asset_lock_signer` — Signs the outer state-transition ECDSA
+    ///   signature against the asset lock's credit-output key. The
+    ///   wallet struct itself carries no key material; signing is
+    ///   atomic + zeroising inside this signer.
+    /// * `settings` — `PutSettings::user_fee_increase` is threaded
+    ///   through to the ST builder. The CL-height retry wrapper bumps
+    ///   this value on consensus-10506 to bypass Tenderdash's
+    ///   invalid-tx hash cache; the caller's initial value is the
+    ///   starting point.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn fund_addresses_with_funding<S, AS>(
+        &self,
+        funding: AssetLockFunding,
+        platform_account_index: u32,
+        addresses: BTreeMap<PlatformAddress, Option<Credits>>,
+        fee_strategy: AddressFundsFeeStrategy,
+        address_signer: &S,
+        asset_lock_signer: &AS,
+        settings: Option<PutSettings>,
+    ) -> Result<PlatformAddressChangeSet, PlatformWalletError>
+    where
+        S: Signer<PlatformAddress> + Send + Sync,
+        AS: ::key_wallet::signer::Signer + Send + Sync,
+    {
+        // Step 1: pre-flight. Identical invariants to the existing
+        // `fund_from_asset_lock` raw-key path; failing fast here
+        // avoids broadcasting an unfundable asset-lock tx.
+        validate_recipient_addresses(self, platform_account_index, &addresses).await?;
+
+        // Step 2: resolve funding. `AssetLockAddressTopUp` selects the
+        // BIP44 funding family for the Core asset-lock tx. The
+        // `destination_index = 0` argument is unused by this funding
+        // type (the resolver only consults it for `IdentityTopUp`),
+        // so any value is fine.
+        let ResolvedFunding {
+            proof,
+            path,
+            tracked_out_point,
+        } = match self
+            .asset_locks
+            .resolve_funding_with_is_timeout_fallback(
+                funding,
+                AssetLockFundingType::AssetLockAddressTopUp,
+                /* destination_index */ 0,
+                asset_lock_signer,
+            )
+            .await?
+        {
+            FundingResolution::Resolved(rf) => rf,
+            FundingResolution::IsTimeout { out_point } => {
+                tracing::warn!(
+                    "IS-lock did not propagate within 300s for funded platform-address top-up \
+                     (tx {}), falling back to ChainLock proof",
+                    out_point.txid
+                );
+                let chain_proof = self
+                    .asset_locks
+                    .upgrade_to_chain_lock_proof(&out_point, CL_FALLBACK_TIMEOUT)
+                    .await?;
+                // Re-derive the credit-output path. The lock is now
+                // CL-attached; `resume_asset_lock` short-circuits to
+                // the existing-proof branch and just hands the path
+                // back.
+                let (_, path) = self
+                    .asset_locks
+                    .resume_asset_lock(&out_point, CL_FALLBACK_TIMEOUT)
+                    .await?;
+                ResolvedFunding {
+                    proof: chain_proof,
+                    path,
+                    tracked_out_point: Some(out_point),
+                }
+            }
+        };
+
+        // Step 3: submit. Two Platform-side fallback layers (matches
+        // `register_identity_with_funding`): CL-height-too-low retries
+        // bump `user_fee_increase` to bypass Tenderdash's invalid-tx
+        // cache, and IS-lock rejection triggers an IS→CL upgrade on
+        // the same outpoint.
+        let proof_out_point = out_point_from_proof(&proof);
+        let address_infos = match submit_with_cl_height_retry(settings, |s| {
+            addresses.top_up_with_signers(
+                &self.sdk,
+                proof.clone(),
+                &path,
+                fee_strategy.clone(),
+                address_signer,
+                asset_lock_signer,
+                s,
+            )
+        })
+        .await
+        {
+            Ok(infos) => infos,
+            Err(e) if is_instant_lock_proof_invalid(&e) => {
+                let out_point = proof_out_point;
+                tracing::warn!(
+                    "IS-lock proof rejected by Platform for platform-address top-up (tx {}), \
+                     retrying with ChainLock proof",
+                    out_point.txid
+                );
+                let chain_proof = self
+                    .asset_locks
+                    .upgrade_to_chain_lock_proof(&out_point, CL_FALLBACK_TIMEOUT)
+                    .await?;
+                submit_with_cl_height_retry(settings, |s| {
+                    addresses.top_up_with_signers(
+                        &self.sdk,
+                        chain_proof.clone(),
+                        &path,
+                        fee_strategy.clone(),
+                        address_signer,
+                        asset_lock_signer,
+                        s,
+                    )
+                })
+                .await
+                .map_err(PlatformWalletError::Sdk)?
+            }
+            Err(e) => return Err(PlatformWalletError::Sdk(e)),
+        };
+
+        // Step 4: bookkeeping + cleanup. Write the proof-attested
+        // balances back into ManagedPlatformAccount, then consume the
+        // tracked asset lock (terminal — marks the row `Consumed` and
+        // drops it from the in-memory map).
+        let cs = self
+            .write_address_balances_changeset(platform_account_index, &address_infos)
+            .await;
+
+        if let Some(out_point) = tracked_out_point {
+            // Cleanup failure can only mean WalletNotFound (the wallet
+            // handle that just funded the addresses vanished). Surface
+            // as a warn — Platform DID accept the top-up, so
+            // propagating the error to the caller would be misleading.
+            if let Err(e) = self.asset_locks.consume_asset_lock(&out_point).await {
+                tracing::warn!(
+                    outpoint = %out_point,
+                    error = %e,
+                    "consume_asset_lock failed after successful Platform submit"
+                );
+            }
+        }
+
+        Ok(cs)
+    }
+
+    /// Apply proof-attested credit balances to the
+    /// `ManagedPlatformAccount` for each recipient address, emitting
+    /// a `PlatformAddressChangeSet` describing the new balances.
+    ///
+    /// Shared between
+    /// [`fund_addresses_with_funding`](Self::fund_addresses_with_funding)
+    /// and the existing raw-key
+    /// [`fund_from_asset_lock`](Self::fund_from_asset_lock) so the
+    /// two paths can't drift apart on the post-success bookkeeping
+    /// shape.
+    pub(super) async fn write_address_balances_changeset(
+        &self,
+        platform_account_index: u32,
+        address_infos: &AddressInfos,
+    ) -> PlatformAddressChangeSet {
+        let key_source = {
+            let guard = self.provider.read().await;
+            guard
+                .as_ref()
+                .and_then(|p| p.key_source(&self.wallet_id, platform_account_index))
+        };
+
+        let mut wm = self.wallet_manager.write().await;
+        let mut cs = PlatformAddressChangeSet::default();
+        if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
+            if let Some(account) = info
+                .core_wallet
+                .platform_payment_managed_account_at_index_mut(platform_account_index)
+            {
+                for (addr, maybe_info) in address_infos.iter() {
+                    let PlatformAddress::P2pkh(hash) = *addr else {
+                        continue;
+                    };
+                    let p2pkh = PlatformP2PKHAddress::new(hash);
+                    let funds = match maybe_info {
+                        Some(ai) => dash_sdk::platform::address_sync::AddressFunds {
+                            balance: ai.balance,
+                            nonce: ai.nonce,
+                        },
+                        None => dash_sdk::platform::address_sync::AddressFunds {
+                            balance: 0,
+                            nonce: 0,
+                        },
+                    };
+                    account.set_address_credit_balance(p2pkh, funds.balance, key_source.as_ref());
+                    let address_index = account
+                        .addresses
+                        .addresses
+                        .iter()
+                        .find_map(|(&idx, ainfo)| {
+                            PlatformP2PKHAddress::from_address(&ainfo.address)
+                                .ok()
+                                .filter(|found| *found == p2pkh)
+                                .map(|_| idx)
+                        })
+                        .unwrap_or(0);
+                    cs.addresses.push(crate::PlatformAddressBalanceEntry {
+                        wallet_id: self.wallet_id,
+                        account_index: platform_account_index,
+                        address_index,
+                        address: p2pkh,
+                        funds,
+                    });
+                }
+            }
+        }
+        cs
+    }
+}
+
+/// Pre-flight check for the recipient address map:
+/// - Non-empty
+/// - Exactly one `None`-amount entry (the remainder recipient)
+/// - All addresses are P2PKH and belong to the specified platform-payment account
+async fn validate_recipient_addresses(
+    wallet: &PlatformAddressWallet,
+    platform_account_index: u32,
+    addresses: &BTreeMap<PlatformAddress, Option<Credits>>,
+) -> Result<(), PlatformWalletError> {
+    if addresses.is_empty() {
+        return Err(PlatformWalletError::AddressOperation(
+            "fund_addresses_with_funding requires at least one recipient address".to_string(),
+        ));
+    }
+
+    let none_count = addresses.values().filter(|v| v.is_none()).count();
+    if none_count != 1 {
+        return Err(PlatformWalletError::AddressOperation(format!(
+            "Exactly one address must have None balance (the funding recipient), found {}",
+            none_count
+        )));
+    }
+
+    let wm = wallet.wallet_manager.read().await;
+    let info = wm.get_wallet_info(&wallet.wallet_id).ok_or_else(|| {
+        PlatformWalletError::WalletNotFound(format!(
+            "Wallet {:?} not found in wallet manager",
+            hex::encode(wallet.wallet_id)
+        ))
+    })?;
+    let account = info
+        .core_wallet
+        .platform_payment_managed_account_at_index(platform_account_index)
+        .ok_or_else(|| {
+            PlatformWalletError::AddressSync(format!(
+                "No platform payment account at index {}",
+                platform_account_index
+            ))
+        })?;
+    for addr in addresses.keys() {
+        let PlatformAddress::P2pkh(hash) = addr else {
+            return Err(PlatformWalletError::AddressOperation(
+                "Only P2PKH addresses are supported".to_string(),
+            ));
+        };
+        let p2pkh = PlatformP2PKHAddress::new(*hash);
+        if !account.contains_platform_address(&p2pkh) {
+            return Err(PlatformWalletError::AddressNotFound(format!(
+                "Address {} does not belong to platform account index {}",
+                p2pkh, platform_account_index
+            )));
+        }
+    }
+    Ok(())
+}

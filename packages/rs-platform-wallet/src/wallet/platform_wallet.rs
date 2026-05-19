@@ -273,6 +273,7 @@ impl PlatformWallet {
             Arc::clone(&sdk),
             Arc::clone(&wallet_manager),
             wallet_id,
+            Arc::clone(&asset_locks),
             wallet_persister.clone(),
         );
 

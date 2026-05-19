@@ -4821,6 +4821,7 @@ dependencies = [
  "dash-spv",
  "dashcore",
  "dpp",
+ "drive-proof-verifier",
  "grovedb-commitment-tree",
  "hex",
  "image",
