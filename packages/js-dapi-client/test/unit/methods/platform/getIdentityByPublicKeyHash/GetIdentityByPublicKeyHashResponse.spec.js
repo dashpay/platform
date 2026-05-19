@@ -118,7 +118,7 @@ describe('GetIdentityByPublicKeyHashResponse', () => {
     expect(getIdentityResponse).to.be.an.instanceOf(
       GetIdentityByPublicKeyHashResponseClass,
     );
-    expect(getIdentityResponse.getIdentity()).to.deep.equal(Buffer.alloc(0));
+    expect(getIdentityResponse.getIdentity()).to.deep.equal(new Uint8Array(0));
 
     expect(getIdentityResponse.getMetadata().getHeight())
       .to.deep.equal(BigInt(metadataFixture.height));

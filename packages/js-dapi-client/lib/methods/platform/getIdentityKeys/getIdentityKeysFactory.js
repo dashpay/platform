@@ -23,16 +23,16 @@ function getIdentityKeysFactory(grpcTransport) {
   /**
    * Fetch the version upgrade votes status
    * @typedef {getIdentityKeys}
-   * @param {Buffer} identityId
+   * @param {Uint8Array} identityId
    * @param {number[]=} keyIds
    * @param {number} limit
    * @param {DAPIClientOptions & {prove: boolean}} [options]
    * @returns {Promise<GetIdentityKeysResponse>}
    */
   async function getIdentityKeys(identityId, keyIds, limit = 100, options = {}) {
-    if (Buffer.isBuffer(identityId)) {
+    if (identityId instanceof Uint8Array) {
       // eslint-disable-next-line no-param-reassign
-      identityId = Buffer.from(identityId);
+      identityId = new Uint8Array(identityId);
     }
 
     const getIdentityKeysRequest = new GetIdentityKeysRequest();

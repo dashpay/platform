@@ -6,6 +6,7 @@ const {
 } = require('@dashevo/dapi-grpc');
 
 const DAPIClientError = require('../../errors/DAPIClientError');
+const { hexToBytes } = require('../../utils/bytes');
 
 /**
  * @param {GrpcTransport} grpcTransport
@@ -41,7 +42,7 @@ function subscribeToBlockHeadersWithChainLocksFactory(grpcTransport) {
 
     if (options.fromBlockHash) {
       request.setFromBlockHash(
-        Buffer.from(options.fromBlockHash, 'hex'),
+        hexToBytes(options.fromBlockHash),
       );
     }
 

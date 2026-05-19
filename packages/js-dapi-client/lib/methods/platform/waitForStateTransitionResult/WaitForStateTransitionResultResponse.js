@@ -38,7 +38,7 @@ class WaitForStateTransitionResultResponse extends AbstractResponse {
       let data;
 
       if (proto.getV0().getError().getData()) {
-        data = Buffer.from(proto.getV0().getError().getData());
+        data = new Uint8Array(proto.getV0().getError().getData());
       }
 
       error = new ErrorResult(

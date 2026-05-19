@@ -1,9 +1,9 @@
 class Proof {
   /**
    * @param {object} properties
-   * @param {Buffer} properties.merkleProof
-   * @param {Buffer} properties.quorumHash
-   * @param {Buffer} properties.signature
+   * @param {Uint8Array} properties.merkleProof
+   * @param {Uint8Array} properties.quorumHash
+   * @param {Uint8Array} properties.signature
    * @param {number} properties.round
    */
   constructor(properties) {
@@ -14,21 +14,21 @@ class Proof {
   }
 
   /**
-   * @returns {Buffer}
+   * @returns {Uint8Array}
    */
   getGrovedbProof() {
     return this.merkleProof;
   }
 
   /**
-   * @returns {Buffer}
+   * @returns {Uint8Array}
    */
   getQuorumHash() {
     return this.quorumHash;
   }
 
   /**
-   * @returns {Buffer}
+   * @returns {Uint8Array}
    */
   getSignature() {
     return this.signature;
@@ -48,9 +48,9 @@ class Proof {
    */
   static createFromProto(proofProto) {
     return new Proof({
-      merkleProof: Buffer.from(proofProto.getGrovedbProof()),
-      quorumHash: Buffer.from(proofProto.getQuorumHash()),
-      signature: Buffer.from(proofProto.getSignature()),
+      merkleProof: new Uint8Array(proofProto.getGrovedbProof()),
+      quorumHash: new Uint8Array(proofProto.getQuorumHash()),
+      signature: new Uint8Array(proofProto.getSignature()),
       round: proofProto.getRound(),
     });
   }

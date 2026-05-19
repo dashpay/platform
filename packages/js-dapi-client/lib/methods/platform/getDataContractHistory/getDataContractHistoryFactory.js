@@ -17,7 +17,7 @@ function getDataContractHistoryFactory(grpcTransport) {
   /**
    * Fetch Data Contract by id
    * @typedef {getDataContractHistory}
-   * @param {Buffer} contractId
+   * @param {Uint8Array} contractId
    * @param {bigint} [startAtMs]
    * @param {number} [limit]
    * @param {number} [offset]
@@ -34,12 +34,12 @@ function getDataContractHistoryFactory(grpcTransport) {
     const { GetDataContractHistoryRequestV0 } = GetDataContractHistoryRequest;
     const getDataContractHistoryRequest = new GetDataContractHistoryRequest();
 
-    // need to convert objects inherited from Buffer to pure buffer as google protobuf
+    // need to convert objects inherited from Uint8Array to pure Uint8Array as google protobuf
     // doesn't support extended buffers
     // https://github.com/protocolbuffers/protobuf/blob/master/js/binary/utils.js#L1049
-    if (Buffer.isBuffer(contractId)) {
+    if (contractId instanceof Uint8Array) {
       // eslint-disable-next-line no-param-reassign
-      contractId = Buffer.from(contractId);
+      contractId = new Uint8Array(contractId);
     }
 
     getDataContractHistoryRequest.setV0(

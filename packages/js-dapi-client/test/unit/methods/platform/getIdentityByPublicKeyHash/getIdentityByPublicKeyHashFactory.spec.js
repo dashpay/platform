@@ -121,7 +121,7 @@ describe('getIdentityByPublicKeyHashFactory', () => {
       request,
       options,
     );
-    expect(result.getIdentity()).to.deep.equal(Buffer.alloc(0));
+    expect(result.getIdentity()).to.deep.equal(new Uint8Array(0));
 
     expect(result.getMetadata().getHeight())
       .to.deep.equal(BigInt(metadataFixture.height));

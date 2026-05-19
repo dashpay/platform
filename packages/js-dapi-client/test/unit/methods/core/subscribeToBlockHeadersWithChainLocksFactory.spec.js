@@ -9,6 +9,7 @@ const { EventEmitter } = require('events');
 const subscribeToBlockHeadersWithChainLocksFactory = require('../../../../lib/methods/core/subscribeToBlockHeadersWithChainLocksFactory');
 
 const DAPIClientError = require('../../../../lib/errors/DAPIClientError');
+const { hexToBytes } = require('../../../../lib/utils/bytes');
 
 describe('subscribeToBlockHeadersWithChainLocks', () => {
   let subscribeToBlockHeadersWithChainLocks;
@@ -50,7 +51,7 @@ describe('subscribeToBlockHeadersWithChainLocks', () => {
     const request = new BlockHeadersWithChainLocksRequest();
 
     request.setFromBlockHeight(1);
-    request.setFromBlockHash(Buffer.from(options.fromBlockHash, 'hex'));
+    request.setFromBlockHash(hexToBytes(options.fromBlockHash));
     request.setCount(options.count);
 
     expect(grpcTransportMock.request).to.be.calledWith(

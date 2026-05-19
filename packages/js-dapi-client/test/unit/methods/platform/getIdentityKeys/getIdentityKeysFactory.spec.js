@@ -35,11 +35,11 @@ describe('getIdentityKeysFactory', () => {
   let proofResponse;
 
   beforeEach(async function beforeEach() {
-    keys = [Buffer.alloc(41), Buffer.alloc(46)];
+    keys = [new Uint8Array(41), new Uint8Array(46)];
     keyIds = [0, 1];
     limit = 100;
 
-    identityId = Buffer.alloc(32).fill(0);
+    identityId = new Uint8Array(32);
 
     metadataFixture = getMetadataFixture();
     proofFixture = getProofFixture();

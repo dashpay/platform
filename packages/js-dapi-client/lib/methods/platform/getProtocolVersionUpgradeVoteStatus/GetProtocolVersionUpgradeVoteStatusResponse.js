@@ -1,6 +1,7 @@
 const AbstractResponse = require('../response/AbstractResponse');
 const VersionSignal = require('./VersionSignal');
 const InvalidResponseError = require('../response/errors/InvalidResponseError');
+const { bytesToHex } = require('../../../utils/bytes');
 
 class GetProtocolVersionUpgradeVoteStatusResponse extends AbstractResponse {
   /**
@@ -40,7 +41,7 @@ class GetProtocolVersionUpgradeVoteStatusResponse extends AbstractResponse {
     const versionSignalsList = versions && versions.getVersionSignalsList();
     if (versionSignalsList) {
       versionSignals = versionSignalsList.map((versionSignal) => new VersionSignal(
-        Buffer.from(versionSignal.getProTxHash()).toString('hex'),
+        bytesToHex(new Uint8Array(versionSignal.getProTxHash())),
         versionSignal.getVersion(),
       ));
     }

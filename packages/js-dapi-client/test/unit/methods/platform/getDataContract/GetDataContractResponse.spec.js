@@ -41,7 +41,7 @@ describe('GetDataContractResponse', () => {
 
   it('should return proof', () => {
     getDataContractResponse = new GetDataContractResponseClass(
-      Buffer.alloc(0),
+      new Uint8Array(0),
       new Metadata(metadataFixture),
       new Proof(proofFixture),
     );
@@ -49,7 +49,7 @@ describe('GetDataContractResponse', () => {
     const dataContract = getDataContractResponse.getDataContract();
     const proof = getDataContractResponse.getProof();
 
-    expect(dataContract).to.deep.equal(Buffer.alloc(0));
+    expect(dataContract).to.deep.equal(new Uint8Array(0));
     expect(proof).to.be.an.instanceOf(Proof);
     expect(proof.getGrovedbProof()).to.deep.equal(proofFixture.merkleProof);
     expect(proof.getQuorumHash()).to.deep.equal(proofFixture.quorumHash);
@@ -113,7 +113,7 @@ describe('GetDataContractResponse', () => {
 
     getDataContractResponse = GetDataContractResponseClass.createFromProto(proto);
     expect(getDataContractResponse).to.be.an.instanceOf(GetDataContractResponseClass);
-    expect(getDataContractResponse.getDataContract()).to.deep.equal(Buffer.alloc(0));
+    expect(getDataContractResponse.getDataContract()).to.deep.equal(new Uint8Array(0));
 
     expect(getDataContractResponse.getMetadata().getHeight())
       .to.deep.equal(BigInt(metadataFixture.height));

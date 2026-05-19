@@ -15,7 +15,7 @@ function getBlockByHeightFactory(grpcTransport) {
    * @typedef {getBlockByHeight}
    * @param {number} height
    * @param {DAPIClientOptions} [options]
-   * @returns {Promise<null|Buffer>}
+   * @returns {Promise<null|Uint8Array>}
    */
   async function getBlockByHeight(height, options = {}) {
     const getBlockRequest = new GetBlockRequest();
@@ -30,7 +30,7 @@ function getBlockByHeightFactory(grpcTransport) {
 
     const blockBinaryArray = response.getBlock();
 
-    return Buffer.from(blockBinaryArray);
+    return new Uint8Array(blockBinaryArray);
   }
 
   return getBlockByHeight;

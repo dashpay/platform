@@ -3,6 +3,7 @@ const SimplifiedMNListDiff = require('@dashevo/dashcore-lib/lib/deterministicmnl
 const cbor = require('cbor');
 
 const logger = require('../logger');
+const { bytesToHex } = require('../utils/bytes');
 
 class SimplifiedMasternodeListProvider {
   /**
@@ -100,11 +101,11 @@ class SimplifiedMasternodeListProvider {
 
         let simplifiedMNListDiff;
         let simplifiedMNListDiffObject;
-        let simplifiedMNListDiffBuffer;
+        let simplifiedMNListDiffBytes;
         try {
-          simplifiedMNListDiffBuffer = Buffer.from(response.getMasternodeListDiff_asU8());
+          simplifiedMNListDiffBytes = new Uint8Array(response.getMasternodeListDiff_asU8());
 
-          simplifiedMNListDiffObject = cbor.decodeFirstSync(simplifiedMNListDiffBuffer);
+          simplifiedMNListDiffObject = cbor.decodeFirstSync(simplifiedMNListDiffBytes);
 
           simplifiedMNListDiff = new SimplifiedMNListDiff(
             simplifiedMNListDiffObject,
@@ -118,7 +119,7 @@ class SimplifiedMasternodeListProvider {
               network: this.options.network,
               error: e,
               simplifiedMNListDiffObject,
-              simplifiedMNListDiffBytes: simplifiedMNListDiffBuffer.toString('hex'),
+              simplifiedMNListDiffBytes: bytesToHex(simplifiedMNListDiffBytes),
             },
           );
 

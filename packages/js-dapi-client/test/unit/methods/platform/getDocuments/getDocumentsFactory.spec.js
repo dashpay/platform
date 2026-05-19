@@ -53,7 +53,7 @@ describe('getDocumentsFactory', () => {
 
     documentsFixture = await getDocumentsFixture();
     serializedDocuments = documentsFixture
-      .map((document) => Buffer.from(JSON.stringify(document)));
+      .map((document) => new TextEncoder().encode(JSON.stringify(document)));
 
     const metadata = new ResponseMetadata();
     metadata.setHeight(metadataFixture.height);
@@ -91,7 +91,7 @@ describe('getDocumentsFactory', () => {
     const request = new GetDocumentsRequest();
     request.setV0(
       new GetDocumentsRequestV0()
-        .setDataContractId(contractIdBuffer)
+        .setDataContractId(new Uint8Array(contractIdBuffer))
         .setDocumentType(type)
         .setLimit(options.limit)
         .setWhere(cbor.encode(options.where))
@@ -132,7 +132,7 @@ describe('getDocumentsFactory', () => {
     const request = new GetDocumentsRequest();
     request.setV0(
       new GetDocumentsRequestV0()
-        .setDataContractId(contractIdBuffer)
+        .setDataContractId(new Uint8Array(contractIdBuffer))
         .setDocumentType(type)
         .setLimit(options.limit)
         .setWhere(cbor.encode(options.where))
@@ -174,7 +174,7 @@ describe('getDocumentsFactory', () => {
     const request = new GetDocumentsRequest();
     request.setV0(
       new GetDocumentsRequestV0()
-        .setDataContractId(contractIdBuffer)
+        .setDataContractId(new Uint8Array(contractIdBuffer))
         .setDocumentType(type)
         .setLimit(options.limit)
         .setWhere(cbor.encode(options.where))
