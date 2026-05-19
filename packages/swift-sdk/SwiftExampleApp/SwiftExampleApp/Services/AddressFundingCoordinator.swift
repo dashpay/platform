@@ -83,6 +83,7 @@ final class AddressFundingCoordinator: ObservableObject {
         walletId: Data,
         platformAccountIndex: UInt32,
         recipientHash: Data,
+        recipientType: UInt8,
         body: @escaping () async throws -> UInt64
     ) -> AddressFundingController {
         let key = SlotKey(
@@ -100,14 +101,20 @@ final class AddressFundingCoordinator: ObservableObject {
             case .idle, .failed:
                 // Legitimate restart paths.
                 existing.submit(body: body)
-                scheduleRetentionSweep(key: key, controller: existing)
+                // No retention sweep here — the slot is sticky on
+                // .failed (we want the user to see + dismiss the
+                // error) and a duplicate sweep on retry would just
+                // spawn a second 30s poll Task against the same
+                // controller. Sweep was already scheduled when the
+                // controller was first created.
                 return existing
             }
         }
         let controller = AddressFundingController(
             walletId: walletId,
             platformAccountIndex: platformAccountIndex,
-            recipientHash: recipientHash
+            recipientHash: recipientHash,
+            recipientType: recipientType
         )
         controllers[key] = controller
         controller.submit(body: body)

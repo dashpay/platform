@@ -81,6 +81,16 @@ final class AddressFundingController: ObservableObject {
     /// the same account don't collide.
     let recipientHash: Data
 
+    /// `PlatformAddress` type byte for the recipient (0 = P2PKH,
+    /// 1 = P2SH). Carried so the post-success back-fill onto
+    /// `PersistentAssetLock.recipientPlatformAddressType` records
+    /// the real value rather than a hardcoded P2PKH constant. The
+    /// wallet only generates P2PKH today, but the field exists
+    /// because the stored type drives the bech32m encoder's type
+    /// byte (`0xb0` vs `0x80`) and a hardcoded `0` would silently
+    /// mis-tag any future P2SH funding for the lifetime of the row.
+    let recipientType: UInt8
+
     /// Timestamp of the most recent `submit` call. Used by the
     /// coordinator's TTL-based retention policy (`.completed` rows
     /// purge ~30s after the success transition).
@@ -91,10 +101,29 @@ final class AddressFundingController: ObservableObject {
     /// wired today (the FFI call doesn't yet support clean abort).
     private var task: Task<Void, Never>?
 
-    init(walletId: Data, platformAccountIndex: UInt32, recipientHash: Data) {
+    /// Outpoints of `Consumed` address-funding locks observed on
+    /// this wallet **before** `submit()` fired. Captured by the
+    /// caller (`FundPlatformAddressView.submit`) immediately before
+    /// kicking off the FFI body and stored here so the post-success
+    /// back-fill can compute the delta against the new set and
+    /// deterministically match this funding's consumed lock — even
+    /// when two concurrent fundings on the same wallet land in close
+    /// succession.
+    ///
+    /// `nil` (default) means snapshot wasn't captured; the back-fill
+    /// falls back to its earlier "newest unrecipiented" heuristic.
+    var preSubmitConsumedOutpoints: Set<String>?
+
+    init(
+        walletId: Data,
+        platformAccountIndex: UInt32,
+        recipientHash: Data,
+        recipientType: UInt8
+    ) {
         self.walletId = walletId
         self.platformAccountIndex = platformAccountIndex
         self.recipientHash = recipientHash
+        self.recipientType = recipientType
     }
 
     /// Submit the funding. Defensively rejects any phase that

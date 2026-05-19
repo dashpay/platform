@@ -566,6 +566,15 @@ struct FundPlatformAddressView: View {
             }
         }
 
+        // Capture the set of currently-Consumed address-funding
+        // outpoints on this wallet BEFORE the FFI fires. The
+        // post-success back-fill uses the set-difference against
+        // the new state to deterministically match this funding's
+        // consumed lock — even when two concurrent fundings on the
+        // same wallet land in close succession (the previous
+        // newest-`updatedAt` heuristic mis-stamped in that race).
+        let preSubmitOutpoints = capturePreSubmitConsumedOutpoints()
+
         // Single-flight gate via the coordinator. The same slot
         // re-presents the existing controller on a duplicate tap
         // so two FFI calls never race for the same asset lock.
@@ -574,8 +583,10 @@ struct FundPlatformAddressView: View {
             walletId: walletId,
             platformAccountIndex: platformAcct,
             recipientHash: recipientHash,
+            recipientType: recipientType,
             body: body
         )
+        controller.preSubmitConsumedOutpoints = preSubmitOutpoints
 
         // Stash the controller; setting it flips the body to the
         // progress section in place of the form. The controller's
@@ -584,6 +595,23 @@ struct FundPlatformAddressView: View {
         // reachable via the "Pending Platform Funding" section on
         // the wallet detail screen.
         activeController = controller
+    }
+
+    /// Snapshot every outpoint currently marked Consumed for this
+    /// wallet's address-funding asset locks. Used by the post-
+    /// success back-fill to compute the "new since submission"
+    /// delta. Pure read; no writes.
+    private func capturePreSubmitConsumedOutpoints() -> Set<String> {
+        let walletId = wallet.walletId
+        let descriptor = FetchDescriptor<PersistentAssetLock>(
+            predicate: #Predicate<PersistentAssetLock> { entry in
+                entry.walletId == walletId
+                    && entry.fundingTypeRaw == 4
+                    && entry.statusRaw == 4
+            }
+        )
+        let rows = (try? modelContext.fetch(descriptor)) ?? []
+        return Set(rows.map { $0.outPointHex })
     }
 
     /// Parse `<txid display hex>:<vout>` back into (32-byte raw
@@ -613,32 +641,37 @@ struct FundPlatformAddressView: View {
 
     // MARK: - Helpers
 
-    /// Stamp the recipient hash onto the most recent `Consumed`
-    /// asset-lock row on this wallet whose recipient isn't set yet.
-    /// Called from `.onChange` after the controller flips to
-    /// `.completed`.
+    /// Stamp the recipient hash + type onto the asset-lock row this
+    /// funding's FFI call just Consumed. Called from `.onChange`
+    /// after the controller flips to `.completed`.
     ///
-    /// The match is `(walletId, fundingTypeRaw==4, statusRaw==4,
-    /// recipientPlatformAddressHash==nil)` newest-first. In the
-    /// happy path exactly one row matches: the lock the FFI just
-    /// consumed. If multiple match (two back-to-back fundings on
-    /// the same wallet where the first stamp hasn't run yet), we
-    /// stamp the newest — the older one will get picked up on its
-    /// own `.completed` since the back-fill is FIFO by completion
-    /// time anyway.
+    /// Match strategy: set-difference against the pre-submit
+    /// Consumed-outpoint snapshot captured at `submit()` time. The
+    /// new Consumed outpoint that wasn't in the snapshot is ours.
+    ///
+    /// Edge cases:
+    /// - `preSubmitConsumedOutpoints` missing on controller: fall
+    ///   back to the legacy `newest unrecipiented` heuristic.
+    /// - Zero new outpoints: nothing to stamp; the funding
+    ///   succeeded but no Consumed row appeared yet (persister
+    ///   callback lag). The catch-up on the next funding will fix
+    ///   it via the same delta logic.
+    /// - Multiple new outpoints: two address-funding flows
+    ///   completed Consumed in the same `.onChange` window.
+    ///   Refuse to stamp either to avoid mis-attribution — better
+    ///   to leave both showing "—" in the storage explorer than to
+    ///   silently tag the wrong row. Both controllers will retry on
+    ///   their next phase tick if they share the same view; in
+    ///   practice one will land first and the other re-runs against
+    ///   the now-smaller delta.
     private func backfillRecipientOnConsumedLock() {
         guard let controller = activeController else { return }
         let walletId = wallet.walletId
-        // Capture the recipient before the closure body — Swift
-        // strict-concurrency wants the value local, not the
-        // controller reference.
         let recipientHash = controller.recipientHash
-        // Type byte is fixed at P2PKH today (the only platform-
-        // address shape the wallet generates) but capture it
-        // alongside so the storage explorer can render correctly
-        // if P2SH is added later.
-        let recipientType: UInt8 = 0  // P2PKH discriminant.
-        var descriptor = FetchDescriptor<PersistentAssetLock>(
+        let recipientType = controller.recipientType
+        let preSubmitSet = controller.preSubmitConsumedOutpoints
+
+        let descriptor = FetchDescriptor<PersistentAssetLock>(
             predicate: #Predicate<PersistentAssetLock> { entry in
                 entry.walletId == walletId
                     && entry.fundingTypeRaw == 4
@@ -647,20 +680,62 @@ struct FundPlatformAddressView: View {
             },
             sortBy: [SortDescriptor(\.updatedAt, order: .reverse)]
         )
-        descriptor.fetchLimit = 1
+        let matches: [PersistentAssetLock]
         do {
-            let matches = try modelContext.fetch(descriptor)
-            if let lock = matches.first {
-                lock.recipientPlatformAddressHash = recipientHash
-                lock.recipientPlatformAddressType = recipientType
-                try? modelContext.save()
-            }
+            matches = try modelContext.fetch(descriptor)
         } catch {
-            // Surface as a log rather than alerting — the funding
-            // already succeeded, the only downside of a missed
-            // back-fill is a "Recipient — unknown" line in the
-            // storage explorer for this row.
-            print("backfillRecipient: fetch failed: \(error)")
+            // The funding succeeded; this fetch only feeds the
+            // storage-explorer recipient column. Match the
+            // surrounding app's `print`-with-emoji logging idiom
+            // rather than introducing an OSLog dependency just for
+            // this one call site.
+            print("⚠️ backfillRecipient: fetch failed: \(error)")
+            return
+        }
+
+        let target: PersistentAssetLock?
+        if let preSubmit = preSubmitSet {
+            // Deterministic snapshot-delta path. Filter the
+            // unrecipiented Consumed rows down to those NOT in the
+            // pre-submit set — those are the genuinely new rows.
+            let newRows = matches.filter { !preSubmit.contains($0.outPointHex) }
+            switch newRows.count {
+            case 1:
+                target = newRows.first
+            case 0:
+                // No new Consumed row visible yet (persister lag);
+                // skip rather than stamp the wrong unrecipiented
+                // row. The next funding's delta will pick this row
+                // up via its own pre-submit snapshot.
+                print("⚠️ backfillRecipient: no new Consumed outpoint since submission; skipping stamp")
+                return
+            default:
+                // Multi-match: two address-funding flows resolved
+                // Consumed in the same window. Refuse rather than
+                // mis-attribute — better both rows show "—" in the
+                // storage explorer than a wrong attribution.
+                print("⚠️ backfillRecipient: \(newRows.count) new Consumed outpoints in delta; refusing to stamp ambiguous row")
+                return
+            }
+        } else {
+            // Legacy fallback — used when the snapshot wasn't
+            // captured (e.g. a future caller that wires up the
+            // coordinator directly). Newest-unrecipiented match.
+            // Documented race window: see the doc comment above.
+            target = matches.first
+        }
+
+        guard let lock = target else { return }
+        lock.recipientPlatformAddressHash = recipientHash
+        lock.recipientPlatformAddressType = recipientType
+        do {
+            try modelContext.save()
+        } catch {
+            // SwiftData save failure is rare (typically only on
+            // disk-full / store-corruption) but worth visible
+            // surfacing. The funding itself succeeded so we don't
+            // alert the user — just log.
+            print("⚠️ backfillRecipient: save failed: \(error)")
         }
     }
 
