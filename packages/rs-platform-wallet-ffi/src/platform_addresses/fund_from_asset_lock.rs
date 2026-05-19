@@ -49,16 +49,27 @@ pub unsafe extern "C" fn platform_address_wallet_fund_from_asset_lock(
     );
 
     let key_array = &*(private_key_bytes as *const [u8; 32]);
-    let private_key = unwrap_result_or_return!(dashcore::PrivateKey::from_byte_array(
-        key_array,
-        crate::types::Network::Mainnet,
-    ));
 
     let fee = parse_fee_strategy(fee_strategy, fee_strategy_count);
 
     let address_signer: &VTableSigner = &*(signer_address_handle as *const VTableSigner);
 
     let option = PLATFORM_ADDRESS_WALLET_STORAGE.with_item(handle, |wallet| {
+        // Pull the network from the wallet so `PrivateKey::network`
+        // matches the SPV chain we're signing for. The earlier
+        // hardcoded `Network::Mainnet` quietly produced a testnet/
+        // devnet PrivateKey wearing a mainnet label — harmless for
+        // ECDSA signing itself (the `network` field is purely a
+        // serialization tag) but a footgun if the value was ever
+        // exposed back over an FFI.
+        let private_key = match dashcore::PrivateKey::from_byte_array(key_array, wallet.network()) {
+            Ok(pk) => pk,
+            Err(e) => {
+                return Err(platform_wallet::PlatformWalletError::AddressOperation(
+                    format!("invalid asset-lock private key bytes: {e}"),
+                ));
+            }
+        };
         runtime().block_on(wallet.fund_from_asset_lock(
             account_index,
             address_map,
