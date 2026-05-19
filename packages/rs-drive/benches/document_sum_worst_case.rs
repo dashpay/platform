@@ -1544,9 +1544,7 @@ fn display_proofs(fixture: &SumBenchFixture, platform_version: &PlatformVersion)
         // prover/verifier in lock-step; every other case rides
         // the basic `Aggregate` mode.
         let (request_mode, request_limit) = match case.shape {
-            Shape::CarrierAggregate { limit, .. } => {
-                (SumMode::GroupByIn, limit.map(|l| l as u32))
-            }
+            Shape::CarrierAggregate { limit, .. } => (SumMode::GroupByIn, limit.map(|l| l as u32)),
             _ => (SumMode::Aggregate, None),
         };
         let make_request = || {

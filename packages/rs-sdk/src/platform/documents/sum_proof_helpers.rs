@@ -217,7 +217,23 @@ pub(super) fn verify_sum_query(
             ))
         }
         DocumentSumMode::RangeDistinctProof => {
-            // Same limit-clamp pattern as the carrier arm.
+            // Limit handling on the prove path:
+            // - Fallback uses [`drive::config::DEFAULT_QUERY_LIMIT`]
+            //   (compile-time constant), matching the server's
+            //   `DocumentSumMode::RangeDistinctProof` arm in
+            //   `drive_document_sum_query/drive_dispatcher.rs`.
+            //   Both sides MUST anchor to the same compile-time
+            //   value — operator-tunable
+            //   `drive_config.default_query_limit` is intentionally
+            //   NOT used here so a tuned operator default can't
+            //   byte-differ the reconstructed `SizedQuery::limit`
+            //   from the prover's.
+            // - Raw caller limit propagates unchanged on the prove
+            //   path — the server rejects over-max
+            //   (`max_query_limit`) requests with a typed
+            //   `InvalidLimit` error before producing proof bytes,
+            //   so the SDK never sees a clamped value to
+            //   un-clamp.
             let limit_u16 = if request.limit == 0 {
                 drive::config::DEFAULT_QUERY_LIMIT
             } else {

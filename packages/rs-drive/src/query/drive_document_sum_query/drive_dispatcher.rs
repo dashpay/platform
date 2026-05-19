@@ -121,14 +121,39 @@ impl Drive {
                 )?,
             )),
             DocumentSumMode::RangeDistinctProof => {
-                // Clamp the caller-supplied limit against the drive config's
-                // max before narrowing to u16. The previous `as u16` cast
-                // silently truncated values >= 65 536 and bypassed the
-                // max-limit policy from `drive_config`.
+                // Validate-don't-clamp limit policy on the prove path:
+                // client-side proof reconstruction needs the EXACT
+                // limit value the server applied to the path query
+                // (the SDK rebuilds the same `SizedQuery::limit` for
+                // merk-root recomputation). Silent clamping or a
+                // tuned `default_query_limit` would byte-differ the
+                // reconstructed path query and break verification.
+                //
+                // Limit fallback uses [`crate::config::DEFAULT_QUERY_LIMIT`]
+                // (compile-time constant), NOT
+                // `drive_config.default_query_limit` (operator-tunable
+                // runtime value). `max_query_limit` still gates the
+                // request as a DoS-protection knob — proofs never
+                // cross the operator-set ceiling, but the ceiling
+                // itself doesn't shape proof bytes; it only decides
+                // whether the request gets served.
+                //
+                // Mirrors count's policy at
+                // `drive_document_count_query::drive_dispatcher`
+                // `DocumentCountMode::RangeDistinctProof`.
                 let effective_limit = request
                     .limit
-                    .unwrap_or(request.drive_config.default_query_limit as u32)
-                    .min(request.drive_config.max_query_limit as u32);
+                    .unwrap_or(crate::config::DEFAULT_QUERY_LIMIT as u32);
+                if effective_limit > request.drive_config.max_query_limit as u32 {
+                    return Err(Error::Query(
+                        crate::error::query::QuerySyntaxError::InvalidLimit(format!(
+                            "limit {} exceeds max_query_limit {} on the prove + \
+                             distinct-walk path (GROUP BY a range field, SUM); \
+                             reduce the requested limit or use prove = false",
+                            effective_limit, request.drive_config.max_query_limit
+                        )),
+                    ));
+                }
                 let limit_u16 = u16::try_from(effective_limit).map_err(|_| {
                     Error::Query(crate::error::query::QuerySyntaxError::Unsupported(format!(
                         "limit {} exceeds u16::MAX for range-distinct sum proof",
@@ -161,14 +186,28 @@ impl Drive {
                 )?,
             )),
             DocumentSumMode::RangeAggregateCarrierProof => {
-                // Same clamp-then-try_into pattern as RangeDistinctProof
-                // above. Carrier proofs commit `(outer_key, sum)` pairs;
-                // a truncated outer-walk cap would silently change which
-                // pairs end up in the proof.
+                // Validate-don't-clamp limit policy on the prove path
+                // — same contract as RangeDistinctProof above. The
+                // carrier proof's outer-walk cap is `SizedQuery::limit`
+                // bytes-of-proof material; a silent clamp would
+                // byte-differ the SDK's reconstruction and break
+                // verification. Unlike the distinct arm, the carrier
+                // arm passes `Option<u16>` (None = unbounded outer
+                // walk), so the request's `None` stays `None` instead
+                // of falling back to a default.
                 let limit_u16 = request
                     .limit
-                    .map(|l| l.min(request.drive_config.max_query_limit as u32))
                     .map(|l| {
+                        if l > request.drive_config.max_query_limit as u32 {
+                            return Err(Error::Query(
+                                crate::error::query::QuerySyntaxError::InvalidLimit(format!(
+                                    "limit {} exceeds max_query_limit {} on the prove + \
+                                     carrier-aggregate path (GROUP BY In + range, SUM); \
+                                     reduce the requested limit or use prove = false",
+                                    l, request.drive_config.max_query_limit
+                                )),
+                            ));
+                        }
                         u16::try_from(l).map_err(|_| {
                             Error::Query(crate::error::query::QuerySyntaxError::Unsupported(
                                 format!(

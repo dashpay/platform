@@ -508,8 +508,18 @@ impl LowLevelDriveOperation {
                 )));
             }
         };
-        let tree = Element::new_non_counted(inner)
-            .expect("new_non_counted only fails when wrapping another wrapper variant");
+        // Propagate the grovedb error as a typed Drive error rather
+        // than `.expect`-ing. The match above already restricts `inner`
+        // to NormalTree / CountTree / ProvableCountTree — all of which
+        // `new_non_counted` accepts at the head this PR pins
+        // (`packages/rs-drive/Cargo.toml`'s grovedb rev) — so in
+        // practice this `?` is a no-op. Keeping it as `?` means a
+        // future grovedb bump that tightens `new_non_counted`'s
+        // accepted-variant set lands a typed `Error::GroveDB` at the
+        // call site instead of a runtime panic. The `?` conversion
+        // uses `impl From<grovedb::element::error::ElementError>`
+        // defined in `crate::error::mod.rs`.
+        let tree = Element::new_non_counted(inner)?;
         Ok(LowLevelDriveOperation::insert_for_known_path_key_element(
             path, key, tree,
         ))

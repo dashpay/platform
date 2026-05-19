@@ -97,6 +97,22 @@ impl Drive {
         // `where_clauses` + `order_clauses` + `limit` + (false) `prove`
         // — the average's shape contract is "two reads of the same
         // grovedb snapshot, zipped after."
+        //
+        // Architectural note (per maintainer feedback): a follow-up
+        // PR will collapse this into a single `DocumentCountSumRequest`
+        // + a unified `execute_document_count_and_sum_request` that
+        // walks grovedb once and reads both metrics from each visited
+        // PCPS element via `count_sum_value_or_default()`. The prove
+        // path at `execute_document_average_prove` below already does
+        // this (one PCPS walk yields both fields); the no-proof path
+        // currently double-walks. The refactor is non-trivial — it
+        // needs joint per-mode executors (Total / PerInValue /
+        // RangeNoProof) that don't exist yet on the no-proof side —
+        // and merits its own focused PR for review attention rather
+        // than getting bundled with the surface-wiring work in this
+        // PR. The current two-request shape is correct (the local
+        // transaction below guarantees atomicity); it just does more
+        // grovedb work than strictly necessary.
         let count_request = DocumentCountRequest {
             contract: request.contract,
             document_type: request.document_type,
@@ -299,13 +315,23 @@ impl Drive {
                 )?,
                 AverageMode::GroupByIn => {
                     // Carrier-PCPS: one (count, sum) per In branch.
-                    // `limit` clamps the per-branch outer walk; same
-                    // contract as sum's
-                    // `RangeAggregateCarrierProof` arm.
+                    // Validate-don't-clamp limit policy on the prove
+                    // path — `SizedQuery::limit` is bytes-of-proof
+                    // material; silent clamping would byte-differ the
+                    // SDK's reconstruction and break verification.
+                    // Same contract as sum's `RangeAggregateCarrierProof`
+                    // arm. `None` stays `None` (unbounded outer walk).
                     let limit_u16 = request
                         .limit
-                        .map(|l| l.min(request.drive_config.max_query_limit as u32))
                         .map(|l| {
+                            if l > request.drive_config.max_query_limit as u32 {
+                                return Err(Error::Query(QuerySyntaxError::InvalidLimit(format!(
+                                    "limit {} exceeds max_query_limit {} on the prove + \
+                                         carrier-aggregate path (GROUP BY In + range, AVG); \
+                                         reduce the requested limit or use prove = false",
+                                    l, request.drive_config.max_query_limit
+                                ))));
+                            }
                             u16::try_from(l).map_err(|_| {
                                 Error::Query(QuerySyntaxError::Unsupported(format!(
                                     "limit {} exceeds u16::MAX for carrier-aggregate \
@@ -358,10 +384,24 @@ impl Drive {
                         .to_string(),
                 ))
             })?;
+            // Validate-don't-clamp limit policy on the prove path —
+            // see sum's `RangeDistinctProof` arm for the full
+            // rationale. Limit fallback uses
+            // [`crate::config::DEFAULT_QUERY_LIMIT`] (compile-time
+            // constant) so the SDK's reconstruction lands on the same
+            // `SizedQuery::limit` value; `max_query_limit` still
+            // gates as a DoS ceiling.
             let effective_limit = request
                 .limit
-                .unwrap_or(request.drive_config.default_query_limit as u32)
-                .min(request.drive_config.max_query_limit as u32);
+                .unwrap_or(crate::config::DEFAULT_QUERY_LIMIT as u32);
+            if effective_limit > request.drive_config.max_query_limit as u32 {
+                return Err(Error::Query(QuerySyntaxError::InvalidLimit(format!(
+                    "limit {} exceeds max_query_limit {} on the prove + distinct-walk \
+                     path (GROUP BY a range field, AVG); reduce the requested limit \
+                     or use prove = false",
+                    effective_limit, request.drive_config.max_query_limit
+                ))));
+            }
             let limit_u16 = u16::try_from(effective_limit).map_err(|_| {
                 Error::Query(QuerySyntaxError::Unsupported(format!(
                     "limit {} exceeds u16::MAX for distinct AVG proof",
