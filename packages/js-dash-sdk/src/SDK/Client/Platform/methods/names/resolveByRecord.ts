@@ -1,5 +1,6 @@
-import { Identifier } from '@dashevo/wasm-dpp';
-import { Platform } from '../../Platform';
+import wasmDpp from '@dashevo/wasm-dpp';
+const { Identifier } = wasmDpp;
+import { Platform } from '../../Platform.js';
 
 /**
  * @param record - the exact name of the record to resolve

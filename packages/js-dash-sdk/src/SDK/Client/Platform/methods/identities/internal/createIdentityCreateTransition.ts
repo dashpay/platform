@@ -1,6 +1,10 @@
-import { PrivateKey } from '@dashevo/dashcore-lib';
-import { IdentityPublicKey } from '@dashevo/wasm-dpp';
-import { Platform } from '../../../Platform';
+import dashcore from '@dashevo/dashcore-lib';
+const { PrivateKey } = dashcore;
+import type { PrivateKey as PrivateKeyType } from '@dashevo/dashcore-lib';
+type PrivateKey = PrivateKeyType;
+import wasmDpp from '@dashevo/wasm-dpp';
+const { IdentityPublicKey } = wasmDpp;
+import { Platform } from '../../../Platform.js';
 
 /**
  * Creates a funding transaction for the platform identity

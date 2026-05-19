@@ -1,14 +1,21 @@
 import { EventEmitter } from 'events';
 import { Account, Wallet } from '@dashevo/wallet-lib';
-import DAPIClientTransport from '@dashevo/wallet-lib/src/transport/DAPIClientTransport/DAPIClientTransport';
-import { Network } from '@dashevo/dashcore-lib';
+import DAPIClientTransport from '@dashevo/wallet-lib/src/transport/DAPIClientTransport/DAPIClientTransport.js';
+import dashcore from '@dashevo/dashcore-lib';
+const { Network } = dashcore;
+import type { Network as NetworkType } from '@dashevo/dashcore-lib';
+type Network = NetworkType;
 import DAPIClient from '@dashevo/dapi-client';
-import { contractId as dpnsContractId } from '@dashevo/dpns-contract/lib/systemIds';
-import { contractId as dashpayContractId } from '@dashevo/dashpay-contract/lib/systemIds';
-import { contractId as masternodeRewardSharesContractId } from '@dashevo/masternode-reward-shares-contract/lib/systemIds';
-import { contractId as withdrawalsContractId } from '@dashevo/withdrawals-contract/lib/systemIds';
-import { Platform } from './Platform';
-import { ClientApps, ClientAppsOptions } from './ClientApps';
+import dpnsSystemIds from '@dashevo/dpns-contract/lib/systemIds.js';
+const { contractId: dpnsContractId } = dpnsSystemIds;
+import dashpaySystemIds from '@dashevo/dashpay-contract/lib/systemIds.js';
+const { contractId: dashpayContractId } = dashpaySystemIds;
+import masternodeRewardSharesSystemIds from '@dashevo/masternode-reward-shares-contract/lib/systemIds.js';
+const { contractId: masternodeRewardSharesContractId } = masternodeRewardSharesSystemIds;
+import withdrawalsSystemIds from '@dashevo/withdrawals-contract/lib/systemIds.js';
+const { contractId: withdrawalsContractId } = withdrawalsSystemIds;
+import { Platform } from './Platform/index.js';
+import { ClientApps, ClientAppsOptions } from './ClientApps.js';
 
 export interface WalletOptions extends Wallet.IWalletOptions {
   defaultAccountIndex?: number;
@@ -102,8 +109,10 @@ export class Client extends EventEmitter {
 
     // Initialize a wallet if `wallet` option is preset
     if (this.options.wallet !== undefined) {
-      if (this.options.wallet.network !== undefined
-        && this.options.wallet.network !== this.network) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const walletOpts = this.options.wallet as any;
+      if (walletOpts.network !== undefined
+        && walletOpts.network !== this.network) {
         throw new Error('Wallet and Client networks are different');
       }
 

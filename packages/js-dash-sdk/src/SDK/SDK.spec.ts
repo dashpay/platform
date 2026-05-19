@@ -1,5 +1,5 @@
 import { expect } from 'chai';
-import SDK from './index';
+import SDK from './index.js';
 import 'mocha';
 
 describe('Dash', () => {

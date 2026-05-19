@@ -1,7 +1,7 @@
-const Dash = require('dash');
+import Dash from 'dash';
 
-const wait = require('../../../lib/wait');
-const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
+import wait from '../../../lib/wait.js';
+import createClientWithFundedWallet from '../../../lib/test/createClientWithFundedWallet.js';
 
 const {
   Core: { Transaction, PrivateKey }, DAPIClient: {

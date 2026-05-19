@@ -1,9 +1,9 @@
-const Dash = require('dash');
+import Dash from 'dash';
 
-const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
+import getDataContractFixture from '../../../lib/test/fixtures/getDataContractFixture.js';
 
-const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
-const waitForSTPropagated = require('../../../lib/waitForSTPropagated');
+import createClientWithFundedWallet from '../../../lib/test/createClientWithFundedWallet.js';
+import waitForSTPropagated from '../../../lib/waitForSTPropagated.js';
 
 const {
   Errors: {

@@ -1,8 +1,8 @@
-const Dash = require('dash');
+import Dash from 'dash';
+import dpnsSystemIds from '@dashevo/dpns-contract/lib/systemIds.js';
+const { contractId } = dpnsSystemIds;
 
-const { contractId } = require('@dashevo/dpns-contract/lib/systemIds');
-
-const getDAPISeeds = require('./getDAPISeeds');
+import getDAPISeeds from './getDAPISeeds.js';
 
 function createClientWithoutWallet() {
   const dapiAddresses = (process.env.DAPI_ADDRESSES || '')
@@ -24,4 +24,4 @@ function createClientWithoutWallet() {
   });
 }
 
-module.exports = createClientWithoutWallet;
+export default createClientWithoutWallet;

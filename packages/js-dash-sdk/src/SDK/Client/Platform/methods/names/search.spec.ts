@@ -1,6 +1,6 @@
 import { expect } from 'chai';
 
-import search from './search';
+import search from './search.js';
 
 describe('Platform', () => {
   describe('Names', () => {

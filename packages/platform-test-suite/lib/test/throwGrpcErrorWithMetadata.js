@@ -1,4 +1,4 @@
-const { inspect } = require('util');
+import { inspect } from 'util';
 
 /**
  * @param {Error} e
@@ -11,4 +11,4 @@ function throwGrpcErrorWithMetadata(e) {
   throw e;
 }
 
-module.exports = throwGrpcErrorWithMetadata;
+export default throwGrpcErrorWithMetadata;

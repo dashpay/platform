@@ -1,9 +1,9 @@
-const Dash = require('dash');
+import Dash from 'dash';
 
-const getDAPISeeds = require('../../lib/test/getDAPISeeds');
+import getDAPISeeds from '../../lib/test/getDAPISeeds.js';
 
-const createClientWithFundedWallet = require('../../lib/test/createClientWithFundedWallet');
-const waitForBalanceToChange = require('../../lib/test/waitForBalanceToChange');
+import createClientWithFundedWallet from '../../lib/test/createClientWithFundedWallet.js';
+import waitForBalanceToChange from '../../lib/test/waitForBalanceToChange.js';
 
 const { EVENTS } = Dash.WalletLib;
 

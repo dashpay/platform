@@ -1,19 +1,21 @@
-import { Transaction } from '@dashevo/dashcore-lib';
+import dashcore from '@dashevo/dashcore-lib';
+const { Transaction } = dashcore;
 import DAPIClient from '@dashevo/dapi-client';
-import { StateTransitionTypes } from '@dashevo/wasm-dpp';
+import wasmDpp from '@dashevo/wasm-dpp';
+const { StateTransitionTypes } = wasmDpp;
 
-import { createFakeInstantLock } from '../../utils/createFakeIntantLock';
-import getResponseMetadataFixture from '../fixtures/getResponseMetadataFixture';
-import { createDapiClientMock } from './createDapiClientMock';
+import { createFakeInstantLock } from '../../utils/createFakeIntantLock.js';
+import getResponseMetadataFixture from '../fixtures/getResponseMetadataFixture.js';
+import { createDapiClientMock } from './createDapiClientMock.js';
 
-import { wait } from '../../utils/wait';
+import { wait } from '../../utils/wait.js';
 
-const GetIdentityResponse = require('@dashevo/dapi-client/lib/methods/platform/getIdentity/GetIdentityResponse');
-const NotFoundError = require('@dashevo/dapi-client/lib/transport/GrpcTransport/errors/NotFoundError');
+import GetIdentityResponse from '@dashevo/dapi-client/lib/methods/platform/getIdentity/GetIdentityResponse.js';
+import NotFoundError from '@dashevo/dapi-client/lib/transport/GrpcTransport/errors/NotFoundError.js';
 
-const TxStreamMock = require('@dashevo/wallet-lib/src/test/mocks/TxStreamMock');
-const TxStreamDataResponseMock = require('@dashevo/wallet-lib/src/test/mocks/TxStreamDataResponseMock');
-const TransportMock = require('@dashevo/wallet-lib/src/test/mocks/TransportMock');
+import TxStreamMock from '@dashevo/wallet-lib/src/test/mocks/TxStreamMock.js';
+import TxStreamDataResponseMock from '@dashevo/wallet-lib/src/test/mocks/TxStreamDataResponseMock.js';
+import TransportMock from '@dashevo/wallet-lib/src/test/mocks/TransportMock.js';
 
 function makeTxStreamEmitISLocksForTransactions(transportMock, txStreamMock) {
   transportMock.sendTransaction.callsFake((txString) => {

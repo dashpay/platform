@@ -1,4 +1,4 @@
-const createClientWithoutWallet = require('../../../lib/test/createClientWithoutWallet');
+import createClientWithoutWallet from '../../../lib/test/createClientWithoutWallet.js';
 
 describe('Platform', () => {
   describe('getStatus', () => {

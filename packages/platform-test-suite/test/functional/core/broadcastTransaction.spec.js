@@ -1,6 +1,6 @@
-const Dash = require('dash');
+import Dash from 'dash';
 
-const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
+import createClientWithFundedWallet from '../../../lib/test/createClientWithFundedWallet.js';
 
 const { Core: { PrivateKey } } = Dash;
 

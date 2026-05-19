@@ -1,5 +1,5 @@
-import convertToHomographSafeChars from '../../../../../utils/convertToHomographSafeChars';
-import { Platform } from '../../Platform';
+import convertToHomographSafeChars from '../../../../../utils/convertToHomographSafeChars.js';
+import { Platform } from '../../Platform.js';
 
 /**
  * This method will allow you to resolve a DPNS record from its humanized name.

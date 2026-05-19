@@ -1,8 +1,15 @@
-import { Identity, IdentityPublicKey } from '@dashevo/wasm-dpp';
-import { Platform } from '../../Platform';
-import { signStateTransition } from '../../signStateTransition';
+import wasmDpp from '@dashevo/wasm-dpp';
+const { Identity, IdentityPublicKey } = wasmDpp;
+import type {
+  Identity as IdentityType,
+  IdentityPublicKey as IdentityPublicKeyType,
+} from '@dashevo/wasm-dpp';
+type Identity = IdentityType;
+type IdentityPublicKey = IdentityPublicKeyType;
+import { Platform } from '../../Platform.js';
+import { signStateTransition } from '../../signStateTransition.js';
 
-import broadcastStateTransition from '../../broadcastStateTransition';
+import broadcastStateTransition from '../../broadcastStateTransition.js';
 
 /**
  * Update platform identities

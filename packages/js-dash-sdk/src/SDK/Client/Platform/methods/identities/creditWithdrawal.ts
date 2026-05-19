@@ -1,10 +1,16 @@
-import { Identity } from '@dashevo/wasm-dpp';
-import { Address, Script } from '@dashevo/dashcore-lib';
-import { Metadata } from '@dashevo/dapi-client/lib/methods/platform/response/Metadata';
-import broadcastStateTransition from '../../broadcastStateTransition';
-import { Platform } from '../../Platform';
-import { signStateTransition } from '../../signStateTransition';
-import { nearestGreaterFibonacci } from '../../../../../utils/fibonacci';
+import wasmDpp from '@dashevo/wasm-dpp';
+const { Identity } = wasmDpp;
+import type { Identity as IdentityType } from '@dashevo/wasm-dpp';
+type Identity = IdentityType;
+import dashcore from '@dashevo/dashcore-lib';
+const { Address, Script } = dashcore;
+import type { Address as AddressType } from '@dashevo/dashcore-lib';
+type Address = AddressType;
+import { Metadata } from '@dashevo/dapi-client/lib/methods/platform/response/Metadata.js';
+import broadcastStateTransition from '../../broadcastStateTransition.js';
+import { Platform } from '../../Platform.js';
+import { signStateTransition } from '../../signStateTransition.js';
+import { nearestGreaterFibonacci } from '../../../../../utils/fibonacci.js';
 
 export const STATUSES = {
   PENDING: 0,

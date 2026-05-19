@@ -1,5 +1,5 @@
-const crypto = require('crypto');
-const Dash = require('dash');
+import crypto from 'crypto';
+import Dash from 'dash';
 
 const { Platform } = Dash;
 
@@ -13,4 +13,4 @@ async function generateRandomIdentifier() {
   return new Identifier(crypto.randomBytes(32));
 }
 
-module.exports = generateRandomIdentifier;
+export default generateRandomIdentifier;

@@ -1,10 +1,14 @@
-const path = require('path');
-const dotenvSafe = require('dotenv-safe');
-const sinon = require('sinon');
-const sinonChai = require('sinon-chai');
-const { use } = require('chai');
-const dirtyChai = require('dirty-chai');
-const chaiAsPromised = require('chai-as-promised');
+import path from 'path';
+import { fileURLToPath } from 'url';
+import dotenvSafe from 'dotenv-safe';
+import sinon from 'sinon';
+import sinonChai from 'sinon-chai';
+import { use } from 'chai';
+import dirtyChai from 'dirty-chai';
+import chaiAsPromised from 'chai-as-promised';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 if (process.env.LOAD_ENV === 'true') {
   dotenvSafe.config({
@@ -16,7 +20,7 @@ use(dirtyChai);
 use(sinonChai);
 use(chaiAsPromised);
 
-exports.mochaHooks = {
+export const mochaHooks = {
   beforeEach() {
     if (!this.sinon) {
       this.sinon = sinon.createSandbox();

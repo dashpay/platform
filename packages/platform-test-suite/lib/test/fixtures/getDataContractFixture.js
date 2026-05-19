@@ -1,7 +1,7 @@
-const Dash = require('dash');
+import Dash from 'dash';
 
-const crypto = require('crypto');
-const generateRandomIdentifier = require('../utils/generateRandomIdentifier');
+import crypto from 'crypto';
+import generateRandomIdentifier from '../utils/generateRandomIdentifier.js';
 
 const {
   Platform,
@@ -14,7 +14,7 @@ let randomOwnerId = null;
  * @param {Identifier} [ownerId]
  * @return {Promise<DataContract>}
  */
-module.exports = async function getDataContractFixture(
+export default async function getDataContractFixture(
   identityNonce,
   ownerId = randomOwnerId,
 ) {
@@ -152,4 +152,4 @@ module.exports = async function getDataContractFixture(
   };
 
   return factory.create(ownerId, BigInt(identityNonce), documents, config);
-};
+}

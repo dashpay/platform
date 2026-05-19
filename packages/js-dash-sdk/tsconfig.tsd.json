@@ -1,7 +1,9 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "target": "es6",
+    "target": "es2020",
+    "module": "nodenext",
+    "moduleResolution": "nodenext"
   },
   "include": ["test-d/**/*.ts"]
 }

@@ -1,6 +1,6 @@
 exit: true
 timeout: 650000
-require:
+import:
   - ./lib/test/bootstrap.js
 parallel: true
 jobs: 2

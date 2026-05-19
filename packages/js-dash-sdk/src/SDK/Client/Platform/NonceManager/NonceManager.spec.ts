@@ -1,6 +1,7 @@
-import { Identifier } from '@dashevo/wasm-dpp';
+import wasmDpp from '@dashevo/wasm-dpp';
+const { Identifier } = wasmDpp;
 import { expect } from 'chai';
-import NonceManager, { NONCE_FETCH_INTERVAL } from './NonceManager';
+import NonceManager, { NONCE_FETCH_INTERVAL } from './NonceManager.js';
 
 describe('Dash - NonceManager', () => {
   let nonceManager: NonceManager;

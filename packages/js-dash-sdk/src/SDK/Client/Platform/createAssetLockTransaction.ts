@@ -1,8 +1,19 @@
-import {
-  PrivateKey, Transaction, Script, Address, Opcode,
+import dashcore from '@dashevo/dashcore-lib';
+const {
+  PrivateKey,
+  Transaction,
+  Script,
+  Address,
+  Opcode,
+} = dashcore;
+import type {
+  PrivateKey as PrivateKeyType,
+  Transaction as TransactionType,
 } from '@dashevo/dashcore-lib';
+type PrivateKey = PrivateKeyType;
+type Transaction = TransactionType;
 import { utils } from '@dashevo/wallet-lib';
-import { Platform } from './Platform';
+import { Platform } from './Platform.js';
 
 // We're creating a new transaction every time and the index is always 0
 const ASSET_LOCK_OUTPUT_INDEX = 0;

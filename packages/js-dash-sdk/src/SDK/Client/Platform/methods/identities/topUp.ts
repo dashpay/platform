@@ -1,7 +1,10 @@
-import { Identifier } from '@dashevo/wasm-dpp';
-import { Platform } from '../../Platform';
+import wasmDpp from '@dashevo/wasm-dpp';
+const { Identifier } = wasmDpp;
+import type { Identifier as IdentifierType } from '@dashevo/wasm-dpp';
+type Identifier = IdentifierType;
+import { Platform } from '../../Platform.js';
 
-import broadcastStateTransition from '../../broadcastStateTransition';
+import broadcastStateTransition from '../../broadcastStateTransition.js';
 
 /**
  * Register identities to the platform

@@ -1,15 +1,18 @@
 import DAPIClient from '@dashevo/dapi-client';
-import { Identifier } from '@dashevo/wasm-dpp/dist';
-import { GetDataContractResponse } from '@dashevo/dapi-client/lib/methods/platform/getDataContract/GetDataContractResponse';
-import { GetIdentityResponse } from '@dashevo/dapi-client/lib/methods/platform/getIdentity/GetIdentityResponse';
+import wasmDpp from '@dashevo/wasm-dpp';
+const { Identifier } = wasmDpp;
+import type { Identifier as IdentifierType } from '@dashevo/wasm-dpp';
+type Identifier = IdentifierType;
+import { GetDataContractResponse } from '@dashevo/dapi-client/lib/methods/platform/getDataContract/GetDataContractResponse.js';
+import { GetIdentityResponse } from '@dashevo/dapi-client/lib/methods/platform/getIdentity/GetIdentityResponse.js';
 
-import NotFoundError from '@dashevo/dapi-client/lib/transport/GrpcTransport/errors/NotFoundError';
-import { GetDocumentsResponse } from '@dashevo/dapi-client/lib/methods/platform/getDocuments/GetDocumentsResponse';
+import NotFoundError from '@dashevo/dapi-client/lib/transport/GrpcTransport/errors/NotFoundError.js';
+import { GetDocumentsResponse } from '@dashevo/dapi-client/lib/methods/platform/getDocuments/GetDocumentsResponse.js';
 import {
   GetDataContractHistoryResponse,
-} from '@dashevo/dapi-client/lib/methods/platform/getDataContractHistory/GetDataContractHistoryResponse';
-import withRetry from './withRetry';
-import { QueryOptions } from '../types';
+} from '@dashevo/dapi-client/lib/methods/platform/getDataContractHistory/GetDataContractHistoryResponse.js';
+import withRetry from './withRetry.js';
+import { QueryOptions } from '../types.js';
 
 type FetcherOptions = {
   /**

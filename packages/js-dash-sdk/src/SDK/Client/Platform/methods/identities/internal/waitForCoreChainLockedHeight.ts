@@ -1,4 +1,4 @@
-import { Platform } from '../../../Platform';
+import { Platform } from '../../../Platform.js';
 
 export async function waitForCoreChainLockedHeight(
   this : Platform,

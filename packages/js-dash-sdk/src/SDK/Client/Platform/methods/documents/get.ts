@@ -1,8 +1,9 @@
-import { Identifier, ExtendedDocument, Metadata } from '@dashevo/wasm-dpp';
-import { GetDocumentsResponse } from '@dashevo/dapi-client/lib/methods/platform/getDocuments/GetDocumentsResponse';
-import NotFoundError from '@dashevo/dapi-client/lib/transport/GrpcTransport/errors/NotFoundError';
-import { Platform } from '../../Platform';
-import { QueryOptions, WhereCondition } from '../../types';
+import wasmDpp from '@dashevo/wasm-dpp';
+const { Identifier, ExtendedDocument, Metadata } = wasmDpp;
+import { GetDocumentsResponse } from '@dashevo/dapi-client/lib/methods/platform/getDocuments/GetDocumentsResponse.js';
+import NotFoundError from '@dashevo/dapi-client/lib/transport/GrpcTransport/errors/NotFoundError.js';
+import { Platform } from '../../Platform.js';
+import { QueryOptions, WhereCondition } from '../../types.js';
 
 /**
  * Prefetch contract

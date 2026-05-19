@@ -1,6 +1,6 @@
-import { Platform } from '../../Platform';
+import { Platform } from '../../Platform.js';
 
-import convertToHomographSafeChars from '../../../../../utils/convertToHomographSafeChars';
+import convertToHomographSafeChars from '../../../../../utils/convertToHomographSafeChars.js';
 
 /**
  *

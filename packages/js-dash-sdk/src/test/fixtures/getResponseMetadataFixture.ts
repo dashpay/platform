@@ -1,4 +1,4 @@
-const Metadata = require('@dashevo/dapi-client/lib/methods/platform/response/Metadata');
+import Metadata from '@dashevo/dapi-client/lib/methods/platform/response/Metadata.js';
 
 function getResponseMetadataFixture() {
   const metadata = {

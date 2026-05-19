@@ -1,11 +1,11 @@
-const Dash = require('dash');
+import Dash from 'dash';
 
-const { createFakeInstantLock } = require('dash/build/utils/createFakeIntantLock');
+import { createFakeInstantLock } from 'dash/build/utils/createFakeIntantLock.js';
 
-const { hash, sha256 } = require('@dashevo/wasm-dpp/lib/utils/hash');
-const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
-const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
-const waitForSTPropagated = require('../../../lib/waitForSTPropagated');
+import { hash, sha256 } from '@dashevo/wasm-dpp/lib/utils/hash.js';
+import getDataContractFixture from '../../../lib/test/fixtures/getDataContractFixture.js';
+import createClientWithFundedWallet from '../../../lib/test/createClientWithFundedWallet.js';
+import waitForSTPropagated from '../../../lib/waitForSTPropagated.js';
 
 const {
   Essentials: {

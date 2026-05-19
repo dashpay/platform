@@ -1,3 +1,3 @@
-module.exports = function wait(ms) {
+export default function wait(ms) {
   return new Promise((res) => { setTimeout(res, ms); });
-};
+}

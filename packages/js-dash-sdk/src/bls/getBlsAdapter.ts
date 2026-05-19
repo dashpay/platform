@@ -1,7 +1,9 @@
-import loadBLS from '@dashevo/bls';
-import { Buffer } from 'buffer';
+import * as blsModule from '@dashevo/bls';
 
 export default async (): Promise<any> => {
+  // @dashevo/bls exposes a callable factory; types declare it as a namespace.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const loadBLS = ((blsModule as any).default ?? blsModule) as () => Promise<any>;
   const bls = await loadBLS();
 
   return {

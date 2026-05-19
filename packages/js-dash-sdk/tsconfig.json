@@ -1,15 +1,16 @@
 {
   "compilerOptions": {
     "target": "es2020",
-    "module": "commonjs",
-    "lib": ["es6", "dom"],
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "lib": ["es2020", "dom"],
     "skipLibCheck": true,
     "strict": true,
     "allowUmdGlobalAccess": true,
     "noImplicitAny": false,
     "esModuleInterop": true,
     "resolveJsonModule": true,
-    "allowJs": true,
+    "allowJs": true
   },
   "include": [
     "src/**/*"
