@@ -184,6 +184,154 @@ fn upsert_sync_state(
     Ok(())
 }
 
+/// Bulk-reconstruct the keyless [`CoreChangeSet`] projection for one
+/// wallet from the `core_*` tables.
+///
+/// The manager applies this onto a freshly-minted `ManagedWalletInfo`
+/// (built from the re-derived wallet that already passed the
+/// wrong-account gate). It mints no `Wallet` (PUBLIC material only).
+///
+/// # Reconstructed (safety-critical-correct)
+///
+/// - **Unspent UTXOs** (`new_utxos`): every `spent = 0` row, with the
+///   address recovered from the persisted `script` + `network`. These
+///   drive the wallet-balance recompute downstream — the no-silent-zero
+///   guarantee. A row carrying a block `height` is marked confirmed so
+///   it lands in the `confirmed` bucket; the wallet total is exact
+///   either way.
+/// - **Transaction records** (`records`): every `record_blob`,
+///   decoded bit-exact. Fail-hard on a corrupt blob.
+/// - **IS-locks** (`instant_locks_for_non_final_records`): every
+///   `core_instant_locks` row.
+/// - **Sync watermarks**: `synced_height` / `last_processed_height`
+///   from `core_sync_state`.
+///
+/// # Deferred to the first post-load `sync` (safe re-warm)
+///
+/// - **`last_applied_chain_lock`**: NOT a V001 column and never written
+///   by [`apply`]; left `None`. SPV re-applies a fresh chainlock on the
+///   first post-restart sync, at which point the asset-lock
+///   proof-resume metadata fallback can fire. (This is the documented
+///   deviation from the dev-plan §5: persisting the chainlock would
+///   require a schema migration + write-path change, both outside the
+///   no-migration constraint and the read-only scope of this reader.)
+/// - **Per-account UTXO attribution / `is_coinbase` / `is_instantlocked`
+///   / `is_trusted` flags**: `core_utxos` does not carry them;
+///   conservatively defaulted and refreshed on the next scan. The
+///   wallet *total* balance is unaffected.
+/// - **`core_derived_addresses` `used` flags**: not part of the
+///   balance projection; the gap-limit re-warms on the next scan.
+///
+/// `network` is the wallet's network (from `wallet_metadata`), needed
+/// to turn a persisted `script` back into an `Address`.
+pub fn load_state(
+    conn: &Connection,
+    wallet_id: &WalletId,
+    network: dashcore::Network,
+) -> Result<CoreChangeSet, WalletStorageError> {
+    let mut cs = CoreChangeSet::default();
+
+    // --- Unspent UTXOs → new_utxos (balance source) ---
+    {
+        let mut stmt = conn.prepare(
+            "SELECT outpoint, value, script, height FROM core_utxos \
+             WHERE wallet_id = ?1 AND spent = 0",
+        )?;
+        let rows = stmt.query_map(params![wallet_id.as_slice()], |row| {
+            let op: Vec<u8> = row.get(0)?;
+            let value: i64 = row.get(1)?;
+            let script: Vec<u8> = row.get(2)?;
+            let height: Option<i64> = row.get(3)?;
+            Ok((op, value, script, height))
+        })?;
+        for r in rows {
+            let (op_bytes, value, script_bytes, height) = r?;
+            let outpoint = blob::decode_outpoint(&op_bytes)?;
+            let value = crate::sqlite::util::safe_cast::i64_to_u64("core_utxos.value", value)?;
+            let height_u32 = match height {
+                None => 0u32,
+                Some(h) => u32::try_from(h).map_err(|_| WalletStorageError::IntegerOverflow {
+                    field: "core_utxos.height",
+                    value: h as u64,
+                    target: crate::sqlite::util::safe_cast::SafeCastTarget::U64,
+                })?,
+            };
+            let script = dashcore::ScriptBuf::from_bytes(script_bytes);
+            let address = dashcore::Address::from_script(&script, network)
+                .map_err(|_| WalletStorageError::blob_decode("core_utxos.script not an address"))?;
+            let confirmed = height.map(|h| h > 0).unwrap_or(false);
+            let utxo = Utxo {
+                outpoint,
+                txout: dashcore::TxOut {
+                    value,
+                    script_pubkey: script,
+                },
+                address,
+                height: height_u32,
+                is_coinbase: false,
+                is_confirmed: confirmed,
+                is_instantlocked: false,
+                is_locked: false,
+                is_trusted: false,
+            };
+            cs.new_utxos.push(utxo);
+        }
+    }
+
+    // --- Transaction records (fail-hard on corrupt blob) ---
+    {
+        let mut stmt =
+            conn.prepare("SELECT record_blob FROM core_transactions WHERE wallet_id = ?1")?;
+        let rows = stmt.query_map(params![wallet_id.as_slice()], |row| {
+            row.get::<_, Vec<u8>>(0)
+        })?;
+        for r in rows {
+            let payload = r?;
+            cs.records
+                .push(blob::decode::<TransactionRecord>(&payload)?);
+        }
+    }
+
+    // --- IS-locks ---
+    {
+        let mut stmt =
+            conn.prepare("SELECT txid, islock_blob FROM core_instant_locks WHERE wallet_id = ?1")?;
+        let rows = stmt.query_map(params![wallet_id.as_slice()], |row| {
+            let txid: Vec<u8> = row.get(0)?;
+            let blob_bytes: Vec<u8> = row.get(1)?;
+            Ok((txid, blob_bytes))
+        })?;
+        for r in rows {
+            use dashcore::hashes::Hash;
+            let (txid_bytes, blob_bytes) = r?;
+            let txid = dashcore::Txid::from_slice(&txid_bytes)
+                .map_err(|_| WalletStorageError::blob_decode("core_instant_locks.txid"))?;
+            let islock: dashcore::ephemerealdata::instant_lock::InstantLock =
+                blob::decode(&blob_bytes)?;
+            cs.instant_locks_for_non_final_records.insert(txid, islock);
+        }
+    }
+
+    // --- Sync watermarks ---
+    if let Some((lp, sy)) = conn
+        .query_row(
+            "SELECT last_processed_height, synced_height FROM core_sync_state WHERE wallet_id = ?1",
+            params![wallet_id.as_slice()],
+            |row| {
+                let lp: Option<i64> = row.get(0)?;
+                let sy: Option<i64> = row.get(1)?;
+                Ok((lp, sy))
+            },
+        )
+        .optional()?
+    {
+        cs.last_processed_height = lp.and_then(|v| u32::try_from(v).ok());
+        cs.synced_height = sy.and_then(|v| u32::try_from(v).ok());
+    }
+
+    Ok(cs)
+}
+
 /// Fetch a single transaction record by txid. Returns `Ok(None)` if
 /// absent.
 pub fn get_tx_record(
