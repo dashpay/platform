@@ -2,7 +2,7 @@ import SwiftUI
 import SwiftData
 import SwiftDashSDK
 
-/// Embeddable 4-step progress section for an address-funding flow.
+/// Embeddable 5-step progress section for an address-funding flow.
 /// Mirrors [`RegistrationProgressSection`] but for
 /// `AddressFundingFromAssetLockTransition`.
 ///
@@ -15,14 +15,21 @@ import SwiftDashSDK
 ///   3. Waiting for InstantSend proof → activeLock `statusRaw == 1` and
 ///                                      between `broadcastingWindow`
 ///                                      and `instantLockTimeout`
-///   3a. Waiting for ChainLock proof  → activeLock `statusRaw == 1` and
-///                                      >= `instantLockTimeout`; or
+///   4. Waiting for ChainLock proof   → activeLock `statusRaw == 1` and
+///                                      >= `instantLockTimeout` (Rust
+///                                      side has fallen back to CL);
+///                                      also done when
 ///                                      `statusRaw == 3` (CL-locked).
-///                                      Rendered as "step 3" in the UI
-///                                      with a CL-specific footer so
-///                                      step count stays at 4.
-///   4. Funding platform address      → activeLock `statusRaw ∈ {2, 3}`
+///   5. Funding platform address      → activeLock `statusRaw ∈ {2, 3}`
 ///                                      AND controller still `.inFlight`
+///
+/// Exactly one of steps 3/4 is `.skipped` on a successful resolution:
+/// step 4 is skipped when IS came back first (statusRaw == 2),
+/// step 3 is skipped when CL did (statusRaw == 3, whether via
+/// IS-timeout fallback or the `metadata.last_applied_chain_lock`
+/// direct path). The faded checkmark distinguishes "passed through"
+/// from "engaged" so users can see which finality lane resolved
+/// the lock.
 ///
 /// `.completed` is the *terminal* state and is not a separate step;
 /// the parent `AddressFundingProgressView` renders the "Address
@@ -67,23 +74,22 @@ struct AddressFundingProgressSection: View {
 
     var body: some View {
         // Same TimelineView pattern as RegistrationProgressSection
-        // so the elapsed-time heuristic distinguishing step 2 / 3
+        // so the elapsed-time heuristic distinguishing step 2 / 3 / 4
         // refreshes without an external timer.
         TimelineView(.periodic(from: .now, by: 1.0)) { timeline in
             let now = timeline.date
             let step = currentStep(now: now)
             let isFailed = isFailed
             let errorMessage = failureMessage
-            let chainLockFallbackEngaged = isInChainLockFallback(now: now)
 
             Section {
-                ForEach(1...4, id: \.self) { idx in
+                ForEach(1...5, id: \.self) { idx in
                     stepRow(
                         index: idx,
-                        title: stepTitle(idx, chainLockFallback: chainLockFallbackEngaged),
+                        title: stepTitle(idx),
                         state: stepState(idx, currentStep: step, isFailed: isFailed)
                     )
-                    if idx == 4, let message = errorMessage {
+                    if idx == 5, let message = errorMessage {
                         Text(message)
                             .font(.caption)
                             .foregroundColor(.red)
@@ -93,7 +99,7 @@ struct AddressFundingProgressSection: View {
             } header: {
                 Text("Funding Progress")
             } footer: {
-                Text(footerText(step: step, isFailed: isFailed, chainLockFallback: chainLockFallbackEngaged))
+                Text(footerText(step: step, isFailed: isFailed))
                     .font(.caption2)
                     .foregroundColor(.secondary)
             }
@@ -102,7 +108,7 @@ struct AddressFundingProgressSection: View {
 
     // MARK: - Step computation
 
-    /// 1...4, current active step. On `.completed` we report 5 (one
+    /// 1...5, current active step. On `.completed` we report 6 (one
     /// past the last visual step) so all rows render as `.done`;
     /// the terminal "Address funded" banner is rendered by the
     /// parent view, not by this section.
@@ -111,17 +117,20 @@ struct AddressFundingProgressSection: View {
         case .idle:
             return 1
         case .completed:
-            return 5
+            // No visible "funded" step — terminalSection on
+            // `AddressFundingProgressView` carries that state.
+            // Return 6 so every step row (1...5) is marked `.done`.
+            return 6
         case .failed:
             if let lock = activeLocks.first {
                 switch lock.statusRaw {
                 case 0: return 1
                 case 1: return broadcastSubStep(for: lock, now: now)
-                case 2, 3: return 4
+                case 2, 3: return 5
                 default: return 1
                 }
             }
-            return 4
+            return 5
         case .inFlight:
             guard let lock = activeLocks.first else { return 1 }
             switch lock.statusRaw {
@@ -129,38 +138,59 @@ struct AddressFundingProgressSection: View {
                 return 1
             case 1:
                 return broadcastSubStep(for: lock, now: now)
-            case 2, 3:
-                // IS-locked or CL-locked → submitting the ST.
-                return 4
+            case 2:
+                // InstantSend-locked. Never went through step 4
+                // (CL fallback); it stays as `.skipped`.
+                return 5
+            case 3:
+                // ChainLock-locked. Step 3 (IS) is skipped (no IS
+                // proof was observed — either IS timed out and CL
+                // fallback ran, or `metadata.last_applied_chain_lock`
+                // built a CL proof directly). Step 4 done.
+                return 5
             default:
                 return 1
             }
         }
     }
 
-    /// Resolve which of steps 2/3 is "active" while the lock is at
-    /// `statusRaw == 1`. Brief broadcasting window first, then IS
-    /// wait, then CL fallback (which still renders as step 3 with a
-    /// CL-specific footer so the step count stays at 4).
+    /// Resolve which of steps 2/3/4 is "active" while the lock is at
+    /// `statusRaw == 1`. Uses elapsed time since the row's last
+    /// update as the anchor: brief broadcasting window first, then
+    /// IS wait until the Rust-side timeout, then the CL fallback.
     private func broadcastSubStep(for lock: PersistentAssetLock, now: Date) -> Int {
         let elapsed = now.timeIntervalSince(lock.updatedAt)
         if elapsed < Self.broadcastingWindow { return 2 }
-        return 3
+        if elapsed < Self.instantLockTimeout { return 3 }
+        return 4
     }
 
-    /// Returns true once the IS wait has rolled over to the CL
-    /// fallback window. Drives the step-3 title swap and the
-    /// footer text so the user knows the IS branch was abandoned.
-    private func isInChainLockFallback(now: Date) -> Bool {
+    /// True when step 4 should appear "skipped" rather than
+    /// "active" — i.e. the lock came back InstantSend-locked
+    /// (statusRaw == 2) so the CL fallback was never needed.
+    private var step4WasSkipped: Bool {
         guard let lock = activeLocks.first else { return false }
-        switch lock.statusRaw {
-        case 1:
-            return now.timeIntervalSince(lock.updatedAt) >= Self.instantLockTimeout
-        case 3:
-            return true
-        default:
-            return false
-        }
+        return lock.statusRaw == 2
+    }
+
+    /// True when step 3 ("Waiting for InstantSend proof") should
+    /// appear "skipped" — i.e. no IS proof was observed during the
+    /// step-3 window. Symmetric to `step4WasSkipped`:
+    ///
+    /// - `statusRaw == 3` — CL-locked. Either IS timed out and the
+    ///   CL fallback ran, OR `wait_for_proof`'s
+    ///   `metadata.last_applied_chain_lock` fallback built a Chain
+    ///   proof directly without ever attempting IS.
+    /// - `statusRaw == 1` + elapsed past the IS deadline. The lock
+    ///   is still Broadcast but `broadcastSubStep` has advanced to
+    ///   step 4 (CL wait) because IS didn't materialize within
+    ///   `instantLockTimeout`. The guard on `idx < currentStep` in
+    ///   `stepState` means this branch only matters when we're past
+    ///   step 3 anyway, so a simple `statusRaw != 2` covers it
+    ///   cleanly.
+    private var step3WasSkipped: Bool {
+        guard let lock = activeLocks.first else { return false }
+        return lock.statusRaw != 2
     }
 
     private var isFailed: Bool {
@@ -173,26 +203,41 @@ struct AddressFundingProgressSection: View {
         return nil
     }
 
-    private func stepTitle(_ idx: Int, chainLockFallback: Bool) -> String {
+    private func stepTitle(_ idx: Int) -> String {
         switch idx {
         case 1: return "Building asset-lock transaction"
         case 2: return "Broadcasting"
-        case 3:
-            return chainLockFallback
-                ? "Waiting for ChainLock proof"
-                : "Waiting for InstantSend proof"
-        case 4: return "Funding platform address"
+        case 3: return "Waiting for InstantSend proof"
+        case 4: return "Waiting for ChainLock proof"
+        case 5: return "Funding platform address"
         default: return ""
         }
     }
 
-    enum StepState { case done, active, pending, failed }
+    /// Step-state classification. Drives the icon + tint on the
+    /// row. `.skipped` is a softer pending variant for the IS or
+    /// CL step the wallet didn't engage on the successful path —
+    /// visually distinguishable so users don't think the step
+    /// "didn't happen yet" once we've moved past it.
+    enum StepState { case done, active, pending, skipped, failed }
 
     private func stepState(_ idx: Int, currentStep: Int, isFailed: Bool) -> StepState {
         if isFailed && idx == currentStep {
             return .failed
         }
         if idx < currentStep {
+            // Steps 3 and 4 are the IS / CL halves of the proof
+            // round: exactly one of them is skipped on a successful
+            // resolution. Step 4 skipped when IS came back first
+            // (statusRaw == 2); step 3 skipped when CL did
+            // (statusRaw == 3, whether via IS-timeout fallback or
+            // the direct `last_applied_chain_lock` path).
+            if idx == 3 && step3WasSkipped {
+                return .skipped
+            }
+            if idx == 4 && step4WasSkipped {
+                return .skipped
+            }
             return .done
         }
         if idx == currentStep {
@@ -236,6 +281,13 @@ struct AddressFundingProgressSection: View {
                     .font(.caption2)
                     .foregroundColor(.secondary)
             }
+        case .skipped:
+            // Lighter checkmark to communicate "we passed this step
+            // but didn't need it" — IS came back fast so CL was
+            // skipped, or CL resolved directly so IS was skipped.
+            Image(systemName: "checkmark.circle")
+                .foregroundColor(.secondary)
+                .font(.title3)
         case .failed:
             Image(systemName: "xmark.octagon.fill")
                 .foregroundColor(.red)
@@ -248,23 +300,21 @@ struct AddressFundingProgressSection: View {
         case .done: return .primary
         case .active: return .primary
         case .pending: return .secondary
+        case .skipped: return .secondary
         case .failed: return .red
         }
     }
 
-    private func footerText(step: Int, isFailed: Bool, chainLockFallback: Bool) -> String {
+    private func footerText(step: Int, isFailed: Bool) -> String {
         if isFailed {
             return "Tap Dismiss to clear this entry."
         }
         switch step {
         case 1: return "Building a Core asset-lock transaction from wallet funds."
         case 2: return "Sending the asset-lock transaction to peers."
-        case 3:
-            return chainLockFallback
-                ? "InstantSend timed out; falling back to ChainLock finality (~2 min)."
-                : "Waiting for the InstantSend lock so the asset-lock proof is final."
-        case 4: return "Submitting the AddressFundingFromAssetLock state transition to Platform."
-        case 5: return "Address funded."
+        case 3: return "Waiting for the InstantSend lock so the asset-lock proof is final."
+        case 4: return "InstantSend timed out; falling back to ChainLock finality (~2 min)."
+        case 5: return "Submitting the AddressFundingFromAssetLock state transition to Platform."
         default: return ""
         }
     }
