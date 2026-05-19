@@ -1,6 +1,6 @@
 import { expect } from 'chai';
 
-import resolve from './resolve';
+import resolve from './resolve.js';
 
 describe('Platform', () => {
   describe('Names', () => {

@@ -1,4 +1,7 @@
-import { InstantLock } from '@dashevo/dashcore-lib';
+import dashcore from '@dashevo/dashcore-lib';
+const { InstantLock } = dashcore;
+import type { InstantLock as InstantLockType } from '@dashevo/dashcore-lib';
+type InstantLock = InstantLockType;
 
 export function createFakeInstantLock(transactionHash: string): InstantLock {
   return new InstantLock({

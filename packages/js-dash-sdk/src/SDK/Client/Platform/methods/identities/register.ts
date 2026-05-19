@@ -1,5 +1,5 @@
-import { Platform } from '../../Platform';
-import broadcastStateTransition from '../../broadcastStateTransition';
+import { Platform } from '../../Platform.js';
+import broadcastStateTransition from '../../broadcastStateTransition.js';
 
 /**
  * Register identities to the platform

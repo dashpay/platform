@@ -1,18 +1,4 @@
-import {
-    Transaction as _Transaction,
-    Address as _Address,
-    Block as _Block,
-    UnspentOutput as _UnspentOutput,
-    HDPublicKey as _HDPublicKey,
-    HDPrivateKey as _HDPrivateKey,
-    Mnemonic as _Mnemonic,
-    Network as _Network,
-    Input as _Input,
-    Output as _Output,
-    Script as _Script,
-    PublicKey as _PublicKey,
-    PrivateKey as _PrivateKey
-} from '@dashevo/dashcore-lib';
+import { Transaction as _Transaction, Address as _Address, Block as _Block, UnspentOutput as _UnspentOutput, HDPublicKey as _HDPublicKey, HDPrivateKey as _HDPrivateKey, Mnemonic as _Mnemonic, Network as _Network, Input as _Input, Output as _Output, Script as _Script, PublicKey as _PublicKey, PrivateKey as _PrivateKey } from '@dashevo/dashcore-lib';
 
 export declare namespace Core {
     export type Transaction = _Transaction;

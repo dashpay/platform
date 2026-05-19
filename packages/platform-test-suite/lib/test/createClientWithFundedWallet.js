@@ -1,14 +1,13 @@
-const Dash = require('dash');
+import Dash from 'dash';
 
-const fundWallet = require('@dashevo/wallet-lib/src/utils/fundWallet');
+import fundWallet from '@dashevo/wallet-lib/src/utils/fundWallet.js';
 
-const {
-  contractId: dpnsContractId,
-} = require('@dashevo/dpns-contract/lib/systemIds');
+import dpnsSystemIds from '@dashevo/dpns-contract/lib/systemIds.js';
+const { contractId: dpnsContractId } = dpnsSystemIds;
 
-const getDAPISeeds = require('./getDAPISeeds');
+import getDAPISeeds from './getDAPISeeds.js';
 
-const createFaucetClient = require('./createFaucetClient');
+import createFaucetClient from './createFaucetClient.js';
 
 let faucetClient;
 
@@ -76,4 +75,4 @@ async function createClientWithFundedWallet(amount, HDPrivateKey = undefined) {
   return client;
 }
 
-module.exports = createClientWithFundedWallet;
+export default createClientWithFundedWallet;

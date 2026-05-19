@@ -1,4 +1,11 @@
-import { Identifier, ExtendedDocument } from '@dashevo/wasm-dpp';
+import wasmDpp from '@dashevo/wasm-dpp';
+const { Identifier, ExtendedDocument } = wasmDpp;
+import type {
+  Identifier as IdentifierType,
+  ExtendedDocument as ExtendedDocumentType,
+} from '@dashevo/wasm-dpp';
+type Identifier = IdentifierType;
+type ExtendedDocument = ExtendedDocumentType;
 
 /**
  * @param {WhereCondition[]} [where] - where

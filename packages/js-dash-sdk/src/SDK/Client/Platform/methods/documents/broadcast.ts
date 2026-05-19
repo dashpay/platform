@@ -1,7 +1,10 @@
-import { ExtendedDocument } from '@dashevo/wasm-dpp';
-import { Platform } from '../../Platform';
-import broadcastStateTransition from '../../broadcastStateTransition';
-import { signStateTransition } from '../../signStateTransition';
+import wasmDpp from '@dashevo/wasm-dpp';
+const { ExtendedDocument } = wasmDpp;
+import type { ExtendedDocument as ExtendedDocumentType } from '@dashevo/wasm-dpp';
+type ExtendedDocument = ExtendedDocumentType;
+import { Platform } from '../../Platform.js';
+import broadcastStateTransition from '../../broadcastStateTransition.js';
+import { signStateTransition } from '../../signStateTransition.js';
 
 /**
  * Broadcast document onto the platform

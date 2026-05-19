@@ -1,4 +1,7 @@
-import { Identifier } from '@dashevo/wasm-dpp';
+import wasmDpp from '@dashevo/wasm-dpp';
+const { Identifier } = wasmDpp;
+import type { Identifier as IdentifierType } from '@dashevo/wasm-dpp';
+type Identifier = IdentifierType;
 
 /**
  * Interface for ClientApps

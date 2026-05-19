@@ -1,21 +1,11 @@
 import { expect } from 'chai';
-import { ImportMock } from 'ts-mock-imports';
-import generateRandomIdentifier from '@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync';
+import generateRandomIdentifier from '@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync.js';
 
-import cryptoModule from 'crypto';
-
-import register from './register';
-import { ClientApps } from '../../../ClientApps';
+import register from './register.js';
+import { ClientApps } from '../../../ClientApps.js';
 
 describe('Platform', () => {
-  let randomBytesMock;
-
-  before(() => {
-    randomBytesMock = ImportMock.mockFunction(cryptoModule, 'randomBytes', Buffer.alloc(32));
-  });
-  after(() => {
-    randomBytesMock.restore();
-  });
+  const randomBytesStub = (size: number) => Buffer.alloc(size);
 
   describe('Names', () => {
     describe('#register', () => {
@@ -54,7 +44,7 @@ describe('Platform', () => {
 
         await register.call(platformMock, 'Dash', {
           identity: identityId,
-        }, identityMock);
+        }, identityMock, randomBytesStub);
 
         expect(platformMock.documents.create.getCall(0).args[0]).to.deep.equal('dpns.preorder');
         expect(platformMock.documents.create.getCall(0).args[1]).to.deep.equal(identityMock);
@@ -87,7 +77,7 @@ describe('Platform', () => {
 
         await register.call(platformMock, 'User.dash', {
           identity: identityId,
-        }, identityMock);
+        }, identityMock, randomBytesStub);
 
         expect(platformMock.documents.create.getCall(0).args[0]).to.deep.equal('dpns.preorder');
         expect(platformMock.documents.create.getCall(0).args[1]).to.deep.equal(identityMock);
@@ -120,7 +110,7 @@ describe('Platform', () => {
         try {
           await register.call(platformMock, 'user.dash', {
             identity: await generateRandomIdentifier(),
-          }, identityMock);
+          }, identityMock, randomBytesStub);
         } catch (e: any) {
           expect(e.message).to.equal('DPNS is required to register a new name.');
         }

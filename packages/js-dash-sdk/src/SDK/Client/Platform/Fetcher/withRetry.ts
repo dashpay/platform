@@ -1,5 +1,5 @@
-import { fibonacci } from '../../../../utils/fibonacci';
-import { wait } from '../../../../utils/wait';
+import { fibonacci } from '../../../../utils/fibonacci.js';
+import { wait } from '../../../../utils/wait.js';
 
 /**
  * Maximum number of retry attempts

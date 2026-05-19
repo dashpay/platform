@@ -1,9 +1,9 @@
-const EventEmitter = require('events');
-const Dash = require('dash');
+import EventEmitter from 'events';
+import Dash from 'dash';
 
-const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
-const getDAPISeeds = require('../../../lib/test/getDAPISeeds');
-const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
+import GrpcErrorCodes from '@dashevo/grpc-common/lib/server/error/GrpcErrorCodes.js';
+import getDAPISeeds from '../../../lib/test/getDAPISeeds.js';
+import createClientWithFundedWallet from '../../../lib/test/createClientWithFundedWallet.js';
 
 const {
   Core: {
@@ -137,19 +137,6 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
     expect(streamError).to.not.exist();
     expect(streamEnded).to.be.true();
 
-    // TODO: Implement getBlockHeaders in dapi-client so we can compare block hashes
-    // const fetchedBlocks = [];
-    //
-    // for (let i = 1; i <= headersAmount; i++) {
-    //   const rawBlock = await dapiClient.core.getBlockByHeight(i);
-    //   const block = new Block(rawBlock);
-    //
-    //   fetchedBlocks.push(block);
-    // }
-    //
-    // expect(historicalBlockHeaders.map((header) => header.hash))
-    //   .to.deep.equal(fetchedBlocks.map((block) => block.header.hash));
-
     expect(historicalBlockHeaders.length).to.equal(headersAmount);
     expect(bestChainLock.height).to.exist();
   });
@@ -224,21 +211,6 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
     }
 
     expect(streamError).to.not.exist();
-
-    // TODO: Implement getBlockHeaders in dapi-client to compare block hashes
-    // const fetchedHistoricalBlocks = [];
-    //
-    // for (let i = bestBlockHeight - historicalBlocksToGet + 1; i <= bestBlockHeight; i++) {
-    //   const rawBlock = await dapiClient.core.getBlockByHeight(i);
-    //   const block = new Block(rawBlock);
-    //
-    //   fetchedHistoricalBlocks.push(block);
-    // }
-    //
-    // for (let i = 0; i < historicalBlocksToGet; i++) {
-    //   expect(fetchedHistoricalBlocks[i].header.hash).to.equal(
-    //   [...blockHeadersHashesFromStream][i]);
-    // }
 
     expect(obtainedFreshBlock).to.be.true();
     expect(latestChainLock).to.exist();

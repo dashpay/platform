@@ -1,4 +1,4 @@
-const wait = require('./wait');
+import wait from './wait.js';
 
 /**
  * @returns {Promise<void>}
@@ -13,4 +13,4 @@ async function waitForSTPropagated() {
   await wait(interval);
 }
 
-module.exports = waitForSTPropagated;
+export default waitForSTPropagated;

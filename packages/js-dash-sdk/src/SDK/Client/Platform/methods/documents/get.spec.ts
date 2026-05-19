@@ -1,12 +1,12 @@
-import getDataContractFixture from '@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture';
-import generateRandomIdentifier from '@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync';
-import getDocumentsFixture from '@dashevo/wasm-dpp/lib/test/fixtures/getDocumentsFixture';
+import getDataContractFixture from '@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture.js';
+import generateRandomIdentifier from '@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync.js';
+import getDocumentsFixture from '@dashevo/wasm-dpp/lib/test/fixtures/getDocumentsFixture.js';
 import { expect } from 'chai';
-import getResponseMetadataFixture from '../../../../../test/fixtures/getResponseMetadataFixture';
+import getResponseMetadataFixture from '../../../../../test/fixtures/getResponseMetadataFixture.js';
 
-import get from './get';
+import get from './get.js';
 
-const GetDocumentsResponse = require('@dashevo/dapi-client/lib/methods/platform/getDocuments/GetDocumentsResponse');
+import GetDocumentsResponse from '@dashevo/dapi-client/lib/methods/platform/getDocuments/GetDocumentsResponse.js';
 
 describe('Client - Platform - Documents - .get()', () => {
   let platform;

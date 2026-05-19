@@ -1,7 +1,14 @@
-import { Identifier, Identity } from '@dashevo/wasm-dpp';
-import broadcastStateTransition from '../../broadcastStateTransition';
-import { Platform } from '../../Platform';
-import { signStateTransition } from '../../signStateTransition';
+import wasmDpp from '@dashevo/wasm-dpp';
+const { Identifier, Identity } = wasmDpp;
+import type {
+  Identifier as IdentifierType,
+  Identity as IdentityType,
+} from '@dashevo/wasm-dpp';
+type Identifier = IdentifierType;
+type Identity = IdentityType;
+import broadcastStateTransition from '../../broadcastStateTransition.js';
+import { Platform } from '../../Platform.js';
+import { signStateTransition } from '../../signStateTransition.js';
 
 export async function creditTransfer(
   this: Platform,

@@ -1,4 +1,4 @@
-const wait = require('../wait');
+import wait from '../wait.js';
 
 const MAX_TIME_TO_WAIT_MS = 20000;
 const ITERATION_TIME_MS = 500;
@@ -20,4 +20,4 @@ async function waitForBalanceToChange(walletAccount) {
   }
 }
 
-module.exports = waitForBalanceToChange;
+export default waitForBalanceToChange;

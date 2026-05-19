@@ -1,7 +1,16 @@
-import { Identity, DataContract, DataContractCreateTransition } from '@dashevo/wasm-dpp';
-import { Platform } from '../../Platform';
-import broadcastStateTransition from '../../broadcastStateTransition';
-import { signStateTransition } from '../../signStateTransition';
+import wasmDpp from '@dashevo/wasm-dpp';
+const { Identity, DataContract, DataContractCreateTransition } = wasmDpp;
+import type {
+  Identity as IdentityType,
+  DataContract as DataContractType,
+  DataContractCreateTransition as DataContractCreateTransitionType,
+} from '@dashevo/wasm-dpp';
+type Identity = IdentityType;
+type DataContract = DataContractType;
+type DataContractCreateTransition = DataContractCreateTransitionType;
+import { Platform } from '../../Platform.js';
+import broadcastStateTransition from '../../broadcastStateTransition.js';
+import { signStateTransition } from '../../signStateTransition.js';
 
 /**
  * Publish contract onto the platform

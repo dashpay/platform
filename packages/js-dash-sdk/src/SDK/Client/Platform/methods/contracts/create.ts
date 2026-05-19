@@ -1,4 +1,4 @@
-import { Platform } from '../../Platform';
+import { Platform } from '../../Platform.js';
 
 /**
  * Create and prepare contracts for the platform

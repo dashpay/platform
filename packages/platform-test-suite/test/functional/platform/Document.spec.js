@@ -1,13 +1,13 @@
-const Dash = require('dash');
-const { expect } = require('chai');
+import Dash from 'dash';
+import { expect } from 'chai';
 
-const { signStateTransition } = require('dash/build/SDK/Client/Platform/signStateTransition');
+import { signStateTransition } from 'dash/build/SDK/Client/Platform/signStateTransition.js';
 
-const getIdentityFixture = require('../../../lib/test/fixtures/getIdentityFixture');
-const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
+import getIdentityFixture from '../../../lib/test/fixtures/getIdentityFixture.js';
+import getDataContractFixture from '../../../lib/test/fixtures/getDataContractFixture.js';
 
-const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
-const waitForSTPropagated = require('../../../lib/waitForSTPropagated');
+import createClientWithFundedWallet from '../../../lib/test/createClientWithFundedWallet.js';
+import waitForSTPropagated from '../../../lib/waitForSTPropagated.js';
 
 const {
   Errors: {

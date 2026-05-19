@@ -1,6 +1,7 @@
-import { Identifier } from '@dashevo/wasm-dpp';
+import wasmDpp from '@dashevo/wasm-dpp';
+const { Identifier } = wasmDpp;
 import { expect } from 'chai';
-import { ClientApps } from './ClientApps';
+import { ClientApps } from './ClientApps.js';
 import 'mocha';
 
 describe('ClientApps', () => {

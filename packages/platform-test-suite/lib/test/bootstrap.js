@@ -1,10 +1,13 @@
-const path = require('path');
-const dotenvSafe = require('dotenv-safe');
-const { expect, use } = require('chai');
-const dirtyChai = require('dirty-chai');
-const chaiAsPromised = require('chai-as-promised');
-const sinon = require('sinon');
-const sinonChai = require('sinon-chai');
+import path from 'path';
+import { fileURLToPath } from 'url';
+import dotenvSafe from 'dotenv-safe';
+import { expect, use } from 'chai';
+import dirtyChai from 'dirty-chai';
+import chaiAsPromised from 'chai-as-promised';
+import sinon from 'sinon';
+import sinonChai from 'sinon-chai';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 use(chaiAsPromised);
 use(dirtyChai);
@@ -25,7 +28,7 @@ if (process.env.MOCHA_WORKER_ID) {
 process.env.FAUCET_ADDRESS = process.env[`FAUCET_${faucetIndex}_ADDRESS`];
 process.env.FAUCET_PRIVATE_KEY = process.env[`FAUCET_${faucetIndex}_PRIVATE_KEY`];
 
-exports.mochaHooks = {
+export const mochaHooks = {
   beforeEach() {
     if (!this.sinon) {
       this.sinon = sinon.createSandbox();

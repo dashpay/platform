@@ -1,7 +1,11 @@
-import { Transaction } from '@dashevo/dashcore-lib';
-import { Platform } from '../../../Platform';
+import dashcore from '@dashevo/dashcore-lib';
+const { Transaction } = dashcore;
+import type { Transaction as TransactionType } from '@dashevo/dashcore-lib';
+type Transaction = TransactionType;
+import walletLibErrors from '@dashevo/wallet-lib/src/errors/index.js';
+import { Platform } from '../../../Platform.js';
 
-const { InstantLockTimeoutError, TxMetadataTimeoutError } = require('@dashevo/wallet-lib/src/errors');
+const { InstantLockTimeoutError, TxMetadataTimeoutError } = walletLibErrors;
 
 /**
  * Creates a funding transaction for the platform identity
