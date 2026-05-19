@@ -104,9 +104,7 @@ pub(crate) const CL_HEIGHT_RETRY_BUDGET: Duration = Duration::from_secs(210);
 /// the asset-lock module when the platform-address funding flow
 /// needed the same shape — funding source is funding-target-agnostic;
 /// the `funding_type` argument to the resolver picks the BIP44
-/// derivation family. A `pub use ... as IdentityFunding` alias is
-/// retained at the old path so existing external callers keep
-/// compiling.
+/// derivation family.
 #[derive(Debug, Clone)]
 pub enum AssetLockFunding {
     /// Build an asset lock from wallet UTXOs for the given amount.

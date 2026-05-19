@@ -465,8 +465,4 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             ))
         })
     }
-
-    // `out_point_from_proof` moved to `wallet::asset_lock::orchestration`
-    // as a free `pub(crate) fn` — used by every asset-lock-funded flow
-    // (identity register/top-up, platform-address funding).
 }

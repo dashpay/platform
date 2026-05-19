@@ -70,14 +70,10 @@ use crate::wallet::asset_lock::orchestration::{
     out_point_from_proof, submit_with_cl_height_retry, FundingResolution, ResolvedFunding,
     CL_FALLBACK_TIMEOUT,
 };
-use crate::wallet::identity::types::funding::IdentityFunding;
+use crate::wallet::asset_lock::AssetLockFunding;
 
 use super::*;
 
-// Timeout policy, the CL-height retry helper, and the IS-timeout-aware
-// funding resolver moved to `wallet::asset_lock::orchestration` so the
-// identity register/top-up flows and the platform-address funding
-// flow share one source of truth for these timeouts and retry shapes.
 
 // ---------------------------------------------------------------------------
 // register
@@ -92,7 +88,7 @@ impl IdentityWallet {
     ///    AUTHENTICATION key (the IdentityCreate transition itself
     ///    must be signed by a MASTER-level identity key, and we pin
     ///    that role on id=0 by convention).
-    /// 2. Resolve the [`IdentityFunding`] to an asset-lock proof +
+    /// 2. Resolve the [`AssetLockFunding`] to an asset-lock proof +
     ///    derivation path.
     /// 3. Submit via
     ///    `Identity::put_to_platform_and_wait_for_response_with_signer`
@@ -124,7 +120,7 @@ impl IdentityWallet {
     /// attempts can resume via `FromExistingAssetLock`.
     pub async fn register_identity_with_funding<S, AS>(
         &self,
-        funding: IdentityFunding,
+        funding: AssetLockFunding,
         identity_index: u32,
         keys_map: BTreeMap<u32, IdentityPublicKey>,
         identity_signer: &S,
@@ -312,7 +308,7 @@ impl IdentityWallet {
 
         // Step 5: clean up the tracked asset lock — Platform has
         // accepted the registration and the credit output is now
-        // consumed. Both `IdentityFunding` variants produce a tracked
+        // consumed. Both `AssetLockFunding` variants produce a tracked
         // lock so `tracked_out_point` is always `Some` today; the
         // `Option` is retained for future variants that may not have
         // wallet-owned lifecycle.
@@ -347,7 +343,7 @@ impl IdentityWallet {
     ///
     /// 1. Look up the identity by `identity_id` in the local
     ///    `IdentityManager`. Return `IdentityNotFound` if missing.
-    /// 2. Resolve the [`IdentityFunding`] to an asset-lock proof.
+    /// 2. Resolve the [`AssetLockFunding`] to an asset-lock proof.
     /// 3. Submit via `Identity::top_up_identity_with_signer` inside
     ///    `submit_with_cl_height_retry`, with IS→CL fallback on
     ///    Core-side timeout and Platform-side rejection (same as
@@ -357,7 +353,7 @@ impl IdentityWallet {
     pub async fn top_up_identity_with_funding<AS>(
         &self,
         identity_id: &Identifier,
-        funding: IdentityFunding,
+        funding: AssetLockFunding,
         asset_lock_signer: &AS,
         settings: Option<PutSettings>,
     ) -> Result<u64, PlatformWalletError>
