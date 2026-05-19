@@ -1,6 +1,5 @@
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::platform_types::platform::PlatformStateRef;
-use dpp::block::block_info::BlockInfo;
 use dpp::prelude::*;
 use drive::grovedb::TransactionArg;
 use std::fmt::{Debug, Formatter};
@@ -14,10 +13,6 @@ pub struct DataTriggerExecutionContext<'a> {
     pub transaction: TransactionArg<'a, 'a>,
     /// The identifier of the owner of the data contract that the trigger is associated with.
     pub owner_id: &'a Identifier,
-    /// The current block info, used as the source of `epoch` for trigger
-    /// fee computations on PROTOCOL_VERSION_12+. `_v1` triggers use
-    /// `block_info.epoch` to match the batch transformer's epoch source.
-    pub block_info: &'a BlockInfo,
     /// Mutable reference to the outer execution context — `_v1` triggers
     /// call `add_operation` on this to bill their drive reads directly.
     /// `_v0` triggers ignore it (preserving PROTOCOL_VERSION_11 chain

@@ -180,7 +180,6 @@ mod test {
         let mut data_trigger_context = DataTriggerExecutionContext {
             platform: &platform_ref,
             owner_id,
-            block_info: &BlockInfo::default(),
             state_transition_execution_context: &mut transition_execution_context,
             transaction: None,
         };
@@ -302,7 +301,6 @@ mod test {
         let mut data_trigger_context = DataTriggerExecutionContext {
             platform: &platform_ref,
             owner_id: &owner_id,
-            block_info: &BlockInfo::default(),
             state_transition_execution_context: &mut transition_execution_context,
             transaction: None,
         };
@@ -421,7 +419,6 @@ mod test {
         let mut data_trigger_context = DataTriggerExecutionContext {
             platform: &platform_ref,
             owner_id: &owner_id,
-            block_info: &BlockInfo::default(),
             state_transition_execution_context: &mut transition_execution_context,
             transaction: None,
         };

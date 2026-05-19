@@ -12,6 +12,7 @@ use crate::execution::types::state_transition_execution_context::StateTransition
 use crate::execution::validation::state_transition::batch::data_triggers::{
     DataTriggerExecutionContext, DataTriggerExecutionResult,
 };
+use crate::platform_types::platform_state::PlatformStateV0Methods;
 use dpp::consensus::state::data_trigger::data_trigger_condition_error::DataTriggerConditionError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
@@ -68,7 +69,7 @@ pub(super) fn create_contact_request_data_trigger_v1(
     let (to_identity, balance_fee_result) =
         context.platform.drive.fetch_identity_balance_with_costs(
             to_user_id.to_buffer(),
-            context.block_info,
+            context.platform.state.last_block_info(),
             true,
             context.transaction,
             platform_version,
