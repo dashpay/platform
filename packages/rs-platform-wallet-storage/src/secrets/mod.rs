@@ -7,6 +7,16 @@
 //! `migrations/` and exempts this module, so this module owns its own
 //! review discipline (`tests/secrets_guard.rs`, SEC-REQ-4.5/4.5.1).
 //!
+//! # Backends & selection
+//!
+//! [`EncryptedFileStore`] (Argon2id + XChaCha20-Poly1305 vault file) is
+//! fully self-contained — the recommended default on **headless /
+//! server** hosts. The OS-keyring backend (recommended on desktop)
+//! lands alongside it; **backend selection is an explicit operator
+//! decision — there is no silent fallback between backends**
+//! (SEC-REQ-2.1.3 / AR-4). [`MemoryStore`] is test-only and gated so it
+//! is unreachable from production builds.
+//!
 //! # Memory hygiene
 //!
 //! Secrets cross every boundary inside [`SecretBytes`] / [`SecretString`]
@@ -15,6 +25,7 @@
 //! any variant.
 
 mod error;
+mod file;
 mod secret;
 mod store;
 mod validate;
@@ -23,6 +34,7 @@ mod validate;
 mod memory;
 
 pub use error::SecretStoreError;
+pub use file::EncryptedFileStore;
 pub use secret::{SecretBytes, SecretString};
 pub use store::SecretStore;
 pub use validate::WalletId;

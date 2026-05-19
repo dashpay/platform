@@ -67,8 +67,8 @@ const fn _secrets_send_sync_check<T: Send + Sync>() {}
 const _: () = {
     _secrets_send_sync_check::<secrets::SecretStoreError>();
 };
-#[cfg(all(feature = "secrets", any(test, feature = "__secrets-test-helpers")))]
+#[cfg(feature = "secrets")]
 #[allow(dead_code)]
-fn _secret_store_object_safety_check(store: secrets::MemoryStore) {
+fn _secret_store_object_safety_check(store: secrets::EncryptedFileStore) {
     let _: std::sync::Arc<dyn secrets::SecretStore> = std::sync::Arc::new(store);
 }
