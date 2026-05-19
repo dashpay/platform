@@ -24,6 +24,7 @@ dash-context-provider = { path = "../rs-context-provider", default-features = fa
 dash-platform-macros = { path = "../rs-dash-platform-macros" }
 platform-encryption = { path = "../rs-platform-encryption" }
 http = { version = "1.1" }
+ciborium = "0.2"
 thiserror = "2.0.17"
 tokio = { version = "1.40", features = ["macros", "time"] }
 tokio-util = { version = "0.7.12" }
