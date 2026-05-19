@@ -75,6 +75,7 @@ pub unsafe extern "C" fn asset_lock_manager_list_tracked_locks(
                         AssetLockStatus::Broadcast => 1,
                         AssetLockStatus::InstantSendLocked => 2,
                         AssetLockStatus::ChainLocked => 3,
+                        AssetLockStatus::Consumed => 4,
                     },
                     has_proof: lock.proof.is_some(),
                 }

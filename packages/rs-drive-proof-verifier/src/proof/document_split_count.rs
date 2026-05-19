@@ -1,5 +1,5 @@
 use crate::{ContextProvider, Error, FromProof};
-use dapi_grpc::platform::v0::{GetDocumentsCountResponse, Proof, ResponseMetadata};
+use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
 use dpp::dashcore::Network;
 use dpp::version::PlatformVersion;
 use drive::query::{DriveDocumentQuery, SplitCountEntry};
@@ -31,7 +31,7 @@ impl DocumentSplitCounts {
     pub fn into_flat_map(self) -> BTreeMap<Vec<u8>, u64> {
         let mut out: BTreeMap<Vec<u8>, u64> = BTreeMap::new();
         for entry in self.0 {
-            *out.entry(entry.key).or_insert(0) += entry.count;
+            *out.entry(entry.key).or_insert(0) += entry.count.unwrap_or(0);
         }
         out
     }
@@ -46,21 +46,23 @@ impl DocumentSplitCounts {
 
 /// Reject the generic [`FromProof`] entry point for [`DocumentSplitCounts`].
 ///
-/// `DocumentSplitCounts` is reached from rs-sdk via
-/// `FromProof<DocumentCountQuery>` (which routes to the count-tree
-/// element proof / aggregate-count proof / distinct-count proof based
-/// on the request shape — see
-/// `rs-sdk/src/platform/documents/document_count_query.rs`). The
-/// generic `FromProof<Q>` path doesn't carry enough information to
-/// pick a proof shape, so it errors out explicitly. Calling this
-/// directly is a programmer mistake.
+/// `DocumentSplitCounts` is reached from rs-sdk via the
+/// `FromProof<DocumentQuery>` impl defined alongside the SDK's
+/// `DocumentQuery` type (see
+/// `rs-sdk/src/platform/documents/document_count.rs`), which
+/// dispatches to the right proof shape (CountTree element /
+/// aggregate-count / distinct-count) based on
+/// `(group_by, where_clauses, prove)`. The generic
+/// `FromProof<Q: TryInto<DriveDocumentQuery>>` path doesn't carry
+/// enough information to pick a proof shape, so it errors out
+/// explicitly — calling this impl directly is a programmer mistake.
 impl<'dq, Q> FromProof<Q> for DocumentSplitCounts
 where
     Q: TryInto<DriveDocumentQuery<'dq>> + Clone + 'dq,
     Q::Error: std::fmt::Display,
 {
     type Request = Q;
-    type Response = GetDocumentsCountResponse;
+    type Response = GetDocumentsResponse;
 
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         _request: I,
@@ -74,9 +76,9 @@ where
     {
         Err(Error::RequestError {
             error: "DocumentSplitCounts can't be verified via the generic FromProof path; \
-                 use the rs-sdk Fetch impl on DocumentCountQuery, which routes to the \
-                 correct proof shape (CountTree element / aggregate / distinct) based \
-                 on the request"
+                 call DocumentSplitCounts::fetch on a DocumentQuery with .with_select(Count), \
+                 which routes through the right proof shape (CountTree element / aggregate / \
+                 distinct) based on the request"
                 .to_string(),
         })
     }
@@ -109,7 +111,11 @@ mod tests {
         SplitCountEntry {
             in_key: in_key.map(|s| s.to_vec()),
             key: key.to_vec(),
-            count,
+            // Test helper always builds verified entries; `None`
+            // entries (caller asked but verifier was silent) are
+            // tested via explicit struct construction at the SDK
+            // synthesis call site, not through this helper.
+            count: Some(count),
         }
     }
 

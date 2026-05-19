@@ -195,6 +195,36 @@ async fn build_core_changeset(
             synced_height: Some(*height),
             ..CoreChangeSet::default()
         },
+        WalletEvent::ChainLockProcessed { chain_lock, .. } => {
+            // The wallet has already promoted the matching records from
+            // `InBlock` to `InChainLockedBlock` by the time this event
+            // fires (upstream `WalletManager::process_chain_lock` mutates
+            // the in-memory map before emitting); our poll loop reads
+            // `record.context.is_chain_locked()` directly so we don't
+            // mirror per-record promotions here.
+            //
+            // What we DO persist is the wallet's global
+            // `metadata.last_applied_chain_lock` advance. Without this
+            // roundtrip, the metadata starts as `None` on every restart
+            // and the asset-lock-resume CL-from-metadata fallback in
+            // `proof.rs` can't fire until SPV re-applies a fresh
+            // ChainLock — wasted latency that the persister-roundtrip
+            // collapses to ~zero. SPV persists its own `best_chainlock`
+            // independently; this is the symmetric wallet-side
+            // persistence, not a re-application.
+            //
+            // `ChainLockProcessed` fires every time the wallet's
+            // `last_applied_chain_lock` advances (dashpay/rust-dashcore#769),
+            // even when no record was promoted — so a quiescent wallet's
+            // boundary advance is no longer invisible to this bridge.
+            // The earlier `TransactionsChainlocked`-only signal had a
+            // gap on the "metadata advanced but per-account empty"
+            // path; the new event closes it deterministically.
+            CoreChangeSet {
+                last_applied_chain_lock: Some(chain_lock.clone()),
+                ..CoreChangeSet::default()
+            }
+        }
     }
 }
 
@@ -323,5 +353,6 @@ impl CoreChangeSet {
             && self.instant_locks_for_non_final_records.is_empty()
             && self.last_processed_height.is_none()
             && self.synced_height.is_none()
+            && self.last_applied_chain_lock.is_none()
     }
 }
