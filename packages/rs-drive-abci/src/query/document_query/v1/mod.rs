@@ -170,18 +170,10 @@ fn validate_and_route(
             // "<field>"` index. Validation lives downstream in
             // [`crate::query::drive_document_sum_query::drive_dispatcher::detect_sum_mode`].
             //
-            // **Status**: server-side wiring is the
-            // `RoutingDecision::Sum(...)` variant below; the dispatch
-            // arm in the response-building section (~line 720) routes
-            // the resulting `DocumentSumResponse` into the
-            // `SumResults` proto message added to platform.proto.
-            //
-            // Until the executor bodies in
-            // `drive_document_sum_query/executors/*.rs` are filled in
-            // from their count-side templates, this arm returns
-            // `Error::Drive(DriveError::NotSupported)` from the
-            // dispatcher and the handler propagates it as a typed
-            // user error.
+            // Wiring: `RoutingDecision::Sum(...)` variant below feeds
+            // the dispatch arm in the response-building section, which
+            // routes the resulting `DocumentSumResponse` into the
+            // `SumResults` proto message defined in platform.proto.
             if select.field.is_empty() {
                 return Err(QueryError::InvalidArgument(
                     "SELECT SUM requires a non-empty `field` naming the integer property \
@@ -215,16 +207,11 @@ fn validate_and_route(
             // or is needed; the same `CountSumTree` / PCPS element
             // backs both).
             //
-            // **Status**: server-side wiring is the
-            // `RoutingDecision::Average(...)` variant below; the dispatch
-            // arm in the response-building section routes the resulting
-            // `DocumentAverageResponse` into the `AverageResults` proto
-            // message added to platform.proto. Like sum, the executor
-            // body currently returns `NotYetImplemented` — the wire
-            // surface lands ahead of execution so callers can encode
-            // AVG today and the SDK fan-out follow-up can flip the
-            // dispatch arm to the real executor without another version
-            // bump.
+            // Wiring: `RoutingDecision::Average(...)` variant below
+            // feeds the dispatch arm in the response-building section,
+            // which routes the resulting `DocumentAverageResponse` into
+            // the `AverageResults` proto message defined in
+            // platform.proto.
             if select.field.is_empty() {
                 return Err(QueryError::InvalidArgument(
                     "SELECT AVG requires a non-empty `field` naming the integer property \
