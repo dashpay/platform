@@ -56,15 +56,20 @@ impl DocumentTypeV2 {
             .transpose()?
             .unwrap_or(false);
 
-        let range_countable = schema_map_opt
+        // Keep the raw `Option<bool>` so the averageable desugar below
+        // can distinguish "field absent (default false)" from
+        // "field explicit false" — same explicit-vs-default tracking
+        // the Index parser does for its range axes. `range_countable`
+        // (the resolved bool) flows into the rest of the logic.
+        let range_countable_opt = schema_map_opt
             .as_ref()
             .and_then(|schema_map| {
                 Value::inner_optional_bool_value(schema_map, RANGE_COUNTABLE)
                     .map_err(consensus_or_protocol_value_error)
                     .transpose()
             })
-            .transpose()?
-            .unwrap_or(false);
+            .transpose()?;
+        let range_countable = range_countable_opt.unwrap_or(false);
 
         // `documentsSummable` names the integer property whose values are
         // summed across all documents of this type. When set, the primary
@@ -99,15 +104,15 @@ impl DocumentTypeV2 {
             .transpose()?
             .flatten();
 
-        let range_summable = schema_map_opt
+        let range_summable_opt = schema_map_opt
             .as_ref()
             .and_then(|schema_map| {
                 Value::inner_optional_bool_value(schema_map, RANGE_SUMMABLE)
                     .map_err(consensus_or_protocol_value_error)
                     .transpose()
             })
-            .transpose()?
-            .unwrap_or(false);
+            .transpose()?;
+        let range_summable = range_summable_opt.unwrap_or(false);
 
         // `documentsAverageable` is syntactic sugar for
         // `documentsCountable: true` + `documentsSummable: "<prop>"`.
@@ -190,6 +195,39 @@ impl DocumentTypeV2 {
                                 )),
                             ));
                         }
+                    }
+                }
+                // When `rangeAverageable: true` is set, BOTH range axes
+                // are promoted. Reject explicit-`false` contradictions
+                // on either axis (silently flipping the author's
+                // explicit value would emit the wrong on-disk layout).
+                // Omitted / default-false → silently promoted.
+                if range_averageable {
+                    if range_countable_opt == Some(false) {
+                        return Err(ProtocolError::DataContractError(
+                            DataContractError::InvalidContractStructure(format!(
+                                "rangeAverageable: true on document type \"{}\" conflicts \
+                                 with explicit rangeCountable: false: rangeAverageable is \
+                                 shorthand for rangeCountable + rangeSummable on the \
+                                 averageable property. Remove the explicit \
+                                 `rangeCountable: false` (or drop rangeAverageable in \
+                                 favor of rangeSummable alone).",
+                                name,
+                            )),
+                        ));
+                    }
+                    if range_summable_opt == Some(false) {
+                        return Err(ProtocolError::DataContractError(
+                            DataContractError::InvalidContractStructure(format!(
+                                "rangeAverageable: true on document type \"{}\" conflicts \
+                                 with explicit rangeSummable: false: rangeAverageable is \
+                                 shorthand for rangeCountable + rangeSummable on the \
+                                 averageable property. Remove the explicit \
+                                 `rangeSummable: false` (or drop rangeAverageable in favor \
+                                 of rangeCountable alone).",
+                                name,
+                            )),
+                        ));
                     }
                 }
                 let merged_range = range_countable || range_summable || range_averageable;

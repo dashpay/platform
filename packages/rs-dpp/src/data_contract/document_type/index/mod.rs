@@ -601,8 +601,17 @@ impl TryFrom<&[(Value, Value)]> for Index {
         // countability).
         let mut countable_was_explicit = false;
         let mut range_countable = false;
+        // Same explicit-vs-default tracking for `rangeCountable` and
+        // `rangeSummable`. After the loop the default `false` is
+        // indistinguishable from an explicit `rangeCountable: false`
+        // on the parsed bool — but the two have different conflict
+        // semantics under `rangeAverageable: true`: omitted is
+        // silently promotable; explicit `false` is a contradiction
+        // we surface to the author.
+        let mut range_countable_was_explicit = false;
         let mut summable: Option<String> = None;
         let mut range_summable = false;
+        let mut range_summable_was_explicit = false;
         // `averageable` / `rangeAverageable` are syntactic sugar for the
         // count+sum combination — same on-disk layout and same query
         // surface, just a friendlier name for authors who think in terms
@@ -762,6 +771,7 @@ impl TryFrom<&[(Value, Value)]> for Index {
                     };
                 }
                 "rangeCountable" => {
+                    range_countable_was_explicit = true;
                     range_countable =
                         value_value
                             .as_bool()
@@ -797,6 +807,7 @@ impl TryFrom<&[(Value, Value)]> for Index {
                     };
                 }
                 "rangeSummable" => {
+                    range_summable_was_explicit = true;
                     range_summable =
                         value_value
                             .as_bool()
@@ -929,6 +940,29 @@ impl TryFrom<&[(Value, Value)]> for Index {
         }
         if range_averageable {
             // `rangeAverageable: true` ⇒ both range axes opt in.
+            // Reject explicit-`false` contradictions on either range
+            // axis — silently flipping the author's explicit value
+            // would emit on-disk layout the author didn't ask for.
+            // Omitted (default-false) flags are promoted silently;
+            // explicit `true` is a redundant no-op.
+            if range_countable_was_explicit && !range_countable {
+                return Err(DataContractError::InvalidContractStructure(
+                    "rangeAverageable: true conflicts with explicit rangeCountable: false: \
+                     rangeAverageable is shorthand for rangeCountable + rangeSummable on \
+                     the averageable property. Remove the explicit `rangeCountable: false` \
+                     (or drop rangeAverageable in favor of rangeSummable alone)."
+                        .to_string(),
+                ));
+            }
+            if range_summable_was_explicit && !range_summable {
+                return Err(DataContractError::InvalidContractStructure(
+                    "rangeAverageable: true conflicts with explicit rangeSummable: false: \
+                     rangeAverageable is shorthand for rangeCountable + rangeSummable on \
+                     the averageable property. Remove the explicit `rangeSummable: false` \
+                     (or drop rangeAverageable in favor of rangeCountable alone)."
+                        .to_string(),
+                ));
+            }
             range_countable = true;
             range_summable = true;
         }
@@ -1703,6 +1737,111 @@ mod tests {
         assert_eq!(index.summable.as_deref(), Some("score"));
         assert!(!index.range_countable);
         assert!(!index.range_summable);
+    }
+
+    /// `rangeAverageable: true` + explicit `rangeCountable: false` is a
+    /// direct contradiction: rangeAverageable is shorthand for both
+    /// range axes opting in, but the author explicitly said "no range
+    /// count". Must reject rather than silently flip.
+    #[test]
+    fn test_index_try_from_range_averageable_with_explicit_range_countable_false_rejected() {
+        let index_map: Vec<(Value, Value)> = vec![
+            (
+                Value::Text("properties".to_string()),
+                Value::Array(vec![Value::Map(vec![(
+                    Value::Text("score".to_string()),
+                    Value::Text("asc".to_string()),
+                )])]),
+            ),
+            (
+                Value::Text("averageable".to_string()),
+                Value::Text("score".to_string()),
+            ),
+            (
+                Value::Text("rangeAverageable".to_string()),
+                Value::Bool(true),
+            ),
+            (
+                Value::Text("rangeCountable".to_string()),
+                Value::Bool(false),
+            ),
+        ];
+        let result = Index::try_from(index_map.as_slice());
+        assert!(
+            result.is_err(),
+            "rangeAverageable + explicit rangeCountable: false must reject"
+        );
+        let msg = format!("{:?}", result.unwrap_err());
+        assert!(
+            msg.contains("rangeAverageable") && msg.contains("rangeCountable: false"),
+            "error must reference both flags; got {msg}"
+        );
+    }
+
+    /// Symmetric case: `rangeAverageable: true` + explicit
+    /// `rangeSummable: false` must also reject.
+    #[test]
+    fn test_index_try_from_range_averageable_with_explicit_range_summable_false_rejected() {
+        let index_map: Vec<(Value, Value)> = vec![
+            (
+                Value::Text("properties".to_string()),
+                Value::Array(vec![Value::Map(vec![(
+                    Value::Text("score".to_string()),
+                    Value::Text("asc".to_string()),
+                )])]),
+            ),
+            (
+                Value::Text("averageable".to_string()),
+                Value::Text("score".to_string()),
+            ),
+            (
+                Value::Text("rangeAverageable".to_string()),
+                Value::Bool(true),
+            ),
+            (Value::Text("rangeSummable".to_string()), Value::Bool(false)),
+        ];
+        let result = Index::try_from(index_map.as_slice());
+        assert!(
+            result.is_err(),
+            "rangeAverageable + explicit rangeSummable: false must reject"
+        );
+        let msg = format!("{:?}", result.unwrap_err());
+        assert!(
+            msg.contains("rangeAverageable") && msg.contains("rangeSummable: false"),
+            "error must reference both flags; got {msg}"
+        );
+    }
+
+    /// `rangeAverageable: true` + redundant explicit `rangeCountable:
+    /// true` (and / or `rangeSummable: true`) is fine — the author
+    /// agreed with what averageable promotes, no contradiction.
+    #[test]
+    fn test_index_try_from_range_averageable_with_explicit_range_countable_true_ok() {
+        let index_map: Vec<(Value, Value)> = vec![
+            (
+                Value::Text("properties".to_string()),
+                Value::Array(vec![Value::Map(vec![(
+                    Value::Text("score".to_string()),
+                    Value::Text("asc".to_string()),
+                )])]),
+            ),
+            (
+                Value::Text("averageable".to_string()),
+                Value::Text("score".to_string()),
+            ),
+            (
+                Value::Text("rangeAverageable".to_string()),
+                Value::Bool(true),
+            ),
+            (Value::Text("rangeCountable".to_string()), Value::Bool(true)),
+            (Value::Text("rangeSummable".to_string()), Value::Bool(true)),
+        ];
+        let index = Index::try_from(index_map.as_slice())
+            .expect("rangeAverageable + redundant explicit true must parse");
+        assert!(index.range_countable);
+        assert!(index.range_summable);
+        assert!(index.countable.is_countable());
+        assert_eq!(index.summable.as_deref(), Some("score"));
     }
 
     #[test]
