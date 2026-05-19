@@ -62,11 +62,16 @@ impl StateTransitionActionTransformer for BatchTransition {
             BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
         >,
         validation_mode: ValidationMode,
-        _execution_context: &mut StateTransitionExecutionContext,
+        execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let platform_version = platform.state.current_platform_version()?;
 
+        // Dispatch always calls `transform_into_action_v0` (the only function
+        // version that exists); the version field is interpreted *inside* that
+        // function to decide whether the outer `execution_context` is threaded
+        // through to the transformer or whether a dropped-on-return local ctx
+        // is used (v11-and-below behavior). See B7 in docs/paid-error-fee-audit.md.
         match platform_version
             .drive_abci
             .validation_and_processing
@@ -74,10 +79,16 @@ impl StateTransitionActionTransformer for BatchTransition {
             .batch_state_transition
             .transform_into_action
         {
-            0 => self.transform_into_action_v0(&platform.into(), block_info, validation_mode, tx),
+            0 | 1 => self.transform_into_action_v0(
+                &platform.into(),
+                block_info,
+                validation_mode,
+                execution_context,
+                tx,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "documents batch transition: transform_into_action".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
