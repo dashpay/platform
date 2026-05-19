@@ -1,4 +1,5 @@
-import { Transaction } from '@dashevo/dashcore-lib';
+import dashcore from '@dashevo/dashcore-lib';
+const { Transaction } = dashcore;
 
 export async function createTransactionInAccount(account) {
   // add fake tx to the wallet so it will be able to create transactions

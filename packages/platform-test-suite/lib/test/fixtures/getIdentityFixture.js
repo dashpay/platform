@@ -1,6 +1,6 @@
-const Dash = require('dash');
+import Dash from 'dash';
 
-const generateRandomIdentifier = require('../utils/generateRandomIdentifier');
+import generateRandomIdentifier from '../utils/generateRandomIdentifier.js';
 
 const {
   Platform,
@@ -9,7 +9,7 @@ const {
 /**
  * @return {Identity}
  */
-module.exports = async function getIdentityFixture() {
+export default async function getIdentityFixture() {
   const { Identity, IdentityPublicKey } = await Platform
     .initializeDppModule();
 
@@ -30,4 +30,4 @@ module.exports = async function getIdentityFixture() {
   identity.setBalance(BigInt(10000));
 
   return identity;
-};
+}

@@ -2,16 +2,16 @@ import { expect } from 'chai';
 
 import loadDpp from '@dashevo/wasm-dpp';
 
-import getDataContractFixture from '@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture';
+import getDataContractFixture from '@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture.js';
 
-import getResponseMetadataFixture from '../../../../../test/fixtures/getResponseMetadataFixture';
-import get from './get';
-import identitiesFixtures from '../../../../../../tests/fixtures/identities.json';
+import getResponseMetadataFixture from '../../../../../test/fixtures/getResponseMetadataFixture.js';
+import get from './get.js';
+import identitiesFixtures from '../../../../../../tests/fixtures/identities.json' with { type: 'json' };
 import 'mocha';
-import { ClientApps } from '../../../ClientApps';
+import { ClientApps } from '../../../ClientApps.js';
 
-const GetDataContractResponse = require('@dashevo/dapi-client/lib/methods/platform/getDataContract/GetDataContractResponse');
-const NotFoundError = require('@dashevo/dapi-client/lib/transport/GrpcTransport/errors/NotFoundError');
+import GetDataContractResponse from '@dashevo/dapi-client/lib/methods/platform/getDataContract/GetDataContractResponse.js';
+import NotFoundError from '@dashevo/dapi-client/lib/transport/GrpcTransport/errors/NotFoundError.js';
 
 let client;
 let fetcher;
@@ -38,7 +38,9 @@ let apps;
 
 describe('Client - Platform - Contracts - .get()', () => {
   before(async function before() {
-    await loadDpp();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const load = (loadDpp as any).default ?? loadDpp;
+    await load();
 
     dataContractFixture = await getDataContractFixture();
     metadataFixture = getResponseMetadataFixture();

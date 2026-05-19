@@ -1,1 +1,1 @@
-export { Platform, PlatformOpts } from './Platform';
+export { Platform, PlatformOpts } from './Platform.js';

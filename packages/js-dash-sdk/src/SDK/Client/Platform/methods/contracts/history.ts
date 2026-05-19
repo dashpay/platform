@@ -1,10 +1,14 @@
-import { DataContract, Identifier } from '@dashevo/wasm-dpp';
-import {
-  GetDataContractHistoryResponse,
-} from '@dashevo/dapi-client/lib/methods/platform/getDataContractHistory/GetDataContractHistoryResponse';
-import { Platform } from '../../Platform';
-
-const NotFoundError = require('@dashevo/dapi-client/lib/transport/GrpcTransport/errors/NotFoundError');
+import wasmDpp from '@dashevo/wasm-dpp';
+const { DataContract, Identifier } = wasmDpp;
+import type {
+  DataContract as DataContractType,
+  Identifier as IdentifierType,
+} from '@dashevo/wasm-dpp';
+type DataContract = DataContractType;
+type Identifier = IdentifierType;
+import GetDataContractHistoryResponse from '@dashevo/dapi-client/lib/methods/platform/getDataContractHistory/GetDataContractHistoryResponse.js';
+import NotFoundError from '@dashevo/dapi-client/lib/transport/GrpcTransport/errors/NotFoundError.js';
+import { Platform } from '../../Platform.js';
 
 declare type ContractIdentifier = string | Identifier;
 

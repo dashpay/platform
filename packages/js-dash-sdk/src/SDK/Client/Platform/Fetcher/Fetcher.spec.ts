@@ -1,6 +1,7 @@
-import { Identifier } from '@dashevo/wasm-dpp';
+import wasmDpp from '@dashevo/wasm-dpp';
+const { Identifier } = wasmDpp;
 import { expect } from 'chai';
-import Fetcher from './index';
+import Fetcher from './index.js';
 
 describe('Dash - Fetcher', () => {
   let fetcher: Fetcher;

@@ -1,4 +1,4 @@
-const wait = require('./wait');
+import wait from './wait.js';
 
 /**
  *
@@ -6,7 +6,7 @@ const wait = require('./wait');
  * @param {number} numberOfBlocks
  * @return {Promise<void>}
  */
-module.exports = async function waitForBlocks(dapiClient, numberOfBlocks) {
+export default async function waitForBlocks(dapiClient, numberOfBlocks) {
   let currentBlockHeight = await dapiClient.core.getBestBlockHeight();
 
   const desiredBlockHeight = currentBlockHeight + numberOfBlocks;
@@ -17,4 +17,4 @@ module.exports = async function waitForBlocks(dapiClient, numberOfBlocks) {
       await wait(5000);
     }
   } while (currentBlockHeight < desiredBlockHeight);
-};
+}

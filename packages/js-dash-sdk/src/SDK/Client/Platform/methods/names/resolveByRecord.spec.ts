@@ -1,6 +1,6 @@
 import { expect } from 'chai';
 
-import resolveByRecord from './resolveByRecord';
+import resolveByRecord from './resolveByRecord.js';
 
 describe('Platform', () => {
   describe('Names', () => {

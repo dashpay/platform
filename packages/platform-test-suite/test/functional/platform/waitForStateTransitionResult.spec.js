@@ -1,10 +1,10 @@
-const crypto = require('crypto');
+import crypto from 'crypto';
 
-const { MerkleProof } = require('js-merkle');
+import { MerkleProof } from 'js-merkle';
 
-const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
+import createClientWithFundedWallet from '../../../lib/test/createClientWithFundedWallet.js';
 
-const parseStoreTreeProof = require('../../../lib/parseStoreTreeProof');
+import parseStoreTreeProof from '../../../lib/parseStoreTreeProof.js';
 
 // TODO: Fix test to be running in Browser
 

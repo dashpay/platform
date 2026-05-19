@@ -1,20 +1,22 @@
 import { expect } from 'chai';
-import { Transaction, BlockHeader, PrivateKey } from '@dashevo/dashcore-lib';
-import { IdentityPublicKey, IdentityPublicKeyWithWitness, StateTransitionTypes } from '@dashevo/wasm-dpp';
-import { Client } from './index';
+import dashcore from '@dashevo/dashcore-lib';
+const { Transaction, BlockHeader, PrivateKey } = dashcore;
+import wasmDpp from '@dashevo/wasm-dpp';
+const { IdentityPublicKey, IdentityPublicKeyWithWitness, StateTransitionTypes } = wasmDpp;
+import { Client } from './index.js';
 import 'mocha';
 
-import { createFakeInstantLock } from '../../utils/createFakeIntantLock';
+import { createFakeInstantLock } from '../../utils/createFakeIntantLock.js';
 
-import { StateTransitionBroadcastError } from '../../errors/StateTransitionBroadcastError';
+import { StateTransitionBroadcastError } from '../../errors/StateTransitionBroadcastError.js';
 
-import { createIdentityFixtureInAccount } from '../../test/fixtures/createIdentityFixtureInAccount';
+import { createIdentityFixtureInAccount } from '../../test/fixtures/createIdentityFixtureInAccount.js';
 
-import { createAndAttachTransportMocksToClient } from '../../test/mocks/createAndAttachTransportMocksToClient';
-import { createTransactionInAccount } from '../../test/fixtures/createTransactionFixtureInAccount';
+import { createAndAttachTransportMocksToClient } from '../../test/mocks/createAndAttachTransportMocksToClient.js';
+import { createTransactionInAccount } from '../../test/fixtures/createTransactionFixtureInAccount.js';
 
-const getDocumentsFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDocumentsFixture');
-const getDataContractFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture');
+import getDocumentsFixture from '@dashevo/wasm-dpp/lib/test/fixtures/getDocumentsFixture.js';
+import getDataContractFixture from '@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture.js';
 
 const blockHeaderFixture = '00000020e2bddfb998d7be4cc4c6b126f04d6e4bd201687523ded527987431707e0200005520320b4e263bec33e08944656f7ce17efbc2c60caab7c8ed8a73d413d02d3a169d555ecdd6021e56d000000203000500010000000000000000000000000000000000000000000000000000000000000000ffffffff050219250102ffffffff0240c3609a010000001976a914ecfd5aaebcbb8f4791e716e188b20d4f0183265c88ac40c3609a010000001976a914ecfd5aaebcbb8f4791e716e188b20d4f0183265c88ac0000000046020019250000476416132511031b71167f4bb7658eab5c3957d79636767f83e0e18e2b9ed7f8000000000000000000000000000000000000000000000000000000000000000003000600000000000000fd4901010019250000010001d02e9ee1b14c022ad6895450f3375a8e9a87f214912d4332fa997996d2000000320000000000000032000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000';
 const privateKeyFixture = '9b67f852093bc61cea0eeca38599dbfba0de28574d2ed9b99d10d33dc1bde7b2';
@@ -38,9 +40,12 @@ describe('Dash - Client', function suite() {
 
     client = new Client({
       network: 'testnet',
+      // wallet-lib's WalletOptions type is too narrow under NodeNext;
+      // it doesn't expose HDPrivateKey / mnemonic. Cast to bypass.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       wallet: {
         HDPrivateKey: testHDKey,
-      },
+      } as any,
     });
 
     ({
@@ -89,10 +94,11 @@ describe('Dash - Client', function suite() {
 
   it('should initiate wallet-lib with a mnemonic', async () => {
     client = new Client({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       wallet: {
         mnemonic: testMnemonic,
         offlineMode: true,
-      },
+      } as any,
     });
     expect(client.wallet).to.exist;
     expect(client.wallet!.offlineMode).to.be.equal(true);
@@ -109,11 +115,12 @@ describe('Dash - Client', function suite() {
       // eslint-disable-next-line
       new Client({
         network: 'testnet',
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         wallet: {
           mnemonic: testMnemonic,
           offlineMode: true,
           network: 'mainnet',
-        },
+        } as any,
       });
 
       expect.fail('should throw an error');

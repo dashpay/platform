@@ -1,4 +1,7 @@
-const Dash = require('dash');
+import Dash from 'dash';
+
+import createClientWithFundedWallet from '../../lib/test/createClientWithFundedWallet.js';
+import waitForSTPropagated from '../../lib/waitForSTPropagated.js';
 
 const {
   PlatformProtocol: {
@@ -7,9 +10,6 @@ const {
     IdentityPublicKeyWithWitness,
   },
 } = Dash;
-
-const createClientWithFundedWallet = require('../../lib/test/createClientWithFundedWallet');
-const waitForSTPropagated = require('../../lib/waitForSTPropagated');
 
 describe('e2e', () => {
   describe('Contacts', function contacts() {

@@ -1,10 +1,10 @@
-const { expect } = require('chai');
+import { expect } from 'chai';
 
-const wait = require('@dashevo/dapi-client/lib/utils/wait');
-const { STATUSES: WITHDRAWAL_STATUSES } = require('dash/build/SDK/Client/Platform/methods/identities/creditWithdrawal');
+import wait from '@dashevo/dapi-client/lib/utils/wait.js';
+import { STATUSES as WITHDRAWAL_STATUSES } from 'dash/build/SDK/Client/Platform/methods/identities/creditWithdrawal.js';
 
-const createClientWithFundedWallet = require('../../lib/test/createClientWithFundedWallet');
-const waitForSTPropagated = require('../../lib/waitForSTPropagated');
+import createClientWithFundedWallet from '../../lib/test/createClientWithFundedWallet.js';
+import waitForSTPropagated from '../../lib/waitForSTPropagated.js';
 
 // TODO: temporary disabled due to flakiness. These tests aren't important for now, since we are
 //  going to release v1.0.0 with withdrawals disabled.

@@ -1,14 +1,11 @@
 import crypto from 'crypto';
-import { Platform } from './Platform';
-import { StateTransitionBroadcastError } from '../../../errors/StateTransitionBroadcastError';
-import { IStateTransitionResult } from './IStateTransitionResult';
-
-const ResponseError = require('@dashevo/dapi-client/lib/transport/errors/response/ResponseError');
-const InvalidRequestDPPError = require('@dashevo/dapi-client/lib/transport/errors/response/InvalidRequestDPPError');
-
-const createGrpcTransportError = require('@dashevo/dapi-client/lib/transport/GrpcTransport/createGrpcTransportError');
-
-const GrpcError = require('@dashevo/grpc-common/lib/server/error/GrpcError');
+import ResponseError from '@dashevo/dapi-client/lib/transport/errors/response/ResponseError.js';
+import InvalidRequestDPPError from '@dashevo/dapi-client/lib/transport/errors/response/InvalidRequestDPPError.js';
+import createGrpcTransportError from '@dashevo/dapi-client/lib/transport/GrpcTransport/createGrpcTransportError.js';
+import GrpcError from '@dashevo/grpc-common/lib/server/error/GrpcError.js';
+import { Platform } from './Platform.js';
+import { StateTransitionBroadcastError } from '../../../errors/StateTransitionBroadcastError.js';
+import { IStateTransitionResult } from './IStateTransitionResult.js';
 
 /**
  * @param {Platform} platform

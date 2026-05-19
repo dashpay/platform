@@ -1,11 +1,10 @@
-const crypto = require('crypto');
+import crypto from 'crypto';
 
-const {
-  contractId: dpnsContractId,
-} = require('@dashevo/dpns-contract/lib/systemIds');
+import dpnsSystemIds from '@dashevo/dpns-contract/lib/systemIds.js';
+const { contractId: dpnsContractId } = dpnsSystemIds;
 
-const createClientWithFundedWallet = require('../../lib/test/createClientWithFundedWallet');
-const waitForSTPropagated = require('../../lib/waitForSTPropagated');
+import createClientWithFundedWallet from '../../lib/test/createClientWithFundedWallet.js';
+import waitForSTPropagated from '../../lib/waitForSTPropagated.js';
 
 const getRandomDomain = () => crypto.randomBytes(10).toString('hex');
 

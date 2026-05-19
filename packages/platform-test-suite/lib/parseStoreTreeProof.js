@@ -1,6 +1,6 @@
 const hashLength = 32;
 
-module.exports = function getStoreProofData(storeProof) {
+export default function getStoreProofData(storeProof) {
   const buf = storeProof;
   const hashes = [];
   const keyValueHashes = [];
@@ -58,4 +58,4 @@ module.exports = function getStoreProofData(storeProof) {
   return {
     hashes, keyValueHashes, values, keyValues,
   };
-};
+}

@@ -1,6 +1,6 @@
-const BufferReader = require('@dashevo/dashcore-lib/lib/encoding/bufferreader');
+import BufferReader from '@dashevo/dashcore-lib/lib/encoding/bufferreader.js';
 
-module.exports = function parseRootTreeBuffer(rootTreeProofBuffer) {
+export default function parseRootTreeBuffer(rootTreeProofBuffer) {
   /*
    amount of subtrees to proof
    It is equal to 1 because at the moment our proof won't be a simultaneous proof for more
@@ -19,4 +19,4 @@ module.exports = function parseRootTreeBuffer(rootTreeProofBuffer) {
   }
 
   return hashes;
-};
+}

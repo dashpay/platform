@@ -19,4 +19,4 @@ function testProofStructure(expect, proof, proofExist = true) {
   expect(proof.round).to.be.greaterThanOrEqual(0);
 }
 
-module.exports = testProofStructure;
+export default testProofStructure;

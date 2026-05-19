@@ -1,15 +1,10 @@
-const { expect } = require('chai');
-
-const { Identifier } = require('@dashevo/wasm-dpp');
-
-const { contractId: dpnsContractIdString } = require('@dashevo/dpns-contract/lib/systemIds');
-
-const {
-  Networks,
-} = require('@dashevo/dashcore-lib');
-
-// eslint-disable-next-line
-const Dash = require(typeof process === 'undefined' ? '../../src/index.ts' : '../../');
+import { expect } from 'chai';
+import wasmDpp from '@dashevo/wasm-dpp';
+const { Identifier } = wasmDpp;
+import { contractId as dpnsContractIdString } from '@dashevo/dpns-contract/lib/systemIds.js';
+import dashcore from '@dashevo/dashcore-lib';
+const { Networks } = dashcore;
+import Dash from '../../build/index.js';
 
 describe('SDK', function suite() {
   this.timeout(700000);

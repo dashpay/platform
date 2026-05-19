@@ -1,9 +1,13 @@
-import { Identifier } from '@dashevo/wasm-dpp';
-import { Platform } from '../../Platform';
-import convertToHomographSafeChars from '../../../../../utils/convertToHomographSafeChars';
+import crypto from 'crypto';
+import wasmDpp from '@dashevo/wasm-dpp';
+const { Identifier } = wasmDpp;
+import type { Identifier as IdentifierType } from '@dashevo/wasm-dpp';
+type Identifier = IdentifierType;
+import { hash } from '@dashevo/wasm-dpp/lib/utils/hash.js';
+import { Platform } from '../../Platform.js';
+import convertToHomographSafeChars from '../../../../../utils/convertToHomographSafeChars.js';
 
-const crypto = require('crypto');
-const { hash } = require('@dashevo/wasm-dpp/lib/utils/hash');
+type RandomBytesFn = (size: number) => Buffer;
 
 /**
  * Register names to the platform
@@ -13,6 +17,7 @@ const { hash } = require('@dashevo/wasm-dpp/lib/utils/hash');
  * @param {Object} records - records object having only one of the following items
  * @param {string} [records.identity]
  * @param identity - identity
+ * @param randomBytes - injectable source of preorder-salt randomness (defaults to crypto.randomBytes); tests use this seam
  *
  * @returns registered domain document
  */
@@ -26,6 +31,7 @@ export async function register(
     getId(): Identifier;
     getPublicKeyById(number: number):any;
   },
+  randomBytes: RandomBytesFn = crypto.randomBytes,
 ): Promise<any> {
   await this.initialize();
 
@@ -44,7 +50,7 @@ export async function register(
   const [label] = nameLabels;
   const normalizedLabel = convertToHomographSafeChars(label);
 
-  const preorderSalt = crypto.randomBytes(32);
+  const preorderSalt = randomBytes(32);
 
   const isSecondLevelDomain = normalizedParentDomainName.length > 0;
 

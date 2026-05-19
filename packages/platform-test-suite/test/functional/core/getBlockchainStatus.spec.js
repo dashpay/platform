@@ -1,6 +1,8 @@
-const { Essentials: { Buffer } } = require('dash');
+import Dash from 'dash';
 
-const createClientWithoutWallet = require('../../../lib/test/createClientWithoutWallet');
+import createClientWithoutWallet from '../../../lib/test/createClientWithoutWallet.js';
+
+const { Essentials: { Buffer } } = Dash;
 
 describe('Core', () => {
   describe('getBlockchainStatus', function main() {

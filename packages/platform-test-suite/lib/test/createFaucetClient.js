@@ -1,22 +1,20 @@
-const Dash = require('dash');
+import Dash from 'dash';
+import dpnsSystemIds from '@dashevo/dpns-contract/lib/systemIds.js';
+const { contractId } = dpnsSystemIds;
+
+import getDAPISeeds from './getDAPISeeds.js';
 
 let storageAdapter;
 
 if (typeof window === 'undefined') {
-  // eslint-disable-next-line global-require
-  const { NodeForage } = require('nodeforage');
+  const { NodeForage } = await import('nodeforage');
   storageAdapter = new NodeForage({
     dir: process.env.FAUCET_WALLET_STORAGE_DIR || process.cwd(),
     name: `faucet-wallet-${process.env.FAUCET_ADDRESS}`,
   });
 } else {
-  // eslint-disable-next-line global-require
-  storageAdapter = require('localforage');
+  storageAdapter = (await import('localforage')).default;
 }
-
-const { contractId } = require('@dashevo/dpns-contract/lib/systemIds');
-
-const getDAPISeeds = require('./getDAPISeeds');
 
 let faucetClient;
 
@@ -60,4 +58,4 @@ function createFaucetClient() {
   return faucetClient;
 }
 
-module.exports = createFaucetClient;
+export default createFaucetClient;

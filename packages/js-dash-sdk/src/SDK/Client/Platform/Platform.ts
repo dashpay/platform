@@ -1,42 +1,43 @@
-import loadWasmDpp, { DashPlatformProtocol, getLatestProtocolVersion } from '@dashevo/wasm-dpp';
+import loadWasmDpp from '@dashevo/wasm-dpp';
+const { DashPlatformProtocol, getLatestProtocolVersion } = loadWasmDpp;
 import type { DPPModule } from '@dashevo/wasm-dpp';
 import crypto from 'crypto';
 
-import Client from '../Client';
-import { IStateTransitionResult } from './IStateTransitionResult';
+import Client from '../Client.js';
+import { IStateTransitionResult } from './IStateTransitionResult.js';
 
-import createAssetLockTransaction from './createAssetLockTransaction';
+import createAssetLockTransaction from './createAssetLockTransaction.js';
 
-import broadcastDocument from './methods/documents/broadcast';
-import createDocument from './methods/documents/create';
-import getDocument from './methods/documents/get';
+import broadcastDocument from './methods/documents/broadcast.js';
+import createDocument from './methods/documents/create.js';
+import getDocument from './methods/documents/get.js';
 
-import publishContract from './methods/contracts/publish';
-import updateContract from './methods/contracts/update';
-import createContract from './methods/contracts/create';
-import getContract from './methods/contracts/get';
-import getContractHistory from './methods/contracts/history';
+import publishContract from './methods/contracts/publish.js';
+import updateContract from './methods/contracts/update.js';
+import createContract from './methods/contracts/create.js';
+import getContract from './methods/contracts/get.js';
+import getContractHistory from './methods/contracts/history.js';
 
-import getIdentity from './methods/identities/get';
-import registerIdentity from './methods/identities/register';
-import topUpIdentity from './methods/identities/topUp';
-import creditTransferIdentity from './methods/identities/creditTransfer';
-import creditWithdrawal from './methods/identities/creditWithdrawal';
-import updateIdentity from './methods/identities/update';
-import createIdentityCreateTransition from './methods/identities/internal/createIdentityCreateTransition';
-import createIdentityTopUpTransition from './methods/identities/internal/createIdentityTopUpTransition';
-import createAssetLockProof from './methods/identities/internal/createAssetLockProof';
-import waitForCoreChainLockedHeight from './methods/identities/internal/waitForCoreChainLockedHeight';
+import getIdentity from './methods/identities/get.js';
+import registerIdentity from './methods/identities/register.js';
+import topUpIdentity from './methods/identities/topUp.js';
+import creditTransferIdentity from './methods/identities/creditTransfer.js';
+import creditWithdrawal from './methods/identities/creditWithdrawal.js';
+import updateIdentity from './methods/identities/update.js';
+import createIdentityCreateTransition from './methods/identities/internal/createIdentityCreateTransition.js';
+import createIdentityTopUpTransition from './methods/identities/internal/createIdentityTopUpTransition.js';
+import createAssetLockProof from './methods/identities/internal/createAssetLockProof.js';
+import waitForCoreChainLockedHeight from './methods/identities/internal/waitForCoreChainLockedHeight.js';
 
-import registerName from './methods/names/register';
-import resolveName from './methods/names/resolve';
-import resolveNameByRecord from './methods/names/resolveByRecord';
-import searchName from './methods/names/search';
-import broadcastStateTransition from './broadcastStateTransition';
+import registerName from './methods/names/register.js';
+import resolveName from './methods/names/resolve.js';
+import resolveNameByRecord from './methods/names/resolveByRecord.js';
+import searchName from './methods/names/search.js';
+import broadcastStateTransition from './broadcastStateTransition.js';
 
-import logger, { ConfigurableLogger } from '../../../logger';
-import Fetcher from './Fetcher';
-import NonceManager from './NonceManager/NonceManager';
+import logger, { ConfigurableLogger } from '../../../logger/index.js';
+import Fetcher from './Fetcher/index.js';
+import NonceManager from './NonceManager/NonceManager.js';
 
 /**
  * Interface for PlatformOpts
@@ -246,6 +247,10 @@ export class Platform {
   //
   // Slash is missing before `dist` and TS compilation in consumers is breaking
   static async initializeDppModule(): Promise<DPPModule> {
-    return loadWasmDpp();
+    // wasm-dpp is CJS; under NodeNext the default import may resolve to the
+    // module namespace object instead of the callable. Unwrap defensively.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const load = (loadWasmDpp as any).default ?? loadWasmDpp;
+    return load();
   }
 }

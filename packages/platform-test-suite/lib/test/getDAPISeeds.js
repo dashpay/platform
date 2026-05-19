@@ -1,4 +1,4 @@
-const DAPIAddress = require('@dashevo/dapi-client/lib/dapiAddressProvider/DAPIAddress');
+import DAPIAddress from '@dashevo/dapi-client/lib/dapiAddressProvider/DAPIAddress.js';
 
 function getDAPISeeds() {
   return process.env.DAPI_SEED
@@ -10,4 +10,4 @@ function getDAPISeeds() {
     });
 }
 
-module.exports = getDAPISeeds;
+export default getDAPISeeds;

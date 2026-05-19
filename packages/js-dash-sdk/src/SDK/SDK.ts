@@ -10,11 +10,11 @@ import {
   utils as _WalletLibUtils,
   plugins as _WalletLibPlugins,
 } from '@dashevo/wallet-lib';
-import { Client as _Client } from './Client';
-import { Core as _Core } from './Core';
-import { Platform as _Platform } from './Platform';
+import { Client as _Client } from './Client/index.js';
+import { Core as _Core } from './Core/index.js';
+import { Platform as _Platform } from './Platform/index.js';
 
-import { StateTransitionBroadcastError } from '../errors/StateTransitionBroadcastError';
+import { StateTransitionBroadcastError } from '../errors/StateTransitionBroadcastError.js';
 
 export namespace SDK {
   export const DAPIClient = _DAPIClient;

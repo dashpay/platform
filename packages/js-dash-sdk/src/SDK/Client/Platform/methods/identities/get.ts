@@ -1,8 +1,10 @@
-import { Identifier, Metadata } from '@dashevo/wasm-dpp';
-import { GetIdentityResponse } from '@dashevo/dapi-client/lib/methods/platform/getIdentity/GetIdentityResponse';
-import { Platform } from '../../Platform';
-
-const NotFoundError = require('@dashevo/dapi-client/lib/transport/GrpcTransport/errors/NotFoundError');
+import wasmDpp from '@dashevo/wasm-dpp';
+const { Identifier, Metadata } = wasmDpp;
+import type { Identifier as IdentifierType } from '@dashevo/wasm-dpp';
+type Identifier = IdentifierType;
+import GetIdentityResponse from '@dashevo/dapi-client/lib/methods/platform/getIdentity/GetIdentityResponse.js';
+import NotFoundError from '@dashevo/dapi-client/lib/transport/GrpcTransport/errors/NotFoundError.js';
+import { Platform } from '../../Platform.js';
 
 /**
  * Get an identity from the platform

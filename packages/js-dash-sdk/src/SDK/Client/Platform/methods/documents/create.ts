@@ -1,5 +1,8 @@
-import { ExtendedDocument } from '@dashevo/wasm-dpp';
-import { Platform } from '../../Platform';
+import wasmDpp from '@dashevo/wasm-dpp';
+const { ExtendedDocument } = wasmDpp;
+import type { ExtendedDocument as ExtendedDocumentType } from '@dashevo/wasm-dpp';
+type ExtendedDocument = ExtendedDocumentType;
+import { Platform } from '../../Platform.js';
 
 declare interface CreateOpts {
   [name:string]: any;

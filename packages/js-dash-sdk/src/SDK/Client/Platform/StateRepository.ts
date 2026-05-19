@@ -1,5 +1,14 @@
-import { DataContract, Identity, Identifier } from '@dashevo/wasm-dpp';
-import Client from '../Client';
+import wasmDpp from '@dashevo/wasm-dpp';
+const { DataContract, Identity, Identifier } = wasmDpp;
+import type {
+  DataContract as DataContractType,
+  Identity as IdentityType,
+  Identifier as IdentifierType,
+} from '@dashevo/wasm-dpp';
+type DataContract = DataContractType;
+type Identity = IdentityType;
+type Identifier = IdentifierType;
+import Client from '../Client.js';
 
 class StateRepository {
   private readonly client: Client;

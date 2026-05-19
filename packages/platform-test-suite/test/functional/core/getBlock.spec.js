@@ -1,6 +1,6 @@
-const Dash = require('dash');
+import Dash from 'dash';
 
-const createClientWithoutWallet = require('../../../lib/test/createClientWithoutWallet');
+import createClientWithoutWallet from '../../../lib/test/createClientWithoutWallet.js';
 
 const { Core: { Block }, Essentials: { Buffer } } = Dash;
 
