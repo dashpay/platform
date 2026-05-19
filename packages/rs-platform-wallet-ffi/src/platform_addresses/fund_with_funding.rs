@@ -178,6 +178,8 @@ pub unsafe extern "C" fn platform_address_wallet_resume_fund_with_existing_asset
         let wallet_id = wallet.wallet_id();
         let network = wallet.network();
         block_on_worker(async move {
+            // SAFETY: see the fn-level safety doc — both handles are
+            // pinned alive for the duration of this FFI call.
             let address_signer: &VTableSigner = unsafe { &*(signer_addr as *const VTableSigner) };
             let asset_lock_signer = unsafe {
                 MnemonicResolverCoreSigner::new(

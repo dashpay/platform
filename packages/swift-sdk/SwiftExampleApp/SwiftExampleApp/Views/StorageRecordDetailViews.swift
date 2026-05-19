@@ -1801,6 +1801,13 @@ struct AssetLockStorageDetailView: View {
     /// don't yet have the `wallet` relationship populated.
     @Query private var candidateIdentities: [PersistentIdentity]
 
+    /// Wallet this asset lock belongs to. Filtered by walletId so
+    /// the bech32m HRP picker on the Recipient section reads the
+    /// correct network. `@Query` is reactive; if the wallet row
+    /// vanishes (e.g. wallet deletion), the helper falls back to
+    /// testnet HRP rather than crashing.
+    @Query private var owningWallets: [PersistentWallet]
+
     init(record: PersistentAssetLock) {
         self.record = record
         // `PersistentAssetLock.identityIndexRaw` is `Int32` (the
@@ -1814,6 +1821,12 @@ struct AssetLockStorageDetailView: View {
         _candidateIdentities = Query(
             filter: #Predicate<PersistentIdentity> { identity in
                 identity.identityIndex == identityIndex
+            }
+        )
+        let walletId = record.walletId
+        _owningWallets = Query(
+            filter: #Predicate<PersistentWallet> { wallet in
+                wallet.walletId == walletId
             }
         )
     }
@@ -2010,14 +2023,21 @@ struct AssetLockStorageDetailView: View {
     }
 
     /// Determine the network HRP for the wallet that owns this
-    /// asset lock. Falls back to testnet — the common case in
-    /// this example app.
+    /// asset lock. Reads from the matching `PersistentWallet`'s
+    /// `network` field per DIP-0018 (`dash` on mainnet, `tdash`
+    /// everywhere else). Falls back to testnet only when the
+    /// owning wallet row can't be resolved (deleted wallet, legacy
+    /// row without the relationship populated) — that case is
+    /// already non-functional so the fallback string is
+    /// inconsequential.
     private func networkHRP() -> String {
-        // Wallet row lookup is best-effort; we keep the explorer
-        // self-contained here rather than threading the wallet
-        // through every storage detail view's init.
-        // Default: testnet HRP.
-        "tdash"
+        guard let wallet = owningWallets.first, let network = wallet.network else {
+            return "tdash"
+        }
+        switch network {
+        case .mainnet: return "dash"
+        default: return "tdash"
+        }
     }
 }
 

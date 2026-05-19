@@ -132,26 +132,41 @@ struct PendingPlatformFundingRow: View {
     @EnvironmentObject var walletManager: PlatformWalletManager
 
     var body: some View {
-        NavigationLink(destination: AddressFundingProgressView(controller: controller)) {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    Image(systemName: phaseIcon)
-                        .foregroundColor(phaseTint)
-                    Text("Platform Account #\(controller.platformAccountIndex)")
-                        .font(.body)
-                    Spacer()
-                    Text(phaseLabel)
-                        .font(.caption)
+        HStack(spacing: 8) {
+            NavigationLink(destination: AddressFundingProgressView(controller: controller)) {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Image(systemName: phaseIcon)
+                            .foregroundColor(phaseTint)
+                        Text("Platform Account #\(controller.platformAccountIndex)")
+                            .font(.body)
+                        Spacer()
+                        Text(phaseLabel)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        // Manual disclosure indicator — without a
+                        // List ancestor SwiftUI doesn't auto-render
+                        // the chevron, and the row would read as a
+                        // static label.
+                        Image(systemName: "chevron.right")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    Text(recipientLabel)
+                        .font(.caption2)
                         .foregroundColor(.secondary)
+                        .lineLimit(1)
                 }
-                Text(recipientLabel)
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-                    .lineLimit(1)
+                .padding(.vertical, 2)
             }
-            .padding(.vertical, 2)
-        }
-        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            .buttonStyle(.plain)
+            // Inline Dismiss for `.failed` controllers. The earlier
+            // `.swipeActions` modifier was dead — that modifier only
+            // takes effect when the row is inside a List/Form, and
+            // this row renders inside a VStack card on the wallet
+            // detail screen. Without an inline button the user had
+            // no way to clear a failed funding short of an app
+            // restart.
             if case .failed = controller.phase {
                 Button {
                     walletManager.addressFundingCoordinator.dismiss(
@@ -160,9 +175,11 @@ struct PendingPlatformFundingRow: View {
                         recipientHash: controller.recipientHash
                     )
                 } label: {
-                    Label("Dismiss", systemImage: "trash")
+                    Image(systemName: "trash")
+                        .foregroundColor(.red)
                 }
-                .tint(.red)
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Dismiss failed funding")
             }
         }
     }

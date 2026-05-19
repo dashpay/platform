@@ -382,6 +382,27 @@ struct AddressFundingProgressView: View {
                         .font(.callout)
                         .foregroundColor(.primary)
                         .textSelection(.enabled)
+                    // Dismissal path mirroring the inline terminal
+                    // section in `FundPlatformAddressView`. Without
+                    // this the only way to clear a `.failed`
+                    // controller from a pushed progress view was to
+                    // relaunch the app — the `Pending Platform
+                    // Funding` row's `.swipeActions` doesn't fire
+                    // outside a List, so neither surface had a
+                    // working dismissal.
+                    Button {
+                        walletManager.addressFundingCoordinator.dismiss(
+                            walletId: controller.walletId,
+                            platformAccountIndex: controller.platformAccountIndex,
+                            recipientHash: controller.recipientHash
+                        )
+                        dismiss()
+                    } label: {
+                        Text("Dismiss")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .padding(.top, 4)
                 }
             }
         default:
