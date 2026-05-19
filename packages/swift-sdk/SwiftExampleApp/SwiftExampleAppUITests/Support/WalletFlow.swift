@@ -608,7 +608,7 @@ func runIdentityDiscovery(
         file: file, line: line
     )
 
-    let doneButton = app.buttons["Done"]
+    let doneButton = searchSheetNavBar.buttons["Done"]
     if doneButton.waitForExistence(timeout: 5) {
         doneButton.tap()
     }
