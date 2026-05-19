@@ -38,10 +38,27 @@
 //!
 //! # Zeroization
 //!
-//! Every intermediate that carries key material — the resolver
-//! buffer, the BIP-39 seed, the derived 32-byte scalar — is wrapped
-//! in `Zeroizing` and dropped before the method returns. No private
-//! key bytes survive past the trait-method boundary.
+//! Every intermediate that carries key material is wiped before the
+//! method returns. Two mechanisms cover the different ownership
+//! shapes:
+//!
+//! - **`Zeroizing` wrappers** scrub on `Drop` for the byte-buffer
+//!   intermediates: the resolver mnemonic buffer, the BIP-39 seed,
+//!   and the final derived 32-byte scalar.
+//! - **Explicit `non_secure_erase` calls** scrub the
+//!   [`secp256k1::SecretKey`] scalars inside the two intermediate
+//!   [`ExtendedPrivKey`] values (master + derived). `ExtendedPrivKey`
+//!   has no `Drop` / `Zeroize` impl in `key-wallet`, so falling out
+//!   of scope alone would leave those scalars resident; the explicit
+//!   wipe at the bottom of `derive_priv` closes the gap. Same
+//!   defense is applied at the sign-site for the `SecretKey` copy
+//!   `from_slice` creates. A proper fix is a `Zeroize` /
+//!   `ZeroizeOnDrop` impl in `dashpay/rust-dashcore`'s
+//!   `key-wallet/src/bip32.rs`; until that ships, the local wipes
+//!   keep the no-residue invariant true.
+//!
+//! Combined, no private key bytes survive past the trait-method
+//! boundary.
 
 use std::ffi::c_void;
 use std::os::raw::c_char;

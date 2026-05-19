@@ -838,14 +838,13 @@ mod tests {
         use dpp::consensus::basic::BasicError;
         use dpp::consensus::ConsensusError;
 
-        let consensus = ConsensusError::BasicError(
-            BasicError::InvalidAssetLockProofCoreChainHeightError(
+        let consensus =
+            ConsensusError::BasicError(BasicError::InvalidAssetLockProofCoreChainHeightError(
                 InvalidAssetLockProofCoreChainHeightError::new(
                     /* proof_core_chain_locked_height */ 100,
                     /* current_core_chain_locked_height */ 99,
                 ),
-            ),
-        );
+            ));
         dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(Box::new(consensus)))
     }
 
@@ -903,7 +902,10 @@ mod tests {
 
         // Surfaced error must be the original 10506 — not a wrapper, not
         // a "timeout" type, not None.
-        assert!(result.is_err(), "retry must surface the underlying error on budget exhaust");
+        assert!(
+            result.is_err(),
+            "retry must surface the underlying error on budget exhaust"
+        );
         let surfaced_err = result.unwrap_err();
         assert!(
             as_asset_lock_proof_cl_height_too_low(&surfaced_err).is_some(),
@@ -916,7 +918,8 @@ mod tests {
         // At least 2 attempts (initial + at least one retry); upper
         // bound is `budget / delay` + 1 with a small slack for the
         // boundary check.
-        let max_expected = (CL_HEIGHT_RETRY_BUDGET.as_secs() / CL_HEIGHT_RETRY_DELAY.as_secs()) as u32 + 2;
+        let max_expected =
+            (CL_HEIGHT_RETRY_BUDGET.as_secs() / CL_HEIGHT_RETRY_DELAY.as_secs()) as u32 + 2;
         assert!(
             call_n >= 2 && call_n <= max_expected,
             "expected 2..={max_expected} attempts (initial + retries up to budget), got {call_n}"
@@ -929,8 +932,7 @@ mod tests {
 
         // First attempt: caller-supplied `None` settings → user_fee_increase = None.
         assert_eq!(
-            captured[0],
-            None,
+            captured[0], None,
             "first attempt must use the caller-supplied `None` settings (no bump yet)"
         );
 
