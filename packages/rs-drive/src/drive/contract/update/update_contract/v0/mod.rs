@@ -300,28 +300,65 @@ impl Drive {
                     type_key.as_bytes(),
                 ];
 
-                let apply_type = if estimated_costs_only_with_layer_info.is_none() {
-                    BatchInsertTreeApplyType::StatefulBatchInsertTree
-                } else {
-                    BatchInsertTreeApplyType::StatelessBatchInsertTree {
-                        in_tree_type: TreeType::NormalTree,
-                        tree_type: TreeType::NormalTree,
-                        flags_len: element_flags
-                            .as_ref()
-                            .map(|e| e.len() as u32)
-                            .unwrap_or_default(),
-                    }
-                };
-
                 let mut index_cache: HashSet<&[u8]> = HashSet::new();
-                // for each type we should insert the indices that are top level
+                let document_type_ref = document_type.as_ref();
+                let index_structure = document_type_ref.index_structure();
+                // for each type we should insert the indices that are top level.
+                //
+                // `batch_insert_empty_tree_if_not_exists` is a no-op when the
+                // index already exists, so this loop covers BOTH the
+                // pre-existing indexes (no-op, no on-disk change) AND any
+                // brand-new top-level indexes the contract update adds to an
+                // existing doctype. The latter must materialize with the
+                // matching tree variant from the `(range_countable,
+                // range_summable)` dispatch — same 4-way table the
+                // new-doctype branch below uses, identical to
+                // `insert_contract_v0`'s top-level-index dispatch. Without
+                // this, adding a new `rangeSummable: true` (or
+                // `rangeCountable: true`) index to an existing doctype via
+                // contract update silently created a NormalTree, diverging
+                // from the layout a fresh insert would have produced and
+                // breaking subsequent range-sum / range-count reads.
                 for index in document_type.as_ref().top_level_indices() {
-                    // toDo: we can save a little by only inserting on new indexes
                     let index_bytes = index.name.as_bytes();
                     if !index_cache.contains(index_bytes) {
+                        let index_info = index_structure
+                            .sub_levels()
+                            .get(index.name.as_str())
+                            .and_then(|level| level.has_index_with_type());
+                        let range_countable =
+                            index_info.map(|info| info.range_countable).unwrap_or(false);
+                        let range_summable =
+                            index_info.map(|info| info.range_summable).unwrap_or(false);
+                        let target_tree_type = match (range_countable, range_summable) {
+                            (true, true) => TreeType::ProvableCountProvableSumTree,
+                            (true, false) => TreeType::ProvableCountTree,
+                            (false, true) => TreeType::ProvableSumTree,
+                            (false, false) => TreeType::NormalTree,
+                        };
+                        let apply_type = if estimated_costs_only_with_layer_info.is_none() {
+                            BatchInsertTreeApplyType::StatefulBatchInsertTree
+                        } else {
+                            BatchInsertTreeApplyType::StatelessBatchInsertTree {
+                                in_tree_type: TreeType::NormalTree,
+                                tree_type: target_tree_type,
+                                flags_len: element_flags
+                                    .as_ref()
+                                    .map(|e| e.len() as u32)
+                                    .unwrap_or_default(),
+                            }
+                        };
+                        // The generic `batch_insert_empty_tree_if_not_exists`
+                        // already takes a `TreeType` arg and routes the
+                        // grovedb insert to the matching variant — same
+                        // helper count's non-summable index path uses.
+                        // No-op when the path/key already exists, which is
+                        // how this branch handles both pre-existing
+                        // indexes (unchanged on disk) and brand-new ones
+                        // (materialized with the dispatch-chosen variant).
                         self.batch_insert_empty_tree_if_not_exists(
                             PathFixedSizeKeyRef((type_path, index.name.as_bytes())),
-                            TreeType::NormalTree,
+                            target_tree_type,
                             storage_flags.as_ref().map(|flags| flags.as_ref()),
                             apply_type,
                             transaction,
@@ -1185,5 +1222,232 @@ mod tests {
                 other
             ),
         }
+    }
+
+    /// Insert a doctype FIRST without any range-countable index, then
+    /// add a `rangeSummable`/`rangeCountable` index via a SECOND
+    /// `apply_contract` call — exercises the existing-doctype branch
+    /// in `update_contract_operations_v0` (the `if let Some(...)`
+    /// arm at the top of the loop). The dispatch must materialize
+    /// the property-name tree with the matching tree variant, NOT
+    /// the unconditional `NormalTree` the pre-fix code used.
+    ///
+    /// Returns `(drive, contract_after_update)` so each per-shape
+    /// test can read the materialized tree element it cares about.
+    fn update_existing_doctype_with_new_indexed_index(
+        document_type_name: &str,
+        index_summable: bool,
+        index_range_summable: bool,
+        index_countable: bool,
+        index_range_countable: bool,
+    ) -> (Drive, dpp::prelude::DataContract) {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        // Step 1: add the doctype with NO indices.
+        let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+        let bare_schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "userId": {
+                    "type": "array",
+                    "byteArray": true,
+                    "contentMediaType": "application/x.dash.dpp.identifier",
+                    "minItems": 32,
+                    "maxItems": 32,
+                    "position": 0,
+                },
+                "amount": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1000000,
+                    "position": 1,
+                },
+            },
+            "required": ["userId", "amount"],
+            "additionalProperties": false,
+        });
+        contract
+            .set_document_schema(
+                document_type_name,
+                bare_schema,
+                true,
+                &mut vec![],
+                platform_version,
+            )
+            .expect("set bare schema");
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("initial insert with bare doctype");
+
+        // Step 2: update the EXISTING doctype to add a top-level
+        // index. This is the branch under test — the doctype
+        // already exists, so we hit the `if let Some(original)` arm
+        // not the `else` (new doctype) arm.
+        let new_schema = schema_with_indexed_summable(
+            index_summable,
+            index_range_summable,
+            index_countable,
+            index_range_countable,
+        );
+        contract
+            .set_document_schema(
+                document_type_name,
+                new_schema,
+                true,
+                &mut vec![],
+                platform_version,
+            )
+            .expect("set updated schema");
+        contract.increment_version();
+
+        drive
+            .update_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("update existing doctype with new index");
+
+        (drive, contract)
+    }
+
+    /// Existing-doctype branch: adding a `rangeSummable: true`
+    /// index to a doctype that already exists must materialize the
+    /// property-name tree as `ProvableSumTree`. Regression for the
+    /// pre-fix `batch_insert_empty_tree_if_not_exists(...,
+    /// TreeType::NormalTree, ...)` unconditional NormalTree at the
+    /// top-level-index step in the existing-doctype branch — the
+    /// new-doctype branch was already fixed in 64051f3f, but the
+    /// existing-doctype branch was missed.
+    #[test]
+    fn test_update_contract_v0_adds_range_summable_index_to_existing_doctype_creates_provable_sum_tree(
+    ) {
+        let (drive, contract) = update_existing_doctype_with_new_indexed_index(
+            "existingDoctypeRangeSummable",
+            true,
+            true,
+            false,
+            false,
+        );
+
+        let elem =
+            read_top_level_index_tree(&drive, &contract, "existingDoctypeRangeSummable", "userId");
+        match elem {
+            Element::ProvableSumTree(_, sum, _) => {
+                assert_eq!(
+                    sum, 0,
+                    "freshly created top-level ProvableSumTree (existing-doctype branch) \
+                     should have sum 0"
+                );
+            }
+            other => panic!(
+                "rangeSummable index added to EXISTING doctype must materialize a \
+                 ProvableSumTree at the property-name level, got {:?}",
+                other
+            ),
+        }
+    }
+
+    /// Existing-doctype branch: adding a `rangeCountable: true`
+    /// index to a doctype that already exists must materialize
+    /// `ProvableCountTree`. Mirror of the previous test on the
+    /// count axis — pins that the existing-doctype dispatch
+    /// covers all four `(range_countable, range_summable)` arms.
+    #[test]
+    fn test_update_contract_v0_adds_range_countable_index_to_existing_doctype_creates_provable_count_tree(
+    ) {
+        let (drive, contract) = update_existing_doctype_with_new_indexed_index(
+            "existingDoctypeRangeCountable",
+            false,
+            false,
+            true,
+            true,
+        );
+
+        let elem =
+            read_top_level_index_tree(&drive, &contract, "existingDoctypeRangeCountable", "userId");
+        match elem {
+            Element::ProvableCountTree(_, count, _) => {
+                assert_eq!(
+                    count, 0,
+                    "freshly created top-level ProvableCountTree (existing-doctype branch) \
+                     should have count 0"
+                );
+            }
+            other => panic!(
+                "rangeCountable index added to EXISTING doctype must materialize a \
+                 ProvableCountTree at the property-name level, got {:?}",
+                other
+            ),
+        }
+    }
+
+    /// Existing-doctype branch: `rangeCountable + rangeSummable`
+    /// → PCPS at the property-name level. Pins the `(true, true)`
+    /// arm of the existing-doctype dispatch.
+    #[test]
+    fn test_update_contract_v0_adds_pcps_index_to_existing_doctype_creates_pcps_tree() {
+        let (drive, contract) = update_existing_doctype_with_new_indexed_index(
+            "existingDoctypePcps",
+            true,
+            true,
+            true,
+            true,
+        );
+
+        let elem = read_top_level_index_tree(&drive, &contract, "existingDoctypePcps", "userId");
+        match elem {
+            Element::ProvableCountProvableSumTree(_, count, sum, _) => {
+                assert_eq!(
+                    (count, sum),
+                    (0, 0),
+                    "freshly created top-level PCPS (existing-doctype branch) should have \
+                     count=0 and sum=0"
+                );
+            }
+            other => panic!(
+                "rangeCountable + rangeSummable index added to EXISTING doctype must \
+                 materialize a ProvableCountProvableSumTree at the property-name level, \
+                 got {:?}",
+                other
+            ),
+        }
+    }
+
+    /// Existing-doctype branch: unflagged index → `NormalTree`.
+    /// Pins that the `(false, false)` default arm still routes
+    /// through the dispatch — without this test a future refactor
+    /// could fall through to a wrong default without tripping any
+    /// of the sum/count-flagged tests.
+    #[test]
+    fn test_update_contract_v0_adds_unflagged_index_to_existing_doctype_keeps_normal_tree() {
+        let (drive, contract) = update_existing_doctype_with_new_indexed_index(
+            "existingDoctypeUnflagged",
+            false,
+            false,
+            false,
+            false,
+        );
+
+        let elem =
+            read_top_level_index_tree(&drive, &contract, "existingDoctypeUnflagged", "userId");
+        assert!(
+            matches!(elem, Element::Tree(..)),
+            "unflagged index on existing doctype must stay NormalTree; got {:?}",
+            elem
+        );
     }
 }

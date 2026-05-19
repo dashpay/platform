@@ -48,12 +48,25 @@ pub(super) fn detect_sum_mode_v0_from_inputs(
         (SumMode::GroupByIn, false, _, false) => DocumentSumMode::PerInValue,
         (SumMode::GroupByIn, false, _, true) => DocumentSumMode::PointLookupProof,
         // GroupByIn + range: the carrier-ACOR shape (count's
-        // RangeAggregateCarrierProof). Same routing on the sum side.
+        // RangeAggregateCarrierProof). Same routing on the sum side —
+        // one sum per In branch.
         (SumMode::GroupByIn, true, true, true) => DocumentSumMode::RangeAggregateCarrierProof,
         (SumMode::GroupByIn, true, _, false) => DocumentSumMode::RangeNoProof,
         (SumMode::GroupByRange, true, _, true) => DocumentSumMode::RangeDistinctProof,
         (SumMode::GroupByRange, true, _, false) => DocumentSumMode::RangeNoProof,
-        (SumMode::GroupByCompound, true, true, true) => DocumentSumMode::RangeAggregateCarrierProof,
+        // GroupByCompound is a DISTINCT shape (per `(in_key,
+        // range_key)` pair) — must route to `RangeDistinctProof` so
+        // the prover walks every distinct in-range terminator per
+        // In branch via `distinct_sum_path_query` (whose compound
+        // arm handles `In on prefix + range on terminator`). Routing
+        // this to `RangeAggregateCarrierProof` would have emitted
+        // one entry PER In branch (collapsing the range axis), which
+        // contradicts the no-proof semantics that emit one entry
+        // per `(in_key, range_key)` pair. Mirrors count's
+        // `(true, _, true, true) => RangeDistinctProof` for the
+        // distinct branch (count's `GroupByCompound` is in
+        // `requires_distinct_walk()` for the same reason).
+        (SumMode::GroupByCompound, true, true, true) => DocumentSumMode::RangeDistinctProof,
         (SumMode::GroupByCompound, true, true, false) => DocumentSumMode::RangeNoProof,
         _ => {
             return Err(Error::Drive(crate::error::drive::DriveError::NotSupported(
@@ -204,20 +217,30 @@ mod tests {
         assert_eq!(mode, DocumentSumMode::RangeDistinctProof);
     }
 
-    /// GroupByCompound + In + range + prove → RangeAggregateCarrierProof.
-    /// Compound (In on prefix, range on terminator) maps to the
-    /// carrier shape — same target as GroupByIn+range. Different
-    /// caller intent (distinct per `(in_key, key)`) but same
-    /// underlying carrier-ACOR proof.
+    /// GroupByCompound + In + range + prove → RangeDistinctProof.
+    /// Compound IS a distinct shape — one entry per `(in_key,
+    /// range_key)` pair, walked via `distinct_sum_path_query`'s
+    /// compound arm (which handles `In on prefix + range on
+    /// terminator` via grovedb's subquery primitive). Pinning this
+    /// to `RangeAggregateCarrierProof` would emit one entry PER In
+    /// branch (collapsing the range axis), contradicting the
+    /// no-proof semantics — which is the bug this test guards.
+    /// Mirrors count's `GroupByCompound -> RangeDistinctProof`.
     #[test]
-    fn group_by_compound_with_in_and_range_prove_routes_to_carrier() {
+    fn group_by_compound_with_in_and_range_prove_routes_to_range_distinct() {
         let mode = detect_sum_mode_v0_from_inputs(
             &[in_clause("user_id"), range_clause("amount")],
             SumMode::GroupByCompound,
             true,
         )
         .expect("GroupByCompound In+range prove must route");
-        assert_eq!(mode, DocumentSumMode::RangeAggregateCarrierProof);
+        assert_eq!(
+            mode,
+            DocumentSumMode::RangeDistinctProof,
+            "GroupByCompound is a distinct shape — per (in_key, range_key) entries — \
+             not a carrier-aggregate one. The carrier shape (one entry per In branch) \
+             is reserved for GroupByIn."
+        );
     }
 
     /// GroupByCompound + range (no In) + prove → UNSUPPORTED.
