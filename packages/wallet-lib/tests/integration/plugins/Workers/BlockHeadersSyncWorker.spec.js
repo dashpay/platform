@@ -1,18 +1,19 @@
-const { expect } = require('chai');
-const EventEmitter = require('events');
-const { Block } = require('@dashevo/dashcore-lib');
-const DAPIClient = require('@dashevo/dapi-client');
-const EVENTS = require('../../../../src/EVENTS');
-const CONSTANTS = require('../../../../src/CONSTANTS');
-const BlockHeadersSyncWorker = require('../../../../src/plugins/Workers/BlockHeadersSyncWorker/BlockHeadersSyncWorker');
-const mockBlockHeadersProvider = require('../../../../src/test/mocks/mockBlockHeadersProvider');
-const mockStorage = require('../../../../src/test/mocks/mockStorage');
-const BlockHeadersStreamMock = require('../../../../src/test/mocks/BlockHeadersStreamMock');
-const { waitOneTick } = require('../../../../src/test/utils');
-const { mockHeadersChain } = require('../../../../src/test/mocks/dashcore/block');
+import { expect } from 'chai';
+import EventEmitter from 'events';
+import dashcore from '@dashevo/dashcore-lib';
+const { Block } = dashcore;
+import DAPIClient from '@dashevo/dapi-client';
+import EVENTS from '../../../../src/EVENTS.js';
+import CONSTANTS from '../../../../src/CONSTANTS.js';
+import BlockHeadersSyncWorker from '../../../../src/plugins/Workers/BlockHeadersSyncWorker/BlockHeadersSyncWorker.js';
+import mockBlockHeadersProvider from '../../../../src/test/mocks/mockBlockHeadersProvider.js';
+import mockStorage from '../../../../src/test/mocks/mockStorage.js';
+import BlockHeadersStreamMock from '../../../../src/test/mocks/BlockHeadersStreamMock.js';
+import { waitOneTick } from '../../../../src/test/utils.js';
+import { mockHeadersChain } from '../../../../src/test/mocks/dashcore/block.js';
 
 const { BlockHeadersProvider } = DAPIClient;
-const logger = require('../../../../src/logger');
+import logger from '../../../../src/logger/index.js';
 
 describe('BlockHeadersSyncWorker - integration', () => {
   let headersChain = [];

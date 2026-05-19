@@ -1,8 +1,8 @@
-const DAPIClient = require('@dashevo/dapi-client');
+import DAPIClient from '@dashevo/dapi-client';
 
-const _ = require('lodash');
+import _ from 'lodash';
 
-const DAPIClientTransport = require('./DAPIClientTransport/DAPIClientTransport');
+import DAPIClientTransport from './DAPIClientTransport/DAPIClientTransport.js';
 
 /**
  *
@@ -20,4 +20,4 @@ function createTransportFromOptions(options) {
   return new DAPIClientTransport(client);
 }
 
-module.exports = createTransportFromOptions;
+export default createTransportFromOptions;

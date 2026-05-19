@@ -1,9 +1,10 @@
-const _ = require('lodash');
-const {expect} = require('chai');
-const ChainStore = require('../../src/types/ChainStore/ChainStore');
-const castItemTypes = require('./castStorageItemsTypes');
-const {BlockHeader, Transaction} = require('@dashevo/dashcore-lib')
-const WalletStore = require("../types/WalletStore/WalletStore");
+import _ from 'lodash';
+import {expect} from 'chai';
+import ChainStore from '../../src/types/ChainStore/ChainStore.js';
+import castItemTypes from './castStorageItemsTypes.js';
+import dashcore from '@dashevo/dashcore-lib';
+const { BlockHeader, Transaction } = dashcore;
+import WalletStore from '../types/WalletStore/WalletStore.js';
 
 const mockChainStorage = {
   "headersMetadata": {

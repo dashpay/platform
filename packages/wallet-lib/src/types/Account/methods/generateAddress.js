@@ -1,6 +1,6 @@
-const EVENTS = require('../../../EVENTS');
-const { WALLET_TYPES } = require('../../../CONSTANTS');
-const { is } = require('../../../utils');
+import EVENTS from '../../../EVENTS.js';
+import { WALLET_TYPES } from '../../../CONSTANTS.js';
+import { is } from '../../../utils/index.js';
 
 /**
  * Generate an address from a path and import it to the store
@@ -91,4 +91,4 @@ function generateAddress(path, isWatchedAddress = true) {
   return addressData;
 }
 
-module.exports = generateAddress;
+export default generateAddress;

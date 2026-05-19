@@ -1,7 +1,8 @@
-const { Block } = require('@dashevo/dashcore-lib');
-const logger = require('../../../logger');
+import dashcore from '@dashevo/dashcore-lib';
+const { Block } = dashcore;
+import logger from '../../../logger/index.js';
 
-module.exports = async function getBlockByHeight(height) {
+export default async function getBlockByHeight(height) {
   logger.silly(`DAPIClient.getBlockByHeight[${height}]`);
 
   return new Block(await this.client.core.getBlockByHeight(height));

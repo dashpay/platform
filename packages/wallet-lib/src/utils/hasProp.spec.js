@@ -1,5 +1,5 @@
-const { expect } = require('chai');
-const { hasProp } = require("./index");
+import { expect } from 'chai';
+import { hasProp } from './index.js';
 
 describe('Utils - hasProp', function suite() {
   it('should correctly handle property detection', function () {

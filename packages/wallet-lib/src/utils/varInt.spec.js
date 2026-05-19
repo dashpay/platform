@@ -1,5 +1,5 @@
-const { expect } = require('chai');
-const varInt = require('./varInt');
+import { expect } from 'chai';
+import varInt from './varInt.js';
 
 describe('Utils - varInt', function suite() {
   this.timeout(10000);

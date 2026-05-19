@@ -1,4 +1,4 @@
-const WalletLibError = require('./WalletLibError');
+import WalletLibError from './WalletLibError.js';
 
 class InvalidTransaction extends WalletLibError {
   constructor() {
@@ -6,4 +6,4 @@ class InvalidTransaction extends WalletLibError {
   }
 }
 
-module.exports = InvalidTransaction;
+export default InvalidTransaction;

@@ -12,4 +12,4 @@ const _addAccountToWallet = function addAccountToWallet(account, wallet) {
     wallet.accounts.push(account);
   }
 };
-module.exports = _addAccountToWallet;
+export default _addAccountToWallet;

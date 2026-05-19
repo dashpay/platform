@@ -1,4 +1,4 @@
-const { WALLET_TYPES } = require('../../../CONSTANTS');
+import { WALLET_TYPES } from '../../../CONSTANTS.js';
 
 /**
  * Get a specific address based on the index and type of address.
@@ -23,4 +23,4 @@ function getAddress(addressIndex = 0, addressType = 'external') {
     ...chainStore.getAddress(address),
   };
 }
-module.exports = getAddress;
+export default getAddress;

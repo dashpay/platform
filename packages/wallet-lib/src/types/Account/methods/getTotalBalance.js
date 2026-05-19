@@ -1,4 +1,4 @@
-const { duffsToDash, calculateDuffBalance } = require('../../../utils');
+import { duffsToDash, calculateDuffBalance } from '../../../utils/index.js';
 
 /**
  * Return the total balance of an account (confirmed + unconfirmed).
@@ -18,4 +18,4 @@ function getTotalBalance(displayDuffs = true) {
   return (displayDuffs) ? totalSat : duffsToDash(totalSat);
 }
 
-module.exports = getTotalBalance;
+export default getTotalBalance;

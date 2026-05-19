@@ -1,4 +1,4 @@
-const WalletLibError = require('./WalletLibError');
+import WalletLibError from './WalletLibError.js';
 
 class TxMetadataTimeoutError extends WalletLibError {
   /**
@@ -9,4 +9,4 @@ class TxMetadataTimeoutError extends WalletLibError {
   }
 }
 
-module.exports = TxMetadataTimeoutError;
+export default TxMetadataTimeoutError;

@@ -1,6 +1,6 @@
-const logger = require('../../../logger');
+import logger from '../../../logger/index.js';
 
-module.exports = async function getBestBlockHeight() {
+export default async function getBestBlockHeight() {
   logger.silly('DAPIClientTransport.getBestBlockHeight');
 
   return this.client.core.getBestBlockHeight();

@@ -1,19 +1,20 @@
+import dashcore from '@dashevo/dashcore-lib';
 const {
   HDPrivateKey,
   Transaction,
-  PrivateKey
-} = require('@dashevo/dashcore-lib');
+  PrivateKey,
+} = dashcore;
 
-const { expect } = require('chai');
+import { expect } from 'chai';
 
-const { Wallet } = require("../../../src");
-const TransactionsSyncWorker = require("../../../src/plugins/Workers/TransactionsSyncWorker/TransactionsSyncWorker");
-const ChainPlugin = require("../../../src/plugins/Plugins/ChainPlugin");
-const LocalForageAdapterMock = require("../../../src/test/mocks/LocalForageAdapterMock");
-const {waitOneTick} = require("../../../src/test/utils");
-const {mockMerkleBlock} = require("../../../src/test/mocks/dashcore/block");
-const createTransportFromOptions = require("../../../src/transport/createTransportFromOptions");
-const TxStreamMock = require("../../../src/test/mocks/TxStreamMock");
+import { Wallet } from '../../../src/index.js';
+import TransactionsSyncWorker from '../../../src/plugins/Workers/TransactionsSyncWorker/TransactionsSyncWorker.js';
+import ChainPlugin from '../../../src/plugins/Plugins/ChainPlugin.js';
+import LocalForageAdapterMock from '../../../src/test/mocks/LocalForageAdapterMock.js';
+import {waitOneTick} from '../../../src/test/utils.js';
+import {mockMerkleBlock} from '../../../src/test/mocks/dashcore/block.js';
+import createTransportFromOptions from '../../../src/transport/createTransportFromOptions.js';
+import TxStreamMock from '../../../src/test/mocks/TxStreamMock.js';
 
 describe('Wallet', () => {
   // TODO: write test that ensures that storage getting wiped after removing skipSynchronizationBeforeHeight flag

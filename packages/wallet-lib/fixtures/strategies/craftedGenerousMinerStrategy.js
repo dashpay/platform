@@ -1,7 +1,7 @@
-const TransactionEstimator = require('../../src/utils/coinSelections/TransactionEstimator.js');
-const { sortAndVerifyUTXOS } = require('../../src/utils/coinSelections/helpers');
+import TransactionEstimator from '../../src/utils/coinSelections/TransactionEstimator.js';
+import { sortAndVerifyUTXOS } from '../../src/utils/coinSelections/helpers/index.js';
 
-module.exports = function craftedGenerousMinerStrategy(utxosList, outputsList, deductFee = false, feeCategory = 'normal') {
+export default function craftedGenerousMinerStrategy(utxosList, outputsList, deductFee = false, feeCategory = 'normal') {
   const txEstimator = new TransactionEstimator(feeCategory);
 
   // We add our outputs, theses will change only in case deductfee being true
@@ -48,4 +48,4 @@ module.exports = function craftedGenerousMinerStrategy(utxosList, outputsList, d
     estimatedFee,
     utxosValue: txEstimator.getInValue(),
   };
-};
+}

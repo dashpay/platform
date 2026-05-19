@@ -1,10 +1,10 @@
-const _ = require('lodash');
-const {
+import _ from 'lodash';
+import {
   InjectionErrorCannotInject,
-  InjectionErrorCannotInjectUnknownDependency: InjectionErrorCannotInjectUnknownDep,
-} = require('../../../errors');
-const { is } = require('../../../utils');
-const logger = require('../../../logger');
+  InjectionErrorCannotInjectUnknownDependency as InjectionErrorCannotInjectUnknownDep,
+} from '../../../errors/index.js';
+import { is } from '../../../utils/index.js';
+import logger from '../../../logger/index.js';
 /**
  * Will try to inject a given plugin. If needed, it will construct the object first (new).
  * @param {Plugin} UnsafePlugin - Either a child object, or it's parent class to inject
@@ -12,7 +12,7 @@ const logger = require('../../../logger');
  * @param {Boolean} [awaitOnInjection=true] - When true, wait for onInjected resolve first
  * @return {Promise<*>} plugin - instance of the plugin
  */
-module.exports = async function injectPlugin(
+export default async function injectPlugin(
   UnsafePlugin,
   allowSensitiveOperations = false,
   awaitOnInjection = true,

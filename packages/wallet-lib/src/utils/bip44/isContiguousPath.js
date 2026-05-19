@@ -1,6 +1,6 @@
-const is = require('../is');
+import is from '../is.js';
 
-module.exports = function isContiguousPath(currPath, prevPath) {
+export default function isContiguousPath(currPath, prevPath) {
   if (is.undef(currPath)) return false;
 
   const splitCurrPath = currPath.split('/');

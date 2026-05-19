@@ -1,4 +1,4 @@
-const logger = require('../../../logger');
+import logger from '../../../logger/index.js';
 
 function markAddressAsUsed(address) {
   const searchResult = [...this.issuedPaths.entries()]
@@ -17,4 +17,4 @@ function markAddressAsUsed(address) {
 
   return false;
 }
-module.exports = markAddressAsUsed;
+export default markAddressAsUsed;

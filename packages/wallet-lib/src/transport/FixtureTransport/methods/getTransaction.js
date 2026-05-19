@@ -1,7 +1,12 @@
-const { Transaction } = require('@dashevo/dashcore-lib');
-const fs = require('fs');
+import dashcore from '@dashevo/dashcore-lib';
+const { Transaction } = dashcore;
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-module.exports = async function getTransaction(transactionHash) {
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+export default async function getTransaction(transactionHash) {
   const txFile = JSON.parse(fs.readFileSync(`${__dirname}/../data/transactions/${transactionHash}.json`));
   return new Transaction(Buffer.from(txFile.transaction, 'hex'));
-};
+}

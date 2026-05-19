@@ -1,4 +1,4 @@
-const WalletLibError = require('./WalletLibError');
+import WalletLibError from './WalletLibError.js';
 
 class InvalidStrategy extends WalletLibError {
   constructor(arg) {
@@ -6,4 +6,4 @@ class InvalidStrategy extends WalletLibError {
     super(`Unable to import strategy. Expected 'str' or 'fn' got ${type}`);
   }
 }
-module.exports = InvalidStrategy;
+export default InvalidStrategy;

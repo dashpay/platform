@@ -4,7 +4,7 @@
  * You want to use this method at the end of your life cycle of this lib.
  * @return {Promise<Boolean>}
  */
-module.exports = async function disconnect() {
+export default async function disconnect() {
   this.isDisconnecting = true;
   if (this.transport && this.transport.disconnect) {
     await this.transport.disconnect();

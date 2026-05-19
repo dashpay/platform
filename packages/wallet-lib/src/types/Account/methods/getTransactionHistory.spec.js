@@ -1,10 +1,10 @@
-const {expect} = require('chai');
-const getTransactions = require('./getTransactions');
-const getTransactionHistory = require('./getTransactionHistory');
-const getTotalBalance = require('./getTotalBalance');
+import {expect} from 'chai';
+import getTransactions from './getTransactions.js';
+import getTransactionHistory from './getTransactionHistory.js';
+import getTotalBalance from './getTotalBalance.js';
 
-const getFixtureHDAccountWithStorage = require('../../../../fixtures/wallets/apart-trip-dignity/getFixtureAccountWithStorage');
-const getFixturePrivateAccountWithStorage = require('../../../../fixtures/wallets/2a331817b9d6bf85100ef0/getFixtureAccountWithStorage');
+import getFixtureHDAccountWithStorage from '../../../../fixtures/wallets/apart-trip-dignity/getFixtureAccountWithStorage.js';
+import getFixturePrivateAccountWithStorage from '../../../../fixtures/wallets/2a331817b9d6bf85100ef0/getFixtureAccountWithStorage.js';
 
 
 const mockedHDAccount = getFixtureHDAccountWithStorage();

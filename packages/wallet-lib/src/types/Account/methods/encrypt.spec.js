@@ -1,6 +1,6 @@
-const { expect } = require('chai');
-const CryptoJS = require('crypto-js');
-const { Wallet } = require('../../../index');
+import { expect } from 'chai';
+import CryptoJS from 'crypto-js';
+import { Wallet } from '../../../index.js';
 
 const derivationPath = "m/44'/1'/0'/0";
 

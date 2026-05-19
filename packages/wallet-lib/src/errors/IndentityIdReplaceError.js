@@ -1,6 +1,6 @@
-const WalletLibError = require('./WalletLibError');
+import WalletLibError from './WalletLibError.js';
 
 class IdentityIdReplaceError extends WalletLibError {
 
 }
-module.exports = IdentityIdReplaceError;
+export default IdentityIdReplaceError;

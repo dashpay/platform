@@ -1,3 +1,3 @@
-module.exports = async function getBestBlockHash() {
+export default async function getBestBlockHash() {
   return this.blockHash;
 };

@@ -1,14 +1,14 @@
-const { expect } = require('chai');
-const Dashcore = require('@dashevo/dashcore-lib');
-const knifeMnemonic = require('../../../fixtures/knifeeasily');
-const gatherSailMnemonic = require('../../../fixtures/gathersail');
-const fluidMnemonic = require('../../../fixtures/fluidDepth');
-const cR4t6ePrivateKey = require('../../../fixtures/cR4t6e_pk');
-const { WALLET_TYPES } = require('../../CONSTANTS');
-const { Wallet } = require('../../index');
-const inMem = require('../../adapters/InMem');
-const fromHDPublicKey = require('./methods/fromHDPublicKey');
-const gatherSail = require('../../../fixtures/gathersail');
+import { expect } from 'chai';
+import Dashcore from '@dashevo/dashcore-lib';
+import knifeMnemonic from '../../../fixtures/knifeeasily.json' with { type: 'json' };
+import gatherSailMnemonic from '../../../fixtures/gathersail.json' with { type: 'json' };
+import fluidMnemonic from '../../../fixtures/fluidDepth.json' with { type: 'json' };
+import cR4t6ePrivateKey from '../../../fixtures/cR4t6e_pk.json' with { type: 'json' };
+import { WALLET_TYPES } from '../../CONSTANTS.js';
+import { Wallet } from '../../index.js';
+import inMem from '../../adapters/InMem.js';
+import fromHDPublicKey from './methods/fromHDPublicKey.js';
+import gatherSail from '../../../fixtures/gathersail.json' with { type: 'json' };
 
 const mocks = {
   adapter: inMem,

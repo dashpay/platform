@@ -1,8 +1,8 @@
 // todo refactor promise function to fit no-promise-executor-return
 /* eslint-disable no-promise-executor-return */
 
-const { WALLET_TYPES } = require('../../../CONSTANTS');
-const logger = require('../../../logger');
+import { WALLET_TYPES } from '../../../CONSTANTS.js';
+import logger from '../../../logger/index.js';
 /**
  * This will sweep any paper wallet with remaining UTXOS to another Wallet created
  * via a random new mnemonic or via passed one.
@@ -62,4 +62,4 @@ async function sweepWallet(opts = {}) {
   });
 }
 
-module.exports = sweepWallet;
+export default sweepWallet;

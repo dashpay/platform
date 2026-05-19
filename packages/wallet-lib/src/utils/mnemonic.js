@@ -1,6 +1,8 @@
-const { pbkdf2Sync } = require('pbkdf2');
-const { Mnemonic, HDPrivateKey } = require('@dashevo/dashcore-lib');
-const { doubleSha256 } = require('./crypto');
+import pbkdf2 from 'pbkdf2';
+const { pbkdf2Sync } = pbkdf2;
+import dashcore from '@dashevo/dashcore-lib';
+const { Mnemonic, HDPrivateKey } = dashcore;
+import { doubleSha256 } from './crypto.js';
 
 function generateNewMnemonic() {
   return Mnemonic();
@@ -38,7 +40,15 @@ const mnemonicToSeed = function mnemonicToSeed(mnemonic, password = '') {
 const seedToHDPrivateKey = function seedToHDPrivateKey(seed, network = 'testnet') {
   return HDPrivateKey.fromSeed(seed, network);
 };
-module.exports = {
+export {
+  generateNewMnemonic,
+  mnemonicToHDPrivateKey,
+  mnemonicToWalletId,
+  mnemonicToSeed,
+  seedToHDPrivateKey,
+};
+
+export default {
   generateNewMnemonic,
   mnemonicToHDPrivateKey,
   mnemonicToWalletId,

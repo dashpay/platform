@@ -1,5 +1,5 @@
-const { expect } = require('chai');
-const { getBytesOf } = require("./index");
+import { expect } from 'chai';
+import { getBytesOf } from './index.js';
 
 describe('Utils - getBytesOf', function suite() {
   it('should have getBytesOf return false on unknown type', () => {

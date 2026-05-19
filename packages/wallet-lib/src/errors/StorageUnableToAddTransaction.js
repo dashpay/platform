@@ -1,4 +1,4 @@
-const WalletLibError = require('./WalletLibError');
+import WalletLibError from './WalletLibError.js';
 
 class StorageUnableToAddTransaction extends WalletLibError {
   constructor(tx) {
@@ -6,4 +6,4 @@ class StorageUnableToAddTransaction extends WalletLibError {
     super(getErrorMessageOf(tx));
   }
 }
-module.exports = StorageUnableToAddTransaction;
+export default StorageUnableToAddTransaction;

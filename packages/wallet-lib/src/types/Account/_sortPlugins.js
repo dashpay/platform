@@ -1,9 +1,10 @@
-const { each, findIndex } = require('lodash');
-const TransactionsSyncWorker = require('../../plugins/Workers/TransactionsSyncWorker/TransactionsSyncWorker');
-const BlockHeadersSyncWorker = require('../../plugins/Workers/BlockHeadersSyncWorker/BlockHeadersSyncWorker');
-const ChainPlugin = require('../../plugins/Plugins/ChainPlugin');
-const IdentitySyncWorker = require('../../plugins/Workers/IdentitySyncWorker');
-const { WALLET_TYPES } = require('../../CONSTANTS');
+import lodash from 'lodash';
+const { each, findIndex } = lodash;
+import TransactionsSyncWorker from '../../plugins/Workers/TransactionsSyncWorker/TransactionsSyncWorker.js';
+import BlockHeadersSyncWorker from '../../plugins/Workers/BlockHeadersSyncWorker/BlockHeadersSyncWorker.js';
+import ChainPlugin from '../../plugins/Plugins/ChainPlugin.js';
+import IdentitySyncWorker from '../../plugins/Workers/IdentitySyncWorker.js';
+import { WALLET_TYPES } from '../../CONSTANTS.js';
 
 const initPlugin = (UnsafePlugin) => {
   const isInit = !(typeof UnsafePlugin === 'function');
@@ -139,4 +140,4 @@ const sortPlugins = (account, userUnsafePlugins) => {
   }
   return sortUserPlugins(plugins, userUnsafePlugins, account.allowSensitiveOperations);
 };
-module.exports = sortPlugins;
+export default sortPlugins;

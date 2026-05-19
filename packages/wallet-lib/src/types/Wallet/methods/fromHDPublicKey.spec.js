@@ -1,9 +1,9 @@
-const Dashcore = require('@dashevo/dashcore-lib');
-const { expect } = require('chai');
-const Wallet = require('../Wallet');
-const fromHDPublicKey = require('./fromHDPublicKey');
-const gatherSail = require('../../../../fixtures/gathersail');
-const { WALLET_TYPES } = require('../../../CONSTANTS');
+import Dashcore from '@dashevo/dashcore-lib';
+import { expect } from 'chai';
+import Wallet from '../Wallet.js';
+import fromHDPublicKey from './fromHDPublicKey.js';
+import gatherSail from '../../../../fixtures/gathersail.json' with { type: 'json' };
+import { WALLET_TYPES } from '../../../CONSTANTS.js';
 /**
  * Theses first set of data labeled gatherSail correspond to the following mnemonic:
  * gather sail face invite together focus waste barely excuse slide harbor hint

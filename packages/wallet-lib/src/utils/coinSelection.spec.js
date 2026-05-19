@@ -1,9 +1,11 @@
-const {expect} = require('chai');
-const {Transaction, Address, Script} = require('@dashevo/dashcore-lib');
-const coinSelection = require('./coinSelection');
-const {utxosList} = require('../../fixtures/crackspice');
-const STRATEGIES = require('./coinSelections/strategies');
-const TransactionEstimator = require('./coinSelections/TransactionEstimator')
+import {expect} from 'chai';
+import dashcore from '@dashevo/dashcore-lib';
+const { Transaction, Address, Script } = dashcore;
+import coinSelection from './coinSelection.js';
+import crackspice from '../../fixtures/crackspice.json' with { type: 'json' };
+const { utxosList } = crackspice;
+import STRATEGIES from './coinSelections/strategies/index.js';
+import TransactionEstimator from './coinSelections/TransactionEstimator.js';
 
 const utxosListAsUnspentOutput = utxosList.map((utxo)=> Transaction.UnspentOutput(utxo));
 const outputs = {

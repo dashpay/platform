@@ -1,8 +1,8 @@
-const WalletLibError = require('./WalletLibError');
+import WalletLibError from './WalletLibError.js';
 
 class InvalidAddress extends WalletLibError {
   constructor(address) {
     super(`Address Invalid : ${address} `);
   }
 }
-module.exports = InvalidAddress;
+export default InvalidAddress;

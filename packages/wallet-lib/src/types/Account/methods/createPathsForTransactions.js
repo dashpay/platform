@@ -1,4 +1,4 @@
-const sortTransactions = require('../../../utils/sortTransactions');
+import sortTransactions from '../../../utils/sortTransactions.js';
 
 /**
  * Function goes through all transactions, and ensures address gap
@@ -35,4 +35,4 @@ function createPathsForTransactions() {
   });
 }
 
-module.exports = createPathsForTransactions;
+export default createPathsForTransactions;

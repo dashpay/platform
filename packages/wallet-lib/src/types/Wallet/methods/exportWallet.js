@@ -1,4 +1,4 @@
-const { WALLET_TYPES } = require('../../../CONSTANTS');
+import { WALLET_TYPES } from '../../../CONSTANTS.js';
 
 function exportMnemonic(mnemonic) {
   if (!mnemonic) throw new Error('Wallet was not initiated with a mnemonic, can\'t export it');
@@ -77,7 +77,7 @@ function exportHDPublicWallet(outputType = 'HDPublicKey') {
  * @param outputType - Allow to overwrite the default output type
  * @return {Mnemonic|HDPrivateKey}
  */
-module.exports = function exportWallet(outputType) {
+export default function exportWallet(outputType) {
   switch (this.walletType) {
     case WALLET_TYPES.PRIVATEKEY:
     case WALLET_TYPES.SINGLE_ADDRESS:

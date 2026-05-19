@@ -27,6 +27,11 @@ const hashes = Object.entries(heights).reduce((obj, [height, hash]) => {
   return obj;
 }, {});
 
-module.exports = {
+export {
+  heights,
+  hashes,
+};
+
+export default {
   heights, hashes,
 };

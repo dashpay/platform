@@ -1,5 +1,6 @@
-const { sortBy } = require('lodash');
-const TransactionEstimator = require('../TransactionEstimator');
+import lodash from 'lodash';
+const { sortBy } = lodash;
+import TransactionEstimator from '../TransactionEstimator.js';
 
 /**
  * Given a utxos list and a thresholdSatoshis, will add them
@@ -67,4 +68,4 @@ const simpleDescendingAccumulator = (utxosList, outputsList, deductFee = false, 
     utxosValue: txEstimator.getInValue(),
   };
 };
-module.exports = simpleDescendingAccumulator;
+export default simpleDescendingAccumulator;

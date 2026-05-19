@@ -1,4 +1,4 @@
-const castStorageItemsTypes = require('../../../utils/castStorageItemsTypes');
+import castStorageItemsTypes from '../../../utils/castStorageItemsTypes.js';
 
 function importState(rawState) {
   const stateToImport = { ...rawState };
@@ -38,4 +38,4 @@ function importState(rawState) {
   });
 }
 
-module.exports = importState;
+export default importState;

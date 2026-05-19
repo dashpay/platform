@@ -1,4 +1,4 @@
-import {Block, BlockHeader, Transaction} from "@dashevo/dashcore-lib";
+import { Block, BlockHeader, Transaction } from '@dashevo/dashcore-lib';
 export declare interface Transport {
     announce(eventName: string, args: any[]): void
 

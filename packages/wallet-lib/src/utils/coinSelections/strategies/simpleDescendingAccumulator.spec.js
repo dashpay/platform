@@ -1,7 +1,7 @@
-const { expect } = require('chai');
-const { simpleDescendingAccumulator } = require('./index');
-const getUTXOS = require('../../../types/Account/methods/getUTXOS');
-const duringDevelopStore = require('../../../../fixtures/duringdevelop-fullstore-snapshot-1549310417');
+import { expect } from 'chai';
+import { simpleDescendingAccumulator } from './index.js';
+import getUTXOS from '../../../types/Account/methods/getUTXOS.js';
+import duringDevelopStore from '../../../../fixtures/duringdevelop-fullstore-snapshot-1549310417.json' with { type: 'json' };
 
 console.error('coinSelection.strategies.simpleDescendingAccumulator needs a rebuilt store');
 describe.skip('CoinSelection - Strategy - simpleDescendingAccumulator', () => {

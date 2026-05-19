@@ -3,4 +3,4 @@ function getMasterKeyChain() {
   return this.keyChains.get(keyChainId);
 }
 
-module.exports = getMasterKeyChain;
+export default getMasterKeyChain;

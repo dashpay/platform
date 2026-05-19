@@ -1,8 +1,9 @@
-const simpleAscendingAccumulator = require('./simpleAscendingAccumulator');
-const simpleDescendingAccumulator = require('./simpleDescendingAccumulator');
+import simpleAscendingAccumulator from './simpleAscendingAccumulator.js';
+import simpleDescendingAccumulator from './simpleDescendingAccumulator.js';
 
 const STRATEGIES = {
   simpleDescendingAccumulator,
   simpleAscendingAccumulator,
 };
-module.exports = STRATEGIES;
+export default STRATEGIES;
+export { simpleAscendingAccumulator, simpleDescendingAccumulator };

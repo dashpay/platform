@@ -4,4 +4,4 @@ function getWatchedAddresses() {
     .map(([, el]) => el.address.toString());
 }
 
-module.exports = getWatchedAddresses;
+export default getWatchedAddresses;

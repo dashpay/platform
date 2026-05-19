@@ -1,7 +1,8 @@
-const { has } = require('lodash');
-const is = require('../utils/is');
+import lodash from 'lodash';
+const { has } = lodash;
+import is from '../utils/is.js';
 
-const WalletLibError = require('./WalletLibError');
+import WalletLibError from './WalletLibError.js';
 
 class InvalidOutput extends WalletLibError {
   constructor(output) {
@@ -34,4 +35,4 @@ class InvalidOutput extends WalletLibError {
     super(getErrorMessageOf(evaluateUTXOObjectError(output)));
   }
 }
-module.exports = InvalidOutput;
+export default InvalidOutput;

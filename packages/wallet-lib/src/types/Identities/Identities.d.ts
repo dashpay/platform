@@ -1,5 +1,5 @@
 import { Wallet } from "../Wallet/Wallet";
-import { HDPrivateKey } from "@dashevo/dashcore-lib";
+import { HDPrivateKey } from '@dashevo/dashcore-lib';
 
 export declare class Identities {
     constructor(wallet: Wallet);

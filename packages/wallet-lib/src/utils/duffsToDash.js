@@ -1,4 +1,4 @@
-const { DUFFS_PER_DASH } = require('../CONSTANTS');
+import { DUFFS_PER_DASH } from '../CONSTANTS.js';
 
 function duffsToDash(duffs) {
   if (duffs === undefined || duffs.constructor.name !== Number.name) {
@@ -6,4 +6,4 @@ function duffsToDash(duffs) {
   }
   return duffs / DUFFS_PER_DASH;
 }
-module.exports = duffsToDash;
+export default duffsToDash;

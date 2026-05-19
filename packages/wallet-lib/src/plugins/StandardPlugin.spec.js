@@ -1,6 +1,6 @@
-const { expect } = require('chai');
-const { EventEmitter } = require('events');
-const StandardPluginSpec = require('./StandardPlugin');
+import { expect } from 'chai';
+import { EventEmitter } from 'events';
+import StandardPluginSpec from './StandardPlugin.js';
 
 describe('Plugins - StandardPlugin', function suite() {
   this.timeout(60000);

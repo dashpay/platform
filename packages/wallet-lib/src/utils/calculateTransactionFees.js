@@ -1,4 +1,4 @@
-const is = require('./is');
+import is from './is.js';
 
 function calculateTransactionFees(transaction) {
   if (!is.dashcoreTransaction(transaction)) throw new Error('Expected a valid transaction');
@@ -10,4 +10,4 @@ function calculateTransactionFees(transaction) {
   const outputAmount = outputs.reduce((acc, output) => (acc + output.satoshis), 0);
   return transaction.isCoinbase() ? 0 : inputAmount - outputAmount;
 }
-module.exports = calculateTransactionFees;
+export default calculateTransactionFees;

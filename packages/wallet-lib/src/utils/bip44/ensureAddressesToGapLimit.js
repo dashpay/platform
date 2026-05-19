@@ -1,9 +1,9 @@
-const logger = require('../../logger');
-const { BIP44_ADDRESS_GAP } = require('../../CONSTANTS');
-const is = require('../is');
+import logger from '../../logger/index.js';
+import { BIP44_ADDRESS_GAP } from '../../CONSTANTS.js';
+import is from '../is.js';
 
-const getMissingIndexes = require('./getMissingIndexes');
-const isContiguousPath = require('./isContiguousPath');
+import getMissingIndexes from './getMissingIndexes.js';
+import isContiguousPath from './isContiguousPath.js';
 
 const sortByIndex = (a, b) => parseInt(a.split('/')[5], 10) - parseInt(b.split('/')[5], 10);
 
@@ -108,4 +108,4 @@ function ensureAccountAddressesToGapLimit(walletStore, walletType, accountIndex,
   return generated;
 }
 
-module.exports = ensureAccountAddressesToGapLimit;
+export default ensureAccountAddressesToGapLimit;

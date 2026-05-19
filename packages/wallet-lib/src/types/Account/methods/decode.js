@@ -1,4 +1,4 @@
-const cbor = require('cbor');
+import cbor from 'cbor';
 
 /**
  * Allow to decode an input
@@ -13,4 +13,4 @@ const decode = function decode(method, data) {
       return cbor.decodeFirstSync(data);
   }
 };
-module.exports = decode;
+export default decode;

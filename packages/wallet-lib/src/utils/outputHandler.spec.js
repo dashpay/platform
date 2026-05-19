@@ -1,5 +1,5 @@
-const { expect } = require('chai');
-const outputHandler = require('./outputHandler');
+import { expect } from 'chai';
+import outputHandler from './outputHandler.js';
 
 describe('Utils - outputHandler', function suite() {
   this.timeout(10000);

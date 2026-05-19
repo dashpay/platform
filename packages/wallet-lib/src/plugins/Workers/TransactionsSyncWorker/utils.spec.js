@@ -1,12 +1,14 @@
-const { expect } = require('chai');
+import { expect } from 'chai';
 
+import dashcore from '@dashevo/dashcore-lib';
 const {
-  PrivateKey, Transaction,
-} = require('@dashevo/dashcore-lib');
+  PrivateKey,
+  Transaction,
+} = dashcore;
 
-const { mockUtxo } = require('../../../test/mocks/dashcore/transaction');
+import { mockUtxo } from '../../../test/mocks/dashcore/transaction.js';
 
-const utils = require('./utils');
+import utils from './utils.js';
 
 describe('TransactionsSyncWorker - utils', () => {
   describe('#filterTransactionsForAddresses()', () => {

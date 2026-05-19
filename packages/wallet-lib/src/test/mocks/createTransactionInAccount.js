@@ -1,4 +1,5 @@
-const { Transaction } = require('@dashevo/dashcore-lib');
+import dashcore from '@dashevo/dashcore-lib';
+const { Transaction } = dashcore;
 
 /**
  * Creates a mocked transaction in the wallet that can be used to perform various tests
@@ -27,4 +28,4 @@ async function createTransactionInAccount(account) {
   return walletTransaction;
 }
 
-module.exports = createTransactionInAccount;
+export default createTransactionInAccount;

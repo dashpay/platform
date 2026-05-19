@@ -1,5 +1,5 @@
-const DerivableKeyChain = require('../../DerivableKeyChain/DerivableKeyChain');
-const logger = require('../../../logger');
+import DerivableKeyChain from '../../DerivableKeyChain/DerivableKeyChain.js';
+import logger from '../../../logger/index.js';
 
 function makeChildKeyChainStore(path, opts) {
   logger.debug(`KeyChainStore - make a child keychainstore for ${path}`);
@@ -16,4 +16,4 @@ function makeChildKeyChainStore(path, opts) {
   return childKeyChainStore;
 }
 
-module.exports = makeChildKeyChainStore;
+export default makeChildKeyChainStore;

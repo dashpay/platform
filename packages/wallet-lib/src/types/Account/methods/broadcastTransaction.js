@@ -1,13 +1,13 @@
-const Dashcore = require('@dashevo/dashcore-lib');
-const { is } = require('../../../utils');
-const {
+import Dashcore from '@dashevo/dashcore-lib';
+import { is } from '../../../utils/index.js';
+import {
   ValidTransportLayerRequired,
   InvalidRawTransaction,
   InvalidDashcoreTransaction,
-} = require('../../../errors');
-const EVENTS = require('../../../EVENTS');
-const MempoolPropagationTimeoutError = require('../../../errors/MempoolPropagationTimeoutError');
-const sleep = require('../../../utils/sleep');
+} from '../../../errors/index.js';
+import EVENTS from '../../../EVENTS.js';
+import MempoolPropagationTimeoutError from '../../../errors/MempoolPropagationTimeoutError.js';
+import sleep from '../../../utils/sleep.js';
 
 const MEMPOOL_PROPAGATION_TIMEOUT = 360000;
 
@@ -197,4 +197,4 @@ async function broadcastTransaction(transaction, options = {
   return transaction.hash;
 }
 
-module.exports = broadcastTransaction;
+export default broadcastTransaction;

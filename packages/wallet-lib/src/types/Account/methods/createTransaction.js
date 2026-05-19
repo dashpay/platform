@@ -1,11 +1,16 @@
 /* eslint-disable no-underscore-dangle */
-const _ = require('lodash');
+import _ from 'lodash';
+import dashcore from '@dashevo/dashcore-lib';
 const {
-  Transaction, PrivateKey, HDPrivateKey, crypto, Script,
-} = require('@dashevo/dashcore-lib');
-const { CreateTransactionError } = require('../../../errors');
-const { dashToDuffs, coinSelection, is } = require('../../../utils');
-const _loadStrategy = require('../_loadStrategy');
+  Transaction,
+  PrivateKey,
+  HDPrivateKey,
+  crypto,
+  Script,
+} = dashcore;
+import { CreateTransactionError } from '../../../errors/index.js';
+import { dashToDuffs, coinSelection, is } from '../../../utils/index.js';
+import _loadStrategy from '../_loadStrategy.js';
 
 const parseUtxos = (utxos) => {
   // We do not allow mixmatch types (output, object together) utxo list
@@ -128,4 +133,4 @@ function createTransaction(opts = {}) {
   }
 }
 
-module.exports = createTransaction;
+export default createTransaction;

@@ -1,13 +1,15 @@
-const { expect } = require('chai');
-const EventEmitter = require('events');
-const Dashcore = require('@dashevo/dashcore-lib');
+import { expect } from 'chai';
+import EventEmitter from 'events';
+import Dashcore from '@dashevo/dashcore-lib';
 
-const broadcastTransaction = require('./broadcastTransaction');
-const EVENTS = require('../../../EVENTS');
-const validRawTxs = require('../../../../fixtures/rawtx').valid;
-const invalidRawTxs = require('../../../../fixtures/rawtx').invalid;
-const MempoolPropagationTimeoutError = require('../../../errors/MempoolPropagationTimeoutError');
-const ChainStore = require('../../ChainStore/ChainStore');
+import broadcastTransaction from './broadcastTransaction.js';
+import EVENTS from '../../../EVENTS.js';
+import rawTxs from '../../../../fixtures/rawtx.json' with { type: 'json' };
+
+const validRawTxs = rawTxs.valid;
+const invalidRawTxs = rawTxs.invalid;
+import MempoolPropagationTimeoutError from '../../../errors/MempoolPropagationTimeoutError.js';
+import ChainStore from '../../ChainStore/ChainStore.js';
 const { PrivateKey } = Dashcore;
 
 describe('Account - broadcastTransaction', function suite() {

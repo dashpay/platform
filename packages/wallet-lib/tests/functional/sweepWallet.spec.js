@@ -1,6 +1,6 @@
-const {Wallet} = require('../../src/index');
-const expectThrowsAsync = require('../../src/utils/expectThrowsAsync');
-const sweepWallet = require('../../src/types/Wallet/methods/sweepWallet');
+import {Wallet} from '../../src/index.js';
+import expectThrowsAsync from '../../src/utils/expectThrowsAsync.js';
+import sweepWallet from '../../src/types/Wallet/methods/sweepWallet.js';
 
 const paperWallet = {
   publicKey: 'ybvbBPisVjiemj4qSg1mzZAzTSAPk64Ppf',

@@ -1,9 +1,12 @@
-const _ = require('lodash');
+import _ from 'lodash';
+import dashcore from '@dashevo/dashcore-lib';
 const {
-  Address, Script, Transaction,
-} = require('@dashevo/dashcore-lib');
-const logger = require('../../logger');
-const {
+  Address,
+  Script,
+  Transaction,
+} = dashcore;
+import logger from '../../logger/index.js';
+import {
   FEES,
   VERSION_BYTES,
   TXOUT_DUFFS_VALUE_BYTES,
@@ -11,9 +14,9 @@ const {
   TXIN_OUTPOINT_TXID_BYTES,
   TXIN_OUTPOINT_INDEX_BYTES,
   TXIN_SEQUENCE_BYTES,
-} = require('../../CONSTANTS');
-const is = require('../is');
-const { varIntSizeBytesFromLength } = require('../varInt');
+} from '../../CONSTANTS.js';
+import is from '../is.js';
+import { varIntSizeBytesFromLength } from '../varInt.js';
 
 const { Output } = Transaction;
 const calculateInputsSize = (inputs) => {
@@ -168,4 +171,4 @@ class TransactionEstimator {
     logger.info('=========================');
   }
 }
-module.exports = TransactionEstimator;
+export default TransactionEstimator;

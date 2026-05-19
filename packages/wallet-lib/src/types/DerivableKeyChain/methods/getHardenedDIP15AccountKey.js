@@ -11,4 +11,4 @@ function getHardenedDIP15AccountKey(accountIndex = 0, type = 'HDPrivateKey') {
   const featureKey = hardenedFeatureRootKey.deriveChild(15, true);
   return featureKey.deriveChild(accountIndex, true);
 }
-module.exports = getHardenedDIP15AccountKey;
+export default getHardenedDIP15AccountKey;

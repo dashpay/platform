@@ -1,39 +1,40 @@
-const CreateTransactionError = require('./CreateTransactionError');
-const CoinSelectionUnsufficientUTXOS = require('./CoinSelectionUnsufficientUTXOS');
-const InjectionErrorCannotInject = require('./InjectionErrorCannotInject');
-const InjectionErrorCannotInjectUnknownDependency = require('./InjectionErrorCannotInjectUnknownDependency');
-const InjectionToPluginUnallowed = require('./InjectionToPluginUnallowed');
+import CreateTransactionError from './CreateTransactionError.js';
+import CoinSelectionUnsufficientUTXOS from './CoinSelectionUnsufficientUTXOS.js';
+import InjectionErrorCannotInject from './InjectionErrorCannotInject.js';
+import InjectionErrorCannotInjectUnknownDependency from './InjectionErrorCannotInjectUnknownDependency.js';
+import InjectionToPluginUnallowed from './InjectionToPluginUnallowed.js';
 
-const PluginFailedOnStart = require('./PluginFailedOnStart');
-const WorkerFailedOnStart = require('./WorkerFailedOnStart');
-const WorkerFailedOnExecute = require('./WorkerFailedOnExecute');
+import PluginFailedOnStart from './PluginFailedOnStart.js';
+import WorkerFailedOnStart from './WorkerFailedOnStart.js';
+import WorkerFailedOnExecute from './WorkerFailedOnExecute.js';
 
-const InvalidAddress = require('./InvalidAddress');
-const InvalidAddressObject = require('./InvalidAddressObject');
-const InvalidOutput = require('./InvalidOutput');
-const InvalidDashcoreTransaction = require('./InvalidDashcoreTransaction');
-const InvalidRawTransaction = require('./InvalidRawTransaction');
-const InvalidStrategy = require('./InvalidStrategy');
-const InvalidStorageAdapter = require('./InvalidStorageAdapter');
+import InvalidAddress from './InvalidAddress.js';
+import InvalidAddressObject from './InvalidAddressObject.js';
+import InvalidOutput from './InvalidOutput.js';
+import InvalidDashcoreTransaction from './InvalidDashcoreTransaction.js';
+import InvalidRawTransaction from './InvalidRawTransaction.js';
+import InvalidStrategy from './InvalidStrategy.js';
+import InvalidStorageAdapter from './InvalidStorageAdapter.js';
 
-const InvalidTransactionObject = require('./InvalidTransactionObject');
-const InvalidUTXO = require('./InvalidUTXO');
-const StorageUnableToAddTransaction = require('./StorageUnableToAddTransaction');
-const TransactionNotInStore = require('./TransactionNotInStore');
-const TransactionMetadataNotInStore = require('./TransactionMetadataNotInStore');
-const BlockHeaderNotInStore = require('./BlockHeaderNotInStore');
+import InvalidTransactionObject from './InvalidTransactionObject.js';
+import InvalidUTXO from './InvalidUTXO.js';
+import StorageUnableToAddTransaction from './StorageUnableToAddTransaction.js';
+import TransactionNotInStore from './TransactionNotInStore.js';
+import TransactionMetadataNotInStore from './TransactionMetadataNotInStore.js';
+import BlockHeaderNotInStore from './BlockHeaderNotInStore.js';
 
-const UnknownWorker = require('./UnknownWorker');
-const UnknownPlugin = require('./UnknownPlugin');
+import UnknownWorker from './UnknownWorker.js';
+import UnknownPlugin from './UnknownPlugin.js';
+import UnknownStrategy from './UnknownStrategy.js';
 
-const ValidTransportLayerRequired = require('./ValidTransportLayerRequired');
-const WalletLibError = require('./WalletLibError');
+import ValidTransportLayerRequired from './ValidTransportLayerRequired.js';
+import WalletLibError from './WalletLibError.js';
 
-const PluginInjectionError = require('./PluginInjectionError');
-const InstantLockTimeoutError = require('./InstantLockTimeoutError');
-const TxMetadataTimeoutError = require('./TxMetadataTimeoutError');
+import PluginInjectionError from './PluginInjectionError.js';
+import InstantLockTimeoutError from './InstantLockTimeoutError.js';
+import TxMetadataTimeoutError from './TxMetadataTimeoutError.js';
 
-module.exports = {
+export {
   BlockHeaderNotInStore,
   CreateTransactionError,
   CoinSelectionUnsufficientUTXOS,
@@ -56,6 +57,39 @@ module.exports = {
   TransactionNotInStore,
   TransactionMetadataNotInStore,
   UnknownPlugin,
+  UnknownStrategy,
+  UnknownWorker,
+  ValidTransportLayerRequired,
+  WalletLibError,
+  PluginInjectionError,
+  InstantLockTimeoutError,
+  TxMetadataTimeoutError,
+};
+
+export default {
+  BlockHeaderNotInStore,
+  CreateTransactionError,
+  CoinSelectionUnsufficientUTXOS,
+  InjectionErrorCannotInject,
+  InjectionErrorCannotInjectUnknownDependency,
+  InjectionToPluginUnallowed,
+  InvalidAddress,
+  InvalidAddressObject,
+  InvalidOutput,
+  InvalidStrategy,
+  InvalidDashcoreTransaction,
+  InvalidRawTransaction,
+  InvalidStorageAdapter,
+  InvalidTransactionObject,
+  InvalidUTXO,
+  PluginFailedOnStart,
+  WorkerFailedOnStart,
+  WorkerFailedOnExecute,
+  StorageUnableToAddTransaction,
+  TransactionNotInStore,
+  TransactionMetadataNotInStore,
+  UnknownPlugin,
+  UnknownStrategy,
   UnknownWorker,
   ValidTransportLayerRequired,
   WalletLibError,

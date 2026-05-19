@@ -1,5 +1,5 @@
-const is = require('../utils/is');
-const WalletLibError = require('./WalletLibError');
+import is from '../utils/is.js';
+import WalletLibError from './WalletLibError.js';
 
 class InvalidAddressObject extends WalletLibError {
   constructor(addressObject) {
@@ -30,4 +30,4 @@ class InvalidAddressObject extends WalletLibError {
     super(getErrorMessageOf(evaluateAddressObjectError(addressObject)));
   }
 }
-module.exports = InvalidAddressObject;
+export default InvalidAddressObject;

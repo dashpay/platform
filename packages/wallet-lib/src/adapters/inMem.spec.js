@@ -1,5 +1,5 @@
-const { expect } = require('chai');
-const InMem = require('./InMem');
+import { expect } from 'chai';
+import InMem from './InMem.js';
 
 const inMem = new InMem();
 

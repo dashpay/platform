@@ -1,4 +1,4 @@
-const { WALLET_TYPES } = require('../../../CONSTANTS');
+import { WALLET_TYPES } from '../../../CONSTANTS.js';
 
 /**
  * Get all the addresses from the store from a given type
@@ -34,4 +34,4 @@ function getAddresses(addressType = 'external') {
 
   return typedAddresses;
 }
-module.exports = getAddresses;
+export default getAddresses;

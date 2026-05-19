@@ -1,5 +1,6 @@
 /* eslint-disable max-len */
 // Todo : Some validators here are really proto type of methods, urgent impr is needed here.
+import dashcore from '@dashevo/dashcore-lib';
 const {
   PrivateKey,
   PublicKey,
@@ -8,7 +9,7 @@ const {
   Transaction,
   Mnemonic,
   Address,
-} = require('@dashevo/dashcore-lib');
+} = dashcore;
 
 const is = {
   // Primitives
@@ -50,4 +51,4 @@ const is = {
 // aliases
 is.array = is.arr;
 
-module.exports = is;
+export default is;

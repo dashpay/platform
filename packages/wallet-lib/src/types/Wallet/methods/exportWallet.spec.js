@@ -1,11 +1,12 @@
-const { expect } = require('chai');
-const Wallet = require('../Wallet');
-const { PrivateKey, Networks } = require('@dashevo/dashcore-lib');
-const exportWallet = require('./exportWallet');
-const { WALLET_TYPES } = require('../../../CONSTANTS');
-const cR4t6ePrivateKey = require('../../../../fixtures/cR4t6e_pk');
-const knifeMnemonic = require('../../../../fixtures/knifeeasily');
-const cR4t6eFixture = require("../../../../fixtures/cR4t6e_pk");
+import { expect } from 'chai';
+import Wallet from '../Wallet.js';
+import dashcore from '@dashevo/dashcore-lib';
+const { PrivateKey, Networks } = dashcore;
+import exportWallet from './exportWallet.js';
+import { WALLET_TYPES } from '../../../CONSTANTS.js';
+import cR4t6ePrivateKey from '../../../../fixtures/cR4t6e_pk.json' with { type: 'json' };
+import knifeMnemonic from '../../../../fixtures/knifeeasily.json' with { type: 'json' };
+import cR4t6eFixture from '../../../../fixtures/cR4t6e_pk.json' with { type: 'json' };
 const cR4t6ePublicKey = new PrivateKey(cR4t6eFixture.privateKey).toPublicKey();
 
 describe('Wallet - export Wallet', function suite() {

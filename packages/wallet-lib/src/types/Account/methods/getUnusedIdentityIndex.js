@@ -13,4 +13,4 @@ async function getUnusedIdentityIndex() {
   return firstMissingIndex > -1 ? firstMissingIndex : identityIds.length;
 }
 
-module.exports = getUnusedIdentityIndex;
+export default getUnusedIdentityIndex;

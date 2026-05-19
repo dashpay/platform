@@ -17,4 +17,4 @@ function getIdentityHDKeyById(identityId, keyIndex) {
   return this.getIdentityHDKeyByIndex(identityIndex, keyIndex);
 }
 
-module.exports = getIdentityHDKeyById;
+export default getIdentityHDKeyById;

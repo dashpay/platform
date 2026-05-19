@@ -1,4 +1,4 @@
-const WalletLibError = require('./WalletLibError');
+import WalletLibError from './WalletLibError.js';
 
 class InvalidDashcoreTransaction extends WalletLibError {
   constructor(tx, reason = 'A Dashcore Transaction object or valid rawTransaction is required') {
@@ -6,4 +6,4 @@ class InvalidDashcoreTransaction extends WalletLibError {
   }
 }
 
-module.exports = InvalidDashcoreTransaction;
+export default InvalidDashcoreTransaction;

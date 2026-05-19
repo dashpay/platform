@@ -1,5 +1,5 @@
-const ChainStore = require('../../ChainStore/ChainStore');
-const EVENTS = require('../../../EVENTS');
+import ChainStore from '../../ChainStore/ChainStore.js';
+import EVENTS from '../../../EVENTS.js';
 
 const EVENTS_TO_FORWARD = [
   EVENTS.FETCHED_CONFIRMED_TRANSACTION,
@@ -26,4 +26,4 @@ const createChainStore = function createChain(network) {
   }
   return false;
 };
-module.exports = createChainStore;
+export default createChainStore;

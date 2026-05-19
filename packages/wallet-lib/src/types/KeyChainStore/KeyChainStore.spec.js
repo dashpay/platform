@@ -1,7 +1,8 @@
-const {HDPrivateKey} = require("@dashevo/dashcore-lib");
-const KeyChainsStore = require('./KeyChainStore');
-const DerivableKeyChain = require("../DerivableKeyChain/DerivableKeyChain");
-const { expect } = require('chai');
+import dashcore from '@dashevo/dashcore-lib';
+const { HDPrivateKey } = dashcore;
+import KeyChainsStore from './KeyChainStore.js';
+import DerivableKeyChain from '../DerivableKeyChain/DerivableKeyChain.js';
+import { expect } from 'chai';
 
 describe('KeyChainStore', function suite() {
   let keyChainsStore;

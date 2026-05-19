@@ -1,6 +1,6 @@
-const { expect } = require('chai');
-const mockedStore = require('../../../../fixtures/sirentonight-fullstore-snapshot-1562711703');
-const getIdentityHDKeyById = require('./getIdentityHDKeyById');
+import { expect } from 'chai';
+import mockedStore from '../../../../fixtures/sirentonight-fullstore-snapshot-1562711703.json' with { type: 'json' };
+import getIdentityHDKeyById from './getIdentityHDKeyById.js';
 
 let walletMock;
 let fetchTransactionInfoCalledNb = 0;

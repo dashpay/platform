@@ -1,5 +1,6 @@
-const { WALLET_TYPES } = require('../../../CONSTANTS');
-const EVENTS = require('../../../EVENTS');
+import { WALLET_TYPES } from '../../../CONSTANTS.js';
+import EVENTS from '../../../EVENTS.js';
+import Account from '../../Account/Account.js';
 /**
  * Will derivate to a new account.
  * @param {object} accountOpts - options to pass, will autopopulate some
@@ -9,14 +10,6 @@ async function createAccount(accountOpts) {
   if (!this.storage.configured) {
     await new Promise((resolve) => { this.storage.once(EVENTS.CONFIGURED, resolve); });
   }
-
-  /**
-   *   Wallet.createAccount calls Account that depends on Wallet.
-   *   In order to avoid a cyclic dependency issue we put this require here and
-   *   disable eslint global require for next line
-   */
-  // eslint-disable-next-line global-require
-  const Account = require('../../Account/Account');
 
   const {
     injectDefaultPlugins, debug, plugins, allowSensitiveOperations,
@@ -57,4 +50,4 @@ async function createAccount(accountOpts) {
     throw e;
   }
 }
-module.exports = createAccount;
+export default createAccount;

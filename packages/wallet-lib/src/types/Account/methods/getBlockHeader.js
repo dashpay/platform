@@ -1,4 +1,4 @@
-const { is } = require('../../../utils');
+import { is } from '../../../utils/index.js';
 
 /**
  * Get a getBlockHeader from a provided block hash or block height
@@ -17,4 +17,4 @@ async function getBlockHeader(identifier) {
 
   return blockHeader;
 }
-module.exports = getBlockHeader;
+export default getBlockHeader;

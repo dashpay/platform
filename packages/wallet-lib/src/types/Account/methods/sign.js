@@ -1,4 +1,5 @@
-const { PrivateKey, HDPrivateKey } = require('@dashevo/dashcore-lib');
+import dashcore from '@dashevo/dashcore-lib';
+const { PrivateKey, HDPrivateKey } = dashcore;
 /**
  * To any object passed (Transaction, ST,..), will try to sign the message given passed keys.
  * @param {Transaction} object - The object to sign
@@ -8,7 +9,7 @@ const { PrivateKey, HDPrivateKey } = require('@dashevo/dashcore-lib');
  */
 // TODO move options to as last param
 // eslint-disable-next-line default-param-last
-module.exports = function sign(object, privateKeys = [], sigType) {
+export default function sign(object, privateKeys = [], sigType) {
   const { network } = this;
 
   if (object.inputs && (!privateKeys || !privateKeys.length)) {

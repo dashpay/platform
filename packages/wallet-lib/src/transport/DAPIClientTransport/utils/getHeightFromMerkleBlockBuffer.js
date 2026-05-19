@@ -1,6 +1,7 @@
+import dashcore from '@dashevo/dashcore-lib';
 const {
   MerkleBlock,
-} = require('@dashevo/dashcore-lib');
+} = dashcore;
 
 const getHeightFromMerkleBlockBuffer = async (client, merkleBlockBuffer) => {
   // FIXME: MerkleBlock do not accept hex.
@@ -16,4 +17,4 @@ const getHeightFromMerkleBlockBuffer = async (client, merkleBlockBuffer) => {
     return prevBlockHeight + 1;
   }
 };
-module.exports = getHeightFromMerkleBlockBuffer;
+export default getHeightFromMerkleBlockBuffer;

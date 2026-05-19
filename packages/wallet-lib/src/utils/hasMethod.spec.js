@@ -1,5 +1,5 @@
-const { expect } = require('chai');
-const { hasMethod} = require("./index");
+import { expect } from 'chai';
+import { hasMethod} from './index.js';
 
 describe('Utils - hasMethod', function suite() {
   it('should correctly handle method detection', function () {

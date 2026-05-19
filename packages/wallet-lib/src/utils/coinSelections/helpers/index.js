@@ -1,6 +1,10 @@
-const sortAndVerifyUTXOS = require('./sortAndVerifyUTXOS');
+import sortAndVerifyUTXOS from './sortAndVerifyUTXOS.js';
 
-module.exports = {
+export {
+  sortAndVerifyUTXOS,
+};
+
+export default {
   sortAndVerifyUTXOS,
 };
 

@@ -1,4 +1,4 @@
-const CryptoJS = require('crypto-js');
+import CryptoJS from 'crypto-js';
 const { AES } = CryptoJS;
 
 /**
@@ -16,4 +16,4 @@ const decrypt = function decrypt(method, data, secret, encoding = '') {
       return (encoding === 'hex') ? decrypted.toString(CryptoJS.enc.Hex) : decrypted.toString(CryptoJS.enc.Utf8);
   }
 };
-module.exports = decrypt;
+export default decrypt;

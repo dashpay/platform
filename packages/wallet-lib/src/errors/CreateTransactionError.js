@@ -1,5 +1,5 @@
-const WalletLibError = require('./WalletLibError');
-const CoinSelectionUnsufficientUTXOS = require('./CoinSelectionUnsufficientUTXOS');
+import WalletLibError from './WalletLibError.js';
+import CoinSelectionUnsufficientUTXOS from './CoinSelectionUnsufficientUTXOS.js';
 
 class CreateTransactionError extends WalletLibError {
   constructor(e) {
@@ -10,4 +10,4 @@ class CreateTransactionError extends WalletLibError {
     }
   }
 }
-module.exports = CreateTransactionError;
+export default CreateTransactionError;

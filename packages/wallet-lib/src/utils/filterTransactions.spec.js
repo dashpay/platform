@@ -1,7 +1,8 @@
-const { Transaction } = require('@dashevo/dashcore-lib');
-const { expect } = require('chai');
-const { WALLET_TYPES } = require('../CONSTANTS');
-const filterTransactions = require('./filterTransactions');
+import dashcore from '@dashevo/dashcore-lib';
+const { Transaction } = dashcore;
+import { expect } from 'chai';
+import { WALLET_TYPES } from '../CONSTANTS.js';
+import filterTransactions from './filterTransactions.js';
 
 const fixtureAddressesStore = {
   external: {},

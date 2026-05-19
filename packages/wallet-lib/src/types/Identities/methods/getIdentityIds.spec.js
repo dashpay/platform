@@ -1,7 +1,7 @@
-const { expect } = require('chai');
-const mockedStore = require('../../../../fixtures/sirentonight-fullstore-snapshot-1562711703');
-const getIdentityIds = require('./getIdentityIds');
-const WalletStore = require("../../WalletStore/WalletStore");
+import { expect } from 'chai';
+import mockedStore from '../../../../fixtures/sirentonight-fullstore-snapshot-1562711703.json' with { type: 'json' };
+import getIdentityIds from './getIdentityIds.js';
+import WalletStore from '../../WalletStore/WalletStore.js';
 
 let mockedWallet;
 let fetchTransactionInfoCalledNb = 0;

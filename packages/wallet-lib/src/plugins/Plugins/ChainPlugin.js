@@ -1,6 +1,6 @@
-const logger = require('../../logger');
-const { StandardPlugin } = require('..');
-const { dashToDuffs } = require('../../utils');
+import logger from '../../logger/index.js';
+import { StandardPlugin } from '../index.js';
+import { dashToDuffs } from '../../utils/index.js';
 
 const defaultOpts = {
   firstExecutionRequired: true,
@@ -57,4 +57,4 @@ class ChainPlugin extends StandardPlugin {
   }
 }
 
-module.exports = ChainPlugin;
+export default ChainPlugin;

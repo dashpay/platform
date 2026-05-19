@@ -1,5 +1,5 @@
-const _ = require('lodash');
-const StandardPlugin = require('./StandardPlugin');
+import _ from 'lodash';
+import StandardPlugin from './StandardPlugin.js';
 
 // eslint-disable-next-line no-underscore-dangle
 const _defaultOpts = {
@@ -143,4 +143,4 @@ class Worker extends StandardPlugin {
   }
 }
 
-module.exports = Worker;
+export default Worker;

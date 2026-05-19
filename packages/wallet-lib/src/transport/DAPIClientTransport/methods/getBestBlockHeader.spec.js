@@ -1,7 +1,8 @@
-const { expect } = require('chai');
-const { Block } = require('@dashevo/dashcore-lib');
+import { expect } from 'chai';
+import dashcore from '@dashevo/dashcore-lib';
+const { Block } = dashcore;
 
-const DAPIClientTransport = require('../DAPIClientTransport');
+import DAPIClientTransport from '../DAPIClientTransport.js';
 
 describe('transports - DAPIClientTransport - .getBestBlockHeader', function suite() {
   let bestBlockHash;
