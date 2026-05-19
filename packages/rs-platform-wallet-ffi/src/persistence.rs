@@ -2195,9 +2195,43 @@ fn build_wallet_start_state(
     // status without rebroadcasting.
     let unused_asset_locks = build_unused_asset_locks(entry)?;
 
+    // Project the reconstructed `wallet` + `wallet_info` into the
+    // keyless `ClientWalletStartState` the new persister contract
+    // requires (SECRETS.md: no `Wallet`/seed crosses `load()`). The
+    // manager re-derives the signing wallet from the runtime
+    // `SeedProvider` (here the Swift mnemonic resolver), runs the
+    // wrong-seed gate, then re-applies this `core_state` projection.
+    // The locally-built `wallet` is dropped — it was only needed to
+    // shape the account collection / UTXO routing above.
+    let account_manifest: Vec<AccountRegistrationEntry> = wallet
+        .accounts
+        .all_accounts()
+        .into_iter()
+        .map(|a| AccountRegistrationEntry {
+            account_type: a.account_type,
+            account_xpub: a.account_xpub,
+        })
+        .collect();
+    let new_utxos: Vec<key_wallet::Utxo> = wallet_info
+        .accounts
+        .all_funding_accounts()
+        .into_iter()
+        .flat_map(|acct| acct.utxos.values().cloned())
+        .collect();
+    let core_state = platform_wallet::changeset::CoreChangeSet {
+        new_utxos,
+        last_processed_height: (wallet_info.metadata.last_processed_height > 0)
+            .then_some(wallet_info.metadata.last_processed_height),
+        synced_height: (wallet_info.metadata.synced_height > 0)
+            .then_some(wallet_info.metadata.synced_height),
+        ..Default::default()
+    };
+
     let wallet_state = ClientWalletStartState {
-        wallet,
-        wallet_info,
+        network,
+        birth_height: entry.birth_height,
+        account_manifest,
+        core_state,
         identity_manager,
         unused_asset_locks,
     };

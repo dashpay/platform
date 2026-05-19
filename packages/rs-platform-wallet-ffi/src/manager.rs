@@ -150,25 +150,151 @@ pub unsafe extern "C" fn platform_wallet_manager_create_wallet_from_mnemonic(
     PlatformWalletFFIResult::ok()
 }
 
+/// One wallet skipped during `load_from_persistor` because its seed
+/// was unavailable (recoverable — retry after the host provides /
+/// unlocks the mnemonic). Never a wrong-seed wallet.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct SkippedWalletFFI {
+    /// The (public) 32-byte wallet id that was skipped.
+    pub wallet_id: [u8; 32],
+    /// Structural skip reason: `0` = seed absent, `1` = store
+    /// locked/unavailable (retry after unlock), `2` = other store
+    /// error. No secret material is ever carried.
+    pub reason_code: u32,
+}
+
+/// C-visible summary of one `load_from_persistor` pass so the host can
+/// see which wallets loaded and which were skipped (and why) instead
+/// of the outcome being silently discarded.
+///
+/// `skipped` is a heap array of length `skipped_count`; pass this
+/// struct (by pointer) to
+/// [`platform_wallet_load_outcome_free`] exactly once to release it.
+#[repr(C)]
+#[derive(Debug)]
+pub struct LoadOutcomeFFI {
+    /// Number of wallets fully reconstructed + registered.
+    pub loaded_count: usize,
+    /// Length of the `skipped` array.
+    pub skipped_count: usize,
+    /// Heap-allocated skipped-wallet array (null iff `skipped_count`
+    /// is 0). Owned by Rust until `platform_wallet_load_outcome_free`.
+    pub skipped: *mut SkippedWalletFFI,
+}
+
+fn skip_reason_code(reason: &platform_wallet::SkipReason) -> u32 {
+    match reason {
+        platform_wallet::SkipReason::SeedAbsent => 0,
+        platform_wallet::SkipReason::StoreUnavailable(_) => 1,
+        platform_wallet::SkipReason::StoreError(_) => 2,
+    }
+}
+
 /// Hydrate the manager from its persister.
 ///
 /// Triggers `on_load_wallet_list_fn` on the persistence callbacks to
 /// fetch the persisted wallet list from the client side (SwiftData),
-/// reconstructs each wallet as **watch-only** via its stored root +
-/// per-account xpubs, and registers them inside the manager. Does not
-/// produce wallet handles — the caller should follow up with
-/// [`platform_wallet_manager_get_wallet`] per `wallet_id` it knows
-/// about.
+/// builds a keyless reconstruction payload per wallet, then re-derives
+/// each signing wallet from the supplied mnemonic `resolver` and runs
+/// the fail-closed wrong-seed gate before registering it. Does not
+/// produce wallet handles — follow up with
+/// [`platform_wallet_manager_get_wallet`] per `wallet_id`.
+///
+/// A wallet whose mnemonic the `resolver` cannot supply is **skipped**
+/// (recoverable), not failed: the call still returns `Success`, every
+/// skipped `(wallet_id, reason)` is logged, and — when `out_outcome`
+/// is non-null — surfaced through it so the host can re-attempt the
+/// skipped set after unlocking. A *wrong* mnemonic is a hard error
+/// (returned via the result code), never a silent skip.
+///
+/// # Safety
+/// - `resolver` must be a live handle from
+///   `dash_sdk_mnemonic_resolver_create`, outliving this call.
+/// - `out_outcome` may be null (caller doesn't want the summary);
+///   otherwise it must point to writable `LoadOutcomeFFI` storage and
+///   the caller must later release it via
+///   [`platform_wallet_load_outcome_free`].
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_load_from_persistor(
     manager_handle: Handle,
+    resolver: *const rs_sdk_ffi::MnemonicResolverHandle,
+    out_outcome: *mut LoadOutcomeFFI,
 ) -> PlatformWalletFFIResult {
+    check_ptr!(resolver);
+    // SAFETY: the caller's contract guarantees `resolver` is a live
+    // handle that outlives this synchronous call.
+    let seeds = crate::rehydration_seed_provider::ResolverSeedProvider::new(resolver);
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(manager_handle, |manager| {
-        runtime().block_on(manager.load_from_persistor())
+        runtime().block_on(manager.load_from_persistor(&seeds))
     });
     let result = unwrap_option_or_return!(option);
-    unwrap_result_or_return!(result);
+    let outcome = unwrap_result_or_return!(result);
+
+    // Never silently drop the outcome: log a structured summary plus
+    // one line per skipped wallet (recoverable; the host can retry the
+    // skipped set after unlocking the keychain).
+    tracing::info!(
+        loaded = outcome.loaded.len(),
+        skipped = outcome.skipped.len(),
+        "platform_wallet_manager_load_from_persistor complete"
+    );
+    for (wid, reason) in &outcome.skipped {
+        tracing::warn!(
+            wallet_id = %hex::encode(wid),
+            reason = %reason,
+            "load_from_persistor skipped wallet (seed unavailable — recoverable)"
+        );
+    }
+
+    if !out_outcome.is_null() {
+        let skipped_vec: Vec<SkippedWalletFFI> = outcome
+            .skipped
+            .iter()
+            .map(|(wid, reason)| SkippedWalletFFI {
+                wallet_id: *wid,
+                reason_code: skip_reason_code(reason),
+            })
+            .collect();
+        let skipped_count = skipped_vec.len();
+        let skipped_ptr = if skipped_count == 0 {
+            std::ptr::null_mut()
+        } else {
+            let boxed = skipped_vec.into_boxed_slice();
+            Box::into_raw(boxed) as *mut SkippedWalletFFI
+        };
+        std::ptr::write(
+            out_outcome,
+            LoadOutcomeFFI {
+                loaded_count: outcome.loaded.len(),
+                skipped_count,
+                skipped: skipped_ptr,
+            },
+        );
+    }
     PlatformWalletFFIResult::ok()
+}
+
+/// Release the heap `skipped` array a successful
+/// [`platform_wallet_manager_load_from_persistor`] wrote into a
+/// `LoadOutcomeFFI`. Idempotent: nulls the pointer after freeing, and
+/// a null `outcome` (or already-freed array) is a no-op.
+///
+/// # Safety
+/// `outcome` must point to a `LoadOutcomeFFI` previously populated by
+/// `platform_wallet_manager_load_from_persistor`, not freed already.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_load_outcome_free(outcome: *mut LoadOutcomeFFI) {
+    if outcome.is_null() {
+        return;
+    }
+    let o = &mut *outcome;
+    if !o.skipped.is_null() && o.skipped_count > 0 {
+        let slice = std::slice::from_raw_parts_mut(o.skipped, o.skipped_count);
+        drop(Box::from_raw(slice as *mut [SkippedWalletFFI]));
+    }
+    o.skipped = std::ptr::null_mut();
+    o.skipped_count = 0;
 }
 
 /// Get a `PlatformWallet` handle for a wallet registered in the

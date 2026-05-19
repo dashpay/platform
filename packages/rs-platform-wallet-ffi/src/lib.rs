@@ -51,6 +51,7 @@ pub mod platform_address_sync;
 pub mod platform_address_types;
 pub mod platform_addresses;
 pub mod platform_wallet_info;
+pub mod rehydration_seed_provider;
 mod runtime;
 #[cfg(feature = "shielded")]
 pub mod shielded_sync;
