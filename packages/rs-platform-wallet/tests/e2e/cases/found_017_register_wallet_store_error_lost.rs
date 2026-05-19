@@ -150,28 +150,18 @@ impl PlatformEventHandler for NoopEventHandler {}
 /// defect is in registration ordering, not key material.
 const TEST_SEED: [u8; 64] = [7u8; 64];
 
-/// Bug-pin for Found-017.
+/// Regression guard for Found-017.
 ///
-/// **RED today**: `create_wallet_from_seed_bytes` returns `Ok` and the
-/// wallet is present in `wallet_ids()` even though the persister `store`
-/// failed — the registration round was silently discarded, so the
-/// wallet has no record to rebuild from on next launch.
+/// The fix is landed: on a registration-round `persister.store` error,
+/// `register_wallet` (`src/manager/wallet_lifecycle.rs`) rolls back the
+/// in-memory state via `remove_wallet` and returns
+/// `Err(WalletCreation(..))`. This test actively guards it — if a
+/// future change reintroduces log-and-swallow on the registration
+/// `store`, `create_wallet_from_seed_bytes` would return `Ok` with the
+/// wallet still in `wallet_ids()` and this test fails.
 ///
-/// **GREEN after fix**: the registration `store` error aborts
-/// registration with an `Err` and rolls back the in-memory state; the
-/// wallet is absent from `wallet_ids()`.
-#[ignore = "Found-017 bug pin — pins a real, current rs-platform-wallet \
-            defect: src/manager/wallet_lifecycle.rs:276-282 logs and \
-            swallows the registration-round persister `store` error, then \
-            src/manager/wallet_lifecycle.rs:347-349 inserts the wallet into \
-            the live registry unconditionally. A successful-looking import \
-            leaves no persisted record and vanishes on next launch (silent \
-            data loss). Deterministic — no live network, no concurrency. \
-            Run with `cargo test -- --ignored`. EXPECTED to fail until \
-            register_wallet treats the registration `store` as \
-            load-bearing (fail + roll back on error, same shape as the \
-            load_persisted / initialize_from_persisted paths in the same \
-            function). See TEST_SPEC.md Found-017."]
+/// Deterministic — no live network, no concurrency (`Sdk::new_mock`,
+/// `StoreFailsPersister`). See TEST_SPEC.md Found-017.
 #[tokio_shared_rt::test(shared)]
 async fn found_017_register_wallet_store_error_lost() {
     let _ = tracing_subscriber::fmt()
@@ -222,24 +212,20 @@ async fn found_017_register_wallet_store_error_lost() {
 
     assert!(
         result.is_err() && !wallet_present,
-        "Found-017 (RED-by-design): registering a wallet while the persister \
+        "Found-017 regression: registering a wallet while the persister \
          `store` fails must fail atomically — `create_wallet_from_seed_bytes` \
          must return Err AND the wallet must be absent from the live \
          registry. Observed: create_wallet_from_seed_bytes returned {} and \
          wallet_ids() = {} entr{} (wallet_present = {}). \
-         Today register_wallet (src/manager/wallet_lifecycle.rs:276-282) only \
-         logs the registration-round `persister.store` error via \
-         tracing::error! and falls through, then \
-         src/manager/wallet_lifecycle.rs:347-349 inserts the wallet into \
-         self.wallets unconditionally and returns Ok(_). The wallet is fully \
-         usable in-process but has NO persisted record, so it vanishes on \
-         the next launch — silent data loss. Note the asymmetry: the \
-         load_persisted / initialize_from_persisted failure paths in the \
-         SAME function already roll back and return Err; the registration \
-         `store` must do the same. Fix: treat the registration round as \
-         load-bearing — on `store` error, roll back the in-memory state \
-         (self.wallets + inner WalletManager) and return Err. \
-         See TEST_SPEC.md Found-017.",
+         The landed contract: register_wallet \
+         (src/manager/wallet_lifecycle.rs) treats the registration-round \
+         `persister.store` as load-bearing — on error it rolls back the \
+         in-memory state via `remove_wallet` and returns \
+         Err(WalletCreation(..)), matching the load_persisted / \
+         initialize_from_persisted failure paths in the same function. A \
+         failure here means that rollback was removed, so a wallet with no \
+         persisted record is left in the live registry and vanishes on the \
+         next launch — silent data loss. See TEST_SPEC.md Found-017.",
         if result.is_err() { "Err(_)" } else { "Ok(_)" },
         registered_ids.len(),
         if registered_ids.len() == 1 {
