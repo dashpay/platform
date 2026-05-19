@@ -425,8 +425,8 @@ pub async fn setup_with_per_identity_funding(
 ///
 /// On success the test wallet's `core_balance_confirmed()` is
 /// guaranteed to be `>= duffs`, so downstream callers (e.g.
-/// `IdentityWallet::register_identity_with_funding_external_signer`
-/// with `IdentityFundingMethod::FundWithWallet { amount_duffs }`) can
+/// `IdentityWallet::register_identity_with_funding`
+/// with `IdentityFunding::FromWalletBalance { amount_duffs, account_index }`) can
 /// build an asset lock without a follow-up Core sync race.
 ///
 /// Errors:

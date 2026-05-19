@@ -21,7 +21,7 @@
 //!    (ID-001 helper) — cheaper than the asset-lock registration
 //!    path for this test's needs.
 //! 3. `IdentityWallet::top_up_identity_with_funding` with
-//!    `TopUpFundingMethod::FundWithWallet { amount_duffs: TOP_UP_ASSET_LOCK_AMOUNT }`
+//!    `IdentityFunding::FromWalletBalance { amount_duffs: TOP_UP_ASSET_LOCK_AMOUNT, account_index: 0 }`
 //!    drives the unified asset-lock flow internally —
 //!    `AssetLockManager::create_funded_asset_lock_proof` (build →
 //!    broadcast → wait IS / fall back to ChainLock) and submits an
@@ -29,11 +29,6 @@
 //! 4. The identity's on-chain balance increases by approximately
 //!    `TOP_UP_ASSET_LOCK_AMOUNT * CREDITS_PER_DUFF` minus the
 //!    (positive) top-up fee.
-//!
-//! See Found-006 (covered separately) for the `topup_index`
-//! parameter being a no-op today — this test passes `1` purely as
-//! the canonical "second derivation slot for this identity" signal;
-//! the assertion shape does not depend on the parameter's behaviour.
 
 use std::time::Duration;
 
@@ -43,10 +38,11 @@ use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::Identity;
 use key_wallet::AccountType;
 use platform_wallet::wallet::asset_lock::tracked::AssetLockStatus;
-use platform_wallet::wallet::identity::types::funding::TopUpFundingMethod;
+use platform_wallet::wallet::identity::types::funding::IdentityFunding;
 use platform_wallet::PlatformWalletError;
 
 use crate::framework::prelude::*;
+use crate::framework::signer::SeedBackedCoreSigner;
 use crate::framework::wait::{
     wait_for_address_balance_chain_confirmed_n, wait_for_identity_balance,
     CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
@@ -65,12 +61,6 @@ const TOP_UP_ASSET_LOCK_AMOUNT: u64 = 100_000_000;
 
 /// DIP-9 identity slot used for the registered + topped-up identity.
 const IDENTITY_INDEX: u32 = 0;
-
-/// `topup_index` value passed to `top_up_identity_with_funding`.
-/// Per spec: "Pass `1` for ID-002b to distinguish from the
-/// registration asset lock". Currently a no-op (Found-006) — kept
-/// here as a documented call-site shape, not a behavioural pin.
-const TOPUP_INDEX: u32 = 1;
 
 /// Credits committed to the address-funded registration. Sized
 /// identically to `id_001` so the registered identity's post-reg
@@ -186,15 +176,20 @@ async fn id_002b_asset_lock_funded_top_up() {
     //      IS-lock (or falls back to ChainLock).
     //   2. Submits IdentityTopUp with the resolved proof.
     //   3. Updates the local identity-manager balance cache.
+    let core_signer = SeedBackedCoreSigner::new(
+        s.test_wallet.seed_bytes(),
+        s.test_wallet.platform_wallet().core().network(),
+    );
     s.test_wallet
         .platform_wallet()
         .identity()
         .top_up_identity_with_funding(
             &identity_id,
-            TopUpFundingMethod::FundWithWallet {
+            IdentityFunding::FromWalletBalance {
                 amount_duffs: TOP_UP_ASSET_LOCK_AMOUNT,
+                account_index: 0,
             },
-            TOPUP_INDEX,
+            &core_signer,
             None,
         )
         .await

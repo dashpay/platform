@@ -29,6 +29,7 @@ use key_wallet::account::account_type::StandardAccountType;
 use platform_wallet::PlatformWalletError;
 
 use crate::framework::prelude::*;
+use crate::framework::signer::SeedBackedCoreSigner;
 use crate::framework::wait::wait_for_core_balance;
 
 /// Per-UTXO funding amount in duffs. Two distinct UTXOs land on the
@@ -183,6 +184,10 @@ async fn cr_004_legacy_bip32_utxo_update_after_spend() {
         .await
         .expect("bank.primary_core_receive_address");
     let send_amount = TOTAL_FUNDING.saturating_sub(SEND_ALL_HEADROOM);
+    let core_signer = SeedBackedCoreSigner::new(
+        s.test_wallet.seed_bytes(),
+        s.test_wallet.platform_wallet().core().network(),
+    );
     let tx = s
         .test_wallet
         .platform_wallet()
@@ -191,6 +196,7 @@ async fn cr_004_legacy_bip32_utxo_update_after_spend() {
             StandardAccountType::BIP32Account,
             0,
             vec![(sink.clone(), send_amount)],
+            &core_signer,
         )
         .await
         .expect(
@@ -248,6 +254,7 @@ async fn cr_004_legacy_bip32_utxo_update_after_spend() {
             StandardAccountType::BIP32Account,
             0,
             vec![(sink.clone(), CHANGE_RESPEND_AMOUNT)],
+            &core_signer,
         )
         .await;
     match respend {

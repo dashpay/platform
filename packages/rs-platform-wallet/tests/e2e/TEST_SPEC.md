@@ -28,7 +28,7 @@ presumably enumerate the joy of doing it.
   - PA-003 reclassified `green` → `red-real-fail (test-bug)`. Root cause: the five-marker pre-funding loop (`pa_003_fee_scaling.rs:146-166`) writes `address_funds` storage rows for each future `dests[i]` before the 5-output transfer runs. Chain-time fee (Drive's `validate_fees_of_event/v0/mod.rs:195` driving the cost off real drive ops, not the static `state_transition_min_fees` floor) therefore pays a cheap UPDATE per 5-output recipient while the 1-output transfer pays the one-time CREATE; observed Δfee ≈ 536k matches one absent create. The asserted "more bytes ⇒ larger fee" invariant silently bakes in a "no pre-existing outputs" assumption that the marker-derivation trick violates. No production regression — the test contract is misformulated for the chosen address-derivation strategy.
   - PA-005b spec drift resolved → truth is `blocked`. Both prior `PASS` claims (detailed body at line ~534 and changelog "PR #3609 merged" entry) were stale: they landed in PR #3609 / commit `5c6baabd8f` on 2026-05-11 without re-running PA-005b against the QA-002 setup hook (`consume_platform_address_index_zero`, `wallet_factory.rs:1106-1140`) that had landed seven days earlier on 2026-05-04 (commit `94902be73b`). The failure is a three-way contract mismatch: QA-002's hook marks index 0 used while the DIP-17 platform-payment pool eagerly generates indices `0..=19` in `AddressPool::new` (rust-dashcore pinned rev `53130869e5`, `address_pool.rs:351-368`), and the headroom helper at `framework/gap_limit.rs:188-207` measures fresh-past-`highest_generated` rather than any-unused-below-ceiling — so `available` is permanently 1 from the first call regardless of the request. Test-side defect, not production.
   - PA-008b reclassified `green / IMPLEMENTED — passing` → `red-real-fail (concurrency-only)`. Isolation re-run on 2026-05-14 with `cargo test … --test-threads=1` passes in 158s; the 14-thread suite hits the canonical 120s `wait_for_balance` timeout on the first marker funding (`pa_008b_cross_wallet_funding.rs:59`, before the six-way `tokio::join!` fan-out). Suspected race in `PlatformAddressWallet::next_unused_receive_address` (`platform_addresses/wallet.rs:223-270`) vs concurrent BLAST syncs from sibling tests: a freshly derived receive address may not be promoted into the unified provider's pending set in time, so the next `sync_balances` BLAST sweep at `platform_addresses/sync.rs:24-86` returns `current=0` for the funded address indefinitely. Pinned as **Found-026** in §3 Found-bug pins.
-  - Found-006 — upstream issue filed: **dashpay/rust-dashcore#762** — *Add `top_up_index` field to `CreditOutputFunding::IdentityTopUp` (DIP-9 conformance gap)*. Wallet-side TODO in `wallet/identity/network/top_up.rs` updated to reference the issue; once it lands, drop the `_` prefix on `topup_index` and forward it through the derivation path.
+  - Found-006 — RETIRED by #3634: the reshaped `top_up_identity_with_funding(id, IdentityFunding, asset_lock_signer, settings)` signature dropped the `topup_index` parameter entirely, so the "ignored `topup_index`" discrepancy is structurally impossible. Pin and test removed (git history retains both).
   - **Found-026** added — `PlatformAddressWallet::next_unused_receive_address` pool-cursor bump may not enqueue address into BLAST sync provider's pending set under concurrent load. P2, MEDIUM, suspected (pinned by PA-008b). Symmetric `rs-sdk`-side gap is already pinned as Found-025.
 
 - **v3.1-dev (SHA `cf9b6d2ba4`, v47 audit)** — 34 PASS / 4 FAIL on 38 tests; Wave G (tokens) complete:
@@ -255,7 +255,7 @@ Status legend: **green** = test file present, body has real assertions, runnable
 | Found-003 | `addresses_with_balances` and `total_credits` only see the first platform-payment account | P2 | not implemented | S |
 | Found-004 | `transfer` / `withdraw` / `fund_from_asset_lock` silently fall back to `address_index = 0` on lookup miss | P2 | blocked — test file present; `#[ignore]`d on harness extension (fine-grained address seeding) | S |
 | Found-005 | `register_from_addresses` / `top_up_from_addresses` discard SDK-returned address balances and nonces | P2 | not implemented | M |
-| Found-006 | `top_up_identity_with_funding` requires pre-created `IdentityTopUp { registration_index }` HD slot; absence yields confusing "not found" error | P2 | red-by-design — test file present; fails deterministically until `CreditOutputFunding` gains `top_up_index` (upstream `key-wallet`) | S |
+| Found-006 | `top_up_identity_with_funding` ignored caller-supplied `topup_index` | P2 | resolved by #3634 (API removal of `topup_index` parameter); pin retired | — |
 | Found-007 | `PlatformAddressSyncManager::start` lacks a generation guard so a fast `start()` → `stop()` → `start()` can spawn parallel sync threads | P2 | not implemented | M |
 | Found-008 | `LockNotifyHandler` uses `notify_waiters()` so a lock event arriving in the check / wait gap of `wait_for_proof` is dropped (tracked: dashpay/platform#3641) | P2 | red-by-design — inverted pin: Cargo PASS = bug confirmed = intentionally RED until `LockNotifyHandler` migrates off `notify_waiters()` | M |
 | Found-009 | wallet-event adapter swallows `RecvError::Lagged` events without compensating recovery | P2 | not implemented | M |
@@ -288,7 +288,7 @@ Counts by priority: **P0: 10**, **P1: 29** (incl. CR-004 passing-as-regression +
 **Status at HEAD (SHA `cf9b6d2ba4`, post-v47):**
 - CR-004 retargeted (QA-901, 2026-05-14): reclassified `red-by-design (dash-evo-tool#845)` → `passing-as-regression`. The deterministic failure was a test-side dust-threshold mismatch (assumed 2,730; upstream gate at `transaction_builder.rs:294` is 546). Headroom changed `2_500 → 700`; test now pins the symmetric BIP-32 spent-marking + upstream sub-dust fold contracts.
 - Found-025 prior pin retargeted: the v47-era unit test asserted on a local `HashMap` (Found-022 disease) and has been deleted in favour of a documented stub. Status remains `red-by-design — pending upstream test-hook surface`; no Cargo test is emitted today. See `/tmp/marvin-redbyd-sweep.md` and the file-level docstring at `cases/found_025_address_sync_silent_discard.rs`.
-- 24 Found-bug pins total; 2 red-by-design with live Cargo tests (Found-006, Found-008), 1 red-by-design pending upstream test-hook surface (Found-025; pin deleted), 1 passing-as-regression (Found-024 V27-007 fix), 3 blocked-scaffold (Found-004, Found-012, Found-013), 1 suspected concurrency-only race (Found-026, pinned by PA-008b), 16 not implemented (Found-019/020 deleted 2026-05-14 — fixes confirmed; knowledge in memcan)
+- 23 Found-bug pins total; 1 red-by-design with a live Cargo test (Found-008), 1 red-by-design pending upstream test-hook surface (Found-025; pin deleted), 1 retired by upstream API removal (Found-006 — #3634 dropped `topup_index`), 1 passing-as-regression (Found-024 V27-007 fix), 3 blocked-scaffold (Found-004, Found-012, Found-013), 1 suspected concurrency-only race (Found-026, pinned by PA-008b), 16 not implemented (Found-019/020 deleted 2026-05-14 — fixes confirmed; knowledge in memcan)
 
 ### Platform Addresses (PA)
 
@@ -827,7 +827,7 @@ Counts by priority: **P0: 10**, **P1: 29** (incl. CR-004 passing-as-regression +
   1. `setup_with_core_funded_test_wallet(TEST_WALLET_CORE_FUNDING)` — land `TEST_WALLET_CORE_FUNDING` duffs on BIP-44 account 0 (mirror CR-003 setup).
   2. Register an identity via `register_from_addresses` (Platform-side, simpler — reuse ID-001 helper). Capture `identity_id` and `pre_balance`.
   3. Define `TOP_UP_ASSET_LOCK_AMOUNT = 100_000_000` (100 M duffs ≈ 0.001 DASH) plus fee headroom as the top-up amount.
-  4. Call `IdentityWallet::top_up_identity_with_funding(identity_id, TopUpFundingMethod::FundWithWallet { amount_duffs: TOP_UP_ASSET_LOCK_AMOUNT }, _topup_index = 1, None)`.
+  4. Call `IdentityWallet::top_up_identity_with_funding(identity_id, IdentityFunding::FromWalletBalance { amount_duffs: TOP_UP_ASSET_LOCK_AMOUNT, account_index: 0 }, asset_lock_signer, None)`.
   5. Wait for IS-lock / ChainLock on the asset-lock tx (same primitive CR-003 uses for registration).
   6. Fetch the identity's chain balance via `Identity::fetch(sdk, identity_id)`.
 - **Assertions**:
@@ -842,7 +842,7 @@ Counts by priority: **P0: 10**, **P1: 29** (incl. CR-004 passing-as-regression +
 - **Notes / risks**:
   - Requires the same `PLATFORM_WALLET_E2E_BANK_CORE_GATE` env var that CR-003 uses (default-on, 900 s deadline). An under-funded Core address surfaces as `FrameworkError::Bank` with the bank's Core address embedded — identical operator-actionable error contract to CR-003.
   - Core-sweep teardown should return Core residuals to the bank (mirror CR-003 teardown); teardown failure is best-effort: log and skip rather than fail the test.
-  - Found-006 (matrix line, §3) notes that `top_up_identity_with_funding` ignores the caller-supplied `_topup_index` — the parameter is currently a no-op (`_topup_index` in the production signature). Pass `1` for ID-002b to distinguish from the registration asset lock; cover the `topup_index` routing discrepancy separately under Found-006's test entry.
+  - Found-006 retired: #3634 removed the `topup_index` parameter from `top_up_identity_with_funding`, so the historical "ignored `_topup_index`" discrepancy no longer applies. The new signature funds via `IdentityFunding::FromWalletBalance { account_index }`.
 - **Harness extensions required**: same as CR-003 — `setup_with_core_funded_test_wallet`, `wait_for_asset_lock`; plus Wave A identity setup helpers already needed by ID-001.
 - **Estimated complexity**: L (Core-funded wallet setup + asset-lock orchestration — same shape as CR-003; the top-up call itself is simpler than registration but the harness scaffolding is equivalent)
 - **Rationale**: `top_up_identity_with_funding` with `FundWithWallet` is a complete production primitive with zero positive test coverage in this suite. ID-002 covers the address-funded top-up path; this case covers the Core/asset-lock-funded path — the two together give full positive coverage of the identity top-up surface.
@@ -1579,7 +1579,7 @@ This section covers primitive-level correctness of `AssetLockManager` — the in
 - **Preconditions**:
   - CR-001 (SPV ready).
   - Core-funded test wallet. Implementation uses `N = 3` concurrent tasks, per-lock amount `100_000_000` duffs (0.001 DASH); Core funding floor ≈ 500_000_000 duffs (5 DASH testnet). Same `PLATFORM_WALLET_E2E_BANK_CORE_GATE` env gate as CR-003.
-  - N pre-registered identities (each via address-funded `register_from_addresses` from the ID-001 helper). Concurrent top-ups target different identities to avoid colliding on Found-006.
+  - N pre-registered identities (each via address-funded `register_from_addresses` from the ID-001 helper). Concurrent top-ups target different identities so each draws an independent asset-lock build path.
 - **Scenario**:
   1. `setup_with_core_funded_test_wallet(CONCURRENT_LOCK_FUNDING_TOTAL)` lands Core funds on the test wallet.
   2. Register N identities via the address-funded path (ID-001 helper); capture `identity_ids[N]` and `pre_balances[N]`.
@@ -2041,73 +2041,12 @@ becomes a test failure rather than a silent drift.
 - **Estimated complexity**: M (needs identity-signer + DPNS-style identity setup, then two consecutive identity-funding calls)
 - **Rationale**: The TODO comment in the source admits the gap; a test pins it so the comment doesn't outlive the next refactor that touches these files.
 
-#### Found-006 — `top_up_identity_with_funding` requires pre-created `IdentityTopUp { registration_index }` HD slot; absence yields confusing "not found" error
-- **Priority**: P2 (bug pin — failure is the proof)
-- **Wallet feature exercised**: `wallet/identity/network/top_up.rs:60-106`.
-- **Two layered bugs** (QA-006 investigation, 2026-05-12):
-
-  **Bug A — the visible precondition failure (what this pin actually tests):**
-  `top_up_identity_with_funding` calls `create_funded_asset_lock_proof` with
-  `AssetLockFundingType::IdentityTopUp { identity_index }`. Internally,
-  `peek_next_funding_address` (`key-wallet/src/wallet/asset_lock/build.rs:163`,
-  audited at SHA `d6dd5da`) does
-  `wallet_info.accounts.identity_topup.get_mut(&identity_index)` and returns
-  `Err("Identity top-up account for index N not found")` when the BTreeMap has no
-  entry for that index. The map is populated only via
-  `Wallet::add_account(AccountType::IdentityTopUp { registration_index: N }, None)`,
-  which `WalletAccountCreationOptions::Default` never calls — `Default` delegates to
-  `create_special_purpose_accounts` (`key-wallet/src/wallet/helper.rs:524-549`),
-  which creates `IdentityRegistration`, `IdentityInvitation`,
-  `IdentityTopUpNotBoundToIdentity`, and provider-key accounts, but no
-  `IdentityTopUp { registration_index: N }` for any N. As a result, any test or
-  caller that creates a wallet with `Default` and then calls
-  `top_up_identity_with_funding` with `FundWithWallet` receives the "not found" error
-  for every index, including 0. The error fires before any `topup_index`-routing logic
-  is reached. This is on the critical path of ID-002b, AL-001, and this pin (Found-006)
-  itself. Fix owner: upstream `key-wallet` (lazy-create the slot inside
-  `peek_next_funding_address` / `build.rs:163`) OR the `rs-platform-wallet` wrapper
-  (call `add_account(AccountType::IdentityTopUp { registration_index })` lazily before
-  the lookup). The population point is
-  `ManagedAccountCollection::insert_keys_bearing_account`
-  (`key-wallet/src/managed_account/managed_account_collection.rs:307`).
-
-  **Bug B — the original claim, blocked behind Bug A:**
-  Once Bug A is fixed, `topup_index` routing to distinct HD slots is testable. The
-  upstream `CreditOutputFunding` in
-  `key-wallet/src/wallet/managed_wallet_info/asset_lock_builder.rs:42-49` exposes only
-  `identity_index` for the `IdentityTopUp` variant; the canonical DIP-9 path
-  `DerivationPath::identity_top_up_path(network, identity_index, top_up_index)` at
-  `key-wallet/src/bip32.rs:1062-1077` takes a second index that the type system never
-  plumbs. Whether `topup_index` actually routes to distinct HD slots cannot be confirmed
-  until Bug A is fixed so the test can reach the routing logic. Bug B is retained as a
-  follow-up assertion within this pin.
-
-- **Preconditions**: an identity registered on testnet via the wallet; **the test must
-  pre-provision `IdentityTopUp { registration_index }` HD slots before calling
-  `top_up_identity_with_funding`** (v44-discovered prerequisite that Bilby is
-  implementing test-side). Concretely, call
-  `wallet.add_account(AccountType::IdentityTopUp { registration_index: 0 }, None)` and
-  `wallet.add_account(AccountType::IdentityTopUp { registration_index: 1 }, None)` after
-  wallet creation and before the first top-up attempt. Alternatively, use
-  `WalletAccountCreationOptions::AllAccounts` or `SpecificAccounts` with those slots
-  included.
-- **Scenario**:
-  1. Register identity `I` via `register_identity_with_funding_external_signer`.
-  2. Pre-provision HD slots: `wallet.add_account(AccountType::IdentityTopUp { registration_index: 0 }, None)` and `{ registration_index: 1 }`.
-  3. Call `top_up_identity(&I.id, topup_index=0, amount_duffs=A0, ...)`.
-  4. Call `top_up_identity(&I.id, topup_index=1, amount_duffs=A1, ...)` — same identity, fresh `topup_index`.
-- **Assertions** (the proof shape):
-  - Without the precondition step, both calls fail with `"Identity top-up account for index N not found"` — this is the Bug A regression proof.
-  - After precondition step, the two top-up calls produce DIFFERENT funding-output addresses (re-derived from different paths) — this is the Bug B assertion.
-  - The two asset-lock transactions have different txids.
-  - The doc claim about "successive top-ups for the same identity" is honoured — both calls succeed and credit the identity by `A0 + A1` total.
-- **Expected** (after Bug A fix): `top_up_identity_with_funding` works without manual `add_account` preamble; after Bug B fix, `topup_index` routes to distinct HD paths.
-- **Actual** (current code): any call with `WalletAccountCreationOptions::Default` fails at `build.rs:163` with a misleading "not found" error before any routing logic is reached.
-- **Severity**: HIGH — Bug A is on the critical path of every asset-lock-funded top-up; affects ID-002b, AL-001, and this pin. The silent prerequisite provides no actionable guidance to callers.
-- **Owner**: upstream `key-wallet` — lazy-create the `IdentityTopUp` slot inside `peek_next_funding_address` (`build.rs:163`) rather than erroring; OR `rs-platform-wallet` wrapper — call `add_account` lazily before the lookup. Population point: `ManagedAccountCollection::insert_keys_bearing_account` (`managed_account_collection.rs:307`).
-- **Harness extensions required**: identity setup; access to the asset-lock transaction details (currently inside `AssetLockManager`); wallet `add_account` call prior to top-up.
-- **Estimated complexity**: M
-- **Rationale**: Bug A is pinned explicitly — a public API method that fails with a confusing "not found" error for a precondition that no default initialisation path satisfies is a DX contract violation. Bug B (the original `topup_index` ignored claim) is retained as the follow-up assertion once Bug A is fixed.
+#### Found-006 — `top_up_identity_with_funding` ignored caller-supplied `topup_index` — RETIRED
+Resolved by #3634 (API removal of the `topup_index` parameter); pin retired. The
+parameter the pin existed to test no longer exists on the reshaped
+`top_up_identity_with_funding(id, IdentityFunding, asset_lock_signer, settings)`
+signature, so the defect is structurally impossible. Test file and the original
+detailed pin removed; git history retains both.
 
 #### Found-007 — `PlatformAddressSyncManager::start` lacks a generation guard so a fast `start()` → `stop()` → `start()` can spawn parallel sync threads
 - **Priority**: P2 (bug pin — failure is the proof)

@@ -1,6 +1,10 @@
 use crate::errors::consensus::ConsensusError;
+use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use std::fmt::Debug;
+
+mod flatten;
+mod merge_many;
 
 #[macro_export]
 macro_rules! check_validation_result_with_data {
@@ -34,36 +38,79 @@ impl<T: Clone, E: Debug> Default for ValidationResult<T, E> {
 }
 
 impl<TData: Clone, E: Debug> ValidationResult<Vec<TData>, E> {
+    /// Aggregate a list of `ValidationResult<Vec<TData>, E>` into a single
+    /// result. Dispatches to the version selected by `platform_version`:
+    ///
+    /// - **v0** (`PROTOCOL_VERSION_11` and below): always returns
+    ///   `data: Some(Vec<...>)`, including `Some(empty_vec)` when no input
+    ///   contributed any data. Preserved for chain reproducibility.
+    /// - **v1** (`PROTOCOL_VERSION_12`+): returns `data: None` when no input
+    ///   contributed any data. Honors the invariant
+    ///   `data.is_none() ⇔ no work done`, which downstream code (e.g.
+    ///   `process_validation_result_v0:241`) relies on to choose between
+    ///   `PaidConsensusError` and `UnpaidConsensusError`.
+    ///
+    /// # v1 caller-intent ambiguity
+    ///
+    /// v1 keys on `aggregate_data.is_empty()` to decide between
+    /// `data: None` and `data: Some(_)`, which collapses two distinct
+    /// caller intents into the same output: every input had `data: None`
+    /// (truly no work) and every input had `data: Some(empty_vec)`
+    /// (validated but produced no output). v1 cannot distinguish those
+    /// at the aggregate level — both yield `data: None` and are routed
+    /// to `UnpaidConsensusError` downstream. Callers that need "validated
+    /// but no actions" must signal that with at least one non-empty entry.
+    ///
+    /// See issue #2867 for context on the v0 → v1 change.
     pub fn flatten<I: IntoIterator<Item = ValidationResult<Vec<TData>, E>>>(
         items: I,
-    ) -> ValidationResult<Vec<TData>, E> {
-        let mut aggregate_errors = vec![];
-        let mut aggregate_data = vec![];
-        items.into_iter().for_each(|single_validation_result| {
-            let ValidationResult { mut errors, data } = single_validation_result;
-            aggregate_errors.append(&mut errors);
-            if let Some(mut data) = data {
-                aggregate_data.append(&mut data);
-            }
-        });
-        ValidationResult::new_with_data_and_errors(aggregate_data, aggregate_errors)
+        platform_version: &PlatformVersion,
+    ) -> Result<ValidationResult<Vec<TData>, E>, ProtocolError> {
+        match platform_version.dpp.validation.validation_result.flatten {
+            0 => Ok(flatten::v0::flatten_v0(items)),
+            1 => Ok(flatten::v1::flatten_v1(items)),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "ValidationResult::flatten".to_string(),
+                known_versions: vec![0, 1],
+                received: version,
+            }),
+        }
     }
 }
 
 impl<TData: Clone, E: Debug> ValidationResult<TData, E> {
+    /// Aggregate a list of `ValidationResult<TData, E>` into a
+    /// `ValidationResult<Vec<TData>, E>`. Dispatches to the version selected
+    /// by `platform_version`:
+    ///
+    /// - **v0** (`PROTOCOL_VERSION_11` and below): always returns
+    ///   `data: Some(Vec<...>)`, including `Some(empty_vec)` when no input
+    ///   contributed any data. Preserved for chain reproducibility.
+    /// - **v1** (`PROTOCOL_VERSION_12`+): returns `data: None` when no input
+    ///   contributed any data. See [`flatten`] for the invariant this
+    ///   restores.
+    ///
+    /// Unlike [`flatten`], `merge_many` operates on per-item `TData` (not
+    /// `Vec<TData>`), so each `Some(_)` input contributes exactly one
+    /// element — there is no `Some(empty_vec)`-input collapse hazard at
+    /// this layer.
+    ///
+    /// See issue #2867 for context on the v0 → v1 change.
+    ///
+    /// [`flatten`]: ValidationResult::flatten
     pub fn merge_many<I: IntoIterator<Item = ValidationResult<TData, E>>>(
         items: I,
-    ) -> ValidationResult<Vec<TData>, E> {
-        let mut aggregate_errors = vec![];
-        let mut aggregate_data = vec![];
-        items.into_iter().for_each(|single_validation_result| {
-            let ValidationResult { mut errors, data } = single_validation_result;
-            aggregate_errors.append(&mut errors);
-            if let Some(data) = data {
-                aggregate_data.push(data);
-            }
-        });
-        ValidationResult::new_with_data_and_errors(aggregate_data, aggregate_errors)
+        platform_version: &PlatformVersion,
+    ) -> Result<ValidationResult<Vec<TData>, E>, ProtocolError> {
+        match platform_version.dpp.validation.validation_result.merge_many {
+            0 => Ok(merge_many::v0::merge_many_v0(items)),
+            1 => Ok(merge_many::v1::merge_many_v1(items)),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "ValidationResult::merge_many".to_string(),
+                known_versions: vec![0, 1],
+                received: version,
+            }),
+        }
     }
 }
 
@@ -539,48 +586,46 @@ mod tests {
         assert_eq!(result.errors, vec!["bad".to_string()]);
     }
 
-    // -- flatten() --
+    // -- facade dispatch (flatten / merge_many take platform_version) --
+    //
+    // These verify the version field on PlatformVersion correctly steers the
+    // facade to v0 vs v1 semantics. Per-version behavior is tested in each
+    // version's own module (e.g. `flatten::v1::tests`).
 
     #[test]
-    fn test_flatten_merges_data_and_errors() {
-        let r1: ValidationResult<Vec<i32>, String> = ValidationResult::new_with_data(vec![1, 2]);
-        let r2: ValidationResult<Vec<i32>, String> =
-            ValidationResult::new_with_data_and_errors(vec![3], vec!["e".to_string()]);
-        let r3: ValidationResult<Vec<i32>, String> =
-            ValidationResult::new_with_error("e2".to_string());
-
-        let flat = ValidationResult::flatten(vec![r1, r2, r3]);
-        assert_eq!(flat.data, Some(vec![1, 2, 3]));
-        assert_eq!(flat.errors, vec!["e".to_string(), "e2".to_string()]);
-    }
-
-    #[test]
-    fn test_flatten_empty_input() {
-        let flat: ValidationResult<Vec<i32>, String> =
-            ValidationResult::flatten(std::iter::empty());
+    fn test_facade_flatten_v0_returns_some_empty_on_no_data() {
+        // PROTOCOL_VERSION_11 maps to dpp.validation.validation_result.flatten = 0
+        let pv = PlatformVersion::get(11).expect("v11 exists");
+        let r1: ValidationResult<Vec<i32>, ConsensusError> =
+            ValidationResult::new_with_errors(vec![]);
+        let flat = ValidationResult::flatten(vec![r1], pv).expect("dispatch ok");
         assert_eq!(flat.data, Some(vec![]));
-        assert!(flat.errors.is_empty());
-    }
-
-    // -- merge_many() --
-
-    #[test]
-    fn test_merge_many_collects_data_into_vec() {
-        let r1: ValidationResult<i32, String> = ValidationResult::new_with_data(1);
-        let r2: ValidationResult<i32, String> = ValidationResult::new_with_data(2);
-        let r3: ValidationResult<i32, String> = ValidationResult::new_with_error("e".to_string());
-
-        let merged = ValidationResult::merge_many(vec![r1, r2, r3]);
-        assert_eq!(merged.data, Some(vec![1, 2]));
-        assert_eq!(merged.errors, vec!["e".to_string()]);
     }
 
     #[test]
-    fn test_merge_many_empty_input() {
-        let merged: ValidationResult<Vec<i32>, String> =
-            ValidationResult::merge_many(std::iter::empty::<ValidationResult<i32, String>>());
+    fn test_facade_flatten_v1_returns_none_on_no_data() {
+        // PROTOCOL_VERSION_12 maps to dpp.validation.validation_result.flatten = 1
+        let pv = PlatformVersion::get(12).expect("v12 exists");
+        let r1: ValidationResult<Vec<i32>, ConsensusError> =
+            ValidationResult::new_with_errors(vec![]);
+        let flat = ValidationResult::flatten(vec![r1], pv).expect("dispatch ok");
+        assert!(flat.data.is_none());
+    }
+
+    #[test]
+    fn test_facade_merge_many_v0_returns_some_empty_on_no_data() {
+        let pv = PlatformVersion::get(11).expect("v11 exists");
+        let r1: ValidationResult<i32, ConsensusError> = ValidationResult::new_with_errors(vec![]);
+        let merged = ValidationResult::merge_many(vec![r1], pv).expect("dispatch ok");
         assert_eq!(merged.data, Some(vec![]));
-        assert!(merged.errors.is_empty());
+    }
+
+    #[test]
+    fn test_facade_merge_many_v1_returns_none_on_no_data() {
+        let pv = PlatformVersion::get(12).expect("v12 exists");
+        let r1: ValidationResult<i32, ConsensusError> = ValidationResult::new_with_errors(vec![]);
+        let merged = ValidationResult::merge_many(vec![r1], pv).expect("dispatch ok");
+        assert!(merged.data.is_none());
     }
 
     // -- merge_many_errors() --

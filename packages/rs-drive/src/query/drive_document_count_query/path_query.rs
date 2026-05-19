@@ -164,9 +164,10 @@ impl DriveDocumentCountQuery<'_> {
     ///
     /// Shared between the server-side prove path
     /// ([`Self::execute_aggregate_count_with_proof`]) and the client-
-    /// side verify path (the SDK's `FromProof<DocumentCountQuery>` for
-    /// `DocumentCount`). Both sides must produce the *exact same*
-    /// `PathQuery` for verification to recompute the same merk root.
+    /// side verify path (the SDK's `FromProof<DocumentQuery>` for
+    /// `DocumentCount`, via the shared `verify_aggregate_count`
+    /// helper). Both sides must produce the *exact same* `PathQuery`
+    /// for verification to recompute the same merk root.
     ///
     /// Aggregate-count specifically restricts prefix props to `Equal`:
     /// grovedb's `AggregateCountOnRange` primitive wraps a *single*
@@ -217,8 +218,8 @@ impl DriveDocumentCountQuery<'_> {
                 return Err(Error::Query(
                     QuerySyntaxError::InvalidWhereClauseComponents(
                         "aggregate-count proof: prefix properties must use `==` (no `in`); \
-                         use `return_distinct_counts_in_range = true` for compound In-on-prefix \
-                         queries",
+                         use a two-field `group_by = [in_field, range_field]` for compound \
+                         In-on-prefix queries",
                     ),
                 ));
             }
@@ -242,6 +243,220 @@ impl DriveDocumentCountQuery<'_> {
         path.push(range_prop_name.as_bytes().to_vec());
 
         Ok(PathQuery::new_aggregate_count_on_range(path, query_item))
+    }
+
+    /// Build the grovedb `PathQuery` for a **carrier**
+    /// `AggregateCountOnRange` proof — one outer Key per `In`
+    /// value, each terminating in an ACOR boundary walk over the
+    /// per-branch range subtree. Returns one `(in_key, u64)` pair
+    /// per resolved In branch via
+    /// [`grovedb::GroveDb::query_aggregate_count_per_key`] (no-
+    /// proof) and
+    /// [`grovedb::GroveDb::verify_aggregate_count_query_per_key`]
+    /// (verify).
+    ///
+    /// Required where-clause shape (validated upstream by
+    /// [`Self::detect_mode`] routing to
+    /// [`DocumentCountMode::RangeAggregateCarrierProof`]):
+    /// - Exactly one `In` clause on the In-property
+    /// - Exactly one range clause on the *terminator* property of
+    ///   a `range_countable: true` index whose first property is
+    ///   the In-property
+    /// - Any prefix properties between In and range must use
+    ///   `==` (mirror of [`Self::aggregate_count_path_query`]'s
+    ///   non-In prefix rule)
+    ///
+    /// Path-query structure:
+    /// - Outer path stops one level above the In-bearing property
+    ///   subtree's children (`@/doc_prefix/0x01/doctype/<In-prop>`).
+    /// - Outer Query: `Key(in_value_0)`, `Key(in_value_1)`, … in
+    ///   lex-asc serialized order (grovedb's multi-key walker
+    ///   invariant).
+    /// - `subquery_path`: the terminator property name (and any
+    ///   trailing `==` clause names between In and range, in
+    ///   index order).
+    /// - `subquery`: `Query::new_aggregate_count_on_range(range_item)`.
+    ///
+    /// Enabled by [grovedb PR #663](https://github.com/dashpay/grovedb/pull/663).
+    /// Before that PR, `AggregateCountOnRange` was required to be
+    /// the only item in its query and could not appear under a
+    /// `subquery` field — the dispatcher rejected this shape with
+    /// "range count queries with an `in` clause are not supported on
+    /// the aggregate prove path".
+    ///
+    /// Errors:
+    /// - No range where-clause / multiple range where-clauses →
+    ///   `InvalidWhereClauseComponents`
+    /// - No In where-clause → `InvalidWhereClauseComponents`
+    /// - In on a non-prefix property → `InvalidWhereClauseComponents`
+    /// - Prefix property between In and range uses non-Equal →
+    ///   `InvalidWhereClauseComponents`
+    pub fn carrier_aggregate_count_path_query(
+        &self,
+        limit: Option<u16>,
+        left_to_right: bool,
+        platform_version: &PlatformVersion,
+    ) -> Result<PathQuery, Error> {
+        // The terminator property (last in the index) carries the
+        // ACOR target range. The "carrier" property — the one whose
+        // clause becomes the outer Query items — is either:
+        // - An `In` clause (G7 shape: one Key per In value)
+        // - A range clause on a prefix prop (G8 shape: one QueryItem
+        //   bounding the outer range, with `SizedQuery::limit` capping
+        //   how many outer matches the carrier walks — see
+        //   [grovedb PR #664](https://github.com/dashpay/grovedb/pull/664))
+        //
+        // The terminator's clause must be a range and is converted to
+        // the inner ACOR `QueryItem`. Any properties between the
+        // carrier and the terminator must use `==` and extend the
+        // subquery_path.
+        let terminator_prop_name = &self
+            .index
+            .properties
+            .last()
+            .ok_or(Error::Query(
+                QuerySyntaxError::InvalidWhereClauseComponents(
+                    "range_countable index must have at least one property",
+                ),
+            ))?
+            .name;
+        let terminator_clause = self
+            .where_clauses
+            .iter()
+            .find(|wc| wc.field == *terminator_prop_name && Self::is_range_operator(wc.operator))
+            .ok_or(Error::Query(
+                QuerySyntaxError::InvalidWhereClauseComponents(
+                    "carrier_aggregate_count_path_query requires a range where-clause on the \
+                     terminator property of the chosen index",
+                ),
+            ))?;
+        let inner_range_item =
+            self.range_clause_to_query_item(terminator_clause, platform_version)?;
+
+        let mut base_path: Vec<Vec<u8>> = vec![
+            vec![RootTree::DataContractDocuments as u8],
+            self.contract_id.to_vec(),
+            vec![1u8],
+            self.document_type_name.as_bytes().to_vec(),
+        ];
+        let mut subquery_path_extension: Vec<Vec<u8>> = vec![];
+
+        // Carrier clause state: either `None` (not seen yet, still on
+        // the `==`-prefix run), `Some(In)` (G7), or `Some(Range)` (G8).
+        enum Carrier {
+            Pending,
+            In(WhereClause),
+            Range(WhereClause),
+        }
+        let mut carrier = Carrier::Pending;
+        let prefix_and_carrier_props = &self.index.properties[..self.index.properties.len() - 1];
+
+        for prop in prefix_and_carrier_props {
+            let clause = self
+                .where_clauses
+                .iter()
+                .find(|wc| wc.field == prop.name)
+                .ok_or(
+                Error::Query(QuerySyntaxError::InvalidWhereClauseComponents(
+                    "carrier-aggregate proof: missing where clause for an index prefix property",
+                )),
+            )?;
+            match (&carrier, clause.operator) {
+                (Carrier::Pending, WhereOperator::Equal) => {
+                    base_path.push(prop.name.as_bytes().to_vec());
+                    base_path.push(self.document_type.serialize_value_for_key(
+                        prop.name.as_str(),
+                        &clause.value,
+                        platform_version,
+                    )?);
+                }
+                (Carrier::Pending, WhereOperator::In) => {
+                    base_path.push(prop.name.as_bytes().to_vec());
+                    carrier = Carrier::In(clause.clone());
+                }
+                (Carrier::Pending, op) if Self::is_range_operator(op) => {
+                    base_path.push(prop.name.as_bytes().to_vec());
+                    carrier = Carrier::Range(clause.clone());
+                }
+                (Carrier::In(_) | Carrier::Range(_), WhereOperator::Equal) => {
+                    subquery_path_extension.push(prop.name.as_bytes().to_vec());
+                    subquery_path_extension.push(self.document_type.serialize_value_for_key(
+                        prop.name.as_str(),
+                        &clause.value,
+                        platform_version,
+                    )?);
+                }
+                (Carrier::In(_) | Carrier::Range(_), _) => {
+                    return Err(Error::Query(
+                        QuerySyntaxError::InvalidWhereClauseComponents(
+                            "carrier-aggregate proof: at most one carrier clause (In or range) \
+                         is supported on prefix properties; subsequent prefix clauses must \
+                         use `==`",
+                        ),
+                    ));
+                }
+                _ => {
+                    return Err(Error::Query(
+                        QuerySyntaxError::InvalidWhereClauseComponents(
+                            "carrier-aggregate proof: prefix property operator unsupported",
+                        ),
+                    ));
+                }
+            }
+        }
+        subquery_path_extension.push(terminator_prop_name.as_bytes().to_vec());
+
+        let mut outer_query = Query::new_with_direction(left_to_right);
+        match carrier {
+            Carrier::Pending => {
+                return Err(Error::Query(
+                    QuerySyntaxError::InvalidWhereClauseComponents(
+                        "carrier-aggregate proof: an In or range clause must appear on a prefix \
+                     property of the chosen index to act as the carrier dimension",
+                    ),
+                ));
+            }
+            Carrier::In(in_clause) => {
+                // Build one Key per In value, sorted lex-ascending
+                // (grovedb's multi-key walker invariant per PR #663).
+                let in_values = in_clause.in_values().into_data_with_error()??;
+                let mut serialized_in_keys: Vec<Vec<u8>> = in_values
+                    .iter()
+                    .map(|v| {
+                        self.document_type.serialize_value_for_key(
+                            in_clause.field.as_str(),
+                            v,
+                            platform_version,
+                        )
+                    })
+                    .collect::<Result<_, _>>()?;
+                serialized_in_keys.sort();
+                serialized_in_keys.dedup();
+                for key in serialized_in_keys {
+                    outer_query.insert_key(key);
+                }
+            }
+            Carrier::Range(range_clause) => {
+                // Single QueryItem bounding the outer range. The
+                // carrier walks this range and emits one `(key, u64)`
+                // pair per matched outer key.
+                let outer_range_item =
+                    self.range_clause_to_query_item(&range_clause, platform_version)?;
+                outer_query.items.push(outer_range_item);
+            }
+        }
+        outer_query.set_subquery_path(subquery_path_extension);
+        outer_query.set_subquery(Query::new_aggregate_count_on_range(inner_range_item));
+
+        // `SizedQuery::limit` is permitted on carriers as of grovedb
+        // PR #664; for In-outer carriers the |IN| array already
+        // bounds the result so `limit` is typically `None`, but for
+        // Range-outer carriers `limit` caps the outer walk and is
+        // load-bearing for proof bytes.
+        Ok(PathQuery::new(
+            base_path,
+            SizedQuery::new(outer_query, limit, None),
+        ))
     }
 
     /// Build the grovedb `PathQuery` for a *regular* range query
@@ -484,9 +699,8 @@ impl DriveDocumentCountQuery<'_> {
 
     /// Build the grovedb `PathQuery` for a point-lookup count proof
     /// against a `countable: true` index. Returns one element per
-    /// covered branch — the `CountTree` element at
-    /// `[..., last_field, last_value, 0]` whose `count_value` is the
-    /// per-branch document count.
+    /// covered branch whose `count_value` is the per-branch document
+    /// count.
     ///
     /// Shared between the server-side prove path
     /// ([`Self::execute_point_lookup_count_with_proof`]) and the
@@ -494,6 +708,33 @@ impl DriveDocumentCountQuery<'_> {
     /// ([`Self::verify_point_lookup_count_proof`]). Both sides must
     /// produce the *exact same* `PathQuery` for the merk-root
     /// recomputation to match.
+    ///
+    /// ## Two terminator shapes depending on `range_countable`
+    ///
+    /// The proof's terminal element is at one of two layers, picked
+    /// from [`Index::range_countable`]:
+    ///
+    /// - **Normal `countable: true`** (NOT `range_countable`): the
+    ///   terminator's value tree is a `NormalTree`, and the doc-count
+    ///   `CountTree` sits inside it at the conventional `[0]` child.
+    ///   Proof targets `[..., last_field, last_value, 0]`.
+    /// - **`range_countable: true`**: the terminator's value tree is
+    ///   itself a `CountTree` (continuation property-name subtrees
+    ///   sit beneath as `Element::NonCounted` so they don't pollute
+    ///   the parent count — see `add_indices_for_index_level_for_contract_operations_v0`).
+    ///   The value tree's own `count_value_or_default()` already IS
+    ///   the per-branch doc count, so the proof targets the value
+    ///   tree directly at `[..., last_field, last_value]` and saves
+    ///   one merk-path layer per covered branch.
+    ///
+    /// Concretely the optimization replaces a trailing `Key([0])`
+    /// with `Key(last_value)` against `[..., last_field]` (Equal-
+    /// only, no In) — or against the In-bearing prop's property-name
+    /// subtree (In on terminator) — or replaces the trailing pair in
+    /// `set_subquery_path` (In on prefix + trailing Equals that reach
+    /// the terminator). The query shape stays in the same Query/
+    /// subquery topology so byte-equality across prover and verifier
+    /// is preserved by construction.
     ///
     /// ## Shape support
     ///
@@ -528,23 +769,31 @@ impl DriveDocumentCountQuery<'_> {
     /// route through this single builder, so they accept the same
     /// query shapes by construction.
     ///
-    /// Output shapes:
-    /// - **Equal-only, fully covered**: flat path query at
-    ///   `[..., last_field, last_value]` with a single `Key([0])`
-    ///   item. Returns one element (the CountTree).
+    /// Output shapes (`countable` / `range_countable` differ only in
+    /// whether the trailing `Key([0])` is replaced by `Key(last_value)`):
+    /// - **Equal-only, fully covered**:
+    ///   - `countable`: path `[..., last_field, last_value]`, single `Key([0])`.
+    ///   - `range_countable`: path `[..., last_field]`, single
+    ///     `Key(last_value)`.
     /// - **Equal prefix + `In` (any position) [+ trailing Equals]**:
     ///   compound query with `base_path` ending at the In-bearing
-    ///   property's property-name subtree (so any Equal clauses
-    ///   *before* the In are baked into `base_path`); outer Query
-    ///   has one `Key` per In value (sorted lex-asc for prove/no-
-    ///   proof parity and pushed-limit safety — same convention as
-    ///   [`Self::distinct_count_path_query`]). `set_subquery_path`
-    ///   carries the post-In Equal clauses' `(prop_name,
-    ///   serialized_value)` pairs in index order, and the subquery's
-    ///   `Key([0])` picks off the CountTree at the resolved leaf
-    ///   under each matched In branch. Same `set_subquery_path` +
-    ///   `set_subquery` mechanism as [`Self::distinct_count_path_query`]
-    ///   uses for compound In-on-prefix range counts.
+    ///   property's property-name subtree (Equal clauses before the
+    ///   In are baked into `base_path`); outer Query has one `Key`
+    ///   per In value (sorted lex-asc for prove/no-proof parity and
+    ///   pushed-limit safety — same convention as
+    ///   [`Self::distinct_count_path_query`]).
+    ///   - **In on terminator**:
+    ///     - `countable`: subquery `Key([0])` under each In value's
+    ///       value tree (`set_subquery_path` unset).
+    ///     - `range_countable`: outer `Key`s already point at the
+    ///       CountTree value trees themselves; no subquery is set.
+    ///   - **In on a prefix + trailing Equals reaching the
+    ///     terminator**: `set_subquery_path` carries the post-In
+    ///     Equal `(name, value)` pairs in index order:
+    ///     - `countable`: full pairs, subquery `Key([0])`.
+    ///     - `range_countable`: last pair's `value` is hoisted out as
+    ///       the subquery's single `Key(value)`; `set_subquery_path`
+    ///       ends at the terminator's property-name segment.
     ///
     /// ## Errors
     ///
@@ -553,6 +802,8 @@ impl DriveDocumentCountQuery<'_> {
     /// - More than one `In` clause
     /// - Any non-`Equal` / non-`In` operator (defense-in-depth; mode
     ///   detection already filters these out)
+    ///
+    /// [`Index::range_countable`]: dpp::data_contract::document_type::index::Index::range_countable
     pub fn point_lookup_count_path_query(
         &self,
         platform_version: &PlatformVersion,
@@ -579,7 +830,10 @@ impl DriveDocumentCountQuery<'_> {
         // `set_subquery_path` — i.e., the descent under each matched
         // In value walks `[trailing_field_1, trailing_value_1, ...,
         // trailing_field_n, trailing_value_n]` before the
-        // `Key([0])` subquery picks off the CountTree leaf.
+        // selector subquery (either `Key([0])` for normal countable
+        // or a `Key(terminator_value)` lift for range_countable —
+        // see the post-loop selector decision below) picks off the
+        // count-bearing element.
         //
         // No position restriction on the In clause: any index
         // position works because the count path doesn't have the
@@ -667,18 +921,76 @@ impl DriveDocumentCountQuery<'_> {
             }
         }
 
-        // CountTree storage convention: the count lives at the `[0]`
-        // child of the value tree. See the book's "Count Trees and
-        // Provable Counts" chapter for the layout.
+        // Whether the terminator's value tree is itself a `CountTree`
+        // (carries the per-branch doc count directly) vs. a
+        // `NormalTree` whose `[0]` child is the `CountTree`. Drives
+        // the selector-element decision below.
+        //
+        // The insertion side
+        // (`add_indices_for_index_level_for_contract_operations_v0`)
+        // makes the terminator value tree a `CountTree` for **any**
+        // countable index — not just `range_countable: true`. Both
+        // tiers (`Countable` and `CountableAllowingOffset`) layout
+        // the value tree the same way: a `CountTree` whose count
+        // equals the `[0]` ref-bucket's doc count (continuations
+        // wrapped `NonCounted` so they don't pollute the parent).
+        // `range_countable` only additionally upgrades the
+        // property-name tree to `ProvableCountTree` for
+        // `AggregateCountOnRange` queries — that's orthogonal to the
+        // point-lookup proof shape.
+        //
+        // So gate the optimization on `countable.is_countable()`:
+        // every countable index uses the compact shape. The picker
+        // upstream already requires the index to be countable to be
+        // selected (`find_countable_index_for_where_clauses` / the
+        // range_countable picker for range shapes), so reaching this
+        // builder with a non-countable index would be a bug — but
+        // we keep the gate explicit for clarity.
+        //
+        // The loop above already enforces full coverage of every
+        // index property, so the terminator is always proven; this
+        // flag is the only differentiator between the two output
+        // shapes.
+        let count_tree_terminator = self.index.countable.is_countable();
+
+        // CountTree storage convention for non-countable indexes
+        // (defensive — picker upstream filters these out): the count
+        // lives at the `[0]` child of the value
+        // tree. See the book's "Count Trees and Provable Counts"
+        // chapter for the layout.
         const COUNT_TREE_KEY: u8 = 0;
 
         match in_outer_keys {
             None => {
-                // Equal-only, fully covered. `base_path` ends at
-                // `[..., last_field, last_value]`; query asks for the
-                // single key `[0]` (the CountTree element).
+                // Equal-only, fully covered.
+                //
+                // - normal countable: `base_path` ends at
+                //   `[..., last_field, last_value]`; query asks for
+                //   the single key `[0]` (the CountTree under the
+                //   value tree).
+                // - `range_countable`: peel the trailing `last_value`
+                //   off `base_path` and use it as the query's Key.
+                //   The resolved element is the value tree itself
+                //   (a CountTree), and its `count_value_or_default()`
+                //   is the per-branch count — one merk layer shorter
+                //   per resolved branch than the `[0]` shape.
                 let mut query = Query::new();
-                query.insert_key(vec![COUNT_TREE_KEY]);
+                if count_tree_terminator {
+                    // The Equal loop always pushes (name, value) per
+                    // prop, so `base_path` has at least the trailing
+                    // serialized `last_value` to lift. The expect()
+                    // here would fire only if the loop above changed
+                    // its push contract — a load-bearing invariant
+                    // checked by every test in this module that
+                    // routes through this builder.
+                    let last_value = base_path.pop().expect(
+                        "Equal-only loop pushes (name, value) per prop; \
+                         base_path must hold the terminator's serialized value",
+                    );
+                    query.insert_key(last_value);
+                } else {
+                    query.insert_key(vec![COUNT_TREE_KEY]);
+                }
                 Ok(PathQuery::new(
                     base_path,
                     SizedQuery::new(query, None, None),
@@ -688,31 +1000,82 @@ impl DriveDocumentCountQuery<'_> {
                 // Compound shape. `base_path` ends at the In-bearing
                 // property's property-name subtree; the outer Query
                 // enumerates serialized In values; the subquery
-                // descends to the CountTree element under each
-                // matched In value.
+                // (when present) descends from each matched In value
+                // to the count-bearing element.
                 //
                 // `subquery_path_extension` carries 0..N segments,
                 // one `(prop_name, serialized_value)` pair per Equal
                 // clause that sits *after* the In in the index
-                // ordering:
-                // - **In on last property**: `subquery_path_extension`
-                //   is empty; subquery's `Key([0])` runs directly
-                //   under each In value's value tree.
-                // - **In with any number of trailing Equals**:
-                //   `set_subquery_path` consumes those segments so
-                //   the subquery descends through them before grabbing
-                //   the `Key([0])` CountTree at the resolved leaf.
+                // ordering. The exact subquery topology depends on
+                // both whether trailing Equals exist AND whether the
+                // terminator is range_countable; see the inline
+                // branches below.
                 let mut outer_query = Query::new();
                 for key in keys {
                     outer_query.insert_key(key);
                 }
-                let mut subquery = Query::new();
-                subquery.insert_key(vec![COUNT_TREE_KEY]);
-                if !subquery_path_extension.is_empty() {
-                    outer_query.set_subquery_path(subquery_path_extension);
-                }
-                outer_query.set_subquery(subquery);
 
+                if subquery_path_extension.is_empty() {
+                    // **In on the terminator** (no trailing Equals).
+                    if count_tree_terminator {
+                        // Outer `Key`s already point at the terminator
+                        // value trees, which are themselves CountTrees.
+                        // No subquery is needed — grovedb returns one
+                        // element per matched outer Key.
+                    } else {
+                        // Normal countable: descend one more layer
+                        // under each matched In value's NormalTree
+                        // value tree to grab the `Key([0])` CountTree
+                        // child.
+                        let mut subquery = Query::new();
+                        subquery.insert_key(vec![COUNT_TREE_KEY]);
+                        outer_query.set_subquery(subquery);
+                    }
+                } else {
+                    // **In on a prefix + trailing Equals** that
+                    // collectively reach the terminator.
+                    let mut subquery = Query::new();
+                    if count_tree_terminator {
+                        // The terminator's serialized value is the
+                        // last element pushed into
+                        // `subquery_path_extension` (the trailing-
+                        // Equal loop pushes `[name, value, ...,
+                        // termname, termval]`). Lift `termval` out
+                        // as the subquery's Key so the descent stops
+                        // at the terminator's property-name subtree
+                        // and the subquery resolves the CountTree
+                        // value tree directly. `subquery_path_extension`
+                        // is left at an odd length on purpose — it
+                        // ends with the terminator's `name` segment,
+                        // exactly where the subquery's `Key(termval)`
+                        // picks up.
+                        let termval = subquery_path_extension.pop().expect(
+                            "trailing-Equal loop pushes (name, value) pairs; \
+                             non-empty extension's tail must be the terminator's \
+                             serialized value",
+                        );
+                        subquery.insert_key(termval);
+                    } else {
+                        // Normal countable: subquery descends to the
+                        // `Key([0])` CountTree at the resolved leaf,
+                        // with the full `(name, value)` pairs of the
+                        // trailing Equals consumed by
+                        // `set_subquery_path`.
+                        subquery.insert_key(vec![COUNT_TREE_KEY]);
+                    }
+                    outer_query.set_subquery_path(subquery_path_extension);
+                    outer_query.set_subquery(subquery);
+                }
+
+                // `SizedQuery::new(_, None, None)` is intentional —
+                // PointLookupProof always returns ALL In branches.
+                // The handler rejects `limit` upstream on this path
+                // (see [`CountMode::accepts_limit`]'s `GroupByIn`
+                // arm) because the In array is already capped at 100
+                // by `WhereClause::in_values()`, and a partial-In
+                // selection isn't representable in this `SizedQuery`
+                // shape without rebuilding the verifier to know
+                // which subset got truncated.
                 Ok(PathQuery::new(
                     base_path,
                     SizedQuery::new(outer_query, None, None),

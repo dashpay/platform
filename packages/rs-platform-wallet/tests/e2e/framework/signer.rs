@@ -227,3 +227,93 @@ pub fn derive_identity_key(
     };
     Ok(IdentityPublicKey::V0(v0))
 }
+
+/// Seed-backed [`key_wallet::signer::Signer`] (Core ECDSA) for the e2e
+/// harness — the Core-side analog of [`SeedBackedIdentitySigner`].
+///
+/// Derives the signing secret on demand from a 64-byte BIP-39 seed for
+/// whatever [`DerivationPath`] the transaction builder requests, so it
+/// works for funding-input P2PKH paths and asset-lock credit-output
+/// paths alike without a pre-derived gap window. This is the test
+/// equivalent of production's `MnemonicResolverCoreSigner` (whose key
+/// material instead flows through the Keychain-resolver FFI vtable).
+#[derive(Clone)]
+pub struct SeedBackedCoreSigner {
+    seed: [u8; 64],
+    network: Network,
+}
+
+impl std::fmt::Debug for SeedBackedCoreSigner {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SeedBackedCoreSigner")
+            .field("network", &self.network)
+            .finish_non_exhaustive()
+    }
+}
+
+impl SeedBackedCoreSigner {
+    /// Build a Core signer bound to `seed` and `network`.
+    pub fn new(seed: [u8; 64], network: Network) -> Self {
+        Self { seed, network }
+    }
+
+    fn derive_secret(
+        &self,
+        path: &key_wallet::bip32::DerivationPath,
+    ) -> Result<key_wallet::dashcore::secp256k1::SecretKey, String> {
+        use key_wallet::dashcore::secp256k1::Secp256k1;
+        use key_wallet::wallet::root_extended_keys::RootExtendedPrivKey;
+
+        let root_priv = RootExtendedPrivKey::new_master(&self.seed)
+            .map_err(|e| format!("SeedBackedCoreSigner: invalid seed: {e}"))?;
+        let master = root_priv.to_extended_priv_key(self.network);
+        let secp = Secp256k1::new();
+        let xpriv = master
+            .derive_priv(&secp, path)
+            .map_err(|e| format!("SeedBackedCoreSigner: derive_priv({path}): {e}"))?;
+        Ok(xpriv.private_key)
+    }
+}
+
+#[async_trait]
+impl key_wallet::signer::Signer for SeedBackedCoreSigner {
+    type Error = String;
+
+    fn supported_methods(&self) -> &[key_wallet::signer::SignerMethod] {
+        static METHODS: &[key_wallet::signer::SignerMethod] =
+            &[key_wallet::signer::SignerMethod::Digest];
+        METHODS
+    }
+
+    async fn sign_ecdsa(
+        &self,
+        path: &key_wallet::bip32::DerivationPath,
+        sighash: [u8; 32],
+    ) -> Result<
+        (
+            key_wallet::dashcore::secp256k1::ecdsa::Signature,
+            key_wallet::dashcore::secp256k1::PublicKey,
+        ),
+        Self::Error,
+    > {
+        use key_wallet::dashcore::secp256k1::{Message, PublicKey, Secp256k1};
+
+        let secret = self.derive_secret(path)?;
+        let secp = Secp256k1::new();
+        let message = Message::from_digest(sighash);
+        let signature = secp.sign_ecdsa(&message, &secret);
+        let pubkey = PublicKey::from_secret_key(&secp, &secret);
+        Ok((signature, pubkey))
+    }
+
+    async fn public_key(
+        &self,
+        path: &key_wallet::bip32::DerivationPath,
+    ) -> Result<key_wallet::dashcore::secp256k1::PublicKey, Self::Error> {
+        use key_wallet::dashcore::secp256k1::{PublicKey, Secp256k1};
+
+        let secret = self.derive_secret(path)?;
+        let secp = Secp256k1::new();
+        Ok(PublicKey::from_secret_key(&secp, &secret))
+    }
+}

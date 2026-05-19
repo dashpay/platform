@@ -219,3 +219,34 @@ pub unsafe extern "C" fn platform_wallet_manager_destroy(
     }
     PlatformWalletFFIResult::ok()
 }
+
+/// Remove one wallet from the manager. Idempotent on missing wallets.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_remove_wallet(
+    manager_handle: Handle,
+    wallet_id: *const [u8; 32],
+) -> PlatformWalletFFIResult {
+    check_ptr!(wallet_id);
+    let wallet_id_value = *wallet_id;
+
+    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(manager_handle, |manager| {
+        runtime().block_on(manager.remove_wallet(&wallet_id_value))
+    });
+    let result = unwrap_option_or_return!(option);
+    match result {
+        Ok(_) => PlatformWalletFFIResult::ok(),
+        // Idempotency: a wallet that's already gone is the success
+        // state callers want. Everything else is a real failure.
+        Err(platform_wallet::PlatformWalletError::WalletNotFound(_)) => {
+            PlatformWalletFFIResult::ok()
+        }
+        Err(e) => PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorWalletOperation,
+            format!(
+                "Failed to remove wallet {}: {}",
+                hex::encode(wallet_id_value),
+                e
+            ),
+        ),
+    }
+}

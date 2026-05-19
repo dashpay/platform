@@ -12,8 +12,8 @@
 //! registration and top-up goes through, but CR-003 / ID-002b only
 //! exercise the sequential single-build happy path. AL-001 fires
 //! `N = 3` concurrent `top_up_identity_with_funding` calls (each
-//! against a DIFFERENT identity to dodge Found-006's `topup_index`
-//! routing discrepancy — tracked upstream at dashpay/rust-dashcore#762)
+//! against a DIFFERENT identity so every task drives an independent
+//! asset-lock build path with no shared HD-slot contention)
 //! so the manager's locking, UTXO-reservation, and proof-correlation
 //! logic is exercised under concurrent load.
 //!
@@ -61,10 +61,11 @@ use dpp::prelude::Identifier;
 use key_wallet::account::account_type::StandardAccountType;
 use key_wallet::AccountType;
 use platform_wallet::wallet::asset_lock::tracked::AssetLockStatus;
-use platform_wallet::wallet::identity::types::funding::TopUpFundingMethod;
+use platform_wallet::wallet::identity::types::funding::IdentityFunding;
 use platform_wallet::PlatformWalletError;
 
 use crate::framework::prelude::*;
+use crate::framework::signer::SeedBackedCoreSigner;
 use crate::framework::wait::{
     wait_for_address_balance_chain_confirmed_n, wait_for_core_balance, wait_for_identity_balance,
     CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
@@ -158,11 +159,20 @@ async fn al_001_concurrent_asset_lock_builds() {
             .expect("derive BIP-44 receive address for UTXO split");
         split_outputs.push((addr, split_amount));
     }
+    let split_signer = SeedBackedCoreSigner::new(
+        s.test_wallet.seed_bytes(),
+        s.test_wallet.platform_wallet().core().network(),
+    );
     let split_tx = s
         .test_wallet
         .platform_wallet()
         .core()
-        .send_to_addresses(StandardAccountType::BIP44Account, 0, split_outputs)
+        .send_to_addresses(
+            StandardAccountType::BIP44Account,
+            0,
+            split_outputs,
+            &split_signer,
+        )
         .await
         .expect("UTXO pre-split self-send failed");
     tracing::info!(
@@ -219,8 +229,8 @@ async fn al_001_concurrent_asset_lock_builds() {
     }
 
     // Step 2: register N identities via the address-funded path. The
-    // concurrent top-ups in step 3 target DIFFERENT identities so we
-    // don't collide with Found-006 (`topup_index` routing discrepancy).
+    // concurrent top-ups in step 3 target DIFFERENT identities so each
+    // drives an independent asset-lock build path.
     let mut identity_ids: Vec<Identifier> = Vec::with_capacity(N);
     let mut pre_balances: Vec<u64> = Vec::with_capacity(N);
     for i in 0..N {
@@ -286,19 +296,22 @@ async fn al_001_concurrent_asset_lock_builds() {
     }
 
     let mut handles = Vec::with_capacity(N);
-    for (i, identity_id) in identity_ids.iter().enumerate() {
+    let core_network = s.test_wallet.platform_wallet().core().network();
+    let seed = s.test_wallet.seed_bytes();
+    for identity_id in identity_ids.iter() {
         let wallet = s.test_wallet.platform_wallet().clone();
         let id = *identity_id;
-        let topup_index = i as u32;
+        let signer = SeedBackedCoreSigner::new(seed, core_network);
         let handle = tokio::spawn(async move {
             wallet
                 .identity()
                 .top_up_identity_with_funding(
                     &id,
-                    TopUpFundingMethod::FundWithWallet {
+                    IdentityFunding::FromWalletBalance {
                         amount_duffs: LOCK_AMOUNT,
+                        account_index: 0,
                     },
-                    topup_index,
+                    &signer,
                     None,
                 )
                 .await

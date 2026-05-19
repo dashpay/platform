@@ -17,8 +17,8 @@
 //! Pins the canonical asset-lock-funded registration contract:
 //! 1. `setup_with_core_funded_test_wallet` lands `TEST_WALLET_CORE_FUNDING`
 //!    duffs on the test wallet's BIP-44 account 0 (visible to SPV).
-//! 2. `IdentityWallet::register_identity_with_funding_external_signer`
-//!    with `IdentityFundingMethod::FundWithWallet { amount_duffs = ASSET_LOCK_AMOUNT }`
+//! 2. `IdentityWallet::register_identity_with_funding`
+//!    with `IdentityFunding::FromWalletBalance { amount_duffs = ASSET_LOCK_AMOUNT, account_index = 0 }`
 //!    drives the unified asset-lock flow — internally calls
 //!    `AssetLockManager::create_funded_asset_lock_proof` (build →
 //!    broadcast → wait IS / fall back to ChainLock) and submits the
@@ -37,10 +37,12 @@ use dpp::balances::credits::CREDITS_PER_DUFF;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::{KeyID, Purpose, SecurityLevel};
 use dpp::prelude::Identity;
-use platform_wallet::wallet::identity::types::funding::IdentityFundingMethod;
+use platform_wallet::wallet::identity::types::funding::IdentityFunding;
 
 use crate::framework::prelude::*;
-use crate::framework::signer::{derive_identity_key, SeedBackedIdentitySigner};
+use crate::framework::signer::{
+    derive_identity_key, SeedBackedCoreSigner, SeedBackedIdentitySigner,
+};
 use crate::framework::wait::{wait_for_identity_balance, wait_for_identity_visible_to_platform};
 
 /// DIP-9 identity index used for the asset-lock registration. Slot 0
@@ -150,6 +152,7 @@ async fn cr_003_asset_lock_funded_registration() {
 
     let identity_signer = SeedBackedIdentitySigner::new(&seed_bytes, network, IDENTITY_INDEX)
         .expect("build SeedBackedIdentitySigner for identity slot 0");
+    let asset_lock_signer = SeedBackedCoreSigner::new(seed_bytes, network);
 
     // Step 3: drive the unified asset-lock-funded registration. The
     // wallet:
@@ -164,18 +167,20 @@ async fn cr_003_asset_lock_funded_registration() {
         .test_wallet
         .platform_wallet()
         .identity()
-        .register_identity_with_funding_external_signer(
-            IdentityFundingMethod::FundWithWallet {
+        .register_identity_with_funding(
+            IdentityFunding::FromWalletBalance {
                 amount_duffs: ASSET_LOCK_AMOUNT,
+                account_index: 0,
             },
             IDENTITY_INDEX,
             keys_map,
             &identity_signer,
+            &asset_lock_signer,
             None,
         )
         .await
         .expect(
-            "register_identity_with_funding_external_signer (CR-003 — \
+            "register_identity_with_funding (CR-003 — \
              asset-lock-funded identity registration)",
         );
 
@@ -258,16 +263,10 @@ async fn cr_003_asset_lock_funded_registration() {
         fetched_master.security_level()
     );
 
-    // Step 6: assert the asset-lock manager removed the tracked entry
-    // for the consumed lock. `funded_register_identity`'s success path
-    // does this via `remove_asset_lock` after the IdentityCreate
-    // transition lands; the legacy
-    // `register_identity_with_funding_external_signer` path does NOT
-    // remove on success today (verified at registration.rs — it only
-    // tracks via `create_funded_asset_lock_proof`'s internal
-    // changeset). We pin the looser contract: every tracked lock must
+    // Step 6: assert every consumed asset lock reached a finalised
+    // proof state. We pin the looser contract: each tracked lock must
     // be in `InstantSendLocked` / `ChainLocked` final state, never
-    // stuck at `Built` or `Broadcast`. If upstream tightens to
+    // stuck at `Built` or `Broadcast`. If the flow tightens to
     // remove-on-success, flip this to `assert!(tracked.is_empty())`.
     let tracked = s
         .test_wallet
@@ -283,7 +282,7 @@ async fn cr_003_asset_lock_funded_registration() {
                 AssetLockStatus::InstantSendLocked | AssetLockStatus::ChainLocked
             ),
             "POST-pin violated: tracked asset lock {:?} is in non-final \
-             status {:?} after register_identity_with_funding_external_signer \
+             status {:?} after register_identity_with_funding \
              completed. The unified flow must drive every consumed lock to \
              a finalised proof state.",
             lock.out_point,

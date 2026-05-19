@@ -298,7 +298,7 @@ async fn sweep_one(
         &mut report,
     )
     .await?;
-    sweep_core_addresses(&wallet, bank, &mut report).await?;
+    sweep_core_addresses(&wallet, &seed_bytes, bank, &mut report).await?;
     sweep_unused_core_asset_locks(&wallet).await?;
     sweep_shielded(&wallet).await?;
 
@@ -388,7 +388,13 @@ pub async fn teardown_one(
         &mut report,
     )
     .await?;
-    sweep_core_addresses(test_wallet.platform_wallet(), bank, &mut report).await?;
+    sweep_core_addresses(
+        test_wallet.platform_wallet(),
+        &test_wallet.seed_bytes(),
+        bank,
+        &mut report,
+    )
+    .await?;
     sweep_unused_core_asset_locks(test_wallet.platform_wallet()).await?;
     sweep_shielded(test_wallet.platform_wallet()).await?;
 
@@ -901,6 +907,7 @@ const IDENTITY_BALANCE_REFRESH_LOG_THRESHOLD: Credits = 100_000_000;
 /// later retry.
 async fn sweep_core_addresses(
     wallet: &Arc<PlatformWallet>,
+    seed: &[u8; 64],
     bank: &BankWallet,
     report: &mut SweepReport,
 ) -> FrameworkResult<()> {
@@ -933,7 +940,7 @@ async fn sweep_core_addresses(
     let bank_core_addr = bank.primary_core_receive_address().await?;
 
     report.had_funds_to_recover = true;
-    match core_send(wallet, &bank_core_addr, amount).await {
+    match core_send(wallet, seed, &bank_core_addr, amount).await {
         Ok(txid) => {
             tracing::info!(
                 target: "platform_wallet::e2e::cleanup",

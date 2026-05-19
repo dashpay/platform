@@ -733,7 +733,7 @@ impl BankWallet {
             )));
         }
 
-        let txid = core_send(&self.wallet, target, duffs).await?;
+        let txid = core_send(&self.wallet, &self.seed_bytes, target, duffs).await?;
         tracing::info!(
             target: "platform_wallet::e2e::bank",
             %txid,
@@ -809,13 +809,15 @@ pub const CORE_TX_FEE_RESERVE: u64 = 10_000;
 /// `Txid`.
 pub(super) async fn core_send(
     wallet: &Arc<PlatformWallet>,
+    seed: &[u8; 64],
     target: &dashcore::Address,
     duffs: u64,
 ) -> FrameworkResult<dashcore::Txid> {
     let outputs = vec![(target.clone(), duffs)];
+    let signer = super::signer::SeedBackedCoreSigner::new(*seed, wallet.core().network());
     let tx = wallet
         .core()
-        .send_to_addresses(StandardAccountType::BIP44Account, 0, outputs)
+        .send_to_addresses(StandardAccountType::BIP44Account, 0, outputs, &signer)
         .await
         .map_err(wallet_err)?;
     Ok(tx.txid())

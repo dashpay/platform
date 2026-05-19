@@ -223,7 +223,7 @@ impl TestWallet {
         target: &dashcore::Address,
         amount: u64,
     ) -> FrameworkResult<dashcore::Txid> {
-        super::bank::core_send(&self.wallet, target, amount).await
+        super::bank::core_send(&self.wallet, &self.seed_bytes, target, amount).await
     }
 
     /// Transfer credits to one or more outputs. Auto-selects inputs

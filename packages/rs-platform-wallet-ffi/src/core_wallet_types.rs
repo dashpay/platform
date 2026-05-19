@@ -85,7 +85,23 @@ pub struct TransactionRecordFFI {
     pub block_timestamp: u32,
     /// 0=incoming, 1=outgoing, 2=internal, 3=coinJoin.
     pub direction: u32,
+    /// `transaction_type` rendered as a `Debug`-formatted string for
+    /// human display (`"Standard"`, `"AssetLock"`, etc.). NOT stable
+    /// across Rust version bumps — the typed discriminant is
+    /// `transaction_type_kind`; the string is for UI only and should
+    /// never be matched against.
     pub transaction_type: *mut c_char,
+    /// Typed discriminant of `key_wallet::transaction_checking::
+    /// transaction_router::TransactionType`:
+    /// 0=Standard, 1=CoinJoin, 2=ProviderRegistration,
+    /// 3=ProviderUpdateRegistrar, 4=ProviderUpdateService,
+    /// 5=ProviderUpdateRevocation, 6=AssetLock, 7=AssetUnlock,
+    /// 8=Coinbase, 9=Ignored. Stable wire shape — Swift
+    /// `PersistentTransaction.isAssetLock` matches on this byte
+    /// instead of regex-matching `transaction_type`'s Debug string.
+    /// `0xFF` is the sentinel for "pre-feature row whose discriminant
+    /// hasn't been populated yet"; treat as unknown.
+    pub transaction_type_kind: u8,
     pub net_amount: i64,
     pub fee: u64,
     pub has_fee: bool,
@@ -177,6 +193,17 @@ pub struct WalletChangeSetFFI {
     pub balance: BalanceChangeSetFFI,
     pub accounts: *mut AccountChangeSetFFI,
     pub accounts_count: usize,
+    /// Bincode-serialised `dashcore::ephemerealdata::chain_lock::ChainLock`
+    /// (`bincode::config::standard()`) representing the wallet's
+    /// `metadata.last_applied_chain_lock` after this round. `null` /
+    /// `0` length when this changeset didn't advance the chainlock
+    /// watermark. Persister writes the bytes to a dedicated SwiftData
+    /// column on `PersistentWallet` so the wallet's CL metadata
+    /// survives app restarts (otherwise it starts as `None` every
+    /// launch and the asset-lock-resume CL-from-metadata fallback in
+    /// `proof.rs` can't fire until SPV re-applies a fresh CL).
+    pub last_applied_chain_lock_bytes: *mut u8,
+    pub last_applied_chain_lock_bytes_len: usize,
 }
 
 // ---------------------------------------------------------------------------
@@ -343,6 +370,35 @@ impl WalletChangeSetFFI {
         }
 
         let accounts_count = ffi_accounts.len();
+
+        // Bincode-serialise `last_applied_chain_lock` if present.
+        // `ChainLock` derives `Encode` under upstream's `bincode`
+        // feature; `bincode::encode_to_vec` cannot fail for plain
+        // POD-shaped types, so a serialisation error here would
+        // indicate an upstream `ChainLock` derive regression — fall
+        // back to null and log so the persister round still
+        // succeeds for the rest of the changeset.
+        let (last_applied_chain_lock_bytes, last_applied_chain_lock_bytes_len) =
+            match cs.last_applied_chain_lock.as_ref() {
+                Some(cl) => match dpp::bincode::encode_to_vec(cl, dpp::bincode::config::standard())
+                {
+                    Ok(bytes) => {
+                        let len = bytes.len();
+                        let boxed = bytes.into_boxed_slice();
+                        (Box::into_raw(boxed) as *mut u8, len)
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            error = %e,
+                            "Failed to bincode-encode last_applied_chain_lock; \
+                             persister round will skip the watermark for this batch"
+                        );
+                        (std::ptr::null_mut(), 0)
+                    }
+                },
+                None => (std::ptr::null_mut(), 0),
+            };
+
         WalletChangeSetFFI {
             has_chain,
             chain,
@@ -350,6 +406,8 @@ impl WalletChangeSetFFI {
             balance,
             accounts: vec_to_ptr(ffi_accounts),
             accounts_count,
+            last_applied_chain_lock_bytes,
+            last_applied_chain_lock_bytes_len,
         }
     }
 }
@@ -750,6 +808,35 @@ fn record_spent_outpoints_ffi(
         .collect()
 }
 
+/// Map upstream `TransactionType` to a stable `u8` discriminant for
+/// the FFI wire shape. Order mirrors the enum declaration in
+/// `key_wallet::transaction_checking::transaction_router::mod.rs`,
+/// pinned here so a future variant addition surfaces as a compile
+/// error (the exhaustive match has no wildcard arm).
+///
+/// Stable contract: this byte is the Swift side's typed discriminant
+/// for `PersistentTransaction.isAssetLock` / `isAssetUnlock`. Keep
+/// it in sync with `TransactionTypeKind` in
+/// `swift-sdk/Sources/SwiftDashSDK/Persistence/Models/PersistentTransaction.swift`
+/// — every new variant added here must also gain a Swift enum case.
+fn transaction_type_to_u8(
+    ty: &key_wallet::transaction_checking::transaction_router::TransactionType,
+) -> u8 {
+    use key_wallet::transaction_checking::transaction_router::TransactionType;
+    match ty {
+        TransactionType::Standard => 0,
+        TransactionType::CoinJoin => 1,
+        TransactionType::ProviderRegistration => 2,
+        TransactionType::ProviderUpdateRegistrar => 3,
+        TransactionType::ProviderUpdateService => 4,
+        TransactionType::ProviderUpdateRevocation => 5,
+        TransactionType::AssetLock => 6,
+        TransactionType::AssetUnlock => 7,
+        TransactionType::Coinbase => 8,
+        TransactionType::Ignored => 9,
+    }
+}
+
 fn tx_record_to_ffi(
     tr: &key_wallet::managed_account::transaction_record::TransactionRecord,
 ) -> TransactionRecordFFI {
@@ -790,6 +877,7 @@ fn tx_record_to_ffi(
 
     let type_str = CString::new(format!("{:?}", tr.transaction_type))
         .unwrap_or_else(|_| CString::new("Unknown").unwrap());
+    let type_kind = transaction_type_to_u8(&tr.transaction_type);
     let label_str = CString::new(tr.label.clone()).unwrap_or_else(|_| CString::new("").unwrap());
 
     // Build the input-outpoint slice from `tx.input` directly. NOT from
@@ -834,6 +922,7 @@ fn tx_record_to_ffi(
         block_timestamp: blk_ts,
         direction: dir_val,
         transaction_type: type_str.into_raw(),
+        transaction_type_kind: type_kind,
         net_amount: tr.net_amount,
         fee: tr.fee.unwrap_or(0),
         has_fee: tr.fee.is_some(),
@@ -878,6 +967,21 @@ fn vec_to_ptr_u8(v: Vec<u8>, _len: usize) -> *mut u8 {
 /// Must only be called once per changeset.
 pub unsafe fn free_wallet_changeset_ffi(cs: &WalletChangeSetFFI) {
     use std::ffi::CString;
+
+    // Top-level chain-lock bytes free path runs regardless of
+    // whether the changeset carried any account-level deltas — a
+    // round that ONLY advances the watermark (chain-lock arm with
+    // empty per_account on the WalletEvent side wouldn't fire, but
+    // a coalesced round may still resolve down to "just the CL"
+    // after `is_empty_no_records` filters out the other arms) must
+    // still release the heap allocation we made in `from_changeset`.
+    if !cs.last_applied_chain_lock_bytes.is_null() && cs.last_applied_chain_lock_bytes_len > 0 {
+        drop(Vec::from_raw_parts(
+            cs.last_applied_chain_lock_bytes,
+            cs.last_applied_chain_lock_bytes_len,
+            cs.last_applied_chain_lock_bytes_len,
+        ));
+    }
 
     if cs.accounts.is_null() || cs.accounts_count == 0 {
         return;
