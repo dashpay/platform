@@ -186,20 +186,22 @@ pub fn rehydrate_wallet(
 ///   + wallet totals are recomputed via `update_balance()`. A UTXO
 ///   carrying a block height is marked confirmed so it lands in the
 ///   `confirmed` bucket; the wallet total is exact regardless.
-/// - **UTXO set**: every unspent persisted outpoint is restored (in
-///   the wallet's funds-account UTXO map).
+/// - **UTXO set**: every unspent persisted outpoint is restored into a
+///   funds-bearing account of the wallet (whatever topology it has —
+///   BIP44, BIP32, CoinJoin, DashPay).
 /// - **Sync watermarks**: `synced_height` / `last_processed_height`.
-/// - **`last_applied_chain_lock`**: round-tripped so the asset-lock
-///   proof-resume metadata fallback can fire without waiting for SPV
-///   to re-apply a fresh chainlock.
 ///
 /// # Deferred to the first post-load `sync` (safe re-warm)
 ///
-/// - **Per-account UTXO attribution beyond the primary funds account**:
-///   `core_utxos.account_index` is written as `0` at persist time, so
-///   per-account bucketing is not recoverable from disk; UTXOs are
-///   restored against the primary funds account and re-attributed on
-///   the next scan. The *wallet total* is unaffected (it is a sum).
+/// - **Per-account UTXO attribution**: `core_utxos.account_index` is
+///   written as `0` at persist time, so per-account bucketing is not
+///   recoverable from disk; UTXOs are restored against the wallet's
+///   first funds-bearing account and re-attributed on the next scan.
+///   The *wallet total* is unaffected (it is a sum across all funds
+///   accounts).
+/// - **`last_applied_chain_lock`**: not a persisted column (V001) and
+///   never written by the core-state writer; always `None` from disk.
+///   SPV re-applies a fresh chainlock on the first post-restart sync.
 /// - **Per-UTXO `is_coinbase` / `is_instantlocked` / `is_trusted`
 ///   flags**: not columns in `core_utxos`; conservatively defaulted
 ///   (non-coinbase, confirmed-by-height) and refreshed on the next
@@ -207,11 +209,19 @@ pub fn rehydrate_wallet(
 /// - **Transaction-record history**: rebuilt by the next scan; not a
 ///   balance input.
 ///
+/// # Errors
+///
+/// [`PlatformWalletError::RehydrationTopologyUnsupported`] if there are
+/// persisted UTXOs to restore but the reconstructed account collection
+/// has **no** funds-bearing account to hold them. Fail-closed rather
+/// than reconstructing a silent zero balance (the no-silent-zero
+/// mandate). An empty UTXO set is always `Ok`.
+///
 /// This never logs and never touches key material.
 pub fn apply_persisted_core_state(
     wallet_info: &mut ManagedWalletInfo,
     core: &crate::changeset::CoreChangeSet,
-) {
+) -> Result<(), PlatformWalletError> {
     use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 
     // Sync watermarks first so `update_balance`'s maturity check sees
@@ -223,34 +233,36 @@ pub fn apply_persisted_core_state(
     if let Some(h) = core.synced_height {
         wallet_info.metadata.synced_height = wallet_info.metadata.synced_height.max(h);
     }
-    if let Some(cl) = core.last_applied_chain_lock.clone() {
-        let advance = wallet_info
-            .metadata
-            .last_applied_chain_lock
-            .as_ref()
-            .is_none_or(|existing| cl.block_height > existing.block_height);
-        if advance {
-            wallet_info.metadata.last_applied_chain_lock = Some(cl);
-        }
-    }
 
-    // Restore the UTXO set. Persisted attribution is account-0 only
-    // (see the doc above), so route every restored UTXO to the primary
-    // funds account; the wallet total is a sum and stays exact.
-    if !core.new_utxos.is_empty() {
-        let target_index = wallet_info
+    // Restore the UTXO set. Persisted attribution is lost at write time
+    // (account_index is always 0), so route every restored UTXO to the
+    // wallet's first funds-bearing account *of any topology* (BIP44,
+    // BIP32, CoinJoin, DashPay) — the wallet total is a sum across all
+    // funds accounts and stays exact. A wallet with persisted UTXOs but
+    // no funds account at all cannot be represented: fail closed rather
+    // than silently reconstruct a zero balance.
+    let unspent: Vec<&key_wallet::Utxo> = core
+        .new_utxos
+        .iter()
+        .filter(|u| !core.spent_utxos.iter().any(|s| s.outpoint == u.outpoint))
+        .collect();
+    if !unspent.is_empty() {
+        match wallet_info
             .accounts
-            .standard_bip44_accounts
-            .keys()
+            .all_funding_accounts_mut()
+            .into_iter()
             .next()
-            .copied();
-        if let Some(idx) = target_index {
-            if let Some(account) = wallet_info.accounts.get_mut(idx) {
-                for utxo in &core.new_utxos {
-                    if !core.spent_utxos.iter().any(|s| s.outpoint == utxo.outpoint) {
-                        account.utxos.insert(utxo.outpoint, utxo.clone());
-                    }
+        {
+            Some(account) => {
+                for utxo in unspent {
+                    account.utxos.insert(utxo.outpoint, utxo.clone());
                 }
+            }
+            None => {
+                return Err(PlatformWalletError::RehydrationTopologyUnsupported {
+                    wallet_id: wallet_info.wallet_id,
+                    utxo_count: core.new_utxos.len(),
+                });
             }
         }
     }
@@ -259,6 +271,7 @@ pub fn apply_persisted_core_state(
     // After this, a non-zero persisted balance is non-zero here — a
     // silent zero would be a hard FAIL of the rehydration contract.
     wallet_info.update_balance();
+    Ok(())
 }
 
 /// Parse a BIP-39 phrase against every supported wordlist in turn.

@@ -102,7 +102,8 @@ fn rt2_nonzero_balance_survives_reopen() {
     // rehydration path) and assert the wallet balance is the persisted
     // amount — NOT a silent zero.
     let mut info = ManagedWalletInfo::from_wallet(&wallet, 1);
-    platform_wallet::manager::rehydrate::apply_persisted_core_state(&mut info, &core);
+    platform_wallet::manager::rehydrate::apply_persisted_core_state(&mut info, &core)
+        .expect("BIP44 reconstruction must not error");
     let bal = WalletInfoInterface::balance(&info);
     let total = bal.confirmed() + bal.unconfirmed() + bal.immature() + bal.locked();
     assert_eq!(
@@ -174,6 +175,97 @@ fn b3_corrupt_record_blob_is_hard_error() {
     assert!(
         matches!(result, Err(WalletStorageError::BincodeDecode { .. })),
         "corrupt record_blob must be a typed BincodeDecode; got {result:?}"
+    );
+}
+
+/// F2 / RT-noBIP44: a CoinJoin-only wallet (no BIP44 account) with
+/// non-zero persisted UTXOs must reconstruct to the correct non-zero
+/// total — NEVER a silent `Ok` + 0.
+#[test]
+fn f2_no_bip44_wallet_nonzero_balance_survives_reopen() {
+    use std::collections::BTreeSet;
+
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0xBF);
+    ensure_wallet_meta(&persister, &w);
+
+    // CoinJoin-only topology: empty BIP44/BIP32 sets, one CoinJoin
+    // account, no special accounts.
+    let mut coinjoin = BTreeSet::new();
+    coinjoin.insert(0u32);
+    let opts = WalletAccountCreationOptions::SpecificAccounts(
+        BTreeSet::new(),
+        BTreeSet::new(),
+        coinjoin,
+        BTreeSet::new(),
+        BTreeSet::new(),
+        None,
+    );
+    let seed = [0x4F; 64];
+    let wallet = Wallet::from_seed_bytes(seed, key_wallet::Network::Testnet, opts).unwrap();
+    assert!(
+        wallet.accounts.standard_bip44_accounts.is_empty(),
+        "fixture must be BIP44-free to exercise F2"
+    );
+    let info = ManagedWalletInfo::from_wallet(&wallet, 1);
+    assert!(
+        info.accounts.standard_bip44_accounts.is_empty()
+            && !info.accounts.coinjoin_accounts.is_empty(),
+        "managed info must be CoinJoin-only"
+    );
+    let address = WalletInfoInterface::monitored_addresses(&info)
+        .into_iter()
+        .next()
+        .expect("CoinJoin-only wallet still has monitored addresses");
+
+    let utxo = Utxo {
+        outpoint: OutPoint {
+            txid: Txid::from_byte_array([0x77; 32]),
+            vout: 0,
+        },
+        txout: dashcore::TxOut {
+            value: 9_000_000,
+            script_pubkey: address.script_pubkey(),
+        },
+        address,
+        height: 50,
+        is_coinbase: false,
+        is_confirmed: true,
+        is_instantlocked: false,
+        is_locked: false,
+        is_trusted: false,
+    };
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                core: Some(CoreChangeSet {
+                    new_utxos: vec![utxo],
+                    last_processed_height: Some(60),
+                    synced_height: Some(60),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    drop(persister);
+
+    let p2 = reopen(&path);
+    let conn = p2.lock_conn_for_test();
+    let core = core_state::load_state(&conn, &w, key_wallet::Network::Testnet).unwrap();
+    drop(conn);
+    assert_eq!(core.new_utxos.len(), 1);
+
+    let mut info = ManagedWalletInfo::from_wallet(&wallet, 1);
+    platform_wallet::manager::rehydrate::apply_persisted_core_state(&mut info, &core)
+        .expect("CoinJoin-only reconstruction must not error");
+    let bal = WalletInfoInterface::balance(&info);
+    let total = bal.confirmed() + bal.unconfirmed() + bal.immature() + bal.locked();
+    assert_eq!(
+        total, 9_000_000,
+        "CoinJoin-only wallet must reconstruct the exact non-zero total — \
+         a silent zero is a FAIL"
     );
 }
 
