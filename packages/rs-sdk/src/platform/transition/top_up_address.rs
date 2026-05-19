@@ -126,7 +126,7 @@ async fn create_address_funding_from_asset_lock_transition<S: Signer<PlatformAdd
     user_fee_increase: UserFeeIncrease,
     sdk: &Sdk,
 ) -> Result<StateTransition, ProtocolError> {
-    AddressFundingFromAssetLockTransition::try_from_asset_lock_with_signer(
+    AddressFundingFromAssetLockTransition::try_from_asset_lock_with_signer_and_private_key(
         asset_lock_proof,
         asset_lock_private_key,
         inputs,
