@@ -22,9 +22,17 @@ pub fn encode<T: Serialize>(value: &T) -> Result<Vec<u8>, WalletStorageError> {
     )?)
 }
 
-/// Decode a `BLOB` payload back into a serde-derived value.
+/// Decode a `BLOB` payload back into a serde-derived value. Rejects
+/// trailing bytes so a corrupt or forward-incompatible payload fails
+/// loudly instead of decoding a stale prefix — mirroring the strict
+/// length check in [`decode_outpoint`].
 pub fn decode<T: DeserializeOwned>(blob: &[u8]) -> Result<T, WalletStorageError> {
-    let (value, _) = bincode::serde::decode_from_slice(blob, bincode::config::standard())?;
+    let (value, consumed) = bincode::serde::decode_from_slice(blob, bincode::config::standard())?;
+    if consumed != blob.len() {
+        return Err(WalletStorageError::blob_decode(
+            "unexpected trailing bytes in blob payload",
+        ));
+    }
     Ok(value)
 }
 
@@ -72,6 +80,21 @@ mod tests {
         let blob = encode(&value).unwrap();
         let decoded: Dummy = decode(&blob).unwrap();
         assert_eq!(decoded, value);
+    }
+
+    #[test]
+    fn decode_rejects_trailing_bytes() {
+        let value = Dummy {
+            a: 7,
+            b: "world".into(),
+        };
+        let mut blob = encode(&value).unwrap();
+        blob.push(0x00);
+        let res: Result<Dummy, _> = decode(&blob);
+        assert!(
+            matches!(res, Err(WalletStorageError::BlobDecode { .. })),
+            "expected BlobDecode on trailing bytes, got {res:?}"
+        );
     }
 
     #[test]
