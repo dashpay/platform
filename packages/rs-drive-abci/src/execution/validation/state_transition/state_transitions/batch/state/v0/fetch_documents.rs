@@ -35,6 +35,7 @@ use drive::query::{DriveDocumentQuery, InternalClauses, WhereClause, WhereOperat
 pub(crate) fn fetch_documents_for_transitions(
     platform: &PlatformStateRef,
     document_transitions: &[&DocumentTransition],
+    epoch: &Epoch,
     transaction: TransactionArg,
     platform_version: &PlatformVersion,
 ) -> Result<ConsensusValidationResult<Vec<Document>>, Error> {
@@ -63,6 +64,7 @@ pub(crate) fn fetch_documents_for_transitions(
                 contract_id,
                 document_type_name,
                 transitions.as_slice(),
+                epoch,
                 transaction,
                 platform_version,
             )
@@ -81,6 +83,7 @@ pub(crate) fn fetch_documents_for_transitions_knowing_contract_id_and_document_t
     contract_id: &Identifier,
     document_type_name: &str,
     transitions: &[&DocumentTransition],
+    epoch: &Epoch,
     transaction: TransactionArg,
     platform_version: &PlatformVersion,
 ) -> Result<ConsensusValidationResult<Vec<Document>>, Error> {
@@ -115,26 +118,46 @@ pub(crate) fn fetch_documents_for_transitions_knowing_contract_id_and_document_t
             .into(),
         ));
     };
-    fetch_documents_for_transitions_knowing_contract_and_document_type(
-        drive,
-        &contract_fetch_info.contract,
-        document_type,
-        transitions,
-        transaction,
-        platform_version,
-    )
+    // This caller is `#[allow(dead_code)]`; the FeeResult is discarded
+    // here because it is currently unused. If this function gets revived,
+    // the caller will need to propagate the fee through the existing
+    // billing version-gate.
+    let (validation_result, _fee_result) =
+        fetch_documents_for_transitions_knowing_contract_and_document_type(
+            drive,
+            &contract_fetch_info.contract,
+            document_type,
+            transitions,
+            epoch,
+            transaction,
+            platform_version,
+        )?;
+    Ok(validation_result)
 }
 
+/// Returns the fetched documents plus the `FeeResult` for the underlying
+/// `query_documents` operation. The caller decides whether to bill the
+/// `FeeResult` to the `StateTransitionExecutionContext` — gated by the
+/// `fetch_documents_for_transitions_billing` field on
+/// `DriveAbciDocumentsStateTransitionValidationVersions`.
+///
+/// `query_documents` only computes a non-zero cost when an `Epoch` is
+/// provided; the legacy `None` epoch resulted in a hard-coded zero cost
+/// that was discarded anyway.
 pub(crate) fn fetch_documents_for_transitions_knowing_contract_and_document_type(
     drive: &Drive,
     contract: &DataContract,
     document_type: DocumentTypeRef,
     transitions: &[&DocumentTransition],
+    epoch: &Epoch,
     transaction: TransactionArg,
     platform_version: &PlatformVersion,
-) -> Result<ConsensusValidationResult<Vec<Document>>, Error> {
+) -> Result<(ConsensusValidationResult<Vec<Document>>, FeeResult), Error> {
     if transitions.is_empty() {
-        return Ok(ConsensusValidationResult::new_with_data(vec![]));
+        return Ok((
+            ConsensusValidationResult::new_with_data(vec![]),
+            FeeResult::default(),
+        ));
     }
 
     let ids: Vec<Value> = transitions
@@ -164,17 +187,24 @@ pub(crate) fn fetch_documents_for_transitions_knowing_contract_and_document_type
         block_time_ms: None,
     };
 
-    // todo: deal with cost of this operation
     let documents_outcome = drive.query_documents(
         drive_query,
-        None,
+        Some(epoch),
         false,
         transaction,
         Some(platform_version.protocol_version),
     )?;
 
-    Ok(ConsensusValidationResult::new_with_data(
-        documents_outcome.documents_owned(),
+    let fee_result = FeeResult {
+        storage_fee: 0,
+        processing_fee: documents_outcome.cost(),
+        fee_refunds: Default::default(),
+        removed_bytes_from_system: 0,
+    };
+
+    Ok((
+        ConsensusValidationResult::new_with_data(documents_outcome.documents_owned()),
+        fee_result,
     ))
 }
 

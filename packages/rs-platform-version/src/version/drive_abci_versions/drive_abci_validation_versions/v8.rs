@@ -134,6 +134,14 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V8: DriveAbciValidationVersions =
                 // ownership/revision check). v0 stays for chain
                 // reproducibility on PROTOCOL_VERSION_11 and below.
                 failed_per_transition_action: 1,
+                // PROTOCOL_VERSION_12 (v3.1 hard fork): the
+                // `query_documents` cost from
+                // `fetch_documents_for_transitions_knowing_contract_and_document_type`
+                // is now billed to the user via `execution_context`
+                // instead of being discarded inside the helper. Pairs
+                // with `transform_into_action: 1` so the billed ctx
+                // reaches the user's bill.
+                fetch_documents_for_transitions_billing: 1,
                 data_triggers: DriveAbciValidationDataTriggerAndBindingVersions {
                     bindings: 0,
                     triggers: DriveAbciValidationDataTriggerVersions {

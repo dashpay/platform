@@ -346,7 +346,7 @@ mod nft_tests {
 
         assert_eq!(processing_result.valid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 2473880);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 2485600);
 
         let query_sender_results = platform
             .drive
@@ -602,7 +602,7 @@ mod nft_tests {
             None
         );
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 2473880);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 2485600);
 
         let seller_balance = platform
             .drive
@@ -613,7 +613,7 @@ mod nft_tests {
         // the seller should have received 0.1 and already had 0.1 minus the processing fee and storage fee
         assert_eq!(
             seller_balance,
-            dash_to_credits!(0.1) - original_creation_cost - 2689880
+            dash_to_credits!(0.1) - original_creation_cost - 2701600
         );
 
         let query_sender_results = platform
@@ -709,7 +709,7 @@ mod nft_tests {
 
         assert_eq!(processing_result.aggregated_fees().storage_fee, 64611000);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 4080480);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 4092360);
 
         assert_eq!(
             processing_result
@@ -743,7 +743,7 @@ mod nft_tests {
         // the seller should have received 0.1 and already had 0.1 minus the processing fee and storage fee
         assert_eq!(
             seller_balance,
-            dash_to_credits!(0.2) - original_creation_cost + 20014623
+            dash_to_credits!(0.2) - original_creation_cost + 20002903
         );
 
         let buyers_balance = platform
@@ -753,7 +753,7 @@ mod nft_tests {
             .expect("expected that purchaser exists");
 
         // the buyer paid 0.1, but also storage and processing fees
-        assert_eq!(buyers_balance, dash_to_credits!(0.9) - 68691480);
+        assert_eq!(buyers_balance, dash_to_credits!(0.9) - 68703360);
     }
 
     #[tokio::test]
@@ -1017,7 +1017,7 @@ mod nft_tests {
             None
         );
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 2717400);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 2729120);
 
         let seller_balance = platform
             .drive
@@ -1028,7 +1028,7 @@ mod nft_tests {
         // the seller should have received 0.1 and already had 0.1 minus the processing fee and storage fee
         assert_eq!(
             seller_balance,
-            dash_to_credits!(0.1) - original_creation_cost - 2717400 - 378000
+            dash_to_credits!(0.1) - original_creation_cost - 2729120 - 378000
         );
 
         // now let's update price, but first go to next epoch
@@ -1106,7 +1106,7 @@ mod nft_tests {
             None
         );
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 2721160);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 2733160);
 
         let seller_balance = platform
             .drive
@@ -1117,7 +1117,7 @@ mod nft_tests {
         // the seller should have received 0.1 and already had 0.1 minus the processing fee and storage fee
         assert_eq!(
             seller_balance,
-            dash_to_credits!(0.1) - original_creation_cost - 2717400 - 378000 - 2721160 - 216000
+            dash_to_credits!(0.1) - original_creation_cost - 2729120 - 378000 - 2733160 - 216000
         );
 
         let query_sender_results = platform
@@ -1230,7 +1230,7 @@ mod nft_tests {
 
         assert_eq!(processing_result.aggregated_fees().storage_fee, 64611000);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 4345280);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 4357440);
 
         assert_eq!(
             processing_result
@@ -1264,7 +1264,7 @@ mod nft_tests {
         // the seller should have received 0.1 and already had 0.1 minus the processing fee and storage fee
         assert_eq!(
             seller_balance,
-            dash_to_credits!(0.2) - original_creation_cost + 46955162
+            dash_to_credits!(0.2) - original_creation_cost + 46931442
         );
 
         let buyers_balance = platform
@@ -1274,7 +1274,7 @@ mod nft_tests {
             .expect("expected that purchaser exists");
 
         // the buyer paid 0.1, but also storage and processing fees
-        assert_eq!(buyers_balance, dash_to_credits!(0.9) - 68956280);
+        assert_eq!(buyers_balance, dash_to_credits!(0.9) - 68968440);
     }
 
     #[tokio::test]
@@ -1506,7 +1506,7 @@ mod nft_tests {
             None
         );
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 2473880);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 2485600);
 
         let seller_balance = platform
             .drive
@@ -1517,7 +1517,7 @@ mod nft_tests {
         // the seller should have received 0.1 and already had 0.1 minus the processing fee and storage fee
         assert_eq!(
             seller_balance,
-            dash_to_credits!(0.1) - original_creation_cost - 2689880
+            dash_to_credits!(0.1) - original_creation_cost - 2701600
         );
 
         let query_sender_results = platform
@@ -1615,7 +1615,7 @@ mod nft_tests {
 
         assert_eq!(processing_result.aggregated_fees().storage_fee, 64611000);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 4080480);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 4092360);
 
         assert_eq!(
             processing_result
@@ -1649,7 +1649,7 @@ mod nft_tests {
         // the seller should have received 0.1 and already had 0.1 minus the processing fee and storage fee
         assert_eq!(
             seller_balance,
-            dash_to_credits!(0.2) - original_creation_cost + 20014623
+            dash_to_credits!(0.2) - original_creation_cost + 20002903
         );
 
         let buyers_balance = platform
@@ -1659,7 +1659,7 @@ mod nft_tests {
             .expect("expected that purchaser exists");
 
         // the buyer paid 0.1, but also storage and processing fees
-        assert_eq!(buyers_balance, dash_to_credits!(0.9) - 68691480);
+        assert_eq!(buyers_balance, dash_to_credits!(0.9) - 68703360);
     }
 
     /// Helper for the paired Purchase-at-wrong-price test. Same scenario at
@@ -2613,7 +2613,7 @@ mod nft_tests {
 
         assert_eq!(processing_result.valid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 2473880);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 2485600);
 
         let query_sender_results = platform
             .drive
@@ -2922,7 +2922,7 @@ mod nft_tests {
     async fn test_document_set_price_on_not_owned_document() {
         run_document_set_price_on_not_owned_document_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            571240,
+            582960,
         )
         .await;
     }

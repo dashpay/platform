@@ -142,6 +142,18 @@ pub struct DriveAbciDocumentsStateTransitionValidationVersions {
     ///
     /// [`transform_document_transition`]: crate
     pub failed_per_transition_action: FeatureVersion,
+    /// Versions the billing of `query_documents` cost performed by
+    /// `fetch_documents_for_transitions_knowing_contract_and_document_type`
+    /// inside the batch transformer (run on every batch with
+    /// replace/transfer/purchase/update-price transitions).
+    ///
+    /// - `0` (PROTOCOL_VERSION_11 and below): the query cost is computed
+    ///   and discarded — the user does not pay for the document fetch.
+    /// - `1` (PROTOCOL_VERSION_12+): the query cost is added to the
+    ///   `StateTransitionExecutionContext` so it reaches the user's bill.
+    ///   Pairs with `transform_into_action: 1`, which is what ensures the
+    ///   billed ctx is not the dropped local from the legacy wrapper.
+    pub fetch_documents_for_transitions_billing: FeatureVersion,
     pub data_triggers: DriveAbciValidationDataTriggerAndBindingVersions,
     pub is_allowed: FeatureVersion,
     pub document_create_transition_structure_validation: FeatureVersion,

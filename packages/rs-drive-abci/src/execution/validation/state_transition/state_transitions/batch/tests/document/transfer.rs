@@ -160,7 +160,7 @@ mod transfer_tests {
 
         assert_eq!(processing_result.aggregated_fees().storage_fee, 0); // There is no storage fee, as there are no indexes that will change
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 1985420);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 1997120);
 
         let issues = platform
             .drive
@@ -391,7 +391,7 @@ mod transfer_tests {
             Some(14992395)
         );
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 3369260);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 3380960);
 
         let query_sender_results = platform
             .drive
@@ -639,7 +639,7 @@ mod transfer_tests {
             Some(14992395)
         );
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 3631040);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 3643400);
 
         let query_sender_results = platform
             .drive
@@ -893,7 +893,7 @@ mod transfer_tests {
             Some(14992395)
         );
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 3369260);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 3380960);
 
         let query_sender_results = platform
             .drive
@@ -1105,7 +1105,7 @@ mod transfer_tests {
 
         assert_eq!(processing_result.valid_count(), 0);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 445700);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 457000);
 
         let query_sender_results = platform
             .drive
@@ -1292,7 +1292,7 @@ mod transfer_tests {
     async fn test_document_transfer_that_does_not_yet_exist() {
         run_document_transfer_that_does_not_yet_exist_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            517400,
+            521700,
         )
         .await;
     }
@@ -1484,7 +1484,7 @@ mod transfer_tests {
 
         assert_eq!(processing_result.valid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 3991900);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 4004260);
 
         let query_sender_results = platform
             .drive

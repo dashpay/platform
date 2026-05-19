@@ -508,15 +508,49 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
         // Below we also perform state validation for replace and transfer transitions only
         // other transitions are validated in their validate_state functions
         // TODO: Think more about this architecture
-        let fetched_documents_validation_result =
+        let (fetched_documents_validation_result, fetch_documents_fee_result) =
             fetch_documents_for_transitions_knowing_contract_and_document_type(
                 platform.drive,
                 data_contract,
                 document_type,
                 replace_and_transfer_transitions.as_slice(),
+                &block_info.epoch,
                 transaction,
                 platform_version,
             )?;
+
+        // The `fetch_documents_for_transitions_billing` field gates whether
+        // the `query_documents` cost is billed to the user. v0
+        // (PROTOCOL_VERSION_11 and below) preserves the legacy
+        // discard-cost behavior for chain replay; v1 (PROTOCOL_VERSION_12+)
+        // adds the fee to the execution_context (which on v1 of
+        // `transform_into_action` is the outer ctx that reaches the
+        // user's bill).
+        match platform_version
+            .drive_abci
+            .validation_and_processing
+            .state_transitions
+            .batch_state_transition
+            .fetch_documents_for_transitions_billing
+        {
+            0 => {}
+            1 => {
+                execution_context.add_operation(ValidationOperation::PrecalculatedOperation(
+                    fetch_documents_fee_result,
+                ));
+            }
+            version => {
+                return Err(Error::Execution(
+                    crate::error::execution::ExecutionError::UnknownVersionMismatch {
+                        method:
+                            "documents batch transition: fetch_documents_for_transitions_billing"
+                                .to_string(),
+                        known_versions: vec![0, 1],
+                        received: version,
+                    },
+                ));
+            }
+        }
 
         if !fetched_documents_validation_result.is_valid() {
             return Ok(ConsensusValidationResult::new_with_errors(

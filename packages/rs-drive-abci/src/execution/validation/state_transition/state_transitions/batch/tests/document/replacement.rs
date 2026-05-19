@@ -146,7 +146,7 @@ mod replacement_tests {
 
         assert_eq!(processing_result.valid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 1399260);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 1411320);
 
         let issues = platform
             .drive
@@ -671,7 +671,7 @@ mod replacement_tests {
     async fn test_document_replace_on_document_type_that_is_not_mutable() {
         run_document_replace_on_document_type_that_is_not_mutable_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            445700,
+            460920,
         )
         .await;
     }
@@ -1094,7 +1094,7 @@ mod replacement_tests {
 
         assert_eq!(processing_result.valid_count(), 0);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 445700);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 457660);
 
         let query_sender_results = platform
             .drive
@@ -1224,13 +1224,14 @@ mod replacement_tests {
         );
     }
 
-    /// PROTOCOL_VERSION_12+ — same fee as v11 because the bump emission for
-    /// this specific path is unconditional (pre-existing legacy behavior).
+    /// PROTOCOL_VERSION_12+ — bump emission for this specific path is
+    /// unconditional (pre-existing legacy behavior), but the document
+    /// query now bills its cost on top of v11's bump-only fee.
     #[tokio::test]
     async fn test_document_replace_that_does_not_yet_exist() {
         run_document_replace_that_does_not_yet_exist_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            516040,
+            520340,
         )
         .await;
     }

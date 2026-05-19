@@ -155,7 +155,7 @@ mod token_selling_tests {
             .drive
             .fetch_identity_balance(buyer.id().to_buffer(), None, platform_version)
             .expect("expected to fetch credit balance");
-        assert_eq!(buyer_credit_balance, Some(699_868_130_120)); // 10.0 - 3.0 spent - fees =~ 7 dash left
+        assert_eq!(buyer_credit_balance, Some(699_868_122_220)); // 10.0 - 3.0 spent - fees =~ 7 dash left
     }
 
     #[tokio::test]
@@ -362,7 +362,7 @@ mod token_selling_tests {
             .drive
             .fetch_identity_balance(buyer.id().to_buffer(), None, platform_version)
             .expect("expected to fetch credit balance");
-        assert_eq!(buyer_credit_balance, Some(999_987_872_760)); // 10.0 - bump action fees
+        assert_eq!(buyer_credit_balance, Some(999_987_864_860)); // 10.0 - bump action fees
     }
 
     #[tokio::test]
