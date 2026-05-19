@@ -321,7 +321,10 @@ fn decode_data_message(data: &str) -> Option<String> {
 
     let raw_value = decode_cbor_value(&decoded_bytes)?;
 
-    walk_cbor_for_key(&raw_value, &["message"]).and_then(|v| v.as_text().map(|s| s.to_string()))
+    walk_cbor_for_key(&raw_value, &["message"])
+        .and_then(|v| v.as_text())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
 }
 
 impl From<serde_json::Value> for TenderdashStatus {
@@ -758,6 +761,26 @@ mod tests {
             super::decode_data_message(&b64),
             Some("hello world".to_string())
         );
+    }
+
+    #[test]
+    fn decode_data_message_empty_cbor_message_returns_none() {
+        // CBOR: {"message": ""} → returns None so the caller falls back to the
+        // raw `data` string instead of suppressing it with an empty message.
+        let cbor_bytes = {
+            let mut buf = Vec::new();
+            ciborium::ser::into_writer(
+                &ciborium::Value::Map(vec![(
+                    ciborium::Value::Text("message".to_string()),
+                    ciborium::Value::Text(String::new()),
+                )]),
+                &mut buf,
+            )
+            .unwrap();
+            buf
+        };
+        let b64 = base64::prelude::BASE64_STANDARD.encode(&cbor_bytes);
+        assert!(super::decode_data_message(&b64).is_none());
     }
 
     #[test]
