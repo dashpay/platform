@@ -706,7 +706,7 @@ impl WasmSdk {
     ) -> Result<Map, WasmSdkError> {
         let sum_query = parse_documents_sum_query(self, query, &sum_property).await?;
         let splits = DocumentSplitSums::fetch(self.as_ref(), sum_query).await?;
-        Ok(split_sums_to_js_map(splits))
+        split_sums_to_js_map(splits)
     }
 
     #[wasm_bindgen(
@@ -722,7 +722,7 @@ impl WasmSdk {
         let (splits_opt, metadata, proof) =
             DocumentSplitSums::fetch_with_metadata_and_proof(self.as_ref(), sum_query, None)
                 .await?;
-        let map = split_sums_to_js_map(splits_opt);
+        let map = split_sums_to_js_map(splits_opt)?;
 
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
             map, metadata, proof,
@@ -758,7 +758,7 @@ impl WasmSdk {
     ) -> Result<Map, WasmSdkError> {
         let avg_query = parse_documents_average_query(self, query, &sum_property).await?;
         let splits = DocumentSplitAverages::fetch(self.as_ref(), avg_query).await?;
-        Ok(split_averages_to_js_map(splits))
+        split_averages_to_js_map(splits)
     }
 
     #[wasm_bindgen(
@@ -774,7 +774,7 @@ impl WasmSdk {
         let (splits_opt, metadata, proof) =
             DocumentSplitAverages::fetch_with_metadata_and_proof(self.as_ref(), avg_query, None)
                 .await?;
-        let map = split_averages_to_js_map(splits_opt);
+        let map = split_averages_to_js_map(splits_opt)?;
 
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
             map, metadata, proof,
@@ -805,24 +805,41 @@ fn split_counts_to_js_map(splits: Option<DocumentSplitCounts>) -> Map {
 /// Convert an `Option<DocumentSplitSums>` into a JS `Map<string, bigint>`.
 ///
 /// Sum analog of [`split_counts_to_js_map`]. Same hex-encoded keys,
-/// same flat-map fork-merging via `DocumentSplitSums::into_flat_map`
-/// (which combines per-(in_key, key) entries into per-key sums for
-/// compound queries — callers needing the unmerged view should
-/// consume `DocumentSplitSums.0` directly).
+/// same flat-map fork-merging via
+/// `DocumentSplitSums::try_into_flat_map` (which combines
+/// per-(in_key, key) entries into per-key sums for compound queries
+/// — callers needing the unmerged view should consume
+/// `DocumentSplitSums.0` directly).
 ///
-/// Values are `i64` per grovedb's signed SumTree value type. `bigint`
-/// on the JS side preserves the full i64 range that `Number` can't —
-/// avoids the silent precision loss past `Number.MAX_SAFE_INTEGER`
-/// (2^53 - 1) that an `f64` conversion would introduce.
-fn split_sums_to_js_map(splits: Option<DocumentSplitSums>) -> Map {
+/// Values are `i64` per grovedb's signed SumTree value type.
+/// `bigint` on the JS side preserves the full i64 range that
+/// `Number` can't — avoids the silent precision loss past
+/// `Number.MAX_SAFE_INTEGER` (2^53 - 1) that an `f64` conversion
+/// would introduce.
+///
+/// Returns a `WasmSdkError` if the fold across In-fork branches
+/// crosses the i64 range at any terminator key
+/// (`try_into_flat_map` does `checked_add` on each step). JS sees
+/// a structured error rather than a debug-build panic or a
+/// release-build wrap.
+fn split_sums_to_js_map(splits: Option<DocumentSplitSums>) -> Result<Map, WasmSdkError> {
     let map = Map::new();
     if let Some(split_sums) = splits {
-        for (key_bytes, sum) in split_sums.into_flat_map() {
+        // `try_into_flat_map` uses `i64::checked_add` and surfaces
+        // overflow as `drive_proof_verifier::Error::RequestError`.
+        // Convert to `WasmSdkError::generic` so JS callers see a
+        // structured error (rather than the debug-build panic /
+        // release-build wrap that the previous unchecked `+=`
+        // would produce on a compound-In merge crossing i64::MAX).
+        let flat = split_sums
+            .try_into_flat_map()
+            .map_err(|e| WasmSdkError::generic(format!("{e}")))?;
+        for (key_bytes, sum) in flat {
             let key: JsValue = hex::encode(key_bytes).into();
             map.set(&key, &JsValue::from(sum));
         }
     }
-    map
+    Ok(map)
 }
 
 /// Convert an `Option<DocumentSplitAverages>` into a JS `Map<string,
@@ -837,12 +854,22 @@ fn split_sums_to_js_map(splits: Option<DocumentSplitSums>) -> Map {
 /// doesn't pre-divide — `count` and `sum` are independently
 /// load-bearing for downstream filters.
 ///
-/// Hex-encoded keys + `into_flat_map` fork-merging match the count
-/// and sum helpers' conventions exactly.
-fn split_averages_to_js_map(splits: Option<DocumentSplitAverages>) -> Map {
+/// Hex-encoded keys + `try_into_flat_map` fork-merging match the
+/// count and sum helpers' conventions exactly. Returns a
+/// `WasmSdkError` if either the u64 count or the i64 sum fold
+/// crosses its range at any terminator key, matching the
+/// hardening on [`split_sums_to_js_map`].
+fn split_averages_to_js_map(splits: Option<DocumentSplitAverages>) -> Result<Map, WasmSdkError> {
     let map = Map::new();
     if let Some(split_averages) = splits {
-        for (key_bytes, (count, sum)) in split_averages.into_flat_map() {
+        // Same overflow hardening rationale as `split_sums_to_js_map`
+        // above — `try_into_flat_map` uses `u64::checked_add` (count
+        // axis) and `i64::checked_add` (sum axis); either overflow
+        // surfaces as a typed JS error instead of a panic / wrap.
+        let flat = split_averages
+            .try_into_flat_map()
+            .map_err(|e| WasmSdkError::generic(format!("{e}")))?;
+        for (key_bytes, (count, sum)) in flat {
             let key: JsValue = hex::encode(key_bytes).into();
             let entry = js_sys::Object::new();
             // `unwrap` here is safe in WASM — `js_sys::Reflect::set`
@@ -856,5 +883,5 @@ fn split_averages_to_js_map(splits: Option<DocumentSplitAverages>) -> Map {
             map.set(&key, &entry);
         }
     }
-    map
+    Ok(map)
 }
