@@ -1,10 +1,12 @@
 //! AL-001 — Concurrent asset-lock builds from same wallet.
 //!
 //! Spec: `tests/e2e/TEST_SPEC.md` (### Asset Lock (AL) → AL-001).
-//! Pinned status: red-real-fail — full test body implemented, `#[ignore]`-tagged
-//! behind the same `PLATFORM_WALLET_E2E_BANK_CORE_GATE` env gate
-//! CR-003 and ID-002b use. Fails deterministically (fingerprint identical
-//! across v48/v49/v50/v51) on Found-008 — tracked at dashpay/platform#3641.
+//! Pinned status: active regression guard — full test body implemented,
+//! `#[ignore]`-tagged ONLY behind the same `PLATFORM_WALLET_E2E_BANK_CORE_GATE`
+//! env gate CR-003 and ID-002b use (funded testnet run; exercised by the
+//! gated solo concurrency job, not the default suite). Found-008 is FIXED
+//! (waiter-side pre-arm in `sync/proof.rs`, both wait loops, #3634); this
+//! test now guards against a regression of that fix under concurrent load.
 //! Requires bank Core (Layer-1) pre-funding large enough for N parallel
 //! asset locks + fees (~5 DASH testnet).
 //!
@@ -25,16 +27,16 @@
 //! - No UTXO double-spend: input outpoints across the N asset-lock
 //!   transactions form pairwise-disjoint sets.
 //!
-//! Known dependencies (documented per spec — not regression pins
-//! here):
-//! - Found-008 (`LockNotifyHandler` missed-wakeup at `packages/rs-platform-wallet/src/wallet/asset_lock/lock_notify_handler.rs:30`) is on the critical
-//!   path. Under concurrent load an IS-lock event arriving in the
-//!   check / await gap of `wait_for_proof` (`sync/proof.rs:367-418`)
-//!   stalls one of the N waiters until the configured timeout.
-//!   AL-001 fails deterministically on `FinalityTimeout` today — fingerprint
-//!   identical across v48/v49/v50/v51. Tracked at dashpay/platform#3641.
-//!   TODO(dashpay/platform#3641): re-evaluate once the missed-wakeup
-//!   race is fixed; AL-001 should turn green with zero test-side changes.
+//! Critical-path interactions this guard also covers:
+//! - Found-008 (`LockNotifyHandler` / `wait_for_proof` missed-wakeup) is
+//!   FIXED: `sync/proof.rs` arms the `Notify` future (`notified();
+//!   pin!; enable()`) BEFORE the state check in both wait loops, so an
+//!   IS-lock event arriving in the former check/await gap is no longer
+//!   lost. Under concurrent load (N parallel `wait_for_proof` waiters)
+//!   this is exactly the path that previously stalled on
+//!   `FinalityTimeout`; the all-tasks-`Ok` assertion below fails if
+//!   that pre-arm regresses, making AL-001 the concurrent regression
+//!   guard for #3634's Found-008 fix.
 //! - Found-012 (account-type tunnel vision in `validate_or_upgrade_proof`)
 //!   is also on the path. If any of the N asset-lock transactions
 //!   ends up funded from a non-BIP-44 account, the test hits
@@ -109,12 +111,13 @@ const TOP_UP_VISIBILITY_TIMEOUT: Duration = Duration::from_secs(240);
 
 #[ignore = "AL-001 — needs testnet + bank Core (Layer-1) pre-funding \
             sized for N parallel asset-locks (~5 DASH testnet). Same \
-            PLATFORM_WALLET_E2E_BANK_CORE_GATE gate as CR-003 / ID-002b. \
-            Step 1b pre-splits the balance into N+1 UTXOs (QA-011). \
-            Fails deterministically under concurrent load on Found-008 \
-            (LockNotifyHandler missed-wakeup) — tracked at \
-            dashpay/platform#3641; see the file-level doc-comment and \
-            Found-008's spec entry."]
+            PLATFORM_WALLET_E2E_BANK_CORE_GATE gate as CR-003 / ID-002b; \
+            run by the gated solo concurrency job, not the default \
+            suite. Step 1b pre-splits the balance into N+1 UTXOs \
+            (QA-011). Found-008 is FIXED (sync/proof.rs waiter pre-arm, \
+            #3634); this test now guards that fix under concurrent load \
+            — all N tasks must return Ok. See the file-level doc-comment \
+            and Found-008's spec entry."]
 #[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
 async fn al_001_concurrent_asset_lock_builds() {
     let _ = tracing_subscriber::fmt()
