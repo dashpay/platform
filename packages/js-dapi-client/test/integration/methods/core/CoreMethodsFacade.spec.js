@@ -1,4 +1,7 @@
-const { EventEmitter } = require('events');
+import EventEmitter from 'events';
+import dapiGrpc from '@dashevo/dapi-grpc';
+import BloomFilter from '@dashevo/dashcore-lib/lib/bloomfilter.js';
+import CoreMethodsFacade from '../../../../lib/methods/core/CoreMethodsFacade.js';
 
 const {
   v0: {
@@ -8,11 +11,7 @@ const {
     GetBlockchainStatusResponse,
     GetMasternodeStatusResponse,
   },
-} = require('@dashevo/dapi-grpc');
-
-const BloomFilter = require('@dashevo/dashcore-lib/lib/bloomfilter');
-
-const CoreMethodsFacade = require('../../../../lib/methods/core/CoreMethodsFacade');
+} = dapiGrpc;
 
 describe('CoreMethodsFacade', () => {
   let jsonRpcTransportMock;

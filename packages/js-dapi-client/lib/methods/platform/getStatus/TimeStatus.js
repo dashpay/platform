@@ -46,4 +46,4 @@ class TimeStatus {
   }
 }
 
-module.exports = TimeStatus;
+export default TimeStatus;

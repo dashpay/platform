@@ -1,4 +1,4 @@
-const AbstractResponse = require('../response/AbstractResponse');
+import AbstractResponse from '../response/AbstractResponse.js';
 
 class GetIdentityByPublicKeyHashResponse extends AbstractResponse {
   /**
@@ -37,4 +37,4 @@ class GetIdentityByPublicKeyHashResponse extends AbstractResponse {
   }
 }
 
-module.exports = GetIdentityByPublicKeyHashResponse;
+export default GetIdentityByPublicKeyHashResponse;

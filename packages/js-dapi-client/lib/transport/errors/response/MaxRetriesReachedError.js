@@ -1,4 +1,4 @@
-const ResponseError = require('./ResponseError');
+import ResponseError from './ResponseError.js';
 
 class MaxRetriesReachedError extends ResponseError {
   /**
@@ -23,4 +23,4 @@ class MaxRetriesReachedError extends ResponseError {
   }
 }
 
-module.exports = MaxRetriesReachedError;
+export default MaxRetriesReachedError;

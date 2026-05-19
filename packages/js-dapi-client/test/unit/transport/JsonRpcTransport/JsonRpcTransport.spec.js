@@ -1,12 +1,12 @@
-const JsonRpcTransport = require('../../../../lib/transport/JsonRpcTransport/JsonRpcTransport');
-const DAPIAddress = require('../../../../lib/dapiAddressProvider/DAPIAddress');
+import JsonRpcTransport from '../../../../lib/transport/JsonRpcTransport/JsonRpcTransport.js';
+import DAPIAddress from '../../../../lib/dapiAddressProvider/DAPIAddress.js';
 
-const MaxRetriesReachedError = require('../../../../lib/transport/errors/response/MaxRetriesReachedError');
-const NoAvailableAddressesForRetryError = require('../../../../lib/transport/errors/response/NoAvailableAddressesForRetryError');
-const NoAvailableAddressesError = require('../../../../lib/transport/errors/NoAvailableAddressesError');
-const ResponseError = require('../../../../lib/transport/errors/response/ResponseError');
-const JsonRpcError = require('../../../../lib/transport/JsonRpcTransport/errors/JsonRpcError');
-const RetriableResponseError = require('../../../../lib/transport/errors/response/RetriableResponseError');
+import MaxRetriesReachedError from '../../../../lib/transport/errors/response/MaxRetriesReachedError.js';
+import NoAvailableAddressesForRetryError from '../../../../lib/transport/errors/response/NoAvailableAddressesForRetryError.js';
+import NoAvailableAddressesError from '../../../../lib/transport/errors/NoAvailableAddressesError.js';
+import ResponseError from '../../../../lib/transport/errors/response/ResponseError.js';
+import JsonRpcError from '../../../../lib/transport/JsonRpcTransport/errors/JsonRpcError.js';
+import RetriableResponseError from '../../../../lib/transport/errors/response/RetriableResponseError.js';
 
 describe('JsonRpcTransport', () => {
   let jsonRpcTransport;

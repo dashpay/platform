@@ -1,14 +1,14 @@
-const cbor = require('cbor');
+import cbor from 'cbor';
+import dapiGrpc from '@dashevo/dapi-grpc';
+import GetDocumentsResponse from './GetDocumentsResponse.js';
+import InvalidResponseError from '../response/errors/InvalidResponseError.js';
 
 const {
   v0: {
     PlatformPromiseClient,
     GetDocumentsRequest,
   },
-} = require('@dashevo/dapi-grpc');
-
-const GetDocumentsResponse = require('./GetDocumentsResponse');
-const InvalidResponseError = require('../response/errors/InvalidResponseError');
+} = dapiGrpc;
 
 /**
  * @param {GrpcTransport} grpcTransport
@@ -108,4 +108,4 @@ function getDocumentsFactory(grpcTransport) {
  * @property {object} [startAfter]
  */
 
-module.exports = getDocumentsFactory;
+export default getDocumentsFactory;

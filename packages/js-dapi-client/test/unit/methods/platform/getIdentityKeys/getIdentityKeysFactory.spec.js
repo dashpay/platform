@@ -1,3 +1,10 @@
+import dapiGrpc from '@dashevo/dapi-grpc';
+import wrappersPb from 'google-protobuf/google/protobuf/wrappers_pb.js';
+import getIdentityKeysFactory from '../../../../../lib/methods/platform/getIdentityKeys/getIdentityKeysFactory.js';
+import getMetadataFixture from '../../../../../lib/test/fixtures/getMetadataFixture.js';
+import getProofFixture from '../../../../../lib/test/fixtures/getProofFixture.js';
+import Proof from '../../../../../lib/methods/platform/response/Proof.js';
+
 const {
   v0: {
     PlatformPromiseClient,
@@ -9,16 +16,12 @@ const {
     SpecificKeys,
     AllKeys,
   },
-} = require('@dashevo/dapi-grpc');
-const { UInt32Value } = require('google-protobuf/google/protobuf/wrappers_pb');
+} = dapiGrpc;
+
+const { UInt32Value } = wrappersPb;
 
 const { GetIdentityKeysResponseV0 } = GetIdentityKeysResponse;
 const { Keys } = GetIdentityKeysResponseV0;
-
-const getIdentityKeysFactory = require('../../../../../lib/methods/platform/getIdentityKeys/getIdentityKeysFactory');
-const getMetadataFixture = require('../../../../../lib/test/fixtures/getMetadataFixture');
-const getProofFixture = require('../../../../../lib/test/fixtures/getProofFixture');
-const Proof = require('../../../../../lib/methods/platform/response/Proof');
 
 describe('getIdentityKeysFactory', () => {
   let grpcTransportMock;

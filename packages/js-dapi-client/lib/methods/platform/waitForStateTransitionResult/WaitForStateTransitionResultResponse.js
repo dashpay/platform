@@ -1,7 +1,7 @@
-const AbstractResponse = require('../response/AbstractResponse');
-const Metadata = require('../response/Metadata');
-const Proof = require('../response/Proof');
-const ErrorResult = require('./ErrorResult');
+import AbstractResponse from '../response/AbstractResponse.js';
+import Metadata from '../response/Metadata.js';
+import Proof from '../response/Proof.js';
+import ErrorResult from './ErrorResult.js';
 
 class WaitForStateTransitionResultResponse extends AbstractResponse {
   /**
@@ -59,4 +59,4 @@ class WaitForStateTransitionResultResponse extends AbstractResponse {
   }
 }
 
-module.exports = WaitForStateTransitionResultResponse;
+export default WaitForStateTransitionResultResponse;

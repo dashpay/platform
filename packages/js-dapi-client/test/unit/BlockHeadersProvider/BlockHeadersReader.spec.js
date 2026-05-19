@@ -1,8 +1,8 @@
-const { expect } = require('chai');
-const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
-const BlockHeadersReader = require('../../../lib/BlockHeadersProvider/BlockHeadersReader');
-const getHeadersFixture = require('../../../lib/test/fixtures/getHeadersFixture');
-const BlockHeadersWithChainLocksStreamMock = require('../../../lib/test/mocks/BlockHeadersWithChainLocksStreamMock');
+import { expect } from 'chai';
+import GrpcErrorCodes from '@dashevo/grpc-common/lib/server/error/GrpcErrorCodes.js';
+import BlockHeadersReader from '../../../lib/BlockHeadersProvider/BlockHeadersReader.js';
+import getHeadersFixture from '../../../lib/test/fixtures/getHeadersFixture.js';
+import BlockHeadersWithChainLocksStreamMock from '../../../lib/test/mocks/BlockHeadersWithChainLocksStreamMock.js';
 
 const sleepOneTick = () => new Promise((resolve) => {
   if (typeof setImmediate === 'undefined') {

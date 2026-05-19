@@ -1,4 +1,4 @@
-const DAPIAddress = require('./DAPIAddress');
+import DAPIAddress from './DAPIAddress.js';
 
 class SimplifiedMasternodeListDAPIAddressProvider {
   /**
@@ -72,4 +72,4 @@ class SimplifiedMasternodeListDAPIAddressProvider {
   }
 }
 
-module.exports = SimplifiedMasternodeListDAPIAddressProvider;
+export default SimplifiedMasternodeListDAPIAddressProvider;

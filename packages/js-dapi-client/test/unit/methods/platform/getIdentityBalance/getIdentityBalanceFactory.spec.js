@@ -1,3 +1,9 @@
+import dapiGrpc from '@dashevo/dapi-grpc';
+import getIdentityBalanceFactory from '../../../../../lib/methods/platform/getIdentityBalance/getIdentityBalanceFactory.js';
+import getMetadataFixture from '../../../../../lib/test/fixtures/getMetadataFixture.js';
+import getProofFixture from '../../../../../lib/test/fixtures/getProofFixture.js';
+import Proof from '../../../../../lib/methods/platform/response/Proof.js';
+
 const {
   v0: {
     PlatformPromiseClient,
@@ -6,14 +12,9 @@ const {
     ResponseMetadata,
     Proof: ProofResponse,
   },
-} = require('@dashevo/dapi-grpc');
+} = dapiGrpc;
 
 const { GetIdentityBalanceResponseV0 } = GetIdentityBalanceResponse;
-
-const getIdentityBalanceFactory = require('../../../../../lib/methods/platform/getIdentityBalance/getIdentityBalanceFactory');
-const getMetadataFixture = require('../../../../../lib/test/fixtures/getMetadataFixture');
-const getProofFixture = require('../../../../../lib/test/fixtures/getProofFixture');
-const Proof = require('../../../../../lib/methods/platform/response/Proof');
 
 describe('getIdentityBalanceFactory', () => {
   let grpcTransportMock;

@@ -1,6 +1,6 @@
-const AbstractResponse = require('../response/AbstractResponse');
-const InvalidResponseError = require('../response/errors/InvalidResponseError');
-const DataContractHistoryEntry = require('./DataContractHistoryEntry');
+import AbstractResponse from '../response/AbstractResponse.js';
+import InvalidResponseError from '../response/errors/InvalidResponseError.js';
+import DataContractHistoryEntry from './DataContractHistoryEntry.js';
 
 class GetDataContractHistoryResponse extends AbstractResponse {
   /**
@@ -46,4 +46,4 @@ class GetDataContractHistoryResponse extends AbstractResponse {
   }
 }
 
-module.exports = GetDataContractHistoryResponse;
+export default GetDataContractHistoryResponse;

@@ -1,6 +1,6 @@
-const InvalidResponseError = require('./errors/InvalidResponseError');
-const Metadata = require('./Metadata');
-const Proof = require('./Proof');
+import InvalidResponseError from './errors/InvalidResponseError.js';
+import Metadata from './Metadata.js';
+import Proof from './Proof.js';
 
 /**
  * @abstract
@@ -61,4 +61,4 @@ class AbstractResponse {
   }
 }
 
-module.exports = AbstractResponse;
+export default AbstractResponse;

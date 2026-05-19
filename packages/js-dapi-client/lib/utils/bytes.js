@@ -1,4 +1,4 @@
-function hexToBytes(hex) {
+export function hexToBytes(hex) {
   if (typeof hex !== 'string') {
     throw new TypeError('hex must be a string');
   }
@@ -12,11 +12,11 @@ function hexToBytes(hex) {
   return out;
 }
 
-function bytesToHex(bytes) {
+export function bytesToHex(bytes) {
   return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-function base64ToBytes(b64) {
+export function base64ToBytes(b64) {
   const bin = atob(b64);
   const out = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i += 1) {
@@ -25,7 +25,7 @@ function base64ToBytes(b64) {
   return out;
 }
 
-function bytesToBase64(bytes) {
+export function bytesToBase64(bytes) {
   let bin = '';
   for (let i = 0; i < bytes.length; i += 1) {
     bin += String.fromCharCode(bytes[i]);
@@ -33,7 +33,7 @@ function bytesToBase64(bytes) {
   return btoa(bin);
 }
 
-function concatBytes(arrays) {
+export function concatBytes(arrays) {
   let total = 0;
   for (const a of arrays) total += a.length;
   const out = new Uint8Array(total);
@@ -45,19 +45,10 @@ function concatBytes(arrays) {
   return out;
 }
 
-function bytesEqual(a, b) {
+export function bytesEqual(a, b) {
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i += 1) {
     if (a[i] !== b[i]) return false;
   }
   return true;
 }
-
-module.exports = {
-  hexToBytes,
-  bytesToHex,
-  base64ToBytes,
-  bytesToBase64,
-  concatBytes,
-  bytesEqual,
-};

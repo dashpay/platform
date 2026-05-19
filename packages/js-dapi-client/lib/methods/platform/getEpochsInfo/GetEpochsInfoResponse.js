@@ -1,6 +1,6 @@
-const AbstractResponse = require('../response/AbstractResponse');
-const EpochInfo = require('./EpochInfo');
-const InvalidResponseError = require('../response/errors/InvalidResponseError');
+import AbstractResponse from '../response/AbstractResponse.js';
+import EpochInfo from './EpochInfo.js';
+import InvalidResponseError from '../response/errors/InvalidResponseError.js';
 
 class GetEpochsInfoResponse extends AbstractResponse {
   /**
@@ -56,4 +56,4 @@ class GetEpochsInfoResponse extends AbstractResponse {
   }
 }
 
-module.exports = GetEpochsInfoResponse;
+export default GetEpochsInfoResponse;

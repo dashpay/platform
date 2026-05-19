@@ -1,5 +1,5 @@
-const JsonRpcError = require('./errors/JsonRpcError');
-const WrongHttpCodeError = require('./errors/WrongHttpCodeError');
+import JsonRpcError from './errors/JsonRpcError.js';
+import WrongHttpCodeError from './errors/WrongHttpCodeError.js';
 /**
  * @typedef {requestJsonRpc}
  * @param {string} protocol
@@ -80,4 +80,4 @@ async function requestJsonRpc(protocol, host, port, selfSigned, method, params, 
   return data.result;
 }
 
-module.exports = requestJsonRpc;
+export default requestJsonRpc;

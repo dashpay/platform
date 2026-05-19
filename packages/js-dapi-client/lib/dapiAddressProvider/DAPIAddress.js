@@ -1,4 +1,4 @@
-const DAPIAddressHostMissingError = require('./errors/DAPIAddressHostMissingError');
+import DAPIAddressHostMissingError from './errors/DAPIAddressHostMissingError.js';
 
 class DAPIAddress {
   /**
@@ -171,4 +171,4 @@ DAPIAddress.DEFAULT_PROTOCOL = 'https';
  * @property {bool} [selfSigned]
  */
 
-module.exports = DAPIAddress;
+export default DAPIAddress;

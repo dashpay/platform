@@ -1,12 +1,13 @@
+import dapiGrpc from '@dashevo/dapi-grpc';
+import GetIdentityBalanceResponse from './GetIdentityBalanceResponse.js';
+import InvalidResponseError from '../response/errors/InvalidResponseError.js';
+
 const {
   v0: {
     PlatformPromiseClient,
     GetIdentityBalanceRequest,
   },
-} = require('@dashevo/dapi-grpc');
-
-const GetIdentityBalanceResponse = require('./GetIdentityBalanceResponse');
-const InvalidResponseError = require('../response/errors/InvalidResponseError');
+} = dapiGrpc;
 
 /**
  * @param {GrpcTransport} grpcTransport
@@ -68,4 +69,4 @@ function getIdentityBalanceFactory(grpcTransport) {
   return getIdentityBalance;
 }
 
-module.exports = getIdentityBalanceFactory;
+export default getIdentityBalanceFactory;

@@ -96,4 +96,4 @@ class ChainStatus {
   }
 }
 
-module.exports = ChainStatus;
+export default ChainStatus;

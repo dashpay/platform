@@ -1,4 +1,4 @@
-const AbstractResponse = require('../response/AbstractResponse');
+import AbstractResponse from '../response/AbstractResponse.js';
 
 class GetDocumentsResponse extends AbstractResponse {
   /**
@@ -37,4 +37,4 @@ class GetDocumentsResponse extends AbstractResponse {
   }
 }
 
-module.exports = GetDocumentsResponse;
+export default GetDocumentsResponse;

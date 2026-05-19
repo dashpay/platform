@@ -1,13 +1,15 @@
+import dapiGrpc from '@dashevo/dapi-grpc';
+
+import GetProtocolVersionUpgradeVoteStatusResponse from './GetProtocolVersionUpgradeVoteStatusResponse.js';
+import InvalidResponseError from '../response/errors/InvalidResponseError.js';
+import { hexToBytes } from '../../../utils/bytes.js';
+
 const {
   v0: {
     PlatformPromiseClient,
     GetProtocolVersionUpgradeVoteStatusRequest,
   },
-} = require('@dashevo/dapi-grpc');
-
-const GetProtocolVersionUpgradeVoteStatusResponse = require('./GetProtocolVersionUpgradeVoteStatusResponse');
-const InvalidResponseError = require('../response/errors/InvalidResponseError');
-const { hexToBytes } = require('../../../utils/bytes');
+} = dapiGrpc;
 
 /**
  * @param {GrpcTransport} grpcTransport
@@ -69,4 +71,4 @@ function getProtocolVersionUpgradeVoteStatusFactory(grpcTransport) {
   return getProtocolVersionUpgradeVoteStatus;
 }
 
-module.exports = getProtocolVersionUpgradeVoteStatusFactory;
+export default getProtocolVersionUpgradeVoteStatusFactory;

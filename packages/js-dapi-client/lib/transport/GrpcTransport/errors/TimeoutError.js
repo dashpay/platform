@@ -1,6 +1,6 @@
-const grpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
+import grpcErrorCodes from '@dashevo/grpc-common/lib/server/error/GrpcErrorCodes.js';
 
-const RetriableResponseError = require('../../errors/response/RetriableResponseError');
+import RetriableResponseError from '../../errors/response/RetriableResponseError.js';
 
 class TimeoutError extends RetriableResponseError {
   /**
@@ -13,4 +13,4 @@ class TimeoutError extends RetriableResponseError {
   }
 }
 
-module.exports = TimeoutError;
+export default TimeoutError;

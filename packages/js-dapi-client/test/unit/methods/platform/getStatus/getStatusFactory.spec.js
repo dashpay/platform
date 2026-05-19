@@ -1,20 +1,22 @@
+import dapiGrpc from '@dashevo/dapi-grpc';
+
+import getStatusFixture from '../../../../../lib/test/fixtures/getStatusFixture.js';
+import getStatusFactory from '../../../../../lib/methods/platform/getStatus/getStatusFactory.js';
+import VersionStatus from '../../../../../lib/methods/platform/getStatus/VersionStatus.js';
+import NodeStatus from '../../../../../lib/methods/platform/getStatus/NodeStatus.js';
+import ChainStatus from '../../../../../lib/methods/platform/getStatus/ChainStatus.js';
+import NetworkStatus from '../../../../../lib/methods/platform/getStatus/NetworkStatus.js';
+import StateSyncStatus from '../../../../../lib/methods/platform/getStatus/StateSyncStatus.js';
+import TimeStatus from '../../../../../lib/methods/platform/getStatus/TimeStatus.js';
+import { bytesToHex } from '../../../../../lib/utils/bytes.js';
+
 const {
   v0: {
     PlatformPromiseClient,
     GetStatusRequest,
     GetStatusResponse,
   },
-} = require('@dashevo/dapi-grpc');
-
-const getStatusFixture = require('../../../../../lib/test/fixtures/getStatusFixture');
-const getStatusFactory = require('../../../../../lib/methods/platform/getStatus/getStatusFactory');
-const VersionStatus = require('../../../../../lib/methods/platform/getStatus/VersionStatus');
-const NodeStatus = require('../../../../../lib/methods/platform/getStatus/NodeStatus');
-const ChainStatus = require('../../../../../lib/methods/platform/getStatus/ChainStatus');
-const NetworkStatus = require('../../../../../lib/methods/platform/getStatus/NetworkStatus');
-const StateSyncStatus = require('../../../../../lib/methods/platform/getStatus/StateSyncStatus');
-const TimeStatus = require('../../../../../lib/methods/platform/getStatus/TimeStatus');
-const { bytesToHex } = require('../../../../../lib/utils/bytes');
+} = dapiGrpc;
 
 describe('getStatusFactory', () => {
   let grpcTransportMock;

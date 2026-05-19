@@ -1,9 +1,11 @@
+import dapiGrpc from '@dashevo/dapi-grpc';
+
 const {
   v0: {
     CorePromiseClient,
     BroadcastTransactionRequest,
   },
-} = require('@dashevo/dapi-grpc');
+} = dapiGrpc;
 
 /**
  * @param {GrpcTransport} grpcTransport
@@ -13,7 +15,7 @@ function broadcastTransactionFactory(grpcTransport) {
   /**
    * Broadcast Transaction
    * @typedef {broadcastTransaction}
-   * @param {Buffer} transaction
+   * @param {Uint8Array} transaction
    * @param {DAPIClientOptions & BroadcastTransactionOptions} [options]
    * @returns {string}
    */
@@ -42,4 +44,4 @@ function broadcastTransactionFactory(grpcTransport) {
  * @property {boolean} [bypassLimits=false]
  */
 
-module.exports = broadcastTransactionFactory;
+export default broadcastTransactionFactory;

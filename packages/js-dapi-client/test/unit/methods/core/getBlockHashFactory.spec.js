@@ -1,4 +1,4 @@
-const getBlockHashFactory = require('../../../../lib/methods/core/getBlockHashFactory');
+import getBlockHashFactory from '../../../../lib/methods/core/getBlockHashFactory.js';
 
 describe('getBlockHashFactory', () => {
   let getBlockHash;

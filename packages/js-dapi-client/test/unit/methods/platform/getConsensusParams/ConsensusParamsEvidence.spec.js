@@ -1,4 +1,4 @@
-const ConsensusParamsEvidence = require('../../../../../lib/methods/platform/getConsensusParams/ConsensusParamsEvidence');
+import ConsensusParamsEvidence from '../../../../../lib/methods/platform/getConsensusParams/ConsensusParamsEvidence.js';
 
 describe('ConsensusParamsEvidence', () => {
   let consensusParamsEvidence;

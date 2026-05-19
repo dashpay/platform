@@ -1,12 +1,13 @@
+import dapiGrpc from '@dashevo/dapi-grpc';
+import getBlockByHeightFactory from '../../../../lib/methods/core/getBlockByHeightFactory.js';
+
 const {
   v0: {
     GetBlockRequest,
     GetBlockResponse,
     CorePromiseClient,
   },
-} = require('@dashevo/dapi-grpc');
-
-const getBlockByHeightFactory = require('../../../../lib/methods/core/getBlockByHeightFactory');
+} = dapiGrpc;
 
 describe('getBlockByHeightFactory', () => {
   let getBlockByHeight;

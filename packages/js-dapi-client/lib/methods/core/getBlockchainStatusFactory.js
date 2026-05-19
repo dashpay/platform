@@ -1,10 +1,12 @@
+import dapiGrpc from '@dashevo/dapi-grpc';
+
 const {
   v0: {
     GetBlockchainStatusRequest,
     GetBlockchainStatusResponse,
     CorePromiseClient,
   },
-} = require('@dashevo/dapi-grpc');
+} = dapiGrpc;
 
 /**
  * @param {GrpcTransport} grpcTransport
@@ -56,4 +58,4 @@ function getBlockchainStatusFactory(grpcTransport) {
   return getBlockchainStatus;
 }
 
-module.exports = getBlockchainStatusFactory;
+export default getBlockchainStatusFactory;

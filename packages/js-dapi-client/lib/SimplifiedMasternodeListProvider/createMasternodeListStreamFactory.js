@@ -1,13 +1,15 @@
+import dapiGrpc from '@dashevo/dapi-grpc';
+
+import GrpcTransport from '../transport/GrpcTransport/GrpcTransport.js';
+import createGrpcTransportError from '../transport/GrpcTransport/createGrpcTransportError.js';
+import ReconnectableStream from '../transport/ReconnectableStream.js';
+
 const {
   v0: {
     MasternodeListRequest,
     CorePromiseClient,
   },
-} = require('@dashevo/dapi-grpc');
-
-const GrpcTransport = require('../transport/GrpcTransport/GrpcTransport');
-const createGrpcTransportError = require('../transport/GrpcTransport/createGrpcTransportError');
-const ReconnectableStream = require('../transport/ReconnectableStream');
+} = dapiGrpc;
 
 /**
  * Creates continues masternode list stream
@@ -46,4 +48,4 @@ function createMasternodeListStreamFactory(
     );
 }
 
-module.exports = createMasternodeListStreamFactory;
+export default createMasternodeListStreamFactory;

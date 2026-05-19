@@ -1,4 +1,4 @@
-const DAPIClientError = require('../../../../errors/DAPIClientError');
+import DAPIClientError from '../../../../errors/DAPIClientError.js';
 
 class InvalidResponseError extends DAPIClientError {
   constructor(message) {
@@ -6,4 +6,4 @@ class InvalidResponseError extends DAPIClientError {
   }
 }
 
-module.exports = InvalidResponseError;
+export default InvalidResponseError;

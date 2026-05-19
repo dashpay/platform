@@ -1,12 +1,10 @@
-const createDAPIAddressProviderFromOptions = require(
-  '../../../lib/dapiAddressProvider/createDAPIAddressProviderFromOptions',
-);
-const ListDAPIAddressProvider = require('../../../lib/dapiAddressProvider/ListDAPIAddressProvider');
-const SimplifiedMasternodeListDAPIAddressProvider = require('../../../lib/dapiAddressProvider/SimplifiedMasternodeListDAPIAddressProvider');
+import createDAPIAddressProviderFromOptions from '../../../lib/dapiAddressProvider/createDAPIAddressProviderFromOptions.js';
+import ListDAPIAddressProvider from '../../../lib/dapiAddressProvider/ListDAPIAddressProvider.js';
+import SimplifiedMasternodeListDAPIAddressProvider from '../../../lib/dapiAddressProvider/SimplifiedMasternodeListDAPIAddressProvider.js';
 
-const networkConfigs = require('../../../lib/networkConfigs');
+import networkConfigs from '../../../lib/networkConfigs.js';
 
-const DAPIClientError = require('../../../lib/errors/DAPIClientError');
+import DAPIClientError from '../../../lib/errors/DAPIClientError.js';
 
 describe('createDAPIAddressProviderFromOptions', () => {
   describe('dapiAddressProvider', () => {

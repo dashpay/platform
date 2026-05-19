@@ -1,4 +1,4 @@
-const ResponseError = require('./ResponseError');
+import ResponseError from './ResponseError.js';
 
 class NoAvailableAddressesForRetryError extends ResponseError {
   /**
@@ -23,4 +23,4 @@ class NoAvailableAddressesForRetryError extends ResponseError {
   }
 }
 
-module.exports = NoAvailableAddressesForRetryError;
+export default NoAvailableAddressesForRetryError;

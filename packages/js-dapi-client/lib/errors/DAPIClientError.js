@@ -14,4 +14,4 @@ class DAPIClientError extends Error {
   }
 }
 
-module.exports = DAPIClientError;
+export default DAPIClientError;

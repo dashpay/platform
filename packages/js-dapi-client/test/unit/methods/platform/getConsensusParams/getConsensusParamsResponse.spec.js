@@ -1,12 +1,14 @@
+import dapiGrpc from '@dashevo/dapi-grpc';
+import GetConsensusParamsResponse from '../../../../../lib/methods/platform/getConsensusParams/getConsensusParamsResponse.js';
+import InvalidResponseError from '../../../../../lib/methods/platform/response/errors/InvalidResponseError.js';
+import ConsensusParamsBlock from '../../../../../lib/methods/platform/getConsensusParams/ConsensusParamsBlock.js';
+import ConsensusParamsEvidence from '../../../../../lib/methods/platform/getConsensusParams/ConsensusParamsEvidence.js';
+
 const {
   v0: {
     GetConsensusParamsResponse: GetConsensusParamsResponseProto,
   },
-} = require('@dashevo/dapi-grpc');
-const GetConsensusParamsResponse = require('../../../../../lib/methods/platform/getConsensusParams/getConsensusParamsResponse');
-const InvalidResponseError = require('../../../../../lib/methods/platform/response/errors/InvalidResponseError');
-const ConsensusParamsBlock = require('../../../../../lib/methods/platform/getConsensusParams/ConsensusParamsBlock');
-const ConsensusParamsEvidence = require('../../../../../lib/methods/platform/getConsensusParams/ConsensusParamsEvidence');
+} = dapiGrpc;
 
 const {
   ConsensusParamsBlock: ConsensusParamsBlockProto,

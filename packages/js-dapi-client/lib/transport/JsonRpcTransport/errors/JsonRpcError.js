@@ -1,4 +1,4 @@
-const DAPIClientError = require('../../../errors/DAPIClientError');
+import DAPIClientError from '../../../errors/DAPIClientError.js';
 
 class JsonRpcError extends DAPIClientError {
   /**
@@ -53,4 +53,4 @@ class JsonRpcError extends DAPIClientError {
   }
 }
 
-module.exports = JsonRpcError;
+export default JsonRpcError;
