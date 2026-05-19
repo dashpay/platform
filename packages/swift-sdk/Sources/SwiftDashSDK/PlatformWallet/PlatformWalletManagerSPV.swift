@@ -99,6 +99,12 @@ public struct PlatformSpvSyncProgress: Sendable, Equatable {
 }
 
 /// Config for starting the SPV sync.
+///
+/// Masternode sync (and the IS/CL P2P subscriptions that come with it)
+/// is always enabled — `AssetLockManager::wait_for_proof` requires it
+/// to receive InstantSend and ChainLock signatures from peers, so
+/// exposing a toggle here would silently break asset-lock-funded
+/// identity registration in trusted-SDK setups.
 public struct PlatformSpvStartConfig {
     public var dataDir: String
     public var network: Network
@@ -106,7 +112,6 @@ public struct PlatformSpvStartConfig {
     public var peers: [String]
     public var restrictToConfiguredPeers: Bool
     public var startFromHeight: UInt32
-    public var masternodeSyncEnabled: Bool
 
     public init(
         dataDir: String,
@@ -114,8 +119,7 @@ public struct PlatformSpvStartConfig {
         userAgent: String? = nil,
         peers: [String] = [],
         restrictToConfiguredPeers: Bool = false,
-        startFromHeight: UInt32 = 0,
-        masternodeSyncEnabled: Bool = true
+        startFromHeight: UInt32 = 0
     ) {
         self.dataDir = dataDir
         self.network = network
@@ -123,7 +127,6 @@ public struct PlatformSpvStartConfig {
         self.peers = peers
         self.restrictToConfiguredPeers = restrictToConfiguredPeers
         self.startFromHeight = startFromHeight
-        self.masternodeSyncEnabled = masternodeSyncEnabled
     }
 }
 
@@ -159,6 +162,25 @@ extension PlatformWalletManager {
         return running
     }
 
+    /// Read the unix-seconds block time of the SPV header storage's
+    /// current tip. Returns `nil` when no tip is available — i.e.
+    /// the SPV client isn't running, no headers have been stored
+    /// yet, or the tip header isn't readable.
+    ///
+    /// Distinct from the `@Published var spvTipBlockTime` mirror on
+    /// the manager: this is a one-shot FFI query, the published
+    /// property is the cached value the 1 Hz progress poll feeds.
+    ///
+    /// Useful as a "is core producing blocks?" indicator: a stale
+    /// stamp across multiple polls means the chain has stalled
+    /// even though the local SPV client is healthy.
+    public func currentSpvTipBlockTime() throws -> Date? {
+        var unixSeconds: UInt64 = 0
+        try platform_wallet_manager_spv_tip_unix_seconds(handle, &unixSeconds).check()
+        guard unixSeconds > 0 else { return nil }
+        return Date(timeIntervalSince1970: TimeInterval(unixSeconds))
+    }
+
     /// Start the SPV client in the background.
     ///
     /// Spawns the sync loop on the shared tokio runtime and returns
@@ -184,8 +206,7 @@ extension PlatformWalletManager {
                     peersPtr,
                     UInt(peerCStrings.count),
                     config.restrictToConfiguredPeers,
-                    config.startFromHeight,
-                    config.masternodeSyncEnabled
+                    config.startFromHeight
                 ).check()
             }
         }

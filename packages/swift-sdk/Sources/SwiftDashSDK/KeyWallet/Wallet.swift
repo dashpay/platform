@@ -26,10 +26,9 @@ public class Wallet {
     /// Create a wallet from a mnemonic phrase
     /// - Parameters:
     ///   - mnemonic: The mnemonic phrase
-    ///   - passphrase: Optional BIP39 passphrase
     ///   - network: The network type
     ///   - accountOptions: Account creation options
-    public init(mnemonic: String, passphrase: String? = nil,
+    public init(mnemonic: String,
                 network: Network = .mainnet,
                 accountOptions: AccountCreationOption = .default) throws {
 
@@ -43,46 +42,21 @@ public class Wallet {
             // Note: For production, we'd need to properly manage the memory for the arrays
             // This is a simplified version
             walletPtr = mnemonic.withCString { mnemonicCStr in
-                if let passphrase = passphrase {
-                    return passphrase.withCString { passphraseCStr in
-                        wallet_create_from_mnemonic_with_options(
-                            mnemonicCStr,
-                            passphraseCStr,
-                            network.ffiValue,
-                            &options,
-                            &error
-                        )
-                    }
-                } else {
-                    return wallet_create_from_mnemonic_with_options(
-                        mnemonicCStr,
-                        nil,
-                        network.ffiValue,
-                        &options,
-                        &error
-                    )
-                }
+                wallet_create_from_mnemonic_with_options(
+                    mnemonicCStr,
+                    network.ffiValue,
+                    &options,
+                    &error
+                )
             }
         } else {
             // Use simpler variant for default options
             walletPtr = mnemonic.withCString { mnemonicCStr in
-                if let passphrase = passphrase {
-                    return passphrase.withCString { passphraseCStr in
-                        wallet_create_from_mnemonic(
-                            mnemonicCStr,
-                            passphraseCStr,
-                            network.ffiValue,
-                            &error
-                        )
-                    }
-                } else {
-                    return wallet_create_from_mnemonic(
-                        mnemonicCStr,
-                        nil,
-                        network.ffiValue,
-                        &error
-                    )
-                }
+                wallet_create_from_mnemonic(
+                    mnemonicCStr,
+                    network.ffiValue,
+                    &error
+                )
             }
         }
 

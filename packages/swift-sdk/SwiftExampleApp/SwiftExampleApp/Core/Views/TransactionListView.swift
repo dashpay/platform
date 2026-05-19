@@ -20,14 +20,45 @@ struct TransactionListView: View {
     /// denormalized `walletId` on TXOs.
     @Query private var walletTxos: [PersistentTxo]
     @Query private var transactionObservation: [PersistentTransaction]
+    /// Per-wallet asset-lock rows. Used to look up the *locked* amount
+    /// for each asset-lock tx — `PersistentTransaction.netAmount` is
+    /// the wallet's input-vs-output diff, which sees the credit
+    /// output as "to-self" and reports ~0 for asset locks. The
+    /// `amountDuffs` on the asset-lock row is the actual L1 burn.
+    @Query private var assetLocks: [PersistentAssetLock]
     @State private var selectedTransaction: PersistentTransaction?
 
     init(walletId: Data) {
         self.walletId = walletId
-        let descriptor = FetchDescriptor<PersistentTxo>(
+        let txoDescriptor = FetchDescriptor<PersistentTxo>(
             predicate: #Predicate { $0.walletId == walletId }
         )
-        _walletTxos = Query(descriptor)
+        _walletTxos = Query(txoDescriptor)
+        let assetLockDescriptor = FetchDescriptor<PersistentAssetLock>(
+            predicate: PersistentAssetLock.predicate(walletId: walletId)
+        )
+        _assetLocks = Query(assetLockDescriptor)
+    }
+
+    /// Lookup `txid (display-order hex) → total asset-lock amount in
+    /// duffs`, built once per @Query invalidation so the row's amount
+    /// label can swap in the real funded amount without re-fetching.
+    ///
+    /// `PersistentAssetLock.outPointHex` is `"<txidHex>:<vout>"`. A
+    /// single funding tx can carry multiple credit outputs (DIP-0027
+    /// allows up to 255), each becoming its own `PersistentAssetLock`
+    /// row at a distinct `vout`. We sum amounts across all rows
+    /// sharing a txid so the list shows the *total* DASH burned by
+    /// that funding tx, not whichever row SwiftData happened to
+    /// enumerate last.
+    private var assetLockAmountByTxid: [String: Int64] {
+        var map: [String: Int64] = [:]
+        for lock in assetLocks {
+            let parts = lock.outPointHex.split(separator: ":", maxSplits: 1)
+            guard let txidHex = parts.first.map(String.init) else { continue }
+            map[txidHex, default: 0] += lock.amountDuffs
+        }
+        return map
     }
 
     private var transactions: [PersistentTransaction] {
@@ -61,7 +92,10 @@ struct TransactionListView: View {
         .navigationTitle("Transactions")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(item: $selectedTransaction) { transaction in
-            TransactionDetailView(transaction: transaction)
+            TransactionDetailView(
+                transaction: transaction,
+                assetLockAmountDuffs: assetLockAmountByTxid[transaction.txidHex]
+            )
         }
     }
 
@@ -84,11 +118,15 @@ struct TransactionListView: View {
     }
 
     private var transactionsList: some View {
-        List(transactions) { transaction in
+        let assetLockAmounts = assetLockAmountByTxid
+        return List(transactions) { transaction in
             Button {
                 selectedTransaction = transaction
             } label: {
-                TransactionRowView(transaction: transaction)
+                TransactionRowView(
+                    transaction: transaction,
+                    assetLockAmountDuffs: assetLockAmounts[transaction.txidHex]
+                )
             }
             .buttonStyle(.plain)
         }
@@ -100,8 +138,22 @@ struct TransactionListView: View {
 
 struct TransactionRowView: View {
     let transaction: PersistentTransaction
+    /// Override amount displayed for asset-lock rows. The wallet's
+    /// `netAmount` shows ~0 for these (credit output is structurally
+    /// self-owned), so the list view passes the linked
+    /// `PersistentAssetLock.amountDuffs` — the actual L1 DASH burned
+    /// to mint platform credits. `nil` for non-asset-lock rows or
+    /// when no matching row was found.
+    var assetLockAmountDuffs: Int64? = nil
 
     private var typeIcon: String {
+        // Asset-lock / asset-unlock txs override direction-based icons
+        // since the `direction` classifier reports `Internal` (the
+        // credit output is structurally self-owned), but the intent
+        // is L1→L2 / L2→L1 credit conversion — neither "send" nor
+        // "receive" applies cleanly.
+        if transaction.isAssetLock { return "lock.fill" }
+        if transaction.isAssetUnlock { return "lock.open.fill" }
         // direction: 0=incoming, 1=outgoing, 2=internal, 3=coinJoin
         switch transaction.direction {
         case 0: return "arrow.down.circle.fill"
@@ -113,6 +165,12 @@ struct TransactionRowView: View {
     }
 
     private var typeColor: Color {
+        // Asset-lock txs render purple — distinct from the red
+        // outgoing / green incoming axis so the user can scan the
+        // list and immediately spot identity-funding rows.
+        if transaction.isAssetLock || transaction.isAssetUnlock {
+            return .purple
+        }
         switch transaction.direction {
         case 0: return .green
         case 1, 2: return .red
@@ -194,7 +252,7 @@ struct TransactionRowView: View {
                     Spacer()
 
                     VStack(alignment: .trailing, spacing: 2) {
-                        Text(transaction.formattedAmount)
+                        Text(displayAmount)
                             .font(.headline)
                             .foregroundColor(typeColor)
 
@@ -213,5 +271,29 @@ struct TransactionRowView: View {
     private func formatFee(_ fee: UInt64) -> String {
         let dash = Double(fee) / 100_000_000.0
         return String(format: "%.8f DASH", dash)
+    }
+
+    /// Amount label for the row. For asset-lock txs we substitute
+    /// the linked `PersistentAssetLock.amountDuffs` (the L1 DASH
+    /// actually burned to mint platform credits); the wallet's
+    /// `netAmount` is ~0 for these because the credit output is a
+    /// self-owned address. Rendered as a negative (DASH leaving L1).
+    ///
+    /// If we know the row is an asset lock but the linked
+    /// `PersistentAssetLock` is missing (e.g. a historical record
+    /// from before the `Consumed`-status retention change shipped),
+    /// we render "Asset Lock (amount unknown)" instead of falling
+    /// through to `transaction.formattedAmount` — that would say
+    /// `+0.00000000 DASH`, which is misleading for a row the user
+    /// can see was a funding tx.
+    private var displayAmount: String {
+        if transaction.isAssetLock {
+            if let duffs = assetLockAmountDuffs {
+                let dash = Double(duffs) / 100_000_000.0
+                return String(format: "-%.8f DASH", dash)
+            }
+            return "Asset Lock (amount unknown)"
+        }
+        return transaction.formattedAmount
     }
 }

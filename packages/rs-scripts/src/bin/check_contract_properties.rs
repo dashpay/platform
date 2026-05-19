@@ -1,7 +1,7 @@
 use clap::Parser;
 use dapi_grpc::platform::v0 as platform_proto;
 use dapi_grpc::platform::v0::platform_client::PlatformClient;
-use dpp::data_contract::document_type::schema::allowed_top_level_properties::ALLOWED_DOCUMENT_SCHEMA_V1_PROPERTIES;
+use dpp::data_contract::document_type::schema::allowed_top_level_properties::ALLOWED_TRANSITION_TO_DOCUMENT_SCHEMA_V1_PROPERTIES;
 use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dpp::platform_value::Identifier;
 use serde::Deserialize;
@@ -336,7 +336,7 @@ async fn main() {
                         dpp::platform_value::Value::Text(s) => s.as_str(),
                         _ => return None,
                     };
-                    if ALLOWED_DOCUMENT_SCHEMA_V1_PROPERTIES.contains(&key_str) {
+                    if ALLOWED_TRANSITION_TO_DOCUMENT_SCHEMA_V1_PROPERTIES.contains(&key_str) {
                         None
                     } else {
                         Some(key_str)

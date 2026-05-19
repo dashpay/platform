@@ -497,6 +497,7 @@ mod tests {
             {
                 DocumentTypeMutRef::V0(dt) => dt.documents_mutable = false,
                 DocumentTypeMutRef::V1(dt) => dt.documents_mutable = false,
+                DocumentTypeMutRef::V2(dt) => dt.documents_mutable = false,
             }
 
             let result = old_data_contract

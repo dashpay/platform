@@ -13,6 +13,21 @@
             { "firstName": "asc" }
           ],
           "countable": true
+        },
+        {
+          "name": "byFirstNameLastName",
+          "properties": [
+            { "firstName": "asc" },
+            { "lastName": "asc" }
+          ],
+          "countable": true
+        },
+        {
+          "name": "byAge",
+          "properties": [
+            { "age": "asc" }
+          ],
+          "countable": true
         }
       ],
       "properties": {
@@ -20,9 +35,18 @@
           "type": "string",
           "maxLength": 50,
           "position": 0
+        },
+        "lastName": {
+          "type": "string",
+          "maxLength": 50,
+          "position": 1
+        },
+        "age": {
+          "type": "integer",
+          "position": 2
         }
       },
-      "required": ["firstName"],
+      "required": ["firstName", "lastName", "age"],
       "additionalProperties": false
     }
   }

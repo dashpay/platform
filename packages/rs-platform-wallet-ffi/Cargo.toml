@@ -12,7 +12,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [dependencies]
 platform-wallet = { path = "../rs-platform-wallet" }
 dpp = { path = "../rs-dpp" }
-dash-sdk = { path = "../rs-sdk" }
+dash-sdk = { path = "../rs-sdk", features = ["wallet"] }
 # Needed for `SignerHandle` + `VTableSigner` so the `*_with_signer`
 # entry points can accept iOS-side keychain-backed signers without
 # duplicating the vtable plumbing. See `signer.rs` in rs-sdk-ffi.
@@ -64,3 +64,8 @@ cbindgen = "0.27"
 [features]
 default = []
 mocks = []
+# Opt-in Orchard / shielded support. Pulls in the heavy
+# `grovedb-commitment-tree` + `zip32` dependencies via
+# `platform-wallet/shielded`. Builds that don't enable this feature
+# omit every `shielded_*` FFI symbol cleanly.
+shielded = ["platform-wallet/shielded"]

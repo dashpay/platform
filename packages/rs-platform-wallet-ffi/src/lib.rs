@@ -10,6 +10,7 @@
 #![allow(clippy::large_enum_variant)]
 
 pub mod asset_lock;
+pub mod asset_lock_persistence;
 pub mod contact;
 pub mod contact_persistence;
 pub mod contact_request;
@@ -51,6 +52,9 @@ pub mod platform_address_types;
 pub mod platform_addresses;
 pub mod platform_wallet_info;
 mod runtime;
+#[cfg(feature = "shielded")]
+pub mod shielded_sync;
+pub mod shielded_types;
 pub mod sign_with_mnemonic_resolver;
 pub mod spv;
 pub mod token_persistence;
@@ -64,6 +68,7 @@ pub mod xpub_render;
 
 // Re-exports
 pub use asset_lock::*;
+pub use asset_lock_persistence::*;
 pub use contact::*;
 pub use contact_persistence::*;
 pub use contact_request::*;
@@ -87,6 +92,7 @@ pub use identity_key_preview::*;
 pub use identity_keys_from_mnemonic::*;
 pub use identity_manager::*;
 pub use identity_persistence::*;
+pub use identity_registration::*;
 pub use identity_registration_funded_with_signer::*;
 pub use identity_registration_with_signer::*;
 pub use identity_sync::*;
@@ -103,6 +109,9 @@ pub use platform_address_sync::*;
 pub use platform_address_types::*;
 pub use platform_addresses::*;
 pub use platform_wallet_info::*;
+#[cfg(feature = "shielded")]
+pub use shielded_sync::*;
+pub use shielded_types::*;
 pub use sign_with_mnemonic_resolver::*;
 pub use spv::*;
 pub use token_persistence::*;

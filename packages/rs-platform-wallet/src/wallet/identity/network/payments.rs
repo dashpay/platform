@@ -1,6 +1,7 @@
 //! DashPay payment recording and send-to-contact flows.
 
 use dpp::prelude::Identifier;
+use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 
 use super::*;
 use crate::broadcaster::TransactionBroadcaster;
@@ -109,8 +110,6 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
 
         let account_index: u32 = 0;
 
-        // --- 1. Derive the next unused payment address from the external account
-        //        and collect the UTXOs / change address from BIP-44 account 0.  ---
         let (payment_address, tx) = {
             let mut wm = self.wallet_manager.write().await;
 
@@ -168,74 +167,39 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 .next_address(Some(&contact_xpub), true)
                 .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
 
-            // --- 2. Build the transaction from BIP-44 account 0 UTXOs. ---
             let current_height = info.core_wallet.synced_height();
 
-            let bip44_xpub = wallet
-                .accounts
-                .standard_bip44_accounts
-                .get(&0)
-                .map(|a| a.account_xpub)
-                .ok_or_else(|| {
-                    PlatformWalletError::TransactionBuild(
-                        "BIP-44 account 0 not found in wallet".to_string(),
-                    )
-                })?;
-
-            let spendable: Vec<_> = info
-                .core_wallet
-                .accounts
-                .standard_bip44_accounts
-                .get(&0)
-                .ok_or_else(|| {
-                    PlatformWalletError::TransactionBuild(
-                        "BIP-44 managed account 0 not found".to_string(),
-                    )
-                })?
-                .spendable_utxos(current_height)
-                .into_iter()
-                .cloned()
-                .collect();
-
-            // Derive change address from BIP-44 account 0.
-            let change_address = info
+            let managed_account = info
                 .core_wallet
                 .accounts
                 .standard_bip44_accounts
                 .get_mut(&0)
                 .ok_or_else(|| {
                     PlatformWalletError::TransactionBuild(
-                        "BIP-44 managed account 0 not found for change".to_string(),
+                        "BIP-44 managed account 0 not found".to_string(),
                     )
-                })?
-                .next_change_address(Some(&bip44_xpub), true)
-                .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
+                })?;
+            let account = wallet
+                .accounts
+                .standard_bip44_accounts
+                .get(&0)
+                .ok_or_else(|| {
+                    PlatformWalletError::TransactionBuild(
+                        "BIP-44 account 0 not found in wallet".to_string(),
+                    )
+                })?;
 
-            let mut builder = TransactionBuilder::new();
-            builder = builder
-                .add_output(&payment_address, amount_duffs)
-                .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
-            builder = builder.set_change_address(change_address);
-            builder = builder
-                .select_inputs(
-                    &spendable,
-                    SelectionStrategy::LargestFirst,
-                    current_height,
-                    |utxo| {
-                        for account in info.core_wallet.accounts.all_accounts() {
-                            if let Some(path) = account.address_derivation_path(&utxo.address) {
-                                if let Ok(key) = wallet.derive_private_key(&path) {
-                                    return Some(key);
-                                }
-                            }
-                        }
-                        None
-                    },
-                )
-                .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
+            let builder = TransactionBuilder::new()
+                .set_current_height(current_height)
+                .set_selection_strategy(SelectionStrategy::LargestFirst)
+                .set_funding(managed_account, account)
+                .add_output(&payment_address, amount_duffs);
 
-            let tx = builder
-                .build()
+            let (tx, _fee) = builder
+                .build_signed(wallet, |addr| {
+                    managed_account.address_derivation_path(&addr)
+                })
+                .await
                 .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
 
             (payment_address, tx)

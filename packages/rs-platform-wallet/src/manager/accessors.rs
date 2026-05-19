@@ -13,6 +13,8 @@ use key_wallet::WalletCoreBalance;
 use crate::changeset::PlatformWalletPersistence;
 use crate::manager::identity_sync::IdentitySyncManager;
 use crate::manager::platform_address_sync::PlatformAddressSyncManager;
+#[cfg(feature = "shielded")]
+use crate::manager::shielded_sync::ShieldedSyncManager;
 use crate::spv::SpvRuntime;
 use crate::wallet::platform_wallet::WalletId;
 use crate::wallet::PlatformWallet;
@@ -240,6 +242,20 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         Arc::clone(&self.identity_sync_manager)
     }
 
+    /// Access the shielded sync coordinator.
+    #[cfg(feature = "shielded")]
+    pub fn shielded_sync(&self) -> &ShieldedSyncManager {
+        &self.shielded_sync_manager
+    }
+
+    /// Clone the `Arc<ShieldedSyncManager>` so callers (e.g. FFI)
+    /// can invoke [`ShieldedSyncManager::start`] which takes
+    /// `&Arc<Self>`.
+    #[cfg(feature = "shielded")]
+    pub fn shielded_sync_arc(&self) -> Arc<ShieldedSyncManager> {
+        Arc::clone(&self.shielded_sync_manager)
+    }
+
     /// Get a clone of a wallet by its ID.
     pub async fn get_wallet(&self, wallet_id: &WalletId) -> Option<Arc<PlatformWallet>> {
         let wallets = self.wallets.read().await;
@@ -347,10 +363,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // through a helper on the manager — since the registry itself
         // isn't exposed, fall back to "0" until a sync getter is
         // added. This is intentionally a TODO surface, not a guess.
-        let queue_depth = match self.identity_sync_manager.try_queue_depth() {
-            Some(n) => n,
-            None => 0,
-        };
+        let queue_depth = self
+            .identity_sync_manager
+            .try_queue_depth()
+            .unwrap_or_default();
         IdentitySyncConfigSnapshot {
             interval_seconds: interval.as_secs().max(1),
             queue_depth,
@@ -474,6 +490,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     AssetLockStatus::Broadcast => 1,
                     AssetLockStatus::InstantSendLocked => 2,
                     AssetLockStatus::ChainLocked => 3,
+                    AssetLockStatus::Consumed => 4,
                 };
                 let (instant_lock_present, chain_lock_height) = match &lock.proof {
                     Some(dpp::prelude::AssetLockProof::Instant(_)) => (true, 0u32),
@@ -531,17 +548,18 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             .iter()
             .find(|a| &a.managed_account_type().to_account_type() == target)?;
         // Funds-only fields (`utxos`) live on the funds variant; the
-        // ref-enum delegates the rest. `transactions_iter()` returns an
-        // empty iterator when `keep_txs_in_memory` is off (the default
-        // — tx history is event-driven), so `total_transactions` reads
-        // 0 in production builds. Both behaviors are intentional.
+        // ref-enum delegates the rest. `transactions()` returns an
+        // empty map when `keep-finalized-transactions` is off (the
+        // default — tx history is event-driven), so
+        // `total_transactions` reads 0 in production builds. Both
+        // behaviors are intentional.
         let funds = account.as_funds();
         Some(AccountMetadataSnapshot {
-            // `transactions_iter()` returns empty when
-            // `keep_txs_in_memory` is off (the default — tx history is
-            // event-driven), so `total_transactions` reads 0 in
-            // production builds.
-            total_transactions: account.transactions_iter().count() as u64,
+            // `transactions()` is empty when
+            // `keep-finalized-transactions` is off (the default — tx
+            // history is event-driven), so `total_transactions` reads
+            // 0 in production builds.
+            total_transactions: account.transactions().len() as u64,
             total_utxos: funds.map(|a| a.utxos.len() as u64).unwrap_or(0),
             monitor_revision: account.monitor_revision(),
         })
@@ -641,17 +659,14 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         else {
             return Vec::new();
         };
-        // `transactions_iter` is the variant-agnostic walk and returns
-        // an empty iterator when `keep_txs_in_memory` is disabled — the
-        // default. Tx history is delivered through the event channel,
-        // not stored in-memory, so a paged readout here is effectively
-        // a debug surface for builds that flip the feature on. We
-        // collapse `(Txid, &TransactionRecord)` to just records, since
-        // the snapshot type carries the txid as a field of its own.
-        let iter = account
-            .transactions_iter()
-            .map(|(_, record)| record)
-            .skip(page_offset);
+        // `transactions()` returns an empty map when
+        // `keep-finalized-transactions` is disabled — the default. Tx
+        // history is delivered through the event channel, not stored
+        // in-memory, so a paged readout here is effectively a debug
+        // surface for builds that flip the feature on. The snapshot
+        // type carries the txid as a field of its own, so we walk
+        // values only.
+        let iter = account.transactions().values().skip(page_offset);
         let take = if page_limit == 0 {
             usize::MAX
         } else {
@@ -702,7 +717,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             .map(|(reg_idx, managed)| {
                 use dpp::identity::accessors::IdentityGettersV0;
                 WalletIdentityRowSnapshot {
-                    registration_index: *reg_idx as u32,
+                    registration_index: *reg_idx,
                     identity_id: managed.identity.id().to_buffer(),
                 }
             })
@@ -739,11 +754,7 @@ fn pool_snapshot(pool: &AddressPool) -> AccountAddressPoolSnapshot {
         AddressPoolType::AbsentHardened => 3,
     };
     let last_used_index: i64 = pool.highest_used.map(|i| i as i64).unwrap_or(-1);
-    let addresses = pool
-        .addresses
-        .values()
-        .map(|info| addr_info_snapshot(info))
-        .collect();
+    let addresses = pool.addresses.values().map(addr_info_snapshot).collect();
     AccountAddressPoolSnapshot {
         pool_type,
         gap_limit: pool.gap_limit,

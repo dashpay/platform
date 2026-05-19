@@ -19,12 +19,15 @@ mod error;
 mod evonode;
 mod group;
 mod identity;
-mod nullifier_sync;
+mod mnemonic_resolver;
+mod mnemonic_resolver_core_signer;
 mod protocol_version;
 mod sdk;
-mod shielded;
 mod signer;
 mod signer_simple;
+
+pub use mnemonic_resolver::*;
+pub use mnemonic_resolver_core_signer::*;
 mod system;
 mod token;
 mod types;
@@ -48,10 +51,8 @@ pub use error::*;
 pub use evonode::*;
 pub use group::*;
 pub use identity::*;
-pub use nullifier_sync::*;
 pub use protocol_version::*;
 pub use sdk::*;
-pub use shielded::*;
 pub use signer::*;
 pub use signer_simple::*;
 pub use system::*;
@@ -104,8 +105,13 @@ pub extern "C" fn dash_sdk_enable_logging(level: u8) {
     // Build the filter string with per-crate directives -- identical to what
     // was previously stored in RUST_LOG, but constructed in-process so there
     // is no data-race with concurrent `env::var` reads on other threads.
+    // Includes `platform_wallet` + `platform_wallet_ffi` so wallet-side
+    // traces (asset-lock catch-up, wait_for_proof, etc.) reach the
+    // configured level instead of falling through to the EnvFilter
+    // default (warn).
     let filter_string = format!(
         "dash_sdk={log_level},rs_sdk={log_level},rs_sdk_ffi={log_level},\
+         platform_wallet={log_level},platform_wallet_ffi={log_level},\
          dapi_grpc={log_level},h2={log_level},tower={log_level},\
          hyper={log_level},tonic={log_level}"
     );

@@ -7,7 +7,10 @@ use crate::broadcaster::TransactionBroadcaster;
 use std::time::Duration;
 
 use dashcore::Address as DashAddress;
-use dashcore::{OutPoint, PrivateKey, Transaction, TxOut};
+use dashcore::{OutPoint, Transaction, TxOut};
+use key_wallet::bip32::DerivationPath;
+use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+use key_wallet::signer::Signer;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::{
     AssetLockFundingType, CreditOutputFunding,
 };
@@ -26,8 +29,11 @@ use super::tracked::{AssetLockStatus, TrackedAssetLock};
 impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// Build an asset lock transaction using the key-wallet builder.
     ///
-    /// Delegates UTXO selection, fee calculation, change handling, and signing
-    /// to `ManagedWalletInfo::build_asset_lock`.
+    /// Delegates UTXO selection, fee calculation, and signing to
+    /// `ManagedWalletInfo::build_asset_lock_with_signer`. The host
+    /// never sees a raw credit-output private key — the returned
+    /// `DerivationPath` is what the caller hands back to the same
+    /// `signer` when the credit output is later consumed on Platform.
     ///
     /// # Arguments
     ///
@@ -36,13 +42,21 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// * `funding_type` — Which account to derive the one-time key from
     ///   (e.g., `IdentityRegistration`, `IdentityTopUp`).
     /// * `identity_index` — Identity index (used by `IdentityTopUp`, ignored by others).
-    pub async fn build_asset_lock_transaction(
+    /// * `signer` — External signer that produces both the funding-input
+    ///   P2PKH signatures and the credit-output public key. For Swift,
+    ///   this is typically a
+    ///   [`MnemonicResolverCoreSigner`](crate::wallet::asset_lock::build)
+    ///   from `platform-wallet-ffi` — built on top of the
+    ///   Keychain-resolver vtable so private keys never cross the FFI
+    ///   boundary.
+    pub async fn build_asset_lock_transaction<S: Signer>(
         &self,
         amount_duffs: u64,
         account_index: u32,
         funding_type: AssetLockFundingType,
         identity_index: u32,
-    ) -> Result<(Transaction, PrivateKey), PlatformWalletError> {
+        signer: &S,
+    ) -> Result<(Transaction, DerivationPath), PlatformWalletError> {
         if amount_duffs == 0 {
             return Err(PlatformWalletError::AssetLockTransaction(
                 "Amount must be greater than zero".to_string(),
@@ -75,10 +89,17 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             identity_index,
         };
 
-        // 3. Delegate to the key-wallet builder.
+        // 3. Delegate to the key-wallet signer-driven builder.
         let result = info
             .core_wallet
-            .build_asset_lock(wallet, account_index, vec![funding], DEFAULT_FEE_PER_KB)
+            .build_asset_lock_with_signer(
+                wallet,
+                account_index,
+                vec![funding],
+                DEFAULT_FEE_PER_KB,
+                signer,
+            )
+            .await
             .map_err(|e| {
                 PlatformWalletError::AssetLockTransaction(format!(
                     "Asset lock builder failed: {}",
@@ -86,36 +107,30 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 ))
             })?;
 
-        // 4. Convert the raw key bytes to a PrivateKey.
+        // 4. Pull the (pubkey, path) for our single credit output.
         //
-        // `build_asset_lock` is the soft-wallet variant, so the
-        // keys are always the `Private` variant of
-        // `AssetLockCreditKeys`. The `Public` variant would only
-        // come from `build_asset_lock_with_signer` (external
-        // signer path) which we don't use here.
+        // `build_asset_lock_with_signer` always returns the `Public`
+        // variant. The `Private` arm would only come from the soft-
+        // wallet `build_asset_lock` path which we no longer call from
+        // platform-wallet — defensively bail if it appears.
         use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockCreditKeys;
-        let key_bytes = match result.keys {
-            AssetLockCreditKeys::Private(mut keys) => keys.drain(..).next().ok_or_else(|| {
-                PlatformWalletError::AssetLockTransaction(
-                    "Builder returned no credit-output keys".to_string(),
-                )
-            })?,
-            AssetLockCreditKeys::Public(_) => {
+        let path = match result.keys {
+            AssetLockCreditKeys::Public(mut keys) => {
+                let (_pubkey, path) = keys.drain(..).next().ok_or_else(|| {
+                    PlatformWalletError::AssetLockTransaction(
+                        "Builder returned no credit-output keys".to_string(),
+                    )
+                })?;
+                path
+            }
+            AssetLockCreditKeys::Private(_) => {
                 return Err(PlatformWalletError::AssetLockTransaction(
-                    "Builder returned Public keys (signer path); expected Private from soft wallet"
-                        .to_string(),
+                    "Builder returned Private keys; signer-driven path expected Public".to_string(),
                 ));
             }
         };
-        let one_time_private_key = PrivateKey::from_byte_array(&key_bytes, self.sdk.network)
-            .map_err(|e| {
-                PlatformWalletError::AssetLockTransaction(format!(
-                    "Invalid private key from builder: {}",
-                    e
-                ))
-            })?;
 
-        Ok((result.transaction, one_time_private_key))
+        Ok((result.transaction, path))
     }
 
     /// Peek at the next unused address from a funding account without
@@ -258,12 +273,15 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     ///
     /// ## Flow
     ///
-    /// 1. Build the asset lock transaction via the key-wallet builder.
+    /// 1. Build the asset lock transaction via the key-wallet
+    ///    signer-driven builder.
     /// 2. Track the lifecycle as `Built` (in-memory).
     /// 3. Broadcast the transaction.
     /// 4. Wait for an InstantLock or ChainLock proof via the event channel.
     /// 5. Track the lifecycle as `InstantSendLocked` or `ChainLocked`.
-    /// 6. Return `(proof, private_key, txid)`.
+    /// 6. Return `(proof, credit_output_derivation_path, txid)` — the
+    ///    caller hands the path back to the same `signer` when
+    ///    consuming the credit on Platform.
     ///
     /// ## Persistence
     ///
@@ -282,16 +300,25 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     /// * `funding_type` — Which account to derive the one-time key from.
     /// * `identity_index` — HD identity index (for `IdentityTopUp`, this is
     ///   the registration index identifying which identity is being topped up).
-    pub async fn create_funded_asset_lock_proof(
+    /// * `signer` — External ECDSA signer (Swift Keychain-backed in
+    ///   production via `MnemonicResolverCoreSigner`).
+    pub async fn create_funded_asset_lock_proof<S: Signer>(
         &self,
         amount_duffs: u64,
         account_index: u32,
         funding_type: AssetLockFundingType,
         identity_index: u32,
-    ) -> Result<(dpp::prelude::AssetLockProof, PrivateKey, OutPoint), PlatformWalletError> {
+        signer: &S,
+    ) -> Result<(dpp::prelude::AssetLockProof, DerivationPath, OutPoint), PlatformWalletError> {
         // 1. Build the asset lock transaction.
-        let (tx, key) = self
-            .build_asset_lock_transaction(amount_duffs, account_index, funding_type, identity_index)
+        let (tx, path) = self
+            .build_asset_lock_transaction(
+                amount_duffs,
+                account_index,
+                funding_type,
+                identity_index,
+                signer,
+            )
             .await?;
 
         let txid = tx.txid();
@@ -350,6 +377,6 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             .await?;
         self.queue_asset_lock_changeset(cs_final);
 
-        Ok((proof, key, out_point))
+        Ok((proof, path, out_point))
     }
 }

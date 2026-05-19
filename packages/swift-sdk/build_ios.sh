@@ -23,6 +23,15 @@ PACKAGE="rs-unified-sdk-ffi"
 XCFRAMEWORK="$SCRIPT_DIR/DashSDKFFI.xcframework"
 PROFILE="dev" # Rust doesn't allow us to use "debug" for some reason, the profile name internally is dev
 
+# Crates whose cbindgen-generated headers ship in the unified framework.
+# Order matters: earlier headers define types referenced by later ones.
+INCLUDED_CRATES=(
+  dash-network
+  key-wallet-ffi
+  rs-sdk-ffi
+  platform-wallet-ffi
+)
+
 # -------------------------------
 # Flags
 # -------------------------------
@@ -122,20 +131,40 @@ fi
 
 inject_modulemap() {
   local HEADERS_DIR="$1"
+  local dir name keep c
 
-  # Create umbrella header that includes all FFI headers in dependency order
-  cat > "$HEADERS_DIR/DashSDKFFI.h" << 'EOF'
-#ifndef DASHSDKFFI_H
-#define DASHSDKFFI_H
+  for dir in "$HEADERS_DIR"/*/; do
+    [[ -d "$dir" ]] || continue
+    name=$(basename "$dir")
+    keep=0
+    for c in "${INCLUDED_CRATES[@]}"; do
+      if [[ "$c" == "$name" ]]; then
+        keep=1
+        break
+      fi
+    done
+    if (( ! keep )); then
+      rm -rf "$dir"
+      log_info "  → pruned orphan header dir: $name"
+    fi
+  done
 
-#include "dash-network/dash-network.h"
-#include "key-wallet-ffi/key-wallet-ffi.h"
-#include "dash-spv-ffi/dash-spv-ffi.h"
-#include "rs-sdk-ffi/rs-sdk-ffi.h"
-#include "platform-wallet-ffi/platform-wallet-ffi.h"
+  for c in "${INCLUDED_CRATES[@]}"; do
+    if [[ ! -f "$HEADERS_DIR/$c/$c.h" ]]; then
+      log_error "Missing header: $HEADERS_DIR/$c/$c.h"
+      log_error "  → ensure '$c' is a dependency of $PACKAGE"
+      exit 1
+    fi
+  done
 
-#endif
-EOF
+  {
+    printf '#ifndef DASHSDKFFI_H\n'
+    printf '#define DASHSDKFFI_H\n\n'
+    for c in "${INCLUDED_CRATES[@]}"; do
+      printf '#include "%s/%s.h"\n' "$c" "$c"
+    done
+    printf '\n#endif\n'
+  } > "$HEADERS_DIR/DashSDKFFI.h"
 
   cat > "$HEADERS_DIR/module.modulemap" << 'EOF'
 module DashSDKFFI {
@@ -160,11 +189,18 @@ EOF
   done
 }
 
+# Shielded (Orchard / ZK) support is compiled in by default. The
+# `shielded` Cargo feature is opt-in at the crate level so non-iOS
+# consumers don't pay for the heavy crypto deps, but the iOS
+# framework ships everything — keep `--features shielded` here so
+# the bundled SDK exposes the platform-wallet shielded FFI.
+CARGO_FEATURES="shielded"
+
 # iOS device
 if $BUILD_IOS; then
   IOS_TARGET="aarch64-apple-ios"
   log_info "Building iOS device ($IOS_TARGET)..."
-  cargo build -p "$PACKAGE" --profile "$PROFILE" --target "$IOS_TARGET"
+  cargo build -p "$PACKAGE" --profile "$PROFILE" --target "$IOS_TARGET" --features "$CARGO_FEATURES"
   IOS_LIB="$TARGET_DIR/$IOS_TARGET/$OUTPUT_DIR/librs_unified_sdk_ffi.a"
   IOS_HEADERS="$TARGET_DIR/$IOS_TARGET/$OUTPUT_DIR/include"
   inject_modulemap "$IOS_HEADERS"
@@ -174,7 +210,7 @@ fi
 if $BUILD_SIM; then
   SIM_TARGET="aarch64-apple-ios-sim"
   log_info "Building iOS simulator ($SIM_TARGET)..."
-  cargo build -p "$PACKAGE" --profile "$PROFILE" --target "$SIM_TARGET"
+  cargo build -p "$PACKAGE" --profile "$PROFILE" --target "$SIM_TARGET" --features "$CARGO_FEATURES"
   SIM_LIB="$TARGET_DIR/$SIM_TARGET/$OUTPUT_DIR/librs_unified_sdk_ffi.a"
   SIM_HEADERS="$TARGET_DIR/$SIM_TARGET/$OUTPUT_DIR/include"
   inject_modulemap "$SIM_HEADERS"
@@ -184,7 +220,7 @@ fi
 if $BUILD_MAC; then
   MAC_TARGET="aarch64-apple-darwin"
   log_info "Building macOS ($MAC_TARGET)..."
-  cargo build -p "$PACKAGE" --profile "$PROFILE" --target "$MAC_TARGET"
+  cargo build -p "$PACKAGE" --profile "$PROFILE" --target "$MAC_TARGET" --features "$CARGO_FEATURES"
   MAC_LIB="$TARGET_DIR/$MAC_TARGET/$OUTPUT_DIR/librs_unified_sdk_ffi.a"
   MAC_HEADERS="$TARGET_DIR/$MAC_TARGET/$OUTPUT_DIR/include"
   inject_modulemap "$MAC_HEADERS"

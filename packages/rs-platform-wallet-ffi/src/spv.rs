@@ -162,7 +162,41 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_is_running(
     PlatformWalletFFIResult::ok()
 }
 
+/// Read the unix-seconds block time of the SPV header storage's
+/// current tip. Useful as a "is core producing blocks?" indicator —
+/// a stale value across multiple polls means the chain has stalled.
+///
+/// `*out_unix_seconds` is set to `0` when the SPV client isn't
+/// running, no headers have been stored yet, or the tip header
+/// can't be read for any reason. The function still returns
+/// success in those cases — `0` is the in-band sentinel.
+///
+/// # Safety
+/// - `out_unix_seconds` must be writable for one `u64` value.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_spv_tip_unix_seconds(
+    handle: Handle,
+    out_unix_seconds: *mut u64,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_unix_seconds);
+    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
+        runtime().block_on(manager.spv().tip_block_time())
+    });
+    let tip = unwrap_option_or_return!(option);
+    *out_unix_seconds = tip.map(|t| t as u64).unwrap_or(0);
+    PlatformWalletFFIResult::ok()
+}
+
 /// Start SPV sync in the background.
+///
+/// `enable_masternodes` is NOT a caller knob: platform-wallet always
+/// needs `ChainLockManager` + `InstantSendManager` running so
+/// asset-lock proofs can resolve via the `CLSig` / `ISLock` P2P
+/// messages. Disabling masternode sync silently breaks
+/// `AssetLockManager::wait_for_proof`, which is a published feature.
+/// Hardcoded to `true` here; if a future caller has a real reason to
+/// run SPV without masternode sync, it can construct the wallet
+/// manager without the asset-lock path instead.
 #[no_mangle]
 #[allow(clippy::field_reassign_with_default)]
 pub unsafe extern "C" fn platform_wallet_manager_spv_start(
@@ -174,7 +208,6 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_start(
     peer_count: usize,
     restrict_to_configured_peers: bool,
     start_from_height: u32,
-    masternode_sync_enabled: bool,
 ) -> PlatformWalletFFIResult {
     check_ptr!(data_dir);
     let data_dir_str = unwrap_result_or_return!(CStr::from_ptr(data_dir).to_str()).to_string();
@@ -209,7 +242,14 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_start(
         if start_from_height > 0 {
             config.start_from_height = Some(start_from_height);
         }
-        config.enable_masternodes = masternode_sync_enabled;
+        // Asset-lock proof acquisition (`AssetLockManager::wait_for_proof`)
+        // depends on `CLSig` / `ISLock` P2P messages reaching the wallet,
+        // which only happens when `ChainLockManager` + `InstantSendManager`
+        // are spawned (see dash-spv/src/client/lifecycle.rs). Hardcode
+        // here so trusted-SDK callers (who'd otherwise disable masternode
+        // sync) don't silently break asset-lock-funded identity
+        // registration.
+        config.enable_masternodes = true;
         config.restrict_to_configured_peers = restrict_to_configured_peers;
         for p in &peer_list {
             if let Ok(addr) = p.parse() {

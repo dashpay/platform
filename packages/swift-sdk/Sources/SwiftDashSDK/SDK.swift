@@ -81,62 +81,6 @@ public final class SDK: @unchecked Sendable {
     print("🔵 SDK: Logging enabled at level: \(level)")
   }
 
-  /// Initialize SPV logging with configurable output options
-  /// - Parameters:
-  ///   - level: Log level (defaults to .info if nil)
-  ///   - enableConsole: Whether to output logs to console/stderr
-  ///   - logDirectory: Directory for log files (nil to disable file logging)
-  ///   - maxFiles: Maximum archived log files to retain (ignored if logDirectory is nil)
-  /// - Returns: true if logging was initialized successfully
-  @discardableResult
-  public static func initializeSPVLogging(
-    level: LogLevel? = nil,
-    enableConsole: Bool = true,
-    logDirectory: String? = nil,
-    maxFiles: UInt = 5
-  ) -> Bool {
-    let levelString: String? = level.map { lvl in
-      switch lvl {
-      case .error: return "error"
-      case .warn: return "warn"
-      case .info: return "info"
-      case .debug: return "debug"
-      case .trace: return "trace"
-      }
-    }
-
-    let result: Int32
-    if let levelStr = levelString {
-      if let logDir = logDirectory {
-        result = levelStr.withCString { levelCStr in
-          logDir.withCString { dirCStr in
-            dash_spv_ffi_init_logging(levelCStr, enableConsole, dirCStr, maxFiles)
-          }
-        }
-      } else {
-        result = levelStr.withCString { levelCStr in
-          dash_spv_ffi_init_logging(levelCStr, enableConsole, nil, maxFiles)
-        }
-      }
-    } else {
-      if let logDir = logDirectory {
-        result = logDir.withCString { dirCStr in
-          dash_spv_ffi_init_logging(nil, enableConsole, dirCStr, maxFiles)
-        }
-      } else {
-        result = dash_spv_ffi_init_logging(nil, enableConsole, nil, maxFiles)
-      }
-    }
-
-    let success = result == 0
-    if success {
-      print("🔵 SDK: SPV logging initialized (level: \(levelString ?? "default"), console: \(enableConsole))")
-    } else {
-      print("⚠️ SDK: SPV logging initialization returned code \(result)")
-    }
-    return success
-  }
-
   /// Local Platform DAPI addresses; override via UserDefaults key "platformDAPIAddresses"
   private static var platformDAPIAddresses: String {
     if let override = UserDefaults.standard.string(forKey: "platformDAPIAddresses"), !override.isEmpty {
@@ -159,9 +103,19 @@ public final class SDK: @unchecked Sendable {
     config.request_timeout_ms = 8000 // 8 seconds
 
     // Create SDK with trusted setup — Rust side auto-detects local/regtest
-    // and uses the quorum sidecar at localhost:22444 instead of remote endpoints
+    // and uses the quorum sidecar at localhost:22444 instead of remote endpoints.
+    //
+    // Regtest has no remote DAPI defaults on the Rust side, so it
+    // *must* be constructed with a local DAPI address regardless of
+    // the user-facing `useDockerSetup` toggle. Without this, building
+    // a regtest SDK from a context where the toggle has been
+    // auto-disabled (e.g. orphan-mnemonic recovery routing wallets to
+    // their original network from a non-regtest active state) fails
+    // with `DAPI addresses not available for network: Regtest` and
+    // the recovery loop stalls.
     let result: DashSDKResult
-    let forceLocal = UserDefaults.standard.bool(forKey: "useDockerSetup")
+    let forceLocal = network == .regtest
+        || UserDefaults.standard.bool(forKey: "useDockerSetup")
     if forceLocal {
       let localAddresses = Self.platformDAPIAddresses
       result = localAddresses.withCString { addressesCStr -> DashSDKResult in

@@ -1,4 +1,4 @@
-use crate::data_contract::document_type::index::{Index, IndexProperty};
+use crate::data_contract::document_type::index::{Index, IndexCountability, IndexProperty};
 use crate::ProtocolError;
 use rand::prelude::StdRng;
 use rand::seq::SliceRandom;
@@ -60,7 +60,8 @@ impl Index {
             unique,
             null_searchable: true,
             contested_index: None,
-            countable: false,
+            countable: IndexCountability::NotCountable,
+            range_countable: false,
         })
     }
 }

@@ -8,9 +8,10 @@ use crate::broadcaster::TransactionBroadcaster;
 use std::time::Duration;
 
 use dashcore::Address as DashAddress;
-use dashcore::{OutPoint, PrivateKey};
+use dashcore::OutPoint;
+use key_wallet::bip32::DerivationPath;
+use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
-use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 
 use crate::changeset::changeset::AssetLockChangeSet;
 use crate::error::PlatformWalletError;
@@ -43,14 +44,36 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
         out_point: OutPoint,
         proof: Option<dpp::prelude::AssetLockProof>,
     ) {
-        let mut wm = self.wallet_manager.blocking_write();
-        let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
-            return;
+        // Phase 1 (lock held): claim the tracked-asset-lock slot and
+        // pull the in-memory record out so the lookup work is
+        // bounded to a single hashmap fetch.
+        let in_memory_record = {
+            let mut wm = self.wallet_manager.blocking_write();
+            let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
+                return;
+            };
+            if info.tracked_asset_locks.contains_key(&out_point) {
+                return;
+            }
+            // Only fetch the in-memory record when we actually need
+            // it (no proof was provided). Otherwise the proof we
+            // already have determines the status without a lookup.
+            if proof.is_none() {
+                info.core_wallet
+                    .accounts
+                    .standard_bip44_accounts
+                    .get(&account_index)
+                    .and_then(|a| a.transactions().get(&out_point.txid).cloned())
+            } else {
+                None
+            }
+            // wm dropped here — release before persister I/O.
         };
-        if info.tracked_asset_locks.contains_key(&out_point) {
-            return;
-        }
 
+        // Phase 2 (no lock held): resolve status. The persister
+        // fallback's I/O (synchronous lookup, possibly an FFI
+        // callback into a SwiftData query) is no longer serialized
+        // behind the wallet-manager write lock.
         let (status, proof) = match proof {
             Some(ref p) => {
                 let status = match p {
@@ -59,53 +82,85 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 };
                 (status, proof)
             }
-            None => {
-                // Need to resolve from wallet info - drop the write guard and use a read.
-                // Actually we already have mutable access to info, so we can read from it.
-                Self::resolve_status_from_info(&info.core_wallet, account_index, &out_point)
+            None => self.resolve_status_with_in_memory(in_memory_record, account_index, &out_point),
+        };
+
+        // Phase 3 (lock held): commit the tracked-asset-lock entry.
+        // We re-check `tracked_asset_locks.contains_key` because
+        // another caller could have raced in during phase 2 — first
+        // writer wins.
+        let cs = {
+            let mut wm = self.wallet_manager.blocking_write();
+            let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) else {
+                return;
+            };
+            if info.tracked_asset_locks.contains_key(&out_point) {
+                return;
             }
+            let lock = TrackedAssetLock {
+                out_point,
+                transaction: tx,
+                account_index,
+                funding_type,
+                identity_index,
+                amount,
+                status,
+                proof,
+            };
+            let mut cs = AssetLockChangeSet::default();
+            cs.asset_locks.insert(out_point, (&lock).into());
+            info.tracked_asset_locks.insert(out_point, lock);
+            cs
+            // wm dropped here — must release before queue_asset_lock_changeset
+            // since the persister flush may need the wallet-manager lock
+            // for other sub-changesets.
         };
-
-        let lock = TrackedAssetLock {
-            out_point,
-            transaction: tx,
-            account_index,
-            funding_type,
-            identity_index,
-            amount,
-            status,
-            proof,
-        };
-        let mut cs = AssetLockChangeSet::default();
-        cs.asset_locks.insert(out_point, (&lock).into());
-        info.tracked_asset_locks.insert(out_point, lock);
-
-        // Must drop the write guard before queuing — the persister's
-        // flush (if strategy is Immediate) may need the wallet manager
-        // lock for other sub-changesets.
-        drop(wm);
         self.queue_asset_lock_changeset(cs);
     }
 
-    /// Determine asset lock status by looking up the transaction in
-    /// `ManagedWalletInfo`.
+    /// Determine asset lock status from a pre-snapshotted in-memory
+    /// record, falling back to the persister if the snapshot was
+    /// `None`. The caller is responsible for dropping the
+    /// wallet-manager lock between the snapshot and this call so the
+    /// persister fallback's I/O isn't serialized behind it.
     ///
     /// If the TX is in a chain-locked block, returns `ChainLocked` with a
     /// constructed `ChainAssetLockProof`. If the TX has an InstantSend
     /// context, returns `InstantSendLocked` (without a proof, since we lack
     /// the IS-lock data). Otherwise defaults to `Broadcast`.
-    fn resolve_status_from_info(
-        wallet_info: &ManagedWalletInfo,
+    ///
+    /// Persister errors are logged at `error` and treated the same as
+    /// "not found" — we'd rather classify as `Broadcast` (and let
+    /// `resume_asset_lock` re-derive the proof via SPV) than abort
+    /// recovery entirely. The `error` log surfaces the failure to
+    /// operators since this is a one-shot path: a silently-degraded
+    /// `Broadcast` classification for a genuinely chain-locked tx
+    /// makes `resume_asset_lock` take the wasteful `wait_for_proof`
+    /// path instead of constructing a `ChainAssetLockProof`
+    /// directly, with no other signal that anything went wrong.
+    fn resolve_status_with_in_memory(
+        &self,
+        in_memory: Option<key_wallet::managed_account::transaction_record::TransactionRecord>,
         account_index: u32,
         out_point: &OutPoint,
     ) -> (AssetLockStatus, Option<dpp::prelude::AssetLockProof>) {
+        use super::proof::record_or_persister;
         use key_wallet::transaction_checking::TransactionContext;
 
-        let record = wallet_info
-            .accounts
-            .standard_bip44_accounts
-            .get(&account_index)
-            .and_then(|a| a.transactions.get(&out_point.txid));
+        let record = match record_or_persister(in_memory, &self.persister, &out_point.txid) {
+            Ok(opt) => opt,
+            Err(e) => {
+                tracing::error!(
+                    txid = %out_point.txid,
+                    account_index,
+                    error = %e,
+                    "Persister fallback failed during asset-lock status \
+                     recovery; classifying as Broadcast (resume will \
+                     re-derive the proof via SPV)"
+                );
+                None
+            }
+        };
 
         match record {
             Some(record) => match &record.context {
@@ -144,27 +199,45 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
     ///   (upgrading a stale IS-lock to a ChainLock proof if necessary).
     ///
     /// After obtaining the proof, advances the tracked lock status and
-    /// re-derives the one-time private key from the wallet.
+    /// re-derives the one-time credit-output derivation path from the
+    /// wallet's funding-account address pool.
     ///
-    /// Returns `(proof, private_key)` ready for use in identity registration
-    /// or top-up.
+    /// Returns `(proof, derivation_path)` ready for use in identity
+    /// registration or top-up via the `_with_signer` SDK methods. The
+    /// caller passes `derivation_path` to the same signer used for the
+    /// build phase when the credit output is later consumed on Platform.
     pub async fn resume_asset_lock(
         &self,
         out_point: &OutPoint,
         timeout: Duration,
-    ) -> Result<(dpp::prelude::AssetLockProof, PrivateKey), PlatformWalletError> {
+    ) -> Result<(dpp::prelude::AssetLockProof, DerivationPath), PlatformWalletError> {
+        tracing::info!(outpoint = %out_point, ?timeout, "resume_asset_lock: entered");
+
         // 1. Look up the tracked lock — snapshot the fields we need.
         let (tx, status, existing_proof, account_index) = {
             let wm = self.wallet_manager.read().await;
             let info = wm
                 .get_wallet_info(&self.wallet_id)
                 .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
+            let tracked_count = info.tracked_asset_locks.len();
             let lock = info.tracked_asset_locks.get(out_point).ok_or_else(|| {
+                tracing::warn!(
+                    outpoint = %out_point,
+                    tracked_count,
+                    "resume_asset_lock: asset lock not in tracked_asset_locks map"
+                );
                 PlatformWalletError::AssetLockProofWait(format!(
                     "Asset lock {} is not tracked",
                     out_point
                 ))
             })?;
+            tracing::info!(
+                outpoint = %out_point,
+                status = ?lock.status,
+                has_proof = lock.proof.is_some(),
+                account_index = lock.account_index,
+                "resume_asset_lock: lock looked up"
+            );
             (
                 lock.transaction.clone(),
                 lock.status.clone(),
@@ -203,6 +276,19 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 self.validate_or_upgrade_proof(proof, account_index, out_point)
                     .await?
             }
+            AssetLockStatus::Consumed => {
+                // Terminal — the asset lock was already burned by a
+                // successful identity registration / top-up. We
+                // should never reach this arm in practice (the
+                // `tracked_asset_locks` map drops Consumed entries
+                // and the load path filters them out), but the
+                // exhaustive match needs an arm. Treat as a wallet-
+                // state mismatch rather than panicking.
+                return Err(PlatformWalletError::AssetLockProofWait(format!(
+                    "Asset lock {} is already Consumed — nothing to resume",
+                    out_point
+                )));
+            }
         };
 
         // 3. Advance status and attach proof.
@@ -215,8 +301,8 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
             .await?;
         self.queue_asset_lock_changeset(cs);
 
-        // 4. Re-derive the one-time private key.
-        let private_key = {
+        // 4. Re-derive the one-time credit-output derivation path.
+        let path = {
             let wm = self.wallet_manager.read().await;
             let info = wm
                 .get_wallet_info(&self.wallet_id)
@@ -227,22 +313,31 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                     out_point
                 ))
             })?;
-            self.rederive_private_key(lock).await?
+            self.rederive_credit_output_path(lock).await?
         };
 
-        Ok((proof, private_key))
+        Ok((proof, path))
     }
 
-    /// Re-derive the one-time private key for a tracked asset lock.
+    /// Re-derive the one-time credit-output **derivation path** for a
+    /// tracked asset lock.
     ///
     /// The credit output address was generated from a funding account
-    /// (identity registration, top-up, etc.). This method finds that address
-    /// in the funding account's address pool, retrieves its derivation path,
-    /// and derives the private key from the wallet's root key.
-    async fn rederive_private_key(
+    /// (identity registration, top-up, etc.). This method finds that
+    /// address in the funding account's address pool and retrieves
+    /// its derivation path — the path is what the caller hands to a
+    /// `key_wallet::signer::Signer` when later consuming the credit
+    /// output on Platform.
+    ///
+    /// Previously this method derived the actual private key from the
+    /// wallet's root xpriv; that path is no longer reachable for
+    /// `ExternalSignable` wallets (the root key isn't in-process) and
+    /// the signer-based architecture doesn't need it — the signer
+    /// owns derivation end-to-end.
+    async fn rederive_credit_output_path(
         &self,
         lock: &TrackedAssetLock,
-    ) -> Result<PrivateKey, PlatformWalletError> {
+    ) -> Result<DerivationPath, PlatformWalletError> {
         use dashcore::blockdata::transaction::special_transaction::TransactionPayload;
         use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 
@@ -320,17 +415,6 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
                 ))
             })?;
 
-        // 4. Derive the private key from the wallet's root key.
-        let wallet = wm
-            .get_wallet(&self.wallet_id)
-            .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
-        let secret_key = wallet.derive_private_key(&derivation_path).map_err(|e| {
-            PlatformWalletError::AssetLockTransaction(format!(
-                "Failed to derive private key for asset lock: {}",
-                e
-            ))
-        })?;
-
-        Ok(PrivateKey::new(secret_key, self.sdk.network))
+        Ok(derivation_path)
     }
 }
