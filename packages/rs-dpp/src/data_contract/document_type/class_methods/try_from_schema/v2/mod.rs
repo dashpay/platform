@@ -291,49 +291,29 @@ impl DocumentTypeV2 {
         v2.documents_summable = documents_summable.clone();
         v2.range_summable = range_summable;
 
-        // Reject `documentsKeepHistory: true` + `documentsSummable: <prop>`
-        // (also covers the desugared `documentsAverageable` shorthand).
+        // `documentsKeepHistory: true` + `documentsSummable: <prop>` IS
+        // supported (as of the keep-history sum-aware-reference change).
+        // Layout: the per-document subtree at `[..doctype, doc_id]`
+        // becomes a `SumTree` (was `NormalTree`); the version bodies
+        // under `[..doctype, doc_id, t_N]` stay plain `Item`s (NOT
+        // `ItemWithSumItem`) so historical versions don't double-count;
+        // the `[..doctype, doc_id, 0]` "current pointer" becomes a
+        // `ReferenceWithSumItem` carrying the current version's
+        // `sum_property` value. Aggregation walks:
         //
-        // Why: with keep-history, each document is stored under its own
-        // per-doc subtree at `[..doctype, doc_id]` (a `NormalTree` holding
-        // every historical version of that document keyed by encoded
-        // timestamp). Grovedb's sum aggregation only propagates through
-        // sum-bearing tree elements — a `NormalTree` child contributes
-        // nothing to a parent SumTree's aggregate, so the `ItemWithSumItem`
-        // payloads inside per-document history subtrees never reach the
-        // doctype-level root aggregate at `[..doctype, 0]` that
-        // `execute_document_sum_total_no_proof` reads. Even if we made
-        // the per-doc subtree sum-bearing, ALL historical versions would
-        // contribute (double-counting per-document edits) because there's
-        // no clean grovedb-level way to express "only the current
-        // version's sum_value participates".
+        //   - Per-doc SumTree aggregate = `0`-key's sum_value (= current
+        //     version's amount) + 0 from each history Item. Result: the
+        //     current version's contribution.
+        //   - Doctype-level SumTree aggregate = sum over per-doc SumTree
+        //     aggregates = total of CURRENT versions across all docs.
         //
-        // We considered three alternatives:
-        //   1. Make per-doc subtree a SumTree → wrong semantics (sums all
-        //      versions, not just current).
-        //   2. Materialize a separate "current sum" subtree at doctype
-        //      level alongside the history → adds a third write per
-        //      keep-history insert and a parallel cost-estimation table.
-        //   3. Reject the combination at schema validation time (this
-        //      change) → simple, contract authors must pick one.
-        //
-        // Same reasoning applies to `documentsAverageable` (desugared to
-        // documentsCountable + documentsSummable — the summable half has
-        // the same propagation problem).
-        if v2.documents_keep_history && documents_summable.is_some() {
-            let prop = documents_summable.as_deref().unwrap_or("<unset>");
-            return Err(ProtocolError::DataContractError(
-                DataContractError::InvalidContractStructure(format!(
-                    "documentsKeepHistory: true on document type \"{}\" is incompatible \
-                     with documentsSummable=\"{}\" (or documentsAverageable). Keep-history \
-                     doctypes store every version under a per-document subtree, so a sum \
-                     value contributed by one version can never reach the doctype-level \
-                     primary-key sum aggregate. Choose one: either remove documentsSummable / \
-                     documentsAverageable, or disable documentsKeepHistory for this doctype.",
-                    name, prop,
-                )),
-            ));
-        }
+        // On update, rewriting the `0`-key reference with the new
+        // version's sum_value triggers grovedb's standard
+        // delete-then-insert merk propagation, which carries the delta
+        // up to ancestors automatically. No separate shadow tree or
+        // parallel bookkeeping. Same `Element::ReferenceWithSumItem`
+        // primitive the per-index sum-tree path already uses (see
+        // `make_document_reference_with_sum_item` on the rs-drive side).
 
         // Cross-validate: every index with `summable` set must name the
         // same property as `documents_summable` (if doctype-level
@@ -675,15 +655,22 @@ mod tests {
         );
     }
 
-    /// `documentsKeepHistory: true + documentsSummable: "score"`:
-    /// must be rejected. With keep-history each doc is stored under
-    /// its own per-doc `NormalTree` subtree at `[..doctype, doc_id]`
-    /// — sum payloads inside that subtree never reach the doctype-
-    /// level root aggregate `[..doctype, 0]` that the unfiltered SUM
-    /// fast path reads. We reject at parse time rather than silently
-    /// producing wrong totals.
+    /// `documentsKeepHistory: true + documentsSummable: "score"` is
+    /// SUPPORTED. The rs-drive insert path materializes the per-doc
+    /// subtree as a `SumTree`, writes version bodies as plain `Item`s
+    /// (no `sum_value` so historical versions don't double-count),
+    /// and writes a `ReferenceWithSumItem` at the `0`-key carrying
+    /// the current version's `sum_property` value. Aggregation walks
+    /// then deliver the current-versions-only sum at the doctype
+    /// root.
+    ///
+    /// Earlier versions of this PR rejected this combination at parse
+    /// time because we hadn't worked through the
+    /// `ReferenceWithSumItem`-on-`0`-key approach; that rejection is
+    /// gone, and this test pins that the combination parses cleanly
+    /// AND that both flags survive into the parsed `v2`.
     #[test]
-    fn doctype_keep_history_with_documents_summable_rejected() {
+    fn doctype_keep_history_with_documents_summable_accepted() {
         let schema = platform_value!({
             "type": "object",
             "properties": {
@@ -699,24 +686,29 @@ mod tests {
             "documentsKeepHistory": true,
             "documentsSummable": "score",
         });
-        let result = parse(schema);
-        assert!(
-            result.is_err(),
-            "documentsKeepHistory: true + documentsSummable must be rejected"
+        let v2 = parse(schema).expect(
+            "documentsKeepHistory: true + documentsSummable must be accepted (the per-doc \
+             SumTree + ReferenceWithSumItem-on-0-key layout makes this combination correct)",
         );
-        let msg = format!("{:?}", result.unwrap_err());
         assert!(
-            msg.contains("documentsKeepHistory") && msg.contains("documentsSummable"),
-            "error must reference both flags; got {msg}"
+            v2.documents_keep_history,
+            "documentsKeepHistory: true must be carried into v2"
+        );
+        assert_eq!(
+            v2.documents_summable.as_deref(),
+            Some("score"),
+            "documents_summable must be carried into v2"
         );
     }
 
-    /// Same rejection via the `documentsAverageable` shorthand —
-    /// averageable desugars to countable + summable on the same
-    /// property, so the summable half hits the same propagation
-    /// bug under keep-history.
+    /// Same acceptance via the `documentsAverageable` shorthand
+    /// (desugars to documentsCountable: true + documentsSummable on
+    /// the same property). The sum half rides the same
+    /// keep-history + sum-aware-reference layout; the count half
+    /// composes through the doctype's primary-key tree being a
+    /// `CountSumTree` / `ProvableCountSumTree` variant.
     #[test]
-    fn doctype_keep_history_with_documents_averageable_rejected() {
+    fn doctype_keep_history_with_documents_averageable_accepted() {
         let schema = platform_value!({
             "type": "object",
             "properties": {
@@ -732,16 +724,14 @@ mod tests {
             "documentsKeepHistory": true,
             "documentsAverageable": "score",
         });
-        let result = parse(schema);
-        assert!(
-            result.is_err(),
-            "documentsKeepHistory: true + documentsAverageable must be rejected"
+        let v2 = parse(schema).expect(
+            "documentsKeepHistory + documentsAverageable must be accepted (same layout as \
+             the documents_summable acceptance above)",
         );
-        let msg = format!("{:?}", result.unwrap_err());
-        assert!(
-            msg.contains("documentsKeepHistory"),
-            "error must reference documentsKeepHistory; got {msg}"
-        );
+        assert!(v2.documents_keep_history);
+        // averageable desugars to countable + summable
+        assert!(v2.documents_countable);
+        assert_eq!(v2.documents_summable.as_deref(), Some("score"));
     }
 
     /// `documentsKeepHistory: true` WITHOUT any summable flag must

@@ -10,7 +10,7 @@ use crate::error::Error;
 
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::config::v0::DataContractConfigGettersV0;
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::document::DocumentV0Getters;
 use dpp::version::PlatformVersion;
@@ -106,23 +106,62 @@ impl Drive {
             // (DEFAULT_FLOAT_SIZE) plus 1 byte for reference type and 1 byte for the space of
             // the encoded time
             let reference_size = DEFAULT_FLOAT_SIZE + 2;
+
+            // Per-document subtree variant + layer-size mix.
+            //
+            // - Non-summable keep-history (the original case):
+            //   `NormalTree` per-doc subtree, version bodies are
+            //   plain `Item`s, `0`-key is a plain `Reference`.
+            // - Summable keep-history (added by the
+            //   `ReferenceWithSumItem`-on-`0`-key change):
+            //   `SumTree` per-doc subtree (so its aggregate
+            //   propagates to the doctype-level SumTree), version
+            //   bodies STAY plain `Item`s (the sum is on the
+            //   `0`-key reference, not the version), `0`-key is a
+            //   `ReferenceWithSumItem`. The estimation has to
+            //   match the applied layout byte-for-byte so dry-run
+            //   fee estimation doesn't undercharge the inserts.
+            let summable = document_type.documents_summable().is_some();
+            let (per_doc_subtree_tree_type, references_size, references_with_sum_item_size) =
+                if summable {
+                    // ReferenceWithSumItem carries the same path bytes as
+                    // a plain Reference plus a 10-byte worst-case varint
+                    // for the i64 sum_value. We account for that by
+                    // moving the ref slot into the sum-bearing column —
+                    // grovedb computes the per-variant overhead
+                    // internally from the column it's filed under.
+                    (
+                        TreeType::SumTree,
+                        None,
+                        Some((1, reference_size, average_flags_size, 1)),
+                    )
+                } else {
+                    (
+                        TreeType::NormalTree,
+                        Some((1, reference_size, average_flags_size, 1)),
+                        None,
+                    )
+                };
             // on the lower level we have many items by date, and 1 ref to the current item
             estimated_costs_only_with_layer_info.insert(
                 KeyInfoPath::from_known_path(document_id_in_primary_path),
                 EstimatedLayerInformation {
-                    tree_type: TreeType::NormalTree,
+                    tree_type: per_doc_subtree_tree_type,
                     estimated_layer_count: ApproximateElements(AVERAGE_NUMBER_OF_UPDATES as u32),
                     estimated_layer_sizes: Mix {
                         subtrees_size: None,
+                        // Version bodies are always plain `Item`s under
+                        // keep-history (regardless of summable) — the
+                        // sum, if any, lives on the `0`-key reference.
                         items_size: Some((
                             DEFAULT_FLOAT_SIZE_U8,
                             document_type.estimated_size(platform_version)? as u32,
                             average_flags_size,
                             AVERAGE_NUMBER_OF_UPDATES,
                         )),
-                        references_size: Some((1, reference_size, average_flags_size, 1)),
+                        references_size,
                         items_with_sum_item_size: None,
-                        references_with_sum_item_size: None,
+                        references_with_sum_item_size,
                     },
                 },
             );
