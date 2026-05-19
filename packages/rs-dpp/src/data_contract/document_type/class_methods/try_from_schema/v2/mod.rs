@@ -1,5 +1,6 @@
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::class_methods::consensus_or_protocol_value_error;
+use crate::data_contract::document_type::property::DocumentPropertyType;
 use crate::data_contract::document_type::property_names::{
     DOCUMENTS_AVERAGEABLE, DOCUMENTS_COUNTABLE, DOCUMENTS_SUMMABLE, RANGE_AVERAGEABLE,
     RANGE_COUNTABLE, RANGE_SUMMABLE,
@@ -364,13 +365,13 @@ impl DocumentTypeV2 {
                 // signed/unsigned type that's not U64.
                 if !matches!(
                     prop.property_type,
-                    crate::data_contract::document_type::property::DocumentPropertyType::I64
-                        | crate::data_contract::document_type::property::DocumentPropertyType::I32
-                        | crate::data_contract::document_type::property::DocumentPropertyType::U32
-                        | crate::data_contract::document_type::property::DocumentPropertyType::I16
-                        | crate::data_contract::document_type::property::DocumentPropertyType::U16
-                        | crate::data_contract::document_type::property::DocumentPropertyType::I8
-                        | crate::data_contract::document_type::property::DocumentPropertyType::U8
+                    DocumentPropertyType::I64
+                        | DocumentPropertyType::I32
+                        | DocumentPropertyType::U32
+                        | DocumentPropertyType::I16
+                        | DocumentPropertyType::U16
+                        | DocumentPropertyType::I8
+                        | DocumentPropertyType::U8
                 ) {
                     return Err(ProtocolError::DataContractError(
                         DataContractError::InvalidContractStructure(format!(

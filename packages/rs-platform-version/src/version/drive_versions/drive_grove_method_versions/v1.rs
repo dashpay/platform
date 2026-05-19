@@ -52,12 +52,8 @@ pub const DRIVE_GROVE_METHOD_VERSIONS_V1: DriveGroveMethodVersions = DriveGroveM
         batch_refresh_reference: 0,
         batch_insert_empty_sum_tree: 0,
         batch_insert_empty_count_tree: 0,
+        batch_insert_empty_count_sum_tree: 0,
         batch_insert_empty_provable_count_tree: 0,
-        // New in v3 (sum trees). Method version 0 on every platform
-        // version that didn't have the field yet — the corresponding
-        // batch_insert_empty_provable_*_tree helpers' v0 are the only
-        // implementations that exist today, so v0 is the universally-
-        // correct fallback.
         batch_insert_empty_provable_sum_tree: 0,
         batch_insert_empty_provable_count_sum_tree: 0,
         batch_insert_empty_provable_count_provable_sum_tree: 0,

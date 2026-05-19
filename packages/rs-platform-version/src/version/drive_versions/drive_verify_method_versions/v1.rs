@@ -27,10 +27,6 @@ pub const DRIVE_VERIFY_METHOD_VERSIONS_V1: DriveVerifyMethodVersions = DriveVeri
         verify_primary_key_count_tree_proof: 0,
     },
     document_sum: DriveVerifyDocumentSumMethodVersions {
-        // Pre-stage stub bodies — surface `NotSupported` until the
-        // grovedb sister PR exposes per-key carrier-sum support.
-        // Once it lands, the v0 bodies flip to real grovedb calls
-        // (no version bump needed; same v0 dispatch arm).
         verify_carrier_aggregate_sum_proof: 0,
         verify_carrier_aggregate_count_and_sum_proof: 0,
         verify_aggregate_count_and_sum_proof: 0,

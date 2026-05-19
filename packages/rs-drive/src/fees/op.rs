@@ -588,7 +588,7 @@ impl LowLevelDriveOperation {
     /// parent — typically a property-name continuation tree
     /// (`NormalTree` / `CountTree` / `ProvableCountTree` / their
     /// sum-bearing siblings).
-    pub fn for_known_path_key_empty_tree_under_aggregating_parent(
+    pub fn wrap_in_non_aggregated_for_parent_tree_type(
         path: Vec<Vec<u8>>,
         key: Vec<u8>,
         aggregating_parent_tree_type: TreeType,
@@ -631,8 +631,8 @@ impl LowLevelDriveOperation {
                 )
             }
             _ => Err(Error::Drive(DriveError::NotSupported(
-                "for_known_path_key_empty_tree_under_aggregating_parent called with a \
-                 non-aggregating parent tree type — caller should use the unwrapped \
+                "wrap_in_non_aggregated_for_parent_tree_type called with a non-aggregating \
+                 parent tree type — caller should use the unwrapped \
                  `empty_tree_operation_for_known_path_key` path instead.",
             ))),
         }
@@ -854,6 +854,23 @@ impl LowLevelDriveOperation {
                 Element::empty_provable_sum_tree_with_flags(storage_flags.to_some_element_flags())
             }
             None => Element::empty_provable_sum_tree(),
+        };
+
+        LowLevelDriveOperation::insert_for_estimated_path_key_element(path, key, tree)
+    }
+
+    /// Cost-estimation analog of
+    /// [`Self::for_known_path_key_empty_count_sum_tree`]. See its doc.
+    pub fn for_estimated_path_key_empty_count_sum_tree(
+        path: KeyInfoPath,
+        key: KeyInfo,
+        storage_flags: Option<&StorageFlags>,
+    ) -> Self {
+        let tree = match storage_flags {
+            Some(storage_flags) => {
+                Element::empty_count_sum_tree_with_flags(storage_flags.to_some_element_flags())
+            }
+            None => Element::empty_count_sum_tree(),
         };
 
         LowLevelDriveOperation::insert_for_estimated_path_key_element(path, key, tree)

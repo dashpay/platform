@@ -256,7 +256,7 @@ impl Drive {
             // (the value tree at `index_path_info`) aggregates count,
             // sum, or both. The wrapper variant is keyed on
             // `parent_value_tree_type` — the new helper
-            // `for_known_path_key_empty_tree_under_aggregating_parent`
+            // `wrap_in_non_aggregated_for_parent_tree_type`
             // picks NonCounted / NotSummed / NotCountedOrSummed
             // based on what axes the parent aggregates.
             let wrap_property_name_tree_under_aggregating_parent = parent_value_tree_aggregates;

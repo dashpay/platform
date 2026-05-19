@@ -32,8 +32,8 @@ impl Drive {
     ) -> Result<bool, Error> {
         // The index walker passes the parent value tree's TreeType when
         // the parent aggregates count, sum, or both. The
-        // `for_known_path_key_empty_tree_under_aggregating_parent`
-        // dispatcher then picks the right wrapper variant
+        // `wrap_in_non_aggregated_for_parent_tree_type` dispatcher
+        // then picks the right wrapper variant
         // (NonCounted / NotSummed / NotCountedOrSummed) based on what
         // axes the parent aggregates. For non-aggregating parents
         // (`aggregating_parent_tree_type: None`), no wrapping is
@@ -41,7 +41,7 @@ impl Drive {
         let build_op =
             |path: Vec<Vec<u8>>, key: Vec<u8>| -> Result<LowLevelDriveOperation, Error> {
                 if let Some(parent_tt) = aggregating_parent_tree_type {
-                    LowLevelDriveOperation::for_known_path_key_empty_tree_under_aggregating_parent(
+                    LowLevelDriveOperation::wrap_in_non_aggregated_for_parent_tree_type(
                         path,
                         key,
                         parent_tt,

@@ -32,7 +32,7 @@ impl Drive {
     ///   information. Cost estimation for sum-bearing layers may
     ///   under-charge by a few bytes per affected node as a result.
     ///   See the matching docstring on
-    ///   `remove_indices_for_index_level_for_contract_operations_v0`
+    ///   `remove_indices_for_index_level_for_contract_operations_v1`
     ///   for the full deferred-fix note (replacing the bool with a
     ///   `TreeType` is a focused follow-up; the actual delete
     ///   operations remain correct because the per-element delete

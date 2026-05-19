@@ -75,6 +75,12 @@ pub mod batch_insert_empty_sum_tree;
 /// Batch insert operation into empty count tree (O(1) total count)
 pub mod batch_insert_empty_count_tree;
 
+/// Batch insert operation into empty count-sum tree (O(1) totals for both
+/// count and sum, no per-node aggregation). Used when a document type
+/// opts into BOTH `documentsCountable` and `documentsSummable` without
+/// any range-* flags.
+pub mod batch_insert_empty_count_sum_tree;
+
 /// Batch insert operation into empty provable count tree (range-countable)
 pub mod batch_insert_empty_provable_count_tree;
 

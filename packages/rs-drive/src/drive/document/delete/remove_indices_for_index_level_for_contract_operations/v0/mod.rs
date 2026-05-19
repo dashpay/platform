@@ -33,22 +33,6 @@ impl Drive {
     /// a `range_countable` index). Cost estimation uses this to report the
     /// correct tree variant for the layer being walked, so storage-cost
     /// math matches what's actually on disk.
-    ///
-    /// **v3 sum-tree caveat**: when the parent value tree was actually
-    /// inserted as a `SumTree` / `ProvableSumTree` / `CountSumTree` /
-    /// `ProvableCountSumTree` (because the IndexLevel that produced it
-    /// declares `summable`), this single-bool input under-reports the
-    /// layer's tree type for cost estimation — the bool only signals
-    /// count-side range-countability. The actual delete operations
-    /// remain correct (the per-element delete path runs through
-    /// [`Drive::remove_reference_for_index_level_for_contract_operations`]
-    /// which composes all four count+sum flags), but the
-    /// `EstimatedLayerInformation` emitted from this walker may
-    /// under-charge the fee for sum-bearing layers by a few bytes per
-    /// affected node. Fixing this requires a wrapper signature change
-    /// to pass either a richer enum or four bools; deferred to its own
-    /// PR. See also the matching note in
-    /// `add_indices_for_index_level_for_contract_operations_v0`.
     #[inline]
     #[allow(clippy::too_many_arguments)]
     pub(super) fn remove_indices_for_index_level_for_contract_operations_v0(
@@ -114,24 +98,15 @@ impl Drive {
 
         // fourth we need to store a reference to the document for each index
         for (name, sub_level) in index_level.sub_levels() {
-            // Same property-name tree-type composition as the insert
-            // side — see
-            // `add_indices_for_index_level_for_contract_operations_v0`
-            // for the four-way dispatch table.
-            let sub_level_info = sub_level.has_index_with_type();
-            let sub_level_range_countable = sub_level_info
+            let sub_level_range_countable = sub_level
+                .has_index_with_type()
                 .map(|info| info.range_countable)
                 .unwrap_or(false);
-            let sub_level_range_summable = sub_level_info
-                .map(|info| info.range_summable)
-                .unwrap_or(false);
-            let property_name_tree_type =
-                match (sub_level_range_countable, sub_level_range_summable) {
-                    (true, true) => TreeType::ProvableCountProvableSumTree,
-                    (true, false) => TreeType::ProvableCountTree,
-                    (false, true) => TreeType::ProvableSumTree,
-                    (false, false) => TreeType::NormalTree,
-                };
+            let property_name_tree_type = if sub_level_range_countable {
+                TreeType::ProvableCountTree
+            } else {
+                TreeType::NormalTree
+            };
 
             let mut sub_level_index_path_info = index_path_info.clone();
             let index_property_key = KeyRef(name.as_bytes());

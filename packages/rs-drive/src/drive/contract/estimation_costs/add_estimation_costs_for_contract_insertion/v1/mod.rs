@@ -1,4 +1,7 @@
 use crate::drive::constants::{AVERAGE_NUMBER_OF_UPDATES, ESTIMATED_AVERAGE_INDEX_NAME_SIZE};
+use crate::drive::contract::estimation_costs::{
+    property_name_tree_type_from_flags, TreeTypeWeights,
+};
 use crate::drive::contract::paths::contract_keeping_history_root_path;
 use crate::drive::document::paths::contract_document_type_path;
 use crate::drive::document::primary_key_tree_type::DocumentTypePrimaryKeyTreeType;
@@ -20,7 +23,7 @@ use dpp::version::PlatformVersion;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{ApproximateElements, EstimatedLevel};
 use grovedb::EstimatedLayerSizes::{AllSubtrees, Mix};
-use grovedb::EstimatedSumTrees::{NoSumTrees, SomeSumTrees};
+use grovedb::EstimatedSumTrees::NoSumTrees;
 use grovedb::{EstimatedLayerInformation, TreeType};
 use std::collections::{HashMap, HashSet};
 
@@ -202,111 +205,6 @@ impl Drive {
     }
 }
 
-/// Per-tree-type weight tally used by [`Drive::add_estimation_costs_for_contract_insertion_v1`].
-/// Mirrors every `TreeType` variant the contract apply path can write at
-/// the doctype's children layer: the primary-key tree (`[0]`) plus each
-/// top-level index's terminator tree.
-#[derive(Debug, Default, Clone, Copy)]
-struct TreeTypeWeights {
-    normal: u8,
-    count: u8,
-    provable_count: u8,
-    sum: u8,
-    big_sum: u8,
-    provable_sum: u8,
-    count_sum: u8,
-    provable_count_sum: u8,
-    provable_count_provable_sum: u8,
-}
-
-impl TreeTypeWeights {
-    fn tally(&mut self, tree_type: TreeType) {
-        match tree_type {
-            TreeType::NormalTree => self.normal = self.normal.saturating_add(1),
-            TreeType::CountTree => self.count = self.count.saturating_add(1),
-            TreeType::ProvableCountTree => {
-                self.provable_count = self.provable_count.saturating_add(1)
-            }
-            TreeType::SumTree => self.sum = self.sum.saturating_add(1),
-            TreeType::BigSumTree => self.big_sum = self.big_sum.saturating_add(1),
-            TreeType::ProvableSumTree => self.provable_sum = self.provable_sum.saturating_add(1),
-            TreeType::CountSumTree => self.count_sum = self.count_sum.saturating_add(1),
-            TreeType::ProvableCountSumTree => {
-                self.provable_count_sum = self.provable_count_sum.saturating_add(1)
-            }
-            TreeType::ProvableCountProvableSumTree => {
-                self.provable_count_provable_sum =
-                    self.provable_count_provable_sum.saturating_add(1)
-            }
-            // Other tree variants (e.g. CommitmentTree) don't appear at
-            // the doctype's children layer — they're shielded-pool-only.
-            // Bucket them with `normal` (zero per-node aggregate cost) so
-            // the tally stays exhaustive.
-            _ => self.normal = self.normal.saturating_add(1),
-        }
-    }
-
-    /// Convert the tally into an [`EstimatedSumTrees`]. Returns
-    /// `NoSumTrees` only when every aggregate-bearing tally is zero
-    /// (preserving the existing v0/v1-output contract for purely-normal
-    /// doctypes — see the regression test in this module).
-    fn to_estimated_sum_trees(self) -> grovedb::EstimatedSumTrees {
-        let any_aggregate = self.count
-            | self.provable_count
-            | self.sum
-            | self.big_sum
-            | self.provable_sum
-            | self.count_sum
-            | self.provable_count_sum
-            | self.provable_count_provable_sum;
-        if any_aggregate == 0 {
-            NoSumTrees
-        } else {
-            SomeSumTrees {
-                sum_trees_weight: self.sum,
-                big_sum_trees_weight: self.big_sum,
-                count_trees_weight: self.count,
-                count_sum_trees_weight: self.count_sum,
-                non_sum_trees_weight: self.normal,
-                provable_sum_trees_weight: self.provable_sum,
-                provable_count_trees_weight: self.provable_count,
-                provable_count_sum_trees_weight: self.provable_count_sum,
-                provable_count_provable_sum_trees_weight: self.provable_count_provable_sum,
-            }
-        }
-    }
-}
-
-/// Derive the property-name tree type of a top-level index from its
-/// terminator's flags. Mirror of the selection in
-/// `add_indices_for_index_level_for_contract_operations` — when the
-/// terminator opts into a range axis (`range_countable` or
-/// `range_summable`) the property-name level gets a `Provable*` tree;
-/// otherwise it gets the root-only-aggregate variant. The combinations
-/// follow the same matrix the document-storage primary-key dispatcher
-/// uses, see
-/// [`DocumentTypePrimaryKeyTreeType::primary_key_tree_type`].
-fn property_name_tree_type_from_flags(
-    info: &dpp::data_contract::document_type::IndexLevelTypeInfo,
-) -> TreeType {
-    let summable = info.summable.is_some();
-    let countable = info.countable.is_countable();
-    match (
-        info.range_summable,
-        info.range_countable,
-        summable,
-        countable,
-    ) {
-        (true, true, _, _) => TreeType::ProvableCountProvableSumTree,
-        (true, false, _, _) => TreeType::ProvableSumTree,
-        (false, true, _, _) => TreeType::ProvableCountTree,
-        (false, false, true, true) => TreeType::CountSumTree,
-        (false, false, true, false) => TreeType::SumTree,
-        (false, false, false, true) => TreeType::CountTree,
-        (false, false, false, false) => TreeType::NormalTree,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     //! These tests pin the per-doctype `EstimatedSumTrees` shape v1 emits
@@ -323,6 +221,7 @@ mod tests {
     use dpp::platform_value::{platform_value, Value};
     use dpp::tests::utils::generate_random_identifier_struct;
     use grovedb::EstimatedLayerSizes;
+    use grovedb::EstimatedSumTrees::SomeSumTrees;
 
     const PROTOCOL_VERSION_V12: u32 = 12;
 

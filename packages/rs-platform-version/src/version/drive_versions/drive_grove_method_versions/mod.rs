@@ -61,6 +61,7 @@ pub struct DriveGroveBatchMethodVersions {
     pub batch_refresh_reference: FeatureVersion,
     pub batch_insert_empty_sum_tree: FeatureVersion,
     pub batch_insert_empty_count_tree: FeatureVersion,
+    pub batch_insert_empty_count_sum_tree: FeatureVersion,
     pub batch_insert_empty_provable_count_tree: FeatureVersion,
     /// Provable sum tree (range-summable). Mirrors
     /// [`Self::batch_insert_empty_provable_count_tree`] for the sum
