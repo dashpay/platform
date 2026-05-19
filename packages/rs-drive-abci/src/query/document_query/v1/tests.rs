@@ -645,8 +645,17 @@ fn reject_count_aggregate_with_limit() {
     }];
     match validate_and_route_for_tests(&request, &where_clauses) {
         Err(QueryError::Query(QuerySyntaxError::InvalidLimit(msg))) => {
+            // The aggregate-mode limit rejection is now produced by the
+            // shared `compute_aggregate_mode_and_check_limit` helper
+            // (covers COUNT / SUM / AVG); the wording dropped the
+            // function-specific "count" word from the parenthetical
+            // since the helper is keyed off `function_name` (interpolated
+            // as "SELECT COUNT" / "SELECT SUM" / "SELECT AVG" at the
+            // head of the message). Assert against the function-agnostic
+            // tail.
             assert!(
-                msg.contains("aggregate count is a single row"),
+                msg.contains("SELECT COUNT with empty GROUP BY")
+                    && msg.contains("aggregate is a single row"),
                 "expected aggregate-count limit-rejection message, got: {msg}"
             );
         }
