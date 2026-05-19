@@ -102,9 +102,11 @@ const DOCUMENT_CREATE_OPTIONS_TS: &'static str = r#"
 export interface DocumentCreateOptions {
   /**
    * The document to create.
-   * Use `new Document(...)` or `Document.fromJSON(...)` to construct it.
-   * Must include dataContractId, documentTypeName, and ownerId.
-   * Entropy is optional - if not set, it will be auto-generated.
+   * Use `new Document(...)` to construct it (the constructor auto-generates
+   * entropy and the matching document id). Must include dataContractId,
+   * documentTypeName, ownerId, and entropy. When constructing via
+   * `fromObject` / `fromJSON` / `fromBytes`, supply `$entropy` explicitly
+   * along with an `$id` derived from it.
    */
   document: Document;
 
@@ -164,16 +166,20 @@ impl WasmSdk {
         let contract_id: Identifier = document_wasm.data_contract_id().into();
         let document_type_name = document_wasm.document_type_name();
 
-        // Get entropy from document if set, otherwise let rs-sdk generate it
-        let entropy = document_wasm.entropy().and_then(|e| {
-            if e.len() == 32 {
-                let mut arr = [0u8; 32];
-                arr.copy_from_slice(&e);
-                Some(arr)
-            } else {
-                None
-            }
-        });
+        // Require explicit entropy from the caller. If we let rs-sdk auto-generate it, it would
+        // also rewrite the document id (see PutDocument::put_to_platform), and that updated id is
+        // not surfaced back through this wrapper's `Result<(), _>` return — the JS-side Document
+        // would silently retain an id that doesn't match what was committed on-chain.
+        let entropy_bytes = document_wasm.entropy().ok_or_else(|| {
+            WasmSdkError::invalid_argument(
+                "Document must have entropy set for creation. Construct the document with \
+                 `new Document(...)` (which auto-generates entropy) or supply `$entropy` \
+                 explicitly when using fromObject/fromJSON/fromBytes.",
+            )
+        })?;
+        let entropy: [u8; 32] = entropy_bytes.as_slice().try_into().map_err(|_| {
+            WasmSdkError::invalid_argument("Document entropy must be exactly 32 bytes")
+        })?;
 
         // Extract identity key from options
         let identity_key_wasm = IdentityPublicKeyWasm::try_from_options(&options, "identityKey")?;
@@ -198,7 +204,7 @@ impl WasmSdk {
             .put_to_platform_and_wait_for_response(
                 self.inner_sdk(),
                 document_type,
-                entropy,
+                Some(entropy),
                 identity_key,
                 token_payment_info,
                 &signer,
