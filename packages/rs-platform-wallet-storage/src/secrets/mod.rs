@@ -9,13 +9,20 @@
 //!
 //! # Backends & selection
 //!
-//! [`EncryptedFileStore`] (Argon2id + XChaCha20-Poly1305 vault file) is
-//! fully self-contained — the recommended default on **headless /
-//! server** hosts. The OS-keyring backend (recommended on desktop)
-//! lands alongside it; **backend selection is an explicit operator
-//! decision — there is no silent fallback between backends**
-//! (SEC-REQ-2.1.3 / AR-4). [`MemoryStore`] is test-only and gated so it
-//! is unreachable from production builds.
+//! Two production backends ship; **selection is an explicit operator
+//! decision — there is no silent fallback between them** (SEC-REQ-2.1.3
+//! / AR-4):
+//!
+//! - [`KeyringStore`] — OS keyring. Recommended default on **desktop**
+//!   OSes. Fails closed on headless Linux (no Secret Service) with a
+//!   typed [`SecretStoreError::BackendUnavailable`], never a degraded
+//!   plaintext store.
+//! - [`EncryptedFileStore`] — Argon2id + XChaCha20-Poly1305 vault file.
+//!   Recommended default on **headless / server** hosts; fully
+//!   self-contained, no environment caveat.
+//!
+//! [`MemoryStore`] is test-only and gated so it is unreachable from
+//! production builds.
 //!
 //! # Memory hygiene
 //!
@@ -26,6 +33,7 @@
 
 mod error;
 mod file;
+mod keyring;
 mod secret;
 mod store;
 mod validate;
@@ -35,6 +43,7 @@ mod memory;
 
 pub use error::SecretStoreError;
 pub use file::EncryptedFileStore;
+pub use keyring::KeyringStore;
 pub use secret::{SecretBytes, SecretString};
 pub use store::SecretStore;
 pub use validate::WalletId;
