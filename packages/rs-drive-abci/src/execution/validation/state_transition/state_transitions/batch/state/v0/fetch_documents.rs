@@ -26,6 +26,13 @@ use drive::query::{DriveDocumentQuery, InternalClauses, WhereClause, WhereOperat
 /// `DriveAbciDocumentsStateTransitionValidationVersions` (`0` discards
 /// the cost for PROTOCOL_VERSION_11 chain replay, `1` bills it).
 ///
+/// PROTOCOL_VERSION_11 consensus-safety: the function signature
+/// changed from pre-PR (added `epoch: &Epoch`, return type now a
+/// tuple) but the DOCUMENTS returned are unchanged — `query_documents`
+/// is epoch-independent for the documents/skipped fields, only the
+/// `cost` field varies. The cost is discarded on `transform_into_action: 0`
+/// at the caller, so net PV11 user-visible behavior matches pre-PR.
+///
 /// `query_documents` only computes a non-zero cost when an `Epoch` is
 /// provided; the legacy `None` epoch resulted in a hard-coded zero cost
 /// that was discarded anyway.
@@ -105,6 +112,16 @@ pub(crate) fn fetch_documents_for_transitions_knowing_contract_and_document_type
 /// - `1` (PROTOCOL_VERSION_12+): pass `Some(epoch)` so the real grovedb
 ///   cost is computed and returned. Callers bill it via the existing
 ///   `execution_context.add_operation` call site.
+///
+/// PROTOCOL_VERSION_11 consensus-safety: signature changed from pre-PR
+/// (added `epoch: &Epoch` parameter) but the v0 arm forces epoch=None
+/// inside `query_documents`, producing the exact same zero-cost
+/// `FeeResult` that pre-PR produced. The DOCUMENT returned is
+/// epoch-independent. Callers (`document_create_transition_action`,
+/// `document_delete_transition_action`) always called
+/// `add_operation(PrecalculatedOperation(fee_result))` pre-PR — that
+/// call survives unchanged but receives a zero-cost FeeResult on PV11,
+/// same net effect (no fees added).
 pub(crate) fn fetch_document_with_id(
     drive: &Drive,
     contract: &DataContract,

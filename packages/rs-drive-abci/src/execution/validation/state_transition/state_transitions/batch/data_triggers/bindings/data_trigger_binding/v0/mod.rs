@@ -73,6 +73,11 @@ pub trait DataTriggerBindingV0Getters {
 }
 
 impl DataTriggerBindingV0Getters for DataTriggerBindingV0 {
+    // PROTOCOL_VERSION_11 consensus-safety: `execute` now takes
+    // `&mut DataTriggerExecutionContext` instead of `&...` so that
+    // `_v1` triggers can call `add_operation` on the context. On PV11
+    // the dispatched trigger is `_v0`, which never mutates the
+    // context, so the chain state is identical to pre-PR.
     fn execute(
         &self,
         document_transition: &DocumentTransitionAction,

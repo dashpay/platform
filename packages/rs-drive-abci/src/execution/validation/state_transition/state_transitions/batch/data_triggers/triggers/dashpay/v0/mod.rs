@@ -30,6 +30,9 @@ use crate::execution::validation::state_transition::batch::data_triggers::{DataT
 /// # Returns
 ///
 /// A `DataTriggerExecutionResult` indicating the success or failure of the trigger execution.
+// PROTOCOL_VERSION_11 consensus-safety: body byte-identical to
+// v3.1-dev. Only the `context` param type changed from `&` to `&mut`
+// (compile-time only — the body never mutates the context).
 #[inline(always)]
 pub(super) fn create_contact_request_data_trigger_v0(
     document_transition: &DocumentTransitionAction,

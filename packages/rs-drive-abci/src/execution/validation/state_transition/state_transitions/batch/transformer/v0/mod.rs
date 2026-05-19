@@ -508,6 +508,17 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
         // Below we also perform state validation for replace and transfer transitions only
         // other transitions are validated in their validate_state functions
         // TODO: Think more about this architecture
+        //
+        // PROTOCOL_VERSION_11 consensus-safety: this callsite now passes
+        // `&block_info.epoch` so `query_documents` computes a non-zero
+        // cost. Pre-PR the function passed `epoch=None` and the cost was
+        // hard-coded to 0. The DOCUMENTS returned by `query_documents` are
+        // epoch-independent (see `query_documents_v0`: only the `cost`
+        // field reads epoch) so the validation outcome on PV11 is
+        // unchanged. The cost itself only reaches the user's bill when
+        // we explicitly add it via `add_operation` below, which is gated
+        // on `transform_into_action: 1` — on v0 we discard the cost,
+        // identical to pre-PR.
         let (fetched_documents_validation_result, fetch_documents_fee_result) =
             fetch_documents_for_transitions_knowing_contract_and_document_type(
                 platform.drive,
@@ -531,6 +542,8 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
             .batch_state_transition
             .transform_into_action
         {
+            // PROTOCOL_VERSION_11: discard the fee. Same end state as
+            // pre-PR where the cost was always zero (epoch was None).
             0 => {}
             1 => {
                 execution_context.add_operation(ValidationOperation::PrecalculatedOperation(

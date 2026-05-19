@@ -44,6 +44,13 @@ pub const MAX_PRINTABLE_DOMAIN_NAME_LENGTH: usize = 253;
 /// # Returns
 ///
 /// A `DataTriggerExecutionResult` indicating the success or failure of the trigger execution.
+// PROTOCOL_VERSION_11 consensus-safety: the body of this function is
+// byte-identical to v3.1-dev. The only signature change is the
+// `context` parameter: pre-PR `&DataTriggerExecutionContext`, now
+// `&mut DataTriggerExecutionContext` (required by the new
+// `DataTrigger` fn type that `_v1` triggers need). The body never
+// mutates the context (no `add_operation` calls, only reads via
+// `in_dry_run()` and field accesses), so PV11 behavior is identical.
 #[inline(always)]
 pub(super) fn create_domain_data_trigger_v0(
     document_transition: &DocumentTransitionAction,
