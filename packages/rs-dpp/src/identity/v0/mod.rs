@@ -2,17 +2,21 @@ mod conversion;
 #[cfg(feature = "random-identities")]
 pub mod random;
 
+#[cfg(feature = "json-conversion")]
+use crate::serialization::json_safe_fields;
+#[cfg(feature = "value-conversion")]
+use crate::serialization::ValueConvertible;
 use std::collections::BTreeMap;
-#[cfg(feature = "identity-value-conversion")]
+#[cfg(feature = "value-conversion")]
 use std::convert::TryFrom;
 use std::hash::{Hash, Hasher};
 
 use crate::identity::{IdentityPublicKey, KeyID, PartialIdentity};
 use crate::prelude::Revision;
-#[cfg(feature = "identity-value-conversion")]
+#[cfg(feature = "value-conversion")]
 use platform_value::Value;
 
-#[cfg(feature = "identity-value-conversion")]
+#[cfg(feature = "value-conversion")]
 use crate::errors::ProtocolError;
 use crate::identifier::Identifier;
 #[cfg(feature = "identity-serialization")]
@@ -20,23 +24,19 @@ use bincode::{Decode, Encode};
 
 /// Implement the Identity. Identity is a low-level construct that provides the foundation
 /// for user-facing functionality on the platform
+#[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(Default, Debug, Clone, Eq, PartialEq)]
 #[cfg_attr(feature = "identity-serialization", derive(Encode, Decode))]
 #[cfg_attr(
-    any(
-        feature = "identity-serde-conversion",
-        feature = "state-transition-serde-conversion"
-    ),
+    any(feature = "serde-conversion", feature = "serde-conversion"),
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
+#[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
 pub struct IdentityV0 {
     pub id: Identifier,
     #[cfg_attr(
-        any(
-            feature = "identity-serde-conversion",
-            feature = "state-transition-serde-conversion"
-        ),
+        any(feature = "serde-conversion", feature = "serde-conversion"),
         serde(with = "public_key_serialization")
     )]
     pub public_keys: BTreeMap<KeyID, IdentityPublicKey>,
@@ -125,7 +125,7 @@ impl IdentityV0 {
     }
 }
 
-#[cfg(feature = "identity-value-conversion")]
+#[cfg(feature = "value-conversion")]
 impl TryFrom<Value> for IdentityV0 {
     type Error = ProtocolError;
 
@@ -134,7 +134,7 @@ impl TryFrom<Value> for IdentityV0 {
     }
 }
 
-#[cfg(feature = "identity-value-conversion")]
+#[cfg(feature = "value-conversion")]
 impl TryFrom<&Value> for IdentityV0 {
     type Error = ProtocolError;
 

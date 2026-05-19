@@ -109,7 +109,7 @@ describe('SPV-DASH (forks & re-orgs) serialized raw headers for mainnet', () => 
     chain.getLongestChain().length.should.equal(2);
   });
 
-  it('should discard addding of duplicate block', () => {
+  it('should discard adding of duplicate block', () => {
     chain.addHeaders([mainnet[1]]);
     chain.getOrphanChunks().length.should.equal(0);
     chain.getLongestChain().length.should.equal(2);

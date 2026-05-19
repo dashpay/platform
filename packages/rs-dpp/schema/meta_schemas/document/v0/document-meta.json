@@ -1,6 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/dashpay/platform/blob/master/packages/rs-dpp/schema/meta_schemas/document/v0/document-meta.json",
+  "$comment": "FROZEN — DO NOT MODIFY. This v0 document meta-schema is the schema validator used to admit pre-v12 contracts and remains in view-only mode for state already on disk. Any new top-level property or rule MUST go in a newer meta-schema version (v1+) so historical validation results stay deterministic. Touching this file changes how every pre-v12 contract was admitted and breaks consensus replay.",
   "type": "object",
   "$defs": {
     "documentProperties": {
@@ -426,6 +427,10 @@
               "resolution"
             ],
             "additionalProperties": false
+          },
+          "countable": {
+            "type": "boolean",
+            "description": "Enables countable operations on the index. Adds extra costs for documents storage"
           }
         },
         "required": [

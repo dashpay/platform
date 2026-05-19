@@ -1,5 +1,3 @@
-# cbindgen configuration for Dash SDK FFI
-
 language = "C"
 pragma_once = true
 include_guard = "DASH_SDK_FFI_H"
@@ -8,7 +6,7 @@ include_version = true
 namespaces = []
 using_namespaces = []
 sys_includes = ["stdint.h", "stdbool.h"]
-includes = ["dash_spv_ffi.h"]
+includes = []
 no_includes = false
 cpp_compat = true
 documentation = true
@@ -17,15 +15,13 @@ documentation_style = "c99"
 [defines]
 
 [export]
-include = ["dash_sdk_*", "dash_core_*", "dash_unified_sdk_*", "dash_spv_ffi_*"]
-# Exclude types that come from key-wallet-ffi or dash-spv-ffi to avoid duplication
+include = ["dash_sdk_*", "dash_core_*", "dash_unified_sdk_*"]
+# Exclude types that come from key-wallet-ffi to avoid duplication
 exclude = ["FFIAccountType", "FFIAccountTypePreference", "FFIAccountTypeUsed", "FFIAccountCreationOptionType"]
 prefix = ""
 item_types = ["enums", "structs", "unions", "typedefs", "opaque", "functions"]
 
 [export.rename]
-"SDKHandle" = "dash_sdk_handle_t"
-"SDKError" = "dash_sdk_error_t"
 
 [fn]
 args = "horizontal"
@@ -47,7 +43,7 @@ derive_gte = false
 [enum]
 rename_variant_name_fields = "snake_case"
 add_sentinel = false
-prefix_with_name = true
+prefix_with_name = false
 derive_helper_methods = false
 derive_const_casts = false
 derive_mut_casts = false

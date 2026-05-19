@@ -207,7 +207,7 @@ Successful proof verification guarantees that the server responded without modif
 
 ## Deployment Considerations
 
-DAPI is designed to be deployed on masternode. The prefered and officaially supported way is to use [dashmate](https://docs.dash.org/en/stable/docs/user/network/dashmate/index.html).
+DAPI is designed to be deployed on masternode. The preferred and officially supported way is to use [dashmate](https://docs.dash.org/en/stable/docs/user/network/dashmate/index.html).
 
 ## Monitoring
 

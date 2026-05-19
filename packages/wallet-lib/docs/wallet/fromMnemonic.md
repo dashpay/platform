@@ -15,5 +15,3 @@ Examples :
 ```js
 wallet.fromMnemonic('knife easily prosper input concert merge prepare autumn pen blood glance toilet')
 ```
-
-

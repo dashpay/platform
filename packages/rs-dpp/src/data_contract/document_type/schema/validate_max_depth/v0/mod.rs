@@ -118,6 +118,8 @@ pub(super) fn validate_max_depth_v0(
 
 #[cfg(test)]
 mod test {
+    use crate::consensus::basic::BasicError;
+    use crate::consensus::ConsensusError;
     use serde_json::json;
 
     use super::*;
@@ -339,5 +341,31 @@ mod test {
             .depth;
 
         assert_eq!(found_depth, 4);
+    }
+
+    #[test]
+    fn should_return_error_when_max_depth_exceeded() {
+        let platform_version = PlatformVersion::first();
+        let max_depth = platform_version
+            .dpp
+            .contract_versions
+            .document_type_versions
+            .schema
+            .max_depth as usize;
+
+        let mut inner = json!({ "type": "string" });
+        for _ in 0..max_depth {
+            inner = json!({ "a": inner });
+        }
+        let schema: Value = inner.into();
+
+        let result = validate_max_depth_v0(&schema, platform_version);
+
+        let Some(ConsensusError::BasicError(BasicError::DataContractMaxDepthExceedError(e))) =
+            result.errors.first()
+        else {
+            panic!("expected DataContractMaxDepthExceedError");
+        };
+        assert_eq!(e.max_depth(), max_depth);
     }
 }

@@ -195,27 +195,65 @@ pub(super) fn derive_platform_deserialize_enum(
         } else {
             quote! {}
         }
+    } else if let Some(limit) = platform_serialize_limit {
+        let limit_map_err = quote! {
+            .map_err(|e| {
+                match e {
+                    bincode::error::DecodeError::Io { .. }
+                    | bincode::error::DecodeError::LimitExceeded => {
+                        #crate_name::#error_type::MaxEncodedBytesReachedError {
+                            max_size_kbytes: #limit,
+                            size_hit: data.len(),
+                        }
+                    }
+                    _ => #crate_name::#error_type::PlatformDeserializationError(
+                        format!("unable to deserialize {}: {}", stringify!(#name), e),
+                    ),
+                }
+            })
+        };
+        quote! {
+            impl #impl_generics #crate_name::serialization::PlatformDeserializable for #name #ty_generics #where_clause {
+                fn deserialize_from_bytes(
+                    data: &[u8]
+                ) -> Result<Self, ProtocolError>
+                where
+                    Self: Sized {
+                    let config = bincode::config::standard().with_big_endian().with_limit::<{ #limit }>();
+                    bincode::decode_from_slice(&data, config).map(|(a,_)| a)#limit_map_err
+                }
+
+                fn deserialize_from_bytes_no_limit(
+                    data: &[u8]
+                ) -> Result<Self, ProtocolError>
+                where
+                    Self: Sized {
+                    let config = bincode::config::standard().with_big_endian().with_no_limit();
+                    bincode::decode_from_slice(&data, config).map(|(a,_)| a)#map_err
+                }
+            }
+        }
     } else {
         quote! {
             impl #impl_generics #crate_name::serialization::PlatformDeserializable for #name #ty_generics #where_clause {
-                        fn deserialize_from_bytes(
-                            data: &[u8]
-                        ) -> Result<Self, ProtocolError>
-                        where
-                            Self: Sized {
-                            let config = bincode::config::standard().with_big_endian().with_no_limit();
-                            bincode::decode_from_slice(&data, config).map(|(a,_)| a)#map_err
-                        }
+                fn deserialize_from_bytes(
+                    data: &[u8]
+                ) -> Result<Self, ProtocolError>
+                where
+                    Self: Sized {
+                    let config = bincode::config::standard().with_big_endian().with_no_limit();
+                    bincode::decode_from_slice(&data, config).map(|(a,_)| a)#map_err
+                }
 
-                        fn deserialize_from_bytes_no_limit(
-                            data: &[u8]
-                        ) -> Result<Self, ProtocolError>
-                        where
-                            Self: Sized {
-                            let config = bincode::config::standard().with_big_endian().with_no_limit();
-                            bincode::decode_from_slice(&data, config).map(|(a,_)| a)#map_err
-                        }
-                    }
+                fn deserialize_from_bytes_no_limit(
+                    data: &[u8]
+                ) -> Result<Self, ProtocolError>
+                where
+                    Self: Sized {
+                    let config = bincode::config::standard().with_big_endian().with_no_limit();
+                    bincode::decode_from_slice(&data, config).map(|(a,_)| a)#map_err
+                }
+            }
         }
     };
 

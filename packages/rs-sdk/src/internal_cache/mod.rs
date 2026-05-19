@@ -68,12 +68,9 @@ pub(crate) struct IdentityContractPair {
 /// transactions fail silently, the cache may advance past the on-chain
 /// nonce until the next re-fetch realigns it.
 ///
-/// # DAPI node staleness
+/// # First-time interactions
 ///
-/// A stale DAPI node may report an identity as unknown.  The fetch
-/// closure surfaces this as [`Error::IdentityNonceNotFound`] rather
-/// than defaulting to nonce 0.  Worst case: one state transition
-/// attempt fails and must be retried against a different node.
+/// `None` from Platform → nonce `0` (matches Drive's `unwrap_or_default()`).
 pub(crate) struct NonceCache {
     identity_nonces: Mutex<LruCache<Identifier, NonceCacheEntry>>,
     contract_nonces: Mutex<LruCache<IdentityContractPair, NonceCacheEntry>>,
@@ -143,20 +140,21 @@ impl NonceCache {
             settings,
             self.default_stale_time_s,
             || async move {
-                let fetcher =
+                // None = first interaction (or missing identity — GroveDB
+                // can't distinguish). Matches Drive's unwrap_or_default().
+                let nonce =
                     IdentityNonceFetcher::fetch_with_settings(sdk, identity_id, request_settings)
                         .await?
-                        .ok_or_else(|| {
-                            tracing::warn!(
+                        .map(|fetcher| fetcher.0)
+                        .unwrap_or_else(|| {
+                            tracing::debug!(
                                 identity_id = %identity_id,
                                 "Platform returned no nonce for identity; \
-                                 node may be stale or identity may not exist yet"
+                                 defaulting to 0 (unknown identity, node missing data, or first interaction)"
                             );
-                            Error::IdentityNonceNotFound(format!(
-                                "identity {identity_id}: platform returned no nonce"
-                            ))
-                        })?;
-                Ok(fetcher.0)
+                            0
+                        });
+                Ok(nonce)
             },
         )
         .await
@@ -183,25 +181,24 @@ impl NonceCache {
             settings,
             self.default_stale_time_s,
             || async move {
-                let fetcher = IdentityContractNonceFetcher::fetch_with_settings(
+                // Same as get_identity_nonce: None → 0.
+                let nonce = IdentityContractNonceFetcher::fetch_with_settings(
                     sdk,
                     (identity_id, contract_id),
                     request_settings,
                 )
                 .await?
-                .ok_or_else(|| {
-                    tracing::warn!(
+                .map(|fetcher| fetcher.0)
+                .unwrap_or_else(|| {
+                    tracing::debug!(
                         identity_id = %identity_id,
                         contract_id = %contract_id,
                         "Platform returned no nonce for identity-contract pair; \
-                         node may be stale or identity may not exist yet"
+                         defaulting to 0 (first interaction)"
                     );
-                    Error::IdentityNonceNotFound(format!(
-                        "identity {identity_id} contract {contract_id}: \
-                         platform returned no nonce"
-                    ))
-                })?;
-                Ok(fetcher.0)
+                    0
+                });
+                Ok(nonce)
             },
         )
         .await
@@ -262,10 +259,7 @@ impl NonceCache {
     ///
     /// # Errors
     ///
-    /// - Returns whatever error `fetch_from_platform` produces, including
-    ///   [`Error::IdentityNonceNotFound`] when the queried DAPI node does
-    ///   not know the identity. Callers should retry in that case; a
-    ///   different node will likely have the data.
+    /// - Returns whatever error `fetch_from_platform` produces.
     /// - Returns [`Error::NonceOverflow`] if bumping would wrap past the
     ///   40-bit nonce value filter.
     async fn get_or_fetch_nonce<K: Hash + Eq + Copy + Debug, F, Fut>(
@@ -685,6 +679,77 @@ mod nonce_cache_tests {
             .await
             .unwrap();
         assert_eq!(nonce, 21);
+    }
+
+    // --- First-time interaction: None → nonce 0 (issue #3169) ---
+    #[tokio::test]
+    async fn first_identity_nonce_defaults_to_zero_then_bumps_to_one() {
+        use drive_proof_verifier::types::IdentityNonceFetcher;
+
+        let mut sdk = crate::Sdk::new_mock();
+        let identity_id = Identifier::default();
+        let settings = PutSettings::default();
+
+        // Platform returns None (identity has never interacted).
+        sdk.mock()
+            .expect_fetch::<IdentityNonceFetcher, _>(identity_id, None)
+            .await
+            .expect("set mock expectation");
+
+        // Should default to 0 and bump to 1.
+        let nonce = sdk
+            .get_identity_nonce(identity_id, true, Some(settings))
+            .await
+            .unwrap();
+        assert_eq!(nonce, 1, "first identity nonce should be 1 (0 bumped)");
+    }
+
+    #[tokio::test]
+    async fn first_identity_contract_nonce_defaults_to_zero_then_bumps_to_one() {
+        use drive_proof_verifier::types::IdentityContractNonceFetcher;
+
+        let mut sdk = crate::Sdk::new_mock();
+        let identity_id = Identifier::default();
+        let contract_id = Identifier::from([1u8; 32]);
+        let settings = PutSettings::default();
+
+        // Platform returns None (identity has never interacted with contract).
+        sdk.mock()
+            .expect_fetch::<IdentityContractNonceFetcher, _>((identity_id, contract_id), None)
+            .await
+            .expect("set mock expectation");
+
+        // Should default to 0 and bump to 1.
+        let nonce = sdk
+            .get_identity_contract_nonce(identity_id, contract_id, true, Some(settings))
+            .await
+            .unwrap();
+        assert_eq!(
+            nonce, 1,
+            "first identity-contract nonce should be 1 (0 bumped)"
+        );
+    }
+
+    #[tokio::test]
+    async fn first_identity_nonce_defaults_to_zero_without_bump() {
+        use drive_proof_verifier::types::IdentityNonceFetcher;
+
+        let mut sdk = crate::Sdk::new_mock();
+        let identity_id = Identifier::default();
+        let settings = PutSettings::default();
+
+        // Platform returns None (identity has never interacted).
+        sdk.mock()
+            .expect_fetch::<IdentityNonceFetcher, _>(identity_id, None)
+            .await
+            .expect("set mock expectation");
+
+        // bump_first=false: should return the raw default of 0.
+        let nonce = sdk
+            .get_identity_nonce(identity_id, false, Some(settings))
+            .await
+            .unwrap();
+        assert_eq!(nonce, 0, "first identity nonce without bump should be 0");
     }
 
     // --- Different keys are isolated ---

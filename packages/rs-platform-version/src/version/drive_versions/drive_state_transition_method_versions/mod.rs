@@ -48,6 +48,11 @@ pub struct DriveStateTransitionActionConvertToHighLevelOperationsMethodVersions 
     pub address_funds_transfer_transition: FeatureVersion,
     pub address_credit_withdrawal_transition: FeatureVersion,
     pub address_funding_from_asset_lock_transition: FeatureVersion,
+    pub shield_transition: FeatureVersion,
+    pub shield_from_asset_lock_transition: FeatureVersion,
+    pub shielded_transfer_transition: FeatureVersion,
+    pub unshield_transition: FeatureVersion,
+    pub shielded_withdrawal_transition: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

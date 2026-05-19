@@ -64,7 +64,7 @@ struct Cli {
     /// Repeat 'v' multiple times to increase log verbosity:
     ///
     /// * none   - default to 'info' level for rs-dapi, 'warn' for libraries
-    /// * -v     - 'debug' level for rs-dapi, 'info' for libraries  
+    /// * -v     - 'debug' level for rs-dapi, 'info' for libraries
     /// * -vv    - 'trace' level for rs-dapi, 'debug' for libraries
     /// * -vvv   - 'trace' level for all components
     ///

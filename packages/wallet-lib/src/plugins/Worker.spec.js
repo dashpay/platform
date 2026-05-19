@@ -71,7 +71,7 @@ describe('Plugins - Worker', function suite() {
     const expectedEvents = ['start', 'executed', 'start', 'executed'];
     setTimeout(()=>{
       worker.stopWorker();
-      // It's okay if we have an additionnal "start"
+      // It's okay if we have an additional "start"
       expect(events.slice(0,4)).to.deep.equal(expectedEvents);
       done();
     }, expectedTimeout);

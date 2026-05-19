@@ -1,4 +1,6 @@
 mod accessors;
+#[cfg(feature = "json-conversion")]
+use crate::serialization::json_safe_fields;
 use bincode::Encode;
 use platform_serialization::de::Decode;
 use serde::{Deserialize, Serialize};
@@ -7,6 +9,7 @@ use std::fmt;
 /// The rules for keeping a ledger as documents of token events.
 /// Config update, Destroying Frozen Funds, Emergency Action,
 /// Pre Programmed Token Release always require an entry to the ledger
+#[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct TokenKeepsHistoryRulesV0 {

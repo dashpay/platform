@@ -57,8 +57,13 @@ impl Drive {
             )));
         };
 
-        let (root_hash, elements) =
-            GroveDb::verify_query(proof, &path_query, &platform_version.drive.grove_version)?;
+        // Use verify_subset_query because the proof may contain extra lower layers
+        // for sibling subtrees at the root level (e.g., shielded pool subtrees)
+        let (root_hash, elements) = GroveDb::verify_subset_query(
+            proof,
+            &path_query,
+            &platform_version.drive.grove_version,
+        )?;
 
         let results = elements.into_iter().fold(
             BTreeMap::<_, BTreeMap<_, _>>::new(),
@@ -122,5 +127,184 @@ impl Drive {
             .collect::<Result<Vec<(EpochIndex, FinalizedEpochInfo)>, Error>>()?;
 
         Ok((root_hash, finalized_epoch_infos))
+    }
+}
+
+#[cfg(feature = "server")]
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::drive::credit_pools::epochs::operations_factory::EpochOperations;
+    use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
+    use crate::util::batch::GroveDbOpBatch;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::block::epoch::Epoch;
+    use dpp::block::finalized_epoch_info::v0::FinalizedEpochInfoV0;
+
+    #[test]
+    fn should_prove_and_verify_finalized_epoch_infos() {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let transaction = drive.grove.start_transaction();
+
+        // Initialize epoch 0 with current operations (subtree already exists)
+        let epoch0 = Epoch::new(0).unwrap();
+        let mut batch = GroveDbOpBatch::new();
+        epoch0.add_init_current_operations(
+            1000,
+            100,
+            50,
+            1_000_000,
+            platform_version.protocol_version,
+            &mut batch,
+        );
+        drive
+            .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
+            .expect("should apply batch");
+
+        // Add finalized epoch info for epoch 0
+        let finalized_info_0 = FinalizedEpochInfo::V0(FinalizedEpochInfoV0 {
+            first_block_time: 1_000_000,
+            first_block_height: 100,
+            total_blocks_in_epoch: 500,
+            first_core_block_height: 50,
+            next_epoch_start_core_block_height: 100,
+            total_processing_fees: 10_000,
+            total_distributed_storage_fees: 5_000,
+            total_created_storage_fees: 6_000,
+            core_block_rewards: 100_000,
+            block_proposers: std::collections::BTreeMap::new(),
+            fee_multiplier_permille: 1000,
+            protocol_version: platform_version.protocol_version,
+        });
+
+        let op = drive
+            .add_epoch_final_info_operation(&epoch0, finalized_info_0.clone(), platform_version)
+            .expect("should create finalized epoch info operation");
+        drive
+            .grove_apply_operation(op, false, Some(&transaction), &platform_version.drive)
+            .expect("should apply finalized epoch info");
+
+        // Initialize epoch 1 and add finalized info
+        let epoch1 = Epoch::new(1).unwrap();
+        let mut batch = GroveDbOpBatch::new();
+        epoch1
+            .add_init_empty_operations(&mut batch)
+            .expect("should init empty epoch");
+        epoch1.add_init_current_operations(
+            2000,
+            600,
+            100,
+            2_000_000,
+            platform_version.protocol_version,
+            &mut batch,
+        );
+        drive
+            .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
+            .expect("should apply batch");
+
+        let finalized_info_1 = FinalizedEpochInfo::V0(FinalizedEpochInfoV0 {
+            first_block_time: 2_000_000,
+            first_block_height: 600,
+            total_blocks_in_epoch: 400,
+            first_core_block_height: 100,
+            next_epoch_start_core_block_height: 150,
+            total_processing_fees: 20_000,
+            total_distributed_storage_fees: 10_000,
+            total_created_storage_fees: 12_000,
+            core_block_rewards: 200_000,
+            block_proposers: std::collections::BTreeMap::new(),
+            fee_multiplier_permille: 2000,
+            protocol_version: platform_version.protocol_version,
+        });
+
+        let op = drive
+            .add_epoch_final_info_operation(&epoch1, finalized_info_1.clone(), platform_version)
+            .expect("should create finalized epoch info operation");
+        drive
+            .grove_apply_operation(op, false, Some(&transaction), &platform_version.drive)
+            .expect("should apply finalized epoch info");
+
+        drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("should commit transaction");
+
+        // Prove finalized epoch infos for epochs 0..=1
+        let proof = drive
+            .prove_finalized_epoch_infos(0, true, 1, true, None, platform_version)
+            .expect("should prove finalized epoch infos");
+
+        let (_root_hash, verified_infos) =
+            Drive::verify_finalized_epoch_infos(&proof, 0, true, 1, true, platform_version)
+                .expect("should verify finalized epoch infos");
+
+        assert_eq!(verified_infos.len(), 2);
+        assert_eq!(verified_infos[0].0, 0);
+        assert_eq!(verified_infos[0].1, finalized_info_0);
+        assert_eq!(verified_infos[1].0, 1);
+        assert_eq!(verified_infos[1].1, finalized_info_1);
+    }
+
+    #[test]
+    fn should_prove_and_verify_single_finalized_epoch_info() {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let transaction = drive.grove.start_transaction();
+
+        let epoch0 = Epoch::new(0).unwrap();
+        let mut batch = GroveDbOpBatch::new();
+        epoch0.add_init_current_operations(
+            1000,
+            100,
+            50,
+            1_000_000,
+            platform_version.protocol_version,
+            &mut batch,
+        );
+        drive
+            .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
+            .expect("should apply batch");
+
+        let finalized_info = FinalizedEpochInfo::V0(FinalizedEpochInfoV0 {
+            first_block_time: 1_000_000,
+            first_block_height: 100,
+            total_blocks_in_epoch: 500,
+            first_core_block_height: 50,
+            next_epoch_start_core_block_height: 100,
+            total_processing_fees: 10_000,
+            total_distributed_storage_fees: 5_000,
+            total_created_storage_fees: 6_000,
+            core_block_rewards: 100_000,
+            block_proposers: std::collections::BTreeMap::new(),
+            fee_multiplier_permille: 1000,
+            protocol_version: platform_version.protocol_version,
+        });
+
+        let op = drive
+            .add_epoch_final_info_operation(&epoch0, finalized_info.clone(), platform_version)
+            .expect("should create finalized epoch info operation");
+        drive
+            .grove_apply_operation(op, false, Some(&transaction), &platform_version.drive)
+            .expect("should apply finalized epoch info");
+
+        drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("should commit transaction");
+
+        let proof = drive
+            .prove_finalized_epoch_infos(0, true, 0, true, None, platform_version)
+            .expect("should prove finalized epoch infos");
+
+        let (_root_hash, verified_infos) =
+            Drive::verify_finalized_epoch_infos(&proof, 0, true, 0, true, platform_version)
+                .expect("should verify finalized epoch infos");
+
+        assert_eq!(verified_infos.len(), 1);
+        assert_eq!(verified_infos[0].0, 0);
+        assert_eq!(verified_infos[0].1, finalized_info);
     }
 }

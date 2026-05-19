@@ -53,3 +53,130 @@ impl Drive {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::util::test_helpers::setup::setup_drive;
+    use dpp::block::block_info::BlockInfo;
+    use dpp::identity::accessors::IdentityGettersV0;
+    use dpp::identity::Identity;
+    use dpp::version::PlatformVersion;
+
+    #[test]
+    fn should_prove_single_identity_all_keys() {
+        let drive = setup_drive(None);
+        let platform_version = PlatformVersion::latest();
+
+        drive
+            .create_initial_state_structure(None, platform_version)
+            .expect("expected to create root tree successfully");
+
+        let identity = Identity::random_identity(3, Some(44444), platform_version)
+            .expect("expected a random identity");
+
+        drive
+            .add_new_identity(
+                identity.clone(),
+                false,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to insert identity");
+
+        let proof = drive
+            .prove_identities_all_keys(
+                &[identity.id().to_buffer()],
+                None,
+                None,
+                &platform_version.drive,
+            )
+            .expect("expected to generate proof for single identity");
+
+        assert!(!proof.is_empty(), "proof should be non-empty");
+    }
+
+    #[test]
+    fn should_prove_multiple_identities_all_keys() {
+        let drive = setup_drive(None);
+        let platform_version = PlatformVersion::latest();
+
+        drive
+            .create_initial_state_structure(None, platform_version)
+            .expect("expected to create root tree successfully");
+
+        let identity_a = Identity::random_identity(3, Some(55555), platform_version)
+            .expect("expected a random identity");
+        let identity_b = Identity::random_identity(2, Some(66666), platform_version)
+            .expect("expected a random identity");
+
+        drive
+            .add_new_identity(
+                identity_a.clone(),
+                false,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to insert identity a");
+
+        drive
+            .add_new_identity(
+                identity_b.clone(),
+                false,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to insert identity b");
+
+        let proof = drive
+            .prove_identities_all_keys(
+                &[identity_a.id().to_buffer(), identity_b.id().to_buffer()],
+                None,
+                None,
+                &platform_version.drive,
+            )
+            .expect("expected to generate proof for multiple identities");
+
+        assert!(!proof.is_empty(), "proof should be non-empty");
+    }
+
+    #[test]
+    fn should_prove_identities_all_keys_with_limit() {
+        let drive = setup_drive(None);
+        let platform_version = PlatformVersion::latest();
+
+        drive
+            .create_initial_state_structure(None, platform_version)
+            .expect("expected to create root tree successfully");
+
+        let identity = Identity::random_identity(5, Some(77777), platform_version)
+            .expect("expected a random identity");
+
+        drive
+            .add_new_identity(
+                identity.clone(),
+                false,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to insert identity");
+
+        let proof = drive
+            .prove_identities_all_keys(
+                &[identity.id().to_buffer()],
+                Some(2),
+                None,
+                &platform_version.drive,
+            )
+            .expect("expected to generate proof with limit");
+
+        assert!(!proof.is_empty(), "proof should be non-empty");
+    }
+}

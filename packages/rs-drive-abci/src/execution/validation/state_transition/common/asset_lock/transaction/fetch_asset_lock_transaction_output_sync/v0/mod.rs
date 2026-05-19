@@ -106,3 +106,113 @@ pub fn fetch_asset_lock_transaction_output_sync_v0<C: CoreRPCLike>(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::rpc::core::MockCoreRPCLike;
+    use dpp::consensus::basic::BasicError;
+    use dpp::consensus::ConsensusError;
+    use dpp::dashcore::hashes::Hash;
+    use dpp::dashcore::transaction::special_transaction::asset_lock::AssetLockPayload;
+    use dpp::dashcore::transaction::special_transaction::TransactionPayload;
+    use dpp::dashcore::{Transaction, TxIn, Txid};
+    use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
+    use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
+
+    fn dummy_txid(seed: u8) -> Txid {
+        Txid::from_raw_hash(dpp::dashcore::hashes::sha256d::Hash::from_byte_array(
+            [seed; 32],
+        ))
+    }
+
+    #[test]
+    fn instant_proof_with_missing_output_returns_output_not_found() {
+        let platform_version = PlatformVersion::latest();
+
+        // InstantAssetLockProof with a vout that doesn't exist in the transaction's tx outs.
+        let tx_without_output = Transaction {
+            version: 3,
+            lock_time: 0,
+            input: vec![TxIn::default()],
+            output: vec![], // no outputs at all
+            special_transaction_payload: Some(TransactionPayload::AssetLockPayloadType(
+                AssetLockPayload {
+                    version: 1,
+                    credit_outputs: vec![],
+                },
+            )),
+        };
+
+        let proof = InstantAssetLockProof::new(
+            dpp::dashcore::InstantLock {
+                version: 1,
+                inputs: vec![],
+                txid: tx_without_output.txid(),
+                cyclehash: [0u8; 32].into(),
+                signature: [0u8; 96].into(),
+            },
+            tx_without_output,
+            5, // output_index out of range
+        );
+
+        let asset_lock_proof = AssetLockProof::Instant(proof);
+
+        let core_rpc = MockCoreRPCLike::new();
+        let result = fetch_asset_lock_transaction_output_sync_v0(
+            &core_rpc,
+            &asset_lock_proof,
+            platform_version,
+        )
+        .expect("should not return Err");
+
+        assert!(!result.is_valid(), "should be invalid");
+        assert!(
+            result.errors.iter().any(|e| matches!(
+                e,
+                ConsensusError::BasicError(
+                    BasicError::IdentityAssetLockTransactionOutputNotFoundError(_)
+                )
+            )),
+            "expected IdentityAssetLockTransactionOutputNotFoundError, got: {:?}",
+            result.errors
+        );
+    }
+
+    #[test]
+    fn chain_proof_tx_not_found_returns_tx_not_found_error() {
+        let platform_version = PlatformVersion::latest();
+
+        let txid = dummy_txid(0x11);
+        let mut out_point_bytes = [0u8; 36];
+        out_point_bytes[..32].copy_from_slice(txid.as_raw_hash().as_byte_array());
+        out_point_bytes[32..36].copy_from_slice(&0u32.to_le_bytes());
+
+        let chain_proof = ChainAssetLockProof::new(42, out_point_bytes);
+        let asset_lock_proof = AssetLockProof::Chain(chain_proof);
+
+        let mut core_rpc = MockCoreRPCLike::new();
+        core_rpc
+            .expect_get_optional_transaction_extended_info()
+            .returning(|_txid| Ok(None));
+
+        let result = fetch_asset_lock_transaction_output_sync_v0(
+            &core_rpc,
+            &asset_lock_proof,
+            platform_version,
+        )
+        .expect("should not return Err");
+
+        assert!(!result.is_valid(), "should be invalid");
+        assert!(
+            result.errors.iter().any(|e| matches!(
+                e,
+                ConsensusError::BasicError(
+                    BasicError::IdentityAssetLockTransactionIsNotFoundError(_)
+                )
+            )),
+            "expected IdentityAssetLockTransactionIsNotFoundError, got: {:?}",
+            result.errors
+        );
+    }
+}

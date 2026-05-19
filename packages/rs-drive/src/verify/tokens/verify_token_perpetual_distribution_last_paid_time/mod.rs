@@ -74,3 +74,41 @@ impl Drive {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::error::drive::DriveError;
+    use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
+
+    #[test]
+    fn test_verify_token_perpetual_distribution_last_paid_time_unknown_version() {
+        let mut platform_version = PlatformVersion::latest().clone();
+        platform_version
+            .drive
+            .methods
+            .verify
+            .token
+            .verify_token_perpetual_distribution_last_paid_time = 255;
+
+        let dist_type = RewardDistributionType::BlockBasedDistribution {
+            interval: 1,
+            function: DistributionFunction::FixedAmount { amount: 0 },
+        };
+
+        let result = Drive::verify_token_perpetual_distribution_last_paid_time(
+            &[],
+            [0u8; 32],
+            [0u8; 32],
+            &dist_type,
+            false,
+            &platform_version,
+        );
+
+        assert!(
+            matches!(result, Err(Error::Drive(DriveError::UnknownVersionMismatch { method, known_versions, received }))
+                if method == "verify_token_perpetual_distribution_last_paid_time" && known_versions == vec![0] && received == 255
+            )
+        );
+    }
+}

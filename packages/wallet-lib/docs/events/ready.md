@@ -9,4 +9,3 @@ const onReady = ()=>{
 }
 account.events.on(EVENTS.READY, onReady);
 ```
-

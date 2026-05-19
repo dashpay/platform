@@ -14,22 +14,41 @@ describe('TokenConfigurationLocalization', () => {
     });
   });
 
+  // Hardcoded expected fixtures
+  const expectedJSON = {
+    $formatVersion: '0',
+    shouldCapitalize: false,
+    singularForm: 'singularForm',
+    pluralForm: 'pluralForm',
+  };
+
+  // Object format is identical to JSON for this simple type (no Identifiers or binary data)
+  const expectedObject = {
+    $formatVersion: '0',
+    shouldCapitalize: false,
+    singularForm: 'singularForm',
+    pluralForm: 'pluralForm',
+  };
+
   describe('toJSON()', () => {
-    it('should convert to JSON', () => {
+    it('should convert to JSON matching fixture', () => {
       const localization = new wasm.TokenConfigurationLocalization(false, 'singularForm', 'pluralForm');
       const json = localization.toJSON();
 
-      expect(json).to.deep.equal({
-        $format_version: '0',
-        shouldCapitalize: false,
-        singularForm: 'singularForm',
-        pluralForm: 'pluralForm',
-      });
+      expect(json).to.deep.equal(expectedJSON);
     });
   });
 
   describe('fromJSON()', () => {
-    it('should create instance from JSON', () => {
+    it('should create instance from JSON fixture and verify getters', () => {
+      const restored = wasm.TokenConfigurationLocalization.fromJSON(expectedJSON);
+
+      expect(restored.shouldCapitalize).to.equal(false);
+      expect(restored.singularForm).to.equal('singularForm');
+      expect(restored.pluralForm).to.equal('pluralForm');
+    });
+
+    it('should round-trip from JSON', () => {
       const localization = new wasm.TokenConfigurationLocalization(false, 'singularForm', 'pluralForm');
       const json = localization.toJSON();
 
@@ -39,14 +58,31 @@ describe('TokenConfigurationLocalization', () => {
     });
   });
 
-  describe('fromObject()', () => {
-    it('should create instance from object', () => {
+  describe('toObject()', () => {
+    it('should convert to Object matching fixture', () => {
       const localization = new wasm.TokenConfigurationLocalization(false, 'singularForm', 'pluralForm');
-      const object = localization.toJSON();
+      const obj = localization.toObject();
+
+      expect(obj).to.deep.equal(expectedObject);
+    });
+  });
+
+  describe('fromObject()', () => {
+    it('should create instance from Object fixture and verify getters', () => {
+      const restored = wasm.TokenConfigurationLocalization.fromObject(expectedObject);
+
+      expect(restored.shouldCapitalize).to.equal(false);
+      expect(restored.singularForm).to.equal('singularForm');
+      expect(restored.pluralForm).to.equal('pluralForm');
+    });
+
+    it('should round-trip from Object', () => {
+      const localization = new wasm.TokenConfigurationLocalization(false, 'singularForm', 'pluralForm');
+      const object = localization.toObject();
 
       const restored = wasm.TokenConfigurationLocalization.fromObject(object);
 
-      expect(restored.toJSON()).to.deep.equal(object);
+      expect(restored.toJSON()).to.deep.equal(localization.toJSON());
     });
   });
 

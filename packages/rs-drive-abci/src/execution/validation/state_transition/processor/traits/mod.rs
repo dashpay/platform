@@ -10,4 +10,5 @@ pub(crate) mod identity_based_signature;
 pub(crate) mod identity_nonces;
 pub(crate) mod is_allowed;
 pub(crate) mod prefunded_specialized_balance;
+pub(crate) mod shielded_proof;
 pub(crate) mod state;

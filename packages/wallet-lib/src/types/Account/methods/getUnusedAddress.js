@@ -1,6 +1,6 @@
 /**
  * Get an unused address from the store
- * @param {AddressType} [type="external"] - Type of the requested usused address
+ * @param {AddressType} [type="external"] - Type of the requested unused address
  * @param {number} [skip=0]
  * @return {AddressObj}
  */

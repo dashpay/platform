@@ -172,3 +172,196 @@ impl From<&PoolItem> for PoolPrefix {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dapi_grpc::tonic::transport::Channel;
+    use std::str::FromStr;
+
+    fn test_uri() -> Uri {
+        Uri::from_str("http://127.0.0.1:3000").unwrap()
+    }
+
+    fn make_platform_pool_item() -> PoolItem {
+        let channel = Channel::builder(test_uri()).connect_lazy();
+        PoolItem::Platform(PlatformGrpcClient::new(channel))
+    }
+
+    fn make_core_pool_item() -> PoolItem {
+        let channel = Channel::builder(test_uri()).connect_lazy();
+        PoolItem::Core(CoreGrpcClient::new(channel))
+    }
+
+    #[test]
+    fn test_connection_pool_new() {
+        let pool = ConnectionPool::new(10);
+        let result = pool.get(PoolPrefix::Platform, &test_uri(), None);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_connection_pool_default() {
+        let pool = ConnectionPool::default();
+        let result = pool.get(PoolPrefix::Core, &test_uri(), None);
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_connection_pool_put_and_get_platform() {
+        let pool = ConnectionPool::new(10);
+        let uri = test_uri();
+        let item = make_platform_pool_item();
+
+        pool.put(&uri, None, item);
+
+        let result = pool.get(PoolPrefix::Platform, &uri, None);
+        assert!(result.is_some());
+        assert!(matches!(result.unwrap(), PoolItem::Platform(_)));
+    }
+
+    #[tokio::test]
+    async fn test_connection_pool_put_and_get_core() {
+        let pool = ConnectionPool::new(10);
+        let uri = test_uri();
+        let item = make_core_pool_item();
+
+        pool.put(&uri, None, item);
+
+        let result = pool.get(PoolPrefix::Core, &uri, None);
+        assert!(result.is_some());
+        assert!(matches!(result.unwrap(), PoolItem::Core(_)));
+    }
+
+    #[tokio::test]
+    async fn test_connection_pool_get_or_create_creates_new() {
+        let pool = ConnectionPool::new(10);
+        let uri = test_uri();
+
+        let result: Result<PoolItem, String> =
+            pool.get_or_create(PoolPrefix::Platform, &uri, None, || {
+                Ok(make_platform_pool_item())
+            });
+
+        assert!(result.is_ok());
+
+        // Second call should return cached version
+        let mut create_called = false;
+        let result2: Result<PoolItem, String> =
+            pool.get_or_create(PoolPrefix::Platform, &uri, None, || {
+                create_called = true;
+                Ok(make_platform_pool_item())
+            });
+
+        assert!(result2.is_ok());
+        assert!(
+            !create_called,
+            "create should not be called for cached item"
+        );
+    }
+
+    #[test]
+    fn test_connection_pool_get_or_create_error_not_cached() {
+        let pool = ConnectionPool::new(10);
+        let uri = test_uri();
+
+        let result: Result<PoolItem, String> =
+            pool.get_or_create(PoolPrefix::Platform, &uri, None, || {
+                Err("creation failed".to_string())
+            });
+
+        assert!(result.is_err());
+
+        // Pool should still be empty after failed creation
+        let cached = pool.get(PoolPrefix::Platform, &uri, None);
+        assert!(cached.is_none());
+    }
+
+    #[test]
+    fn test_pool_prefix_display() {
+        assert_eq!(format!("{}", PoolPrefix::Core), "Core");
+        assert_eq!(format!("{}", PoolPrefix::Platform), "Platform");
+    }
+
+    #[tokio::test]
+    async fn test_pool_prefix_from_pool_item() {
+        let platform_item = make_platform_pool_item();
+        let prefix: PoolPrefix = (&platform_item).into();
+        assert!(matches!(prefix, PoolPrefix::Platform));
+
+        let core_item = make_core_pool_item();
+        let prefix: PoolPrefix = (&core_item).into();
+        assert!(matches!(prefix, PoolPrefix::Core));
+    }
+
+    #[tokio::test]
+    async fn test_pool_item_from_platform_client() {
+        let channel = Channel::builder(test_uri()).connect_lazy();
+        let client = PlatformGrpcClient::new(channel);
+        let item: PoolItem = client.into();
+        assert!(matches!(item, PoolItem::Platform(_)));
+    }
+
+    #[tokio::test]
+    async fn test_pool_item_from_core_client() {
+        let channel = Channel::builder(test_uri()).connect_lazy();
+        let client = CoreGrpcClient::new(channel);
+        let item: PoolItem = client.into();
+        assert!(matches!(item, PoolItem::Core(_)));
+    }
+
+    #[tokio::test]
+    async fn test_pool_item_into_platform_client() {
+        let item = make_platform_pool_item();
+        let _client: PlatformGrpcClient = item.into();
+    }
+
+    #[tokio::test]
+    async fn test_pool_item_into_core_client() {
+        let item = make_core_pool_item();
+        let _client: CoreGrpcClient = item.into();
+    }
+
+    #[tokio::test]
+    #[should_panic(expected = "ClientType is not Platform")]
+    async fn test_pool_item_core_into_platform_panics() {
+        let item = make_core_pool_item();
+        let _client: PlatformGrpcClient = item.into();
+    }
+
+    #[tokio::test]
+    #[should_panic(expected = "ClientType is not Core")]
+    async fn test_pool_item_platform_into_core_panics() {
+        let item = make_platform_pool_item();
+        let _client: CoreGrpcClient = item.into();
+    }
+
+    #[tokio::test]
+    async fn test_connection_pool_different_prefixes_different_keys() {
+        let pool = ConnectionPool::new(10);
+        let uri = test_uri();
+
+        pool.put(&uri, None, make_platform_pool_item());
+
+        // Core prefix should not find a Platform item
+        let result = pool.get(PoolPrefix::Core, &uri, None);
+        assert!(result.is_none());
+
+        // Platform prefix should find it
+        let result = pool.get(PoolPrefix::Platform, &uri, None);
+        assert!(result.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_connection_pool_clone_shares_data() {
+        let pool = ConnectionPool::new(10);
+        let pool_clone = pool.clone();
+        let uri = test_uri();
+
+        pool.put(&uri, None, make_platform_pool_item());
+
+        // Clone should see the same data
+        let result = pool_clone.get(PoolPrefix::Platform, &uri, None);
+        assert!(result.is_some());
+    }
+}

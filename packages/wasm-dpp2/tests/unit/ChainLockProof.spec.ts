@@ -53,7 +53,7 @@ describe('ChainAssetLockProof', () => {
       const object = chainlock.toObject();
       expect(object.coreChainLockedHeight).to.equal(11);
       expect(object.outPoint).to.be.an('object');
-      expect(object.outPoint.txid).to.exist();
+      expect(object.outPoint.txid).to.be.instanceOf(Uint8Array);
       expect(object.outPoint.vout).to.equal(1);
 
       const fromObject = wasm.ChainAssetLockProof.fromObject(object);
@@ -80,6 +80,21 @@ describe('ChainAssetLockProof', () => {
       const fromJson = wasm.ChainAssetLockProof.fromJSON(json);
       expect(fromJson.coreChainLockedHeight).to.equal(11);
       expect(Array.from(fromJson.outPoint.toBytes())).to.deep.equal(Array.from(outpoint.toBytes()));
+    });
+
+    it('should match hardcoded expected JSON fixture', () => {
+      const outpoint = new wasm.OutPoint(
+        'e8b43025641eea4fd21190f01bd870ef90f1a8b199d8fc3376c5b62c0b1a179d',
+        1,
+      );
+      const chainlock = new wasm.ChainAssetLockProof(11, outpoint);
+
+      const expectedJSON = {
+        coreChainLockedHeight: 11,
+        outPoint: 'e8b43025641eea4fd21190f01bd870ef90f1a8b199d8fc3376c5b62c0b1a179d:1',
+      };
+
+      expect(chainlock.toJSON()).to.deep.equal(expectedJSON);
     });
   });
 

@@ -328,6 +328,45 @@ describe('PartialIdentity', () => {
       expect(restored.revision).to.equal(BigInt(5));
       expect(Array.from(restored.notFoundPublicKeys)).to.deep.equal([10, 20]);
     });
+
+    it('should deserialize from hardcoded Object fixture and verify all getters', () => {
+      const objectFixture = {
+        id: Uint8Array.from(identifierBytes),
+        loadedPublicKeys: {
+          '2': {
+            $formatVersion: '0',
+            id: 2,
+            purpose: 0,
+            securityLevel: 1,
+            type: 0,
+            readOnly: false,
+            data: Uint8Array.from([
+              3, 106, 57, 67, 18, 228, 14, 129, 217, 40, 253, 226, 189, 231, 136,
+              0, 112, 228, 250, 156, 29, 29, 155, 22, 141, 167, 7, 234, 70, 138,
+              250, 43, 72,
+            ]),
+          },
+        },
+        balance: 1000n,
+        revision: 5n,
+        notFoundPublicKeys: [10, 20],
+      };
+
+      const restored = wasm.PartialIdentity.fromObject(objectFixture);
+
+      expect(restored.id.toBase58()).to.equal(identifier);
+      expect(Object.keys(restored.loadedPublicKeys)).to.deep.equal(['2']);
+      const loadedKey = restored.loadedPublicKeys['2'];
+      expect(loadedKey.__type).to.equal('IdentityPublicKey');
+      expect(loadedKey.keyId).to.equal(2);
+      expect(loadedKey.purpose).to.equal('AUTHENTICATION');
+      expect(loadedKey.securityLevel).to.equal('CRITICAL');
+      expect(loadedKey.keyType).to.equal('ECDSA_SECP256K1');
+      expect(loadedKey.isReadOnly).to.equal(false);
+      expect(restored.balance).to.equal(1000n);
+      expect(restored.revision).to.equal(5n);
+      expect(Array.from(restored.notFoundPublicKeys)).to.deep.equal([10, 20]);
+    });
   });
 
   describe('fromJSON()', () => {
@@ -375,6 +414,41 @@ describe('PartialIdentity', () => {
       // Note: balance/revision come back as numbers in JSON (not BigInt)
       expect(restored.balance).to.equal(BigInt(1000));
       expect(restored.revision).to.equal(BigInt(5));
+      expect(Array.from(restored.notFoundPublicKeys)).to.deep.equal([10, 20]);
+    });
+
+    it('should deserialize from hardcoded JSON fixture and verify all getters', () => {
+      const jsonFixture = {
+        id: 'H2pb35GtKpjLinncBYeMsXkdDYXCbsFzzVmssce6pSJ1',
+        loadedPublicKeys: {
+          '2': {
+            $formatVersion: '0',
+            id: 2,
+            purpose: 0,
+            securityLevel: 1,
+            type: 0,
+            readOnly: false,
+            data: 'A2o5QxLkDoHZKP3iveeIAHDk+pwdHZsWjacH6kaK+itI',
+          },
+        },
+        balance: "1000",
+        revision: "5",
+        notFoundPublicKeys: [10, 20],
+      };
+
+      const restored = wasm.PartialIdentity.fromJSON(jsonFixture);
+
+      expect(restored.id.toBase58()).to.equal(identifier);
+      expect(Object.keys(restored.loadedPublicKeys)).to.deep.equal(['2']);
+      const loadedKey = restored.loadedPublicKeys['2'];
+      expect(loadedKey.__type).to.equal('IdentityPublicKey');
+      expect(loadedKey.keyId).to.equal(2);
+      expect(loadedKey.purpose).to.equal('AUTHENTICATION');
+      expect(loadedKey.securityLevel).to.equal('CRITICAL');
+      expect(loadedKey.keyType).to.equal('ECDSA_SECP256K1');
+      expect(loadedKey.isReadOnly).to.equal(false);
+      expect(restored.balance).to.equal(1000n);
+      expect(restored.revision).to.equal(5n);
       expect(Array.from(restored.notFoundPublicKeys)).to.deep.equal([10, 20]);
     });
   });

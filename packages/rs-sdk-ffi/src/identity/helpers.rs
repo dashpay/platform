@@ -89,7 +89,7 @@ pub unsafe fn parse_private_key(
     let key_bytes = *private_key_bytes;
     let secret_key = dashcore::secp256k1::SecretKey::from_byte_array(&key_bytes)
         .map_err(|e| FFIError::InternalError(format!("Invalid private key: {}", e)))?;
-    Ok(PrivateKey::new(secret_key, Network::Dash))
+    Ok(PrivateKey::new(secret_key, Network::Mainnet))
 }
 
 /// Helper function to create instant asset lock proof from components

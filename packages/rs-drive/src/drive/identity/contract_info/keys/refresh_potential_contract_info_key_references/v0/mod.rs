@@ -113,6 +113,7 @@ impl Drive {
                         storage_cost: Default::default(),
                         storage_loaded_bytes: 100,
                         hash_node_calls: 0,
+                        sinsemilla_hash_calls: 0,
                     },
                 ));
                 None

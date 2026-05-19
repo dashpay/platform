@@ -47,6 +47,7 @@ impl From<UnsupportedProtocolVersionError> for ConsensusError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::serialization::PlatformDeserializable;
     use crate::serialization::PlatformSerializableWithPlatformVersion;
     use platform_version::version::LATEST_PLATFORM_VERSION;
 
@@ -56,15 +57,13 @@ mod tests {
 
         let consensus_error: ConsensusError = error.clone().into();
 
-        let _cbor = consensus_error
+        let serialized_bytes = consensus_error
             .serialize_to_bytes_with_platform_version(LATEST_PLATFORM_VERSION)
             .expect("should serialize");
 
-        // let value = Value::try_from(&consensus_error).expect("should convert to value");
+        let recovered_consensus_error =
+            ConsensusError::deserialize_from_bytes(&serialized_bytes).expect("should deserialize");
 
-        // let recovered_error: UnsupportedProtocolVersionError =
-        //     value.try_into().expect("should recover from value");
-        //
-        // assert_eq!(recovered_error, error);
+        assert_eq!(consensus_error, recovered_consensus_error);
     }
 }

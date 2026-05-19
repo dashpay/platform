@@ -13,4 +13,3 @@ message ExampleRequest {
 message ExampleResponse {
   uint32 value = 1;
 }
-

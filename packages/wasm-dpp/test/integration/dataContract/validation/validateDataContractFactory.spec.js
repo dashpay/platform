@@ -1610,9 +1610,9 @@ describe.skip('validateDataContractFactory', () => {
           ],
         };
 
-        const indeciesDefinition = rawDataContract.documents.indexedDocument.indices;
+        const indicesDefinition = rawDataContract.documents.indexedDocument.indices;
 
-        indeciesDefinition.push(indexDefinition);
+        indicesDefinition.push(indexDefinition);
 
         const result = await validateDataContract(rawDataContract);
 

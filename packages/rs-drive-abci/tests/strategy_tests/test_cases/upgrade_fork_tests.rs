@@ -29,9 +29,10 @@ mod tests {
     use std::collections::BTreeMap;
     use strategy_tests::{IdentityInsertInfo, StartAddresses, StartIdentities, Strategy};
 
-    #[test]
     #[stack_size(4 * 1024 * 1024)]
-    fn run_chain_version_upgrade() {
+    #[test]
+    #[ignore] // Long-running: runs in nightly CI only
+    async fn run_chain_version_upgrade() {
         let platform_version = PlatformVersion::first();
         let strategy = NetworkStrategy {
             strategy: Strategy {
@@ -110,7 +111,8 @@ mod tests {
             13,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
 
         let platform = abci_app.platform;
         let state = platform.state.load();
@@ -190,7 +192,8 @@ mod tests {
             strategy.clone(),
             config.clone(),
             StrategyRandomness::SeedEntropy(7),
-        );
+        )
+        .await;
 
         let state = platform.state.load();
         {
@@ -244,7 +247,8 @@ mod tests {
             strategy,
             config,
             StrategyRandomness::SeedEntropy(18),
-        );
+        )
+        .await;
 
         let state = platform.state.load();
 
@@ -280,6 +284,9 @@ mod tests {
             .expect("expected to get epoch proposers");
         assert_eq!(epoch_proposers_2.len(), 147);
 
+        // Epochs 0 and 1 have been paid out, so their proposers trees
+        // were deleted by add_mark_as_paid_operations (DeleteChildren
+        // properly cleans up the tree and its contents).
         let epoch_proposers_1 = platform
             .drive
             .fetch_epoch_proposers(
@@ -289,7 +296,7 @@ mod tests {
                 platform_version,
             )
             .expect("expected to get epoch proposers");
-        assert_eq!(epoch_proposers_1.len(), 299); // We had 299 proposers in epoch 1
+        assert_eq!(epoch_proposers_1.len(), 0);
 
         let epoch_proposers_0 = platform
             .drive
@@ -300,12 +307,12 @@ mod tests {
                 platform_version,
             )
             .expect("expected to get epoch proposers");
-        assert_eq!(epoch_proposers_0.len(), 447); // We had 447 proposers in epoch 0
+        assert_eq!(epoch_proposers_0.len(), 0);
     }
 
-    #[test]
     #[stack_size(4 * 1024 * 1024)]
-    fn run_chain_quick_version_upgrade() {
+    #[test]
+    async fn run_chain_quick_version_upgrade() {
         let platform_version = PlatformVersion::first();
         let strategy = NetworkStrategy {
             strategy: Strategy {
@@ -384,7 +391,8 @@ mod tests {
             13,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
 
         let platform = abci_app.platform;
         let state = platform.state.load();
@@ -461,7 +469,8 @@ mod tests {
             strategy.clone(),
             config.clone(),
             StrategyRandomness::SeedEntropy(7),
-        );
+        )
+        .await;
 
         let state = platform.state.load();
         {
@@ -515,7 +524,8 @@ mod tests {
             strategy,
             config,
             StrategyRandomness::SeedEntropy(18),
-        );
+        )
+        .await;
         let state = platform.state.load();
         {
             let counter = &platform.drive.cache.protocol_versions_counter.read();
@@ -540,9 +550,10 @@ mod tests {
         }
     }
 
-    #[test]
     #[stack_size(4 * 1024 * 1024)]
-    fn run_chain_version_upgrade_slow_upgrade() {
+    #[test]
+    #[ignore] // Long-running: runs in nightly CI only
+    async fn run_chain_version_upgrade_slow_upgrade() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
                 start_contracts: vec![],
@@ -624,7 +635,8 @@ mod tests {
             16,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
         let platform = abci_app.platform;
         let state = platform.state.load();
         {
@@ -693,7 +705,8 @@ mod tests {
             strategy.clone(),
             config.clone(),
             StrategyRandomness::SeedEntropy(7),
-        );
+        )
+        .await;
         let state = platform.state.load();
         {
             let counter = &platform.drive.cache.protocol_versions_counter.read();
@@ -746,7 +759,8 @@ mod tests {
             strategy,
             config,
             StrategyRandomness::SeedEntropy(8),
-        );
+        )
+        .await;
 
         let state = platform.state.load();
 
@@ -766,9 +780,10 @@ mod tests {
         );
     }
 
-    #[test]
     #[stack_size(4 * 1024 * 1024)]
-    fn run_chain_version_upgrade_slow_upgrade_quick_reversion_after_lock_in() {
+    #[test]
+    #[ignore] // Long-running: runs in nightly CI only
+    async fn run_chain_version_upgrade_slow_upgrade_quick_reversion_after_lock_in() {
         drive_abci::logging::init_for_tests(LogLevel::Silent);
 
         let strategy = NetworkStrategy {
@@ -851,7 +866,8 @@ mod tests {
             15,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
 
         let platform = abci_app.platform;
         let state = platform.state.load();
@@ -912,7 +928,8 @@ mod tests {
             strategy,
             config.clone(),
             StrategyRandomness::SeedEntropy(99),
-        );
+        )
+        .await;
         let state = platform.state.load();
         {
             let counter = &platform.drive.cache.protocol_versions_counter.read();
@@ -1008,7 +1025,8 @@ mod tests {
             strategy.clone(),
             config.clone(),
             StrategyRandomness::SeedEntropy(40),
-        );
+        )
+        .await;
         let state = platform.state.load();
         {
             let counter = &platform.drive.cache.protocol_versions_counter.read();
@@ -1067,7 +1085,8 @@ mod tests {
             strategy,
             config,
             StrategyRandomness::SeedEntropy(40),
-        );
+        )
+        .await;
         let state = platform.state.load();
         {
             let counter = &platform.drive.cache.protocol_versions_counter.read();
@@ -1093,9 +1112,10 @@ mod tests {
         }
     }
 
-    #[test]
     #[stack_size(4 * 1024 * 1024)]
-    fn run_chain_version_upgrade_multiple_versions() {
+    #[test]
+    #[ignore] // Long-running: runs in nightly CI only
+    async fn run_chain_version_upgrade_multiple_versions() {
         let strategy = NetworkStrategy {
             strategy: Strategy {
                 start_contracts: vec![],
@@ -1178,7 +1198,8 @@ mod tests {
             15,
             &mut None,
             &mut None,
-        );
+        )
+        .await;
         let state = abci_app.platform.state.load();
         {
             let platform = abci_app.platform;
@@ -1288,7 +1309,8 @@ mod tests {
             strategy,
             config,
             StrategyRandomness::SeedEntropy(7),
-        );
+        )
+        .await;
         let state = platform.state.load();
         {
             let counter = &platform.drive.cache.protocol_versions_counter.read();

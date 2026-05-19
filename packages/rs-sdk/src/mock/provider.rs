@@ -6,7 +6,6 @@ use crate::sync::block_on;
 use crate::{Error, Sdk};
 use arc_swap::ArcSwapAny;
 use dash_context_provider::{ContextProvider, ContextProviderError};
-use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::TokenConfiguration;
 use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
 use dpp::version::PlatformVersion;
@@ -239,11 +238,6 @@ impl ContextProvider for GrpcContextProvider {
 
     fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
         self.core.get_platform_activation_height()
-    }
-
-    fn update_data_contract(&self, contract: Arc<DataContract>) {
-        self.data_contracts_cache
-            .put(contract.id(), (*contract).clone());
     }
 }
 

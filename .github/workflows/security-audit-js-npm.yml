@@ -1,0 +1,20 @@
+name: "Security: JS NPM"
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "30 23 * * *"
+
+jobs:
+  js-npm-security:
+    name: JS NPM security audit
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Audit NPM
+        run: yarn npm audit --environment production --all --recursive

@@ -10,7 +10,6 @@ use dpp::state_transition::batch_transition::document_base_transition::v1::Docum
 use dpp::state_transition::batch_transition::document_base_transition::v1::v1_methods::DocumentBaseTransitionV1Methods;
 use dpp::tokens::token_payment_info::TokenPaymentInfo;
 use serde::Deserialize;
-use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Deserialize)]
@@ -119,9 +118,9 @@ impl DocumentBaseTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "identityContractNonce")]
-    pub fn set_identity_contract_nonce(&mut self, nonce: JsValue) -> WasmDppResult<()> {
+    pub fn set_identity_contract_nonce(&mut self, nonce: &js_sys::BigInt) -> WasmDppResult<()> {
         self.0
-            .set_identity_contract_nonce(try_to_u64(&nonce, "identityContractNonce")?);
+            .set_identity_contract_nonce(try_to_u64(nonce, "identityContractNonce")?);
         Ok(())
     }
 

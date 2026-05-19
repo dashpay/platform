@@ -20,17 +20,17 @@ impl Drive {
     ///
     /// ## Parameters
     ///
-    /// - `start_epoch_index` (`u16`):  
+    /// - `start_epoch_index` (`u16`):
     ///   The starting epoch index for the query.
-    /// - `start_epoch_index_included` (`bool`):  
+    /// - `start_epoch_index_included` (`bool`):
     ///   If `true`, includes `start_epoch_index` in the results.
-    /// - `end_epoch_index` (`u16`):  
+    /// - `end_epoch_index` (`u16`):
     ///   The ending epoch index for the query.
-    /// - `end_epoch_index_included` (`bool`):  
+    /// - `end_epoch_index_included` (`bool`):
     ///   If `true`, includes `end_epoch_index` in the results.
-    /// - `transaction` (`TransactionArg`):  
+    /// - `transaction` (`TransactionArg`):
     ///   The current database transaction for querying storage.
-    /// - `platform_version` (`&PlatformVersion`):  
+    /// - `platform_version` (`&PlatformVersion`):
     ///   The platform version to use for method dispatch.
     ///
     /// ## Returns

@@ -5,9 +5,10 @@ use crate::utils::IntoWasm;
 use dpp::address_funds::PlatformAddress;
 use dpp::dashcore::Network;
 use js_sys::Uint8Array;
-use serde::de::{self, Error, Visitor};
+use serde::de::{self, Error, MapAccess, Visitor};
 use serde::ser::Serializer;
 use serde::{Deserialize, Deserializer, Serialize};
+use serde_json::Value as JsonValue;
 use std::fmt;
 use wasm_bindgen::prelude::*;
 
@@ -196,6 +197,16 @@ impl<'de> Visitor<'de> for PlatformAddressWasmVisitor {
         PlatformAddress::from_bytes(&bytes)
             .map(PlatformAddressWasm)
             .map_err(|e| A::Error::custom(e.to_string()))
+    }
+
+    fn visit_map<M>(self, map: M) -> Result<Self::Value, M::Error>
+    where
+        M: MapAccess<'de>,
+    {
+        let value = JsonValue::deserialize(de::value::MapAccessDeserializer::new(map))
+            .map_err(M::Error::custom)?;
+        let js_value = serde_wasm_bindgen::to_value(&value).map_err(M::Error::custom)?;
+        PlatformAddressWasm::try_from(&js_value).map_err(|err| M::Error::custom(err.to_string()))
     }
 }
 

@@ -1,0 +1,137 @@
+use crate::address_funds::OrchardAddress;
+use crate::prelude::AssetLockProof;
+use crate::state_transition::shield_from_asset_lock_transition::methods::ShieldFromAssetLockTransitionMethodsV0;
+use crate::state_transition::shield_from_asset_lock_transition::ShieldFromAssetLockTransition;
+use crate::state_transition::StateTransition;
+use crate::ProtocolError;
+use platform_version::version::PlatformVersion;
+
+use super::{build_output_only_bundle, serialize_authorized_bundle, OrchardProver};
+
+/// Builds a ShieldFromAssetLock state transition (core asset lock -> shielded pool).
+///
+/// Like Shield, constructs an output-only Orchard bundle. The funds come from
+/// a core asset lock proof rather than platform address inputs.
+///
+/// # Parameters
+/// - `recipient` - Orchard address to receive the shielded note
+/// - `shield_amount` - Amount of credits to shield (from the asset lock)
+/// - `asset_lock_proof` - Proof that funds are locked on core chain
+/// - `asset_lock_private_key` - Private key for the asset lock (signs the transition)
+/// - `prover` - Orchard prover (holds the Halo 2 proving key)
+/// - `memo` - 36-byte structured memo for the recipient (4-byte type tag + 32-byte payload)
+/// - `platform_version` - Protocol version
+#[allow(clippy::too_many_arguments)]
+pub fn build_shield_from_asset_lock_transition<P: OrchardProver>(
+    recipient: &OrchardAddress,
+    shield_amount: u64,
+    asset_lock_proof: AssetLockProof,
+    asset_lock_private_key: &[u8],
+    prover: &P,
+    memo: [u8; 36],
+    platform_version: &PlatformVersion,
+) -> Result<StateTransition, ProtocolError> {
+    let bundle = build_output_only_bundle(recipient, shield_amount, memo, prover)?;
+    let sb = serialize_authorized_bundle(&bundle);
+
+    // For output-only bundles, Orchard value_balance is negative (value flowing in).
+    // Convert to u64 (absolute amount entering the pool).
+    let value_balance = sb
+        .value_balance
+        .checked_neg()
+        .and_then(|v| u64::try_from(v).ok())
+        .ok_or_else(|| {
+            ProtocolError::ShieldedBuildError(
+                "shield_from_asset_lock: bundle value_balance is not negative".to_string(),
+            )
+        })?;
+
+    ShieldFromAssetLockTransition::try_from_asset_lock_with_bundle(
+        asset_lock_proof,
+        asset_lock_private_key,
+        sb.actions,
+        value_balance,
+        sb.anchor,
+        sb.proof,
+        sb.binding_signature,
+        platform_version,
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::{build_output_only_bundle, serialize_authorized_bundle};
+    use crate::shielded::builder::test_helpers::{test_orchard_address, TestProver};
+
+    /// Verifies that an output-only bundle produces a negative value_balance
+    /// (value flowing into the pool), which is the precondition for
+    /// shield_from_asset_lock's value_balance conversion.
+    #[test]
+    fn test_output_only_bundle_value_balance_is_negative() {
+        let recipient = test_orchard_address();
+        let amount = 50_000u64;
+
+        let bundle = build_output_only_bundle(&recipient, amount, [0u8; 36], &TestProver)
+            .expect("bundle should build successfully");
+        let sb = serialize_authorized_bundle(&bundle);
+
+        // Output-only bundles have negative value_balance (value entering the pool)
+        assert!(
+            sb.value_balance < 0,
+            "expected negative value_balance, got {}",
+            sb.value_balance
+        );
+
+        // The absolute value should match the shield amount
+        let abs_balance = sb
+            .value_balance
+            .checked_neg()
+            .and_then(|v| u64::try_from(v).ok())
+            .expect("value_balance should be safely negatable");
+        assert_eq!(abs_balance, amount);
+    }
+
+    // -------------------------------------------------------------
+    // Arithmetic edge cases on the value_balance conversion branch
+    // (the `checked_neg().and_then(u64::try_from)` chain).
+    // -------------------------------------------------------------
+
+    #[test]
+    fn test_value_balance_positive_would_fail_conversion() {
+        // This is a regression-guard: if a *positive* value_balance ever
+        // reached the conversion path, `checked_neg` on i64::MIN would
+        // overflow and the `.try_from::<u64>` on a negative value would
+        // fail. We simulate by constructing a hypothetical value_balance
+        // scenario rather than calling the high-level builder (which
+        // requires a real AssetLockProof).
+        let positive: i64 = 123;
+        let converted = positive.checked_neg().and_then(|v| u64::try_from(v).ok());
+        assert!(converted.is_none(), "negative result cannot be u64");
+
+        let zero: i64 = 0;
+        let converted_zero = zero.checked_neg().and_then(|v| u64::try_from(v).ok());
+        assert_eq!(converted_zero, Some(0));
+
+        let negative: i64 = -42;
+        let converted_neg = negative.checked_neg().and_then(|v| u64::try_from(v).ok());
+        assert_eq!(converted_neg, Some(42));
+    }
+
+    #[test]
+    fn test_output_only_various_amounts_negative_balance() {
+        // Try several amounts to ensure the helper consistently produces a
+        // negative value_balance equal in magnitude to the requested amount.
+        for amount in [1u64, 100, 1_000_000, u32::MAX as u64] {
+            let recipient = test_orchard_address();
+            let bundle = build_output_only_bundle(&recipient, amount, [0u8; 36], &TestProver)
+                .expect("bundle should build");
+            let sb = serialize_authorized_bundle(&bundle);
+            assert_eq!(
+                sb.value_balance,
+                -(amount as i64),
+                "value_balance mismatch for amount {}",
+                amount
+            );
+        }
+    }
+}

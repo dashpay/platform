@@ -1,5 +1,6 @@
 import { expect } from './helpers/chai.ts';
 import init, * as sdk from '../../dist/sdk.compressed.js';
+import { prefetchLocalReady } from './helpers/trustedContext.ts';
 
 describe('Epochs and Evonode Blocks', function describeEpochs() {
   this.timeout(60000);
@@ -9,7 +10,7 @@ describe('Epochs and Evonode Blocks', function describeEpochs() {
 
   before(async () => {
     await init();
-    const context = await sdk.WasmTrustedContext.prefetchLocal();
+    const context = await prefetchLocalReady();
     const builder = sdk.WasmSdkBuilder.local().withTrustedContext(context);
     client = await builder.build();
 
@@ -100,14 +101,10 @@ describe('Epochs and Evonode Blocks', function describeEpochs() {
       // Get a proTxHash from the results (or use node's proTxHash if available)
       let testProTxHash = evonodeProTxHash;
       if (!testProTxHash && byRange.size > 0) {
-        // The keys in the map are Identifier objects
-        // Need to convert to hex for the API (ProTxHash requires 64 hex chars)
+        // The keys in the map are hex strings (ProTxHash.toHex())
         const firstKey = byRange.keys().next().value;
         if (firstKey) {
-          // Convert Identifier bytes to hex string using toBytes()
-          testProTxHash = Array.from(firstKey.toBytes() as Uint8Array)
-            .map((b: number) => b.toString(16).padStart(2, '0'))
-            .join('');
+          testProTxHash = firstKey;
         }
       }
 

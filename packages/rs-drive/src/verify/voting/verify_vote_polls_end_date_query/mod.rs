@@ -60,3 +60,39 @@ impl VotePollsByEndDateDriveQuery {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::error::drive::DriveError;
+    use crate::error::Error;
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn test_verify_vote_polls_by_end_date_proof_unknown_version() {
+        let mut platform_version = PlatformVersion::latest().clone();
+        platform_version
+            .drive
+            .methods
+            .verify
+            .voting
+            .verify_vote_polls_by_end_date_proof = 255;
+
+        let query = VotePollsByEndDateDriveQuery {
+            start_time: None,
+            end_time: None,
+            limit: None,
+            offset: None,
+            order_ascending: true,
+        };
+
+        let result: Result<(RootHash, BTreeMap<TimestampMillis, Vec<VotePoll>>), Error> =
+            query.verify_vote_polls_by_end_date_proof(&[], &platform_version);
+
+        assert!(
+            matches!(result, Err(Error::Drive(DriveError::UnknownVersionMismatch { method, known_versions, received }))
+                if method == "verify_vote_polls_by_end_date_proof" && known_versions == vec![0] && received == 255
+            )
+        );
+    }
+}

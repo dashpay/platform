@@ -23,7 +23,7 @@ export class VotingFacade {
 
   async contestedResourceIdentityVotes(
     query: wasm.ContestedResourceIdentityVotesQuery,
-  ): Promise<Map<wasm.Identifier, wasm.ResourceVote>> {
+  ): Promise<Map<string, wasm.ResourceVote>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getContestedResourceIdentityVotes(query);
   }
@@ -31,7 +31,7 @@ export class VotingFacade {
   async contestedResourceIdentityVotesWithProof(
     query: wasm.ContestedResourceIdentityVotesQuery,
   ): Promise<wasm.ProofMetadataResponseTyped<
-    Map<wasm.Identifier, wasm.ResourceVote>
+    Map<string, wasm.ResourceVote>
   >> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getContestedResourceIdentityVotesWithProofInfo(query);

@@ -16,6 +16,8 @@ pub enum Error {
     InvalidSchemaJson(#[from] serde_json::Error),
     #[error("contract '{0}' not included in build (enable feature '{0}')")]
     ContractNotIncluded(&'static str),
+    #[error("contract '{0}' is a reserved system contract slot with no implementation")]
+    ContractReserved(&'static str),
 }
 
 #[cfg(feature = "withdrawals")]
@@ -88,24 +90,6 @@ impl From<masternode_reward_shares_contract::Error> for Error {
             masternode_reward_shares_contract::Error::InvalidSchemaJson(e) => {
                 Error::InvalidSchemaJson(e)
             }
-        }
-    }
-}
-
-#[cfg(feature = "feature-flags")]
-impl From<feature_flags_contract::Error> for Error {
-    fn from(e: feature_flags_contract::Error) -> Self {
-        match e {
-            feature_flags_contract::Error::UnknownVersionMismatch {
-                method,
-                known_versions,
-                received,
-            } => Error::UnknownVersionMismatch {
-                method,
-                known_versions,
-                received,
-            },
-            feature_flags_contract::Error::InvalidSchemaJson(e) => Error::InvalidSchemaJson(e),
         }
     }
 }

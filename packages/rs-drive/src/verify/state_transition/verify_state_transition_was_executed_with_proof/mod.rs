@@ -69,3 +69,44 @@ impl Drive {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dpp::state_transition::state_transitions::identity::identity_credit_transfer_transition::IdentityCreditTransferTransition;
+    use dpp::state_transition::state_transitions::identity::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
+    use dpp::version::PlatformVersion;
+    #[test]
+    fn test_verify_state_transition_was_executed_with_proof_unknown_version_mismatch() {
+        let mut platform_version = PlatformVersion::latest().clone();
+        platform_version
+            .drive
+            .methods
+            .verify
+            .state_transition
+            .verify_state_transition_was_executed_with_proof = 255;
+
+        let st = StateTransition::IdentityCreditTransfer(IdentityCreditTransferTransition::V0(
+            IdentityCreditTransferTransitionV0::default(),
+        ));
+        let block_info = BlockInfo::default();
+        let known_contracts_provider_fn: &ContractLookupFn = &|_id| Ok(None);
+
+        let result = Drive::verify_state_transition_was_executed_with_proof(
+            &st,
+            &block_info,
+            &[],
+            known_contracts_provider_fn,
+            &platform_version,
+        );
+
+        assert!(
+            matches!(
+                result,
+                Err(Error::Drive(DriveError::UnknownVersionMismatch { .. }))
+            ),
+            "expected UnknownVersionMismatch, got {:?}",
+            result,
+        );
+    }
+}

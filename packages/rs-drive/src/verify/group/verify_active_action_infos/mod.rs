@@ -80,3 +80,40 @@ impl Drive {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dpp::version::PlatformVersion;
+
+    #[test]
+    fn test_verify_action_infos_in_contract_unknown_version_mismatch() {
+        let mut platform_version = PlatformVersion::latest().clone();
+        platform_version
+            .drive
+            .methods
+            .verify
+            .group
+            .verify_action_infos = 255;
+
+        let result = Drive::verify_action_infos_in_contract::<Vec<(Identifier, GroupAction)>>(
+            &[],
+            Identifier::from([0u8; 32]),
+            0,
+            GroupActionStatus::ActionActive,
+            None,
+            None,
+            false,
+            &platform_version,
+        );
+
+        assert!(
+            matches!(
+                result,
+                Err(Error::Drive(DriveError::UnknownVersionMismatch { .. }))
+            ),
+            "expected UnknownVersionMismatch, got {:?}",
+            result,
+        );
+    }
+}

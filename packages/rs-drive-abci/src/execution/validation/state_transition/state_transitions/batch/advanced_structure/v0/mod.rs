@@ -9,7 +9,7 @@ use dpp::identity::PartialIdentity;
 use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
 use dpp::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 use dpp::state_transition::batch_transition::BatchTransition;
-use dpp::state_transition::{StateTransitionIdentitySigned, StateTransitionLike, StateTransitionOwned};
+use dpp::state_transition::{StateTransitionHasUserFeeIncrease, StateTransitionIdentitySigned, StateTransitionOwned};
 use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
 use dpp::state_transition::batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;

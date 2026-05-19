@@ -6,8 +6,8 @@ module.exports = function getMissingIndexes(paths, fromOrigin = true) {
   let sortedIndexes = [];
 
   paths.forEach((path) => {
-    const splitedPath = path.split('/');
-    const index = parseInt(splitedPath[5], 10);
+    const splitPath = path.split('/');
+    const index = parseInt(splitPath[5], 10);
     sortedIndexes.push(index);
   });
 

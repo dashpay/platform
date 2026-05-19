@@ -19,9 +19,9 @@ impl RewardDistributionType {
     ///
     /// # Parameters
     ///
-    /// - `start_at_moment_excluded` (`RewardDistributionMoment`):  
+    /// - `start_at_moment_excluded` (`RewardDistributionMoment`):
     ///   The last known point after which rewards should be counted (exclusive).
-    /// - `current_moment_included` (`RewardDistributionMoment`):  
+    /// - `current_moment_included` (`RewardDistributionMoment`):
     ///   The latest point up to which rewards should be counted (inclusive).
     /// - `get_epoch_reward_ratio`: Optional function providing a reward ratio for epoch-based distributions.
     ///
@@ -58,11 +58,11 @@ impl RewardDistributionType {
     ///
     /// # Parameters
     ///
-    /// - `distribution_start` (`RewardDistributionMoment`):  
+    /// - `distribution_start` (`RewardDistributionMoment`):
     ///   The starting moment of the distribution.
-    /// - `start_at_moment` (`RewardDistributionMoment`):  
+    /// - `start_at_moment` (`RewardDistributionMoment`):
     ///   The last known point after which rewards should be counted (exclusive).
-    /// - `current_moment_included` (`RewardDistributionMoment`):  
+    /// - `current_moment_included` (`RewardDistributionMoment`):
     ///   The latest point up to which rewards should be counted (inclusive).
     /// - `get_epoch_reward_ratio`: Optional function providing a reward ratio for epoch-based distributions.
     /// - `is_first_claim`: Explanation will be based on whether this is the first claim or not.

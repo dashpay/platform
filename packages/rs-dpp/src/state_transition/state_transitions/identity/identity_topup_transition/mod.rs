@@ -1,16 +1,20 @@
 pub mod accessors;
 pub mod fields;
-#[cfg(feature = "state-transition-json-conversion")]
+#[cfg(feature = "json-conversion")]
 mod json_conversion;
 pub mod methods;
 pub mod proved;
 mod state_transition_estimated_fee_validation;
 mod state_transition_like;
 pub mod v0;
-#[cfg(feature = "state-transition-value-conversion")]
+#[cfg(feature = "value-conversion")]
 mod value_conversion;
 mod version;
 
+#[cfg(feature = "json-conversion")]
+use crate::serialization::JsonConvertible;
+#[cfg(feature = "value-conversion")]
+use crate::serialization::ValueConvertible;
 use fields::*;
 
 use crate::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
@@ -23,9 +27,13 @@ use derive_more::From;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 use platform_version::version::PlatformVersion;
 use platform_versioning::PlatformVersioned;
-#[cfg(feature = "state-transition-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
+#[cfg_attr(
+    all(feature = "json-conversion", feature = "serde-conversion"),
+    derive(JsonConvertible)
+)]
 #[derive(
     Debug,
     Clone,
@@ -39,16 +47,17 @@ use serde::{Deserialize, Serialize};
     PartialEq,
 )]
 #[cfg_attr(
-    feature = "state-transition-serde-conversion",
+    feature = "serde-conversion",
     derive(Serialize, Deserialize),
-    serde(tag = "$version")
+    serde(tag = "$formatVersion")
 )]
+#[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
 #[platform_serialize(unversioned)] //versioned directly, no need to use platform_version
 #[platform_version_path_bounds(
     "dpp.state_transition_serialization_versions.identity_top_up_state_transition"
 )]
 pub enum IdentityTopUpTransition {
-    #[cfg_attr(feature = "state-transition-serde-conversion", serde(rename = "0"))]
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "0"))]
     V0(IdentityTopUpTransitionV0),
 }
 
@@ -82,5 +91,122 @@ impl StateTransitionFieldTypes for IdentityTopUpTransition {
 
     fn binary_property_paths() -> Vec<&'static str> {
         vec![]
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
+    use crate::state_transition::{
+        StateTransitionEstimatedFeeValidation, StateTransitionHasUserFeeIncrease,
+        StateTransitionLike, StateTransitionOwned, StateTransitionSingleSigned,
+        StateTransitionType, StateTransitionValueConvert,
+    };
+    use crate::version::LATEST_PLATFORM_VERSION;
+    use platform_value::{BinaryData, Identifier, Value};
+
+    fn make_topup() -> IdentityTopUpTransition {
+        IdentityTopUpTransition::V0(IdentityTopUpTransitionV0 {
+            asset_lock_proof: AssetLockProof::default(),
+            identity_id: Identifier::random(),
+            user_fee_increase: 1,
+            signature: [0u8; 65].to_vec().into(),
+        })
+    }
+
+    #[test]
+    fn test_default_versioned() {
+        let t = IdentityTopUpTransition::default_versioned(LATEST_PLATFORM_VERSION)
+            .expect("should create default");
+        match t {
+            IdentityTopUpTransition::V0(_) => {}
+        }
+    }
+
+    #[test]
+    fn test_state_transition_like() {
+        let t = make_topup();
+        assert_eq!(
+            t.state_transition_type(),
+            StateTransitionType::IdentityTopUp
+        );
+        assert_eq!(t.state_transition_protocol_version(), 0);
+        let ids = t.modified_data_ids();
+        assert_eq!(ids.len(), 1);
+    }
+
+    #[test]
+    fn test_owner_id() {
+        let t = make_topup();
+        match &t {
+            IdentityTopUpTransition::V0(v0) => {
+                assert_eq!(t.owner_id(), v0.identity_id);
+            }
+        }
+    }
+
+    #[test]
+    fn test_user_fee_increase() {
+        let mut t = make_topup();
+        assert_eq!(t.user_fee_increase(), 1);
+        t.set_user_fee_increase(50);
+        assert_eq!(t.user_fee_increase(), 50);
+    }
+
+    #[test]
+    fn test_single_signed() {
+        let mut t = make_topup();
+        assert_eq!(t.signature().len(), 65);
+        t.set_signature(BinaryData::new(vec![7, 8, 9]));
+        assert_eq!(t.signature().as_slice(), &[7, 8, 9]);
+        t.set_signature_bytes(vec![10, 11]);
+        assert_eq!(t.signature().as_slice(), &[10, 11]);
+    }
+
+    #[test]
+    fn test_field_types() {
+        let sig = IdentityTopUpTransition::signature_property_paths();
+        assert_eq!(sig.len(), 1);
+        let ids = IdentityTopUpTransition::identifiers_property_paths();
+        assert_eq!(ids.len(), 1);
+        let bin = IdentityTopUpTransition::binary_property_paths();
+        assert!(bin.is_empty());
+    }
+
+    #[test]
+    fn test_estimated_fee() {
+        let t = make_topup();
+        let fee = t
+            .calculate_min_required_fee(LATEST_PLATFORM_VERSION)
+            .expect("fee calc should work");
+        assert!(fee > 0);
+    }
+
+    #[test]
+    fn test_from_object_unknown_version() {
+        let value = Value::from([("$stateTransitionProtocolVersion", Value::U16(255))]);
+        let result = <IdentityTopUpTransition as StateTransitionValueConvert>::from_object(
+            value,
+            LATEST_PLATFORM_VERSION,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_clean_value_unknown_version() {
+        let mut value = Value::from([("$stateTransitionProtocolVersion", Value::U8(255))]);
+        let result =
+            <IdentityTopUpTransition as StateTransitionValueConvert>::clean_value(&mut value);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_into_from_v0() {
+        let v0 = IdentityTopUpTransitionV0::default();
+        let t: IdentityTopUpTransition = v0.clone().into();
+        match t {
+            IdentityTopUpTransition::V0(inner) => assert_eq!(inner, v0),
+        }
     }
 }

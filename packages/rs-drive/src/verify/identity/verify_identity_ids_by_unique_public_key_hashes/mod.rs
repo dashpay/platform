@@ -65,3 +65,30 @@ impl Drive {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::error::drive::DriveError;
+
+    #[test]
+    fn test_verify_identity_ids_by_unique_public_key_hashes_unknown_version() {
+        let mut platform_version = PlatformVersion::latest().clone();
+        platform_version
+            .drive
+            .methods
+            .verify
+            .identity
+            .verify_identity_ids_by_unique_public_key_hashes = 255;
+
+        let result = Drive::verify_identity_ids_by_unique_public_key_hashes::<
+            Vec<([u8; 20], Option<[u8; 32]>)>,
+        >(&[], false, &[], &platform_version);
+
+        assert!(
+            matches!(result, Err(Error::Drive(DriveError::UnknownVersionMismatch { method, known_versions, received }))
+                if method == "verify_identity_ids_by_unique_public_key_hashes" && known_versions == vec![0] && received == 255
+            )
+        );
+    }
+}

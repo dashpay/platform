@@ -257,3 +257,190 @@ impl Drive {
         Ok((root_hash, extended_epoch_infos))
     }
 }
+
+#[cfg(feature = "server")]
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::drive::credit_pools::epochs::operations_factory::EpochOperations;
+    use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
+    use crate::util::batch::GroveDbOpBatch;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::block::epoch::Epoch;
+
+    #[test]
+    fn should_prove_and_verify_epoch_infos_ascending() {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let transaction = drive.grove.start_transaction();
+
+        // Set up epoch 0 with known data (epoch 0 subtree already exists from initial setup)
+        let epoch = Epoch::new(0).unwrap();
+        let start_time: u64 = 1_000_000;
+        let start_block_height: u64 = 100;
+        let start_block_core_height: u32 = 50;
+        let fee_multiplier: u64 = 1000;
+        let protocol_version: u32 = platform_version.protocol_version;
+
+        let mut batch = GroveDbOpBatch::new();
+        epoch.add_init_current_operations(
+            fee_multiplier,
+            start_block_height,
+            start_block_core_height,
+            start_time,
+            protocol_version,
+            &mut batch,
+        );
+        drive
+            .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
+            .expect("should apply batch");
+
+        // Set up epoch 1
+        let epoch1 = Epoch::new(1).unwrap();
+        let start_time1: u64 = 2_000_000;
+        let start_block_height1: u64 = 200;
+        let start_block_core_height1: u32 = 100;
+        let fee_multiplier1: u64 = 2000;
+
+        let mut batch = GroveDbOpBatch::new();
+        epoch1
+            .add_init_empty_operations(&mut batch)
+            .expect("should init empty epoch");
+        epoch1.add_init_current_operations(
+            fee_multiplier1,
+            start_block_height1,
+            start_block_core_height1,
+            start_time1,
+            protocol_version,
+            &mut batch,
+        );
+        drive
+            .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
+            .expect("should apply batch");
+
+        drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("should commit transaction");
+
+        // Prove starting from epoch 0, ascending, count = 2
+        let proof = drive
+            .prove_epochs_infos(0, 2, true, None, platform_version)
+            .expect("should prove epoch infos");
+
+        let (_root_hash, epoch_infos) = Drive::verify_epoch_infos(
+            &proof,
+            1,       // current_epoch
+            Some(0), // start_epoch
+            2,       // count
+            true,    // ascending
+            platform_version,
+        )
+        .expect("should verify epoch infos");
+
+        assert_eq!(epoch_infos.len(), 2);
+
+        let info0: &ExtendedEpochInfo = &epoch_infos[0];
+        let expected0 = ExtendedEpochInfo::from(ExtendedEpochInfoV0 {
+            index: 0,
+            first_block_time: start_time,
+            first_block_height: start_block_height,
+            first_core_block_height: start_block_core_height,
+            fee_multiplier_permille: fee_multiplier,
+            protocol_version,
+        });
+        assert_eq!(info0, &expected0);
+
+        let info1: &ExtendedEpochInfo = &epoch_infos[1];
+        let expected1 = ExtendedEpochInfo::from(ExtendedEpochInfoV0 {
+            index: 1,
+            first_block_time: start_time1,
+            first_block_height: start_block_height1,
+            first_core_block_height: start_block_core_height1,
+            fee_multiplier_permille: fee_multiplier1,
+            protocol_version,
+        });
+        assert_eq!(info1, &expected1);
+    }
+
+    #[test]
+    fn should_prove_and_verify_epoch_infos_descending() {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let transaction = drive.grove.start_transaction();
+
+        let epoch = Epoch::new(0).unwrap();
+        let mut batch = GroveDbOpBatch::new();
+        epoch.add_init_current_operations(
+            1000,
+            100,
+            50,
+            1_000_000,
+            platform_version.protocol_version,
+            &mut batch,
+        );
+        drive
+            .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
+            .expect("should apply batch");
+
+        let epoch1 = Epoch::new(1).unwrap();
+        let mut batch = GroveDbOpBatch::new();
+        epoch1
+            .add_init_empty_operations(&mut batch)
+            .expect("should init empty epoch");
+        epoch1.add_init_current_operations(
+            2000,
+            200,
+            100,
+            2_000_000,
+            platform_version.protocol_version,
+            &mut batch,
+        );
+        drive
+            .grove_apply_batch(batch, false, Some(&transaction), &platform_version.drive)
+            .expect("should apply batch");
+
+        drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("should commit transaction");
+
+        // Prove descending from epoch 1
+        let proof = drive
+            .prove_epochs_infos(1, 2, false, None, platform_version)
+            .expect("should prove epoch infos");
+
+        let (_root_hash, epoch_infos) =
+            Drive::verify_epoch_infos(&proof, 1, Some(1), 2, false, platform_version)
+                .expect("should verify epoch infos descending");
+
+        assert_eq!(epoch_infos.len(), 2);
+        // Results are ordered by epoch index (BTreeMap ordering), regardless of query direction
+        assert_eq!(
+            epoch_infos[0],
+            ExtendedEpochInfoV0 {
+                index: 0,
+                first_block_time: 1_000_000,
+                first_block_height: 100,
+                first_core_block_height: 50,
+                fee_multiplier_permille: 1000,
+                protocol_version: platform_version.protocol_version,
+            }
+            .into()
+        );
+        assert_eq!(
+            epoch_infos[1],
+            ExtendedEpochInfoV0 {
+                index: 1,
+                first_block_time: 2_000_000,
+                first_block_height: 200,
+                first_core_block_height: 100,
+                fee_multiplier_permille: 2000,
+                protocol_version: platform_version.protocol_version,
+            }
+            .into()
+        );
+    }
+}

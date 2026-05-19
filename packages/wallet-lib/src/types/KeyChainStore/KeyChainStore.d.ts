@@ -16,5 +16,3 @@ export declare class KeyChainStore {
 export declare interface addKeyChainParam {
   isMasterKeyChain?: boolean;
 }
-
-

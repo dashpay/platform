@@ -139,3 +139,74 @@ impl UnpaidEpochV0Setters for UnpaidEpoch {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::execution::types::unpaid_epoch::v0::UnpaidEpochV0;
+
+    fn make_unpaid_epoch() -> UnpaidEpoch {
+        UnpaidEpoch::V0(UnpaidEpochV0 {
+            epoch_index: 3,
+            next_unpaid_epoch_index: 4,
+            epoch_start_time: 500_000,
+            start_block_height: 50,
+            next_epoch_start_block_height: 150,
+            start_block_core_height: 25,
+            next_epoch_start_block_core_height: 35,
+            protocol_version: 1,
+            fee_multiplier: 100,
+        })
+    }
+
+    #[test]
+    fn wrapper_getters_delegate_correctly() {
+        let epoch = make_unpaid_epoch();
+        assert_eq!(epoch.epoch_index(), 3);
+        assert_eq!(epoch.next_unpaid_epoch_index(), 4);
+        assert_eq!(epoch.epoch_start_time(), 500_000);
+        assert_eq!(epoch.start_block_height(), 50);
+        assert_eq!(epoch.next_epoch_start_block_height(), 150);
+        assert_eq!(epoch.start_block_core_height(), 25);
+        assert_eq!(epoch.next_epoch_start_block_core_height(), 35);
+        assert_eq!(epoch.protocol_version(), 1);
+        assert_eq!(epoch.fee_multiplier(), 100);
+    }
+
+    #[test]
+    fn wrapper_setters_delegate_correctly() {
+        let mut epoch = make_unpaid_epoch();
+        epoch.set_epoch_index(10);
+        epoch.set_next_unpaid_epoch_index(11);
+        epoch.set_epoch_start_time(999);
+        epoch.set_start_block_height(1000);
+        epoch.set_next_epoch_start_block_height(2000);
+        epoch.set_start_block_core_height(80);
+        epoch.set_next_epoch_start_block_core_height(90);
+        epoch.set_protocol_version(5);
+        epoch.set_fee_multiplier(300);
+
+        assert_eq!(epoch.epoch_index(), 10);
+        assert_eq!(epoch.next_unpaid_epoch_index(), 11);
+        assert_eq!(epoch.epoch_start_time(), 999);
+        assert_eq!(epoch.start_block_height(), 1000);
+        assert_eq!(epoch.next_epoch_start_block_height(), 2000);
+        assert_eq!(epoch.start_block_core_height(), 80);
+        assert_eq!(epoch.next_epoch_start_block_core_height(), 90);
+        assert_eq!(epoch.protocol_version(), 5);
+        assert_eq!(epoch.fee_multiplier(), 300);
+    }
+
+    #[test]
+    fn wrapper_block_count_delegates_correctly() {
+        let epoch = make_unpaid_epoch();
+        assert_eq!(epoch.block_count().unwrap(), 100);
+    }
+
+    #[test]
+    fn from_v0_conversion() {
+        let v0 = UnpaidEpochV0::default();
+        let epoch: UnpaidEpoch = v0.into();
+        assert_eq!(epoch.epoch_index(), 0);
+    }
+}

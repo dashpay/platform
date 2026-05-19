@@ -2,6 +2,10 @@ use crate::address_funds::PlatformAddress;
 use crate::identity::v0::IdentityV0;
 use crate::identity::{IdentityPublicKey, KeyID};
 use crate::prelude::{AddressNonce, Revision};
+#[cfg(feature = "json-conversion")]
+use crate::serialization::json_safe_fields;
+#[cfg(feature = "value-conversion")]
+use crate::serialization::ValueConvertible;
 
 #[cfg(feature = "identity-hashing")]
 use crate::serialization::PlatformSerializable;
@@ -25,9 +29,9 @@ use std::collections::{BTreeMap, BTreeSet};
 /// untagged is needed here
 #[derive(Debug, Clone, PartialEq, From)]
 #[cfg_attr(
-   any( feature = "identity-serde-conversion" ,feature = "state-transition-serde-conversion",),
+   any( feature = "serde-conversion" ,feature = "serde-conversion",),
     derive(serde::Serialize, serde::Deserialize),
-    serde(tag = "$version"),
+    serde(tag = "$formatVersion"),
     // platform_version_path("dpp.identity_versions.identity_structure_version")
 )]
 #[cfg_attr(
@@ -35,24 +39,20 @@ use std::collections::{BTreeMap, BTreeSet};
     derive(Encode, Decode, PlatformDeserialize, PlatformSerialize),
     platform_serialize(limit = 15000, unversioned)
 )]
+#[cfg_attr(feature = "value-conversion", derive(ValueConvertible))]
 pub enum Identity {
     #[cfg_attr(
-        any(
-            feature = "identity-serde-conversion",
-            feature = "state-transition-serde-conversion"
-        ),
+        any(feature = "serde-conversion", feature = "serde-conversion"),
         serde(rename = "0")
     )]
     V0(IdentityV0),
 }
 
 /// An identity struct that represent partially set/loaded identity data.
+#[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(Debug, Clone, Eq, PartialEq)]
 #[cfg_attr(
-    any(
-        feature = "identity-serde-conversion",
-        feature = "state-transition-serde-conversion",
-    ),
+    any(feature = "serde-conversion", feature = "serde-conversion",),
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
@@ -158,5 +158,180 @@ impl Identity {
         match self {
             Identity::V0(v0) => v0.into_partial_identity_info_no_balance(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::identity::accessors::IdentityGettersV0;
+    use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use crate::identity::{KeyType, Purpose, SecurityLevel};
+    use platform_value::{BinaryData, Identifier};
+    use platform_version::version::LATEST_PLATFORM_VERSION;
+    use std::collections::BTreeMap;
+
+    fn sample_key(id: u32) -> IdentityPublicKey {
+        IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::MASTER,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: BinaryData::new(vec![0x42; 33]),
+            disabled_at: None,
+        })
+    }
+
+    #[test]
+    fn default_versioned_returns_default_v0() {
+        let identity =
+            Identity::default_versioned(LATEST_PLATFORM_VERSION).expect("default should succeed");
+        assert_eq!(identity.id(), Identifier::default());
+        assert_eq!(identity.balance(), 0);
+        assert_eq!(identity.revision(), 0);
+        assert!(identity.public_keys().is_empty());
+    }
+
+    #[test]
+    fn new_with_id_and_keys_preserves_inputs() {
+        let id = Identifier::from([4u8; 32]);
+        let mut keys: BTreeMap<u32, IdentityPublicKey> = BTreeMap::new();
+        keys.insert(0, sample_key(0));
+        keys.insert(1, sample_key(1));
+
+        let identity = Identity::new_with_id_and_keys(id, keys.clone(), LATEST_PLATFORM_VERSION)
+            .expect("new_with_id_and_keys");
+        assert_eq!(identity.id(), id);
+        assert_eq!(identity.balance(), 0);
+        assert_eq!(identity.revision(), 0);
+        assert_eq!(identity.public_keys().len(), 2);
+    }
+
+    #[test]
+    fn into_partial_identity_info_preserves_balance_and_revision() {
+        let mut keys: BTreeMap<u32, IdentityPublicKey> = BTreeMap::new();
+        keys.insert(0, sample_key(0));
+        let v0 = IdentityV0 {
+            id: Identifier::from([5u8; 32]),
+            public_keys: keys,
+            balance: 123,
+            revision: 7,
+        };
+        let identity: Identity = v0.clone().into();
+        let partial = identity.into_partial_identity_info();
+        assert_eq!(partial.id, v0.id);
+        assert_eq!(partial.balance, Some(123));
+        assert_eq!(partial.revision, Some(7));
+        assert_eq!(partial.loaded_public_keys.len(), 1);
+        assert!(partial.not_found_public_keys.is_empty());
+    }
+
+    #[test]
+    fn into_partial_identity_info_no_balance_drops_balance() {
+        let v0 = IdentityV0 {
+            id: Identifier::from([6u8; 32]),
+            public_keys: BTreeMap::new(),
+            balance: 999,
+            revision: 2,
+        };
+        let identity: Identity = v0.into();
+        let partial = identity.into_partial_identity_info_no_balance();
+        assert!(partial.balance.is_none());
+        assert_eq!(partial.revision, Some(2));
+    }
+
+    #[test]
+    fn from_v0_conversion_works() {
+        let v0 = IdentityV0 {
+            id: Identifier::from([1u8; 32]),
+            public_keys: BTreeMap::new(),
+            balance: 1,
+            revision: 1,
+        };
+        let identity: Identity = v0.clone().into();
+        match identity {
+            Identity::V0(inner) => assert_eq!(inner, v0),
+        }
+    }
+
+    #[test]
+    fn clone_and_equality() {
+        let id = Identifier::from([3u8; 32]);
+        let identity =
+            Identity::new_with_id_and_keys(id, BTreeMap::new(), LATEST_PLATFORM_VERSION).unwrap();
+        let clone = identity.clone();
+        assert_eq!(identity, clone);
+    }
+
+    #[cfg(feature = "identity-hashing")]
+    #[test]
+    fn hash_is_stable_for_same_identity() {
+        let id = Identifier::from([8u8; 32]);
+        let identity =
+            Identity::new_with_id_and_keys(id, BTreeMap::new(), LATEST_PLATFORM_VERSION).unwrap();
+        let h1 = identity.hash().unwrap();
+        let h2 = identity.hash().unwrap();
+        assert_eq!(h1, h2);
+        // The hash is a fixed-size SHA256-double, 32 bytes.
+        assert_eq!(h1.len(), 32);
+    }
+
+    #[cfg(feature = "identity-hashing")]
+    #[test]
+    fn hash_differs_for_different_identities() {
+        let a = Identity::new_with_id_and_keys(
+            Identifier::from([0u8; 32]),
+            BTreeMap::new(),
+            LATEST_PLATFORM_VERSION,
+        )
+        .unwrap();
+        let b = Identity::new_with_id_and_keys(
+            Identifier::from([1u8; 32]),
+            BTreeMap::new(),
+            LATEST_PLATFORM_VERSION,
+        )
+        .unwrap();
+        assert_ne!(a.hash().unwrap(), b.hash().unwrap());
+    }
+
+    #[cfg(feature = "state-transitions")]
+    #[test]
+    fn new_with_input_addresses_and_keys_is_deterministic() {
+        use crate::address_funds::PlatformAddress;
+
+        let mut inputs: BTreeMap<PlatformAddress, (u32, u64)> = BTreeMap::new();
+        inputs.insert(PlatformAddress::P2pkh([0x11; 20]), (1, 0));
+        inputs.insert(PlatformAddress::P2pkh([0x22; 20]), (2, 0));
+
+        let keys: BTreeMap<u32, IdentityPublicKey> = BTreeMap::new();
+
+        let a = Identity::new_with_input_addresses_and_keys(
+            &inputs,
+            keys.clone(),
+            LATEST_PLATFORM_VERSION,
+        )
+        .unwrap();
+        let b = Identity::new_with_input_addresses_and_keys(
+            &inputs,
+            keys.clone(),
+            LATEST_PLATFORM_VERSION,
+        )
+        .unwrap();
+        // Deterministic derivation: same inputs -> same id.
+        assert_eq!(a.id(), b.id());
+    }
+
+    #[cfg(feature = "state-transitions")]
+    #[test]
+    fn new_with_input_addresses_and_keys_fails_on_empty_inputs() {
+        use crate::address_funds::PlatformAddress;
+        let inputs: BTreeMap<PlatformAddress, (u32, u64)> = BTreeMap::new();
+        let keys: BTreeMap<u32, IdentityPublicKey> = BTreeMap::new();
+
+        let result =
+            Identity::new_with_input_addresses_and_keys(&inputs, keys, LATEST_PLATFORM_VERSION);
+        assert!(result.is_err());
     }
 }

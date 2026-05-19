@@ -127,3 +127,107 @@ impl DefaultForPlatformVersion for StateTransitionExecutionContext {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::execution::types::execution_operation::signature_verification_operation::SignatureVerificationOperation;
+    use crate::execution::types::execution_operation::RetrieveIdentityInfo;
+    use dpp::identity::KeyType;
+    use dpp::validation::operations::ProtocolValidationOperation;
+    use dpp::version::DefaultForPlatformVersion;
+
+    fn make_context() -> StateTransitionExecutionContext {
+        StateTransitionExecutionContext::default_for_platform_version(PlatformVersion::latest())
+            .unwrap()
+    }
+
+    #[test]
+    fn default_context_starts_with_no_operations() {
+        let ctx = make_context();
+        assert!(ctx.operations_slice().is_empty());
+    }
+
+    #[test]
+    fn default_context_not_in_dry_run() {
+        let ctx = make_context();
+        assert!(!ctx.in_dry_run());
+    }
+
+    #[test]
+    fn enable_disable_dry_run() {
+        let mut ctx = make_context();
+        ctx.enable_dry_run();
+        assert!(ctx.in_dry_run());
+        ctx.disable_dry_run();
+        assert!(!ctx.in_dry_run());
+    }
+
+    #[test]
+    fn add_operation_increases_count() {
+        let mut ctx = make_context();
+        ctx.add_operation(ValidationOperation::SingleSha256(1));
+        assert_eq!(ctx.operations_slice().len(), 1);
+    }
+
+    #[test]
+    fn add_operations_batch() {
+        let mut ctx = make_context();
+        ctx.add_operations(vec![
+            ValidationOperation::SingleSha256(1),
+            ValidationOperation::DoubleSha256(2),
+        ]);
+        assert_eq!(ctx.operations_slice().len(), 2);
+    }
+
+    #[test]
+    fn add_dpp_operations_wraps_in_protocol() {
+        let mut ctx = make_context();
+        ctx.add_dpp_operations(vec![
+            ProtocolValidationOperation::DocumentTypeSchemaValidationForSize(50),
+        ]);
+        assert_eq!(ctx.operations_slice().len(), 1);
+        assert!(matches!(
+            ctx.operations_slice()[0],
+            ValidationOperation::Protocol(_)
+        ));
+    }
+
+    #[test]
+    fn operations_consume_returns_all_operations() {
+        let mut ctx = make_context();
+        ctx.add_operation(ValidationOperation::Ripemd160(1));
+        ctx.add_operation(ValidationOperation::SingleSha256(2));
+        let ops = ctx.operations_consume();
+        assert_eq!(ops.len(), 2);
+    }
+
+    #[test]
+    fn fee_cost_empty_context_returns_zero() {
+        let ctx = make_context();
+        let fee = ctx.fee_cost(PlatformVersion::latest()).unwrap();
+        assert_eq!(fee.processing_fee, 0);
+        assert_eq!(fee.storage_fee, 0);
+    }
+
+    #[test]
+    fn fee_cost_with_operations_returns_nonzero() {
+        let mut ctx = make_context();
+        ctx.add_operation(ValidationOperation::SignatureVerification(
+            SignatureVerificationOperation::new(KeyType::ECDSA_SECP256K1),
+        ));
+        ctx.add_operation(ValidationOperation::RetrieveIdentity(
+            RetrieveIdentityInfo::only_balance(),
+        ));
+        let fee = ctx.fee_cost(PlatformVersion::latest()).unwrap();
+        assert!(fee.processing_fee > 0);
+    }
+
+    #[test]
+    fn from_v0_conversion() {
+        let v0 = StateTransitionExecutionContextV0::default();
+        let ctx: StateTransitionExecutionContext = v0.into();
+        assert!(!ctx.in_dry_run());
+        assert!(ctx.operations_slice().is_empty());
+    }
+}

@@ -126,3 +126,126 @@ impl IdentityFromIdentityCreateFromAddressesTransitionAction for Identity {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::state_transition_action::identity::identity_create_from_addresses::v0::IdentityCreateFromAddressesTransitionActionV0;
+    use dpp::address_funds::fee_strategy::AddressFundsFeeStrategy;
+    use dpp::address_funds::PlatformAddress;
+    use dpp::identity::accessors::IdentityGettersV0;
+    use dpp::identity::IdentityPublicKey;
+    use dpp::version::PlatformVersion;
+
+    fn make_v0() -> IdentityCreateFromAddressesTransitionActionV0 {
+        let platform_version = PlatformVersion::latest();
+        let (key, _private) =
+            IdentityPublicKey::random_masternode_transfer_key(1, Some(42), platform_version)
+                .expect("expected a random key");
+        let mut inputs = BTreeMap::new();
+        inputs.insert(PlatformAddress::P2pkh([0x11; 20]), (1u32, 900u64));
+        IdentityCreateFromAddressesTransitionActionV0 {
+            inputs_with_remaining_balance: inputs,
+            output: Some((PlatformAddress::P2sh([0x22; 20]), 100)),
+            fee_strategy: AddressFundsFeeStrategy::default(),
+            public_keys: vec![key],
+            identity_id: Identifier::from([0xAA; 32]),
+            fund_identity_amount: 800,
+            user_fee_increase: 2,
+        }
+    }
+
+    #[test]
+    fn test_from_v0() {
+        let v0 = make_v0();
+        let action: IdentityCreateFromAddressesTransitionAction = v0.into();
+        assert!(matches!(
+            action,
+            IdentityCreateFromAddressesTransitionAction::V0(_)
+        ));
+    }
+
+    #[test]
+    fn test_inputs_with_remaining_balance() {
+        let action = IdentityCreateFromAddressesTransitionAction::V0(make_v0());
+        let inputs = action.inputs_with_remaining_balance();
+        assert_eq!(inputs.len(), 1);
+        let (nonce, credits) = inputs
+            .get(&PlatformAddress::P2pkh([0x11; 20]))
+            .expect("expected input");
+        assert_eq!(*nonce, 1);
+        assert_eq!(*credits, 900);
+    }
+
+    #[test]
+    fn test_inputs_with_remaining_balance_owned() {
+        let action = IdentityCreateFromAddressesTransitionAction::V0(make_v0());
+        let inputs = action.inputs_with_remaining_balance_owned();
+        assert_eq!(inputs.len(), 1);
+    }
+
+    #[test]
+    fn test_public_keys() {
+        let action = IdentityCreateFromAddressesTransitionAction::V0(make_v0());
+        assert_eq!(action.public_keys().len(), 1);
+    }
+
+    #[test]
+    fn test_identity_id() {
+        let action = IdentityCreateFromAddressesTransitionAction::V0(make_v0());
+        assert_eq!(action.identity_id(), Identifier::from([0xAA; 32]));
+    }
+
+    #[test]
+    fn test_user_fee_increase() {
+        let action = IdentityCreateFromAddressesTransitionAction::V0(make_v0());
+        assert_eq!(action.user_fee_increase(), 2);
+    }
+
+    #[test]
+    fn test_output() {
+        let action = IdentityCreateFromAddressesTransitionAction::V0(make_v0());
+        let output = action.output();
+        assert!(output.is_some());
+        let (addr, credits) = output.unwrap();
+        assert_eq!(addr, PlatformAddress::P2sh([0x22; 20]));
+        assert_eq!(credits, 100);
+    }
+
+    #[test]
+    fn test_fee_strategy() {
+        let action = IdentityCreateFromAddressesTransitionAction::V0(make_v0());
+        let strategy = action.fee_strategy();
+        assert!(strategy.is_empty()); // default is empty vec
+    }
+
+    #[test]
+    fn test_into_partial_identity_owned() {
+        let action = IdentityCreateFromAddressesTransitionAction::V0(make_v0());
+        let partial: PartialIdentity = action.into();
+        assert_eq!(partial.id, Identifier::from([0xAA; 32]));
+        assert_eq!(partial.balance, Some(800));
+        assert!(partial.revision.is_none());
+    }
+
+    #[test]
+    fn test_into_partial_identity_borrowed() {
+        let action = IdentityCreateFromAddressesTransitionAction::V0(make_v0());
+        let partial: PartialIdentity = (&action).into();
+        assert_eq!(partial.id, Identifier::from([0xAA; 32]));
+        assert_eq!(partial.balance, Some(800));
+    }
+
+    #[test]
+    fn test_try_from_borrowed_identity_create_from_addresses_transition_action() {
+        let platform_version = PlatformVersion::latest();
+        let action = IdentityCreateFromAddressesTransitionAction::V0(make_v0());
+        let identity =
+            Identity::try_from_borrowed_identity_create_from_addresses_transition_action(
+                &action,
+                platform_version,
+            )
+            .expect("expected identity");
+        assert_eq!(identity.id(), Identifier::from([0xAA; 32]));
+    }
+}

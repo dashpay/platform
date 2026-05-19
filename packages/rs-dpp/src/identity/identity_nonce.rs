@@ -168,9 +168,29 @@ mod tests {
     use crate::consensus::state::state_error::StateError;
     use crate::consensus::ConsensusError;
     use crate::identity::identity_nonce::{
-        validate_identity_nonce_update, MergeIdentityNonceResult,
+        validate_identity_nonce_update, validate_new_identity_nonce, MergeIdentityNonceResult,
+        MISSING_IDENTITY_REVISIONS_MAX_BYTES,
     };
     use platform_value::Identifier;
+
+    #[test]
+    fn validate_new_identity_nonce_valid_zero() {
+        let result = validate_new_identity_nonce(0, Identifier::default());
+        assert!(result.errors.is_empty());
+    }
+
+    #[test]
+    fn validate_new_identity_nonce_invalid_at_max() {
+        let nonce = MISSING_IDENTITY_REVISIONS_MAX_BYTES;
+        let result = validate_new_identity_nonce(nonce, Identifier::default());
+
+        let Some(ConsensusError::StateError(StateError::InvalidIdentityNonceError(e))) =
+            result.errors.first()
+        else {
+            panic!("expected state error");
+        };
+        assert_eq!(e.error, MergeIdentityNonceResult::NonceTooFarInPast);
+    }
 
     #[test]
     fn validate_identity_nonce_not_changed() {

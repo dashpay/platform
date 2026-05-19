@@ -1,6 +1,6 @@
 use crate::data_contract::DataContractWasm;
 use crate::error::{WasmDppError, WasmDppResult};
-use crate::impl_wasm_conversions;
+use crate::impl_wasm_conversions_inner;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
 use crate::version::{PlatformVersionLikeJs, PlatformVersionWasm};
@@ -213,8 +213,9 @@ impl DataContractCreateTransitionWasm {
     }
 }
 
-impl_wasm_conversions!(
+impl_wasm_conversions_inner!(
     DataContractCreateTransitionWasm,
+    DataContractCreateTransition,
     DataContractCreateTransition,
     DataContractCreateTransitionObjectJs,
     DataContractCreateTransitionJSONJs

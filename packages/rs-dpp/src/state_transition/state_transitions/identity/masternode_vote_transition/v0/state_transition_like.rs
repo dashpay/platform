@@ -2,7 +2,6 @@ use base64::prelude::BASE64_STANDARD;
 use base64::Engine;
 use platform_value::BinaryData;
 
-use crate::prelude::UserFeeIncrease;
 use crate::{
     prelude::Identifier,
     state_transition::{StateTransitionLike, StateTransitionOwned, StateTransitionType},
@@ -30,15 +29,6 @@ impl StateTransitionLike for MasternodeVoteTransitionV0 {
     /// returns the type of State Transition
     fn state_transition_type(&self) -> StateTransitionType {
         MasternodeVote
-    }
-
-    fn user_fee_increase(&self) -> UserFeeIncrease {
-        // The user fee increase for a masternode votes is always 0
-        0
-    }
-
-    fn set_user_fee_increase(&mut self, _fee_multiplier: UserFeeIncrease) {
-        // Setting does nothing
     }
 
     fn modified_data_ids(&self) -> Vec<Identifier> {

@@ -1,7 +1,7 @@
 use crate::bls_signatures::{Bls12381G2Impl, PublicKey as BlsPublicKey};
 use crate::core_types::validator::v0::{ValidatorV0, ValidatorV0Getters, ValidatorV0Setters};
 use dashcore::{ProTxHash, PubkeyHash};
-#[cfg(feature = "core-types-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 /// Version 0
@@ -9,10 +9,7 @@ pub mod v0;
 
 /// A validator in the context of a quorum
 #[derive(Clone, Debug, Eq, PartialEq)]
-#[cfg_attr(
-    feature = "core-types-serde-conversion",
-    derive(Serialize, Deserialize)
-)]
+#[cfg_attr(feature = "serde-conversion", derive(Serialize, Deserialize))]
 pub enum Validator {
     /// Version 0
     V0(ValidatorV0),

@@ -5,8 +5,8 @@ mod nft_tests {
     use crate::test::helpers::fast_forward_to_block::fast_forward_to_block;
     use dpp::tokens::token_payment_info::v0::TokenPaymentInfoV0;
     use dpp::tokens::token_payment_info::TokenPaymentInfo;
-    #[test]
-    fn test_document_set_price_on_document_without_ability_to_purchase() {
+    #[tokio::test]
+    async fn test_document_set_price_on_document_without_ability_to_purchase() {
         let platform_version = PlatformVersion::latest();
         let (mut platform, contract) = TestPlatformBuilder::new()
             .build_with_mock_rpc()
@@ -54,6 +54,7 @@ mod nft_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition = documents_batch_create_transition
@@ -123,6 +124,7 @@ mod nft_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition for the update price");
 
         let documents_batch_transfer_serialized_transition =
@@ -164,8 +166,8 @@ mod nft_tests {
         assert_eq!(consensus_error.to_string(), "Document transition action card is in trade mode No Trading that does not support the seller setting the price is not supported");
     }
 
-    #[test]
-    fn test_document_set_price() {
+    #[tokio::test]
+    async fn test_document_set_price() {
         let platform_version = PlatformVersion::latest();
         let (mut platform, contract) = TestPlatformBuilder::new()
             .build_with_mock_rpc()
@@ -215,6 +217,7 @@ mod nft_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition = documents_batch_create_transition
@@ -307,6 +310,7 @@ mod nft_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition for the update price");
 
         let documents_batch_transfer_serialized_transition =
@@ -373,8 +377,8 @@ mod nft_tests {
         assert_eq!(document.revision(), Some(2));
     }
 
-    #[test]
-    fn test_document_set_price_and_purchase() {
+    #[tokio::test]
+    async fn test_document_set_price_and_purchase() {
         let platform_version = PlatformVersion::latest();
         let (mut platform, contract) = TestPlatformBuilder::new()
             .build_with_mock_rpc()
@@ -433,6 +437,7 @@ mod nft_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition = documents_batch_create_transition
@@ -551,6 +556,7 @@ mod nft_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition for the update price");
 
         let documents_batch_transfer_serialized_transition =
@@ -666,6 +672,7 @@ mod nft_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition for the purchase");
 
         let documents_batch_purchase_serialized_transition = documents_batch_purchase_transition
@@ -749,8 +756,8 @@ mod nft_tests {
         assert_eq!(buyers_balance, dash_to_credits!(0.9) - 68691480);
     }
 
-    #[test]
-    fn test_document_set_price_and_purchase_different_epoch_documents_mutable() {
+    #[tokio::test]
+    async fn test_document_set_price_and_purchase_different_epoch_documents_mutable() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
@@ -825,6 +832,7 @@ mod nft_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition = documents_batch_create_transition
@@ -947,6 +955,7 @@ mod nft_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_update_serialized_transition = documents_batch_update_transition
@@ -1041,6 +1050,7 @@ mod nft_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition for the update price");
 
         let documents_batch_transfer_serialized_transition =
@@ -1168,6 +1178,7 @@ mod nft_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition for the purchase");
 
         let documents_batch_purchase_serialized_transition = documents_batch_purchase_transition
@@ -1266,8 +1277,8 @@ mod nft_tests {
         assert_eq!(buyers_balance, dash_to_credits!(0.9) - 68956280);
     }
 
-    #[test]
-    fn test_document_set_price_and_purchase_different_epoch() {
+    #[tokio::test]
+    async fn test_document_set_price_and_purchase_different_epoch() {
         let platform_version = PlatformVersion::latest();
         let (mut platform, contract) = TestPlatformBuilder::new()
             .build_with_mock_rpc()
@@ -1326,6 +1337,7 @@ mod nft_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition = documents_batch_create_transition
@@ -1448,6 +1460,7 @@ mod nft_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition for the update price");
 
         let documents_batch_transfer_serialized_transition =
@@ -1565,6 +1578,7 @@ mod nft_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition for the purchase");
 
         let documents_batch_purchase_serialized_transition = documents_batch_purchase_transition
@@ -1648,10 +1662,18 @@ mod nft_tests {
         assert_eq!(buyers_balance, dash_to_credits!(0.9) - 68691480);
     }
 
-    #[test]
-    fn test_document_set_price_and_try_purchase_at_different_amount() {
-        let platform_version = PlatformVersion::latest();
+    /// Helper for the paired Purchase-at-wrong-price test. Same scenario at
+    /// PROTOCOL_VERSION_11 (legacy bump-only fee — Purchase paths don't emit
+    /// per-tx bumps in v0 of the transformer) and PROTOCOL_VERSION_12+ (bump
+    /// emission active for every per-tx failure). Both versions land as
+    /// PaidConsensusError; only the fee differs.
+    async fn run_document_set_price_and_try_purchase_at_different_amount_at_protocol_version(
+        protocol_version: dpp::version::ProtocolVersion,
+    ) {
+        let platform_version = PlatformVersion::get(protocol_version)
+            .expect("expected platform version for the requested protocol_version");
         let (mut platform, contract) = TestPlatformBuilder::new()
+            .with_initial_protocol_version(protocol_version)
             .build_with_mock_rpc()
             .set_initial_state_structure()
             .with_crypto_card_game_nft(TradeMode::DirectPurchase);
@@ -1708,6 +1730,7 @@ mod nft_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition = documents_batch_create_transition
@@ -1753,6 +1776,7 @@ mod nft_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition for the update price");
 
         let documents_batch_transfer_serialized_transition =
@@ -1802,6 +1826,7 @@ mod nft_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition for the purchase");
 
         let documents_batch_purchase_serialized_transition = documents_batch_purchase_transition
@@ -1830,7 +1855,12 @@ mod nft_tests {
             .unwrap()
             .expect("expected to commit transaction");
 
-        assert_eq!(processing_result.invalid_paid_count(), 1);
+        assert_eq!(
+            processing_result.invalid_paid_count(),
+            1,
+            "PROTOCOL_VERSION_{}: must land as PaidConsensusError",
+            protocol_version,
+        );
 
         let result = processing_result.into_execution_results().remove(0);
 
@@ -1844,8 +1874,25 @@ mod nft_tests {
         assert_eq!(consensus_error.to_string(), "5rJccTdtJfg6AxSKyrptWUug3PWjveEitTTLqBn9wHdk document can not be purchased for 35000000000, it's sale price is 50000000000 (in credits)");
     }
 
-    #[test]
-    fn test_document_set_price_and_purchase_from_ones_self() {
+    /// PROTOCOL_VERSION_12+: bump emission active on Purchase failure paths.
+    #[tokio::test]
+    async fn test_document_set_price_and_try_purchase_at_different_amount() {
+        run_document_set_price_and_try_purchase_at_different_amount_at_protocol_version(
+            PlatformVersion::latest().protocol_version,
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_11: legacy bump-only fee (Purchase paths don't emit
+    /// per-tx bumps in v0 of the transformer; the empty action still flows as
+    /// PaidConsensusError via the legacy `Some(empty_vec)` aggregator).
+    #[tokio::test]
+    async fn test_document_set_price_and_try_purchase_at_different_amount_protocol_version_11() {
+        run_document_set_price_and_try_purchase_at_different_amount_at_protocol_version(11).await;
+    }
+
+    #[tokio::test]
+    async fn test_document_set_price_and_purchase_from_ones_self() {
         let platform_version = PlatformVersion::latest();
         let (mut platform, contract) = TestPlatformBuilder::new()
             .build_with_mock_rpc()
@@ -1901,6 +1948,7 @@ mod nft_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition = documents_batch_create_transition
@@ -1946,6 +1994,7 @@ mod nft_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition for the update price");
 
         let documents_batch_transfer_serialized_transition =
@@ -1995,6 +2044,7 @@ mod nft_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition for the purchase");
 
         let documents_batch_purchase_serialized_transition = documents_batch_purchase_transition
@@ -2037,12 +2087,19 @@ mod nft_tests {
         assert_eq!(consensus_error.to_string(), "Document transition action on document type: card identity trying to purchase a document that is already owned by the purchaser is not supported");
     }
 
-    #[test]
-    fn test_document_set_price_and_purchase_then_try_buy_back() {
+    /// Helper for the paired Purchase-then-buy-back test. Same scenario at
+    /// PROTOCOL_VERSION_11 (legacy bump-only fee) and PROTOCOL_VERSION_12+
+    /// (bump emission active for every per-tx failure). Both versions land
+    /// as PaidConsensusError; only the fee differs.
+    async fn run_document_set_price_and_purchase_then_try_buy_back_at_protocol_version(
+        protocol_version: dpp::version::ProtocolVersion,
+    ) {
         // In this test we try to buy back a document after it has been sold
 
-        let platform_version = PlatformVersion::latest();
+        let platform_version = PlatformVersion::get(protocol_version)
+            .expect("expected platform version for the requested protocol_version");
         let (mut platform, contract) = TestPlatformBuilder::new()
+            .with_initial_protocol_version(protocol_version)
             .build_with_mock_rpc()
             .set_initial_state_structure()
             .with_crypto_card_game_nft(TradeMode::DirectPurchase);
@@ -2099,6 +2156,7 @@ mod nft_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition = documents_batch_create_transition
@@ -2144,6 +2202,7 @@ mod nft_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition for the update price");
 
         let documents_batch_transfer_serialized_transition =
@@ -2193,6 +2252,7 @@ mod nft_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition for the purchase");
 
         let documents_batch_purchase_serialized_transition = documents_batch_purchase_transition
@@ -2303,6 +2363,7 @@ mod nft_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition for the purchase");
 
         let documents_batch_purchase_serialized_transition = documents_batch_purchase_transition
@@ -2331,7 +2392,12 @@ mod nft_tests {
             .unwrap()
             .expect("expected to commit transaction");
 
-        assert_eq!(processing_result.invalid_paid_count(), 1);
+        assert_eq!(
+            processing_result.invalid_paid_count(),
+            1,
+            "PROTOCOL_VERSION_{}: must land as PaidConsensusError",
+            protocol_version,
+        );
 
         let result = processing_result.into_execution_results().remove(0);
 
@@ -2348,8 +2414,25 @@ mod nft_tests {
         );
     }
 
-    #[test]
-    fn test_document_set_price_and_purchase_with_enough_credits_to_buy_but_not_enough_to_pay_for_processing(
+    /// PROTOCOL_VERSION_12+: bump emission active on Purchase failure paths.
+    #[tokio::test]
+    async fn test_document_set_price_and_purchase_then_try_buy_back() {
+        run_document_set_price_and_purchase_then_try_buy_back_at_protocol_version(
+            PlatformVersion::latest().protocol_version,
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_11: legacy bump-only fee (Purchase paths don't emit
+    /// per-tx bumps in v0 of the transformer; the empty action still flows as
+    /// PaidConsensusError via the legacy `Some(empty_vec)` aggregator).
+    #[tokio::test]
+    async fn test_document_set_price_and_purchase_then_try_buy_back_protocol_version_11() {
+        run_document_set_price_and_purchase_then_try_buy_back_at_protocol_version(11).await;
+    }
+
+    #[tokio::test]
+    async fn test_document_set_price_and_purchase_with_enough_credits_to_buy_but_not_enough_to_pay_for_processing(
     ) {
         let platform_version = PlatformVersion::latest();
         let (mut platform, contract) = TestPlatformBuilder::new()
@@ -2401,6 +2484,7 @@ mod nft_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition = documents_batch_create_transition
@@ -2493,6 +2577,7 @@ mod nft_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition for the update price");
 
         let documents_batch_transfer_serialized_transition =
@@ -2586,6 +2671,7 @@ mod nft_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition for the purchase");
 
         let documents_batch_purchase_serialized_transition = documents_batch_purchase_transition
@@ -2625,10 +2711,28 @@ mod nft_tests {
         assert_eq!(processing_result.aggregated_fees().processing_fee, 0);
     }
 
-    #[test]
-    fn test_document_set_price_on_not_owned_document() {
-        let platform_version = PlatformVersion::latest();
+    /// Helper for the paired set-price-on-not-owned-document test.
+    ///
+    /// - **PROTOCOL_VERSION_11**: lands as `PaidConsensusError` via the
+    ///   legacy `flatten_v0` / `merge_many_v0` aggregators lifting the
+    ///   empty errors-only result to `Some(empty_vec)` — preserved for
+    ///   chain reproducibility. The contract nonce is *not* actually
+    ///   advanced (no bump action's drive op is created).
+    /// - **PROTOCOL_VERSION_12+**: lands as `PaidConsensusError` because
+    ///   the per-tx failure path now emits a
+    ///   `BumpIdentityDataContractNonce` action
+    ///   (`failed_per_transition_action: 1`). The contract nonce
+    ///   advances and the user pays for the fetch + ownership check.
+    ///
+    /// Only the fee differs between the two versions.
+    async fn run_document_set_price_on_not_owned_document_at_protocol_version(
+        protocol_version: dpp::version::ProtocolVersion,
+        expected_processing_fee: dpp::fee::Credits,
+    ) {
+        let platform_version = PlatformVersion::get(protocol_version)
+            .expect("expected platform version for the requested protocol_version");
         let (mut platform, contract) = TestPlatformBuilder::new()
+            .with_initial_protocol_version(protocol_version)
             .build_with_mock_rpc()
             .set_initial_state_structure()
             .with_crypto_card_game_nft(TradeMode::DirectPurchase);
@@ -2677,6 +2781,7 @@ mod nft_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition = documents_batch_create_transition
@@ -2724,6 +2829,7 @@ mod nft_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition for the update price");
 
         let documents_batch_transfer_serialized_transition =
@@ -2753,13 +2859,34 @@ mod nft_tests {
             .unwrap()
             .expect("expected to commit transaction");
 
-        assert_eq!(processing_result.invalid_paid_count(), 1);
-
+        // UpdatePrice on a not-owned doc: the per-tx ownership check fails.
+        // Both protocol versions land as PaidConsensusError, but for
+        // different reasons:
+        // - v11: `failed_per_transition_action` is 0, helper returns
+        //   errors-only; legacy `flatten_v0`/`merge_many_v0` lift to
+        //   `Some(empty_vec)`, recorded as Paid with the bump-only fee
+        //   (no actual nonce advance — the v11 footgun preserved for
+        //   chain reproducibility).
+        // - v12: helper emits `BumpIdentityDataContractNonce`; aggregator
+        //   wraps as `Some([bump])`; recorded as Paid; nonce advances.
+        // See the helper doc on
+        // `run_document_set_price_on_not_owned_document_at_protocol_version`
+        // for the full split.
+        assert_eq!(
+            processing_result.invalid_paid_count(),
+            1,
+            "PROTOCOL_VERSION_{}: ownership-mismatch UpdatePrice must land as PaidConsensusError",
+            protocol_version,
+        );
         assert_eq!(processing_result.invalid_unpaid_count(), 0);
-
         assert_eq!(processing_result.valid_count(), 0);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 36200);
+        assert_eq!(
+            processing_result.aggregated_fees().processing_fee,
+            expected_processing_fee,
+            "PROTOCOL_VERSION_{}: processing fee must match the version-specific baseline",
+            protocol_version,
+        );
 
         let sender_documents_sql_string =
             format!("select * from card where $ownerId == '{}'", identity.id());
@@ -2789,8 +2916,26 @@ mod nft_tests {
         );
     }
 
-    #[test]
-    fn test_document_set_price_and_purchase_with_token_costs() {
+    /// PROTOCOL_VERSION_12+: bump emission charges the user for the fetch +
+    /// ownership check that ran before the failure.
+    #[tokio::test]
+    async fn test_document_set_price_on_not_owned_document() {
+        run_document_set_price_on_not_owned_document_at_protocol_version(
+            PlatformVersion::latest().protocol_version,
+            571240,
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_11: pre-fix bump-only fee. Pinned so v11 chain
+    /// history stays bit-for-bit reproducible.
+    #[tokio::test]
+    async fn test_document_set_price_on_not_owned_document_protocol_version_11() {
+        run_document_set_price_on_not_owned_document_at_protocol_version(11, 36200).await;
+    }
+
+    #[tokio::test]
+    async fn test_document_set_price_and_purchase_with_token_costs() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -2874,6 +3019,7 @@ mod nft_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition = documents_batch_create_transition
@@ -2975,6 +3121,7 @@ mod nft_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition for the update price");
 
         let documents_batch_transfer_serialized_transition =
@@ -3071,6 +3218,7 @@ mod nft_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition for the purchase");
 
         let documents_batch_purchase_serialized_transition = documents_batch_purchase_transition
@@ -3146,8 +3294,8 @@ mod nft_tests {
         assert_eq!(gold_token_balance, Some(2));
     }
 
-    #[test]
-    fn test_document_creator_id_unique_index_enforcement_with_purchase() {
+    #[tokio::test]
+    async fn test_document_creator_id_unique_index_enforcement_with_purchase() {
         // This test verifies that a unique index on creator_id is properly enforced throughout
         // the complete document lifecycle with purchase operations, ensuring that only one
         // document per creator can exist at any time.
@@ -3245,6 +3393,7 @@ mod nft_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition1 = documents_batch_create_transition1
@@ -3294,6 +3443,7 @@ mod nft_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create update price transition");
 
         let documents_batch_update_price_serialized_transition =
@@ -3356,6 +3506,7 @@ mod nft_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition2 = documents_batch_create_transition2
@@ -3405,6 +3556,7 @@ mod nft_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition for purchase");
 
         let documents_batch_purchase_serialized_transition = documents_batch_purchase_transition
@@ -3491,6 +3643,7 @@ mod nft_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition3 = documents_batch_create_transition3
@@ -3539,6 +3692,7 @@ mod nft_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch deletion transition");
 
         let documents_batch_deletion_serialized_transition = documents_batch_deletion_transition
@@ -3615,6 +3769,7 @@ mod nft_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition4 = documents_batch_create_transition4
@@ -3701,8 +3856,8 @@ mod nft_tests {
         );
     }
 
-    #[test]
-    fn test_document_owner_and_creator_id_unique_index_enforcement_with_purchase() {
+    #[tokio::test]
+    async fn test_document_owner_and_creator_id_unique_index_enforcement_with_purchase() {
         // This test verifies that a unique compound index on (owner_id, creator_id) is properly
         // enforced throughout the document lifecycle with purchase operations, allowing a creator
         // to have multiple documents but preventing duplicate (owner, creator) combinations.
@@ -3808,6 +3963,7 @@ mod nft_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition1 = documents_batch_create_transition1
@@ -3855,6 +4011,7 @@ mod nft_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create update price transition");
 
         let documents_batch_update_price_serialized_transition1 =
@@ -3917,6 +4074,7 @@ mod nft_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition2 = documents_batch_create_transition2
@@ -3967,6 +4125,7 @@ mod nft_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition for purchase");
 
         let documents_batch_purchase_serialized_transition1 = documents_batch_purchase_transition1
@@ -4029,6 +4188,7 @@ mod nft_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition3 = documents_batch_create_transition3
@@ -4077,6 +4237,7 @@ mod nft_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create update price transition");
 
         let documents_batch_update_price_serialized_transition3 =
@@ -4126,6 +4287,7 @@ mod nft_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition for purchase");
 
         let documents_batch_purchase_serialized_transition_buyer1 =
@@ -4177,6 +4339,7 @@ mod nft_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition for purchase");
 
         let documents_batch_purchase_serialized_transition_buyer2 =
@@ -4226,6 +4389,7 @@ mod nft_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch deletion transition");
 
         let documents_batch_deletion_serialized_transition = documents_batch_deletion_transition

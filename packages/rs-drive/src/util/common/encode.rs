@@ -219,3 +219,225 @@ pub fn encode_u32(val: u32) -> Vec<u8> {
 
     wtr
 }
+
+#[cfg(test)]
+#[allow(clippy::approx_constant)]
+mod tests {
+    use super::*;
+
+    // --- encode_u64 / decode_u64 round-trip tests ---
+
+    #[test]
+    fn encode_decode_u64_zero() {
+        let encoded = encode_u64(0);
+        assert_eq!(encoded.len(), 8);
+        let decoded = decode_u64(&encoded).unwrap();
+        assert_eq!(decoded, 0);
+    }
+
+    #[test]
+    fn encode_decode_u64_one() {
+        let encoded = encode_u64(1);
+        let decoded = decode_u64(&encoded).unwrap();
+        assert_eq!(decoded, 1);
+    }
+
+    #[test]
+    fn encode_decode_u64_max() {
+        let encoded = encode_u64(u64::MAX);
+        let decoded = decode_u64(&encoded).unwrap();
+        assert_eq!(decoded, u64::MAX);
+    }
+
+    #[test]
+    fn encode_decode_u64_owned_round_trip() {
+        for val in [0u64, 1, 42, 1000, u64::MAX / 2, u64::MAX] {
+            let encoded = encode_u64(val);
+            let decoded = decode_u64_owned(encoded).unwrap();
+            assert_eq!(decoded, val);
+        }
+    }
+
+    #[test]
+    fn encode_u64_preserves_sort_order_in_positive_range() {
+        // The sign-bit flip means lexicographic ordering matches signed interpretation.
+        // Values in 0..=i64::MAX sort correctly among themselves.
+        let values = [0u64, 1, 2, 100, 1000, i64::MAX as u64];
+        let encoded: Vec<Vec<u8>> = values.iter().map(|&v| encode_u64(v)).collect();
+        for i in 0..encoded.len() - 1 {
+            assert!(
+                encoded[i] < encoded[i + 1],
+                "Sort order violated: encode_u64({}) >= encode_u64({})",
+                values[i],
+                values[i + 1]
+            );
+        }
+    }
+
+    #[test]
+    fn encode_u64_sign_bit_flip_makes_high_values_sort_lower() {
+        // Values above i64::MAX have the sign bit set in big-endian, so the flip
+        // clears it, making them sort below values in the 0..=i64::MAX range.
+        // This is the intended behavior: the encoding treats u64 as if it were i64.
+        let below_midpoint = encode_u64(100);
+        let above_midpoint = encode_u64(u64::MAX);
+        assert!(above_midpoint < below_midpoint);
+    }
+
+    #[test]
+    fn decode_u64_wrong_length_returns_error() {
+        assert!(decode_u64(&[]).is_err());
+        assert!(decode_u64(&[0; 7]).is_err());
+        assert!(decode_u64(&[0; 9]).is_err());
+        assert!(decode_u64(&[0; 1]).is_err());
+    }
+
+    #[test]
+    fn decode_u64_owned_wrong_length_returns_error() {
+        assert!(decode_u64_owned(vec![]).is_err());
+        assert!(decode_u64_owned(vec![0; 7]).is_err());
+        assert!(decode_u64_owned(vec![0; 9]).is_err());
+    }
+
+    // --- encode_i64 tests ---
+
+    #[test]
+    fn encode_i64_positive() {
+        let encoded = encode_i64(42);
+        assert_eq!(encoded.len(), 8);
+    }
+
+    #[test]
+    fn encode_i64_negative() {
+        let encoded = encode_i64(-42);
+        assert_eq!(encoded.len(), 8);
+    }
+
+    #[test]
+    fn encode_i64_zero() {
+        let encoded = encode_i64(0);
+        assert_eq!(encoded.len(), 8);
+    }
+
+    #[test]
+    fn encode_i64_preserves_sort_order() {
+        let values = [i64::MIN, -1000, -1, 0, 1, 1000, i64::MAX];
+        let encoded: Vec<Vec<u8>> = values.iter().map(|&v| encode_i64(v)).collect();
+        for i in 0..encoded.len() - 1 {
+            assert!(
+                encoded[i] < encoded[i + 1],
+                "Sort order violated: encode_i64({}) >= encode_i64({})",
+                values[i],
+                values[i + 1]
+            );
+        }
+    }
+
+    #[test]
+    fn encode_i64_negative_less_than_positive() {
+        let neg = encode_i64(-1);
+        let pos = encode_i64(1);
+        assert!(neg < pos);
+    }
+
+    // --- encode_float tests ---
+
+    #[test]
+    fn encode_float_positive() {
+        let encoded = encode_float(3.14);
+        assert_eq!(encoded.len(), 8);
+    }
+
+    #[test]
+    fn encode_float_negative() {
+        let encoded = encode_float(-3.14);
+        assert_eq!(encoded.len(), 8);
+    }
+
+    #[test]
+    fn encode_float_zero() {
+        let encoded = encode_float(0.0);
+        assert_eq!(encoded.len(), 8);
+    }
+
+    #[test]
+    fn encode_float_preserves_sort_order() {
+        let values = [-1000.0f64, -1.0, -0.001, 0.0, 0.001, 1.0, 1000.0];
+        let encoded: Vec<Vec<u8>> = values.iter().map(|&v| encode_float(v)).collect();
+        for i in 0..encoded.len() - 1 {
+            assert!(
+                encoded[i] < encoded[i + 1],
+                "Sort order violated: encode_float({}) >= encode_float({})",
+                values[i],
+                values[i + 1]
+            );
+        }
+    }
+
+    #[test]
+    fn encode_float_negative_less_than_positive() {
+        let neg = encode_float(-0.5);
+        let pos = encode_float(0.5);
+        assert!(neg < pos);
+    }
+
+    // --- encode_u16 tests ---
+
+    #[test]
+    fn encode_u16_basic() {
+        assert_eq!(encode_u16(0).len(), 2);
+        assert_eq!(encode_u16(u16::MAX).len(), 2);
+    }
+
+    #[test]
+    fn encode_u16_preserves_sort_order_in_positive_range() {
+        // Values in 0..=i16::MAX sort correctly after sign-bit flip.
+        let values = [0u16, 1, 100, 1000, i16::MAX as u16];
+        let encoded: Vec<Vec<u8>> = values.iter().map(|&v| encode_u16(v)).collect();
+        for i in 0..encoded.len() - 1 {
+            assert!(
+                encoded[i] < encoded[i + 1],
+                "Sort order violated: encode_u16({}) >= encode_u16({})",
+                values[i],
+                values[i + 1]
+            );
+        }
+    }
+
+    #[test]
+    fn encode_u16_sign_bit_flip_makes_high_values_sort_lower() {
+        let below = encode_u16(100);
+        let above = encode_u16(u16::MAX);
+        assert!(above < below);
+    }
+
+    // --- encode_u32 tests ---
+
+    #[test]
+    fn encode_u32_basic() {
+        assert_eq!(encode_u32(0).len(), 4);
+        assert_eq!(encode_u32(u32::MAX).len(), 4);
+    }
+
+    #[test]
+    fn encode_u32_preserves_sort_order_in_positive_range() {
+        // Values in 0..=i32::MAX sort correctly after sign-bit flip.
+        let values = [0u32, 1, 100, 10000, i32::MAX as u32];
+        let encoded: Vec<Vec<u8>> = values.iter().map(|&v| encode_u32(v)).collect();
+        for i in 0..encoded.len() - 1 {
+            assert!(
+                encoded[i] < encoded[i + 1],
+                "Sort order violated: encode_u32({}) >= encode_u32({})",
+                values[i],
+                values[i + 1]
+            );
+        }
+    }
+
+    #[test]
+    fn encode_u32_sign_bit_flip_makes_high_values_sort_lower() {
+        let below = encode_u32(100);
+        let above = encode_u32(u32::MAX);
+        assert!(above < below);
+    }
+}

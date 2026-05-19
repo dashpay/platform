@@ -15,6 +15,9 @@ pub mod batched_transition;
 /// v0
 pub mod v0;
 
+#[cfg(test)]
+mod tests;
+
 /// documents batch transition action
 #[derive(Debug, Clone, From)]
 pub enum BatchTransitionAction {

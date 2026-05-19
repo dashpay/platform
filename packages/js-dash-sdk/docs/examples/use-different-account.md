@@ -8,4 +8,3 @@ To access other accounts, pass the `index` option:
 ```
 const secondAccount = await client.wallet.getAccount({ index: 1 })
 ``` 
-

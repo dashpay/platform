@@ -21,7 +21,7 @@ use crate::state_transition::identity_credit_withdrawal_transition::v1::Identity
 
 impl IdentityCreditWithdrawalTransitionMethodsV0 for IdentityCreditWithdrawalTransitionV1 {
     #[cfg(feature = "state-transition-signing")]
-    fn try_from_identity<S: Signer<IdentityPublicKey>>(
+    async fn try_from_identity<S: Signer<IdentityPublicKey>>(
         identity: &Identity,
         output_script: Option<CoreScript>,
         amount: u64,
@@ -126,11 +126,13 @@ impl IdentityCreditWithdrawalTransitionMethodsV0 for IdentityCreditWithdrawalTra
             }
         };
 
-        transition.sign_external(
-            identity_public_key,
-            &signer,
-            None::<GetDataContractSecurityLevelRequirementFn>,
-        )?;
+        transition
+            .sign_external(
+                identity_public_key,
+                &signer,
+                None::<GetDataContractSecurityLevelRequirementFn>,
+            )
+            .await?;
 
         Ok(transition)
     }

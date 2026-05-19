@@ -3,6 +3,7 @@ use crate::consensus::basic::data_contract::DataContractInvalidIndexDefinitionUp
 use crate::consensus::basic::data_contract::DuplicateIndexError;
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
+use crate::data_contract::document_type::index::IndexCountability;
 use crate::data_contract::document_type::index_level::IndexType::{
     ContestedResourceIndex, NonUniqueIndex, UniqueIndex,
 };
@@ -35,6 +36,24 @@ pub struct IndexLevelTypeInfo {
     pub should_insert_with_all_null: bool,
     /// The index type
     pub index_type: IndexType,
+    /// Whether and how this index supports count fast paths. Drives the GroveDB
+    /// tree variant chosen at the terminal level of the index path:
+    /// `NotCountable` → `NormalTree`,
+    /// `Countable` → `CountTree`,
+    /// `CountableAllowingOffset` → `ProvableCountTree`.
+    pub countable: IndexCountability,
+    /// Whether this index supports range-count queries. When true:
+    /// - The property-name level (the level *above* this terminating
+    ///   level, whose keys are the property's distinct values) is laid out
+    ///   as a `ProvableCountTree`.
+    /// - Each value tree under it is laid out as a `CountTree`.
+    /// - Sibling continuations inside each value tree get wrapped with
+    ///   `Element::NonCounted` so their counts don't leak into the value
+    ///   tree's count.
+    ///
+    /// Mutually compatible with the `countable` flag — additive, not a
+    /// replacement.
+    pub range_countable: bool,
 }
 
 impl IndexType {
@@ -214,12 +233,48 @@ impl IndexLevel {
                     current_level.has_index_with_type = Some(IndexLevelTypeInfo {
                         should_insert_with_all_null: index.null_searchable,
                         index_type,
+                        countable: index.countable,
+                        range_countable: index.range_countable,
                     });
                 }
             }
         }
 
         Ok(index_level)
+    }
+
+    /// Recursively finds the first index path where a count-affecting
+    /// property (`countable` or `range_countable`) differs between two
+    /// IndexLevel trees. Both flags drive GroveDB tree-variant choice
+    /// at contract creation (NormalTree / CountTree / ProvableCountTree
+    /// at the [0] terminal, and additionally NonCounted-wrapped
+    /// continuations + ProvableCountTree property-name level for
+    /// `range_countable`), so toggling either after creation would
+    /// require rebuilding the index tree and is rejected.
+    /// Returns `None` if both properties are the same everywhere.
+    #[cfg(feature = "validation")]
+    fn find_first_countability_change(&self, new: &IndexLevel) -> Option<String> {
+        if let (Some(old_info), Some(new_info)) =
+            (&self.has_index_with_type, &new.has_index_with_type)
+        {
+            if old_info.countable != new_info.countable {
+                return Some("(countable changed)".to_string());
+            }
+            if old_info.range_countable != new_info.range_countable {
+                return Some("(range_countable changed)".to_string());
+            }
+        }
+
+        // Recurse into sub-levels that exist in both old and new
+        for (key, old_sub) in &self.sub_index_levels {
+            if let Some(new_sub) = new.sub_index_levels.get(key) {
+                if let Some(inner_path) = old_sub.find_first_countability_change(new_sub) {
+                    return Some(format!("{} -> {}", key, inner_path));
+                }
+            }
+        }
+
+        None
     }
 
     #[cfg(feature = "validation")]
@@ -258,6 +313,21 @@ impl IndexLevel {
             );
         }
 
+        // Check that the countability properties (`countable` and
+        // `range_countable`) have not changed on any existing index.
+        // Both flags drive GroveDB tree-variant choice at contract
+        // creation, so changing either would require rebuilding the
+        // index tree structure — both are immutable after creation.
+        if let Some(countable_change_path) = self.find_first_countability_change(new_indices) {
+            return SimpleConsensusValidationResult::new_with_error(
+                DataContractInvalidIndexDefinitionUpdateError::new(
+                    document_type_name.to_string(),
+                    countable_change_path,
+                )
+                .into(),
+            );
+        }
+
         SimpleConsensusValidationResult::new()
     }
 }
@@ -282,6 +352,8 @@ mod tests {
             unique: false,
             null_searchable: true,
             contested_index: None,
+            countable: IndexCountability::NotCountable,
+            range_countable: false,
         }];
 
         let old_index_structure =
@@ -309,6 +381,8 @@ mod tests {
             unique: false,
             null_searchable: true,
             contested_index: None,
+            countable: IndexCountability::NotCountable,
+            range_countable: false,
         }];
 
         let new_indices = vec![
@@ -321,6 +395,8 @@ mod tests {
                 unique: false,
                 null_searchable: true,
                 contested_index: None,
+                countable: IndexCountability::NotCountable,
+                range_countable: false,
             },
             Index {
                 name: "test2".to_string(),
@@ -331,6 +407,8 @@ mod tests {
                 unique: false,
                 null_searchable: true,
                 contested_index: None,
+                countable: IndexCountability::NotCountable,
+                range_countable: false,
             },
         ];
 
@@ -367,6 +445,8 @@ mod tests {
                 unique: false,
                 null_searchable: true,
                 contested_index: None,
+                countable: IndexCountability::NotCountable,
+                range_countable: false,
             },
             Index {
                 name: "test2".to_string(),
@@ -377,6 +457,8 @@ mod tests {
                 unique: false,
                 null_searchable: true,
                 contested_index: None,
+                countable: IndexCountability::NotCountable,
+                range_countable: false,
             },
         ];
 
@@ -389,6 +471,8 @@ mod tests {
             unique: false,
             null_searchable: true,
             contested_index: None,
+            countable: IndexCountability::NotCountable,
+            range_countable: false,
         }];
 
         let old_index_structure =
@@ -423,6 +507,8 @@ mod tests {
             unique: false,
             null_searchable: true,
             contested_index: None,
+            countable: IndexCountability::NotCountable,
+            range_countable: false,
         }];
 
         let new_indices = vec![Index {
@@ -440,6 +526,8 @@ mod tests {
             unique: false,
             null_searchable: true,
             contested_index: None,
+            countable: IndexCountability::NotCountable,
+            range_countable: false,
         }];
 
         let old_index_structure =
@@ -480,6 +568,8 @@ mod tests {
             unique: false,
             null_searchable: true,
             contested_index: None,
+            countable: IndexCountability::NotCountable,
+            range_countable: false,
         }];
 
         let new_indices = vec![Index {
@@ -491,6 +581,8 @@ mod tests {
             unique: false,
             null_searchable: true,
             contested_index: None,
+            countable: IndexCountability::NotCountable,
+            range_countable: false,
         }];
 
         let old_index_structure =
@@ -508,6 +600,360 @@ mod tests {
             [ConsensusError::BasicError(
                 BasicError::DataContractInvalidIndexDefinitionUpdateError(e)
             )] if e.index_path() == "test -> test2"
+        );
+    }
+
+    #[test]
+    fn should_return_invalid_result_if_countable_changed_from_false_to_true() {
+        let platform_version = PlatformVersion::latest();
+        let document_type_name = "test";
+
+        let old_indices = vec![Index {
+            name: "test".to_string(),
+            properties: vec![IndexProperty {
+                name: "test".to_string(),
+                ascending: false,
+            }],
+            unique: false,
+            null_searchable: true,
+            contested_index: None,
+            countable: IndexCountability::NotCountable,
+            range_countable: false,
+        }];
+
+        let new_indices = vec![Index {
+            name: "test".to_string(),
+            properties: vec![IndexProperty {
+                name: "test".to_string(),
+                ascending: false,
+            }],
+            unique: false,
+            null_searchable: true,
+            contested_index: None,
+            countable: IndexCountability::Countable,
+            range_countable: false,
+        }];
+
+        let old_index_structure =
+            IndexLevel::try_from_indices(&old_indices, document_type_name, platform_version)
+                .expect("failed to create old index level");
+
+        let new_index_structure =
+            IndexLevel::try_from_indices(&new_indices, document_type_name, platform_version)
+                .expect("failed to create new index level");
+
+        let result = old_index_structure.validate_update(document_type_name, &new_index_structure);
+
+        assert_matches!(
+            result.errors.as_slice(),
+            [ConsensusError::BasicError(
+                BasicError::DataContractInvalidIndexDefinitionUpdateError(e)
+            )] if e.index_path() == "test -> (countable changed)"
+        );
+    }
+
+    #[test]
+    fn should_return_invalid_result_if_countable_changed_from_true_to_false() {
+        let platform_version = PlatformVersion::latest();
+        let document_type_name = "test";
+
+        let old_indices = vec![Index {
+            name: "test".to_string(),
+            properties: vec![IndexProperty {
+                name: "test".to_string(),
+                ascending: false,
+            }],
+            unique: false,
+            null_searchable: true,
+            contested_index: None,
+            countable: IndexCountability::Countable,
+            range_countable: false,
+        }];
+
+        let new_indices = vec![Index {
+            name: "test".to_string(),
+            properties: vec![IndexProperty {
+                name: "test".to_string(),
+                ascending: false,
+            }],
+            unique: false,
+            null_searchable: true,
+            contested_index: None,
+            countable: IndexCountability::NotCountable,
+            range_countable: false,
+        }];
+
+        let old_index_structure =
+            IndexLevel::try_from_indices(&old_indices, document_type_name, platform_version)
+                .expect("failed to create old index level");
+
+        let new_index_structure =
+            IndexLevel::try_from_indices(&new_indices, document_type_name, platform_version)
+                .expect("failed to create new index level");
+
+        let result = old_index_structure.validate_update(document_type_name, &new_index_structure);
+
+        assert_matches!(
+            result.errors.as_slice(),
+            [ConsensusError::BasicError(
+                BasicError::DataContractInvalidIndexDefinitionUpdateError(e)
+            )] if e.index_path() == "test -> (countable changed)"
+        );
+    }
+
+    #[test]
+    fn should_pass_if_countable_unchanged_on_update() {
+        let platform_version = PlatformVersion::latest();
+        let document_type_name = "test";
+
+        let old_indices = vec![Index {
+            name: "test".to_string(),
+            properties: vec![IndexProperty {
+                name: "test".to_string(),
+                ascending: false,
+            }],
+            unique: false,
+            null_searchable: true,
+            contested_index: None,
+            countable: IndexCountability::Countable,
+            range_countable: false,
+        }];
+
+        let old_index_structure =
+            IndexLevel::try_from_indices(&old_indices, document_type_name, platform_version)
+                .expect("failed to create old index level");
+
+        // Clone so countable stays the same
+        let new_index_structure = old_index_structure.clone();
+
+        let result = old_index_structure.validate_update(document_type_name, &new_index_structure);
+
+        assert!(result.is_valid());
+    }
+
+    /// `range_countable` is layered on top of `countable` (it changes
+    /// the index's tree shape: property-name → ProvableCountTree, value
+    /// level → CountTree, sibling continuations → NonCounted) and is
+    /// just as load-bearing as `countable` itself for state-sync
+    /// determinism. Toggling it post-creation must be rejected for the
+    /// same reasons.
+    #[test]
+    fn should_return_invalid_result_if_range_countable_changed_from_false_to_true() {
+        let platform_version = PlatformVersion::latest();
+        let document_type_name = "test";
+
+        let old_indices = vec![Index {
+            name: "test".to_string(),
+            properties: vec![IndexProperty {
+                name: "test".to_string(),
+                ascending: false,
+            }],
+            unique: false,
+            null_searchable: true,
+            contested_index: None,
+            countable: IndexCountability::Countable,
+            range_countable: false,
+        }];
+
+        let new_indices = vec![Index {
+            name: "test".to_string(),
+            properties: vec![IndexProperty {
+                name: "test".to_string(),
+                ascending: false,
+            }],
+            unique: false,
+            null_searchable: true,
+            contested_index: None,
+            countable: IndexCountability::Countable,
+            range_countable: true,
+        }];
+
+        let old_index_structure =
+            IndexLevel::try_from_indices(&old_indices, document_type_name, platform_version)
+                .expect("failed to create old index level");
+
+        let new_index_structure =
+            IndexLevel::try_from_indices(&new_indices, document_type_name, platform_version)
+                .expect("failed to create new index level");
+
+        let result = old_index_structure.validate_update(document_type_name, &new_index_structure);
+
+        assert_matches!(
+            result.errors.as_slice(),
+            [ConsensusError::BasicError(
+                BasicError::DataContractInvalidIndexDefinitionUpdateError(e)
+            )] if e.index_path() == "test -> (range_countable changed)"
+        );
+    }
+
+    #[test]
+    fn should_return_invalid_result_if_range_countable_changed_from_true_to_false() {
+        let platform_version = PlatformVersion::latest();
+        let document_type_name = "test";
+
+        let old_indices = vec![Index {
+            name: "test".to_string(),
+            properties: vec![IndexProperty {
+                name: "test".to_string(),
+                ascending: false,
+            }],
+            unique: false,
+            null_searchable: true,
+            contested_index: None,
+            countable: IndexCountability::Countable,
+            range_countable: true,
+        }];
+
+        let new_indices = vec![Index {
+            name: "test".to_string(),
+            properties: vec![IndexProperty {
+                name: "test".to_string(),
+                ascending: false,
+            }],
+            unique: false,
+            null_searchable: true,
+            contested_index: None,
+            countable: IndexCountability::Countable,
+            range_countable: false,
+        }];
+
+        let old_index_structure =
+            IndexLevel::try_from_indices(&old_indices, document_type_name, platform_version)
+                .expect("failed to create old index level");
+
+        let new_index_structure =
+            IndexLevel::try_from_indices(&new_indices, document_type_name, platform_version)
+                .expect("failed to create new index level");
+
+        let result = old_index_structure.validate_update(document_type_name, &new_index_structure);
+
+        assert_matches!(
+            result.errors.as_slice(),
+            [ConsensusError::BasicError(
+                BasicError::DataContractInvalidIndexDefinitionUpdateError(e)
+            )] if e.index_path() == "test -> (range_countable changed)"
+        );
+    }
+
+    #[test]
+    fn should_return_invalid_result_if_range_countable_changed_on_compound_index() {
+        let platform_version = PlatformVersion::latest();
+        let document_type_name = "test";
+
+        let old_indices = vec![Index {
+            name: "compound".to_string(),
+            properties: vec![
+                IndexProperty {
+                    name: "first".to_string(),
+                    ascending: true,
+                },
+                IndexProperty {
+                    name: "second".to_string(),
+                    ascending: true,
+                },
+            ],
+            unique: false,
+            null_searchable: true,
+            contested_index: None,
+            countable: IndexCountability::Countable,
+            range_countable: false,
+        }];
+
+        let new_indices = vec![Index {
+            name: "compound".to_string(),
+            properties: vec![
+                IndexProperty {
+                    name: "first".to_string(),
+                    ascending: true,
+                },
+                IndexProperty {
+                    name: "second".to_string(),
+                    ascending: true,
+                },
+            ],
+            unique: false,
+            null_searchable: true,
+            contested_index: None,
+            countable: IndexCountability::Countable,
+            range_countable: true,
+        }];
+
+        let old_index_structure =
+            IndexLevel::try_from_indices(&old_indices, document_type_name, platform_version)
+                .expect("failed to create old index level");
+
+        let new_index_structure =
+            IndexLevel::try_from_indices(&new_indices, document_type_name, platform_version)
+                .expect("failed to create new index level");
+
+        let result = old_index_structure.validate_update(document_type_name, &new_index_structure);
+
+        assert_matches!(
+            result.errors.as_slice(),
+            [ConsensusError::BasicError(
+                BasicError::DataContractInvalidIndexDefinitionUpdateError(e)
+            )] if e.index_path() == "first -> second -> (range_countable changed)"
+        );
+    }
+
+    #[test]
+    fn should_return_invalid_result_if_countable_changed_on_compound_index() {
+        let platform_version = PlatformVersion::latest();
+        let document_type_name = "test";
+
+        let old_indices = vec![Index {
+            name: "compound".to_string(),
+            properties: vec![
+                IndexProperty {
+                    name: "first".to_string(),
+                    ascending: true,
+                },
+                IndexProperty {
+                    name: "second".to_string(),
+                    ascending: true,
+                },
+            ],
+            unique: false,
+            null_searchable: true,
+            contested_index: None,
+            countable: IndexCountability::NotCountable,
+            range_countable: false,
+        }];
+
+        let new_indices = vec![Index {
+            name: "compound".to_string(),
+            properties: vec![
+                IndexProperty {
+                    name: "first".to_string(),
+                    ascending: true,
+                },
+                IndexProperty {
+                    name: "second".to_string(),
+                    ascending: true,
+                },
+            ],
+            unique: false,
+            null_searchable: true,
+            contested_index: None,
+            countable: IndexCountability::Countable,
+            range_countable: false,
+        }];
+
+        let old_index_structure =
+            IndexLevel::try_from_indices(&old_indices, document_type_name, platform_version)
+                .expect("failed to create old index level");
+
+        let new_index_structure =
+            IndexLevel::try_from_indices(&new_indices, document_type_name, platform_version)
+                .expect("failed to create new index level");
+
+        let result = old_index_structure.validate_update(document_type_name, &new_index_structure);
+
+        assert_matches!(
+            result.errors.as_slice(),
+            [ConsensusError::BasicError(
+                BasicError::DataContractInvalidIndexDefinitionUpdateError(e)
+            )] if e.index_path() == "first -> second -> (countable changed)"
         );
     }
 }

@@ -301,3 +301,365 @@ fn validate_identity_public_key_contract_bounds_v0(
         Ok(SimpleConsensusValidationResult::new())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test::helpers::setup::TestPlatformBuilder;
+    use dpp::block::block_info::BlockInfo;
+    use dpp::consensus::basic::BasicError;
+    use dpp::consensus::ConsensusError;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::identity::{KeyType, Purpose, SecurityLevel};
+    use dpp::platform_value::BinaryData;
+    use dpp::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
+    use dpp::version::DefaultForPlatformVersion;
+
+    fn make_key_in_creation(
+        id: u32,
+        purpose: Purpose,
+        contract_bounds: Option<ContractBounds>,
+    ) -> IdentityPublicKeyInCreation {
+        IdentityPublicKeyInCreationV0 {
+            id: id.into(),
+            key_type: KeyType::ECDSA_SECP256K1,
+            purpose,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds,
+            read_only: false,
+            data: BinaryData::new(vec![0u8; 33]),
+            signature: BinaryData::default(),
+        }
+        .into()
+    }
+
+    #[test]
+    fn should_fail_when_single_contract_does_not_exist() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let identity_id = Identifier::random();
+        let non_existent_contract_id = Identifier::random();
+
+        let key = make_key_in_creation(
+            0,
+            ENCRYPTION,
+            Some(ContractBounds::SingleContract {
+                id: non_existent_contract_id,
+            }),
+        );
+
+        let mut execution_context =
+            StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                .expect("should create execution context");
+
+        let result = validate_identity_public_keys_contract_bounds_v0(
+            identity_id,
+            &[key],
+            &platform.drive,
+            None,
+            &mut execution_context,
+            platform_version,
+        )
+        .expect("should succeed");
+
+        assert!(
+            !result.is_valid(),
+            "should be invalid when contract does not exist"
+        );
+        match &result.errors[0] {
+            ConsensusError::BasicError(BasicError::DataContractNotPresentError(e)) => {
+                assert_eq!(e.data_contract_id(), &non_existent_contract_id);
+            }
+            other => panic!("expected DataContractNotPresentError, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn should_fail_when_single_contract_document_type_contract_does_not_exist() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let identity_id = Identifier::random();
+        let non_existent_contract_id = Identifier::random();
+
+        let key = make_key_in_creation(
+            0,
+            ENCRYPTION,
+            Some(ContractBounds::SingleContractDocumentType {
+                id: non_existent_contract_id,
+                document_type_name: "note".to_string(),
+            }),
+        );
+
+        let mut execution_context =
+            StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                .expect("should create execution context");
+
+        let result = validate_identity_public_keys_contract_bounds_v0(
+            identity_id,
+            &[key],
+            &platform.drive,
+            None,
+            &mut execution_context,
+            platform_version,
+        )
+        .expect("should succeed");
+
+        assert!(
+            !result.is_valid(),
+            "should be invalid when contract does not exist"
+        );
+        match &result.errors[0] {
+            ConsensusError::BasicError(BasicError::DataContractNotPresentError(e)) => {
+                assert_eq!(e.data_contract_id(), &non_existent_contract_id);
+            }
+            other => panic!("expected DataContractNotPresentError, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn should_fail_when_purpose_is_not_encryption_or_decryption_for_single_contract() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let data_contract = dpp::tests::fixtures::get_data_contract_fixture(
+            None,
+            0,
+            platform_version.protocol_version,
+        )
+        .data_contract_owned();
+        let contract_id = data_contract.id();
+
+        platform
+            .drive
+            .apply_contract(
+                &data_contract,
+                BlockInfo::default(),
+                true,
+                None,
+                None,
+                platform_version,
+            )
+            .expect("should apply contract");
+
+        let identity_id = Identifier::random();
+        let key = make_key_in_creation(
+            0,
+            Purpose::AUTHENTICATION,
+            Some(ContractBounds::SingleContract { id: contract_id }),
+        );
+
+        let mut execution_context =
+            StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                .expect("should create execution context");
+
+        let result = validate_identity_public_keys_contract_bounds_v0(
+            identity_id,
+            &[key],
+            &platform.drive,
+            None,
+            &mut execution_context,
+            platform_version,
+        )
+        .expect("should succeed");
+
+        assert!(
+            !result.is_valid(),
+            "should be invalid when purpose is not encryption or decryption"
+        );
+        match &result.errors[0] {
+            ConsensusError::BasicError(BasicError::InvalidKeyPurposeForContractBoundsError(_)) => {}
+            other => panic!(
+                "expected InvalidKeyPurposeForContractBoundsError, got {:?}",
+                other
+            ),
+        }
+    }
+
+    #[test]
+    fn should_fail_when_purpose_is_not_encryption_or_decryption_for_document_type_bound() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let data_contract = dpp::tests::fixtures::get_data_contract_fixture(
+            None,
+            0,
+            platform_version.protocol_version,
+        )
+        .data_contract_owned();
+        let contract_id = data_contract.id();
+        // Get a valid document type name from the contract
+        let doc_type_name = data_contract
+            .document_types()
+            .keys()
+            .next()
+            .unwrap()
+            .clone();
+
+        platform
+            .drive
+            .apply_contract(
+                &data_contract,
+                BlockInfo::default(),
+                true,
+                None,
+                None,
+                platform_version,
+            )
+            .expect("should apply contract");
+
+        let identity_id = Identifier::random();
+        let key = make_key_in_creation(
+            0,
+            Purpose::AUTHENTICATION,
+            Some(ContractBounds::SingleContractDocumentType {
+                id: contract_id,
+                document_type_name: doc_type_name,
+            }),
+        );
+
+        let mut execution_context =
+            StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                .expect("should create execution context");
+
+        let result = validate_identity_public_keys_contract_bounds_v0(
+            identity_id,
+            &[key],
+            &platform.drive,
+            None,
+            &mut execution_context,
+            platform_version,
+        )
+        .expect("should succeed");
+
+        assert!(
+            !result.is_valid(),
+            "should be invalid when purpose is not encryption or decryption"
+        );
+        match &result.errors[0] {
+            ConsensusError::BasicError(BasicError::InvalidKeyPurposeForContractBoundsError(_)) => {}
+            other => panic!(
+                "expected InvalidKeyPurposeForContractBoundsError, got {:?}",
+                other
+            ),
+        }
+    }
+
+    #[test]
+    fn should_fail_when_document_type_does_not_exist_in_contract() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let data_contract = dpp::tests::fixtures::get_data_contract_fixture(
+            None,
+            0,
+            platform_version.protocol_version,
+        )
+        .data_contract_owned();
+        let contract_id = data_contract.id();
+
+        platform
+            .drive
+            .apply_contract(
+                &data_contract,
+                BlockInfo::default(),
+                true,
+                None,
+                None,
+                platform_version,
+            )
+            .expect("should apply contract");
+
+        let identity_id = Identifier::random();
+        let key = make_key_in_creation(
+            0,
+            ENCRYPTION,
+            Some(ContractBounds::SingleContractDocumentType {
+                id: contract_id,
+                document_type_name: "nonExistentType".to_string(),
+            }),
+        );
+
+        let mut execution_context =
+            StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                .expect("should create execution context");
+
+        let result = validate_identity_public_keys_contract_bounds_v0(
+            identity_id,
+            &[key],
+            &platform.drive,
+            None,
+            &mut execution_context,
+            platform_version,
+        )
+        .expect("should succeed");
+
+        assert!(
+            !result.is_valid(),
+            "should be invalid when document type does not exist"
+        );
+        match &result.errors[0] {
+            ConsensusError::BasicError(BasicError::InvalidDocumentTypeError(e)) => {
+                assert_eq!(e.document_type(), "nonExistentType");
+            }
+            other => panic!("expected InvalidDocumentTypeError, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn should_accumulate_errors_from_multiple_keys() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let identity_id = Identifier::random();
+        let non_existent_contract_id_1 = Identifier::random();
+        let non_existent_contract_id_2 = Identifier::random();
+
+        let keys = vec![
+            make_key_in_creation(
+                0,
+                ENCRYPTION,
+                Some(ContractBounds::SingleContract {
+                    id: non_existent_contract_id_1,
+                }),
+            ),
+            make_key_in_creation(
+                1,
+                ENCRYPTION,
+                Some(ContractBounds::SingleContract {
+                    id: non_existent_contract_id_2,
+                }),
+            ),
+        ];
+
+        let mut execution_context =
+            StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                .expect("should create execution context");
+
+        let result = validate_identity_public_keys_contract_bounds_v0(
+            identity_id,
+            &keys,
+            &platform.drive,
+            None,
+            &mut execution_context,
+            platform_version,
+        )
+        .expect("should succeed");
+
+        assert!(!result.is_valid(), "should be invalid");
+        assert_eq!(result.errors.len(), 2, "should have errors from both keys");
+    }
+}

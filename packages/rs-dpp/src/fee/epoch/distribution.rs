@@ -1083,5 +1083,242 @@ mod tests {
             assert_eq!(leftovers, 400);
             assert_eq!(amount, storage_fee - leftovers - first_two_epochs_amount);
         }
+
+        #[test]
+        fn should_return_zero_amount_and_zero_leftovers_for_zero_storage_fee() {
+            let (amount, leftovers) =
+                calculate_storage_fee_refund_amount_and_leftovers(0, GENESIS_EPOCH_INDEX, 10, 20)
+                    .expect("should handle zero storage fee");
+
+            assert_eq!(amount, 0);
+            assert_eq!(leftovers, 0);
+        }
+
+        #[test]
+        fn should_return_zero_refund_when_start_epoch_equals_current_epoch() {
+            // When start == current, skipped_amount covers epoch 0 only (the one epoch
+            // between start_epoch_index and current_epoch_index + 1 = 1).
+            let storage_fee = 1000000;
+            let epoch = 0;
+
+            let (amount, leftovers) =
+                calculate_storage_fee_refund_amount_and_leftovers(storage_fee, epoch, epoch, 20)
+                    .expect("should distribute storage fee");
+
+            // Only epoch 0 is skipped (cost = floor(1000000 * 0.05 / 20) = 2500).
+            // The refund amount is everything except the skipped epoch and leftovers.
+            assert_eq!(amount, storage_fee - 2500 - leftovers);
+        }
+
+        #[test]
+        fn should_calculate_correctly_with_non_genesis_start() {
+            let storage_fee = 500000;
+            let start = 100;
+            let current = 110;
+
+            let (amount, leftovers) =
+                calculate_storage_fee_refund_amount_and_leftovers(storage_fee, start, current, 20)
+                    .expect("should distribute storage fee");
+
+            // Verify invariant: amount + skipped + leftovers = storage_fee
+            assert_eq!(
+                amount + (storage_fee - amount - leftovers) + leftovers,
+                storage_fee
+            );
+            // Amount must be less than total
+            assert!(amount < storage_fee);
+            assert!(leftovers < storage_fee);
+        }
+
+        #[test]
+        fn should_handle_large_epoch_gap() {
+            // current_epoch far from start
+            let storage_fee = 10_000_000;
+            let start = 0;
+            let current = 500; // halfway through the 1000 total epochs
+
+            let (amount, leftovers) =
+                calculate_storage_fee_refund_amount_and_leftovers(storage_fee, start, current, 20)
+                    .expect("should handle large epoch gap");
+
+            // Refund amount should be smaller because most epochs have been paid out
+            assert!(amount < storage_fee / 2);
+            assert!(leftovers < storage_fee);
+        }
+    }
+
+    mod additional_original_removed_credits_multiplier_from {
+        use super::*;
+
+        #[test]
+        fn should_create_multiplier_of_one_when_no_epochs_have_passed() {
+            // When start_repayment == start, paid_epochs = 0, ratio_used = full table sum = 1.0
+            // So multiplier = 1/1 = 1
+            let multiplier = original_removed_credits_multiplier_from(0, 0, 20);
+            assert_eq!(multiplier, dec!(1));
+        }
+
+        #[test]
+        fn should_increase_multiplier_as_more_epochs_pass() {
+            let m1 = original_removed_credits_multiplier_from(0, 5, 20);
+            let m2 = original_removed_credits_multiplier_from(0, 10, 20);
+            let m3 = original_removed_credits_multiplier_from(0, 19, 20);
+
+            // More paid epochs means less ratio remaining, so multiplier increases
+            assert!(m1 < m2);
+            assert!(m2 < m3);
+        }
+
+        #[test]
+        fn should_handle_era_boundary_crossing() {
+            // paid_epochs = 20 means we enter the second era exactly
+            let m_at_boundary = original_removed_credits_multiplier_from(0, 20, 20);
+            let m_before_boundary = original_removed_credits_multiplier_from(0, 19, 20);
+            let m_after_boundary = original_removed_credits_multiplier_from(0, 21, 20);
+
+            // At the boundary, the entire first era (0.05) is consumed
+            assert!(m_at_boundary > m_before_boundary);
+            assert!(m_after_boundary > m_at_boundary);
+        }
+
+        #[test]
+        fn should_handle_different_epochs_per_era() {
+            // With 40 epochs per era (the default), 40 paid epochs = 1 full era
+            let m_40 = original_removed_credits_multiplier_from(0, 40, 40);
+            // With 20 epochs per era, 20 paid epochs = 1 full era
+            let m_20 = original_removed_credits_multiplier_from(0, 20, 20);
+
+            // Both consume exactly one full era of 0.05, so multipliers should be equal
+            assert_eq!(m_40, m_20);
+        }
+
+        #[test]
+        fn should_produce_same_multiplier_regardless_of_absolute_epoch_offset() {
+            // The multiplier depends only on the difference, not absolute indices
+            let m1 = original_removed_credits_multiplier_from(0, 15, 20);
+            let m2 = original_removed_credits_multiplier_from(100, 115, 20);
+            let m3 = original_removed_credits_multiplier_from(5000, 5015, 20);
+
+            assert_eq!(m1, m2);
+            assert_eq!(m2, m3);
+        }
+    }
+
+    mod additional_restore_original_removed_credits_amount {
+        use super::*;
+
+        #[test]
+        fn should_restore_to_original_when_no_epochs_passed() {
+            // If start_repayment == start, multiplier is 1.0, so restored == refund_amount
+            let refund = dec!(1000000);
+            let restored = restore_original_removed_credits_amount(refund, 0, 0, 20)
+                .expect("should not overflow");
+            assert_eq!(restored, refund);
+        }
+
+        #[test]
+        fn should_increase_amount_when_epochs_have_passed() {
+            // After some epochs, the multiplier > 1, so restored > refund
+            let refund = dec!(500000);
+            let restored = restore_original_removed_credits_amount(refund, 0, 10, 20)
+                .expect("should not overflow");
+            assert!(restored > refund);
+        }
+
+        #[test]
+        fn should_handle_zero_refund_amount() {
+            let restored = restore_original_removed_credits_amount(dec!(0), 0, 10, 20)
+                .expect("should handle zero");
+            assert_eq!(restored, dec!(0));
+        }
+    }
+
+    mod additional_refund_storage_fee_to_epochs_map {
+        use super::*;
+
+        #[test]
+        fn should_return_zero_leftovers_for_zero_storage_fee() {
+            let leftovers = refund_storage_fee_to_epochs_map(0, 0, 1, |_, _| Ok(()), 20)
+                .expect("should handle zero");
+            assert_eq!(leftovers, 0);
+        }
+
+        #[test]
+        fn should_skip_epochs_before_skip_until_index() {
+            let storage_fee = 1000000u64;
+            let start = 0u16;
+            let skip_until = 10u16;
+
+            let mut min_epoch_seen = u16::MAX;
+
+            let _leftovers = refund_storage_fee_to_epochs_map(
+                storage_fee,
+                start,
+                skip_until,
+                |epoch_index, _amount| {
+                    if epoch_index < min_epoch_seen {
+                        min_epoch_seen = epoch_index;
+                    }
+                    Ok(())
+                },
+                20,
+            )
+            .expect("should distribute refund");
+
+            // The first epoch called should be >= skip_until
+            assert!(min_epoch_seen >= skip_until);
+        }
+
+        #[test]
+        fn should_distribute_to_single_remaining_epoch_in_era() {
+            // skip_until is 19 (last epoch of era 0), start is 0
+            // This means only 1 epoch remains in era 0
+            let storage_fee = 100000u64;
+
+            let mut epoch_count = 0u32;
+
+            let leftovers = refund_storage_fee_to_epochs_map(
+                storage_fee,
+                0,
+                19,
+                |_epoch_index, _amount| {
+                    epoch_count += 1;
+                    Ok(())
+                },
+                20,
+            )
+            .expect("should distribute");
+
+            // Total epochs = (1000 - 19) = 981 epochs should be called
+            assert_eq!(epoch_count, 981);
+            assert!(leftovers < storage_fee);
+        }
+
+        #[test]
+        fn should_handle_skip_at_era_boundary() {
+            // skip_until exactly at era 1 start
+            let storage_fee = 500000u64;
+            let start = 0u16;
+            let skip_until = 20u16; // era 1 starts here
+
+            let mut epochs_called = Vec::new();
+
+            let _leftovers = refund_storage_fee_to_epochs_map(
+                storage_fee,
+                start,
+                skip_until,
+                |epoch_index, _amount| {
+                    epochs_called.push(epoch_index);
+                    Ok(())
+                },
+                20,
+            )
+            .expect("should distribute");
+
+            // First epoch called should be exactly skip_until
+            assert_eq!(*epochs_called.first().unwrap(), skip_until);
+            // Total = 1000 - 20 = 980
+            assert_eq!(epochs_called.len(), 980);
+        }
     }
 }

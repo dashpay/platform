@@ -48,3 +48,31 @@ impl Drive {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use platform_version::version::PlatformVersion;
+
+    #[test]
+    fn test_verify_address_funds_trunk_query_unknown_version_mismatch() {
+        let mut platform_version = PlatformVersion::latest().clone();
+        platform_version
+            .drive
+            .methods
+            .verify
+            .address_funds
+            .verify_address_funds_trunk_query = 255;
+
+        let result = Drive::verify_address_funds_trunk_query(&[], &platform_version);
+
+        assert!(
+            matches!(
+                result,
+                Err(Error::Drive(DriveError::UnknownVersionMismatch { .. }))
+            ),
+            "expected UnknownVersionMismatch, got {:?}",
+            result,
+        );
+    }
+}

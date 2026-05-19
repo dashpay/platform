@@ -2,7 +2,7 @@ use dashcore::{ProTxHash, PubkeyHash};
 use std::fmt::{Debug, Formatter};
 
 use crate::bls_signatures::{Bls12381G2Impl, PublicKey as BlsPublicKey};
-#[cfg(feature = "core-types-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "core-types-serialization")]
@@ -18,10 +18,7 @@ use dashcore::hashes::Hash;
 
 /// A validator in the context of a quorum
 #[derive(Clone, Eq, PartialEq)]
-#[cfg_attr(
-    feature = "core-types-serde-conversion",
-    derive(Serialize, Deserialize)
-)]
+#[cfg_attr(feature = "serde-conversion", derive(Serialize, Deserialize))]
 pub struct ValidatorV0 {
     /// The proTxHash
     pub pro_tx_hash: ProTxHash,

@@ -1,10 +1,10 @@
 const contract = {
-  $format_version: '0',
+  $formatVersion: '0',
   id: '86LHvdC1Tqx5P97LQUSibGFqf2vnKFpB6VkqQ7oso86e',
   ownerId: '2QjL594djCH2NyDsn45vd6yQjEDHupMKo7CEGVTHtQxU',
   version: 1,
   config: {
-    $format_version: '0',
+    $formatVersion: '0',
     canBeDeleted: false,
     readonly: false,
     keepsHistory: false,

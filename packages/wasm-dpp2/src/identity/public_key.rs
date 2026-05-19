@@ -10,7 +10,9 @@ use crate::impl_wasm_type_info;
 use crate::serialization;
 use crate::utils::{
     try_from_options, try_from_options_optional, try_to_fixed_bytes, try_to_u32, try_to_u64,
+    try_vec_to_fixed_bytes,
 };
+use crate::version::PlatformVersionLikeJs;
 use dpp::dashcore::Network;
 use dpp::dashcore::secp256k1::hashes::hex::{Case, DisplayHex};
 use dpp::identity::contract_bounds::ContractBounds;
@@ -66,7 +68,7 @@ export interface IdentityPublicKeyOptions {
  * IdentityPublicKey serialized as a plain object.
  */
 export interface IdentityPublicKeyObject {
-    $version: string;
+    $formatVersion: string;
     id: number;
     purpose: number;
     securityLevel: number;
@@ -74,18 +76,18 @@ export interface IdentityPublicKeyObject {
     type: number;
     readOnly: boolean;
     data: Uint8Array;
-    disabledAt?: number;
+    disabledAt?: bigint;
 }
 
 /**
  * IdentityPublicKey serialized as JSON.
  */
 export interface IdentityPublicKeyJSON {
-    $version: string;
+    $formatVersion: string;
     id: number;
     purpose: number;
     securityLevel: number;
-    contractBounds?: object;
+    contractBounds?: ContractBoundsJSON;
     type: number;
     readOnly: boolean;
     data: string;
@@ -197,14 +199,8 @@ impl IdentityPublicKeyWasm {
         private_key_bytes_input: Vec<u8>,
         network: NetworkLikeJs,
     ) -> WasmDppResult<bool> {
-        if private_key_bytes_input.len() != 32 {
-            return Err(WasmDppError::invalid_argument(format!(
-                "Private key must be exactly 32 bytes, got {}",
-                private_key_bytes_input.len()
-            )));
-        }
-        let mut private_key_bytes = [0u8; 32];
-        private_key_bytes.copy_from_slice(&private_key_bytes_input);
+        let private_key_bytes: [u8; 32] =
+            try_vec_to_fixed_bytes(private_key_bytes_input, "privateKey")?;
 
         let network: Network = network.try_into()?;
 
@@ -408,11 +404,14 @@ impl IdentityPublicKeyWasm {
     ///
     /// Uses platform_value conversion which properly handles the tagged enum.
     #[wasm_bindgen(js_name = "fromObject")]
-    pub fn from_object(value: IdentityPublicKeyObjectJs) -> WasmDppResult<IdentityPublicKeyWasm> {
+    pub fn from_object(
+        value: IdentityPublicKeyObjectJs,
+        platform_version: PlatformVersionLikeJs,
+    ) -> WasmDppResult<IdentityPublicKeyWasm> {
+        let platform_version: PlatformVersion = platform_version.try_into()?;
         let value: JsValue = value.into();
         let platform_value = serialization::platform_value_from_object(&value)?;
-        let platform_version = PlatformVersion::latest();
-        let key = IdentityPublicKey::from_object(platform_value, platform_version)
+        let key = IdentityPublicKey::from_object(platform_value, &platform_version)
             .map_err(WasmDppError::from)?;
         Ok(IdentityPublicKeyWasm(key))
     }
@@ -424,7 +423,7 @@ impl IdentityPublicKeyWasm {
     #[wasm_bindgen(js_name = "toJSON")]
     pub fn to_json(&self) -> WasmDppResult<IdentityPublicKeyJSONJs> {
         let json_value = self.0.to_json_object().map_err(WasmDppError::from)?;
-        let js_value = serialization::to_json(&json_value)?;
+        let js_value = serialization::json_value_to_js(&json_value)?;
         Ok(js_value.into())
     }
 
@@ -433,7 +432,11 @@ impl IdentityPublicKeyWasm {
     /// Uses serde_json conversion which properly handles the tagged enum
     /// and deserializes base64 strings to binary data.
     #[wasm_bindgen(js_name = "fromJSON")]
-    pub fn from_json(value: IdentityPublicKeyJSONJs) -> WasmDppResult<IdentityPublicKeyWasm> {
+    pub fn from_json(
+        value: IdentityPublicKeyJSONJs,
+        platform_version: PlatformVersionLikeJs,
+    ) -> WasmDppResult<IdentityPublicKeyWasm> {
+        let platform_version: PlatformVersion = platform_version.try_into()?;
         let json_value: JsonValue = serde_from_value(value.into()).map_err(|err| {
             WasmDppError::serialization(format!(
                 "IdentityPublicKey.fromJSON: unable to parse JSON: {}",
@@ -441,8 +444,7 @@ impl IdentityPublicKeyWasm {
             ))
         })?;
 
-        let platform_version = PlatformVersion::latest();
-        let key = IdentityPublicKey::from_json_object(json_value, platform_version)
+        let key = IdentityPublicKey::from_json_object(json_value, &platform_version)
             .map_err(WasmDppError::from)?;
 
         Ok(IdentityPublicKeyWasm(key))

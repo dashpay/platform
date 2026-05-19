@@ -21,21 +21,21 @@ build_module() {
     local module_name=$1
     local features=$2
     local out_dir="pkg-${module_name}"
-    
+
     echo "Building ${module_name} module with features: ${features}..."
-    
+
     # Build with specific features
     cargo build --target wasm32-unknown-unknown --release --no-default-features --features "${features}"
-    
+
     # Create output directory
     mkdir -p "${out_dir}"
-    
+
     # Run wasm-bindgen
     wasm-bindgen "$CARGO_OUT_DIR/wasm32-unknown-unknown/release/wasm_drive_verify.wasm" \
         --out-dir "${out_dir}" \
         --target web \
         --out-name "wasm_drive_verify_${module_name}"
-    
+
     # Optimize with wasm-opt if available
     if command -v wasm-opt &> /dev/null; then
         echo "Optimizing ${module_name} module with wasm-opt..."
@@ -43,7 +43,7 @@ build_module() {
             "${out_dir}/wasm_drive_verify_${module_name}_bg.wasm" \
             -o "${out_dir}/wasm_drive_verify_${module_name}_bg.wasm"
     fi
-    
+
     # Get module size
     local size=$(ls -lh "${out_dir}/wasm_drive_verify_${module_name}_bg.wasm" | awk '{print $5}')
     echo "Module ${module_name} size: ${size}"

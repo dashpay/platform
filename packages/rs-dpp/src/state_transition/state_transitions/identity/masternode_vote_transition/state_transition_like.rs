@@ -1,4 +1,3 @@
-use crate::prelude::UserFeeIncrease;
 use crate::state_transition::masternode_vote_transition::MasternodeVoteTransition;
 use crate::state_transition::{
     StateTransitionLike, StateTransitionOwned, StateTransitionSingleSigned, StateTransitionType,
@@ -29,20 +28,6 @@ impl StateTransitionLike for MasternodeVoteTransition {
     fn unique_identifiers(&self) -> Vec<String> {
         match self {
             MasternodeVoteTransition::V0(transition) => transition.unique_identifiers(),
-        }
-    }
-
-    fn user_fee_increase(&self) -> UserFeeIncrease {
-        match self {
-            MasternodeVoteTransition::V0(transition) => transition.user_fee_increase(),
-        }
-    }
-
-    fn set_user_fee_increase(&mut self, user_fee_increase: UserFeeIncrease) {
-        match self {
-            MasternodeVoteTransition::V0(transition) => {
-                transition.set_user_fee_increase(user_fee_increase)
-            }
         }
     }
 }

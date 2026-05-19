@@ -62,3 +62,42 @@ impl ContestedResourceVotesGivenByIdentityQuery {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::error::drive::DriveError;
+    use crate::error::Error;
+    use dpp::version::PlatformVersion;
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn test_verify_identity_votes_given_proof_unknown_version() {
+        let mut platform_version = PlatformVersion::latest().clone();
+        platform_version
+            .drive
+            .methods
+            .verify
+            .voting
+            .verify_identity_votes_given_proof = 255;
+
+        let query = ContestedResourceVotesGivenByIdentityQuery {
+            identity_id: Identifier::default(),
+            offset: None,
+            limit: None,
+            start_at: None,
+            order_ascending: true,
+        };
+
+        let contract_lookup_fn: &ContractLookupFn = &|_id| Ok(None);
+
+        let result: Result<(RootHash, BTreeMap<Identifier, ResourceVote>), Error> =
+            query.verify_identity_votes_given_proof(&[], contract_lookup_fn, &platform_version);
+
+        assert!(
+            matches!(result, Err(Error::Drive(DriveError::UnknownVersionMismatch { method, known_versions, received }))
+                if method == "verify_identity_votes_given_proof" && known_versions == vec![0] && received == 255
+            )
+        );
+    }
+}

@@ -183,11 +183,11 @@ describe('DistributionFunction', () => {
       const distributionFunction = wasm.DistributionFunction.Polynomial(
         new wasm.DistributionPolynomial({
           a: BigInt(111),
-d: BigInt(113),
-m: BigInt(113),
+          d: BigInt(113),
+          m: BigInt(113),
           n: BigInt(113),
-o: BigInt(113),
-b: BigInt(113),
+          o: BigInt(113),
+          b: BigInt(113),
         }),
       );
 
@@ -198,11 +198,11 @@ b: BigInt(113),
       const distributionFunction = wasm.DistributionFunction.Polynomial(
         new wasm.DistributionPolynomial({
           a: BigInt(111),
-d: BigInt(113),
-m: BigInt(113),
+          d: BigInt(113),
+          m: BigInt(113),
           n: BigInt(113),
-o: BigInt(113),
-b: BigInt(113),
+          o: BigInt(113),
+          b: BigInt(113),
         }),
       );
 
@@ -213,11 +213,11 @@ b: BigInt(113),
       const distributionFunction = wasm.DistributionFunction.Polynomial(
         new wasm.DistributionPolynomial({
           a: BigInt(111),
-d: BigInt(113),
-m: BigInt(113),
+          d: BigInt(113),
+          m: BigInt(113),
           n: BigInt(113),
-o: BigInt(113),
-b: BigInt(113),
+          o: BigInt(113),
+          b: BigInt(113),
         }),
       );
 
@@ -238,11 +238,11 @@ b: BigInt(113),
       const distributionFunction = wasm.DistributionFunction.Exponential(
         new wasm.DistributionExponential({
           a: BigInt(111),
-d: BigInt(113),
-m: BigInt(113),
+          d: BigInt(113),
+          m: BigInt(113),
           n: BigInt(113),
-o: BigInt(113),
-b: BigInt(113),
+          o: BigInt(113),
+          b: BigInt(113),
         }),
       );
 
@@ -253,11 +253,11 @@ b: BigInt(113),
       const distributionFunction = wasm.DistributionFunction.Exponential(
         new wasm.DistributionExponential({
           a: BigInt(111),
-d: BigInt(113),
-m: BigInt(113),
+          d: BigInt(113),
+          m: BigInt(113),
           n: BigInt(113),
-o: BigInt(113),
-b: BigInt(113),
+          o: BigInt(113),
+          b: BigInt(113),
         }),
       );
 
@@ -268,11 +268,11 @@ b: BigInt(113),
       const distributionFunction = wasm.DistributionFunction.Exponential(
         new wasm.DistributionExponential({
           a: BigInt(111),
-d: BigInt(113),
-m: BigInt(113),
+          d: BigInt(113),
+          m: BigInt(113),
           n: BigInt(113),
-o: BigInt(113),
-b: BigInt(113),
+          o: BigInt(113),
+          b: BigInt(113),
         }),
       );
 
@@ -293,11 +293,11 @@ b: BigInt(113),
       const distributionFunction = wasm.DistributionFunction.Logarithmic(
         new wasm.DistributionLogarithmic({
           a: BigInt(111),
-d: BigInt(113),
-m: BigInt(113),
+          d: BigInt(113),
+          m: BigInt(113),
           n: BigInt(113),
-o: BigInt(113),
-b: BigInt(113),
+          o: BigInt(113),
+          b: BigInt(113),
         }),
       );
 
@@ -308,11 +308,11 @@ b: BigInt(113),
       const distributionFunction = wasm.DistributionFunction.Logarithmic(
         new wasm.DistributionLogarithmic({
           a: BigInt(111),
-d: BigInt(113),
-m: BigInt(113),
+          d: BigInt(113),
+          m: BigInt(113),
           n: BigInt(113),
-o: BigInt(113),
-b: BigInt(113),
+          o: BigInt(113),
+          b: BigInt(113),
         }),
       );
 
@@ -323,11 +323,11 @@ b: BigInt(113),
       const distributionFunction = wasm.DistributionFunction.Logarithmic(
         new wasm.DistributionLogarithmic({
           a: BigInt(111),
-d: BigInt(113),
-m: BigInt(113),
+          d: BigInt(113),
+          m: BigInt(113),
           n: BigInt(113),
-o: BigInt(113),
-b: BigInt(113),
+          o: BigInt(113),
+          b: BigInt(113),
         }),
       );
 
@@ -348,11 +348,11 @@ b: BigInt(113),
       const distributionFunction = wasm.DistributionFunction.InvertedLogarithmic(
         new wasm.DistributionInvertedLogarithmic({
           a: BigInt(111),
-d: BigInt(113),
-m: BigInt(113),
+          d: BigInt(113),
+          m: BigInt(113),
           n: BigInt(113),
-o: BigInt(113),
-b: BigInt(113),
+          o: BigInt(113),
+          b: BigInt(113),
         }),
       );
 
@@ -363,11 +363,11 @@ b: BigInt(113),
       const distributionFunction = wasm.DistributionFunction.InvertedLogarithmic(
         new wasm.DistributionInvertedLogarithmic({
           a: BigInt(111),
-d: BigInt(113),
-m: BigInt(113),
+          d: BigInt(113),
+          m: BigInt(113),
           n: BigInt(113),
-o: BigInt(113),
-b: BigInt(113),
+          o: BigInt(113),
+          b: BigInt(113),
         }),
       );
 
@@ -378,11 +378,11 @@ b: BigInt(113),
       const distributionFunction = wasm.DistributionFunction.InvertedLogarithmic(
         new wasm.DistributionInvertedLogarithmic({
           a: BigInt(111),
-d: BigInt(113),
-m: BigInt(113),
+          d: BigInt(113),
+          m: BigInt(113),
           n: BigInt(113),
-o: BigInt(113),
-b: BigInt(113),
+          o: BigInt(113),
+          b: BigInt(113),
         }),
       );
 

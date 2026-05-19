@@ -16,7 +16,7 @@ const createTransportFromOptions = require("../../../src/transport/createTranspo
 const TxStreamMock = require("../../../src/test/mocks/TxStreamMock");
 
 describe('Wallet', () => {
-  // TODO: write test that ensures that storage getting wiped after removing skipSynchronizationBeofreHeight flag
+  // TODO: write test that ensures that storage getting wiped after removing skipSynchronizationBeforeHeight flag
   describe('Storage', () => {
     let wallet;
     let txSyncWorker;

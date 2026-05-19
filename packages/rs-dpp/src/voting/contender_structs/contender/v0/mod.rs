@@ -2,6 +2,8 @@ use crate::data_contract::document_type::DocumentTypeRef;
 use crate::data_contract::DataContract;
 use crate::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use crate::document::Document;
+#[cfg(feature = "json-conversion")]
+use crate::serialization::json_safe_fields;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use platform_value::Identifier;
@@ -26,9 +28,10 @@ pub struct ContenderV0 {
 ///
 /// This struct holds the identity ID of the contender, the serialized document,
 /// and the vote tally.
+#[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(Debug, PartialEq, Eq, Clone, Default, Encode, Decode)]
 #[cfg_attr(
-    feature = "state-transition-serde-conversion",
+    feature = "serde-conversion",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]

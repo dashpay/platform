@@ -383,3 +383,178 @@ impl Drive {
         Ok(batch_operations)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::util::storage_flags::StorageFlags;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::block::block_info::BlockInfo;
+    use dpp::data_contract::accessors::v1::{DataContractV1Getters, DataContractV1Setters};
+    use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Setters;
+    use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
+    use dpp::data_contract::associated_token::token_configuration::TokenConfiguration;
+    use dpp::tests::fixtures::get_dashpay_contract_fixture;
+    use dpp::version::PlatformVersion;
+    use std::collections::BTreeMap;
+
+    /// Exercises the `base_supply > i64::MAX as u64` overflow branch in
+    /// `insert_contract_operations_v1`, which returns
+    /// `ProtocolError::CriticalCorruptedCreditsCodeExecution`.
+    ///
+    /// PR #3516 only covered base_supply==0, base_supply>0 within range, and
+    /// base_supply==0 with custom destination identity. This test specifically
+    /// drives the `i64::MAX` guard.
+    #[test]
+    fn test_insert_contract_with_token_base_supply_overflow_fails() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+
+        // Set base_supply to u64::MAX, which is > i64::MAX.
+        let token_config = TokenConfiguration::V0(
+            TokenConfigurationV0::default_most_restrictive().with_base_supply(u64::MAX),
+        );
+        contract.set_tokens(BTreeMap::from([(0, token_config)]));
+
+        let result = drive.insert_contract(
+            &contract,
+            BlockInfo::default(),
+            true,
+            None,
+            platform_version,
+        );
+
+        assert!(
+            matches!(
+                &result,
+                Err(crate::error::Error::Protocol(boxed))
+                    if matches!(
+                        boxed.as_ref(),
+                        dpp::ProtocolError::CriticalCorruptedCreditsCodeExecution(_)
+                    )
+            ),
+            "Expected CriticalCorruptedCreditsCodeExecution, got: {:?}",
+            result
+        );
+    }
+
+    /// Exercises the estimated-costs branches in `insert_contract_operations_v1`
+    /// when tokens are present. Calling `insert_contract` with `apply=false`
+    /// populates `estimated_costs_only_with_layer_info = Some(..)`, causing the
+    /// `add_estimation_costs_for_token_*` calls (token_status_infos,
+    /// token_contract_infos, token_balances, token_identity_infos,
+    /// token_total_supply) to execute. This is a separate branch from the
+    /// apply=true path PR #3516 covered.
+    #[test]
+    fn test_insert_contract_v1_token_estimated_costs_branches() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+
+        // Add two tokens so the loop in insert_contract_operations_v1 iterates more
+        // than once; this helps exercise estimation-cost paths per token.
+        let mut paused_config =
+            TokenConfiguration::V0(TokenConfigurationV0::default_most_restrictive());
+        paused_config.set_start_as_paused(true);
+        let normal_config = TokenConfiguration::V0(
+            TokenConfigurationV0::default_most_restrictive().with_base_supply(500),
+        );
+        contract.set_tokens(BTreeMap::from([(0, paused_config), (1, normal_config)]));
+
+        // apply=false forces the estimation branches.
+        let fee = drive
+            .insert_contract(
+                &contract,
+                BlockInfo::default(),
+                false,
+                None,
+                platform_version,
+            )
+            .expect("estimation insert should succeed with tokens");
+
+        assert!(
+            fee.processing_fee > 0 || fee.storage_fee > 0,
+            "estimation should produce non-zero fees"
+        );
+    }
+
+    /// Exercises the `insert_contract_v1` early-exit for `contract.groups().is_empty()`:
+    /// PR #3516 covered the non-empty groups branch. This test complements by driving
+    /// the empty-groups path (false-branch of `if !contract.groups().is_empty()`) while
+    /// also asserting token+keyword insertion still works on a separate contract id.
+    #[test]
+    fn test_insert_contract_v1_empty_groups_with_tokens_and_keywords() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+
+        // Tokens yes, groups intentionally empty.
+        let token_config = TokenConfiguration::V0(
+            TokenConfigurationV0::default_most_restrictive().with_base_supply(42),
+        );
+        contract.set_tokens(BTreeMap::from([(0, token_config)]));
+        assert!(contract.groups().is_empty());
+
+        // Use apply=false so we don't need keyword_search contract in grove yet.
+        // This covers the empty-groups-AND-empty-keywords-AND-no-description branches
+        // while still exercising the token loop.
+        let fee = drive
+            .insert_contract(
+                &contract,
+                BlockInfo::default(),
+                false,
+                None,
+                platform_version,
+            )
+            .expect("should succeed with tokens only");
+        assert!(fee.processing_fee > 0 || fee.storage_fee > 0);
+    }
+
+    /// Exercises `insert_contract_v1` with a token whose position doesn't round-trip
+    /// via `token_id(pos)`. This is hard to actually trigger in practice because
+    /// `token_id` hashes `contract.id || pos` deterministically. Instead, we
+    /// verify the happy path where two tokens at different positions both get
+    /// distinct token_ids and each receives its own balances / contract_infos /
+    /// identity_infos trees.
+    #[test]
+    fn test_insert_contract_v1_two_tokens_distinct_ids_all_trees_created() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let mut contract = get_dashpay_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+
+        let c1 = TokenConfiguration::V0(
+            TokenConfigurationV0::default_most_restrictive().with_base_supply(10),
+        );
+        let c2 = TokenConfiguration::V0(
+            TokenConfigurationV0::default_most_restrictive().with_base_supply(0),
+        );
+        contract.set_tokens(BTreeMap::from([(0, c1), (1, c2)]));
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("apply with two tokens should succeed");
+
+        // Token positions 0 and 1 must yield different ids.
+        let id0 = contract.token_id(0).expect("token 0 id");
+        let id1 = contract.token_id(1).expect("token 1 id");
+        assert_ne!(
+            id0, id1,
+            "tokens at different positions must have distinct ids"
+        );
+    }
+}

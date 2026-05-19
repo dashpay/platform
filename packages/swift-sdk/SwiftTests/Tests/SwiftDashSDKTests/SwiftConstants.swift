@@ -4,7 +4,7 @@ import Foundation
 
 // Network type constants
 public let Mainnet = SwiftDashNetwork_Mainnet
-public let Testnet = SwiftDashNetwork_Testnet  
+public let Testnet = SwiftDashNetwork_Testnet
 public let Devnet = SwiftDashNetwork_Devnet
 public let Local = SwiftDashNetwork_Local
 

@@ -9,11 +9,8 @@ use crate::state_transition::identity_credit_transfer_transition::IdentityCredit
 use crate::state_transition::state_transitions::identity_credit_transfer_transition::fields::*;
 use crate::state_transition::StateTransitionValueConvert;
 
-use crate::serialization::ValueConvertible;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_version::version::{FeatureVersion, PlatformVersion};
-
-impl ValueConvertible<'_> for IdentityCreditTransferTransition {}
 
 impl StateTransitionValueConvert<'_> for IdentityCreditTransferTransition {
     fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {

@@ -94,3 +94,208 @@ where
         status: VerifyStatus::Accept.into(),
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::abci::app::FullAbciApplication;
+    use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0;
+    use crate::execution::types::block_execution_context::BlockExecutionContext;
+    use crate::execution::types::block_state_info::v0::BlockStateInfoV0;
+    use crate::execution::types::block_state_info::BlockStateInfo;
+    use crate::platform_types::epoch_info::v0::EpochInfoV0;
+    use crate::platform_types::epoch_info::EpochInfo;
+    use crate::platform_types::platform_state::PlatformState;
+    use crate::platform_types::withdrawal::unsigned_withdrawal_txs::v0::UnsignedWithdrawalTxs;
+    use crate::rpc::core::MockCoreRPCLike;
+    use crate::test::helpers::setup::TestPlatformBuilder;
+    use dpp::version::PlatformVersion;
+    use std::collections::BTreeMap;
+
+    fn make_test_block_execution_context(
+        height: u64,
+        round: u32,
+        block_hash: Option<[u8; 32]>,
+        platform: &crate::platform_types::platform::Platform<MockCoreRPCLike>,
+    ) -> BlockExecutionContext {
+        let platform_version = PlatformVersion::latest();
+        BlockExecutionContext::V0(BlockExecutionContextV0 {
+            block_state_info: BlockStateInfo::V0(BlockStateInfoV0 {
+                height,
+                round,
+                block_time_ms: 1_000_000,
+                previous_block_time_ms: None,
+                proposer_pro_tx_hash: [0u8; 32],
+                core_chain_locked_height: 1,
+                block_hash,
+                app_hash: None,
+            }),
+            epoch_info: EpochInfo::V0(EpochInfoV0 {
+                current_epoch_index: 0,
+                previous_epoch_index: None,
+                is_epoch_change: false,
+            }),
+            unsigned_withdrawal_transactions: UnsignedWithdrawalTxs::default(),
+            block_address_balance_changes: BTreeMap::new(),
+            block_platform_state: PlatformState::default_with_protocol_versions(
+                platform_version.protocol_version,
+                platform_version.protocol_version,
+                &platform.config,
+            )
+            .expect("should create default platform state"),
+            proposer_results: None,
+        })
+    }
+
+    #[test]
+    fn verify_vote_extension_rejects_when_no_block_execution_context() {
+        let platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc();
+
+        let app = FullAbciApplication::<MockCoreRPCLike>::new(&platform.platform);
+
+        // No block execution context is set
+        let request = proto::RequestVerifyVoteExtension {
+            hash: vec![0u8; 32],
+            validator_pro_tx_hash: vec![0u8; 32],
+            height: 10,
+            round: 0,
+            vote_extensions: vec![],
+        };
+
+        let response = verify_vote_extension::<_, MockCoreRPCLike>(&app, request)
+            .expect("should return Ok with Reject status");
+
+        assert_eq!(response.status, VerifyStatus::Reject as i32);
+    }
+
+    #[test]
+    fn verify_vote_extension_rejects_when_height_mismatch() {
+        let platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc();
+
+        let app = FullAbciApplication::<MockCoreRPCLike>::new(&platform.platform);
+
+        // Set block execution context at height 10
+        let context =
+            make_test_block_execution_context(10, 0, Some([0xAA; 32]), &platform.platform);
+        app.block_execution_context
+            .write()
+            .unwrap()
+            .replace(context);
+
+        // Request verification for a different height (20)
+        let request = proto::RequestVerifyVoteExtension {
+            hash: vec![0u8; 32],
+            validator_pro_tx_hash: vec![0u8; 32],
+            height: 20,
+            round: 0,
+            vote_extensions: vec![],
+        };
+
+        let response = verify_vote_extension::<_, MockCoreRPCLike>(&app, request)
+            .expect("should return Ok with Reject status");
+
+        assert_eq!(response.status, VerifyStatus::Reject as i32);
+    }
+
+    #[test]
+    fn verify_vote_extension_accepts_matching_empty_withdrawals() {
+        let platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc();
+
+        let app = FullAbciApplication::<MockCoreRPCLike>::new(&platform.platform);
+
+        // Set block execution context at height 10, with empty withdrawal transactions
+        let context =
+            make_test_block_execution_context(10, 0, Some([0xAA; 32]), &platform.platform);
+        app.block_execution_context
+            .write()
+            .unwrap()
+            .replace(context);
+
+        // Request with matching empty vote extensions
+        let request = proto::RequestVerifyVoteExtension {
+            hash: vec![0u8; 32],
+            validator_pro_tx_hash: vec![0u8; 32],
+            height: 10,
+            round: 0,
+            vote_extensions: vec![],
+        };
+
+        let response = verify_vote_extension::<_, MockCoreRPCLike>(&app, request)
+            .expect("should return Ok with Accept status");
+
+        assert_eq!(response.status, VerifyStatus::Accept as i32);
+    }
+
+    #[test]
+    fn verify_vote_extension_rejects_mismatched_withdrawals() {
+        let platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc();
+
+        let app = FullAbciApplication::<MockCoreRPCLike>::new(&platform.platform);
+
+        // Set block execution context at height 10 with empty withdrawal transactions
+        let context =
+            make_test_block_execution_context(10, 0, Some([0xAA; 32]), &platform.platform);
+        app.block_execution_context
+            .write()
+            .unwrap()
+            .replace(context);
+
+        // Request with non-empty vote extensions (mismatch)
+        let request = proto::RequestVerifyVoteExtension {
+            hash: vec![0u8; 32],
+            validator_pro_tx_hash: vec![0u8; 32],
+            height: 10,
+            round: 0,
+            vote_extensions: vec![proto::ExtendVoteExtension {
+                r#type: 0,
+                extension: vec![1, 2, 3],
+                sign_request_id: None,
+            }],
+        };
+
+        let response = verify_vote_extension::<_, MockCoreRPCLike>(&app, request)
+            .expect("should return Ok with Reject status");
+
+        assert_eq!(response.status, VerifyStatus::Reject as i32);
+    }
+
+    #[test]
+    fn verify_vote_extension_accepts_different_round_same_height() {
+        let platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc();
+
+        let app = FullAbciApplication::<MockCoreRPCLike>::new(&platform.platform);
+
+        // Set block execution context at height 10, round 1
+        let context =
+            make_test_block_execution_context(10, 1, Some([0xAA; 32]), &platform.platform);
+        app.block_execution_context
+            .write()
+            .unwrap()
+            .replace(context);
+
+        // Request for same height but different round (round 5)
+        // This should still be accepted since only height needs to match
+        let request = proto::RequestVerifyVoteExtension {
+            hash: vec![0u8; 32],
+            validator_pro_tx_hash: vec![0u8; 32],
+            height: 10,
+            round: 5,
+            vote_extensions: vec![],
+        };
+
+        let response = verify_vote_extension::<_, MockCoreRPCLike>(&app, request)
+            .expect("should return Ok with Accept status");
+
+        assert_eq!(response.status, VerifyStatus::Accept as i32);
+    }
+}

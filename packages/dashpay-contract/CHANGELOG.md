@@ -13,6 +13,3 @@
 ### Features
 
 * update contract ([#7](https://github.com/dashevo/dashpay-contract/issues/7))
-
-
-

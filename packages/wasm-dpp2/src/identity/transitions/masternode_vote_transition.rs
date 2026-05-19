@@ -2,10 +2,10 @@ use crate::VoteWasm;
 use crate::asset_lock_proof::AssetLockProofWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
-use crate::impl_wasm_conversions;
+use crate::impl_wasm_conversions_inner;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
-use crate::utils::{try_from_options, try_to_u16, try_to_u32, try_to_u64};
+use crate::utils::{try_from_options, try_to_u32, try_to_u64};
 use dpp::identity::KeyID;
 use dpp::identity::state_transition::OptionallyAssetLockProved;
 use dpp::platform_value::BinaryData;
@@ -54,7 +54,7 @@ export interface MasternodeVoteTransitionJSON {
     proTxHash: string;
     voterIdentityId: string;
     vote: VoteJSON;
-    nonce: string;
+    nonce: number | string;
     signaturePublicKeyId?: number;
     signature?: string;
 }
@@ -183,8 +183,8 @@ impl MasternodeVoteTransitionWasm {
     }
 
     #[wasm_bindgen(setter = nonce)]
-    pub fn set_nonce(&mut self, nonce: JsValue) -> WasmDppResult<()> {
-        let nonce = try_to_u64(&nonce, "nonce")?;
+    pub fn set_nonce(&mut self, nonce: &js_sys::BigInt) -> WasmDppResult<()> {
+        let nonce = try_to_u64(nonce, "nonce")?;
         self.0 = match self.0.clone() {
             MasternodeVoteTransition::V0(mut vote) => {
                 vote.nonce = nonce;
@@ -242,7 +242,7 @@ impl MasternodeVoteTransitionWasm {
 
     #[wasm_bindgen(getter = "userFeeIncrease")]
     pub fn user_fee_increase(&self) -> u16 {
-        self.0.user_fee_increase()
+        0
     }
 
     #[wasm_bindgen(getter = "assetLockProof")]
@@ -253,9 +253,8 @@ impl MasternodeVoteTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "userFeeIncrease")]
-    pub fn set_user_fee_increase(&mut self, amount: JsValue) -> WasmDppResult<()> {
-        self.0
-            .set_user_fee_increase(try_to_u16(&amount, "userFeeIncrease")?);
+    pub fn set_user_fee_increase(&mut self, _amount: &js_sys::Number) -> WasmDppResult<()> {
+        // MasternodeVoteTransition no longer supports user fee increase; no-op.
         Ok(())
     }
 
@@ -300,8 +299,9 @@ impl MasternodeVoteTransitionWasm {
     }
 }
 
-impl_wasm_conversions!(
+impl_wasm_conversions_inner!(
     MasternodeVoteTransitionWasm,
+    MasternodeVoteTransition,
     MasternodeVoteTransition,
     MasternodeVoteTransitionObjectJs,
     MasternodeVoteTransitionJSONJs

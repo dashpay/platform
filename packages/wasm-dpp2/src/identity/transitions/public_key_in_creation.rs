@@ -5,7 +5,7 @@ use crate::enums::keys::security_level::{SecurityLevelLikeJs, SecurityLevelWasm}
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identity::public_key::IdentityPublicKeyWasm;
 use crate::impl_try_from_js_value;
-use crate::impl_wasm_conversions;
+use crate::impl_wasm_conversions_inner;
 use crate::impl_wasm_type_info;
 use crate::utils::{try_from_options, try_from_options_optional, try_to_u32};
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
@@ -290,8 +290,9 @@ impl_try_from_js_value!(
     IdentityPublicKeyInCreationWasm,
     "IdentityPublicKeyInCreation"
 );
-impl_wasm_conversions!(
+impl_wasm_conversions_inner!(
     IdentityPublicKeyInCreationWasm,
+    IdentityPublicKeyInCreation,
     IdentityPublicKeyInCreation,
     IdentityPublicKeyInCreationObjectJs,
     IdentityPublicKeyInCreationJSONJs

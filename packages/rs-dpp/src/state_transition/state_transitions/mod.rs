@@ -9,3 +9,6 @@ pub use address_funds::*;
 pub use contract::*;
 pub use document::*;
 pub use identity::*;
+
+pub mod shielded;
+pub use shielded::*;

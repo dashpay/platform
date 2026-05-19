@@ -14,4 +14,3 @@ Parameters:
 | **opts.autosaveIntervalTime**      | Number          | no (10sec)     | If millisecond, the interval time at which the adapter should persist the data                       |
 
 Returns : Storage instance.
-

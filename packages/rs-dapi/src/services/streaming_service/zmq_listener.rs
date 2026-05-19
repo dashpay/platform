@@ -193,7 +193,7 @@ impl ZmqConnection {
         if let Some(error) = first_error {
             debug!(
                 ?error,
-                "ZMQ subscription errors occured, trying to unsubscribe from successful topics",
+                "ZMQ subscription errors occurred, trying to unsubscribe from successful topics",
             );
 
             if let Err(unsub_err) = self.zmq_unsubscribe_all(socket).await {

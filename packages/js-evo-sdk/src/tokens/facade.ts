@@ -31,7 +31,7 @@ export class TokensFacade {
     return w.getTokenTotalSupplyWithProofInfo(tokenId);
   }
 
-  async statuses(tokenIds: wasm.IdentifierLikeArray): Promise<Map<wasm.Identifier, wasm.TokenStatus>> {
+  async statuses(tokenIds: wasm.IdentifierLikeArray): Promise<Map<string, wasm.TokenStatus>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getTokenStatuses(tokenIds);
   }
@@ -39,14 +39,14 @@ export class TokensFacade {
   async statusesWithProof(
     tokenIds: wasm.IdentifierLikeArray,
   ): Promise<wasm.ProofMetadataResponseTyped<
-    Map<wasm.Identifier, wasm.TokenStatus>
+    Map<string, wasm.TokenStatus>
   >> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getTokenStatusesWithProofInfo(tokenIds);
   }
 
   async balances(identityIds: wasm.IdentifierLikeArray, tokenId: wasm.IdentifierLike):
-    Promise<Map<wasm.Identifier, bigint>> {
+    Promise<Map<string, bigint>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getIdentitiesTokenBalances(identityIds, tokenId);
   }
@@ -54,13 +54,13 @@ export class TokensFacade {
   async balancesWithProof(
     identityIds: wasm.IdentifierLikeArray,
     tokenId: wasm.IdentifierLike,
-  ): Promise<wasm.ProofMetadataResponseTyped<Map<wasm.Identifier, bigint>>> {
+  ): Promise<wasm.ProofMetadataResponseTyped<Map<string, bigint>>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getIdentitiesTokenBalancesWithProofInfo(identityIds, tokenId);
   }
 
   async identityBalances(identityId: wasm.IdentifierLike, tokenIds: wasm.IdentifierLikeArray):
-    Promise<Map<wasm.Identifier, bigint>> {
+    Promise<Map<string, bigint>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getIdentityTokenBalances(identityId, tokenIds);
   }
@@ -68,19 +68,19 @@ export class TokensFacade {
   async identityBalancesWithProof(
     identityId: wasm.IdentifierLike,
     tokenIds: wasm.IdentifierLikeArray,
-  ): Promise<wasm.ProofMetadataResponseTyped<Map<wasm.Identifier, bigint>>> {
+  ): Promise<wasm.ProofMetadataResponseTyped<Map<string, bigint>>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getIdentityTokenBalancesWithProofInfo(identityId, tokenIds);
   }
 
   async identityTokenInfos(identityId: wasm.IdentifierLike, tokenIds: wasm.IdentifierLikeArray):
-    Promise<Map<wasm.Identifier, wasm.IdentityTokenInfo>> {
+    Promise<Map<string, wasm.IdentityTokenInfo>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getIdentityTokenInfos(identityId, tokenIds);
   }
 
   async identitiesTokenInfos(identityIds: wasm.IdentifierLikeArray, tokenId: wasm.IdentifierLike):
-    Promise<Map<wasm.Identifier, wasm.IdentityTokenInfo>> {
+    Promise<Map<string, wasm.IdentityTokenInfo>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getIdentitiesTokenInfos(identityIds, tokenId);
   }
@@ -89,7 +89,7 @@ export class TokensFacade {
     identityId: wasm.IdentifierLike,
     tokenIds: wasm.IdentifierLikeArray,
   ): Promise<wasm.ProofMetadataResponseTyped<
-    Map<wasm.Identifier, wasm.IdentityTokenInfo>
+    Map<string, wasm.IdentityTokenInfo>
   >> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getIdentityTokenInfosWithProofInfo(identityId, tokenIds);
@@ -99,13 +99,13 @@ export class TokensFacade {
     identityIds: wasm.IdentifierLikeArray,
     tokenId: wasm.IdentifierLike,
   ): Promise<wasm.ProofMetadataResponseTyped<
-    Map<wasm.Identifier, wasm.IdentityTokenInfo>
+    Map<string, wasm.IdentityTokenInfo>
   >> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getIdentitiesTokenInfosWithProofInfo(identityIds, tokenId);
   }
 
-  async directPurchasePrices(tokenIds: wasm.IdentifierLikeArray): Promise<Map<wasm.Identifier, wasm.TokenPriceInfo>> {
+  async directPurchasePrices(tokenIds: wasm.IdentifierLikeArray): Promise<Map<string, wasm.TokenPriceInfo>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getTokenDirectPurchasePrices(tokenIds);
   }
@@ -113,7 +113,7 @@ export class TokensFacade {
   async directPurchasePricesWithProof(
     tokenIds: wasm.IdentifierLikeArray,
   ): Promise<wasm.ProofMetadataResponseTyped<
-    Map<wasm.Identifier, wasm.TokenPriceInfo>
+    Map<string, wasm.TokenPriceInfo>
   >> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getTokenDirectPurchasePricesWithProofInfo(tokenIds);

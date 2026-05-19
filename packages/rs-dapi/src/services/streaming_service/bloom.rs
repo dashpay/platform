@@ -3,7 +3,6 @@ use std::sync::Arc;
 use dashcore_rpc::dashcore::bloom::{BloomFilter as CoreBloomFilter, BloomFlags};
 use dashcore_rpc::dashcore::script::Instruction;
 use dashcore_rpc::dashcore::{OutPoint, ScriptBuf, Transaction as CoreTx, Txid};
-
 fn script_matches(filter: &CoreBloomFilter, script: &ScriptBuf) -> bool {
     let script_bytes = script.as_bytes();
     if filter.contains(script_bytes) {

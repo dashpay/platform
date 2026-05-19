@@ -11,7 +11,7 @@ use platform_version::version::PlatformVersion;
 
 impl Drive {
     /// V0 implementation — checks for the presence of the action tree under the *closed* root
-    /// first; if absent, checks the *active* root.  
+    /// first; if absent, checks the *active* root.
     /// Fails if the action is missing from **both** roots.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn fetch_action_is_closed_v0(
@@ -56,5 +56,83 @@ impl Drive {
 
         // If it is stateless we say that the action is still open
         Ok(false)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::identifier::Identifier;
+    use dpp::version::PlatformVersion;
+
+    #[test]
+    fn fetch_action_is_closed_v0_missing_action_returns_false_stateful() {
+        // With apply=true (stateful), a nonexistent closed-action path must
+        // produce Ok(false): the probe into the Closed root returns None and
+        // the function falls through to returning false.
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let mut ops = vec![];
+        let is_closed = drive
+            .fetch_action_is_closed_v0(
+                Identifier::random(),
+                0,
+                Identifier::random(),
+                true, // apply
+                None,
+                &mut ops,
+                platform_version,
+            )
+            .expect("expected fetch to succeed");
+
+        assert!(!is_closed);
+    }
+
+    #[test]
+    fn fetch_action_is_closed_v0_missing_action_returns_false_stateless() {
+        // With apply=false (stateless) the function always returns false when
+        // the closed-action tree doesn't yield the action.
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let mut ops = vec![];
+        let is_closed = drive
+            .fetch_action_is_closed_v0(
+                Identifier::random(),
+                0,
+                Identifier::random(),
+                false, // stateless
+                None,
+                &mut ops,
+                platform_version,
+            )
+            .expect("expected stateless fetch to succeed");
+
+        assert!(!is_closed);
+    }
+
+    #[test]
+    fn fetch_action_is_closed_v0_stateless_records_ops() {
+        // The stateless branch uses QueryTargetTree and should still push a
+        // read operation onto the drive_operations vector.
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let mut ops = vec![];
+        let _ = drive
+            .fetch_action_is_closed_v0(
+                Identifier::random(),
+                0,
+                Identifier::random(),
+                false,
+                None,
+                &mut ops,
+                platform_version,
+            )
+            .expect("expected fetch to succeed");
+
+        // Stateless direct query still estimates a read cost.
+        assert!(!ops.is_empty(), "stateless branch should record a cost op");
     }
 }

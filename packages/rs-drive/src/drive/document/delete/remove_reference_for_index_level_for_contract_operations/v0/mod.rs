@@ -5,8 +5,8 @@ use grovedb::EstimatedLayerCount::PotentiallyAtMaxElements;
 use grovedb::EstimatedLayerSizes::{AllReference, AllSubtrees};
 use grovedb::{EstimatedLayerInformation, MaybeTree, TransactionArg, TreeType};
 
-use dpp::data_contract::document_type::IndexLevelTypeInfo;
 use dpp::data_contract::document_type::IndexType::{ContestedResourceIndex, NonUniqueIndex};
+use dpp::data_contract::document_type::{IndexCountability, IndexLevelTypeInfo};
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use std::collections::HashMap;
 
@@ -59,13 +59,21 @@ impl Drive {
         {
             key_info_path.push(KnownKey(vec![0]));
 
+            // Mirror the insert path: tree variant is driven by the index's
+            // countability. See `add_reference_for_index_level_for_contract_operations`.
+            let reference_tree_type = match index_type.countable {
+                IndexCountability::NotCountable => TreeType::NormalTree,
+                IndexCountability::Countable => TreeType::CountTree,
+                IndexCountability::CountableAllowingOffset => TreeType::ProvableCountTree,
+            };
+
             if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
             {
                 // On this level we will have a 0 and all the top index paths
                 estimated_costs_only_with_layer_info.insert(
                     key_info_path.clone(),
                     EstimatedLayerInformation {
-                        tree_type: TreeType::NormalTree,
+                        tree_type: reference_tree_type,
                         estimated_layer_count: PotentiallyAtMaxElements,
                         estimated_layer_sizes: AllSubtrees(
                             DEFAULT_HASH_SIZE_U8,

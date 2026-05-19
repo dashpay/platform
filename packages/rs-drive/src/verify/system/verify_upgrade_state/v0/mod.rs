@@ -71,3 +71,96 @@ impl Drive {
         Ok((root_hash, protocol_version_map))
     }
 }
+
+#[cfg(feature = "server")]
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+
+    #[test]
+    fn should_prove_and_verify_upgrade_state_empty() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        // With no votes cast, the upgrade state should be empty
+        let proof = drive
+            .fetch_proved_versions_with_counter(None, &platform_version.drive)
+            .expect("should fetch proved versions with counter");
+
+        let (_root_hash, version_map) = Drive::verify_upgrade_state(&proof, platform_version)
+            .expect("should verify upgrade state");
+
+        assert!(version_map.is_empty(), "no versions should be recorded yet");
+    }
+
+    #[test]
+    fn should_prove_and_verify_upgrade_state_with_votes() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let transaction = drive.grove.start_transaction();
+
+        // Cast votes from multiple validators for different versions
+        let validator1: [u8; 32] = [1u8; 32];
+        let validator2: [u8; 32] = [2u8; 32];
+        let validator3: [u8; 32] = [3u8; 32];
+
+        let target_version: ProtocolVersion = platform_version.protocol_version + 1;
+
+        drive
+            .update_validator_proposed_app_version(
+                validator1,
+                target_version,
+                Some(&transaction),
+                &platform_version.drive,
+            )
+            .expect("should update validator proposed app version");
+
+        drive
+            .update_validator_proposed_app_version(
+                validator2,
+                target_version,
+                Some(&transaction),
+                &platform_version.drive,
+            )
+            .expect("should update validator proposed app version");
+
+        drive
+            .update_validator_proposed_app_version(
+                validator3,
+                target_version + 1,
+                Some(&transaction),
+                &platform_version.drive,
+            )
+            .expect("should update validator proposed app version");
+
+        drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("should commit transaction");
+
+        let proof = drive
+            .fetch_proved_versions_with_counter(None, &platform_version.drive)
+            .expect("should fetch proved versions with counter");
+
+        let (_root_hash, version_map) = Drive::verify_upgrade_state(&proof, platform_version)
+            .expect("should verify upgrade state");
+
+        assert_eq!(
+            version_map.len(),
+            2,
+            "should have two distinct version entries"
+        );
+        assert_eq!(
+            version_map.get(&target_version).copied(),
+            Some(2),
+            "target_version should have 2 votes"
+        );
+        assert_eq!(
+            version_map.get(&(target_version + 1)).copied(),
+            Some(1),
+            "target_version+1 should have 1 vote"
+        );
+    }
+}

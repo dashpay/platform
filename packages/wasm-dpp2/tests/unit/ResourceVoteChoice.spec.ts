@@ -10,7 +10,7 @@ describe('ResourceVoteChoice', () => {
 
   describe('TowardsIdentity()', () => {
     it('should create TowardsIdentity choice', () => {
-      const identityId = wasm.Identifier.fromBytes(Buffer.from(identityIdHex, 'hex'));
+      const identityId = wasm.Identifier.fromHex(identityIdHex);
       const choice = wasm.ResourceVoteChoice.TowardsIdentity(identityId);
 
       expect(choice.voteType).to.equal('TowardsIdentity');
@@ -44,133 +44,106 @@ describe('ResourceVoteChoice', () => {
     });
   });
 
-  describe('voteType', () => {
-    it('should return TowardsIdentity for TowardsIdentity choice', () => {
-      const identityId = wasm.Identifier.fromBytes(Buffer.from(identityIdHex, 'hex'));
-      const choice = wasm.ResourceVoteChoice.TowardsIdentity(identityId);
-
-      expect(choice.voteType).to.equal('TowardsIdentity');
-    });
-
-    it('should return Abstain for Abstain choice', () => {
-      const choice = wasm.ResourceVoteChoice.Abstain();
-
-      expect(choice.voteType).to.equal('Abstain');
-    });
-
-    it('should return Lock for Lock choice', () => {
-      const choice = wasm.ResourceVoteChoice.Lock();
-
-      expect(choice.voteType).to.equal('Lock');
-    });
-  });
-
   describe('toJSON()', () => {
-    it('should serialize TowardsIdentity to JSON object', () => {
-      const identityId = wasm.Identifier.fromBytes(Buffer.from(identityIdHex, 'hex'));
+    it('should serialize TowardsIdentity to JSON matching fixture', () => {
+      const identityId = wasm.Identifier.fromHex(identityIdHex);
+      const identityIdBase58 = identityId.toBase58();
       const choice = wasm.ResourceVoteChoice.TowardsIdentity(identityId);
 
       const json = choice.toJSON();
-      expect(json).to.be.an('object');
+      expect(json).to.deep.equal({ type: 'towardsIdentity', data: identityIdBase58 });
     });
 
-    it('should serialize Abstain to JSON string', () => {
+    it('should serialize Abstain to JSON', () => {
       const choice = wasm.ResourceVoteChoice.Abstain();
 
       const json = choice.toJSON();
-      // Simple enum variants serialize to strings in serde
-      expect(json).to.equal('abstain');
+      expect(json).to.deep.equal({ type: 'abstain' });
     });
 
-    it('should serialize Lock to JSON string', () => {
+    it('should serialize Lock to JSON', () => {
       const choice = wasm.ResourceVoteChoice.Lock();
 
       const json = choice.toJSON();
-      // Simple enum variants serialize to strings in serde
-      expect(json).to.equal('lock');
+      expect(json).to.deep.equal({ type: 'lock' });
     });
   });
 
   describe('fromJSON()', () => {
-    it('should deserialize TowardsIdentity from JSON', () => {
-      const identityId = wasm.Identifier.fromBytes(Buffer.from(identityIdHex, 'hex'));
-      const choice = wasm.ResourceVoteChoice.TowardsIdentity(identityId);
+    it('should create TowardsIdentity from JSON fixture and verify getters', () => {
+      const identityId = wasm.Identifier.fromHex(identityIdHex);
+      const identityIdBase58 = identityId.toBase58();
 
-      const json = choice.toJSON();
-      const restored = wasm.ResourceVoteChoice.fromJSON(json);
-      expect(restored.voteType).to.equal(choice.voteType);
+      const fixture = { type: 'towardsIdentity', data: identityIdBase58 };
+
+      const restored = wasm.ResourceVoteChoice.fromJSON(fixture);
+      expect(restored.voteType).to.equal('TowardsIdentity');
+      expect(restored.value).to.not.be.undefined();
+      expect(restored.value.toBase58()).to.equal(identityIdBase58);
     });
 
-    it('should deserialize Abstain from JSON', () => {
-      const choice = wasm.ResourceVoteChoice.Abstain();
-
-      const json = choice.toJSON();
-      const restored = wasm.ResourceVoteChoice.fromJSON(json);
+    it('should create Abstain from JSON fixture', () => {
+      const restored = wasm.ResourceVoteChoice.fromJSON({ type: 'abstain' });
       expect(restored.voteType).to.equal('Abstain');
+      expect(restored.value).to.be.undefined();
     });
 
-    it('should deserialize Lock from JSON', () => {
-      const choice = wasm.ResourceVoteChoice.Lock();
-
-      const json = choice.toJSON();
-      const restored = wasm.ResourceVoteChoice.fromJSON(json);
+    it('should create Lock from JSON fixture', () => {
+      const restored = wasm.ResourceVoteChoice.fromJSON({ type: 'lock' });
       expect(restored.voteType).to.equal('Lock');
+      expect(restored.value).to.be.undefined();
     });
   });
 
   describe('toObject()', () => {
-    it('should serialize TowardsIdentity to object', () => {
-      const identityId = wasm.Identifier.fromBytes(Buffer.from(identityIdHex, 'hex'));
+    it('should serialize TowardsIdentity to object with Uint8Array', () => {
+      const identityId = wasm.Identifier.fromHex(identityIdHex);
       const choice = wasm.ResourceVoteChoice.TowardsIdentity(identityId);
 
       const obj = choice.toObject();
       expect(obj).to.be.an('object');
-      // Serde serializes enum variants as { variantName: value } with camelCase
-      expect(obj.towardsIdentity).to.not.be.undefined();
+      expect(obj.type).to.equal('towardsIdentity');
+      expect(obj.data).to.be.instanceOf(Uint8Array);
+      expect(Buffer.from(obj.data).toString('hex')).to.equal(identityIdHex);
     });
 
-    it('should serialize Abstain to object string', () => {
+    it('should serialize Abstain to object', () => {
       const choice = wasm.ResourceVoteChoice.Abstain();
 
       const obj = choice.toObject();
-      // Simple enum variants serialize to strings in serde
-      expect(obj).to.equal('abstain');
+      expect(obj).to.deep.equal({ type: 'abstain' });
     });
 
-    it('should serialize Lock to object string', () => {
+    it('should serialize Lock to object', () => {
       const choice = wasm.ResourceVoteChoice.Lock();
 
       const obj = choice.toObject();
-      // Simple enum variants serialize to strings in serde
-      expect(obj).to.equal('lock');
+      expect(obj).to.deep.equal({ type: 'lock' });
     });
   });
 
   describe('fromObject()', () => {
-    it('should deserialize TowardsIdentity from object', () => {
-      const identityId = wasm.Identifier.fromBytes(Buffer.from(identityIdHex, 'hex'));
-      const choice = wasm.ResourceVoteChoice.TowardsIdentity(identityId);
+    it('should create TowardsIdentity from object fixture and verify getters', () => {
+      const identityIdBytes = new Uint8Array(Buffer.from(identityIdHex, 'hex'));
 
-      const obj = choice.toObject();
-      const restored = wasm.ResourceVoteChoice.fromObject(obj);
-      expect(restored.voteType).to.equal(choice.voteType);
-      expect(restored.value.toBase58()).to.equal(identityId.toBase58());
+      const fixture = { type: 'towardsIdentity', data: identityIdBytes };
+
+      const restored = wasm.ResourceVoteChoice.fromObject(fixture);
+      expect(restored.voteType).to.equal('TowardsIdentity');
+      expect(restored.value).to.not.be.undefined();
+      expect(restored.value.toHex()).to.equal(identityIdHex);
     });
 
-    it('should deserialize Abstain from object', () => {
-      const choice = wasm.ResourceVoteChoice.Abstain();
-
-      const obj = choice.toObject();
-      const restored = wasm.ResourceVoteChoice.fromObject(obj);
+    it('should create Abstain from object fixture', () => {
+      const restored = wasm.ResourceVoteChoice.fromObject({ type: 'abstain' });
       expect(restored.voteType).to.equal('Abstain');
+      expect(restored.value).to.be.undefined();
     });
 
-    it('should deserialize Lock from object', () => {
-      const choice = wasm.ResourceVoteChoice.Lock();
-
-      const obj = choice.toObject();
-      const restored = wasm.ResourceVoteChoice.fromObject(obj);
+    it('should create Lock from object fixture', () => {
+      const restored = wasm.ResourceVoteChoice.fromObject({ type: 'lock' });
       expect(restored.voteType).to.equal('Lock');
+      expect(restored.value).to.be.undefined();
     });
   });
 });

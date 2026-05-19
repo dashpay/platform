@@ -68,9 +68,9 @@ class TransactionEstimator {
     this.feeCategory = feeCategory;
   }
 
-  reduceFeeFromOutput(amoutToReduce) {
+  reduceFeeFromOutput(amountToReduce) {
     const output = this.state.outputs[0];
-    output.satoshis -= amoutToReduce;
+    output.satoshis -= amountToReduce;
   }
 
   getOutputs() {

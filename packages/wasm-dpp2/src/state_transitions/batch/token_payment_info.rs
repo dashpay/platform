@@ -2,6 +2,7 @@ use crate::enums::batch::gas_fees_paid_by::{GasFeesPaidByLikeJs, GasFeesPaidByWa
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::{IdentifierLikeOrUndefinedJs, IdentifierWasm};
 use crate::impl_try_from_js_value;
+use crate::impl_wasm_conversions_serde;
 use crate::impl_wasm_type_info;
 use crate::utils::try_from_options_optional;
 use dpp::balances::credits::TokenAmount;
@@ -32,15 +33,46 @@ export interface TokenPaymentInfoOptions {
     maximumTokenCost?: bigint;
     gasFeesPaidBy?: GasFeesPaidByLike;
 }
+
+/**
+ * TokenPaymentInfo serialized as a plain object.
+ */
+export interface TokenPaymentInfoObject {
+    $formatVersion: string;
+    paymentTokenContractId: Uint8Array | null;
+    tokenContractPosition: number;
+    minimumTokenCost: bigint | null;
+    maximumTokenCost: bigint | null;
+    gasFeesPaidBy: string;
+}
+
+/**
+ * TokenPaymentInfo serialized as JSON.
+ */
+export interface TokenPaymentInfoJSON {
+    $formatVersion: string;
+    paymentTokenContractId: string | null;
+    tokenContractPosition: number;
+    minimumTokenCost: number | string | null;
+    maximumTokenCost: number | string | null;
+    gasFeesPaidBy: string;
+}
 "#;
 
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(typescript_type = "TokenPaymentInfoOptions")]
     pub type TokenPaymentInfoOptionsJs;
+
+    #[wasm_bindgen(typescript_type = "TokenPaymentInfoObject")]
+    pub type TokenPaymentInfoObjectJs;
+
+    #[wasm_bindgen(typescript_type = "TokenPaymentInfoJSON")]
+    pub type TokenPaymentInfoJSONJs;
 }
 
-#[derive(Clone)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
 #[wasm_bindgen(js_name = "TokenPaymentInfo")]
 pub struct TokenPaymentInfoWasm(TokenPaymentInfo);
 
@@ -155,5 +187,11 @@ impl TokenPaymentInfoWasm {
     }
 }
 
+impl_wasm_conversions_serde!(
+    TokenPaymentInfoWasm,
+    TokenPaymentInfo,
+    TokenPaymentInfoObjectJs,
+    TokenPaymentInfoJSONJs
+);
 impl_try_from_js_value!(TokenPaymentInfoWasm, "TokenPaymentInfo");
 impl_wasm_type_info!(TokenPaymentInfoWasm, TokenPaymentInfo);

@@ -194,7 +194,7 @@ experimental-disable-websocket = false
 # /events RPC method are disabled.
 event-log-window-size = "0s"
 
-# The maxiumum number of events that may be retained by the event log.  If
+# The maximum number of events that may be retained by the event log.  If
 # this value is 0, no upper limit is set. Otherwise, items in excess of
 # this number will be discarded from the event log.
 #

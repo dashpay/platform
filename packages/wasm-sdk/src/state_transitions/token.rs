@@ -3,7 +3,6 @@
 //! This module provides WASM bindings for token operations like mint, burn, transfer, etc.
 
 use crate::error::WasmSdkError;
-use crate::impl_wasm_serde_conversions;
 use crate::queries::utils::deserialize_required_query;
 use crate::sdk::WasmSdk;
 use crate::settings::{get_user_fee_increase, PutSettingsInput};
@@ -37,7 +36,119 @@ use wasm_dpp2::state_transitions::base::GroupStateTransitionInfoStatusWasm;
 use wasm_dpp2::state_transitions::batch::token_pricing_schedule::TokenPricingScheduleWasm;
 use wasm_dpp2::tokens::configuration_change_item::TokenConfigurationChangeItemWasm;
 use wasm_dpp2::utils::{try_from_options, try_from_options_optional};
+use wasm_dpp2::version::PlatformVersionLikeJs;
 use wasm_dpp2::IdentitySignerWasm;
+
+/// Like `impl_wasm_serde_conversions!` but also handles an `Option<DocumentWasm>` field
+/// named `document` that is `#[serde(skip)]`'d on the struct.
+///
+/// In `toJSON`/`toObject`, if `self.document` is `Some`, the macro calls
+/// `DocumentWasm::to_json()`/`to_object()` and merges the result into the JS output.
+/// In `fromJSON`/`fromObject`, it extracts the `document` key from the JS input,
+/// deserializes it via `DocumentWasm::from_json()`/`from_object()`, and sets it
+/// on the deserialized struct.
+macro_rules! impl_wasm_serde_conversions_with_document {
+    ($ty:ty, $js_class:ident) => {
+        #[wasm_bindgen(js_class = $js_class)]
+        impl $ty {
+            #[wasm_bindgen(js_name = toObject)]
+            pub fn to_object(&self) -> Result<JsValue, WasmSdkError> {
+                let result =
+                    wasm_dpp2::serialization::to_object(self).map_err(WasmSdkError::from)?;
+                if let Some(ref doc) = self.document {
+                    let doc_obj = doc.to_object().map_err(WasmSdkError::from)?;
+                    js_sys::Reflect::set(&result, &JsValue::from_str("document"), &doc_obj.into())
+                        .map_err(|e| {
+                            WasmSdkError::serialization(format!(
+                                "Failed to set document on result: {:?}",
+                                e
+                            ))
+                        })?;
+                }
+                Ok(result)
+            }
+
+            #[wasm_bindgen(js_name = fromObject)]
+            pub fn from_object(
+                obj: js_sys::Object,
+                platform_version: PlatformVersionLikeJs,
+            ) -> Result<$ty, WasmSdkError> {
+                let js_val: JsValue = obj.into();
+                // Note: the `document` key remains in js_val but is safely ignored by serde
+                // because the struct uses #[serde(skip)] on the document field.
+                let doc_val = js_sys::Reflect::get(&js_val, &JsValue::from_str("document"))
+                    .map_err(|e| {
+                        WasmSdkError::serialization(format!(
+                            "Failed to read document from input: {:?}",
+                            e
+                        ))
+                    })?;
+                let document =
+                    if doc_val.is_object() && !doc_val.is_null() && !doc_val.is_undefined() {
+                        Some(
+                            DocumentWasm::from_object(doc_val.into(), platform_version)
+                                .map_err(WasmSdkError::from)?,
+                        )
+                    } else {
+                        None
+                    };
+                let mut result: $ty =
+                    wasm_dpp2::serialization::from_object(js_val).map_err(WasmSdkError::from)?;
+                result.document = document;
+                Ok(result)
+            }
+
+            #[wasm_bindgen(js_name = toJSON)]
+            pub fn to_json(
+                &self,
+                platform_version: PlatformVersionLikeJs,
+            ) -> Result<JsValue, WasmSdkError> {
+                let result = wasm_dpp2::serialization::to_json(self).map_err(WasmSdkError::from)?;
+                if let Some(ref doc) = self.document {
+                    let doc_json = doc.to_json(platform_version).map_err(WasmSdkError::from)?;
+                    js_sys::Reflect::set(&result, &JsValue::from_str("document"), &doc_json.into())
+                        .map_err(|e| {
+                            WasmSdkError::serialization(format!(
+                                "Failed to set document on result: {:?}",
+                                e
+                            ))
+                        })?;
+                }
+                Ok(result)
+            }
+
+            #[wasm_bindgen(js_name = fromJSON)]
+            pub fn from_json(
+                js: js_sys::Object,
+                platform_version: PlatformVersionLikeJs,
+            ) -> Result<$ty, WasmSdkError> {
+                let js_val: JsValue = js.into();
+                // Note: the `document` key remains in js_val but is safely ignored by serde
+                // because the struct uses #[serde(skip)] on the document field.
+                let doc_val = js_sys::Reflect::get(&js_val, &JsValue::from_str("document"))
+                    .map_err(|e| {
+                        WasmSdkError::serialization(format!(
+                            "Failed to read document from input: {:?}",
+                            e
+                        ))
+                    })?;
+                let document =
+                    if doc_val.is_object() && !doc_val.is_null() && !doc_val.is_undefined() {
+                        Some(
+                            DocumentWasm::from_json(doc_val.into(), platform_version)
+                                .map_err(WasmSdkError::from)?,
+                        )
+                    } else {
+                        None
+                    };
+                let mut result: $ty =
+                    wasm_dpp2::serialization::from_json(js_val).map_err(WasmSdkError::from)?;
+                result.document = document;
+                Ok(result)
+            }
+        }
+    };
+}
 
 /// Helper function to convert a Document to DocumentWasm with the required metadata.
 /// Token historical documents use the contract_id and a document type name based on the operation.
@@ -176,7 +287,7 @@ impl TokenMintResultWasm {
     }
 }
 
-impl_wasm_serde_conversions!(TokenMintResultWasm, TokenMintResult);
+impl_wasm_serde_conversions_with_document!(TokenMintResultWasm, TokenMintResult);
 
 impl TokenMintResultWasm {
     /// Convert from SDK MintResult with the required contract context
@@ -411,7 +522,7 @@ impl TokenBurnResultWasm {
     }
 }
 
-impl_wasm_serde_conversions!(TokenBurnResultWasm, TokenBurnResult);
+impl_wasm_serde_conversions_with_document!(TokenBurnResultWasm, TokenBurnResult);
 
 impl TokenBurnResultWasm {
     /// Convert from SDK BurnResult with the required contract context
@@ -615,6 +726,7 @@ fn deserialize_token_transfer_options(
 /// - Group-managed tokens: returns group power and document
 ///
 /// Check which optional fields are present to determine the result type.
+#[dpp_json_convertible_derive::json_safe_fields(crate = "dash_sdk::dpp")]
 #[wasm_bindgen(js_name = "TokenTransferResult")]
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -647,7 +759,7 @@ impl TokenTransferResultWasm {
     }
 }
 
-impl_wasm_serde_conversions!(TokenTransferResultWasm, TokenTransferResult);
+impl_wasm_serde_conversions_with_document!(TokenTransferResultWasm, TokenTransferResult);
 
 impl TokenTransferResultWasm {
     /// Convert from SDK TransferResult with the required contract context
@@ -875,7 +987,7 @@ pub struct TokenFreezeResultWasm {
     pub document: Option<DocumentWasm>,
 }
 
-impl_wasm_serde_conversions!(TokenFreezeResultWasm, TokenFreezeResult);
+impl_wasm_serde_conversions_with_document!(TokenFreezeResultWasm, TokenFreezeResult);
 
 impl TokenFreezeResultWasm {
     /// Convert from SDK FreezeResult with the required contract context
@@ -1088,7 +1200,7 @@ pub struct TokenUnfreezeResultWasm {
     pub document: Option<DocumentWasm>,
 }
 
-impl_wasm_serde_conversions!(TokenUnfreezeResultWasm, TokenUnfreezeResult);
+impl_wasm_serde_conversions_with_document!(TokenUnfreezeResultWasm, TokenUnfreezeResult);
 
 impl TokenUnfreezeResultWasm {
     /// Convert from SDK UnfreezeResult with the required contract context
@@ -1297,7 +1409,7 @@ pub struct TokenDestroyFrozenResultWasm {
     pub document: Option<DocumentWasm>,
 }
 
-impl_wasm_serde_conversions!(TokenDestroyFrozenResultWasm, TokenDestroyFrozenResult);
+impl_wasm_serde_conversions_with_document!(TokenDestroyFrozenResultWasm, TokenDestroyFrozenResult);
 
 impl TokenDestroyFrozenResultWasm {
     /// Convert from SDK DestroyFrozenFundsResult with the required contract context
@@ -1502,7 +1614,10 @@ pub struct TokenEmergencyActionResultWasm {
     pub document: Option<DocumentWasm>,
 }
 
-impl_wasm_serde_conversions!(TokenEmergencyActionResultWasm, TokenEmergencyActionResult);
+impl_wasm_serde_conversions_with_document!(
+    TokenEmergencyActionResultWasm,
+    TokenEmergencyActionResult
+);
 
 impl TokenEmergencyActionResultWasm {
     /// Convert from SDK EmergencyActionResult with the required contract context
@@ -1706,7 +1821,7 @@ pub struct TokenClaimResultWasm {
     pub document: Option<DocumentWasm>,
 }
 
-impl_wasm_serde_conversions!(TokenClaimResultWasm, TokenClaimResult);
+impl_wasm_serde_conversions_with_document!(TokenClaimResultWasm, TokenClaimResult);
 
 impl TokenClaimResultWasm {
     /// Convert from SDK ClaimResult with the required contract context
@@ -1907,7 +2022,6 @@ pub struct TokenSetPriceResultWasm {
     pub owner_id: Option<IdentifierWasm>,
     /// For PricingSchedule or GroupActionWithPricingSchedule - the pricing schedule
     #[wasm_bindgen(getter_with_clone, js_name = "pricingSchedule")]
-    #[serde(skip)]
     pub pricing_schedule: Option<TokenPricingScheduleWasm>,
     /// For group actions
     #[wasm_bindgen(getter_with_clone, js_name = "groupPower")]
@@ -1921,7 +2035,7 @@ pub struct TokenSetPriceResultWasm {
     pub document: Option<DocumentWasm>,
 }
 
-impl_wasm_serde_conversions!(TokenSetPriceResultWasm, TokenSetPriceResult);
+impl_wasm_serde_conversions_with_document!(TokenSetPriceResultWasm, TokenSetPriceResult);
 
 impl TokenSetPriceResultWasm {
     /// Convert from SDK SetPriceResult with the required contract context
@@ -2156,7 +2270,10 @@ impl TokenDirectPurchaseResultWasm {
     }
 }
 
-impl_wasm_serde_conversions!(TokenDirectPurchaseResultWasm, TokenDirectPurchaseResult);
+impl_wasm_serde_conversions_with_document!(
+    TokenDirectPurchaseResultWasm,
+    TokenDirectPurchaseResult
+);
 
 impl TokenDirectPurchaseResultWasm {
     /// Convert from SDK DirectPurchaseResult with the required contract context
@@ -2360,7 +2477,7 @@ pub struct TokenConfigUpdateResultWasm {
     pub document: Option<DocumentWasm>,
 }
 
-impl_wasm_serde_conversions!(TokenConfigUpdateResultWasm, TokenConfigUpdateResult);
+impl_wasm_serde_conversions_with_document!(TokenConfigUpdateResultWasm, TokenConfigUpdateResult);
 
 impl TokenConfigUpdateResultWasm {
     /// Convert from SDK ConfigUpdateResult with the required contract context

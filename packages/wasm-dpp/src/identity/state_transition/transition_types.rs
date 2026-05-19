@@ -55,6 +55,7 @@ impl From<StateTransitionType> for StateTransitionTypeWasm {
             StateTransitionType::AddressCreditWithdrawal => {
                 StateTransitionTypeWasm::AddressCreditWithdrawal
             }
+            _ => todo!("shielded state transition types not yet implemented in wasm"),
         }
     }
 }

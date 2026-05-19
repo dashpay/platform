@@ -6,7 +6,7 @@ description: |
     - name and head ref to hit all builds for this branch with this name
     - just name to hit all builds for this name
 
-  To correcly use caching, ensure buildx has AWS_PROFILE environment set to value of `aws_profile` output.
+  To correctly use caching, ensure buildx has AWS_PROFILE environment set to value of `aws_profile` output.
 
 inputs:
   name:

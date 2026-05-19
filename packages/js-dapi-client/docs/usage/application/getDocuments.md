@@ -14,4 +14,3 @@ Parameters:
 | **options.startAfter** | Number             | yes            | exclusive skip |
 
 Returns : Promise<Buffer[]>
-

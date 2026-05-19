@@ -7,7 +7,7 @@ macro_rules! generic_consensus_error {
                 serialization::PlatformSerializableWithPlatformVersion,
                 version::PlatformVersion,
             },
-            paste::paste,
+            pastey::paste,
             wasm_bindgen::prelude::wasm_bindgen,
             $crate::buffer::Buffer,
         };

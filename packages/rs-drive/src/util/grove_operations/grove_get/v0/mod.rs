@@ -66,3 +66,108 @@ impl Drive {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::util::grove_operations::{QueryTarget, QueryType};
+    use crate::util::test_helpers::setup::setup_drive;
+    use grovedb::{Element, TreeType};
+    use grovedb_path::SubtreePath;
+    use platform_version::version::PlatformVersion;
+
+    #[test]
+    fn test_grove_get_stateful_existing_item() {
+        let drive = setup_drive(None);
+        let pv = PlatformVersion::latest();
+        let tx = drive.grove.start_transaction();
+
+        drive
+            .grove_insert_empty_tree(
+                SubtreePath::empty(),
+                b"root",
+                TreeType::NormalTree,
+                Some(&tx),
+                None,
+                &mut vec![],
+                &pv.drive,
+            )
+            .expect("expected to insert root tree");
+
+        drive
+            .grove
+            .insert(
+                &[b"root".as_slice()],
+                b"key",
+                Element::new_item(b"value".to_vec()),
+                None,
+                Some(&tx),
+                &pv.drive.grove_version,
+            )
+            .unwrap()
+            .expect("expected to insert element");
+
+        let mut ops = vec![];
+        let result = drive
+            .grove_get_v0(
+                [b"root".as_slice()].as_slice().into(),
+                b"key",
+                QueryType::StatefulQuery,
+                Some(&tx),
+                &mut ops,
+                &pv.drive,
+            )
+            .expect("expected to get element");
+
+        assert_eq!(result, Some(Element::new_item(b"value".to_vec())));
+        assert!(!ops.is_empty()); // cost op pushed
+    }
+
+    #[test]
+    fn test_grove_get_stateless_returns_none() {
+        let drive = setup_drive(None);
+        let pv = PlatformVersion::latest();
+
+        let mut ops = vec![];
+        let result = drive
+            .grove_get_v0(
+                [b"root".as_slice()].as_slice().into(),
+                b"key",
+                QueryType::StatelessQuery {
+                    in_tree_type: TreeType::NormalTree,
+                    query_target: QueryTarget::QueryTargetValue(100),
+                    estimated_reference_sizes: vec![],
+                },
+                None,
+                &mut ops,
+                &pv.drive,
+            )
+            .expect("expected operation to succeed");
+
+        assert!(result.is_none());
+        assert!(!ops.is_empty()); // cost op pushed
+    }
+
+    #[test]
+    fn test_grove_get_stateless_tree_target() {
+        let drive = setup_drive(None);
+        let pv = PlatformVersion::latest();
+
+        let mut ops = vec![];
+        let result = drive
+            .grove_get_v0(
+                [b"root".as_slice()].as_slice().into(),
+                b"key",
+                QueryType::StatelessQuery {
+                    in_tree_type: TreeType::NormalTree,
+                    query_target: QueryTarget::QueryTargetTree(0, TreeType::NormalTree),
+                    estimated_reference_sizes: vec![],
+                },
+                None,
+                &mut ops,
+                &pv.drive,
+            )
+            .expect("expected operation to succeed");
+
+        assert!(result.is_none());
+    }
+}

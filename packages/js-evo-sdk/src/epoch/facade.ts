@@ -48,25 +48,25 @@ export class EpochFacade {
   }
 
   async evonodesProposedBlocksByIds(epoch: number, ids: wasm.ProTxHashLikeArray):
-    Promise<Map<wasm.Identifier, bigint>> {
+    Promise<Map<string, bigint>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getEvonodesProposedEpochBlocksByIds(epoch, ids);
   }
 
   async evonodesProposedBlocksByIdsWithProof(epoch: number, ids: wasm.ProTxHashLikeArray):
-    Promise<wasm.ProofMetadataResponseTyped<Map<wasm.Identifier, bigint>>> {
+    Promise<wasm.ProofMetadataResponseTyped<Map<string, bigint>>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getEvonodesProposedEpochBlocksByIdsWithProofInfo(epoch, ids);
   }
 
-  async evonodesProposedBlocksByRange(query: EvonodeProposedBlocksRangeQuery): Promise<Map<wasm.Identifier, bigint>> {
+  async evonodesProposedBlocksByRange(query: EvonodeProposedBlocksRangeQuery): Promise<Map<string, bigint>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getEvonodesProposedEpochBlocksByRange(query);
   }
 
   async evonodesProposedBlocksByRangeWithProof(
     query: EvonodeProposedBlocksRangeQuery,
-  ): Promise<wasm.ProofMetadataResponseTyped<Map<wasm.Identifier, bigint>>> {
+  ): Promise<wasm.ProofMetadataResponseTyped<Map<string, bigint>>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getEvonodesProposedEpochBlocksByRangeWithProofInfo(query);
   }

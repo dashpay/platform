@@ -1,0 +1,27 @@
+[package]
+name = "rs-scripts"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "decode-document"
+path = "src/bin/decode_document.rs"
+
+[[bin]]
+name = "check-contract-properties"
+path = "src/bin/check_contract_properties.rs"
+
+[dependencies]
+dpp = { path = "../rs-dpp", features = ["system_contracts"] }
+dapi-grpc = { path = "../dapi-grpc", features = ["client"] }
+data-contracts = { path = "../data-contracts" }
+platform-version = { path = "../rs-platform-version" }
+base64 = "0.22"
+chrono = "0.4"
+hex = "0.4"
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1.40", features = ["macros", "rt-multi-thread"] }
+tonic = { version = "0.14.2", features = ["channel", "transport", "tls-native-roots", "tls-webpki-roots", "tls-ring"], default-features = false }
+ureq = "3.3"

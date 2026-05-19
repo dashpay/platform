@@ -3,7 +3,7 @@ use crate::errors::ProtocolError;
 use crate::fee::Credits;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
-#[cfg(feature = "state-transition-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt::{self, Display, Formatter};
@@ -25,10 +25,7 @@ use std::fmt::{self, Display, Formatter};
     PlatformSerialize,
     PlatformDeserialize,
 )]
-#[cfg_attr(
-    feature = "state-transition-serde-conversion",
-    derive(Serialize, Deserialize)
-)]
+#[cfg_attr(feature = "serde-conversion", derive(Serialize, Deserialize))]
 pub enum TokenPricingSchedule {
     /// A single flat price in credits for all token amounts.
     ///
@@ -76,5 +73,89 @@ impl Display for TokenPricingSchedule {
                 write!(f, "]")
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn single_price_minimum_purchase_amount_and_price() {
+        let schedule = TokenPricingSchedule::SinglePrice(500);
+        let (amount, price) = schedule.minimum_purchase_amount_and_price();
+        assert_eq!(amount, 1);
+        assert_eq!(price, 500);
+    }
+
+    #[test]
+    fn single_price_zero_credits() {
+        let schedule = TokenPricingSchedule::SinglePrice(0);
+        let (amount, price) = schedule.minimum_purchase_amount_and_price();
+        assert_eq!(amount, 1);
+        assert_eq!(price, 0);
+    }
+
+    #[test]
+    fn set_prices_minimum_purchase_amount_and_price_single_entry() {
+        let mut prices = BTreeMap::new();
+        prices.insert(10u64, 100u64);
+        let schedule = TokenPricingSchedule::SetPrices(prices);
+        let (amount, price) = schedule.minimum_purchase_amount_and_price();
+        assert_eq!(amount, 10);
+        assert_eq!(price, 100);
+    }
+
+    #[test]
+    fn set_prices_minimum_purchase_amount_and_price_multiple_entries() {
+        let mut prices = BTreeMap::new();
+        prices.insert(5u64, 50u64);
+        prices.insert(10u64, 80u64);
+        prices.insert(100u64, 500u64);
+        let schedule = TokenPricingSchedule::SetPrices(prices);
+        // BTreeMap orders by key, so the first entry is the minimum amount
+        let (amount, price) = schedule.minimum_purchase_amount_and_price();
+        assert_eq!(amount, 5);
+        assert_eq!(price, 50);
+    }
+
+    #[test]
+    fn set_prices_empty_map_returns_default() {
+        let prices = BTreeMap::new();
+        let schedule = TokenPricingSchedule::SetPrices(prices);
+        let (amount, price) = schedule.minimum_purchase_amount_and_price();
+        // unwrap_or_default returns (0, 0) for empty map
+        assert_eq!(amount, 0);
+        assert_eq!(price, 0);
+    }
+
+    #[test]
+    fn display_single_price() {
+        let schedule = TokenPricingSchedule::SinglePrice(1234);
+        assert_eq!(format!("{}", schedule), "SinglePrice: 1234");
+    }
+
+    #[test]
+    fn display_set_prices_empty() {
+        let schedule = TokenPricingSchedule::SetPrices(BTreeMap::new());
+        assert_eq!(format!("{}", schedule), "SetPrices: []");
+    }
+
+    #[test]
+    fn display_set_prices_single_entry() {
+        let mut prices = BTreeMap::new();
+        prices.insert(10u64, 100u64);
+        let schedule = TokenPricingSchedule::SetPrices(prices);
+        assert_eq!(format!("{}", schedule), "SetPrices: [10 => 100]");
+    }
+
+    #[test]
+    fn display_set_prices_multiple_entries() {
+        let mut prices = BTreeMap::new();
+        prices.insert(5u64, 50u64);
+        prices.insert(10u64, 80u64);
+        let schedule = TokenPricingSchedule::SetPrices(prices);
+        // BTreeMap iterates in sorted key order
+        assert_eq!(format!("{}", schedule), "SetPrices: [5 => 50, 10 => 80]");
     }
 }

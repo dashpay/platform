@@ -31,10 +31,10 @@ describe('BlockInfo', () => {
       const blockInfo = new wasm.BlockInfo({ timeMs: 1234567890n, height: 999n, coreHeight: 500, epochIndex: 10 });
 
       const json = blockInfo.toJSON();
-      // serde uses snake_case by default
-      expect(json.time_ms).to.equal(1234567890);
+
+      expect(json.timeMs).to.equal(1234567890);
       expect(json.height).to.equal(999);
-      expect(json.core_height).to.equal(500);
+      expect(json.coreHeight).to.equal(500);
       expect(json.epoch.index).to.equal(10);
 
       const restored = wasm.BlockInfo.fromJSON(json);
@@ -43,6 +43,38 @@ describe('BlockInfo', () => {
       expect(restored.coreHeight).to.equal(blockInfo.coreHeight);
       expect(restored.epochIndex).to.equal(blockInfo.epochIndex);
     });
+
+    it('should match hardcoded expected JSON fixture', () => {
+      const blockInfo = new wasm.BlockInfo({ timeMs: 1234567890n, height: 999n, coreHeight: 500, epochIndex: 10 });
+
+      const expectedJSON = {
+        timeMs: 1234567890,
+        height: 999,
+        coreHeight: 500,
+        epoch: { index: 10 },
+      };
+
+      const json = blockInfo.toJSON();
+      expect(json).to.deep.equal(expectedJSON);
+    });
+  });
+
+  describe('fromJSON()', () => {
+    it('should deserialize from hardcoded JSON fixture and verify all getters', () => {
+      const jsonFixture = {
+        timeMs: 1234567890,
+        height: 999,
+        coreHeight: 500,
+        epoch: { index: 10 },
+      };
+
+      const blockInfo = wasm.BlockInfo.fromJSON(jsonFixture);
+
+      expect(blockInfo.timeMs).to.equal(1234567890n);
+      expect(blockInfo.height).to.equal(999n);
+      expect(blockInfo.coreHeight).to.equal(500);
+      expect(blockInfo.epochIndex).to.equal(10);
+    });
   });
 
   describe('toObject()', () => {
@@ -50,11 +82,10 @@ describe('BlockInfo', () => {
       const blockInfo = new wasm.BlockInfo({ timeMs: 1234567890n, height: 999n, coreHeight: 500, epochIndex: 10 });
 
       const obj = blockInfo.toObject();
-      // serde uses snake_case by default
-      // serde_wasm_bindgen serializes u64 as Number when it fits
-      expect(Number(obj.time_ms)).to.equal(1234567890);
+
+      expect(Number(obj.timeMs)).to.equal(1234567890);
       expect(Number(obj.height)).to.equal(999);
-      expect(obj.core_height).to.equal(500);
+      expect(obj.coreHeight).to.equal(500);
       expect(obj.epoch.index).to.equal(10);
 
       const restored = wasm.BlockInfo.fromObject(obj);
@@ -64,11 +95,30 @@ describe('BlockInfo', () => {
       expect(restored.epochIndex).to.equal(blockInfo.epochIndex);
     });
 
+    it('should match hardcoded expected Object fixture', () => {
+      const blockInfo = new wasm.BlockInfo({ timeMs: 1234567890n, height: 999n, coreHeight: 500, epochIndex: 10 });
+
+      const expectedObject = {
+        timeMs: 1234567890n,
+        height: 999n,
+        coreHeight: 500,
+        epoch: { index: 10 },
+      };
+
+      const obj = blockInfo.toObject();
+      expect(obj).to.deep.equal(expectedObject);
+    });
+
     it('should handle large values correctly', () => {
       // Test with BigInt-sized values
       const largeTimeMs = 1702500000000n; // realistic timestamp in ms
       const largeHeight = 1000000n;
-      const blockInfo = new wasm.BlockInfo({ timeMs: largeTimeMs, height: largeHeight, coreHeight: 800000, epochIndex: 100 });
+      const blockInfo = new wasm.BlockInfo({
+        timeMs: largeTimeMs,
+        height: largeHeight,
+        coreHeight: 800000,
+        epochIndex: 100,
+      });
 
       // JSON round-trip
       const json = blockInfo.toJSON();
@@ -81,6 +131,24 @@ describe('BlockInfo', () => {
       const restoredFromObj = wasm.BlockInfo.fromObject(obj);
       expect(restoredFromObj.timeMs).to.equal(largeTimeMs);
       expect(restoredFromObj.height).to.equal(largeHeight);
+    });
+  });
+
+  describe('fromObject()', () => {
+    it('should deserialize from hardcoded Object fixture and verify all getters', () => {
+      const objectFixture = {
+        timeMs: 1234567890n,
+        height: 999n,
+        coreHeight: 500,
+        epoch: { index: 10 },
+      };
+
+      const blockInfo = wasm.BlockInfo.fromObject(objectFixture);
+
+      expect(blockInfo.timeMs).to.equal(1234567890n);
+      expect(blockInfo.height).to.equal(999n);
+      expect(blockInfo.coreHeight).to.equal(500);
+      expect(blockInfo.epochIndex).to.equal(10);
     });
   });
 

@@ -27,7 +27,7 @@ use reqwest::Client;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::error::Error as StdError;
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), not(target_os = "ios")))]
 use std::net::ToSocketAddrs;
 use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex};
@@ -38,6 +38,7 @@ use url::Url;
 
 /// A trusted HTTP-based context provider that fetches quorum information
 /// from trusted HTTP endpoints instead of requiring Core RPC access.
+#[derive(Clone)]
 pub struct TrustedHttpContextProvider {
     network: Network,
     client: Client,
@@ -56,7 +57,7 @@ pub struct TrustedHttpContextProvider {
     last_previous_quorums: Arc<ArcSwap<Option<PreviousQuorumsResponse>>>,
 
     /// Optional fallback provider for data contracts and token configurations
-    fallback_provider: Option<Box<dyn ContextProvider>>,
+    fallback_provider: Option<Arc<dyn ContextProvider>>,
 
     /// Known contracts cache - contracts that are pre-loaded and can be served immediately
     known_contracts: Arc<Mutex<HashMap<Identifier, Arc<DataContract>>>>,
@@ -86,7 +87,7 @@ struct MasternodeDiscoveryResponse {
 
 impl TrustedHttpContextProvider {
     /// Verify that a URL's domain resolves
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(all(not(target_arch = "wasm32"), not(target_os = "ios")))]
     fn verify_domain_resolves(url: &str) -> Result<(), TrustedContextProviderError> {
         let parsed_url = Url::parse(url).map_err(|e| {
             TrustedContextProviderError::NetworkError(format!("Invalid URL: {}", e))
@@ -177,7 +178,7 @@ impl TrustedHttpContextProvider {
 
     /// Set a fallback provider for data contracts and token configurations
     pub fn with_fallback_provider<P: ContextProvider + 'static>(mut self, provider: P) -> Self {
-        self.fallback_provider = Some(Box::new(provider));
+        self.fallback_provider = Some(Arc::new(provider));
         self
     }
 
@@ -306,7 +307,7 @@ impl TrustedHttpContextProvider {
         }
 
         let default_dapi_port = match self.network {
-            Network::Dash => 443,
+            Network::Mainnet => 443,
             Network::Testnet => 1443,
             _ => 443,
         };
@@ -543,6 +544,31 @@ impl TrustedHttpContextProvider {
             quorum_hash: hex::encode(quorum_hash),
         })
     }
+
+    /// Parse a BLS quorum public key from its hex representation.
+    ///
+    /// Accepts an optional `0x` prefix. Returns `ContextProviderError::Generic`
+    /// on invalid hex, wrong length (must be 48 bytes), or conversion failure.
+    fn parse_quorum_public_key(key: &str) -> Result<[u8; 48], ContextProviderError> {
+        let pubkey_hex = key
+            .strip_prefix("0x")
+            .or_else(|| key.strip_prefix("0X"))
+            .unwrap_or(key);
+        let pubkey_bytes = hex::decode(pubkey_hex).map_err(|e| {
+            ContextProviderError::Generic(format!("Invalid hex in public key: {}", e))
+        })?;
+
+        if pubkey_bytes.len() != 48 {
+            return Err(ContextProviderError::Generic(format!(
+                "Invalid public key length: {} bytes, expected 48",
+                pubkey_bytes.len()
+            )));
+        }
+
+        pubkey_bytes.try_into().map_err(|_| {
+            ContextProviderError::Generic("Failed to convert public key to array".to_string())
+        })
+    }
 }
 
 impl ContextProvider for TrustedHttpContextProvider {
@@ -562,25 +588,7 @@ impl ContextProvider for TrustedHttpContextProvider {
         if let Ok(mut cache) = self.current_quorums_cache.lock() {
             if let Some(quorum) = cache.get(&quorum_hash) {
                 debug!("Found quorum in current cache");
-
-                // Parse the public key from the 'key' field
-                let pubkey_hex = quorum.key.trim_start_matches("0x");
-                let pubkey_bytes = hex::decode(pubkey_hex).map_err(|e| {
-                    ContextProviderError::Generic(format!("Invalid hex in public key: {}", e))
-                })?;
-
-                if pubkey_bytes.len() != 48 {
-                    return Err(ContextProviderError::Generic(format!(
-                        "Invalid public key length: {} bytes, expected 48",
-                        pubkey_bytes.len()
-                    )));
-                }
-
-                return pubkey_bytes.try_into().map_err(|_| {
-                    ContextProviderError::Generic(
-                        "Failed to convert public key to array".to_string(),
-                    )
-                });
+                return Self::parse_quorum_public_key(&quorum.key);
             }
         }
 
@@ -588,25 +596,7 @@ impl ContextProvider for TrustedHttpContextProvider {
         if let Ok(mut cache) = self.previous_quorums_cache.lock() {
             if let Some(quorum) = cache.get(&quorum_hash) {
                 debug!("Found quorum in previous cache");
-
-                // Parse the public key from the 'key' field
-                let pubkey_hex = quorum.key.trim_start_matches("0x");
-                let pubkey_bytes = hex::decode(pubkey_hex).map_err(|e| {
-                    ContextProviderError::Generic(format!("Invalid hex in public key: {}", e))
-                })?;
-
-                if pubkey_bytes.len() != 48 {
-                    return Err(ContextProviderError::Generic(format!(
-                        "Invalid public key length: {} bytes, expected 48",
-                        pubkey_bytes.len()
-                    )));
-                }
-
-                return pubkey_bytes.try_into().map_err(|_| {
-                    ContextProviderError::Generic(
-                        "Failed to convert public key to array".to_string(),
-                    )
-                });
+                return Self::parse_quorum_public_key(&quorum.key);
             }
         }
 
@@ -618,47 +608,15 @@ impl ContextProvider for TrustedHttpContextProvider {
             )));
         }
 
-        // For non-WASM targets, we can use block_on to fetch
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            // Use blocking to run async code in sync context
-            let quorum =
-                match futures::executor::block_on(self.find_quorum(quorum_type, quorum_hash)) {
-                    Ok(q) => q,
-                    Err(e) => {
-                        debug!("Error finding quorum: {}", e);
-                        return Err(ContextProviderError::Generic(format!(
-                            "Failed to find quorum: {}",
-                            e
-                        )));
-                    }
-                };
+        let this = self.clone();
+        let quorum =
+            dash_async::block_on(async move { this.find_quorum(quorum_type, quorum_hash).await })?
+                .map_err(|e| {
+                    debug!("Error finding quorum: {}", e);
+                    ContextProviderError::Generic(format!("Failed to find quorum: {}", e))
+                })?;
 
-            // Parse the public key from the 'key' field
-            let pubkey_hex = quorum.key.trim_start_matches("0x");
-            let pubkey_bytes = hex::decode(pubkey_hex).map_err(|e| {
-                ContextProviderError::Generic(format!("Invalid hex in public key: {}", e))
-            })?;
-
-            if pubkey_bytes.len() != 48 {
-                return Err(ContextProviderError::Generic(format!(
-                    "Invalid public key length: {} bytes, expected 48",
-                    pubkey_bytes.len()
-                )));
-            }
-
-            pubkey_bytes.try_into().map_err(|_| {
-                ContextProviderError::Generic("Failed to convert public key to array".to_string())
-            })
-        }
-        #[cfg(target_arch = "wasm32")]
-        {
-            // For WASM, we rely on pre-fetched cache
-            Err(ContextProviderError::Generic(
-                "Quorum not found in cache. In WASM, call update_quorum_caches() first."
-                    .to_string(),
-            ))
-        }
+        Self::parse_quorum_public_key(&quorum.key)
     }
 
     fn get_data_contract(
@@ -802,17 +760,10 @@ impl ContextProvider for TrustedHttpContextProvider {
     fn get_platform_activation_height(&self) -> Result<CoreBlockHeight, ContextProviderError> {
         // Return the L1 locked height for each network
         match self.network {
-            Network::Dash => Ok(2132092),    // Mainnet L1 locked height
+            Network::Mainnet => Ok(2132092), // Mainnet L1 locked height
             Network::Testnet => Ok(1090319), // Testnet L1 locked height
-            Network::Devnet => Ok(1),        // Devnet activation height
-            _ => Err(ContextProviderError::Generic(
-                "Unsupported network".to_string(),
-            )),
+            Network::Devnet | Network::Regtest => Ok(1), // Devnet/Regtest activation height
         }
-    }
-
-    fn update_data_contract(&self, contract: Arc<DataContract>) {
-        self.add_known_contract((*contract).clone());
     }
 }
 
@@ -823,7 +774,7 @@ mod tests {
     #[test]
     fn test_get_quorum_base_url() {
         assert_eq!(
-            get_quorum_base_url(Network::Dash, None).unwrap(),
+            get_quorum_base_url(Network::Mainnet, None).unwrap(),
             "https://quorums.mainnet.networks.dash.org"
         );
 

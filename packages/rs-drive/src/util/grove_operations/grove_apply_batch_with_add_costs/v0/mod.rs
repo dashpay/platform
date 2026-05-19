@@ -65,8 +65,6 @@ impl Drive {
             Some(BatchApplyOptions {
                 validate_insertion_does_not_override: validate,
                 validate_insertion_does_not_override_tree: validate,
-                allow_deleting_non_empty_trees: false,
-                deleting_non_empty_trees_returns_error: true,
                 disable_operation_consistency_check: !self.config.batching_consistency_verification,
                 base_root_storage_is_free: true,
                 batch_pause_height: None,
@@ -87,23 +85,22 @@ impl Drive {
         if tracing::event_enabled!(target: "drive_grovedb_operations", tracing::Level::TRACE)
             && cost_context.value.is_ok()
         {
-            let root_hash = self
-                .grove
-                .root_hash(transaction, &drive_version.grove_version)
-                .unwrap()
-                .map_err(Error::from)?;
+            if let Some((ops, previous_root_hash)) = maybe_params_for_logs {
+                let root_hash = self
+                    .grove
+                    .root_hash(transaction, &drive_version.grove_version)
+                    .unwrap()
+                    .map_err(Error::from)?;
 
-            let (ops, previous_root_hash) =
-                maybe_params_for_logs.expect("log params should be set above");
-
-            tracing::trace!(
-                target: "drive_grovedb_operations",
-                ?ops,
-                ?root_hash,
-                ?previous_root_hash,
-                is_transactional = transaction.is_some(),
-                "grovedb batch applied",
-            );
+                tracing::trace!(
+                    target: "drive_grovedb_operations",
+                    ?ops,
+                    ?root_hash,
+                    ?previous_root_hash,
+                    is_transactional = transaction.is_some(),
+                    "grovedb batch applied",
+                );
+            }
         }
 
         push_drive_operation_result(cost_context, drive_operations)

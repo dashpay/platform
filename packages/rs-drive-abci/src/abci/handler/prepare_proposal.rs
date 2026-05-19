@@ -36,7 +36,7 @@ where
 
     let platform_state = app.platform().state.load();
 
-    // Verify that Platform State corresponds to Drive commited state
+    // Verify that Platform State corresponds to Drive committed state
     let platform_state_app_hash = platform_state
         .last_committed_block_app_hash()
         .unwrap_or_default();
@@ -62,7 +62,7 @@ where
     let config = &app.platform().config;
 
     #[allow(clippy::collapsible_if)]
-    if !(config.network == Network::Dash
+    if !(config.network == Network::Mainnet
         && config.abci.chain_id == "evo1"
         && request.height < 33000)
     {

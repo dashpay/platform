@@ -11,4 +11,3 @@ Parameters:
 
 
 Returns: Number (duff - aka satoshis - value of the balance).  
-

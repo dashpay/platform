@@ -189,7 +189,7 @@ describe('IdentityPublicKey', () => {
       const jsonPublicKey = publicKey.toJSON();
 
       expect(jsonPublicKey).to.deep.equal({
-        $version: '0',
+        $formatVersion: '0',
         id: 0,
         type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
         data: 'AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH',
@@ -210,7 +210,7 @@ describe('IdentityPublicKey', () => {
       const jsonPublicKey = publicKey.toObject();
 
       expect(jsonPublicKey).to.deep.equal({
-        $version: '0',
+        $formatVersion: '0',
         id: 0,
         type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
         data: Buffer.from('AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH', 'base64'),

@@ -1,5 +1,5 @@
 use crate::group::token_event::TokenEventWasm;
-use crate::impl_wasm_conversions;
+use crate::impl_wasm_conversions_inner;
 use crate::impl_wasm_type_info;
 use dpp::group::action_event::GroupActionEvent;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -10,16 +10,16 @@ const TS_TYPES: &str = r#"
  * GroupActionEvent serialized as a plain object.
  */
 export interface GroupActionEventObject {
-    variant: GroupActionEventVariant;
-    tokenEvent?: TokenEventObject;
+    type: "tokenEvent";
+    data: TokenEventObject;
 }
 
 /**
  * GroupActionEvent serialized as JSON.
  */
 export interface GroupActionEventJSON {
-    variant: number;
-    tokenEvent?: TokenEventJSON;
+    type: "tokenEvent";
+    data: TokenEventJSON;
 }
 "#;
 
@@ -83,8 +83,9 @@ impl GroupActionEventWasm {
     }
 }
 
-impl_wasm_conversions!(
+impl_wasm_conversions_inner!(
     GroupActionEventWasm,
+    GroupActionEvent,
     GroupActionEvent,
     GroupActionEventObjectJs,
     GroupActionEventJSONJs

@@ -98,6 +98,22 @@ describe('InstantAssetLockProof', () => {
       expect(Buffer.from(json.instantLock, 'base64')).to.deep.equal(Buffer.from(instantLockBytes));
       expect(Buffer.from(json.transaction, 'base64')).to.deep.equal(Buffer.from(transactionBytes));
     });
+
+    it('should match hardcoded expected JSON', () => {
+      const instantLockProof = new wasm.InstantAssetLockProof(
+        instantLockBytes,
+        transactionBytes,
+        0,
+      );
+
+      const expectedJSON = {
+        instantLock: Buffer.from(instantLockBytes).toString('base64'),
+        transaction: Buffer.from(transactionBytes).toString('base64'),
+        outputIndex: 0,
+      };
+
+      expect(instantLockProof.toJSON()).to.deep.equal(expectedJSON);
+    });
   });
 
   describe('fromJSON()', () => {
@@ -112,6 +128,24 @@ describe('InstantAssetLockProof', () => {
       const restored = wasm.InstantAssetLockProof.fromJSON(json);
 
       expect(restored.toObject()).to.deep.equal(instantLockProof.toObject());
+    });
+
+    it('should create from hardcoded JSON fixture and verify via getters', () => {
+      const expectedInstantLockBase64 = Buffer.from(instantLockBytes).toString('base64');
+      const expectedTransactionBase64 = Buffer.from(transactionBytes).toString('base64');
+
+      const jsonFixture = {
+        instantLock: expectedInstantLockBase64,
+        transaction: expectedTransactionBase64,
+        outputIndex: 0,
+      };
+
+      const proof = wasm.InstantAssetLockProof.fromJSON(jsonFixture);
+
+      expect(proof).to.be.an.instanceof(wasm.InstantAssetLockProof);
+      expect(proof.outputIndex).to.equal(0);
+      expect(proof.instantLock).to.deep.equal(instantLockBytes);
+      expect(proof.transaction).to.deep.equal(transactionBytes);
     });
   });
 

@@ -1,7 +1,7 @@
 use crate::error::WasmDppResult;
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::impl_try_from_js_value;
-use crate::impl_wasm_conversions;
+use crate::impl_wasm_conversions_inner;
 use crate::impl_wasm_type_info;
 use dpp::identity::contract_bounds::ContractBounds;
 use dpp::prelude::Identifier;
@@ -157,8 +157,9 @@ impl ContractBoundsWasm {
     }
 }
 
-impl_wasm_conversions!(
+impl_wasm_conversions_inner!(
     ContractBoundsWasm,
+    ContractBounds,
     ContractBounds,
     ContractBoundsObjectJs,
     ContractBoundsJSONJs

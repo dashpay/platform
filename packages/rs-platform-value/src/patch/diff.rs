@@ -323,4 +323,337 @@ mod tests {
         crate::patch(&mut left, &patch).unwrap();
         assert_eq!(left, right);
     }
+
+    // ---------------------------------------------------------------
+    // append_path: tilde and slash escaping
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn append_path_escapes_tilde() {
+        let mut path = String::from("/");
+        super::append_path(&mut path, "a~b");
+        assert_eq!(path, "/a~0b");
+    }
+
+    #[test]
+    fn append_path_escapes_slash() {
+        let mut path = String::from("/");
+        super::append_path(&mut path, "a/b");
+        assert_eq!(path, "/a~1b");
+    }
+
+    #[test]
+    fn append_path_escapes_both() {
+        let mut path = String::from("/");
+        super::append_path(&mut path, "~/");
+        assert_eq!(path, "/~0~1");
+    }
+
+    #[test]
+    fn append_path_no_escaping_needed() {
+        let mut path = String::from("/");
+        super::append_path(&mut path, "plain");
+        assert_eq!(path, "/plain");
+    }
+
+    #[test]
+    fn append_path_empty_key() {
+        let mut path = String::from("/");
+        super::append_path(&mut path, "");
+        assert_eq!(path, "/");
+    }
+
+    // ---------------------------------------------------------------
+    // diff: identical values returns empty patch
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn diff_identical_scalars_returns_empty() {
+        let v = platform_value!("hello");
+        let p = super::diff(&v, &v);
+        assert!(p.0.is_empty());
+    }
+
+    #[test]
+    fn diff_identical_maps_returns_empty() {
+        let v = platform_value!({"a": 1, "b": 2});
+        let p = super::diff(&v, &v);
+        assert!(p.0.is_empty());
+    }
+
+    #[test]
+    fn diff_identical_arrays_returns_empty() {
+        let v = platform_value!([1, 2, 3]);
+        let p = super::diff(&v, &v);
+        assert!(p.0.is_empty());
+    }
+
+    #[test]
+    fn diff_identical_nested_returns_empty() {
+        let v = platform_value!({"a": {"b": [1, 2]}});
+        let p = super::diff(&v, &v);
+        assert!(p.0.is_empty());
+    }
+
+    // ---------------------------------------------------------------
+    // diff: maps with added/removed/modified keys
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn diff_map_added_key() {
+        let left = platform_value!({"a": 1});
+        let right = platform_value!({"a": 1, "b": 2});
+        let p = super::diff(&left, &right);
+        assert_eq!(
+            p,
+            from_value(platform_value!([
+                { "op": "add", "path": "/b", "value": 2 },
+            ]))
+            .unwrap()
+        );
+    }
+
+    #[test]
+    fn diff_map_removed_key() {
+        let left = platform_value!({"a": 1, "b": 2});
+        let right = platform_value!({"a": 1});
+        let p = super::diff(&left, &right);
+        assert_eq!(
+            p,
+            from_value(platform_value!([
+                { "op": "remove", "path": "/b" },
+            ]))
+            .unwrap()
+        );
+    }
+
+    #[test]
+    fn diff_map_modified_key() {
+        let left = platform_value!({"a": 1});
+        let right = platform_value!({"a": 2});
+        let p = super::diff(&left, &right);
+        assert_eq!(
+            p,
+            from_value(platform_value!([
+                { "op": "replace", "path": "/a", "value": 2 },
+            ]))
+            .unwrap()
+        );
+    }
+
+    #[test]
+    fn diff_map_added_removed_modified() {
+        let left = platform_value!({"a": 1, "b": 2});
+        let right = platform_value!({"a": 10, "c": 3});
+        let mut p_left = left.clone();
+        let patch = super::diff(&left, &right);
+        crate::patch(&mut p_left, &patch).unwrap();
+        assert_eq!(p_left, right);
+    }
+
+    // ---------------------------------------------------------------
+    // diff: arrays with insertions/deletions
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn diff_array_append() {
+        let left = platform_value!([1, 2]);
+        let right = platform_value!([1, 2, 3]);
+        let patch = super::diff(&left, &right);
+        let mut doc = left.clone();
+        crate::patch(&mut doc, &patch).unwrap();
+        assert_eq!(doc, right);
+    }
+
+    #[test]
+    fn diff_array_removal_from_middle() {
+        let left = platform_value!([1, 2, 3]);
+        let right = platform_value!([1, 3]);
+        let patch = super::diff(&left, &right);
+        let mut doc = left.clone();
+        crate::patch(&mut doc, &patch).unwrap();
+        assert_eq!(doc, right);
+    }
+
+    #[test]
+    fn diff_array_complete_replacement() {
+        let left = platform_value!([1, 2, 3]);
+        let right = platform_value!([4, 5]);
+        let patch = super::diff(&left, &right);
+        let mut doc = left.clone();
+        crate::patch(&mut doc, &patch).unwrap();
+        assert_eq!(doc, right);
+    }
+
+    // ---------------------------------------------------------------
+    // diff: nested maps
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn diff_nested_map_modification() {
+        let left = platform_value!({
+            "outer": {
+                "inner": 1,
+                "keep": "same"
+            }
+        });
+        let right = platform_value!({
+            "outer": {
+                "inner": 99,
+                "keep": "same"
+            }
+        });
+        let p = super::diff(&left, &right);
+        assert_eq!(
+            p,
+            from_value(platform_value!([
+                { "op": "replace", "path": "/outer/inner", "value": 99 },
+            ]))
+            .unwrap()
+        );
+    }
+
+    #[test]
+    fn diff_nested_map_add_and_remove() {
+        let left = platform_value!({
+            "a": {
+                "b": 1,
+                "c": 2
+            }
+        });
+        let right = platform_value!({
+            "a": {
+                "c": 2,
+                "d": 3
+            }
+        });
+        let patch = super::diff(&left, &right);
+        let mut doc = left.clone();
+        crate::patch(&mut doc, &patch).unwrap();
+        assert_eq!(doc, right);
+    }
+
+    #[test]
+    fn diff_deeply_nested() {
+        let left = platform_value!({
+            "l1": {
+                "l2": {
+                    "l3": "old"
+                }
+            }
+        });
+        let right = platform_value!({
+            "l1": {
+                "l2": {
+                    "l3": "new"
+                }
+            }
+        });
+        let p = super::diff(&left, &right);
+        assert_eq!(
+            p,
+            from_value(platform_value!([
+                { "op": "replace", "path": "/l1/l2/l3", "value": "new" },
+            ]))
+            .unwrap()
+        );
+    }
+
+    // ---------------------------------------------------------------
+    // diff: tilde-escaped keys round-trip through patch
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn diff_tilde_key_round_trip() {
+        let left = platform_value!({
+            "a~b": 1
+        });
+        let right = platform_value!({
+            "a~b": 2
+        });
+        let mut doc = left.clone();
+        let patch = super::diff(&left, &right);
+        crate::patch(&mut doc, &patch).unwrap();
+        assert_eq!(doc, right);
+    }
+
+    #[test]
+    fn diff_slash_key_round_trip() {
+        let left = platform_value!({
+            "x/y": 10
+        });
+        let right = platform_value!({
+            "x/y": 20
+        });
+        let mut doc = left.clone();
+        let patch = super::diff(&left, &right);
+        crate::patch(&mut doc, &patch).unwrap();
+        assert_eq!(doc, right);
+    }
+
+    // ---------------------------------------------------------------
+    // diff: null values
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn diff_both_null_returns_empty() {
+        let p = super::diff(&Value::Null, &Value::Null);
+        assert!(p.0.is_empty());
+    }
+
+    #[test]
+    fn diff_null_to_value() {
+        let left = Value::Null;
+        let right = platform_value!(42);
+        let p = super::diff(&left, &right);
+        assert_eq!(
+            p,
+            from_value(platform_value!([
+                { "op": "replace", "path": "/", "value": 42 },
+            ]))
+            .unwrap()
+        );
+    }
+
+    #[test]
+    fn diff_value_to_null() {
+        let left = platform_value!(42);
+        let right = Value::Null;
+        let p = super::diff(&left, &right);
+        assert_eq!(
+            p,
+            from_value(platform_value!([
+                { "op": "replace", "path": "/", "value": null },
+            ]))
+            .unwrap()
+        );
+    }
+
+    // ---------------------------------------------------------------
+    // diff: mixed types
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn diff_scalar_to_map() {
+        let left = platform_value!(42);
+        let right = platform_value!({"a": 1});
+        let p = super::diff(&left, &right);
+        assert_eq!(
+            p,
+            from_value(platform_value!([
+                { "op": "replace", "path": "/", "value": {"a": 1} },
+            ]))
+            .unwrap()
+        );
+    }
+
+    #[test]
+    fn diff_array_with_nested_maps() {
+        let left = platform_value!([{"name": "alice"}, {"name": "bob"}]);
+        let right = platform_value!([{"name": "alice"}, {"name": "charlie"}]);
+        let patch = super::diff(&left, &right);
+        let mut doc = left.clone();
+        crate::patch(&mut doc, &patch).unwrap();
+        assert_eq!(doc, right);
+    }
 }

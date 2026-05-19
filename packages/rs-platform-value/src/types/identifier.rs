@@ -95,6 +95,11 @@ impl<'de> Deserialize<'de> for IdentifierBytes32 {
     where
         D: serde::Deserializer<'de>,
     {
+        // Both visitors accept strings AND bytes because serde's ContentDeserializer
+        // (used for internally tagged enums like `#[serde(tag = "$version")]`) defaults
+        // `is_human_readable` to `true` regardless of the parent deserializer's setting.
+        // This means bytes can arrive through the string path and vice versa.
+
         if deserializer.is_human_readable() {
             struct StringVisitor;
 
@@ -102,7 +107,7 @@ impl<'de> Deserialize<'de> for IdentifierBytes32 {
                 type Value = IdentifierBytes32;
 
                 fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                    formatter.write_str("a base58-encoded string")
+                    formatter.write_str("a base58-encoded string or 32-byte array")
                 }
 
                 fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
@@ -119,6 +124,18 @@ impl<'de> Deserialize<'de> for IdentifierBytes32 {
                     array.copy_from_slice(&bytes);
                     Ok(IdentifierBytes32(array))
                 }
+
+                fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>
+                where
+                    E: serde::de::Error,
+                {
+                    if v.len() != 32 {
+                        return Err(E::invalid_length(v.len(), &self));
+                    }
+                    let mut array = [0u8; 32];
+                    array.copy_from_slice(v);
+                    Ok(IdentifierBytes32(array))
+                }
             }
 
             deserializer.deserialize_string(StringVisitor)
@@ -129,7 +146,7 @@ impl<'de> Deserialize<'de> for IdentifierBytes32 {
                 type Value = IdentifierBytes32;
 
                 fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                    formatter.write_str("a byte array with length 32")
+                    formatter.write_str("a 32-byte array or base58-encoded string")
                 }
 
                 fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>
@@ -141,7 +158,21 @@ impl<'de> Deserialize<'de> for IdentifierBytes32 {
                     }
                     let mut array = [0u8; 32];
                     array.copy_from_slice(v);
+                    Ok(IdentifierBytes32(array))
+                }
 
+                fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+                where
+                    E: serde::de::Error,
+                {
+                    let bytes = bs58::decode(v)
+                        .into_vec()
+                        .map_err(|e| E::custom(format!("expected base 58: {}", e)))?;
+                    if bytes.len() != 32 {
+                        return Err(E::invalid_length(bytes.len(), &self));
+                    }
+                    let mut array = [0u8; 32];
+                    array.copy_from_slice(&bytes);
                     Ok(IdentifierBytes32(array))
                 }
             }
@@ -407,5 +438,32 @@ mod tests {
         let value = Value::Identifier(id.to_buffer());
         let new_id: Identifier = from_value(value).unwrap();
         assert_eq!(id, new_id);
+    }
+
+    /// Serde's ContentDeserializer (used for internally tagged enums) always
+    /// reports `is_human_readable() = true`, even when the parent serializer
+    /// was non-HR (like platform_value). This means bytes serialized by
+    /// platform_value arrive through the "human-readable" deserialization path.
+    /// Without `visit_bytes` on the StringVisitor, this would fail with
+    /// "invalid type: byte array, expected a base58-encoded string".
+    #[test]
+    fn test_identifier_in_tagged_enum_platform_value_roundtrip() {
+        #[derive(Debug, PartialEq, Serialize, Deserialize)]
+        #[serde(tag = "$version")]
+        enum Tagged {
+            #[serde(rename = "0")]
+            V0 { owner_id: IdentifierBytes32 },
+        }
+
+        let id = IdentifierBytes32([7u8; 32]);
+        let original = Tagged::V0 { owner_id: id };
+
+        // platform_value is non-HR, so IdentifierBytes32 serializes as bytes.
+        // But on deserialization, serde's ContentDeserializer (needed for the
+        // tag) reports is_human_readable()=true, sending bytes through the
+        // string visitor path.
+        let value = to_value(&original).expect("serialize to platform_value");
+        let restored: Tagged = from_value(value).expect("deserialize from platform_value");
+        assert_eq!(original, restored);
     }
 }

@@ -37,13 +37,13 @@ runs:
     - name: Set env variables
       shell: bash
       run: |
-        # Exit on any error  
-        set -euo pipefail  
-        # Validate AWS_PROFILE is not empty  
-        if [ -z "${{ inputs.profile }}" ]; then  
+        # Exit on any error
+        set -euo pipefail
+        # Validate AWS_PROFILE is not empty
+        if [ -z "${{ inputs.profile }}" ]; then
           echo "Error: AWS_PROFILE cannot be empty"
           exit 1
         fi
-        # Export variables        
+        # Export variables
         echo "AWS_PROFILE=${{ inputs.profile }}" >> $GITHUB_ENV
         echo "AWS_SHARED_CREDENTIALS_FILE=${HOME}/.aws/credentials" >> $GITHUB_ENV

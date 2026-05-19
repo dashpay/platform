@@ -81,4 +81,3 @@ wallet.getAccount().then((account) => {
 ## Licence
 
 [MIT](https://github.com/dashevo/wallet-lib/blob/master/LICENCE.md) © Dash Core Group, Inc.
-

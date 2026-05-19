@@ -22,7 +22,7 @@ impl DataContractValueConversionMethodsV0 for DataContractV1 {
             DATA_CONTRACT_IDENTIFIER_FIELDS_V0,
             ReplacementType::Identifier,
         )?;
-        let format_version = value.get_str("$format_version")?;
+        let format_version = value.get_str("$formatVersion")?;
         match format_version {
             "0" => {
                 let data_contract_data: DataContractInSerializationFormatV0 =

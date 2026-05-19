@@ -15,5 +15,3 @@ Examples :
 ```js
 wallet.fromHDPrivateKey('xprv9s21ZrQH143K37d2j9YW7snYGbAJJX9vzEZRwU7QEc4yP39t1Yc7t2Aw79aBBQWfLNqnpo9bFRnWoDv7xCPyBpLFHZvvrtVYfRv2zEBtnT5')
 ```
-
-

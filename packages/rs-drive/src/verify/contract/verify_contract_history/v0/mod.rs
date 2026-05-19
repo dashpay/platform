@@ -91,3 +91,151 @@ impl Drive {
         Ok((root_hash, Some(contracts)))
     }
 }
+
+#[cfg(feature = "server")]
+#[cfg(test)]
+mod tests {
+    use crate::drive::Drive;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::block::block_info::BlockInfo;
+    use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
+    use dpp::data_contract::config::v0::DataContractConfigSettersV0;
+    use dpp::data_contract::DataContract;
+    use dpp::tests::fixtures::get_data_contract_fixture;
+    use dpp::version::PlatformVersion;
+
+    fn apply_contract(drive: &Drive, contract: &DataContract, block_info: BlockInfo) {
+        let platform_version = PlatformVersion::latest();
+        drive
+            .apply_contract(contract, block_info, true, None, None, platform_version)
+            .expect("should apply contract");
+    }
+
+    #[test]
+    fn should_prove_and_verify_contract_history() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let mut contract = get_data_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+        contract.config_mut().set_keeps_history(true);
+        contract.config_mut().set_readonly(false);
+
+        let contract_id = contract.id().to_buffer();
+
+        // Apply original contract at time 1000
+        apply_contract(
+            &drive,
+            &contract,
+            BlockInfo {
+                time_ms: 1000,
+                height: 100,
+                core_height: 10,
+                epoch: Default::default(),
+            },
+        );
+
+        // Apply an update at time 2000
+        contract.increment_version();
+        apply_contract(
+            &drive,
+            &contract,
+            BlockInfo {
+                time_ms: 2000,
+                height: 101,
+                core_height: 11,
+                epoch: Default::default(),
+            },
+        );
+
+        // Prove history starting from time 0
+        let proof = drive
+            .prove_contract_history(contract_id, None, 0, Some(10), None, platform_version)
+            .expect("should prove contract history");
+
+        let (_root_hash, verified_history) = Drive::verify_contract_history(
+            &proof,
+            contract_id,
+            0,
+            Some(10),
+            None,
+            platform_version,
+        )
+        .expect("should verify contract history");
+
+        let history = verified_history.expect("history should be Some");
+        assert_eq!(history.len(), 2, "should have 2 history entries");
+
+        // Verify the entries exist at the expected timestamps
+        assert!(
+            history.contains_key(&1000),
+            "should have entry at time 1000"
+        );
+        assert!(
+            history.contains_key(&2000),
+            "should have entry at time 2000"
+        );
+
+        // The first entry should be version 1, second should be version 2
+        let first_contract = &history[&1000];
+        let second_contract = &history[&2000];
+        assert_eq!(first_contract.version(), 1);
+        assert_eq!(second_contract.version(), 2);
+    }
+
+    #[test]
+    fn should_prove_and_verify_contract_history_with_limit() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let mut contract = get_data_contract_fixture(None, 0, platform_version.protocol_version)
+            .data_contract_owned();
+        contract.config_mut().set_keeps_history(true);
+        contract.config_mut().set_readonly(false);
+
+        let contract_id = contract.id().to_buffer();
+
+        // Apply original contract at time 1000
+        apply_contract(
+            &drive,
+            &contract,
+            BlockInfo {
+                time_ms: 1000,
+                height: 100,
+                core_height: 10,
+                epoch: Default::default(),
+            },
+        );
+
+        // Apply updates at times 2000, 3000, 4000
+        for i in 1..=3u64 {
+            contract.increment_version();
+            apply_contract(
+                &drive,
+                &contract,
+                BlockInfo {
+                    time_ms: 1000 * (i + 1),
+                    height: 100 + i,
+                    core_height: 10 + i as u32,
+                    epoch: Default::default(),
+                },
+            );
+        }
+
+        // Prove with limit = 2 (should return 2 most recent entries from start)
+        let proof = drive
+            .prove_contract_history(contract_id, None, 0, Some(2), None, platform_version)
+            .expect("should prove contract history");
+
+        let (_root_hash, verified_history) =
+            Drive::verify_contract_history(&proof, contract_id, 0, Some(2), None, platform_version)
+                .expect("should verify contract history");
+
+        let history = verified_history.expect("history should be Some");
+        assert_eq!(
+            history.len(),
+            2,
+            "should have 2 history entries with limit=2"
+        );
+    }
+}

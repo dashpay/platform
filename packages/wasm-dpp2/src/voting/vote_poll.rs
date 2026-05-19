@@ -2,7 +2,7 @@ use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::utils::{ToSerdeJSONExt, try_from_options, try_from_options_with};
 use crate::{
-    impl_try_from_js_value, impl_try_from_options, impl_wasm_conversions, impl_wasm_type_info,
+    impl_try_from_js_value, impl_try_from_options, impl_wasm_conversions_inner, impl_wasm_type_info,
 };
 use dpp::bincode;
 use dpp::voting::vote_polls::VotePoll;
@@ -32,20 +32,26 @@ export interface VotePollOptions {
  * VotePoll serialized as a plain object.
  */
 export interface VotePollObject {
-    contractId: Uint8Array;
-    documentTypeName: string;
-    indexName: string;
-    indexValues: any[];
+    type: "contestedDocumentResourceVotePoll";
+    data: {
+        contractId: Uint8Array;
+        documentTypeName: string;
+        indexName: string;
+        indexValues: any[];
+    };
 }
 
 /**
  * VotePoll serialized as JSON.
  */
 export interface VotePollJSON {
-    contractId: string;
-    documentTypeName: string;
-    indexName: string;
-    indexValues: any[];
+    type: "contestedDocumentResourceVotePoll";
+    data: {
+        contractId: string;
+        documentTypeName: string;
+        indexName: string;
+        indexValues: any[];
+    };
 }
 "#;
 
@@ -231,5 +237,11 @@ impl VotePollWasm {
 
 impl_try_from_js_value!(VotePollWasm, "VotePoll");
 impl_try_from_options!(VotePollWasm);
-impl_wasm_conversions!(VotePollWasm, VotePoll, VotePollObjectJs, VotePollJSONJs);
+impl_wasm_conversions_inner!(
+    VotePollWasm,
+    VotePoll,
+    VotePoll,
+    VotePollObjectJs,
+    VotePollJSONJs
+);
 impl_wasm_type_info!(VotePollWasm, VotePoll);

@@ -134,3 +134,63 @@ impl Drive {
         Ok((root_hash, maybe_identity))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::drive::identity::key::fetch::KeyRequestType;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::block::block_info::BlockInfo;
+    use dpp::identity::accessors::IdentityGettersV0;
+    use dpp::identity::Identity;
+
+    #[test]
+    fn should_prove_and_verify_identity_keys() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let identity = Identity::random_identity(5, Some(14), platform_version)
+            .expect("expected a random identity");
+
+        let identity_id = identity.id().to_buffer();
+
+        drive
+            .add_new_identity(
+                identity.clone(),
+                false,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to add an identity");
+
+        let key_request = IdentityKeysRequest {
+            identity_id,
+            request_type: KeyRequestType::AllKeys,
+            limit: None,
+            offset: None,
+        };
+
+        let proof = drive
+            .prove_identity_keys(key_request.clone(), None, platform_version)
+            .expect("should not error when proving identity keys");
+
+        let (_root_hash, proved_partial_identity) = Drive::verify_identity_keys_by_identity_id(
+            proof.as_slice(),
+            key_request,
+            false, // with_revision
+            false, // with_balance
+            false, // is_proof_subset
+            platform_version,
+        )
+        .expect("expected to verify identity keys");
+
+        let partial_identity = proved_partial_identity.expect("expected a partial identity");
+
+        assert_eq!(partial_identity.id, identity.id());
+        assert_eq!(partial_identity.loaded_public_keys, *identity.public_keys());
+        assert_eq!(partial_identity.balance, None);
+        assert_eq!(partial_identity.revision, None);
+    }
+}

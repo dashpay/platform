@@ -5,12 +5,14 @@ run:
   - packages/js-dash-sdk/**
   - packages/js-dapi-client/**
   - packages/wasm-dpp/**
+  - packages/wasm-dpp2/**
   - packages/dapi-grpc/**
   - packages/js-grpc-common/**
   - packages/dash-spv/**
   - packages/wallet-lib/**
   # Rust core components that affect local network behavior
   - packages/rs-dpp/**
+  - packages/rs-dpp-json-convertible-derive/**
   - packages/rs-drive/**
   - packages/rs-drive-abci/**
   - packages/rs-dapi-client/**

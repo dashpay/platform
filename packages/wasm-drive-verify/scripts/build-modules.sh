@@ -35,7 +35,7 @@ EOF
 
 # Create core module (serialization utilities)
 cat > dist/core.js << 'EOF'
-import init, { 
+import init, {
   serialize_to_bytes,
   deserialize_from_bytes
 } from '../pkg/wasm_drive_verify.js';

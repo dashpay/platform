@@ -9,23 +9,71 @@ description = "Platform wallet with identity management support"
 [dependencies]
 # Dash Platform packages
 dpp = { path = "../rs-dpp" }
+dash-sdk = { path = "../rs-sdk", default-features = false, features = ["dashpay-contract", "dpns-contract"] }
+platform-encryption = { path = "../rs-platform-encryption" }
 
 # Key wallet dependencies (from rust-dashcore)
 key-wallet = { workspace = true }
-key-wallet-manager = { workspace = true, optional = true }
+key-wallet-manager = { workspace = true, features = [] }
+dash-spv = { workspace = true }
 
 # Core dependencies
 dashcore = { workspace = true }
 
 # Standard dependencies
 thiserror = "1.0"
+async-trait = "0.1"
+arc-swap = "1"
 
 # Collections
-indexmap = "2.0"
+bimap = "0.6"
+
+# Async runtime
+tokio = { version = "1", features = ["sync", "rt", "time", "macros"] }
+tokio-util = { version = "0.7.12" }
+
+# Logging
+tracing = "0.1"
+
+# Encoding
+hex = "0.4"
+bs58 = "0.5"
+serde_json = "1.0"
+
+# Image processing (DIP-15 avatar hash + fingerprint)
+sha2 = "0.10"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif"] }
+
+# Security
+zeroize = "1"
+
+# Shielded pool (optional, behind `shielded` feature)
+grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "352c2f5504fba8795e8ed1056753bfd73c13b4cc", optional = true }
+zip32 = { version = "0.2.0", default-features = false, optional = true }
+
+[dev-dependencies]
+rand = "0.8"
+static_assertions = "1.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+# Re-enable the SDK with mocks feature for test-only mock builders;
+# the non-test build keeps the leaner default-feature SDK above.
+dash-sdk = { path = "../rs-sdk", default-features = false, features = ["dashpay-contract", "dpns-contract", "mocks"] }
 
 
 [features]
-default = ["bls", "eddsa", "manager"]
-bls = ["key-wallet/bls"]
-eddsa = ["key-wallet/eddsa"]
-manager = ["key-wallet-manager"]
+default = ["bls", "eddsa"]
+bls = ["key-wallet/bls", "key-wallet-manager/bls"]
+eddsa = ["key-wallet/eddsa", "key-wallet-manager/eddsa"]
+shielded = ["dep:grovedb-commitment-tree", "dep:zip32", "dash-sdk/shielded", "dpp/shielded-client"]
+# Forward to the upstream `key-wallet` / `key-wallet-manager`
+# `keep-finalized-transactions` feature. With it OFF (the default),
+# chainlocked transactions are evicted from the in-memory
+# `transactions` map and only their txids are kept (in
+# `finalized_txids`) for dedup; tx history is delivered through the
+# event channel. Turn ON to keep the full `TransactionRecord` for
+# finalized transactions in memory for the wallet's lifetime — useful
+# for debug surfaces that page through history.
+keep-finalized-transactions = [
+    "key-wallet/keep-finalized-transactions",
+    "key-wallet-manager/keep-finalized-transactions",
+]

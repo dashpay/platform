@@ -108,6 +108,8 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V7: DriveAbciMethodVersions = DriveAbciMeth
         validate_fees_of_event: 0,
         store_address_balances_to_recent_block_storage: Some(0), // changed
         cleanup_recent_block_storage_address_balances: Some(0), // cleanup enabled when store is enabled
+        store_nullifiers_to_recent_block_storage: Some(0),
+        cleanup_recent_block_storage_nullifiers: Some(0),
     },
     epoch: DriveAbciEpochMethodVersions {
         gather_epoch_info: 0,
@@ -122,6 +124,8 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V7: DriveAbciMethodVersions = DriveAbciMeth
         validator_set_update: 2,
         should_checkpoint: Some(0),
         update_checkpoints: Some(0),
+        record_shielded_pool_anchor: Some(0),
+        prune_shielded_pool_anchors: Some(0),
     },
     platform_state_storage: DriveAbciPlatformStateStorageMethodVersions {
         fetch_platform_state: 0,

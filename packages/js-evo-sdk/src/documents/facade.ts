@@ -9,7 +9,7 @@ export class DocumentsFacade {
   }
 
   // Query many documents
-  async query(query: wasm.DocumentsQuery): Promise<Map<wasm.Identifier, wasm.Document | undefined>> {
+  async query(query: wasm.DocumentsQuery): Promise<Map<string, wasm.Document | undefined>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getDocuments(query);
   }
@@ -17,7 +17,7 @@ export class DocumentsFacade {
   async queryWithProof(
     query: wasm.DocumentsQuery,
   ): Promise<wasm.ProofMetadataResponseTyped<
-    Map<wasm.Identifier, wasm.Document | undefined>
+    Map<string, wasm.Document | undefined>
   >> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getDocumentsWithProofInfo(query);

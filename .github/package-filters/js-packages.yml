@@ -42,6 +42,12 @@
   - packages/rs-platform-version/**
   - packages/rs-platform-versioning/**
   - packages/rs-dpp/**
+  - packages/rs-dpp-json-convertible-derive/**
+
+'@dashevo/wasm-dpp2': &wasm-dpp2
+  - .github/workflows/tests*
+  - packages/wasm-dpp2/**
+  - *wasm-dpp
 
 '@dashevo/dapi-grpc': &dapi-grpc
   - .github/workflows/tests*
@@ -108,5 +114,3 @@ dashmate:
   - .github/workflows/tests*
   - packages/js-evo-sdk/**
   - *wasm-sdk
-
-

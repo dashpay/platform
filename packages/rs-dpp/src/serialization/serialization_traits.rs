@@ -4,7 +4,10 @@
 ))]
 use crate::identity::KeyType;
 
-use serde::{Deserialize, Serialize};
+use serde::de::DeserializeOwned;
+use serde::Serialize;
+#[cfg(feature = "json-conversion")]
+use serde_json::Value as JsonValue;
 
 #[cfg(feature = "message-signature-verification")]
 use crate::validation::SimpleConsensusValidationResult;
@@ -135,12 +138,13 @@ pub trait PlatformLimitDeserializableFromVersionedStructure {
         Self: Sized;
 }
 
-pub trait ValueConvertible<'a>: Serialize + Deserialize<'a> {
+#[cfg(feature = "value-conversion")]
+pub trait ValueConvertible: Serialize + DeserializeOwned {
     fn to_object(&self) -> Result<Value, ProtocolError>
     where
-        Self: Sized + Clone,
+        Self: Sized,
     {
-        platform_value::to_value(self.clone()).map_err(ProtocolError::ValueError)
+        platform_value::to_value(self).map_err(ProtocolError::ValueError)
     }
 
     fn into_object(self) -> Result<Value, ProtocolError>
@@ -162,6 +166,21 @@ pub trait ValueConvertible<'a>: Serialize + Deserialize<'a> {
         Self: Sized,
     {
         platform_value::from_value(value.clone()).map_err(ProtocolError::ValueError)
+    }
+}
+
+/// Convert to/from JSON using human-readable serde (Identifier=base58, Bytes=base64).
+///
+/// This trait produces clean `serde_json::Value` with native number types.
+/// Any JS-boundary concerns (large number stringification) are handled by the WASM layer.
+#[cfg(feature = "json-conversion")]
+pub trait JsonConvertible: Serialize + DeserializeOwned {
+    fn to_json(&self) -> Result<JsonValue, ProtocolError> {
+        serde_json::to_value(self).map_err(|e| ProtocolError::EncodingError(e.to_string()))
+    }
+
+    fn from_json(json: JsonValue) -> Result<Self, ProtocolError> {
+        serde_json::from_value(json).map_err(|e| ProtocolError::DecodingError(e.to_string()))
     }
 }
 

@@ -61,7 +61,7 @@ describe('e2e', () => {
           requiresIdentityDecryptionBoundedKey: 2,
           indices: [
             {
-              name: 'onwerIdToUserId',
+              name: 'ownerIdToUserId',
               properties: [
                 { $ownerId: 'asc' },
                 { toUserId: 'asc' },

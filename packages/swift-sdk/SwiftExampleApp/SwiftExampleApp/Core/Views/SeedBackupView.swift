@@ -3,24 +3,24 @@ import SwiftUI
 struct SeedBackupView: View {
     let mnemonic: String
     let onConfirm: () -> Void
-    
+
     @Environment(\.dismiss) private var dismiss
     @State private var wroteItDown: Bool = false
     @State private var isSubmitting: Bool = false
-    
+
     private var words: [String] {
         mnemonic.split(separator: " ").map(String.init)
     }
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Recovery Phrase")
                 .font(.title2.bold())
-            
+
             Text("Write down these 12 words in order and store them somewhere safe. Do not take screenshots or share them with anyone.")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
-            
+
             // Display words in a grid with indices
             let columns = [GridItem(.flexible()), GridItem(.flexible())]
             LazyVGrid(columns: columns, spacing: 8) {
@@ -41,15 +41,16 @@ struct SeedBackupView: View {
                 }
             }
             .padding(.top, 8)
-            
+
             Toggle(isOn: $wroteItDown) {
                 Text("I wrote it down")
                     .font(.body)
             }
+            .accessibilityIdentifier("seedBackup.wroteItDownToggle")
             .padding(.top, 8)
-            
+
             Spacer()
-            
+
             HStack {
                 Button("Back") {
                     dismiss()
@@ -58,7 +59,7 @@ struct SeedBackupView: View {
                 .frame(maxWidth: .infinity)
                 .background(Color(.secondarySystemBackground))
                 .cornerRadius(10)
-                
+
                 Button("Create Wallet") {
                     guard !isSubmitting else { return }
                     isSubmitting = true
@@ -70,6 +71,7 @@ struct SeedBackupView: View {
                 .foregroundColor(.white)
                 .cornerRadius(10)
                 .disabled(!wroteItDown || isSubmitting)
+                .accessibilityIdentifier("seedBackup.createWalletButton")
             }
         }
         .padding()

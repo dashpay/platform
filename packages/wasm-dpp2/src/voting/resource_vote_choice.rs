@@ -1,7 +1,7 @@
 use crate::error::WasmDppResult;
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
 use crate::{
-    impl_try_from_js_value, impl_try_from_options, impl_wasm_conversions, impl_wasm_type_info,
+    impl_try_from_js_value, impl_try_from_options, impl_wasm_conversions_inner, impl_wasm_type_info,
 };
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -11,18 +11,18 @@ const TS_TYPES: &str = r#"
 /**
  * ResourceVoteChoice serialized as a plain object.
  */
-export interface ResourceVoteChoiceObject {
-    voteType: "TowardsIdentity" | "Abstain" | "Lock";
-    value?: Uint8Array;
-}
+export type ResourceVoteChoiceObject =
+    | { type: "towardsIdentity"; data: Uint8Array }
+    | { type: "abstain" }
+    | { type: "lock" };
 
 /**
  * ResourceVoteChoice serialized as JSON.
  */
-export interface ResourceVoteChoiceJSON {
-    voteType: "TowardsIdentity" | "Abstain" | "Lock";
-    value?: string;
-}
+export type ResourceVoteChoiceJSON =
+    | { type: "towardsIdentity"; data: string }
+    | { type: "abstain" }
+    | { type: "lock" };
 "#;
 
 #[wasm_bindgen]
@@ -91,8 +91,9 @@ impl ResourceVoteChoiceWasm {
 
 impl_try_from_js_value!(ResourceVoteChoiceWasm, "ResourceVoteChoice");
 impl_try_from_options!(ResourceVoteChoiceWasm);
-impl_wasm_conversions!(
+impl_wasm_conversions_inner!(
     ResourceVoteChoiceWasm,
+    ResourceVoteChoice,
     ResourceVoteChoice,
     ResourceVoteChoiceObjectJs,
     ResourceVoteChoiceJSONJs

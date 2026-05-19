@@ -5,8 +5,9 @@ mod transfer_tests {
     use dpp::tokens::token_payment_info::v0::TokenPaymentInfoV0;
     use dpp::tokens::token_payment_info::TokenPaymentInfo;
 
-    #[test]
-    fn test_document_transfer_on_document_type_that_is_transferable_that_has_no_owner_indices() {
+    #[tokio::test]
+    async fn test_document_transfer_on_document_type_that_is_transferable_that_has_no_owner_indices(
+    ) {
         let mut platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
@@ -76,6 +77,7 @@ mod transfer_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition = documents_batch_create_transition
@@ -121,6 +123,7 @@ mod transfer_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition for transfer");
 
         let documents_batch_transfer_serialized_transition = documents_batch_transfer_transition
@@ -177,8 +180,8 @@ mod transfer_tests {
         );
     }
 
-    #[test]
-    fn test_document_transfer_on_document_type_that_is_transferable_before_creator_id() {
+    #[tokio::test]
+    async fn test_document_transfer_on_document_type_that_is_transferable_before_creator_id() {
         let platform_version = PlatformVersion::get(9).unwrap();
 
         let mut platform = TestPlatformBuilder::new()
@@ -248,6 +251,7 @@ mod transfer_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition = documents_batch_create_transition
@@ -340,6 +344,7 @@ mod transfer_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition for transfer");
 
         let documents_batch_transfer_serialized_transition = documents_batch_transfer_transition
@@ -421,8 +426,8 @@ mod transfer_tests {
         );
     }
 
-    #[test]
-    fn test_document_transfer_on_document_type_that_is_transferable() {
+    #[tokio::test]
+    async fn test_document_transfer_on_document_type_that_is_transferable() {
         let platform_version = PlatformVersion::latest();
         let (mut platform, contract) = TestPlatformBuilder::new()
             .build_with_mock_rpc()
@@ -472,6 +477,7 @@ mod transfer_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition = documents_batch_create_transition
@@ -588,6 +594,7 @@ mod transfer_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition for transfer");
 
         let documents_batch_transfer_serialized_transition = documents_batch_transfer_transition
@@ -674,8 +681,8 @@ mod transfer_tests {
         );
     }
 
-    #[test]
-    fn test_document_transfer_on_document_type_that_is_transferable_contract_v0() {
+    #[tokio::test]
+    async fn test_document_transfer_on_document_type_that_is_transferable_contract_v0() {
         // With a contract v0 we should not be adding the creator id
         // We do this because the creator id can not be serialized in document serialization v0
         // And document serialization v0 is necessary when the data contract is v0 or the data
@@ -748,6 +755,7 @@ mod transfer_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition = documents_batch_create_transition
@@ -840,6 +848,7 @@ mod transfer_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition for transfer");
 
         let documents_batch_transfer_serialized_transition = documents_batch_transfer_transition
@@ -919,8 +928,8 @@ mod transfer_tests {
         );
     }
 
-    #[test]
-    fn test_document_transfer_on_document_type_that_is_not_transferable() {
+    #[tokio::test]
+    async fn test_document_transfer_on_document_type_that_is_not_transferable() {
         let platform_version = PlatformVersion::latest();
         let (mut platform, contract) = TestPlatformBuilder::new()
             .build_with_mock_rpc()
@@ -968,6 +977,7 @@ mod transfer_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition = documents_batch_create_transition
@@ -1060,6 +1070,7 @@ mod transfer_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition for transfer");
 
         let documents_batch_transfer_serialized_transition = documents_batch_transfer_transition
@@ -1112,10 +1123,17 @@ mod transfer_tests {
         assert_eq!(query_receiver_results.documents().len(), 0);
     }
 
-    #[test]
-    fn test_document_transfer_that_does_not_yet_exist() {
-        let platform_version = PlatformVersion::latest();
+    /// Helper for the paired transfer-of-missing-document test. Same scenario
+    /// at PROTOCOL_VERSION_11 (legacy bump-only fee) and PROTOCOL_VERSION_12
+    /// (fee covers fetch + validation work).
+    async fn run_document_transfer_that_does_not_yet_exist_at_protocol_version(
+        protocol_version: dpp::version::ProtocolVersion,
+        expected_processing_fee: dpp::fee::Credits,
+    ) {
+        let platform_version = PlatformVersion::get(protocol_version)
+            .expect("expected platform version for the requested protocol_version");
         let (mut platform, contract) = TestPlatformBuilder::new()
+            .with_initial_protocol_version(protocol_version)
             .build_with_mock_rpc()
             .set_initial_state_structure()
             .with_crypto_card_game_transfer_only(Transferable::Never);
@@ -1210,6 +1228,7 @@ mod transfer_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition for transfer");
 
         let documents_batch_transfer_serialized_transition = documents_batch_transfer_transition
@@ -1244,7 +1263,12 @@ mod transfer_tests {
 
         assert_eq!(processing_result.valid_count(), 0);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 36200);
+        assert_eq!(
+            processing_result.aggregated_fees().processing_fee,
+            expected_processing_fee,
+            "PROTOCOL_VERSION_{}: processing fee must match the version-specific baseline",
+            protocol_version,
+        );
 
         let query_sender_results = platform
             .drive
@@ -1262,8 +1286,26 @@ mod transfer_tests {
         assert_eq!(query_receiver_results.documents().len(), 0);
     }
 
-    #[test]
-    fn test_document_delete_after_transfer() {
+    /// PROTOCOL_VERSION_12+: bump emission charges the user for the fetch
+    /// that ran before the failure.
+    #[tokio::test]
+    async fn test_document_transfer_that_does_not_yet_exist() {
+        run_document_transfer_that_does_not_yet_exist_at_protocol_version(
+            PlatformVersion::latest().protocol_version,
+            517400,
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_11: pre-fix bump-only fee. Pinned so v11 chain
+    /// history stays bit-for-bit reproducible.
+    #[tokio::test]
+    async fn test_document_transfer_that_does_not_yet_exist_protocol_version_11() {
+        run_document_transfer_that_does_not_yet_exist_at_protocol_version(11, 36200).await;
+    }
+
+    #[tokio::test]
+    async fn test_document_delete_after_transfer() {
         let platform_version = PlatformVersion::latest();
         let (mut platform, contract) = TestPlatformBuilder::new()
             .build_with_mock_rpc()
@@ -1314,6 +1356,7 @@ mod transfer_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition = documents_batch_create_transition
@@ -1406,6 +1449,7 @@ mod transfer_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition for transfer");
 
         let documents_batch_transfer_serialized_transition = documents_batch_transfer_transition
@@ -1473,6 +1517,7 @@ mod transfer_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_deletion_serialized_transition = documents_batch_deletion_transition
@@ -1526,8 +1571,8 @@ mod transfer_tests {
                 .join(" | ")
         );
     }
-    #[test]
-    fn test_document_transfer_on_document_that_needs_a_token() {
+    #[tokio::test]
+    async fn test_document_transfer_on_document_that_needs_a_token() {
         let platform_version = PlatformVersion::latest();
         let mut platform = TestPlatformBuilder::new()
             .with_latest_protocol_version()
@@ -1609,6 +1654,7 @@ mod transfer_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition = documents_batch_create_transition
@@ -1707,6 +1753,7 @@ mod transfer_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition for transfer");
 
         let documents_batch_transfer_serialized_transition = documents_batch_transfer_transition
@@ -1773,8 +1820,8 @@ mod transfer_tests {
         assert_eq!(token_balance, Some(4));
     }
 
-    #[test]
-    fn test_document_creator_id_unique_index_enforcement_during_transfer() {
+    #[tokio::test]
+    async fn test_document_creator_id_unique_index_enforcement_during_transfer() {
         // This test verifies that a unique index on creator_id is properly enforced throughout
         // the complete document lifecycle, ensuring that only one document per creator can exist
         // at any time, regardless of ownership changes.
@@ -1877,6 +1924,7 @@ mod transfer_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition1 = documents_batch_create_transition1
@@ -1939,6 +1987,7 @@ mod transfer_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition2 = documents_batch_create_transition2
@@ -1987,6 +2036,7 @@ mod transfer_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition for transfer");
 
         let documents_batch_transfer_serialized_transition = documents_batch_transfer_transition
@@ -2073,6 +2123,7 @@ mod transfer_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition3 = documents_batch_create_transition3
@@ -2121,6 +2172,7 @@ mod transfer_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch deletion transition");
 
         let documents_batch_deletion_serialized_transition = documents_batch_deletion_transition
@@ -2197,6 +2249,7 @@ mod transfer_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition4 = documents_batch_create_transition4
@@ -2283,8 +2336,8 @@ mod transfer_tests {
         );
     }
 
-    #[test]
-    fn test_document_owner_and_creator_id_unique_index_enforcement_during_transfer() {
+    #[tokio::test]
+    async fn test_document_owner_and_creator_id_unique_index_enforcement_during_transfer() {
         // This test verifies that a unique compound index on (owner_id, creator_id) is properly
         // enforced throughout the document lifecycle, allowing a creator to have multiple documents
         // but preventing duplicate (owner, creator) combinations.
@@ -2395,6 +2448,7 @@ mod transfer_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition1 = documents_batch_create_transition1
@@ -2457,6 +2511,7 @@ mod transfer_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition2 = documents_batch_create_transition2
@@ -2506,6 +2561,7 @@ mod transfer_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition for transfer");
 
         let documents_batch_transfer_serialized_transition1 = documents_batch_transfer_transition1
@@ -2568,6 +2624,7 @@ mod transfer_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition");
 
         let documents_batch_create_serialized_transition3 = documents_batch_create_transition3
@@ -2617,6 +2674,7 @@ mod transfer_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition for transfer");
 
         let documents_batch_transfer_serialized_transition3 = documents_batch_transfer_transition3
@@ -2667,6 +2725,7 @@ mod transfer_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition for transfer");
 
         let documents_batch_transfer_serialized_transition_back =
@@ -2715,6 +2774,7 @@ mod transfer_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch deletion transition");
 
         let documents_batch_deletion_serialized_transition = documents_batch_deletion_transition
@@ -2763,6 +2823,7 @@ mod transfer_tests {
                 platform_version,
                 None,
             )
+            .await
             .expect("expect to create documents batch transition for transfer");
 
         let documents_batch_transfer_serialized_transition_back2 =

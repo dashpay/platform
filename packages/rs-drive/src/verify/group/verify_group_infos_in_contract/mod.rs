@@ -75,3 +75,38 @@ impl Drive {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dpp::version::PlatformVersion;
+
+    #[test]
+    fn test_verify_group_infos_in_contract_unknown_version_mismatch() {
+        let mut platform_version = PlatformVersion::latest().clone();
+        platform_version
+            .drive
+            .methods
+            .verify
+            .group
+            .verify_group_infos_in_contract = 255;
+
+        let result = Drive::verify_group_infos_in_contract::<Vec<(GroupContractPosition, Group)>>(
+            &[],
+            Identifier::from([0u8; 32]),
+            None,
+            None,
+            false,
+            &platform_version,
+        );
+
+        assert!(
+            matches!(
+                result,
+                Err(Error::Drive(DriveError::UnknownVersionMismatch { .. }))
+            ),
+            "expected UnknownVersionMismatch, got {:?}",
+            result,
+        );
+    }
+}

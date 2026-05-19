@@ -13,7 +13,7 @@ DAPI is designed to be run on the Dash masternode network, providing a decentral
 
 ## Documentation
 
-DAPI documentaion is available in the [doc](./doc/index.md) directory and [website](https://docs.dash.org/projects/platform/en/stable/docs/explanations/dapi.html).
+DAPI documentation is available in the [doc](./doc/index.md) directory and [website](https://docs.dash.org/projects/platform/en/stable/docs/explanations/dapi.html).
 
 ## License
 

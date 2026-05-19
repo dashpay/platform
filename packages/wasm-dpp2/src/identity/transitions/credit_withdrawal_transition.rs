@@ -4,7 +4,7 @@ use crate::core::core_script::CoreScriptWasm;
 use crate::enums::keys::purpose::PurposeWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::{IdentifierLikeJs, IdentifierWasm};
-use crate::impl_wasm_conversions;
+use crate::impl_wasm_conversions_inner;
 use crate::impl_wasm_type_info;
 use crate::state_transitions::StateTransitionWasm;
 use crate::utils::{
@@ -20,8 +20,8 @@ use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCredit
 use dpp::state_transition::identity_credit_withdrawal_transition::accessors::IdentityCreditWithdrawalTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_withdrawal_transition::v1::IdentityCreditWithdrawalTransitionV1;
 use dpp::state_transition::{
-    StateTransition, StateTransitionIdentitySigned, StateTransitionLike,
-    StateTransitionSingleSigned,
+    StateTransition, StateTransitionHasUserFeeIncrease, StateTransitionIdentitySigned,
+    StateTransitionLike, StateTransitionSingleSigned,
 };
 use serde::Deserialize;
 use wasm_bindgen::JsValue;
@@ -29,7 +29,7 @@ use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(typescript_custom_section)]
 const CREDIT_WITHDRAWAL_OPTIONS_TS: &str = r#"
-export type CreditWithdrawalTransitionPoolingLike = CreditWithdrawalTransitionPooling | string | number;
+export type CreditWithdrawalTransitionPoolingLike = PoolingWasm | string | number;
 
 export interface IdentityCreditWithdrawalTransitionOptions {
     identityId: IdentifierLike;
@@ -48,7 +48,7 @@ export interface IdentityCreditWithdrawalTransitionObject {
     identityId: Uint8Array;
     amount: bigint;
     coreFeePerByte: number;
-    pooling: CreditWithdrawalTransitionPooling;
+    pooling: PoolingWasm;
     outputScript?: Uint8Array;
     nonce: bigint;
     userFeeIncrease: number;
@@ -61,11 +61,11 @@ export interface IdentityCreditWithdrawalTransitionObject {
  */
 export interface IdentityCreditWithdrawalTransitionJSON {
     identityId: string;
-    amount: string;
+    amount: number | string;
     coreFeePerByte: number;
     pooling: string;
     outputScript?: string;
-    nonce: string;
+    nonce: number | string;
     userFeeIncrease: number;
     signature?: string;
     signaturePublicKeyId?: number;
@@ -100,6 +100,18 @@ struct IdentityCreditWithdrawalTransitionOptionsInput {
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 #[serde(transparent)]
 pub struct IdentityCreditWithdrawalTransitionWasm(IdentityCreditWithdrawalTransition);
+
+impl From<IdentityCreditWithdrawalTransition> for IdentityCreditWithdrawalTransitionWasm {
+    fn from(val: IdentityCreditWithdrawalTransition) -> Self {
+        IdentityCreditWithdrawalTransitionWasm(val)
+    }
+}
+
+impl From<IdentityCreditWithdrawalTransitionWasm> for IdentityCreditWithdrawalTransition {
+    fn from(val: IdentityCreditWithdrawalTransitionWasm) -> Self {
+        val.0
+    }
+}
 
 #[wasm_bindgen(js_class = IdentityCreditWithdrawalTransition)]
 impl IdentityCreditWithdrawalTransitionWasm {
@@ -344,8 +356,9 @@ impl IdentityCreditWithdrawalTransitionWasm {
     }
 }
 
-impl_wasm_conversions!(
+impl_wasm_conversions_inner!(
     IdentityCreditWithdrawalTransitionWasm,
+    IdentityCreditWithdrawalTransition,
     IdentityCreditWithdrawalTransition,
     IdentityCreditWithdrawalTransitionObjectJs,
     IdentityCreditWithdrawalTransitionJSONJs

@@ -1,7 +1,7 @@
 use crate::asset_lock_proof::outpoint::OutPointWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
-use crate::impl_wasm_conversions;
+use crate::impl_wasm_conversions_inner;
 use crate::impl_wasm_type_info;
 use crate::utils::try_to_u32;
 use dpp::dashcore::consensus::{deserialize, serialize};
@@ -129,8 +129,9 @@ impl InstantAssetLockProofWasm {
     }
 }
 
-impl_wasm_conversions!(
+impl_wasm_conversions_inner!(
     InstantAssetLockProofWasm,
+    InstantAssetLockProof,
     InstantAssetLockProof,
     InstantAssetLockProofObjectJs,
     InstantAssetLockProofJSONJs

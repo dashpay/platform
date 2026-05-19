@@ -16,7 +16,7 @@ const CONSTANTS = {
   // All testnet coins are 1's
   DIP9_TESTNET_ROOT_PATH: "m/9'/1'",
   // The max amount of an UTXO to be considered too big to be used in the tx before exploring
-  // smaller alternatives (proportinal to tx amount).
+  // smaller alternatives (proportional to tx amount).
   UTXO_SELECTION_MAX_SINGLE_UTXO_FACTOR: 2,
   // The minimum amount an UTXO need to contribute proportional to tx amount.
   UTXO_SELECTION_MIN_TX_AMOUNT_VS_UTXO_FACTOR: 0.1,

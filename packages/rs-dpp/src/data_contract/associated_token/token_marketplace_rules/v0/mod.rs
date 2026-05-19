@@ -3,6 +3,8 @@ mod accessors;
 use crate::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
 use crate::data_contract::change_control_rules::v0::ChangeControlRulesV0;
 use crate::data_contract::change_control_rules::ChangeControlRules;
+#[cfg(feature = "json-conversion")]
+use crate::serialization::json_safe_fields;
 use bincode::Encode;
 use platform_serialization::de::Decode;
 use serde::{Deserialize, Serialize};
@@ -16,6 +18,7 @@ pub enum TokenTradeMode {
     NotTradeable,
 }
 
+#[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(Serialize, Deserialize, Decode, Encode, Debug, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct TokenMarketplaceRulesV0 {

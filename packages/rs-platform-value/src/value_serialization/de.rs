@@ -446,6 +446,7 @@ impl<'de> de::Deserializer<'de> for Deserializer<Value> {
         visitor: V,
     ) -> Result<V::Value, Self::Error> {
         match self.0 {
+            // Existing CBOR enum types — keep for backward compatibility
             Value::EnumU8(x) => {
                 let enum_variant = x.first().ok_or_else(|| {
                     de::Error::invalid_length(0, &"at least one variant expected")
@@ -460,7 +461,36 @@ impl<'de> de::Deserializer<'de> for Deserializer<Value> {
                     .clone();
                 visitor.visit_enum(variant_name.into_deserializer())
             }
-            _ => Err(de::Error::invalid_type((&self.0).into(), &"enum")),
+
+            // String → unit variant (e.g., "Abstain", "Lock", "NoWinner")
+            Value::Text(variant) => visitor.visit_enum(ValueEnumDeserializer {
+                variant,
+                value: None,
+            }),
+
+            // Single-key map → externally tagged variant
+            // e.g., {"TowardsIdentity": <data>} or {"ResourceVote": {...}}
+            Value::Map(entries) if entries.len() == 1 => {
+                let (key, value) = entries
+                    .into_iter()
+                    .next()
+                    .expect("guard guarantees len == 1");
+                let variant = match key {
+                    Value::Text(s) => s,
+                    other => {
+                        return Err(de::Error::invalid_type(
+                            (&other).into(),
+                            &"string variant name",
+                        ))
+                    }
+                };
+                visitor.visit_enum(ValueEnumDeserializer {
+                    variant,
+                    value: Some(value),
+                })
+            }
+
+            other => Err(de::Error::invalid_type((&other).into(), &"enum")),
         }
     }
 
@@ -516,6 +546,83 @@ impl<'de> de::MapAccess<'de> for ValueMapDeserializer<'_> {
     }
 }
 
+/// EnumAccess for deserializing externally-tagged enums from Value.
+struct ValueEnumDeserializer {
+    variant: String,
+    value: Option<Value>,
+}
+
+impl<'de> de::EnumAccess<'de> for ValueEnumDeserializer {
+    type Error = Error;
+    type Variant = ValueVariantDeserializer;
+
+    fn variant_seed<V: de::DeserializeSeed<'de>>(
+        self,
+        seed: V,
+    ) -> Result<(V::Value, Self::Variant), Self::Error> {
+        let variant = seed.deserialize(self.variant.into_deserializer())?;
+        Ok((variant, ValueVariantDeserializer { value: self.value }))
+    }
+}
+
+/// VariantAccess that delegates to Deserializer<Value> for variant data.
+struct ValueVariantDeserializer {
+    value: Option<Value>,
+}
+
+impl<'de> de::VariantAccess<'de> for ValueVariantDeserializer {
+    type Error = Error;
+
+    fn unit_variant(self) -> Result<(), Self::Error> {
+        match self.value {
+            None => Ok(()),
+            Some(Value::Null) => Ok(()),
+            Some(other) => Err(de::Error::invalid_type((&other).into(), &"unit variant")),
+        }
+    }
+
+    fn newtype_variant_seed<T: de::DeserializeSeed<'de>>(
+        self,
+        seed: T,
+    ) -> Result<T::Value, Self::Error> {
+        match self.value {
+            Some(value) => seed.deserialize(Deserializer(value)),
+            None => Err(de::Error::invalid_type(
+                de::Unexpected::UnitVariant,
+                &"newtype variant",
+            )),
+        }
+    }
+
+    fn tuple_variant<V: de::Visitor<'de>>(
+        self,
+        _len: usize,
+        visitor: V,
+    ) -> Result<V::Value, Self::Error> {
+        match self.value {
+            Some(value) => Deserializer(value).deserialize_seq(visitor),
+            None => Err(de::Error::invalid_type(
+                de::Unexpected::UnitVariant,
+                &"tuple variant",
+            )),
+        }
+    }
+
+    fn struct_variant<V: de::Visitor<'de>>(
+        self,
+        _fields: &'static [&'static str],
+        visitor: V,
+    ) -> Result<V::Value, Self::Error> {
+        match self.value {
+            Some(value) => Deserializer(value).deserialize_map(visitor),
+            None => Err(de::Error::invalid_type(
+                de::Unexpected::UnitVariant,
+                &"struct variant",
+            )),
+        }
+    }
+}
+
 impl<'de> de::VariantAccess<'de> for Deserializer<Value> {
     type Error = Error;
 
@@ -547,5 +654,547 @@ impl<'de> de::VariantAccess<'de> for Deserializer<Value> {
         visitor: V,
     ) -> Result<V::Value, Self::Error> {
         self.deserialize_map(visitor)
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::approx_constant)]
+mod tests {
+    use super::*;
+    use crate::{from_value, to_value};
+    use serde::{Deserialize, Serialize};
+
+    // ---------------------------------------------------------------
+    // Deserialize Value via serde (Value -> Rust types)
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn deserialize_bool() {
+        let val = Value::Bool(true);
+        let result: bool = from_value(val).unwrap();
+        assert!(result);
+    }
+
+    #[test]
+    fn deserialize_u8() {
+        let val = Value::U8(42);
+        let result: u8 = from_value(val).unwrap();
+        assert_eq!(result, 42);
+    }
+
+    #[test]
+    fn deserialize_u16() {
+        let val = Value::U16(1000);
+        let result: u16 = from_value(val).unwrap();
+        assert_eq!(result, 1000);
+    }
+
+    #[test]
+    fn deserialize_u32() {
+        let val = Value::U32(100_000);
+        let result: u32 = from_value(val).unwrap();
+        assert_eq!(result, 100_000);
+    }
+
+    #[test]
+    fn deserialize_u64() {
+        let val = Value::U64(10_000_000_000);
+        let result: u64 = from_value(val).unwrap();
+        assert_eq!(result, 10_000_000_000);
+    }
+
+    #[test]
+    fn deserialize_u128() {
+        let val = Value::U128(u128::MAX);
+        let result: u128 = from_value(val).unwrap();
+        assert_eq!(result, u128::MAX);
+    }
+
+    #[test]
+    fn deserialize_i8() {
+        let val = Value::I8(-42);
+        let result: i8 = from_value(val).unwrap();
+        assert_eq!(result, -42);
+    }
+
+    #[test]
+    fn deserialize_i16() {
+        let val = Value::I16(-1000);
+        let result: i16 = from_value(val).unwrap();
+        assert_eq!(result, -1000);
+    }
+
+    #[test]
+    fn deserialize_i32() {
+        let val = Value::I32(-100_000);
+        let result: i32 = from_value(val).unwrap();
+        assert_eq!(result, -100_000);
+    }
+
+    #[test]
+    fn deserialize_i64() {
+        let val = Value::I64(-10_000_000_000);
+        let result: i64 = from_value(val).unwrap();
+        assert_eq!(result, -10_000_000_000);
+    }
+
+    #[test]
+    fn deserialize_i128() {
+        let val = Value::I128(i128::MIN);
+        let result: i128 = from_value(val).unwrap();
+        assert_eq!(result, i128::MIN);
+    }
+
+    #[test]
+    fn deserialize_f64() {
+        let val = Value::Float(3.14);
+        let result: f64 = from_value(val).unwrap();
+        assert!((result - 3.14).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn deserialize_string() {
+        let val = Value::Text("hello".into());
+        let result: String = from_value(val).unwrap();
+        assert_eq!(result, "hello");
+    }
+
+    #[test]
+    fn deserialize_null_as_option_none() {
+        let val = Value::Null;
+        let result: Option<String> = from_value(val).unwrap();
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn deserialize_some_as_option_some() {
+        let val = Value::Text("hi".into());
+        let result: Option<String> = from_value(val).unwrap();
+        assert_eq!(result, Some("hi".to_string()));
+    }
+
+    #[test]
+    fn deserialize_array_of_integers() {
+        let val = Value::Array(vec![Value::U32(1), Value::U32(2), Value::U32(3)]);
+        let result: Vec<u32> = from_value(val).unwrap();
+        assert_eq!(result, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn deserialize_unit_from_null() {
+        let val = Value::Null;
+        let result: () = from_value(val).unwrap();
+        assert_eq!(result, ());
+    }
+
+    #[test]
+    fn deserialize_unit_from_non_null_errors() {
+        let val = Value::U8(1);
+        let result: Result<(), Error> = from_value(val);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn deserialize_char_from_single_char_text() {
+        let val = Value::Text("A".into());
+        let result: char = from_value(val).unwrap();
+        assert_eq!(result, 'A');
+    }
+
+    #[test]
+    fn deserialize_char_from_multi_char_text_errors() {
+        let val = Value::Text("AB".into());
+        let result: Result<char, Error> = from_value(val);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn deserialize_struct_from_map() {
+        #[derive(Debug, PartialEq, Deserialize)]
+        struct Point {
+            x: i32,
+            y: i32,
+        }
+
+        let val = Value::Map(vec![
+            (Value::Text("x".into()), Value::I32(10)),
+            (Value::Text("y".into()), Value::I32(20)),
+        ]);
+        let result: Point = from_value(val).unwrap();
+        assert_eq!(result, Point { x: 10, y: 20 });
+    }
+
+    #[test]
+    fn deserialize_tuple_from_array() {
+        let val = Value::Array(vec![Value::U32(1), Value::U32(2)]);
+        let result: (u32, u32) = from_value(val).unwrap();
+        assert_eq!(result, (1, 2));
+    }
+
+    #[test]
+    fn deserialize_bool_type_mismatch_errors() {
+        let val = Value::U32(1);
+        let result: Result<bool, Error> = from_value(val);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn deserialize_f64_type_mismatch_errors() {
+        let val = Value::Text("not_a_float".into());
+        let result: Result<f64, Error> = from_value(val);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn deserialize_string_type_mismatch_errors() {
+        let val = Value::U32(42);
+        let result: Result<String, Error> = from_value(val);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn deserialize_seq_type_mismatch_errors() {
+        let val = Value::U32(42);
+        let result: Result<Vec<u32>, Error> = from_value(val);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn deserialize_map_type_mismatch_errors() {
+        let val = Value::U32(42);
+        let result: Result<std::collections::HashMap<String, u32>, Error> = from_value(val);
+        assert!(result.is_err());
+    }
+
+    // ---------------------------------------------------------------
+    // Round-trip serialization: Rust -> Value -> Rust
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn round_trip_struct() {
+        #[derive(Debug, PartialEq, Serialize, Deserialize)]
+        struct Data {
+            name: String,
+            count: u64,
+            active: bool,
+        }
+
+        let original = Data {
+            name: "test".into(),
+            count: 42,
+            active: true,
+        };
+        let val = to_value(&original).unwrap();
+        let recovered: Data = from_value(val).unwrap();
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn round_trip_vec() {
+        let original = vec![1u32, 2, 3, 4, 5];
+        let val = to_value(&original).unwrap();
+        let recovered: Vec<u32> = from_value(val).unwrap();
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn round_trip_option_some() {
+        let original: Option<String> = Some("hello".into());
+        let val = to_value(&original).unwrap();
+        let recovered: Option<String> = from_value(val).unwrap();
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn round_trip_option_none() {
+        let original: Option<String> = None;
+        let val = to_value(&original).unwrap();
+        let recovered: Option<String> = from_value(val).unwrap();
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn round_trip_nested_struct() {
+        #[derive(Debug, PartialEq, Serialize, Deserialize)]
+        struct Inner {
+            value: i32,
+        }
+        #[derive(Debug, PartialEq, Serialize, Deserialize)]
+        struct Outer {
+            inner: Inner,
+            label: String,
+        }
+
+        let original = Outer {
+            inner: Inner { value: -5 },
+            label: "test".into(),
+        };
+        let val = to_value(&original).unwrap();
+        let recovered: Outer = from_value(val).unwrap();
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn round_trip_hashmap() {
+        let mut original = std::collections::HashMap::new();
+        original.insert("a".to_string(), 1u32);
+        original.insert("b".to_string(), 2u32);
+        let val = to_value(&original).unwrap();
+        let recovered: std::collections::HashMap<String, u32> = from_value(val).unwrap();
+        assert_eq!(original, recovered);
+    }
+
+    // ---------------------------------------------------------------
+    // Value -> Value deserialization (Deserialize for Value)
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn value_deserialize_preserves_bool() {
+        let val = Value::Bool(false);
+        let cloned = val.clone();
+        let result: Value = from_value(cloned).unwrap();
+        assert_eq!(result, val);
+    }
+
+    #[test]
+    fn value_deserialize_preserves_text() {
+        let val = Value::Text("test".into());
+        let cloned = val.clone();
+        let result: Value = from_value(cloned).unwrap();
+        assert_eq!(result, val);
+    }
+
+    #[test]
+    fn value_deserialize_preserves_integer_types() {
+        for val in [
+            Value::U8(1),
+            Value::I8(-1),
+            Value::U16(100),
+            Value::I16(-100),
+            Value::U32(1000),
+            Value::I32(-1000),
+            Value::U64(10000),
+            Value::I64(-10000),
+            Value::U128(100000),
+            Value::I128(-100000),
+        ] {
+            let cloned = val.clone();
+            let result: Value = from_value(cloned).unwrap();
+            assert_eq!(result, val);
+        }
+    }
+
+    #[test]
+    fn value_deserialize_preserves_float() {
+        let val = Value::Float(2.718);
+        let cloned = val.clone();
+        let result: Value = from_value(cloned).unwrap();
+        assert_eq!(result, val);
+    }
+
+    #[test]
+    fn value_deserialize_preserves_null() {
+        let val = Value::Null;
+        let cloned = val.clone();
+        let result: Value = from_value(cloned).unwrap();
+        assert_eq!(result, val);
+    }
+
+    #[test]
+    fn value_deserialize_preserves_array() {
+        let val = Value::Array(vec![Value::U8(1), Value::Text("hello".into())]);
+        let cloned = val.clone();
+        let result: Value = from_value(cloned).unwrap();
+        assert_eq!(result, val);
+    }
+
+    #[test]
+    fn value_deserialize_preserves_map() {
+        let val = Value::Map(vec![(Value::Text("key".into()), Value::U64(42))]);
+        let cloned = val.clone();
+        let result: Value = from_value(cloned).unwrap();
+        assert_eq!(result, val);
+    }
+
+    // ---------------------------------------------------------------
+    // Bytes deserialization (non-human-readable -> visit_bytes)
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn value_deserialize_bytes_as_value() {
+        let val = Value::Bytes(vec![1, 2, 3]);
+        let cloned = val.clone();
+        let result: Value = from_value(cloned).unwrap();
+        assert_eq!(result, val);
+    }
+
+    #[test]
+    fn value_deserialize_bytes32_as_value() {
+        let val = Value::Bytes32([7u8; 32]);
+        let cloned = val.clone();
+        let result: Value = from_value(cloned).unwrap();
+        // Non-human-readable: Bytes32 goes through visit_bytes which produces Value::Bytes
+        assert_eq!(result, Value::Bytes(vec![7u8; 32]));
+    }
+
+    #[test]
+    fn value_deserialize_bytes20_as_value() {
+        let val = Value::Bytes20([8u8; 20]);
+        let cloned = val.clone();
+        let result: Value = from_value(cloned).unwrap();
+        // Non-human-readable: Bytes20 goes through visit_bytes which produces Value::Bytes
+        assert_eq!(result, Value::Bytes(vec![8u8; 20]));
+    }
+
+    #[test]
+    fn value_deserialize_bytes36_as_value() {
+        let val = Value::Bytes36([9u8; 36]);
+        let cloned = val.clone();
+        let result: Value = from_value(cloned).unwrap();
+        // Non-human-readable: Bytes36 goes through visit_bytes which produces Value::Bytes
+        assert_eq!(result, Value::Bytes(vec![9u8; 36]));
+    }
+
+    #[test]
+    fn value_deserialize_identifier_as_value() {
+        let val = Value::Identifier([10u8; 32]);
+        let cloned = val.clone();
+        let result: Value = from_value(cloned).unwrap();
+        // Non-human-readable: Identifier goes through visit_bytes which produces Value::Bytes
+        assert_eq!(result, Value::Bytes(vec![10u8; 32]));
+    }
+
+    // ---------------------------------------------------------------
+    // Newtype struct deserialization
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn deserialize_newtype_struct() {
+        #[derive(Debug, PartialEq, Serialize, Deserialize)]
+        struct Wrapper(u32);
+
+        let val = Value::U32(42);
+        let result: Wrapper = from_value(val).unwrap();
+        assert_eq!(result, Wrapper(42));
+    }
+
+    // ---------------------------------------------------------------
+    // Unit struct deserialization
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn deserialize_unit_struct_from_null() {
+        #[derive(Debug, PartialEq, Deserialize)]
+        struct Empty;
+
+        let val = Value::Null;
+        let result: Empty = from_value(val).unwrap();
+        assert_eq!(result, Empty);
+    }
+
+    // ---------------------------------------------------------------
+    // Bytes deserialization into byte buffers
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn deserialize_bytes_from_bytes_value() {
+        let val = Value::Bytes(vec![1, 2, 3, 4]);
+        let result: Value = from_value(val.clone()).unwrap();
+        assert_eq!(result, val);
+    }
+
+    #[test]
+    fn deserialize_bytes_type_mismatch_errors() {
+        use serde::de::Deserializer as _;
+        struct BytesVisitor;
+        impl<'de> de::Visitor<'de> for BytesVisitor {
+            type Value = Vec<u8>;
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                write!(f, "bytes")
+            }
+            fn visit_bytes<E: de::Error>(self, v: &[u8]) -> Result<Self::Value, E> {
+                Ok(v.to_vec())
+            }
+        }
+        let deser = Deserializer(Value::Bool(true));
+        let result = deser.deserialize_bytes(BytesVisitor);
+        assert!(result.is_err());
+    }
+
+    // ---------------------------------------------------------------
+    // Enum deserialization
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn deserialize_unit_enum_from_text() {
+        #[derive(Debug, PartialEq, Deserialize)]
+        enum Color {
+            Red,
+            Green,
+            Blue,
+        }
+        let val = Value::Text("Red".into());
+        let result: Color = from_value(val).unwrap();
+        assert_eq!(result, Color::Red);
+    }
+
+    #[test]
+    fn deserialize_newtype_enum_from_map() {
+        #[derive(Debug, PartialEq, Serialize, Deserialize)]
+        enum Wrapper {
+            Count(u32),
+        }
+        let val = Value::Map(vec![(Value::Text("Count".into()), Value::U32(42))]);
+        let result: Wrapper = from_value(val).unwrap();
+        assert_eq!(result, Wrapper::Count(42));
+    }
+
+    #[test]
+    fn round_trip_unit_enum() {
+        #[derive(Debug, PartialEq, Serialize, Deserialize)]
+        enum Direction {
+            Up,
+            Down,
+        }
+        let original = Direction::Up;
+        let val = to_value(&original).unwrap();
+        let recovered: Direction = from_value(val).unwrap();
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn round_trip_newtype_enum() {
+        #[derive(Debug, PartialEq, Serialize, Deserialize)]
+        enum Payload {
+            Message(String),
+        }
+        let original = Payload::Message("hello".into());
+        let val = to_value(&original).unwrap();
+        let recovered: Payload = from_value(val).unwrap();
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn round_trip_struct_enum() {
+        #[derive(Debug, PartialEq, Serialize, Deserialize)]
+        enum Shape {
+            Circle { radius: u32 },
+        }
+        let original = Shape::Circle { radius: 5 };
+        let val = to_value(&original).unwrap();
+        let recovered: Shape = from_value(val).unwrap();
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn round_trip_tuple_enum() {
+        #[derive(Debug, PartialEq, Serialize, Deserialize)]
+        enum Pair {
+            Coords(i32, i32),
+        }
+        let original = Pair::Coords(10, 20);
+        let val = to_value(&original).unwrap();
+        let recovered: Pair = from_value(val).unwrap();
+        assert_eq!(original, recovered);
     }
 }

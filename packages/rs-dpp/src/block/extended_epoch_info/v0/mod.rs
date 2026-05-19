@@ -1,10 +1,14 @@
 use crate::block::epoch::EpochIndex;
+#[cfg(feature = "json-conversion")]
+use crate::serialization::json_safe_fields;
 use crate::util::deserializer::ProtocolVersion;
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
 /// Extended Epoch information
+#[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(Clone, Debug, PartialEq, Encode, Decode, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ExtendedEpochInfoV0 {
     /// The index of the epoch
     pub index: EpochIndex,

@@ -40,3 +40,52 @@ impl<'a> Into<Vec<DecodedStateTransition<'a>>> for StateTransitionContainer<'a> 
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::execution::types::state_transition_container::v0::InvalidWithProtocolErrorStateTransition;
+    use dpp::ProtocolError;
+    use std::time::Duration;
+
+    fn make_test_st<'a>(raw: &'a [u8]) -> DecodedStateTransition<'a> {
+        DecodedStateTransition::FailedToDecode(InvalidWithProtocolErrorStateTransition {
+            raw,
+            error: ProtocolError::Generic("test".to_string()),
+            elapsed_time: Duration::from_millis(1),
+        })
+    }
+
+    #[test]
+    fn wrapper_ref_iterator() {
+        let raw = b"data";
+        let v0 = StateTransitionContainerV0::new(vec![make_test_st(raw)]);
+        let container: StateTransitionContainer = v0.into();
+        assert_eq!((&container).into_iter().count(), 1);
+    }
+
+    #[test]
+    fn wrapper_owned_iterator() {
+        let raw = b"data";
+        let v0 = StateTransitionContainerV0::new(vec![make_test_st(raw)]);
+        let container: StateTransitionContainer = v0.into();
+        assert_eq!(container.into_iter().count(), 1);
+    }
+
+    #[test]
+    fn wrapper_into_vec() {
+        let raw = b"data";
+        let v0 = StateTransitionContainerV0::new(vec![make_test_st(raw), make_test_st(raw)]);
+        let container: StateTransitionContainer = v0.into();
+        let vec: Vec<DecodedStateTransition> = container.into();
+        assert_eq!(vec.len(), 2);
+    }
+
+    #[test]
+    fn from_v0_conversion() {
+        let raw = b"data";
+        let v0 = StateTransitionContainerV0::new(vec![make_test_st(raw)]);
+        let container: StateTransitionContainer = v0.into();
+        assert!(matches!(container, StateTransitionContainer::V0(_)));
+    }
+}

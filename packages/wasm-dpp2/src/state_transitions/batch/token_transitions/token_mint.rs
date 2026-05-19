@@ -14,7 +14,6 @@ use dpp::state_transition::batch_transition::token_mint_transition::v0::v0_metho
 use dpp::state_transition::batch_transition::token_mint_transition::TokenMintTransitionV0;
 use dpp::state_transition::batch_transition::TokenMintTransition;
 use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::JsValue;
 
 #[wasm_bindgen(typescript_custom_section)]
 const TOKEN_MINT_OPTIONS_TS: &str = r#"
@@ -112,8 +111,8 @@ impl TokenMintTransitionWasm {
     }
 
     #[wasm_bindgen(setter = amount)]
-    pub fn set_amount(&mut self, amount: JsValue) -> WasmDppResult<()> {
-        self.0.set_amount(try_to_u64(&amount, "amount")?);
+    pub fn set_amount(&mut self, amount: &js_sys::BigInt) -> WasmDppResult<()> {
+        self.0.set_amount(try_to_u64(amount, "amount")?);
         Ok(())
     }
 

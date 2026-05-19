@@ -16,7 +16,6 @@ const TESTNET_CONTRACTS = {
   dpns: '7133734967411265855288437346261134676850487612170005227449438774554101671041',
   dashpay: '11820826580861527503515256915869415134572226289567404439933090029265983217778',
   withdrawals: 'ARaM5u3iibTGq2qVcB3sfWBwUq51zV39MVWKw6Enk5QD',
-  featureFlags: 'G7c8S5JDw5FkJEGGeGKCMoHwGbvCNrQrtdbnMirALNV2',
   masternodeRewardShares: 'GfbnFqmNZ8ZJG2ZJDhAj8P7KRbYvqwUmgRhhgJ7bDfwJ'
 };
 
@@ -40,12 +39,12 @@ async function main() {
   try {
     // Fetch some known identities
     console.log('Fetching identity proofs...');
-    
+
     // Try to get an identity by a known testnet identity ID
     try {
       const identityId = 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec'; // Example testnet identity
       const identity = await client.platform.identities.get(identityId);
-      
+
       if (identity) {
         proofData.proofs.identity = {
           description: 'Full identity by ID',
@@ -85,7 +84,7 @@ async function main() {
     console.log('Fetching data contract proofs...');
     try {
       const contract = await client.platform.contracts.get(TESTNET_CONTRACTS.dpns);
-      
+
       if (contract) {
         proofData.proofs.dataContract = {
           description: 'DPNS data contract',
@@ -101,10 +100,10 @@ async function main() {
     // Write collected proofs to file
     const outputDir = path.join(__dirname, 'fixtures');
     await fs.mkdir(outputDir, { recursive: true });
-    
+
     const outputFile = path.join(outputDir, 'testnet_proofs.json');
     await fs.writeFile(outputFile, JSON.stringify(proofData, null, 2));
-    
+
     console.log(`Proofs saved to: ${outputFile}`);
     console.log(`Total proofs collected: ${Object.keys(proofData.proofs).length}`);
 

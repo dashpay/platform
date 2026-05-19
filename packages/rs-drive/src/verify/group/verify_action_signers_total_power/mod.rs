@@ -81,3 +81,40 @@ impl Drive {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dpp::version::PlatformVersion;
+
+    #[test]
+    fn test_verify_action_signer_and_total_power_unknown_version_mismatch() {
+        let mut platform_version = PlatformVersion::latest().clone();
+        platform_version
+            .drive
+            .methods
+            .verify
+            .group
+            .verify_action_signers_total_power = 255;
+
+        let result = Drive::verify_action_signer_and_total_power(
+            &[],
+            Identifier::from([0u8; 32]),
+            0,
+            None,
+            Identifier::from([0u8; 32]),
+            Identifier::from([0u8; 32]),
+            false,
+            &platform_version,
+        );
+
+        assert!(
+            matches!(
+                result,
+                Err(Error::Drive(DriveError::UnknownVersionMismatch { .. }))
+            ),
+            "expected UnknownVersionMismatch, got {:?}",
+            result,
+        );
+    }
+}

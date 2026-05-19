@@ -361,14 +361,16 @@ pub fn value_to_hash(value: &CborValue) -> Result<[u8; 32], ProtocolError> {
 
 #[cfg(test)]
 mod test {
+    use std::collections::BTreeMap;
+    use std::convert::TryFrom;
     use std::convert::TryInto;
 
-    use crate::util::cbor_value::ReplacePaths;
+    use crate::util::cbor_value::{ReplacePaths, ValuesCollection};
 
-    use super::{CborValue, FieldType};
+    use super::{value_to_bytes, value_to_hash, CborCanonicalMap, CborValue, FieldType};
     use ciborium::cbor;
 
-    use super::CborCanonicalMap;
+    // ------- Existing tests -------
 
     #[test]
     fn should_get_path_to_property_from_cbor() {
@@ -440,5 +442,714 @@ mod test {
             &mut CborValue::Text(bs58::encode(vec![0_u8; 32]).into_string()),
             replaced
         );
+    }
+
+    // ------- New coverage tests -------
+
+    // CborCanonicalMap construction and basic operations
+
+    #[test]
+    fn new_creates_empty_map() {
+        let map = CborCanonicalMap::new();
+        let value = map.to_value_unsorted();
+        assert_eq!(value, CborValue::Map(vec![]));
+    }
+
+    #[test]
+    fn default_creates_empty_map() {
+        let map = CborCanonicalMap::default();
+        let value = map.to_value_unsorted();
+        assert_eq!(value, CborValue::Map(vec![]));
+    }
+
+    #[test]
+    fn insert_adds_key_value_pair() {
+        let mut map = CborCanonicalMap::new();
+        map.insert("hello", CborValue::Text("world".to_string()));
+
+        let val = ValuesCollection::get(&map, &CborValue::Text("hello".to_string()));
+        assert_eq!(val, Some(&CborValue::Text("world".to_string())));
+    }
+
+    #[test]
+    fn insert_multiple_keys() {
+        let mut map = CborCanonicalMap::new();
+        map.insert("a", CborValue::Integer(1.into()));
+        map.insert("b", CborValue::Integer(2.into()));
+        map.insert("c", CborValue::Integer(3.into()));
+
+        assert_eq!(
+            ValuesCollection::get(&map, &CborValue::Text("a".to_string())),
+            Some(&CborValue::Integer(1.into()))
+        );
+        assert_eq!(
+            ValuesCollection::get(&map, &CborValue::Text("b".to_string())),
+            Some(&CborValue::Integer(2.into()))
+        );
+        assert_eq!(
+            ValuesCollection::get(&map, &CborValue::Text("c".to_string())),
+            Some(&CborValue::Integer(3.into()))
+        );
+    }
+
+    #[test]
+    fn remove_existing_key() {
+        let mut map = CborCanonicalMap::new();
+        map.insert("key1", CborValue::Bool(true));
+        map.insert("key2", CborValue::Bool(false));
+
+        map.remove("key1");
+
+        assert!(ValuesCollection::get(&map, &CborValue::Text("key1".to_string())).is_none());
+        assert_eq!(
+            ValuesCollection::get(&map, &CborValue::Text("key2".to_string())),
+            Some(&CborValue::Bool(false))
+        );
+    }
+
+    #[test]
+    fn remove_nonexistent_key_is_noop() {
+        let mut map = CborCanonicalMap::new();
+        map.insert("key1", CborValue::Bool(true));
+
+        // Should not panic or change anything
+        map.remove("nonexistent");
+
+        assert_eq!(
+            ValuesCollection::get(&map, &CborValue::Text("key1".to_string())),
+            Some(&CborValue::Bool(true))
+        );
+    }
+
+    #[test]
+    fn get_mut_returns_mutable_reference() {
+        let mut map = CborCanonicalMap::new();
+        map.insert("key", CborValue::Integer(10.into()));
+
+        let val = map.get_mut(&CborValue::Text("key".to_string()));
+        assert!(val.is_some());
+        *val.unwrap() = CborValue::Integer(20.into());
+
+        assert_eq!(
+            ValuesCollection::get(&map, &CborValue::Text("key".to_string())),
+            Some(&CborValue::Integer(20.into()))
+        );
+    }
+
+    #[test]
+    fn get_mut_returns_none_for_missing_key() {
+        let mut map = CborCanonicalMap::new();
+        assert!(map
+            .get_mut(&CborValue::Text("missing".to_string()))
+            .is_none());
+    }
+
+    #[test]
+    fn set_replaces_existing_value() {
+        let mut map = CborCanonicalMap::new();
+        map.insert("key", CborValue::Integer(1.into()));
+
+        let result = map.set(
+            &CborValue::Text("key".to_string()),
+            CborValue::Integer(99.into()),
+        );
+        assert!(result.is_some());
+
+        assert_eq!(
+            ValuesCollection::get(&map, &CborValue::Text("key".to_string())),
+            Some(&CborValue::Integer(99.into()))
+        );
+    }
+
+    #[test]
+    fn set_returns_none_for_missing_key() {
+        let mut map = CborCanonicalMap::new();
+
+        let result = map.set(
+            &CborValue::Text("missing".to_string()),
+            CborValue::Integer(1.into()),
+        );
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn from_vector_creates_map() {
+        let vec = vec![
+            (
+                CborValue::Text("a".to_string()),
+                CborValue::Integer(1.into()),
+            ),
+            (
+                CborValue::Text("b".to_string()),
+                CborValue::Integer(2.into()),
+            ),
+        ];
+
+        let map = CborCanonicalMap::from_vector(vec);
+
+        assert_eq!(
+            ValuesCollection::get(&map, &CborValue::Text("a".to_string())),
+            Some(&CborValue::Integer(1.into()))
+        );
+        assert_eq!(
+            ValuesCollection::get(&map, &CborValue::Text("b".to_string())),
+            Some(&CborValue::Integer(2.into()))
+        );
+    }
+
+    #[test]
+    fn from_serializable_with_btreemap() {
+        let mut btree = BTreeMap::new();
+        btree.insert("name".to_string(), "test".to_string());
+
+        let map =
+            CborCanonicalMap::from_serializable(&btree).expect("should serialize from BTreeMap");
+
+        assert!(ValuesCollection::get(&map, &CborValue::Text("name".to_string())).is_some());
+    }
+
+    #[test]
+    fn from_serializable_with_non_map_value_fails() {
+        // A plain string serializes as CborValue::Text, not a Map
+        let result = CborCanonicalMap::from_serializable(&"just a string");
+        assert!(result.is_err());
+    }
+
+    // Canonical sorting
+
+    #[test]
+    fn sort_canonical_orders_by_key_length_then_lexicographic() {
+        let mut map = CborCanonicalMap::new();
+        // Longer key first
+        map.insert("beta", CborValue::Integer(2.into()));
+        map.insert("a", CborValue::Integer(1.into()));
+        map.insert("cc", CborValue::Integer(3.into()));
+        map.insert("bb", CborValue::Integer(4.into()));
+
+        map.sort_canonical();
+
+        let sorted = map.to_value_unsorted();
+        if let CborValue::Map(pairs) = sorted {
+            let keys: Vec<&str> = pairs.iter().map(|(k, _)| k.as_text().unwrap()).collect();
+            // "a" (len 1) < "bb" (len 2) < "cc" (len 2, but bb < cc) < "beta" (len 4)
+            assert_eq!(keys, vec!["a", "bb", "cc", "beta"]);
+        } else {
+            panic!("Expected map");
+        }
+    }
+
+    #[test]
+    fn sort_canonical_recursively_sorts_nested_maps() {
+        let mut map = CborCanonicalMap::new();
+        // Create a nested map with unsorted keys
+        let nested = CborValue::Map(vec![
+            (
+                CborValue::Text("zz".to_string()),
+                CborValue::Integer(1.into()),
+            ),
+            (
+                CborValue::Text("a".to_string()),
+                CborValue::Integer(2.into()),
+            ),
+        ]);
+        map.insert("outer", nested);
+
+        map.sort_canonical();
+
+        let sorted = map.to_value_unsorted();
+        if let CborValue::Map(pairs) = sorted {
+            if let CborValue::Map(inner_pairs) = &pairs[0].1 {
+                let keys: Vec<&str> = inner_pairs
+                    .iter()
+                    .map(|(k, _)| k.as_text().unwrap())
+                    .collect();
+                // "a" (len 1) should come before "zz" (len 2)
+                assert_eq!(keys, vec!["a", "zz"]);
+            } else {
+                panic!("Expected nested map");
+            }
+        }
+    }
+
+    #[test]
+    fn sort_canonical_recursively_sorts_maps_inside_arrays() {
+        let mut map = CborCanonicalMap::new();
+        let nested_map_in_array = CborValue::Array(vec![CborValue::Map(vec![
+            (
+                CborValue::Text("zz".to_string()),
+                CborValue::Integer(1.into()),
+            ),
+            (
+                CborValue::Text("a".to_string()),
+                CborValue::Integer(2.into()),
+            ),
+        ])]);
+        map.insert("items", nested_map_in_array);
+
+        map.sort_canonical();
+
+        let sorted = map.to_value_unsorted();
+        if let CborValue::Map(pairs) = sorted {
+            if let CborValue::Array(arr) = &pairs[0].1 {
+                if let CborValue::Map(inner_pairs) = &arr[0] {
+                    let keys: Vec<&str> = inner_pairs
+                        .iter()
+                        .map(|(k, _)| k.as_text().unwrap())
+                        .collect();
+                    assert_eq!(keys, vec!["a", "zz"]);
+                } else {
+                    panic!("Expected map inside array");
+                }
+            } else {
+                panic!("Expected array");
+            }
+        }
+    }
+
+    // Serialization and value conversion
+
+    #[test]
+    fn to_bytes_produces_valid_cbor() {
+        let mut map = CborCanonicalMap::new();
+        map.insert("key", CborValue::Text("value".to_string()));
+
+        let bytes = map.to_bytes().expect("should serialize to bytes");
+        assert!(!bytes.is_empty());
+
+        // Deserialize back
+        let deserialized: CborValue =
+            ciborium::de::from_reader(&bytes[..]).expect("should deserialize");
+        if let CborValue::Map(pairs) = deserialized {
+            assert_eq!(pairs.len(), 1);
+            assert_eq!(
+                pairs[0],
+                (
+                    CborValue::Text("key".to_string()),
+                    CborValue::Text("value".to_string())
+                )
+            );
+        } else {
+            panic!("Expected map after deserialization");
+        }
+    }
+
+    #[test]
+    fn to_bytes_sorts_before_serializing() {
+        let mut map = CborCanonicalMap::new();
+        map.insert("beta", CborValue::Integer(2.into()));
+        map.insert("a", CborValue::Integer(1.into()));
+
+        let bytes = map.to_bytes().expect("should serialize");
+        let deserialized: CborValue =
+            ciborium::de::from_reader(&bytes[..]).expect("should deserialize");
+
+        if let CborValue::Map(pairs) = deserialized {
+            let keys: Vec<&str> = pairs.iter().map(|(k, _)| k.as_text().unwrap()).collect();
+            assert_eq!(keys, vec!["a", "beta"]);
+        }
+    }
+
+    #[test]
+    fn to_value_unsorted_preserves_insertion_order() {
+        let mut map = CborCanonicalMap::new();
+        map.insert("z", CborValue::Integer(1.into()));
+        map.insert("a", CborValue::Integer(2.into()));
+
+        let value = map.to_value_unsorted();
+        if let CborValue::Map(pairs) = value {
+            assert_eq!(pairs[0].0, CborValue::Text("z".to_string()));
+            assert_eq!(pairs[1].0, CborValue::Text("a".to_string()));
+        }
+    }
+
+    #[test]
+    fn to_value_sorted_returns_sorted_map() {
+        let mut map = CborCanonicalMap::new();
+        map.insert("beta", CborValue::Integer(2.into()));
+        map.insert("a", CborValue::Integer(1.into()));
+
+        let value = map.to_value_sorted();
+        if let CborValue::Map(pairs) = value {
+            assert_eq!(pairs[0].0, CborValue::Text("a".to_string()));
+            assert_eq!(pairs[1].0, CborValue::Text("beta".to_string()));
+        }
+    }
+
+    #[test]
+    fn to_value_clone_returns_sorted_clone() {
+        let mut map = CborCanonicalMap::new();
+        map.insert("beta", CborValue::Integer(2.into()));
+        map.insert("a", CborValue::Integer(1.into()));
+
+        let value = map.to_value_clone();
+        if let CborValue::Map(pairs) = value {
+            assert_eq!(pairs[0].0, CborValue::Text("a".to_string()));
+            assert_eq!(pairs[1].0, CborValue::Text("beta".to_string()));
+        }
+
+        // Original map should still be accessible (it was sorted in place but not consumed)
+        let val = ValuesCollection::get(&map, &CborValue::Text("a".to_string()));
+        assert!(val.is_some());
+    }
+
+    // TryFrom and From impls
+
+    #[test]
+    fn try_from_cbor_map_succeeds() {
+        let cbor = CborValue::Map(vec![(
+            CborValue::Text("k".to_string()),
+            CborValue::Bool(true),
+        )]);
+
+        let map = CborCanonicalMap::try_from(cbor).expect("should convert from map");
+        assert_eq!(
+            ValuesCollection::get(&map, &CborValue::Text("k".to_string())),
+            Some(&CborValue::Bool(true))
+        );
+    }
+
+    #[test]
+    fn try_from_non_map_fails() {
+        let cbor = CborValue::Text("not a map".to_string());
+        let result = CborCanonicalMap::try_from(cbor);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn from_vec_creates_canonical_map() {
+        let vec = vec![(
+            CborValue::Text("x".to_string()),
+            CborValue::Integer(42.into()),
+        )];
+
+        let map: CborCanonicalMap = vec.into();
+        assert_eq!(
+            ValuesCollection::get(&map, &CborValue::Text("x".to_string())),
+            Some(&CborValue::Integer(42.into()))
+        );
+    }
+
+    #[test]
+    fn from_ref_vec_creates_canonical_map() {
+        let vec = vec![(
+            CborValue::Text("y".to_string()),
+            CborValue::Integer(7.into()),
+        )];
+
+        let map: CborCanonicalMap = (&vec).into();
+        assert_eq!(
+            ValuesCollection::get(&map, &CborValue::Text("y".to_string())),
+            Some(&CborValue::Integer(7.into()))
+        );
+    }
+
+    #[test]
+    fn from_btreemap_string_creates_canonical_map() {
+        let mut btree = BTreeMap::new();
+        btree.insert("alpha".to_string(), CborValue::Integer(1.into()));
+        btree.insert("beta".to_string(), CborValue::Integer(2.into()));
+
+        let map: CborCanonicalMap = (&btree).into();
+        assert_eq!(
+            ValuesCollection::get(&map, &CborValue::Text("alpha".to_string())),
+            Some(&CborValue::Integer(1.into()))
+        );
+        assert_eq!(
+            ValuesCollection::get(&map, &CborValue::Text("beta".to_string())),
+            Some(&CborValue::Integer(2.into()))
+        );
+    }
+
+    // ValuesCollection trait impl
+
+    #[test]
+    fn values_collection_get_returns_value() {
+        let map = CborCanonicalMap::from_vector(vec![(
+            CborValue::Text("k".to_string()),
+            CborValue::Text("v".to_string()),
+        )]);
+
+        let result = ValuesCollection::get(&map, &CborValue::Text("k".to_string()));
+        assert_eq!(result, Some(&CborValue::Text("v".to_string())));
+    }
+
+    #[test]
+    fn values_collection_get_returns_none_for_missing() {
+        let map = CborCanonicalMap::new();
+        let result = ValuesCollection::get(&map, &CborValue::Text("missing".to_string()));
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn values_collection_remove_returns_removed_value() {
+        let mut map = CborCanonicalMap::from_vector(vec![
+            (
+                CborValue::Text("a".to_string()),
+                CborValue::Integer(1.into()),
+            ),
+            (
+                CborValue::Text("b".to_string()),
+                CborValue::Integer(2.into()),
+            ),
+        ]);
+
+        let removed = ValuesCollection::remove(&mut map, "a");
+        assert_eq!(removed, Some(CborValue::Integer(1.into())));
+        assert!(ValuesCollection::get(&map, &CborValue::Text("a".to_string())).is_none());
+    }
+
+    #[test]
+    fn values_collection_remove_returns_none_for_missing() {
+        let mut map = CborCanonicalMap::new();
+        let removed = ValuesCollection::remove(&mut map, "nonexistent");
+        assert!(removed.is_none());
+    }
+
+    // replace_paths (ReplacePaths trait)
+
+    #[test]
+    fn replace_paths_converts_multiple_paths() {
+        let cbor_value = cbor!({
+            "field1" => vec![0_u8; 32],
+            "field2" => vec![1_u8; 32]
+        })
+        .expect("valid cbor");
+
+        let mut canonical: CborCanonicalMap = cbor_value.try_into().expect("valid canonical");
+        ReplacePaths::replace_paths(
+            &mut canonical,
+            vec!["field1", "field2"],
+            FieldType::ArrayInt,
+            FieldType::Bytes,
+        );
+
+        let v1 = ValuesCollection::get(&canonical, &CborValue::Text("field1".to_string()));
+        assert!(matches!(v1, Some(CborValue::Bytes(_))));
+        let v2 = ValuesCollection::get(&canonical, &CborValue::Text("field2".to_string()));
+        assert!(matches!(v2, Some(CborValue::Bytes(_))));
+    }
+
+    #[test]
+    fn replace_path_returns_none_for_nonexistent_path() {
+        let mut map = CborCanonicalMap::new();
+        map.insert("exists", CborValue::Text("value".to_string()));
+
+        let result =
+            ReplacePaths::replace_path(&mut map, "nonexistent", FieldType::Bytes, FieldType::Bytes);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn get_path_mut_with_empty_path_returns_none() {
+        let mut map = CborCanonicalMap::new();
+        map.insert("key", CborValue::Integer(1.into()));
+
+        // Empty string results in a path with a single empty-string key
+        // which won't match any real keys typically
+        let result = ReplacePaths::get_path_mut(&mut map, "");
+        // An empty path string still produces a single Key("") step,
+        // which won't match any inserted key
+        assert!(result.is_none());
+    }
+
+    // value_to_bytes tests
+
+    #[test]
+    fn value_to_bytes_from_bytes() {
+        let val = CborValue::Bytes(vec![1, 2, 3, 4]);
+        let result = value_to_bytes(&val).expect("should succeed");
+        assert_eq!(result, Some(vec![1, 2, 3, 4]));
+    }
+
+    #[test]
+    fn value_to_bytes_from_valid_base58_text() {
+        let original = vec![1, 2, 3, 4, 5];
+        let encoded = bs58::encode(&original).into_string();
+        let val = CborValue::Text(encoded);
+
+        let result = value_to_bytes(&val).expect("should succeed");
+        assert_eq!(result, Some(original));
+    }
+
+    #[test]
+    fn value_to_bytes_from_invalid_base58_text_returns_none() {
+        // "0OIl" contains characters invalid in base58
+        let val = CborValue::Text("0OIl!!!".to_string());
+        let result = value_to_bytes(&val).expect("should succeed");
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn value_to_bytes_from_integer_array() {
+        let val = CborValue::Array(vec![
+            CborValue::Integer(10.into()),
+            CborValue::Integer(20.into()),
+            CborValue::Integer(30.into()),
+        ]);
+
+        let result = value_to_bytes(&val).expect("should succeed");
+        assert_eq!(result, Some(vec![10, 20, 30]));
+    }
+
+    #[test]
+    fn value_to_bytes_from_array_with_non_integer_fails() {
+        let val = CborValue::Array(vec![
+            CborValue::Integer(1.into()),
+            CborValue::Text("not an int".to_string()),
+        ]);
+
+        let result = value_to_bytes(&val);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn value_to_bytes_from_bool_fails() {
+        let val = CborValue::Bool(true);
+        let result = value_to_bytes(&val);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn value_to_bytes_from_null_fails() {
+        let val = CborValue::Null;
+        let result = value_to_bytes(&val);
+        assert!(result.is_err());
+    }
+
+    // value_to_hash tests
+
+    #[test]
+    fn value_to_hash_from_32_bytes() {
+        let bytes = vec![42u8; 32];
+        let val = CborValue::Bytes(bytes.clone());
+
+        let result = value_to_hash(&val).expect("should succeed");
+        assert_eq!(result, [42u8; 32]);
+    }
+
+    #[test]
+    fn value_to_hash_from_wrong_length_bytes_fails() {
+        let val = CborValue::Bytes(vec![1u8; 16]);
+        let result = value_to_hash(&val);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn value_to_hash_from_valid_base58_text_32_bytes() {
+        let original = [7u8; 32];
+        let encoded = bs58::encode(&original).into_string();
+        let val = CborValue::Text(encoded);
+
+        let result = value_to_hash(&val).expect("should succeed");
+        assert_eq!(result, original);
+    }
+
+    #[test]
+    fn value_to_hash_from_invalid_base58_text_fails() {
+        let val = CborValue::Text("!!!invalid!!!".to_string());
+        let result = value_to_hash(&val);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn value_to_hash_from_base58_text_wrong_length_fails() {
+        // Valid base58 but only 4 bytes
+        let encoded = bs58::encode(&[1u8; 4]).into_string();
+        let val = CborValue::Text(encoded);
+        let result = value_to_hash(&val);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn value_to_hash_from_integer_array_32_bytes() {
+        let val = CborValue::Array((0..32).map(|i| CborValue::Integer(i.into())).collect());
+
+        let result = value_to_hash(&val).expect("should succeed");
+        let expected: [u8; 32] = (0u8..32).collect::<Vec<u8>>().try_into().unwrap();
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn value_to_hash_from_integer_array_wrong_length_fails() {
+        let val = CborValue::Array(vec![CborValue::Integer(1.into()); 10]);
+        let result = value_to_hash(&val);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn value_to_hash_from_array_with_non_integer_fails() {
+        let mut arr: Vec<CborValue> = (0..31).map(|i| CborValue::Integer(i.into())).collect();
+        arr.push(CborValue::Text("not_int".to_string()));
+        let val = CborValue::Array(arr);
+
+        let result = value_to_hash(&val);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn value_to_hash_from_bool_fails() {
+        let val = CborValue::Bool(false);
+        let result = value_to_hash(&val);
+        assert!(result.is_err());
+    }
+
+    // Round-trip: to_bytes and back
+
+    #[test]
+    fn round_trip_canonical_map_through_bytes() {
+        let mut map = CborCanonicalMap::new();
+        map.insert("name", CborValue::Text("Alice".to_string()));
+        map.insert("age", CborValue::Integer(30.into()));
+        map.insert("active", CborValue::Bool(true));
+
+        let bytes = map.to_bytes().expect("should serialize");
+
+        let decoded: CborValue = ciborium::de::from_reader(&bytes[..]).expect("should deserialize");
+        let decoded_map = CborCanonicalMap::try_from(decoded).expect("should convert to map");
+
+        assert_eq!(
+            ValuesCollection::get(&decoded_map, &CborValue::Text("name".to_string())),
+            Some(&CborValue::Text("Alice".to_string()))
+        );
+        assert_eq!(
+            ValuesCollection::get(&decoded_map, &CborValue::Text("age".to_string())),
+            Some(&CborValue::Integer(30.into()))
+        );
+        assert_eq!(
+            ValuesCollection::get(&decoded_map, &CborValue::Text("active".to_string())),
+            Some(&CborValue::Bool(true))
+        );
+    }
+
+    #[test]
+    fn canonical_sort_with_same_length_keys_uses_lexicographic_order() {
+        let mut map = CborCanonicalMap::new();
+        map.insert("cc", CborValue::Integer(1.into()));
+        map.insert("bb", CborValue::Integer(2.into()));
+        map.insert("aa", CborValue::Integer(3.into()));
+
+        map.sort_canonical();
+
+        let value = map.to_value_unsorted();
+        if let CborValue::Map(pairs) = value {
+            let keys: Vec<&str> = pairs.iter().map(|(k, _)| k.as_text().unwrap()).collect();
+            assert_eq!(keys, vec!["aa", "bb", "cc"]);
+        }
+    }
+
+    #[test]
+    fn canonical_sort_shorter_keys_come_first() {
+        let mut map = CborCanonicalMap::new();
+        map.insert("zzz", CborValue::Integer(1.into()));
+        map.insert("a", CborValue::Integer(2.into()));
+        map.insert("bb", CborValue::Integer(3.into()));
+
+        map.sort_canonical();
+
+        let value = map.to_value_unsorted();
+        if let CborValue::Map(pairs) = value {
+            let keys: Vec<&str> = pairs.iter().map(|(k, _)| k.as_text().unwrap()).collect();
+            assert_eq!(keys, vec!["a", "bb", "zzz"]);
+        }
     }
 }

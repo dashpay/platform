@@ -21,8 +21,9 @@ pub trait StateTransitionIdentityIdFromInputs: StateTransitionWitnessSigned {
 /// Helper that computes the identity ID from input addresses and nonces.
 /// Nonces should represent state after creation of the identity (eg. be incremented by 1).
 ///
-/// Internal use only; see `StateTransitionIdentityIdFromInputs` trait.
-pub(crate) fn identity_id_from_input_addresses(
+/// This is the canonical way to derive the deterministic identity ID from
+/// address-funded identity creation inputs.
+pub fn identity_id_from_input_addresses(
     input_addresses: &BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
 ) -> Result<Identifier, ProtocolError> {
     if input_addresses.is_empty() {

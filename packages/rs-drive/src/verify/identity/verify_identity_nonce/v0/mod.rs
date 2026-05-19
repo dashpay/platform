@@ -93,3 +93,95 @@ impl Drive {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::block::block_info::BlockInfo;
+    use dpp::identity::accessors::IdentityGettersV0;
+    use dpp::identity::Identity;
+    use dpp::version::PlatformVersion;
+
+    #[test]
+    fn should_prove_and_verify_identity_nonce() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::first();
+
+        let identity = Identity::random_identity(3, Some(14), platform_version)
+            .expect("expected a random identity");
+
+        let identity_id = identity.id().to_buffer();
+
+        drive
+            .add_new_identity(
+                identity.clone(),
+                false,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to add an identity");
+
+        // Set a nonce value by merging
+        let nonce_value: u64 = 1;
+        let (result, _fee) = drive
+            .merge_identity_nonce(
+                identity_id,
+                nonce_value,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to merge identity nonce");
+        assert!(result.error_message().is_none());
+
+        // Prove the nonce
+        let proof = drive
+            .prove_identity_nonce(identity_id, None, platform_version)
+            .expect("should not error when proving identity nonce");
+
+        // Verify the nonce
+        let (_root_hash, proved_nonce) =
+            Drive::verify_identity_nonce(proof.as_slice(), identity_id, false, platform_version)
+                .expect("expected to verify identity nonce");
+
+        assert_eq!(proved_nonce, Some(nonce_value));
+    }
+
+    #[test]
+    fn should_prove_and_verify_default_identity_nonce() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::first();
+
+        let identity = Identity::random_identity(3, Some(14), platform_version)
+            .expect("expected a random identity");
+
+        let identity_id = identity.id().to_buffer();
+
+        drive
+            .add_new_identity(
+                identity.clone(),
+                false,
+                &BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to add an identity");
+
+        // Prove without explicitly setting a nonce -- the identity initialization
+        // sets the nonce to 0
+        let proof = drive
+            .prove_identity_nonce(identity_id, None, platform_version)
+            .expect("should not error when proving identity nonce");
+
+        let (_root_hash, proved_nonce) =
+            Drive::verify_identity_nonce(proof.as_slice(), identity_id, false, platform_version)
+                .expect("expected to verify identity nonce");
+
+        assert_eq!(proved_nonce, Some(0));
+    }
+}

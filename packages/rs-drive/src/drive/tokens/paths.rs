@@ -635,3 +635,318 @@ impl TokenPerpetualDistributionMomentPaths for RewardDistributionMoment {
         }
     }
 }
+
+#[cfg(feature = "server")]
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::drive::RootTree;
+
+    fn tokens_root_byte() -> u8 {
+        RootTree::Tokens as u8
+    }
+
+    /// Helper: verify array path and vec path produce identical data.
+    fn assert_array_vec_consistent(arr: &[&[u8]], v: &[Vec<u8>]) {
+        assert_eq!(arr.len(), v.len(), "path lengths differ");
+        for (a, b) in arr.iter().zip(v.iter()) {
+            assert_eq!(*a, b.as_slice());
+        }
+    }
+
+    #[test]
+    fn root_paths_have_correct_structure() {
+        // All root-level paths: 1 segment (tokens root) or 2 segments (tokens root + subtree key)
+        let root = tokens_root_path();
+        assert_eq!(root.len(), 1);
+        assert_eq!(root[0], &[tokens_root_byte()]);
+
+        // 2-segment root paths: balances, direct_purchase, identity_infos, contract_infos, statuses, distributions
+        for (arr, v, key) in [
+            (
+                token_balances_root_path().to_vec(),
+                token_balances_root_path_vec(),
+                TOKEN_BALANCES_KEY,
+            ),
+            (
+                token_direct_purchase_root_path().to_vec(),
+                token_direct_purchase_root_path_vec(),
+                TOKEN_DIRECT_SELL_PRICE_KEY,
+            ),
+            (
+                token_identity_infos_root_path().to_vec(),
+                token_identity_infos_root_path_vec(),
+                TOKEN_IDENTITY_INFO_KEY,
+            ),
+            (
+                token_contract_infos_root_path().to_vec(),
+                token_contract_infos_root_path_vec(),
+                TOKEN_CONTRACT_INFO_KEY,
+            ),
+            (
+                token_statuses_root_path().to_vec(),
+                token_statuses_root_path_vec(),
+                TOKEN_STATUS_INFO_KEY,
+            ),
+            (
+                token_distributions_root_path().to_vec(),
+                token_distributions_root_path_vec(),
+                TOKEN_DISTRIBUTIONS_KEY,
+            ),
+        ] {
+            assert_eq!(arr.len(), 2);
+            assert_eq!(v.len(), 2);
+            assert_eq!(arr[0], &[tokens_root_byte()]);
+            assert_eq!(v[1], vec![key]);
+        }
+    }
+
+    #[test]
+    fn distribution_subtree_paths_have_correct_structure() {
+        let t = tokens_root_byte();
+
+        // 3-segment paths: timed, perpetual, pre-programmed distributions
+        assert_array_vec_consistent(
+            &token_timed_distributions_path(),
+            &token_timed_distributions_path_vec(),
+        );
+        assert_eq!(
+            token_timed_distributions_path()[2],
+            &[TOKEN_TIMED_DISTRIBUTIONS_KEY]
+        );
+
+        assert_array_vec_consistent(
+            &token_root_perpetual_distributions_path(),
+            &token_root_perpetual_distributions_path_vec(),
+        );
+        assert_eq!(
+            token_root_perpetual_distributions_path()[2],
+            &[TOKEN_PERPETUAL_DISTRIBUTIONS_KEY]
+        );
+
+        assert_array_vec_consistent(
+            &token_root_pre_programmed_distributions_path(),
+            &token_root_pre_programmed_distributions_path_vec(),
+        );
+        assert_eq!(
+            token_root_pre_programmed_distributions_path()[2],
+            &[TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS_KEY]
+        );
+
+        // 4-segment timed distribution paths
+        for (arr, v, key) in [
+            (
+                token_ms_timed_distributions_path().to_vec(),
+                token_ms_timed_distributions_path_vec(),
+                TOKEN_MS_TIMED_DISTRIBUTIONS_KEY,
+            ),
+            (
+                token_block_timed_distributions_path().to_vec(),
+                token_block_timed_distributions_path_vec(),
+                TOKEN_BLOCK_TIMED_DISTRIBUTIONS_KEY,
+            ),
+            (
+                token_epoch_timed_distributions_path().to_vec(),
+                token_epoch_timed_distributions_path_vec(),
+                TOKEN_EPOCH_TIMED_DISTRIBUTIONS_KEY,
+            ),
+        ] {
+            assert_eq!(arr.len(), 4);
+            assert_eq!(v.len(), 4);
+            assert_eq!(arr[0], &[t]);
+            assert_eq!(v[3], vec![key]);
+        }
+    }
+
+    #[test]
+    fn token_id_paths_include_id_and_are_consistent() {
+        let token_id = [0xAAu8; 32];
+
+        // Balances, identity infos, contract infos — all 3-segment with token_id
+        assert_array_vec_consistent(
+            &token_balances_path(&token_id),
+            &token_balances_path_vec(token_id),
+        );
+        assert_eq!(token_balances_path(&token_id)[2], &token_id);
+
+        assert_array_vec_consistent(
+            &token_identity_infos_path(&token_id),
+            &token_identity_infos_path_vec(token_id),
+        );
+        assert_eq!(token_identity_infos_path(&token_id)[2], &token_id);
+
+        assert_array_vec_consistent(
+            &token_contract_infos_path(&token_id),
+            &token_contract_infos_path_vec(token_id),
+        );
+        assert_eq!(token_contract_infos_path(&token_id)[2], &token_id);
+
+        // Perpetual + pre-programmed distribution with token_id — 4-segment
+        let perp = token_perpetual_distributions_path(&token_id);
+        assert_eq!(perp.len(), 4);
+        assert_eq!(perp[3], &token_id);
+
+        let pre = token_pre_programmed_distributions_path(&token_id);
+        assert_eq!(pre.len(), 4);
+        assert_eq!(pre[3], &token_id);
+
+        // Different token_ids produce different paths
+        let other_id = [0xBBu8; 32];
+        assert_ne!(
+            token_balances_path_vec(token_id)[2],
+            token_balances_path_vec(other_id)[2]
+        );
+    }
+
+    #[test]
+    fn parameterized_distribution_paths() {
+        let token_id = [0xCCu8; 32];
+        let identity_id = [0xDDu8; 32];
+
+        // Perpetual distribution claim paths
+        let claim_time = token_perpetual_distributions_identity_last_claimed_time_path(&token_id);
+        assert_eq!(claim_time.len(), 5);
+        assert_eq!(claim_time[3], &token_id);
+        assert_eq!(
+            claim_time[4],
+            &[TOKEN_PERPETUAL_DISTRIBUTIONS_FOR_IDENTITIES_LAST_CLAIM_KEY]
+        );
+
+        let claim_by_id = token_perpetual_distributions_identity_last_claimed_by_identity_path(
+            &token_id,
+            &identity_id,
+        );
+        assert_eq!(claim_by_id.len(), 6);
+        assert_eq!(claim_by_id[5], &identity_id);
+
+        // Pre-programmed distribution claim paths
+        let pre_claim =
+            token_pre_programmed_distributions_identity_last_claimed_time_path(&token_id);
+        assert_eq!(pre_claim.len(), 5);
+        assert_eq!(pre_claim[2], &[TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS_KEY]);
+
+        // Timed at specific time/block/epoch
+        let ts: u64 = 42000;
+        assert_eq!(
+            token_ms_timed_at_time_distributions_path_vec(ts)[4],
+            ts.to_be_bytes().to_vec()
+        );
+
+        let height: u64 = 500;
+        assert_eq!(
+            token_block_timed_at_block_distributions_path_vec(height)[4],
+            height.to_be_bytes().to_vec()
+        );
+
+        let epoch: u16 = 10;
+        assert_eq!(
+            token_epoch_timed_at_epoch_distributions_path_vec(epoch)[4],
+            epoch.to_be_bytes().to_vec()
+        );
+
+        // Pre-programmed at time
+        let pre_time = token_pre_programmed_at_time_distribution_path_vec(token_id, 1234567890);
+        assert_eq!(pre_time.len(), 5);
+        assert_eq!(pre_time[3], token_id.to_vec());
+    }
+
+    #[test]
+    fn array_and_vec_consistency_for_all_root_and_subtree_paths() {
+        let token_id = [0xFFu8; 32];
+
+        // All pairs of array/vec path functions
+        assert_array_vec_consistent(&tokens_root_path(), &tokens_root_path_vec());
+        assert_array_vec_consistent(&token_balances_root_path(), &token_balances_root_path_vec());
+        assert_array_vec_consistent(
+            &token_direct_purchase_root_path(),
+            &token_direct_purchase_root_path_vec(),
+        );
+        assert_array_vec_consistent(
+            &token_identity_infos_root_path(),
+            &token_identity_infos_root_path_vec(),
+        );
+        assert_array_vec_consistent(
+            &token_contract_infos_root_path(),
+            &token_contract_infos_root_path_vec(),
+        );
+        assert_array_vec_consistent(&token_statuses_root_path(), &token_statuses_root_path_vec());
+        assert_array_vec_consistent(
+            &token_distributions_root_path(),
+            &token_distributions_root_path_vec(),
+        );
+        assert_array_vec_consistent(
+            &token_balances_path(&token_id),
+            &token_balances_path_vec(token_id),
+        );
+        assert_array_vec_consistent(
+            &token_timed_distributions_path(),
+            &token_timed_distributions_path_vec(),
+        );
+        assert_array_vec_consistent(
+            &token_root_perpetual_distributions_path(),
+            &token_root_perpetual_distributions_path_vec(),
+        );
+        assert_array_vec_consistent(
+            &token_root_pre_programmed_distributions_path(),
+            &token_root_pre_programmed_distributions_path_vec(),
+        );
+        assert_array_vec_consistent(
+            &token_ms_timed_distributions_path(),
+            &token_ms_timed_distributions_path_vec(),
+        );
+        assert_array_vec_consistent(
+            &token_block_timed_distributions_path(),
+            &token_block_timed_distributions_path_vec(),
+        );
+        assert_array_vec_consistent(
+            &token_epoch_timed_distributions_path(),
+            &token_epoch_timed_distributions_path_vec(),
+        );
+    }
+
+    #[test]
+    fn key_constants_have_expected_values() {
+        assert_eq!(TOKEN_STATUS_INFO_KEY, 64);
+        assert_eq!(TOKEN_IDENTITY_INFO_KEY, 192);
+        assert_eq!(TOKEN_CONTRACT_INFO_KEY, 160);
+        assert_eq!(TOKEN_BALANCES_KEY, 128);
+        assert_eq!(TOKEN_DIRECT_SELL_PRICE_KEY, 92);
+        assert_eq!(TOKEN_DISTRIBUTIONS_KEY, 32);
+        assert_eq!(TOKEN_TIMED_DISTRIBUTIONS_KEY, 128);
+        assert_eq!(TOKEN_PERPETUAL_DISTRIBUTIONS_KEY, 64);
+        assert_eq!(TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS_KEY, 192);
+        assert_eq!(TOKEN_MS_TIMED_DISTRIBUTIONS_KEY, 128);
+        assert_eq!(TOKEN_BLOCK_TIMED_DISTRIBUTIONS_KEY, 64);
+        assert_eq!(TOKEN_EPOCH_TIMED_DISTRIBUTIONS_KEY, 192);
+        assert_eq!(TOKEN_PERPETUAL_DISTRIBUTIONS_INFO_KEY, 128);
+        assert_eq!(
+            TOKEN_PERPETUAL_DISTRIBUTIONS_FOR_IDENTITIES_LAST_CLAIM_KEY,
+            192
+        );
+        assert_eq!(
+            TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS_FOR_IDENTITIES_LAST_CLAIM_KEY,
+            192
+        );
+    }
+
+    #[test]
+    fn reward_distribution_moment_paths() {
+        let block = RewardDistributionMoment::BlockBasedMoment(100);
+        assert_eq!(
+            block.distribution_path(),
+            token_block_timed_at_block_distributions_path_vec(100)
+        );
+
+        let time = RewardDistributionMoment::TimeBasedMoment(5000);
+        assert_eq!(
+            time.distribution_path(),
+            token_ms_timed_at_time_distributions_path_vec(5000)
+        );
+
+        let epoch = RewardDistributionMoment::EpochBasedMoment(7);
+        assert_eq!(
+            epoch.distribution_path(),
+            token_epoch_timed_at_epoch_distributions_path_vec(7)
+        );
+    }
+}

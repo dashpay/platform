@@ -48,6 +48,12 @@ pub mod grove_get_raw_path_query;
 /// Proved path query in grove
 pub mod grove_get_proved_path_query;
 
+/// V1 proved path query in grove (supports BulkAppendTree/CommitmentTree)
+pub mod grove_get_proved_path_query_v1;
+
+/// Get total count from a CommitmentTree
+pub mod grove_commitment_tree_count;
+
 /// Proved branch chunk query in grove
 pub mod grove_get_proved_branch_chunk_query;
 
@@ -65,6 +71,12 @@ pub mod batch_insert_empty_tree;
 
 /// Batch insert operation into empty sum tree
 pub mod batch_insert_empty_sum_tree;
+
+/// Batch insert operation into empty count tree (O(1) total count)
+pub mod batch_insert_empty_count_tree;
+
+/// Batch insert operation into empty provable count tree (range-countable)
+pub mod batch_insert_empty_provable_count_tree;
 
 /// Batch insert operation into empty tree, but only if it doesn't already exist
 pub mod batch_insert_empty_tree_if_not_exists;

@@ -72,10 +72,14 @@ pub unsafe extern "C" fn dash_sdk_identities_fetch_balances(
 
     let result: Result<DashSDKIdentityBalanceMap, FFIError> = wrapper.runtime.block_on(async {
         // Fetch identities balances
-        let balances: IdentityBalances =
-            IdentityBalance::fetch_many(&wrapper.sdk, identifiers.clone())
-                .await
-                .map_err(FFIError::from)?;
+        // UFCS required: RPITIT opaque return types prevent the compiler from
+        // inferring which FetchMany impl to use (rust-lang/rust#113495).
+        let balances: IdentityBalances = <IdentityBalance as FetchMany<
+            Identifier,
+            IdentityBalances,
+        >>::fetch_many(&wrapper.sdk, identifiers.clone())
+        .await
+        .map_err(FFIError::from)?;
 
         // Convert to entries array
         let mut entries: Vec<DashSDKIdentityBalanceEntry> = Vec::with_capacity(identity_ids_len);
@@ -90,8 +94,12 @@ pub unsafe extern "C" fn dash_sdk_identities_fetch_balances(
         }
 
         let count = entries.len();
-        let entries_ptr = entries.as_mut_ptr();
-        std::mem::forget(entries); // Prevent deallocation
+        let entries_ptr = if entries.is_empty() {
+            std::ptr::null_mut()
+        } else {
+            let boxed = entries.into_boxed_slice();
+            Box::into_raw(boxed) as *mut DashSDKIdentityBalanceEntry
+        };
 
         Ok(DashSDKIdentityBalanceMap {
             entries: entries_ptr,

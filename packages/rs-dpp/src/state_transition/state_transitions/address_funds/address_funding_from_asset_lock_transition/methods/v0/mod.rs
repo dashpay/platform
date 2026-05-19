@@ -18,7 +18,7 @@ use platform_version::version::PlatformVersion;
 pub trait AddressFundingFromAssetLockTransitionMethodsV0 {
     #[cfg(feature = "state-transition-signing")]
     #[allow(clippy::too_many_arguments)]
-    fn try_from_asset_lock_with_signer<S: Signer<PlatformAddress>>(
+    async fn try_from_asset_lock_with_signer<S: Signer<PlatformAddress>>(
         asset_lock_proof: AssetLockProof,
         asset_lock_proof_private_key: &[u8],
         inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,

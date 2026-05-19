@@ -44,6 +44,26 @@ describe('Document', () => {
     });
   }
 
+  // Fixed 32-byte entropy for deterministic tests
+  const fixedEntropy = Uint8Array.from([
+    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+    17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32,
+  ]);
+
+  // Pre-computed byte arrays for identifiers (from Base58 decoding)
+  const idBytes = Uint8Array.from([
+    132, 11, 92, 236, 159, 4, 1, 177, 149, 6, 16, 232, 93, 203, 38, 130,
+    145, 34, 172, 136, 83, 70, 78, 30, 44, 126, 56, 237, 34, 180, 137, 3,
+  ]);
+  const ownerIdBytes = Uint8Array.from([
+    171, 50, 27, 25, 69, 123, 28, 22, 177, 39, 98, 80, 146, 118, 212, 125,
+    149, 47, 88, 45, 151, 140, 189, 139, 80, 187, 252, 47, 216, 167, 118, 125,
+  ]);
+  const dataContractIdBytes = Uint8Array.from([
+    234, 137, 32, 237, 234, 82, 250, 64, 13, 226, 204, 196, 48, 82, 178, 130,
+    31, 69, 88, 82, 65, 162, 135, 93, 66, 80, 227, 93, 76, 233, 55, 200,
+  ]);
+
   describe('constructor()', () => {
     it('should create Document from values', () => {
       const documentInstance = createDocument();
@@ -102,6 +122,19 @@ describe('Document', () => {
       // toObject uses BigInt for u64 values like revision to preserve precision
       expect(BigInt(obj.$revision)).to.equal(revision);
     });
+
+    it('should match expected byte values for known input', () => {
+      const doc = createDocument({ id, entropy: fixedEntropy });
+      const obj = doc.toObject();
+
+      expect(obj.$id).to.deep.equal(idBytes);
+      expect(obj.$ownerId).to.deep.equal(ownerIdBytes);
+      expect(obj.$dataContractId).to.deep.equal(dataContractIdBytes);
+      expect(obj.$type).to.equal(documentTypeName);
+      expect(obj.$revision).to.equal(1n);
+      expect(obj.$entropy).to.deep.equal(fixedEntropy);
+      expect(obj.message).to.equal('Tutorial CI Test @ Tue, 07 Jan 2025 15:27:50 GMT');
+    });
   });
 
   describe('fromObject()', () => {
@@ -130,6 +163,19 @@ describe('Document', () => {
       expect(typeof json.$dataContractId).to.equal('string');
       expect(json.$type).to.equal(documentTypeName);
       expect(json.$revision).to.equal(Number(revision));
+    });
+
+    it('should match expected values for known input', () => {
+      const doc = createDocument({ id, entropy: fixedEntropy });
+      const json = doc.toJSON();
+
+      expect(json.$id).to.equal(id);
+      expect(json.$ownerId).to.equal(ownerId);
+      expect(json.$dataContractId).to.equal(dataContractId);
+      expect(json.$type).to.equal(documentTypeName);
+      expect(json.$revision).to.equal(Number(revision));
+      expect(json.message).to.equal('Tutorial CI Test @ Tue, 07 Jan 2025 15:27:50 GMT');
+      expect(typeof json.$entropy).to.equal('string');
     });
   });
 

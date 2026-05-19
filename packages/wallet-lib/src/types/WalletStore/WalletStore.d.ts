@@ -22,5 +22,3 @@ export declare class WalletStore {
   importState(exportedState: ExportedState): void;
   insertIdentityIdAtIndex(identityId: string, identityIndex: number): void;
 }
-
-

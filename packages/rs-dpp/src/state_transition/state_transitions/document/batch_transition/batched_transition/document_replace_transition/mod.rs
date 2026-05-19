@@ -11,15 +11,12 @@ use bincode::{Decode, Encode};
 use derive_more::{Display, From};
 use platform_value::Identifier;
 use platform_version::version::PlatformVersion;
-#[cfg(feature = "state-transition-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 pub use v0::*;
 
 #[derive(Debug, Clone, Encode, Decode, PartialEq, Display, From)]
-#[cfg_attr(
-    feature = "state-transition-serde-conversion",
-    derive(Serialize, Deserialize)
-)]
+#[cfg_attr(feature = "serde-conversion", derive(Serialize, Deserialize))]
 pub enum DocumentReplaceTransition {
     #[display("V0({})", "_0")]
     V0(DocumentReplaceTransitionV0),

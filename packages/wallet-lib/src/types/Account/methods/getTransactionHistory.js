@@ -8,7 +8,7 @@ const sortbyTimeDescending = (a, b) => (b.time - a.time);
 const sortByHeightDescending = (a, b) => (b.height - a.height);
 
 /**
- * Get all the transaction history already formated
+ * Get all the transaction history already formatted
  * @return {TransactionsHistory}
  */
 function getTransactionHistory() {

@@ -14,15 +14,15 @@ Events types :
 
 | Event Name                 | Description                                             | 
 | -------------------------- |:-------------------------------------------------------:|
-| CONFIGURED                 |  throwed when Storage has configured the adapter.       |
+| CONFIGURED                 |  thrown when Storage has configured the adapter.       |
 | REHYDRATE_STATE_FAILED     | onFailedRehydrateState                                  |
-| REHYDRATE_STATE_SUCCESS    | throwed when Storage has succesfully rehydrated the data|
+| REHYDRATE_STATE_SUCCESS    | thrown when Storage has successfully rehydrated the data|
 
 ### General 
 
 | Event Name                 | Description                          | 
 | -------------------------- |:------------------------------------:|
-| READY                      |  throwed when ready to be used       |
+| READY                      |  thrown when ready to be used       |
 
 
 
@@ -42,5 +42,3 @@ Events types :
 | ---------------------------- |:----------------------------------------------------------------------:|
 | UNCONFIRMED_BALANCE_CHANGED  | When unconfirmed balance change, we gives the delta + totalValue       |
 | BALANCE_CHANGED              | When the balance change, we gives the delta + totalValue               |
-
-

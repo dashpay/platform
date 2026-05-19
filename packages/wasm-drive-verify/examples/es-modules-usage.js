@@ -7,7 +7,7 @@ async function verifyIdentity() {
   const proof = new Uint8Array([/* ... */]);
   const identityId = new Uint8Array([/* ... */]);
   const platformVersion = 1;
-  
+
   const result = await verifyFullIdentityByIdentityId(proof, identityId, platformVersion);
   console.log('Identity verification result:', result);
 }
@@ -16,21 +16,21 @@ async function verifyIdentity() {
 async function verifyDocumentOnDemand() {
   // This module will only be loaded when this function is called
   const { verifyProof } = await import('wasm-drive-verify/document');
-  
+
   const proof = new Uint8Array([/* ... */]);
   const contractId = new Uint8Array([/* ... */]);
   const documentTypeName = 'myDocument';
   const query = { /* ... */ };
   const platformVersion = 1;
-  
+
   const result = await verifyProof(proof, contractId, documentTypeName, query, platformVersion);
   console.log('Document verification result:', result);
 }
 
 // Option 3: Import multiple functions from a module
-import { 
+import {
   verifyTokenBalanceForIdentityId,
-  verifyTokenInfoForIdentityId 
+  verifyTokenInfoForIdentityId
 } from 'wasm-drive-verify/tokens';
 
 async function checkTokenInfo() {
@@ -38,12 +38,12 @@ async function checkTokenInfo() {
   const contractId = new Uint8Array([/* ... */]);
   const identityId = new Uint8Array([/* ... */]);
   const platformVersion = 1;
-  
+
   const [balance, info] = await Promise.all([
     verifyTokenBalanceForIdentityId(proof, contractId, identityId, platformVersion),
     verifyTokenInfoForIdentityId(proof, contractId, identityId, platformVersion)
   ]);
-  
+
   console.log('Token balance:', balance);
   console.log('Token info:', info);
 }

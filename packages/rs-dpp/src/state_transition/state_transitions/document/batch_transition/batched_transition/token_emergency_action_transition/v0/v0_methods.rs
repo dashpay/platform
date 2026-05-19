@@ -1,4 +1,6 @@
 use platform_value::Identifier;
+use platform_version::version::PlatformVersion;
+use crate::ProtocolError;
 use crate::state_transition::batch_transition::batched_transition::multi_party_action::AllowedAsMultiPartyAction;
 use crate::state_transition::batch_transition::batched_transition::token_emergency_action_transition::TokenEmergencyActionTransitionV0;
 use crate::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
@@ -63,18 +65,24 @@ impl TokenEmergencyActionTransitionV0Methods for TokenEmergencyActionTransitionV
 }
 
 impl AllowedAsMultiPartyAction for TokenEmergencyActionTransitionV0 {
-    fn calculate_action_id(&self, owner_id: Identifier) -> Identifier {
+    fn calculate_action_id(
+        &self,
+        owner_id: Identifier,
+        _platform_version: &PlatformVersion,
+    ) -> Result<Identifier, ProtocolError> {
         let TokenEmergencyActionTransitionV0 {
             base,
             emergency_action,
             ..
         } = self;
 
-        TokenEmergencyActionTransition::calculate_action_id_with_fields(
-            base.token_id().as_bytes(),
-            owner_id.as_bytes(),
-            base.identity_contract_nonce(),
-            *emergency_action,
+        Ok(
+            TokenEmergencyActionTransition::calculate_action_id_with_fields(
+                base.token_id().as_bytes(),
+                owner_id.as_bytes(),
+                base.identity_contract_nonce(),
+                *emergency_action,
+            ),
         )
     }
 }

@@ -141,3 +141,196 @@ impl AddressFundingFromAssetLockTransitionAction {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dpp::address_funds::fee_strategy::AddressFundsFeeStrategyStep;
+    use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
+    use dpp::platform_value::Bytes36;
+    use dpp::state_transition::signable_bytes_hasher::SignableBytesHasher;
+    use platform_version::version::PlatformVersion;
+
+    fn make_asset_lock_value(remaining: Credits) -> AssetLockValue {
+        AssetLockValue::new(
+            remaining + 1000, // initial > remaining
+            vec![0xDE, 0xAD],
+            remaining,
+            vec![],
+            PlatformVersion::latest(),
+        )
+        .expect("should create AssetLockValue")
+    }
+
+    fn make_action() -> AddressFundingFromAssetLockTransitionAction {
+        let addr_input = PlatformAddress::P2pkh([0xAA; 20]);
+        let addr_explicit = PlatformAddress::P2pkh([0xBB; 20]);
+        let addr_remainder = PlatformAddress::P2sh([0xCC; 20]);
+
+        let mut inputs = BTreeMap::new();
+        inputs.insert(addr_input, (1_u32, 2000_u64));
+
+        let mut outputs = BTreeMap::new();
+        outputs.insert(addr_explicit, Some(3000_u64));
+        outputs.insert(addr_remainder, None); // remainder recipient
+
+        let v0 = AddressFundingFromAssetLockTransitionActionV0 {
+            signable_bytes_hasher: SignableBytesHasher::Bytes(vec![0xFF; 8]),
+            asset_lock_value_to_be_consumed: make_asset_lock_value(5000),
+            asset_lock_outpoint: Bytes36([0xDD; 36]),
+            inputs_with_remaining_balance: inputs,
+            outputs,
+            input_contributions_total: 2000,
+            fee_strategy: vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+            user_fee_increase: 5,
+        };
+        AddressFundingFromAssetLockTransitionAction::from(v0)
+    }
+
+    #[test]
+    fn test_from_v0() {
+        let action = make_action();
+        assert!(matches!(
+            action,
+            AddressFundingFromAssetLockTransitionAction::V0(_)
+        ));
+    }
+
+    #[test]
+    fn test_inputs_with_remaining_balance() {
+        let action = make_action();
+        let inputs = action.inputs_with_remaining_balance();
+        assert_eq!(inputs.len(), 1);
+        let addr = PlatformAddress::P2pkh([0xAA; 20]);
+        let (nonce, balance) = inputs.get(&addr).unwrap();
+        assert_eq!(*nonce, 1);
+        assert_eq!(*balance, 2000);
+    }
+
+    #[test]
+    fn test_outputs() {
+        let action = make_action();
+        let outputs = action.outputs();
+        assert_eq!(outputs.len(), 2);
+        let addr_explicit = PlatformAddress::P2pkh([0xBB; 20]);
+        let addr_remainder = PlatformAddress::P2sh([0xCC; 20]);
+        assert_eq!(*outputs.get(&addr_explicit).unwrap(), Some(3000_u64));
+        assert_eq!(*outputs.get(&addr_remainder).unwrap(), None);
+    }
+
+    #[test]
+    fn test_asset_lock_value_to_be_consumed() {
+        use dpp::asset_lock::reduced_asset_lock_value::AssetLockValueGettersV0;
+
+        let action = make_action();
+        let alv = action.asset_lock_value_to_be_consumed();
+        assert_eq!(alv.remaining_credit_value(), 5000);
+    }
+
+    #[test]
+    fn test_input_contributions_total() {
+        let action = make_action();
+        assert_eq!(action.input_contributions_total(), 2000);
+    }
+
+    #[test]
+    fn test_resolved_outputs() {
+        let action = make_action();
+        // total_available = 5000 (asset lock remaining) + 2000 (input contributions) = 7000
+        // explicit_outputs_sum = 3000
+        // remainder = 7000 - 3000 = 4000
+        let resolved = action.resolved_outputs();
+        assert_eq!(resolved.len(), 2);
+        let addr_explicit = PlatformAddress::P2pkh([0xBB; 20]);
+        let addr_remainder = PlatformAddress::P2sh([0xCC; 20]);
+        assert_eq!(*resolved.get(&addr_explicit).unwrap(), 3000);
+        assert_eq!(*resolved.get(&addr_remainder).unwrap(), 4000);
+    }
+
+    #[test]
+    fn test_resolved_outputs_all_explicit() {
+        // When there's no remainder recipient, all outputs should match their explicit values.
+        let addr = PlatformAddress::P2pkh([0xBB; 20]);
+        let mut outputs = BTreeMap::new();
+        outputs.insert(addr, Some(7000_u64));
+
+        let v0 = AddressFundingFromAssetLockTransitionActionV0 {
+            signable_bytes_hasher: SignableBytesHasher::Bytes(vec![]),
+            asset_lock_value_to_be_consumed: make_asset_lock_value(5000),
+            asset_lock_outpoint: Bytes36([0x00; 36]),
+            inputs_with_remaining_balance: BTreeMap::new(),
+            outputs,
+            input_contributions_total: 2000,
+            fee_strategy: vec![],
+            user_fee_increase: 0,
+        };
+        let action = AddressFundingFromAssetLockTransitionAction::from(v0);
+        let resolved = action.resolved_outputs();
+        assert_eq!(resolved.len(), 1);
+        assert_eq!(*resolved.get(&addr).unwrap(), 7000);
+    }
+
+    #[test]
+    fn test_asset_lock_outpoint() {
+        let action = make_action();
+        assert_eq!(action.asset_lock_outpoint(), Bytes36([0xDD; 36]));
+    }
+
+    #[test]
+    fn test_user_fee_increase() {
+        let action = make_action();
+        assert_eq!(action.user_fee_increase(), 5);
+    }
+
+    #[test]
+    fn test_fee_strategy() {
+        let action = make_action();
+        let strategy = action.fee_strategy();
+        assert_eq!(strategy.len(), 1);
+        assert!(matches!(
+            strategy[0],
+            AddressFundsFeeStrategyStep::DeductFromInput(0)
+        ));
+    }
+
+    #[test]
+    fn test_remove_remainder_output() {
+        let mut action = make_action();
+        assert_eq!(action.outputs().len(), 2);
+        action.remove_remainder_output();
+        // Only explicit (Some) outputs should remain.
+        assert_eq!(action.outputs().len(), 1);
+        let addr_explicit = PlatformAddress::P2pkh([0xBB; 20]);
+        assert!(action.outputs().contains_key(&addr_explicit));
+    }
+
+    #[test]
+    fn test_inputs_outputs_and_asset_lock_value_owned() {
+        let action = make_action();
+        let (inputs, outputs, alv, contributions) =
+            action.inputs_with_remaining_balance_outputs_and_asset_lock_value_owned();
+
+        assert_eq!(inputs.len(), 1);
+        assert_eq!(outputs.len(), 2);
+        assert_eq!(contributions, 2000);
+
+        use dpp::asset_lock::reduced_asset_lock_value::AssetLockValueGettersV0;
+        assert_eq!(alv.remaining_credit_value(), 5000);
+    }
+
+    #[test]
+    fn test_clone() {
+        let action = make_action();
+        let cloned = action.clone();
+        assert_eq!(cloned.user_fee_increase(), 5);
+        assert_eq!(cloned.input_contributions_total(), 2000);
+        assert_eq!(cloned.outputs().len(), 2);
+    }
+
+    #[test]
+    fn test_debug() {
+        let action = make_action();
+        let debug_str = format!("{:?}", action);
+        assert!(debug_str.contains("V0"));
+    }
+}

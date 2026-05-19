@@ -32,7 +32,7 @@ pub(super) fn derive_platform_deserialize_struct(
             quote! {
                 .map_err(|e| {
                         match e {
-                            bincode::error::DecodeError::Io{inner} => #error_type::MaxEncodedBytesReachedError{max_size_kbytes: #limit},
+                            bincode::error::DecodeError::Io { .. } | bincode::error::DecodeError::LimitExceeded => #error_type::MaxEncodedBytesReachedError{max_size_kbytes: #limit, size_hit: bytes.len()},
                             _ => #error_type::PlatformDeserializationError(format!("unable to deserialize {}: {}", stringify!(#name), e)),
                         }
                     })

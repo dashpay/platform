@@ -44,4 +44,3 @@ describe('KeyChainStore', function suite() {
     expect(childKeyChainStore.getMasterKeyChain().rootKeyType).to.be.equal(HDPrivateKey.name)
   });
 });
-

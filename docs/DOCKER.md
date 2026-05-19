@@ -27,7 +27,7 @@ We implement the following levels of caching:
 
 ### Docker-level caching cache mounts
 
-Cache mounts include some cachable elements of RUST_HOME (including downloaded dependencies), as well as
+Cache mounts include some cacheable elements of RUST_HOME (including downloaded dependencies), as well as
 [Cargo target dir](https://doc.rust-lang.org/cargo/guide/build-cache.html). As the target dir grows to multiple
 gigabytes, Docker cache garbage collector must be tuned accordingly.
 

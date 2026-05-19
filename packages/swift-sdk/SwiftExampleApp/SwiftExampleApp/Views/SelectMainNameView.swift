@@ -1,17 +1,28 @@
 import SwiftUI
+import SwiftDashSDK
 
 struct SelectMainNameView: View {
-    let identity: IdentityModel
+    let identity: PersistentIdentity
     @EnvironmentObject var appState: AppState
+    @EnvironmentObject var walletManager: PlatformWalletManager
+    @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) var dismiss
-    
+
     @State private var selectedName: String?
-    
+    /// DPNS names owned by this identity — loaded on appear from
+    /// the owning wallet's `ManagedIdentity`. Empty when the
+    /// identity isn't wallet-associated or the wallet hasn't
+    /// synced DPNS names yet.
+    @State private var dpnsNames: [String] = []
+    /// Labels this identity is currently contending for — shown
+    /// as read-only information ("contested, cannot be main").
+    @State private var contestedDpnsNames: [String] = []
+
     var availableNames: [String] {
-        // Only show non-contested names that the user actually owns
-        identity.dpnsNames
+        // Only show non-contested names that the user actually owns.
+        dpnsNames
     }
-    
+
     var body: some View {
         NavigationView {
             Form {
@@ -20,7 +31,7 @@ struct SelectMainNameView: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
-                
+
                 if availableNames.isEmpty {
                     Section {
                         VStack(spacing: 12) {
@@ -53,7 +64,7 @@ struct SelectMainNameView: View {
                         .onTapGesture {
                             selectedName = nil
                         }
-                        
+
                         // List all available names
                         ForEach(availableNames, id: \.self) { name in
                             HStack {
@@ -66,9 +77,9 @@ struct SelectMainNameView: View {
                                             .foregroundColor(.secondary)
                                     }
                                 }
-                                
+
                                 Spacer()
-                                
+
                                 if selectedName == name {
                                     Image(systemName: "checkmark.circle.fill")
                                         .foregroundColor(.blue)
@@ -80,7 +91,7 @@ struct SelectMainNameView: View {
                             }
                         }
                     }
-                    
+
                     // Show current selection
                     if let currentMain = identity.mainDpnsName {
                         Section("Current Main Name") {
@@ -94,11 +105,11 @@ struct SelectMainNameView: View {
                         }
                     }
                 }
-                
+
                 // Show contested names as information only
-                if !identity.contestedDpnsNames.isEmpty {
+                if !contestedDpnsNames.isEmpty {
                     Section("Contested Names") {
-                        ForEach(identity.contestedDpnsNames, id: \.self) { name in
+                        ForEach(contestedDpnsNames, id: \.self) { name in
                             HStack {
                                 Text(name)
                                     .foregroundColor(.secondary)
@@ -108,7 +119,7 @@ struct SelectMainNameView: View {
                                     .foregroundColor(.orange)
                             }
                         }
-                        
+
                         Text("Contested names cannot be selected as main names until they are won.")
                             .font(.caption)
                             .foregroundColor(.secondary)
@@ -123,7 +134,7 @@ struct SelectMainNameView: View {
                         dismiss()
                     }
                 }
-                
+
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Save") {
                         saveSelection()
@@ -134,21 +145,38 @@ struct SelectMainNameView: View {
             .onAppear {
                 // Initialize with current main name
                 selectedName = identity.mainDpnsName
+                loadNamesFromWallet()
             }
         }
     }
-    
-    private func saveSelection() {
-        // Update the identity with the new main name
-        if let index = appState.identities.firstIndex(where: { $0.id == identity.id }) {
-            var updatedIdentity = appState.identities[index]
-            updatedIdentity.mainDpnsName = selectedName
-            appState.identities[index] = updatedIdentity
-            
-            // Persist the selection
-            appState.updateIdentityMainName(id: identity.id, mainName: selectedName)
+
+    /// Populate `dpnsNames` / `contestedDpnsNames` by asking the
+    /// owning wallet's `ManagedIdentity`. Skipped silently when
+    /// the identity has no wallet association — the view then
+    /// shows the "No Names Available" empty state.
+    private func loadNamesFromWallet() {
+        guard let walletId = identity.wallet?.walletId,
+              let wallet = walletManager.wallet(for: walletId)
+        else {
+            return
         }
-        
+        guard let managed = try? wallet.managedIdentity(identityId: identity.identityId) else {
+            return
+        }
+        dpnsNames = (try? managed.getDpnsNames()) ?? []
+        contestedDpnsNames = (try? managed.getContestedDpnsNames()) ?? []
+    }
+
+    private func saveSelection() {
+        // One direct SwiftData write — PersistentIdentity's unique
+        // `identityId` lets `@Query` views upstream pick up the
+        // change reactively on `save()`.
+        PersistentIdentity.updateMainDpnsName(
+            in: modelContext,
+            identityId: identity.identityId,
+            mainDpnsName: selectedName
+        )
+        try? modelContext.save()
         dismiss()
     }
 }

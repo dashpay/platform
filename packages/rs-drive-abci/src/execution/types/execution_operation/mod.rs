@@ -279,3 +279,263 @@ impl ValidationOperation {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dpp::fee::fee_result::FeeResult;
+    use dpp::identity::KeyType;
+    use dpp::validation::operations::ProtocolValidationOperation;
+    use platform_version::version::PlatformVersion;
+
+    fn platform_version() -> &'static PlatformVersion {
+        PlatformVersion::latest()
+    }
+
+    #[test]
+    fn retrieve_identity_info_only_balance() {
+        let info = RetrieveIdentityInfo::only_balance();
+        assert_eq!(info.query_by_key_id_key_count, 0);
+        assert!(info.request_balance);
+        assert!(!info.request_revision);
+    }
+
+    #[test]
+    fn retrieve_identity_info_only_revision() {
+        let info = RetrieveIdentityInfo::only_revision();
+        assert_eq!(info.query_by_key_id_key_count, 0);
+        assert!(!info.request_balance);
+        assert!(info.request_revision);
+    }
+
+    #[test]
+    fn retrieve_identity_info_one_key() {
+        let info = RetrieveIdentityInfo::one_key();
+        assert_eq!(info.query_by_key_id_key_count, 1);
+        assert!(!info.request_balance);
+        assert!(!info.request_revision);
+    }
+
+    #[test]
+    fn retrieve_identity_info_one_key_and_balance_and_revision() {
+        let info = RetrieveIdentityInfo::one_key_and_balance_and_revision();
+        assert_eq!(info.query_by_key_id_key_count, 1);
+        assert!(info.request_balance);
+        assert!(info.request_revision);
+    }
+
+    #[test]
+    fn retrieve_identity_info_one_key_and_balance() {
+        let info = RetrieveIdentityInfo::one_key_and_balance();
+        assert_eq!(info.query_by_key_id_key_count, 1);
+        assert!(info.request_balance);
+        assert!(!info.request_revision);
+    }
+
+    #[test]
+    fn retrieve_identity_info_one_key_and_revision() {
+        let info = RetrieveIdentityInfo::one_key_and_revision();
+        assert_eq!(info.query_by_key_id_key_count, 1);
+        assert!(!info.request_balance);
+        assert!(info.request_revision);
+    }
+
+    #[test]
+    fn add_many_empty_operations_is_noop() {
+        let mut fee_result = FeeResult::default();
+        ValidationOperation::add_many_to_fee_result(&[], &mut fee_result, platform_version())
+            .unwrap();
+        assert_eq!(fee_result.processing_fee, 0);
+        assert_eq!(fee_result.storage_fee, 0);
+    }
+
+    #[test]
+    fn add_many_signature_verification() {
+        let ops = vec![ValidationOperation::SignatureVerification(
+            SignatureVerificationOperation::new(KeyType::ECDSA_SECP256K1),
+        )];
+        let mut fee_result = FeeResult::default();
+        ValidationOperation::add_many_to_fee_result(&ops, &mut fee_result, platform_version())
+            .unwrap();
+        assert!(fee_result.processing_fee > 0);
+    }
+
+    #[test]
+    fn add_many_precalculated_operation() {
+        let precalc = FeeResult {
+            processing_fee: 100,
+            storage_fee: 50,
+            ..Default::default()
+        };
+        let ops = vec![ValidationOperation::PrecalculatedOperation(precalc)];
+        let mut fee_result = FeeResult::default();
+        ValidationOperation::add_many_to_fee_result(&ops, &mut fee_result, platform_version())
+            .unwrap();
+        assert_eq!(fee_result.processing_fee, 100);
+        assert_eq!(fee_result.storage_fee, 50);
+    }
+
+    #[test]
+    fn add_many_single_sha256() {
+        let ops = vec![ValidationOperation::SingleSha256(2)];
+        let mut fee_result = FeeResult::default();
+        ValidationOperation::add_many_to_fee_result(&ops, &mut fee_result, platform_version())
+            .unwrap();
+        let pv = platform_version();
+        let expected =
+            pv.fee_version.hashing.single_sha256_base + pv.fee_version.hashing.sha256_per_block * 2;
+        assert_eq!(fee_result.processing_fee, expected);
+    }
+
+    #[test]
+    fn add_many_double_sha256() {
+        let ops = vec![ValidationOperation::DoubleSha256(3)];
+        let mut fee_result = FeeResult::default();
+        ValidationOperation::add_many_to_fee_result(&ops, &mut fee_result, platform_version())
+            .unwrap();
+        let pv = platform_version();
+        let expected =
+            pv.fee_version.hashing.single_sha256_base + pv.fee_version.hashing.sha256_per_block * 3;
+        assert_eq!(fee_result.processing_fee, expected);
+    }
+
+    #[test]
+    fn add_many_ripemd160() {
+        let ops = vec![ValidationOperation::Ripemd160(4)];
+        let mut fee_result = FeeResult::default();
+        ValidationOperation::add_many_to_fee_result(&ops, &mut fee_result, platform_version())
+            .unwrap();
+        let pv = platform_version();
+        let expected = pv.fee_version.hashing.ripemd160_per_block * 4;
+        assert_eq!(fee_result.processing_fee, expected);
+    }
+
+    #[test]
+    fn add_many_retrieve_identity_balance_only() {
+        let ops = vec![ValidationOperation::RetrieveIdentity(
+            RetrieveIdentityInfo::only_balance(),
+        )];
+        let mut fee_result = FeeResult::default();
+        ValidationOperation::add_many_to_fee_result(&ops, &mut fee_result, platform_version())
+            .unwrap();
+        assert!(fee_result.processing_fee > 0);
+    }
+
+    #[test]
+    fn add_many_retrieve_identity_revision_only() {
+        let ops = vec![ValidationOperation::RetrieveIdentity(
+            RetrieveIdentityInfo::only_revision(),
+        )];
+        let mut fee_result = FeeResult::default();
+        ValidationOperation::add_many_to_fee_result(&ops, &mut fee_result, platform_version())
+            .unwrap();
+        assert!(fee_result.processing_fee > 0);
+    }
+
+    #[test]
+    fn add_many_retrieve_identity_one_key_and_balance_and_revision() {
+        let ops = vec![ValidationOperation::RetrieveIdentity(
+            RetrieveIdentityInfo::one_key_and_balance_and_revision(),
+        )];
+        let mut fee_result = FeeResult::default();
+        ValidationOperation::add_many_to_fee_result(&ops, &mut fee_result, platform_version())
+            .unwrap();
+        assert!(fee_result.processing_fee > 0);
+    }
+
+    #[test]
+    fn add_many_retrieve_identity_no_balance_no_revision_no_keys() {
+        // Tests the (false, false) branch with 0 keys
+        let ops = vec![ValidationOperation::RetrieveIdentity(
+            RetrieveIdentityInfo {
+                query_by_key_id_key_count: 0,
+                request_balance: false,
+                request_revision: false,
+            },
+        )];
+        let mut fee_result = FeeResult::default();
+        ValidationOperation::add_many_to_fee_result(&ops, &mut fee_result, platform_version())
+            .unwrap();
+        // Base cost is 0 when both flags are false and no keys
+        assert_eq!(fee_result.processing_fee, 0);
+    }
+
+    #[test]
+    fn add_many_retrieve_prefunded_specialized_balance() {
+        let ops = vec![ValidationOperation::RetrievePrefundedSpecializedBalance];
+        let mut fee_result = FeeResult::default();
+        ValidationOperation::add_many_to_fee_result(&ops, &mut fee_result, platform_version())
+            .unwrap();
+        assert!(fee_result.processing_fee > 0);
+    }
+
+    #[test]
+    fn add_many_validate_key_structure() {
+        let ops = vec![ValidationOperation::ValidateKeyStructure(5)];
+        let mut fee_result = FeeResult::default();
+        ValidationOperation::add_many_to_fee_result(&ops, &mut fee_result, platform_version())
+            .unwrap();
+        let pv = platform_version();
+        let expected = pv.fee_version.processing.validate_key_structure * 5;
+        assert_eq!(fee_result.processing_fee, expected);
+    }
+
+    #[test]
+    fn add_many_protocol_operation() {
+        let ops = vec![ValidationOperation::Protocol(
+            ProtocolValidationOperation::DocumentTypeSchemaValidationForSize(100),
+        )];
+        let mut fee_result = FeeResult::default();
+        ValidationOperation::add_many_to_fee_result(&ops, &mut fee_result, platform_version())
+            .unwrap();
+        assert!(fee_result.processing_fee > 0);
+    }
+
+    #[test]
+    fn add_many_perform_network_threshold_signing() {
+        let ops = vec![ValidationOperation::PerformNetworkThresholdSigning];
+        let mut fee_result = FeeResult::default();
+        ValidationOperation::add_many_to_fee_result(&ops, &mut fee_result, platform_version())
+            .unwrap();
+        assert!(fee_result.processing_fee > 0);
+    }
+
+    #[test]
+    fn add_many_retrieve_identity_token_balance() {
+        let ops = vec![ValidationOperation::RetrieveIdentityTokenBalance];
+        let mut fee_result = FeeResult::default();
+        ValidationOperation::add_many_to_fee_result(&ops, &mut fee_result, platform_version())
+            .unwrap();
+        assert!(fee_result.processing_fee > 0);
+    }
+
+    #[test]
+    fn add_many_retrieve_address_nonce_and_balance() {
+        let ops = vec![ValidationOperation::RetrieveAddressNonceAndBalance(3)];
+        let mut fee_result = FeeResult::default();
+        ValidationOperation::add_many_to_fee_result(&ops, &mut fee_result, platform_version())
+            .unwrap();
+        let pv = platform_version();
+        let expected = pv
+            .fee_version
+            .processing
+            .fetch_key_with_type_nonce_and_balance_cost
+            * 3;
+        assert_eq!(fee_result.processing_fee, expected);
+    }
+
+    #[test]
+    fn add_many_multiple_operations_accumulate() {
+        let ops = vec![
+            ValidationOperation::SingleSha256(1),
+            ValidationOperation::SingleSha256(1),
+        ];
+        let mut fee_result = FeeResult::default();
+        ValidationOperation::add_many_to_fee_result(&ops, &mut fee_result, platform_version())
+            .unwrap();
+        let pv = platform_version();
+        let single =
+            pv.fee_version.hashing.single_sha256_base + pv.fee_version.hashing.sha256_per_block;
+        assert_eq!(fee_result.processing_fee, single * 2);
+    }
+}

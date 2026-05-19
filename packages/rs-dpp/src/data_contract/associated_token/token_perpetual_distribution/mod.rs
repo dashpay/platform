@@ -1,5 +1,7 @@
 use crate::data_contract::associated_token::token_perpetual_distribution::v0::TokenPerpetualDistributionV0;
 use crate::errors::ProtocolError;
+#[cfg(feature = "json-conversion")]
+use crate::serialization::JsonConvertible;
 use bincode::{Decode, Encode};
 use derive_more::From;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -13,6 +15,7 @@ pub mod reward_distribution_moment;
 pub mod reward_distribution_type;
 pub mod v0;
 
+#[cfg_attr(feature = "json-conversion", derive(JsonConvertible))]
 #[derive(
     Serialize,
     Deserialize,
@@ -27,7 +30,7 @@ pub mod v0;
     PartialOrd,
     From,
 )]
-#[serde(tag = "$format_version")]
+#[serde(tag = "$formatVersion")]
 #[platform_serialize(unversioned)]
 pub enum TokenPerpetualDistribution {
     #[serde(rename = "0")]

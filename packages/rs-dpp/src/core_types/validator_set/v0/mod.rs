@@ -13,7 +13,7 @@ use dashcore::blsful::Bls12381G2Impl;
 use dashcore::hashes::Hash;
 use dashcore::{ProTxHash, QuorumHash};
 use itertools::Itertools;
-#[cfg(feature = "core-types-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
@@ -22,10 +22,7 @@ use std::fmt::{Debug, Display, Formatter};
 /// The validator set is only slightly different from a quorum as it does not contain non-valid
 /// members
 #[derive(Clone, Eq, PartialEq)]
-#[cfg_attr(
-    feature = "core-types-serde-conversion",
-    derive(Serialize, Deserialize)
-)]
+#[cfg_attr(feature = "serde-conversion", derive(Serialize, Deserialize))]
 pub struct ValidatorSetV0 {
     /// The quorum hash
     pub quorum_hash: QuorumHash,

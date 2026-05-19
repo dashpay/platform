@@ -77,3 +77,39 @@ impl Drive {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::drive::identity::identity_and_non_unique_public_key_hash_double_proof::IdentityAndNonUniquePublicKeyHashDoubleProof;
+    use crate::error::drive::DriveError;
+
+    #[test]
+    fn test_verify_full_identity_by_non_unique_public_key_hash_unknown_version() {
+        let mut platform_version = PlatformVersion::latest().clone();
+        platform_version
+            .drive
+            .methods
+            .verify
+            .identity
+            .verify_full_identity_by_non_unique_public_key_hash = 255;
+
+        let proof = IdentityAndNonUniquePublicKeyHashDoubleProof {
+            identity_proof: None,
+            identity_id_public_key_hash_proof: vec![],
+        };
+
+        let result = Drive::verify_full_identity_by_non_unique_public_key_hash(
+            &proof,
+            [0u8; 20],
+            None,
+            &platform_version,
+        );
+
+        assert!(
+            matches!(result, Err(Error::Drive(DriveError::UnknownVersionMismatch { method, known_versions, received }))
+                if method == "verify_full_identity_by_non_unique_public_key_hash" && known_versions == vec![0] && received == 255
+            )
+        );
+    }
+}

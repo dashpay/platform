@@ -1,0 +1,15 @@
+[package]
+name = "dpp-json-convertible-derive"
+description = "Proc macros for JSON-safe serialization of DPP types"
+version.workspace = true
+edition = "2021"
+rust-version.workspace = true
+license = "MIT"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+quote = "1.0.37"
+syn = { version = "2.0.75", features = ["full"] }
+proc-macro2 = "1.0"

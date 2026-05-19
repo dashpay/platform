@@ -18,29 +18,7 @@ fn parse_addresses(addresses: &'static [&str]) -> Vec<Address> {
         })
         .collect()
 }
-// Mainnet addresses from mnowatch.org
-fn default_mainnet_addresses() -> Vec<Address> {
-    parse_addresses(&[
-        "https://149.28.241.190:443",
-        "https://198.7.115.48:443",
-        "https://134.255.182.186:443",
-        "https://93.115.172.39:443",
-        "https://5.189.164.253:443",
-    ])
-}
-// Testnet addresses from https://quorums.testnet.networks.dash.org/masternodes
-fn default_testnet_addresses() -> Vec<Address> {
-    parse_addresses(&[
-        "https://52.12.176.90:1443",
-        "https://35.82.197.197:1443",
-        "https://44.240.98.102:1443",
-        "https://52.34.144.50:1443",
-        "https://44.239.39.153:1443",
-        "https://34.214.48.68:1443",
-        "https://54.149.33.167:1443",
-        "https://52.24.124.162:1443",
-    ])
-}
+
 fn default_local_addresses() -> Vec<Address> {
     parse_addresses(&["https://127.0.0.1:2443"])
 }
@@ -225,7 +203,7 @@ impl WasmSdkBuilder {
         let parsed_addresses = parsed_addresses.map_err(WasmSdkError::invalid_argument)?;
 
         let network = match network.to_lowercase().as_str() {
-            "mainnet" => Network::Dash,
+            "mainnet" => Network::Mainnet,
             "testnet" => Network::Testnet,
             "local" => Network::Regtest,
             _ => {
@@ -249,10 +227,7 @@ impl WasmSdkBuilder {
 
     #[wasm_bindgen(js_name = "mainnet")]
     pub fn new_mainnet() -> Self {
-        let address_list = dash_sdk::sdk::AddressList::from_iter(default_mainnet_addresses());
-        let sdk_builder = SdkBuilder::new(address_list)
-            .with_network(dash_sdk::dpp::dashcore::Network::Dash)
-            .with_context_provider(WasmContext {});
+        let sdk_builder = SdkBuilder::new_mainnet().with_context_provider(WasmContext {});
 
         Self {
             inner: sdk_builder,
@@ -262,10 +237,7 @@ impl WasmSdkBuilder {
 
     #[wasm_bindgen(js_name = "testnet")]
     pub fn new_testnet() -> Self {
-        let address_list = dash_sdk::sdk::AddressList::from_iter(default_testnet_addresses());
-        let sdk_builder = SdkBuilder::new(address_list)
-            .with_network(dash_sdk::dpp::dashcore::Network::Testnet)
-            .with_context_provider(WasmContext {});
+        let sdk_builder = SdkBuilder::new_testnet().with_context_provider(WasmContext {});
 
         Self {
             inner: sdk_builder,

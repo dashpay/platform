@@ -8,6 +8,27 @@ describe('TokenUnfreezeResult', () => {
     await init();
   });
 
+  // Hardcoded expected JSON fixture (camelCase)
+  const expectedJSON = {
+    unfrozenIdentityId: testIdentifier,
+    groupPower: 70,
+  };
+
+  // Hardcoded expected Object fixture (camelCase)
+  const expectedObject = {
+    unfrozenIdentityId: testIdentifier,
+    groupPower: 70,
+  };
+
+  const documentJSON = {
+    $id: '9tSsCqKHTZ8ro16MydChSxgHBukFW36eMLJKKRtebJEn',
+    $ownerId: 'CXH2kZCATjvDTnQAPVg28EgPg9WySUvwvnR5ZkmNqY5i',
+    $dataContractId: 'GnXgMaiqAwTxh44ccQe8AoCgFvcseHK5CncH3sUorW4X',
+    $type: 'note',
+    $revision: 1,
+    message: 'hello',
+  };
+
   describe('fromObject()', () => {
     it('should create result from object with all fields', () => {
       const data = {
@@ -45,6 +66,13 @@ describe('TokenUnfreezeResult', () => {
       const roundtrip = sdk.TokenUnfreezeResult.fromObject(obj);
       expect(roundtrip.groupPower).to.equal(70);
     });
+
+    it('should produce output matching expected Object fixture', () => {
+      const result = sdk.TokenUnfreezeResult.fromObject(expectedObject);
+      const obj = result.toObject();
+
+      expect(obj.groupPower).to.equal(expectedObject.groupPower);
+    });
   });
 
   describe('fromJSON()', () => {
@@ -58,6 +86,14 @@ describe('TokenUnfreezeResult', () => {
 
       expect(result.unfrozenIdentityId.toBase58()).to.equal(testIdentifier);
       expect(result.groupPower).to.equal(60);
+    });
+
+    it('should create from JSON fixture and verify all fields via getters', () => {
+      const result = sdk.TokenUnfreezeResult.fromJSON(expectedJSON);
+
+      expect(result.unfrozenIdentityId.toBase58()).to.equal(testIdentifier);
+      expect(result.groupPower).to.equal(70);
+      expect(result.document).to.be.undefined();
     });
   });
 
@@ -73,6 +109,68 @@ describe('TokenUnfreezeResult', () => {
       const roundtrip = sdk.TokenUnfreezeResult.fromJSON(json);
       expect(roundtrip.unfrozenIdentityId.toBase58()).to.equal(testIdentifier);
       expect(roundtrip.groupPower).to.equal(60);
+    });
+
+    it('should produce output matching expected JSON fixture', () => {
+      const result = sdk.TokenUnfreezeResult.fromJSON(expectedJSON);
+      const json = result.toJSON();
+
+      expect(json.unfrozenIdentityId).to.equal(expectedJSON.unfrozenIdentityId);
+      expect(json.groupPower).to.equal(expectedJSON.groupPower);
+    });
+  });
+
+  describe('document serialization', () => {
+    it('should include document in toJSON when present', () => {
+      const data = { ...expectedJSON, document: documentJSON };
+      const result = sdk.TokenUnfreezeResult.fromJSON(data);
+
+      expect(result.document).to.exist();
+      expect(result.document.id.toBase58()).to.equal(documentJSON.$id);
+
+      const json = result.toJSON();
+      expect(json.document).to.exist();
+      expect(json.document.$id).to.equal(documentJSON.$id);
+      expect(json.document.$ownerId).to.equal(documentJSON.$ownerId);
+      expect(json.document.$type).to.equal(documentJSON.$type);
+    });
+
+    it('should round-trip document through toJSON/fromJSON', () => {
+      const data = { ...expectedJSON, document: documentJSON };
+      const result = sdk.TokenUnfreezeResult.fromJSON(data);
+      const json = result.toJSON();
+      const restored = sdk.TokenUnfreezeResult.fromJSON(json);
+
+      expect(restored.document).to.exist();
+      expect(restored.document.id.toBase58()).to.equal(documentJSON.$id);
+      expect(restored.groupPower).to.equal(expectedJSON.groupPower);
+    });
+
+    it('should not include document in toJSON when absent', () => {
+      const result = sdk.TokenUnfreezeResult.fromJSON(expectedJSON);
+      const json = result.toJSON();
+
+      expect(json.document).to.be.undefined();
+    });
+
+    it('should include document in toObject when present', () => {
+      const data = { ...expectedJSON, document: documentJSON };
+      const result = sdk.TokenUnfreezeResult.fromJSON(data);
+
+      expect(result.document).to.exist();
+
+      const obj = result.toObject();
+      expect(obj.document).to.exist();
+    });
+
+    it('should round-trip document through toObject/fromObject', () => {
+      const data = { ...expectedJSON, document: documentJSON };
+      const result = sdk.TokenUnfreezeResult.fromJSON(data);
+      const obj = result.toObject();
+      const restored = sdk.TokenUnfreezeResult.fromObject(obj);
+
+      expect(restored.document).to.exist();
+      expect(restored.document.id.toBase58()).to.equal(documentJSON.$id);
     });
   });
 });

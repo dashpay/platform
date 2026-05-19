@@ -4,7 +4,7 @@ use crate::state_transition::batch_transition::token_base_transition::TokenBaseT
 use bincode::{Decode, Encode};
 use platform_value::string_encoding::Encoding;
 use platform_value::Identifier;
-#[cfg(feature = "state-transition-serde-conversion")]
+#[cfg(feature = "serde-conversion")]
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -16,18 +16,15 @@ pub use super::super::document_base_transition::IDENTIFIER_FIELDS;
 
 #[derive(Debug, Clone, Default, Encode, Decode, PartialEq)]
 #[cfg_attr(
-    feature = "state-transition-serde-conversion",
+    feature = "serde-conversion",
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
 pub struct TokenMintTransitionV0 {
     /// Document Base Transition
-    #[cfg_attr(feature = "state-transition-serde-conversion", serde(flatten))]
+    #[cfg_attr(feature = "serde-conversion", serde(flatten))]
     pub base: TokenBaseTransition,
-    #[cfg_attr(
-        feature = "state-transition-serde-conversion",
-        serde(rename = "issuedToIdentityId")
-    )]
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "issuedToIdentityId"))]
     /// Who should we issue the token to? If this is not set then we issue to the identity set in
     /// contract settings. If such an operation is allowed.
     pub issued_to_identity_id: Option<Identifier>,
@@ -35,10 +32,7 @@ pub struct TokenMintTransitionV0 {
     /// How much should we issue
     pub amount: u64,
     /// The public note
-    #[cfg_attr(
-        feature = "state-transition-serde-conversion",
-        serde(rename = "publicNote")
-    )]
+    #[cfg_attr(feature = "serde-conversion", serde(rename = "publicNote"))]
     pub public_note: Option<String>,
 }
 

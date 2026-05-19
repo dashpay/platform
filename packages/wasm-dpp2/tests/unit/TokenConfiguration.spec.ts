@@ -45,9 +45,8 @@ describe('TokenConfiguration', () => {
     });
   }
   function createPreProgrammedDistribution(timestamp: number, identifierBase58: string, amount: bigint) {
-    const identifier = new wasm.Identifier(identifierBase58);
     const innerMap = new Map();
-    innerMap.set(identifier, amount);
+    innerMap.set(identifierBase58, amount);
     const outerMap = new Map();
     outerMap.set(timestamp.toString(), innerMap);
     return new wasm.TokenPreProgrammedDistribution(outerMap);
@@ -58,7 +57,7 @@ describe('TokenConfiguration', () => {
       const convention = new wasm.TokenConfigurationConvention(
         {
           ru: {
-            $format_version: '0',
+            $formatVersion: '0',
             shouldCapitalize: true,
             singularForm: 'TOKEN',
             pluralForm: 'TOKENS',
@@ -120,12 +119,12 @@ describe('TokenConfiguration', () => {
     });
   });
 
-  describe('conventions', () => {
-    it('should return conventions', () => {
+  describe('getters (value verification)', () => {
+    it('should return correct values for all getters', () => {
       const convention = new wasm.TokenConfigurationConvention(
         {
           ru: {
-            $format_version: '0',
+            $formatVersion: '0',
             shouldCapitalize: true,
             singularForm: 'TOKEN',
             pluralForm: 'TOKENS',
@@ -183,24 +182,35 @@ describe('TokenConfiguration', () => {
         description: 'note',
       });
 
-      expect(config.conventions.constructor.name).to.equal('TokenConfigurationConvention');
-      expect(config.conventionsChangeRules.constructor.name).to.equal('ChangeControlRules');
-      expect(config.baseSupply.constructor.name).to.equal('BigInt');
-      expect(config.keepsHistory.constructor.name).to.equal('TokenKeepsHistoryRules');
-      expect(config.isStartedAsPaused.constructor.name).to.equal('Boolean');
-      expect(config.isAllowedTransferToFrozenBalance.constructor.name).to.equal('Boolean');
+      // Verify actual values, not just constructor names
+      expect(config.conventions).to.be.an.instanceof(wasm.TokenConfigurationConvention);
+      expect(config.conventions.decimals).to.equal(1);
+
+      expect(config.conventionsChangeRules).to.be.an.instanceof(wasm.ChangeControlRules);
+      expect(config.conventionsChangeRules.authorizedToMakeChange.takerType).to.equal('NoOne');
+
+      expect(config.baseSupply).to.equal(BigInt(999999999));
+
+      expect(config.keepsHistory).to.be.an.instanceof(wasm.TokenKeepsHistoryRules);
+
+      expect(config.isStartedAsPaused).to.equal(false);
+      expect(config.isAllowedTransferToFrozenBalance).to.equal(false);
       expect(config.maxSupply).to.equal(undefined);
-      expect(config.maxSupplyChangeRules.constructor.name).to.equal('ChangeControlRules');
-      expect(config.distributionRules.constructor.name).to.equal('TokenDistributionRules');
-      expect(config.marketplaceRules.constructor.name).to.equal('TokenMarketplaceRules');
-      expect(config.manualMintingRules.constructor.name).to.equal('ChangeControlRules');
-      expect(config.manualBurningRules.constructor.name).to.equal('ChangeControlRules');
-      expect(config.freezeRules.constructor.name).to.equal('ChangeControlRules');
-      expect(config.unfreezeRules.constructor.name).to.equal('ChangeControlRules');
-      expect(config.destroyFrozenFundsRules.constructor.name).to.equal('ChangeControlRules');
-      expect(config.emergencyActionRules.constructor.name).to.equal('ChangeControlRules');
+
+      expect(config.maxSupplyChangeRules).to.be.an.instanceof(wasm.ChangeControlRules);
+      expect(config.distributionRules).to.be.an.instanceof(wasm.TokenDistributionRules);
+      expect(config.marketplaceRules).to.be.an.instanceof(wasm.TokenMarketplaceRules);
+
+      expect(config.manualMintingRules).to.be.an.instanceof(wasm.ChangeControlRules);
+      expect(config.manualBurningRules).to.be.an.instanceof(wasm.ChangeControlRules);
+      expect(config.freezeRules).to.be.an.instanceof(wasm.ChangeControlRules);
+      expect(config.unfreezeRules).to.be.an.instanceof(wasm.ChangeControlRules);
+      expect(config.destroyFrozenFundsRules).to.be.an.instanceof(wasm.ChangeControlRules);
+      expect(config.emergencyActionRules).to.be.an.instanceof(wasm.ChangeControlRules);
+
       expect(config.mainControlGroup).to.equal(undefined);
-      expect(config.description.constructor.name).to.equal('String');
+      expect(config.mainControlGroupCanBeModified.takerType).to.equal('NoOne');
+      expect(config.description).to.equal('note');
     });
   });
 });

@@ -18,4 +18,3 @@ See here [sample code](https://github.com/dashpay/platform/blob/master/packages/
 
 - From Mnemonic: [sample code](https://github.com/dashpay/platform/blob/master/packages/wallet-lib/examples/client-usage.js) 
 - From PrivateKey: [sample code](https://github.com/dashpay/platform/blob/master/packages/wallet-lib/examples/client-usage-single-privateKey.js) 
-

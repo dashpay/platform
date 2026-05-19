@@ -99,4 +99,77 @@ mod tests {
             )] if err.message() == "Recipient addresses sum overflow"
         );
     }
+
+    #[test]
+    fn should_return_invalid_result_if_no_recipients() {
+        let platform_version = PlatformVersion::latest();
+        let transition = IdentityCreditTransferToAddressesTransitionV0::default();
+        let result = transition.validate_structure(platform_version);
+        assert_matches!(
+            result.errors.as_slice(),
+            [crate::consensus::ConsensusError::BasicError(
+                BasicError::TransitionNoOutputsError(_)
+            )]
+        );
+    }
+
+    #[test]
+    fn should_return_invalid_result_if_too_many_recipients() {
+        let platform_version = PlatformVersion::latest();
+        let max = platform_version.dpp.state_transitions.max_address_outputs;
+        let mut recipient_addresses = BTreeMap::new();
+        for i in 0..=max {
+            let mut addr = [0u8; 20];
+            addr[0] = (i & 0xff) as u8;
+            addr[1] = ((i >> 8) & 0xff) as u8;
+            recipient_addresses.insert(PlatformAddress::P2pkh(addr), 1_000_000);
+        }
+        let transition = IdentityCreditTransferToAddressesTransitionV0 {
+            recipient_addresses,
+            ..Default::default()
+        };
+        let result = transition.validate_structure(platform_version);
+        assert_matches!(
+            result.errors.as_slice(),
+            [crate::consensus::ConsensusError::BasicError(
+                BasicError::TransitionOverMaxOutputsError(_)
+            )]
+        );
+    }
+
+    #[test]
+    fn should_return_invalid_result_if_recipient_below_minimum() {
+        let platform_version = PlatformVersion::latest();
+        let mut recipient_addresses = BTreeMap::new();
+        recipient_addresses.insert(PlatformAddress::P2pkh([3u8; 20]), 1);
+        let transition = IdentityCreditTransferToAddressesTransitionV0 {
+            recipient_addresses,
+            ..Default::default()
+        };
+        let result = transition.validate_structure(platform_version);
+        assert_matches!(
+            result.errors.as_slice(),
+            [crate::consensus::ConsensusError::BasicError(
+                BasicError::OutputBelowMinimumError(_)
+            )]
+        );
+    }
+
+    #[test]
+    fn should_pass_with_single_valid_recipient() {
+        let platform_version = PlatformVersion::latest();
+        let min_output = platform_version
+            .dpp
+            .state_transitions
+            .address_funds
+            .min_output_amount;
+        let mut recipient_addresses = BTreeMap::new();
+        recipient_addresses.insert(PlatformAddress::P2pkh([4u8; 20]), min_output);
+        let transition = IdentityCreditTransferToAddressesTransitionV0 {
+            recipient_addresses,
+            ..Default::default()
+        };
+        let result = transition.validate_structure(platform_version);
+        assert!(result.is_valid(), "{:?}", result.errors);
+    }
 }

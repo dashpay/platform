@@ -69,3 +69,62 @@ impl StateTransitionPrefundedSpecializedBalanceValidationV0 for StateTransition 
         matches!(self, StateTransition::MasternodeVote(_))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn make_data_contract_create_st() -> StateTransition {
+        use dpp::tests::fixtures::get_data_contract_fixture;
+        use platform_version::TryIntoPlatformVersioned;
+        let platform_version = platform_version::version::PlatformVersion::latest();
+        let created_data_contract =
+            get_data_contract_fixture(None, 1, platform_version.protocol_version);
+        let transition: dpp::state_transition::data_contract_create_transition::DataContractCreateTransition =
+            created_data_contract.try_into_platform_versioned(platform_version).unwrap();
+        transition.into()
+    }
+
+    use dpp::state_transition::batch_transition::BatchTransition;
+    use dpp::state_transition::batch_transition::BatchTransitionV0;
+    use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
+    use dpp::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
+    use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
+    use dpp::state_transition::masternode_vote_transition::v0::MasternodeVoteTransitionV0;
+    use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
+
+    mod uses_prefunded_specialized_balance_for_payment {
+        use super::*;
+
+        #[test]
+        fn should_return_true_only_for_masternode_vote() {
+            let st = StateTransition::MasternodeVote(MasternodeVoteTransition::V0(
+                MasternodeVoteTransitionV0::default(),
+            ));
+            assert!(st.uses_prefunded_specialized_balance_for_payment());
+        }
+
+        #[test]
+        fn should_return_false_for_non_masternode_vote_transitions() {
+            let transitions: Vec<(&str, StateTransition)> = vec![
+                ("DataContractCreate", make_data_contract_create_st()),
+                (
+                    "Batch",
+                    StateTransition::Batch(BatchTransition::V0(BatchTransitionV0::default())),
+                ),
+                (
+                    "IdentityCreate",
+                    StateTransition::IdentityCreate(IdentityCreateTransition::V0(
+                        IdentityCreateTransitionV0::default(),
+                    )),
+                ),
+            ];
+            for (name, st) in transitions {
+                assert!(
+                    !st.uses_prefunded_specialized_balance_for_payment(),
+                    "expected false for {}",
+                    name
+                );
+            }
+        }
+    }
+}

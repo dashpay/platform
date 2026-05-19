@@ -2,7 +2,7 @@ use anyhow::bail;
 
 #[derive(Debug, PartialEq, PartialOrd, Clone, Copy, Eq)]
 #[cfg_attr(
-    feature = "state-transition-serde-conversion",
+    feature = "serde-conversion",
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]

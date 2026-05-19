@@ -89,6 +89,7 @@ impl From<RewardDistributionMoment> for RewardDistributionMomentWasm {
     }
 }
 
+#[dpp_json_convertible_derive::json_safe_fields(crate = "dash_sdk::dpp")]
 #[wasm_bindgen(js_name = "TokenTotalSupply")]
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -244,7 +245,7 @@ impl WasmSdk {
 
     #[wasm_bindgen(
         js_name = "getIdentitiesTokenBalances",
-        unchecked_return_type = "Map<Identifier, bigint>"
+        unchecked_return_type = "Map<string, bigint>"
     )]
     pub async fn get_identities_token_balances(
         &self,
@@ -276,7 +277,7 @@ impl WasmSdk {
         let balances_map = Map::new();
         for identifier in &identities {
             if let Some(Some(balance)) = balances_result.get(identifier) {
-                let key = JsValue::from(IdentifierWasm::from(*identifier));
+                let key: JsValue = IdentifierWasm::from(*identifier).to_base58().into();
                 let value = JsValue::from(BigInt::from(*balance));
                 balances_map.set(&key, &value);
             }
@@ -287,7 +288,7 @@ impl WasmSdk {
 
     #[wasm_bindgen(
         js_name = "getIdentityTokenInfos",
-        unchecked_return_type = "Map<Identifier, IdentityTokenInfo>"
+        unchecked_return_type = "Map<string, IdentityTokenInfo>"
     )]
     pub async fn get_identity_token_infos(
         &self,
@@ -320,7 +321,7 @@ impl WasmSdk {
         for token in tokens {
             if let Some(Some(info)) = infos_result.get(&token) {
                 let info_wasm = IdentityTokenInfoWasm::from(info.clone());
-                let key = JsValue::from(IdentifierWasm::from(token));
+                let key: JsValue = IdentifierWasm::from(token).to_base58().into();
                 let value = JsValue::from(info_wasm);
                 infos_map.set(&key, &value);
             }
@@ -331,7 +332,7 @@ impl WasmSdk {
 
     #[wasm_bindgen(
         js_name = "getIdentitiesTokenInfos",
-        unchecked_return_type = "Map<Identifier, IdentityTokenInfo>"
+        unchecked_return_type = "Map<string, IdentityTokenInfo>"
     )]
     pub async fn get_identities_token_infos(
         &self,
@@ -364,7 +365,7 @@ impl WasmSdk {
         for identity in identities {
             if let Some(Some(info)) = infos_result.get(&identity) {
                 let info_wasm = IdentityTokenInfoWasm::from(info.clone());
-                let key = JsValue::from(IdentifierWasm::from(identity));
+                let key: JsValue = IdentifierWasm::from(identity).to_base58().into();
                 let value = JsValue::from(info_wasm);
                 infos_map.set(&key, &value);
             }
@@ -375,7 +376,7 @@ impl WasmSdk {
 
     #[wasm_bindgen(
         js_name = "getTokenStatuses",
-        unchecked_return_type = "Map<Identifier, TokenStatus>"
+        unchecked_return_type = "Map<string, TokenStatus>"
     )]
     pub async fn get_token_statuses(
         &self,
@@ -394,7 +395,7 @@ impl WasmSdk {
         let statuses_map = Map::new();
         for token in tokens {
             if let Some(Some(status)) = statuses_result.get(&token) {
-                let key = JsValue::from(IdentifierWasm::from(token));
+                let key: JsValue = IdentifierWasm::from(token).to_base58().into();
                 let value = JsValue::from(TokenStatusWasm::from(status.clone()));
                 statuses_map.set(&key, &value);
             }
@@ -405,7 +406,7 @@ impl WasmSdk {
 
     #[wasm_bindgen(
         js_name = "getTokenDirectPurchasePrices",
-        unchecked_return_type = "Map<Identifier, TokenPriceInfo>"
+        unchecked_return_type = "Map<string, TokenPriceInfo>"
     )]
     pub async fn get_token_direct_purchase_prices(
         &self,
@@ -447,7 +448,7 @@ impl WasmSdk {
 
                 let price_info = TokenPriceInfoWasm::new(token_id_wasm, current_price, base_price);
 
-                let key = JsValue::from(token_id_wasm);
+                let key: JsValue = token_id_wasm.to_base58().into();
                 let value = JsValue::from(price_info);
                 prices_map.set(&key, &value);
             }
@@ -527,7 +528,7 @@ impl WasmSdk {
 
     #[wasm_bindgen(
         js_name = "getIdentitiesTokenBalancesWithProofInfo",
-        unchecked_return_type = "ProofMetadataResponseTyped<Map<Identifier, bigint>>"
+        unchecked_return_type = "ProofMetadataResponseTyped<Map<string, bigint>>"
     )]
     pub async fn get_identities_token_balances_with_proof_info(
         &self,
@@ -561,7 +562,7 @@ impl WasmSdk {
         let balances_map = Map::new();
         for identifier in &identities {
             if let Some(Some(balance)) = balances_result.get(identifier) {
-                let key = JsValue::from(IdentifierWasm::from(*identifier));
+                let key: JsValue = IdentifierWasm::from(*identifier).to_base58().into();
                 let value = JsValue::from(BigInt::from(*balance));
                 balances_map.set(&key, &value);
             }
@@ -576,7 +577,7 @@ impl WasmSdk {
 
     #[wasm_bindgen(
         js_name = "getTokenStatusesWithProofInfo",
-        unchecked_return_type = "ProofMetadataResponseTyped<Map<Identifier, TokenStatus>>"
+        unchecked_return_type = "ProofMetadataResponseTyped<Map<string, TokenStatus>>"
     )]
     pub async fn get_token_statuses_with_proof_info(
         &self,
@@ -594,7 +595,7 @@ impl WasmSdk {
         let statuses_map = Map::new();
         for token in tokens {
             if let Some(Some(status)) = statuses_result.get(&token) {
-                let key = JsValue::from(IdentifierWasm::from(token));
+                let key: JsValue = IdentifierWasm::from(token).to_base58().into();
                 let value = JsValue::from(TokenStatusWasm::from(status.clone()));
                 statuses_map.set(&key, &value);
             }
@@ -645,7 +646,7 @@ impl WasmSdk {
 
     #[wasm_bindgen(
         js_name = "getIdentityTokenInfosWithProofInfo",
-        unchecked_return_type = "ProofMetadataResponseTyped<Map<Identifier, IdentityTokenInfo>>"
+        unchecked_return_type = "ProofMetadataResponseTyped<Map<string, IdentityTokenInfo>>"
     )]
     pub async fn get_identity_token_infos_with_proof_info(
         &self,
@@ -679,7 +680,7 @@ impl WasmSdk {
         for token in tokens {
             if let Some(Some(info)) = infos_result.get(&token) {
                 let info_wasm = IdentityTokenInfoWasm::from(info.clone());
-                let key = JsValue::from(IdentifierWasm::from(token));
+                let key: JsValue = IdentifierWasm::from(token).to_base58().into();
                 let value = JsValue::from(info_wasm);
                 infos_map.set(&key, &value);
             }
@@ -692,7 +693,7 @@ impl WasmSdk {
 
     #[wasm_bindgen(
         js_name = "getIdentitiesTokenInfosWithProofInfo",
-        unchecked_return_type = "ProofMetadataResponseTyped<Map<Identifier, IdentityTokenInfo>>"
+        unchecked_return_type = "ProofMetadataResponseTyped<Map<string, IdentityTokenInfo>>"
     )]
     pub async fn get_identities_token_infos_with_proof_info(
         &self,
@@ -726,7 +727,7 @@ impl WasmSdk {
         for identity in identities {
             if let Some(Some(info)) = infos_result.get(&identity) {
                 let info_wasm = IdentityTokenInfoWasm::from(info.clone());
-                let key = JsValue::from(IdentifierWasm::from(identity));
+                let key: JsValue = IdentifierWasm::from(identity).to_base58().into();
                 let value = JsValue::from(info_wasm);
                 infos_map.set(&key, &value);
             }
@@ -739,7 +740,7 @@ impl WasmSdk {
 
     #[wasm_bindgen(
         js_name = "getTokenDirectPurchasePricesWithProofInfo",
-        unchecked_return_type = "ProofMetadataResponseTyped<Map<Identifier, TokenPriceInfo>>"
+        unchecked_return_type = "ProofMetadataResponseTyped<Map<string, TokenPriceInfo>>"
     )]
     pub async fn get_token_direct_purchase_prices_with_proof_info(
         &self,
@@ -785,7 +786,7 @@ impl WasmSdk {
 
                 let price_info = TokenPriceInfoWasm::new(token_id_wasm, current_price, base_price);
 
-                let key = JsValue::from(token_id_wasm);
+                let key: JsValue = token_id_wasm.to_base58().into();
                 let value = JsValue::from(price_info);
                 prices_map.set(&key, &value);
             }

@@ -1,6 +1,6 @@
 use crate::group::action_event::GroupActionEventWasm;
 use crate::identifier::IdentifierWasm;
-use crate::impl_wasm_conversions;
+use crate::impl_wasm_conversions_inner;
 use crate::impl_wasm_type_info;
 use dpp::data_contract::TokenContractPosition;
 use dpp::group::group_action::{GroupAction, GroupActionAccessors};
@@ -12,6 +12,7 @@ const TS_TYPES: &str = r#"
  * GroupAction serialized as a plain object.
  */
 export interface GroupActionObject {
+    $formatVersion: string;
     contractId: Uint8Array;
     proposerId: Uint8Array;
     tokenContractPosition: number;
@@ -22,6 +23,7 @@ export interface GroupActionObject {
  * GroupAction serialized as JSON.
  */
 export interface GroupActionJSON {
+    $formatVersion: string;
     contractId: string;
     proposerId: string;
     tokenContractPosition: number;
@@ -78,8 +80,9 @@ impl GroupActionWasm {
     }
 }
 
-impl_wasm_conversions!(
+impl_wasm_conversions_inner!(
     GroupActionWasm,
+    GroupAction,
     GroupAction,
     GroupActionObjectJs,
     GroupActionJSONJs

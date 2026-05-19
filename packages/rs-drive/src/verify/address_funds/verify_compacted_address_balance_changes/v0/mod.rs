@@ -8,7 +8,7 @@ use dpp::address_funds::PlatformAddress;
 /// The subtree key for compacted address balances storage as u8
 const COMPACTED_ADDRESS_BALANCES_KEY_U8: u8 = b'c';
 use dpp::balances::credits::BlockAwareCreditOperation;
-use grovedb::operations::proof::GroveDBProof;
+use grovedb::operations::proof::{GroveDBProof, ProofBytes};
 use grovedb::{
     GroveDb, MerkProofDecoder, MerkProofNode, MerkProofOp, PathQuery, Query, SizedQuery,
 };
@@ -75,24 +75,43 @@ impl Drive {
 
         // Navigate to the compacted address balances layer
         // Path: SavedBlockTransactions ('$' = 0x24) -> CompactedAddressBalances ('c' = 0x63)
-        let root_layer = match &grovedb_proof {
-            GroveDBProof::V0(v0) => &v0.root_layer,
-        };
-
         let saved_block_key = vec![RootTree::SavedBlockTransactions as u8];
         let compacted_key = vec![COMPACTED_ADDRESS_BALANCES_KEY_U8];
 
-        let compacted_layer = root_layer
-            .lower_layers
-            .get(&saved_block_key)
-            .and_then(|layer| layer.lower_layers.get(&compacted_key));
-
         // Extract KV entries from the compacted layer's merk proof to find
-        // if there's a containing range for start_block_height
-        let kv_entries = compacted_layer
-            .map(|layer| extract_kv_entries_from_merk_proof(&layer.merk_proof))
-            .transpose()?
-            .unwrap_or_default();
+        // if there's a containing range for start_block_height.
+        // V0 and V1 proofs have different layer types (MerkOnlyLayerProof vs LayerProof),
+        // so we handle them separately.
+        let kv_entries = match &grovedb_proof {
+            GroveDBProof::V0(v0) => {
+                let compacted_layer = v0
+                    .root_layer
+                    .lower_layers
+                    .get(&saved_block_key)
+                    .and_then(|layer| layer.lower_layers.get(&compacted_key));
+                compacted_layer
+                    .map(|layer| extract_kv_entries_from_merk_proof(&layer.merk_proof))
+                    .transpose()?
+                    .unwrap_or_default()
+            }
+            GroveDBProof::V1(v1) => {
+                let compacted_layer = v1
+                    .root_layer
+                    .lower_layers
+                    .get(&saved_block_key)
+                    .and_then(|layer| layer.lower_layers.get(&compacted_key));
+                compacted_layer
+                    .map(|layer| match &layer.merk_proof {
+                        ProofBytes::Merk(bytes) => extract_kv_entries_from_merk_proof(bytes),
+                        other => Err(Error::Proof(ProofError::CorruptedProof(format!(
+                            "unsupported V1 proof bytes variant for compacted address balances: {:?}",
+                            std::mem::discriminant(other)
+                        )))),
+                    })
+                    .transpose()?
+                    .unwrap_or_default()
+            }
+        };
 
         // Look for a KV entry where the range contains start_block_height
         // Keys are 16 bytes: (start_block, end_block), both big-endian
@@ -182,7 +201,102 @@ impl Drive {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::address_funds::PlatformAddress;
+    use dpp::balances::credits::CreditOperation;
     use platform_version::version::PlatformVersion;
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn should_prove_and_verify_compacted_address_balance_changes_roundtrip() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let address_1 = PlatformAddress::P2pkh([10; 20]);
+        let address_2 = PlatformAddress::P2sh([11; 20]);
+
+        // Store enough blocks of changes to trigger compaction
+        // The compaction threshold is controlled by platform_version
+        // We insert many blocks to ensure compaction happens
+        let max_blocks = platform_version
+            .drive
+            .methods
+            .saved_block_transactions
+            .max_blocks_before_compaction as u64;
+
+        for block_height in 1u64..=(max_blocks + 1) {
+            let mut changes = BTreeMap::new();
+            changes.insert(
+                address_1,
+                CreditOperation::AddToCredits(block_height * 1000),
+            );
+            if block_height % 2 == 0 {
+                changes.insert(address_2, CreditOperation::AddToCredits(block_height * 500));
+            }
+            drive
+                .store_address_balances_for_block(
+                    &changes,
+                    block_height,
+                    block_height * 1000,
+                    None,
+                    platform_version,
+                )
+                .expect("should store balances");
+        }
+
+        // Prove compacted changes from block 1
+        let proof = drive
+            .prove_compacted_address_balance_changes(1, None, None, platform_version)
+            .expect("should prove compacted address balance changes");
+
+        // Verify the proof
+        let (root_hash, compacted_changes) = Drive::verify_compacted_address_balance_changes(
+            proof.as_slice(),
+            1,
+            None,
+            platform_version,
+        )
+        .expect("should verify proof");
+
+        assert!(!root_hash.is_empty(), "root hash should not be empty");
+        // We should have at least one compacted entry
+        assert!(
+            !compacted_changes.is_empty(),
+            "should have at least one compacted entry"
+        );
+
+        // All entries should have valid block ranges
+        for (start, end, changes) in &compacted_changes {
+            assert!(*start <= *end, "start should be <= end");
+            assert!(!changes.is_empty(), "each entry should have changes");
+        }
+    }
+
+    #[test]
+    fn should_prove_and_verify_empty_compacted_address_balance_changes() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        // Prove compacted changes from block 100 with no data stored
+        let proof = drive
+            .prove_compacted_address_balance_changes(100, None, None, platform_version)
+            .expect("should prove empty compacted changes");
+
+        // Verify the proof
+        let (root_hash, compacted_changes) = Drive::verify_compacted_address_balance_changes(
+            proof.as_slice(),
+            100,
+            None,
+            platform_version,
+        )
+        .expect("should verify proof");
+
+        assert!(!root_hash.is_empty(), "root hash should not be empty");
+        assert!(
+            compacted_changes.is_empty(),
+            "should have no compacted entries when no data stored"
+        );
+    }
 
     #[test]
     fn test_verify_compacted_address_balance_changes_proof() {
@@ -228,7 +342,7 @@ mod tests {
         let start_block_height = 329u64;
         let platform_version = PlatformVersion::latest();
 
-        let result = Drive::verify_compacted_address_balance_changes_v0(
+        let result = Drive::verify_compacted_address_balance_changes(
             &proof,
             start_block_height,
             None,

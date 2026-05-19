@@ -1,7 +1,7 @@
 /* eslint-disable quote-props, quotes */
 
 export default {
-  "$format_version": "0",
+  "$formatVersion": "0",
   "version": 1,
   "ownerId": "11111111111111111111111111111111",
   "schemaDefs": null,

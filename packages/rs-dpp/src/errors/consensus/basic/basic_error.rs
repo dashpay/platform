@@ -55,7 +55,8 @@ use crate::consensus::basic::identity::{
     IdentityAssetLockStateTransitionReplayError, IdentityAssetLockTransactionIsNotFoundError,
     IdentityAssetLockTransactionOutPointAlreadyConsumedError,
     IdentityAssetLockTransactionOutPointNotEnoughBalanceError,
-    IdentityAssetLockTransactionOutputNotFoundError, IdentityCreditTransferToSelfError,
+    IdentityAssetLockTransactionOutputNotFoundError,
+    IdentityAssetLockTransactionTooManyInputsError, IdentityCreditTransferToSelfError,
     InvalidAssetLockProofCoreChainHeightError, InvalidAssetLockProofTransactionHeightError,
     InvalidAssetLockTransactionOutputReturnSizeError,
     InvalidCreditWithdrawalTransitionCoreFeeError,
@@ -77,10 +78,12 @@ use crate::consensus::basic::state_transition::{
     InputWitnessCountMismatchError, InputsNotLessThanOutputsError, InsufficientFundingAmountError,
     InvalidRemainderOutputCountError, InvalidStateTransitionTypeError,
     MissingStateTransitionTypeError, OutputAddressAlsoInputError, OutputBelowMinimumError,
-    OutputsNotGreaterThanInputsError, StateTransitionMaxSizeExceededError,
-    StateTransitionNotActiveError, TransitionNoInputsError, TransitionNoOutputsError,
-    TransitionOverMaxInputsError, TransitionOverMaxOutputsError, WithdrawalBalanceMismatchError,
-    WithdrawalBelowMinAmountError,
+    OutputsNotGreaterThanInputsError, ShieldedEmptyProofError,
+    ShieldedEncryptedNoteSizeMismatchError, ShieldedInvalidValueBalanceError,
+    ShieldedNoActionsError, ShieldedTooManyActionsError, ShieldedZeroAnchorError,
+    StateTransitionMaxSizeExceededError, StateTransitionNotActiveError, TransitionNoInputsError,
+    TransitionNoOutputsError, TransitionOverMaxInputsError, TransitionOverMaxOutputsError,
+    WithdrawalBalanceMismatchError, WithdrawalBelowMinAmountError,
 };
 use crate::consensus::basic::{
     IncompatibleProtocolVersionError, UnsupportedFeatureError, UnsupportedProtocolVersionError,
@@ -657,6 +660,27 @@ pub enum BasicError {
 
     #[error(transparent)]
     OutputAddressAlsoInputError(OutputAddressAlsoInputError),
+
+    #[error(transparent)]
+    ShieldedNoActionsError(ShieldedNoActionsError),
+
+    #[error(transparent)]
+    ShieldedTooManyActionsError(ShieldedTooManyActionsError),
+
+    #[error(transparent)]
+    ShieldedEmptyProofError(ShieldedEmptyProofError),
+
+    #[error(transparent)]
+    ShieldedZeroAnchorError(ShieldedZeroAnchorError),
+
+    #[error(transparent)]
+    ShieldedInvalidValueBalanceError(ShieldedInvalidValueBalanceError),
+
+    #[error(transparent)]
+    ShieldedEncryptedNoteSizeMismatchError(ShieldedEncryptedNoteSizeMismatchError),
+
+    #[error(transparent)]
+    IdentityAssetLockTransactionTooManyInputsError(IdentityAssetLockTransactionTooManyInputsError),
 }
 
 impl From<BasicError> for ConsensusError {

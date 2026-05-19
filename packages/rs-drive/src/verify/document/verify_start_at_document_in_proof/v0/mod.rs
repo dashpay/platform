@@ -84,3 +84,95 @@ impl DriveDocumentQuery<'_> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::query::DriveDocumentQuery;
+    use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
+    use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::block::block_info::BlockInfo;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::document_type::random_document::CreateRandomDocument;
+    use dpp::data_contracts::SystemDataContract;
+    use dpp::document::DocumentV0Getters;
+    use dpp::system_data_contracts::load_system_data_contract;
+    use dpp::version::PlatformVersion;
+
+    #[test]
+    fn should_prove_and_verify_start_at_document_in_proof() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let contract = load_system_data_contract(SystemDataContract::DPNS, platform_version)
+            .expect("expected to load DPNS contract");
+
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                None,
+                None,
+                platform_version,
+            )
+            .expect("expected to apply contract");
+
+        let document_type = contract
+            .document_type_for_name("preorder")
+            .expect("expected preorder document type");
+
+        // Insert a document
+        let document = document_type
+            .random_document(Some(42), platform_version)
+            .expect("expected a random document");
+
+        let doc_id = document.id();
+
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((&document, None)),
+                        owner_id: None,
+                    },
+                    contract: &contract,
+                    document_type,
+                },
+                false,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("expected to insert document");
+
+        // Build a query - we use any_item_query to get all, then use the proof
+        // to verify a specific document via verify_start_at_document_in_proof
+        let query = DriveDocumentQuery::any_item_query(&contract, document_type);
+
+        // Get proof that covers all documents
+        let (proof, _cost) = query
+            .clone()
+            .execute_with_proof(&drive, None, None, platform_version)
+            .expect("expected to execute query with proof");
+
+        // Verify that the specific document is found in the proof
+        let (_root_hash, found_document) = query
+            .verify_start_at_document_in_proof(
+                proof.as_slice(),
+                true, // is_proof_subset = true because the proof covers all documents
+                doc_id.to_buffer(),
+                platform_version,
+            )
+            .expect("expected proof verification to succeed");
+
+        assert!(
+            found_document.is_some(),
+            "expected document to be found in proof"
+        );
+        let found_doc = found_document.unwrap();
+        assert_eq!(found_doc.id(), doc_id);
+    }
+}

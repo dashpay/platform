@@ -54,7 +54,7 @@ describe('DataContract', () => {
     schemaDefs = { something: { type: 'string' } };
 
     dataContract = new DataContract({
-      $format_version: '0',
+      $formatVersion: '0',
       id: contractId,
       version: 1,
       ownerId,
@@ -65,7 +65,7 @@ describe('DataContract', () => {
   describe('constructor', () => {
     it('should create new DataContract', async () => {
       dataContract = new DataContract({
-        $format_version: '0',
+        $formatVersion: '0',
         id: contractId,
         version: 1,
         ownerId,
@@ -218,9 +218,9 @@ describe('DataContract', () => {
       const result = dataContract.toJSON();
 
       expect(result).to.deep.equal({
-        $format_version: '0',
+        $formatVersion: '0',
         config: {
-          $format_version: '0',
+          $formatVersion: '0',
           canBeDeleted: false,
           documentsCanBeDeletedContractDefault: true,
           documentsKeepHistoryContractDefault: false,
@@ -248,9 +248,9 @@ describe('DataContract', () => {
       const result = dataContract.toJSON();
 
       expect(result).to.deep.equal({
-        $format_version: '0',
+        $formatVersion: '0',
         config: {
-          $format_version: '0',
+          $formatVersion: '0',
           canBeDeleted: false,
           documentsCanBeDeletedContractDefault: true,
           documentsKeepHistoryContractDefault: false,

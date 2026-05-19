@@ -55,7 +55,7 @@ describe('DataContract', () => {
           PLATFORM_VERSION_CONTRACT_V0,
         );
         const roundTripped = contract.toJSON(PLATFORM_VERSION_CONTRACT_V0);
-        expect(roundTripped.$format_version).to.equal(contractFixtureV0.$format_version);
+        expect(roundTripped.$formatVersion).to.equal(contractFixtureV0.$formatVersion);
         contract.free();
       });
 
@@ -159,7 +159,7 @@ describe('DataContract', () => {
           PLATFORM_VERSION_CONTRACT_V1,
         );
         const roundTripped = contract.toJSON(PLATFORM_VERSION_CONTRACT_V1);
-        expect(roundTripped.$format_version).to.equal(contractFixtureV1.$format_version);
+        expect(roundTripped.$formatVersion).to.equal(contractFixtureV1.$formatVersion);
         contract.free();
       });
 
@@ -231,14 +231,14 @@ describe('DataContract', () => {
         contract.free();
       });
 
-      it('should create a V1 contract with correct group required_power', () => {
+      it('should create a V1 contract with correct group requiredPower', () => {
         const contract = sdk.DataContract.fromJSON(
           contractFixtureV1,
           true,
           PLATFORM_VERSION_CONTRACT_V1,
         );
         const roundTripped = contract.toJSON(PLATFORM_VERSION_CONTRACT_V1);
-        expect(roundTripped.groups['0'].required_power).to.equal(2);
+        expect(roundTripped.groups['0'].requiredPower).to.equal(2);
         contract.free();
       });
 
@@ -354,7 +354,7 @@ describe('DataContract', () => {
 
       it('should require at least one document type or token', () => {
         const contractWithEmptySchemas = {
-          $format_version: '0',
+          $formatVersion: '0',
           id: contractFixtureV0.id,
           ownerId: contractFixtureV0.ownerId,
           version: 1,
@@ -418,25 +418,96 @@ describe('DataContract', () => {
         contract.free();
         contract2.free();
       });
+    });
+  });
 
-      it('should preserve all data through JSON round-trip (object output)', () => {
+  describe('toObject()', () => {
+    describe('V0 contract', () => {
+      it('should serialize with Identifier objects for id and ownerId', () => {
+        const contract = sdk.DataContract.fromJSON(
+          contractFixtureV0,
+          true,
+          PLATFORM_VERSION_CONTRACT_V0,
+        );
+        const obj = contract.toObject(PLATFORM_VERSION_CONTRACT_V0);
+
+        expect(obj.$formatVersion).to.equal(contractFixtureV0.$formatVersion);
+        // id and ownerId should be Identifier wasm objects
+        expect(obj.id).to.exist();
+        expect(obj.ownerId).to.exist();
+        expect(obj.version).to.equal(contractFixtureV0.version);
+        expect(obj.documentSchemas).to.exist();
+
+        contract.free();
+      });
+
+      it('should round-trip through toObject/fromObject', () => {
+        const contract = sdk.DataContract.fromJSON(
+          contractFixtureV0,
+          true,
+          PLATFORM_VERSION_CONTRACT_V0,
+        );
+        const obj = contract.toObject(PLATFORM_VERSION_CONTRACT_V0);
+        const restored = sdk.DataContract.fromObject(
+          obj,
+          true,
+          PLATFORM_VERSION_CONTRACT_V0,
+        );
+
+        expect(restored.id.toBase58()).to.equal(contractFixtureV0.id);
+        expect(restored.version).to.equal(contractFixtureV0.version);
+
+        const roundTrippedJson = restored.toJSON(PLATFORM_VERSION_CONTRACT_V0);
+        expect(roundTrippedJson.documentSchemas).to.deep.equal(contractFixtureV0.documentSchemas);
+
+        contract.free();
+        restored.free();
+      });
+    });
+
+    describe('V1 contract', () => {
+      it('should round-trip V1 contract through toObject/fromObject', () => {
         const contract = sdk.DataContract.fromJSON(
           contractFixtureV1,
           true,
           PLATFORM_VERSION_CONTRACT_V1,
         );
-        const jsonRepresentation = contract.toJSON(PLATFORM_VERSION_CONTRACT_V1);
-
-        const contract2 = sdk.DataContract.fromJSON(
-          jsonRepresentation,
+        const obj = contract.toObject(PLATFORM_VERSION_CONTRACT_V1);
+        const restored = sdk.DataContract.fromObject(
+          obj,
           true,
           PLATFORM_VERSION_CONTRACT_V1,
         );
 
-        expect(contract2.toJSON(PLATFORM_VERSION_CONTRACT_V1)).to.deep.equal(jsonRepresentation);
+        expect(restored.id.toBase58()).to.equal(contractFixtureV1.id);
+        expect(restored.version).to.equal(contractFixtureV1.version);
+
+        const roundTrippedJson = restored.toJSON(PLATFORM_VERSION_CONTRACT_V1);
+        expect(roundTrippedJson.documentSchemas).to.deep.equal(contractFixtureV1.documentSchemas);
 
         contract.free();
-        contract2.free();
+        restored.free();
+      });
+
+      it('should preserve tokens through Object round-trip', () => {
+        const contract = sdk.DataContract.fromJSON(
+          contractFixtureV1,
+          true,
+          PLATFORM_VERSION_CONTRACT_V1,
+        );
+        const obj = contract.toObject(PLATFORM_VERSION_CONTRACT_V1);
+        const restored = sdk.DataContract.fromObject(
+          obj,
+          true,
+          PLATFORM_VERSION_CONTRACT_V1,
+        );
+
+        const roundTrippedJson = restored.toJSON(PLATFORM_VERSION_CONTRACT_V1);
+        expect(roundTrippedJson.tokens).to.exist();
+        expect(roundTrippedJson.tokens['0'].baseSupply).to.equal(100);
+
+        contract.free();
+        restored.free();
       });
     });
   });

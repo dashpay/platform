@@ -52,3 +52,38 @@ impl SingleDocumentDriveQuery {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::error::drive::DriveError;
+    use crate::query::SingleDocumentDriveQueryContestedStatus;
+
+    #[test]
+    fn test_single_document_verify_proof_keep_serialized_unknown_version() {
+        let mut platform_version = PlatformVersion::latest().clone();
+        platform_version
+            .drive
+            .methods
+            .verify
+            .single_document
+            .verify_proof_keep_serialized = 255;
+
+        let query = SingleDocumentDriveQuery {
+            contract_id: [0u8; 32],
+            document_type_name: "test".to_string(),
+            document_type_keeps_history: false,
+            document_id: [0u8; 32],
+            block_time_ms: None,
+            contested_status: SingleDocumentDriveQueryContestedStatus::NotContested,
+        };
+
+        let result = query.verify_proof_keep_serialized(false, &[], &platform_version);
+
+        assert!(
+            matches!(result, Err(Error::Drive(DriveError::UnknownVersionMismatch { method, known_versions, received }))
+                if method == "SingleDocumentDriveQuery::verify_proof_keep_serialized" && known_versions == vec![0] && received == 255
+            )
+        );
+    }
+}

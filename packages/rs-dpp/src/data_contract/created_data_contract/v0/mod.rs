@@ -3,7 +3,7 @@ use bincode::{Decode, Encode};
 
 use crate::data_contract::serialized_version::DataContractInSerializationFormat;
 use crate::prelude::IdentityNonce;
-#[cfg(feature = "data-contract-value-conversion")]
+#[cfg(feature = "value-conversion")]
 use crate::{
     data_contract::{
         conversion::value::v0::DataContractValueConversionMethodsV0,
@@ -12,7 +12,7 @@ use crate::{
     version::PlatformVersion,
     ProtocolError,
 };
-#[cfg(feature = "data-contract-value-conversion")]
+#[cfg(feature = "value-conversion")]
 use platform_value::{btreemap_extensions::BTreeValueRemoveFromMapHelper, Error, Value};
 
 // TODO: Decide on what we need ExtendedDataContract with metadata or CreatedDataContract or both.
@@ -29,7 +29,7 @@ pub struct CreatedDataContractInSerializationFormatV0 {
 }
 
 impl CreatedDataContractV0 {
-    #[cfg(feature = "data-contract-value-conversion")]
+    #[cfg(feature = "value-conversion")]
     pub fn from_object(
         raw_object: Value,
         full_validation: bool,

@@ -1,6 +1,8 @@
 use super::{PlatformAddressLikeJs, PlatformAddressWasm};
-use crate::error::WasmDppResult;
-use crate::utils::try_to_u64;
+use crate::error::{WasmDppError, WasmDppResult};
+use crate::impl_try_from_js_value;
+use crate::impl_wasm_type_info;
+use crate::utils::{IntoWasm, try_from_options_with, try_to_array, try_to_u64};
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
 use dpp::prelude::AddressNonce;
@@ -8,6 +10,52 @@ use js_sys::BigInt;
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use wasm_bindgen::prelude::*;
+
+#[wasm_bindgen(typescript_custom_section)]
+const PLATFORM_ADDRESS_INPUT_OUTPUT_TS_TYPES: &str = r#"
+/**
+ * Input address spending credits — Object form (output of a transition's `toObject()`).
+ *
+ * `address` is the 21-byte PlatformAddress (1 type byte + 20-byte hash) as a Uint8Array.
+ */
+export interface PlatformAddressInputObject {
+    address: Uint8Array;
+    nonce: number;
+    amount: bigint;
+}
+
+/**
+ * Input address spending credits — JSON form (output of a transition's `toJSON()`).
+ *
+ * `address` is hex-encoded; `amount` may be a string when above `Number.MAX_SAFE_INTEGER`.
+ */
+export interface PlatformAddressInputJSON {
+    address: string;
+    nonce: number;
+    amount: number | string;
+}
+
+/**
+ * Output address receiving credits — Object form.
+ *
+ * `amount` is `null` only for asset-lock funding transitions, where exactly one
+ * output (acting as the change recipient) absorbs the asset-lock remainder. For
+ * all other transitions (transfer / withdrawal / identity flows / credit transfer)
+ * the amount is always present.
+ */
+export interface PlatformAddressOutputObject {
+    address: Uint8Array;
+    amount: bigint | null;
+}
+
+/**
+ * Output address receiving credits — JSON form.
+ */
+export interface PlatformAddressOutputJSON {
+    address: string;
+    amount: number | string | null;
+}
+"#;
 
 /// Represents an input address for address-based state transitions.
 ///
@@ -21,6 +69,8 @@ pub struct PlatformAddressInputWasm {
     nonce: AddressNonce,
     amount: Credits,
 }
+
+impl_wasm_type_info!(PlatformAddressInputWasm, PlatformAddressInput);
 
 #[wasm_bindgen(js_class = PlatformAddressInput)]
 impl PlatformAddressInputWasm {
@@ -65,6 +115,14 @@ impl PlatformAddressInputWasm {
 }
 
 impl PlatformAddressInputWasm {
+    pub fn new(address: PlatformAddress, nonce: AddressNonce, amount: Credits) -> Self {
+        Self {
+            address: address.into(),
+            nonce,
+            amount,
+        }
+    }
+
     /// Returns the inner values as a tuple suitable for BTreeMap insertion.
     pub fn into_inner(self) -> (PlatformAddress, (AddressNonce, Credits)) {
         (self.address.into(), (self.nonce, self.amount))
@@ -85,6 +143,9 @@ pub struct PlatformAddressOutputWasm {
     #[serde(default)]
     amount: Option<Credits>,
 }
+
+impl_wasm_type_info!(PlatformAddressOutputWasm, PlatformAddressOutput);
+impl_try_from_js_value!(PlatformAddressOutputWasm, "PlatformAddressOutput");
 
 #[wasm_bindgen(js_class = PlatformAddressOutput)]
 impl PlatformAddressOutputWasm {
@@ -122,13 +183,26 @@ impl PlatformAddressOutputWasm {
 }
 
 impl PlatformAddressOutputWasm {
-    /// Returns the inner values as a tuple suitable for BTreeMap insertion.
-    /// Panics if amount is None - use `into_inner_optional` for optional amounts.
-    pub fn into_inner(self) -> (PlatformAddress, Credits) {
-        (
-            self.address.into(),
-            self.amount.expect("amount is required for this operation"),
-        )
+    pub fn new(address: PlatformAddress, amount: Credits) -> Self {
+        Self {
+            address: address.into(),
+            amount: Some(amount),
+        }
+    }
+
+    pub fn new_optional(address: PlatformAddress, amount: Option<Credits>) -> Self {
+        Self {
+            address: address.into(),
+            amount,
+        }
+    }
+
+    /// Returns the inner values as a tuple, or an error if amount is None.
+    pub fn try_into_inner(self) -> WasmDppResult<(PlatformAddress, Credits)> {
+        let amount = self.amount.ok_or_else(|| {
+            WasmDppError::invalid_argument("PlatformAddressOutput: amount is required")
+        })?;
+        Ok((self.address.into(), amount))
     }
 
     /// Returns the inner values with optional amount.
@@ -137,22 +211,113 @@ impl PlatformAddressOutputWasm {
     }
 }
 
+/// Converts a vector of `PlatformAddressInputWasm` into a `BTreeMap`,
+/// returning an error if any address appears more than once.
+///
+/// `BTreeMap::collect()` on its own would silently overwrite duplicates,
+/// which is dangerous: a JS caller could pass two entries for the same
+/// address with different amounts and only the last one would survive.
+pub fn inputs_to_btree_map(
+    inputs: Vec<PlatformAddressInputWasm>,
+) -> WasmDppResult<BTreeMap<PlatformAddress, (AddressNonce, Credits)>> {
+    let mut map = BTreeMap::new();
+    for input in inputs {
+        let (address, value) = input.into_inner();
+        if map.insert(address, value).is_some() {
+            return Err(WasmDppError::invalid_argument(format!(
+                "duplicate input address: {}",
+                hex::encode(address.to_bytes())
+            )));
+        }
+    }
+    Ok(map)
+}
+
 /// Converts a vector of PlatformAddressOutput into a BTreeMap.
+/// Returns an error if any output has no amount set or if an address is duplicated.
 pub fn outputs_to_btree_map(
     outputs: Vec<PlatformAddressOutputWasm>,
-) -> BTreeMap<PlatformAddress, Credits> {
-    outputs.into_iter().map(|o| o.into_inner()).collect()
+) -> WasmDppResult<BTreeMap<PlatformAddress, Credits>> {
+    let mut map = BTreeMap::new();
+    for output in outputs {
+        let (address, amount) = output.try_into_inner()?;
+        if map.insert(address, amount).is_some() {
+            return Err(WasmDppError::invalid_argument(format!(
+                "duplicate output address: {}",
+                hex::encode(address.to_bytes())
+            )));
+        }
+    }
+    Ok(map)
 }
 
 /// Converts a vector of PlatformAddressOutput into a BTreeMap with optional amounts.
 ///
 /// Used for asset lock funding where the amount is optional (None means
-/// the system distributes the asset lock funds automatically).
+/// the system distributes the asset lock funds automatically). Returns an
+/// error if an address is duplicated.
 pub fn outputs_to_optional_btree_map(
     outputs: Vec<PlatformAddressOutputWasm>,
-) -> BTreeMap<PlatformAddress, Option<Credits>> {
-    outputs
-        .into_iter()
-        .map(|o| o.into_inner_optional())
+) -> WasmDppResult<BTreeMap<PlatformAddress, Option<Credits>>> {
+    let mut map = BTreeMap::new();
+    for output in outputs {
+        let (address, amount) = output.into_inner_optional();
+        if map.insert(address, amount).is_some() {
+            return Err(WasmDppError::invalid_argument(format!(
+                "duplicate output address: {}",
+                hex::encode(address.to_bytes())
+            )));
+        }
+    }
+    Ok(map)
+}
+
+/// Extract a Vec<PlatformAddressInputWasm> from a JS options object property.
+///
+/// Reads the named property as a JS array, then extracts each element
+/// as a PlatformAddressInput wasm-bindgen object via its __wbg_ptr.
+pub fn inputs_from_js_options(
+    options: &JsValue,
+    field_name: &str,
+) -> WasmDppResult<Vec<PlatformAddressInputWasm>> {
+    let array = try_from_options_with(options, field_name, |v| try_to_array(v, field_name))?;
+    array
+        .iter()
+        .enumerate()
+        .map(|(i, item)| {
+            item.to_wasm::<PlatformAddressInputWasm>("PlatformAddressInput")
+                .map(|r| (*r).clone())
+                .map_err(|_| {
+                    WasmDppError::invalid_argument(format!(
+                        "{}[{}] is not a PlatformAddressInput",
+                        field_name, i
+                    ))
+                })
+        })
+        .collect()
+}
+
+/// Extract a Vec<PlatformAddressOutputWasm> from a JS options object property.
+///
+/// Reads the named property as a JS array, then extracts each element
+/// as a PlatformAddressOutput wasm-bindgen object via its __wbg_ptr.
+pub fn outputs_from_js_options(
+    options: &JsValue,
+    field_name: &str,
+) -> WasmDppResult<Vec<PlatformAddressOutputWasm>> {
+    let array = try_from_options_with(options, field_name, |v| try_to_array(v, field_name))?;
+    array
+        .iter()
+        .enumerate()
+        .map(|(i, item)| {
+            item.to_wasm::<PlatformAddressOutputWasm>("PlatformAddressOutput")
+                .map(|r| (*r).clone())
+                .map_err(|_| {
+                    WasmDppError::invalid_argument(format!(
+                        "{}[{}] is not a PlatformAddressOutput",
+                        field_name, i
+                    ))
+                })
+        })
         .collect()
 }

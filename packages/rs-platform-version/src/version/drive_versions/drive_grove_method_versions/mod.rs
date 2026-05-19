@@ -38,6 +38,8 @@ pub struct DriveGroveBasicMethodVersions {
     pub grove_get_optional_sum_tree_total_value: FeatureVersion,
     pub grove_get_raw_optional_item: FeatureVersion,
     pub grove_get_big_sum_tree_total_value: FeatureVersion,
+    pub grove_get_proved_path_query_v1: FeatureVersion,
+    pub grove_commitment_tree_count: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -58,6 +60,8 @@ pub struct DriveGroveBatchMethodVersions {
     pub batch_delete_up_tree_while_empty: FeatureVersion,
     pub batch_refresh_reference: FeatureVersion,
     pub batch_insert_empty_sum_tree: FeatureVersion,
+    pub batch_insert_empty_count_tree: FeatureVersion,
+    pub batch_insert_empty_provable_count_tree: FeatureVersion,
     pub batch_move: FeatureVersion,
     pub batch_insert_item_with_sum_item_if_not_exists: FeatureVersion,
 }

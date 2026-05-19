@@ -1,0 +1,25 @@
+language = "C"
+pragma_once = true
+include_guard = "PLATFORM_WALLET_FFI_H"
+autogen_warning = "/* This file is auto-generated. Do not modify manually. */"
+include_version = true
+sys_includes = ["stdint.h", "stdbool.h"]
+no_includes = false
+cpp_compat = true
+documentation = true
+documentation_style = "c99"
+
+[fn]
+args = "horizontal"
+rename_args = "snake_case"
+must_use = "PLATFORM_WALLET_WARN_UNUSED_RESULT"
+
+[enum]
+rename_variants = "ScreamingSnakeCase"
+prefix_with_name = true
+must_use = "PLATFORM_WALLET_WARN_UNUSED_RESULT"
+
+[const]
+allow_static_const = true
+allow_constexpr = false
+sort_by = "name"

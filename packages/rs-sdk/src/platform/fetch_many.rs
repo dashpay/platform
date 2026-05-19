@@ -45,7 +45,6 @@ use rs_dapi_client::{
     transport::TransportRequest, DapiRequest, ExecutionError, ExecutionResponse, InnerInto,
     IntoInner, RequestSettings,
 };
-use std::fmt::Debug;
 
 /// Fetch multiple objects from Platform.
 ///
@@ -208,8 +207,51 @@ where
         query: Q,
         settings: Option<RequestSettings>,
     ) -> Result<(O, ResponseMetadata, Proof), Error> {
-        let request = query.query(sdk.prove())?;
-        fetch_many_request(sdk, &request, settings).await
+        let request = &query.query(sdk.prove())?;
+
+        let fut = |settings: RequestSettings| async move {
+            let ExecutionResponse {
+                address,
+                retries,
+                inner: response,
+            } = request
+                .clone()
+                .execute(sdk, settings)
+                .await
+                .map_err(|e| e.inner_into())?;
+
+            let object_type = std::any::type_name::<Self>().to_string();
+            tracing::trace!(
+                request = ?request,
+                response = ?response,
+                ?address,
+                retries,
+                object_type,
+                "fetched objects from platform"
+            );
+
+            sdk.parse_proof_with_metadata_and_proof::<<Self as FetchMany<K, O>>::Request, O>(
+                request.clone(),
+                response,
+            )
+            .await
+            .map_err(|e| ExecutionError {
+                inner: e,
+                address: Some(address.clone()),
+                retries,
+            })
+            .map(|(o, metadata, proof)| ExecutionResponse {
+                inner: (o.unwrap_or_default(), metadata, proof),
+                retries,
+                address: address.clone(),
+            })
+        };
+
+        let settings = sdk
+            .dapi_client_settings
+            .override_by(settings.unwrap_or_default());
+
+        retry(sdk.address_list(), settings, fut).await.into_inner()
     }
 
     /// Fetch multiple objects from Platform by their identifiers.
@@ -272,91 +314,11 @@ where
 ///
 /// * [DriveDocumentQuery](crate::platform::DriveDocumentQuery) - query that specifies document matching criteria
 /// * [DocumentQuery](crate::platform::documents::document_query::DocumentQuery)
-#[async_trait::async_trait]
 impl FetchMany<Identifier, Documents> for Document {
     // We need to use the DocumentQuery type here because the DocumentQuery
     // type stores full contract, which is missing in the GetDocumentsRequest type.
     // TODO: Refactor to use ContextProvider
     type Request = DocumentQuery;
-
-    async fn fetch_many_with_metadata_and_proof<
-        Q: Query<<Self as FetchMany<Identifier, Documents>>::Request>,
-    >(
-        sdk: &Sdk,
-        query: Q,
-        settings: Option<RequestSettings>,
-    ) -> Result<(Documents, ResponseMetadata, Proof), Error> {
-        let document_query: DocumentQuery = query.query(sdk.prove())?;
-
-        // First attempt with current (possibly cached) contract
-        match fetch_many_request(sdk, &document_query, settings).await {
-            Ok(result) => Ok(result),
-            Err(e) if super::fetch::is_document_deserialization_error(&e) => {
-                let fresh_query =
-                    super::fetch::refetch_contract_for_query(sdk, &document_query).await?;
-                fetch_many_request(sdk, &fresh_query, settings).await
-            }
-            Err(e) => Err(e),
-        }
-    }
-}
-
-/// Execute a fetch-many request with node-level retry logic.
-///
-/// Shared implementation used by both the default [FetchMany::fetch_many_with_metadata_and_proof]
-/// and the [Document]-specific override.
-async fn fetch_many_request<O, R>(
-    sdk: &Sdk,
-    request: &R,
-    settings: Option<RequestSettings>,
-) -> Result<(O, ResponseMetadata, Proof), Error>
-where
-    O: Send
-        + Default
-        + MockResponse
-        + FromProof<R, Request = R, Response = <R as TransportRequest>::Response>,
-    R: TransportRequest + Into<<O as FromProof<R>>::Request> + Clone + Debug,
-{
-    let fut = |settings: RequestSettings| async move {
-        let ExecutionResponse {
-            address,
-            retries,
-            inner: response,
-        } = request
-            .clone()
-            .execute(sdk, settings)
-            .await
-            .map_err(|e| e.inner_into())?;
-
-        let object_type = std::any::type_name::<O>().to_string();
-        tracing::trace!(
-            request = ?request,
-            response = ?response,
-            ?address,
-            retries,
-            object_type,
-            "fetched objects from platform"
-        );
-
-        sdk.parse_proof_with_metadata_and_proof::<R, O>(request.clone(), response)
-            .await
-            .map_err(|e| ExecutionError {
-                inner: e,
-                address: Some(address.clone()),
-                retries,
-            })
-            .map(|(o, metadata, proof)| ExecutionResponse {
-                inner: (o.unwrap_or_default(), metadata, proof),
-                retries,
-                address: address.clone(),
-            })
-    };
-
-    let settings = sdk
-        .dapi_client_settings
-        .override_by(settings.unwrap_or_default());
-
-    retry(sdk.address_list(), settings, fut).await.into_inner()
 }
 
 /// Retrieve public keys for a given identity.

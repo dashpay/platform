@@ -54,3 +54,45 @@ impl Drive {
         Ok((root_hash, path_key_optional_elements))
     }
 }
+
+#[cfg(feature = "server")]
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::version::PlatformVersion;
+
+    #[test]
+    fn should_prove_and_verify_elements() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        // The initial state structure creates various root trees.
+        // We will prove and verify elements at a known path.
+        // The balances root tree is at path [RootTree::Balances].
+        // After initial setup, the "misc" tree has the total system credits key.
+        let path = vec![vec![crate::drive::RootTree::Misc as u8]];
+        let keys = vec![crate::drive::balances::TOTAL_SYSTEM_CREDITS_STORAGE_KEY.to_vec()];
+
+        let proof = drive
+            .prove_elements(path.clone(), keys.clone(), None, platform_version)
+            .expect("should generate proof for elements");
+
+        let (_root_hash, verified_elements) =
+            Drive::verify_elements(&proof, path, keys.clone(), platform_version)
+                .expect("should verify elements proof");
+
+        // We should get back exactly one entry for the key we queried
+        assert_eq!(verified_elements.len(), 1);
+        let key = &keys[0];
+        assert!(
+            verified_elements.contains_key(key),
+            "verified elements should contain the requested key"
+        );
+        // The element should exist (it's initialized during setup)
+        assert!(
+            verified_elements[key].is_some(),
+            "the total system credits element should exist"
+        );
+    }
+}

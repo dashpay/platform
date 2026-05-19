@@ -1,6 +1,9 @@
 # Summary
 
 [Introduction](introduction.md)
+[Platform Comparison](platform-comparison.md)
+[SDK Support](sdk-support.md)
+[Getting Started](getting-started.md)
 
 ---
 
@@ -37,7 +40,12 @@
 # Serialization
 
 - [Platform Serialization](serialization/platform-serialization.md)
+- [Document Serialization](serialization/document-serialization.md)
 - [Derive Macros](serialization/derive-macros.md)
+
+# Addresses
+
+- [Platform Addresses](addresses/platform-addresses.md)
 
 # Data Model
 
@@ -51,6 +59,10 @@
 - [Batch Operations](drive/batch-operations.md)
 - [Cost Tracking](drive/cost-tracking.md)
 - [Finalize Tasks](drive/finalize-tasks.md)
+- [Indexes](drive/indexes.md)
+- [Document Count Trees](drive/document-count-trees.md)
+- [Count Index Examples](drive/count-index-examples.md)
+- [Count Index Group By Examples](drive/count-index-group-by-examples.md)
 
 # Testing
 
@@ -58,11 +70,27 @@
 - [Strategy Tests](testing/strategy-tests.md)
 - [Test Configuration](testing/test-configuration.md)
 
-# SDK
+# Evo SDK (JavaScript/TypeScript)
+
+- [Overview](evo-sdk/overview.md)
+- [Getting Started](evo-sdk/getting-started.md)
+- [Trusted Mode and Proofs](evo-sdk/trusted-mode.md)
+- [State Transitions](evo-sdk/state-transitions.md)
+- [Wallet Utilities](evo-sdk/wallet-utilities.md)
+- [Networks and Environments](evo-sdk/networks-and-environments.md)
+- [Tutorials]()
+  - [Car Sales Management](evo-sdk/tutorials/car-sales.md)
+  - [Creating a Basic Token](evo-sdk/tutorials/basic-token.md)
+  - [Card Game with Tokens](evo-sdk/tutorials/card-game.md)
+  - [React Integration](evo-sdk/tutorials/react-integration.md)
+
+# Rust SDK
 
 - [Builder Pattern](sdk/builder-pattern.md)
 - [Fetch Traits](sdk/fetch-traits.md)
 - [Put Operations](sdk/put-operations.md)
+- [Identity Keys Deep Dive](sdk/identity-keys.md)
+- [BLAST Sync](sdk/blast-sync.md)
 
 # WASM
 

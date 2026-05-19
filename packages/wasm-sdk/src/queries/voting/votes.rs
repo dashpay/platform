@@ -126,7 +126,7 @@ fn parse_contested_resource_identity_votes_query(
     build_contested_resource_identity_votes_query(input)
 }
 
-/// Convert ResourceVotesByIdentity to a Map<Identifier, ResourceVote>.
+/// Convert ResourceVotesByIdentity to a Map<string, ResourceVote>.
 fn resource_votes_to_map(votes: ResourceVotesByIdentity) -> Map {
     let map = Map::new();
 
@@ -135,7 +135,7 @@ fn resource_votes_to_map(votes: ResourceVotesByIdentity) -> Map {
             continue;
         };
 
-        let key = JsValue::from(IdentifierWasm::from(vote_id));
+        let key: JsValue = IdentifierWasm::from(vote_id).to_base58().into();
         let value = JsValue::from(ResourceVoteWasm::from(vote));
 
         map.set(&key, &value);
@@ -148,7 +148,7 @@ fn resource_votes_to_map(votes: ResourceVotesByIdentity) -> Map {
 impl WasmSdk {
     #[wasm_bindgen(
         js_name = "getContestedResourceIdentityVotes",
-        unchecked_return_type = "Map<Identifier, ResourceVote>"
+        unchecked_return_type = "Map<string, ResourceVote>"
     )]
     pub async fn get_contested_resource_identity_votes(
         &self,
@@ -163,7 +163,7 @@ impl WasmSdk {
 
     #[wasm_bindgen(
         js_name = "getContestedResourceIdentityVotesWithProofInfo",
-        unchecked_return_type = "ProofMetadataResponseTyped<Map<Identifier, ResourceVote>>"
+        unchecked_return_type = "ProofMetadataResponseTyped<Map<string, ResourceVote>>"
     )]
     pub async fn get_contested_resource_identity_votes_with_proof_info(
         &self,

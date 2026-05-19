@@ -2,47 +2,60 @@ import SwiftUI
 import SwiftDashSDK
 
 struct TransactionDetailView: View {
-    let transaction: WalletTransaction
+    let transaction: PersistentTransaction
     @Environment(\.dismiss) private var dismiss
     @State private var showCopiedAlert = false
 
     private var typeDescription: String {
-        switch transaction.type {
-        case "received":
+        switch transaction.netAmount {
+        case let amount where amount > 0:
             return "Received"
-        case "sent":
+        case let amount where amount < 0:
             return "Sent"
-        case "self":
-            return "Self-Transfer"
         default:
-            return "Unknown"
+            return "Self-Transfer"
         }
     }
 
     private var typeIcon: String {
-        switch transaction.type {
-        case "received":
+        switch transaction.netAmount {
+        case let amount where amount > 0:
             return "arrow.down.circle.fill"
-        case "sent":
+        case let amount where amount < 0:
             return "arrow.up.circle.fill"
-        case "self":
-            return "arrow.triangle.2.circlepath"
         default:
-            return "questionmark.circle"
+            return "arrow.triangle.2.circlepath"
         }
     }
 
     private var typeColor: Color {
-        switch transaction.type {
-        case "received":
+        switch transaction.netAmount {
+        case let amount where amount > 0:
             return .green
-        case "sent":
+        case let amount where amount < 0:
             return .red
-        case "self":
-            return .blue
         default:
-            return .gray
+            return .blue
         }
+    }
+
+    private var isConfirmed: Bool {
+        transaction.context >= 2
+    }
+
+    private var transactionDate: Date {
+        Date(timeIntervalSince1970: TimeInterval(transaction.firstSeen))
+    }
+
+    private var blockHashHex: String? {
+        guard let bh = transaction.blockHash, !bh.isEmpty else { return nil }
+        return bh.map { String(format: "%02x", $0) }.joined()
+    }
+
+    private var formattedFee: String? {
+        guard let fee = transaction.fee else { return nil }
+        let dash = Double(fee) / 100_000_000.0
+        return String(format: "%.8f DASH", dash)
     }
 
     var body: some View {
@@ -69,24 +82,22 @@ struct TransactionDetailView: View {
                     VStack(spacing: 16) {
                         TransactionDetailRow(
                             label: "Status",
-                            value: transaction.confirmations == 0 ? "Pending" :
-                                   transaction.confirmations < 6 ? "\(transaction.confirmations) confirmations" :
-                                   "Confirmed"
+                            value: isConfirmed ? "Confirmed" : "Pending"
                         )
 
                         TransactionDetailRow(
                             label: "Date",
-                            value: formatDate(transaction.date)
+                            value: formatDate(transactionDate)
                         )
 
-                        if let height = transaction.height {
+                        if transaction.blockHeight != 0 {
                             TransactionDetailRow(
                                 label: "Block Height",
-                                value: "\(height)"
+                                value: "\(transaction.blockHeight)"
                             )
                         }
 
-                        if let fee = transaction.formattedFee, transaction.type == "sent" {
+                        if let fee = formattedFee, transaction.netAmount < 0 {
                             TransactionDetailRow(
                                 label: "Network Fee",
                                 value: fee
@@ -100,10 +111,10 @@ struct TransactionDetailView: View {
                                 .foregroundColor(.secondary)
 
                             Button {
-                                copyToClipboard(transaction.txid)
+                                copyToClipboard(transaction.txidHex)
                             } label: {
                                 HStack {
-                                    Text(transaction.txid)
+                                    Text(transaction.txidHex)
                                         .font(.system(.footnote, design: .monospaced))
                                         .foregroundColor(.primary)
                                         .lineLimit(nil)
@@ -122,7 +133,7 @@ struct TransactionDetailView: View {
                         }
 
                         // Block Hash (if available)
-                        if let blockHash = transaction.blockHash {
+                        if let blockHash = blockHashHex {
                             VStack(alignment: .leading, spacing: 8) {
                                 Text("Block Hash")
                                     .font(.caption)
@@ -183,7 +194,7 @@ struct TransactionDetailView: View {
     }
 
     private func formatDate(_ date: Date) -> String {
-        let formatter = DateFormatter()
+        let formatter = DateFormatter.gregorian()
         formatter.dateStyle = .medium
         formatter.timeStyle = .short
         return formatter.string(from: date)
@@ -226,22 +237,4 @@ struct TransactionDetailRow: View {
         }
         .padding(.horizontal)
     }
-}
-
-// MARK: - Preview
-
-#Preview {
-    TransactionDetailView(
-        transaction: WalletTransaction(
-            txid: "abc123def456abc123def456abc123def456abc123def456abc123def456abc1",
-            netAmount: 50000000,
-            height: 12345,
-            blockHash: "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f",
-            timestamp: UInt64(Date().timeIntervalSince1970),
-            fee: 226,
-            confirmations: 6,
-            type: "received",
-            isOurs: false
-        )
-    )
 }

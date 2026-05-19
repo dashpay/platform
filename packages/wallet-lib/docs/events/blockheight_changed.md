@@ -9,4 +9,3 @@ account.events.on(EVENTS.BLOCKHEIGHT_CHANGED, ({payload: blockHeight})=>{
   console.log(`Blockheight changed to ${blockHeight}`);
 });
 ```
-

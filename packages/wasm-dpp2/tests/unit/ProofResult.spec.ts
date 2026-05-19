@@ -183,8 +183,8 @@ describe('StateTransitionProofResult types', () => {
     it('should round-trip with V0 tokenInfo', () => {
       const data = {
         tokenId: identifier,
-        // IdentityTokenInfo is a versioned enum: { V0: { frozen: bool } }
-        tokenInfo: { V0: { frozen: false } },
+        // IdentityTokenInfo is an internally tagged enum: { $formatVersion: "0", frozen: bool }
+        tokenInfo: { $formatVersion: "0", frozen: false },
       };
       const result = wasm.VerifiedTokenIdentityInfo.fromObject(data);
 
@@ -200,8 +200,8 @@ describe('StateTransitionProofResult types', () => {
   describe('VerifiedTokenStatus', () => {
     it('should round-trip with V0 tokenStatus', () => {
       const data = {
-        // TokenStatus is a versioned enum: { V0: { paused: bool } }
-        tokenStatus: { V0: { paused: false } },
+        // TokenStatus is an internally tagged enum: { $formatVersion: "0", paused: bool }
+        tokenStatus: { $formatVersion: "0", paused: false },
       };
       const result = wasm.VerifiedTokenStatus.fromObject(data);
 
@@ -275,12 +275,12 @@ describe('StateTransitionProofResult types', () => {
 
   describe('VerifiedIdentity', () => {
     it('should construct from object with minimal Identity', () => {
-      // Identity uses #[serde(tag = "$version")] with V0 renamed to "0"
+      // Identity uses #[serde(tag = "$formatVersion")] with V0 renamed to "0"
       // IdentityV0 uses #[serde(rename_all = "camelCase")]
       // Inside internally-tagged enum, Identifier expects base58 string (not bytes)
       const data = {
         identity: {
-          $version: '0',
+          $formatVersion: '0',
           id: identifier,
           publicKeys: [],
           balance: 0,
@@ -302,23 +302,25 @@ describe('StateTransitionProofResult types', () => {
 
   describe('VerifiedMasternodeVote', () => {
     it('should construct from object with Abstain vote', () => {
-      // Vote: rename_all = "camelCase" -> resourceVote
-      // ResourceVote: tag = "$version", V0 renamed to "0"
-      // VotePoll: rename_all = "camelCase" -> contestedDocumentResourceVotePoll
-      // Inside internally-tagged enum, Identifier expects base58 string
+      // Vote: tag = "type", content = "data", rename_all = "camelCase"
+      // ResourceVote: tag = "$formatVersion", V0 renamed to "0"
+      // VotePoll: tag = "type", content = "data", rename_all = "camelCase"
+      // ResourceVoteChoice: tag = "type", content = "data", rename_all = "camelCase"
       const data = {
         vote: {
-          resourceVote: {
-            $version: '0',
+          type: 'resourceVote',
+          data: {
+            $formatVersion: '0',
             votePoll: {
-              contestedDocumentResourceVotePoll: {
+              type: 'contestedDocumentResourceVotePoll',
+              data: {
                 contractId: identifier,
                 documentTypeName: 'domain',
                 indexName: 'parentNameAndLabel',
                 indexValues: ['dash', 'test'],
               },
             },
-            resourceVoteChoice: 'abstain',
+            resourceVoteChoice: { type: 'abstain' },
           },
         },
       };
@@ -326,8 +328,6 @@ describe('StateTransitionProofResult types', () => {
 
       expect(result.vote).to.not.be.null();
 
-      // toObject serializes Identifier as bytes, but fromObject expects base58 string
-      // (internally-tagged enum serde limitation), so full round-trip is not possible
       const obj = result.toObject();
       expect(obj).to.have.property('vote');
     });
@@ -335,20 +335,21 @@ describe('StateTransitionProofResult types', () => {
 
   describe('VerifiedNextDistribution', () => {
     it('should construct from object with Abstain vote', () => {
-      // Inside internally-tagged enum, Identifier expects base58 string
       const data = {
         vote: {
-          resourceVote: {
-            $version: '0',
+          type: 'resourceVote',
+          data: {
+            $formatVersion: '0',
             votePoll: {
-              contestedDocumentResourceVotePoll: {
+              type: 'contestedDocumentResourceVotePoll',
+              data: {
                 contractId: identifier,
                 documentTypeName: 'domain',
                 indexName: 'parentNameAndLabel',
                 indexValues: ['dash', 'test'],
               },
             },
-            resourceVoteChoice: 'abstain',
+            resourceVoteChoice: { type: 'abstain' },
           },
         },
       };
@@ -356,8 +357,6 @@ describe('StateTransitionProofResult types', () => {
 
       expect(result.vote).to.not.be.null();
 
-      // toObject serializes Identifier as bytes, but fromObject expects base58 string
-      // (internally-tagged enum serde limitation), so full round-trip is not possible
       const obj = result.toObject();
       expect(obj).to.have.property('vote');
     });
@@ -371,7 +370,7 @@ describe('StateTransitionProofResult types', () => {
     it('should round-trip through fromObject/toObject with Map', () => {
       const id1 = new wasm.Identifier(identifier);
       const balancesMap = new Map();
-      balancesMap.set(id1, 999000n);
+      balancesMap.set(id1.toBase58(), 999000n);
 
       const data = { balances: balancesMap };
       const result = wasm.VerifiedTokenIdentitiesBalances.fromObject(data);
@@ -392,6 +391,24 @@ describe('StateTransitionProofResult types', () => {
 
       expect(result.balances.size).to.equal(0);
     });
+
+    // Regression: toJSON() must produce a value where JSON.stringify preserves
+    // Map entries. js_sys::Map embedded in a JsValue serialises to {} via
+    // JSON.stringify, so toJSON() has to normalise the Map to a plain object.
+    it('toJSON() should preserve Map entries through JSON.stringify', () => {
+      const id1 = new wasm.Identifier(identifier);
+      const balancesMap = new Map();
+      balancesMap.set(id1.toBase58(), 999000n);
+
+      const result = wasm.VerifiedTokenIdentitiesBalances.fromObject({ balances: balancesMap });
+      const json = result.toJSON();
+
+      const stringified = JSON.stringify(json);
+      const parsed = JSON.parse(stringified);
+      expect(parsed.balances).to.have.property(id1.toBase58());
+      // BigInt is normalised to a string for JSON compatibility.
+      expect(parsed.balances[id1.toBase58()]).to.equal('999000');
+    });
   });
 
   describe('VerifiedDocuments', () => {
@@ -399,7 +416,7 @@ describe('StateTransitionProofResult types', () => {
       const id1 = new wasm.Identifier(identifier);
       const docsMap = new Map();
       // null values represent absent documents
-      docsMap.set(id1, null);
+      docsMap.set(id1.toBase58(), null);
 
       const data = { documents: docsMap };
       const result = wasm.VerifiedDocuments.fromObject(data);
@@ -419,6 +436,18 @@ describe('StateTransitionProofResult types', () => {
       const result = wasm.VerifiedDocuments.fromObject(data);
 
       expect(result.documents.size).to.equal(0);
+    });
+
+    it('toJSON() should preserve Map entries through JSON.stringify', () => {
+      const id1 = new wasm.Identifier(identifier);
+      const docsMap = new Map();
+      docsMap.set(id1.toBase58(), null);
+
+      const result = wasm.VerifiedDocuments.fromObject({ documents: docsMap });
+      const parsed = JSON.parse(JSON.stringify(result.toJSON()));
+
+      expect(parsed.documents).to.have.property(id1.toBase58());
+      expect(parsed.documents[id1.toBase58()]).to.equal(null);
     });
   });
 
@@ -447,6 +476,17 @@ describe('StateTransitionProofResult types', () => {
 
       expect(result.addressInfos.size).to.equal(0);
     });
+
+    it('toJSON() should preserve Map entries through JSON.stringify', () => {
+      const infosMap = new Map();
+      infosMap.set('abcdef0123456789', null);
+
+      const result = wasm.VerifiedAddressInfos.fromObject({ addressInfos: infosMap });
+      const parsed = JSON.parse(JSON.stringify(result.toJSON()));
+
+      expect(parsed.addressInfos).to.have.property('abcdef0123456789');
+      expect(parsed.addressInfos.abcdef0123456789).to.equal(null);
+    });
   });
 
   // =========================================================================
@@ -457,7 +497,7 @@ describe('StateTransitionProofResult types', () => {
     it('should construct from object with Identity + addressInfos', () => {
       // Identity uses internally-tagged enum -> Identifier expects base58 string
       const identityData = {
-        $version: '0',
+        $formatVersion: '0',
         id: identifier,
         publicKeys: [],
         balance: 0,
@@ -476,6 +516,27 @@ describe('StateTransitionProofResult types', () => {
       const obj = result.toObject();
       expect(obj).to.have.property('identity');
       expect(obj).to.have.property('addressInfos');
+    });
+
+    it('toJSON() should preserve Map entries through JSON.stringify', () => {
+      const identityData = {
+        $formatVersion: '0',
+        id: identifier,
+        publicKeys: [],
+        balance: 0,
+        revision: 0,
+      };
+      const infosMap = new Map();
+      infosMap.set('deadbeef', null);
+
+      const result = wasm.VerifiedIdentityFullWithAddressInfos.fromObject({
+        identity: identityData,
+        addressInfos: infosMap,
+      });
+      const parsed = JSON.parse(JSON.stringify(result.toJSON()));
+
+      expect(parsed.addressInfos).to.have.property('deadbeef');
+      expect(parsed.addressInfos.deadbeef).to.equal(null);
     });
   });
 
@@ -503,6 +564,28 @@ describe('StateTransitionProofResult types', () => {
       const obj = result.toObject();
       expect(obj).to.have.property('partialIdentity');
       expect(obj).to.have.property('addressInfos');
+    });
+
+    it('toJSON() should preserve Map entries through JSON.stringify', () => {
+      const idBytes = new wasm.Identifier(identifier).toBytes();
+      const piData = {
+        id: idBytes,
+        loadedPublicKeys: {},
+        balance: null,
+        revision: null,
+        notFoundPublicKeys: [],
+      };
+      const infosMap = new Map();
+      infosMap.set('cafebabe', null);
+
+      const result = wasm.VerifiedIdentityWithAddressInfos.fromObject({
+        partialIdentity: piData,
+        addressInfos: infosMap,
+      });
+      const parsed = JSON.parse(JSON.stringify(result.toJSON()));
+
+      expect(parsed.addressInfos).to.have.property('cafebabe');
+      expect(parsed.addressInfos.cafebabe).to.equal(null);
     });
   });
 });

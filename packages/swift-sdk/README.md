@@ -169,7 +169,7 @@ if let result = swift_dash_identity_transfer_credits(
 let ownerId = "identity_that_owns_contract"
 let schema = """
 {
-    "$format_version": "0",
+    "$formatVersion": "0",
     "ownerId": "\(ownerId)",
     "documents": {
         "message": {

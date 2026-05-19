@@ -1,4 +1,6 @@
 use crate::data_contract::associated_token::token_pre_programmed_distribution::v0::TokenPreProgrammedDistributionV0;
+#[cfg(feature = "json-conversion")]
+use crate::serialization::JsonConvertible;
 use bincode::{Decode, Encode};
 use derive_more::From;
 use serde::{Deserialize, Serialize};
@@ -8,8 +10,9 @@ pub mod accessors;
 
 pub mod v0;
 
+#[cfg_attr(feature = "json-conversion", derive(JsonConvertible))]
 #[derive(Serialize, Deserialize, Encode, Decode, Debug, Clone, PartialEq, Eq, From)]
-#[serde(tag = "$format_version")]
+#[serde(tag = "$formatVersion")]
 pub enum TokenPreProgrammedDistribution {
     #[serde(rename = "0")]
     V0(TokenPreProgrammedDistributionV0),
