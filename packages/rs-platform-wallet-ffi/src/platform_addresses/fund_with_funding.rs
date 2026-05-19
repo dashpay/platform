@@ -218,12 +218,22 @@ pub unsafe extern "C" fn platform_address_wallet_resume_fund_with_existing_asset
 /// entry points agree on the wire shape.
 ///
 /// # Safety
-/// - `addresses` must be a valid, non-null pointer to an array of at
-///   least `addresses_count` `FundingAddressEntryFFI` entries.
+/// - `addresses` must be a valid, non-null pointer to an array of
+///   at least `addresses_count` `FundingAddressEntryFFI` entries
+///   WHEN `addresses_count > 0`. A `0`-count call is handled
+///   short-circuit and does not dereference `addresses`, so a
+///   dangling non-null sentinel pointer in that case is sound.
 pub(super) unsafe fn decode_funding_addresses(
     addresses: *const FundingAddressEntryFFI,
     addresses_count: usize,
 ) -> Result<BTreeMap<PlatformAddress, Option<dpp::fee::Credits>>, PlatformWalletFFIResult> {
+    // Short-circuit the empty case to dodge the
+    // `slice::from_raw_parts` safety contract entirely when no
+    // dereference is needed. Downstream `validate_recipient_addresses`
+    // rejects empty with a typed error.
+    if addresses_count == 0 {
+        return Ok(BTreeMap::new());
+    }
     let mut address_map = BTreeMap::new();
     for entry in std::slice::from_raw_parts(addresses, addresses_count) {
         let addr = PlatformAddress::try_from(entry.address).map_err(|e| {

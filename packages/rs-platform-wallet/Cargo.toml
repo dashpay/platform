@@ -10,7 +10,7 @@ description = "Platform wallet with identity management support"
 # Dash Platform packages
 dpp = { path = "../rs-dpp" }
 dash-sdk = { path = "../rs-sdk", default-features = false, features = ["dashpay-contract", "dpns-contract", "wallet"] }
-drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
+drive-proof-verifier = { path = "../rs-drive-proof-verifier", default-features = false }
 platform-encryption = { path = "../rs-platform-encryption" }
 
 # Key wallet dependencies (from rust-dashcore)

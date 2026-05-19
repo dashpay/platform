@@ -224,6 +224,24 @@ impl PlatformAddressWallet {
                     .asset_locks
                     .upgrade_to_chain_lock_proof(&out_point, CL_FALLBACK_TIMEOUT)
                     .await?;
+                // Advance the tracked status from `InstantSendLocked`
+                // to `ChainLocked` with the upgraded proof attached
+                // BEFORE the second submit. If the next call fails
+                // (transport blip, fresh CL-height race that
+                // exhausts the retry budget), the row accurately
+                // reflects the lock's CL-attached state instead of
+                // the stale IS proof Platform just rejected. The
+                // catch-up scanner / Resume path then has a
+                // truthful status to work from.
+                let cs = self
+                    .asset_locks
+                    .advance_asset_lock_status(
+                        &out_point,
+                        crate::wallet::asset_lock::tracked::AssetLockStatus::ChainLocked,
+                        Some(chain_proof.clone()),
+                    )
+                    .await?;
+                self.asset_locks.queue_asset_lock_changeset(cs);
                 submit_with_cl_height_retry(settings, |s| {
                     addresses.top_up_with_signers(
                         &self.sdk,

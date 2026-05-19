@@ -172,7 +172,7 @@ struct FundPlatformAddressView: View {
         let options = coreAccountOptions
         Section {
             if options.isEmpty {
-                Text("No funded Core (BIP44 standard) accounts on this wallet.")
+                Text("No Core (BIP44 standard) accounts on this wallet.")
                     .font(.caption)
                     .foregroundColor(.secondary)
             } else {
@@ -486,9 +486,21 @@ struct FundPlatformAddressView: View {
     private func submit() {
         guard
             let platformAcct = platformAccountIndex,
-            let hash = selectedRecipientHash,
-            let recipient = recipientCandidates.first(where: { $0.addressHash == hash })
+            let hash = selectedRecipientHash
         else { return }
+        // Recipient resolution can race with SwiftData: between the
+        // user tapping Fund Address and this body running, the
+        // selected address may have flipped to `isUsed = true` (a
+        // concurrent flow consumed it) or its balance may have moved.
+        // Surface that as a fail-fast error instead of silently
+        // dropping the tap — earlier shape returned nil and the
+        // button looked unresponsive.
+        guard let recipient = recipientCandidates.first(where: { $0.addressHash == hash }) else {
+            submitError = SubmitError(
+                message: "The selected recipient address is no longer available (it may have been used by another funding). Pick a fresh address and try again."
+            )
+            return
+        }
 
         let managedHolder = walletManager.wallet(for: wallet.walletId)
         guard let managedHolder else {
