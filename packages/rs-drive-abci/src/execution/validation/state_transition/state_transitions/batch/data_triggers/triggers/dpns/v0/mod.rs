@@ -462,6 +462,18 @@ mod test {
             platform_version,
         )
         .expect("the execution result should be returned");
+
+        // PROTOCOL_VERSION_11 byte-identity assertion: _v0 must NOT add
+        // any operations to the execution_context. If a future refactor
+        // accidentally re-introduces billing in _v0, this assertion
+        // fails and PV11 chain replay would diverge.
+        assert!(
+            data_trigger_context
+                .state_transition_execution_context
+                .operations_slice()
+                .is_empty(),
+            "create_domain_data_trigger_v0 must not add operations (PV11 byte-identity)"
+        );
         assert!(result.is_valid());
     }
 }

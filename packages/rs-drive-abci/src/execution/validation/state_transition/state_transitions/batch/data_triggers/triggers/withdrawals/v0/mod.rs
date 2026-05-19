@@ -144,7 +144,9 @@ mod tests {
     use dpp::version::PlatformVersion;
     use drive::util::object_size_info::DocumentInfo::DocumentRefInfo;
     use drive::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
-    use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
+    use crate::execution::types::state_transition_execution_context::{
+        StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
+    };
     use dpp::withdrawal::Pooling;
     use drive::drive::contract::DataContractFetchInfo;
     use crate::execution::types::state_transition_execution_context::v0::StateTransitionExecutionContextV0;
@@ -343,6 +345,45 @@ mod tests {
         assert_eq!(
             error.to_string(),
             "withdrawal deletion is allowed only for COMPLETE statuses"
+        );
+
+        // PROTOCOL_VERSION_11 byte-identity assertion: _v0 must NOT add
+        // any operations to the execution_context. Catches any regression
+        // that accidentally re-introduces billing in _v0.
+        assert!(
+            data_trigger_context
+                .state_transition_execution_context
+                .operations_slice()
+                .is_empty(),
+            "delete_withdrawal_data_trigger_v0 must not add operations (PV11 byte-identity)"
+        );
+
+        // T4 PROTOCOL_VERSION_12+ billing assertion: run the same
+        // scenario through `_v1` directly and verify it DID add an
+        // operation. Same fixture, different code path — catches the
+        // regression where `_v1` drops the `add_operation` call.
+        let mut transition_execution_context_v1 =
+            StateTransitionExecutionContext::V0(StateTransitionExecutionContextV0::default());
+        let mut data_trigger_context_v1 = DataTriggerExecutionContext {
+            platform: &platform_ref,
+            owner_id: &owner_id,
+            state_transition_execution_context: &mut transition_execution_context_v1,
+            transaction: None,
+        };
+        use super::super::v1::delete_withdrawal_data_trigger_v1;
+        let result_v1 = delete_withdrawal_data_trigger_v1(
+            &document_transition,
+            &mut data_trigger_context_v1,
+            platform_version,
+        )
+        .expect("the execution result should be returned (v1)");
+        assert!(!result_v1.is_valid());
+        assert!(
+            !data_trigger_context_v1
+                .state_transition_execution_context
+                .operations_slice()
+                .is_empty(),
+            "T4: delete_withdrawal_data_trigger_v1 must add operations to execution_context"
         );
     }
 }

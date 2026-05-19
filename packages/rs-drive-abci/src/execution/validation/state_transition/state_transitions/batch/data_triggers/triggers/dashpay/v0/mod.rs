@@ -446,5 +446,19 @@ mod test {
                 e.message() == format!("Identity {contract_request_to_user_id} doesn't exist")
             }
         ));
+
+        // T3 PROTOCOL_VERSION_12+ billing assertion: this test runs at
+        // `PlatformVersion::latest()` where
+        // `create_contact_request_data_trigger: 1` dispatches to `_v1`.
+        // `_v1` must surface the `fetch_identity_balance_with_costs`
+        // cost via `add_operation`. If a regression drops the
+        // `add_operation` call in `_v1`, this assertion fails.
+        let ops = data_trigger_context
+            .state_transition_execution_context
+            .operations_slice();
+        assert!(
+            !ops.is_empty(),
+            "T3: _v1 must add operations to execution_context (caught zero ops)"
+        );
     }
 }
