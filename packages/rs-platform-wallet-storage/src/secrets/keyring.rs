@@ -1,4 +1,8 @@
-//! [`KeyringStore`] — OS keyring backend (keyring-core 4.x split).
+//! [`KeyringStore`] — OS keyring backend.
+//!
+//! Built on `keyring-core 1.0.0` (the split-architecture library) plus
+//! the per-platform credential-store crates; the `keyring` 4.x crate
+//! itself is the sample CLI and is not a dependency here.
 //!
 //! Delegates at-rest protection to the OS credential store. Its
 //! security *is* the OS keyring's security.
@@ -107,12 +111,20 @@ fn default_store() -> Result<Arc<CredentialStore>, SecretStoreError> {
 /// mapped here — callers translate it to `Ok(None)`/`Ok(())`. No
 /// keyring error string is embedded (it could echo the `account`,
 /// which is non-secret, but the taxonomy stays clean — SEC-REQ-2.0.1).
+///
+/// Per keyring-core 1.0.0, `NoStorageAccess` covers the *locked*
+/// collection case ("it might be that the credential store is
+/// locked"), so it maps to [`SecretStoreError::KeyringLocked`] to
+/// drive the unlock-retry UX (SEC-REQ-2.1.4). A genuinely absent
+/// backend (`NoDefaultStore` / `PlatformFailure`) is
+/// [`SecretStoreError::BackendUnavailable`].
 fn map_keyring_err(e: KeyringError) -> SecretStoreError {
     match e {
         KeyringError::NoEntry => SecretStoreError::NotFound,
-        KeyringError::NoStorageAccess(_)
-        | KeyringError::NoDefaultStore
-        | KeyringError::PlatformFailure(_) => SecretStoreError::BackendUnavailable,
+        KeyringError::NoStorageAccess(_) => SecretStoreError::KeyringLocked,
+        KeyringError::NoDefaultStore | KeyringError::PlatformFailure(_) => {
+            SecretStoreError::BackendUnavailable
+        }
         _ => SecretStoreError::BackendUnavailable,
     }
 }
@@ -169,6 +181,28 @@ mod tests {
                 Err(SecretStoreError::InvalidLabel)
             ));
         }
+    }
+
+    #[test]
+    fn locked_keyring_maps_to_keyring_locked() {
+        // keyring-core's `NoStorageAccess` covers the locked-collection
+        // case; it must surface as `KeyringLocked` so the caller can
+        // prompt for unlock (SEC-REQ-2.1.4), not as `BackendUnavailable`.
+        let locked =
+            KeyringError::NoStorageAccess(std::io::Error::other("collection is locked").into());
+        assert!(matches!(
+            map_keyring_err(locked),
+            SecretStoreError::KeyringLocked
+        ));
+        // A genuinely absent backend stays `BackendUnavailable`.
+        assert!(matches!(
+            map_keyring_err(KeyringError::NoDefaultStore),
+            SecretStoreError::BackendUnavailable
+        ));
+        assert!(matches!(
+            map_keyring_err(KeyringError::NoEntry),
+            SecretStoreError::NotFound
+        ));
     }
 
     #[test]
