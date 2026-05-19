@@ -90,6 +90,20 @@ pub(crate) mod property_names {
     /// can be answered with an `AggregateSumOnRange` O(log n) proof.
     /// Requires [`DOCUMENTS_SUMMABLE`] to be set.
     pub const RANGE_SUMMABLE: &str = "rangeSummable";
+    /// Doctype-level syntactic sugar for the combination of
+    /// `documentsCountable: true` + [`DOCUMENTS_SUMMABLE`]`: "<prop>"`.
+    /// Average queries return `(count, sum)` pairs the client divides
+    /// — same on-disk layout as setting both flags directly. Authors
+    /// who think in terms of averages get a single flag; the parser
+    /// in `try_from_schema/v2` desugars it into the underlying
+    /// count + sum flags so all downstream code paths (insert, query,
+    /// estimation) stay unchanged.
+    pub const DOCUMENTS_AVERAGEABLE: &str = "documentsAverageable";
+    /// Doctype-level syntactic sugar for [`RANGE_COUNTABLE`]`: true` +
+    /// [`RANGE_SUMMABLE`]`: true`. Requires [`DOCUMENTS_AVERAGEABLE`]
+    /// to be set (parallels the count/sum-individually rules: range
+    /// axes require the corresponding base flag).
+    pub const RANGE_AVERAGEABLE: &str = "rangeAverageable";
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

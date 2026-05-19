@@ -1,7 +1,8 @@
 use crate::data_contract::config::DataContractConfig;
 use crate::data_contract::document_type::class_methods::consensus_or_protocol_value_error;
 use crate::data_contract::document_type::property_names::{
-    DOCUMENTS_COUNTABLE, DOCUMENTS_SUMMABLE, RANGE_COUNTABLE, RANGE_SUMMABLE,
+    DOCUMENTS_AVERAGEABLE, DOCUMENTS_COUNTABLE, DOCUMENTS_SUMMABLE, RANGE_AVERAGEABLE,
+    RANGE_COUNTABLE, RANGE_SUMMABLE,
 };
 use crate::data_contract::document_type::v1::DocumentTypeV1;
 use crate::data_contract::document_type::v2::DocumentTypeV2;
@@ -108,10 +109,116 @@ impl DocumentTypeV2 {
             .transpose()?
             .unwrap_or(false);
 
+        // `documentsAverageable` is syntactic sugar for
+        // `documentsCountable: true` + `documentsSummable: "<prop>"`.
+        // `rangeAverageable` is shorthand for both range_* flags.
+        // Both desugar into the underlying flags below.
+        let documents_averageable: Option<String> = schema_map_opt
+            .as_ref()
+            .and_then(|schema_map| {
+                schema_map
+                    .iter()
+                    .find(|(k, _)| k.as_text() == Some(DOCUMENTS_AVERAGEABLE))
+            })
+            .map(|(_, v)| match v {
+                Value::Null => Ok(None),
+                Value::Text(s) if !s.is_empty() => Ok(Some(s.clone())),
+                Value::Text(_) => Err(ProtocolError::DataContractError(
+                    DataContractError::ValueWrongType(
+                        "documentsAverageable must be a non-empty string naming an integer \
+                         property, or null"
+                            .to_string(),
+                    ),
+                )),
+                _ => Err(ProtocolError::DataContractError(
+                    DataContractError::ValueWrongType(
+                        "documentsAverageable value must be a string or null".to_string(),
+                    ),
+                )),
+            })
+            .transpose()?
+            .flatten();
+
+        let range_averageable = schema_map_opt
+            .as_ref()
+            .and_then(|schema_map| {
+                Value::inner_optional_bool_value(schema_map, RANGE_AVERAGEABLE)
+                    .map_err(consensus_or_protocol_value_error)
+                    .transpose()
+            })
+            .transpose()?
+            .unwrap_or(false);
+
+        // Desugar averageable into count + sum flags. Conflict rules
+        // mirror the per-index dispatch: if both `averageable` and
+        // `documentsSummable` are set, the property names must match;
+        // `documentsCountable: false` alongside `averageable` is a
+        // contradiction.
+        let (documents_countable, documents_summable, range_countable, range_summable) =
+            if let Some(avg_prop) = &documents_averageable {
+                if let Some(sum_prop) = &documents_summable {
+                    if sum_prop != avg_prop {
+                        return Err(ProtocolError::DataContractError(
+                            DataContractError::InvalidContractStructure(format!(
+                                "documentsAverageable=\"{}\" conflicts with \
+                                 documentsSummable=\"{}\" on document type \"{}\": both name \
+                                 the property aggregated into the primary-key sum tree, so \
+                                 they must agree (or set only one — documentsAverageable is \
+                                 shorthand for documentsCountable + documentsSummable on the \
+                                 same property)",
+                                avg_prop, sum_prop, name,
+                            )),
+                        ));
+                    }
+                }
+                // averageable implies countable; explicit
+                // `documentsCountable: false` alongside is a contradiction.
+                if let Some(schema_map) = schema_map_opt.as_ref() {
+                    if let Some(explicit_countable) =
+                        Value::inner_optional_bool_value(schema_map, DOCUMENTS_COUNTABLE)
+                            .map_err(consensus_or_protocol_value_error)?
+                    {
+                        if !explicit_countable {
+                            return Err(ProtocolError::DataContractError(
+                                DataContractError::InvalidContractStructure(format!(
+                                    "documentsAverageable=\"{}\" on document type \"{}\" \
+                                     implies documentsCountable: true, but the schema \
+                                     explicitly sets documentsCountable: false. Remove the \
+                                     explicit false (or drop documentsAverageable in favor \
+                                     of just documentsSummable).",
+                                    avg_prop, name,
+                                )),
+                            ));
+                        }
+                    }
+                }
+                let merged_range = range_countable || range_summable || range_averageable;
+                (true, Some(avg_prop.clone()), merged_range, merged_range)
+            } else if range_averageable {
+                return Err(ProtocolError::DataContractError(
+                    DataContractError::InvalidContractStructure(format!(
+                        "rangeAverageable: true on document type \"{}\" requires \
+                         documentsAverageable: \"<prop>\" to name the integer property to \
+                         average; rangeAverageable on its own has no property to aggregate",
+                        name,
+                    )),
+                ));
+            } else {
+                (
+                    documents_countable,
+                    documents_summable,
+                    range_countable,
+                    range_summable,
+                )
+            };
+
         // Cross-validation: `rangeSummable: true` requires
         // `documentsSummable` to be set. (Mirrors count's
         // `rangeCountable implies documentsCountable` rule at the
-        // doctype level.)
+        // doctype level.) This also catches the
+        // `rangeAverageable + no documentsAverageable + no documentsSummable`
+        // case above, but the earlier explicit error gives a better
+        // message for the averageable-specific path.
         if range_summable && documents_summable.is_none() {
             return Err(ProtocolError::DataContractError(
                 DataContractError::InvalidContractStructure(

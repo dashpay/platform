@@ -455,6 +455,16 @@
           "rangeSummable": {
             "type": "boolean",
             "description": "When true, the property-name level becomes a ProvableSumTree (or ProvableCountProvableSumTree when paired with `rangeCountable: true`) so range-sum queries on the indexed property are O(log n) via the `AggregateSumOnRange` proof primitive. Requires `summable` to be set."
+          },
+          "averageable": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "description": "Syntactic sugar: `averageable: \"<prop>\"` is shorthand for `countable: \"countable\"` + `summable: \"<prop>\"`. Enables average queries (which return `(count, sum)` pairs the client divides) without forcing authors to think in terms of count + sum. Same on-disk layout as setting both underlying flags. If you set both `averageable` and `summable`, they must name the same property."
+          },
+          "rangeAverageable": {
+            "type": "boolean",
+            "description": "Syntactic sugar: `rangeAverageable: true` is shorthand for `rangeCountable: true` + `rangeSummable: true`. Requires `averageable` to be set."
           }
         },
         "required": [
@@ -463,7 +473,8 @@
         ],
         "dependentRequired": {
           "rangeCountable": ["countable"],
-          "rangeSummable": ["summable"]
+          "rangeSummable": ["summable"],
+          "rangeAverageable": ["averageable"]
         },
         "additionalProperties": false
       },
@@ -551,6 +562,16 @@
     "rangeSummable": {
       "type": "boolean",
       "description": "When true, the primary key tree uses a ProvableSumTree (or ProvableCountProvableSumTree paired with rangeCountable: true) enabling O(log n) range-sum queries over the primary axis. Requires `documentsSummable` to be set. Rarely useful — range-sum on the primary key with no where-clause filter is unusual; most callers want per-index `rangeSummable` instead. Set this only when you need a provable global range-sum tree."
+    },
+    "documentsAverageable": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "description": "Syntactic sugar: `documentsAverageable: \"<prop>\"` is shorthand for `documentsCountable: true` + `documentsSummable: \"<prop>\"`. Enables doctype-wide average queries (returns `(count, sum)` the client divides) without authors having to compose the count + sum flags. Same on-disk layout. If you set both `documentsAverageable` and `documentsSummable`, they must name the same property."
+    },
+    "rangeAverageable": {
+      "type": "boolean",
+      "description": "Syntactic sugar: `rangeAverageable: true` is shorthand for `rangeCountable: true` + `rangeSummable: true`. Requires `documentsAverageable` to be set. Same caveat as `rangeSummable` — rarely useful on the primary key; per-index `rangeAverageable` is what most callers want."
     },
     "tokenCost": {
       "type": "object",
@@ -689,7 +710,8 @@
     "additionalProperties"
   ],
   "dependentRequired": {
-    "rangeSummable": ["documentsSummable"]
+    "rangeSummable": ["documentsSummable"],
+    "rangeAverageable": ["documentsAverageable"]
   },
   "additionalProperties": false
 }

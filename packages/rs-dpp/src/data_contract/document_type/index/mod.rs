@@ -594,6 +594,15 @@ impl TryFrom<&[(Value, Value)]> for Index {
         let mut range_countable = false;
         let mut summable: Option<String> = None;
         let mut range_summable = false;
+        // `averageable` / `rangeAverageable` are syntactic sugar for the
+        // count+sum combination — same on-disk layout and same query
+        // surface, just a friendlier name for authors who think in terms
+        // of averages rather than (count, sum) pairs. Parsed into the
+        // existing flags below after the value-key loop; intermediate
+        // bindings here let us detect conflicts (e.g. `averageable: "x"`
+        // alongside `summable: "y"`) before the merge.
+        let mut averageable: Option<String> = None;
+        let mut range_averageable = false;
 
         for (key_value, value_value) in index_type_value_map {
             let key = key_value.to_str()?;
@@ -785,6 +794,37 @@ impl TryFrom<&[(Value, Value)]> for Index {
                                 "rangeSummable value must be a boolean".to_string(),
                             ))?;
                 }
+                "averageable" => {
+                    // `averageable: "<prop>"` is shorthand for
+                    // `countable: "countable"` + `summable: "<prop>"`.
+                    // Same parsing rules as `summable`: null = not
+                    // averageable, non-empty string = property name.
+                    averageable =
+                        match value_value {
+                            Value::Null => None,
+                            Value::Text(s) if !s.is_empty() => Some(s.clone()),
+                            Value::Text(_) => return Err(DataContractError::ValueWrongType(
+                                "averageable value must be a non-empty string naming an integer \
+                                 property, or null"
+                                    .to_string(),
+                            )),
+                            _ => return Err(DataContractError::ValueWrongType(
+                                "averageable value must be a string naming an integer property, \
+                                 or null"
+                                    .to_string(),
+                            )),
+                        };
+                }
+                "rangeAverageable" => {
+                    // `rangeAverageable: true` is shorthand for
+                    // `rangeCountable: true` + `rangeSummable: true`.
+                    range_averageable =
+                        value_value
+                            .as_bool()
+                            .ok_or(DataContractError::ValueWrongType(
+                                "rangeAverageable value must be a boolean".to_string(),
+                            ))?;
+                }
                 "properties" => {
                     let properties =
                         value_value
@@ -816,6 +856,66 @@ impl TryFrom<&[(Value, Value)]> for Index {
             return Err(DataContractError::InvalidContractStructure(
                 "contest supported only for unique indexes".to_string(),
             ));
+        }
+
+        // Desugar `averageable` / `rangeAverageable` into the
+        // count + sum flags they're shorthand for. Conflict rules:
+        // - `averageable` + `summable` must name the same property (or
+        //   `summable` must be absent). They're describing the same
+        //   on-disk layout from two different angles; differing names
+        //   are an authoring mistake.
+        // - `averageable` + `countable: notCountable` is a conflict —
+        //   `averageable` implies countable but the author explicitly
+        //   said no. Setting `countable` to `countable` or
+        //   `countableAllowingOffset` alongside `averageable` is fine
+        //   because they agree.
+        // - `rangeAverageable: true` requires `averageable` to be set
+        //   (mirrors `rangeSummable` requires `summable`). Caught via
+        //   the existing range_summable check after the merge below.
+        if let Some(avg_prop) = &averageable {
+            if let Some(sum_prop) = &summable {
+                if sum_prop != avg_prop {
+                    return Err(DataContractError::InvalidContractStructure(format!(
+                        "averageable=\"{}\" conflicts with summable=\"{}\": both flags name \
+                         the property whose values are aggregated into the index's sum tree, \
+                         so they must agree (or only one should be set — averageable is \
+                         shorthand for countable + summable on the same property)",
+                        avg_prop, sum_prop,
+                    )));
+                }
+            }
+            if matches!(countable, IndexCountability::NotCountable)
+                && !range_averageable
+                && !range_countable
+            {
+                // Promote `countable` because `averageable` implies it.
+                countable = IndexCountability::Countable;
+            } else if !countable.is_countable() {
+                // `countable: NotCountable` was set explicitly while
+                // `averageable` is also set. We could promote silently
+                // but rejecting forces the author to remove the
+                // contradiction.
+                return Err(DataContractError::InvalidContractStructure(format!(
+                    "averageable=\"{}\" implies the index must be countable, but `countable` \
+                     is set to a non-countable value. Remove the explicit `countable: \
+                     \"notCountable\"` (or set it to `\"countable\"` / \
+                     `\"countableAllowingOffset\"`).",
+                    avg_prop,
+                )));
+            }
+            // Promote `summable` to the same property.
+            summable = Some(avg_prop.clone());
+        } else if range_averageable {
+            return Err(DataContractError::InvalidContractStructure(
+                "rangeAverageable: true requires averageable: \"<prop>\" to name the integer \
+                 property to average; rangeAverageable on its own has no property to aggregate"
+                    .to_string(),
+            ));
+        }
+        if range_averageable {
+            // `rangeAverageable: true` ⇒ both range axes opt in.
+            range_countable = true;
+            range_summable = true;
         }
 
         // `rangeCountable` is additive on top of `countable`: it changes how
