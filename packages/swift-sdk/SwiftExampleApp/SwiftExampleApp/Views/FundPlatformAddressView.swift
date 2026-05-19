@@ -273,18 +273,26 @@ struct FundPlatformAddressView: View {
     }
 
     private var coreAccountOptions: [CoreAccountOption] {
-        // Surface Core BIP44 standard accounts (`standardTag == 0`).
-        // Balance shown from `balanceConfirmed` so the user sees
-        // what's spendable. UTXO selection itself is owned by the
-        // Rust-side asset-lock builder.
-        allAccounts
-            .filter { $0.wallet.walletId == wallet.walletId }
-            .filter { $0.standardTag == 0 }
-            .sorted { $0.accountIndex < $1.accountIndex }
+        // Surface Core BIP44 standard accounts only. The compound
+        // filter `typeTag == 0 && standardTag == 0` matches BIP44
+        // (Standard, BIP44-tagged) — `standardTag` alone would
+        // include PlatformPayment / CoinJoin / Identity* accounts
+        // because those leave `standardTag` at its `0` default
+        // (meaningless for non-Standard variants), surfacing
+        // duplicate "Account #0" rows in the picker.
+        //
+        // Balance reads from the live FFI (`accountBalances(for:)`)
+        // not `PersistentAccount.balanceConfirmed` — the SwiftData
+        // field is populated by the persister callback and lags
+        // the in-memory Rust state, so a freshly-synced wallet
+        // would show zero here even with spendable Core funds.
+        walletManager.accountBalances(for: wallet.walletId)
+            .filter { $0.typeTag == 0 && $0.standardTag == 0 }
+            .sorted { $0.index < $1.index }
             .map {
                 CoreAccountOption(
-                    accountIndex: $0.accountIndex,
-                    balanceDuffs: $0.balanceConfirmed
+                    accountIndex: $0.index,
+                    balanceDuffs: $0.confirmed
                 )
             }
     }
