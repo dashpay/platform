@@ -147,7 +147,7 @@ public final class KeychainManager: Sendable {
 
         // Add metadata
         let metadata: [String: Any] = [
-            "identityId": identityId.map { String(format: "%02x", $0) }.joined(),
+            "identityId": identityId.toHexString(),
             "keyIndex": keyIndex,
             "createdAt": Date().timeIntervalSince1970
         ]
@@ -228,49 +228,50 @@ public final class KeychainManager: Sendable {
         return status == errSecSuccess || status == errSecItemNotFound
     }
 
-    /// Delete all private keys for an identity
-    /// - Parameter identityId: The identity ID (32 bytes)
-    /// - Returns: true if deletion completed (even if no keys existed)
-    @discardableResult
-    public func deleteAllPrivateKeys(for identityId: Data) -> Bool {
+    /// Delete every `privkey_<identityHex>_*` keychain row for `identityId`.
+    public nonisolated func deleteAllPrivateKeys(for identityId: Data) throws {
+        try deleteItems(accountPrefixes: ["privkey_\(identityId.toHexString())_"])
+    }
+
+    /// Delete every per-identity keychain row — both `privkey_*` and
+    /// `specialkey_*` schemes — for `identityId`.
+    public nonisolated func deleteAllKeychainItems(forIdentityId identityId: Data) throws {
+        let identityHex = identityId.toHexString()
+        try deleteItems(accountPrefixes: [
+            "privkey_\(identityHex)_",
+            "specialkey_\(identityHex)_"
+        ])
+    }
+
+    private nonisolated func deleteItems(accountPrefixes: [String]) throws {
         var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: serviceName,
-            kSecMatchLimit as String: kSecMatchLimitAll
+            kSecMatchLimit as String: kSecMatchLimitAll,
+            kSecReturnAttributes as String: true
         ]
 
         if let accessGroup = accessGroup {
             query[kSecAttrAccessGroup as String] = accessGroup
         }
 
-        // First, find all keys for this identity
         var result: AnyObject?
         let searchStatus = SecItemCopyMatching(query as CFDictionary, &result)
-
-        let identityHex = identityId.map { String(format: "%02x", $0) }.joined()
-
-        if searchStatus == errSecSuccess,
-           let items = result as? [[String: Any]] {
-            // Filter items for this identity and delete them
-            for item in items {
-                if let account = item[kSecAttrAccount as String] as? String,
-                   account.hasPrefix("privkey_\(identityHex)_") {
-                    var deleteQuery: [String: Any] = [
-                        kSecClass as String: kSecClassGenericPassword,
-                        kSecAttrService as String: serviceName,
-                        kSecAttrAccount as String: account
-                    ]
-
-                    if let accessGroup = accessGroup {
-                        deleteQuery[kSecAttrAccessGroup as String] = accessGroup
-                    }
-
-                    SecItemDelete(deleteQuery as CFDictionary)
-                }
-            }
+        if searchStatus == errSecItemNotFound {
+            return
+        }
+        guard searchStatus == errSecSuccess, let items = result as? [[String: Any]] else {
+            throw KeychainError.retrieveFailed(searchStatus)
         }
 
-        return true
+        for item in items {
+            guard let account = item[kSecAttrAccount as String] as? String,
+                  accountPrefixes.contains(where: { account.hasPrefix($0) })
+            else {
+                continue
+            }
+            try deleteGenericPassword(account: account)
+        }
     }
 
     // MARK: - Special Keys (Voting, Owner, Payout)
@@ -432,18 +433,33 @@ public final class KeychainManager: Sendable {
 
     // MARK: - Private Helpers
 
+    private nonisolated func deleteGenericPassword(account: String) throws {
+        var query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: serviceName,
+            kSecAttrAccount as String: account
+        ]
+
+        if let accessGroup = accessGroup {
+            query[kSecAttrAccessGroup as String] = accessGroup
+        }
+
+        let status = SecItemDelete(query as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else {
+            throw KeychainError.deleteFailed(status)
+        }
+    }
+
     /// Nonisolated because the result only depends on the arguments
     /// — no access to actor-isolated state — and the function is
     /// shared between the `@MainActor` wrapper methods and the
     /// off-actor `storePrivateKeyNonisolated` path.
     private nonisolated func generateKeyIdentifier(identityId: Data, keyIndex: Int32) -> String {
-        let identityHex = identityId.map { String(format: "%02x", $0) }.joined()
-        return "privkey_\(identityHex)_\(keyIndex)"
+        return "privkey_\(identityId.toHexString())_\(keyIndex)"
     }
 
     private func generateSpecialKeyIdentifier(identityId: Data, keyType: SpecialKeyType) -> String {
-        let identityHex = identityId.map { String(format: "%02x", $0) }.joined()
-        return "specialkey_\(identityHex)_\(keyType.rawValue)"
+        return "specialkey_\(identityId.toHexString())_\(keyType.rawValue)"
     }
 }
 
@@ -475,7 +491,7 @@ extension KeychainManager {
             }
         }
         guard rc == 0 else { return "" }
-        return out.map { String(format: "%02x", $0) }.joined()
+        return Data(out).toHexString()
     }
 }
 
@@ -746,6 +762,52 @@ extension KeychainManager {
         }
         let status = SecItemDelete(query as CFDictionary)
         return status == errSecSuccess || status == errSecItemNotFound
+    }
+
+    /// Delete every `identity_privkey.<derivationPath>` keychain row whose
+    /// `IdentityPrivateKeyMetadata.walletId` matches `walletId`.
+    public nonisolated func deleteAllIdentityPrivateKeys(forWalletId walletId: Data) throws {
+        let walletIdHex = walletId.toHexString()
+        var query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: serviceName,
+            kSecMatchLimit as String: kSecMatchLimitAll,
+            kSecReturnAttributes as String: true,
+        ]
+        if let accessGroup = accessGroup {
+            query[kSecAttrAccessGroup as String] = accessGroup
+        }
+
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        if status == errSecItemNotFound {
+            return
+        }
+        guard status == errSecSuccess, let items = result as? [[String: Any]] else {
+            throw KeychainError.retrieveFailed(status)
+        }
+
+        let decoder = JSONDecoder()
+        for item in items {
+            guard let account = item[kSecAttrAccount as String] as? String,
+                  account.hasPrefix("identity_privkey.")
+            else {
+                continue
+            }
+            guard let metadataData = item[kSecAttrGeneric as String] as? Data,
+                  let metadata = try? decoder.decode(
+                    IdentityPrivateKeyMetadata.self,
+                    from: metadataData
+                  )
+            else {
+                continue
+            }
+            guard metadata.walletId.caseInsensitiveCompare(walletIdHex) == .orderedSame else {
+                continue
+            }
+
+            try deleteGenericPassword(account: account)
+        }
     }
 }
 

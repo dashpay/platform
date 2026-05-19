@@ -175,7 +175,7 @@ final class KeyManagerTests: XCTestCase {
         ])
 
         // Encode to WIF
-        guard let wif = KeyFormatter.toWIF(originalKey, isTestnet: true) else {
+        guard let wif = KeyFormatter.toWIF(originalKey, network: .testnet) else {
             XCTFail("Failed to encode to WIF")
             return
         }
