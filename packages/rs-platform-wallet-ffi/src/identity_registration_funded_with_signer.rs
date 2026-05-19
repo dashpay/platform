@@ -15,15 +15,8 @@
 //!   crosses the FFI boundary as raw bytes — see
 //!   [`rs_sdk_ffi::MnemonicResolverCoreSigner`].
 
-use std::collections::BTreeMap;
-use std::convert::TryFrom;
-use std::slice;
-
 use dashcore::hashes::Hash;
 use dpp::identity::accessors::IdentityGettersV0;
-use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
-use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
-use dpp::platform_value::BinaryData;
 use platform_wallet::wallet::identity::types::funding::IdentityFunding;
 use rs_sdk_ffi::{SignerHandle, VTableSigner};
 
@@ -31,83 +24,11 @@ use crate::check_ptr;
 use crate::core_wallet_types::OutPointFFI;
 use crate::error::*;
 use crate::handle::*;
-use crate::identity_registration_with_signer::{decode_contract_bounds, IdentityPubkeyFFI};
+use crate::identity_registration_with_signer::{decode_identity_pubkeys, IdentityPubkeyFFI};
 use crate::runtime::block_on_worker;
 use crate::{unwrap_option_or_return, unwrap_result_or_return};
 use rs_sdk_ffi::MnemonicResolverCoreSigner;
 use rs_sdk_ffi::MnemonicResolverHandle;
-
-/// Decode the C-side `IdentityPubkeyFFI` rows into the
-/// `BTreeMap<u32, IdentityPublicKey>` shape that
-/// `IdentityWallet::register_identity_with_funding` expects.
-///
-/// Shared by both the [`platform_wallet_register_identity_with_funding_signer`]
-/// (fresh asset-lock build) and
-/// [`platform_wallet_resume_identity_with_existing_asset_lock_signer`]
-/// (resume from tracked outpoint) entry points — the two differ only in
-/// how they construct the [`IdentityFunding`] variant; the keys-map
-/// shape is identical.
-///
-/// Returns `Err(PlatformWalletFFIResult)` carrying the FFI error the
-/// caller should bubble up directly. Mirrors the inline `Err(...)` /
-/// `unwrap_result_or_return!` flow elsewhere in this file.
-unsafe fn decode_identity_pubkeys(
-    identity_pubkeys: *const IdentityPubkeyFFI,
-    identity_pubkeys_count: usize,
-) -> Result<BTreeMap<u32, IdentityPublicKey>, PlatformWalletFFIResult> {
-    let pubkey_rows: &[IdentityPubkeyFFI] =
-        slice::from_raw_parts(identity_pubkeys, identity_pubkeys_count);
-    let mut keys_map: BTreeMap<u32, IdentityPublicKey> = BTreeMap::new();
-    for (i, row) in pubkey_rows.iter().enumerate() {
-        let key_type = KeyType::try_from(row.key_type).map_err(|e| {
-            PlatformWalletFFIResult::err(
-                PlatformWalletFFIResultCode::ErrorInvalidParameter,
-                format!("identity_pubkeys[{i}].key_type invalid: {e}"),
-            )
-        })?;
-        let purpose = Purpose::try_from(row.purpose).map_err(|e| {
-            PlatformWalletFFIResult::err(
-                PlatformWalletFFIResultCode::ErrorInvalidParameter,
-                format!("identity_pubkeys[{i}].purpose invalid: {e}"),
-            )
-        })?;
-        let security_level = SecurityLevel::try_from(row.security_level).map_err(|e| {
-            PlatformWalletFFIResult::err(
-                PlatformWalletFFIResultCode::ErrorInvalidParameter,
-                format!("identity_pubkeys[{i}].security_level invalid: {e}"),
-            )
-        })?;
-        if row.pubkey_bytes.is_null() || row.pubkey_len == 0 {
-            return Err(PlatformWalletFFIResult::err(
-                PlatformWalletFFIResultCode::ErrorNullPointer,
-                format!("identity_pubkeys[{i}].pubkey_bytes is null or empty"),
-            ));
-        }
-        let pubkey_bytes: Vec<u8> =
-            slice::from_raw_parts(row.pubkey_bytes, row.pubkey_len).to_vec();
-        // ContractBounds round-trip: decode the kind/id/document_type
-        // tuple the Swift side marshalled, with the same enforcement
-        // the signer-only registration path uses (Encryption /
-        // Decryption purposes must carry bounds; kind 0 for those is
-        // rejected with a clean FFI error rather than producing a key
-        // Drive silently can't use).
-        let contract_bounds = decode_contract_bounds(row, purpose, i, "identity_pubkeys")?;
-        keys_map.insert(
-            row.key_id,
-            IdentityPublicKey::V0(IdentityPublicKeyV0 {
-                id: row.key_id,
-                purpose,
-                security_level,
-                contract_bounds,
-                key_type,
-                read_only: row.read_only,
-                data: BinaryData::new(pubkey_bytes),
-                disabled_at: None,
-            }),
-        );
-    }
-    Ok(keys_map)
-}
 
 /// Register a new asset-lock-funded identity using an external signer.
 ///

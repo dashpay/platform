@@ -823,4 +823,125 @@ mod tests {
              (wallet-state mismatch is a hard failure)"
         );
     }
+
+    /// Fabricate the SDK-side 10506 error shape exactly as
+    /// `as_asset_lock_proof_cl_height_too_low` recognizes it
+    /// (`error.rs:223-242`). Both the matcher and the constructor are
+    /// pinned here so a future SDK refactor that changes the variant
+    /// path can't silently desynchronize the retry helper from its
+    /// test surface.
+    fn fabricate_cl_height_too_low_error() -> dash_sdk::Error {
+        use dpp::consensus::basic::identity::InvalidAssetLockProofCoreChainHeightError;
+        use dpp::consensus::basic::BasicError;
+        use dpp::consensus::ConsensusError;
+
+        let consensus = ConsensusError::BasicError(
+            BasicError::InvalidAssetLockProofCoreChainHeightError(
+                InvalidAssetLockProofCoreChainHeightError::new(
+                    /* proof_core_chain_locked_height */ 100,
+                    /* current_core_chain_locked_height */ 99,
+                ),
+            ),
+        );
+        dash_sdk::Error::Protocol(dpp::ProtocolError::ConsensusError(Box::new(consensus)))
+    }
+
+    /// Pins two load-bearing invariants of `submit_with_cl_height_retry`:
+    ///
+    /// 1. Every retry under repeated `InvalidAssetLockProofCoreChainHeightError`
+    ///    (consensus 10506) receives a `PutSettings::user_fee_increase`
+    ///    strictly greater than the previous attempt. The retry's purpose
+    ///    is to bypass Tenderdash's 24h invalid-tx hash cache by changing
+    ///    the ST signable bytes; if `user_fee_increase` weren't bumped,
+    ///    every resubmit would hash identically and be silently dropped.
+    ///    This invariant regressed silently once in this PR series — the
+    ///    test exists so it can't regress quietly again.
+    ///
+    /// 2. After `CL_HEIGHT_RETRY_BUDGET` elapses without a non-10506
+    ///    outcome, the helper surfaces the original 10506 error rather
+    ///    than looping forever or swallowing it.
+    ///
+    /// Driven by `#[tokio::test(start_paused = true)]` + manual
+    /// `tokio::time::advance` so the retry's `CL_HEIGHT_RETRY_DELAY`
+    /// sleeps fire instantly and total test wall time is sub-millisecond.
+    #[tokio::test(start_paused = true)]
+    async fn submit_with_cl_height_retry_bumps_user_fee_and_surfaces_after_budget() {
+        use dash_sdk::platform::transition::put_settings::PutSettings;
+        use std::sync::atomic::{AtomicU32, Ordering};
+        use std::sync::Arc;
+        use tokio::sync::Mutex;
+
+        // Capture each invocation's `user_fee_increase` (None on the
+        // first call, then Some(N) for each retry). Shared `Mutex<Vec>`
+        // because the closure is `Fn` and each future is independent.
+        let captured: Arc<Mutex<Vec<Option<u16>>>> = Arc::new(Mutex::new(Vec::new()));
+        let call_count = Arc::new(AtomicU32::new(0));
+        let captured_clone = captured.clone();
+        let call_count_clone = call_count.clone();
+
+        // Stub `submit` closure: always returns 10506 so the retry loop
+        // exhausts its budget. The helper's return type is generic over
+        // `R`; pin `R = ()` for this test (we never reach the success
+        // path).
+        let submit = move |settings: Option<PutSettings>| {
+            let captured = captured_clone.clone();
+            let call_count = call_count_clone.clone();
+            async move {
+                call_count.fetch_add(1, Ordering::SeqCst);
+                captured
+                    .lock()
+                    .await
+                    .push(settings.and_then(|s| s.user_fee_increase));
+                Err::<(), _>(fabricate_cl_height_too_low_error())
+            }
+        };
+
+        let result = submit_with_cl_height_retry(None, submit).await;
+
+        // Surfaced error must be the original 10506 — not a wrapper, not
+        // a "timeout" type, not None.
+        assert!(result.is_err(), "retry must surface the underlying error on budget exhaust");
+        let surfaced_err = result.unwrap_err();
+        assert!(
+            as_asset_lock_proof_cl_height_too_low(&surfaced_err).is_some(),
+            "surfaced error must still be the InvalidAssetLockProofCoreChainHeightError"
+        );
+
+        let captured = captured.lock().await;
+        let call_n = call_count.load(Ordering::SeqCst);
+
+        // At least 2 attempts (initial + at least one retry); upper
+        // bound is `budget / delay` + 1 with a small slack for the
+        // boundary check.
+        let max_expected = (CL_HEIGHT_RETRY_BUDGET.as_secs() / CL_HEIGHT_RETRY_DELAY.as_secs()) as u32 + 2;
+        assert!(
+            call_n >= 2 && call_n <= max_expected,
+            "expected 2..={max_expected} attempts (initial + retries up to budget), got {call_n}"
+        );
+        assert_eq!(
+            captured.len() as u32,
+            call_n,
+            "every closure invocation should have recorded a fee value"
+        );
+
+        // First attempt: caller-supplied `None` settings → user_fee_increase = None.
+        assert_eq!(
+            captured[0],
+            None,
+            "first attempt must use the caller-supplied `None` settings (no bump yet)"
+        );
+
+        // Subsequent attempts: strictly increasing `user_fee_increase`,
+        // starting from Some(1) and bumping by 1 each retry. The exact
+        // values are load-bearing: Tenderdash hashes the full ST bytes
+        // including this field, so consecutive identical values would
+        // hit the 24h invalid-tx cache.
+        for (i, val) in captured.iter().enumerate().skip(1) {
+            let expected = Some(i as u16);
+            assert_eq!(
+                *val, expected,
+                "attempt #{i} (1-indexed retry) must carry user_fee_increase = {expected:?}, got {val:?}"
+            );
+        }
+    }
 }
