@@ -186,8 +186,30 @@ pub struct DocumentSumRequest<'a> {
     /// The sum mode requested.
     pub mode: SumMode,
     /// Optional cap on the number of entries returned in `Entries`-mode
-    /// responses. Defaults to the server's `default_query_limit` when
-    /// unset; capped at `max_query_limit` either way.
+    /// responses.
+    ///
+    /// **Fallback differs between the no-proof and prove paths**:
+    ///
+    /// - **No-proof path**: unset `limit` falls back to
+    ///   [`crate::config::DriveConfig::default_query_limit`] (the
+    ///   operator-tunable runtime value); explicit `limit >
+    ///   max_query_limit` is clamped to `max_query_limit`. There's
+    ///   no consensus-verification step on no-proof responses, so
+    ///   operator-tunable defaults are safe here.
+    /// - **Prove path**: unset `limit` falls back to
+    ///   [`crate::config::DEFAULT_QUERY_LIMIT`] (the compile-time
+    ///   constant the SDK verifier also reads), explicitly NOT
+    ///   `drive_config.default_query_limit`. An explicit `limit >
+    ///   max_query_limit` is **rejected** with
+    ///   [`crate::error::query::QuerySyntaxError::InvalidLimit`]
+    ///   rather than clamped, so a tuned operator default or an
+    ///   over-max request can't byte-differ the
+    ///   `SizedQuery::limit` the SDK reconstructs for merk-root
+    ///   verification. See the
+    ///   [`drive_dispatcher`]'s `RangeDistinctProof` /
+    ///   `RangeAggregateCarrierProof` arms for the
+    ///   validate-don't-clamp policy, mirrored from count's
+    ///   prove-path arms.
     pub limit: Option<u32>,
     /// Whether to return a `Proof(Vec<u8>)` instead of materializing
     /// the aggregate/entries server-side.

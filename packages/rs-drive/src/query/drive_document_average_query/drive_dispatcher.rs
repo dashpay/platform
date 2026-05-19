@@ -665,4 +665,318 @@ mod tests {
         assert_eq!(out[2].in_key.as_deref(), Some(b"Y".as_ref()));
         assert_eq!(out[2].key, b"a");
     }
+
+    // ── Dispatcher limit-policy regression tests ───────────────────
+    //
+    // AVG-side analogs of count's
+    // `test_range_distinct_proof_uses_compile_time_default_query_limit_not_operator_config`
+    // and the sum-side tests in `drive_document_sum_query/tests.rs`'s
+    // `limit_policy_regression` module. The AVG dispatcher's
+    // `RangeDistinctProof` arm mirrors the same validate-don't-clamp
+    // policy on the prove path; these tests pin that the dispatcher
+    // uses [`crate::config::DEFAULT_QUERY_LIMIT`] (compile-time
+    // constant) rather than the operator-tunable
+    // `drive_config.default_query_limit`, AND that an explicit
+    // `limit > max_query_limit` returns a typed
+    // `QuerySyntaxError::InvalidLimit` instead of silently clamping.
+    //
+    // The AVG distinct path internally calls
+    // `execute_distinct_sum_with_proof` (the same primitive sum's
+    // RangeDistinctProof uses — see `drive_document_average_query/
+    // drive_dispatcher.rs::execute_document_average_prove`); the
+    // distinction is the index requirement (`rangeCountable +
+    // rangeSummable`, i.e. PCPS / `rangeAverageable`) and the
+    // verifier helper (`verify_aggregate_count_and_sum_query`).
+
+    use crate::config::{DriveConfig, DEFAULT_QUERY_LIMIT};
+    use crate::drive::Drive;
+    use crate::error::query::QuerySyntaxError;
+    use crate::query::drive_document_average_query::{
+        AverageMode, DocumentAverageRequest, DocumentAverageResponse,
+    };
+    use crate::query::{WhereClause, WhereOperator};
+    use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
+    use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+    use crate::util::storage_flags::StorageFlags;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::block::block_info::BlockInfo;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::DataContractFactory;
+    use dpp::document::{Document, DocumentV0};
+    use dpp::identifier::Identifier;
+    use dpp::platform_value::{platform_value, Value};
+    use grovedb::GroveDb;
+    use std::borrow::Cow;
+    use std::collections::BTreeMap as StdBTreeMap;
+
+    const PROTOCOL_VERSION_V12: u32 = 12;
+
+    /// v12 contract with a `widget` doctype carrying a single
+    /// `(color, amount)` `rangeAverageable: true` (= `rangeCountable +
+    /// rangeSummable`) index. The PCPS combined `byColor` index is
+    /// what the AVG `RangeDistinctProof` arm walks.
+    fn build_widget_contract_pcps() -> dpp::data_contract::DataContract {
+        let factory = DataContractFactory::new(PROTOCOL_VERSION_V12).expect("create factory");
+        let document_schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "color":  {"type": "string",  "position": 0, "maxLength": 32},
+                "amount": {"type": "integer", "position": 1, "minimum": 0, "maximum": 1000},
+            },
+            "required": ["color", "amount"],
+            "indices": [{
+                "name": "byColor",
+                "properties": [{"color": "asc"}],
+                // rangeAverageable is shorthand for rangeCountable +
+                // rangeSummable on the same summable property. The
+                // DPP parser desugars it into both flags; the picker
+                // routes it through the PCPS path.
+                "summable":        "amount",
+                "rangeSummable":   true,
+                "countable":       "countable",
+                "rangeCountable":  true,
+            }],
+            "additionalProperties": false,
+        });
+        let schemas = platform_value!({ "widget": document_schema });
+        factory
+            .create_with_value_config(
+                dpp::tests::utils::generate_random_identifier_struct(),
+                0,
+                schemas,
+                None,
+                None,
+            )
+            .expect("create data contract")
+            .data_contract_owned()
+    }
+
+    fn insert_widget(
+        drive: &Drive,
+        contract: &dpp::data_contract::DataContract,
+        i: usize,
+        color: &str,
+        amount: u64,
+    ) {
+        let platform_version = PlatformVersion::latest();
+        let document_type = contract
+            .document_type_for_name("widget")
+            .expect("widget type exists");
+        let mut properties = StdBTreeMap::new();
+        properties.insert("color".to_string(), Value::Text(color.to_string()));
+        properties.insert("amount".to_string(), Value::U64(amount));
+        let document: Document = DocumentV0 {
+            id: Identifier::from([(i + 1) as u8; 32]),
+            owner_id: Identifier::from([0u8; 32]),
+            properties,
+            revision: None,
+            created_at: None,
+            updated_at: None,
+            transferred_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            transferred_at_block_height: None,
+            created_at_core_block_height: None,
+            updated_at_core_block_height: None,
+            transferred_at_core_block_height: None,
+            creator_id: None,
+        }
+        .into();
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((&document, storage_flags)),
+                        owner_id: None,
+                    },
+                    contract,
+                    document_type,
+                },
+                false,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("insert widget");
+    }
+
+    /// AVG mirror of the SUM/count regression: with
+    /// `drive_config.default_query_limit = 1` and a `limit = None`
+    /// request, the dispatcher must use `DEFAULT_QUERY_LIMIT` (= 100)
+    /// for the prove path's `SizedQuery::limit`. If it regressed to
+    /// using the runtime `default_query_limit`, the reconstructed
+    /// path query would byte-differ and `verify_aggregate_count_and_sum_query`
+    /// would return Err — exactly the silent-verify-failure surface
+    /// this test guards.
+    #[test]
+    fn range_distinct_avg_proof_uses_compile_time_default_query_limit_not_operator_config() {
+        const OPERATOR_TUNED_LIMIT: u16 = 1;
+        assert_ne!(
+            DEFAULT_QUERY_LIMIT, OPERATOR_TUNED_LIMIT,
+            "test invariant: OPERATOR_TUNED_LIMIT must differ from DEFAULT_QUERY_LIMIT"
+        );
+
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let data_contract = build_widget_contract_pcps();
+        drive
+            .apply_contract(
+                &data_contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("apply contract");
+
+        let docs = [
+            ("red", 5u64),
+            ("red", 5),
+            ("green", 7),
+            ("green", 7),
+            ("green", 7),
+            ("blue", 2),
+        ];
+        for (i, (color, amount)) in docs.iter().enumerate() {
+            insert_widget(&drive, &data_contract, i, color, *amount);
+        }
+
+        let document_type = data_contract
+            .document_type_for_name("widget")
+            .expect("widget");
+
+        let drive_config = DriveConfig {
+            default_query_limit: OPERATOR_TUNED_LIMIT,
+            ..Default::default()
+        };
+
+        let color_gt_blue = WhereClause {
+            field: "color".to_string(),
+            operator: WhereOperator::GreaterThan,
+            value: Value::Text("blue".to_string()),
+        };
+        let request = DocumentAverageRequest {
+            contract: &data_contract,
+            document_type,
+            sum_property: "amount".to_string(),
+            where_clauses: vec![color_gt_blue.clone()],
+            order_clauses: Vec::new(),
+            mode: AverageMode::GroupByRange,
+            limit: None,
+            prove: true,
+            drive_config: &drive_config,
+        };
+
+        let response = drive
+            .execute_document_average_request(request, None, platform_version)
+            .expect("dispatcher should succeed on distinct AVG path");
+        let proof_bytes = match response {
+            DocumentAverageResponse::Proof(p) => p,
+            other => panic!("expected Proof response, got {:?}", other),
+        };
+        assert!(!proof_bytes.is_empty(), "non-empty proof bytes expected");
+
+        // Reconstruct the path query the way the SDK verifier does
+        // — anchored to DEFAULT_QUERY_LIMIT.
+        let index = find_range_summable_index_for_where_clauses(
+            document_type.indexes(),
+            std::slice::from_ref(&color_gt_blue),
+            "amount",
+        )
+        .filter(|idx| idx.range_countable)
+        .expect("byColor rangeAverageable index covers `color > blue`");
+        let sum_query = DriveDocumentSumQuery {
+            document_type,
+            contract_id: data_contract.id().to_buffer(),
+            document_type_name: "widget".to_string(),
+            index,
+            where_clauses: vec![color_gt_blue],
+            sum_property: "amount".to_string(),
+        };
+        let verifier_path_query = sum_query
+            .distinct_sum_path_query(Some(DEFAULT_QUERY_LIMIT), true, platform_version)
+            .expect("path query builder accepts the same shape the prover used");
+
+        // AVG distinct path's proof verifies via the same
+        // `GroveDb::verify_query` shape sum uses — the difference is
+        // the PCPS terminator the proof commits, and the SDK extracts
+        // (count, sum) from each via `count_sum_value_or_default()`.
+        // For this regression test we only need to confirm root-hash
+        // recomputation succeeds against the DEFAULT_QUERY_LIMIT-anchored
+        // path query; any limit mismatch surfaces as Err here.
+        let (_root_hash, _elements) = GroveDb::verify_query(
+            &proof_bytes,
+            &verifier_path_query,
+            &platform_version.drive.grove_version,
+        )
+        .expect(
+            "expected proof to verify against a path query rebuilt with DEFAULT_QUERY_LIMIT; \
+             a failure here means the dispatcher signed the AVG proof with the \
+             operator-tunable default_query_limit — a consensus-adjacent silent-verify \
+             regression",
+        );
+    }
+
+    /// AVG `RangeDistinctProof` over-max rejection: explicit
+    /// `limit > max_query_limit` MUST surface as `InvalidLimit`,
+    /// not a silent clamp.
+    #[test]
+    fn range_distinct_avg_proof_rejects_limit_over_max() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let data_contract = build_widget_contract_pcps();
+        drive
+            .apply_contract(
+                &data_contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("apply contract");
+
+        insert_widget(&drive, &data_contract, 0, "red", 5);
+
+        let document_type = data_contract
+            .document_type_for_name("widget")
+            .expect("widget");
+        let drive_config = DriveConfig::default();
+        let over_max = drive_config.max_query_limit as u32 + 1;
+
+        let color_gt_blue = WhereClause {
+            field: "color".to_string(),
+            operator: WhereOperator::GreaterThan,
+            value: Value::Text("blue".to_string()),
+        };
+        let request = DocumentAverageRequest {
+            contract: &data_contract,
+            document_type,
+            sum_property: "amount".to_string(),
+            where_clauses: vec![color_gt_blue],
+            order_clauses: Vec::new(),
+            mode: AverageMode::GroupByRange,
+            limit: Some(over_max),
+            prove: true,
+            drive_config: &drive_config,
+        };
+
+        let err = drive
+            .execute_document_average_request(request, None, platform_version)
+            .expect_err("limit > max_query_limit must reject, not clamp");
+
+        assert!(
+            matches!(err, Error::Query(QuerySyntaxError::InvalidLimit(_))),
+            "expected QuerySyntaxError::InvalidLimit, got {err:?}"
+        );
+        let msg = err.to_string();
+        assert!(
+            msg.contains("exceeds max_query_limit"),
+            "error must name the rejected limit; got: {msg}"
+        );
+    }
 }

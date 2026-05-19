@@ -230,3 +230,331 @@ fn range_summable_picker_rejects_range_not_on_terminator() {
         find_range_summable_index_for_where_clauses(&indexes, &where_clauses, "amount").is_none()
     );
 }
+
+// ── Dispatcher limit-policy regression tests ───────────────────────
+//
+// Sum-side analogs of count's
+// [`test_range_distinct_proof_uses_compile_time_default_query_limit_not_operator_config`]
+// and over-max rejection. The sum dispatcher mirrors count's
+// validate-don't-clamp policy on the prove path; these tests pin that
+// the dispatcher uses [`crate::config::DEFAULT_QUERY_LIMIT`] (compile-time
+// constant) rather than the operator-tunable
+// `drive_config.default_query_limit`, AND that an explicit
+// `limit > max_query_limit` returns a typed
+// `QuerySyntaxError::InvalidLimit` instead of silently clamping.
+//
+// Without these, a regression where the dispatcher reads from
+// `drive_config.default_query_limit` would only surface on operators
+// who tuned the runtime value away from the constant — exactly the
+// silent verify-failure surface flagged by review.
+
+#[cfg(feature = "server")]
+mod limit_policy_regression {
+    use crate::config::{DriveConfig, DEFAULT_QUERY_LIMIT};
+    use crate::drive::Drive;
+    use crate::error::query::QuerySyntaxError;
+    use crate::error::Error;
+    use crate::query::drive_document_sum_query::{
+        DocumentSumRequest, DocumentSumResponse, DriveDocumentSumQuery, SumMode,
+    };
+    use crate::query::{WhereClause, WhereOperator};
+    use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
+    use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+    use crate::util::storage_flags::StorageFlags;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::block::block_info::BlockInfo;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+    use dpp::data_contract::DataContractFactory;
+    use dpp::document::{Document, DocumentV0};
+    use dpp::identifier::Identifier;
+    use dpp::platform_value::{platform_value, Value};
+    use dpp::version::PlatformVersion;
+    use grovedb::GroveDb;
+    use std::borrow::Cow;
+    use std::collections::BTreeMap as StdBTreeMap;
+
+    const PROTOCOL_VERSION_V12: u32 = 12;
+
+    /// Build a v12 contract with a `widget` doctype carrying a single
+    /// `(color, amount)` `rangeSummable: true` index. The `byColor`
+    /// index — `summable: "amount"` + `rangeSummable: true` — is what
+    /// the SUM `RangeDistinctProof` arm walks (color = the per-distinct
+    /// terminator key, amount = the summed per-doc value).
+    fn build_widget_contract() -> dpp::data_contract::DataContract {
+        let factory = DataContractFactory::new(PROTOCOL_VERSION_V12).expect("create factory");
+        let document_schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "color":  {"type": "string",  "position": 0, "maxLength": 32},
+                "amount": {"type": "integer", "position": 1, "minimum": 0, "maximum": 1000},
+            },
+            "required": ["color", "amount"],
+            "indices": [{
+                "name": "byColor",
+                "properties": [{"color": "asc"}],
+                "summable":      "amount",
+                "rangeSummable": true,
+            }],
+            "additionalProperties": false,
+        });
+        let schemas = platform_value!({ "widget": document_schema });
+        factory
+            .create_with_value_config(
+                dpp::tests::utils::generate_random_identifier_struct(),
+                0,
+                schemas,
+                None,
+                None,
+            )
+            .expect("create data contract")
+            .data_contract_owned()
+    }
+
+    /// Insert one widget document at the given `(color, amount)` pair
+    /// using the index `(i+1)` as a unique 32-byte id.
+    fn insert_widget(
+        drive: &Drive,
+        contract: &dpp::data_contract::DataContract,
+        i: usize,
+        color: &str,
+        amount: u64,
+    ) {
+        let platform_version = PlatformVersion::latest();
+        let document_type = contract
+            .document_type_for_name("widget")
+            .expect("widget type exists");
+        let mut properties = StdBTreeMap::new();
+        properties.insert("color".to_string(), Value::Text(color.to_string()));
+        properties.insert("amount".to_string(), Value::U64(amount));
+        let document: Document = DocumentV0 {
+            id: Identifier::from([(i + 1) as u8; 32]),
+            owner_id: Identifier::from([0u8; 32]),
+            properties,
+            revision: None,
+            created_at: None,
+            updated_at: None,
+            transferred_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            transferred_at_block_height: None,
+            created_at_core_block_height: None,
+            updated_at_core_block_height: None,
+            transferred_at_core_block_height: None,
+            creator_id: None,
+        }
+        .into();
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((&document, storage_flags)),
+                        owner_id: None,
+                    },
+                    contract,
+                    document_type,
+                },
+                false,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("insert widget");
+    }
+
+    /// SUM mirror of count's
+    /// `test_range_distinct_proof_uses_compile_time_default_query_limit_not_operator_config`.
+    ///
+    /// Sets `drive_config.default_query_limit = 1` (≠ `DEFAULT_QUERY_LIMIT
+    /// = 100`) and submits a SUM `GroupByRange + range + prove` request
+    /// with `limit = None`. The dispatcher MUST fall back to the
+    /// compile-time `DEFAULT_QUERY_LIMIT`, not the operator-tunable
+    /// runtime value, so the proof bytes can be reconstructed and
+    /// verified by an SDK that doesn't know the operator's tuned config.
+    /// If the dispatcher regressed to using
+    /// `drive_config.default_query_limit`, the prover would emit a
+    /// 1-key proof and the reconstructed path query (built with
+    /// `Some(DEFAULT_QUERY_LIMIT)`) would fail `verify_query` — that
+    /// failure is what this test guards against.
+    #[test]
+    fn range_distinct_sum_proof_uses_compile_time_default_query_limit_not_operator_config() {
+        const OPERATOR_TUNED_LIMIT: u16 = 1;
+        assert_ne!(
+            DEFAULT_QUERY_LIMIT, OPERATOR_TUNED_LIMIT,
+            "test invariant: OPERATOR_TUNED_LIMIT must differ from DEFAULT_QUERY_LIMIT"
+        );
+
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let data_contract = build_widget_contract();
+
+        drive
+            .apply_contract(
+                &data_contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("apply contract");
+
+        // Distinct keys: 2 red @ 5, 3 green @ 7, 1 blue @ 2. The
+        // `color > "blue"` range excludes blue, leaving 2 distinct
+        // in-range terminator keys (red, green) — enough to make the
+        // limit choice matter (with OPERATOR_TUNED_LIMIT = 1 the proof
+        // shapes differ between the two key counts).
+        let docs = [
+            ("red", 5u64),
+            ("red", 5),
+            ("green", 7),
+            ("green", 7),
+            ("green", 7),
+            ("blue", 2),
+        ];
+        for (i, (color, amount)) in docs.iter().enumerate() {
+            insert_widget(&drive, &data_contract, i, color, *amount);
+        }
+
+        let document_type = data_contract
+            .document_type_for_name("widget")
+            .expect("widget");
+
+        // Operator-tuned DriveConfig — dispatcher MUST NOT use this
+        // on the prove path.
+        let drive_config = DriveConfig {
+            default_query_limit: OPERATOR_TUNED_LIMIT,
+            ..Default::default()
+        };
+
+        let color_gt_blue = WhereClause {
+            field: "color".to_string(),
+            operator: WhereOperator::GreaterThan,
+            value: Value::Text("blue".to_string()),
+        };
+        let request = DocumentSumRequest {
+            contract: &data_contract,
+            document_type,
+            sum_property: "amount".to_string(),
+            where_clauses: vec![color_gt_blue.clone()],
+            order_clauses: Vec::new(),
+            mode: SumMode::GroupByRange,
+            limit: None,
+            prove: true,
+            drive_config: &drive_config,
+        };
+
+        let response = drive
+            .execute_document_sum_request(request, None, platform_version)
+            .expect("dispatcher should succeed on RangeDistinctProof SUM path");
+        let proof_bytes = match response {
+            DocumentSumResponse::Proof(p) => p,
+            other => panic!("expected Proof response, got {:?}", other),
+        };
+        assert!(!proof_bytes.is_empty(), "non-empty proof bytes expected");
+
+        // Rebuild the path query the way an SDK verifier does:
+        // anchored to DEFAULT_QUERY_LIMIT. If the dispatcher signed
+        // with `default_query_limit = OPERATOR_TUNED_LIMIT` instead,
+        // the reconstructed `SizedQuery::limit` differs from the
+        // prover's and `verify_query` returns Err.
+        let index = crate::query::drive_document_sum_query::index_picker::find_range_summable_index_for_where_clauses(
+            document_type.indexes(),
+            std::slice::from_ref(&color_gt_blue),
+            "amount",
+        )
+        .expect("byColor rangeSummable index covers `color > blue`");
+        let sum_query = DriveDocumentSumQuery {
+            document_type,
+            contract_id: data_contract.id().to_buffer(),
+            document_type_name: "widget".to_string(),
+            index,
+            where_clauses: vec![color_gt_blue],
+            sum_property: "amount".to_string(),
+        };
+        let verifier_path_query = sum_query
+            .distinct_sum_path_query(Some(DEFAULT_QUERY_LIMIT), true, platform_version)
+            .expect("path query builder accepts the same shape the prover used");
+
+        let (_root_hash, _elements) = GroveDb::verify_query(
+            &proof_bytes,
+            &verifier_path_query,
+            &platform_version.drive.grove_version,
+        )
+        .expect(
+            "expected proof to verify against a path query rebuilt with DEFAULT_QUERY_LIMIT; \
+             a failure here means the dispatcher signed the SUM proof with the \
+             operator-tunable default_query_limit — a consensus-adjacent silent-verify \
+             regression",
+        );
+    }
+
+    /// Pins the over-max rejection on the SUM `RangeDistinctProof`
+    /// arm: an explicit `limit > max_query_limit` MUST return
+    /// [`QuerySyntaxError::InvalidLimit`] rather than silently
+    /// clamping. The previous behavior (pre-fix) was a `.min()` clamp
+    /// against `max_query_limit`, which would byte-differ the
+    /// reconstructed `SizedQuery::limit` and break SDK verification on
+    /// any request with `limit > max`.
+    #[test]
+    fn range_distinct_sum_proof_rejects_limit_over_max() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let data_contract = build_widget_contract();
+        drive
+            .apply_contract(
+                &data_contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("apply contract");
+
+        // Single distinct in-range doc is enough — the rejection
+        // fires at the dispatcher's limit-validation gate before any
+        // grovedb walk happens, so the fixture size doesn't matter.
+        insert_widget(&drive, &data_contract, 0, "red", 5);
+
+        let document_type = data_contract
+            .document_type_for_name("widget")
+            .expect("widget");
+        let drive_config = DriveConfig::default();
+        let over_max = drive_config.max_query_limit as u32 + 1;
+
+        let color_gt_blue = WhereClause {
+            field: "color".to_string(),
+            operator: WhereOperator::GreaterThan,
+            value: Value::Text("blue".to_string()),
+        };
+        let request = DocumentSumRequest {
+            contract: &data_contract,
+            document_type,
+            sum_property: "amount".to_string(),
+            where_clauses: vec![color_gt_blue],
+            order_clauses: Vec::new(),
+            mode: SumMode::GroupByRange,
+            limit: Some(over_max),
+            prove: true,
+            drive_config: &drive_config,
+        };
+
+        let err = drive
+            .execute_document_sum_request(request, None, platform_version)
+            .expect_err("limit > max_query_limit must reject, not clamp");
+
+        assert!(
+            matches!(err, Error::Query(QuerySyntaxError::InvalidLimit(_))),
+            "expected QuerySyntaxError::InvalidLimit, got {err:?}"
+        );
+        let msg = err.to_string();
+        assert!(
+            msg.contains("exceeds max_query_limit"),
+            "error must name the rejected limit; got: {msg}"
+        );
+    }
+}

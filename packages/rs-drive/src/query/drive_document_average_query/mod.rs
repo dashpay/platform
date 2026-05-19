@@ -15,10 +15,15 @@
 //! [`book/src/drive/average-index-examples.md`](../../../../../book/src/drive/average-index-examples.md)
 //! for the design and the grades-contract worked example.
 //!
-//! Status: wire-stable surface lands in this PR (parallels how SUM
-//! landed first as a request/response shape with a NotYetImplemented
-//! executor); execution lands in the same follow-up as the SUM
-//! executor bodies.
+//! Wired end-to-end: the dispatcher composes the count + sum
+//! executors on the no-proof path under a shared read-transaction
+//! (see [`drive_dispatcher`] module docstring for the atomicity
+//! contract), and the prove path dispatches directly to the PCPS /
+//! primary-key proof executors. A planned follow-up tracked at
+//! [dashpay/platform#3687](https://github.com/dashpay/platform/issues/3687)
+//! will collapse the no-proof path's two-request composition into a
+//! single unified executor that reads both metrics from each visited
+//! PCPS element in one walk.
 
 #[cfg(feature = "server")]
 pub mod drive_dispatcher;
@@ -113,8 +118,30 @@ pub struct DocumentAverageRequest<'a> {
     /// The average mode requested.
     pub mode: AverageMode,
     /// Optional cap on the number of entries returned in `Entries`-mode
-    /// responses. Defaults to the server's `default_query_limit` when
-    /// unset; capped at `max_query_limit` either way.
+    /// responses.
+    ///
+    /// **Fallback differs between the no-proof and prove paths**:
+    ///
+    /// - **No-proof path**: unset `limit` falls back to
+    ///   [`crate::config::DriveConfig::default_query_limit`] (the
+    ///   operator-tunable runtime value); explicit `limit >
+    ///   max_query_limit` is clamped to `max_query_limit`. There's
+    ///   no consensus-verification step on no-proof responses, so
+    ///   operator-tunable defaults are safe here.
+    /// - **Prove path**: unset `limit` falls back to
+    ///   [`crate::config::DEFAULT_QUERY_LIMIT`] (the compile-time
+    ///   constant the SDK verifier also reads), explicitly NOT
+    ///   `drive_config.default_query_limit`. An explicit `limit >
+    ///   max_query_limit` is **rejected** with
+    ///   [`crate::error::query::QuerySyntaxError::InvalidLimit`]
+    ///   rather than clamped, so a tuned operator default or an
+    ///   over-max request can't byte-differ the
+    ///   `SizedQuery::limit` the SDK reconstructs for merk-root
+    ///   verification. See the
+    ///   [`drive_dispatcher`]'s `RangeDistinctProof` /
+    ///   `RangeAggregateCarrierProof` arms for the
+    ///   validate-don't-clamp policy, mirrored from count's
+    ///   prove-path arms.
     pub limit: Option<u32>,
     /// Whether to return a `Proof(Vec<u8>)` instead of materializing
     /// the (count, sum) pairs server-side.
