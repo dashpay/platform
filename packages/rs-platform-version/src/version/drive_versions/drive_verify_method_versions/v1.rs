@@ -20,6 +20,7 @@ pub const DRIVE_VERIFY_METHOD_VERSIONS_V1: DriveVerifyMethodVersions = DriveVeri
     },
     document_count: DriveVerifyDocumentCountMethodVersions {
         verify_aggregate_count_proof: 0,
+        verify_carrier_aggregate_count_proof: 0,
         verify_distinct_count_proof: 0,
         verify_point_lookup_count_proof: 0,
         verify_primary_key_count_tree_proof: 0,

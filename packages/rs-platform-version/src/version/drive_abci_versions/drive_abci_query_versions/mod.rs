@@ -8,8 +8,6 @@ pub struct DriveAbciQueryVersions {
     pub response_metadata: FeatureVersion,
     pub proofs_query: FeatureVersion,
     pub document_query: FeatureVersionBounds,
-    pub document_count_query: FeatureVersionBounds,
-    pub document_split_count_query: FeatureVersionBounds,
     pub prefunded_specialized_balances: DriveAbciQueryPrefundedSpecializedBalancesVersions,
     pub identity_based_queries: DriveAbciQueryIdentityVersions,
     pub token_queries: DriveAbciQueryTokenVersions,

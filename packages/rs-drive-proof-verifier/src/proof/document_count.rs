@@ -1,7 +1,7 @@
 use crate::error::MapGroveDbError;
 use crate::verify::verify_tenderdash_proof;
 use crate::{ContextProvider, Error, FromProof};
-use dapi_grpc::platform::v0::{GetDocumentsCountResponse, Proof, ResponseMetadata};
+use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
 use dapi_grpc::platform::VersionedGrpcResponse;
 use dpp::dashcore::Network;
 use dpp::version::PlatformVersion;
@@ -17,7 +17,7 @@ where
     Q::Error: std::fmt::Display,
 {
     type Request = Q;
-    type Response = GetDocumentsCountResponse;
+    type Response = GetDocumentsResponse;
 
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
@@ -141,14 +141,30 @@ pub fn verify_distinct_count_proof(
 ///
 /// ## Entry shape
 ///
-/// - **Equal-only, fully covered**: a single entry with empty `key`
-///   and `count` equal to the covered branch's CountTree
-///   `count_value`.
-/// - **Equal prefix + `In` on last property**: one entry per In
-///   value, `key = <serialized_in_value>`, `count` equal to that In
-///   value's CountTree `count_value`. Branches with zero documents
-///   are omitted from the result (callers can detect "I asked for 3
-///   In values but got entries for 2" directly).
+/// The verifier walks grovedb's
+/// `(path, key, Option<Element>)` triples and emits one
+/// [`SplitCountEntry`] per **present** queried key. The current
+/// path-query shape does NOT set
+/// `absence_proofs_for_non_existing_searched_keys: true`, so absent
+/// branches are silently omitted from grovedb's elements stream
+/// rather than surfaced as `(path, key, None)` triples.
+///
+/// - **Equal-only, fully covered**: zero or one entry. One entry
+///   with empty `key` and `count: Some(n)` if the covered branch
+///   exists; no entries at all if the branch is absent.
+/// - **Equal prefix + `In` on last property**: one entry per
+///   **present** queried In value, with
+///   `key = <serialized_in_value>` and `count: Some(n)`. Absent In
+///   values are omitted from the returned list. Callers that need
+///   to distinguish "verified with n docs" from "queried but
+///   absent" diff their request's In array against the returned
+///   entries by `key`.
+///
+/// The `count: Option<u64>` field's `None` variant is reserved for a
+/// future variant that flips `absence_proofs_for_non_existing_searched_keys`
+/// — see [`SplitCountEntry::count`] and
+/// [`DriveDocumentCountQuery::verify_point_lookup_count_proof`] for
+/// the forward-compat path.
 ///
 /// ## Replaces materialize-and-count
 ///
@@ -204,6 +220,83 @@ pub fn verify_primary_key_count_tree_proof(
     verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
     Ok(count)
+}
+
+/// Verify a **carrier** `AggregateCountOnRange` proof against a
+/// `rangeCountable: true` index and return the per-`In`-branch
+/// counts.
+///
+/// Thin tenderdash-composition wrapper over
+/// [`DriveDocumentCountQuery::verify_carrier_aggregate_count_proof`]
+/// in rs-drive. Used by the prove path when the request shape
+/// is `select=COUNT, group_by=[in_field], where = In(in_field) +
+/// range(other_field), prove=true` — drive's `detect_mode` routes
+/// that shape to `DocumentCountMode::RangeAggregateCarrierProof`
+/// (grovedb PR #663's carrier-ACOR primitive), which collapses
+/// each In branch's range into a single committed `u64` rather
+/// than emitting per-distinct-key entries. Result is one
+/// [`SplitCountEntry`] per **present** In branch:
+/// `in_key = <serialized In value>`, `key = []` (no terminator —
+/// the count is for the whole range slice under that In branch),
+/// `count = Some(n)`. Absent In branches are omitted; callers
+/// that need to surface "queried but absent" diff their In array
+/// against the returned `in_key`s.
+///
+/// ## Trade-off vs. `verify_distinct_count_proof`
+///
+/// Both shapes verify range-count queries with an In on the
+/// prefix. The distinct variant emits one `KVCount` op per
+/// `(in_key, range_key)` pair — proof size scales with the
+/// number of distinct values matched. The carrier variant emits
+/// one `u64` per In branch — proof size scales with `|In|`,
+/// independent of how many distinct range values each branch
+/// covers. Drive picks between them based on whether the caller
+/// asked for distinct entries (`GroupByCompound`) or per-In
+/// aggregates (`GroupByIn`).
+///
+/// ## Limit semantics
+///
+/// `limit: Option<u16>` mirrors the prover's `SizedQuery::limit`
+/// — caps the per-branch carrier walk. The verifier
+/// reconstructs the same path query bytes from `(query, limit)`,
+/// so the value passed here must match what the server used to
+/// generate the proof (validate-don't-clamp on the prove path,
+/// same contract as `verify_distinct_count_proof`).
+pub fn verify_carrier_aggregate_count_proof(
+    query: &DriveDocumentCountQuery,
+    proof: &Proof,
+    mtd: &ResponseMetadata,
+    limit: Option<u16>,
+    left_to_right: bool,
+    platform_version: &PlatformVersion,
+    provider: &dyn ContextProvider,
+) -> Result<Vec<SplitCountEntry>, Error> {
+    let (root_hash, per_key_counts) = query
+        .verify_carrier_aggregate_count_proof(
+            &proof.grovedb_proof,
+            limit,
+            left_to_right,
+            platform_version,
+        )
+        .map_drive_error(proof, mtd)?;
+
+    verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+    // Map drive's `Vec<(Vec<u8>, u64)>` carrier shape onto the
+    // SDK's `Vec<SplitCountEntry>` so the call sites can stay
+    // uniform across `verify_distinct_count_proof` /
+    // `verify_point_lookup_count_proof` / this. `key` is empty
+    // because the carrier variant doesn't emit terminator keys —
+    // each entry's `in_key` is the only routable handle.
+    let entries = per_key_counts
+        .into_iter()
+        .map(|(in_key, count)| SplitCountEntry {
+            in_key: Some(in_key),
+            key: Vec::new(),
+            count: Some(count),
+        })
+        .collect();
+    Ok(entries)
 }
 
 #[cfg(test)]
@@ -276,18 +369,18 @@ mod tests {
         let a = SplitCountEntry {
             in_key: Some(b"acme".to_vec()),
             key: b"red".to_vec(),
-            count: 42,
+            count: Some(42),
         };
         let b = a.clone();
         assert_eq!(a, b);
         assert_eq!(a.in_key.as_deref(), Some(b"acme".as_slice()));
         assert_eq!(a.key, b"red".to_vec());
-        assert_eq!(a.count, 42);
+        assert_eq!(a.count, Some(42));
 
         let flat = SplitCountEntry {
             in_key: None,
             key: b"green".to_vec(),
-            count: 7,
+            count: Some(7),
         };
         assert!(flat.in_key.is_none());
 
@@ -302,7 +395,10 @@ mod tests {
             ..a.clone()
         };
         assert_ne!(a, different_key);
-        let different_count = SplitCountEntry { count: 99, ..a };
+        let different_count = SplitCountEntry {
+            count: Some(99),
+            ..a
+        };
         assert_ne!(b, different_count);
     }
 

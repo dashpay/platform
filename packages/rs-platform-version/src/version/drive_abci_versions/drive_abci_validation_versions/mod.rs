@@ -127,6 +127,21 @@ pub struct DriveAbciDocumentsStateTransitionValidationVersions {
     pub revision: FeatureVersion,
     pub state: FeatureVersion,
     pub transform_into_action: FeatureVersion,
+    /// Versions the action emitted when a per-transition validation fails
+    /// inside [`transform_document_transition`].
+    ///
+    /// - `0` (PROTOCOL_VERSION_11 and below): errors-only, no action data.
+    ///   The empty action flowed through the legacy
+    ///   `flatten` / `merge_many` aggregators as `Some(empty_vec)` and was
+    ///   accounted as `PaidConsensusError`, but no `BumpIdentityDataContractNonce`
+    ///   drive op was created — so the user only paid the bare-bump fee
+    ///   and the contract nonce never advanced.
+    /// - `1` (PROTOCOL_VERSION_12+): emit a `BumpIdentityDataContractNonce`
+    ///   action so the user pays for the validation work that already ran
+    ///   (fetch + ownership/revision check) and the contract nonce advances.
+    ///
+    /// [`transform_document_transition`]: crate
+    pub failed_per_transition_action: FeatureVersion,
     pub data_triggers: DriveAbciValidationDataTriggerAndBindingVersions,
     pub is_allowed: FeatureVersion,
     pub document_create_transition_structure_validation: FeatureVersion,

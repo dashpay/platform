@@ -130,7 +130,6 @@ inject_modulemap() {
 
 #include "dash-network/dash-network.h"
 #include "key-wallet-ffi/key-wallet-ffi.h"
-#include "dash-spv-ffi/dash-spv-ffi.h"
 #include "rs-sdk-ffi/rs-sdk-ffi.h"
 #include "platform-wallet-ffi/platform-wallet-ffi.h"
 
