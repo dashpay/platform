@@ -5,6 +5,8 @@ use crate::error::Error;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::platform_value::Value;
 use drive::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
+use dpp::block::epoch::Epoch;
+use dpp::fee::fee_result::FeeResult;
 use dpp::system_data_contracts::withdrawals_contract;
 use dpp::version::PlatformVersion;
 use drive::query::{DriveDocumentQuery, InternalClauses, WhereClause, WhereOperator};
@@ -18,6 +20,7 @@ use drive::state_transition_action::batch::batched_transition::document_transiti
 use dpp::system_data_contracts::withdrawals_contract::v1::document_types::withdrawal;
 use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use crate::execution::validation::state_transition::batch::data_triggers::{DataTriggerExecutionContext, DataTriggerExecutionResult};
+use crate::platform_types::platform_state::PlatformStateV0Methods;
 
 /// Creates a data trigger for handling deletion of withdrawal documents.
 ///
@@ -76,18 +79,22 @@ pub(super) fn delete_withdrawal_data_trigger_v0(
         block_time_ms: None,
     };
 
-    // todo: deal with cost of this operation
-    let withdrawals = context
-        .platform
-        .drive
-        .query_documents(
-            drive_query,
-            None,
-            false,
-            context.transaction,
-            Some(platform_version.protocol_version),
-        )?
-        .documents_owned();
+    // Pass `Some(epoch)` so query_documents computes the real cost
+    // (with `None` it short-circuits to 0). Surface it via the returned
+    // FeeResult so the caller bills it on `transform_into_action: 1`.
+    let epoch: &Epoch = context.platform.state.last_committed_block_epoch_ref();
+    let withdrawals_outcome = context.platform.drive.query_documents(
+        drive_query,
+        Some(epoch),
+        false,
+        context.transaction,
+        Some(platform_version.protocol_version),
+    )?;
+    let query_fee_result = FeeResult {
+        processing_fee: withdrawals_outcome.cost(),
+        ..Default::default()
+    };
+    let withdrawals = withdrawals_outcome.documents_owned();
 
     let Some(withdrawal) = withdrawals.first() else {
         let err = DataTriggerConditionError::new(
@@ -98,7 +105,7 @@ pub(super) fn delete_withdrawal_data_trigger_v0(
 
         result.add_error(err);
 
-        return Ok((result, dpp::fee::fee_result::FeeResult::default()));
+        return Ok((result, query_fee_result));
     };
 
     let status: u8 = withdrawal
@@ -115,10 +122,10 @@ pub(super) fn delete_withdrawal_data_trigger_v0(
 
         result.add_error(err);
 
-        return Ok((result, dpp::fee::fee_result::FeeResult::default()));
+        return Ok((result, query_fee_result));
     }
 
-    Ok((result, dpp::fee::fee_result::FeeResult::default()))
+    Ok((result, query_fee_result))
 }
 
 #[cfg(test)]
