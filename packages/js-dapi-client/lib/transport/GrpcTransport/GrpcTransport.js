@@ -1,11 +1,11 @@
-const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
-const logger = require('../../logger');
+import GrpcErrorCodes from '@dashevo/grpc-common/lib/server/error/GrpcErrorCodes.js';
+import logger from '../../logger/index.js';
 
-const MaxRetriesReachedError = require('../errors/response/MaxRetriesReachedError');
-const NoAvailableAddressesForRetryError = require('../errors/response/NoAvailableAddressesForRetryError');
-const NoAvailableAddressesError = require('../errors/NoAvailableAddressesError');
-const TimeoutError = require('./errors/TimeoutError');
-const RetriableResponseError = require('../errors/response/RetriableResponseError');
+import MaxRetriesReachedError from '../errors/response/MaxRetriesReachedError.js';
+import NoAvailableAddressesForRetryError from '../errors/response/NoAvailableAddressesForRetryError.js';
+import NoAvailableAddressesError from '../errors/NoAvailableAddressesError.js';
+import TimeoutError from './errors/TimeoutError.js';
+import RetriableResponseError from '../errors/response/RetriableResponseError.js';
 
 class GrpcTransport {
   /**
@@ -156,4 +156,4 @@ class GrpcTransport {
   }
 }
 
-module.exports = GrpcTransport;
+export default GrpcTransport;

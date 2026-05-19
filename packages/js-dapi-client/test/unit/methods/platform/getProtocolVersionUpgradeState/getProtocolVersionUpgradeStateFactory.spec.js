@@ -1,3 +1,11 @@
+import dapiGrpc from '@dashevo/dapi-grpc';
+
+import getProtocolVersionUpgradeStateFactory from '../../../../../lib/methods/platform/getProtocolVersionUpgradeState/getProtocolVersionUpgradeStateFactory.js';
+import VersionEntry from '../../../../../lib/methods/platform/getProtocolVersionUpgradeState/VersionEntry.js';
+import getMetadataFixture from '../../../../../lib/test/fixtures/getMetadataFixture.js';
+import getProofFixture from '../../../../../lib/test/fixtures/getProofFixture.js';
+import Proof from '../../../../../lib/methods/platform/response/Proof.js';
+
 const {
   v0: {
     PlatformPromiseClient,
@@ -6,13 +14,7 @@ const {
     ResponseMetadata,
     Proof: ProofResponse,
   },
-} = require('@dashevo/dapi-grpc');
-
-const getProtocolVersionUpgradeStateFactory = require('../../../../../lib/methods/platform/getProtocolVersionUpgradeState/getProtocolVersionUpgradeStateFactory');
-const VersionEntry = require('../../../../../lib/methods/platform/getProtocolVersionUpgradeState/VersionEntry');
-const getMetadataFixture = require('../../../../../lib/test/fixtures/getMetadataFixture');
-const getProofFixture = require('../../../../../lib/test/fixtures/getProofFixture');
-const Proof = require('../../../../../lib/methods/platform/response/Proof');
+} = dapiGrpc;
 
 describe('getProtocolVersionUpgradeStateFactory', () => {
   let grpcTransportMock;
@@ -134,9 +136,9 @@ describe('getProtocolVersionUpgradeStateFactory', () => {
       .to.deep.equal(metadataFixture.protocolVersion);
 
     expect(result.getProof()).to.be.an.instanceOf(Proof);
-    expect(result.getProof().getGrovedbProof()).to.deep.equal(proofFixture.merkleProof);
-    expect(result.getProof().getQuorumHash()).to.deep.equal(proofFixture.quorumHash);
-    expect(result.getProof().getSignature()).to.deep.equal(proofFixture.signature);
+    expect(result.getProof().getGrovedbProof()).to.deep.equal(new Uint8Array(proofFixture.merkleProof));
+    expect(result.getProof().getQuorumHash()).to.deep.equal(new Uint8Array(proofFixture.quorumHash));
+    expect(result.getProof().getSignature()).to.deep.equal(new Uint8Array(proofFixture.signature));
     expect(result.getProof().getRound()).to.deep.equal(proofFixture.round);
   });
 

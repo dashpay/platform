@@ -1,4 +1,9 @@
-const BloomFilter = require('@dashevo/dashcore-lib/lib/bloomfilter');
+import BloomFilter from '@dashevo/dashcore-lib/lib/bloomfilter.js';
+import dapiGrpc from '@dashevo/dapi-grpc';
+import EventEmitter from 'events';
+import subscribeToTransactionsWithProofsFactory from '../../../../lib/methods/core/subscribeToTransactionsWithProofsFactory.js';
+import DAPIClientError from '../../../../lib/errors/DAPIClientError.js';
+import { hexToBytes } from '../../../../lib/utils/bytes.js';
 
 const {
   v0: {
@@ -6,14 +11,7 @@ const {
     CorePromiseClient,
     TransactionsWithProofsRequest,
   },
-} = require('@dashevo/dapi-grpc');
-
-const { EventEmitter } = require('events');
-
-const subscribeToTransactionsWithProofsFactory = require('../../../../lib/methods/core/subscribeToTransactionsWithProofsFactory');
-
-const DAPIClientError = require('../../../../lib/errors/DAPIClientError');
-const { hexToBytes } = require('../../../../lib/utils/bytes');
+} = dapiGrpc;
 
 describe('subscribeToTransactionsWithProofsFactory', () => {
   let subscribeToTransactionsWithProofs;

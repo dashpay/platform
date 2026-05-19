@@ -1,7 +1,7 @@
-const AbstractResponse = require('../response/AbstractResponse');
-const VersionSignal = require('./VersionSignal');
-const InvalidResponseError = require('../response/errors/InvalidResponseError');
-const { bytesToHex } = require('../../../utils/bytes');
+import AbstractResponse from '../response/AbstractResponse.js';
+import VersionSignal from './VersionSignal.js';
+import InvalidResponseError from '../response/errors/InvalidResponseError.js';
+import { bytesToHex } from '../../../utils/bytes.js';
 
 class GetProtocolVersionUpgradeVoteStatusResponse extends AbstractResponse {
   /**
@@ -54,4 +54,4 @@ class GetProtocolVersionUpgradeVoteStatusResponse extends AbstractResponse {
   }
 }
 
-module.exports = GetProtocolVersionUpgradeVoteStatusResponse;
+export default GetProtocolVersionUpgradeVoteStatusResponse;

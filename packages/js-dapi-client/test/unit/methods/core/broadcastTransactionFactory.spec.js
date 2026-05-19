@@ -1,14 +1,13 @@
+import dapiGrpc from '@dashevo/dapi-grpc';
+import broadcastTransactionFactory from '../../../../lib/methods/core/broadcastTransactionFactory.js';
+
 const {
   v0: {
     CorePromiseClient,
     BroadcastTransactionRequest,
     BroadcastTransactionResponse,
   },
-} = require('@dashevo/dapi-grpc');
-
-const broadcastTransactionFactory = require(
-  '../../../../lib/methods/core/broadcastTransactionFactory',
-);
+} = dapiGrpc;
 
 describe('broadcastTransactionFactory', () => {
   let broadcastTransaction;

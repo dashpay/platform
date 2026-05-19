@@ -1,4 +1,4 @@
-const getBestBlockHashFactory = require('../../../../lib/methods/core/getBestBlockHashFactory');
+import getBestBlockHashFactory from '../../../../lib/methods/core/getBestBlockHashFactory.js';
 
 describe('getBestBlockHashFactory', () => {
   let getBestBlockHash;

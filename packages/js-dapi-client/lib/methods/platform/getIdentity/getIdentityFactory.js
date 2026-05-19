@@ -1,12 +1,13 @@
+import dapiGrpc from '@dashevo/dapi-grpc';
+import GetIdentityResponse from './GetIdentityResponse.js';
+import InvalidResponseError from '../response/errors/InvalidResponseError.js';
+
 const {
   v0: {
     PlatformPromiseClient,
     GetIdentityRequest,
   },
-} = require('@dashevo/dapi-grpc');
-
-const GetIdentityResponse = require('./GetIdentityResponse');
-const InvalidResponseError = require('../response/errors/InvalidResponseError');
+} = dapiGrpc;
 
 /**
  * @param {GrpcTransport} grpcTransport
@@ -68,4 +69,4 @@ function getIdentityFactory(grpcTransport) {
   return getIdentity;
 }
 
-module.exports = getIdentityFactory;
+export default getIdentityFactory;

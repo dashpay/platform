@@ -1,13 +1,14 @@
+import dapiGrpc from '@dashevo/dapi-grpc';
+import DAPIClientError from '../../errors/DAPIClientError.js';
+import { hexToBytes } from '../../utils/bytes.js';
+
 const {
   v0: {
     TransactionsWithProofsRequest,
     CorePromiseClient,
     BloomFilter: BloomFilterMessage,
   },
-} = require('@dashevo/dapi-grpc');
-
-const DAPIClientError = require('../../errors/DAPIClientError');
-const { hexToBytes } = require('../../utils/bytes');
+} = dapiGrpc;
 
 /**
  * @param {GrpcTransport} grpcTransport
@@ -91,4 +92,4 @@ function subscribeToTransactionsWithProofsFactory(grpcTransport) {
  *                                if set to 0 syncing is continuously sends new data as well
  */
 
-module.exports = subscribeToTransactionsWithProofsFactory;
+export default subscribeToTransactionsWithProofsFactory;

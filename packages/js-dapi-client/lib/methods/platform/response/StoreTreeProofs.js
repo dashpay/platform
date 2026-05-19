@@ -1,10 +1,10 @@
 class StoreTreeProofs {
   /**
    * @param {object} properties
-   * @param {Buffer} properties.publicKeyHashesToIdentityIdsProof
-   * @param {Buffer} properties.identitiesProof
-   * @param {Buffer} properties.documentsProof
-   * @param {Buffer} properties.dataContractsProof
+   * @param {Uint8Array} properties.publicKeyHashesToIdentityIdsProof
+   * @param {Uint8Array} properties.identitiesProof
+   * @param {Uint8Array} properties.documentsProof
+   * @param {Uint8Array} properties.dataContractsProof
    */
   constructor(properties) {
     this.publicKeyHashesToIdentityIdsProof = properties.publicKeyHashesToIdentityIdsProof;
@@ -14,32 +14,32 @@ class StoreTreeProofs {
   }
 
   /**
-   * @returns {Buffer}
+   * @returns {Uint8Array}
    */
   getPublicKeyHashesToIdentityIdsProof() {
     return this.publicKeyHashesToIdentityIdsProof;
   }
 
   /**
-   * @returns {Buffer}
+   * @returns {Uint8Array}
    */
   getIdentitiesProof() {
     return this.identitiesProof;
   }
 
   /**
-   * @returns {Buffer}
+   * @returns {Uint8Array}
    */
   getDocumentsProof() {
     return this.documentsProof;
   }
 
   /**
-   * @returns {Buffer}
+   * @returns {Uint8Array}
    */
   getDataContractsProof() {
     return this.dataContractsProof;
   }
 }
 
-module.exports = StoreTreeProofs;
+export default StoreTreeProofs;

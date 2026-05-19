@@ -1,7 +1,7 @@
 class DataContractHistoryEntry {
   /**
    * @param {bigint} date - timestamp
-   * @param {Buffer} value - buffer value of the data contract
+   * @param {Uint8Array} value - byte value of the data contract
    */
   constructor(date, value) {
     this.date = date;
@@ -16,11 +16,11 @@ class DataContractHistoryEntry {
   }
 
   /**
-   * @returns {Buffer} - raw binary value of the data contract
+   * @returns {Uint8Array} - raw binary value of the data contract
    */
   getValue() {
     return this.value;
   }
 }
 
-module.exports = DataContractHistoryEntry;
+export default DataContractHistoryEntry;

@@ -1,6 +1,6 @@
-const grpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
+import grpcErrorCodes from '@dashevo/grpc-common/lib/server/error/GrpcErrorCodes.js';
 
-const ResponseError = require('../../errors/response/ResponseError');
+import ResponseError from '../../errors/response/ResponseError.js';
 
 class NotFoundError extends ResponseError {
   /**
@@ -14,4 +14,4 @@ class NotFoundError extends ResponseError {
   }
 }
 
-module.exports = NotFoundError;
+export default NotFoundError;

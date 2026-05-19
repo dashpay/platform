@@ -1,8 +1,8 @@
-const { expect } = require('chai');
+import { expect } from 'chai';
 
-const BlockHeadersProvider = require('../../../lib/BlockHeadersProvider/BlockHeadersProvider');
-const BlockHeadersWithChainLocksStreamMock = require('../../../lib/test/mocks/BlockHeadersWithChainLocksStreamMock');
-const mockHeadersChain = require('../../../lib/test/mocks/mockHeadersChain');
+import BlockHeadersProvider from '../../../lib/BlockHeadersProvider/BlockHeadersProvider.js';
+import BlockHeadersWithChainLocksStreamMock from '../../../lib/test/mocks/BlockHeadersWithChainLocksStreamMock.js';
+import mockHeadersChain from '../../../lib/test/mocks/mockHeadersChain.js';
 
 describe('BlockHeadersProvider - integration', function describe() {
   this.timeout(6000);

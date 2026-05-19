@@ -1,8 +1,8 @@
-const WrongHttpCodeError = require('./errors/WrongHttpCodeError');
-const JsonRpcError = require('./errors/JsonRpcError');
-const ServerError = require('../errors/response/ServerError');
-const ResponseError = require('../errors/response/ResponseError');
-const RetriableResponseError = require('../errors/response/RetriableResponseError');
+import WrongHttpCodeError from './errors/WrongHttpCodeError.js';
+import JsonRpcError from './errors/JsonRpcError.js';
+import ServerError from '../errors/response/ServerError.js';
+import ResponseError from '../errors/response/ResponseError.js';
+import RetriableResponseError from '../errors/response/RetriableResponseError.js';
 
 /**
  * @typedef {createJsonTransportError}
@@ -63,4 +63,4 @@ function createJsonTransportError(error, dapiAddress) {
   );
 }
 
-module.exports = createJsonTransportError;
+export default createJsonTransportError;

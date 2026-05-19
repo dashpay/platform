@@ -86,4 +86,4 @@ class VersionStatus {
   }
 }
 
-module.exports = VersionStatus;
+export default VersionStatus;

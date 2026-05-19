@@ -1,3 +1,9 @@
+import dapiGrpc from '@dashevo/dapi-grpc';
+import cbor from 'cbor';
+
+import waitForStateTransitionResultFactory from '../../../../../lib/methods/platform/waitForStateTransitionResult/waitForStateTransitionResultFactory.js';
+import getMetadataFixture from '../../../../../lib/test/fixtures/getMetadataFixture.js';
+
 const {
   v0: {
     PlatformPromiseClient,
@@ -7,11 +13,7 @@ const {
     Proof,
     ResponseMetadata,
   },
-} = require('@dashevo/dapi-grpc');
-const cbor = require('cbor');
-
-const waitForStateTransitionResultFactory = require('../../../../../lib/methods/platform/waitForStateTransitionResult/waitForStateTransitionResultFactory');
-const getMetadataFixture = require('../../../../../lib/test/fixtures/getMetadataFixture');
+} = dapiGrpc;
 
 const encoder = new TextEncoder();
 

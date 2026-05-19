@@ -1,6 +1,6 @@
-const InvalidResponseError = require('../response/errors/InvalidResponseError');
-const ConsensusParamsBlock = require('./ConsensusParamsBlock');
-const ConsensusParamsEvidence = require('./ConsensusParamsEvidence');
+import InvalidResponseError from '../response/errors/InvalidResponseError.js';
+import ConsensusParamsBlock from './ConsensusParamsBlock.js';
+import ConsensusParamsEvidence from './ConsensusParamsEvidence.js';
 
 class GetConsensusParamsResponse {
   /**
@@ -58,4 +58,4 @@ class GetConsensusParamsResponse {
   }
 }
 
-module.exports = GetConsensusParamsResponse;
+export default GetConsensusParamsResponse;

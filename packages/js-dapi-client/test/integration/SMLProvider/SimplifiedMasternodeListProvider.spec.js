@@ -1,11 +1,11 @@
-const SimplifiedMNList = require('@dashevo/dashcore-lib/lib/deterministicmnlist/SimplifiedMNList');
+import SimplifiedMNList from '@dashevo/dashcore-lib/lib/deterministicmnlist/SimplifiedMNList.js';
 
-const SimplifiedMasternodeListProvider = require('../../../lib/SimplifiedMasternodeListProvider/SimplifiedMasternodeListProvider');
-const DAPIAddress = require('../../../lib/dapiAddressProvider/DAPIAddress');
+import SimplifiedMasternodeListProvider from '../../../lib/SimplifiedMasternodeListProvider/SimplifiedMasternodeListProvider.js';
+import DAPIAddress from '../../../lib/dapiAddressProvider/DAPIAddress.js';
 
-const getMNListDiffsFixture = require('../../../lib/test/fixtures/getMNListDiffsFixture');
+import getMNListDiffsFixture from '../../../lib/test/fixtures/getMNListDiffsFixture.js';
 
-const wait = require('../../../lib/utils/wait');
+import wait from '../../../lib/utils/wait.js';
 
 // TODO: Update test to new implementation
 describe.skip('SimplifiedMasternodeListProvider', () => {

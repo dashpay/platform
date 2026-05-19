@@ -1,9 +1,11 @@
+import dapiGrpc from '@dashevo/dapi-grpc';
+
 const {
   v0: {
     GetBestBlockHeightRequest,
     CorePromiseClient,
   },
-} = require('@dashevo/dapi-grpc');
+} = dapiGrpc;
 
 /**
  *
@@ -31,4 +33,4 @@ function getBestBlockHeightFactory(grpcTransport) {
   return getBestBlockHeight;
 }
 
-module.exports = getBestBlockHeightFactory;
+export default getBestBlockHeightFactory;

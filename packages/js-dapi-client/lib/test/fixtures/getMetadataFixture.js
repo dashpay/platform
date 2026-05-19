@@ -15,4 +15,4 @@ function getMetadataFixture() {
   };
 }
 
-module.exports = getMetadataFixture;
+export default getMetadataFixture;

@@ -1,4 +1,4 @@
-const DAPIClientError = require('../../../errors/DAPIClientError');
+import DAPIClientError from '../../../errors/DAPIClientError.js';
 
 class WrongHttpCodeError extends DAPIClientError {
   /**
@@ -35,4 +35,4 @@ class WrongHttpCodeError extends DAPIClientError {
   }
 }
 
-module.exports = WrongHttpCodeError;
+export default WrongHttpCodeError;

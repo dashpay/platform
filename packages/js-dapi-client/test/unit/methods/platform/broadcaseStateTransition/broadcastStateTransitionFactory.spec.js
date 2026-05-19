@@ -1,16 +1,17 @@
+import dapiGrpc from '@dashevo/dapi-grpc';
+import wasmDpp from '@dashevo/wasm-dpp';
+import getDataContractFixture from '@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture.js';
+import broadcastStateTransitionFactory from '../../../../../lib/methods/platform/broadcastStateTransition/broadcastStateTransitionFactory.js';
+import BroadcastStateTransitionResponse from '../../../../../lib/methods/platform/broadcastStateTransition/BroadcastStateTransitionResponse.js';
+
 const {
   v0: {
     BroadcastStateTransitionRequest,
     PlatformPromiseClient,
   },
-} = require('@dashevo/dapi-grpc');
+} = dapiGrpc;
 
-const { DashPlatformProtocol } = require('@dashevo/wasm-dpp');
-
-const getDataContractFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture');
-
-const broadcastStateTransitionFactory = require('../../../../../lib/methods/platform/broadcastStateTransition/broadcastStateTransitionFactory');
-const BroadcastStateTransitionResponse = require('../../../../../lib/methods/platform/broadcastStateTransition/BroadcastStateTransitionResponse');
+const { DashPlatformProtocol } = wasmDpp;
 
 describe('broadcastStateTransitionFactory', () => {
   let grpcTransportMock;

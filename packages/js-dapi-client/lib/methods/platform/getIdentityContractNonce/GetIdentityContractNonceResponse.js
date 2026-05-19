@@ -1,5 +1,5 @@
-const AbstractResponse = require('../response/AbstractResponse');
-const InvalidResponseError = require('../response/errors/InvalidResponseError');
+import AbstractResponse from '../response/AbstractResponse.js';
+import InvalidResponseError from '../response/errors/InvalidResponseError.js';
 
 const IDENTITY_CONTRACT_NONCE_VALUE_FILTER = BigInt(0xFFFFFFFFFF);
 
@@ -46,4 +46,4 @@ class GetIdentityContractNonceResponse extends AbstractResponse {
   }
 }
 
-module.exports = GetIdentityContractNonceResponse;
+export default GetIdentityContractNonceResponse;

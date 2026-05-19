@@ -1,4 +1,4 @@
-const ConsensusParamsBlock = require('../../../../../lib/methods/platform/getConsensusParams/ConsensusParamsBlock');
+import ConsensusParamsBlock from '../../../../../lib/methods/platform/getConsensusParams/ConsensusParamsBlock.js';
 
 describe('ConsensusParamsBlock', () => {
   let consensusParamsBlock;

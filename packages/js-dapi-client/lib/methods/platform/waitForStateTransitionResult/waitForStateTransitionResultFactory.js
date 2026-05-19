@@ -1,12 +1,14 @@
+import dapiGrpc from '@dashevo/dapi-grpc';
+
+import WaitForStateTransitionResultResponse from './WaitForStateTransitionResultResponse.js';
+import InvalidResponseError from '../response/errors/InvalidResponseError.js';
+
 const {
   v0: {
     PlatformPromiseClient,
     WaitForStateTransitionResultRequest,
   },
-} = require('@dashevo/dapi-grpc');
-
-const WaitForStateTransitionResultResponse = require('./WaitForStateTransitionResultResponse');
-const InvalidResponseError = require('../response/errors/InvalidResponseError');
+} = dapiGrpc;
 
 /**
  *
@@ -16,7 +18,7 @@ const InvalidResponseError = require('../response/errors/InvalidResponseError');
 function waitForStateTransitionResultFactory(grpcTransport) {
   /**
    * @typedef waitForStateTransitionResult
-   * @param {Buffer} stateTransitionHash
+   * @param {Uint8Array} stateTransitionHash
    * @param {DAPIClientOptions & getDocumentsOptions & {prove: boolean}} [options]
    * @returns {Promise<object>}
    */
@@ -72,4 +74,4 @@ function waitForStateTransitionResultFactory(grpcTransport) {
   return waitForStateTransitionResult;
 }
 
-module.exports = waitForStateTransitionResultFactory;
+export default waitForStateTransitionResultFactory;

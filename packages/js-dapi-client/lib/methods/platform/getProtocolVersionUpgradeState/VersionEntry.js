@@ -23,4 +23,4 @@ class VersionEntry {
   }
 }
 
-module.exports = VersionEntry;
+export default VersionEntry;

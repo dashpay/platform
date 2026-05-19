@@ -1,6 +1,8 @@
-const { EventEmitter } = require('events');
-const { BlockHeader } = require('@dashevo/dashcore-lib');
-const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
+import EventEmitter from 'events';
+import dashcoreLib from '@dashevo/dashcore-lib';
+import GrpcErrorCodes from '@dashevo/grpc-common/lib/server/error/GrpcErrorCodes.js';
+
+const { BlockHeader } = dashcoreLib;
 
 const EVENTS = {
   BLOCK_HEADERS: 'BLOCK_HEADERS',
@@ -302,4 +304,4 @@ class BlockHeadersReader extends EventEmitter {
 
 BlockHeadersReader.EVENTS = EVENTS;
 
-module.exports = BlockHeadersReader;
+export default BlockHeadersReader;

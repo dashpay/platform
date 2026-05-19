@@ -90,4 +90,4 @@ function getMNListDiffsFixture() {
   ];
 }
 
-module.exports = getMNListDiffsFixture;
+export default getMNListDiffsFixture;

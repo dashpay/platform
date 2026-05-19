@@ -1,13 +1,13 @@
+import dapiGrpc from '@dashevo/dapi-grpc';
+import GetIdentitiesContractKeysResponse from './GetIdentitiesContractKeysResponse.js';
+import InvalidResponseError from '../response/errors/InvalidResponseError.js';
+
 const {
   v0: {
     PlatformPromiseClient,
     GetIdentitiesContractKeysRequest,
   },
-} = require('@dashevo/dapi-grpc');
-const { IdentityPublicKey } = require('@dashevo/wasm-dpp');
-
-const GetIdentitiesContractKeysResponse = require('./GetIdentitiesContractKeysResponse');
-const InvalidResponseError = require('../response/errors/InvalidResponseError');
+} = dapiGrpc;
 
 /**
  * @param {GrpcTransport} grpcTransport
@@ -89,4 +89,4 @@ function getIdentitiesContractKeysFactory(grpcTransport) {
   return getIdentitiesContractKeys;
 }
 
-module.exports = getIdentitiesContractKeysFactory;
+export default getIdentitiesContractKeysFactory;

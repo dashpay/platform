@@ -1,12 +1,14 @@
+import dapiGrpc from '@dashevo/dapi-grpc';
+
+import GetTotalCreditsInPlatformResponse from './GetTotalCreditsInPlatformResponse.js';
+import InvalidResponseError from '../response/errors/InvalidResponseError.js';
+
 const {
   v0: {
     PlatformPromiseClient,
     GetTotalCreditsInPlatformRequest,
   },
-} = require('@dashevo/dapi-grpc');
-
-const GetTotalCreditsInPlatformResponse = require('./GetTotalCreditsInPlatformResponse');
-const InvalidResponseError = require('../response/errors/InvalidResponseError');
+} = dapiGrpc;
 
 /**
  * @param {GrpcTransport} grpcTransport
@@ -64,4 +66,4 @@ function getTotalCreditsInPlatformFactory(grpcTransport) {
   return getTotalCreditsInPlatform;
 }
 
-module.exports = getTotalCreditsInPlatformFactory;
+export default getTotalCreditsInPlatformFactory;

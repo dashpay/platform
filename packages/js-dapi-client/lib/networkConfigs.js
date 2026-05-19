@@ -1,4 +1,4 @@
-module.exports = {
+export default {
   testnet: {
     seeds: [
       'seed-1.testnet.networks.dash.org:1443',

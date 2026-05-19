@@ -1,12 +1,13 @@
+import dapiGrpc from '@dashevo/dapi-grpc';
+import GetTransactionResponse from './GetTransactionResponse.js';
+import InvalidResponseError from '../../platform/response/errors/InvalidResponseError.js';
+
 const {
   v0: {
     GetTransactionRequest,
     CorePromiseClient,
   },
-} = require('@dashevo/dapi-grpc');
-
-const GetTransactionResponse = require('./GetTransactionResponse');
-const InvalidResponseError = require('../../platform/response/errors/InvalidResponseError');
+} = dapiGrpc;
 
 /**
  * @param {GrpcTransport} grpcTransport
@@ -18,7 +19,7 @@ function getTransactionFactory(grpcTransport) {
    * @typedef {getTransaction}
    * @param {string} id
    * @param {DAPIClientOptions} [options]
-   * @returns {Promise<null|Buffer>}
+   * @returns {Promise<null|Uint8Array>}
    */
   async function getTransaction(id, options = {}) {
     const getTransactionRequest = new GetTransactionRequest();
@@ -55,4 +56,4 @@ function getTransactionFactory(grpcTransport) {
   return getTransaction;
 }
 
-module.exports = getTransactionFactory;
+export default getTransactionFactory;

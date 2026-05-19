@@ -32,4 +32,4 @@ class NetworkStatus {
   }
 }
 
-module.exports = NetworkStatus;
+export default NetworkStatus;

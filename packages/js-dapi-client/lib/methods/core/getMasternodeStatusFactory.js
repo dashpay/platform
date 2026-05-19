@@ -1,11 +1,13 @@
+import dapiGrpc from '@dashevo/dapi-grpc';
+import { base64ToBytes } from '../../utils/bytes.js';
+
 const {
   v0: {
     GetMasternodeStatusRequest,
     GetMasternodeStatusResponse,
     CorePromiseClient,
   },
-} = require('@dashevo/dapi-grpc');
-const { base64ToBytes } = require('../../utils/bytes');
+} = dapiGrpc;
 
 /**
  * @param {GrpcTransport} grpcTransport
@@ -43,4 +45,4 @@ function getMasternodeStatusFactory(grpcTransport) {
   return getMasternodeStatus;
 }
 
-module.exports = getMasternodeStatusFactory;
+export default getMasternodeStatusFactory;

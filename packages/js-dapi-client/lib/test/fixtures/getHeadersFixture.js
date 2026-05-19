@@ -1,4 +1,5 @@
-const { BlockHeader } = require('@dashevo/dashcore-lib');
+import dashcore from '@dashevo/dashcore-lib';
+const { BlockHeader } = dashcore;
 
 const headers = [
   {
@@ -212,4 +213,4 @@ function getHeadersFixture() {
     .map((header) => new BlockHeader({ ...header, bits: parseInt(header.bits, 16) }));
 }
 
-module.exports = getHeadersFixture;
+export default getHeadersFixture;

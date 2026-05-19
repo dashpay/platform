@@ -1,3 +1,12 @@
+import dapiGrpc from '@dashevo/dapi-grpc';
+
+import getProtocolVersionUpgradeVoteStatusFactory from '../../../../../lib/methods/platform/getProtocolVersionUpgradeVoteStatus/getProtocolVersionUpgradeVoteStatusFactory.js';
+import VersionSignal from '../../../../../lib/methods/platform/getProtocolVersionUpgradeVoteStatus/VersionSignal.js';
+import getMetadataFixture from '../../../../../lib/test/fixtures/getMetadataFixture.js';
+import getProofFixture from '../../../../../lib/test/fixtures/getProofFixture.js';
+import Proof from '../../../../../lib/methods/platform/response/Proof.js';
+import { bytesToHex, hexToBytes } from '../../../../../lib/utils/bytes.js';
+
 const {
   v0: {
     PlatformPromiseClient,
@@ -6,14 +15,7 @@ const {
     ResponseMetadata,
     Proof: ProofResponse,
   },
-} = require('@dashevo/dapi-grpc');
-
-const getProtocolVersionUpgradeVoteStatusFactory = require('../../../../../lib/methods/platform/getProtocolVersionUpgradeVoteStatus/getProtocolVersionUpgradeVoteStatusFactory');
-const VersionSignal = require('../../../../../lib/methods/platform/getProtocolVersionUpgradeVoteStatus/VersionSignal');
-const getMetadataFixture = require('../../../../../lib/test/fixtures/getMetadataFixture');
-const getProofFixture = require('../../../../../lib/test/fixtures/getProofFixture');
-const Proof = require('../../../../../lib/methods/platform/response/Proof');
-const { bytesToHex, hexToBytes } = require('../../../../../lib/utils/bytes');
+} = dapiGrpc;
 
 describe('getProtocolVersionUpgradeVoteStatusFactory', () => {
   let grpcTransportMock;

@@ -1,21 +1,21 @@
-const broadcastStateTransitionFactory = require('./broadcastStateTransition/broadcastStateTransitionFactory');
-const getDataContractFactory = require('./getDataContract/getDataContractFactory');
-const getDataContractHistoryFactory = require('./getDataContractHistory/getDataContractHistoryFactory');
-const getDocumentsFactory = require('./getDocuments/getDocumentsFactory');
-const getIdentityFactory = require('./getIdentity/getIdentityFactory');
-const getIdentityByPublicKeyHashFactory = require('./getIdentityByPublicKeyHash/getIdentityByPublicKeyHashFactory');
-const getIdentitiesContractKeysFactory = require('./getIdentitiesContractKeys/getIdentitiesContractKeysFactory');
-const waitForStateTransitionResultFactory = require('./waitForStateTransitionResult/waitForStateTransitionResultFactory');
-const getConsensusParamsFactory = require('./getConsensusParams/getConsensusParamsFactory');
-const getEpochsInfoFactory = require('./getEpochsInfo/getEpochsInfoFactory');
-const getProtocolVersionUpgradeVoteStatusFactory = require('./getProtocolVersionUpgradeVoteStatus/getProtocolVersionUpgradeVoteStatusFactory');
-const getProtocolVersionUpgradeStateFactory = require('./getProtocolVersionUpgradeState/getProtocolVersionUpgradeStateFactory');
-const getIdentityContractNonceFactory = require('./getIdentityContractNonce/getIdentityContractNonceFactory');
-const getIdentityNonceFactory = require('./getIdentityNonce/getIdentityNonceFactory');
-const getIdentityKeysFactory = require('./getIdentityKeys/getIdentityKeysFactory');
-const getTotalCreditsInPlatformFactory = require('./getTotalCreditsInPlatform/getTotalCreditsInPlatformFactory');
-const getStatusFactory = require('./getStatus/getStatusFactory');
-const getIdentityBalanceFactory = require('./getIdentityBalance/getIdentityBalanceFactory');
+import broadcastStateTransitionFactory from './broadcastStateTransition/broadcastStateTransitionFactory.js';
+import getDataContractFactory from './getDataContract/getDataContractFactory.js';
+import getDataContractHistoryFactory from './getDataContractHistory/getDataContractHistoryFactory.js';
+import getDocumentsFactory from './getDocuments/getDocumentsFactory.js';
+import getIdentityFactory from './getIdentity/getIdentityFactory.js';
+import getIdentityByPublicKeyHashFactory from './getIdentityByPublicKeyHash/getIdentityByPublicKeyHashFactory.js';
+import getIdentitiesContractKeysFactory from './getIdentitiesContractKeys/getIdentitiesContractKeysFactory.js';
+import waitForStateTransitionResultFactory from './waitForStateTransitionResult/waitForStateTransitionResultFactory.js';
+import getConsensusParamsFactory from './getConsensusParams/getConsensusParamsFactory.js';
+import getEpochsInfoFactory from './getEpochsInfo/getEpochsInfoFactory.js';
+import getProtocolVersionUpgradeVoteStatusFactory from './getProtocolVersionUpgradeVoteStatus/getProtocolVersionUpgradeVoteStatusFactory.js';
+import getProtocolVersionUpgradeStateFactory from './getProtocolVersionUpgradeState/getProtocolVersionUpgradeStateFactory.js';
+import getIdentityContractNonceFactory from './getIdentityContractNonce/getIdentityContractNonceFactory.js';
+import getIdentityNonceFactory from './getIdentityNonce/getIdentityNonceFactory.js';
+import getIdentityKeysFactory from './getIdentityKeys/getIdentityKeysFactory.js';
+import getTotalCreditsInPlatformFactory from './getTotalCreditsInPlatform/getTotalCreditsInPlatformFactory.js';
+import getStatusFactory from './getStatus/getStatusFactory.js';
+import getIdentityBalanceFactory from './getIdentityBalance/getIdentityBalanceFactory.js';
 
 class PlatformMethodsFacade {
   /**
@@ -45,4 +45,4 @@ class PlatformMethodsFacade {
   }
 }
 
-module.exports = PlatformMethodsFacade;
+export default PlatformMethodsFacade;

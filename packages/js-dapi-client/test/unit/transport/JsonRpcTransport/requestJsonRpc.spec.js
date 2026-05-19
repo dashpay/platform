@@ -1,6 +1,6 @@
-const requestJsonRpc = require('../../../../lib/transport/JsonRpcTransport/requestJsonRpc');
-const JsonRpcError = require('../../../../lib/transport/JsonRpcTransport/errors/JsonRpcError');
-const WrongHttpCodeError = require('../../../../lib/transport/JsonRpcTransport/errors/WrongHttpCodeError');
+import requestJsonRpc from '../../../../lib/transport/JsonRpcTransport/requestJsonRpc.js';
+import JsonRpcError from '../../../../lib/transport/JsonRpcTransport/errors/JsonRpcError.js';
+import WrongHttpCodeError from '../../../../lib/transport/JsonRpcTransport/errors/WrongHttpCodeError.js';
 
 describe('requestJsonRpc', () => {
   let protocol;

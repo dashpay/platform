@@ -1,12 +1,13 @@
+import dapiGrpc from '@dashevo/dapi-grpc';
+import DAPIClientError from '../../errors/DAPIClientError.js';
+import { hexToBytes } from '../../utils/bytes.js';
+
 const {
   v0: {
     BlockHeadersWithChainLocksRequest,
     CorePromiseClient,
   },
-} = require('@dashevo/dapi-grpc');
-
-const DAPIClientError = require('../../errors/DAPIClientError');
-const { hexToBytes } = require('../../utils/bytes');
+} = dapiGrpc;
 
 /**
  * @param {GrpcTransport} grpcTransport
@@ -67,4 +68,4 @@ function subscribeToBlockHeadersWithChainLocksFactory(grpcTransport) {
  *                                if set to 0 syncing is continuously sends new data as well
  */
 
-module.exports = subscribeToBlockHeadersWithChainLocksFactory;
+export default subscribeToBlockHeadersWithChainLocksFactory;

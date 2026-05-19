@@ -1,9 +1,11 @@
+import dapiGrpc from '@dashevo/dapi-grpc';
+
 const {
   v0: {
     GetBlockRequest,
     CorePromiseClient,
   },
-} = require('@dashevo/dapi-grpc');
+} = dapiGrpc;
 
 /**
  * @param {GrpcTransport} grpcTransport
@@ -35,4 +37,4 @@ function getBlockByHashFactory(grpcTransport) {
   return getBlockByHash;
 }
 
-module.exports = getBlockByHashFactory;
+export default getBlockByHashFactory;

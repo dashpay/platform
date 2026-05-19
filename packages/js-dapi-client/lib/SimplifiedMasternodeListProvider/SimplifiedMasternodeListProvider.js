@@ -1,9 +1,9 @@
-const SimplifiedMNList = require('@dashevo/dashcore-lib/lib/deterministicmnlist/SimplifiedMNList');
-const SimplifiedMNListDiff = require('@dashevo/dashcore-lib/lib/deterministicmnlist/SimplifiedMNListDiff');
-const cbor = require('cbor');
+import SimplifiedMNList from '@dashevo/dashcore-lib/lib/deterministicmnlist/SimplifiedMNList.js';
+import SimplifiedMNListDiff from '@dashevo/dashcore-lib/lib/deterministicmnlist/SimplifiedMNListDiff.js';
+import cbor from 'cbor';
 
-const logger = require('../logger');
-const { bytesToHex } = require('../utils/bytes');
+import logger from '../logger/index.js';
+import { bytesToHex } from '../utils/bytes.js';
 
 class SimplifiedMasternodeListProvider {
   /**
@@ -219,4 +219,4 @@ class SimplifiedMasternodeListProvider {
 
 SimplifiedMasternodeListProvider.NULL_HASH = '0000000000000000000000000000000000000000000000000000000000000000';
 
-module.exports = SimplifiedMasternodeListProvider;
+export default SimplifiedMasternodeListProvider;

@@ -1,7 +1,9 @@
-const EventEmitter = require('events');
-const { SpvChain, SPVError } = require('@dashevo/dash-spv');
+import EventEmitter from 'events';
+import dashSpv from '@dashevo/dash-spv';
 
-const BlockHeadersReader = require('./BlockHeadersReader');
+import BlockHeadersReader from './BlockHeadersReader.js';
+
+const { SpvChain, SPVError } = dashSpv;
 
 /**
  * @typedef {BlockHeadersProviderOptions} BlockHeadersProviderOptions
@@ -253,4 +255,4 @@ BlockHeadersProvider.EVENTS = EVENTS;
 BlockHeadersProvider.STATES = STATES;
 BlockHeadersProvider.defaultOptions = { ...defaultOptions };
 
-module.exports = BlockHeadersProvider;
+export default BlockHeadersProvider;

@@ -1,7 +1,5 @@
-const DAPIAddress = require('../../../lib/dapiAddressProvider/DAPIAddress');
-const DAPIAddressHostMissingError = require(
-  '../../../lib/dapiAddressProvider/errors/DAPIAddressHostMissingError',
-);
+import DAPIAddress from '../../../lib/dapiAddressProvider/DAPIAddress.js';
+import DAPIAddressHostMissingError from '../../../lib/dapiAddressProvider/errors/DAPIAddressHostMissingError.js';
 
 describe('DAPIAddress', () => {
   let host;

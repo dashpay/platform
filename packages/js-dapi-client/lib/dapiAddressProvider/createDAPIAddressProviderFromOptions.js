@@ -1,16 +1,16 @@
-const networks = require('@dashevo/dashcore-lib/lib/networks');
+import networks from '@dashevo/dashcore-lib/lib/networks.js';
 
-const DAPIAddress = require('./DAPIAddress');
+import DAPIAddress from './DAPIAddress.js';
 
-const ListDAPIAddressProvider = require('./ListDAPIAddressProvider');
+import ListDAPIAddressProvider from './ListDAPIAddressProvider.js';
 
-const SimplifiedMasternodeListProvider = require('../SimplifiedMasternodeListProvider/SimplifiedMasternodeListProvider');
-const SimplifiedMasternodeListDAPIAddressProvider = require('./SimplifiedMasternodeListDAPIAddressProvider');
-const createMasternodeListStreamFactory = require('../SimplifiedMasternodeListProvider/createMasternodeListStreamFactory');
+import SimplifiedMasternodeListProvider from '../SimplifiedMasternodeListProvider/SimplifiedMasternodeListProvider.js';
+import SimplifiedMasternodeListDAPIAddressProvider from './SimplifiedMasternodeListDAPIAddressProvider.js';
+import createMasternodeListStreamFactory from '../SimplifiedMasternodeListProvider/createMasternodeListStreamFactory.js';
 
-const DAPIClientError = require('../errors/DAPIClientError');
+import DAPIClientError from '../errors/DAPIClientError.js';
 
-const networkConfigs = require('../networkConfigs');
+import networkConfigs from '../networkConfigs.js';
 
 /**
  * @typedef {createDAPIAddressProviderFromOptions}
@@ -110,4 +110,4 @@ function createDAPIAddressProviderFromOptions(options) {
   return null;
 }
 
-module.exports = createDAPIAddressProviderFromOptions;
+export default createDAPIAddressProviderFromOptions;

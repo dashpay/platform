@@ -1,6 +1,6 @@
-const DAPIClientError = require('../errors/DAPIClientError');
-const BlockHeadersProvider = require('./BlockHeadersProvider');
-const ReconnectableStream = require('../transport/ReconnectableStream');
+import DAPIClientError from '../errors/DAPIClientError.js';
+import BlockHeadersProvider from './BlockHeadersProvider.js';
+import ReconnectableStream from '../transport/ReconnectableStream.js';
 
 const validateNumber = (value, name, min = NaN, max = NaN) => {
   if (typeof value !== 'number') {
@@ -91,4 +91,4 @@ function createBlockHeadersProviderFromOptions(options, coreMethods, logger) {
   return blockHeadersProvider;
 }
 
-module.exports = createBlockHeadersProviderFromOptions;
+export default createBlockHeadersProviderFromOptions;

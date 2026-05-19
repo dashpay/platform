@@ -23,4 +23,4 @@ class VersionSignal {
   }
 }
 
-module.exports = VersionSignal;
+export default VersionSignal;

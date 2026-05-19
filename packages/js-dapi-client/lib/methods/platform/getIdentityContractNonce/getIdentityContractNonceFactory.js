@@ -1,12 +1,13 @@
+import dapiGrpc from '@dashevo/dapi-grpc';
+import GetIdentityContractNonceResponse from './GetIdentityContractNonceResponse.js';
+import InvalidResponseError from '../response/errors/InvalidResponseError.js';
+
 const {
   v0: {
     PlatformPromiseClient,
     GetIdentityContractNonceRequest,
   },
-} = require('@dashevo/dapi-grpc');
-
-const GetIdentityContractNonceResponse = require('./GetIdentityContractNonceResponse');
-const InvalidResponseError = require('../response/errors/InvalidResponseError');
+} = dapiGrpc;
 
 /**
  * @param {GrpcTransport} grpcTransport
@@ -78,4 +79,4 @@ function getIdentityContractNonceFactory(grpcTransport) {
   return getIdentityContractNonce;
 }
 
-module.exports = getIdentityContractNonceFactory;
+export default getIdentityContractNonceFactory;

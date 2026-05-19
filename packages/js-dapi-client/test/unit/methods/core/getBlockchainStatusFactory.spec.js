@@ -1,13 +1,14 @@
+import dapiGrpc from '@dashevo/dapi-grpc';
+import getBlockchainStatusFactory from '../../../../lib/methods/core/getBlockchainStatusFactory.js';
+import { base64ToBytes } from '../../../../lib/utils/bytes.js';
+
 const {
   v0: {
     GetBlockchainStatusRequest,
     GetBlockchainStatusResponse,
     CorePromiseClient,
   },
-} = require('@dashevo/dapi-grpc');
-
-const getBlockchainStatusFactory = require('../../../../lib/methods/core/getBlockchainStatusFactory');
-const { base64ToBytes } = require('../../../../lib/utils/bytes');
+} = dapiGrpc;
 
 describe('getBlockchainStatusFactory', () => {
   let getBlockchainStatus;

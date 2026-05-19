@@ -1,18 +1,20 @@
+import dapiGrpc from '@dashevo/dapi-grpc';
+
+import GetProtocolVersionUpgradeStateResponseClass from '../../../../../lib/methods/platform/getProtocolVersionUpgradeState/GetProtocolVersionUpgradeStateResponse.js';
+import VersionEntryClass from '../../../../../lib/methods/platform/getProtocolVersionUpgradeState/VersionEntry.js';
+import getMetadataFixture from '../../../../../lib/test/fixtures/getMetadataFixture.js';
+import InvalidResponseError from '../../../../../lib/methods/platform/response/errors/InvalidResponseError.js';
+import getProofFixture from '../../../../../lib/test/fixtures/getProofFixture.js';
+import Proof from '../../../../../lib/methods/platform/response/Proof.js';
+import Metadata from '../../../../../lib/methods/platform/response/Metadata.js';
+
 const {
   v0: {
     GetProtocolVersionUpgradeStateResponse,
     ResponseMetadata,
     Proof: ProofResponse,
   },
-} = require('@dashevo/dapi-grpc');
-
-const GetProtocolVersionUpgradeStateResponseClass = require('../../../../../lib/methods/platform/getProtocolVersionUpgradeState/GetProtocolVersionUpgradeStateResponse');
-const VersionEntryClass = require('../../../../../lib/methods/platform/getProtocolVersionUpgradeState/VersionEntry');
-const getMetadataFixture = require('../../../../../lib/test/fixtures/getMetadataFixture');
-const InvalidResponseError = require('../../../../../lib/methods/platform/response/errors/InvalidResponseError');
-const getProofFixture = require('../../../../../lib/test/fixtures/getProofFixture');
-const Proof = require('../../../../../lib/methods/platform/response/Proof');
-const Metadata = require('../../../../../lib/methods/platform/response/Metadata');
+} = dapiGrpc;
 
 describe('GetProtocolVersionUpgradeStateResponse', () => {
   let getProtocolVersionUpgradeState;
@@ -122,9 +124,9 @@ describe('GetProtocolVersionUpgradeStateResponse', () => {
 
     const proof = getProtocolVersionUpgradeState.getProof();
     expect(proof).to.be.an.instanceOf(Proof);
-    expect(proof.getGrovedbProof()).to.deep.equal(proofFixture.merkleProof);
-    expect(proof.getQuorumHash()).to.deep.equal(proofFixture.quorumHash);
-    expect(proof.getSignature()).to.deep.equal(proofFixture.signature);
+    expect(proof.getGrovedbProof()).to.deep.equal(new Uint8Array(proofFixture.merkleProof));
+    expect(proof.getQuorumHash()).to.deep.equal(new Uint8Array(proofFixture.quorumHash));
+    expect(proof.getSignature()).to.deep.equal(new Uint8Array(proofFixture.signature));
     expect(proof.getRound()).to.deep.equal(proofFixture.round);
   });
 

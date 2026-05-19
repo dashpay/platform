@@ -1,14 +1,16 @@
+import dapiGrpc from '@dashevo/dapi-grpc';
+import wrappersPb from 'google-protobuf/google/protobuf/wrappers_pb.js';
+import GetEpochsInfoResponse from './GetEpochsInfoResponse.js';
+import InvalidResponseError from '../response/errors/InvalidResponseError.js';
+
 const {
   v0: {
     PlatformPromiseClient,
     GetEpochsInfoRequest,
   },
-} = require('@dashevo/dapi-grpc');
+} = dapiGrpc;
 
-const { UInt32Value } = require('google-protobuf/google/protobuf/wrappers_pb');
-
-const GetEpochsInfoResponse = require('./GetEpochsInfoResponse');
-const InvalidResponseError = require('../response/errors/InvalidResponseError');
+const { UInt32Value } = wrappersPb;
 
 /**
  * @param {GrpcTransport} grpcTransport
@@ -65,4 +67,4 @@ function getEpochsInfoFactory(grpcTransport) {
   return getEpochsInfo;
 }
 
-module.exports = getEpochsInfoFactory;
+export default getEpochsInfoFactory;

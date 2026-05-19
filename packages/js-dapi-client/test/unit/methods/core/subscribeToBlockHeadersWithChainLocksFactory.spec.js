@@ -1,15 +1,15 @@
+import dapiGrpc from '@dashevo/dapi-grpc';
+import EventEmitter from 'events';
+import subscribeToBlockHeadersWithChainLocksFactory from '../../../../lib/methods/core/subscribeToBlockHeadersWithChainLocksFactory.js';
+import DAPIClientError from '../../../../lib/errors/DAPIClientError.js';
+import { hexToBytes } from '../../../../lib/utils/bytes.js';
+
 const {
   v0: {
     CorePromiseClient,
     BlockHeadersWithChainLocksRequest,
   },
-} = require('@dashevo/dapi-grpc');
-const { EventEmitter } = require('events');
-
-const subscribeToBlockHeadersWithChainLocksFactory = require('../../../../lib/methods/core/subscribeToBlockHeadersWithChainLocksFactory');
-
-const DAPIClientError = require('../../../../lib/errors/DAPIClientError');
-const { hexToBytes } = require('../../../../lib/utils/bytes');
+} = dapiGrpc;
 
 describe('subscribeToBlockHeadersWithChainLocks', () => {
   let subscribeToBlockHeadersWithChainLocks;

@@ -56,4 +56,4 @@ class Proof {
   }
 }
 
-module.exports = Proof;
+export default Proof;

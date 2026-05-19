@@ -1,6 +1,6 @@
-const DAPIClient = require('../../lib/DAPIClient');
+import DAPIClient from '../../lib/DAPIClient.js';
 
-const BlockHeadersProvider = require('../../lib/BlockHeadersProvider/BlockHeadersProvider');
+import BlockHeadersProvider from '../../lib/BlockHeadersProvider/BlockHeadersProvider.js';
 
 describe('DAPIClient - integration', () => {
   let dapiClient;

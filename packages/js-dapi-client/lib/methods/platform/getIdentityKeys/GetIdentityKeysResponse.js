@@ -1,5 +1,5 @@
-const AbstractResponse = require('../response/AbstractResponse');
-const InvalidResponseError = require('../response/errors/InvalidResponseError');
+import AbstractResponse from '../response/AbstractResponse.js';
+import InvalidResponseError from '../response/errors/InvalidResponseError.js';
 
 class GetIdentityKeysResponse extends AbstractResponse {
   /**
@@ -49,4 +49,4 @@ class GetIdentityKeysResponse extends AbstractResponse {
   }
 }
 
-module.exports = GetIdentityKeysResponse;
+export default GetIdentityKeysResponse;

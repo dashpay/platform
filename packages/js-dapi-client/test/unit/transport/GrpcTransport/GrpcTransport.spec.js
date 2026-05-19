@@ -1,15 +1,15 @@
-const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
+import GrpcErrorCodes from '@dashevo/grpc-common/lib/server/error/GrpcErrorCodes.js';
 
-const GrpcError = require('@dashevo/grpc-common/lib/server/error/GrpcError');
-const GrpcTransport = require('../../../../lib/transport/GrpcTransport/GrpcTransport');
-const DAPIAddress = require('../../../../lib/dapiAddressProvider/DAPIAddress');
+import GrpcError from '@dashevo/grpc-common/lib/server/error/GrpcError.js';
+import GrpcTransport from '../../../../lib/transport/GrpcTransport/GrpcTransport.js';
+import DAPIAddress from '../../../../lib/dapiAddressProvider/DAPIAddress.js';
 
-const MaxRetriesReachedError = require('../../../../lib/transport/errors/response/MaxRetriesReachedError');
-const NoAvailableAddressesForRetryError = require('../../../../lib/transport/errors/response/NoAvailableAddressesForRetryError');
-const NoAvailableAddressesError = require('../../../../lib/transport/errors/NoAvailableAddressesError');
-const ResponseError = require('../../../../lib/transport/errors/response/ResponseError');
-const TimeoutError = require('../../../../lib/transport/GrpcTransport/errors/TimeoutError');
-const RetriableResponseError = require('../../../../lib/transport/errors/response/RetriableResponseError');
+import MaxRetriesReachedError from '../../../../lib/transport/errors/response/MaxRetriesReachedError.js';
+import NoAvailableAddressesForRetryError from '../../../../lib/transport/errors/response/NoAvailableAddressesForRetryError.js';
+import NoAvailableAddressesError from '../../../../lib/transport/errors/NoAvailableAddressesError.js';
+import ResponseError from '../../../../lib/transport/errors/response/ResponseError.js';
+import TimeoutError from '../../../../lib/transport/GrpcTransport/errors/TimeoutError.js';
+import RetriableResponseError from '../../../../lib/transport/errors/response/RetriableResponseError.js';
 
 describe('GrpcTransport', () => {
   let grpcTransport;
