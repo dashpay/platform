@@ -274,9 +274,9 @@ impl MnemonicResolverCoreSigner {
         drop(mnemonic);
 
         let secp = Secp256k1::new();
-        let master = ExtendedPrivKey::new_master(self.network, seed.as_ref())
+        let mut master = ExtendedPrivKey::new_master(self.network, seed.as_ref())
             .map_err(|e| MnemonicResolverSignerError::DerivationFailed(format!("master: {e}")))?;
-        let derived = master
+        let mut derived = master
             .derive_priv(&secp, path)
             .map_err(|e| MnemonicResolverSignerError::DerivationFailed(format!("path: {e}")))?;
 
@@ -284,6 +284,19 @@ impl MnemonicResolverCoreSigner {
         // `Zeroizing` so the caller (and any panic-unwind path)
         // wipes it on drop.
         let bytes = Zeroizing::new(derived.private_key.secret_bytes());
+
+        // TODO(upstream): `key_wallet::bip32::ExtendedPrivKey` has no
+        // `Drop` / `Zeroize` impl — the inner `secp256k1::SecretKey`
+        // scalars on `master` and `derived` would otherwise drop
+        // un-wiped. Mirrors the SecretKey-copy hole CodeRabbit R7
+        // flagged at the sign-site. Proper fix is a `Zeroize` /
+        // `ZeroizeOnDrop` impl in `dashpay/rust-dashcore`'s
+        // `key-wallet/src/bip32.rs`; until that lands, wipe the two
+        // SecretKey fields explicitly here. Mirrored in the sibling
+        // FFI at `rs-platform-wallet-ffi/src/sign_with_mnemonic_resolver.rs`.
+        master.private_key.non_secure_erase();
+        derived.private_key.non_secure_erase();
+
         Ok(bytes)
     }
 }

@@ -200,16 +200,27 @@ pub unsafe extern "C" fn dash_sdk_sign_with_mnemonic_resolver_and_path(
     };
 
     let kw_network: Network = network.into();
-    let master = match ExtendedPrivKey::new_master(kw_network, seed.as_ref()) {
+    let mut master = match ExtendedPrivKey::new_master(kw_network, seed.as_ref()) {
         Ok(m) => m,
         Err(_) => return fail(SIGN_WITH_RESOLVER_ERR_DERIVATION),
     };
     let secp = Secp256k1::new();
-    let derived = match master.derive_priv(&secp, &path) {
+    let mut derived = match master.derive_priv(&secp, &path) {
         Ok(d) => d,
         Err(_) => return fail(SIGN_WITH_RESOLVER_ERR_DERIVATION),
     };
     let secret_bytes: Zeroizing<[u8; 32]> = Zeroizing::new(derived.private_key.secret_bytes());
+
+    // TODO(upstream): `key_wallet::bip32::ExtendedPrivKey` has no
+    // `Drop` / `Zeroize` impl — the inner `secp256k1::SecretKey`
+    // scalars on `master` and `derived` would otherwise drop un-wiped.
+    // Proper fix is a `Zeroize` / `ZeroizeOnDrop` impl in
+    // `dashpay/rust-dashcore`'s `key-wallet/src/bip32.rs`; until that
+    // lands, wipe the two SecretKey fields explicitly here. Mirrored
+    // in the sibling Rust signer at
+    // `rs-sdk-ffi/src/mnemonic_resolver_core_signer.rs::derive_priv`.
+    master.private_key.non_secure_erase();
+    derived.private_key.non_secure_erase();
 
     // ---- Sign ---------------------------------------------------------------
     let data_slice: &[u8] = if data_len == 0 {
