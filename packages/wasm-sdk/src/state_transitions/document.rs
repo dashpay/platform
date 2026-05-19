@@ -7,7 +7,8 @@ use crate::sdk::WasmSdk;
 use crate::settings::PutSettingsInput;
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dash_sdk::dpp::data_contract::document_type::DocumentType;
-use dash_sdk::dpp::document::{Document, DocumentV0Getters};
+use dash_sdk::dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
+use dash_sdk::dpp::util::entropy_generator::{DefaultEntropyGenerator, EntropyGenerator};
 use dash_sdk::dpp::fee::Credits;
 use dash_sdk::dpp::identity::IdentityPublicKey;
 use dash_sdk::dpp::platform_value::Identifier;
@@ -102,11 +103,10 @@ const DOCUMENT_CREATE_OPTIONS_TS: &'static str = r#"
 export interface DocumentCreateOptions {
   /**
    * The document to create.
-   * Use `new Document(...)` to construct it (the constructor auto-generates
-   * entropy and the matching document id). Must include dataContractId,
-   * documentTypeName, ownerId, and entropy. When constructing via
-   * `fromObject` / `fromJSON` / `fromBytes`, supply `$entropy` explicitly
-   * along with an `$id` derived from it.
+   * Use `new Document(...)` or `Document.fromJSON(...)` to construct it.
+   * Must include dataContractId, documentTypeName, and ownerId.
+   * Entropy is optional - if not set, it will be auto-generated and the
+   * returned Document will reflect the on-chain id derived from it.
    */
   document: Document;
 
@@ -152,34 +152,46 @@ impl WasmSdk {
     /// 4. Broadcasts and waits for confirmation
     ///
     /// @param options - Creation options including document, identity key, and signer
-    /// @returns Promise that resolves when the document is created
+    /// @returns Promise that resolves to the created Document. When entropy was
+    ///   auto-generated, the returned Document carries the on-chain id derived
+    ///   from it — callers should use this returned Document (not the input)
+    ///   for subsequent replace/delete/fetch.
     #[wasm_bindgen(js_name = "documentCreate")]
     pub async fn document_create(
         &self,
         options: DocumentCreateOptionsJs,
-    ) -> Result<(), WasmSdkError> {
+    ) -> Result<DocumentWasm, WasmSdkError> {
         // Extract document from options
         let document_wasm = DocumentWasm::try_from_options(&options, "document")?;
-        let document: Document = document_wasm.clone().into();
+        let mut document: Document = document_wasm.clone().into();
 
         // Get metadata from document
         let contract_id: Identifier = document_wasm.data_contract_id().into();
         let document_type_name = document_wasm.document_type_name();
 
-        // Require explicit entropy from the caller. If we let rs-sdk auto-generate it, it would
-        // also rewrite the document id (see PutDocument::put_to_platform), and that updated id is
-        // not surfaced back through this wrapper's `Result<(), _>` return — the JS-side Document
-        // would silently retain an id that doesn't match what was committed on-chain.
-        let entropy_bytes = document_wasm.entropy().ok_or_else(|| {
-            WasmSdkError::invalid_argument(
-                "Document must have entropy set for creation. Construct the document with \
-                 `new Document(...)` (which auto-generates entropy) or supply `$entropy` \
-                 explicitly when using fromObject/fromJSON/fromBytes.",
-            )
-        })?;
-        let entropy: [u8; 32] = entropy_bytes.as_slice().try_into().map_err(|_| {
-            WasmSdkError::invalid_argument("Document entropy must be exactly 32 bytes")
-        })?;
+        // Resolve entropy and document id locally so we can surface both back to JS.
+        // If the caller supplied entropy, trust their (entropy, id) pair as-is.
+        // If not, generate fresh entropy and recompute the id to match — mirroring
+        // what rs-sdk would do internally on a None, but without the id getting
+        // lost across the FFI boundary (see PutDocument::put_to_platform).
+        let entropy: [u8; 32] = match document_wasm.entropy() {
+            Some(bytes) => bytes.as_slice().try_into().map_err(|_| {
+                WasmSdkError::invalid_argument("Document entropy must be exactly 32 bytes")
+            })?,
+            None => {
+                let entropy = DefaultEntropyGenerator
+                    .generate()
+                    .map_err(|e| WasmSdkError::generic(format!("Failed to generate entropy: {e}")))?;
+                let new_id = Document::generate_document_id_v0(
+                    &contract_id,
+                    &document.owner_id(),
+                    &document_type_name,
+                    entropy.as_slice(),
+                );
+                document.set_id(new_id);
+                entropy
+            }
+        };
 
         // Extract identity key from options
         let identity_key_wasm = IdentityPublicKeyWasm::try_from_options(&options, "identityKey")?;
@@ -199,8 +211,9 @@ impl WasmSdk {
             try_from_options_optional::<PutSettingsInput>(&options, "settings")?.map(Into::into);
         let token_payment_info = try_from_options_optional_token_payment_info(&options)?;
 
-        // Use PutDocument trait for creation
-        document
+        // Use PutDocument trait for creation. Passing Some(entropy) on the creation branch
+        // makes rs-sdk use our document (and id) as-is rather than rewriting it.
+        let created = document
             .put_to_platform_and_wait_for_response(
                 self.inner_sdk(),
                 document_type,
@@ -212,7 +225,12 @@ impl WasmSdk {
             )
             .await?;
 
-        Ok(())
+        Ok(DocumentWasm::new(
+            created,
+            contract_id,
+            document_type_name,
+            Some(entropy),
+        ))
     }
 }
 
