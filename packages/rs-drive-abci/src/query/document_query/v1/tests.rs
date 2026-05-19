@@ -25,6 +25,7 @@ use dpp::dashcore::Network;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::platform_value::{platform_value, Value};
+use drive::query::WhereOperator;
 
 /// Build a `ProtoDocumentFieldValue` from a `dpp::platform_value::Value`
 /// for use inside this test module only. **Subset of the SDK's
@@ -178,7 +179,10 @@ fn reject_having_non_empty() {
         )],
         ..empty_v1_request()
     };
-    assert_not_yet_implemented(validate_and_route_for_tests(&request, &[]), "HAVING clause");
+    assert_not_yet_implemented(
+        validate_and_route_for_tests(&request, &[], PlatformVersion::latest()),
+        "HAVING clause",
+    );
 }
 
 /// Unknown `Select.Function` discriminants (e.g. `42`) are malformed
@@ -205,7 +209,7 @@ fn reject_unknown_select_enum_value_as_invalid_argument() {
         }],
         ..empty_v1_request()
     };
-    match validate_and_route_for_tests(&request, &[]) {
+    match validate_and_route_for_tests(&request, &[], PlatformVersion::latest()) {
         Err(QueryError::InvalidArgument(msg)) => {
             assert!(
                 msg.contains("42") && msg.contains("Select"),
@@ -257,7 +261,7 @@ fn reject_offset_uniformly_across_select_modes() {
             ..empty_v1_request()
         };
         assert_not_yet_implemented(
-            validate_and_route_for_tests(&request, &[]),
+            validate_and_route_for_tests(&request, &[], PlatformVersion::latest()),
             "OFFSET pagination",
         );
     }
@@ -283,7 +287,7 @@ fn reject_multi_projection_selects() {
         ..empty_v1_request()
     };
     assert_not_yet_implemented(
-        validate_and_route_for_tests(&request, &[]),
+        validate_and_route_for_tests(&request, &[], PlatformVersion::latest()),
         "multi-projection SELECT",
     );
 }
@@ -303,7 +307,10 @@ fn reject_select_min_max() {
             }],
             ..empty_v1_request()
         };
-        assert_not_yet_implemented(validate_and_route_for_tests(&request, &[]), expected_msg);
+        assert_not_yet_implemented(
+            validate_and_route_for_tests(&request, &[], PlatformVersion::latest()),
+            expected_msg,
+        );
     }
 }
 
@@ -323,7 +330,7 @@ fn reject_order_by_aggregate_target() {
         ..empty_v1_request()
     };
     assert_not_yet_implemented(
-        validate_and_route_for_tests(&request, &[]),
+        validate_and_route_for_tests(&request, &[], PlatformVersion::latest()),
         "ORDER BY on aggregate keys",
     );
 }
@@ -369,7 +376,7 @@ fn validate_and_route_for_tests_matches_real_handler_gate_order() {
     // `selects.len > 1`, so the order-by-aggregate rejection
     // must surface first.
     assert_not_yet_implemented(
-        validate_and_route_for_tests(&request, &[]),
+        validate_and_route_for_tests(&request, &[], PlatformVersion::latest()),
         "ORDER BY on aggregate keys",
     );
 }
@@ -412,7 +419,7 @@ fn nested_list_rejected_at_depth_two() {
         where_clauses: vec![nested_clause],
         ..empty_v1_request()
     };
-    match validate_and_route_for_tests(&request, &[]) {
+    match validate_and_route_for_tests(&request, &[], PlatformVersion::latest()) {
         Err(QueryError::InvalidArgument(msg)) => {
             assert!(
                 msg.contains("nested DocumentFieldValue.list"),
@@ -510,7 +517,7 @@ fn reject_limit_some_zero_uniformly_across_select_modes() {
     ];
 
     for (label, request, where_clauses) in cases {
-        match validate_and_route_for_tests(&request, &where_clauses) {
+        match validate_and_route_for_tests(&request, &where_clauses, PlatformVersion::latest()) {
             Err(QueryError::Query(QuerySyntaxError::InvalidLimit(msg))) => {
                 assert!(
                     msg.contains("limit = 0") && msg.contains("v1"),
@@ -546,7 +553,7 @@ fn reject_group_by_with_documents_as_invalid_argument() {
         group_by: vec!["color".to_string()],
         ..empty_v1_request()
     };
-    match validate_and_route_for_tests(&request, &[]) {
+    match validate_and_route_for_tests(&request, &[], PlatformVersion::latest()) {
         Err(QueryError::InvalidArgument(msg)) => {
             assert!(
                 msg.contains("GROUP BY with SELECT DOCUMENTS")
@@ -573,7 +580,7 @@ fn reject_group_by_field_not_in_where_clauses() {
         ..empty_v1_request()
     };
     assert_not_yet_implemented(
-        validate_and_route_for_tests(&request, &[]),
+        validate_and_route_for_tests(&request, &[], PlatformVersion::latest()),
         "GROUP BY on field 'color' which is not constrained",
     );
 }
@@ -586,7 +593,7 @@ fn reject_group_by_more_than_two_fields() {
         ..empty_v1_request()
     };
     assert_not_yet_implemented(
-        validate_and_route_for_tests(&request, &[]),
+        validate_and_route_for_tests(&request, &[], PlatformVersion::latest()),
         "GROUP BY with more than two fields",
     );
 }
@@ -611,7 +618,7 @@ fn reject_two_field_group_by_outside_compound_shape() {
         },
     ];
     assert_not_yet_implemented(
-        validate_and_route_for_tests(&request, &where_clauses),
+        validate_and_route_for_tests(&request, &where_clauses, PlatformVersion::latest()),
         "two-field GROUP BY outside the `(In, range)` compound shape",
     );
 }
@@ -623,7 +630,7 @@ fn accept_count_with_empty_group_by_routes_to_aggregate() {
         ..empty_v1_request()
     };
     assert_eq!(
-        validate_and_route_for_tests(&request, &[]).unwrap(),
+        validate_and_route_for_tests(&request, &[], PlatformVersion::latest()).unwrap(),
         "count_aggregate"
     );
 }
@@ -643,7 +650,7 @@ fn reject_count_aggregate_with_limit() {
         operator: WhereOperator::In,
         value: platform_value!([30u32, 40u32]),
     }];
-    match validate_and_route_for_tests(&request, &where_clauses) {
+    match validate_and_route_for_tests(&request, &where_clauses, PlatformVersion::latest()) {
         Err(QueryError::Query(QuerySyntaxError::InvalidLimit(msg))) => {
             // The aggregate-mode limit rejection is now produced by the
             // shared `compute_aggregate_mode_and_check_limit` helper
@@ -684,7 +691,7 @@ fn reject_count_group_by_in_with_limit() {
         operator: WhereOperator::In,
         value: platform_value!([30u32, 40u32, 50u32]),
     }];
-    match validate_and_route_for_tests(&request, &where_clauses) {
+    match validate_and_route_for_tests(&request, &where_clauses, PlatformVersion::latest()) {
         Err(QueryError::Query(QuerySyntaxError::InvalidLimit(msg))) => {
             assert!(
                 msg.contains("bounded by the In array"),
@@ -721,7 +728,7 @@ fn accept_single_field_group_by_on_in_field_with_range_routes_to_in_entries() {
         },
     ];
     assert_eq!(
-        validate_and_route_for_tests(&request, &where_clauses).unwrap(),
+        validate_and_route_for_tests(&request, &where_clauses, PlatformVersion::latest()).unwrap(),
         "count_entries_via_in_field"
     );
 }
@@ -752,7 +759,7 @@ fn accept_single_field_group_by_on_range_field_with_in_routes_to_range_entries()
         },
     ];
     assert_eq!(
-        validate_and_route_for_tests(&request, &where_clauses).unwrap(),
+        validate_and_route_for_tests(&request, &where_clauses, PlatformVersion::latest()).unwrap(),
         "count_entries_via_range_field"
     );
 }
@@ -777,7 +784,7 @@ fn group_by_routing_is_independent_of_two_range_clause_order() {
             group_by: vec!["brand".to_string()],
             ..empty_v1_request()
         };
-        validate_and_route_for_tests(&request, &where_clauses).unwrap()
+        validate_and_route_for_tests(&request, &where_clauses, PlatformVersion::latest()).unwrap()
     };
 
     let brand_range = WhereClause {
@@ -817,7 +824,7 @@ fn accept_count_group_by_in_field_routes_to_in_entries() {
         value: platform_value!(["acme", "contoso"]),
     }];
     assert_eq!(
-        validate_and_route_for_tests(&request, &where_clauses).unwrap(),
+        validate_and_route_for_tests(&request, &where_clauses, PlatformVersion::latest()).unwrap(),
         "count_entries_via_in_field"
     );
 }
@@ -835,7 +842,7 @@ fn accept_count_group_by_range_field_routes_to_range_entries() {
         value: platform_value!("blue"),
     }];
     assert_eq!(
-        validate_and_route_for_tests(&request, &where_clauses).unwrap(),
+        validate_and_route_for_tests(&request, &where_clauses, PlatformVersion::latest()).unwrap(),
         "count_entries_via_range_field"
     );
 }
@@ -860,7 +867,7 @@ fn accept_count_group_by_compound_routes_to_compound_entries() {
         },
     ];
     assert_eq!(
-        validate_and_route_for_tests(&request, &where_clauses).unwrap(),
+        validate_and_route_for_tests(&request, &where_clauses, PlatformVersion::latest()).unwrap(),
         "count_entries_via_compound"
     );
 }

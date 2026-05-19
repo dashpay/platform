@@ -26,7 +26,10 @@
 //! message-level docstring on `GetDocumentsRequestV1` in
 //! `platform.proto` for the full supported / rejected shape table.
 
+mod compute_aggregate_mode_and_check_limit;
 mod conversions;
+
+use self::compute_aggregate_mode_and_check_limit::compute_aggregate_mode_and_check_limit;
 
 use crate::error::query::QueryError;
 use crate::error::Error;
@@ -55,7 +58,7 @@ use drive::query::{
     AverageEntry as DriveAverageEntry, AverageMode, CountMode, DocumentAverageRequest,
     DocumentAverageResponse, DocumentCountRequest, DocumentCountResponse, DocumentSumRequest,
     DocumentSumResponse, OrderClause, SelectFunction, SelectProjection, SplitCountEntry,
-    SumEntry as DriveSumEntry, SumMode, WhereClause, WhereOperator,
+    SumEntry as DriveSumEntry, SumMode, WhereClause,
 };
 use drive::util::grove_operations::GroveDBToUse;
 
@@ -65,7 +68,7 @@ use drive::util::grove_operations::GroveDBToUse;
 /// only partially implements today; the rejected shapes signal
 /// future capability, not malformed requests, and callers can keep
 /// the request structure unchanged when the capability lands.
-fn not_yet_implemented(feature: &str) -> QueryError {
+pub(super) fn not_yet_implemented(feature: &str) -> QueryError {
     QueryError::Query(QuerySyntaxError::Unsupported(format!(
         "{} is not yet implemented",
         feature
@@ -84,6 +87,7 @@ fn validate_and_route(
     having_non_empty: bool,
     group_by: &[String],
     where_clauses: &[WhereClause],
+    platform_version: &PlatformVersion,
 ) -> Result<RoutingDecision, QueryError> {
     // Centralized `limit: Some(0)` rejection.
     //
@@ -188,8 +192,13 @@ fn validate_and_route(
                         .to_string(),
                 ));
             }
-            let mode =
-                compute_aggregate_mode_and_check_limit(group_by, where_clauses, limit, "SUM")?;
+            let mode = compute_aggregate_mode_and_check_limit(
+                group_by,
+                where_clauses,
+                limit,
+                "SUM",
+                platform_version,
+            )?;
             Ok(RoutingDecision::Sum {
                 sum_property: select.field.clone(),
                 mode,
@@ -227,8 +236,13 @@ fn validate_and_route(
                         .to_string(),
                 ));
             }
-            let mode =
-                compute_aggregate_mode_and_check_limit(group_by, where_clauses, limit, "AVG")?;
+            let mode = compute_aggregate_mode_and_check_limit(
+                group_by,
+                where_clauses,
+                limit,
+                "AVG",
+                platform_version,
+            )?;
             Ok(RoutingDecision::Average {
                 sum_property: select.field.clone(),
                 mode,
@@ -277,8 +291,13 @@ fn validate_and_route(
             // but the `any` shape is used here too so the routing
             // logic doesn't bake in an assumption that could go
             // stale if that validator's contract ever relaxes.
-            let mode =
-                compute_aggregate_mode_and_check_limit(group_by, where_clauses, limit, "COUNT")?;
+            let mode = compute_aggregate_mode_and_check_limit(
+                group_by,
+                where_clauses,
+                limit,
+                "COUNT",
+                platform_version,
+            )?;
             Ok(RoutingDecision::Count(mode))
         }
     }
@@ -316,100 +335,6 @@ enum RoutingDecision {
     },
 }
 
-/// Compute the `(group_by × where)` mode for SELECT COUNT / SUM / AVG.
-/// All three aggregate functions share the same SQL-shape contract
-/// (empty group_by → Aggregate; one-field group_by → GroupByIn or
-/// GroupByRange depending on whether the field is `In`-bound or
-/// range-bound; two-field group_by `(in_field, range_field)` →
-/// GroupByCompound). Extracted as a helper so all three branches use
-/// the same routing rules and rejection messages — keyed off the
-/// `function_name` arg ("COUNT"/"SUM"/"AVG") for clarity in errors.
-///
-/// Also runs the `accepts_limit()` check: Aggregate and GroupByIn
-/// can't honor a caller-supplied limit; rejects with
-/// `QuerySyntaxError::InvalidLimit` if one is set.
-fn compute_aggregate_mode_and_check_limit(
-    group_by: &[String],
-    where_clauses: &[WhereClause],
-    limit: Option<u32>,
-    function_name: &str,
-) -> Result<CountMode, QueryError> {
-    let is_range_op = |op: WhereOperator| {
-        matches!(
-            op,
-            WhereOperator::GreaterThan
-                | WhereOperator::GreaterThanOrEquals
-                | WhereOperator::LessThan
-                | WhereOperator::LessThanOrEquals
-                | WhereOperator::Between
-                | WhereOperator::BetweenExcludeBounds
-                | WhereOperator::BetweenExcludeLeft
-                | WhereOperator::BetweenExcludeRight
-                | WhereOperator::StartsWith
-        )
-    };
-    let is_in_field = |field: &str| {
-        where_clauses
-            .iter()
-            .any(|wc| wc.operator == WhereOperator::In && wc.field == field)
-    };
-    let is_range_field = |field: &str| {
-        where_clauses
-            .iter()
-            .any(|wc| is_range_op(wc.operator) && wc.field == field)
-    };
-
-    let mode = match group_by {
-        [] => CountMode::Aggregate,
-        [field] => {
-            if is_in_field(field) {
-                CountMode::GroupByIn
-            } else if is_range_field(field) {
-                CountMode::GroupByRange
-            } else {
-                return Err(not_yet_implemented(&format!(
-                    "GROUP BY on field '{}' which is not constrained by an `In` or range \
-                     where clause",
-                    field
-                )));
-            }
-        }
-        [first, second] => {
-            if is_in_field(first) && is_range_field(second) {
-                CountMode::GroupByCompound
-            } else {
-                return Err(not_yet_implemented(
-                    "two-field GROUP BY outside the `(In, range)` compound shape",
-                ));
-            }
-        }
-        _ => return Err(not_yet_implemented("GROUP BY with more than two fields")),
-    };
-
-    if limit.is_some() && !mode.accepts_limit() {
-        let reason = match mode {
-            CountMode::Aggregate => format!(
-                "`limit` is not valid for SELECT {} with empty GROUP BY (aggregate is a \
-                 single row; omit `limit` to fix)",
-                function_name
-            ),
-            CountMode::GroupByIn => format!(
-                "`limit` is not valid for SELECT {} with GROUP BY on an `In` field \
-                 (result is bounded by the In array — capped at 100 entries; narrow the \
-                 In array directly to reduce the result set)",
-                function_name
-            ),
-            CountMode::GroupByRange | CountMode::GroupByCompound => unreachable!(
-                "`accepts_limit()` returns true for these variants; outer guard already \
-                 filtered them out"
-            ),
-        };
-        return Err(QueryError::Query(QuerySyntaxError::InvalidLimit(reason)));
-    }
-
-    Ok(mode)
-}
-
 /// Test-only: expose the routing decision for unit tests without
 /// needing a full `Platform` setup. Mirrors **both the rejection
 /// messages and the gate ordering** of [`Platform::query_documents_v1`]
@@ -434,6 +359,7 @@ fn compute_aggregate_mode_and_check_limit(
 pub(super) fn validate_and_route_for_tests(
     request_v1: &GetDocumentsRequestV1,
     where_clauses: &[WhereClause],
+    platform_version: &PlatformVersion,
 ) -> Result<&'static str, QueryError> {
     // 1. OFFSET pagination — rejected before any decoding.
     if request_v1.offset.is_some() {
@@ -480,6 +406,7 @@ pub(super) fn validate_and_route_for_tests(
         !request_v1.having.is_empty(),
         &request_v1.group_by,
         where_clauses,
+        platform_version,
     )
     .map(|d| match d {
         RoutingDecision::Documents => "documents",
@@ -585,11 +512,17 @@ impl<C> Platform<C> {
             None => SelectProjection::documents(),
         };
 
-        let routing =
-            match validate_and_route(&select, limit, having_non_empty, &group_by, &where_clauses) {
-                Ok(r) => r,
-                Err(e) => return Ok(QueryValidationResult::new_with_error(e)),
-            };
+        let routing = match validate_and_route(
+            &select,
+            limit,
+            having_non_empty,
+            &group_by,
+            &where_clauses,
+            platform_version,
+        ) {
+            Ok(r) => r,
+            Err(e) => return Ok(QueryValidationResult::new_with_error(e)),
+        };
 
         match routing {
             RoutingDecision::Documents => self.dispatch_documents_v1(
