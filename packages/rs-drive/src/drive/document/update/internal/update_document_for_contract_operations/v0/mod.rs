@@ -32,6 +32,7 @@ use crate::drive::document::paths::{
     contract_documents_primary_key_path,
 };
 use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
+use dpp::data_contract::document_type::{IndexCountability, IndexLevel};
 use dpp::version::PlatformVersion;
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::key_info::KeyInfo::KnownKey;
@@ -39,6 +40,95 @@ use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, EstimatedLayerInformation, MaybeTree, TransactionArg, TreeType};
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
+
+/// Value-tree `TreeType` dispatch for a given `IndexLevel` node.
+///
+/// Mirrors the dispatch table inlined in
+/// `add_indices_for_index_level_for_contract_operations_v1` (and
+/// the matching arm in the top-level helper) so any branch this
+/// update path materializes for a key-changing update lands with
+/// the exact same TreeType the insert path would have chosen.
+///
+/// Each `IndexLevel` node represents a property name; its value
+/// tree (children of the property-name tree, keyed by the
+/// property's distinct values) takes the aggregate variant from
+/// the level's `has_index_with_type()` flags — `None` (pure
+/// prefix level, no index terminates here) collapses to
+/// `NormalTree`.
+fn value_tree_type_for_index_level(index_level: &IndexLevel) -> TreeType {
+    let info = index_level.has_index_with_type();
+    let is_countable_terminator = info.map(|i| i.countable.is_countable()).unwrap_or(false);
+    let range_countable = info.map(|i| i.range_countable).unwrap_or(false);
+    let is_summable_terminator = info.map(|i| i.summable.is_some()).unwrap_or(false);
+    let range_summable = info.map(|i| i.range_summable).unwrap_or(false);
+    match (
+        is_countable_terminator,
+        range_countable,
+        is_summable_terminator,
+        range_summable,
+    ) {
+        (true, true, true, true) => TreeType::ProvableCountProvableSumTree,
+        (true, false, true, false) => TreeType::CountSumTree,
+        (true, true, true, false) => TreeType::ProvableCountSumTree,
+        (true, false, true, true) => TreeType::ProvableCountProvableSumTree,
+        (true, _, false, false) => TreeType::CountTree,
+        (false, false, true, _) => TreeType::SumTree,
+        (false, _, false, _) => TreeType::NormalTree,
+        _ => TreeType::NormalTree,
+    }
+}
+
+/// Property-name-tree `TreeType` dispatch for a given `IndexLevel`
+/// node. Mirrors the dispatch in
+/// `add_indices_for_index_level_for_contract_operations_v1` —
+/// only the range-* flags drive this upgrade because the
+/// property-name level only matters for the
+/// `AggregateCountOnRange` / `AggregateSumOnRange` walks.
+fn property_name_tree_type_for_index_level(index_level: &IndexLevel) -> TreeType {
+    let info = index_level.has_index_with_type();
+    let range_countable = info.map(|i| i.range_countable).unwrap_or(false);
+    let range_summable = info.map(|i| i.range_summable).unwrap_or(false);
+    match (range_countable, range_summable) {
+        (true, true) => TreeType::ProvableCountProvableSumTree,
+        (true, false) => TreeType::ProvableCountTree,
+        (false, true) => TreeType::ProvableSumTree,
+        (false, false) => TreeType::NormalTree,
+    }
+}
+
+/// `[0]`-key reference-bucket `TreeType` dispatch for the
+/// terminator level. Mirrors the dispatch in
+/// `add_reference_for_index_level_for_contract_operations_v0` —
+/// this table distinguishes `Countable` (→ `CountTree`) from
+/// `CountableAllowingOffset` (→ `ProvableCountTree`), where the
+/// value-tree dispatch above collapses them via `is_countable()`.
+///
+/// The `[0]` bucket is the leaf tree under a non-unique terminator
+/// value, holding the per-doc references; it must carry the index's
+/// count and sum aggregates so `count_value_or_default()` /
+/// `sum_value_or_default()` walks at the value tree's parent
+/// resolve to the right per-value totals.
+fn reference_tree_type_for_index(
+    countable: IndexCountability,
+    summable: &Option<String>,
+    range_summable: bool,
+) -> TreeType {
+    let count_provable = matches!(countable, IndexCountability::CountableAllowingOffset);
+    let count_root_only = matches!(countable, IndexCountability::Countable) && !count_provable;
+    let sum_provable = range_summable;
+    let sum_root_only = summable.is_some() && !sum_provable;
+    match (count_provable, count_root_only, sum_provable, sum_root_only) {
+        (false, false, false, false) => TreeType::NormalTree,
+        (false, true, false, false) => TreeType::CountTree,
+        (true, _, false, false) => TreeType::ProvableCountTree,
+        (false, false, false, true) => TreeType::SumTree,
+        (false, false, true, _) => TreeType::ProvableSumTree,
+        (false, true, false, true) => TreeType::CountSumTree,
+        (true, _, false, true) => TreeType::ProvableCountSumTree,
+        (true, _, true, _) => TreeType::ProvableCountProvableSumTree,
+        (false, true, true, _) => TreeType::ProvableCountProvableSumTree,
+    }
+}
 
 impl Drive {
     /// Gathers operations for updating a document.
@@ -188,6 +278,18 @@ impl Drive {
         };
 
         let mut batch_insertion_cache: HashSet<Vec<Vec<u8>>> = HashSet::new();
+        // Pre-built tree of every index path in the doctype. Walking
+        // this in parallel with each `index.properties` chain below
+        // is how we pick the right aggregate `TreeType` at each
+        // branch we materialize on a key-changing update — matching
+        // exactly what the insert path's
+        // `add_indices_for_{top_index_,index_}level_for_contract_operations_v1`
+        // helpers would have chosen. Without this walk, an update
+        // that moves into a previously-unseen branch under an
+        // aggregate index would create the branch as `NormalTree`
+        // beneath a `ProvableCount*` / `ProvableSum*` parent —
+        // diverging from the insert path (consensus break).
+        let index_structure = document_type.index_structure();
         // fourth we need to store a reference to the document for each index
         for index in document_type.indexes().values() {
             // at this point the contract path is to the contract documents
@@ -201,6 +303,31 @@ impl Drive {
                 DriveError::CorruptedContractIndexes("invalid contract indices".to_string()),
             ))?;
             index_path.push(Vec::from(top_index_property.name.as_bytes()));
+
+            // Mirror the insert path's IndexLevel descent. We
+            // start at the top-level property's `IndexLevel` node —
+            // the same node `add_indices_for_top_index_level_..._v1`
+            // would feed to its `value_tree_type` dispatch — and
+            // descend one step per property in `index.properties`
+            // below, so at every branch we materialize the matching
+            // `IndexLevel` node is in hand.
+            //
+            // `index_structure` carries the upgrade across ALL
+            // indexes that share this path (a level can host both
+            // `byRecipient` and `byRecipientSentAt`; the aggregate
+            // type at depth 1 must reflect whichever terminator is
+            // there). Using `has_index_with_type()` on the descended
+            // node ensures we pick that upgrade rather than the
+            // currently-iterated index's own per-level flags.
+            let mut current_index_level = index_structure
+                .sub_levels()
+                .get(&top_index_property.name)
+                .ok_or(Error::Drive(DriveError::CorruptedContractIndexes(format!(
+                    "index structure missing top property '{}' for index '{}' — \
+                         doctype's IndexLevel tree must contain every property of every \
+                         registered index",
+                    top_index_property.name, index.name
+                ))))?;
 
             // Per-index reference variant. Mirror of the insert path's
             // dispatch in
@@ -263,12 +390,20 @@ impl Drive {
                 qualified_path.push(document_top_field.clone());
 
                 if !batch_insertion_cache.contains(&qualified_path) {
+                    // Top-level value tree: aggregate variant
+                    // depending on whether any index terminates at
+                    // the top property (e.g., a standalone
+                    // `[recipient]` alongside `[recipient, sentAt]`)
+                    // and what flags that terminator carries.
+                    // Default for pure-prefix levels collapses to
+                    // `NormalTree`, matching pre-v12 behavior.
+                    let value_tree_type = value_tree_type_for_index_level(current_index_level);
                     let inserted = self.batch_insert_empty_tree_if_not_exists(
                         PathKeyInfo::PathKeyRef::<0>((
                             index_path.clone(),
                             document_top_field.as_slice(),
                         )),
-                        TreeType::NormalTree,
+                        value_tree_type,
                         storage_flags,
                         BatchInsertTreeApplyType::StatefulBatchInsertTree,
                         transaction,
@@ -298,6 +433,19 @@ impl Drive {
                 let index_property = index.properties.get(i).ok_or(Error::Drive(
                     DriveError::CorruptedContractIndexes("invalid contract indices".to_string()),
                 ))?;
+
+                // Descend one step in the doctype's `IndexLevel`
+                // tree, in lockstep with `index.properties`. Failure
+                // here means the IndexLevel tree was built from a
+                // different doctype than the one we're iterating —
+                // a corruption signal, not a user-input error.
+                current_index_level = current_index_level
+                    .sub_levels()
+                    .get(&index_property.name)
+                    .ok_or(Error::Drive(DriveError::CorruptedContractIndexes(format!(
+                        "index structure missing sub_level '{}' under index '{}' at depth {}",
+                        index_property.name, index.name, i
+                    ))))?;
 
                 let document_index_field = document
                     .get_raw_for_document_type(
@@ -336,12 +484,19 @@ impl Drive {
                     qualified_path.push(index_property.name.as_bytes().to_vec());
 
                     if !batch_insertion_cache.contains(&qualified_path) {
+                        // Inner property-name tree at depth i+1.
+                        // Promotes to `ProvableCountTree` /
+                        // `ProvableSumTree` / `ProvableCountProvableSumTree`
+                        // when the level below opts into the
+                        // range-* variant for the corresponding axis.
+                        let property_name_tree_type =
+                            property_name_tree_type_for_index_level(current_index_level);
                         let inserted = self.batch_insert_empty_tree_if_not_exists(
                             PathKeyInfo::PathKeyRef::<0>((
                                 index_path.clone(),
                                 index_property.name.as_bytes(),
                             )),
-                            TreeType::NormalTree,
+                            property_name_tree_type,
                             storage_flags,
                             BatchInsertTreeApplyType::StatefulBatchInsertTree,
                             transaction,
@@ -368,12 +523,18 @@ impl Drive {
                     qualified_path.push(document_index_field.clone());
 
                     if !batch_insertion_cache.contains(&qualified_path) {
+                        // Inner value tree at depth i+2: same
+                        // dispatch as the top-level value tree
+                        // above — aggregate variant when any index
+                        // terminates at this level (this index or
+                        // another sharing the prefix).
+                        let value_tree_type = value_tree_type_for_index_level(current_index_level);
                         let inserted = self.batch_insert_empty_tree_if_not_exists(
                             PathKeyInfo::PathKeyRef::<0>((
                                 index_path.clone(),
                                 document_index_field.as_slice(),
                             )),
-                            TreeType::NormalTree,
+                            value_tree_type,
                             storage_flags,
                             BatchInsertTreeApplyType::StatefulBatchInsertTree,
                             transaction,
@@ -448,9 +609,30 @@ impl Drive {
                 // non unique indices should have a tree at key "0" that has all elements based off of primary key
                 if !index.unique || all_fields_null {
                     // here we are inserting an empty tree that will have a subtree of all other index properties
+                    //
+                    // Terminator `[0]` reference bucket: same
+                    // dispatch as
+                    // `add_reference_for_index_level_for_contract_operations_v0`
+                    // — this is the leaf tree the insert path
+                    // installs under the terminator value, and it
+                    // must carry the index's count + sum aggregates
+                    // so per-value `count_value_or_default()` /
+                    // `sum_value_or_default()` walks at the parent
+                    // value tree resolve to the right totals.
+                    //
+                    // Unlike the value/property-name dispatches
+                    // above, this table distinguishes `Countable`
+                    // (→ `CountTree`) from `CountableAllowingOffset`
+                    // (→ `ProvableCountTree`), matching the insert
+                    // path's terminator bucket exactly.
+                    let reference_tree_type = reference_tree_type_for_index(
+                        index.countable,
+                        &index.summable,
+                        index.range_summable,
+                    );
                     self.batch_insert_empty_tree_if_not_exists(
                         PathKeyInfo::PathKeyRef::<0>((index_path.clone(), &[0])),
-                        TreeType::NormalTree,
+                        reference_tree_type,
                         storage_flags,
                         BatchInsertTreeApplyType::StatefulBatchInsertTree,
                         transaction,
