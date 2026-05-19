@@ -134,6 +134,19 @@ struct FundPlatformAddressView: View {
                 )
             }
             .onAppear(perform: autoSelectDefaults)
+            .onChange(of: activeController?.phase) { _, newPhase in
+                // On successful funding, stamp the recipient hash
+                // onto the matching consumed asset-lock row so the
+                // storage explorer can show which address received
+                // the credits. The PersistentAssetLock row is
+                // written by the persister callback in response to
+                // Rust's changeset — Rust doesn't know the
+                // recipient (it's chosen at ST-submit time), so we
+                // back-fill on the Swift side after the FFI returns.
+                if case .completed = newPhase {
+                    backfillRecipientOnConsumedLock()
+                }
+            }
         }
     }
 
@@ -599,6 +612,57 @@ struct FundPlatformAddressView: View {
     }
 
     // MARK: - Helpers
+
+    /// Stamp the recipient hash onto the most recent `Consumed`
+    /// asset-lock row on this wallet whose recipient isn't set yet.
+    /// Called from `.onChange` after the controller flips to
+    /// `.completed`.
+    ///
+    /// The match is `(walletId, fundingTypeRaw==4, statusRaw==4,
+    /// recipientPlatformAddressHash==nil)` newest-first. In the
+    /// happy path exactly one row matches: the lock the FFI just
+    /// consumed. If multiple match (two back-to-back fundings on
+    /// the same wallet where the first stamp hasn't run yet), we
+    /// stamp the newest — the older one will get picked up on its
+    /// own `.completed` since the back-fill is FIFO by completion
+    /// time anyway.
+    private func backfillRecipientOnConsumedLock() {
+        guard let controller = activeController else { return }
+        let walletId = wallet.walletId
+        // Capture the recipient before the closure body — Swift
+        // strict-concurrency wants the value local, not the
+        // controller reference.
+        let recipientHash = controller.recipientHash
+        // Type byte is fixed at P2PKH today (the only platform-
+        // address shape the wallet generates) but capture it
+        // alongside so the storage explorer can render correctly
+        // if P2SH is added later.
+        let recipientType: UInt8 = 0  // P2PKH discriminant.
+        var descriptor = FetchDescriptor<PersistentAssetLock>(
+            predicate: #Predicate<PersistentAssetLock> { entry in
+                entry.walletId == walletId
+                    && entry.fundingTypeRaw == 4
+                    && entry.statusRaw == 4
+                    && entry.recipientPlatformAddressHash == nil
+            },
+            sortBy: [SortDescriptor(\.updatedAt, order: .reverse)]
+        )
+        descriptor.fetchLimit = 1
+        do {
+            let matches = try modelContext.fetch(descriptor)
+            if let lock = matches.first {
+                lock.recipientPlatformAddressHash = recipientHash
+                lock.recipientPlatformAddressType = recipientType
+                try? modelContext.save()
+            }
+        } catch {
+            // Surface as a log rather than alerting — the funding
+            // already succeeded, the only downside of a missed
+            // back-fill is a "Recipient — unknown" line in the
+            // storage explorer for this row.
+            print("backfillRecipient: fetch failed: \(error)")
+        }
+    }
 
     private func formatDuffs(_ duffs: UInt64) -> String {
         let dash = Double(duffs) / Double(Self.duffsPerDash)

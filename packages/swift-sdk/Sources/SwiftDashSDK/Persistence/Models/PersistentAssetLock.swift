@@ -96,6 +96,33 @@ public final class PersistentAssetLock {
     /// where Rust decodes them into the live proof.
     public var proofBytes: Data?
 
+    /// 20-byte hash of the recipient platform address for asset
+    /// locks consumed by an `AddressFundingFromAssetLockTransition`
+    /// (`fundingTypeRaw == 4`). Populated by Swift after a
+    /// successful `fundFromCoreAssetLock` call — the recipient is
+    /// known on the caller side, not on the Rust side (which only
+    /// tracks the credit-output key, not the destination address).
+    ///
+    /// `nil` for:
+    /// - Identity-funding asset locks (the destination is the
+    ///   newly-created identity, surfaced via the `identityIndex`
+    ///   slot instead).
+    /// - Address-funding locks that haven't completed yet (status
+    ///   < Consumed).
+    /// - Pre-this-commit address-funding locks that completed
+    ///   before the field existed.
+    ///
+    /// Default `nil` on the column makes SwiftData's lightweight
+    /// migration safe for rows that pre-date this field.
+    public var recipientPlatformAddressHash: Data?
+
+    /// `PlatformAddress` type byte (0 = P2PKH, 1 = P2SH) matching
+    /// `recipientPlatformAddressHash`. Stored alongside the hash so
+    /// the storage explorer can render a typed bech32m string
+    /// without joining against `PersistentPlatformAddress`. `nil`
+    /// whenever `recipientPlatformAddressHash` is `nil`.
+    public var recipientPlatformAddressType: UInt8?
+
     /// Record timestamps.
     public var createdAt: Date
     public var updatedAt: Date
