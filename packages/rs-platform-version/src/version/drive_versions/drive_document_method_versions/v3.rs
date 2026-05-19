@@ -90,6 +90,15 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V3: DriveDocumentMethodVersions =
             validate_document_purchase_transition_action_uniqueness: 1,
             validate_document_update_price_transition_action_uniqueness: 1,
         },
-        // Unchanged from V2.
+        // Bumped to 1 vs V2's frozen 0: this is the v12-gated entry
+        // point for the sum-tree feature. The v1 dispatch arm in
+        // `packages/rs-drive/src/drive/document/primary_key_tree_type.rs`
+        // composes count + sum flags from `DocumentTypeV2::documents_countable`
+        // / `documents_summable` (+ their `range_*` siblings) into the
+        // right grovedb `TreeType` — including the combined
+        // `CountSumTree` / `ProvableCountSumTree` /
+        // `ProvableCountProvableSumTree` variants. Pre-v12 protocol
+        // versions stay on V2's v0 dispatch via their own method
+        // tables (see V2's comment for the freeze rationale).
         primary_key_tree_type: 1,
     };
