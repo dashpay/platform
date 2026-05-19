@@ -202,6 +202,25 @@ impl PlatformAddressWallet {
         // balances back into ManagedPlatformAccount, then consume the
         // tracked asset lock (terminal — marks the row `Consumed` and
         // drops it from the in-memory map).
+
+        // Post-condition: every requested recipient must appear in
+        // the proof-attested `address_infos`. Platform's proof
+        // verifier should never return an empty (or recipient-
+        // missing) result for a top-up call that returned `Ok` —
+        // an empty Ok here would be a DAPI / proof-verifier
+        // contract violation, NOT a successful zero-credit
+        // funding. We fail loud rather than silently consume the
+        // asset lock with no recorded credits.
+        let expected_recipient_count = addresses.len();
+        if address_infos.is_empty() {
+            return Err(PlatformWalletError::AddressSync(format!(
+                "Address-funding ST succeeded but the proof returned no address infos \
+                 (expected {} recipient(s)); refusing to consume the asset lock with \
+                 no recorded credits",
+                expected_recipient_count
+            )));
+        }
+
         let cs = self
             .write_address_balances_changeset(platform_account_index, &address_infos)
             .await;
@@ -257,18 +276,38 @@ impl PlatformAddressWallet {
                         continue;
                     };
                     let p2pkh = PlatformP2PKHAddress::new(hash);
-                    let funds = match maybe_info {
-                        Some(ai) => dash_sdk::platform::address_sync::AddressFunds {
-                            balance: ai.balance,
-                            nonce: ai.nonce,
-                        },
-                        None => dash_sdk::platform::address_sync::AddressFunds {
-                            balance: 0,
-                            nonce: 0,
-                        },
+                    // Platform's proof must carry an `AddressInfo`
+                    // for every recipient we asked to fund. A `None`
+                    // here is a protocol-contract violation —
+                    // earlier shape silently mapped it to
+                    // `balance: 0, nonce: 0` and pushed a "credited
+                    // 0" row onto the changeset, which would have
+                    // been indistinguishable from a successful
+                    // zero-credit funding. Skip with a loud
+                    // `tracing::error!` so operators see the drift;
+                    // the asset lock has already Consumed, the
+                    // changeset just won't reflect the recipient.
+                    let Some(ai) = maybe_info else {
+                        tracing::error!(
+                            address = %p2pkh,
+                            "Platform proof returned None AddressInfo for a recipient that should have been credited; skipping balance write to avoid recording 'credited 0'"
+                        );
+                        continue;
+                    };
+                    let funds = dash_sdk::platform::address_sync::AddressFunds {
+                        balance: ai.balance,
+                        nonce: ai.nonce,
                     };
                     account.set_address_credit_balance(p2pkh, funds.balance, key_source.as_ref());
-                    let address_index = account
+                    // Resolve the address's HD slot in the
+                    // account's address pool. The
+                    // `.unwrap_or(0)` earlier here silently
+                    // mis-attributed credits to slot 0 if the
+                    // recipient wasn't in the pool — log and skip
+                    // instead, again to avoid writing a wrong-slot
+                    // changeset entry that the persister would
+                    // store as if it referred to address #0.
+                    let Some(address_index) = account
                         .addresses
                         .addresses
                         .iter()
@@ -278,7 +317,13 @@ impl PlatformAddressWallet {
                                 .filter(|found| *found == p2pkh)
                                 .map(|_| idx)
                         })
-                        .unwrap_or(0);
+                    else {
+                        tracing::error!(
+                            address = %p2pkh,
+                            "Recipient address not found in account address pool; skipping balance write to avoid mis-attributing credits to slot 0"
+                        );
+                        continue;
+                    };
                     cs.addresses.push(crate::PlatformAddressBalanceEntry {
                         wallet_id: self.wallet_id,
                         account_index: platform_account_index,
