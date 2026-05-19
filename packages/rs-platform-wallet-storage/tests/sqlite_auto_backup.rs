@@ -79,52 +79,39 @@ fn tc052_delete_wallet_auto_backup_disabled() {
 }
 
 /// TC-054 (partial): unwritable auto-backup dir surfaces AutoBackupDirUnwritable.
+///
+/// The failure is forced through a path whose parent is a regular file
+/// (`<file>/sub`), so `create_dir_all` fails with `ENOTDIR`. Unlike a
+/// `chmod 0o500` directory — which UID 0 bypasses — this is rejected
+/// for every UID, making the assertion deterministic in root-running
+/// CI containers.
 #[test]
 fn tc054_unwritable_auto_backup_dir() {
     let tmp = tempfile::tempdir().unwrap();
     let path = tmp.path().join("w.db");
-    let unwritable = tmp.path().join("read-only-dir");
-    std::fs::create_dir(&unwritable).unwrap();
-    // chmod 0500 (r-x------) — we cannot write to it.
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mut perms = std::fs::metadata(&unwritable).unwrap().permissions();
-        perms.set_mode(0o500);
-        std::fs::set_permissions(&unwritable, perms).unwrap();
-    }
-    let cfg = SqlitePersisterConfig::new(&path).with_auto_backup_dir(Some(unwritable.clone()));
+    let blocker = tmp.path().join("not-a-dir");
+    std::fs::write(&blocker, b"regular file").unwrap();
+    let unwritable = blocker.join("sub");
+
+    let cfg = SqlitePersisterConfig::new(&path).with_auto_backup_dir(Some(unwritable));
     let persister = SqlitePersister::open(cfg).unwrap();
     let w = wid(0xE2);
     ensure_wallet_meta(&persister, &w);
     let err = persister.delete_wallet(w);
-    #[cfg(unix)]
-    {
-        assert!(
-            matches!(err, Err(WalletStorageError::AutoBackupDirUnwritable { .. })),
-            "expected AutoBackupDirUnwritable, got {err:?}"
-        );
-        // Wallet still intact.
-        let conn = persister.lock_conn_for_test();
-        let n: i64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM wallet_metadata WHERE wallet_id = ?1",
-                rusqlite::params![w.as_slice()],
-                |row| row.get(0),
-            )
-            .unwrap();
-        assert_eq!(n, 1);
-        // Cleanup so tempdir can drop.
-        use std::os::unix::fs::PermissionsExt;
-        let mut perms = std::fs::metadata(&unwritable).unwrap().permissions();
-        perms.set_mode(0o755);
-        let _ = std::fs::set_permissions(&unwritable, perms);
-    }
-    #[cfg(not(unix))]
-    {
-        // Non-unix: chmod is best-effort; we accept either outcome.
-        let _ = (err, unwritable);
-    }
+    assert!(
+        matches!(err, Err(WalletStorageError::AutoBackupDirUnwritable { .. })),
+        "expected AutoBackupDirUnwritable, got {err:?}"
+    );
+    // Wallet still intact.
+    let conn = persister.lock_conn_for_test();
+    let n: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM wallet_metadata WHERE wallet_id = ?1",
+            rusqlite::params![w.as_slice()],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(n, 1);
 }
 
 /// TC-055: auto-backups respect the same retention as manual backups.
