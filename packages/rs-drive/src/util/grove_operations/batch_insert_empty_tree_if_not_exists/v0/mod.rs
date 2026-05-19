@@ -22,7 +22,7 @@ impl Drive {
         &self,
         path_key_info: PathKeyInfo<N>,
         tree_type: TreeType,
-        aggregating_parent_tree_type: Option<TreeType>,
+        wrap_in_non_aggregated_for_parent_tree_type: Option<TreeType>,
         storage_flags: Option<&StorageFlags>,
         apply_type: BatchInsertTreeApplyType,
         transaction: TransactionArg,
@@ -36,11 +36,11 @@ impl Drive {
         // then picks the right wrapper variant
         // (NonCounted / NotSummed / NotCountedOrSummed) based on what
         // axes the parent aggregates. For non-aggregating parents
-        // (`aggregating_parent_tree_type: None`), no wrapping is
+        // (`wrap_in_non_aggregated_for_parent_tree_type: None`), no wrapping is
         // needed and we fall through to the plain empty-tree op.
         let build_op =
             |path: Vec<Vec<u8>>, key: Vec<u8>| -> Result<LowLevelDriveOperation, Error> {
-                if let Some(parent_tt) = aggregating_parent_tree_type {
+                if let Some(parent_tt) = wrap_in_non_aggregated_for_parent_tree_type {
                     LowLevelDriveOperation::wrap_in_non_aggregated_for_parent_tree_type(
                         path,
                         key,

@@ -36,7 +36,7 @@ impl Drive {
             0 => self.batch_insert_empty_tree_if_not_exists_v0(
                 path_key_info,
                 tree_type,
-                None, // aggregating_parent_tree_type — non-aggregating insert, no wrap
+                None, // wrap_in_non_aggregated_for_parent_tree_type — non-aggregating insert, no wrap
                 storage_flags,
                 apply_type,
                 transaction,
@@ -109,5 +109,38 @@ impl Drive {
                 received: version,
             })),
         }
+    }
+
+    /// Count-only specialization of
+    /// [`Self::batch_insert_empty_tree_under_aggregating_parent_if_not_exists`]
+    /// preserved for [`Drive::add_indices_for_index_level_for_contract_operations_v0`]'s
+    /// exclusive use. v0 only ever encounters `CountTree` parents
+    /// (the v3 sum-tree feature lights up under v1 only), so this
+    /// shim hard-codes the parent tree type and forwards to the
+    /// general helper. Kept as a separate function so v0's source
+    /// text stays bit-identical to its v11-ship state.
+    #[allow(clippy::too_many_arguments)]
+    pub fn batch_insert_empty_non_counted_tree_if_not_exists<const N: usize>(
+        &self,
+        path_key_info: PathKeyInfo<N>,
+        tree_type: TreeType,
+        storage_flags: Option<&StorageFlags>,
+        apply_type: BatchInsertTreeApplyType,
+        transaction: TransactionArg,
+        check_existing_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
+        drive_version: &DriveVersion,
+    ) -> Result<bool, Error> {
+        self.batch_insert_empty_tree_under_aggregating_parent_if_not_exists(
+            path_key_info,
+            TreeType::CountTree,
+            tree_type,
+            storage_flags,
+            apply_type,
+            transaction,
+            check_existing_operations,
+            drive_operations,
+            drive_version,
+        )
     }
 }
