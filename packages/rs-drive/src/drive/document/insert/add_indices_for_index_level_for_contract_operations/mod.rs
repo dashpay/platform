@@ -1,4 +1,5 @@
 mod v0;
+mod v1;
 
 use crate::util::storage_flags::StorageFlags;
 
@@ -71,9 +72,24 @@ impl Drive {
                 batch_operations,
                 platform_version,
             ),
+            1 => self.add_indices_for_index_level_for_contract_operations_v1(
+                document_and_contract_info,
+                index_path_info,
+                index_level,
+                any_fields_null,
+                all_fields_null,
+                parent_value_tree_type,
+                previous_batch_operations,
+                storage_flags,
+                estimated_costs_only_with_layer_info,
+                event_id,
+                transaction,
+                batch_operations,
+                platform_version,
+            ),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "add_indices_for_index_level_for_contract_operations".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

@@ -15,6 +15,7 @@ use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 
 use dpp::version::PlatformVersion;
 
+use crate::drive::document::estimation_costs::estimated_sum_trees_for_value_tree_type::estimated_sum_trees_for_value_tree_type;
 use crate::drive::document::paths::contract_document_type_path_vec;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{ApproximateElements, PotentiallyAtMaxElements};
@@ -25,7 +26,7 @@ use std::collections::HashMap;
 
 impl Drive {
     /// Adds indices for the top index level and calls for lower levels.
-    pub(super) fn add_indices_for_top_index_level_for_contract_operations_v0(
+    pub(super) fn add_indices_for_top_index_level_for_contract_operations_v1(
         &self,
         document_and_contract_info: &DocumentAndContractInfo,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
@@ -118,7 +119,7 @@ impl Drive {
                 .unwrap_or(false);
             // v3 sum-tree flags. Same composition logic as the
             // recursive-level helper — see
-            // `add_indices_for_index_level_for_contract_operations_v0`
+            // `add_indices_for_index_level_for_contract_operations_v1`
             // for the dispatch table.
             let sub_level_is_summable_terminator = sub_level_index_info
                 .map(|info| info.summable.is_some())
@@ -213,7 +214,13 @@ impl Drive {
                     )));
                 }
 
-                // On this level we will have all the user defined values for the paths
+                // On this level we will have all the user defined values
+                // for the paths. Children at this property-name layer
+                // are value trees of type `value_tree_type` derived from
+                // the sub-level's flags above — populate the matching
+                // `SomeSumTrees` weight so the average-case cost includes
+                // the per-node aggregate bytes. v0 emitted `NoSumTrees`
+                // here unconditionally, correct only for pre-v12.
                 estimated_costs_only_with_layer_info.insert(
                     KeyInfoPath::from_known_owned_path(index_path.clone()),
                     EstimatedLayerInformation {
@@ -221,7 +228,7 @@ impl Drive {
                         estimated_layer_count: PotentiallyAtMaxElements,
                         estimated_layer_sizes: AllSubtrees(
                             document_top_field_estimated_size as u8,
-                            NoSumTrees,
+                            estimated_sum_trees_for_value_tree_type(value_tree_type),
                             storage_flags.map(|s| s.serialized_size()),
                         ),
                     },
