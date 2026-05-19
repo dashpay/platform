@@ -1171,7 +1171,9 @@ async fn consume_platform_address_index_zero(wallet: &Arc<PlatformWallet>) -> Fr
             "slot-0 already consumed before the setup guard (used_indices={:?} \
              non-empty, lacks 0): degraded/cold-SPV-cache setup — a BLAST \
              genesis-walk pre-marked the bank-shared slot-0; NOT a reserve \
-             regression. Re-run on a warm filter cache.",
+             regression. Re-run on a warm filter cache — if this recurs on a \
+             warm cache (run-wide matched:0), it IS a genuine reserve \
+             regression, not a cold-cache artefact.",
             account.addresses.used_indices
         )));
     }
