@@ -40,6 +40,23 @@ const READ_ONLY_PREPARE_ALLOWED: &[(&str, &str)] = &[
     ("asset_locks.rs", "SELECT outpoint, account_index"),
     ("platform_addrs.rs", "SELECT account_index, address_index"),
     ("core_state.rs", "SELECT outpoint, value, script, height"),
+    // Full-rehydration readers — one-shot SELECTs in `load_state`.
+    (
+        "accounts.rs",
+        "SELECT account_xpub_bytes FROM account_registrations",
+    ),
+    (
+        "core_state.rs",
+        "SELECT record_blob FROM core_transactions WHERE wallet_id",
+    ),
+    (
+        "core_state.rs",
+        "SELECT txid, islock_blob FROM core_instant_locks WHERE wallet_id",
+    ),
+    (
+        "core_state.rs",
+        "SELECT last_processed_height, synced_height FROM core_sync_state WHERE wallet_id",
+    ),
     // P4 readers — `load_state` per area uses one-shot SELECTs.
     (
         "identities.rs",
