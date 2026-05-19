@@ -45,7 +45,7 @@ pub const MAX_PRINTABLE_DOMAIN_NAME_LENGTH: usize = 253;
 ///
 /// A `DataTriggerExecutionResult` indicating the success or failure of the trigger execution.
 #[inline(always)]
-pub(super) fn create_domain_data_trigger_v0(
+pub(super) fn create_domain_data_trigger_v1(
     document_transition: &DocumentTransitionAction,
     context: &mut DataTriggerExecutionContext<'_>,
     platform_version: &PlatformVersion,
@@ -243,18 +243,24 @@ pub(super) fn create_domain_data_trigger_v0(
             block_time_ms: None,
         };
 
-        // todo: deal with cost of this operation
-        let documents = context
-            .platform
-            .drive
-            .query_documents(
-                drive_query,
-                None,
-                is_dry_run,
-                context.transaction,
-                Some(platform_version.protocol_version),
-            )?
-            .documents_owned();
+        // Pass Some(epoch) so the real grovedb cost is computed; bill
+        // it via add_operation on the outer execution_context.
+        let parent_domain_outcome = context.platform.drive.query_documents(
+            drive_query,
+            Some(&context.block_info.epoch),
+            is_dry_run,
+            context.transaction,
+            Some(platform_version.protocol_version),
+        )?;
+        context.state_transition_execution_context.add_operation(
+            crate::execution::types::execution_operation::ValidationOperation::PrecalculatedOperation(
+                dpp::fee::fee_result::FeeResult {
+                    processing_fee: parent_domain_outcome.cost(),
+                    ..Default::default()
+                },
+            ),
+        );
+        let documents = parent_domain_outcome.documents_owned();
 
         if !is_dry_run {
             if documents.is_empty() {
@@ -334,18 +340,23 @@ pub(super) fn create_domain_data_trigger_v0(
         block_time_ms: None,
     };
 
-    // todo: deal with cost of this operation
-    let preorder_documents = context
-        .platform
-        .drive
-        .query_documents(
-            drive_query,
-            None,
-            is_dry_run,
-            context.transaction,
-            Some(platform_version.protocol_version),
-        )?
-        .documents_owned();
+    // Same pattern as the parent-domain query above — bill the cost.
+    let preorder_outcome = context.platform.drive.query_documents(
+        drive_query,
+        Some(&context.block_info.epoch),
+        is_dry_run,
+        context.transaction,
+        Some(platform_version.protocol_version),
+    )?;
+    context.state_transition_execution_context.add_operation(
+        crate::execution::types::execution_operation::ValidationOperation::PrecalculatedOperation(
+            dpp::fee::fee_result::FeeResult {
+                processing_fee: preorder_outcome.cost(),
+                ..Default::default()
+            },
+        ),
+    );
+    let preorder_documents = preorder_outcome.documents_owned();
 
     if is_dry_run {
         return Ok(result);
@@ -366,96 +377,3 @@ pub(super) fn create_domain_data_trigger_v0(
     Ok(result)
 }
 
-#[cfg(test)]
-mod test {
-    use std::sync::Arc;
-    use dpp::block::block_info::BlockInfo;
-    use dpp::platform_value::Bytes32;
-    use drive::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::DocumentCreateTransitionAction;
-    use drive::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionActionType;
-    use dpp::tests::fixtures::{get_batched_transitions_fixture, get_dpns_data_contract_fixture, get_dpns_parent_document_fixture, ParentDocumentOptions};
-    use dpp::tests::utils::generate_random_identifier_struct;
-    use dpp::version::{DefaultForPlatformVersion};
-    use drive::drive::contract::DataContractFetchInfo;
-    use crate::execution::types::state_transition_execution_context::{StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0};
-    use crate::platform_types::platform::PlatformStateRef;
-    use crate::platform_types::platform_state::PlatformStateV0Methods;
-    use crate::test::helpers::setup::TestPlatformBuilder;
-    use super::*;
-    use dpp::state_transition::batch_transition::resolvers::v0::BatchTransitionResolversV0;
-
-    #[test]
-    fn should_return_execution_result_on_dry_run() {
-        let platform = TestPlatformBuilder::new()
-            .build_with_mock_rpc()
-            .set_initial_state_structure();
-
-        let mut nonce_counter = BTreeMap::new();
-
-        let state = platform.state.load();
-
-        let platform_ref = PlatformStateRef {
-            drive: &platform.drive,
-            state: &state,
-            config: &platform.config,
-        };
-
-        let platform_version = state
-            .current_platform_version()
-            .expect("should return a platform version");
-
-        let mut transition_execution_context =
-            StateTransitionExecutionContext::default_for_platform_version(platform_version)
-                .unwrap();
-        let owner_id = generate_random_identifier_struct();
-        let document = get_dpns_parent_document_fixture(
-            ParentDocumentOptions {
-                owner_id,
-                ..Default::default()
-            },
-            state.current_protocol_version_in_consensus(),
-        );
-        let data_contract = get_dpns_data_contract_fixture(
-            Some(owner_id),
-            0,
-            state.current_protocol_version_in_consensus(),
-        )
-        .data_contract_owned();
-        let document_type = data_contract
-            .document_type_for_name("domain")
-            .expect("expected to get domain document type");
-        let transitions = get_batched_transitions_fixture(
-            [(
-                DocumentTransitionActionType::Create,
-                vec![(document, document_type, Bytes32::default(), None)],
-            )],
-            &mut nonce_counter,
-        );
-        let first_transition = transitions.first().expect("transition should be present");
-
-        let document_create_transition = first_transition
-            .as_transition_create()
-            .expect("expected a document create transition");
-
-        transition_execution_context.enable_dry_run();
-
-        let mut data_trigger_context = DataTriggerExecutionContext {
-            platform: &platform_ref,
-            owner_id: &owner_id,
-            block_info: &BlockInfo::default(),
-            state_transition_execution_context: &mut transition_execution_context,
-            transaction: None,
-        };
-
-        let result = create_domain_data_trigger_v0(
-            &DocumentCreateTransitionAction::try_from_document_borrowed_create_transition_with_contract_lookup(&platform.drive, owner_id, None,
-                                                                                                               document_create_transition, &BlockInfo::default(), 0, |_identifier| {
-                    Ok(Arc::new(DataContractFetchInfo::dpns_contract_fixture(platform_version.protocol_version)))
-                }, platform_version).expect("expected to create action").0.into_data().expect("expected to be a valid transition").as_document_action().expect("expected document action"),
-            &mut data_trigger_context,
-            platform_version,
-        )
-        .expect("the execution result should be returned");
-        assert!(result.is_valid());
-    }
-}

@@ -33,9 +33,9 @@ use crate::execution::validation::state_transition::batch::data_triggers::{DataT
 #[inline(always)]
 pub(super) fn create_contact_request_data_trigger_v0(
     document_transition: &DocumentTransitionAction,
-    context: &DataTriggerExecutionContext<'_>,
+    context: &mut DataTriggerExecutionContext<'_>,
     platform_version: &PlatformVersion,
-) -> Result<(DataTriggerExecutionResult, dpp::fee::fee_result::FeeResult), Error> {
+) -> Result<DataTriggerExecutionResult, Error> {
     let data_contract_fetch_info = document_transition.base().data_contract_fetch_info();
     let data_contract = &data_contract_fetch_info.contract;
     let mut result = DataTriggerExecutionResult::default();
@@ -68,22 +68,17 @@ pub(super) fn create_contact_request_data_trigger_v0(
 
         result.add_error(err);
 
-        return Ok((result, dpp::fee::fee_result::FeeResult::default()));
+        return Ok(result);
     }
 
-    // Recipient identity must exist.
-    //
-    // Use `fetch_identity_balance_with_costs` so the grovedb cost is
-    // returned alongside the balance, then surface it via the returned
-    // FeeResult so the caller bills it on `transform_into_action: 1`.
-    let (to_identity, balance_fee_result) =
-        context.platform.drive.fetch_identity_balance_with_costs(
-            to_user_id.to_buffer(),
-            context.block_info,
-            true,
-            context.transaction,
-            platform_version,
-        )?;
+    // TODO: Calculate fee operations
+
+    // Recipient identity must exist
+    let to_identity = context.platform.drive.fetch_identity_balance(
+        to_user_id.to_buffer(),
+        context.transaction,
+        platform_version,
+    )?;
 
     if !is_dry_run && to_identity.is_none() {
         let err = DataTriggerConditionError::new(
@@ -94,10 +89,10 @@ pub(super) fn create_contact_request_data_trigger_v0(
 
         result.add_error(err);
 
-        return Ok((result, balance_fee_result));
+        return Ok(result);
     }
 
-    Ok((result, balance_fee_result))
+    Ok(result)
 }
 
 #[cfg(test)]
@@ -182,19 +177,19 @@ mod test {
 
         transition_execution_context.enable_dry_run();
 
-        let data_trigger_context = DataTriggerExecutionContext {
+        let mut data_trigger_context = DataTriggerExecutionContext {
             platform: &platform_ref,
             owner_id,
             block_info: &BlockInfo::default(),
-            state_transition_execution_context: &transition_execution_context,
+            state_transition_execution_context: &mut transition_execution_context,
             transaction: None,
         };
 
-        let (result, _fee_result) = create_contact_request_data_trigger(
+        let result = create_contact_request_data_trigger(  // dispatches to _v0 (per-trigger version field = 0 at this test's default PV)
             &DocumentCreateTransitionAction::try_from_document_borrowed_create_transition_with_contract_lookup(&platform.drive, *owner_id,  None, document_create_transition, &BlockInfo::default(), 0, |_identifier| {
                 Ok(Arc::new(DataContractFetchInfo::dashpay_contract_fixture(protocol_version)))
             }, platform_version).expect("expected to create action").0.into_data().expect("expected to be a valid transition").as_document_action().expect("expected document action"),
-            &data_trigger_context,
+            &mut data_trigger_context,
             platform_version,
         )
         .expect("the execution result should be returned");
@@ -285,7 +280,7 @@ mod test {
             .as_transition_create()
             .expect("expected a document create transition");
 
-        let transition_execution_context =
+        let mut transition_execution_context =
             StateTransitionExecutionContext::default_for_platform_version(platform_version)
                 .unwrap();
         let identity_fixture =
@@ -304,21 +299,21 @@ mod test {
             )
             .expect("expected to insert identity");
 
-        let data_trigger_context = DataTriggerExecutionContext {
+        let mut data_trigger_context = DataTriggerExecutionContext {
             platform: &platform_ref,
             owner_id: &owner_id,
             block_info: &BlockInfo::default(),
-            state_transition_execution_context: &transition_execution_context,
+            state_transition_execution_context: &mut transition_execution_context,
             transaction: None,
         };
 
         let _dashpay_identity_id = data_trigger_context.owner_id.to_owned();
 
-        let (result, _fee_result) = create_contact_request_data_trigger(
+        let result = create_contact_request_data_trigger(  // dispatches to _v0 (per-trigger version field = 0 at this test's default PV)
             &DocumentCreateTransitionAction::try_from_document_borrowed_create_transition_with_contract_lookup(&platform.drive, owner_id, None, document_create_transition, &BlockInfo::default(), 0, |_identifier| {
                 Ok(Arc::new(DataContractFetchInfo::dashpay_contract_fixture(protocol_version)))
             }, platform_version).expect("expected to create action").0.into_data().expect("expected to be a valid transition").as_document_action().expect("expected document action"),
-            &data_trigger_context,
+            &mut data_trigger_context,
             platform_version,
         )
         .expect("data trigger result should be returned");
@@ -419,39 +414,31 @@ mod test {
             .as_transition_create()
             .expect("expected a document create transition");
 
-        let transition_execution_context =
+        let mut transition_execution_context =
             StateTransitionExecutionContext::default_for_platform_version(platform_version)
                 .unwrap();
 
-        let data_trigger_context = DataTriggerExecutionContext {
+        let mut data_trigger_context = DataTriggerExecutionContext {
             platform: &platform_ref,
             owner_id: &owner_id,
             block_info: &BlockInfo::default(),
-            state_transition_execution_context: &transition_execution_context,
+            state_transition_execution_context: &mut transition_execution_context,
             transaction: None,
         };
 
         let _dashpay_identity_id = data_trigger_context.owner_id.to_owned();
 
-        let (result, fee_result) = create_contact_request_data_trigger(
+        let result = create_contact_request_data_trigger(  // dispatches to _v0 (per-trigger version field = 0 at this test's default PV)
             &DocumentCreateTransitionAction::try_from_document_borrowed_create_transition_with_contract_lookup(&platform.drive, owner_id, None, document_create_transition, &BlockInfo::default(), 0, |_identifier| {
                 Ok(Arc::new(DataContractFetchInfo::dashpay_contract_fixture(protocol_version)))
             }, platform_version).expect("expected to create action").0.into_data().expect("expected to be a valid transition").as_document_action().expect("expected document action"),
-            &data_trigger_context,
+            &mut data_trigger_context,
             platform_version,
         )
         .expect("data trigger result should be returned");
 
         assert!(!result.is_valid());
         let data_trigger_error = &result.errors[0];
-
-        // T3 regression pin: the trigger ran `fetch_identity_balance_with_costs`
-        // to check recipient existence — that fetch must produce a non-zero
-        // FeeResult so the caller can bill it on transform_into_action: 1.
-        assert!(
-            fee_result.processing_fee > 0,
-            "T3: fetch_identity_balance_with_costs must surface non-zero cost"
-        );
 
         assert!(matches!(
             data_trigger_error,

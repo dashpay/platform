@@ -2,7 +2,6 @@ use crate::execution::validation::state_transition::batch::data_triggers::{
     DataTriggerExecutionContext, DataTriggerExecutionResult,
 };
 use derive_more::From;
-use dpp::fee::fee_result::FeeResult;
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
 use drive::state_transition_action::batch::batched_transition::document_transition::{
@@ -23,9 +22,9 @@ impl DataTriggerBindingV0Getters for DataTriggerBinding {
     fn execute(
         &self,
         document_transition: &DocumentTransitionAction,
-        context: &DataTriggerExecutionContext<'_>,
+        context: &mut DataTriggerExecutionContext<'_>,
         platform_version: &PlatformVersion,
-    ) -> Result<(DataTriggerExecutionResult, FeeResult), Error> {
+    ) -> Result<DataTriggerExecutionResult, Error> {
         match self {
             DataTriggerBinding::V0(binding) => {
                 binding.execute(document_transition, context, platform_version)

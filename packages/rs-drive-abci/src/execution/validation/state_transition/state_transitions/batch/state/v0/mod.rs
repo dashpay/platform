@@ -77,9 +77,6 @@ impl DocumentsBatchStateTransitionStateValidationV0 for BatchTransition {
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let mut validation_result = ConsensusValidationResult::<StateTransitionAction>::new();
 
-        let state_transition_execution_context =
-            StateTransitionExecutionContext::default_for_platform_version(platform_version)?;
-
         let owner_id = state_transition_action.owner_id();
 
         let mut validated_transitions = vec![];
@@ -273,52 +270,25 @@ impl DocumentsBatchStateTransitionStateValidationV0 for BatchTransition {
                 ));
             } else if platform.config.execution.use_document_triggers {
                 if let BatchedTransitionAction::DocumentAction(document_transition) = &transition {
-                    // we should also validate document triggers
-                    let data_trigger_execution_context = DataTriggerExecutionContext {
+                    // Triggers receive a &mut DataTriggerExecutionContext
+                    // wrapping the outer execution_context — `_v1` triggers
+                    // call add_operation on it to bill their drive reads
+                    // directly. `_v0` triggers don't bill (per-trigger
+                    // version field stays at 0 on PROTOCOL_VERSION_11).
+                    let owner_id_value = self.owner_id();
+                    let mut data_trigger_execution_context = DataTriggerExecutionContext {
                         platform,
                         transaction,
-                        owner_id: &self.owner_id(),
+                        owner_id: &owner_id_value,
                         block_info,
-                        state_transition_execution_context: &state_transition_execution_context,
+                        state_transition_execution_context: execution_context,
                     };
-                    let (data_trigger_execution_result, data_trigger_fee_result) =
-                        document_transition.validate_with_data_triggers(
+                    let data_trigger_execution_result = document_transition
+                        .validate_with_data_triggers(
                             &data_trigger_bindings,
-                            &data_trigger_execution_context,
+                            &mut data_trigger_execution_context,
                             platform_version,
                         )?;
-
-                    // Bill the accumulated trigger drive-read cost on the
-                    // bumped `transform_into_action` gate, matching the same
-                    // gate used by the transformer-phase fee fixes. On v0 the
-                    // cost is discarded for chain replay reproducibility.
-                    match platform_version
-                        .drive_abci
-                        .validation_and_processing
-                        .state_transitions
-                        .batch_state_transition
-                        .transform_into_action
-                    {
-                        0 => {}
-                        1 => {
-                            execution_context.add_operation(
-                                ValidationOperation::PrecalculatedOperation(
-                                    data_trigger_fee_result,
-                                ),
-                            );
-                        }
-                        version => {
-                            return Err(Error::Execution(
-                                ExecutionError::UnknownVersionMismatch {
-                                    method:
-                                        "documents batch transition: data trigger fee billing"
-                                            .to_string(),
-                                    known_versions: vec![0, 1],
-                                    received: version,
-                                },
-                            ));
-                        }
-                    }
 
                     if !data_trigger_execution_result.is_valid() {
                         // If a state transition isn't valid because of data triggers we still need

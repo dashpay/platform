@@ -4,7 +4,6 @@ use crate::execution::validation::state_transition::batch::data_triggers::trigge
 use crate::execution::validation::state_transition::batch::data_triggers::{
     DataTriggerExecutionContext, DataTriggerExecutionResult,
 };
-use dpp::fee::fee_result::FeeResult;
 use dpp::version::PlatformVersion;
 use drive::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
 
@@ -12,9 +11,9 @@ mod v0;
 
 pub fn reject_data_trigger(
     document_transition: &DocumentTransitionAction,
-    _context: &DataTriggerExecutionContext<'_>,
+    _context: &mut DataTriggerExecutionContext<'_>,
     platform_version: &PlatformVersion,
-) -> Result<(DataTriggerExecutionResult, FeeResult), Error> {
+) -> Result<DataTriggerExecutionResult, Error> {
     match platform_version
         .drive_abci
         .validation_and_processing
@@ -24,8 +23,8 @@ pub fn reject_data_trigger(
         .triggers
         .reject_data_trigger
     {
-        // Reject performs no drive reads — FeeResult is always default.
-        0 => Ok((reject_data_trigger_v0(document_transition)?, FeeResult::default())),
+        // Reject performs no drive reads — never bills.
+        0 => reject_data_trigger_v0(document_transition),
         version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
             method: "reject_data_trigger".to_string(),
             known_versions: vec![0],

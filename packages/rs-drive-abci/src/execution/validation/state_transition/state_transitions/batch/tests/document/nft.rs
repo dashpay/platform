@@ -469,11 +469,11 @@ mod nft_tests {
                 .change(),
             &BalanceChange::RemoveFromBalance {
                 required_removed_balance: 123579000,
-                desired_removed_balance: 126435860,
+                desired_removed_balance: 126440160,
             }
         );
 
-        let original_creation_cost = 126435860;
+        let original_creation_cost = 126440160;
 
         platform
             .drive
@@ -864,11 +864,11 @@ mod nft_tests {
                 .change(),
             &BalanceChange::RemoveFromBalance {
                 required_removed_balance: 138159000,
-                desired_removed_balance: 141234660,
+                desired_removed_balance: 141238960,
             }
         );
 
-        let original_creation_cost = 141234660;
+        let original_creation_cost = 141238960;
 
         platform
             .drive
@@ -1369,11 +1369,11 @@ mod nft_tests {
                 .change(),
             &BalanceChange::RemoveFromBalance {
                 required_removed_balance: 123579000,
-                desired_removed_balance: 126435860,
+                desired_removed_balance: 126440160,
             }
         );
 
-        let original_creation_cost = 126435860;
+        let original_creation_cost = 126440160;
 
         platform
             .drive

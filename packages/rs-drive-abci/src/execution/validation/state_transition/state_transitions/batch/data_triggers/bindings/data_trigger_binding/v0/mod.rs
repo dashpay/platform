@@ -2,7 +2,6 @@ use crate::error::Error;
 use crate::execution::validation::state_transition::batch::data_triggers::{
     DataTrigger, DataTriggerExecutionContext, DataTriggerExecutionResult,
 };
-use dpp::fee::fee_result::FeeResult;
 use dpp::identifier::Identifier;
 use dpp::version::PlatformVersion;
 use drive::state_transition_action::batch::batched_transition::document_transition::{
@@ -47,9 +46,9 @@ pub trait DataTriggerBindingV0Getters {
     fn execute(
         &self,
         document_transition: &DocumentTransitionAction,
-        context: &DataTriggerExecutionContext<'_>,
+        context: &mut DataTriggerExecutionContext<'_>,
         platform_version: &PlatformVersion,
-    ) -> Result<(DataTriggerExecutionResult, FeeResult), Error>;
+    ) -> Result<DataTriggerExecutionResult, Error>;
 
     /// Checks whether the data trigger matches the specified data contract ID, document type, and action.
     ///
@@ -77,9 +76,9 @@ impl DataTriggerBindingV0Getters for DataTriggerBindingV0 {
     fn execute(
         &self,
         document_transition: &DocumentTransitionAction,
-        context: &DataTriggerExecutionContext<'_>,
+        context: &mut DataTriggerExecutionContext<'_>,
         platform_version: &PlatformVersion,
-    ) -> Result<(DataTriggerExecutionResult, FeeResult), Error> {
+    ) -> Result<DataTriggerExecutionResult, Error> {
         (self.data_trigger)(document_transition, context, platform_version)
     }
 

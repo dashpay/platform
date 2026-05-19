@@ -154,12 +154,18 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V8: DriveAbciValidationVersions =
                 data_triggers: DriveAbciValidationDataTriggerAndBindingVersions {
                     bindings: 0,
                     triggers: DriveAbciValidationDataTriggerVersions {
-                        create_contact_request_data_trigger: 0,
-                        create_domain_data_trigger: 0,
+                        // PROTOCOL_VERSION_12 (v3.1 hard fork): triggers
+                        // that perform drive reads now have `_v1` versions
+                        // that bill the cost via add_operation on the
+                        // outer execution_context. v0 versions remain
+                        // byte-identical to PV11 (don't bill).
+                        create_contact_request_data_trigger: 1,
+                        create_domain_data_trigger: 1,
                         create_identity_data_trigger: 0,
                         create_feature_flag_data_trigger: 0,
                         create_masternode_reward_shares_data_trigger: 0,
-                        delete_withdrawal_data_trigger: 0,
+                        delete_withdrawal_data_trigger: 1,
+                        // Reject does no drive reads — stays at v0.
                         reject_data_trigger: 0,
                     },
                 },

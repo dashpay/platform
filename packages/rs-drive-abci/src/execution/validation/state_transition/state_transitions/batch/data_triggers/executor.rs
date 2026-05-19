@@ -3,7 +3,6 @@ use crate::execution::validation::state_transition::batch::data_triggers::{
 };
 use drive::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
 
-use dpp::fee::fee_result::FeeResult;
 use dpp::state_transition::batch_transition::batched_transition::document_transition_action_type::DocumentTransitionActionTypeGetter;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use dpp::version::PlatformVersion;
@@ -15,28 +14,27 @@ pub trait DataTriggerExecutor {
     fn validate_with_data_triggers(
         &self,
         data_trigger_bindings: &[DataTriggerBinding],
-        context: &DataTriggerExecutionContext<'_>,
+        context: &mut DataTriggerExecutionContext<'_>,
         platform_version: &PlatformVersion,
-    ) -> Result<(DataTriggerExecutionResult, FeeResult), Error>;
+    ) -> Result<DataTriggerExecutionResult, Error>;
 }
 
 impl DataTriggerExecutor for DocumentTransitionAction {
     fn validate_with_data_triggers(
         &self,
         data_trigger_bindings: &[DataTriggerBinding],
-        context: &DataTriggerExecutionContext,
+        context: &mut DataTriggerExecutionContext,
         platform_version: &PlatformVersion,
-    ) -> Result<(DataTriggerExecutionResult, FeeResult), Error> {
+    ) -> Result<DataTriggerExecutionResult, Error> {
         let data_contract_id = self.base().data_contract_id();
         let document_type_name = self.base().document_type_name();
         let transition_action = self.action_type();
 
-        let mut aggregated_fee_result = FeeResult::default();
-
-        // Match data triggers by action type, contract ID and document type name
-        // and then execute matched triggers until one of them returns invalid result.
-        // Fees from every trigger that actually executed (including the one that
-        // returned invalid) are accumulated so the user pays for the work done.
+        // Match data triggers by action type, contract ID and document
+        // type name, then execute matched triggers until one returns
+        // invalid. `_v1` triggers bill their own drive reads directly
+        // via `context.state_transition_execution_context.add_operation`;
+        // `_v0` triggers don't bill (PROTOCOL_VERSION_11 chain replay).
         for data_trigger_binding in data_trigger_bindings {
             if !data_trigger_binding.is_matching(
                 &data_contract_id,
@@ -46,16 +44,13 @@ impl DataTriggerExecutor for DocumentTransitionAction {
                 continue;
             }
 
-            let (result, fee_result) =
-                data_trigger_binding.execute(self, context, platform_version)?;
-
-            aggregated_fee_result.checked_add_assign(fee_result)?;
+            let result = data_trigger_binding.execute(self, context, platform_version)?;
 
             if !result.is_valid() {
-                return Ok((result, aggregated_fee_result));
+                return Ok(result);
             }
         }
 
-        Ok((DataTriggerExecutionResult::default(), aggregated_fee_result))
+        Ok(DataTriggerExecutionResult::default())
     }
 }

@@ -5,8 +5,6 @@ use crate::error::Error;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::platform_value::Value;
 use drive::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
-use dpp::block::epoch::Epoch;
-use dpp::fee::fee_result::FeeResult;
 use dpp::system_data_contracts::withdrawals_contract;
 use dpp::version::PlatformVersion;
 use drive::query::{DriveDocumentQuery, InternalClauses, WhereClause, WhereOperator};
@@ -38,9 +36,9 @@ use crate::execution::validation::state_transition::batch::data_triggers::{DataT
 #[inline(always)]
 pub(super) fn delete_withdrawal_data_trigger_v0(
     document_transition: &DocumentTransitionAction,
-    context: &DataTriggerExecutionContext<'_>,
+    context: &mut DataTriggerExecutionContext<'_>,
     platform_version: &PlatformVersion,
-) -> Result<(DataTriggerExecutionResult, dpp::fee::fee_result::FeeResult), Error> {
+) -> Result<DataTriggerExecutionResult, Error> {
     let data_contract_fetch_info = document_transition.base().data_contract_fetch_info();
     let data_contract = &data_contract_fetch_info.contract;
     let mut result = DataTriggerExecutionResult::default();
@@ -78,22 +76,18 @@ pub(super) fn delete_withdrawal_data_trigger_v0(
         block_time_ms: None,
     };
 
-    // Pass `Some(epoch)` so query_documents computes the real cost
-    // (with `None` it short-circuits to 0). Surface it via the returned
-    // FeeResult so the caller bills it on `transform_into_action: 1`.
-    let epoch: &Epoch = &context.block_info.epoch;
-    let withdrawals_outcome = context.platform.drive.query_documents(
-        drive_query,
-        Some(epoch),
-        false,
-        context.transaction,
-        Some(platform_version.protocol_version),
-    )?;
-    let query_fee_result = FeeResult {
-        processing_fee: withdrawals_outcome.cost(),
-        ..Default::default()
-    };
-    let withdrawals = withdrawals_outcome.documents_owned();
+    // todo: deal with cost of this operation
+    let withdrawals = context
+        .platform
+        .drive
+        .query_documents(
+            drive_query,
+            None,
+            false,
+            context.transaction,
+            Some(platform_version.protocol_version),
+        )?
+        .documents_owned();
 
     let Some(withdrawal) = withdrawals.first() else {
         let err = DataTriggerConditionError::new(
@@ -104,7 +98,7 @@ pub(super) fn delete_withdrawal_data_trigger_v0(
 
         result.add_error(err);
 
-        return Ok((result, query_fee_result));
+        return Ok(result);
     };
 
     let status: u8 = withdrawal
@@ -121,10 +115,10 @@ pub(super) fn delete_withdrawal_data_trigger_v0(
 
         result.add_error(err);
 
-        return Ok((result, query_fee_result));
+        return Ok(result);
     }
 
-    Ok((result, query_fee_result))
+    Ok(result)
 }
 
 #[cfg(test)]
@@ -166,7 +160,7 @@ mod tests {
         };
         let platform_version = state_read_guard.current_platform_version().unwrap();
 
-        let transition_execution_context = StateTransitionExecutionContextV0::default();
+        let mut transition_execution_context = StateTransitionExecutionContextV0::default();
         let data_contract = get_data_contract_fixture(None, 0, platform_version.protocol_version)
             .data_contract_owned();
         let owner_id = data_contract.owner_id();
@@ -187,19 +181,19 @@ mod tests {
         .into();
 
         let document_transition = DocumentTransitionAction::DeleteAction(delete_transition);
-        let data_trigger_context = DataTriggerExecutionContext {
+        let mut state_transition_execution_context_outer =
+            StateTransitionExecutionContext::V0(transition_execution_context);
+        let mut data_trigger_context = DataTriggerExecutionContext {
             platform: &platform_ref,
             owner_id: &owner_id,
             block_info: &BlockInfo::default(),
-            state_transition_execution_context: &StateTransitionExecutionContext::V0(
-                transition_execution_context,
-            ),
+            state_transition_execution_context: &mut state_transition_execution_context_outer,
             transaction: None,
         };
 
         let result = delete_withdrawal_data_trigger_v0(
             &document_transition,
-            &data_trigger_context,
+            &mut data_trigger_context,
             platform_version,
         )
         .expect_err("the execution result should be returned");
@@ -259,7 +253,7 @@ mod tests {
             config: &platform.config,
         };
 
-        let transition_execution_context =
+        let mut transition_execution_context =
             StateTransitionExecutionContext::V0(StateTransitionExecutionContextV0::default());
 
         let platform_version = state_read_guard
@@ -327,16 +321,16 @@ mod tests {
             }),
         );
 
-        let data_trigger_context = DataTriggerExecutionContext {
+        let mut data_trigger_context = DataTriggerExecutionContext {
             platform: &platform_ref,
             owner_id: &owner_id,
             block_info: &BlockInfo::default(),
-            state_transition_execution_context: &transition_execution_context,
+            state_transition_execution_context: &mut transition_execution_context,
             transaction: None,
         };
-        let (result, fee_result) = delete_withdrawal_data_trigger_v0(
+        let result = delete_withdrawal_data_trigger_v0(
             &document_transition,
-            &data_trigger_context,
+            &mut data_trigger_context,
             platform_version,
         )
         .expect("the execution result should be returned");
@@ -348,15 +342,6 @@ mod tests {
         assert_eq!(
             error.to_string(),
             "withdrawal deletion is allowed only for COMPLETE statuses"
-        );
-
-        // T4 regression pin: the trigger ran `query_documents` to fetch the
-        // withdrawal — that query must surface a non-zero cost via the
-        // returned FeeResult so the caller can bill it on
-        // `transform_into_action: 1`.
-        assert!(
-            fee_result.processing_fee > 0,
-            "T4: query_documents must surface non-zero cost"
         );
     }
 }

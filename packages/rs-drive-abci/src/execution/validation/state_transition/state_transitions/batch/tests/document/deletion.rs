@@ -143,7 +143,7 @@ mod deletion_tests {
 
         assert_eq!(processing_result.valid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 1666860);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 1678920);
 
         let issues = platform
             .drive
@@ -488,7 +488,7 @@ mod deletion_tests {
 
         assert_eq!(processing_result.valid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 2762400);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 2778700);
 
         let issues = platform
             .drive
@@ -744,7 +744,7 @@ mod deletion_tests {
 
         assert_eq!(processing_result.valid_count(), 0);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 516040);
+        assert_eq!(processing_result.aggregated_fees().processing_fee, 520340);
     }
     #[tokio::test]
     async fn test_document_deletion_that_needs_a_token() {
