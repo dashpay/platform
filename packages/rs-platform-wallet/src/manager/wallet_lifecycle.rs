@@ -59,14 +59,17 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     ///
     /// `birth_height_override` controls SPV's compact-filter scan
     /// window for the new wallet. `None` (the default for fresh
-    /// wallets) seeds the birth height to SPV's current confirmed
-    /// header tip, so the scan window is `[H_now, ∞)` — anything
-    /// funded before init is invisible. `Some(0)` requests a full
-    /// historical scan from genesis (use sparingly — expensive on
-    /// long-lived chains, but required when an address may have
-    /// received funds before the wallet was first registered).
-    /// `Some(h)` pins the scan start to a specific block height,
-    /// useful when a known funding block is on record.
+    /// wallets) resolves the birth height from SPV's current
+    /// confirmed header tip, so the scan window is `[H_now, ∞)` and
+    /// anything funded before init is invisible — **but** when SPV is
+    /// not running yet or header state is unavailable (e.g. wallet
+    /// created before the SPV client is started), it falls back to
+    /// `0`, i.e. a full historical scan from genesis. `Some(0)`
+    /// always requests a full historical scan from genesis (use
+    /// sparingly — expensive on long-lived chains, but required when
+    /// an address may have received funds before the wallet was first
+    /// registered). `Some(h)` pins the scan start to a specific block
+    /// height, useful when a known funding block is on record.
     pub async fn create_wallet_from_mnemonic(
         &self,
         mnemonic_phrase: &str,
@@ -89,11 +92,11 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// state, register it with the manager and return an `Arc` handle.
     ///
     /// See [`Self::create_wallet_from_mnemonic`] for the
-    /// `birth_height_override` semantics. `None` keeps the
-    /// pre-existing behaviour (scan from current SPV tip forward);
-    /// `Some(h)` is for callers that need to see funding deposited
-    /// before the wallet was registered (e.g. a long-lived bank
-    /// address pre-funded with testnet duffs).
+    /// `birth_height_override` semantics. `None` scans from the
+    /// current SPV tip forward when SPV is running, otherwise from
+    /// genesis; `Some(h)` is for callers that need to see funding
+    /// deposited before the wallet was registered (e.g. a long-lived
+    /// bank address pre-funded with testnet duffs).
     pub async fn create_wallet_from_seed_bytes(
         &self,
         network: Network,
