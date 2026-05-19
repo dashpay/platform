@@ -817,30 +817,12 @@ fn decoded_bytes(inputs: &[DecodedPathInput]) -> Vec<Vec<u8>> {
 }
 
 fn bytes_to_round_trippable_path_display(bytes: &[u8]) -> Option<String> {
-    if let Ok(value) = std::str::from_utf8(bytes) {
-        if value
-            .bytes()
-            .all(|byte| byte.is_ascii_graphic() || byte == b' ')
-            && decode_path_string_silent(value) == bytes
-        {
-            return Some(value.to_string());
-        }
-    }
-
-    None
+    let value = std::str::from_utf8(bytes).ok()?;
+    (decode_path_string_silent(value) == bytes).then(|| value.to_string())
 }
 
 fn bytes_to_round_trippable_key_display(bytes: &[u8]) -> Option<String> {
-    if let Ok(value) = std::str::from_utf8(bytes) {
-        if value
-            .bytes()
-            .all(|byte| byte.is_ascii_graphic() || byte == b' ')
-        {
-            return Some(value.to_string());
-        }
-    }
-
-    None
+    std::str::from_utf8(bytes).ok().map(str::to_string)
 }
 
 fn bytes_path_to_js_array(path: &[Vec<u8>]) -> Array {
@@ -1741,6 +1723,32 @@ mod tests {
 
         assert_eq!(key.bytes, vec![0x39, 0x36]);
         assert_eq!(key.legacy_path_segment.as_deref(), Some("96"));
+    }
+
+    #[test]
+    fn should_preserve_non_ascii_utf8_key_bytes_in_legacy_path_segment() {
+        let bytes = "café".as_bytes();
+        let key = decode_key_input(PathInputValue::Bytes(bytes));
+
+        assert_eq!(key.bytes, bytes);
+        assert_eq!(key.legacy_path_segment.as_deref(), Some("café"));
+    }
+
+    #[test]
+    fn should_preserve_non_ascii_utf8_path_bytes_in_legacy_path_segment() {
+        let bytes = "café".as_bytes();
+        let path = decode_path_input(PathInputValue::Bytes(bytes));
+
+        assert_eq!(path.bytes, bytes);
+        assert_eq!(path.legacy_path_segment.as_deref(), Some("café"));
+    }
+
+    #[test]
+    fn should_drop_legacy_path_segment_for_ambiguous_numeric_path_bytes() {
+        let path = decode_path_input(PathInputValue::Bytes(b"96"));
+
+        assert_eq!(path.bytes, b"96".to_vec());
+        assert_eq!(path.legacy_path_segment, None);
     }
 
     #[test]
