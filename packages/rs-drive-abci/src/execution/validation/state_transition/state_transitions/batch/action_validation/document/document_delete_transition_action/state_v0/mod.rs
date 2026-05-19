@@ -69,17 +69,19 @@ impl DocumentDeleteTransitionActionStateValidationV0 for DocumentDeleteTransitio
         };
 
         // TODO: Use multi get https://github.com/facebook/rocksdb/wiki/MultiGet-Performance
-        let (original_document, fee) = fetch_document_with_id(
+        // `fetch_document_with_id` bills internally on transform_into_action: 1+.
+        // PV11 byte-safe: v0 forces epoch=None inside, no add_operation,
+        // same net effect as pre-PR's explicit zero-fee add_operation call.
+        let original_document = fetch_document_with_id(
             platform.drive,
             contract,
             document_type,
             self.base().id(),
             &block_info.epoch,
+            execution_context,
             transaction,
             platform_version,
         )?;
-
-        execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
 
         let Some(document) = original_document else {
             return Ok(ConsensusValidationResult::new_with_error(
