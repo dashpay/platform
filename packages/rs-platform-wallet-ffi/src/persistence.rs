@@ -475,6 +475,22 @@ impl Default for PersistenceCallbacks {
             on_persist_contacts_fn: None,
             on_get_core_tx_record_fn: None,
             on_get_core_tx_record_free_fn: None,
+            #[cfg(feature = "shielded")]
+            on_persist_shielded_notes_fn: None,
+            #[cfg(feature = "shielded")]
+            on_persist_shielded_nullifiers_spent_fn: None,
+            #[cfg(feature = "shielded")]
+            on_persist_shielded_synced_indices_fn: None,
+            #[cfg(feature = "shielded")]
+            on_persist_shielded_nullifier_checkpoints_fn: None,
+            #[cfg(feature = "shielded")]
+            on_load_shielded_notes_fn: None,
+            #[cfg(feature = "shielded")]
+            on_load_shielded_notes_free_fn: None,
+            #[cfg(feature = "shielded")]
+            on_load_shielded_sync_states_fn: None,
+            #[cfg(feature = "shielded")]
+            on_load_shielded_sync_states_free_fn: None,
         }
     }
 }
