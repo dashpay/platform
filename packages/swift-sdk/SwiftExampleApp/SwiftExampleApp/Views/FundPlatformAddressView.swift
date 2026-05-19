@@ -31,6 +31,16 @@ struct FundPlatformAddressView: View {
     /// wallet only) and the managed-wallet lookup at submit time.
     let wallet: PersistentWallet
 
+    /// Optional asset lock to resume from. When non-nil the view
+    /// hides the Core-funding-account + amount sections (the asset
+    /// lock already exists, those choices were made at original
+    /// build time) and routes Submit to
+    /// `ManagedPlatformAddressWallet.resumeFundFromAssetLock` instead
+    /// of building a fresh lock. The user still picks the recipient
+    /// platform address because the orphan lock doesn't carry that
+    /// information — it's set at ST-submission time.
+    var resumeFromLock: PersistentAssetLock? = nil
+
     /// All persisted accounts. Filtered down to the wallet's Core
     /// BIP44 accounts inside `coreAccountOptions` and to its DIP-17
     /// platform-payment accounts inside `platformAccountOptions`.
@@ -84,6 +94,19 @@ struct FundPlatformAddressView: View {
                     // `RegistrationProgressView`.
                     AddressFundingProgressSection(controller: controller)
                     progressTerminalSection(controller: controller)
+                } else if resumeFromLock != nil {
+                    // Resume mode: the asset lock + amount + Core
+                    // funding account were all decided at original
+                    // build time. The user only re-picks the
+                    // recipient since the orphan lock doesn't
+                    // carry that — it's set at ST-submit time.
+                    walletSection
+                    resumeFromAssetLockSection
+                    platformAccountSection
+                    recipientSection
+                    if canSubmit {
+                        submitSection
+                    }
                 } else {
                     walletSection
                     coreFundingSection
@@ -235,13 +258,48 @@ struct FundPlatformAddressView: View {
                 submit()
             } label: {
                 HStack {
-                    Text("Fund Address")
+                    Text(resumeFromLock == nil ? "Fund Address" : "Resume Funding")
                     Spacer()
                 }
                 .foregroundColor(.white)
             }
             .frame(maxWidth: .infinity)
             .listRowBackground(Color.accentColor)
+        }
+    }
+
+    /// Read-only summary of the asset lock the user is resuming.
+    /// Replaces both `coreFundingSection` (the lock already exists
+    /// against a specific account) and `amountSection` (the locked
+    /// amount is whatever the original build chose).
+    @ViewBuilder
+    private var resumeFromAssetLockSection: some View {
+        if let lock = resumeFromLock {
+            Section {
+                HStack {
+                    Label("Asset Lock", systemImage: "lock.fill")
+                    Spacer()
+                    Text(lock.shortOutPointDisplay)
+                        .font(.system(.body, design: .monospaced))
+                        .foregroundColor(.secondary)
+                }
+                HStack {
+                    Label("Amount Locked", systemImage: "dollarsign.circle")
+                    Spacer()
+                    Text(formatDuffs(UInt64(bitPattern: Int64(lock.amountDuffs))))
+                        .foregroundColor(.secondary)
+                }
+                HStack {
+                    Label("Status", systemImage: "info.circle")
+                    Spacer()
+                    Text(lock.statusLabel)
+                        .foregroundColor(.secondary)
+                }
+            } header: {
+                Text("Resuming")
+            } footer: {
+                Text("The asset lock was already built and reached a usable proof state. Pick a destination address to complete the funding.")
+            }
         }
     }
 
@@ -378,7 +436,14 @@ struct FundPlatformAddressView: View {
     }
 
     private var canSubmit: Bool {
-        fundingCoreAccountIndex != nil
+        if resumeFromLock != nil {
+            // Resume only needs a recipient. The lock + amount +
+            // funding account are fixed by the original build.
+            return platformAccountIndex != nil
+                && selectedRecipientHash != nil
+                && activeController == nil
+        }
+        return fundingCoreAccountIndex != nil
             && platformAccountIndex != nil
             && selectedRecipientHash != nil
             && (parsedDuffs ?? 0) >= Self.minDuffs
@@ -407,11 +472,9 @@ struct FundPlatformAddressView: View {
 
     private func submit() {
         guard
-            let fundingAccountIndex = fundingCoreAccountIndex,
             let platformAcct = platformAccountIndex,
             let hash = selectedRecipientHash,
-            let recipient = recipientCandidates.first(where: { $0.addressHash == hash }),
-            let duffs = parsedDuffs
+            let recipient = recipientCandidates.first(where: { $0.addressHash == hash })
         else { return }
 
         let managedHolder = walletManager.wallet(for: wallet.walletId)
@@ -431,28 +494,28 @@ struct FundPlatformAddressView: View {
         let recipientHash = recipient.addressHash
         let recipientType = recipient.addressType
 
-        // Single-flight gate via the coordinator. The same slot
-        // re-presents the existing controller on a duplicate tap
-        // so two FFI calls never race for the same asset lock.
-        let coordinator = walletManager.addressFundingCoordinator
-        let controller = coordinator.startFunding(
-            walletId: walletId,
-            platformAccountIndex: platformAcct,
-            recipientHash: recipientHash,
-            body: {
-                // FFI body — runs on a background priority detached
-                // Task owned by the controller. Returns the proof-
-                // attested credit balance of the recipient address
-                // so the terminal section can surface a meaningful
-                // number.
-                let updates = try await addressWallet.fundFromCoreAssetLock(
-                    amountDuffs: duffs,
-                    fundingAccountIndex: fundingAccountIndex,
+        // FFI closure — captured into the coordinator so the same
+        // controller-lifetime guarantees apply to both fresh and
+        // resume flows. Returning the proof-attested credit
+        // balance of the recipient so the terminal section can
+        // surface a meaningful number.
+        let body: () async throws -> UInt64
+        if let lock = resumeFromLock {
+            // Resume path: outpoint is decoded from the persisted
+            // `outPointHex` (canonical `<txid display hex>:<vout>`
+            // shape produced by `PersistentAssetLock.encodeOutPoint`).
+            guard let parsed = parseOutPoint(lock.outPointHex) else {
+                submitError = SubmitError(
+                    message: "Could not parse asset lock outpoint: \(lock.outPointHex)"
+                )
+                return
+            }
+            body = {
+                let updates = try await addressWallet.resumeFundFromAssetLock(
+                    outPointTxid: parsed.txid,
+                    outPointVout: parsed.vout,
                     platformAccountIndex: platformAcct,
                     recipients: [
-                        // Single recipient — gets the remainder after
-                        // the on-chain fee. `credits = nil` is the
-                        // canonical "receive remainder" marker.
                         ManagedPlatformAddressWallet.FundingRecipient(
                             addressType: recipientType,
                             hash: recipientHash,
@@ -464,15 +527,75 @@ struct FundPlatformAddressView: View {
                 return updates
                     .first(where: { $0.hash == recipientHash })?.balance ?? 0
             }
+        } else {
+            // Fresh build path: needs the funding account + amount
+            // gates that the resume path skips.
+            guard
+                let fundingAccountIndex = fundingCoreAccountIndex,
+                let duffs = parsedDuffs
+            else { return }
+            body = {
+                let updates = try await addressWallet.fundFromCoreAssetLock(
+                    amountDuffs: duffs,
+                    fundingAccountIndex: fundingAccountIndex,
+                    platformAccountIndex: platformAcct,
+                    recipients: [
+                        ManagedPlatformAddressWallet.FundingRecipient(
+                            addressType: recipientType,
+                            hash: recipientHash,
+                            credits: nil
+                        )
+                    ],
+                    signer: signer
+                )
+                return updates
+                    .first(where: { $0.hash == recipientHash })?.balance ?? 0
+            }
+        }
+
+        // Single-flight gate via the coordinator. The same slot
+        // re-presents the existing controller on a duplicate tap
+        // so two FFI calls never race for the same asset lock.
+        let coordinator = walletManager.addressFundingCoordinator
+        let controller = coordinator.startFunding(
+            walletId: walletId,
+            platformAccountIndex: platformAcct,
+            recipientHash: recipientHash,
+            body: body
         )
 
         // Stash the controller; setting it flips the body to the
         // progress section in place of the form. The controller's
         // canonical lifetime owner is the coordinator — if the user
         // dismisses the sheet mid-flight, the same controller is
-        // reachable via the (forthcoming) "Pending Platform Funding"
-        // surface on the wallet detail screen.
+        // reachable via the "Pending Platform Funding" section on
+        // the wallet detail screen.
         activeController = controller
+    }
+
+    /// Parse `<txid display hex>:<vout>` back into (32-byte raw
+    /// little-endian txid, vout). Inverse of
+    /// `PersistentAssetLock.encodeOutPoint(rawBytes:)`'s display
+    /// formatting. Returns `nil` on any malformed input.
+    private func parseOutPoint(_ hex: String) -> (txid: Data, vout: UInt32)? {
+        let parts = hex.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
+        guard parts.count == 2 else { return nil }
+        let txidDisplay = String(parts[0])
+        guard let vout = UInt32(parts[1]) else { return nil }
+        // The display hex is reverse-of-wire order; flip to get the
+        // raw 32-byte little-endian txid the FFI expects.
+        guard txidDisplay.count == 64 else { return nil }
+        var bytes = [UInt8]()
+        bytes.reserveCapacity(32)
+        var idx = txidDisplay.startIndex
+        while idx < txidDisplay.endIndex {
+            let next = txidDisplay.index(idx, offsetBy: 2)
+            guard let b = UInt8(txidDisplay[idx..<next], radix: 16) else { return nil }
+            bytes.append(b)
+            idx = next
+        }
+        let txid = Data(bytes.reversed())
+        return (txid, vout)
     }
 
     // MARK: - Helpers

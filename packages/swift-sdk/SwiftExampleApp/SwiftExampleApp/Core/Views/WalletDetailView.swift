@@ -28,6 +28,16 @@ struct WalletDetailView: View {
     @State private var showSendTransaction = false
     @State private var showWalletInfo = false
     @State private var showFundPlatformAddress = false
+    /// Bound by `PendingPlatformFundingsList`'s Resume row. Setting
+    /// non-nil presents `FundPlatformAddressView` in resume mode
+    /// against this lock's outpoint.
+    @State private var resumingAssetLock: PersistentAssetLock?
+
+    /// Asset-lock rows for this wallet. Drives both the "Pending
+    /// Platform Funding" section's resumable-row enumeration and
+    /// (cheap) reactivity to status transitions across the wallet
+    /// detail screen.
+    @Query private var walletAssetLocks: [PersistentAssetLock]
 
     // Badge count for "View All Transactions". Transactions are no
     // longer wallet-scoped (the same on-chain tx can land in
@@ -46,6 +56,10 @@ struct WalletDetailView: View {
         )
         descriptor.propertiesToFetch = [\.walletId]
         _walletTxos = Query(descriptor)
+        _walletAssetLocks = Query(
+            filter: PersistentAssetLock.predicate(walletId: walletId),
+            sort: [SortDescriptor(\PersistentAssetLock.updatedAt, order: .reverse)]
+        )
     }
 
     private var transactionCount: Int {
@@ -98,6 +112,18 @@ struct WalletDetailView: View {
                 .buttonStyle(.bordered)
             }
             .padding(.horizontal)
+
+            // Pending / Resumable platform funding — collapses to
+            // nothing when there's no in-flight controller and no
+            // orphan asset-lock row, so a freshly-synced wallet
+            // with nothing pending doesn't see an empty card.
+            PendingPlatformFundingsList(
+                coordinator: walletManager.addressFundingCoordinator,
+                walletId: wallet.walletId,
+                assetLocks: walletAssetLocks,
+                resumingAssetLock: $resumingAssetLock
+            )
+            .padding(.top, 8)
 
             Divider()
                 .padding(.vertical, 8)
@@ -181,6 +207,12 @@ struct WalletDetailView: View {
         }
         .sheet(isPresented: $showFundPlatformAddress) {
             FundPlatformAddressView(wallet: wallet)
+        }
+        .sheet(item: $resumingAssetLock) { lock in
+            // Resume mode: the Fund view branches on `resumeFromLock`
+            // and routes Submit to `resumeFundFromAssetLock` against
+            // this lock's outpoint instead of building a fresh one.
+            FundPlatformAddressView(wallet: wallet, resumeFromLock: lock)
         }
         .onAppear { appUIState.showWalletsSyncDetails = false }
     }
