@@ -61,6 +61,8 @@
 - [Finalize Tasks](drive/finalize-tasks.md)
 - [Indexes](drive/indexes.md)
 - [Document Count Trees](drive/document-count-trees.md)
+- [Count Index Examples](drive/count-index-examples.md)
+- [Count Index Group By Examples](drive/count-index-group-by-examples.md)
 
 # Testing
 

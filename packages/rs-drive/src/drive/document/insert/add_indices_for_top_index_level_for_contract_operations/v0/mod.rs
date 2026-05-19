@@ -89,13 +89,31 @@ impl Drive {
 
         // next we need to store a reference to the document for each index
         for (name, sub_level) in index_level.sub_levels() {
-            // If `sub_level` terminates a `range_countable` index, the
-            // top-level property-name tree (created at contract setup) is a
-            // `ProvableCountTree` and each value tree under it must be a
-            // `CountTree` so the parent's aggregate sums per-value counts
-            // cleanly. Otherwise both stay `NormalTree`.
-            let sub_level_range_countable = sub_level
-                .has_index_with_type()
+            // Two flags split on the same `sub_level.has_index_with_type()`
+            // result:
+            //
+            // - `sub_level_is_countable_terminator` — sub_level has any
+            //   countable index. Drives the value-tree type: each value
+            //   tree becomes a `CountTree` whose `count_value_or_default()`
+            //   IS the per-value doc count. This is what shrinks the
+            //   point-lookup count proof by one merk layer (no `[0]`
+            //   descent needed; see
+            //   `point_lookup_count_path_query`'s rangeCountable-shape
+            //   docstring).
+            // - `sub_level_range_countable` — sub_level opts into
+            //   `AggregateCountOnRange`. Drives the property-name tree's
+            //   upgrade from `NormalTree` to `ProvableCountTree`. Implies
+            //   `is_countable` per the invariant on `Index::range_countable`.
+            //
+            // Pure prefix sub-levels (no index here, only further nesting)
+            // leave both flags `false` — both property-name and value tree
+            // stay `NormalTree`, since there's no count surface to
+            // materialize at a prefix level.
+            let sub_level_index_info = sub_level.has_index_with_type();
+            let sub_level_is_countable_terminator = sub_level_index_info
+                .map(|info| info.countable.is_countable())
+                .unwrap_or(false);
+            let sub_level_range_countable = sub_level_index_info
                 .map(|info| info.range_countable)
                 .unwrap_or(false);
             let property_name_tree_type = if sub_level_range_countable {
@@ -103,7 +121,7 @@ impl Drive {
             } else {
                 TreeType::NormalTree
             };
-            let value_tree_type = if sub_level_range_countable {
+            let value_tree_type = if sub_level_is_countable_terminator {
                 TreeType::CountTree
             } else {
                 TreeType::NormalTree
@@ -203,13 +221,18 @@ impl Drive {
             index_path_info.push(document_top_field)?;
             // the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId/<ownerId>
 
+            // Propagate `parent_value_tree_is_count_tree` to the recursive
+            // level: the value tree we just inserted at the top level
+            // becomes a `CountTree` iff its sub_level terminates a
+            // countable index. The recursive level uses this to decide
+            // whether to NonCounted-wrap its own continuation children.
             self.add_indices_for_index_level_for_contract_operations(
                 document_and_contract_info,
                 index_path_info,
                 sub_level,
                 any_fields_null,
                 all_fields_null,
-                sub_level_range_countable,
+                sub_level_is_countable_terminator,
                 previous_batch_operations,
                 &storage_flags,
                 estimated_costs_only_with_layer_info,

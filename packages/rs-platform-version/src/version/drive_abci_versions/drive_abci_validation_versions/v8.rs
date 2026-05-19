@@ -9,6 +9,16 @@ use crate::version::drive_abci_versions::drive_abci_validation_versions::{
 // Bump basic_structure to v1 for contract create and update state transitions.
 // v1 adds config min_version enforcement: since protocol version 12, V0 config is no longer
 // accepted because it lacks sized_integer_types support.
+//
+// Issue #2867 ("validating state transition for free") is fixed at the
+// aggregator layer instead — see
+// `dpp_versions::dpp_validation_versions::v3::DPP_VALIDATION_VERSIONS_V3`,
+// which bumps `validation_result.flatten` and `merge_many` from v0 to v1
+// for PROTOCOL_VERSION_12. This keeps the batch transformer single-version
+// while changing the underlying aggregator semantics so empty-action
+// failure paths become UnpaidConsensusError (tx removed from block by
+// prepare_proposal) instead of being synthesised into a paid empty
+// BatchTransitionAction.
 pub const DRIVE_ABCI_VALIDATION_VERSIONS_V8: DriveAbciValidationVersions =
     DriveAbciValidationVersions {
         state_transitions: DriveAbciStateTransitionValidationVersions {
@@ -111,6 +121,13 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V8: DriveAbciValidationVersions =
                 state: 0,
                 revision: 0,
                 transform_into_action: 0,
+                // PROTOCOL_VERSION_12 (v3.1 hard fork): per-transition
+                // failure paths in `transform_document_transition` now emit
+                // a `BumpIdentityDataContractNonce` action so the user pays
+                // for the validation work that already ran (fetch +
+                // ownership/revision check). v0 stays for chain
+                // reproducibility on PROTOCOL_VERSION_11 and below.
+                failed_per_transition_action: 1,
                 data_triggers: DriveAbciValidationDataTriggerAndBindingVersions {
                     bindings: 0,
                     triggers: DriveAbciValidationDataTriggerVersions {

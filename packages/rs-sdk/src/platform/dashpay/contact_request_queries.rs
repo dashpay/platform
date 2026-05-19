@@ -41,6 +41,7 @@ impl Sdk {
         // Query for sent contact requests (where this identity is the owner)
         // Note: We need to filter by $ownerId to get only this identity's sent requests
         let query = DocumentQuery {
+            select: drive::query::SelectProjection::documents(),
             data_contract: dashpay_contract,
             document_type_name: "contactRequest".to_string(),
             where_clauses: vec![WhereClause {
@@ -48,6 +49,8 @@ impl Sdk {
                 operator: WhereOperator::Equal,
                 value: platform_value!(identity_id),
             }],
+            group_by: vec![],
+            having: vec![],
             order_by_clauses: vec![],
             limit: limit.unwrap_or(100),
             start: None,
@@ -80,6 +83,7 @@ impl Sdk {
 
         // Query for received contact requests (where this identity is toUserId)
         let query = DocumentQuery {
+            select: drive::query::SelectProjection::documents(),
             data_contract: dashpay_contract,
             document_type_name: "contactRequest".to_string(),
             where_clauses: vec![WhereClause {
@@ -87,6 +91,8 @@ impl Sdk {
                 operator: WhereOperator::Equal,
                 value: platform_value!(identity_id),
             }],
+            group_by: vec![],
+            having: vec![],
             order_by_clauses: vec![],
             limit: limit.unwrap_or(100),
             start: None,

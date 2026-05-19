@@ -52,6 +52,7 @@ pub struct DriveVerifyDocumentMethodVersions {
 #[derive(Clone, Debug, Default)]
 pub struct DriveVerifyDocumentCountMethodVersions {
     pub verify_aggregate_count_proof: FeatureVersion,
+    pub verify_carrier_aggregate_count_proof: FeatureVersion,
     pub verify_distinct_count_proof: FeatureVersion,
     pub verify_point_lookup_count_proof: FeatureVersion,
     pub verify_primary_key_count_tree_proof: FeatureVersion,

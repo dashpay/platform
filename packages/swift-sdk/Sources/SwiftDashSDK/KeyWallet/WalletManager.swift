@@ -49,7 +49,7 @@ public class WalletManager {
 
     deinit {
         if ownsHandle {
-            dash_spv_ffi_wallet_manager_free(handle)
+            wallet_manager_free(handle)
         }
     }
 
