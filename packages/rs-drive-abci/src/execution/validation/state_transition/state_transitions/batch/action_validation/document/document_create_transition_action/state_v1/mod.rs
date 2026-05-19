@@ -80,6 +80,7 @@ impl DocumentCreateTransitionActionStateValidationV1 for DocumentCreateTransitio
             contract,
             document_type,
             self.base().id(),
+            &block_info.epoch,
             transaction,
             platform_version,
         )?;

@@ -81,7 +81,7 @@ pub(super) fn create_contact_request_data_trigger_v0(
     let (to_identity, balance_fee_result) =
         context.platform.drive.fetch_identity_balance_with_costs(
             to_user_id.to_buffer(),
-            context.platform.state.last_block_info(),
+            context.block_info,
             true,
             context.transaction,
             platform_version,
@@ -187,6 +187,7 @@ mod test {
         let data_trigger_context = DataTriggerExecutionContext {
             platform: &platform_ref,
             owner_id,
+            block_info: &BlockInfo::default(),
             state_transition_execution_context: &transition_execution_context,
             transaction: None,
         };
@@ -308,6 +309,7 @@ mod test {
         let data_trigger_context = DataTriggerExecutionContext {
             platform: &platform_ref,
             owner_id: &owner_id,
+            block_info: &BlockInfo::default(),
             state_transition_execution_context: &transition_execution_context,
             transaction: None,
         };
@@ -426,6 +428,7 @@ mod test {
         let data_trigger_context = DataTriggerExecutionContext {
             platform: &platform_ref,
             owner_id: &owner_id,
+            block_info: &BlockInfo::default(),
             state_transition_execution_context: &transition_execution_context,
             transaction: None,
         };

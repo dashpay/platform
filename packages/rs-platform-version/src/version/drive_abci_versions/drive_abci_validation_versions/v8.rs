@@ -120,12 +120,29 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V8: DriveAbciValidationVersions =
                 advanced_structure: 0,
                 state: 0,
                 revision: 0,
-                // PROTOCOL_VERSION_12 (v3.1 hard fork): the outer
-                // `execution_context` is threaded through the batch transformer
-                // so per-transition fee_results accumulated inside
-                // `try_into_action_v0` are billed to the user. v0 preserves the
-                // legacy dropped-local-ctx behavior for PROTOCOL_VERSION_11
-                // chain replay.
+                // PROTOCOL_VERSION_12 (v3.1 hard fork): batch state transition
+                // fee accounting fixes. This single field gates multiple
+                // related billing changes so they all activate together at
+                // the same hard fork. On v0 every behavior below is the
+                // legacy under-billing, preserved verbatim for
+                // PROTOCOL_VERSION_11 chain replay.
+                //
+                // Gated by `transform_into_action: 1`:
+                //   * B7 — outer `execution_context` is threaded through the
+                //     batch transformer (was a dropped local) so per-
+                //     transition fee_results in `try_into_action_v0` are
+                //     billed.
+                //   * B4 — `query_documents` cost in
+                //     `fetch_documents_for_transitions_knowing_contract_and_document_type`
+                //     is added to `execution_context`.
+                //   * B5 — `query_documents` cost in `fetch_document_with_id`
+                //     is added to `execution_context`.
+                //   * T1 — DPNS data trigger parent-domain
+                //     `query_documents` cost.
+                //   * T2 — DPNS data trigger preorder `query_documents` cost.
+                //   * T3 — DashPay data trigger recipient identity-balance
+                //     fetch cost (switched to `fetch_identity_balance_with_costs`).
+                //   * T4 — withdrawals data trigger `query_documents` cost.
                 transform_into_action: 1,
                 // PROTOCOL_VERSION_12 (v3.1 hard fork): per-transition
                 // failure paths in `transform_document_transition` now emit

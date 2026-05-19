@@ -1,5 +1,6 @@
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::platform_types::platform::PlatformStateRef;
+use dpp::block::block_info::BlockInfo;
 use dpp::prelude::*;
 use drive::grovedb::TransactionArg;
 use std::fmt::{Debug, Formatter};
@@ -14,6 +15,13 @@ pub struct DataTriggerExecutionContext<'a> {
     pub transaction: TransactionArg<'a, 'a>,
     /// The identifier of the owner of the data contract that the trigger is associated with.
     pub owner_id: &'a Identifier,
+    /// The current block info, used as the source of `epoch` for trigger
+    /// fee computations. Triggers must use `block_info.epoch` (matching
+    /// the batch transformer's epoch source) rather than
+    /// `platform.state.last_committed_block_epoch_ref()` so the per-batch
+    /// fee accounting is consistent across all sites that bill on
+    /// `transform_into_action: 1`.
+    pub block_info: &'a BlockInfo,
     /// A reference to the execution context for the state transition that triggered the data trigger.
     pub state_transition_execution_context: &'a StateTransitionExecutionContext,
 }

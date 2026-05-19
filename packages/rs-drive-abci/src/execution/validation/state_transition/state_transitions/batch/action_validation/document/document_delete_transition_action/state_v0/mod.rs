@@ -74,6 +74,7 @@ impl DocumentDeleteTransitionActionStateValidationV0 for DocumentDeleteTransitio
             contract,
             document_type,
             self.base().id(),
+            &block_info.epoch,
             transaction,
             platform_version,
         )?;

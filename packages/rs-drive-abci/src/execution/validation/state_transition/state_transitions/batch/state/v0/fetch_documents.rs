@@ -22,8 +22,9 @@ use drive::query::{DriveDocumentQuery, InternalClauses, WhereClause, WhereOperat
 /// Returns the fetched documents plus the `FeeResult` for the underlying
 /// `query_documents` operation. The caller decides whether to bill the
 /// `FeeResult` to the `StateTransitionExecutionContext` — gated by the
-/// `fetch_documents_for_transitions_billing` field on
-/// `DriveAbciDocumentsStateTransitionValidationVersions`.
+/// `transform_into_action` field on
+/// `DriveAbciDocumentsStateTransitionValidationVersions` (`0` discards
+/// the cost for PROTOCOL_VERSION_11 chain replay, `1` bills it).
 ///
 /// `query_documents` only computes a non-zero cost when an `Epoch` is
 /// provided; the legacy `None` epoch resulted in a hard-coded zero cost
@@ -92,11 +93,24 @@ pub(crate) fn fetch_documents_for_transitions_knowing_contract_and_document_type
     ))
 }
 
+/// Returns the document (if any) plus the `FeeResult` for the underlying
+/// `query_documents` operation.
+///
+/// The cost computation is gated by `transform_into_action` on
+/// `DriveAbciDocumentsStateTransitionValidationVersions`:
+/// - `0` (PROTOCOL_VERSION_11 and below): pass `epoch=None` to
+///   `query_documents`, which hard-codes the cost to 0. The returned
+///   `FeeResult` has `processing_fee=0` and callers' `add_operation`
+///   becomes a no-op-fee. Byte-identical to pre-PR behavior on v11.
+/// - `1` (PROTOCOL_VERSION_12+): pass `Some(epoch)` so the real grovedb
+///   cost is computed and returned. Callers bill it via the existing
+///   `execution_context.add_operation` call site.
 pub(crate) fn fetch_document_with_id(
     drive: &Drive,
     contract: &DataContract,
     document_type: DocumentTypeRef,
     id: Identifier,
+    epoch: &Epoch,
     transaction: TransactionArg,
     platform_version: &PlatformVersion,
 ) -> Result<(Option<Document>, FeeResult), Error> {
@@ -122,19 +136,37 @@ pub(crate) fn fetch_document_with_id(
         block_time_ms: None,
     };
 
-    // todo: deal with cost of this operation
+    let epoch_arg = match platform_version
+        .drive_abci
+        .validation_and_processing
+        .state_transitions
+        .batch_state_transition
+        .transform_into_action
+    {
+        0 => None,
+        1 => Some(epoch),
+        version => {
+            return Err(Error::Execution(
+                crate::error::execution::ExecutionError::UnknownVersionMismatch {
+                    method: "fetch_document_with_id: transform_into_action gate".to_string(),
+                    known_versions: vec![0, 1],
+                    received: version,
+                },
+            ));
+        }
+    };
+
     let documents_outcome = drive.query_documents(
         drive_query,
-        None,
+        epoch_arg,
         false,
         transaction,
         Some(platform_version.protocol_version),
     )?;
 
-    let fee = documents_outcome.cost();
     let fee_result = FeeResult {
         storage_fee: 0,
-        processing_fee: fee,
+        processing_fee: documents_outcome.cost(),
         fee_refunds: Default::default(),
         removed_bytes_from_system: 0,
     };

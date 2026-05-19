@@ -278,6 +278,7 @@ impl DocumentsBatchStateTransitionStateValidationV0 for BatchTransition {
                         platform,
                         transaction,
                         owner_id: &self.owner_id(),
+                        block_info,
                         state_transition_execution_context: &state_transition_execution_context,
                     };
                     let (data_trigger_execution_result, data_trigger_fee_result) =

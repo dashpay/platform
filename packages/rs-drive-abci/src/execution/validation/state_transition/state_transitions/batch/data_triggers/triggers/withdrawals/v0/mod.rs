@@ -82,7 +82,7 @@ pub(super) fn delete_withdrawal_data_trigger_v0(
     // Pass `Some(epoch)` so query_documents computes the real cost
     // (with `None` it short-circuits to 0). Surface it via the returned
     // FeeResult so the caller bills it on `transform_into_action: 1`.
-    let epoch: &Epoch = context.platform.state.last_committed_block_epoch_ref();
+    let epoch: &Epoch = &context.block_info.epoch;
     let withdrawals_outcome = context.platform.drive.query_documents(
         drive_query,
         Some(epoch),
@@ -191,6 +191,7 @@ mod tests {
         let data_trigger_context = DataTriggerExecutionContext {
             platform: &platform_ref,
             owner_id: &owner_id,
+            block_info: &BlockInfo::default(),
             state_transition_execution_context: &StateTransitionExecutionContext::V0(
                 transition_execution_context,
             ),
@@ -330,6 +331,7 @@ mod tests {
         let data_trigger_context = DataTriggerExecutionContext {
             platform: &platform_ref,
             owner_id: &owner_id,
+            block_info: &BlockInfo::default(),
             state_transition_execution_context: &transition_execution_context,
             transaction: None,
         };

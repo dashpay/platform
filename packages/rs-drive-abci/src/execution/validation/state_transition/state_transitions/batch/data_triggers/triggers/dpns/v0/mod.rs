@@ -107,7 +107,7 @@ pub(super) fn create_domain_data_trigger_v0(
 
     let mut result = DataTriggerExecutionResult::default();
     let mut accumulated_fee_result = FeeResult::default();
-    let epoch: &Epoch = context.platform.state.last_committed_block_epoch_ref();
+    let epoch: &Epoch = &context.block_info.epoch;
 
     if !is_dry_run {
         if full_domain_name.len() > MAX_PRINTABLE_DOMAIN_NAME_LENGTH {
@@ -453,6 +453,7 @@ mod test {
         let data_trigger_context = DataTriggerExecutionContext {
             platform: &platform_ref,
             owner_id: &owner_id,
+            block_info: &BlockInfo::default(),
             state_transition_execution_context: &transition_execution_context,
             transaction: None,
         };
