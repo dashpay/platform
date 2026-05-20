@@ -28,15 +28,9 @@ struct WalletDetailView: View {
     @State private var showSendTransaction = false
     @State private var showWalletInfo = false
     @State private var showFundPlatformAddress = false
-    /// Bound by `PendingPlatformTopUpsList`'s Resume row. Setting
-    /// non-nil presents `TopUpPlatformAddressView` in resume mode
-    /// against this lock's outpoint.
+    /// Set by `PendingPlatformTopUpsList`'s Resume tap.
     @State private var resumingAssetLock: PersistentAssetLock?
 
-    /// Asset-lock rows for this wallet. Drives both the "Pending
-    /// Platform Funding" section's resumable-row enumeration and
-    /// (cheap) reactivity to status transitions across the wallet
-    /// detail screen.
     @Query private var walletAssetLocks: [PersistentAssetLock]
 
     // Badge count for "View All Transactions". Transactions are no
@@ -113,10 +107,6 @@ struct WalletDetailView: View {
             }
             .padding(.horizontal)
 
-            // Pending / Resumable platform funding — collapses to
-            // nothing when there's no in-flight controller and no
-            // orphan asset-lock row, so a freshly-synced wallet
-            // with nothing pending doesn't see an empty card.
             PendingPlatformTopUpsList(
                 coordinator: walletManager.addressTopUpCoordinator,
                 walletId: wallet.walletId,
@@ -209,9 +199,6 @@ struct WalletDetailView: View {
             TopUpPlatformAddressView(wallet: wallet)
         }
         .sheet(item: $resumingAssetLock) { lock in
-            // Resume mode: the Fund view branches on `resumeFromLock`
-            // and routes Submit to `resumeTopUpFromAssetLock` against
-            // this lock's outpoint instead of building a fresh one.
             TopUpPlatformAddressView(wallet: wallet, resumeFromLock: lock)
         }
         .onAppear { appUIState.showWalletsSyncDetails = false }
