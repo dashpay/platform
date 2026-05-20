@@ -1,34 +1,34 @@
 //! Average-query dispatcher entry point.
 //!
-//! Implementation strategy: **compose** count + sum into the
-//! `(count, sum)` pair the client divides. Both executors are real
-//! and live in `drive_document_count_query` /
-//! `drive_document_sum_query` respectively; the average dispatcher
-//! issues both requests under the same `transaction` and zips their
-//! responses together by `(in_key, key)` for grouped shapes.
+//! Routes a [`DocumentAverageRequest`] to one of two backends:
+//! - **No-prove path** → delegates to the joint count-and-sum
+//!   dispatcher
+//!   [`Drive::execute_document_count_and_sum_request`], which walks
+//!   grovedb ONCE and reads both metrics from each visited
+//!   count-sum-bearing element via
+//!   [`grovedb::Element::count_sum_value_or_default`]. See its module
+//!   docstring for the routing / atomicity contract.
+//! - **Prove path** → dispatched to
+//!   [`Drive::execute_document_average_prove`] (defined below), which
+//!   routes to one of the PCPS / direct-read prove executors based on
+//!   `(mode, where_clauses)`. The prove path's per-shape rules are
+//!   unchanged.
 //!
-//! ## Why compose instead of using a single PCPS traversal?
+//! ## Joint dispatch
 //!
-//! grovedb's `AggregateCountAndSumOnRange` primitive returns both
-//! metrics from one root-hash-committed traversal — cheaper on the
-//! wire and atomic — but it only fires when the chosen index has
-//! a `ProvableCountProvableSumTree` terminator (i.e. `rangeCountable
-//! + rangeSummable`). For doctypes/indexes that lack PCPS-eligibility
-//! (just `documentsSummable` without `rangeCountable`, for example)
-//! the no-prove path has to compose two reads instead:
+//! The no-prove dispatcher at
+//! [`crate::query::drive_document_count_and_sum_query`] reads
+//! `(count, sum)` together — via grovedb's combined
+//! `query_aggregate_count_and_sum` accumulator on the aggregate range
+//! branch, and via a single PCPS walk on the distinct-grouped branch.
+//! Routing reuses sum's versioned mode-detection table so the
+//! `(where_clauses × mode)` → executor decision has a single source
+//! of truth shared with the count and sum surfaces.
 //!
-//! - **No-prove paths**: count + sum are read within the same
-//!   grovedb snapshot, so they see identical state (no block-
-//!   boundary race, no off-by-one). When the caller passes a
-//!   `TransactionArg::None` (the drive-abci query path), the
-//!   dispatcher opens a short-lived read transaction internally and
-//!   reuses it across both sub-calls so the atomicity guarantee
-//!   holds regardless of caller plumbing. The internal transaction
-//!   is rolled back at the end (read-only, never commits).
-//! - **Prove path**: dispatched to
-//!   [`Drive::execute_document_average_prove`] (defined below),
-//!   which routes to one of the PCPS / direct-read prove executors
-//!   based on `(mode, where_clauses)`:
+//! ## Prove path shapes (unchanged)
+//!
+//! The prove-path routing table at
+//! [`Self::execute_document_average_prove`] picks one of:
 //!     - empty-where + `documentsCountable + documentsSummable`
 //!       doctype → primary-key count-sum tree direct read
 //!     - range AVG on a `rangeAverageable` index → PCPS
@@ -49,17 +49,12 @@ use crate::drive::Drive;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use crate::query::drive_document_average_query::{
-    AverageEntry, AverageMode, DocumentAverageRequest, DocumentAverageResponse,
-};
-use crate::query::drive_document_count_query::{
-    CountMode, DocumentCountRequest, DocumentCountResponse,
+    AverageMode, DocumentAverageRequest, DocumentAverageResponse,
 };
 use crate::query::drive_document_sum_query::index_picker::{
     find_range_summable_index_for_where_clauses, find_summable_index_for_where_clauses,
 };
-use crate::query::drive_document_sum_query::{
-    is_range_operator, DocumentSumRequest, DocumentSumResponse, DriveDocumentSumQuery, SumMode,
-};
+use crate::query::drive_document_sum_query::{is_range_operator, DriveDocumentSumQuery};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::{DocumentTypeV0Getters, DocumentTypeV2Getters};
 use dpp::version::PlatformVersion;
@@ -67,12 +62,14 @@ use grovedb::TransactionArg;
 
 #[cfg(feature = "server")]
 impl Drive {
-    /// Server-side entry point for the average surface. Composes the
-    /// count + sum executors and zips their outputs into the
-    /// `(count, sum)` pair the client divides.
+    /// Server-side entry point for the average surface.
     ///
-    /// See the module docstring for the rationale on composition vs.
-    /// a single PCPS traversal.
+    /// Splits prove vs. no-prove at the top level:
+    /// - `prove = true` → routes to
+    ///   [`Self::execute_document_average_prove`].
+    /// - `prove = false` → routes to
+    ///   [`Self::execute_document_count_and_sum_request`], the joint
+    ///   dispatcher that reads `(count, sum)` together.
     pub fn execute_document_average_request(
         &self,
         request: DocumentAverageRequest,
@@ -82,116 +79,7 @@ impl Drive {
         if request.prove {
             return self.execute_document_average_prove(request, transaction, platform_version);
         }
-
-        // Map `AverageMode` → matching `CountMode` / `SumMode`. The
-        // three enums are structurally identical (same four variants);
-        // each pair just lives in its own namespace.
-        let (count_mode, sum_mode) = match request.mode {
-            AverageMode::Aggregate => (CountMode::Aggregate, SumMode::Aggregate),
-            AverageMode::GroupByIn => (CountMode::GroupByIn, SumMode::GroupByIn),
-            AverageMode::GroupByRange => (CountMode::GroupByRange, SumMode::GroupByRange),
-            AverageMode::GroupByCompound => (CountMode::GroupByCompound, SumMode::GroupByCompound),
-        };
-
-        // Build parallel sub-requests. Both consume the same
-        // `where_clauses` + `order_clauses` + `limit` + (false) `prove`
-        // — the average's shape contract is "two reads of the same
-        // grovedb snapshot, zipped after."
-        //
-        // Architectural follow-up: tracked at
-        // [dashpay/platform#3687](https://github.com/dashpay/platform/issues/3687).
-        // The two-sub-request shape will collapse into a single
-        // `DocumentCountSumRequest` + a unified
-        // `execute_document_count_and_sum_request` that walks
-        // grovedb once and reads both metrics from each visited PCPS
-        // element via `count_sum_value_or_default()`. The prove path
-        // at `execute_document_average_prove` below already does
-        // this (one PCPS walk yields both fields); the no-proof
-        // path currently double-walks. The current two-request
-        // shape is correct (the local transaction below guarantees
-        // atomicity); it just does more grovedb work than strictly
-        // necessary, and the dual-routing requires count's and sum's
-        // routing tables to stay in lock-step for AVG composition to
-        // work (already caught one routing divergence). Issue #3687
-        // captures the full scope including the four joint per-mode
-        // no-proof executors that need to land.
-        let count_request = DocumentCountRequest {
-            contract: request.contract,
-            document_type: request.document_type,
-            where_clauses: request.where_clauses.clone(),
-            order_clauses: request.order_clauses.clone(),
-            mode: count_mode,
-            limit: request.limit,
-            prove: false,
-            drive_config: request.drive_config,
-        };
-        let sum_request = DocumentSumRequest {
-            contract: request.contract,
-            document_type: request.document_type,
-            sum_property: request.sum_property,
-            where_clauses: request.where_clauses,
-            order_clauses: request.order_clauses,
-            mode: sum_mode,
-            limit: request.limit,
-            prove: false,
-            drive_config: request.drive_config,
-        };
-
-        // Atomicity: both sub-reads must see the same grovedb root. If
-        // the caller didn't provide a transaction we open a short-lived
-        // read transaction here and reuse it across both executors so
-        // a concurrent block commit can't slip between the count and
-        // sum reads (the attacker-steerable race documented in the
-        // module-level docstring). The local transaction is read-only
-        // and dropped without commit at the end of this function.
-        let local_tx;
-        let effective_transaction: TransactionArg = if transaction.is_some() {
-            transaction
-        } else {
-            local_tx = self.grove.start_transaction();
-            Some(&local_tx)
-        };
-
-        let count_response = self.execute_document_count_request(
-            count_request,
-            effective_transaction,
-            platform_version,
-        )?;
-        let sum_response = self.execute_document_sum_request(
-            sum_request,
-            effective_transaction,
-            platform_version,
-        )?;
-
-        // Combine. The two executors emit either Aggregate or Entries
-        // (Proof is unreachable here since `prove=false` above). The
-        // mode-pair is symmetric so they must agree on which shape
-        // they emit — mismatches indicate a routing bug, surface as
-        // CorruptedCodeExecution.
-        match (count_response, sum_response) {
-            (DocumentCountResponse::Aggregate(count), DocumentSumResponse::Aggregate(sum)) => {
-                Ok(DocumentAverageResponse::Aggregate { count, sum })
-            }
-            (
-                DocumentCountResponse::Entries(count_entries),
-                DocumentSumResponse::Entries(sum_entries),
-            ) => Ok(DocumentAverageResponse::Entries(zip_entries(
-                count_entries,
-                sum_entries,
-            )?)),
-            // Mismatched shapes — count executor and sum executor
-            // disagreed on whether the result fits in a single row.
-            // Should be impossible because they share the same mode
-            // and `validate_and_canonicalize_where_clauses` runs the
-            // same checks on both.
-            _ => Err(Error::Drive(
-                crate::error::drive::DriveError::CorruptedCodeExecution(
-                    "average composition: count and sum executors emitted disagreeing \
-                     response shapes — both should agree on Aggregate vs Entries given \
-                     identical mode + where + group_by",
-                ),
-            )),
-        }
+        self.execute_document_count_and_sum_request(request, transaction, platform_version)
     }
 
     /// Prove path of [`Self::execute_document_average_request`].
@@ -246,7 +134,7 @@ impl Drive {
 
         // Empty-where AVG fast path: prove the primary-key
         // count-sum-bearing element directly when the doctype
-        // declares both `documentsCountable: true` (implied by
+        // declares both `documents_countable: true` (implied by
         // having a CountSumTree primary key) and a matching
         // `documents_summable`. The verifier extracts `(count,
         // sum)` from one element.
@@ -503,188 +391,9 @@ impl Drive {
     }
 }
 
-/// Merge per-`(in_key, key)` count entries and sum entries into average
-/// entries via a strict two-pointer merge keyed on `(in_key, key)`.
-///
-/// Both inputs are emitted by the same executor family with identical
-/// `where_clauses` / `order_clauses` / `mode` against the same grovedb
-/// snapshot, so they MUST emit the same set of keys in the same
-/// ascending `(in_key, key)` order. Any divergence (key on one side
-/// only, or different ordering) indicates an executor bug and is
-/// surfaced as `CorruptedCodeExecution` rather than silently zeroed at
-/// the wire layer — the previous defensive `None`-preservation pattern
-/// was indistinguishable from "this key matched zero documents but the
-/// sum is nonzero" once the wire mapping flattened `Option<u64>` →
-/// `u64`, which let attacker-timed inserts between the two reads
-/// produce a `count=0, sum=V` bucket that crashed naive `sum / count`
-/// clients with a divide-by-zero. With atomicity now enforced inside
-/// `execute_document_average_request` (see module docstring), the only
-/// remaining cause of divergence is a real executor bug — treating it
-/// as fatal is correct.
-///
-/// Output is always strictly ascending by `(in_key, key)` (same order
-/// the inputs are required to be in).
-#[cfg(feature = "server")]
-fn zip_entries(
-    count_entries: Vec<crate::query::SplitCountEntry>,
-    sum_entries: Vec<crate::query::SumEntry>,
-) -> Result<Vec<AverageEntry>, Error> {
-    use crate::error::drive::DriveError;
-
-    let mut out = Vec::with_capacity(count_entries.len().max(sum_entries.len()));
-    let mut c_iter = count_entries.into_iter();
-    let mut s_iter = sum_entries.into_iter();
-    let mut next_c = c_iter.next();
-    let mut next_s = s_iter.next();
-
-    loop {
-        match (&next_c, &next_s) {
-            (Some(c), Some(s)) => {
-                let c_key = (&c.in_key, &c.key);
-                let s_key = (&s.in_key, &s.key);
-                match c_key.cmp(&s_key) {
-                    std::cmp::Ordering::Equal => {
-                        let c = next_c.take().expect("checked Some above");
-                        let s = next_s.take().expect("checked Some above");
-                        out.push(AverageEntry {
-                            in_key: c.in_key,
-                            key: c.key,
-                            count: c.count,
-                            sum: s.sum,
-                        });
-                        next_c = c_iter.next();
-                        next_s = s_iter.next();
-                    }
-                    std::cmp::Ordering::Less => {
-                        return Err(Error::Drive(DriveError::CorruptedCodeExecution(
-                            "average composition: count executor emitted a (in_key, key) the \
-                             sum executor didn't — both executors run identical inputs against \
-                             the same grovedb snapshot, so divergence indicates an executor bug",
-                        )));
-                    }
-                    std::cmp::Ordering::Greater => {
-                        return Err(Error::Drive(DriveError::CorruptedCodeExecution(
-                            "average composition: sum executor emitted a (in_key, key) the \
-                             count executor didn't — both executors run identical inputs against \
-                             the same grovedb snapshot, so divergence indicates an executor bug",
-                        )));
-                    }
-                }
-            }
-            (Some(_), None) => {
-                return Err(Error::Drive(DriveError::CorruptedCodeExecution(
-                    "average composition: count executor produced more entries than sum executor \
-                     — both executors run identical inputs against the same grovedb snapshot, \
-                     so divergence indicates an executor bug",
-                )));
-            }
-            (None, Some(_)) => {
-                return Err(Error::Drive(DriveError::CorruptedCodeExecution(
-                    "average composition: sum executor produced more entries than count executor \
-                     — both executors run identical inputs against the same grovedb snapshot, \
-                     so divergence indicates an executor bug",
-                )));
-            }
-            (None, None) => break,
-        }
-    }
-    Ok(out)
-}
-
 #[cfg(all(test, feature = "server"))]
 mod tests {
     use super::*;
-    use crate::error::drive::DriveError;
-    use crate::query::{SplitCountEntry, SumEntry};
-
-    fn cc(in_key: Option<&[u8]>, key: &[u8], count: u64) -> SplitCountEntry {
-        SplitCountEntry {
-            in_key: in_key.map(|b| b.to_vec()),
-            key: key.to_vec(),
-            count: Some(count),
-        }
-    }
-    fn ss(in_key: Option<&[u8]>, key: &[u8], sum: i64) -> SumEntry {
-        SumEntry {
-            in_key: in_key.map(|b| b.to_vec()),
-            key: key.to_vec(),
-            sum: Some(sum),
-        }
-    }
-
-    #[test]
-    fn zip_entries_merges_aligned_streams_in_ascending_order() {
-        let count_entries = vec![cc(None, b"a", 1), cc(None, b"b", 2), cc(None, b"c", 3)];
-        let sum_entries = vec![ss(None, b"a", 10), ss(None, b"b", 20), ss(None, b"c", 30)];
-        let out = zip_entries(count_entries, sum_entries).expect("aligned streams must merge");
-        assert_eq!(out.len(), 3);
-        assert_eq!(out[0].key, b"a");
-        assert_eq!(out[0].count, Some(1));
-        assert_eq!(out[0].sum, Some(10));
-        assert_eq!(out[2].key, b"c");
-        assert_eq!(out[2].count, Some(3));
-        assert_eq!(out[2].sum, Some(30));
-    }
-
-    #[test]
-    fn zip_entries_errors_when_count_has_an_extra_key() {
-        // count has `b` but sum doesn't — strict merge must reject.
-        let count_entries = vec![cc(None, b"a", 1), cc(None, b"b", 2)];
-        let sum_entries = vec![ss(None, b"a", 10)];
-        let err = zip_entries(count_entries, sum_entries)
-            .expect_err("divergent streams must surface as CorruptedCodeExecution");
-        assert!(
-            matches!(err, Error::Drive(DriveError::CorruptedCodeExecution(_))),
-            "expected CorruptedCodeExecution, got {err:?}",
-        );
-    }
-
-    #[test]
-    fn zip_entries_errors_when_sum_has_an_extra_key() {
-        let count_entries = vec![cc(None, b"a", 1)];
-        let sum_entries = vec![ss(None, b"a", 10), ss(None, b"b", 20)];
-        let err = zip_entries(count_entries, sum_entries)
-            .expect_err("divergent streams must surface as CorruptedCodeExecution");
-        assert!(
-            matches!(err, Error::Drive(DriveError::CorruptedCodeExecution(_))),
-            "expected CorruptedCodeExecution, got {err:?}",
-        );
-    }
-
-    #[test]
-    fn zip_entries_errors_when_streams_disagree_on_a_key_in_the_middle() {
-        // count has `b`, sum has `c` between the matching `a` and `d`.
-        let count_entries = vec![cc(None, b"a", 1), cc(None, b"b", 2), cc(None, b"d", 4)];
-        let sum_entries = vec![ss(None, b"a", 10), ss(None, b"c", 30), ss(None, b"d", 40)];
-        let err = zip_entries(count_entries, sum_entries)
-            .expect_err("middle-of-stream divergence must surface as CorruptedCodeExecution");
-        assert!(matches!(
-            err,
-            Error::Drive(DriveError::CorruptedCodeExecution(_))
-        ));
-    }
-
-    #[test]
-    fn zip_entries_handles_compound_in_key_ordering() {
-        // (Some("X"), "a") < (Some("X"), "b") < (Some("Y"), "a") in
-        // lexicographic order — verify the merge follows it.
-        let count_entries = vec![
-            cc(Some(b"X"), b"a", 1),
-            cc(Some(b"X"), b"b", 2),
-            cc(Some(b"Y"), b"a", 3),
-        ];
-        let sum_entries = vec![
-            ss(Some(b"X"), b"a", 10),
-            ss(Some(b"X"), b"b", 20),
-            ss(Some(b"Y"), b"a", 30),
-        ];
-        let out = zip_entries(count_entries, sum_entries).expect("aligned compound merge");
-        assert_eq!(out.len(), 3);
-        assert_eq!(out[0].in_key.as_deref(), Some(b"X".as_ref()));
-        assert_eq!(out[0].key, b"a");
-        assert_eq!(out[2].in_key.as_deref(), Some(b"Y".as_ref()));
-        assert_eq!(out[2].key, b"a");
-    }
 
     // ── Dispatcher limit-policy regression tests ───────────────────
     //
@@ -1126,5 +835,1436 @@ mod tests {
             .with_no_limit();
         let _: (GroveDBProof, _) = bincode::decode_from_slice(&proof_bytes, bincode_config)
             .expect("proof bytes must bincode-decode as a GroveDBProof");
+    }
+
+    // ── Joint count-and-sum no-prove executor cross-checks ────────
+    //
+    // Acceptance criterion 4 of issue #3687: "one [test] per joint
+    // executor confirming `(count, sum)` match what the current
+    // double-dispatch produces, against the same grades-contract
+    // fixture."
+    //
+    // Strategy: for each joint executor (Total / PerInValue /
+    // RangeNoProof — and RangeNoProof's distinct branch), issue the
+    // AVG no-prove request via `execute_document_average_request`
+    // AND independently issue separate count + sum requests under
+    // the same transaction. Assert the joint executor's
+    // `(count, sum)` matches the zipped pair from the independent
+    // count + sum surfaces — a cross-check the joint and per-surface
+    // dispatchers cannot silently disagree.
+
+    use crate::query::drive_document_average_query::AverageEntry;
+    use crate::query::drive_document_count_query::{
+        CountMode, DocumentCountRequest, DocumentCountResponse,
+    };
+    use crate::query::drive_document_sum_query::{
+        DocumentSumRequest, DocumentSumResponse, SumMode,
+    };
+
+    /// Issue an independent count + sum pair via the per-surface
+    /// dispatchers and return the zipped `(count, sum)` aggregate.
+    /// Used as the source of truth for cross-checking the joint
+    /// executor's output.
+    fn independent_count_sum_aggregate(
+        drive: &Drive,
+        contract: &dpp::data_contract::DataContract,
+        document_type: dpp::data_contract::document_type::DocumentTypeRef,
+        sum_property: &str,
+        where_clauses: Vec<WhereClause>,
+        drive_config: &DriveConfig,
+        platform_version: &PlatformVersion,
+    ) -> (u64, i64) {
+        let count_request = DocumentCountRequest {
+            contract,
+            document_type,
+            where_clauses: where_clauses.clone(),
+            order_clauses: Vec::new(),
+            mode: CountMode::Aggregate,
+            limit: None,
+            prove: false,
+            drive_config,
+        };
+        let sum_request = DocumentSumRequest {
+            contract,
+            document_type,
+            sum_property: sum_property.to_string(),
+            where_clauses,
+            order_clauses: Vec::new(),
+            mode: SumMode::Aggregate,
+            limit: None,
+            prove: false,
+            drive_config,
+        };
+        let count_resp = drive
+            .execute_document_count_request(count_request, None, platform_version)
+            .expect("independent count");
+        let sum_resp = drive
+            .execute_document_sum_request(sum_request, None, platform_version)
+            .expect("independent sum");
+        let count = match count_resp {
+            DocumentCountResponse::Aggregate(c) => c,
+            other => panic!("expected count Aggregate, got {:?}", other),
+        };
+        let sum = match sum_resp {
+            DocumentSumResponse::Aggregate(s) => s,
+            other => panic!("expected sum Aggregate, got {:?}", other),
+        };
+        (count, sum)
+    }
+
+    /// `execute_document_count_and_sum_total_no_proof` cross-check:
+    /// empty-where total on a doctype with `documents_summable +
+    /// documents_countable`. Goes through the primary-key fast path.
+    #[test]
+    fn joint_total_executor_matches_independent_count_plus_sum() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        // The empty-where Total path requires the doctype's
+        // documents_summable + documents_countable to be set, but a
+        // covering `summable + countable` byColor index also works
+        // for the Equal-only-fully-covered sub-path. Use the latter
+        // since the test factory above doesn't easily produce
+        // doctype-level summable+countable. The Equal-only branch
+        // of execute_document_count_and_sum_total_no_proof still
+        // routes through `DocumentSumMode::Total` per sum's table.
+        let factory = DataContractFactory::new(PROTOCOL_VERSION_V12).expect("create factory");
+        let document_schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "color":  {"type": "string",  "position": 0, "maxLength": 32},
+                "amount": {"type": "integer", "position": 1, "minimum": 0, "maximum": 1000},
+            },
+            "required": ["color", "amount"],
+            "indices": [{
+                "name": "byColor",
+                "properties": [{"color": "asc"}],
+                "summable":  "amount",
+                "countable": "countable",
+            }],
+            "additionalProperties": false,
+        });
+        let schemas = platform_value!({ "widget": document_schema });
+        let data_contract = factory
+            .create_with_value_config(
+                dpp::tests::utils::generate_random_identifier_struct(),
+                0,
+                schemas,
+                None,
+                None,
+            )
+            .expect("create data contract")
+            .data_contract_owned();
+        drive
+            .apply_contract(
+                &data_contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("apply contract");
+
+        let docs = [
+            ("red", 5u64),
+            ("red", 5),
+            ("red", 7),
+            ("green", 3),
+            ("green", 4),
+            ("blue", 1),
+        ];
+        for (i, (color, amount)) in docs.iter().enumerate() {
+            insert_widget(&drive, &data_contract, i, color, *amount);
+        }
+
+        let document_type = data_contract
+            .document_type_for_name("widget")
+            .expect("widget");
+        let drive_config = DriveConfig::default();
+
+        // Aggregate, no where → empty-where Total path. The doctype
+        // doesn't declare documents_summable here so the executor
+        // fall-through is the picker path on the byColor index. But
+        // the empty-where branch requires documents_summable; if the
+        // doctype lacks it, the picker is invoked with empty where,
+        // which `find_summable_index_for_where_clauses` rejects
+        // (zero indexable fields). So we test Equal-only-fully-
+        // covered instead — same `DocumentSumMode::Total`
+        // resolution.
+        let where_clauses = vec![WhereClause {
+            field: "color".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Text("red".to_string()),
+        }];
+
+        let request = DocumentAverageRequest {
+            contract: &data_contract,
+            document_type,
+            sum_property: "amount".to_string(),
+            where_clauses: where_clauses.clone(),
+            order_clauses: Vec::new(),
+            mode: AverageMode::Aggregate,
+            limit: None,
+            prove: false,
+            drive_config: &drive_config,
+        };
+
+        let joint_response = drive
+            .execute_document_average_request(request, None, platform_version)
+            .expect("joint total dispatch");
+        let (joint_count, joint_sum) = match joint_response {
+            DocumentAverageResponse::Aggregate { count, sum } => (count, sum),
+            other => panic!("expected Aggregate, got {:?}", other),
+        };
+
+        let (indep_count, indep_sum) = independent_count_sum_aggregate(
+            &drive,
+            &data_contract,
+            document_type,
+            "amount",
+            where_clauses,
+            &drive_config,
+            platform_version,
+        );
+
+        assert_eq!(
+            (joint_count, joint_sum),
+            (indep_count, indep_sum),
+            "joint total executor must produce the same (count, sum) as \
+             independent count + sum dispatch (red == 3 docs / sum 17)"
+        );
+        // Sanity check against the fixture: red docs are 5+5+7 = 17 / count 3.
+        assert_eq!((joint_count, joint_sum), (3, 17));
+    }
+
+    /// `execute_document_count_and_sum_per_in_value_no_proof`
+    /// cross-check: In on a `summable + countable` index.
+    #[test]
+    fn joint_per_in_value_executor_matches_independent_count_plus_sum() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let factory = DataContractFactory::new(PROTOCOL_VERSION_V12).expect("create factory");
+        let document_schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "color":  {"type": "string",  "position": 0, "maxLength": 32},
+                "amount": {"type": "integer", "position": 1, "minimum": 0, "maximum": 1000},
+            },
+            "required": ["color", "amount"],
+            "indices": [{
+                "name": "byColor",
+                "properties": [{"color": "asc"}],
+                "summable":  "amount",
+                "countable": "countable",
+            }],
+            "additionalProperties": false,
+        });
+        let schemas = platform_value!({ "widget": document_schema });
+        let data_contract = factory
+            .create_with_value_config(
+                dpp::tests::utils::generate_random_identifier_struct(),
+                0,
+                schemas,
+                None,
+                None,
+            )
+            .expect("create data contract")
+            .data_contract_owned();
+        drive
+            .apply_contract(
+                &data_contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("apply contract");
+
+        let docs = [
+            ("red", 5u64),
+            ("red", 7),
+            ("green", 3),
+            ("green", 4),
+            ("blue", 1),
+            ("blue", 2),
+        ];
+        for (i, (color, amount)) in docs.iter().enumerate() {
+            insert_widget(&drive, &data_contract, i, color, *amount);
+        }
+
+        let document_type = data_contract
+            .document_type_for_name("widget")
+            .expect("widget");
+        let drive_config = DriveConfig::default();
+
+        let color_in = WhereClause {
+            field: "color".to_string(),
+            operator: WhereOperator::In,
+            value: Value::Array(vec![
+                Value::Text("red".to_string()),
+                Value::Text("green".to_string()),
+            ]),
+        };
+
+        let request = DocumentAverageRequest {
+            contract: &data_contract,
+            document_type,
+            sum_property: "amount".to_string(),
+            where_clauses: vec![color_in.clone()],
+            order_clauses: Vec::new(),
+            mode: AverageMode::GroupByIn,
+            limit: None,
+            prove: false,
+            drive_config: &drive_config,
+        };
+
+        let joint_response = drive
+            .execute_document_average_request(request, None, platform_version)
+            .expect("joint per-in-value dispatch");
+        let joint_entries = match joint_response {
+            DocumentAverageResponse::Entries(e) => e,
+            other => panic!("expected Entries, got {:?}", other),
+        };
+
+        // Cross-check via independent count + sum per-In dispatch.
+        let count_request = DocumentCountRequest {
+            contract: &data_contract,
+            document_type,
+            where_clauses: vec![color_in.clone()],
+            order_clauses: Vec::new(),
+            mode: CountMode::GroupByIn,
+            limit: None,
+            prove: false,
+            drive_config: &drive_config,
+        };
+        let sum_request = DocumentSumRequest {
+            contract: &data_contract,
+            document_type,
+            sum_property: "amount".to_string(),
+            where_clauses: vec![color_in],
+            order_clauses: Vec::new(),
+            mode: SumMode::GroupByIn,
+            limit: None,
+            prove: false,
+            drive_config: &drive_config,
+        };
+        let count_resp = drive
+            .execute_document_count_request(count_request, None, platform_version)
+            .expect("independent count");
+        let sum_resp = drive
+            .execute_document_sum_request(sum_request, None, platform_version)
+            .expect("independent sum");
+        let count_entries = match count_resp {
+            DocumentCountResponse::Entries(e) => e,
+            other => panic!("expected count Entries, got {:?}", other),
+        };
+        let sum_entries = match sum_resp {
+            DocumentSumResponse::Entries(e) => e,
+            other => panic!("expected sum Entries, got {:?}", other),
+        };
+
+        // Zip by key and assert joint matches.
+        assert_eq!(joint_entries.len(), count_entries.len());
+        assert_eq!(joint_entries.len(), sum_entries.len());
+        for ((joint, count), sum) in joint_entries
+            .iter()
+            .zip(count_entries.iter())
+            .zip(sum_entries.iter())
+        {
+            assert_eq!(joint.key, count.key);
+            assert_eq!(joint.key, sum.key);
+            assert_eq!(joint.count, count.count);
+            assert_eq!(joint.sum, sum.sum);
+        }
+        // Two entries — red and green.
+        assert_eq!(joint_entries.len(), 2);
+        // red: 2 docs, sum = 12.
+        // green: 2 docs, sum = 7.
+        // BTreeMap orders by serialized key bytes (lex on string
+        // bytes since color is Text). "green" < "red" lex.
+        let mut by_key: Vec<&AverageEntry> = joint_entries.iter().collect();
+        by_key.sort_by(|a, b| a.key.cmp(&b.key));
+        let red_entry = by_key
+            .iter()
+            .find(|e| e.key.windows(3).any(|w| w == b"red"))
+            .expect("red entry");
+        let green_entry = by_key
+            .iter()
+            .find(|e| e.key.windows(5).any(|w| w == b"green"))
+            .expect("green entry");
+        assert_eq!(red_entry.count, Some(2));
+        assert_eq!(red_entry.sum, Some(12));
+        assert_eq!(green_entry.count, Some(2));
+        assert_eq!(green_entry.sum, Some(7));
+    }
+
+    /// `execute_document_count_and_sum_range_no_proof` cross-check:
+    /// distinct GroupByRange on a `rangeAverageable` (PCPS) index.
+    #[test]
+    fn joint_range_no_proof_executor_matches_independent_count_plus_sum() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let data_contract = build_widget_contract_pcps();
+        drive
+            .apply_contract(
+                &data_contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("apply contract");
+
+        let docs = [
+            ("red", 5u64),
+            ("red", 7),
+            ("green", 3),
+            ("green", 4),
+            ("green", 6),
+            ("blue", 2),
+        ];
+        for (i, (color, amount)) in docs.iter().enumerate() {
+            insert_widget(&drive, &data_contract, i, color, *amount);
+        }
+
+        let document_type = data_contract
+            .document_type_for_name("widget")
+            .expect("widget");
+        let drive_config = DriveConfig::default();
+
+        // `color > "blue"` on the byColor rangeAverageable index.
+        let color_gt_blue = WhereClause {
+            field: "color".to_string(),
+            operator: WhereOperator::GreaterThan,
+            value: Value::Text("blue".to_string()),
+        };
+
+        let request = DocumentAverageRequest {
+            contract: &data_contract,
+            document_type,
+            sum_property: "amount".to_string(),
+            where_clauses: vec![color_gt_blue.clone()],
+            order_clauses: Vec::new(),
+            mode: AverageMode::GroupByRange,
+            limit: None,
+            prove: false,
+            drive_config: &drive_config,
+        };
+
+        let joint_response = drive
+            .execute_document_average_request(request, None, platform_version)
+            .expect("joint range distinct dispatch");
+        let joint_entries = match joint_response {
+            DocumentAverageResponse::Entries(e) => e,
+            other => panic!("expected Entries, got {:?}", other),
+        };
+
+        // Cross-check via independent count + sum distinct dispatch.
+        let count_request = DocumentCountRequest {
+            contract: &data_contract,
+            document_type,
+            where_clauses: vec![color_gt_blue.clone()],
+            order_clauses: Vec::new(),
+            mode: CountMode::GroupByRange,
+            limit: None,
+            prove: false,
+            drive_config: &drive_config,
+        };
+        let sum_request = DocumentSumRequest {
+            contract: &data_contract,
+            document_type,
+            sum_property: "amount".to_string(),
+            where_clauses: vec![color_gt_blue],
+            order_clauses: Vec::new(),
+            mode: SumMode::GroupByRange,
+            limit: None,
+            prove: false,
+            drive_config: &drive_config,
+        };
+        let count_resp = drive
+            .execute_document_count_request(count_request, None, platform_version)
+            .expect("independent count");
+        let sum_resp = drive
+            .execute_document_sum_request(sum_request, None, platform_version)
+            .expect("independent sum");
+        let count_entries = match count_resp {
+            DocumentCountResponse::Entries(e) => e,
+            other => panic!("expected count Entries, got {:?}", other),
+        };
+        let sum_entries = match sum_resp {
+            DocumentSumResponse::Entries(e) => e,
+            other => panic!("expected sum Entries, got {:?}", other),
+        };
+
+        // Both executors emit per-distinct-key entries in ascending
+        // serialized-key order; the lengths must match and per-key
+        // (count, sum) must zip to the same values.
+        assert_eq!(joint_entries.len(), count_entries.len());
+        assert_eq!(joint_entries.len(), sum_entries.len());
+        for ((joint, count), sum) in joint_entries
+            .iter()
+            .zip(count_entries.iter())
+            .zip(sum_entries.iter())
+        {
+            assert_eq!(joint.key, count.key);
+            assert_eq!(joint.key, sum.key);
+            assert_eq!(joint.count, count.count);
+            assert_eq!(joint.sum, sum.sum);
+        }
+        // Two distinct keys (green, red); blue is filtered out by
+        // the range. green: 3 docs, sum=13; red: 2 docs, sum=12.
+        assert_eq!(joint_entries.len(), 2);
+    }
+
+    /// Flat-summed range cross-check: `Aggregate + range` on a PCPS
+    /// index resolves to `DocumentSumMode::RangeNoProof` with
+    /// `return_distinct_sums_in_range = false`. The joint executor
+    /// folds visited PCPS elements via `count_sum_value_or_default()`
+    /// in Rust (no engine-side combined accumulator exists). Pin parity
+    /// vs. the independent count + sum aggregate dispatch — this is the
+    /// path where the issue's perf win lands.
+    #[test]
+    fn joint_range_aggregate_executor_matches_independent_count_plus_sum() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let data_contract = build_widget_contract_pcps();
+        drive
+            .apply_contract(
+                &data_contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("apply contract");
+
+        let docs = [
+            ("red", 5u64),
+            ("red", 7),
+            ("green", 3),
+            ("green", 4),
+            ("green", 6),
+            ("blue", 2),
+        ];
+        for (i, (color, amount)) in docs.iter().enumerate() {
+            insert_widget(&drive, &data_contract, i, color, *amount);
+        }
+
+        let document_type = data_contract
+            .document_type_for_name("widget")
+            .expect("widget");
+        let drive_config = DriveConfig::default();
+
+        let color_gt_blue = WhereClause {
+            field: "color".to_string(),
+            operator: WhereOperator::GreaterThan,
+            value: Value::Text("blue".to_string()),
+        };
+
+        let request = DocumentAverageRequest {
+            contract: &data_contract,
+            document_type,
+            sum_property: "amount".to_string(),
+            where_clauses: vec![color_gt_blue.clone()],
+            order_clauses: Vec::new(),
+            mode: AverageMode::Aggregate,
+            limit: None,
+            prove: false,
+            drive_config: &drive_config,
+        };
+
+        let joint_response = drive
+            .execute_document_average_request(request, None, platform_version)
+            .expect("joint range aggregate dispatch");
+        let (joint_count, joint_sum) = match joint_response {
+            DocumentAverageResponse::Aggregate { count, sum } => (count, sum),
+            other => panic!("expected Aggregate, got {:?}", other),
+        };
+
+        let (indep_count, indep_sum) = independent_count_sum_aggregate(
+            &drive,
+            &data_contract,
+            document_type,
+            "amount",
+            vec![color_gt_blue],
+            &drive_config,
+            platform_version,
+        );
+
+        assert_eq!(
+            (joint_count, joint_sum),
+            (indep_count, indep_sum),
+            "joint range-aggregate executor must produce the same (count, sum) \
+             as independent count + sum range dispatch"
+        );
+        // Sanity check: color > "blue" matches green (3,4,6 = sum 13)
+        // + red (5,7 = sum 12); total 5 docs / sum 25.
+        assert_eq!((joint_count, joint_sum), (5, 25));
+    }
+
+    /// Compound-summed range cross-check: `GroupByIn + In + range` on
+    /// a PCPS index resolves to `DocumentSumMode::RangeNoProof` with
+    /// `return_distinct_sums_in_range = false`. The joint executor's
+    /// distinct path query expresses the multi-In outer walk as a
+    /// single grovedb call (atomicity inherent) and folds each
+    /// In-branch's PCPS elements into one `(count, sum)` pair via
+    /// `count_sum_value_or_default()`.
+    ///
+    /// Pin parity vs. the independent count + sum dispatch. This is
+    /// the second untested-flat-summed branch the agent's three tests
+    /// don't cover.
+    #[test]
+    fn joint_range_group_by_in_executor_matches_independent_count_plus_sum() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        // PCPS index keyed on (color, amount) so In on color + range
+        // on amount fits the rangeCountable + rangeSummable shape.
+        let factory = DataContractFactory::new(PROTOCOL_VERSION_V12).expect("create factory");
+        let document_schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "color":  {"type": "string",  "position": 0, "maxLength": 32},
+                "amount": {"type": "integer", "position": 1, "minimum": 0, "maximum": 1000},
+            },
+            "required": ["color", "amount"],
+            "indices": [{
+                "name": "byColorAmount",
+                "properties": [{"color": "asc"}, {"amount": "asc"}],
+                "summable":        "amount",
+                "rangeSummable":   true,
+                "countable":       "countable",
+                "rangeCountable":  true,
+            }],
+            "additionalProperties": false,
+        });
+        let schemas = platform_value!({ "widget": document_schema });
+        let data_contract = factory
+            .create_with_value_config(
+                dpp::tests::utils::generate_random_identifier_struct(),
+                0,
+                schemas,
+                None,
+                None,
+            )
+            .expect("create data contract")
+            .data_contract_owned();
+        drive
+            .apply_contract(
+                &data_contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("apply contract");
+
+        let docs = [
+            ("red", 5u64),
+            ("red", 7),
+            ("red", 9),
+            ("green", 3),
+            ("green", 4),
+            ("blue", 8),
+            ("blue", 9),
+        ];
+        for (i, (color, amount)) in docs.iter().enumerate() {
+            insert_widget(&drive, &data_contract, i, color, *amount);
+        }
+
+        let document_type = data_contract
+            .document_type_for_name("widget")
+            .expect("widget");
+        let drive_config = DriveConfig::default();
+
+        // In on color (red, green) + range on amount (≥ 4).
+        let color_in = WhereClause {
+            field: "color".to_string(),
+            operator: WhereOperator::In,
+            value: Value::Array(vec![
+                Value::Text("red".to_string()),
+                Value::Text("green".to_string()),
+            ]),
+        };
+        let amount_ge_4 = WhereClause {
+            field: "amount".to_string(),
+            operator: WhereOperator::GreaterThanOrEquals,
+            value: Value::U64(4),
+        };
+
+        let request = DocumentAverageRequest {
+            contract: &data_contract,
+            document_type,
+            sum_property: "amount".to_string(),
+            where_clauses: vec![color_in.clone(), amount_ge_4.clone()],
+            order_clauses: Vec::new(),
+            mode: AverageMode::GroupByIn,
+            limit: None,
+            prove: false,
+            drive_config: &drive_config,
+        };
+
+        let joint_response = drive
+            .execute_document_average_request(request, None, platform_version)
+            .expect("joint range GroupByIn dispatch");
+        let joint_entries = match joint_response {
+            DocumentAverageResponse::Entries(e) => e,
+            other => panic!("expected Entries, got {:?}", other),
+        };
+
+        // Independent count + sum GroupByIn dispatch.
+        let count_request = DocumentCountRequest {
+            contract: &data_contract,
+            document_type,
+            where_clauses: vec![color_in.clone(), amount_ge_4.clone()],
+            order_clauses: Vec::new(),
+            mode: CountMode::GroupByIn,
+            limit: None,
+            prove: false,
+            drive_config: &drive_config,
+        };
+        let sum_request = DocumentSumRequest {
+            contract: &data_contract,
+            document_type,
+            sum_property: "amount".to_string(),
+            where_clauses: vec![color_in, amount_ge_4],
+            order_clauses: Vec::new(),
+            mode: SumMode::GroupByIn,
+            limit: None,
+            prove: false,
+            drive_config: &drive_config,
+        };
+        let count_resp = drive
+            .execute_document_count_request(count_request, None, platform_version)
+            .expect("independent count");
+        let sum_resp = drive
+            .execute_document_sum_request(sum_request, None, platform_version)
+            .expect("independent sum");
+        let count_entries = match count_resp {
+            DocumentCountResponse::Entries(e) => e,
+            other => panic!("expected count Entries, got {:?}", other),
+        };
+        let sum_entries = match sum_resp {
+            DocumentSumResponse::Entries(e) => e,
+            other => panic!("expected sum Entries, got {:?}", other),
+        };
+
+        // The independent count and sum dispatches both produce entries
+        // for every In branch (with `count`/`sum` reflecting the In
+        // branch's value); the joint executor must produce the same
+        // shape. Build a key-keyed map for each and assert pairwise
+        // equality on the (count, sum) pair.
+        use std::collections::BTreeMap;
+        let count_by_key: BTreeMap<Vec<u8>, Option<u64>> = count_entries
+            .iter()
+            .map(|e| (e.key.clone(), e.count))
+            .collect();
+        let sum_by_key: BTreeMap<Vec<u8>, Option<i64>> =
+            sum_entries.iter().map(|e| (e.key.clone(), e.sum)).collect();
+        let joint_by_key: BTreeMap<Vec<u8>, (Option<u64>, Option<i64>)> = joint_entries
+            .iter()
+            .map(|e| (e.key.clone(), (e.count, e.sum)))
+            .collect();
+
+        assert_eq!(
+            count_by_key.keys().collect::<Vec<_>>(),
+            joint_by_key.keys().collect::<Vec<_>>(),
+            "joint executor must emit the same In-branch keys as independent count"
+        );
+        for (key, (joint_count, joint_sum)) in joint_by_key.iter() {
+            assert_eq!(joint_count, count_by_key.get(key).unwrap());
+            assert_eq!(joint_sum, sum_by_key.get(key).unwrap());
+        }
+    }
+
+    /// Distinct AVG no-proof MUST honor the request's `limit` —
+    /// `GroupByRange` over a wide range should truncate to the
+    /// caller's `limit` rather than enumerate every distinct in-range
+    /// terminator. Regression test for the joint dispatcher's
+    /// `RangeNoProof` distinct branch: prior to the P2 fix the
+    /// dispatcher hard-coded `None` into `distinct_sum_path_query`,
+    /// silently returning every matching key.
+    #[test]
+    fn distinct_avg_no_proof_honors_explicit_limit() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let data_contract = build_widget_contract_pcps();
+        drive
+            .apply_contract(
+                &data_contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("apply contract");
+
+        // Five distinct color buckets so a `limit = 2` request must
+        // truncate the result set; otherwise the executor would emit
+        // all five.
+        let docs = [
+            ("red", 5u64),
+            ("green", 7),
+            ("blue", 2),
+            ("yellow", 4),
+            ("purple", 9),
+        ];
+        for (i, (color, amount)) in docs.iter().enumerate() {
+            insert_widget(&drive, &data_contract, i, color, *amount);
+        }
+
+        let document_type = data_contract
+            .document_type_for_name("widget")
+            .expect("widget");
+        let drive_config = DriveConfig::default();
+
+        let color_ge_a = WhereClause {
+            field: "color".to_string(),
+            operator: WhereOperator::GreaterThanOrEquals,
+            value: Value::Text("a".to_string()),
+        };
+
+        let request = DocumentAverageRequest {
+            contract: &data_contract,
+            document_type,
+            sum_property: "amount".to_string(),
+            where_clauses: vec![color_ge_a],
+            order_clauses: Vec::new(),
+            mode: AverageMode::GroupByRange,
+            limit: Some(2),
+            prove: false,
+            drive_config: &drive_config,
+        };
+
+        let response = drive
+            .execute_document_average_request(request, None, platform_version)
+            .expect("dispatcher should succeed");
+        let entries = match response {
+            DocumentAverageResponse::Entries(e) => e,
+            other => panic!("expected Entries, got {:?}", other),
+        };
+        assert_eq!(
+            entries.len(),
+            2,
+            "distinct AVG no-proof must apply the request's `limit = 2` and \
+             return exactly 2 entries; got {entries:?}"
+        );
+    }
+
+    /// Distinct AVG no-proof with `limit = None` must default to
+    /// `drive_config.default_query_limit`, not enumerate every
+    /// distinct key. Regression test for the same hard-coded `None`
+    /// the prior implementation passed.
+    #[test]
+    fn distinct_avg_no_proof_defaults_limit_to_operator_default_query_limit() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let data_contract = build_widget_contract_pcps();
+        drive
+            .apply_contract(
+                &data_contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("apply contract");
+
+        // Five distinct buckets and an operator-tuned
+        // `default_query_limit = 3`. The dispatcher must honor the
+        // operator's runtime default on the no-proof path (this is
+        // explicitly documented as DIFFERENT from the prove path,
+        // which uses the compile-time constant for byte-stability of
+        // proof reconstruction). A regression that leaves limit as
+        // `None` would emit all 5 entries.
+        let docs = [
+            ("red", 5u64),
+            ("green", 7),
+            ("blue", 2),
+            ("yellow", 4),
+            ("purple", 9),
+        ];
+        for (i, (color, amount)) in docs.iter().enumerate() {
+            insert_widget(&drive, &data_contract, i, color, *amount);
+        }
+
+        let document_type = data_contract
+            .document_type_for_name("widget")
+            .expect("widget");
+        let drive_config = DriveConfig {
+            default_query_limit: 3,
+            ..Default::default()
+        };
+
+        let color_ge_a = WhereClause {
+            field: "color".to_string(),
+            operator: WhereOperator::GreaterThanOrEquals,
+            value: Value::Text("a".to_string()),
+        };
+        let request = DocumentAverageRequest {
+            contract: &data_contract,
+            document_type,
+            sum_property: "amount".to_string(),
+            where_clauses: vec![color_ge_a],
+            order_clauses: Vec::new(),
+            mode: AverageMode::GroupByRange,
+            limit: None,
+            prove: false,
+            drive_config: &drive_config,
+        };
+
+        let response = drive
+            .execute_document_average_request(request, None, platform_version)
+            .expect("dispatcher should succeed");
+        let entries = match response {
+            DocumentAverageResponse::Entries(e) => e,
+            other => panic!("expected Entries, got {:?}", other),
+        };
+        assert_eq!(
+            entries.len(),
+            3,
+            "distinct AVG no-proof with `limit = None` must default to \
+             `drive_config.default_query_limit` (= 3 here) rather than \
+             enumerating all 5 distinct keys; got {entries:?}"
+        );
+    }
+
+    /// Distinct AVG no-proof with `limit > max_query_limit` must
+    /// clamp to `max_query_limit`, not return an error. Mirrors
+    /// count's no-proof distinct-walk clamp policy (documented in
+    /// `DocumentAverageRequest::limit`).
+    #[test]
+    fn distinct_avg_no_proof_clamps_limit_to_max_query_limit() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let data_contract = build_widget_contract_pcps();
+        drive
+            .apply_contract(
+                &data_contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("apply contract");
+
+        let docs = [
+            ("red", 5u64),
+            ("green", 7),
+            ("blue", 2),
+            ("yellow", 4),
+            ("purple", 9),
+        ];
+        for (i, (color, amount)) in docs.iter().enumerate() {
+            insert_widget(&drive, &data_contract, i, color, *amount);
+        }
+
+        let document_type = data_contract
+            .document_type_for_name("widget")
+            .expect("widget");
+        // Operator-tuned `max_query_limit = 2`. An explicit `limit =
+        // 4` MUST clamp to 2 (no-proof policy; the prove path errors
+        // on this combination instead — see the
+        // `range_distinct_avg_proof_rejects_limit_over_max` test
+        // above for the prove counterpart).
+        let drive_config = DriveConfig {
+            default_query_limit: 100,
+            max_query_limit: 2,
+            ..Default::default()
+        };
+
+        let color_ge_a = WhereClause {
+            field: "color".to_string(),
+            operator: WhereOperator::GreaterThanOrEquals,
+            value: Value::Text("a".to_string()),
+        };
+        let request = DocumentAverageRequest {
+            contract: &data_contract,
+            document_type,
+            sum_property: "amount".to_string(),
+            where_clauses: vec![color_ge_a],
+            order_clauses: Vec::new(),
+            mode: AverageMode::GroupByRange,
+            limit: Some(4),
+            prove: false,
+            drive_config: &drive_config,
+        };
+
+        let response = drive
+            .execute_document_average_request(request, None, platform_version)
+            .expect("dispatcher should succeed (no-proof clamps, never errors)");
+        let entries = match response {
+            DocumentAverageResponse::Entries(e) => e,
+            other => panic!("expected Entries, got {:?}", other),
+        };
+        assert_eq!(
+            entries.len(),
+            2,
+            "distinct AVG no-proof must clamp `limit = 4` to \
+             `max_query_limit = 2`; got {entries:?}"
+        );
+    }
+
+    /// `execute_document_count_and_sum_request` must reject a direct
+    /// caller passing `prove = true`. The wrapper
+    /// `execute_document_average_request` is the only legitimate entry
+    /// that routes prove requests (to the prove-side dispatcher);
+    /// reaching the joint dispatcher with `prove = true` would
+    /// otherwise silently produce a no-proof response. Regression for
+    /// the CodeRabbit "enforce no-prove precondition" finding.
+    #[test]
+    fn joint_dispatcher_rejects_prove_true_request() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let data_contract = build_widget_contract_pcps();
+        drive
+            .apply_contract(
+                &data_contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("apply contract");
+
+        let document_type = data_contract
+            .document_type_for_name("widget")
+            .expect("widget");
+        let drive_config = DriveConfig::default();
+
+        let request = DocumentAverageRequest {
+            contract: &data_contract,
+            document_type,
+            sum_property: "amount".to_string(),
+            where_clauses: Vec::new(),
+            order_clauses: Vec::new(),
+            mode: AverageMode::Aggregate,
+            limit: None,
+            prove: true,
+            drive_config: &drive_config,
+        };
+
+        let err = drive
+            .execute_document_count_and_sum_request(request, None, platform_version)
+            .expect_err("prove=true direct call must reject");
+        let msg = format!("{err:?}");
+        assert!(
+            msg.contains("no-prove"),
+            "expected the prove=true guard to fire; got: {msg}"
+        );
+    }
+
+    /// AVG no-proof dispatcher must run
+    /// `validate_and_canonicalize_where_clauses` so it shares the same
+    /// accept/reject contract as the count and document-query
+    /// surfaces. Pin a representative rejection: a duplicate Equal on
+    /// the same field. Without the validator the executor would
+    /// either succeed with a silently-collapsed shape or fail
+    /// downstream with a less precise error.
+    #[test]
+    fn joint_dispatcher_runs_validate_and_canonicalize_where_clauses() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let data_contract = build_widget_contract_pcps();
+        drive
+            .apply_contract(
+                &data_contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("apply contract");
+
+        let document_type = data_contract
+            .document_type_for_name("widget")
+            .expect("widget");
+        let drive_config = DriveConfig::default();
+
+        // Duplicate Equal on `color` — validator rejects via
+        // `WhereClause::group_clauses`.
+        let dup_color_a = WhereClause {
+            field: "color".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Text("red".to_string()),
+        };
+        let dup_color_b = WhereClause {
+            field: "color".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Text("green".to_string()),
+        };
+        let request = DocumentAverageRequest {
+            contract: &data_contract,
+            document_type,
+            sum_property: "amount".to_string(),
+            where_clauses: vec![dup_color_a, dup_color_b],
+            order_clauses: Vec::new(),
+            mode: AverageMode::Aggregate,
+            limit: None,
+            prove: false,
+            drive_config: &drive_config,
+        };
+
+        let err = drive
+            .execute_document_average_request(request, None, platform_version)
+            .expect_err(
+                "AVG no-proof must reject duplicate Equal on the same field via \
+                 validate_and_canonicalize_where_clauses",
+            );
+        // The exact error variant comes from `WhereClause::group_clauses` —
+        // pin only that the call returned `Err` and the error mentions
+        // the problematic shape rather than a generic index-picker miss.
+        let msg = format!("{err:?}");
+        assert!(
+            !msg.contains("WhereClauseOnNonIndexedProperty"),
+            "validator should reject before the index picker would: {msg}"
+        );
+    }
+
+    /// `PerInValue` no-proof AVG must honor `request.limit` on the
+    /// returned entry list. Regression for the reviewer's "joint
+    /// dispatcher drops `request.limit`" finding on the PerInValue
+    /// arm. Count's per-In executor truncates at this same point.
+    #[test]
+    fn per_in_value_avg_no_proof_honors_explicit_limit() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        // `byColor` index: `summable: "amount"` + `countable:
+        // "countable"`. No range flags — this is the no-range
+        // PerInValue shape.
+        let factory = DataContractFactory::new(PROTOCOL_VERSION_V12).expect("create factory");
+        let document_schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "color":  {"type": "string",  "position": 0, "maxLength": 32},
+                "amount": {"type": "integer", "position": 1, "minimum": 0, "maximum": 1000},
+            },
+            "required": ["color", "amount"],
+            "indices": [{
+                "name": "byColor",
+                "properties": [{"color": "asc"}],
+                "summable":  "amount",
+                "countable": "countable",
+            }],
+            "additionalProperties": false,
+        });
+        let schemas = platform_value!({ "widget": document_schema });
+        let data_contract = factory
+            .create_with_value_config(
+                dpp::tests::utils::generate_random_identifier_struct(),
+                0,
+                schemas,
+                None,
+                None,
+            )
+            .expect("create data contract")
+            .data_contract_owned();
+        drive
+            .apply_contract(
+                &data_contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("apply contract");
+
+        for (i, (color, amount)) in [("red", 5u64), ("green", 7), ("blue", 2), ("yellow", 4)]
+            .iter()
+            .enumerate()
+        {
+            insert_widget(&drive, &data_contract, i, color, *amount);
+        }
+
+        let document_type = data_contract
+            .document_type_for_name("widget")
+            .expect("widget");
+        let drive_config = DriveConfig::default();
+
+        // `In` over 4 color values, `limit = 2` — dispatcher must
+        // truncate the per-In entry list to 2.
+        let color_in = WhereClause {
+            field: "color".to_string(),
+            operator: WhereOperator::In,
+            value: Value::Array(vec![
+                Value::Text("red".to_string()),
+                Value::Text("green".to_string()),
+                Value::Text("blue".to_string()),
+                Value::Text("yellow".to_string()),
+            ]),
+        };
+        let request = DocumentAverageRequest {
+            contract: &data_contract,
+            document_type,
+            sum_property: "amount".to_string(),
+            where_clauses: vec![color_in],
+            order_clauses: Vec::new(),
+            mode: AverageMode::GroupByIn,
+            limit: Some(2),
+            prove: false,
+            drive_config: &drive_config,
+        };
+
+        let response = drive
+            .execute_document_average_request(request, None, platform_version)
+            .expect("dispatcher should succeed");
+        let entries = match response {
+            DocumentAverageResponse::Entries(e) => e,
+            other => panic!("expected Entries, got {:?}", other),
+        };
+        assert_eq!(
+            entries.len(),
+            2,
+            "PerInValue AVG no-proof must apply request.limit = 2 to the per-In \
+             entry list (caller asked for 4 In values, dispatcher must truncate); \
+             got {entries:?}"
+        );
+    }
+
+    /// Empty-where `Aggregate` AVG MUST exercise the
+    /// [`Drive::execute_document_count_and_sum_total_no_proof`]
+    /// primary-key fast path when the doctype declares
+    /// `documentsAverageable` (= `documentsCountable: true +
+    /// documentsSummable: "<prop>"`). The fast path reads
+    /// `[contract_doc, contract_id, [1], doctype, 0]` — the PCPS
+    /// primary-key element — and decodes `(count, sum)` from it in one
+    /// grovedb call without any index. Consensus-critical: a regression
+    /// here would silently produce wrong `(count, sum)` for the
+    /// most-trafficked AVG shape (unfiltered total).
+    #[test]
+    fn empty_where_total_executor_uses_primary_key_count_sum_tree_fast_path() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        // `documentsAverageable: "amount"` desugars to BOTH
+        // `documentsCountable: true` AND `documentsSummable:
+        // "amount"`, which is exactly what the empty-where fast path
+        // requires. No `indices` block — the fast path doesn't use
+        // an index, it reads the doctype's primary-key
+        // count-sum-bearing tree directly at `[..., doctype, 0]`.
+        let factory = DataContractFactory::new(PROTOCOL_VERSION_V12).expect("create factory");
+        let document_schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "amount": {"type": "integer", "position": 0, "minimum": 0, "maximum": 1000},
+            },
+            "required": ["amount"],
+            "documentsAverageable": "amount",
+            "additionalProperties": false,
+        });
+        let schemas = platform_value!({ "score": document_schema });
+        let data_contract = factory
+            .create_with_value_config(
+                dpp::tests::utils::generate_random_identifier_struct(),
+                0,
+                schemas,
+                None,
+                None,
+            )
+            .expect("create data contract")
+            .data_contract_owned();
+        drive
+            .apply_contract(
+                &data_contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("apply contract");
+
+        // Insert documents directly (no need for the widget helper —
+        // this doctype has no color property).
+        let document_type = data_contract
+            .document_type_for_name("score")
+            .expect("score type");
+        for (i, amount) in [10u64, 20, 30, 40].iter().enumerate() {
+            let mut properties = std::collections::BTreeMap::new();
+            properties.insert("amount".to_string(), Value::U64(*amount));
+            let document: Document = DocumentV0 {
+                id: Identifier::from([(i + 1) as u8; 32]),
+                owner_id: Identifier::from([0u8; 32]),
+                properties,
+                revision: None,
+                created_at: None,
+                updated_at: None,
+                transferred_at: None,
+                created_at_block_height: None,
+                updated_at_block_height: None,
+                transferred_at_block_height: None,
+                created_at_core_block_height: None,
+                updated_at_core_block_height: None,
+                transferred_at_core_block_height: None,
+                creator_id: None,
+            }
+            .into();
+            let storage_flags = Some(std::borrow::Cow::Owned(StorageFlags::SingleEpoch(0)));
+            drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentRefInfo((&document, storage_flags)),
+                            owner_id: None,
+                        },
+                        contract: &data_contract,
+                        document_type,
+                    },
+                    false,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    platform_version,
+                    None,
+                )
+                .expect("insert score");
+        }
+
+        let drive_config = DriveConfig::default();
+        let request = DocumentAverageRequest {
+            contract: &data_contract,
+            document_type,
+            sum_property: "amount".to_string(),
+            where_clauses: Vec::new(),
+            order_clauses: Vec::new(),
+            mode: AverageMode::Aggregate,
+            limit: None,
+            prove: false,
+            drive_config: &drive_config,
+        };
+
+        let response = drive
+            .execute_document_average_request(request, None, platform_version)
+            .expect("empty-where AVG no-proof must succeed via the primary-key fast path");
+        match response {
+            DocumentAverageResponse::Aggregate { count, sum } => {
+                assert_eq!(
+                    (count, sum),
+                    (4, 100),
+                    "primary-key count-sum tree fast path must return (4 docs, sum 10+20+30+40 = 100)"
+                );
+            }
+            other => panic!("expected Aggregate, got {:?}", other),
+        }
+    }
+
+    /// `PerInValue` no-proof AVG with `limit = None` must default to
+    /// `drive_config.default_query_limit` per
+    /// `DocumentAverageRequest::limit`'s documented contract.
+    /// Regression test paired with the explicit-limit case above; pins
+    /// the no-proof contract parity reviewers flagged after the
+    /// initial PerInValue fix landed.
+    #[test]
+    fn per_in_value_avg_no_proof_defaults_limit_to_operator_default_query_limit() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        // Same `summable + countable` `byColor` index as
+        // `per_in_value_avg_no_proof_honors_explicit_limit`, but with
+        // `default_query_limit = 2` and `limit = None` on the request
+        // — the dispatcher must fall back to the operator's runtime
+        // default and truncate the per-In entry list to 2.
+        let factory = DataContractFactory::new(PROTOCOL_VERSION_V12).expect("create factory");
+        let document_schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "color":  {"type": "string",  "position": 0, "maxLength": 32},
+                "amount": {"type": "integer", "position": 1, "minimum": 0, "maximum": 1000},
+            },
+            "required": ["color", "amount"],
+            "indices": [{
+                "name": "byColor",
+                "properties": [{"color": "asc"}],
+                "summable":  "amount",
+                "countable": "countable",
+            }],
+            "additionalProperties": false,
+        });
+        let schemas = platform_value!({ "widget": document_schema });
+        let data_contract = factory
+            .create_with_value_config(
+                dpp::tests::utils::generate_random_identifier_struct(),
+                0,
+                schemas,
+                None,
+                None,
+            )
+            .expect("create data contract")
+            .data_contract_owned();
+        drive
+            .apply_contract(
+                &data_contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("apply contract");
+
+        for (i, (color, amount)) in [("red", 5u64), ("green", 7), ("blue", 2), ("yellow", 4)]
+            .iter()
+            .enumerate()
+        {
+            insert_widget(&drive, &data_contract, i, color, *amount);
+        }
+
+        let document_type = data_contract
+            .document_type_for_name("widget")
+            .expect("widget");
+        let drive_config = DriveConfig {
+            default_query_limit: 2,
+            ..Default::default()
+        };
+
+        let color_in = WhereClause {
+            field: "color".to_string(),
+            operator: WhereOperator::In,
+            value: Value::Array(vec![
+                Value::Text("red".to_string()),
+                Value::Text("green".to_string()),
+                Value::Text("blue".to_string()),
+                Value::Text("yellow".to_string()),
+            ]),
+        };
+        let request = DocumentAverageRequest {
+            contract: &data_contract,
+            document_type,
+            sum_property: "amount".to_string(),
+            where_clauses: vec![color_in],
+            order_clauses: Vec::new(),
+            mode: AverageMode::GroupByIn,
+            limit: None,
+            prove: false,
+            drive_config: &drive_config,
+        };
+
+        let response = drive
+            .execute_document_average_request(request, None, platform_version)
+            .expect("dispatcher should succeed");
+        let entries = match response {
+            DocumentAverageResponse::Entries(e) => e,
+            other => panic!("expected Entries, got {:?}", other),
+        };
+        assert_eq!(
+            entries.len(),
+            2,
+            "PerInValue AVG no-proof with `limit = None` must default to \
+             `drive_config.default_query_limit` (= 2 here) and truncate the \
+             per-In entry list; got {entries:?}"
+        );
     }
 }
