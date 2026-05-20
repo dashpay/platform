@@ -7,8 +7,8 @@ use dpp::fee::Credits;
 pub use dpp::prelude::AddressNonce;
 
 pub(crate) mod provider;
-mod top_up;
 mod sync;
+mod top_up;
 mod transfer;
 mod wallet;
 mod withdrawal;

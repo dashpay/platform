@@ -120,7 +120,7 @@ impl PlatformAddressWallet {
     ///   either `consume_asset_lock` completes or the next resume
     ///   advances it.
     ///
-    /// The Swift `AddressFundingController.task` field deliberately
+    /// The Swift `AddressTopUpController.task` field deliberately
     /// does not call `.cancel()` to avoid these partial-state
     /// outcomes — the FFI call always runs to completion. UI
     /// dismissal hides the progress view without aborting the
@@ -377,16 +377,17 @@ impl PlatformAddressWallet {
                     // mean the pool was mutated between pre-flight
                     // and now; skip and log rather than mis-attribute
                     // credits to whichever address lives at slot 0.
-                    let Some(address_index) = account
-                        .addresses
-                        .addresses
-                        .iter()
-                        .find_map(|(&idx, ainfo)| {
-                            PlatformP2PKHAddress::from_address(&ainfo.address)
-                                .ok()
-                                .filter(|found| *found == p2pkh)
-                                .map(|_| idx)
-                        })
+                    let Some(address_index) =
+                        account
+                            .addresses
+                            .addresses
+                            .iter()
+                            .find_map(|(&idx, ainfo)| {
+                                PlatformP2PKHAddress::from_address(&ainfo.address)
+                                    .ok()
+                                    .filter(|found| *found == p2pkh)
+                                    .map(|_| idx)
+                            })
                     else {
                         tracing::error!(
                             address = %p2pkh,

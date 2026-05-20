@@ -9,8 +9,8 @@ mod wallet;
 mod withdrawal;
 
 // Re-export all FFI types and functions.
-pub use top_up::*;
 pub use sync::*;
+pub use top_up::*;
 pub use transfer::*;
 pub use wallet::*;
 pub use withdrawal::*;
