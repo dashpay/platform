@@ -73,6 +73,14 @@ impl DriveDocumentCountQuery<'_> {
     /// that depends on the contract's index set (no covering index)
     /// stays at the call site since it requires the
     /// `&BTreeMap<String, Index>`.
+    ///
+    /// **Versioning note**: this function is the v0 routing table.
+    /// Production callers go through [`Self::detect_mode_versioned`]
+    /// (which dispatches on
+    /// `platform_version.drive.methods.document.query.detect_count_mode`)
+    /// so future protocol versions can change the routing table behind
+    /// a method-version bump. Tests that want to pin the v0 contract
+    /// directly call this function.
     #[cfg(any(feature = "server", feature = "verify"))]
     pub fn detect_mode(
         where_clauses: &[WhereClause],
@@ -262,5 +270,36 @@ impl DriveDocumentCountQuery<'_> {
                 unreachable!("range + In + prove + Aggregate is rejected before the dispatch match")
             }
         })
+    }
+
+    /// Versioned dispatcher around [`Self::detect_mode`]. Production
+    /// callers (the count dispatcher and the SDK's
+    /// `verify_count_query` helper) go through this so a future
+    /// protocol version can adjust the routing table behind a
+    /// method-version bump without an API churn for tests.
+    ///
+    /// Routes through
+    /// `platform_version.drive.methods.document.query.detect_count_mode`.
+    /// Today only `0` is defined and maps to [`Self::detect_mode`]
+    /// verbatim.
+    #[cfg(any(feature = "server", feature = "verify"))]
+    pub fn detect_mode_versioned(
+        where_clauses: &[WhereClause],
+        mode: CountMode,
+        prove: bool,
+        platform_version: &dpp::version::PlatformVersion,
+    ) -> Result<DocumentCountMode, QuerySyntaxError> {
+        match platform_version
+            .drive
+            .methods
+            .document
+            .query
+            .detect_count_mode
+        {
+            0 => Self::detect_mode(where_clauses, mode, prove),
+            version => Err(QuerySyntaxError::Unsupported(format!(
+                "detect_count_mode: unknown method version {version}; only 0 is supported"
+            ))),
+        }
     }
 }

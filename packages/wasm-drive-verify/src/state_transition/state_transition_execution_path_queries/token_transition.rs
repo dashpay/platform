@@ -430,6 +430,11 @@ fn serialize_query_item(item: &QueryItem) -> Result<JsValue, JsValue> {
                 "AggregateSumOnRange QueryItem is not supported in token-transition path queries",
             ));
         }
+        QueryItem::AggregateCountAndSumOnRange(_) => {
+            return Err(JsValue::from_str(
+                "AggregateCountAndSumOnRange QueryItem is not supported in token-transition path queries",
+            ));
+        }
     }
 
     Ok(obj.into())

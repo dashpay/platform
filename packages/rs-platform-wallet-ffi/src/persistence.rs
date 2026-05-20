@@ -8,13 +8,15 @@
 use bincode::config;
 use key_wallet::account::account_collection::AccountCollection;
 use key_wallet::account::{Account, AccountType, StandardAccountType};
+use key_wallet::bip32::DerivationPath;
 use key_wallet::bip32::ExtendedPubKey;
-use key_wallet::managed_account::address_pool::{AddressPoolType, PublicKeyType};
+use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType, PublicKeyType};
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
 use key_wallet::AddressInfo;
 use parking_lot::RwLock;
+use std::str::FromStr;
 
 use crate::types::{FFINetwork, Network};
 use platform_wallet::changeset::{
@@ -1541,6 +1543,80 @@ fn build_core_address_entry_ffi(
     })
 }
 
+/// Reverse of [`build_core_address_entry_ffi`]: rebuild an
+/// `AddressInfo` from a Swift-supplied `CoreAddressEntryFFI` on the
+/// wallet-load path.
+///
+/// # Safety
+/// `entry.address_base58` / `entry.derivation_path` must be valid
+/// NUL-terminated C strings for the duration of the call.
+unsafe fn address_info_from_ffi(
+    entry: &CoreAddressEntryFFI,
+    network: Network,
+) -> Result<AddressInfo, String> {
+    if entry.address_base58.is_null() {
+        return Err("CoreAddressEntryFFI.address_base58 is null".to_string());
+    }
+    if entry.derivation_path.is_null() {
+        return Err("CoreAddressEntryFFI.derivation_path is null".to_string());
+    }
+    let address_str = CStr::from_ptr(entry.address_base58)
+        .to_str()
+        .map_err(|e| format!("address_base58 not UTF-8: {}", e))?;
+    let address = dashcore::Address::from_str(address_str)
+        .map_err(|e| format!("failed to parse address '{}': {}", address_str, e))?
+        .require_network(network)
+        .map_err(|e| format!("address '{}' not on {:?}: {}", address_str, network, e))?;
+    let script_pubkey = address.script_pubkey();
+    let path_str = CStr::from_ptr(entry.derivation_path)
+        .to_str()
+        .map_err(|e| format!("derivation_path not UTF-8: {}", e))?;
+    let path = DerivationPath::from_str(path_str)
+        .map_err(|e| format!("failed to parse derivation path '{}': {}", path_str, e))?;
+    let public_key = if entry.has_public_key {
+        Some(PublicKeyType::ECDSA(entry.public_key.to_vec()))
+    } else {
+        None
+    };
+    Ok(AddressInfo {
+        address,
+        script_pubkey,
+        public_key,
+        index: entry.address_index,
+        path,
+        used: entry.is_used,
+        generated_at: 0,
+        used_at: if entry.is_used { Some(0) } else { None },
+        tx_count: 0,
+        total_received: 0,
+        total_sent: 0,
+        balance: entry.balance,
+        label: None,
+        metadata: std::collections::BTreeMap::new(),
+    })
+}
+
+/// Merge persisted `AddressInfo` rows into a managed account's
+/// `AddressPool`. Upsert semantics: a persisted row overwrites the
+/// gap-limit default `ManagedWalletInfo::from_wallet` pre-derived at
+/// the same index, and the reverse-lookup maps + `highest_*`
+/// watermarks are extended to cover indices past that default
+/// gap window.
+fn restore_address_pool(pool: &mut AddressPool, infos: Vec<AddressInfo>) {
+    for info in infos {
+        let idx = info.index;
+        pool.address_index.insert(info.address.clone(), idx);
+        pool.script_pubkey_index
+            .insert(info.script_pubkey.clone(), idx);
+        pool.highest_generated = Some(pool.highest_generated.map_or(idx, |h| h.max(idx)));
+        if info.used {
+            pool.used_indices.insert(idx);
+            pool.highest_used = Some(pool.highest_used.map_or(idx, |h| h.max(idx)));
+        }
+        pool.addresses.insert(idx, info);
+    }
+}
+
 /// Bucket a slice of upstream-emitted `DerivedAddress` entries into the
 /// same `AccountAddressPoolFFI` shape `build_address_pools_for_callback`
 /// produces, so the event-driven gap-limit-extension flow can fan out
@@ -1845,6 +1921,142 @@ fn build_wallet_start_state(
                      next fresh CLSig will repopulate"
                 );
             }
+        }
+    }
+
+    // Persisted core address pools → funds-bearing managed accounts.
+    // `ManagedWalletInfo::from_wallet` only pre-derives the gap-limit
+    // window from each account xpub; addresses past that window — and
+    // every `used` flag — come from this snapshot. Without it a
+    // restored wallet can hold a UTXO whose address the signer can't
+    // map back to a derivation path, breaking core-to-core spends.
+    {
+        use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+        let pool_entries: &[AccountAddressPoolFFI] =
+            if entry.core_address_pools.is_null() || entry.core_address_pools_count == 0 {
+                &[]
+            } else {
+                unsafe {
+                    slice::from_raw_parts(entry.core_address_pools, entry.core_address_pools_count)
+                }
+            };
+        let mut pools_routed = 0usize;
+        let mut pools_dropped = 0usize;
+        for pool_ffi in pool_entries {
+            let account_type = match account_type_from_spec(&pool_ffi.account) {
+                Ok(t) => t,
+                Err(e) => {
+                    if is_legacy_removed_account_tag(pool_ffi.account.type_tag) {
+                        pools_dropped += 1;
+                        continue;
+                    }
+                    return Err(e);
+                }
+            };
+            let pool_type = match pool_ffi.pool_type_tag {
+                0 => AddressPoolType::External,
+                1 => AddressPoolType::Internal,
+                2 => AddressPoolType::Absent,
+                3 => AddressPoolType::AbsentHardened,
+                other => {
+                    pools_dropped += 1;
+                    tracing::warn!(
+                        wallet_id = %hex::encode(entry.wallet_id),
+                        pool_type_tag = other,
+                        "load: skipping persisted address pool with invalid pool_type_tag"
+                    );
+                    continue;
+                }
+            };
+            let funds = match account_type {
+                AccountType::Standard {
+                    index,
+                    standard_account_type: StandardAccountType::BIP44Account,
+                } => wallet_info.accounts.standard_bip44_accounts.get_mut(&index),
+                AccountType::Standard {
+                    index,
+                    standard_account_type: StandardAccountType::BIP32Account,
+                } => wallet_info.accounts.standard_bip32_accounts.get_mut(&index),
+                AccountType::CoinJoin { index } => {
+                    wallet_info.accounts.coinjoin_accounts.get_mut(&index)
+                }
+                AccountType::DashpayReceivingFunds {
+                    index,
+                    user_identity_id,
+                    friend_identity_id,
+                } => wallet_info.accounts.dashpay_receival_accounts.get_mut(
+                    &key_wallet::account::account_collection::DashpayAccountKey {
+                        index,
+                        user_identity_id,
+                        friend_identity_id,
+                    },
+                ),
+                AccountType::DashpayExternalAccount {
+                    index,
+                    user_identity_id,
+                    friend_identity_id,
+                } => wallet_info.accounts.dashpay_external_accounts.get_mut(
+                    &key_wallet::account::account_collection::DashpayAccountKey {
+                        index,
+                        user_identity_id,
+                        friend_identity_id,
+                    },
+                ),
+                _ => None,
+            };
+            let Some(funds_account) = funds else {
+                pools_dropped += 1;
+                tracing::warn!(
+                    wallet_id = %hex::encode(entry.wallet_id),
+                    ?account_type,
+                    "load: skipping persisted address pool with no matching funds account"
+                );
+                continue;
+            };
+            let rows: &[CoreAddressEntryFFI] = if pool_ffi.addresses_ptr.is_null()
+                || pool_ffi.addresses_count == 0
+            {
+                &[]
+            } else {
+                unsafe { slice::from_raw_parts(pool_ffi.addresses_ptr, pool_ffi.addresses_count) }
+            };
+            let mut infos: Vec<AddressInfo> = Vec::with_capacity(rows.len());
+            for row in rows {
+                match unsafe { address_info_from_ffi(row, network) } {
+                    Ok(info) => infos.push(info),
+                    Err(e) => {
+                        pools_dropped += 1;
+                        tracing::warn!(
+                            wallet_id = %hex::encode(entry.wallet_id),
+                            error = %e,
+                            "load: skipping un-decodable persisted address row"
+                        );
+                    }
+                }
+            }
+            let mut managed_pools = funds_account.managed_account_type_mut().address_pools_mut();
+            match managed_pools.iter_mut().find(|p| p.pool_type == pool_type) {
+                Some(pool) => {
+                    pools_routed += infos.len();
+                    restore_address_pool(pool, infos);
+                }
+                None => {
+                    pools_dropped += 1;
+                    tracing::warn!(
+                        wallet_id = %hex::encode(entry.wallet_id),
+                        ?pool_type,
+                        "load: persisted address pool has no matching managed pool"
+                    );
+                }
+            }
+        }
+        if pools_dropped > 0 {
+            tracing::warn!(
+                wallet_id = %hex::encode(entry.wallet_id),
+                pools_routed,
+                pools_dropped,
+                "load: persisted address-pool restore completed with skipped rows"
+            );
         }
     }
 
