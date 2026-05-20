@@ -39,6 +39,7 @@ use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyI
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
+use drive::drive::contract::FetchedContract;
 use drive::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyKindRequestType, KeyRequestType, OptionalSingleIdentityPublicKeyOutcome,
 };
@@ -85,29 +86,29 @@ fn validate_identity_public_key_contract_bounds_v1(
         return Ok(SimpleConsensusValidationResult::new());
     };
 
-    // Fetch (and bill) the bounded contract.
+    // Resolve the bounded contract. System contracts come from the in-memory cache
+    // (no fee); user contracts come from grovedb with a billed read.
     let contract_id = match contract_bounds {
         ContractBounds::SingleContract { id } => *id,
         ContractBounds::SingleContractDocumentType { id, .. } => *id,
     };
-    let (contract_fee, contract_fetch_info) = drive.get_contract_with_fetch_info_and_fee(
+    let Some(fetched) = drive.get_system_or_user_contract_with_fee(
         contract_id.to_buffer(),
-        Some(epoch),
-        false,
+        epoch,
         transaction,
         platform_version,
-    )?;
-    if let Some(fee) = contract_fee {
-        execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
-    }
-    let Some(contract_fetch_info) = contract_fetch_info else {
+    )?
+    else {
         return Ok(SimpleConsensusValidationResult::new_with_error(
             ConsensusError::BasicError(BasicError::DataContractNotPresentError(
                 DataContractNotPresentError::new(contract_id),
             )),
         ));
     };
-    let contract = &contract_fetch_info.contract;
+    if let FetchedContract::User { fee, .. } = &fetched {
+        execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee.clone()));
+    }
+    let contract = fetched.contract();
 
     match contract_bounds {
         ContractBounds::SingleContract { .. } => {

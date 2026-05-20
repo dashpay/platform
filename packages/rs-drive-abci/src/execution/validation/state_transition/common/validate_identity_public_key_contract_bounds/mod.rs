@@ -231,6 +231,73 @@ mod tests {
     }
 
     #[test]
+    fn v1_does_not_bill_contract_fetch_for_system_contract() {
+        // DPNS lives in the in-memory system-contract cache. v1 should resolve it without
+        // billing a grovedb read — no `PrecalculatedOperation` should be emitted for the
+        // contract fetch. DPNS doesn't configure bounded keys on any document type, so the
+        // function returns DataContractBoundsNotPresentError, exercising the "found the
+        // contract but no requirements" branch.
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let dpns_id = dpp::system_data_contracts::SystemDataContract::DPNS.id();
+        let key = IdentityPublicKeyInCreationV0 {
+            id: 0,
+            key_type: KeyType::ECDSA_SECP256K1,
+            purpose: Purpose::ENCRYPTION,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: Some(ContractBounds::SingleContract { id: dpns_id }),
+            read_only: false,
+            data: BinaryData::new(vec![0u8; 33]),
+            signature: BinaryData::default(),
+        }
+        .into();
+
+        let mut execution_context =
+            StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                .expect("execution context");
+        let epoch = Epoch::new(0).expect("epoch 0");
+
+        let result = validate_identity_public_keys_contract_bounds_v1(
+            Identifier::random(),
+            &[key],
+            &platform.drive,
+            &epoch,
+            None,
+            &mut execution_context,
+            platform_version,
+        )
+        .expect("v1 returns Ok");
+        assert!(
+            !result.is_valid(),
+            "DPNS configures no bounded keys, so the bound is invalid"
+        );
+        match &result.errors[0] {
+            ConsensusError::BasicError(BasicError::DataContractBoundsNotPresentError(_)) => {}
+            other => panic!(
+                "expected DataContractBoundsNotPresentError, got {:?}",
+                other
+            ),
+        }
+
+        // The critical assertion: no fee was billed for fetching DPNS, because it came from
+        // the in-memory system-contract cache rather than grovedb.
+        let billed: Vec<_> = execution_context
+            .operations_slice()
+            .iter()
+            .filter(|op| matches!(op, ValidationOperation::PrecalculatedOperation(_)))
+            .collect();
+        assert!(
+            billed.is_empty(),
+            "system contract fetch should incur no fee; got {} billing entries: {:?}",
+            billed.len(),
+            billed
+        );
+    }
+
+    #[test]
     fn v1_bills_contract_fetch_and_unique_key_lookup() {
         // v0 dropped these grovedb-read costs on the floor (audit N6/N7). v1 must push them
         // into the execution context so paid-error / successful-action billing sees them.
