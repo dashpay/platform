@@ -136,7 +136,6 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         > = Arc::new(RwLock::new(None));
         #[cfg(feature = "shielded")]
         let shielded_sync = Arc::new(ShieldedSyncManager::new(
-            Arc::clone(&wallets),
             Arc::clone(&event_manager),
             Arc::clone(&shielded_coordinator),
         ));
