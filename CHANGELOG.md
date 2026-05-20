@@ -1,3 +1,10 @@
+## [3.1.0-dev.3](https://github.com/dashpay/platform/compare/v3.1.0-dev.2...v3.1.0-dev.3) (2026-05-20)
+
+
+### Bug Fixes
+
+* **swift-sdk:** drop transitive keypath from PersistentTxo unspent prefetch ([#3691](https://github.com/dashpay/platform/issues/3691))
+
 ## [3.1.0-dev.2](https://github.com/dashpay/platform/compare/v3.1.0-dev.1...v3.1.0-dev.2) (2026-05-20)
 
 
