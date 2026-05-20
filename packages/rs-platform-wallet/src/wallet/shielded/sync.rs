@@ -423,9 +423,7 @@ impl<S: ShieldedStore> ShieldedWallet<S> {
                 .lock()
                 .ok()
                 .and_then(|guard| *guard)
-                .map(|when| {
-                    super::CAUGHT_UP_COOLDOWN.saturating_sub(when.elapsed())
-                })
+                .map(|when| super::CAUGHT_UP_COOLDOWN.saturating_sub(when.elapsed()))
                 .filter(|remaining| !remaining.is_zero())
         };
 
