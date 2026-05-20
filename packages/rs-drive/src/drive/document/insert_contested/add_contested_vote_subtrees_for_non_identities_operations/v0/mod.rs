@@ -55,6 +55,8 @@ impl Drive {
                         )),
                         items_size: None,
                         references_size: None,
+                        items_with_sum_item_size: None,
+                        references_with_sum_item_size: None,
                     },
                 },
             );

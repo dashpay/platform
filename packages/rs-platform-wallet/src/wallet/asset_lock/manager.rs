@@ -106,6 +106,21 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
 // ---------------------------------------------------------------------------
 
 impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
+    /// Wallet id this manager operates on. Exposed so FFI callers that
+    /// build a `MnemonicResolverCoreSigner` (or similar) on demand can
+    /// thread the wallet id through to the resolver callback without
+    /// reaching into private fields.
+    pub fn wallet_id(&self) -> WalletId {
+        self.wallet_id
+    }
+
+    /// Network the SDK was constructed with. Same rationale as
+    /// [`Self::wallet_id`] — needed by FFI callers that build a
+    /// `key_wallet::signer::Signer` per call.
+    pub fn network(&self) -> dashcore::Network {
+        self.sdk.network
+    }
+
     /// List all tracked asset locks (blocking version for UI / synchronous contexts).
     ///
     /// Uses `tokio::sync::RwLock::blocking_read` — must NOT be called from

@@ -26,7 +26,10 @@
 //! message-level docstring on `GetDocumentsRequestV1` in
 //! `platform.proto` for the full supported / rejected shape table.
 
+mod compute_aggregate_mode_and_check_limit;
 mod conversions;
+
+use self::compute_aggregate_mode_and_check_limit::compute_aggregate_mode_and_check_limit;
 
 use crate::error::query::QueryError;
 use crate::error::Error;
@@ -38,7 +41,9 @@ use dapi_grpc::platform::v0::get_documents_request::get_documents_request_v0::St
 use dapi_grpc::platform::v0::get_documents_request::get_documents_request_v1::Start as RequestV1Start;
 use dapi_grpc::platform::v0::get_documents_request::GetDocumentsRequestV1;
 use dapi_grpc::platform::v0::get_documents_response::get_documents_response_v1::{
-    count_results, result_data, CountEntries, CountEntry, CountResults, Documents, ResultData,
+    average_results, count_results, result_data, sum_results, AverageAggregate, AverageEntries,
+    AverageEntry, AverageResults, CountEntries, CountEntry, CountResults, Documents, ResultData,
+    SumEntries, SumEntry, SumResults,
 };
 use dapi_grpc::platform::v0::get_documents_response::{
     get_documents_response_v0, get_documents_response_v1, GetDocumentsResponseV1,
@@ -50,8 +55,10 @@ use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
 use drive::error::query::QuerySyntaxError;
 use drive::query::{
-    CountMode, DocumentCountRequest, DocumentCountResponse, OrderClause, SelectFunction,
-    SelectProjection, SplitCountEntry, WhereClause, WhereOperator,
+    AverageEntry as DriveAverageEntry, AverageMode, CountMode, DocumentAverageRequest,
+    DocumentAverageResponse, DocumentCountRequest, DocumentCountResponse, DocumentSumRequest,
+    DocumentSumResponse, OrderClause, SelectFunction, SelectProjection, SplitCountEntry,
+    SumEntry as DriveSumEntry, SumMode, WhereClause,
 };
 use drive::util::grove_operations::GroveDBToUse;
 
@@ -61,7 +68,7 @@ use drive::util::grove_operations::GroveDBToUse;
 /// only partially implements today; the rejected shapes signal
 /// future capability, not malformed requests, and callers can keep
 /// the request structure unchanged when the capability lands.
-fn not_yet_implemented(feature: &str) -> QueryError {
+pub(super) fn not_yet_implemented(feature: &str) -> QueryError {
     QueryError::Query(QuerySyntaxError::Unsupported(format!(
         "{} is not yet implemented",
         feature
@@ -80,6 +87,7 @@ fn validate_and_route(
     having_non_empty: bool,
     group_by: &[String],
     where_clauses: &[WhereClause],
+    platform_version: &PlatformVersion,
 ) -> Result<RoutingDecision, QueryError> {
     // Centralized `limit: Some(0)` rejection.
     //
@@ -152,18 +160,81 @@ fn validate_and_route(
             }
             Ok(RoutingDecision::Documents)
         }
-        SelectFunction::Sum => Err(not_yet_implemented(
-            "SELECT SUM (the wire surface accepts SUM(field) so callers \
-             can encode it ahead of server support landing, but the \
-             server doesn't yet evaluate numeric aggregates other than \
-             COUNT)",
-        )),
-        SelectFunction::Avg => Err(not_yet_implemented(
-            "SELECT AVG (the wire surface accepts AVG(field) so callers \
-             can encode it ahead of server support landing, but the \
-             server doesn't yet evaluate numeric aggregates other than \
-             COUNT)",
-        )),
+        SelectFunction::Sum => {
+            // SELECT SUM(field): routes to
+            // `Drive::execute_document_sum_request` (in
+            // `packages/rs-drive/src/query/drive_document_sum_query/`).
+            // `field` must be non-empty and must name an integer
+            // property on the document type that's covered by either
+            // `documents_summable` (doctype level) or a `summable:
+            // "<field>"` index. Validation lives downstream in
+            // [`crate::query::drive_document_sum_query::drive_dispatcher::detect_sum_mode`].
+            //
+            // Wiring: `RoutingDecision::Sum(...)` variant below feeds
+            // the dispatch arm in the response-building section, which
+            // routes the resulting `DocumentSumResponse` into the
+            // `SumResults` proto message defined in platform.proto.
+            if select.field.is_empty() {
+                return Err(QueryError::InvalidArgument(
+                    "SELECT SUM requires a non-empty `field` naming the integer property \
+                     to sum (e.g. `SUM(amount)`). The contract must declare \
+                     `documentsSummable: \"<field>\"` at the document-type level OR a \
+                     `summable: \"<field>\"` index covering the where-clause shape; the \
+                     DPP validator enforces this at contract creation."
+                        .to_string(),
+                ));
+            }
+            let mode = compute_aggregate_mode_and_check_limit(
+                group_by,
+                where_clauses,
+                limit,
+                "SUM",
+                platform_version,
+            )?;
+            Ok(RoutingDecision::Sum {
+                sum_property: select.field.clone(),
+                mode,
+            })
+        }
+        SelectFunction::Avg => {
+            // SELECT AVG(field): routes to
+            // `Drive::execute_document_average_request` (in
+            // `packages/rs-drive/src/query/drive_document_average_query/`).
+            // `field` must be non-empty and must name an integer
+            // property covered by either `documents_summable` (doctype
+            // level) or a `summable: "<field>"` index — averages reuse
+            // sum-tree indexes (no separate `averageable` flag exists
+            // or is needed; the same `CountSumTree` / PCPS element
+            // backs both).
+            //
+            // Wiring: `RoutingDecision::Average(...)` variant below
+            // feeds the dispatch arm in the response-building section,
+            // which routes the resulting `DocumentAverageResponse` into
+            // the `AverageResults` proto message defined in
+            // platform.proto.
+            if select.field.is_empty() {
+                return Err(QueryError::InvalidArgument(
+                    "SELECT AVG requires a non-empty `field` naming the integer property \
+                     to average (e.g. `AVG(score)`). The contract must declare \
+                     `documentsSummable: \"<field>\"` at the document-type level OR a \
+                     `summable: \"<field>\"` index covering the where-clause shape; the \
+                     DPP validator enforces this at contract creation. Averages reuse \
+                     sum-tree indexes — no separate `averageable` flag is required."
+                        .to_string(),
+                ));
+            }
+            let mode = compute_aggregate_mode_and_check_limit(
+                group_by,
+                where_clauses,
+                limit,
+                "AVG",
+                platform_version,
+            )?;
+            Ok(RoutingDecision::Average {
+                sum_property: select.field.clone(),
+                mode,
+            })
+        }
         SelectFunction::Min => Err(not_yet_implemented(
             "SELECT MIN (the wire surface accepts MIN(field) so callers \
              can encode it ahead of server support landing, but the \
@@ -207,120 +278,13 @@ fn validate_and_route(
             // but the `any` shape is used here too so the routing
             // logic doesn't bake in an assumption that could go
             // stale if that validator's contract ever relaxes.
-            let is_range_op = |op: WhereOperator| {
-                matches!(
-                    op,
-                    WhereOperator::GreaterThan
-                        | WhereOperator::GreaterThanOrEquals
-                        | WhereOperator::LessThan
-                        | WhereOperator::LessThanOrEquals
-                        | WhereOperator::Between
-                        | WhereOperator::BetweenExcludeBounds
-                        | WhereOperator::BetweenExcludeLeft
-                        | WhereOperator::BetweenExcludeRight
-                        | WhereOperator::StartsWith
-                )
-            };
-            let is_in_field = |field: &str| {
-                where_clauses
-                    .iter()
-                    .any(|wc| wc.operator == WhereOperator::In && wc.field == field)
-            };
-            let is_range_field = |field: &str| {
-                where_clauses
-                    .iter()
-                    .any(|wc| is_range_op(wc.operator) && wc.field == field)
-            };
-
-            // Compute the SQL-shape mode from `(group_by, where)`
-            // first; check `limit` validity against the mode after
-            // so the rejection lives in one place keyed off
-            // `CountMode::accepts_limit()`.
-            let mode = match group_by {
-                [] => CountMode::Aggregate,
-                [field] => {
-                    if is_in_field(field) {
-                        // Single-field GROUP BY on an `In`-constrained
-                        // field routes to `CountMode::GroupByIn`.
-                        // When a range clause is also present,
-                        // drive's [`detect_mode`] picks the right
-                        // submode — `RangeAggregateCarrierProof`
-                        // on the prove path (one count per In
-                        // branch via the grovedb #663 carrier
-                        // primitive) or `RangeNoProof` on the
-                        // no-prove path (per-In-branch entries
-                        // from the range walk). Both produce
-                        // entries that line up with the
-                        // caller-stated GROUP BY shape, so no
-                        // additional gating here is needed.
-                        CountMode::GroupByIn
-                    } else if is_range_field(field) {
-                        // Symmetric to the In branch above:
-                        // `group_by=[range_field]` routes to
-                        // `CountMode::GroupByRange`. With a
-                        // *second* range clause on a different
-                        // field this drives the
-                        // `RangeAggregateCarrierProof` carrier
-                        // shape (drive's outer-range + inner-ACOR
-                        // primitive). With an `In` on a different
-                        // field it's `RangeDistinctProof` on the
-                        // prove path (per-distinct-value counts
-                        // with In-fanout on the prefix) or
-                        // `RangeNoProof` distinct on the no-prove
-                        // path.
-                        CountMode::GroupByRange
-                    } else {
-                        return Err(not_yet_implemented(&format!(
-                            "GROUP BY on field '{}' which is not constrained by an \
-                             `In` or range where clause",
-                            field
-                        )));
-                    }
-                }
-                [first, second] => {
-                    if is_in_field(first) && is_range_field(second) {
-                        CountMode::GroupByCompound
-                    } else {
-                        return Err(not_yet_implemented(
-                            "two-field GROUP BY outside the `(In, range)` compound \
-                             shape (the existing compound count path orders entries \
-                             as `(in_key, key)`; other orderings would need a new \
-                             merk walk)",
-                        ));
-                    }
-                }
-                _ => return Err(not_yet_implemented("GROUP BY with more than two fields")),
-            };
-
-            // Reject `limit` on modes that can't honor it. Aggregate
-            // returns one row; GroupByIn is bounded by the In array
-            // (capped at 100 by `WhereClause::in_values()`) and the
-            // PointLookupProof path can't represent a partial-In
-            // selection in its `SizedQuery`. Either way silent
-            // truncation or fan-out summing would mislead callers
-            // who set a `limit`.
-            if limit.is_some() && !mode.accepts_limit() {
-                let reason = match mode {
-                    CountMode::Aggregate => {
-                        "`limit` is not valid for SELECT COUNT with empty GROUP BY \
-                         (aggregate count is a single row; omit `limit` to fix)"
-                    }
-                    CountMode::GroupByIn => {
-                        "`limit` is not valid for SELECT COUNT with GROUP BY on an \
-                         `In` field (result is bounded by the In array — capped at \
-                         100 entries; narrow the In array directly to reduce the \
-                         result set)"
-                    }
-                    CountMode::GroupByRange | CountMode::GroupByCompound => unreachable!(
-                        "`accepts_limit()` returns true for these variants; \
-                         outer guard already filtered them out"
-                    ),
-                };
-                return Err(QueryError::Query(QuerySyntaxError::InvalidLimit(
-                    reason.to_string(),
-                )));
-            }
-
+            let mode = compute_aggregate_mode_and_check_limit(
+                group_by,
+                where_clauses,
+                limit,
+                "COUNT",
+                platform_version,
+            )?;
             Ok(RoutingDecision::Count(mode))
         }
     }
@@ -336,6 +300,26 @@ fn validate_and_route(
 enum RoutingDecision {
     Documents,
     Count(CountMode),
+    /// `SELECT SUM(field)` routing. `sum_property` is the integer
+    /// property to aggregate; the dispatcher in rs-drive will
+    /// validate that it matches the doctype's `documents_summable`
+    /// or a covering index's `summable: "<field>"`. `mode` mirrors
+    /// `Count(mode)` — `SumMode` and `CountMode` are isomorphic
+    /// enums sharing the same four variants. The response path
+    /// emits the `SumResults` proto message added to platform.proto.
+    Sum {
+        sum_property: String,
+        mode: CountMode,
+    },
+    /// `SELECT AVG(field)` routing. Same field rules as `Sum` —
+    /// averages reuse sum-tree indexes and return a `(count, sum)`
+    /// pair the client divides. `mode` carries the same shape as
+    /// `Count` / `Sum`. The response path emits the
+    /// `AverageResults` proto message added to platform.proto.
+    Average {
+        sum_property: String,
+        mode: CountMode,
+    },
 }
 
 /// Test-only: expose the routing decision for unit tests without
@@ -362,6 +346,7 @@ enum RoutingDecision {
 pub(super) fn validate_and_route_for_tests(
     request_v1: &GetDocumentsRequestV1,
     where_clauses: &[WhereClause],
+    platform_version: &PlatformVersion,
 ) -> Result<&'static str, QueryError> {
     // 1. OFFSET pagination — rejected before any decoding.
     if request_v1.offset.is_some() {
@@ -408,6 +393,7 @@ pub(super) fn validate_and_route_for_tests(
         !request_v1.having.is_empty(),
         &request_v1.group_by,
         where_clauses,
+        platform_version,
     )
     .map(|d| match d {
         RoutingDecision::Documents => "documents",
@@ -415,6 +401,14 @@ pub(super) fn validate_and_route_for_tests(
         RoutingDecision::Count(CountMode::GroupByIn) => "count_entries_via_in_field",
         RoutingDecision::Count(CountMode::GroupByRange) => "count_entries_via_range_field",
         RoutingDecision::Count(CountMode::GroupByCompound) => "count_entries_via_compound",
+        // v3 sum surface — single label for now (no sub-mode
+        // breakdown like count's). `dispatch_sum_v1` further routes
+        // by where-shape × prove flag.
+        RoutingDecision::Sum { .. } => "sum",
+        // v3 average surface — single label like sum;
+        // `dispatch_average_v1` further routes by where-shape ×
+        // prove flag once the executor lands.
+        RoutingDecision::Average { .. } => "average",
     })
 }
 
@@ -505,11 +499,17 @@ impl<C> Platform<C> {
             None => SelectProjection::documents(),
         };
 
-        let routing =
-            match validate_and_route(&select, limit, having_non_empty, &group_by, &where_clauses) {
-                Ok(r) => r,
-                Err(e) => return Ok(QueryValidationResult::new_with_error(e)),
-            };
+        let routing = match validate_and_route(
+            &select,
+            limit,
+            having_non_empty,
+            &group_by,
+            &where_clauses,
+            platform_version,
+        ) {
+            Ok(r) => r,
+            Err(e) => return Ok(QueryValidationResult::new_with_error(e)),
+        };
 
         match routing {
             RoutingDecision::Documents => self.dispatch_documents_v1(
@@ -535,7 +535,394 @@ impl<C> Platform<C> {
                 platform_state,
                 platform_version,
             ),
+            RoutingDecision::Sum { sum_property, mode } => self.dispatch_sum_v1(
+                data_contract_id,
+                document_type,
+                where_clauses,
+                order_by_clauses,
+                limit,
+                start,
+                prove,
+                sum_property,
+                mode,
+                platform_state,
+                platform_version,
+            ),
+            RoutingDecision::Average { sum_property, mode } => self.dispatch_average_v1(
+                data_contract_id,
+                document_type,
+                where_clauses,
+                order_by_clauses,
+                limit,
+                start,
+                prove,
+                sum_property,
+                mode,
+                platform_state,
+                platform_version,
+            ),
         }
+    }
+
+    /// Dispatch a `select = SUM(field)` request to
+    /// [`Drive::execute_document_sum_request`] and map the response
+    /// into a `GetDocumentsResponseV1` carrying a `SumResults` payload
+    /// (or a `Proof` payload when prove=true).
+    ///
+    /// Parallels [`Self::dispatch_count_v1`] line-by-line — same
+    /// request construction, same error → typed-rejection mapping,
+    /// same prove vs no-prove split. Only the response shape mapping
+    /// differs: `DocumentSumResponse::Aggregate(i64)` →
+    /// `SumResults::aggregate_sum`, `Entries(Vec<SumEntry>)` →
+    /// `SumResults::entries`, `Proof(bytes)` → outer `result.proof`.
+    #[allow(clippy::too_many_arguments)]
+    fn dispatch_sum_v1(
+        &self,
+        data_contract_id: Vec<u8>,
+        document_type_name: String,
+        where_clauses: Vec<WhereClause>,
+        order_clauses: Vec<OrderClause>,
+        limit: Option<u32>,
+        start: Option<RequestV1Start>,
+        prove: bool,
+        sum_property: String,
+        mode: CountMode,
+        platform_state: &PlatformState,
+        platform_version: &PlatformVersion,
+    ) -> Result<QueryValidationResult<GetDocumentsResponseV1>, Error> {
+        if start.is_some() {
+            return Ok(QueryValidationResult::new_with_error(not_yet_implemented(
+                "start_after / start_at with SELECT SUM (paginate by narrowing the \
+                 range clause itself)",
+            )));
+        }
+
+        let contract_id: Identifier =
+            check_validation_result_with_data!(data_contract_id.try_into().map_err(|_| {
+                QueryError::InvalidArgument(
+                    "id must be a valid identifier (32 bytes long)".to_string(),
+                )
+            }));
+
+        let (_, contract_fetch_info) = self.drive.get_contract_with_fetch_info_and_fee(
+            contract_id.to_buffer(),
+            None,
+            true,
+            None,
+            platform_version,
+        )?;
+        let contract_fetch_info = check_validation_result_with_data!(contract_fetch_info.ok_or(
+            QueryError::Query(QuerySyntaxError::DataContractNotFound(
+                "contract not found when querying from value with contract info",
+            ))
+        ));
+        let contract_ref = &contract_fetch_info.contract;
+        let document_type = check_validation_result_with_data!(contract_ref
+            .document_type_for_name(document_type_name.as_str())
+            .map_err(|_| QueryError::InvalidArgument(format!(
+                "document type {} not found for contract {}",
+                document_type_name, contract_id
+            ))));
+
+        // `SumMode` mirrors `CountMode` 1:1 — same four variants
+        // computed via the same `compute_aggregate_mode_and_check_limit`
+        // helper. Map across the isomorphism.
+        let sum_mode = match mode {
+            CountMode::Aggregate => SumMode::Aggregate,
+            CountMode::GroupByIn => SumMode::GroupByIn,
+            CountMode::GroupByRange => SumMode::GroupByRange,
+            CountMode::GroupByCompound => SumMode::GroupByCompound,
+        };
+
+        let drive_request = DocumentSumRequest {
+            contract: contract_ref,
+            document_type,
+            sum_property,
+            where_clauses,
+            order_clauses,
+            mode: sum_mode,
+            limit,
+            prove,
+            drive_config: &self.config.drive,
+        };
+        let drive_response =
+            match self
+                .drive
+                .execute_document_sum_request(drive_request, None, platform_version)
+            {
+                Ok(r) => r,
+                Err(drive::error::Error::Query(qe)) => {
+                    return Ok(QueryValidationResult::new_with_error(QueryError::Query(qe)));
+                }
+                Err(e) => return Err(e.into()),
+            };
+
+        let response = match drive_response {
+            DocumentSumResponse::Aggregate(sum) => GetDocumentsResponseV1 {
+                result: Some(get_documents_response_v1::Result::Data(ResultData {
+                    variant: Some(result_data::Variant::Sums(SumResults {
+                        variant: Some(sum_results::Variant::AggregateSum(sum)),
+                    })),
+                })),
+                metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
+            },
+            DocumentSumResponse::Entries(entries) => {
+                if sum_mode == SumMode::Aggregate {
+                    // Mirror of count's same-arm: `select=SUM,
+                    // group_by=[]` whose executor routed through a
+                    // PerInValue path (In + no range + no prove)
+                    // returns one entry per In branch. Fold them into
+                    // a single aggregate. `checked_add` surfaces the
+                    // narrow case where per-branch sums truly add to
+                    // more than i64::MAX as a typed
+                    // `QuerySyntaxError::Unsupported` rather than
+                    // silently saturating at i64::MAX (which produces
+                    // a deterministic-but-misleading answer).
+                    let mut total: i64 = 0;
+                    let mut overflow = false;
+                    for e in &entries {
+                        match total.checked_add(e.sum.unwrap_or(0)) {
+                            Some(t) => total = t,
+                            None => {
+                                overflow = true;
+                                break;
+                            }
+                        }
+                    }
+                    if overflow {
+                        return Ok(QueryValidationResult::new_with_error(QueryError::Query(
+                            QuerySyntaxError::Unsupported(
+                                "aggregate SUM across In branches overflows i64 — \
+                                 the In-fold cannot be represented; narrow the In set \
+                                 or query branches individually"
+                                    .to_string(),
+                            ),
+                        )));
+                    }
+                    GetDocumentsResponseV1 {
+                        result: Some(get_documents_response_v1::Result::Data(ResultData {
+                            variant: Some(result_data::Variant::Sums(SumResults {
+                                variant: Some(sum_results::Variant::AggregateSum(total)),
+                            })),
+                        })),
+                        metadata: Some(
+                            self.response_metadata_v0(platform_state, CheckpointUsed::Current),
+                        ),
+                    }
+                } else {
+                    GetDocumentsResponseV1 {
+                        result: Some(get_documents_response_v1::Result::Data(ResultData {
+                            variant: Some(result_data::Variant::Sums(SumResults {
+                                variant: Some(sum_results::Variant::Entries(SumEntries {
+                                    entries: entries.into_iter().map(into_v1_sum_entry).collect(),
+                                })),
+                            })),
+                        })),
+                        metadata: Some(
+                            self.response_metadata_v0(platform_state, CheckpointUsed::Current),
+                        ),
+                    }
+                }
+            }
+            DocumentSumResponse::Proof(proof_bytes) => {
+                let (grovedb_used, proof) =
+                    self.response_proof_v0(platform_state, proof_bytes, GroveDBToUse::Current)?;
+                GetDocumentsResponseV1 {
+                    result: Some(get_documents_response_v1::Result::Proof(proof)),
+                    metadata: Some(self.response_metadata_v0(platform_state, grovedb_used)),
+                }
+            }
+        };
+
+        Ok(QueryValidationResult::new_with_data(response))
+    }
+
+    /// Dispatch a `select = AVG(field)` request to
+    /// [`Drive::execute_document_average_request`] and map the response
+    /// into a `GetDocumentsResponseV1` carrying an `AverageResults`
+    /// payload (or a `Proof` payload when prove=true).
+    ///
+    /// Parallels [`Self::dispatch_sum_v1`] line-by-line — same request
+    /// construction, same error → typed-rejection mapping, same prove
+    /// vs no-prove split. The response shape mapping differs:
+    /// `DocumentAverageResponse::Aggregate { count, sum }` →
+    /// `AverageResults::aggregate_average`,
+    /// `DocumentAverageResponse::Entries(_)` → `AverageResults::entries`,
+    /// `DocumentAverageResponse::Proof(_)` → outer `result.proof`.
+    #[allow(clippy::too_many_arguments)]
+    fn dispatch_average_v1(
+        &self,
+        data_contract_id: Vec<u8>,
+        document_type_name: String,
+        where_clauses: Vec<WhereClause>,
+        order_clauses: Vec<OrderClause>,
+        limit: Option<u32>,
+        start: Option<RequestV1Start>,
+        prove: bool,
+        sum_property: String,
+        mode: CountMode,
+        platform_state: &PlatformState,
+        platform_version: &PlatformVersion,
+    ) -> Result<QueryValidationResult<GetDocumentsResponseV1>, Error> {
+        if start.is_some() {
+            return Ok(QueryValidationResult::new_with_error(not_yet_implemented(
+                "start_after / start_at with SELECT AVG (paginate by narrowing the \
+                 range clause itself)",
+            )));
+        }
+
+        let contract_id: Identifier =
+            check_validation_result_with_data!(data_contract_id.try_into().map_err(|_| {
+                QueryError::InvalidArgument(
+                    "id must be a valid identifier (32 bytes long)".to_string(),
+                )
+            }));
+
+        let (_, contract_fetch_info) = self.drive.get_contract_with_fetch_info_and_fee(
+            contract_id.to_buffer(),
+            None,
+            true,
+            None,
+            platform_version,
+        )?;
+        let contract_fetch_info = check_validation_result_with_data!(contract_fetch_info.ok_or(
+            QueryError::Query(QuerySyntaxError::DataContractNotFound(
+                "contract not found when querying from value with contract info",
+            ))
+        ));
+        let contract_ref = &contract_fetch_info.contract;
+        let document_type = check_validation_result_with_data!(contract_ref
+            .document_type_for_name(document_type_name.as_str())
+            .map_err(|_| QueryError::InvalidArgument(format!(
+                "document type {} not found for contract {}",
+                document_type_name, contract_id
+            ))));
+
+        // `AverageMode` mirrors `CountMode` 1:1 — map across.
+        let avg_mode = match mode {
+            CountMode::Aggregate => AverageMode::Aggregate,
+            CountMode::GroupByIn => AverageMode::GroupByIn,
+            CountMode::GroupByRange => AverageMode::GroupByRange,
+            CountMode::GroupByCompound => AverageMode::GroupByCompound,
+        };
+
+        let drive_request = DocumentAverageRequest {
+            contract: contract_ref,
+            document_type,
+            sum_property,
+            where_clauses,
+            order_clauses,
+            mode: avg_mode,
+            limit,
+            prove,
+            drive_config: &self.config.drive,
+        };
+        let drive_response =
+            match self
+                .drive
+                .execute_document_average_request(drive_request, None, platform_version)
+            {
+                Ok(r) => r,
+                Err(drive::error::Error::Query(qe)) => {
+                    return Ok(QueryValidationResult::new_with_error(QueryError::Query(qe)));
+                }
+                Err(e) => return Err(e.into()),
+            };
+
+        let response = match drive_response {
+            DocumentAverageResponse::Aggregate { count, sum } => GetDocumentsResponseV1 {
+                result: Some(get_documents_response_v1::Result::Data(ResultData {
+                    variant: Some(result_data::Variant::Averages(AverageResults {
+                        variant: Some(average_results::Variant::AggregateAverage(
+                            AverageAggregate { count, sum },
+                        )),
+                    })),
+                })),
+                metadata: Some(self.response_metadata_v0(platform_state, CheckpointUsed::Current)),
+            },
+            DocumentAverageResponse::Entries(entries) => {
+                if avg_mode == AverageMode::Aggregate {
+                    // Mirror sum-side's fold for the `select=AVG,
+                    // group_by=[]` + PerInValue executor combo. Fold
+                    // both count and sum across In branches. Either
+                    // axis overflowing is surfaced as a typed
+                    // `QuerySyntaxError::Unsupported` so the client
+                    // doesn't get a silently-saturated answer to
+                    // divide against (which would also misreport the
+                    // average).
+                    let mut total_count: u64 = 0;
+                    let mut total_sum: i64 = 0;
+                    let mut overflow_axis: Option<&'static str> = None;
+                    for e in &entries {
+                        match total_count.checked_add(e.count.unwrap_or(0)) {
+                            Some(c) => total_count = c,
+                            None => {
+                                overflow_axis = Some("count");
+                                break;
+                            }
+                        }
+                        match total_sum.checked_add(e.sum.unwrap_or(0)) {
+                            Some(s) => total_sum = s,
+                            None => {
+                                overflow_axis = Some("sum");
+                                break;
+                            }
+                        }
+                    }
+                    if let Some(axis) = overflow_axis {
+                        return Ok(QueryValidationResult::new_with_error(QueryError::Query(
+                            QuerySyntaxError::Unsupported(format!(
+                                "aggregate AVG across In branches overflows {axis} \
+                                 ({} axis range); narrow the In set or query branches \
+                                 individually",
+                                if axis == "count" { "u64" } else { "i64" },
+                            )),
+                        )));
+                    }
+                    GetDocumentsResponseV1 {
+                        result: Some(get_documents_response_v1::Result::Data(ResultData {
+                            variant: Some(result_data::Variant::Averages(AverageResults {
+                                variant: Some(average_results::Variant::AggregateAverage(
+                                    AverageAggregate {
+                                        count: total_count,
+                                        sum: total_sum,
+                                    },
+                                )),
+                            })),
+                        })),
+                        metadata: Some(
+                            self.response_metadata_v0(platform_state, CheckpointUsed::Current),
+                        ),
+                    }
+                } else {
+                    GetDocumentsResponseV1 {
+                        result: Some(get_documents_response_v1::Result::Data(ResultData {
+                            variant: Some(result_data::Variant::Averages(AverageResults {
+                                variant: Some(average_results::Variant::Entries(AverageEntries {
+                                    entries: entries
+                                        .into_iter()
+                                        .map(into_v1_average_entry)
+                                        .collect(),
+                                })),
+                            })),
+                        })),
+                        metadata: Some(
+                            self.response_metadata_v0(platform_state, CheckpointUsed::Current),
+                        ),
+                    }
+                }
+            }
+            DocumentAverageResponse::Proof(proof_bytes) => {
+                let (grovedb_used, proof) =
+                    self.response_proof_v0(platform_state, proof_bytes, GroveDBToUse::Current)?;
+                GetDocumentsResponseV1 {
+                    result: Some(get_documents_response_v1::Result::Proof(proof)),
+                    metadata: Some(self.response_metadata_v0(platform_state, grovedb_used)),
+                }
+            }
+        };
+
+        Ok(QueryValidationResult::new_with_data(response))
     }
 
     /// Forward a `select = DOCUMENTS` request through the shared
@@ -672,12 +1059,16 @@ impl<C> Platform<C> {
                     // `select=COUNT, group_by=[]` against a request
                     // that drove a PerInValue execution (In + no
                     // range + no prove). Sum entries into a single
-                    // aggregate before emission. `saturating_add`
-                    // on the off-chance an operator-misconfigured
-                    // count tree exceeds u64; realistic ceiling is
-                    // `|In| × max_per-branch-count`, well under u64.
-                    let total: u64 = entries
-                        .iter()
+                    // aggregate before emission. `checked_add`
+                    // surfaces u64 overflow as a typed
+                    // `QuerySyntaxError::Unsupported`; realistic
+                    // ceiling is `|In| × max_per-branch-count` (well
+                    // under u64), so triggering this path requires
+                    // either a misconfigured count tree or an
+                    // executor bug.
+                    let mut total: u64 = 0;
+                    let mut overflow = false;
+                    for e in &entries {
                         // `count.unwrap_or(0)` here is safe: this
                         // arm is server-side, summing entries the
                         // executor emitted. Executor never emits
@@ -686,8 +1077,23 @@ impl<C> Platform<C> {
                         // `unwrap_or(0)` is a belt-and-suspenders
                         // guard against any future executor that
                         // forgets the contract.
-                        .map(|e| e.count.unwrap_or(0))
-                        .fold(0u64, |a, b| a.saturating_add(b));
+                        match total.checked_add(e.count.unwrap_or(0)) {
+                            Some(t) => total = t,
+                            None => {
+                                overflow = true;
+                                break;
+                            }
+                        }
+                    }
+                    if overflow {
+                        return Ok(QueryValidationResult::new_with_error(QueryError::Query(
+                            QuerySyntaxError::Unsupported(
+                                "aggregate COUNT across In branches overflows u64 — \
+                                 narrow the In set or query branches individually"
+                                    .to_string(),
+                            ),
+                        )));
+                    }
                     GetDocumentsResponseV1 {
                         result: Some(get_documents_response_v1::Result::Data(ResultData {
                             variant: Some(result_data::Variant::Counts(CountResults {
@@ -742,6 +1148,41 @@ fn into_v1_entry(e: SplitCountEntry) -> CountEntry {
         // it should round to zero on the wire (matching the
         // proto's `uint64` default).
         count: e.count.unwrap_or(0),
+    }
+}
+
+/// Translate an rs-drive `SumEntry` into the wire `SumEntry`. Mirror
+/// of [`into_v1_entry`] for the sum surface.
+fn into_v1_sum_entry(e: DriveSumEntry) -> SumEntry {
+    SumEntry {
+        in_key: e.in_key,
+        key: e.key,
+        // `sum` is `sint64` on the wire — same `None`-rounds-to-0
+        // contract as `into_v1_entry`.
+        sum: e.sum.unwrap_or(0),
+    }
+}
+
+/// Translate an rs-drive `AverageEntry` into the wire `AverageEntry`.
+/// Mirror of [`into_v1_entry`] + [`into_v1_sum_entry`] for the average
+/// surface (carries both count and sum so the client can divide).
+///
+/// `zip_entries` in `drive_document_average_query::drive_dispatcher`
+/// performs a strict two-pointer merge that errors out as
+/// `CorruptedCodeExecution` on any per-`(in_key, key)` divergence
+/// between the count and sum streams. So by the time an entry reaches
+/// this mapper, both axes have already been asserted to agree on
+/// `Some`-vs-`None` for the same key — meaning the dangerous
+/// `(count: None, sum: Some(V))` bucket that could let a client
+/// divide V by 0 cannot exist. The `unwrap_or(0)` below is therefore
+/// defense-in-depth (same as [`into_v1_entry`] / [`into_v1_sum_entry`]
+/// for individual count / sum entries) rather than load-bearing.
+fn into_v1_average_entry(e: DriveAverageEntry) -> AverageEntry {
+    AverageEntry {
+        in_key: e.in_key,
+        key: e.key,
+        count: e.count.unwrap_or(0),
+        sum: e.sum.unwrap_or(0),
     }
 }
 

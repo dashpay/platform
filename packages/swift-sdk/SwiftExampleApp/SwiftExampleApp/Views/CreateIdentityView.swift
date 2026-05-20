@@ -19,6 +19,23 @@ import SwiftUI
 import SwiftDashSDK
 import SwiftData
 
+/// Minimum surface of a tracked asset-lock row needed by the
+/// cross-wallet anti-join behind the Identities-tab "Resumable
+/// Registrations" section. Exists so the pure filter
+/// `IdentitiesContentView.crossWalletResumableLocks(in:usedSlots:)`
+/// can be unit-tested with lightweight structs instead of forcing
+/// tests to spin up a SwiftData `ModelContainer` just to construct
+/// `PersistentAssetLock` `@Model` instances. `PersistentAssetLock`
+/// conforms automatically because it already exposes all three
+/// properties on its public surface.
+protocol AssetLockResumeRow {
+    var walletId: Data { get }
+    var statusRaw: Int { get }
+    var identityIndexRaw: Int32 { get }
+}
+
+extension PersistentAssetLock: AssetLockResumeRow {}
+
 struct CreateIdentityView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
@@ -35,6 +52,30 @@ struct CreateIdentityView: View {
     /// credit amounts. Duplicated from `PersistentPlatformAddress`
     /// docstring; kept here so the conversion logic stays local.
     private static let creditsPerDash: UInt64 = 100_000_000_000
+
+    /// Duffs per DASH (1e8) — Core-side scale, used by the Core-funded
+    /// identity path.
+    private static let duffsPerDash: UInt64 = 100_000_000
+
+    /// Protocol minimum asset-lock funding for an identity create.
+    /// Mirrors `IdentityCreateTransition::calculate_min_required_fee_v1`
+    /// in `rs-platform-version`:
+    ///   identity_create_base_cost (2_000_000 credits)
+    ///   + asset_lock_base (200_000 duffs * 1000 credits/duff = 200_000_000)
+    ///   + identity_key_in_creation_cost (6_500_000) * defaultKeyCount (3)
+    ///   = 221_500_000 credits / 1000 = 221_500 duffs (0.002215 DASH).
+    /// The v0 floor was 200_000 duffs but with key_in_creation_cost
+    /// dynamic at v1, the per-key surcharge has to be added. Submitting
+    /// below this gets rejected by Platform with
+    /// `IdentityAssetLockTransactionOutPointNotEnoughBalance`. Keep this
+    /// in sync if `defaultKeyCount` changes.
+    private static let minIdentityFundingDuffs: UInt64 = 221_500
+
+    /// Default funding amount pre-filled into the field for the Core
+    /// path. Sits 12.5% above the protocol minimum to give headroom
+    /// for the resulting identity's initial credit balance after the
+    /// processing fee is deducted.
+    private static let defaultCoreFundingDuffs: UInt64 = 250_000
 
     /// All locally-persisted wallets. Drives the Source Wallet
     /// picker along with the synthetic "no wallet" sentinel.
@@ -53,6 +94,16 @@ struct CreateIdentityView: View {
     /// `PersistentIdentity` but doesn't currently flip the matching
     /// Core-address `isUsed` flag).
     @Query private var allIdentities: [PersistentIdentity]
+
+    /// All tracked asset locks across wallets. Used here only to
+    /// resolve `selectedAssetLockId` (the resume-flow init seed
+    /// from Path B) back to a concrete row so the submit gate can
+    /// hand its outpoint to the FFI. The cross-wallet anti-join
+    /// that drives the Identities-tab Resumable Registrations
+    /// section lives in `IdentitiesContentView` and runs against
+    /// its own `@Query`.
+    @Query(sort: [SortDescriptor(\PersistentAssetLock.updatedAt, order: .reverse)])
+    private var allAssetLocks: [PersistentAssetLock]
 
     // MARK: - Selection state
 
@@ -74,6 +125,12 @@ struct CreateIdentityView: View {
     /// logic (future) will detect + decode.
     @State private var walletlessProof: String = ""
 
+    /// Persistent-id of the asset-lock row the user picked under
+    /// `.unusedAssetLock`. Nil until they tap one. Identifying via
+    /// `PersistentIdentifier` (not `outPointHex`) keeps the picker
+    /// resilient if the underlying row updates its status mid-pick.
+    @State private var selectedAssetLockId: PersistentIdentifier? = nil
+
     /// Amount (in DASH) to fund the new identity with. Populated
     /// automatically from the selected account's balance; the user
     /// can lower it but not exceed the available balance.
@@ -93,16 +150,79 @@ struct CreateIdentityView: View {
     /// the submit section swaps to a success banner and auto-dismiss.
     @State private var createdIdentityId: Data? = nil
 
+    /// Active registration controller for the Core-funded path.
+    /// Stored only so `submitCoreFunded` has a local reference
+    /// after spawning it; the canonical lifetime owner is
+    /// `walletManager.registrationCoordinator`, which keeps the
+    /// controller available to the "Pending Registrations" row
+    /// on the Identities tab after this sheet dismisses.
+    @State private var activeController: IdentityRegistrationController? = nil
+
+    /// Optional pre-pick wired up by the Identities-tab "Resumable
+    /// Registrations" section. When non-nil, the four selection
+    /// `@State`s below are seeded in `init` so the form opens
+    /// already-configured for the resume path — same final state
+    /// the user would land on by hand-picking the wallet, choosing
+    /// "Fund from unused Asset Lock", and tapping the lock in the
+    /// picker. Seeding in `init` (via `_state = State(initialValue:
+    /// …)`) — rather than mutating in `.onAppear` / `.task` —
+    /// matters because the form's `.onChange(of: walletSelection)`
+    /// handler resets `fundingSelection` and `identityIndex` on any
+    /// runtime mutation; treating the preselect as the *initial*
+    /// state instead never trips that reset cascade.
+    /// Default `nil` keeps the original "Identities tab → + →
+    /// Create Identity" entry point unchanged.
+    let preselectedAssetLock: PersistentAssetLock?
+
+    init(preselectedAssetLock: PersistentAssetLock? = nil) {
+        self.preselectedAssetLock = preselectedAssetLock
+        if let lock = preselectedAssetLock {
+            // Explicit `Optional(…)` wraps so the `@State` initial
+            // values match the underlying Optional types — Swift
+            // can't infer a `T?` from a bare `.wallet(...)` literal
+            // here because the inferred type lands on `T`.
+            _walletSelection = State(
+                initialValue: Optional(WalletSelection.wallet(id: lock.walletId))
+            )
+            _fundingSelection = State(
+                initialValue: Optional(FundingSelection.unusedAssetLock)
+            )
+            _selectedAssetLockId = State(
+                initialValue: Optional(lock.persistentModelID)
+            )
+            _identityIndex = State(
+                initialValue: Optional(UInt32(bitPattern: lock.identityIndexRaw))
+            )
+        }
+    }
+
     var body: some View {
         NavigationStack {
             Form {
-                // Once registration succeeds, collapse the form down to
-                // just the success banner — the input sections (funding
-                // source, amount, registration-index stepper with its
-                // now-irrelevant collision warning) are noise at that
-                // point.
-                if createdIdentityId != nil {
-                    successSection
+                if let controller = activeController {
+                    // While registration is in flight (or has just
+                    // reached a terminal phase), swap the entire
+                    // form for the 5-step progress section + the
+                    // terminal banner (success "Done" / failure
+                    // error). The form's input sections would be
+                    // noise at this point — the user has already
+                    // committed; the controller lives on
+                    // `walletManager.registrationCoordinator` and
+                    // continues to run if this sheet is dismissed.
+                    RegistrationProgressSection(controller: controller)
+                    terminalSection(for: controller)
+                } else if let lock = preselectedAssetLock {
+                    // Path B (Resumable Registrations → Resume):
+                    // wallet + lock + slot are all pinned by the
+                    // tapped row, so the form collapses to a
+                    // read-only summary and a single submit button.
+                    // The picker UI is intentionally absent — the
+                    // user already chose the lock on the Identities
+                    // tab; re-prompting would be noise.
+                    resumeSummarySection(for: lock)
+                    if canSubmit {
+                        submitSection
+                    }
                 } else {
                     sourceWalletSection
                     fundingSection
@@ -128,6 +248,62 @@ struct CreateIdentityView: View {
                     dismissButton: .default(Text("OK"))
                 )
             }
+        }
+    }
+
+    /// Inline terminal banner that appears under the progress
+    /// section once the controller has reached `.completed` or
+    /// `.failed`. On success, shows the new identity id + a
+    /// "Done" button that dismisses the sheet (the new identity
+    /// appears in the Identities tab's `@Query` automatically).
+    /// On failure, shows the error message inline.
+    @ViewBuilder
+    private func terminalSection(for controller: IdentityRegistrationController) -> some View {
+        switch controller.phase {
+        case .completed(let identityId):
+            Section {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("Identity created", systemImage: "checkmark.seal.fill")
+                        .foregroundColor(.green)
+                        .font(.headline)
+                    Text(identityId.toBase58String())
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundColor(.secondary)
+                        .textSelection(.enabled)
+                    Button {
+                        // User acknowledged success — drop the
+                        // controller from the coordinator's map so
+                        // the "Pending Registrations" row on the
+                        // Identities tab clears immediately
+                        // (otherwise it lingers ~30 s until the
+                        // post-completion retention sweep runs).
+                        walletManager.registrationCoordinator.dismiss(
+                            walletId: controller.walletId,
+                            identityIndex: controller.identityIndex
+                        )
+                        dismiss()
+                    } label: {
+                        Text("Done")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .padding(.top, 4)
+                }
+            }
+        case .failed(let message):
+            Section {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("Registration failed", systemImage: "xmark.octagon.fill")
+                        .foregroundColor(.red)
+                        .font(.headline)
+                    Text(message)
+                        .font(.callout)
+                        .foregroundColor(.primary)
+                        .textSelection(.enabled)
+                }
+            }
+        default:
+            EmptyView()
         }
     }
 
@@ -185,6 +361,75 @@ struct CreateIdentityView: View {
         }
     }
 
+    /// Read-only summary shown in place of the source-wallet /
+    /// funding-source / amount / identity-index sections when the
+    /// caller pre-pinned an asset lock via `init(preselectedAssetLock:)`
+    /// (Path B — Identities tab → "Resumable Registrations" → Resume).
+    /// The choices are already made; this view confirms them so the
+    /// user can sanity-check before tapping Create Identity.
+    @ViewBuilder
+    private func resumeSummarySection(for lock: PersistentAssetLock) -> some View {
+        let walletLabel = wallets
+            .first(where: { $0.walletId == lock.walletId })?
+            .label ?? "Wallet"
+        Section {
+            summaryRow("Wallet", value: walletLabel)
+            summaryRow(
+                "Asset Lock",
+                value: lock.shortOutPointDisplay,
+                monospaced: true
+            )
+            summaryRow(
+                "Amount",
+                value: Self.formatDash(
+                    raw: UInt64(bitPattern: Int64(lock.amountDuffs)),
+                    divisor: Double(Self.duffsPerDash)
+                )
+            )
+            summaryRow(
+                "Status",
+                value: lock.statusLabel
+            )
+            summaryRow(
+                "Identity Slot",
+                value: "#\(UInt32(bitPattern: lock.identityIndexRaw))"
+            )
+        } header: {
+            Text("Resuming Registration")
+        } footer: {
+            Text(
+                "Tap Create Identity to complete this in-flight "
+                + "registration. The wallet, slot, and asset lock are "
+                + "fixed by the original registration."
+            )
+        }
+    }
+
+    /// One key/value row used by `resumeSummarySection`. Plain
+    /// `HStack` rather than `LabeledContent` because the value should
+    /// flow with the row's content style (so the txid prefix can be
+    /// monospaced) and `LabeledContent` resists styling overrides
+    /// on its value slot.
+    @ViewBuilder
+    private func summaryRow(
+        _ label: String,
+        value: String,
+        monospaced: Bool = false
+    ) -> some View {
+        HStack {
+            Text(label)
+            Spacer()
+            let valueText = Text(value)
+                .foregroundColor(.secondary)
+            if monospaced {
+                valueText.font(.system(.body, design: .monospaced))
+            } else {
+                valueText
+            }
+        }
+    }
+
+
     @ViewBuilder
     private func walletAccountSection(for walletId: Data) -> some View {
         let options = accountOptions(for: walletId)
@@ -196,9 +441,6 @@ struct CreateIdentityView: View {
                     Text("\(option.label) — \(option.balanceText)")
                         .tag(Optional(FundingSelection.account(id: option.persistentId)))
                 }
-                Divider()
-                Text("Fund from unused Asset Lock")
-                    .tag(Optional(FundingSelection.unusedAssetLock))
             }
             .onChange(of: fundingSelection) { _, newValue in
                 // Pre-fill the amount with the full available balance
@@ -212,15 +454,14 @@ struct CreateIdentityView: View {
             Text(
                 "Any account on the selected wallet with a balance can fund "
                 + "the identity — Core or Platform Payment. Empty accounts "
-                + "are hidden. \"Fund from unused Asset Lock\" picks an "
-                + "existing tracked asset lock instead."
+                + "are hidden. To resume a prior in-flight registration, "
+                + "use the Resumable Registrations section on the Identities tab."
             )
         }
     }
 
-    /// Amount (in DASH) to fund the new identity with. Only shown
-    /// once the user has picked a funding source the current flow
-    /// can actually spend from (Platform Payment account).
+    /// Amount (in DASH) to fund the new identity with. Shown for
+    /// Platform Payment and Core / CoinJoin funding sources.
     @ViewBuilder
     private var amountSection: some View {
         if let account = selectedPlatformAccount {
@@ -241,6 +482,29 @@ struct CreateIdentityView: View {
                     divisor: Double(Self.creditsPerDash)
                 )
                 Text("Available: \(available). The new identity will start with this amount funded from the selected addresses.")
+            }
+        } else if let account = selectedCoreAccount {
+            Section {
+                HStack {
+                    TextField("Amount", text: $amountDash)
+                        .keyboardType(.decimalPad)
+                        .textFieldStyle(.roundedBorder)
+                        .disabled(isCreating)
+                    Text("DASH")
+                        .foregroundColor(.secondary)
+                }
+            } header: {
+                Text("Amount")
+            } footer: {
+                let available = Self.formatDash(
+                    raw: coreAccountBalanceDuffs(account),
+                    divisor: Double(Self.duffsPerDash)
+                )
+                let minimum = Self.formatDash(
+                    raw: Self.minIdentityFundingDuffs,
+                    divisor: Double(Self.duffsPerDash)
+                )
+                Text("Available: \(available). Minimum: \(minimum). Rust builds an asset-lock transaction from your Core UTXOs and the locked funds become the new identity's initial credit balance.")
             }
         }
     }
@@ -265,44 +529,77 @@ struct CreateIdentityView: View {
         // creations don't burn an identity-registration slot off our
         // HD tree.
         if case .wallet(let walletId) = walletSelection {
-            let used = usedIdentityIndices(for: walletId)
-            let collision = identityIndex.map { used.contains($0) } ?? false
-            Section {
-                Stepper(value: Binding(
-                    get: { identityIndex ?? 0 },
-                    set: { identityIndex = $0 }
-                ), in: 0...UInt32.max) {
+            // Resume path: the lock fixes the slot. Render a read-
+            // only summary so the user can confirm which slot the
+            // tracked lock is anchored to, but the stepper is
+            // disabled.
+            if fundingSelection == .unusedAssetLock {
+                Section {
                     HStack {
                         Text("Identity Registration Index")
                         Spacer()
-                        Text("#\(identityIndex ?? 0)")
-                            .foregroundColor(collision ? .red : .secondary)
-                            .monospacedDigit()
+                        if let identityIndex = identityIndex {
+                            Text("#\(identityIndex)")
+                                .foregroundColor(.secondary)
+                                .monospacedDigit()
+                        } else {
+                            Text("—")
+                                .foregroundColor(.secondary)
+                        }
                     }
-                }
-                if collision {
+                } header: {
+                    Text("Identity Registration Index")
+                } footer: {
                     Text(
-                        "Index #\(identityIndex ?? 0) is already taken on "
-                        + "this wallet. Pick a different index."
+                        "Resuming uses the asset lock's original slot — "
+                        + "the index can't be overridden on this path."
                     )
-                    .font(.caption)
-                    .foregroundColor(.red)
                 }
-            } header: {
-                Text("Identity Registration Index")
-            } footer: {
-                Text(
-                    "The DIP-9 identity-registration slot the new identity "
-                    + "will consume "
-                    + "(`m/9'/coin'/5'/0'/0'/N'/0'`). Defaults to one past "
-                    + "the highest index already used on this wallet; "
-                    + "override to pick any other unused index."
-                )
+            } else {
+                let used = usedIdentityIndices(for: walletId)
+                let collision = identityIndex.map { used.contains($0) } ?? false
+                Section {
+                    Stepper(value: Binding(
+                        get: { identityIndex ?? 0 },
+                        set: { identityIndex = $0 }
+                    ), in: 0...UInt32.max) {
+                        HStack {
+                            Text("Identity Registration Index")
+                            Spacer()
+                            Text("#\(identityIndex ?? 0)")
+                                .foregroundColor(collision ? .red : .secondary)
+                                .monospacedDigit()
+                        }
+                    }
+                    if collision {
+                        Text(
+                            "Index #\(identityIndex ?? 0) is already taken on "
+                            + "this wallet. Pick a different index."
+                        )
+                        .font(.caption)
+                        .foregroundColor(.red)
+                    }
+                } header: {
+                    Text("Identity Registration Index")
+                } footer: {
+                    Text(
+                        "The DIP-9 identity-registration slot the new identity "
+                        + "will consume "
+                        + "(`m/9'/coin'/5'/0'/0'/N'/0'`). Defaults to one past "
+                        + "the highest index already used on this wallet; "
+                        + "override to pick any other unused index."
+                    )
+                }
             }
         }
     }
 
     private var submitSection: some View {
+        // The active progress / success / error UI lives on the
+        // pushed `RegistrationProgressView` destination, NOT
+        // inline. Once `submit()` spawns a controller and flips
+        // `showProgressDestination` to true, the user is navigated
+        // there and this form steps off-screen.
         Section {
             Button {
                 submit()
@@ -324,32 +621,12 @@ struct CreateIdentityView: View {
         }
     }
 
-    /// Success banner + "Done" button shown after the identity is
-    /// registered and persisted. Replaces the submit section so
-    /// the user can't accidentally double-submit.
-    private var successSection: some View {
-        Section {
-            VStack(alignment: .leading, spacing: 8) {
-                Label("Identity created", systemImage: "checkmark.seal.fill")
-                    .foregroundColor(.green)
-                    .font(.headline)
-                if let id = createdIdentityId {
-                    Text(id.toBase58String())
-                        .font(.system(.caption, design: .monospaced))
-                        .foregroundColor(.secondary)
-                        .textSelection(.enabled)
-                }
-                Button {
-                    dismiss()
-                } label: {
-                    Text("Done")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .padding(.top, 4)
-            }
-        }
-    }
+    // `successSection` was removed when the dedicated
+    // `RegistrationProgressView` destination took ownership of the
+    // success / failure terminal UI (including the "View Identity"
+    // navigation). The form here is input-only; submission pushes
+    // to the progress destination, which renders the post-
+    // registration state.
 
     // MARK: - Derived state
 
@@ -367,6 +644,26 @@ struct CreateIdentityView: View {
                 .isEmpty
         case (.wallet(let walletId), .some):
             guard let identityIndex = identityIndex else { return false }
+            // The resume path is bound to the lock's original
+            // identity-index slot. Path B's init seeds
+            // `identityIndex` to the lock's `identityIndexRaw`,
+            // so the collision check below would always trip
+            // (the lock's slot has been "taken" by the lock
+            // itself). Resume specifically needs the slot to NOT
+            // have a `PersistentIdentity` — the cross-wallet
+            // anti-join in `IdentitiesContentView` already filtered
+            // for that on the row the user tapped Resume on, so
+            // we trust the seed.
+            if fundingSelection == .unusedAssetLock {
+                // Resolve the id to a live row before enabling
+                // submit — the row could have been deleted between
+                // Path B's init-seed and now (e.g. another flow
+                // consumed the same outpoint, or SwiftData pruning
+                // collapsed it). Submitting with a stale id would
+                // fall into the dispatch's "not yet supported"
+                // branch and show a confusing error.
+                return selectedAssetLock != nil
+            }
             // Block submit on collision with an existing identity's
             // registration index. The picker shows a red collision
             // hint, but the button stays disabled regardless so the
@@ -378,8 +675,11 @@ struct CreateIdentityView: View {
                 guard let credits = parsedAmountCredits else { return false }
                 return credits > 0 && credits <= accountBalance(account)
             }
-            // Non-Platform-payment wallet-backed paths are still
-            // stubbed — don't light the button until they're wired.
+            if let account = selectedCoreAccount {
+                guard let duffs = parsedAmountDuffs else { return false }
+                let available = coreAccountBalanceDuffs(account)
+                return duffs >= Self.minIdentityFundingDuffs && duffs <= available
+            }
             return false
         default:
             return false
@@ -388,15 +688,15 @@ struct CreateIdentityView: View {
 
     // MARK: - Submit
 
-    /// Runs the Platform-payment-funded identity registration path.
-    /// Other funding branches are intentionally stubbed — the button
-    /// stays disabled for them via `canSubmit`.
+    /// Dispatches identity registration to the correct funding path.
+    /// Platform-Payment funding uses `registerIdentityFromAddresses`;
+    /// Core / CoinJoin funding uses `registerIdentityWithFunding`
+    /// (asset-lock proof built Rust-side from wallet UTXOs). Other
+    /// funding branches (unused asset-lock, walletless) stay disabled
+    /// via `canSubmit` until later iterations.
     private func submit() {
         guard
-            let account = selectedPlatformAccount,
             let identityIndex = identityIndex,
-            let targetCredits = parsedAmountCredits,
-            targetCredits > 0,
             case .wallet(let walletId) = walletSelection
         else {
             submitError = .init(message: "Selection is incomplete.")
@@ -451,6 +751,112 @@ struct CreateIdentityView: View {
             return
         }
 
+        let network: Network = platformState.currentNetwork
+
+        // Dispatch by funding source.
+        if let account = selectedPlatformAccount {
+            submitPlatformPayment(
+                account: account,
+                walletId: walletId,
+                identityIndex: identityIndex,
+                identityPubkeys: identityPubkeys,
+                signer: signer,
+                managedWallet: managedWallet,
+                network: network
+            )
+        } else if let account = selectedCoreAccount {
+            submitCoreFunded(
+                account: account,
+                walletId: walletId,
+                identityIndex: identityIndex,
+                identityPubkeys: identityPubkeys,
+                signer: signer,
+                managedWallet: managedWallet,
+                network: network
+            )
+        } else if fundingSelection == .unusedAssetLock,
+                  let lock = selectedAssetLock {
+            submitResumed(
+                lock: lock,
+                walletId: walletId,
+                identityIndex: identityIndex,
+                identityPubkeys: identityPubkeys,
+                signer: signer,
+                managedWallet: managedWallet,
+                network: network
+            )
+        } else {
+            submitError = .init(message: "Selected funding source is not yet supported.")
+        }
+    }
+
+    /// Resume registration against an existing tracked asset lock.
+    /// Same shape as `submitCoreFunded` — the only differences are
+    /// (a) the body closure invokes
+    /// `resumeIdentityWithAssetLock(...)` instead of
+    /// `registerIdentityWithFunding(amountDuffs:...)`, and (b) the
+    /// outpoint is decoded from the lock row's display-order
+    /// `outPointHex` to the raw 32-byte txid + u32 vout the FFI
+    /// wants.
+    private func submitResumed(
+        lock: PersistentAssetLock,
+        walletId: Data,
+        identityIndex: UInt32,
+        identityPubkeys: [ManagedPlatformWallet.IdentityPubkey],
+        signer: KeychainSigner,
+        managedWallet: ManagedPlatformWallet,
+        network: Network
+    ) {
+        guard let parts = Self.parseOutPointHex(lock.outPointHex) else {
+            submitError = .init(
+                message: "Tracked asset lock has a malformed outpoint and can't be resumed: \(lock.outPointHex)"
+            )
+            return
+        }
+        let (txidRaw, vout) = parts
+
+        isCreating = true
+
+        let coordinator = walletManager.registrationCoordinator
+        let controller = coordinator.startRegistration(
+            walletId: walletId,
+            identityIndex: identityIndex,
+            body: {
+                let (identityId, _) = try await managedWallet.resumeIdentityWithAssetLock(
+                    outPointTxid: txidRaw,
+                    outPointVout: vout,
+                    identityIndex: identityIndex,
+                    identityPubkeys: identityPubkeys,
+                    signer: signer
+                )
+                return identityId
+            }
+        )
+
+        self.activeController = controller
+        observeController(
+            controller,
+            walletId: walletId,
+            identityIndex: identityIndex,
+            network: network
+        )
+    }
+
+    /// Platform-Payment funded registration. Spends credits from
+    /// `PersistentPlatformAddress` rows on the selected account.
+    private func submitPlatformPayment(
+        account: PersistentAccount,
+        walletId: Data,
+        identityIndex: UInt32,
+        identityPubkeys: [ManagedPlatformWallet.IdentityPubkey],
+        signer: KeychainSigner,
+        managedWallet: ManagedPlatformWallet,
+        network: Network
+    ) {
+        guard let targetCredits = parsedAmountCredits, targetCredits > 0 else {
+            submitError = .init(message: "Enter a positive amount.")
+            return
+        }
         // Greedy-select addresses to cover `targetCredits`. The
         // last address's credits field is capped to the remaining
         // amount so the total spent matches exactly.
@@ -465,8 +871,6 @@ struct CreateIdentityView: View {
 
         isCreating = true
 
-        let network: Network = platformState.currentNetwork
-
         Task {
             do {
                 let created = try await managedWallet.registerIdentityFromAddresses(
@@ -480,7 +884,7 @@ struct CreateIdentityView: View {
 
                 try await MainActor.run {
                     try persistCreatedIdentity(
-                        created,
+                        identityId: created.identityId,
                         network: network
                     )
                     markIdentitySlotUsed(
@@ -498,6 +902,177 @@ struct CreateIdentityView: View {
                     )
                     self.isCreating = false
                 }
+            }
+        }
+    }
+
+    /// Core BIP44-standard funded registration. Rust builds an
+    /// asset-lock transaction from the *selected* BIP44 standard
+    /// account's UTXOs (the picker is restricted to BIP44 standard
+    /// only — see `isFundingAccount` for the predicate), broadcasts
+    /// it, waits for the instant-send lock, and submits the
+    /// IdentityCreate state transition.
+    ///
+    /// Iter 3 swap (the previous iter-1 path was a single in-flight
+    /// spinner inside this view): the FFI call moves to a
+    /// `RegistrationCoordinator`-hosted `IdentityRegistrationController`
+    /// hung off the `PlatformWalletManager`. The view binds the
+    /// "Registering…" indicator to the controller's `phase` so
+    /// dismissing the sheet doesn't abort the registration —
+    /// `RegistrationProgressView` can be opened from the home /
+    /// identities tab to follow the same controller through.
+    private func submitCoreFunded(
+        account: PersistentAccount,
+        walletId: Data,
+        identityIndex: UInt32,
+        identityPubkeys: [ManagedPlatformWallet.IdentityPubkey],
+        signer: KeychainSigner,
+        managedWallet: ManagedPlatformWallet,
+        network: Network
+    ) {
+        guard let amountDuffs = parsedAmountDuffs, amountDuffs > 0 else {
+            submitError = .init(message: "Enter a positive amount.")
+            return
+        }
+
+        // Pinned at submit time so the async body captures a stable
+        // index rather than re-reading the (mutable) `PersistentAccount`
+        // row from another isolation domain.
+        let accountIndex = account.accountIndex
+
+        isCreating = true
+
+        // Reuse an existing controller for this slot if one is in
+        // flight (the coordinator's single-flight gate makes the
+        // re-submit a no-op at the controller layer), otherwise
+        // spawn a fresh one. The persistence side-effects
+        // (`persistCreatedIdentity`, `markIdentitySlotUsed`) live
+        // here in the view so we still have access to
+        // `modelContext` / `platformState`; the controller's body
+        // is responsible only for the FFI call + the success
+        // identifier.
+        let coordinator = walletManager.registrationCoordinator
+        let controller = coordinator.startRegistration(
+            walletId: walletId,
+            identityIndex: identityIndex,
+            body: {
+                let (identityId, _) = try await managedWallet.registerIdentityWithFunding(
+                    amountDuffs: amountDuffs,
+                    accountIndex: accountIndex,
+                    identityIndex: identityIndex,
+                    identityPubkeys: identityPubkeys,
+                    signer: signer
+                )
+                return identityId
+            }
+        )
+
+        // Stash the controller; setting it flips the body to the
+        // inline progress + terminal section in place of the
+        // form. The controller's canonical lifetime owner is
+        // `walletManager.registrationCoordinator` — if the user
+        // dismisses the sheet mid-flight, the same controller is
+        // reachable via the "Pending Registrations" row on the
+        // Identities tab.
+        self.activeController = controller
+
+        // Observe phase transitions to mirror onto this view's
+        // local success / error state. The controller stays in the
+        // coordinator independently of this view's lifetime, so
+        // the same flow remains reachable from
+        // `RegistrationProgressView` after dismissal.
+        observeController(
+            controller,
+            walletId: walletId,
+            identityIndex: identityIndex,
+            network: network
+        )
+    }
+
+    /// Bridge a controller's phase transitions to this view's
+    /// `createdIdentityId` / `submitError` / `isCreating` state.
+    /// The observer task auto-cancels when this view deallocates
+    /// (Swift task lifecycle on the captured `self`), but the
+    /// controller itself outlives the view.
+    private func observeController(
+        _ controller: IdentityRegistrationController,
+        walletId: Data,
+        identityIndex: UInt32,
+        network: Network
+    ) {
+        Task {
+            for await phase in phaseStream(controller: controller) {
+                switch phase {
+                case .completed(let identityId):
+                    do {
+                        try persistCreatedIdentity(
+                            identityId: identityId,
+                            network: network
+                        )
+                        markIdentitySlotUsed(
+                            walletId: walletId,
+                            identityIndex: identityIndex
+                        )
+                        try modelContext.save()
+                        self.createdIdentityId = identityId
+                    } catch {
+                        self.submitError = .init(
+                            message: error.localizedDescription
+                        )
+                    }
+                    self.isCreating = false
+                    // Do NOT clear `activeController` here — the
+                    // pushed `RegistrationProgressView` destination
+                    // is bound to `if let controller = activeController`,
+                    // so nilling it tears the destination down and
+                    // SwiftUI pops back to the form before the user
+                    // sees the success state. The controller lives
+                    // on `walletManager.registrationCoordinator`
+                    // anyway and is purged by the coordinator's
+                    // ~30 s post-completion retention.
+                    return
+                case .failed(let message):
+                    self.submitError = .init(message: message)
+                    self.isCreating = false
+                    // Same rationale as `.completed`: keep the
+                    // controller so the destination can render
+                    // the inline failure state.
+                    return
+                default:
+                    continue
+                }
+            }
+        }
+    }
+
+    /// Poll the controller's `phase` until it reaches a terminal
+    /// state (`.completed` / `.failed`) and yield each transition.
+    /// Combine's `$phase.values` would be more idiomatic, but
+    /// `AnyCancellable` isn't `Sendable` and the @Sendable closure
+    /// of `AsyncStream`'s builder rejects it. A small polling loop
+    /// avoids the bridge entirely.
+    private func phaseStream(
+        controller: IdentityRegistrationController
+    ) -> AsyncStream<IdentityRegistrationController.Phase> {
+        AsyncStream { continuation in
+            Task { @MainActor in
+                var lastEmitted: IdentityRegistrationController.Phase? = nil
+                while !Task.isCancelled {
+                    let phase = controller.phase
+                    if phase != lastEmitted {
+                        continuation.yield(phase)
+                        lastEmitted = phase
+                    }
+                    switch phase {
+                    case .completed, .failed:
+                        continuation.finish()
+                        return
+                    default:
+                        break
+                    }
+                    try? await Task.sleep(nanoseconds: 100_000_000)
+                }
+                continuation.finish()
             }
         }
     }
@@ -570,20 +1145,19 @@ struct CreateIdentityView: View {
     /// variants that flow through the callback as namespaced
     /// `"derived:<path>"` identifiers — no Keychain write needed.
     private func persistCreatedIdentity(
-        _ created: ManagedPlatformWallet.CreatedIdentity,
+        identityId: Data,
         network: Network
     ) throws {
-        let identityId = created.identityId
         let descriptor = FetchDescriptor<PersistentIdentity>(
             predicate: #Predicate { $0.identityId == identityId }
         )
         guard let row = try modelContext.fetch(descriptor).first else {
             // Row hasn't landed yet — shouldn't happen in
-            // production (Rust emits the changeset before
-            // `registerIdentityFromAddresses` returns), but if the
-            // persister callback isn't wired the UI-side fields
-            // stay unset until a subsequent refresh. Log + fall
-            // through so the registration doesn't fail.
+            // production (Rust emits the changeset before the
+            // registration FFI returns), but if the persister
+            // callback isn't wired the UI-side fields stay unset
+            // until a subsequent refresh. Log + fall through so the
+            // registration doesn't fail.
             print("⚠️ persistCreatedIdentity: no PersistentIdentity row for \(identityId.toHexString()) — persister callback likely not wired")
             return
         }
@@ -626,28 +1200,90 @@ struct CreateIdentityView: View {
         return account
     }
 
+    /// The tracked asset lock the user picked in the resume flow.
+    /// Looked up via `persistentModelID` so it stays valid even if
+    /// the row's mutable fields (status, updatedAt) tick after
+    /// selection.
+    private var selectedAssetLock: PersistentAssetLock? {
+        guard let id = selectedAssetLockId else { return nil }
+        return allAssetLocks.first { $0.persistentModelID == id }
+    }
+
+    /// The currently-selected Core BIP44 standard account, if any.
+    /// Used for the Core-funded identity-creation path.
+    ///
+    /// Restricted to BIP44 standard accounts (`accountType == 0` AND
+    /// `standardTag == 0`) — the Rust side
+    /// (`create_funded_asset_lock_proof`) only supports BIP44 standard
+    /// today, so CoinJoin (`accountType == 1`) and BIP32
+    /// (`standardTag == 1`) are intentionally excluded as funding
+    /// sources for new-identity registration.
+    private var selectedCoreAccount: PersistentAccount? {
+        guard
+            case .account(let persistentId) = fundingSelection,
+            let account = allAccounts.first(where: {
+                $0.persistentModelID == persistentId
+            }),
+            account.accountType == 0,
+            account.standardTag == 0
+        else {
+            return nil
+        }
+        return account
+    }
+
     /// Raw credit balance across all addresses in a PlatformPayment
     /// account.
     private func accountBalance(_ account: PersistentAccount) -> UInt64 {
         account.platformAddresses.reduce(0) { $0 + $1.balance }
     }
 
-    /// Default amount string (DASH) for the amount field — the full
-    /// balance of the selected Platform Payment account.
+    /// Spendable balance (duffs) for a Core / CoinJoin account.
+    /// Reads live FFI-backed balance from the platform-wallet manager
+    /// (the SwiftData per-account `balanceConfirmed` scalar isn't
+    /// maintained by the persister — `AccountDetailView.balanceCard`
+    /// uses the same live source). Returns 0 if no match.
+    private func coreAccountBalanceDuffs(_ account: PersistentAccount) -> UInt64 {
+        let balances = walletManager.accountBalances(for: account.wallet.walletId)
+        guard let match = balances.first(where: { b in
+            UInt32(b.typeTag) == account.accountType
+                && b.standardTag == account.standardTag
+                && b.index == account.accountIndex
+        }) else {
+            return 0
+        }
+        return match.confirmed + match.unconfirmed
+    }
+
+    /// Default amount string (DASH) for the amount field.
+    /// Platform Payment → full account balance (one-tap happy path).
+    /// Core / CoinJoin → 0.001 DASH (the asset-lock minimum-with-
+    /// headroom default); user dials up if they want a larger
+    /// initial credit balance.
     private func defaultAmountString(for funding: FundingSelection?) -> String {
         guard
             case .account(let persistentId) = funding,
             let account = allAccounts.first(where: {
                 $0.persistentModelID == persistentId
-            }),
-            account.accountType == 14
+            })
         else {
             return ""
         }
-        let balance = accountBalance(account)
-        if balance == 0 { return "" }
-        let dash = Double(balance) / Double(Self.creditsPerDash)
-        return String(format: "%g", dash)
+        switch account.accountType {
+        case 14:
+            let balance = accountBalance(account)
+            if balance == 0 { return "" }
+            let dash = Double(balance) / Double(Self.creditsPerDash)
+            return String(format: "%g", dash)
+        case 0, 1:
+            let available = coreAccountBalanceDuffs(account)
+            let defaultDuffs = min(available, Self.defaultCoreFundingDuffs)
+            if defaultDuffs == 0 { return "" }
+            let dash = Double(defaultDuffs) / Double(Self.duffsPerDash)
+            return String(format: "%g", dash)
+        default:
+            return ""
+        }
     }
 
     /// Parse the amount text back into credits. Returns `nil` on
@@ -661,6 +1297,18 @@ struct CreateIdentityView: View {
         let credits = (dash * Double(Self.creditsPerDash)).rounded()
         guard credits >= 1, credits <= Double(UInt64.max) else { return nil }
         return UInt64(credits)
+    }
+
+    /// Parse the amount text into Core duffs (1e8 per DASH). Used for
+    /// the Core-funded identity path.
+    private var parsedAmountDuffs: UInt64? {
+        let trimmed = amountDash.trimmingCharacters(in: .whitespaces)
+        guard let dash = Double(trimmed), dash.isFinite, dash > 0 else {
+            return nil
+        }
+        let duffs = (dash * Double(Self.duffsPerDash)).rounded()
+        guard duffs >= 1, duffs <= Double(UInt64.max) else { return nil }
+        return UInt64(duffs)
     }
 
     // MARK: - Helpers
@@ -687,11 +1335,19 @@ struct CreateIdentityView: View {
     /// child rows. Ordering matches `AccountListView`: BIP44 →
     /// PlatformPayment → BIP32 → CoinJoin.
     private func accountOptions(for walletId: Data) -> [FundingAccountOption] {
-        allAccounts
+        // Live balances from the Rust side. The persister doesn't
+        // maintain `PersistentAccount.balanceConfirmed`, so we read
+        // from the platform-wallet manager (same source as
+        // `AccountDetailView.balanceCard`).
+        let liveBalances = walletManager.accountBalances(for: walletId)
+        return allAccounts
             .filter { account in
                 guard account.wallet.walletId == walletId else { return false }
                 guard CreateIdentityView.isFundingAccount(account) else { return false }
-                return CreateIdentityView.accountBalanceSummary(account).hasBalance
+                return CreateIdentityView.hasBalance(
+                    account: account,
+                    liveBalances: liveBalances
+                )
             }
             .sorted { lhs, rhs in
                 let lhsKey = CreateIdentityView.sortKey(for: lhs)
@@ -699,13 +1355,58 @@ struct CreateIdentityView: View {
                 return lhsKey < rhsKey
             }
             .map { account in
-                let (_, balanceText) = Self.accountBalanceSummary(account)
+                let balanceText = Self.balanceText(
+                    for: account,
+                    liveBalances: liveBalances
+                )
                 return FundingAccountOption(
                     persistentId: account.persistentModelID,
                     label: Self.fundingLabel(for: account),
                     balanceText: balanceText
                 )
             }
+    }
+
+    /// Whether an account has any spendable balance for the picker
+    /// filter. Same data sources as `balanceText` (live FFI for Core /
+    /// CoinJoin, SwiftData for PlatformPayment).
+    private static func hasBalance(
+        account: PersistentAccount,
+        liveBalances: [PlatformWalletManager.AccountBalance]
+    ) -> Bool {
+        switch account.accountType {
+        case 14:
+            return account.platformAddresses.contains { $0.balance > 0 }
+        default:
+            let match = liveBalances.first { b in
+                UInt32(b.typeTag) == account.accountType
+                    && b.standardTag == account.standardTag
+                    && b.index == account.accountIndex
+            }
+            return (match?.confirmed ?? 0) + (match?.unconfirmed ?? 0) > 0
+        }
+    }
+
+    /// Picker-row balance text for an account. Core / CoinJoin reads
+    /// from `liveBalances` (FFI snapshot); PlatformPayment sums
+    /// `platformAddresses[].balance` from SwiftData.
+    private static func balanceText(
+        for account: PersistentAccount,
+        liveBalances: [PlatformWalletManager.AccountBalance]
+    ) -> String {
+        switch account.accountType {
+        case 14:
+            let credits = account.platformAddresses.reduce(0) { $0 + $1.balance }
+            return credits > 0 ? formatDash(raw: credits, divisor: 100_000_000_000.0) : "empty"
+        default:
+            let match = liveBalances.first { b in
+                UInt32(b.typeTag) == account.accountType
+                    && b.standardTag == account.standardTag
+                    && b.index == account.accountIndex
+            }
+            let duffs = (match?.confirmed ?? 0) + (match?.unconfirmed ?? 0)
+            return duffs > 0 ? formatDash(raw: duffs, divisor: 100_000_000.0) : "empty"
+        }
     }
 
     /// Unused identity-registration key indices on the wallet's
@@ -750,36 +1451,63 @@ struct CreateIdentityView: View {
         }
     }
 
-    /// Account types eligible to fund a new identity.
+    /// Accounts eligible to fund a new identity.
+    ///
+    /// Core funding restricted to **BIP44 standard** accounts only
+    /// (`accountType == 0 && standardTag == 0`). CoinJoin
+    /// (`accountType == 1`) and BIP32 standard accounts
+    /// (`accountType == 0 && standardTag == 1`) are intentionally
+    /// hidden — the Rust `create_funded_asset_lock_proof` path used
+    /// by `registerIdentityWithFunding` only handles BIP44 standard
+    /// today; surfacing the others would let the user pick a source
+    /// that silently funds from BIP44 #0 instead.
+    ///
+    /// PlatformPayment (`accountType == 14`) stays eligible — it
+    /// flows through `registerIdentityFromAddresses`, a separate
+    /// path that doesn't go through `create_funded_asset_lock_proof`.
     private static func isFundingAccount(_ account: PersistentAccount) -> Bool {
         switch account.accountType {
-        case 0, 1, 14: return true
+        case 0: return account.standardTag == 0
+        case 14: return true
         default: return false
         }
     }
 
-    /// Formatted balance for the picker row and the disabled flag.
-    /// Core / CoinJoin use the SPV-maintained
-    /// `balanceConfirmed + balanceUnconfirmed` duffs (1e8/DASH);
-    /// PlatformPayment sums the BLAST-synced credit balances across
-    /// its addresses (1e11/DASH).
-    private static func accountBalanceSummary(
-        _ account: PersistentAccount
-    ) -> (hasBalance: Bool, balanceText: String) {
-        switch account.accountType {
-        case 14:
-            let credits = account.platformAddresses.reduce(0) { $0 + $1.balance }
-            return (
-                credits > 0,
-                credits > 0 ? formatDash(raw: credits, divisor: 100_000_000_000.0) : "empty"
-            )
-        default:
-            let duffs = account.balanceConfirmed + account.balanceUnconfirmed
-            return (
-                duffs > 0,
-                duffs > 0 ? formatDash(raw: duffs, divisor: 100_000_000.0) : "empty"
-            )
+    /// Decode the display-order `outPointHex` (`<txid hex>:<vout>`)
+    /// stored on `PersistentAssetLock` back into `(rawTxidBytes,
+    /// vout)`. The rawTxidBytes are 32 bytes in wire / little-
+    /// endian order — what the FFI's `OutPointFFI.txid` field
+    /// expects. Reverse of `PersistentAssetLock.encodeOutPoint`.
+    /// Returns `nil` on any parse failure.
+    ///
+    /// Internal (not private) so the unit test target can pin the
+    /// round-trip with `encodeOutPoint`. Wrong endianness on either
+    /// side would silently address a different outpoint and produce
+    /// confusing Platform-side proof-verification failures, so the
+    /// round-trip invariant is worth pinning explicitly.
+    static func parseOutPointHex(_ hex: String) -> (Data, UInt32)? {
+        let parts = hex.split(
+            separator: ":",
+            maxSplits: 1,
+            omittingEmptySubsequences: false
+        )
+        guard parts.count == 2 else { return nil }
+        let txidHex = String(parts[0])
+        guard let vout = UInt32(parts[1]) else { return nil }
+        guard txidHex.count == 64 else { return nil }
+        var txidDisplay = Data(capacity: 32)
+        var idx = txidHex.startIndex
+        for _ in 0..<32 {
+            let end = txidHex.index(idx, offsetBy: 2)
+            guard let byte = UInt8(txidHex[idx..<end], radix: 16) else {
+                return nil
+            }
+            txidDisplay.append(byte)
+            idx = end
         }
+        // Reverse to raw wire-order to match OutPointFFI.txid.
+        let txidRaw = Data(txidDisplay.reversed())
+        return (txidRaw, vout)
     }
 
     /// `"0.01 DASH"` — stripped of trailing zeros, uses up to 8 decimals.

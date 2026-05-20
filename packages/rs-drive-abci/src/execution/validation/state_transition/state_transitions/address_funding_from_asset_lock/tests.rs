@@ -8224,7 +8224,7 @@ mod tests {
             .into();
 
             let identity_create_transition: StateTransition =
-                IdentityCreateTransition::try_from_identity_with_signer(
+                IdentityCreateTransition::try_from_identity_with_signer_and_private_key(
                     &identity_to_fail,
                     asset_lock_proof.clone(),
                     pk.as_slice(),
@@ -8440,7 +8440,7 @@ mod tests {
             .into();
 
             let identity_create_transition: StateTransition =
-                IdentityCreateTransition::try_from_identity_with_signer(
+                IdentityCreateTransition::try_from_identity_with_signer_and_private_key(
                     &identity,
                     asset_lock_proof.clone(),
                     pk.as_slice(),

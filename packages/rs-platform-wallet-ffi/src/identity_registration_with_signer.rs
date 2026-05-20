@@ -234,6 +234,94 @@ pub(crate) unsafe fn decode_contract_bounds(
     }
 }
 
+/// Decode a C-side slice of [`IdentityPubkeyFFI`] rows into the
+/// `BTreeMap<u32, IdentityPublicKey>` shape every identity-creation
+/// path consumes.
+///
+/// Shared between the address-funded registration entry point
+/// ([`platform_wallet_register_identity_from_addresses_signer`] in
+/// this file) and the asset-lock-funded entry points
+/// ([`platform_wallet_register_identity_with_funding_signer`] /
+/// [`platform_wallet_resume_identity_with_existing_asset_lock_signer`]
+/// in `identity_registration_funded_with_signer.rs`). The two paths
+/// previously each owned their own decoder; one diverged in March
+/// 2026 by dropping `contract_bounds` from Swift pubkey rows
+/// (silently registering keys with the wrong semantics, see PR
+/// review thread `r3247674469`). Centralising the decoder closes
+/// that drift surface — a future field on `IdentityPubkeyFFI`
+/// can't land in only one path.
+///
+/// Per-row validation:
+/// - `key_type` / `purpose` / `security_level` round-trip through
+///   `TryFrom` so an out-of-range byte from Swift surfaces as
+///   `ErrorInvalidParameter` instead of silently coercing.
+/// - `pubkey_bytes` must be non-null and non-empty.
+/// - `contract_bounds` decoded via [`decode_contract_bounds`], which
+///   enforces that Encryption / Decryption keys carry bounds
+///   (Drive rejects unbounded ones).
+///
+/// Returns `Err(PlatformWalletFFIResult)` carrying the FFI error the
+/// caller should bubble up directly via
+/// [`crate::unwrap_result_or_return`].
+///
+/// # Safety
+/// - `identity_pubkeys` must point to `identity_pubkeys_count`
+///   contiguous `IdentityPubkeyFFI` rows that outlive this call.
+/// - Each row's `pubkey_bytes` / `contract_bounds_id` /
+///   `contract_bounds_document_type` pointer must satisfy the
+///   contract documented on [`IdentityPubkeyFFI`].
+pub(crate) unsafe fn decode_identity_pubkeys(
+    identity_pubkeys: *const IdentityPubkeyFFI,
+    identity_pubkeys_count: usize,
+) -> Result<BTreeMap<u32, IdentityPublicKey>, PlatformWalletFFIResult> {
+    let pubkey_rows: &[IdentityPubkeyFFI] =
+        slice::from_raw_parts(identity_pubkeys, identity_pubkeys_count);
+    let mut keys_map: BTreeMap<u32, IdentityPublicKey> = BTreeMap::new();
+    for (i, row) in pubkey_rows.iter().enumerate() {
+        let key_type = KeyType::try_from(row.key_type).map_err(|e| {
+            PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                format!("identity_pubkeys[{i}].key_type invalid: {e}"),
+            )
+        })?;
+        let purpose = Purpose::try_from(row.purpose).map_err(|e| {
+            PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                format!("identity_pubkeys[{i}].purpose invalid: {e}"),
+            )
+        })?;
+        let security_level = SecurityLevel::try_from(row.security_level).map_err(|e| {
+            PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                format!("identity_pubkeys[{i}].security_level invalid: {e}"),
+            )
+        })?;
+        if row.pubkey_bytes.is_null() || row.pubkey_len == 0 {
+            return Err(PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorNullPointer,
+                format!("identity_pubkeys[{i}].pubkey_bytes is null or empty"),
+            ));
+        }
+        let pubkey_bytes: Vec<u8> =
+            slice::from_raw_parts(row.pubkey_bytes, row.pubkey_len).to_vec();
+        let contract_bounds = decode_contract_bounds(row, purpose, i, "identity_pubkeys")?;
+        keys_map.insert(
+            row.key_id,
+            IdentityPublicKey::V0(IdentityPublicKeyV0 {
+                id: row.key_id,
+                purpose,
+                security_level,
+                contract_bounds,
+                key_type,
+                read_only: row.read_only,
+                data: BinaryData::new(pubkey_bytes),
+                disabled_at: None,
+            }),
+        );
+    }
+    Ok(keys_map)
+}
+
 /// Register a new identity funded by Platform-address balances, using
 /// **two** external [`SignerHandle`]s — one for the new identity's
 /// state-transition keys, one for the input platform addresses.
@@ -346,37 +434,10 @@ pub unsafe extern "C" fn platform_wallet_register_identity_with_signer(
     let signer_identity_addr = signer_identity_handle as usize;
     let signer_address_addr = signer_address_handle as usize;
 
-    let pubkey_rows: &[IdentityPubkeyFFI] =
-        slice::from_raw_parts(identity_pubkeys, identity_pubkeys_count);
-    let mut keys_map: BTreeMap<u32, IdentityPublicKey> = BTreeMap::new();
-    for (i, row) in pubkey_rows.iter().enumerate() {
-        let key_type = unwrap_result_or_return!(KeyType::try_from(row.key_type));
-        let purpose = unwrap_result_or_return!(Purpose::try_from(row.purpose));
-        let security_level = unwrap_result_or_return!(SecurityLevel::try_from(row.security_level));
-        if row.pubkey_bytes.is_null() || row.pubkey_len == 0 {
-            return PlatformWalletFFIResult::err(
-                PlatformWalletFFIResultCode::ErrorNullPointer,
-                format!("identity_pubkeys[{i}].pubkey_bytes is null or empty"),
-            );
-        }
-        let pubkey_bytes: Vec<u8> =
-            slice::from_raw_parts(row.pubkey_bytes, row.pubkey_len).to_vec();
-        let contract_bounds =
-            unwrap_result_or_return!(decode_contract_bounds(row, purpose, i, "identity_pubkeys"));
-        keys_map.insert(
-            row.key_id,
-            IdentityPublicKey::V0(IdentityPublicKeyV0 {
-                id: row.key_id,
-                purpose,
-                security_level,
-                contract_bounds,
-                key_type,
-                read_only: row.read_only,
-                data: BinaryData::new(pubkey_bytes),
-                disabled_at: None,
-            }),
-        );
-    }
+    let keys_map = unwrap_result_or_return!(decode_identity_pubkeys(
+        identity_pubkeys,
+        identity_pubkeys_count,
+    ));
 
     let option = PLATFORM_WALLET_STORAGE.with_item(wallet_handle, |wallet| {
         let identity_wallet = wallet.identity().clone();

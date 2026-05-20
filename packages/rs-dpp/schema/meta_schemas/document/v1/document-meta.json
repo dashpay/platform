@@ -444,13 +444,38 @@
           },
           "rangeCountable": {
             "type": "boolean",
-            "description": "When true, the property-name level becomes a ProvableCountTree and value trees become CountTrees so range-count queries on the indexed property are O(log n). Requires `countable` to be \"countable\" or \"countableAllowingOffset\". Per-protocol-version 12+; rejected on earlier protocol versions."
+            "description": "When true, the property-name level becomes a ProvableCountTree and value trees become CountTrees so range-count queries on the indexed property are O(log n). Requires `countable` to be \"countable\" or \"countableAllowingOffset\"."
+          },
+          "summable": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "description": "Name of an integer document property whose values are aggregated into a sum at the index. When set, the index's value trees become SumTrees and each per-document index reference is a ReferenceWithSumItem contributing the named property's value to ancestor sum-bearing trees. The property must exist on the document type, be in `required`, and have an integer type."
+          },
+          "rangeSummable": {
+            "type": "boolean",
+            "description": "When true, the property-name level becomes a ProvableSumTree (or ProvableCountProvableSumTree when paired with `rangeCountable: true`) so range-sum queries on the indexed property are O(log n) via the `AggregateSumOnRange` proof primitive. Requires `summable` to be set."
+          },
+          "averageable": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "description": "Syntactic sugar: `averageable: \"<prop>\"` is shorthand for `countable: \"countable\"` + `summable: \"<prop>\"`. Enables average queries (which return `(count, sum)` pairs the client divides) without forcing authors to think in terms of count + sum. Same on-disk layout as setting both underlying flags. If you set both `averageable` and `summable`, they must name the same property."
+          },
+          "rangeAverageable": {
+            "type": "boolean",
+            "description": "Syntactic sugar: `rangeAverageable: true` is shorthand for `rangeCountable: true` + `rangeSummable: true`. Requires `averageable` to be set."
           }
         },
         "required": [
           "properties",
           "name"
         ],
+        "dependentRequired": {
+          "rangeCountable": ["countable"],
+          "rangeSummable": ["summable"],
+          "rangeAverageable": ["averageable"]
+        },
         "additionalProperties": false
       },
       "minItems": 1,
@@ -522,11 +547,31 @@
     },
     "documentsCountable": {
       "type": "boolean",
-      "description": "When true, the primary key tree uses a CountTree enabling O(1) total document count queries. Only effective from protocol version 12."
+      "description": "When true, the primary key tree uses a CountTree enabling O(1) total document count queries."
     },
     "rangeCountable": {
       "type": "boolean",
-      "description": "When true, the primary key tree uses a ProvableCountTree enabling range countable. Only effective from protocol version 12. Implies documentsCountable."
+      "description": "When true, the primary key tree uses a ProvableCountTree enabling range countable. Implies documentsCountable."
+    },
+    "documentsSummable": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "description": "Name of an integer document property aggregated into the primary-key SumTree (one sum per document type). Stores documents as `ItemWithSumItem` so the primary-key tree's root sum is the total of the named property across all docs of this type. Property must exist on the document type, be in `required`, and have an integer type. Composes with `documentsKeepHistory: true` — keep-history doctypes get a `SumTree` per-document subtree with a `ReferenceWithSumItem` on the `0`-key carrying the current version's value, so the doctype-level root aggregate reflects current versions only (historical versions don't double-count)."
+    },
+    "rangeSummable": {
+      "type": "boolean",
+      "description": "When true, the primary key tree uses a ProvableSumTree (or ProvableCountProvableSumTree paired with rangeCountable: true) enabling O(log n) range-sum queries over the primary axis. Requires `documentsSummable` to be set. Rarely useful — range-sum on the primary key with no where-clause filter is unusual; most callers want per-index `rangeSummable` instead. Set this only when you need a provable global range-sum tree."
+    },
+    "documentsAverageable": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "description": "Syntactic sugar: `documentsAverageable: \"<prop>\"` is shorthand for `documentsCountable: true` + `documentsSummable: \"<prop>\"`. Enables doctype-wide average queries (returns `(count, sum)` the client divides) without authors having to compose the count + sum flags. Same on-disk layout. If you set both `documentsAverageable` and `documentsSummable`, they must name the same property. Composes with `documentsKeepHistory: true` via the per-doc SumTree + ReferenceWithSumItem layout described under `documentsSummable`."
+    },
+    "rangeAverageable": {
+      "type": "boolean",
+      "description": "Syntactic sugar: `rangeAverageable: true` is shorthand for `rangeCountable: true` + `rangeSummable: true`. Requires `documentsAverageable` to be set. Same caveat as `rangeSummable` — rarely useful on the primary key; per-index `rangeAverageable` is what most callers want."
     },
     "tokenCost": {
       "type": "object",
@@ -664,5 +709,9 @@
     "properties",
     "additionalProperties"
   ],
+  "dependentRequired": {
+    "rangeSummable": ["documentsSummable"],
+    "rangeAverageable": ["documentsAverageable"]
+  },
   "additionalProperties": false
 }
