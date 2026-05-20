@@ -115,14 +115,14 @@ validation failure (e.g. corrupt backup source).
 |---|---|---|
 | `sqlite` | yes | SQLite persister (`platform_wallet_storage::sqlite`) and all of its native deps (`rusqlite`, `refinery`, `dpp`, `dash-sdk`, `key-wallet`, etc.) |
 | `cli` | yes | Maintenance binary `platform-wallet-storage`. Implies `sqlite`. |
-| `secrets` | no | Reserved for the future `SecretStore` submodule. No code lands today. |
+| `secrets` | yes | `platform_wallet_storage::secrets` submodule — zeroizing secret wrappers (`SecretBytes`, `SecretString`), the `EncryptedFileStore` Argon2id + XChaCha20-Poly1305 vault backend, and the `default_credential_store()` OS-keyring constructor. Implements the upstream `keyring_core::api::{CredentialApi, CredentialStoreApi}` SPI. |
 | `__test-helpers` | no | Crate-private `lock_conn_for_test` / `config_for_test` accessors. The double-underscore prefix follows Cargo's "do not enable from downstream" convention; the methods are also `#[doc(hidden)]`. |
+| `__secrets-test-helpers` | no | Exposes `secrets::MemoryCredentialStore`, the in-RAM test double. Double-underscore = unreachable from production builds. |
 
-`cargo build -p platform-wallet-storage --no-default-features` builds
-the crate with neither the SQLite backend nor the CLI compiled in.
-The resulting library has no public surface today; the build mode
-exists to support a future split where one cargo target wants only
-the secrets feature.
+`cargo build -p platform-wallet-storage --no-default-features` builds a
+minimal core with neither the SQLite backend, the CLI, nor the secrets
+submodule. `--no-default-features --features sqlite,cli` is the
+"persister-only" build mode (no crypto dependencies).
 
 ## Schema
 

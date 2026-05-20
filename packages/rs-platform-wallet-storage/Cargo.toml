@@ -105,11 +105,15 @@ static_assertions = "1"
 filetime = "0.2"
 tracing-test = { version = "0.2", features = ["no-env-filter"] }
 serial_test = "3"
-platform-wallet-storage = { path = ".", features = ["sqlite", "cli", "__test-helpers"] }
+# `default-features = false` so the off-state CI invocation
+# (`--no-default-features --features sqlite,cli`) actually exercises a
+# build with `secrets` disabled — otherwise the dev-dep view would
+# silently re-enable the default feature set for every integration test.
+platform-wallet-storage = { path = ".", default-features = false, features = ["__test-helpers"] }
 tempfile = "3"
 
 [features]
-default = ["sqlite", "cli"]
+default = ["sqlite", "cli", "secrets"]
 # SQLite-backed persister (`platform_wallet_storage::sqlite`).
 sqlite = [
     "dep:key-wallet",
@@ -135,9 +139,12 @@ cli = [
     "dep:serde_json",
     "dep:tracing-subscriber",
 ]
-# `SecretStore` submodule (`platform_wallet_storage::secrets`):
-# zeroizing secret wrappers + Keyring / EncryptedFile backends. Opt-in;
-# never enabled by `default`. Pulls only RustSec-clean pinned crypto.
+# `secrets` submodule (`platform_wallet_storage::secrets`): zeroizing
+# secret wrappers + EncryptedFile backend + OS-keyring construction
+# helper, all built on the upstream `keyring_core::api` SPI. Default-on
+# so `Cargo.lock` unconditionally pins the RustSec-clean crypto stack
+# (SEC-REQ-4.7). Disable explicitly via `--no-default-features` to
+# build the storage crate without the crypto graph.
 secrets = [
     "dep:argon2",
     "dep:chacha20poly1305",
