@@ -21,7 +21,7 @@ use dapi_grpc::platform::v0::{
 };
 use dash_context_provider::ContextProvider;
 use dpp::dashcore::Network;
-use dpp::version::PlatformVersion;
+use dpp::version::{PlatformVersion, TryFromPlatformVersioned};
 use dpp::{
     data_contract::{
         accessors::v0::DataContractV0Getters, document_type::accessors::DocumentTypeV0Getters,
@@ -277,7 +277,7 @@ impl DocumentQuery {
         self,
         platform_version: &PlatformVersion,
     ) -> Result<GetDocumentsRequest, Error> {
-        encode_get_documents_request(self, platform_version)
+        GetDocumentsRequest::try_from_platform_versioned(self, platform_version)
     }
 }
 
@@ -402,7 +402,7 @@ impl TryFrom<DocumentQuery> for platform_proto::GetDocumentsRequest {
     /// [`Query::query`](crate::platform::Query::query)) or call
     /// [`DocumentQuery::try_into_request_for_version`] directly.
     fn try_from(dapi_request: DocumentQuery) -> Result<Self, Self::Error> {
-        encode_get_documents_request(dapi_request, PlatformVersion::latest())
+        Self::try_from_platform_versioned(dapi_request, PlatformVersion::latest())
     }
 }
 
@@ -415,56 +415,60 @@ impl TryFrom<DocumentQuery> for platform_proto::GetDocumentsRequest {
 /// optional-limit semantics — callers that set those features get
 /// `Error::Config` with a clear "requires Platform v3.1+" message
 /// rather than a silently-truncated request.
-fn encode_get_documents_request(
-    dapi_request: DocumentQuery,
-    platform_version: &PlatformVersion,
-) -> Result<GetDocumentsRequest, Error> {
-    let DocumentQuery {
-        select,
-        data_contract,
-        document_type_name,
-        where_clauses,
-        group_by,
-        having,
-        order_by_clauses,
-        limit,
-        start,
-    } = dapi_request;
+impl TryFromPlatformVersioned<DocumentQuery> for GetDocumentsRequest {
+    type Error = Error;
 
-    let feature_version = platform_version
-        .drive_abci
-        .query
-        .document_query
-        .default_current_version;
-
-    match feature_version {
-        0 => encode_v0(
-            data_contract.id().to_vec(),
-            document_type_name,
-            where_clauses,
-            order_by_clauses,
-            limit,
-            start,
-            &select,
-            &group_by,
-            &having,
-        ),
-        1 => encode_v1(
-            data_contract.id().to_vec(),
-            document_type_name,
-            where_clauses,
-            order_by_clauses,
-            limit,
-            start,
+    fn try_from_platform_versioned(
+        value: DocumentQuery,
+        platform_version: &PlatformVersion,
+    ) -> Result<Self, Self::Error> {
+        let DocumentQuery {
             select,
+            data_contract,
+            document_type_name,
+            where_clauses,
             group_by,
             having,
-        ),
-        n => Err(Error::Config(format!(
-            "GetDocumentsRequest wire encoder does not support feature_version={n} \
-             (drive_abci.query.document_query) on PlatformVersion v{}",
-            platform_version.protocol_version
-        ))),
+            order_by_clauses,
+            limit,
+            start,
+        } = value;
+
+        let feature_version = platform_version
+            .drive_abci
+            .query
+            .document_query
+            .default_current_version;
+
+        match feature_version {
+            0 => encode_v0(
+                data_contract.id().to_vec(),
+                document_type_name,
+                where_clauses,
+                order_by_clauses,
+                limit,
+                start,
+                &select,
+                &group_by,
+                &having,
+            ),
+            1 => encode_v1(
+                data_contract.id().to_vec(),
+                document_type_name,
+                where_clauses,
+                order_by_clauses,
+                limit,
+                start,
+                select,
+                group_by,
+                having,
+            ),
+            n => Err(Error::Config(format!(
+                "GetDocumentsRequest wire encoder does not support feature_version={n} \
+                 (drive_abci.query.document_query) on PlatformVersion v{}",
+                platform_version.protocol_version
+            ))),
+        }
     }
 }
 
@@ -1003,6 +1007,6 @@ impl crate::platform::Query<platform_proto::GetDocumentsRequest> for DocumentQue
         _prove: bool,
         sdk: &crate::Sdk,
     ) -> Result<platform_proto::GetDocumentsRequest, Error> {
-        encode_get_documents_request(self.clone(), sdk.version())
+        GetDocumentsRequest::try_from_platform_versioned(self.clone(), sdk.version())
     }
 }

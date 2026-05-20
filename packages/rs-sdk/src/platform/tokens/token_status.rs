@@ -10,10 +10,7 @@ impl Query<GetTokenStatusesRequest> for Vec<Identifier> {
         let request = GetTokenStatusesRequest {
             version: Some(get_token_statuses_request::Version::V0(
                 GetTokenStatusesRequestV0 {
-                    token_ids: self
-                        .iter()
-                        .map(|identifier| identifier.to_vec())
-                        .collect(),
+                    token_ids: self.iter().map(|identifier| identifier.to_vec()).collect(),
                     prove,
                 },
             )),
