@@ -284,24 +284,6 @@ class ShieldedService: ObservableObject {
             // false and `lastError` is populated. Bail rather
             // than chain a sync that will fail the same way.
             guard isBound else { return }
-
-            // Restart the manager-wide shielded sync loop that
-            // `clearLocalState` stopped on the way in. Without
-            // this, the user would get exactly one manual sync
-            // pass here and then no further background updates
-            // until they navigated into a wallet detail (which
-            // is what re-triggers `rebindWalletScopedServices`).
-            // Guarded against double-start to mirror the same
-            // start path in `SwiftExampleAppApp.rebindWalletScopedServices`.
-            do {
-                if try !walletManager.isShieldedSyncRunning() {
-                    try walletManager.startShieldedSync()
-                }
-            } catch {
-                SDKLogger.error(
-                    "ShieldedService.manualSync: failed to restart shielded sync loop: \(error.localizedDescription)"
-                )
-            }
         }
 
         isSyncing = true
@@ -312,6 +294,27 @@ class ShieldedService: ObservableObject {
         } catch {
             lastError = "Shielded sync error: \(error.localizedDescription)"
             SDKLogger.log(lastError ?? "", minimumLevel: .medium)
+        }
+
+        // Restart the manager-wide shielded sync loop AFTER the
+        // manual `syncShieldedNow()` call completes. `start()`
+        // spawns a background thread whose first iteration calls
+        // `sync_now(false)` immediately, and the manager's
+        // `is_syncing` CAS in `sync_now` means whichever caller
+        // gets there first wins — the other silently no-ops with
+        // an empty summary. Starting *after* the manual pass
+        // returns lets the user-initiated tap run uncontested,
+        // and the loop's first tick happens on its own cadence.
+        // The guard against double-start mirrors the equivalent
+        // call in `SwiftExampleAppApp.rebindWalletScopedServices`.
+        do {
+            if try !walletManager.isShieldedSyncRunning() {
+                try walletManager.startShieldedSync()
+            }
+        } catch {
+            SDKLogger.error(
+                "ShieldedService.manualSync: failed to (re)start shielded sync loop: \(error.localizedDescription)"
+            )
         }
     }
 
