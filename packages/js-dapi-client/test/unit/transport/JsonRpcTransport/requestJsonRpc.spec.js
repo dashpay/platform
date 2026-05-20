@@ -2,6 +2,8 @@ const requestJsonRpc = require('../../../../lib/transport/JsonRpcTransport/reque
 const JsonRpcError = require('../../../../lib/transport/JsonRpcTransport/errors/JsonRpcError');
 const WrongHttpCodeError = require('../../../../lib/transport/JsonRpcTransport/errors/WrongHttpCodeError');
 
+const nodeOnlyIt = typeof window === 'undefined' ? it : it.skip;
+
 describe('requestJsonRpc', () => {
   let protocol;
   let host;
@@ -73,7 +75,7 @@ describe('requestJsonRpc', () => {
     expect(result).to.equal('passed');
   });
 
-  it('should pass an undici Agent that skips TLS verification when selfSigned is true', async () => {
+  nodeOnlyIt('should pass an undici Agent that skips TLS verification when selfSigned is true', async () => {
     protocol = 'https';
     selfSigned = true;
 
@@ -104,7 +106,7 @@ describe('requestJsonRpc', () => {
     expect(requestOptions.dispatcher).to.exist();
   });
 
-  it('should reuse a single undici Agent across multiple self-signed calls (no socket leak)', async () => {
+  nodeOnlyIt('should reuse a single undici Agent across multiple self-signed calls (no socket leak)', async () => {
     protocol = 'https';
     selfSigned = true;
 
