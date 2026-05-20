@@ -35,6 +35,7 @@
 use super::super::drive_document_average_query::{
     AverageMode, DocumentAverageRequest, DocumentAverageResponse,
 };
+use super::super::drive_document_count_query::drive_dispatcher::validate_and_canonicalize_where_clauses;
 use super::super::drive_document_sum_query::mode_detection::detect_sum_mode_from_inputs;
 use super::super::drive_document_sum_query::{DocumentSumMode, RangeSumOptions, SumMode};
 use crate::drive::Drive;
@@ -78,6 +79,38 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<DocumentAverageResponse, Error> {
+        // No-prove precondition. Direct callers (i.e. anything reaching
+        // this method without going through
+        // `execute_document_average_request`'s prove/no-prove split)
+        // must not slip a `prove = true` request past — this dispatcher
+        // hard-routes with `prove = false` and would otherwise silently
+        // hand back a no-prove response to a caller that asked for a
+        // proof. Reject up front rather than honoring the routing
+        // mismatch.
+        if request.prove {
+            return Err(Error::Drive(
+                crate::error::drive::DriveError::CorruptedCodeExecution(
+                    "execute_document_count_and_sum_request only serves the no-prove path. \
+                     For a proven AVG response use \
+                     `execute_document_average_request` (which routes prove=true to the \
+                     prove-side dispatcher).",
+                ),
+            ));
+        }
+
+        // Validate + canonicalize the structured `where_clauses` —
+        // same rejections / canonicalization the regular document-
+        // query path runs, kept here so the AVG no-prove surface
+        // keeps the accept/reject contract it had pre-#3690 when the
+        // composition path ran the validator via count's dispatcher.
+        // Must run BEFORE `detect_sum_mode_from_inputs` because the
+        // canonicalizer collapses `[> A, < B]` pairs into a single
+        // `between*` clause whose presence changes the routing
+        // decision. See
+        // [`validate_and_canonicalize_where_clauses`]'s docstring for
+        // the catalog of rejections.
+        let where_clauses = validate_and_canonicalize_where_clauses(request.where_clauses)?;
+
         // Convert AverageMode → SumMode (1:1 by construction); sum's
         // routing table is the single source of truth for the
         // `(where_clauses × mode × prove=false)` triple. Forking a
@@ -94,11 +127,10 @@ impl Drive {
         };
 
         let resolved_mode =
-            detect_sum_mode_from_inputs(&request.where_clauses, sum_mode, false, platform_version)?;
+            detect_sum_mode_from_inputs(&where_clauses, sum_mode, false, platform_version)?;
 
         let contract_id = request.contract.id().to_buffer();
         let document_type_name = request.document_type.name().to_string();
-        let where_clauses = request.where_clauses;
         let sum_property = request.sum_property;
         let order_by_ascending = request
             .order_clauses
@@ -122,6 +154,18 @@ impl Drive {
                     carrier_outer_limit: None,
                     left_to_right: order_by_ascending,
                 };
+                // PerInValue's per-In fan-out is bounded by the
+                // `In::in_values()` 100-cap, so the executor's worst-
+                // case backlog is small — but the caller's `limit`
+                // still applies to the entry list returned (mirroring
+                // count's no-proof per-In policy at
+                // `execute_document_count_per_in_value_no_proof`). On
+                // the no-proof path `limit > max_query_limit` clamps
+                // to `max_query_limit`; an unset `limit` is `None`
+                // (no truncation beyond the 100-cap).
+                let per_in_limit = request
+                    .limit
+                    .map(|l| l.min(request.drive_config.max_query_limit as u32));
                 self.execute_document_count_and_sum_per_in_value_no_proof(
                     contract_id,
                     request.document_type,
@@ -129,6 +173,7 @@ impl Drive {
                     where_clauses,
                     sum_property,
                     options,
+                    per_in_limit,
                     transaction,
                     platform_version,
                 )

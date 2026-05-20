@@ -49,6 +49,7 @@ impl Drive {
         where_clauses: Vec<WhereClause>,
         sum_property: String,
         options: RangeSumOptions,
+        limit: Option<u32>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<DocumentAverageResponse, Error> {
@@ -196,6 +197,14 @@ impl Drive {
             .collect();
         if !options.left_to_right {
             entries.reverse();
+        }
+        // Apply caller's `limit` AFTER ordering — same shape as
+        // count's `execute_document_count_per_in_value_no_proof`. The
+        // BTreeMap iteration was already ascending; an explicit
+        // descending order reverses the vec, then the truncate caps
+        // it at `limit` from the front.
+        if let Some(l) = limit {
+            entries.truncate(l as usize);
         }
         Ok(DocumentAverageResponse::Entries(entries))
     }

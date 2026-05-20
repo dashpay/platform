@@ -1817,4 +1817,351 @@ mod tests {
              `max_query_limit = 2`; got {entries:?}"
         );
     }
+
+    /// `execute_document_count_and_sum_request` must reject a direct
+    /// caller passing `prove = true`. The wrapper
+    /// `execute_document_average_request` is the only legitimate entry
+    /// that routes prove requests (to the prove-side dispatcher);
+    /// reaching the joint dispatcher with `prove = true` would
+    /// otherwise silently produce a no-proof response. Regression for
+    /// the CodeRabbit "enforce no-prove precondition" finding.
+    #[test]
+    fn joint_dispatcher_rejects_prove_true_request() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let data_contract = build_widget_contract_pcps();
+        drive
+            .apply_contract(
+                &data_contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("apply contract");
+
+        let document_type = data_contract
+            .document_type_for_name("widget")
+            .expect("widget");
+        let drive_config = DriveConfig::default();
+
+        let request = DocumentAverageRequest {
+            contract: &data_contract,
+            document_type,
+            sum_property: "amount".to_string(),
+            where_clauses: Vec::new(),
+            order_clauses: Vec::new(),
+            mode: AverageMode::Aggregate,
+            limit: None,
+            prove: true,
+            drive_config: &drive_config,
+        };
+
+        let err = drive
+            .execute_document_count_and_sum_request(request, None, platform_version)
+            .expect_err("prove=true direct call must reject");
+        let msg = format!("{err:?}");
+        assert!(
+            msg.contains("no-prove"),
+            "expected the prove=true guard to fire; got: {msg}"
+        );
+    }
+
+    /// AVG no-proof dispatcher must run
+    /// `validate_and_canonicalize_where_clauses` — same shape contract
+    /// the pre-#3690 composition path inherited from count's
+    /// dispatcher. Pin a representative rejection: a duplicate Equal
+    /// on the same field. Without the validator the executor would
+    /// either succeed with a silently-collapsed shape or fail downstream
+    /// with a less precise error.
+    #[test]
+    fn joint_dispatcher_runs_validate_and_canonicalize_where_clauses() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let data_contract = build_widget_contract_pcps();
+        drive
+            .apply_contract(
+                &data_contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("apply contract");
+
+        let document_type = data_contract
+            .document_type_for_name("widget")
+            .expect("widget");
+        let drive_config = DriveConfig::default();
+
+        // Duplicate Equal on `color` — validator rejects via
+        // `WhereClause::group_clauses`.
+        let dup_color_a = WhereClause {
+            field: "color".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Text("red".to_string()),
+        };
+        let dup_color_b = WhereClause {
+            field: "color".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Text("green".to_string()),
+        };
+        let request = DocumentAverageRequest {
+            contract: &data_contract,
+            document_type,
+            sum_property: "amount".to_string(),
+            where_clauses: vec![dup_color_a, dup_color_b],
+            order_clauses: Vec::new(),
+            mode: AverageMode::Aggregate,
+            limit: None,
+            prove: false,
+            drive_config: &drive_config,
+        };
+
+        let err = drive
+            .execute_document_average_request(request, None, platform_version)
+            .expect_err(
+                "AVG no-proof must reject duplicate Equal on the same field via \
+                 validate_and_canonicalize_where_clauses",
+            );
+        // The exact error variant comes from `WhereClause::group_clauses` —
+        // pin only that the call returned `Err` and the error mentions
+        // the problematic shape rather than a generic index-picker miss.
+        let msg = format!("{err:?}");
+        assert!(
+            !msg.contains("WhereClauseOnNonIndexedProperty"),
+            "validator should reject before the index picker would: {msg}"
+        );
+    }
+
+    /// `PerInValue` no-proof AVG must honor `request.limit` on the
+    /// returned entry list. Regression for the reviewer's "joint
+    /// dispatcher drops `request.limit`" finding on the PerInValue
+    /// arm. Count's per-In executor truncates at this same point.
+    #[test]
+    fn per_in_value_avg_no_proof_honors_explicit_limit() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        // `byColor` index: `summable: "amount"` + `countable:
+        // "countable"`. No range flags — this is the no-range
+        // PerInValue shape.
+        let factory = DataContractFactory::new(PROTOCOL_VERSION_V12).expect("create factory");
+        let document_schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "color":  {"type": "string",  "position": 0, "maxLength": 32},
+                "amount": {"type": "integer", "position": 1, "minimum": 0, "maximum": 1000},
+            },
+            "required": ["color", "amount"],
+            "indices": [{
+                "name": "byColor",
+                "properties": [{"color": "asc"}],
+                "summable":  "amount",
+                "countable": "countable",
+            }],
+            "additionalProperties": false,
+        });
+        let schemas = platform_value!({ "widget": document_schema });
+        let data_contract = factory
+            .create_with_value_config(
+                dpp::tests::utils::generate_random_identifier_struct(),
+                0,
+                schemas,
+                None,
+                None,
+            )
+            .expect("create data contract")
+            .data_contract_owned();
+        drive
+            .apply_contract(
+                &data_contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("apply contract");
+
+        for (i, (color, amount)) in [("red", 5u64), ("green", 7), ("blue", 2), ("yellow", 4)]
+            .iter()
+            .enumerate()
+        {
+            insert_widget(&drive, &data_contract, i, color, *amount);
+        }
+
+        let document_type = data_contract
+            .document_type_for_name("widget")
+            .expect("widget");
+        let drive_config = DriveConfig::default();
+
+        // `In` over 4 color values, `limit = 2` — dispatcher must
+        // truncate the per-In entry list to 2.
+        let color_in = WhereClause {
+            field: "color".to_string(),
+            operator: WhereOperator::In,
+            value: Value::Array(vec![
+                Value::Text("red".to_string()),
+                Value::Text("green".to_string()),
+                Value::Text("blue".to_string()),
+                Value::Text("yellow".to_string()),
+            ]),
+        };
+        let request = DocumentAverageRequest {
+            contract: &data_contract,
+            document_type,
+            sum_property: "amount".to_string(),
+            where_clauses: vec![color_in],
+            order_clauses: Vec::new(),
+            mode: AverageMode::GroupByIn,
+            limit: Some(2),
+            prove: false,
+            drive_config: &drive_config,
+        };
+
+        let response = drive
+            .execute_document_average_request(request, None, platform_version)
+            .expect("dispatcher should succeed");
+        let entries = match response {
+            DocumentAverageResponse::Entries(e) => e,
+            other => panic!("expected Entries, got {:?}", other),
+        };
+        assert_eq!(
+            entries.len(),
+            2,
+            "PerInValue AVG no-proof must apply request.limit = 2 to the per-In \
+             entry list (caller asked for 4 In values, dispatcher must truncate); \
+             got {entries:?}"
+        );
+    }
+
+    /// Empty-where `Aggregate` AVG MUST exercise the
+    /// [`Drive::execute_document_count_and_sum_total_no_proof`]
+    /// primary-key fast path when the doctype declares
+    /// `documentsAverageable` (= `documentsCountable: true +
+    /// documentsSummable: "<prop>"`). The fast path reads
+    /// `[contract_doc, contract_id, [1], doctype, 0]` — the PCPS
+    /// primary-key element — and decodes `(count, sum)` from it in one
+    /// grovedb call without any index. Consensus-critical: a regression
+    /// here would silently produce wrong `(count, sum)` for the
+    /// most-trafficked AVG shape (unfiltered total).
+    #[test]
+    fn empty_where_total_executor_uses_primary_key_count_sum_tree_fast_path() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        // `documentsAverageable: "amount"` desugars to BOTH
+        // `documentsCountable: true` AND `documentsSummable:
+        // "amount"`, which is exactly what the empty-where fast path
+        // requires. No `indices` block — the fast path doesn't use
+        // an index, it reads the doctype's primary-key
+        // count-sum-bearing tree directly at `[..., doctype, 0]`.
+        let factory = DataContractFactory::new(PROTOCOL_VERSION_V12).expect("create factory");
+        let document_schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "amount": {"type": "integer", "position": 0, "minimum": 0, "maximum": 1000},
+            },
+            "required": ["amount"],
+            "documentsAverageable": "amount",
+            "additionalProperties": false,
+        });
+        let schemas = platform_value!({ "score": document_schema });
+        let data_contract = factory
+            .create_with_value_config(
+                dpp::tests::utils::generate_random_identifier_struct(),
+                0,
+                schemas,
+                None,
+                None,
+            )
+            .expect("create data contract")
+            .data_contract_owned();
+        drive
+            .apply_contract(
+                &data_contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("apply contract");
+
+        // Insert documents directly (no need for the widget helper —
+        // this doctype has no color property).
+        let document_type = data_contract
+            .document_type_for_name("score")
+            .expect("score type");
+        for (i, amount) in [10u64, 20, 30, 40].iter().enumerate() {
+            let mut properties = std::collections::BTreeMap::new();
+            properties.insert("amount".to_string(), Value::U64(*amount));
+            let document: Document = DocumentV0 {
+                id: Identifier::from([(i + 1) as u8; 32]),
+                owner_id: Identifier::from([0u8; 32]),
+                properties,
+                revision: None,
+                created_at: None,
+                updated_at: None,
+                transferred_at: None,
+                created_at_block_height: None,
+                updated_at_block_height: None,
+                transferred_at_block_height: None,
+                created_at_core_block_height: None,
+                updated_at_core_block_height: None,
+                transferred_at_core_block_height: None,
+                creator_id: None,
+            }
+            .into();
+            let storage_flags = Some(std::borrow::Cow::Owned(StorageFlags::SingleEpoch(0)));
+            drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentRefInfo((&document, storage_flags)),
+                            owner_id: None,
+                        },
+                        contract: &data_contract,
+                        document_type,
+                    },
+                    false,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    platform_version,
+                    None,
+                )
+                .expect("insert score");
+        }
+
+        let drive_config = DriveConfig::default();
+        let request = DocumentAverageRequest {
+            contract: &data_contract,
+            document_type,
+            sum_property: "amount".to_string(),
+            where_clauses: Vec::new(),
+            order_clauses: Vec::new(),
+            mode: AverageMode::Aggregate,
+            limit: None,
+            prove: false,
+            drive_config: &drive_config,
+        };
+
+        let response = drive
+            .execute_document_average_request(request, None, platform_version)
+            .expect("empty-where AVG no-proof must succeed via the primary-key fast path");
+        match response {
+            DocumentAverageResponse::Aggregate { count, sum } => {
+                assert_eq!(
+                    (count, sum),
+                    (4, 100),
+                    "primary-key count-sum tree fast path must return (4 docs, sum 10+20+30+40 = 100)"
+                );
+            }
+            other => panic!("expected Aggregate, got {:?}", other),
+        }
+    }
 }

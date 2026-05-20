@@ -173,9 +173,15 @@ impl Drive {
         for triple in elements.to_path_key_elements() {
             let (path, key, element) = triple;
             let (count, sum) = element.count_sum_value_or_default();
-            // Drop empty groups: matches sum's distinct contract
-            // (which drops `sum == 0`). For AVG an empty group has no
-            // averageable signal AND no count signal.
+            // Drop fully-empty rows only. Sum's standalone distinct
+            // executor drops on `sum == 0` regardless of count, but
+            // that's overly aggressive for AVG: a row with
+            // `count = N, sum = 0` is informative — it means the
+            // group has N documents whose averageable values sum to
+            // zero (e.g. all zero, or signed values that cancel). The
+            // joint executor preserves such rows and only drops
+            // grovedb-absent rows that decode as `(0, 0)`. Diverges
+            // intentionally from sum's drop predicate.
             if count == 0 && sum == 0 {
                 continue;
             }
