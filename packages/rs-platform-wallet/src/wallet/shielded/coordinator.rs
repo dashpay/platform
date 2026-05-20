@@ -242,6 +242,32 @@ impl NetworkShieldedCoordinator {
         self.accounts.read().await.keys().copied().collect()
     }
 
+    /// Drop every wallet registration and reset the cooldown
+    /// stamp. The single SQLite handle (commitment tree) stays
+    /// open — Clear semantics on the host side are "wipe my
+    /// persistence and start re-syncing from index 0 on the
+    /// shared tree", not "blow away the chain-wide cache".
+    ///
+    /// Used by [`platform_wallet_manager_shielded_clear`] (the
+    /// host's Clear button). The host then wipes its own
+    /// per-wallet persistence (e.g. SwiftData rows) — Rust can't
+    /// reach that layer — and the next `bind_shielded` call
+    /// repopulates the registries.
+    ///
+    /// Resets the cooldown to `None` so the first post-clear
+    /// background sync pass runs immediately rather than honoring
+    /// a stale "caught up" stamp from before the wipe.
+    ///
+    /// [`platform_wallet_manager_shielded_clear`]:
+    ///     rs-platform-wallet-ffi's FFI entry point
+    pub async fn clear(&self) {
+        self.accounts.write().await.clear();
+        self.persisters.write().await.clear();
+        if let Ok(mut g) = self.last_caught_up_at.lock() {
+            *g = None;
+        }
+    }
+
     /// Run one shielded sync pass for every registered wallet on
     /// this coordinator's network. Returns a per-wallet outcome
     /// summary suitable for emission to UI / persistence layers

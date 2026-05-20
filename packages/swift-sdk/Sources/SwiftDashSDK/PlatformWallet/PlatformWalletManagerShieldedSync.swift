@@ -183,6 +183,29 @@ extension PlatformWalletManager {
         try platform_wallet_manager_shielded_sync_stop(handle).check()
     }
 
+    /// Reset the Rust-side shielded state on this manager:
+    /// stops the background sync loop, drops every wallet
+    /// registration on the network-scoped coordinator, and
+    /// resets the caught-up cooldown stamp.
+    ///
+    /// Use this from the host's "Clear" flow before wiping
+    /// host-side persistence (e.g. SwiftData rows). The single
+    /// per-network SQLite commitment-tree file stays open —
+    /// Clear semantics are "wipe my host persistence and
+    /// re-sync from index 0 on the shared tree", not "blow
+    /// away the chain-wide cache". After Clear, the next
+    /// [`bindShielded`] call repopulates the coordinator's
+    /// registries and the next sync pass re-saves notes via
+    /// the changeset path.
+    public func clearShielded() throws {
+        guard isConfigured, handle != NULL_HANDLE else {
+            throw PlatformWalletError.invalidHandle(
+                "PlatformWalletManager not configured"
+            )
+        }
+        try platform_wallet_manager_shielded_clear(handle).check()
+    }
+
     public func isShieldedSyncRunning() throws -> Bool {
         guard isConfigured, handle != NULL_HANDLE else {
             throw PlatformWalletError.invalidHandle(

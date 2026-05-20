@@ -381,6 +381,47 @@ pub unsafe extern "C" fn platform_wallet_manager_configure_shielded(
 }
 
 // ---------------------------------------------------------------------------
+// Clear shielded state (Rust side)
+// ---------------------------------------------------------------------------
+
+/// Reset the Rust-side shielded state on this manager: stop the
+/// background sync loop, drop every wallet registration on the
+/// network-scoped coordinator, and reset the caught-up cooldown
+/// stamp.
+///
+/// The single SQLite commitment-tree file stays open — Clear
+/// semantics are "wipe my host-side persistence and start
+/// re-syncing from index 0 on the shared tree", **not** "blow
+/// away the chain-wide cache". The host is responsible for
+/// wiping its own per-wallet persistence layer (e.g. SwiftData
+/// rows) since Rust can't reach into iOS / Android persistence;
+/// after that, the next [`platform_wallet_manager_bind_shielded`]
+/// call repopulates the coordinator's registries and the next
+/// sync pass re-saves notes via the changeset path.
+///
+/// Idempotent: calling Clear when shielded support has never
+/// been configured (no coordinator installed) is still a
+/// successful no-op on the coordinator side. The sync-loop stop
+/// is unconditional.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_shielded_clear(
+    handle: Handle,
+) -> PlatformWalletFFIResult {
+    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
+        // Stop the loop first so the next pass can't race the
+        // registry clear and observe a half-emptied state.
+        manager.shielded_sync().stop();
+        runtime().block_on(async {
+            if let Some(coord) = manager.shielded_coordinator().await {
+                coord.clear().await;
+            }
+        });
+    });
+    unwrap_option_or_return!(option);
+    PlatformWalletFFIResult::ok()
+}
+
+// ---------------------------------------------------------------------------
 // Default Orchard payment address
 // ---------------------------------------------------------------------------
 

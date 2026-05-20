@@ -424,26 +424,34 @@ class ShieldedService: ObservableObject {
         // doc above for why.)
         let managerForStop = walletManager
 
-        // 1) Stop the manager-wide shielded sync loop BEFORE
-        //    touching state on disk. The Swift `ShieldedService`
-        //    is per-wallet-at-a-time, but the Rust
+        // 1) Reset the Rust-side shielded state BEFORE touching
+        //    state on disk. The Swift `ShieldedService` is
+        //    per-wallet-at-a-time, but the Rust
         //    `PlatformWalletManager` keeps **every** wallet that
-        //    ever ran `bind_shielded` bound at the Rust level,
-        //    and the background sync iterates all of them on its
-        //    own cadence. If we don't stop the loop, the next
-        //    pass fires per wallet and the persister callback
-        //    immediately re-creates the `PersistentShieldedNote`
-        //    / `PersistentShieldedSyncState` rows we're about to
-        //    delete (this is exactly the "Clear left a row
-        //    behind / re-derived a fresh row" symptom we saw on
-        //    the prior attempt). Stopping is best-effort —
-        //    failure logs but doesn't abort the wipe.
+        //    ever ran `bind_shielded` registered on the
+        //    network-scoped coordinator. Without this call the
+        //    coordinator's next sync iterates the still-registered
+        //    wallets and the persister callback immediately
+        //    re-creates the `PersistentShieldedNote` /
+        //    `PersistentShieldedSyncState` rows we're about to
+        //    delete (the "Clear left a row behind / re-derived a
+        //    fresh row" symptom from before). `clearShielded`
+        //    does three things on the Rust side in one call:
+        //      - stops the background sync loop
+        //      - drops every wallet registration from the
+        //        coordinator (`accounts` + `persisters` maps)
+        //      - resets the network-wide caught-up cooldown
+        //    The single SQLite commitment-tree file stays open;
+        //    the next `bindShielded` call repopulates the
+        //    registries and the next sync re-saves notes via
+        //    the changeset path. Best-effort — failure logs but
+        //    doesn't abort the wipe.
         if let managerForStop {
             do {
-                try managerForStop.stopShieldedSync()
+                try managerForStop.clearShielded()
             } catch {
                 SDKLogger.error(
-                    "ShieldedService.clearLocalState: stopShieldedSync failed: \(error.localizedDescription)"
+                    "ShieldedService.clearLocalState: clearShielded failed: \(error.localizedDescription)"
                 )
             }
         }
