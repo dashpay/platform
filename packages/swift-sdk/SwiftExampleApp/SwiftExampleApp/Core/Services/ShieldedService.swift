@@ -284,6 +284,24 @@ class ShieldedService: ObservableObject {
             // false and `lastError` is populated. Bail rather
             // than chain a sync that will fail the same way.
             guard isBound else { return }
+
+            // Restart the manager-wide shielded sync loop that
+            // `clearLocalState` stopped on the way in. Without
+            // this, the user would get exactly one manual sync
+            // pass here and then no further background updates
+            // until they navigated into a wallet detail (which
+            // is what re-triggers `rebindWalletScopedServices`).
+            // Guarded against double-start to mirror the same
+            // start path in `SwiftExampleAppApp.rebindWalletScopedServices`.
+            do {
+                if try !walletManager.isShieldedSyncRunning() {
+                    try walletManager.startShieldedSync()
+                }
+            } catch {
+                SDKLogger.error(
+                    "ShieldedService.manualSync: failed to restart shielded sync loop: \(error.localizedDescription)"
+                )
+            }
         }
 
         isSyncing = true
@@ -354,9 +372,10 @@ class ShieldedService: ObservableObject {
     /// What it does NOT touch:
     ///   * The manager-wide shielded sync loop is `stopShieldedSync`'d
     ///     first so the persister callback can't re-derive the
-    ///     rows we're deleting; it restarts when something binds
-    ///     (either `manualSync` self-binding or
-    ///     `rebindWalletScopedServices` firing on a navigation).
+    ///     rows we're deleting. It restarts on either of the two
+    ///     bind paths: [`manualSync`] self-binding (which calls
+    ///     `startShieldedSync()` after a successful self-rebind),
+    ///     or `rebindWalletScopedServices` firing on a navigation.
     ///   * The per-network commitment-tree SQLite file at
     ///     `dbPath(for:)`. Earlier revisions of this helper
     ///     unlinked it for a "true clean slate", but with no
