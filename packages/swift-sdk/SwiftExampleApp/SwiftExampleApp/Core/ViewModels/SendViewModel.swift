@@ -212,7 +212,6 @@ class SendViewModel: ObservableObject {
                     error = "Core wallet not available"
                     return
                 }
-                guard let amount = amount else { return }
                 let address = recipientAddress.trimmingCharacters(in: .whitespacesAndNewlines)
                 let _ = try core.sendToAddresses(
                     recipients: [(address: address, amountDuffs: amountDuffs)]
