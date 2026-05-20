@@ -411,24 +411,35 @@ impl<S: ShieldedStore> ShieldedWallet<S> {
     /// a user who just sent a transaction sees the new note on
     /// the next tap rather than waiting out the cooldown.
     pub async fn sync(&self, force: bool) -> Result<ShieldedSyncSummary, PlatformWalletError> {
-        if !force {
-            if let Ok(guard) = self.last_caught_up_at.lock() {
-                if let Some(when) = *guard {
-                    let elapsed = when.elapsed();
-                    if elapsed < super::CAUGHT_UP_COOLDOWN {
-                        debug!(
-                            elapsed_secs = elapsed.as_secs(),
-                            cooldown_secs = super::CAUGHT_UP_COOLDOWN.as_secs(),
-                            "Shielded sync skipped — within caught-up cooldown"
-                        );
-                        return Ok(ShieldedSyncSummary {
-                            notes_result: SyncNotesResult::default(),
-                            newly_spent_per_account: BTreeMap::new(),
-                            balances: self.balances().await?,
-                        });
-                    }
-                }
-            }
+        // Snapshot the timestamp into a local so the `MutexGuard`
+        // is dropped before any `.await` below — `std::sync::Mutex`
+        // is `!Send` across await points (clippy's
+        // `await_holding_lock` lint flags this) and the rest of
+        // `sync()` is heavily async.
+        let cooldown_remaining: Option<std::time::Duration> = if force {
+            None
+        } else {
+            self.last_caught_up_at
+                .lock()
+                .ok()
+                .and_then(|guard| *guard)
+                .map(|when| {
+                    super::CAUGHT_UP_COOLDOWN.saturating_sub(when.elapsed())
+                })
+                .filter(|remaining| !remaining.is_zero())
+        };
+
+        if let Some(remaining) = cooldown_remaining {
+            debug!(
+                cooldown_remaining_secs = remaining.as_secs(),
+                cooldown_total_secs = super::CAUGHT_UP_COOLDOWN.as_secs(),
+                "Shielded sync skipped — within caught-up cooldown"
+            );
+            return Ok(ShieldedSyncSummary {
+                notes_result: SyncNotesResult::default(),
+                newly_spent_per_account: BTreeMap::new(),
+                balances: self.balances().await?,
+            });
         }
 
         let notes_result = self.sync_notes().await?;
