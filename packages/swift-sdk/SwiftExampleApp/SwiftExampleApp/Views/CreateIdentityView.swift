@@ -146,10 +146,6 @@ struct CreateIdentityView: View {
     /// User-facing error surfaced via the `.alert` modifier.
     @State private var submitError: SubmitError? = nil
 
-    /// Success payload. Populated after the identity is persisted;
-    /// the submit section swaps to a success banner and auto-dismiss.
-    @State private var createdIdentityId: Data? = nil
-
     /// Active registration controller for the Core-funded path.
     /// Stored only so `submitCoreFunded` has a local reference
     /// after spawning it; the canonical lifetime owner is
@@ -892,8 +888,8 @@ struct CreateIdentityView: View {
                         identityIndex: identityIndex
                     )
                     try modelContext.save()
-                    self.createdIdentityId = created.identityId
                     self.isCreating = false
+                    dismiss()
                 }
             } catch {
                 await MainActor.run {
@@ -990,7 +986,7 @@ struct CreateIdentityView: View {
     }
 
     /// Bridge a controller's phase transitions to this view's
-    /// `createdIdentityId` / `submitError` / `isCreating` state.
+    /// `submitError` / `isCreating` state.
     /// The observer task auto-cancels when this view deallocates
     /// (Swift task lifecycle on the captured `self`), but the
     /// controller itself outlives the view.
@@ -1014,7 +1010,6 @@ struct CreateIdentityView: View {
                             identityIndex: identityIndex
                         )
                         try modelContext.save()
-                        self.createdIdentityId = identityId
                     } catch {
                         self.submitError = .init(
                             message: error.localizedDescription
