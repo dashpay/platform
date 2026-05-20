@@ -174,8 +174,18 @@ impl Drive {
                 // would produce. Without this re-shape, GroupByIn +
                 // range AVG silently changes wire shape from `Entries`
                 // (pre-#3687) to `Aggregate`.
+                // Strict mode×shape pairing. Every legal combination
+                // is named explicitly; any other pairing surfaces as
+                // `CorruptedCodeExecution` rather than silently
+                // forwarding a wrong-shape response. A future executor
+                // change that emits, say, `Entries` from an
+                // `AverageMode::Aggregate` request would fail loudly
+                // here instead of leaking the wrong wire shape to the
+                // gRPC handler.
                 match (request.mode, response) {
-                    (AverageMode::Aggregate, resp) => Ok(resp),
+                    (AverageMode::Aggregate, resp @ DocumentAverageResponse::Aggregate { .. }) => {
+                        Ok(resp)
+                    }
                     (AverageMode::GroupByIn, DocumentAverageResponse::Aggregate { count, sum }) => {
                         Ok(DocumentAverageResponse::Entries(vec![
                             super::super::drive_document_average_query::AverageEntry {
@@ -186,7 +196,33 @@ impl Drive {
                             },
                         ]))
                     }
-                    (_, resp) => Ok(resp),
+                    (
+                        AverageMode::GroupByRange | AverageMode::GroupByCompound,
+                        resp @ DocumentAverageResponse::Entries(_),
+                    ) => Ok(resp),
+                    (mode, _) => Err(Error::Drive(
+                        crate::error::drive::DriveError::CorruptedCodeExecution(match mode {
+                            AverageMode::Aggregate => {
+                                "execute_document_count_and_sum_request: \
+                                     RangeNoProof executor emitted a non-Aggregate \
+                                     response for AverageMode::Aggregate — joint \
+                                     range executor's shape contract violated"
+                            }
+                            AverageMode::GroupByIn => {
+                                "execute_document_count_and_sum_request: \
+                                     RangeNoProof executor emitted a non-Aggregate \
+                                     response for AverageMode::GroupByIn — the \
+                                     in-axis fold should yield a single (count, sum) \
+                                     pair the dispatcher re-wraps as Entries"
+                            }
+                            AverageMode::GroupByRange | AverageMode::GroupByCompound => {
+                                "execute_document_count_and_sum_request: \
+                                     RangeNoProof executor emitted a non-Entries \
+                                     response for a distinct grouped mode — joint \
+                                     range executor's shape contract violated"
+                            }
+                        }),
+                    )),
                 }
             }
             // The four prove-mode resolutions are unreachable here —
