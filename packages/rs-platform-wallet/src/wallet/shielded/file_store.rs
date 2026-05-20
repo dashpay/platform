@@ -166,6 +166,19 @@ impl ShieldedStore for FileBackedShieldedStore {
             .map_err(|e| FileShieldedStoreError(format!("witness({position}): {e}")))
     }
 
+    fn tree_size(&self) -> Result<u64, Self::Error> {
+        let tree = self
+            .tree
+            .lock()
+            .map_err(|e| FileShieldedStoreError(format!("tree mutex poisoned: {e}")))?;
+        let size = tree
+            .max_leaf_position()
+            .map_err(|e| FileShieldedStoreError(format!("read tree size: {e}")))?
+            .map(|p| u64::from(p) + 1)
+            .unwrap_or(0);
+        Ok(size)
+    }
+
     fn last_synced_note_index(&self, id: SubwalletId) -> Result<u64, Self::Error> {
         Ok(self
             .subwallets
@@ -285,6 +298,47 @@ mod tests {
         assert!(
             failures.is_empty(),
             "every position in a fully-marked tree must be witnessable, but: {failures:?}"
+        );
+    }
+
+    /// `tree_size()` is the append gate the multi-subwallet sync
+    /// relies on to stay idempotent (it appends only positions
+    /// `>= tree_size`). If the count were wrong — or didn't survive
+    /// the persist + reload the wallet does between sessions — a
+    /// re-fetch from a chunk boundary would double-append and
+    /// corrupt the tree ("Anchor not found in the recorded anchors
+    /// tree" on the next spend). This asserts the count is exact
+    /// from empty, after appends, and across a reopen.
+    #[test]
+    fn tree_size_tracks_leaf_count_across_reload() {
+        let path = temp_tree_path("tree_size");
+        let mut store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+
+        assert_eq!(store.tree_size().unwrap(), 0, "empty tree has size 0");
+
+        const N: u64 = 6;
+        for i in 0..N {
+            let mut cmx = [0u8; 32];
+            cmx[0] = (i as u8) + 1;
+            store.append_commitment(&cmx, true).unwrap();
+            assert_eq!(
+                store.tree_size().unwrap(),
+                i + 1,
+                "size must equal leaves appended so far"
+            );
+        }
+        store.checkpoint_tree(N as u32).unwrap();
+
+        drop(store);
+        let store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+
+        let size = store.tree_size().unwrap();
+        let _ = std::fs::remove_file(&path);
+
+        assert_eq!(
+            size, N,
+            "tree size must survive persist + reload — the append gate \
+             reads it on cold start to avoid re-appending existing leaves"
         );
     }
 }

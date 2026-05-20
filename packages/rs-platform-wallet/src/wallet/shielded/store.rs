@@ -158,6 +158,20 @@ pub trait ShieldedStore: Send + Sync {
         position: u64,
     ) -> Result<Option<grovedb_commitment_tree::MerklePath>, Self::Error>;
 
+    /// Number of leaves currently in the shared commitment tree
+    /// (= highest appended position + 1, or 0 when empty).
+    ///
+    /// This is the append watermark for the tree itself, distinct
+    /// from any per-subwallet `last_synced_note_index`. The sync
+    /// path gates [`Self::append_commitment`] on this value — never
+    /// on a per-subwallet watermark — so a re-fetch from a chunk
+    /// boundary (forced when a lagging subwallet rewinds the fetch
+    /// start) re-appends nothing already in the tree. Double-append
+    /// corrupts the shardtree's internal nodes and makes per-position
+    /// witnesses resolve against inconsistent roots ("Anchor not
+    /// found in the recorded anchors tree" at spend time).
+    fn tree_size(&self) -> Result<u64, Self::Error>;
+
     // ── Sync state (per-subwallet) ─────────────────────────────────────
 
     /// The last global note index that was synced for `id`.
@@ -394,6 +408,10 @@ impl ShieldedStore for InMemoryShieldedStore {
         Err(InMemoryStoreError(
             "Merkle witness not supported in in-memory store".into(),
         ))
+    }
+
+    fn tree_size(&self) -> Result<u64, Self::Error> {
+        Ok(self.commitments.len() as u64)
     }
 
     fn last_synced_note_index(&self, id: SubwalletId) -> Result<u64, Self::Error> {
