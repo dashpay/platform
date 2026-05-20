@@ -32,6 +32,14 @@ pub struct ShieldedSyncWalletResultFFI {
     /// `true` if the wallet had no bound shielded sub-wallet (so the
     /// pass simply skipped it). Mutually exclusive with `success`.
     pub skipped: bool,
+    /// `true` when `success` is true but the pass was short-circuited
+    /// by the caught-up cooldown — no SDK fetch / trial-decrypt /
+    /// nullifier scan ran. `balance` is still populated from local
+    /// state so the host can keep its balance display current, but
+    /// any counters / timestamps that track *real sync activity*
+    /// should ignore this event. `false` for every pass that
+    /// actually walked Platform.
+    pub cooldown_skip: bool,
     /// New decrypted notes detected this pass.
     pub new_notes: u32,
     /// Total encrypted notes scanned (decrypted + skipped).
@@ -51,6 +59,7 @@ impl Default for ShieldedSyncWalletResultFFI {
             wallet_id: [0; 32],
             success: false,
             skipped: false,
+            cooldown_skip: false,
             new_notes: 0,
             total_scanned: 0,
             newly_spent: 0,

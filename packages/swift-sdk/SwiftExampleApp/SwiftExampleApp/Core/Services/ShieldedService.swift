@@ -491,28 +491,25 @@ class ShieldedService: ObservableObject {
             lastError = nil
             isBound = true
             // Balance stays current — the Rust cooldown-skip path
-            // still fetches `balances()` and returns it on the
-            // summary, so updating here on every success keeps the
-            // displayed shielded balance accurate even when the
-            // pass itself was a no-op.
+            // still reads `balances()` from local state and
+            // returns it on the summary, so updating here on
+            // every success keeps the displayed shielded balance
+            // accurate without leaking a stale cached value.
             shieldedBalance = result.balance
 
-            // Distinguish a real sync pass from a cooldown-suppressed
-            // one. The Rust side now skips the network + decrypt
-            // work after a recent no-op, but still returns
-            // `Ok(summary)` with zeros — without this gate the
-            // background loop's first tick after Clear → Sync Now
-            // double-ticks `syncCountSinceLaunch` and resets
-            // `lastSyncTime` to "1s ago" for what was actually an
-            // in-memory check. Treating any pass with no scanned
-            // positions, no new notes, and no newly-spent
-            // nullifiers as a no-op also covers the steady-state
-            // case where the wallet was already caught up.
-            let wasNoOp =
-                result.totalScanned == 0
-                && result.newNotes == 0
-                && result.newlySpent == 0
-            if !wasNoOp {
+            // Suppress counter / timestamp updates only on
+            // cooldown skips. Genuine steady-state caught-up
+            // passes (background loop ran, found nothing) still
+            // advance `lastSyncTime` so users have a live signal
+            // that the loop is running. The previous heuristic —
+            // gating on all-zero scanned/new/spent — froze the
+            // timestamp on healthy idle wallets and conflated the
+            // two skip semantics; the Rust side now distinguishes
+            // them explicitly via `is_cooldown_skip` on
+            // `ShieldedSyncSummary`, marshalled to
+            // `result.cooldownSkip` here. (Per swift-sdk/CLAUDE.md
+            // the policy decision belongs on the Rust side.)
+            if !result.cooldownSkip {
                 lastNewNotes = result.newNotes
                 lastNewlySpent = result.newlySpent
                 lastSyncTime = Date(

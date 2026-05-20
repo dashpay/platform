@@ -56,6 +56,15 @@ pub struct ShieldedSyncSummary {
     pub newly_spent_per_account: BTreeMap<u32, usize>,
     /// Per-account unspent balance after sync.
     pub balances: BTreeMap<u32, u64>,
+    /// True when the pass was short-circuited by the
+    /// caught-up cooldown (see [`super::CAUGHT_UP_COOLDOWN`]) —
+    /// no SDK fetch, no trial-decrypt, no nullifier scan. The
+    /// `balances` field is still populated from local state so
+    /// hosts can keep balance displays current, but counters /
+    /// last-sync timestamps should treat this as a no-op
+    /// distinct from a genuine "ran and found nothing" pass.
+    /// `false` for any pass that actually walked Platform.
+    pub is_cooldown_skip: bool,
 }
 
 impl ShieldedSyncSummary {
@@ -437,6 +446,7 @@ impl<S: ShieldedStore> ShieldedWallet<S> {
                 notes_result: SyncNotesResult::default(),
                 newly_spent_per_account: BTreeMap::new(),
                 balances: self.balances().await?,
+                is_cooldown_skip: true,
             });
         }
 
@@ -463,6 +473,7 @@ impl<S: ShieldedStore> ShieldedWallet<S> {
             notes_result,
             newly_spent_per_account,
             balances,
+            is_cooldown_skip: false,
         })
     }
 }

@@ -18,6 +18,15 @@ public struct ShieldedWalletSyncResult: Sendable {
     public let walletId: Data
     public let success: Bool
     public let skipped: Bool
+    /// `true` when `success` is true but the Rust pass was
+    /// short-circuited by the caught-up cooldown — no SDK fetch /
+    /// trial-decrypt / nullifier scan ran. `balance` is still
+    /// current (the Rust side reads it from local state on the
+    /// skip path) so hosts should still update balance displays,
+    /// but any counter / timestamp that tracks *real sync
+    /// activity* should ignore this event. `false` for any pass
+    /// that actually walked Platform.
+    public let cooldownSkip: Bool
     public let newNotes: UInt32
     public let totalScanned: UInt64
     public let newlySpent: UInt32
@@ -29,6 +38,7 @@ public struct ShieldedWalletSyncResult: Sendable {
         self.walletId = withUnsafeBytes(of: &walletId) { Data($0) }
         self.success = ffi.success
         self.skipped = ffi.skipped
+        self.cooldownSkip = ffi.cooldown_skip
         self.newNotes = ffi.new_notes
         self.totalScanned = ffi.total_scanned
         self.newlySpent = ffi.newly_spent

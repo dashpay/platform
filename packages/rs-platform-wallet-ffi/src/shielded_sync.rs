@@ -38,6 +38,7 @@ impl ShieldedSyncWalletResultFFI {
             wallet_id,
             success: true,
             skipped: false,
+            cooldown_skip: summary.is_cooldown_skip,
             new_notes,
             total_scanned: summary.notes_result.total_scanned,
             newly_spent,
