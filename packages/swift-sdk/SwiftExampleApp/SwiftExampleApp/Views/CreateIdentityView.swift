@@ -1273,17 +1273,44 @@ struct CreateIdentityView: View {
         case 14:
             let balance = accountBalance(account)
             if balance == 0 { return "" }
-            let dash = Double(balance) / Double(Self.creditsPerDash)
-            return String(format: "%g", dash)
+            return Self.amountString(
+                smallestUnits: balance,
+                decimalsPerWhole: Self.creditsPerDash
+            )
         case 0, 1:
             let available = coreAccountBalanceDuffs(account)
             let defaultDuffs = min(available, Self.defaultCoreFundingDuffs)
             if defaultDuffs == 0 { return "" }
-            let dash = Double(defaultDuffs) / Double(Self.duffsPerDash)
-            return String(format: "%g", dash)
+            return Self.amountString(
+                smallestUnits: defaultDuffs,
+                decimalsPerWhole: Self.duffsPerDash
+            )
         default:
             return ""
         }
+    }
+
+    private static func amountString(
+        smallestUnits: UInt64,
+        decimalsPerWhole: UInt64
+    ) -> String {
+        let whole = smallestUnits / decimalsPerWhole
+        let fractional = smallestUnits % decimalsPerWhole
+        if fractional == 0 {
+            return "\(whole)"
+        }
+        let decimalPlaces = String(decimalsPerWhole).count - 1
+        var fractionalStr = String(fractional)
+        if fractionalStr.count < decimalPlaces {
+            fractionalStr = String(
+                repeating: "0",
+                count: decimalPlaces - fractionalStr.count
+            ) + fractionalStr
+        }
+        while fractionalStr.last == "0" {
+            fractionalStr.removeLast()
+        }
+        return fractionalStr.isEmpty ? "\(whole)" : "\(whole).\(fractionalStr)"
     }
 
     /// Parse the amount text back into credits. Returns `nil` on
