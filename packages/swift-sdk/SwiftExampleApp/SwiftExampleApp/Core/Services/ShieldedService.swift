@@ -490,14 +490,39 @@ class ShieldedService: ObservableObject {
         if result.success {
             lastError = nil
             isBound = true
+            // Balance stays current — the Rust cooldown-skip path
+            // still fetches `balances()` and returns it on the
+            // summary, so updating here on every success keeps the
+            // displayed shielded balance accurate even when the
+            // pass itself was a no-op.
             shieldedBalance = result.balance
-            lastNewNotes = result.newNotes
-            lastNewlySpent = result.newlySpent
-            lastSyncTime = Date(timeIntervalSince1970: TimeInterval(event.syncUnixSeconds))
-            syncCountSinceLaunch += 1
-            totalScanned += result.totalScanned
-            totalNewNotes += UInt64(result.newNotes)
-            totalNewlySpent += UInt64(result.newlySpent)
+
+            // Distinguish a real sync pass from a cooldown-suppressed
+            // one. The Rust side now skips the network + decrypt
+            // work after a recent no-op, but still returns
+            // `Ok(summary)` with zeros — without this gate the
+            // background loop's first tick after Clear → Sync Now
+            // double-ticks `syncCountSinceLaunch` and resets
+            // `lastSyncTime` to "1s ago" for what was actually an
+            // in-memory check. Treating any pass with no scanned
+            // positions, no new notes, and no newly-spent
+            // nullifiers as a no-op also covers the steady-state
+            // case where the wallet was already caught up.
+            let wasNoOp =
+                result.totalScanned == 0
+                && result.newNotes == 0
+                && result.newlySpent == 0
+            if !wasNoOp {
+                lastNewNotes = result.newNotes
+                lastNewlySpent = result.newlySpent
+                lastSyncTime = Date(
+                    timeIntervalSince1970: TimeInterval(event.syncUnixSeconds)
+                )
+                syncCountSinceLaunch += 1
+                totalScanned += result.totalScanned
+                totalNewNotes += UInt64(result.newNotes)
+                totalNewlySpent += UInt64(result.newlySpent)
+            }
         } else if result.skipped {
             // Skipped means the wallet hasn't been bound yet on the
             // Rust side. The UI can prompt the user to retry the
