@@ -781,7 +781,7 @@ fn decode_js_inputs(
         .enumerate()
         .map(|(index, value)| {
             if is_uint8_array_value(&value) {
-                let bytes = Uint8Array::new(&value).to_vec();
+                let bytes = value.unchecked_ref::<Uint8Array>().to_vec();
                 Ok(decode(PathInputValue::Bytes(&bytes)))
             } else if let Some(string) = value.as_string() {
                 Ok(decode(PathInputValue::String(&string)))
@@ -804,12 +804,15 @@ fn is_uint8_array_value(value: &JsValue) -> bool {
         return false;
     }
 
-    Reflect::get(value, &JsValue::from_str("constructor"))
+    let constructor_name = Reflect::get(value, &JsValue::from_str("constructor"))
         .ok()
         .and_then(|constructor| Reflect::get(&constructor, &JsValue::from_str("name")).ok())
-        .and_then(|name| name.as_string())
-        .as_deref()
-        == Some("Uint8Array")
+        .and_then(|name| name.as_string());
+
+    matches!(
+        constructor_name.as_deref(),
+        Some("Uint8Array") | Some("Buffer")
+    )
 }
 
 fn decoded_bytes(inputs: &[DecodedPathInput]) -> Vec<Vec<u8>> {
@@ -949,9 +952,6 @@ fn not_summed_element_type_name(element: &Element) -> &'static str {
         Element::CountSumTree(_, _, _, _) => "notSummedCountSumTree",
         Element::ProvableCountSumTree(_, _, _, _) => "notSummedProvableCountSumTree",
         Element::ProvableSumTree(_, _, _) => "notSummedProvableSumTree",
-        Element::NonCounted(_) | Element::NotSummed(_) | Element::NotCountedOrSummed(_) => {
-            element_type_name(element)
-        }
         _ => element_type_name(element),
     }
 }
@@ -963,9 +963,6 @@ fn not_counted_or_summed_element_type_name(element: &Element) -> &'static str {
         Element::CountSumTree(_, _, _, _) => "notCountedOrSummedCountSumTree",
         Element::ProvableCountSumTree(_, _, _, _) => "notCountedOrSummedProvableCountSumTree",
         Element::ProvableSumTree(_, _, _) => "notCountedOrSummedProvableSumTree",
-        Element::NonCounted(_) | Element::NotSummed(_) | Element::NotCountedOrSummed(_) => {
-            element_type_name(element)
-        }
         _ => element_type_name(element),
     }
 }
@@ -1068,9 +1065,10 @@ impl PathElementWasm {
 
     #[wasm_bindgen(getter)]
     pub fn sum(&self) -> Option<BigInt> {
-        self.sum
-            .as_ref()
-            .and_then(|sum| BigInt::new(&JsValue::from_str(&sum.to_string())).ok())
+        self.sum.as_ref().map(|sum| {
+            BigInt::new(&JsValue::from_str(&sum.to_string()))
+                .expect("i128 decimal string always parses as BigInt")
+        })
     }
 
     #[wasm_bindgen(
