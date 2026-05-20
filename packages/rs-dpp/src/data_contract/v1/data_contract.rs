@@ -64,7 +64,7 @@ use platform_value::Value;
 /// ## 4. **Keywords** (`keywords: Vec<String>`)
 /// - Keywords which contracts can be searched for via the new `search` system contract.
 /// - This vector can be left empty, but if populated, it must contain unique keywords.
-/// - The maximum number of keywords is limited to 20.
+/// - The maximum number of keywords is limited to 50.
 ///
 /// ## 5. **Description** (`description: Option<String>`)
 /// - A human-readable description of the contract.
