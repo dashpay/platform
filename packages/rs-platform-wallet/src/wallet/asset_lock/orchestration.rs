@@ -96,15 +96,6 @@ pub(crate) const CL_HEIGHT_RETRY_BUDGET: Duration = Duration::from_secs(210);
 /// `Asset lock {} is not tracked`). The variant was removed; future
 /// callers that hold an external proof should register it through
 /// `AssetLockManager` first, then use `FromExistingAssetLock`.
-///
-/// ## Historical note
-///
-/// This type used to be named `IdentityFunding` and lived under
-/// `wallet/identity/types/funding.rs`. It was renamed and moved to
-/// the asset-lock module when the platform-address funding flow
-/// needed the same shape — funding source is funding-target-agnostic;
-/// the `funding_type` argument to the resolver picks the BIP44
-/// derivation family.
 #[derive(Debug, Clone)]
 pub enum AssetLockFunding {
     /// Build an asset lock from wallet UTXOs for the given amount.

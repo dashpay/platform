@@ -74,7 +74,6 @@ use crate::wallet::asset_lock::AssetLockFunding;
 
 use super::*;
 
-
 // ---------------------------------------------------------------------------
 // register
 // ---------------------------------------------------------------------------
@@ -560,7 +559,4 @@ mod tests {
              (wallet-state mismatch is a hard failure)"
         );
     }
-
-    // The `submit_with_cl_height_retry_bumps_user_fee_and_surfaces_after_budget`
-    // test moved with its subject to `wallet::asset_lock::orchestration`.
 }

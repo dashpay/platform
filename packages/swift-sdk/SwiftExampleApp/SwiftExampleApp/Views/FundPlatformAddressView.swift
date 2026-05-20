@@ -491,10 +491,8 @@ struct FundPlatformAddressView: View {
         // Recipient resolution can race with SwiftData: between the
         // user tapping Fund Address and this body running, the
         // selected address may have flipped to `isUsed = true` (a
-        // concurrent flow consumed it) or its balance may have moved.
-        // Surface that as a fail-fast error instead of silently
-        // dropping the tap — earlier shape returned nil and the
-        // button looked unresponsive.
+        // concurrent flow consumed it). Surface that as a fail-fast
+        // error so the button isn't dead on tap.
         guard let recipient = recipientCandidates.first(where: { $0.addressHash == hash }) else {
             submitError = SubmitError(
                 message: "The selected recipient address is no longer available (it may have been used by another funding). Pick a fresh address and try again."
@@ -663,7 +661,7 @@ struct FundPlatformAddressView: View {
     ///
     /// Edge cases:
     /// - `preSubmitConsumedOutpoints` missing on controller: fall
-    ///   back to the legacy `newest unrecipiented` heuristic.
+    ///   back to a newest-unrecipiented heuristic.
     /// - Zero new outpoints: nothing to stamp; the funding
     ///   succeeded but no Consumed row appeared yet (persister
     ///   callback lag). The catch-up on the next funding will fix
@@ -672,10 +670,7 @@ struct FundPlatformAddressView: View {
     ///   completed Consumed in the same `.onChange` window.
     ///   Refuse to stamp either to avoid mis-attribution — better
     ///   to leave both showing "—" in the storage explorer than to
-    ///   silently tag the wrong row. Both controllers will retry on
-    ///   their next phase tick if they share the same view; in
-    ///   practice one will land first and the other re-runs against
-    ///   the now-smaller delta.
+    ///   silently tag the wrong row.
     private func backfillRecipientOnConsumedLock() {
         guard let controller = activeController else { return }
         let walletId = wallet.walletId
@@ -730,10 +725,11 @@ struct FundPlatformAddressView: View {
                 return
             }
         } else {
-            // Legacy fallback — used when the snapshot wasn't
-            // captured (e.g. a future caller that wires up the
-            // coordinator directly). Newest-unrecipiented match.
-            // Documented race window: see the doc comment above.
+            // Snapshot wasn't captured (e.g. a future caller that
+            // wires up the coordinator directly). Pick the
+            // newest-unrecipiented row — has a race window when
+            // multiple flows complete concurrently; see the doc
+            // comment above.
             target = matches.first
         }
 

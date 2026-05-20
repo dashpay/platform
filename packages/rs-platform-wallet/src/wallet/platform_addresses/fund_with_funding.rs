@@ -364,15 +364,10 @@ impl PlatformAddressWallet {
                     let p2pkh = PlatformP2PKHAddress::new(hash);
                     // Platform's proof must carry an `AddressInfo`
                     // for every recipient we asked to fund. A `None`
-                    // here is a protocol-contract violation —
-                    // earlier shape silently mapped it to
-                    // `balance: 0, nonce: 0` and pushed a "credited
-                    // 0" row onto the changeset, which would have
-                    // been indistinguishable from a successful
-                    // zero-credit funding. Skip with a loud
-                    // `tracing::error!` so operators see the drift;
-                    // the asset lock has already Consumed, the
-                    // changeset just won't reflect the recipient.
+                    // is a protocol-contract violation, not a
+                    // zero-credit funding — skip and log so a missed
+                    // recipient is visible to operators instead of
+                    // silently writing a "credited 0" row.
                     let Some(ai) = maybe_info else {
                         tracing::error!(
                             address = %p2pkh,
@@ -385,14 +380,12 @@ impl PlatformAddressWallet {
                         nonce: ai.nonce,
                     };
                     account.set_address_credit_balance(p2pkh, funds.balance, key_source.as_ref());
-                    // Resolve the address's HD slot in the
-                    // account's address pool. The
-                    // `.unwrap_or(0)` earlier here silently
-                    // mis-attributed credits to slot 0 if the
-                    // recipient wasn't in the pool — log and skip
-                    // instead, again to avoid writing a wrong-slot
-                    // changeset entry that the persister would
-                    // store as if it referred to address #0.
+                    // The recipient must exist in the account's
+                    // address pool — `validate_recipient_addresses`
+                    // verified that upstream. A miss here would
+                    // mean the pool was mutated between pre-flight
+                    // and now; skip and log rather than mis-attribute
+                    // credits to whichever address lives at slot 0.
                     let Some(address_index) = account
                         .addresses
                         .addresses
