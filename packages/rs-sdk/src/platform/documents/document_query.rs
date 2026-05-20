@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use crate::{error::Error, sdk::Sdk};
-use dapi_grpc::platform::v0::get_documents_request::Version::V1;
+use dapi_grpc::platform::v0::get_documents_request::Version::{V0, V1};
 use dapi_grpc::platform::v0::{
     self as platform_proto,
     get_documents_request::{
@@ -11,10 +11,11 @@ use dapi_grpc::platform::v0::{
         get_documents_request_v0::Start,
         get_documents_request_v1::{select, Select as ProtoSelect, Start as V1Start},
         having_aggregate, having_clause, having_ranking, order_clause,
-        DocumentFieldValue as ProtoDocumentFieldValue, GetDocumentsRequestV1,
-        HavingAggregate as ProtoHavingAggregate, HavingClause as ProtoHavingClause,
-        HavingRanking as ProtoHavingRanking, OrderClause as ProtoOrderClause,
-        WhereClause as ProtoWhereClause, WhereOperator as ProtoWhereOperator,
+        DocumentFieldValue as ProtoDocumentFieldValue, GetDocumentsRequestV0,
+        GetDocumentsRequestV1, HavingAggregate as ProtoHavingAggregate,
+        HavingClause as ProtoHavingClause, HavingRanking as ProtoHavingRanking,
+        OrderClause as ProtoOrderClause, WhereClause as ProtoWhereClause,
+        WhereOperator as ProtoWhereOperator,
     },
     GetDocumentsRequest, Proof, ResponseMetadata,
 };
@@ -107,6 +108,19 @@ pub struct DocumentQuery {
     pub limit: u32,
     /// first object to start with
     pub start: Option<Start>,
+    /// Optional protocol-version hint used when encoding to the wire.
+    /// Populated by the [`Fetch`] / [`FetchMany`] trampolines from
+    /// `sdk.protocol_version_number()` immediately before transport.
+    /// `None` (the default) falls back to [`PlatformVersion::latest`]
+    /// so direct `TryFrom<DocumentQuery>` callers (mock fixtures, ad-hoc
+    /// encoding) behave exactly as they did before the v3.0/v3.1 split.
+    ///
+    /// `#[serde(skip)]` keeps mock vectors captured before this field
+    /// existed deserializing cleanly, and prevents the hint from
+    /// leaking into recorded request fixtures (it's an
+    /// execution-time-only annotation, not a request-shape input).
+    #[cfg_attr(feature = "mocks", serde(skip))]
+    pub protocol_version_override: Option<u32>,
 }
 
 impl DocumentQuery {
@@ -131,6 +145,7 @@ impl DocumentQuery {
             order_by_clauses: vec![],
             limit: 0,
             start: None,
+            protocol_version_override: None,
         })
     }
 
@@ -264,6 +279,31 @@ impl DocumentQuery {
         self.limit = limit;
         self
     }
+
+    /// Pin the protocol version used to dispatch the wire encoder
+    /// (V0 vs V1). The trampolines in [`crate::platform::Fetch`] and
+    /// [`crate::platform::FetchMany`] populate this from
+    /// [`Sdk::protocol_version_number`] before transport; callers
+    /// constructing requests directly (e.g. for unit tests against a
+    /// recorded fixture, or to talk to an older network without a
+    /// live `Sdk`) can set it explicitly. `None` falls back to
+    /// [`PlatformVersion::latest`] — same shape this conversion has
+    /// always produced before version dispatch landed.
+    pub fn with_protocol_version_number(mut self, protocol_version: u32) -> Self {
+        self.protocol_version_override = Some(protocol_version);
+        self
+    }
+
+    /// Convert into the wire-format [`GetDocumentsRequest`] using a
+    /// specific [`PlatformVersion`] to pick V0 vs V1. The dispatch
+    /// boundary is the document_query feature-version on the
+    /// platform_version: `0` → V0, `1` → V1.
+    pub fn try_into_request_for_version(
+        self,
+        platform_version: &PlatformVersion,
+    ) -> Result<GetDocumentsRequest, Error> {
+        encode_get_documents_request(self, platform_version)
+    }
 }
 
 impl TransportRequest for DocumentQuery {
@@ -380,80 +420,240 @@ impl FromProof<DocumentQuery> for drive_proof_verifier::types::Documents {
 
 impl TryFrom<DocumentQuery> for platform_proto::GetDocumentsRequest {
     type Error = Error;
+    /// Convert without an explicit [`PlatformVersion`]. Reads
+    /// [`DocumentQuery::protocol_version_override`] (set by the
+    /// trampolines in [`crate::platform::Fetch`] /
+    /// [`crate::platform::FetchMany`] from `sdk.version()`); falls
+    /// back to [`PlatformVersion::latest`] when unset so callers
+    /// that bypass the trampoline (mock fixtures, direct encoding
+    /// for unit tests) keep their pre-version-dispatch behaviour.
     fn try_from(dapi_request: DocumentQuery) -> Result<Self, Self::Error> {
-        // `try_from` owns `dapi_request` — destructure once and
-        // consume the owned vectors below (no `.clone()` per field).
-        let DocumentQuery {
-            select,
-            data_contract,
+        let pv_number = dapi_request.protocol_version_override;
+        let platform_version = match pv_number {
+            Some(n) => PlatformVersion::get(n).map_err(|e| {
+                Error::Config(format!(
+                    "DocumentQuery.protocol_version_override = {n} is not a known PlatformVersion: {e}"
+                ))
+            })?,
+            None => PlatformVersion::latest(),
+        };
+        encode_get_documents_request(dapi_request, platform_version)
+    }
+}
+
+/// Version-aware encoder. The dispatch is driven by the
+/// `drive_abci.query.document_query` feature-version on
+/// [`PlatformVersion`]: `0` → V0 wire (used by v3.0 testnet), `1` →
+/// V1 wire (introduced in v3.1).
+///
+/// V0 lacks `selects` / `group_by` / `having` / `offset` and the
+/// optional-limit semantics — callers that set those features get
+/// `Error::Config` with a clear "requires Platform v3.1+" message
+/// rather than a silently-truncated request.
+fn encode_get_documents_request(
+    dapi_request: DocumentQuery,
+    platform_version: &PlatformVersion,
+) -> Result<GetDocumentsRequest, Error> {
+    let DocumentQuery {
+        select,
+        data_contract,
+        document_type_name,
+        where_clauses,
+        group_by,
+        having,
+        order_by_clauses,
+        limit,
+        start,
+        protocol_version_override: _,
+    } = dapi_request;
+
+    let feature_version = platform_version
+        .drive_abci
+        .query
+        .document_query
+        .default_current_version;
+
+    match feature_version {
+        0 => encode_v0(
+            data_contract.id().to_vec(),
             document_type_name,
             where_clauses,
-            group_by,
-            having,
             order_by_clauses,
             limit,
             start,
-        } = dapi_request;
-
-        let where_clauses = where_clauses
-            .into_iter()
-            .map(where_clause_to_proto)
-            .collect::<Result<Vec<_>, _>>()?;
-        let order_by = order_by_clauses
-            .into_iter()
-            .map(order_clause_to_proto)
-            .collect();
-        let having = having
-            .into_iter()
-            .map(having_clause_to_proto)
-            .collect::<Result<Vec<_>, _>>()?;
-        // `limit: u32` with `0` sentinel → `optional uint32` on the
-        // V1 wire. `None` lets the server apply its own default;
-        // explicit `0` would be a strange "return zero rows" request.
-        let limit = if limit == 0 { None } else { Some(limit) };
-        // V0 and V1 ship separate `Start` enums even though the
-        // shape is identical. Translate at the wire boundary so the
-        // `DocumentQuery.start` field stays stable for callers
-        // already using the V0 type.
-        let start_v1 = start.map(|s| match s {
-            Start::StartAfter(b) => V1Start::StartAfter(b),
-            Start::StartAt(b) => V1Start::StartAt(b),
-        });
-
-        //todo: transform this into PlatformVersionedTryFrom
-        Ok(GetDocumentsRequest {
-            version: Some(V1(GetDocumentsRequestV1 {
-                data_contract_id: data_contract.id().to_vec(),
-                document_type: document_type_name,
-                where_clauses,
-                order_by,
-                limit,
-                // Document fetch always proves via this conversion.
-                // Count fetch uses the same wire shape; both paths
-                // go through the `FromProof` decoders which expect
-                // the `Proof(...)` response variant. `SdkBuilder::
-                // with_proofs(false)` is consequently a no-op for
-                // both — see the blanket `Query<T> for T` impl in
-                // `packages/rs-sdk/src/platform/query.rs` for the
-                // `tracing::warn!` emitted at fetch time when proofs
-                // are disabled.
-                prove: true,
-                start: start_v1,
-                // `repeated Select selects` on the wire — single
-                // projection wraps in a one-element vec; the SDK's
-                // `DocumentQuery` carries a single
-                // `SelectProjection` because multi-projection is
-                // wire-only today.
-                selects: vec![select_to_proto(select)],
-                group_by,
-                having,
-                // `offset` is wire-reserved for future row-based
-                // pagination; the SDK doesn't surface it yet, so
-                // we always emit `None` here.
-                offset: None,
-            })),
-        })
+            &select,
+            &group_by,
+            &having,
+        ),
+        1 => encode_v1(
+            data_contract.id().to_vec(),
+            document_type_name,
+            where_clauses,
+            order_by_clauses,
+            limit,
+            start,
+            select,
+            group_by,
+            having,
+        ),
+        n => Err(Error::Config(format!(
+            "GetDocumentsRequest wire encoder does not support feature_version={n} \
+             (drive_abci.query.document_query) on PlatformVersion v{}",
+            platform_version.protocol_version
+        ))),
     }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn encode_v1(
+    data_contract_id: Vec<u8>,
+    document_type: String,
+    where_clauses: Vec<WhereClause>,
+    order_by_clauses: Vec<OrderClause>,
+    limit: u32,
+    start: Option<Start>,
+    select: SelectProjection,
+    group_by: Vec<String>,
+    having: Vec<HavingClause>,
+) -> Result<GetDocumentsRequest, Error> {
+    let where_clauses = where_clauses
+        .into_iter()
+        .map(where_clause_to_proto)
+        .collect::<Result<Vec<_>, _>>()?;
+    let order_by = order_by_clauses
+        .into_iter()
+        .map(order_clause_to_proto)
+        .collect();
+    let having = having
+        .into_iter()
+        .map(having_clause_to_proto)
+        .collect::<Result<Vec<_>, _>>()?;
+    // `limit: u32` with `0` sentinel → `optional uint32` on the V1
+    // wire. `None` lets the server apply its own default; explicit
+    // `0` would be a strange "return zero rows" request.
+    let limit = if limit == 0 { None } else { Some(limit) };
+    // V0 and V1 ship separate `Start` enums even though the shape
+    // is identical. Translate at the wire boundary so the
+    // `DocumentQuery.start` field stays stable for callers already
+    // using the V0 type.
+    let start_v1 = start.map(|s| match s {
+        Start::StartAfter(b) => V1Start::StartAfter(b),
+        Start::StartAt(b) => V1Start::StartAt(b),
+    });
+
+    Ok(GetDocumentsRequest {
+        version: Some(V1(GetDocumentsRequestV1 {
+            data_contract_id,
+            document_type,
+            where_clauses,
+            order_by,
+            limit,
+            // Document fetch always proves via this conversion.
+            // Count fetch uses the same wire shape; both paths go
+            // through the `FromProof` decoders which expect the
+            // `Proof(...)` response variant. `SdkBuilder::with_proofs(false)`
+            // is consequently a no-op for both — see the blanket
+            // `Query<T> for T` impl in `packages/rs-sdk/src/platform/query.rs`
+            // for the `tracing::warn!` emitted at fetch time when
+            // proofs are disabled.
+            prove: true,
+            start: start_v1,
+            // `repeated Select selects` on the wire — single
+            // projection wraps in a one-element vec; the SDK's
+            // `DocumentQuery` carries a single `SelectProjection`
+            // because multi-projection is wire-only today.
+            selects: vec![select_to_proto(select)],
+            group_by,
+            having,
+            // `offset` is wire-reserved for future row-based
+            // pagination; the SDK doesn't surface it yet, so we
+            // always emit `None` here.
+            offset: None,
+        })),
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn encode_v0(
+    data_contract_id: Vec<u8>,
+    document_type: String,
+    where_clauses: Vec<WhereClause>,
+    order_by_clauses: Vec<OrderClause>,
+    limit: u32,
+    start: Option<Start>,
+    select: &SelectProjection,
+    group_by: &[String],
+    having: &[HavingClause],
+) -> Result<GetDocumentsRequest, Error> {
+    // V0 only carries plain `getDocuments` semantics — reject the
+    // v1-only SQL-shaped surfaces with a typed error rather than
+    // letting the server reject them after a round-trip.
+    if !matches!(select.function, SelectFunction::Documents) {
+        return Err(Error::Config(format!(
+            "select={:?} requires Platform v3.1+ (V1 documents wire); pin/upgrade \
+             to a v3.1+ network or rebuild the query with SelectProjection::documents()",
+            select.function
+        )));
+    }
+    if !group_by.is_empty() {
+        return Err(Error::Config(
+            "group_by requires Platform v3.1+ (V1 documents wire); not supported on V0".to_string(),
+        ));
+    }
+    if !having.is_empty() {
+        return Err(Error::Config(
+            "having clauses require Platform v3.1+ (V1 documents wire); not supported on V0"
+                .to_string(),
+        ));
+    }
+
+    // V0 carries CBOR-serialized arrays of clause components. The
+    // server decodes them via `ciborium::de::from_reader` into a
+    // `Value`, then expects `Value::Array(clauses)` where each
+    // inner clause is `[field_text, operator_text, value]` (where)
+    // or `[field_text, "asc"|"desc"]` (order_by). Build the same
+    // shape via the existing `From<WhereClause> for Value` /
+    // `From<OrderClause> for Value` impls, then serialize the
+    // top-level array.
+    let where_bytes = if where_clauses.is_empty() {
+        Vec::new()
+    } else {
+        let where_value = Value::Array(where_clauses.into_iter().map(Value::from).collect());
+        where_value.to_cbor_buffer().map_err(|e| {
+            Error::Protocol(dpp::ProtocolError::EncodingError(format!(
+                "failed to CBOR-encode v0 where clauses: {e}"
+            )))
+        })?
+    };
+    let order_by_bytes = if order_by_clauses.is_empty() {
+        Vec::new()
+    } else {
+        let order_value = Value::Array(order_by_clauses.into_iter().map(Value::from).collect());
+        order_value.to_cbor_buffer().map_err(|e| {
+            Error::Protocol(dpp::ProtocolError::EncodingError(format!(
+                "failed to CBOR-encode v0 order_by clauses: {e}"
+            )))
+        })?
+    };
+
+    Ok(GetDocumentsRequest {
+        version: Some(V0(GetDocumentsRequestV0 {
+            data_contract_id,
+            document_type,
+            r#where: where_bytes,
+            order_by: order_by_bytes,
+            // V0's `limit` is a plain u32 with 0 = "server default".
+            // V1's `optional uint32` keeps 0 as a structurally
+            // meaningless explicit-zero; we translate by clamping
+            // to 0 only when the caller meant "unset".
+            limit,
+            start: start.map(|s| match s {
+                Start::StartAfter(b) => Start::StartAfter(b),
+                Start::StartAt(b) => Start::StartAt(b),
+            }),
+            prove: true,
+        })),
+    })
 }
 
 impl<'a> From<&'a DriveDocumentQuery<'a>> for DocumentQuery {
@@ -486,6 +686,7 @@ impl<'a> From<&'a DriveDocumentQuery<'a>> for DocumentQuery {
             order_by_clauses,
             limit,
             start,
+            protocol_version_override: None,
         }
     }
 }
@@ -520,6 +721,7 @@ impl<'a> From<DriveDocumentQuery<'a>> for DocumentQuery {
             order_by_clauses,
             limit,
             start,
+            protocol_version_override: None,
         }
     }
 }

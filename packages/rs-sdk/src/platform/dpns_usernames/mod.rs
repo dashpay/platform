@@ -434,6 +434,7 @@ impl Sdk {
             order_by_clauses: vec![],
             limit: 1,
             start: None,
+            protocol_version_override: None,
         };
 
         let documents = Document::fetch_many(self, query).await?;
@@ -488,6 +489,7 @@ impl Sdk {
             order_by_clauses: vec![],
             limit: 1,
             start: None,
+            protocol_version_override: None,
         };
 
         let documents = Document::fetch_many(self, query).await?;
