@@ -60,7 +60,7 @@ use tokio::sync::RwLock;
 
 use super::file_store::FileBackedShieldedStore;
 use super::keys::AccountViewingKeys;
-use super::store::SubwalletId;
+use super::store::{ShieldedStore, SubwalletId};
 use super::CAUGHT_UP_COOLDOWN;
 use crate::manager::shielded_sync::{ShieldedSyncPassSummary, WalletShieldedOutcome};
 use crate::wallet::persister::WalletPersister;
@@ -240,6 +240,83 @@ impl NetworkShieldedCoordinator {
     /// for the sync coordinator's pass enumeration.
     pub async fn registered_subwallets(&self) -> Vec<SubwalletId> {
         self.accounts.read().await.keys().copied().collect()
+    }
+
+    /// Rehydrate per-subwallet state from a host-persisted
+    /// snapshot for the wallet identified by `wallet_id`. Should
+    /// be called after [`register_wallet`](Self::register_wallet)
+    /// and before the first sync pass so the in-memory store
+    /// matches what the host already has on disk (notes, spent
+    /// marks, sync watermarks, nullifier checkpoints).
+    ///
+    /// Filters the supplied [`ShieldedSyncStartState`] in two
+    /// ways:
+    /// - **By `wallet_id`**: only entries whose `SubwalletId`
+    ///   belongs to `wallet_id` are restored. The startup
+    ///   snapshot is keyed globally by `SubwalletId` but a single
+    ///   `restore_for_wallet` call only owns one wallet's slice;
+    ///   the host typically loops over registered wallets and
+    ///   calls this once per wallet so each per-wallet `bind`
+    ///   flow drops in its own state.
+    /// - **By registered account**: subwallets whose
+    ///   `account_index` isn't currently registered on this
+    ///   coordinator are skipped — they'd accumulate state we
+    ///   can never spend (no `OrchardKeySet` for them on the
+    ///   per-wallet side).
+    ///
+    /// No-op on empty snapshots.
+    pub async fn restore_for_wallet(
+        &self,
+        wallet_id: WalletId,
+        snapshot: &crate::changeset::ShieldedSyncStartState,
+    ) -> Result<(), crate::error::PlatformWalletError> {
+        if snapshot.is_empty() {
+            return Ok(());
+        }
+        // Snapshot of registered subwallets for the membership
+        // check. Cheaper than holding the accounts read lock
+        // across the store write below.
+        let registered: std::collections::BTreeSet<SubwalletId> = {
+            let accounts = self.accounts.read().await;
+            accounts
+                .keys()
+                .copied()
+                .filter(|id| id.wallet_id == wallet_id)
+                .collect()
+        };
+        if registered.is_empty() {
+            return Ok(());
+        }
+
+        let mut store = self.store.write().await;
+        for (id, sub) in &snapshot.per_subwallet {
+            // Only restore subwallets that belong to `wallet_id`
+            // and are registered on this coordinator.
+            if id.wallet_id != wallet_id || !registered.contains(id) {
+                continue;
+            }
+            for note in &sub.notes {
+                store.save_note(*id, note).map_err(|e| {
+                    crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
+                })?;
+                if note.is_spent {
+                    store.mark_spent(*id, &note.nullifier).map_err(|e| {
+                        crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
+                    })?;
+                }
+            }
+            store
+                .set_last_synced_note_index(*id, sub.last_synced_index)
+                .map_err(|e| {
+                    crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
+                })?;
+            if let Some((h, t)) = sub.nullifier_checkpoint {
+                store.set_nullifier_checkpoint(*id, h, t).map_err(|e| {
+                    crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
+                })?;
+            }
+        }
+        Ok(())
     }
 
     /// Drop every wallet registration and reset the cooldown

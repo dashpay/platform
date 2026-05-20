@@ -338,31 +338,6 @@ impl PlatformWallet {
         // on iOS).
         wallet.set_persister(self.persister.clone());
 
-        // Rehydrate per-subwallet notes / sync watermarks from
-        // the persister's start state if any are present for
-        // this wallet. The lookup is cheap: load() is the
-        // boot-time snapshot, indexed by SubwalletId. Errors are
-        // logged but not fatal — first-launch wallets simply
-        // see no persisted state.
-        match self.persister.load() {
-            Ok(start) => {
-                if let Err(e) = wallet.restore_from_snapshot(&start.shielded).await {
-                    tracing::warn!(
-                        wallet_id = %hex::encode(self.wallet_id),
-                        error = %e,
-                        "Failed to restore shielded snapshot at bind time"
-                    );
-                }
-            }
-            Err(e) => {
-                tracing::warn!(
-                    wallet_id = %hex::encode(self.wallet_id),
-                    error = %e,
-                    "persister.load() failed at shielded bind time"
-                );
-            }
-        }
-
         // Snapshot the viewing-key subset for coordinator
         // registration. Privilege separation: only FVK / IVK /
         // OVK / default address cross to the coordinator; the
@@ -384,9 +359,40 @@ impl PlatformWallet {
         *slot = Some(wallet);
         drop(slot);
 
+        // Register on the coordinator BEFORE restoring so the
+        // restore path's "is this account registered?" gate
+        // sees this wallet's subwallets.
         coordinator
             .register_wallet(self.wallet_id, account_views, self.persister.clone())
             .await;
+
+        // Rehydrate per-subwallet notes / sync watermarks from
+        // the persister's start state if any are present for
+        // this wallet. The lookup is cheap: load() is the
+        // boot-time snapshot, indexed by SubwalletId. Errors are
+        // logged but not fatal — first-launch wallets simply
+        // see no persisted state.
+        match self.persister.load() {
+            Ok(start) => {
+                if let Err(e) = coordinator
+                    .restore_for_wallet(self.wallet_id, &start.shielded)
+                    .await
+                {
+                    tracing::warn!(
+                        wallet_id = %hex::encode(self.wallet_id),
+                        error = %e,
+                        "Failed to restore shielded snapshot at bind time"
+                    );
+                }
+            }
+            Err(e) => {
+                tracing::warn!(
+                    wallet_id = %hex::encode(self.wallet_id),
+                    error = %e,
+                    "persister.load() failed at shielded bind time"
+                );
+            }
+        }
         Ok(())
     }
 
