@@ -7,14 +7,29 @@
 //!
 //! # Architecture
 //!
-//! - [`OrchardKeySet`] — ZIP-32 key derivation from a wallet seed.
-//! - [`ShieldedStore`] / [`InMemoryShieldedStore`] — storage abstraction.
-//!   The shared commitment tree lives here too; per-subwallet
-//!   notes are scoped by [`SubwalletId`] inside the store.
+//! - [`OrchardKeySet`] — ZIP-32 key derivation from a wallet
+//!   seed (FVK / IVK / OVK / `SpendAuthorizingKey` / default
+//!   payment address).
+//! - [`AccountViewingKeys`] — viewing-grade subset of
+//!   `OrchardKeySet` (no ASK); the only key material that
+//!   crosses to coordinator scope.
+//! - [`NetworkShieldedCoordinator`] — network-scoped owner of
+//!   the shared commitment-tree store, the per-`SubwalletId`
+//!   account registry, the caught-up cooldown stamp, and the
+//!   sync entry point. One coordinator per
+//!   `PlatformWalletManager`.
+//! - [`ShieldedStore`] / [`InMemoryShieldedStore`] /
+//!   [`FileBackedShieldedStore`] — storage abstraction; the
+//!   shared commitment tree lives here. Per-subwallet notes are
+//!   scoped by [`SubwalletId`] inside the store.
 //! - [`CachedOrchardProver`] — lazy-init proving key cache.
-//! - [`ShieldedWallet`] — multi-account coordinator tying the
-//!   wallet's Orchard accounts (`BTreeMap<u32, OrchardKeySet>`),
-//!   the shared store, and the SDK together.
+//! - Sync / spend operations live as free functions in the
+//!   [`sync`] and [`operations`] submodules and take
+//!   `(sdk, store, persister, wallet_id, keys, …)` explicitly.
+//!
+//! Per-wallet shielded state on `PlatformWallet` is just the
+//! `BTreeMap<u32, OrchardKeySet>` (with the spend authority);
+//! `PlatformWallet` doesn't need a wrapper struct around it.
 
 pub mod coordinator;
 pub mod file_store;
@@ -32,248 +47,13 @@ pub use prover::CachedOrchardProver;
 pub use store::{InMemoryShieldedStore, ShieldedNote, ShieldedStore, SubwalletId};
 pub use sync::{ShieldedSyncSummary, SyncNotesResult};
 
-use std::collections::BTreeMap;
-use std::sync::Arc;
-
-use tokio::sync::RwLock;
-
-use crate::changeset::PlatformWalletChangeSet;
-use crate::changeset::ShieldedChangeSet;
-use crate::error::PlatformWalletError;
-use crate::wallet::persister::WalletPersister;
-use crate::wallet::platform_wallet::WalletId;
-
-/// Feature-gated multi-account shielded wallet.
-///
-/// One [`ShieldedWallet`] lives inside one [`PlatformWallet`] and
-/// holds every Orchard account that wallet has bound. Operations
-/// take `account: u32` and route to the right keyset internally.
-/// The shared `store: Arc<RwLock<S>>` is keyed per-account via
-/// [`SubwalletId`] so multiple accounts on the same wallet (and
-/// multiple wallets on the same network) cohabit the same store
-/// without cross-talk.
-pub struct ShieldedWallet<S: ShieldedStore> {
-    /// Dash Platform SDK handle for network operations.
-    pub(super) sdk: Arc<dash_sdk::Sdk>,
-    /// 32-byte wallet identifier — used to construct
-    /// [`SubwalletId`] for every store call.
-    pub(super) wallet_id: WalletId,
-    /// Bound Orchard accounts, keyed by ZIP-32 account index.
-    pub(super) accounts: BTreeMap<u32, OrchardKeySet>,
-    /// Pluggable storage backend behind a shared async lock. The
-    /// commitment tree inside is global per network; notes are
-    /// scoped per-subwallet by the store's `SubwalletId` keying.
-    pub(super) store: Arc<RwLock<S>>,
-    /// Optional persister handle. When set, every state-changing
-    /// sync / spend pass emits a [`PlatformWalletChangeSet`] with
-    /// a populated `shielded` field so the host (typically
-    /// SwiftData on iOS) can mirror per-subwallet notes / sync
-    /// watermarks. `None` means in-memory only — useful for
-    /// tests and short-lived wallets.
-    pub(super) persister: Option<WalletPersister>,
-}
-
 /// How long after a no-op sync the background loop should skip
 /// further passes. Tuned against the wallet's typical 60s sync
 /// cadence — halves wire calls in steady-state while keeping
 /// "new notes" discovery latency bounded at one cooldown window
 /// plus the next loop tick. Manual `force=true` syncs bypass.
+///
+/// Held in the coordinator (`NetworkShieldedCoordinator::sync`
+/// is the only caller); the per-`PlatformWallet` cooldown stamp
+/// was removed in Phase 4a.
 pub(super) const CAUGHT_UP_COOLDOWN: std::time::Duration = std::time::Duration::from_secs(30);
-
-impl<S: ShieldedStore> ShieldedWallet<S> {
-    /// Construct a [`ShieldedWallet`] from pre-derived keysets.
-    ///
-    /// `accounts` maps ZIP-32 account index → [`OrchardKeySet`].
-    /// At least one account must be supplied.
-    ///
-    /// `store` is the shared, network-scoped commitment-tree
-    /// store handed in by the caller. Every wallet on the same
-    /// network manager should pass the same `Arc` clone — the
-    /// chain-wide Orchard tree only needs one SQLite handle per
-    /// network. See `NetworkShieldedCoordinator` for the layer
-    /// that owns that single handle on Phase 1+.
-    pub fn from_keysets(
-        sdk: Arc<dash_sdk::Sdk>,
-        wallet_id: WalletId,
-        accounts: BTreeMap<u32, OrchardKeySet>,
-        store: Arc<RwLock<S>>,
-    ) -> Result<Self, PlatformWalletError> {
-        if accounts.is_empty() {
-            return Err(PlatformWalletError::ShieldedKeyDerivation(
-                "shielded wallet requires at least one account".to_string(),
-            ));
-        }
-        Ok(Self {
-            sdk,
-            wallet_id,
-            accounts,
-            store,
-            persister: None,
-        })
-    }
-
-    /// Attach a [`WalletPersister`] so future sync / spend passes
-    /// emit shielded changesets to the host.
-    pub fn set_persister(&mut self, persister: WalletPersister) {
-        self.persister = Some(persister);
-    }
-
-    /// Queue a shielded changeset on the persister if one is
-    /// attached. No-op otherwise.
-    pub(super) fn queue_shielded_changeset(&self, cs: ShieldedChangeSet) {
-        if cs.is_empty() {
-            return;
-        }
-        let Some(persister) = &self.persister else {
-            return;
-        };
-        let full = PlatformWalletChangeSet {
-            shielded: Some(cs),
-            ..Default::default()
-        };
-        if let Err(e) = persister.store(full) {
-            tracing::warn!(
-                wallet_id = %hex::encode(self.wallet_id),
-                error = %e,
-                "Failed to queue shielded changeset"
-            );
-        }
-    }
-
-    /// Derive Orchard keys for every listed `account` from a
-    /// wallet seed and return a [`ShieldedWallet`].
-    ///
-    /// `seed` is the BIP-39 seed bytes (32–252 bytes; typically
-    /// 64). `network` selects the ZIP-32 coin type. Each entry of
-    /// `accounts` becomes a separate ZIP-32 account
-    /// (`m / 32' / coin_type' / account'`); duplicates are
-    /// silently deduplicated.
-    pub fn from_seed_accounts(
-        sdk: Arc<dash_sdk::Sdk>,
-        wallet_id: WalletId,
-        seed: &[u8],
-        network: dashcore::Network,
-        accounts: &[u32],
-        store: Arc<RwLock<S>>,
-    ) -> Result<Self, PlatformWalletError> {
-        if accounts.is_empty() {
-            return Err(PlatformWalletError::ShieldedKeyDerivation(
-                "shielded wallet requires at least one account".to_string(),
-            ));
-        }
-        let mut keysets: BTreeMap<u32, OrchardKeySet> = BTreeMap::new();
-        for &account in accounts {
-            let keys = OrchardKeySet::from_seed(seed, network, account)?;
-            keysets.insert(account, keys);
-        }
-        Self::from_keysets(sdk, wallet_id, keysets, store)
-    }
-
-    /// Add another ZIP-32 account to this wallet by re-deriving
-    /// from the seed. No-op if `account` is already bound.
-    ///
-    /// **Caveat**: the commitment tree only retains
-    /// authentication paths for positions `Retention::Marked` at
-    /// append time. Notes that reached the tree before this
-    /// account existed were marked `Ephemeral` and can never
-    /// produce witnesses for it without a tree wipe + full
-    /// re-sync. New accounts therefore only see notes from
-    /// future syncs. The host should drop the tree DB and
-    /// re-sync from genesis when the user adds an account they
-    /// expect to discover historical funds for.
-    pub fn add_account_from_seed(
-        &mut self,
-        seed: &[u8],
-        network: dashcore::Network,
-        account: u32,
-    ) -> Result<(), PlatformWalletError> {
-        if self.accounts.contains_key(&account) {
-            return Ok(());
-        }
-        let keys = OrchardKeySet::from_seed(seed, network, account)?;
-        self.accounts.insert(account, keys);
-        Ok(())
-    }
-
-    /// All bound ZIP-32 account indices, in ascending order.
-    pub fn account_indices(&self) -> Vec<u32> {
-        self.accounts.keys().copied().collect()
-    }
-
-    /// `true` iff `account` is bound on this wallet.
-    pub fn has_account(&self, account: u32) -> bool {
-        self.accounts.contains_key(&account)
-    }
-
-    /// Borrow the keyset for `account`.
-    pub(super) fn keys_for(&self, account: u32) -> Result<&OrchardKeySet, PlatformWalletError> {
-        self.accounts.get(&account).ok_or_else(|| {
-            PlatformWalletError::ShieldedKeyDerivation(format!(
-                "shielded account {account} not bound"
-            ))
-        })
-    }
-
-    /// Construct the [`SubwalletId`] for `account` on this wallet.
-    pub(super) fn subwallet_id(&self, account: u32) -> SubwalletId {
-        SubwalletId::new(self.wallet_id, account)
-    }
-
-    /// Total unspent shielded balance for `account` in credits.
-    /// Reads from the store — does not trigger a sync.
-    pub async fn balance(&self, account: u32) -> Result<u64, PlatformWalletError> {
-        self.keys_for(account)?; // existence check
-        let id = self.subwallet_id(account);
-        let store = self.store.read().await;
-        let notes = store
-            .get_unspent_notes(id)
-            .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
-        Ok(notes.iter().map(|n| n.value).sum())
-    }
-
-    /// Sum of unspent shielded balance across every bound account.
-    pub async fn balance_total(&self) -> Result<u64, PlatformWalletError> {
-        let store = self.store.read().await;
-        let mut total: u64 = 0;
-        for account in self.accounts.keys() {
-            let id = SubwalletId::new(self.wallet_id, *account);
-            let notes = store
-                .get_unspent_notes(id)
-                .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
-            total = total.saturating_add(notes.iter().map(|n| n.value).sum::<u64>());
-        }
-        Ok(total)
-    }
-
-    /// Per-account unspent shielded balance, in ascending account order.
-    pub async fn balances(&self) -> Result<BTreeMap<u32, u64>, PlatformWalletError> {
-        let store = self.store.read().await;
-        let mut out: BTreeMap<u32, u64> = BTreeMap::new();
-        for account in self.accounts.keys() {
-            let id = SubwalletId::new(self.wallet_id, *account);
-            let notes = store
-                .get_unspent_notes(id)
-                .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
-            out.insert(*account, notes.iter().map(|n| n.value).sum());
-        }
-        Ok(out)
-    }
-
-    /// The default payment address (diversifier index 0) for
-    /// `account`. Returns an error if `account` isn't bound.
-    pub fn default_address(
-        &self,
-        account: u32,
-    ) -> Result<&grovedb_commitment_tree::PaymentAddress, PlatformWalletError> {
-        self.keys_for(account).map(|k| &k.default_address)
-    }
-
-    /// Derive a payment address at `index` under `account`.
-    pub fn address_at(
-        &self,
-        account: u32,
-        index: u32,
-    ) -> Result<grovedb_commitment_tree::PaymentAddress, PlatformWalletError> {
-        Ok(self.keys_for(account)?.address_at(index))
-    }
-}

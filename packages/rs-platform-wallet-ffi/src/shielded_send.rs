@@ -94,8 +94,8 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_transfer(
     let mut recipient = [0u8; 43];
     std::ptr::copy_nonoverlapping(recipient_raw_43, recipient.as_mut_ptr(), 43);
 
-    let wallet = match resolve_wallet(handle, &wallet_id) {
-        Ok(w) => w,
+    let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
+        Ok(p) => p,
         Err(result) => return result,
     };
 
@@ -107,7 +107,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_transfer(
     let result = block_on_worker(async move {
         let prover = CachedOrchardProver::new();
         wallet
-            .shielded_transfer_to(account, &recipient, amount, &prover)
+            .shielded_transfer_to(&coordinator, account, &recipient, amount, &prover)
             .await
     });
     if let Err(e) = result {
@@ -157,15 +157,15 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_unshield(
         }
     };
 
-    let wallet = match resolve_wallet(handle, &wallet_id) {
-        Ok(w) => w,
+    let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
+        Ok(p) => p,
         Err(result) => return result,
     };
 
     let result = block_on_worker(async move {
         let prover = CachedOrchardProver::new();
         wallet
-            .shielded_unshield_to(account, &to_addr_str, amount, &prover)
+            .shielded_unshield_to(&coordinator, account, &to_addr_str, amount, &prover)
             .await
     });
     if let Err(e) = result {
@@ -212,15 +212,22 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_withdraw(
         }
     };
 
-    let wallet = match resolve_wallet(handle, &wallet_id) {
-        Ok(w) => w,
+    let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
+        Ok(p) => p,
         Err(result) => return result,
     };
 
     let result = block_on_worker(async move {
         let prover = CachedOrchardProver::new();
         wallet
-            .shielded_withdraw_to(account, &to_core, amount, core_fee_per_byte, &prover)
+            .shielded_withdraw_to(
+                &coordinator,
+                account,
+                &to_core,
+                amount,
+                core_fee_per_byte,
+                &prover,
+            )
             .await
     });
     if let Err(e) = result {
@@ -335,4 +342,49 @@ fn resolve_wallet(
             format!("wallet not found: {}", hex::encode(wallet_id)),
         )
     })
+}
+
+/// Resolve both the wallet `Arc` and the network-scoped shielded
+/// coordinator `Arc` for the given manager handle. Shielded
+/// spend operations need the coordinator's shared store, so this
+/// is the right resolver for transfer/unshield/withdraw FFIs.
+fn resolve_wallet_and_coordinator(
+    handle: Handle,
+    wallet_id: &[u8; 32],
+) -> Result<
+    (
+        std::sync::Arc<platform_wallet::PlatformWallet>,
+        std::sync::Arc<platform_wallet::wallet::shielded::NetworkShieldedCoordinator>,
+    ),
+    PlatformWalletFFIResult,
+> {
+    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
+        runtime().block_on(async {
+            let wallet = manager.get_wallet(wallet_id).await;
+            let coordinator = manager.shielded_coordinator().await;
+            (wallet, coordinator)
+        })
+    });
+    let (wallet_opt, coord_opt) = match option {
+        Some(v) => v,
+        None => {
+            return Err(PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidHandle,
+                format!("invalid manager handle: {handle}"),
+            ));
+        }
+    };
+    let wallet = wallet_opt.ok_or_else(|| {
+        PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorWalletOperation,
+            format!("wallet not found: {}", hex::encode(wallet_id)),
+        )
+    })?;
+    let coordinator = coord_opt.ok_or_else(|| {
+        PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorWalletOperation,
+            "shielded support not configured — call platform_wallet_manager_configure_shielded first",
+        )
+    })?;
+    Ok((wallet, coordinator))
 }

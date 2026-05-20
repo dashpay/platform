@@ -1,9 +1,14 @@
 //! Shielded transaction operations (5 transition types), multi-account.
 //!
-//! Each operation now takes `account: u32` and routes through the
-//! corresponding `OrchardKeySet` / `SubwalletId`. Spends never
-//! cross account boundaries — note selection reads only the
-//! given account's unspent notes.
+//! Each operation is a free function taking the
+//! (sdk, store, persister, wallet_id, keys, account, …) tuple
+//! it needs explicitly. Phase 4d.3 lifted these out of
+//! `impl<S> ShieldedWallet<S>` so per-wallet shielded state on
+//! `PlatformWallet` can be just the keys map without a wrapper
+//! struct.
+//!
+//! Spends never cross account boundaries — note selection reads
+//! only the given account's unspent notes.
 //!
 //! The five transition types are:
 //! - **Shield** (Type 15): transparent platform addresses → shielded pool
@@ -12,12 +17,16 @@
 //! - **Transfer** (Type 16): shielded pool → shielded pool (private)
 //! - **Withdraw** (Type 19): shielded pool → Core L1 address
 
+use super::keys::OrchardKeySet;
 use super::note_selection::select_notes_with_fee;
 use super::store::{ShieldedNote, ShieldedStore, SubwalletId};
-use super::ShieldedWallet;
+use crate::changeset::{PlatformWalletChangeSet, ShieldedChangeSet};
 use crate::error::PlatformWalletError;
+use crate::wallet::persister::WalletPersister;
+use crate::wallet::platform_wallet::WalletId;
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use dpp::address_funds::{
@@ -35,6 +44,7 @@ use dpp::shielded::builder::{
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::withdrawal::Pooling;
 use grovedb_commitment_tree::{Anchor, PaymentAddress};
+use tokio::sync::RwLock;
 use tracing::{info, trace, warn};
 
 /// Try to extract a structured `AddressesNotEnoughFundsError` from
@@ -80,587 +90,627 @@ fn format_addresses_with_info(
         .join(", ")
 }
 
-impl<S: ShieldedStore> ShieldedWallet<S> {
-    // -------------------------------------------------------------------------
-    // Shield: platform addresses -> shielded pool (Type 15)
-    // -------------------------------------------------------------------------
+/// Queue a shielded changeset on the persister if one is
+/// attached. No-op if the changeset is empty or no persister
+/// was supplied.
+fn queue_shielded_changeset(
+    persister: Option<&WalletPersister>,
+    wallet_id: WalletId,
+    cs: ShieldedChangeSet,
+) {
+    if cs.is_empty() {
+        return;
+    }
+    let Some(persister) = persister else {
+        return;
+    };
+    let full = PlatformWalletChangeSet {
+        shielded: Some(cs),
+        ..Default::default()
+    };
+    if let Err(e) = persister.store(full) {
+        tracing::warn!(
+            wallet_id = %hex::encode(wallet_id),
+            error = %e,
+            "Failed to queue shielded changeset"
+        );
+    }
+}
 
-    /// Shield credits from transparent platform addresses into the
-    /// shielded pool, with the resulting note assigned to `account`'s
-    /// default Orchard payment address.
-    pub async fn shield<Sig: Signer<PlatformAddress>, P: OrchardProver>(
-        &self,
-        account: u32,
-        inputs: BTreeMap<PlatformAddress, Credits>,
-        amount: u64,
-        signer: &Sig,
-        prover: &P,
-    ) -> Result<(), PlatformWalletError> {
-        let recipient_addr = self.default_orchard_address(account)?;
+// -------------------------------------------------------------------------
+// Shield: platform addresses -> shielded pool (Type 15)
+// -------------------------------------------------------------------------
 
-        // Fetch the current address nonces from Platform. Each
-        // input address has a per-address nonce that the next
-        // state transition must use as `last_used + 1`.
-        use dash_sdk::platform::FetchMany;
-        use dash_sdk::query_types::AddressInfo;
-        use std::collections::BTreeSet;
+/// Shield credits from transparent platform addresses into the
+/// shielded pool, with the resulting note assigned to `account`'s
+/// default Orchard payment address derived from `keys`.
+#[allow(clippy::too_many_arguments)]
+pub async fn shield<Sig: Signer<PlatformAddress>, P: OrchardProver>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    keys: &OrchardKeySet,
+    account: u32,
+    inputs: BTreeMap<PlatformAddress, Credits>,
+    amount: u64,
+    signer: &Sig,
+    prover: &P,
+) -> Result<(), PlatformWalletError> {
+    let recipient_addr = default_orchard_address(keys)?;
 
-        let address_set: BTreeSet<PlatformAddress> = inputs.keys().copied().collect();
-        let infos = AddressInfo::fetch_many(&self.sdk, address_set)
-            .await
-            .map_err(|e| {
-                PlatformWalletError::ShieldedBuildError(format!("fetch input nonces: {e}"))
-            })?;
+    // Fetch the current address nonces from Platform. Each input
+    // address has a per-address nonce that the next state
+    // transition must use as `last_used + 1`.
+    use dash_sdk::platform::FetchMany;
+    use dash_sdk::query_types::AddressInfo;
+    use std::collections::BTreeSet;
 
-        let mut inputs_with_nonce: BTreeMap<PlatformAddress, (u32, Credits)> = BTreeMap::new();
-        for (addr, credits) in inputs {
-            let info = infos
-                .get(&addr)
-                .and_then(|opt| opt.as_ref())
-                .ok_or_else(|| {
-                    PlatformWalletError::ShieldedBuildError(format!(
-                        "input address not found on platform: {:?}",
-                        addr
-                    ))
-                })?;
-            if info.balance < credits {
-                warn!(
-                    address = ?addr,
-                    claimed_credits = credits,
-                    platform_balance = info.balance,
-                    platform_nonce = info.nonce,
-                    "Shield input claims more credits than Platform reports — broadcast will likely fail"
-                );
-            } else {
-                info!(
-                    address = ?addr,
-                    claimed_credits = credits,
-                    platform_balance = info.balance,
-                    platform_nonce = info.nonce,
-                    "Shield input"
-                );
-            }
-            // `AddressNonce` is `u32`; `info.nonce + 1` would
-            // wrap silently in release once an address reaches
-            // u32::MAX. drive-abci treats wrap-to-0 as a replay
-            // and rejects it after the wallet has spent ~30 s on
-            // a Halo 2 proof. Bail loudly here instead.
-            let next_nonce = info.nonce.checked_add(1).ok_or_else(|| {
+    let address_set: BTreeSet<PlatformAddress> = inputs.keys().copied().collect();
+    let infos = AddressInfo::fetch_many(sdk, address_set)
+        .await
+        .map_err(|e| PlatformWalletError::ShieldedBuildError(format!("fetch input nonces: {e}")))?;
+
+    let mut inputs_with_nonce: BTreeMap<PlatformAddress, (u32, Credits)> = BTreeMap::new();
+    for (addr, credits) in inputs {
+        let info = infos
+            .get(&addr)
+            .and_then(|opt| opt.as_ref())
+            .ok_or_else(|| {
                 PlatformWalletError::ShieldedBuildError(format!(
-                    "input address nonce exhausted on platform: {:?}",
+                    "input address not found on platform: {:?}",
                     addr
                 ))
             })?;
-            inputs_with_nonce.insert(addr, (next_nonce, credits));
+        if info.balance < credits {
+            warn!(
+                address = ?addr,
+                claimed_credits = credits,
+                platform_balance = info.balance,
+                platform_nonce = info.nonce,
+                "Shield input claims more credits than Platform reports — broadcast will likely fail"
+            );
+        } else {
+            info!(
+                address = ?addr,
+                claimed_credits = credits,
+                platform_balance = info.balance,
+                platform_nonce = info.nonce,
+                "Shield input"
+            );
         }
-
-        let fee_strategy: AddressFundsFeeStrategy =
-            vec![AddressFundsFeeStrategyStep::DeductFromInput(0)];
-
-        info!(account, credits = amount, "Shield: building proof");
-
-        let claimed_inputs = inputs_with_nonce.clone();
-
-        let state_transition = build_shield_transition(
-            &recipient_addr,
-            amount,
-            inputs_with_nonce,
-            fee_strategy,
-            signer,
-            0, // user_fee_increase
-            prover,
-            [0u8; 36], // empty memo
-            self.sdk.version(),
-        )
-        .await
-        .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
-
-        trace!("Shield credits: state transition built, broadcasting...");
-        let network = self.sdk.network;
-        state_transition
-            .broadcast(&self.sdk, None)
-            .await
-            .map_err(|e| {
-                if let Some(rich) = addresses_not_enough_funds(&e) {
-                    let claimed = claimed_inputs
-                        .iter()
-                        .map(|(addr, (nonce, credits))| {
-                            format!(
-                                "{}=(nonce {nonce}, {credits} credits)",
-                                addr.to_bech32m_string(network)
-                            )
-                        })
-                        .collect::<Vec<_>>()
-                        .join(", ");
-                    PlatformWalletError::ShieldedBroadcastFailed(format!(
-                        "addresses not enough funds: required {} credits; \
-                         claimed inputs [{}]; platform sees [{}]",
-                        rich.required_balance(),
-                        claimed,
-                        format_addresses_with_info(rich.addresses_with_info(), network),
-                    ))
-                } else {
-                    PlatformWalletError::ShieldedBroadcastFailed(e.to_string())
-                }
-            })?;
-
-        info!(account, credits = amount, "Shield broadcast succeeded");
-        Ok(())
+        // `AddressNonce` is `u32`; `info.nonce + 1` would wrap
+        // silently in release once an address reaches u32::MAX.
+        // drive-abci treats wrap-to-0 as a replay and rejects it
+        // after the wallet has spent ~30 s on a Halo 2 proof.
+        // Bail loudly here instead.
+        let next_nonce = info.nonce.checked_add(1).ok_or_else(|| {
+            PlatformWalletError::ShieldedBuildError(format!(
+                "input address nonce exhausted on platform: {:?}",
+                addr
+            ))
+        })?;
+        inputs_with_nonce.insert(addr, (next_nonce, credits));
     }
 
-    // -------------------------------------------------------------------------
-    // ShieldFromAssetLock: Core L1 -> shielded pool (Type 18)
-    // -------------------------------------------------------------------------
+    let fee_strategy: AddressFundsFeeStrategy =
+        vec![AddressFundsFeeStrategyStep::DeductFromInput(0)];
 
-    /// Shield funds from a Core L1 asset lock directly into
-    /// `account`'s shielded pool entry.
-    pub async fn shield_from_asset_lock<P: OrchardProver>(
-        &self,
-        account: u32,
-        asset_lock_proof: AssetLockProof,
-        private_key: &[u8],
-        amount: u64,
-        prover: &P,
-    ) -> Result<(), PlatformWalletError> {
-        let recipient_addr = self.default_orchard_address(account)?;
+    info!(account, credits = amount, "Shield: building proof");
 
-        info!(
-            account,
-            credits = amount,
-            "Shield from asset lock: building state transition"
-        );
+    let claimed_inputs = inputs_with_nonce.clone();
 
-        let state_transition = build_shield_from_asset_lock_transition(
-            &recipient_addr,
+    let state_transition = build_shield_transition(
+        &recipient_addr,
+        amount,
+        inputs_with_nonce,
+        fee_strategy,
+        signer,
+        0, // user_fee_increase
+        prover,
+        [0u8; 36], // empty memo
+        sdk.version(),
+    )
+    .await
+    .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
+
+    trace!("Shield credits: state transition built, broadcasting...");
+    let network = sdk.network;
+    state_transition.broadcast(sdk, None).await.map_err(|e| {
+        if let Some(rich) = addresses_not_enough_funds(&e) {
+            let claimed = claimed_inputs
+                .iter()
+                .map(|(addr, (nonce, credits))| {
+                    format!(
+                        "{}=(nonce {nonce}, {credits} credits)",
+                        addr.to_bech32m_string(network)
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            PlatformWalletError::ShieldedBroadcastFailed(format!(
+                "addresses not enough funds: required {} credits; \
+                     claimed inputs [{}]; platform sees [{}]",
+                rich.required_balance(),
+                claimed,
+                format_addresses_with_info(rich.addresses_with_info(), network),
+            ))
+        } else {
+            PlatformWalletError::ShieldedBroadcastFailed(e.to_string())
+        }
+    })?;
+
+    info!(account, credits = amount, "Shield broadcast succeeded");
+    Ok(())
+}
+
+// -------------------------------------------------------------------------
+// ShieldFromAssetLock: Core L1 asset lock -> shielded pool (Type 18)
+// -------------------------------------------------------------------------
+
+/// Shield credits from a Core L1 asset lock into the shielded
+/// pool, with the resulting note assigned to `account`'s default
+/// Orchard payment address derived from `keys`.
+pub async fn shield_from_asset_lock<P: OrchardProver>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    keys: &OrchardKeySet,
+    account: u32,
+    asset_lock_proof: AssetLockProof,
+    private_key: &[u8],
+    amount: u64,
+    prover: &P,
+) -> Result<(), PlatformWalletError> {
+    let recipient_addr = default_orchard_address(keys)?;
+
+    info!(
+        account,
+        credits = amount,
+        "Shield from asset lock: building state transition"
+    );
+
+    let state_transition = build_shield_from_asset_lock_transition(
+        &recipient_addr,
+        amount,
+        asset_lock_proof,
+        private_key,
+        prover,
+        [0u8; 36],
+        sdk.version(),
+    )
+    .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
+
+    trace!("Shield from asset lock: state transition built, broadcasting...");
+    state_transition
+        .broadcast(sdk, None)
+        .await
+        .map_err(|e| PlatformWalletError::ShieldedBroadcastFailed(e.to_string()))?;
+
+    info!(
+        account,
+        credits = amount,
+        "Shield from asset lock broadcast succeeded"
+    );
+    Ok(())
+}
+
+// -------------------------------------------------------------------------
+// Unshield: shielded pool -> platform address (Type 17)
+// -------------------------------------------------------------------------
+
+/// Unshield funds from `account`'s shielded notes to a
+/// transparent platform address.
+#[allow(clippy::too_many_arguments)]
+pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    store: &Arc<RwLock<S>>,
+    persister: Option<&WalletPersister>,
+    wallet_id: WalletId,
+    keys: &OrchardKeySet,
+    account: u32,
+    to_address: &PlatformAddress,
+    amount: u64,
+    prover: &P,
+) -> Result<(), PlatformWalletError> {
+    let change_addr = default_orchard_address(keys)?;
+    let id = SubwalletId::new(wallet_id, account);
+
+    let (selected_notes, total_input, exact_fee) =
+        reserve_unspent_notes(sdk, store, id, amount, 1).await?;
+
+    info!(
+        account,
+        credits = amount,
+        fee = exact_fee,
+        inputs = selected_notes.len(),
+        total_input,
+        "Unshield"
+    );
+
+    // From here on every error path must release the reservation
+    // taken by `reserve_unspent_notes`.
+    let result = async {
+        let (spends, anchor) = extract_spends_and_anchor(store, &selected_notes).await?;
+
+        let state_transition = build_unshield_transition(
+            spends,
+            *to_address,
             amount,
-            asset_lock_proof,
-            private_key,
+            &change_addr,
+            &keys.full_viewing_key,
+            &keys.spend_auth_key,
+            anchor,
             prover,
             [0u8; 36],
-            self.sdk.version(),
+            Some(exact_fee),
+            sdk.version(),
         )
         .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
 
-        trace!("Shield from asset lock: state transition built, broadcasting...");
+        trace!("Unshield: state transition built, broadcasting...");
         state_transition
-            .broadcast(&self.sdk, None)
+            .broadcast_and_wait::<StateTransitionProofResult>(sdk, None)
             .await
             .map_err(|e| PlatformWalletError::ShieldedBroadcastFailed(e.to_string()))?;
-
-        info!(
-            account,
-            credits = amount,
-            "Shield from asset lock broadcast succeeded"
-        );
-        Ok(())
+        Ok::<(), PlatformWalletError>(())
     }
+    .await;
 
-    // -------------------------------------------------------------------------
-    // Unshield: shielded pool -> platform address (Type 17)
-    // -------------------------------------------------------------------------
-
-    /// Unshield funds from `account`'s shielded notes to a
-    /// transparent platform address.
-    pub async fn unshield<P: OrchardProver>(
-        &self,
-        account: u32,
-        to_address: &PlatformAddress,
-        amount: u64,
-        prover: &P,
-    ) -> Result<(), PlatformWalletError> {
-        let keys = self.keys_for(account)?;
-        let change_addr = self.default_orchard_address(account)?;
-        let id = self.subwallet_id(account);
-
-        let (selected_notes, total_input, exact_fee) =
-            self.reserve_unspent_notes(id, amount, 1).await?;
-
-        info!(
-            account,
-            credits = amount,
-            fee = exact_fee,
-            inputs = selected_notes.len(),
-            total_input,
-            "Unshield"
-        );
-
-        // From here on every error path must release the
-        // reservation taken by `reserve_unspent_notes`.
-        let result = async {
-            let (spends, anchor) = self.extract_spends_and_anchor(&selected_notes).await?;
-
-            let state_transition = build_unshield_transition(
-                spends,
-                *to_address,
-                amount,
-                &change_addr,
-                &keys.full_viewing_key,
-                &keys.spend_auth_key,
-                anchor,
-                prover,
-                [0u8; 36],
-                Some(exact_fee),
-                self.sdk.version(),
-            )
-            .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
-
-            trace!("Unshield: state transition built, broadcasting...");
-            state_transition
-                .broadcast_and_wait::<StateTransitionProofResult>(&self.sdk, None)
-                .await
-                .map_err(|e| PlatformWalletError::ShieldedBroadcastFailed(e.to_string()))?;
-            Ok::<(), PlatformWalletError>(())
+    match result {
+        Ok(()) => {
+            finalize_pending(store, persister, wallet_id, id, &selected_notes).await?;
+            info!(account, credits = amount, "Unshield broadcast succeeded");
+            Ok(())
         }
-        .await;
-
-        match result {
-            Ok(()) => {
-                self.finalize_pending(id, &selected_notes).await?;
-                info!(account, credits = amount, "Unshield broadcast succeeded");
-                Ok(())
-            }
-            Err(e) => {
-                self.cancel_pending(id, &selected_notes).await;
-                Err(e)
-            }
+        Err(e) => {
+            cancel_pending(store, id, &selected_notes).await;
+            Err(e)
         }
     }
+}
 
-    // -------------------------------------------------------------------------
-    // Transfer: shielded pool -> shielded pool (Type 16)
-    // -------------------------------------------------------------------------
+// -------------------------------------------------------------------------
+// Transfer: shielded pool -> shielded pool (Type 16)
+// -------------------------------------------------------------------------
 
-    /// Transfer funds privately from `account`'s shielded notes
-    /// to another Orchard payment address.
-    pub async fn transfer<P: OrchardProver>(
-        &self,
-        account: u32,
-        to_address: &PaymentAddress,
-        amount: u64,
-        prover: &P,
-    ) -> Result<(), PlatformWalletError> {
-        let keys = self.keys_for(account)?;
-        let recipient_addr = payment_address_to_orchard(to_address)?;
-        let change_addr = self.default_orchard_address(account)?;
-        let id = self.subwallet_id(account);
+/// Transfer funds privately from `account`'s shielded notes to
+/// another Orchard payment address.
+#[allow(clippy::too_many_arguments)]
+pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    store: &Arc<RwLock<S>>,
+    persister: Option<&WalletPersister>,
+    wallet_id: WalletId,
+    keys: &OrchardKeySet,
+    account: u32,
+    to_address: &PaymentAddress,
+    amount: u64,
+    prover: &P,
+) -> Result<(), PlatformWalletError> {
+    let recipient_addr = payment_address_to_orchard(to_address)?;
+    let change_addr = default_orchard_address(keys)?;
+    let id = SubwalletId::new(wallet_id, account);
 
-        let (selected_notes, total_input, exact_fee) =
-            self.reserve_unspent_notes(id, amount, 2).await?;
+    let (selected_notes, total_input, exact_fee) =
+        reserve_unspent_notes(sdk, store, id, amount, 2).await?;
 
-        info!(
-            account,
-            credits = amount,
-            fee = exact_fee,
-            inputs = selected_notes.len(),
-            total_input,
-            "Shielded transfer"
-        );
+    info!(
+        account,
+        credits = amount,
+        fee = exact_fee,
+        inputs = selected_notes.len(),
+        total_input,
+        "Shielded transfer"
+    );
 
-        let result = async {
-            let (spends, anchor) = self.extract_spends_and_anchor(&selected_notes).await?;
+    let result = async {
+        let (spends, anchor) = extract_spends_and_anchor(store, &selected_notes).await?;
 
-            let state_transition = build_shielded_transfer_transition(
-                spends,
-                &recipient_addr,
-                amount,
-                &change_addr,
-                &keys.full_viewing_key,
-                &keys.spend_auth_key,
-                anchor,
-                prover,
-                [0u8; 36],
-                Some(exact_fee),
-                self.sdk.version(),
-            )
-            .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
+        let state_transition = build_shielded_transfer_transition(
+            spends,
+            &recipient_addr,
+            amount,
+            &change_addr,
+            &keys.full_viewing_key,
+            &keys.spend_auth_key,
+            anchor,
+            prover,
+            [0u8; 36],
+            Some(exact_fee),
+            sdk.version(),
+        )
+        .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
 
-            trace!("Shielded transfer: state transition built, broadcasting...");
-            state_transition
-                .broadcast_and_wait::<StateTransitionProofResult>(&self.sdk, None)
-                .await
-                .map_err(|e| PlatformWalletError::ShieldedBroadcastFailed(e.to_string()))?;
-            Ok::<(), PlatformWalletError>(())
+        trace!("Shielded transfer: state transition built, broadcasting...");
+        state_transition
+            .broadcast_and_wait::<StateTransitionProofResult>(sdk, None)
+            .await
+            .map_err(|e| PlatformWalletError::ShieldedBroadcastFailed(e.to_string()))?;
+        Ok::<(), PlatformWalletError>(())
+    }
+    .await;
+
+    match result {
+        Ok(()) => {
+            finalize_pending(store, persister, wallet_id, id, &selected_notes).await?;
+            info!(
+                account,
+                credits = amount,
+                "Shielded transfer broadcast succeeded"
+            );
+            Ok(())
         }
-        .await;
-
-        match result {
-            Ok(()) => {
-                self.finalize_pending(id, &selected_notes).await?;
-                info!(
-                    account,
-                    credits = amount,
-                    "Shielded transfer broadcast succeeded"
-                );
-                Ok(())
-            }
-            Err(e) => {
-                self.cancel_pending(id, &selected_notes).await;
-                Err(e)
-            }
+        Err(e) => {
+            cancel_pending(store, id, &selected_notes).await;
+            Err(e)
         }
     }
+}
 
-    // -------------------------------------------------------------------------
-    // Withdraw: shielded pool -> Core L1 address (Type 19)
-    // -------------------------------------------------------------------------
+// -------------------------------------------------------------------------
+// Withdraw: shielded pool -> Core L1 address (Type 19)
+// -------------------------------------------------------------------------
 
-    /// Withdraw funds from `account`'s shielded notes to a Core L1 address.
-    pub async fn withdraw<P: OrchardProver>(
-        &self,
-        account: u32,
-        to_address: &dashcore::Address,
-        amount: u64,
-        core_fee_per_byte: u32,
-        prover: &P,
-    ) -> Result<(), PlatformWalletError> {
-        let keys = self.keys_for(account)?;
-        let change_addr = self.default_orchard_address(account)?;
-        let id = self.subwallet_id(account);
-        let output_script = CoreScript::from_bytes(to_address.script_pubkey().to_bytes());
+/// Withdraw funds from `account`'s shielded notes to a Core L1 address.
+#[allow(clippy::too_many_arguments)]
+pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    store: &Arc<RwLock<S>>,
+    persister: Option<&WalletPersister>,
+    wallet_id: WalletId,
+    keys: &OrchardKeySet,
+    account: u32,
+    to_address: &dashcore::Address,
+    amount: u64,
+    core_fee_per_byte: u32,
+    prover: &P,
+) -> Result<(), PlatformWalletError> {
+    let change_addr = default_orchard_address(keys)?;
+    let id = SubwalletId::new(wallet_id, account);
+    let output_script = CoreScript::from_bytes(to_address.script_pubkey().to_bytes());
 
-        let (selected_notes, total_input, exact_fee) =
-            self.reserve_unspent_notes(id, amount, 1).await?;
+    let (selected_notes, total_input, exact_fee) =
+        reserve_unspent_notes(sdk, store, id, amount, 1).await?;
 
-        info!(
-            account,
-            credits = amount,
-            fee = exact_fee,
-            inputs = selected_notes.len(),
-            total_input,
-            "Shielded withdrawal"
-        );
+    info!(
+        account,
+        credits = amount,
+        fee = exact_fee,
+        inputs = selected_notes.len(),
+        total_input,
+        "Shielded withdrawal"
+    );
 
-        let result = async {
-            let (spends, anchor) = self.extract_spends_and_anchor(&selected_notes).await?;
+    let result = async {
+        let (spends, anchor) = extract_spends_and_anchor(store, &selected_notes).await?;
 
-            let state_transition = build_shielded_withdrawal_transition(
-                spends,
-                amount,
-                output_script,
-                core_fee_per_byte,
-                Pooling::Standard,
-                &change_addr,
-                &keys.full_viewing_key,
-                &keys.spend_auth_key,
-                anchor,
-                prover,
-                [0u8; 36],
-                Some(exact_fee),
-                self.sdk.version(),
-            )
-            .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
+        let state_transition = build_shielded_withdrawal_transition(
+            spends,
+            amount,
+            output_script,
+            core_fee_per_byte,
+            Pooling::Standard,
+            &change_addr,
+            &keys.full_viewing_key,
+            &keys.spend_auth_key,
+            anchor,
+            prover,
+            [0u8; 36],
+            Some(exact_fee),
+            sdk.version(),
+        )
+        .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
 
-            trace!("Shielded withdrawal: state transition built, broadcasting...");
-            state_transition
-                .broadcast_and_wait::<StateTransitionProofResult>(&self.sdk, None)
-                .await
-                .map_err(|e| PlatformWalletError::ShieldedBroadcastFailed(e.to_string()))?;
-            Ok::<(), PlatformWalletError>(())
+        trace!("Shielded withdrawal: state transition built, broadcasting...");
+        state_transition
+            .broadcast_and_wait::<StateTransitionProofResult>(sdk, None)
+            .await
+            .map_err(|e| PlatformWalletError::ShieldedBroadcastFailed(e.to_string()))?;
+        Ok::<(), PlatformWalletError>(())
+    }
+    .await;
+
+    match result {
+        Ok(()) => {
+            finalize_pending(store, persister, wallet_id, id, &selected_notes).await?;
+            info!(
+                account,
+                credits = amount,
+                "Shielded withdrawal broadcast succeeded"
+            );
+            Ok(())
         }
-        .await;
-
-        match result {
-            Ok(()) => {
-                self.finalize_pending(id, &selected_notes).await?;
-                info!(
-                    account,
-                    credits = amount,
-                    "Shielded withdrawal broadcast succeeded"
-                );
-                Ok(())
-            }
-            Err(e) => {
-                self.cancel_pending(id, &selected_notes).await;
-                Err(e)
-            }
+        Err(e) => {
+            cancel_pending(store, id, &selected_notes).await;
+            Err(e)
         }
     }
+}
 
-    // -------------------------------------------------------------------------
-    // Internal helpers
-    // -------------------------------------------------------------------------
+// -------------------------------------------------------------------------
+// Internal helpers (free fns)
+// -------------------------------------------------------------------------
 
-    /// Convert `account`'s default `PaymentAddress` to an `OrchardAddress`.
-    fn default_orchard_address(&self, account: u32) -> Result<OrchardAddress, PlatformWalletError> {
-        let keys = self.keys_for(account)?;
-        payment_address_to_orchard(&keys.default_address)
-    }
+/// Convert `keys`'s default `PaymentAddress` to an `OrchardAddress`.
+fn default_orchard_address(keys: &OrchardKeySet) -> Result<OrchardAddress, PlatformWalletError> {
+    payment_address_to_orchard(&keys.default_address)
+}
 
-    /// Extract `SpendableNote` structs with Merkle witnesses and
-    /// the tree anchor.
-    ///
-    /// The anchor is derived from the witness paths themselves
-    /// (via `MerklePath::root(cmx)`) rather than from
-    /// `store.tree_anchor()`. The store's witness call is
-    /// `witness_at_checkpoint_depth(0)` (root of the most recent
-    /// checkpoint) while `tree_anchor()` is
-    /// `root_at_checkpoint_depth(None)` (latest tree state) —
-    /// any commitments appended after the last checkpoint move
-    /// the latter ahead of the former, and the resulting
-    /// `AnchorMismatch` from the Orchard spend builder is what
-    /// you'd see at proof time. Using the witness's own
-    /// computed root keeps the anchor consistent with the
-    /// authentication paths the proof actually verifies.
-    async fn extract_spends_and_anchor(
-        &self,
-        notes: &[ShieldedNote],
-    ) -> Result<(Vec<SpendableNote>, Anchor), PlatformWalletError> {
-        use grovedb_commitment_tree::ExtractedNoteCommitment;
+/// Extract `SpendableNote` structs with Merkle witnesses and the
+/// tree anchor.
+///
+/// The anchor is derived from the witness paths themselves (via
+/// `MerklePath::root(cmx)`) rather than from `store.tree_anchor()`.
+/// The store's witness call is `witness_at_checkpoint_depth(0)`
+/// (root of the most recent checkpoint) while `tree_anchor()` is
+/// `root_at_checkpoint_depth(None)` (latest tree state) — any
+/// commitments appended after the last checkpoint move the latter
+/// ahead of the former, and the resulting `AnchorMismatch` from
+/// the Orchard spend builder is what you'd see at proof time.
+/// Using the witness's own computed root keeps the anchor
+/// consistent with the authentication paths the proof actually
+/// verifies.
+async fn extract_spends_and_anchor<S: ShieldedStore>(
+    store: &Arc<RwLock<S>>,
+    notes: &[ShieldedNote],
+) -> Result<(Vec<SpendableNote>, Anchor), PlatformWalletError> {
+    use grovedb_commitment_tree::ExtractedNoteCommitment;
 
-        let store = self.store.read().await;
+    let store = store.read().await;
 
-        let mut spends = Vec::with_capacity(notes.len());
-        let mut anchor: Option<Anchor> = None;
-        for note in notes {
-            let orchard_note = deserialize_note(&note.note_data).ok_or_else(|| {
-                PlatformWalletError::ShieldedBuildError(format!(
-                    "Failed to deserialize note at position {}",
+    let mut spends = Vec::with_capacity(notes.len());
+    let mut anchor: Option<Anchor> = None;
+    for note in notes {
+        let orchard_note = deserialize_note(&note.note_data).ok_or_else(|| {
+            PlatformWalletError::ShieldedBuildError(format!(
+                "Failed to deserialize note at position {}",
+                note.position
+            ))
+        })?;
+
+        let merkle_path = store
+            .witness(note.position)
+            .map_err(|e| PlatformWalletError::ShieldedMerkleWitnessUnavailable(e.to_string()))?
+            .ok_or_else(|| {
+                PlatformWalletError::ShieldedMerkleWitnessUnavailable(format!(
+                    "no witness available for note at position {} (not marked, or pruned past this position)",
                     note.position
                 ))
             })?;
 
-            let merkle_path = store
-                .witness(note.position)
-                .map_err(|e| PlatformWalletError::ShieldedMerkleWitnessUnavailable(e.to_string()))?
-                .ok_or_else(|| {
-                    PlatformWalletError::ShieldedMerkleWitnessUnavailable(format!(
-                        "no witness available for note at position {} (not marked, or pruned past this position)",
-                        note.position
-                    ))
-                })?;
-
-            // Compute the anchor this witness was generated
-            // against. All selected notes must share the same
-            // anchor — if not, the store handed us witnesses
-            // from different checkpoints, which the spend
-            // builder would reject downstream with
-            // `AnchorMismatch`. Surface the mismatch here so the
-            // host doesn't pay the ~30 s proof cost first.
-            let cmx = ExtractedNoteCommitment::from_bytes(&note.cmx)
-                .into_option()
-                .ok_or_else(|| {
-                    PlatformWalletError::ShieldedBuildError(format!(
-                        "invalid stored cmx for note at position {}",
-                        note.position
-                    ))
-                })?;
-            let witness_anchor = merkle_path.root(cmx);
-            match &anchor {
-                None => anchor = Some(witness_anchor),
-                Some(prev) if prev.to_bytes() != witness_anchor.to_bytes() => {
-                    return Err(PlatformWalletError::ShieldedBuildError(format!(
-                        "witness anchor mismatch across selected notes (position {})",
-                        note.position
-                    )));
-                }
-                _ => {}
+        // Compute the anchor this witness was generated against.
+        // All selected notes must share the same anchor — if not,
+        // the store handed us witnesses from different
+        // checkpoints, which the spend builder would reject
+        // downstream with `AnchorMismatch`. Surface the mismatch
+        // here so the host doesn't pay the ~30 s proof cost
+        // first.
+        let cmx = ExtractedNoteCommitment::from_bytes(&note.cmx)
+            .into_option()
+            .ok_or_else(|| {
+                PlatformWalletError::ShieldedBuildError(format!(
+                    "invalid stored cmx for note at position {}",
+                    note.position
+                ))
+            })?;
+        let witness_anchor = merkle_path.root(cmx);
+        match &anchor {
+            None => anchor = Some(witness_anchor),
+            Some(prev) if prev.to_bytes() != witness_anchor.to_bytes() => {
+                return Err(PlatformWalletError::ShieldedBuildError(format!(
+                    "witness anchor mismatch across selected notes (position {})",
+                    note.position
+                )));
             }
-
-            spends.push(SpendableNote {
-                note: orchard_note,
-                merkle_path,
-            });
+            _ => {}
         }
 
-        let anchor = anchor.ok_or_else(|| {
-            PlatformWalletError::ShieldedBuildError(
-                "no spendable notes selected — anchor undefined".to_string(),
-            )
-        })?;
-
-        Ok((spends, anchor))
+        spends.push(SpendableNote {
+            note: orchard_note,
+            merkle_path,
+        });
     }
 
-    /// Mark the selected notes as spent for `id`. Also queues a
-    /// shielded changeset on the persister so the spent flag
-    /// reaches durable storage immediately rather than waiting for
-    /// the next nullifier-sync pass to rediscover the spend.
-    ///
-    /// Also drops any matching pending reservation so the
-    /// confirmed-spent state and the in-flight-spend state can't
-    /// disagree.
-    async fn mark_notes_spent(
-        &self,
-        id: SubwalletId,
-        notes: &[ShieldedNote],
-    ) -> Result<(), PlatformWalletError> {
-        let mut changeset = crate::changeset::ShieldedChangeSet::default();
-        {
-            let mut store = self.store.write().await;
-            for note in notes {
-                if store
-                    .mark_spent(id, &note.nullifier)
-                    .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?
-                {
-                    changeset.record_nullifier_spent(id, note.nullifier);
-                }
-            }
-        }
-        self.queue_shielded_changeset(changeset);
-        Ok(())
-    }
+    let anchor = anchor.ok_or_else(|| {
+        PlatformWalletError::ShieldedBuildError(
+            "no spendable notes selected — anchor undefined".to_string(),
+        )
+    })?;
 
-    /// Select unspent notes and reserve them against an in-flight
-    /// spend in one write-locked critical section.
-    ///
-    /// Combining selection and reservation under a single write
-    /// lock is the only thing that prevents two overlapping spend
-    /// calls from picking the same notes: with separate
-    /// read-then-write phases, the second caller would observe
-    /// the same `unspent_notes()` between the first caller's
-    /// read and write and proceed to build a duplicate proof
-    /// that's only rejected ~30 s later at broadcast time.
-    ///
-    /// The reservation is in-memory only — see
-    /// [`ShieldedStore::mark_pending`] for the crash-recovery
-    /// note. Callers must pair this with [`Self::finalize_pending`]
-    /// (on broadcast success) or [`Self::cancel_pending`] (on
-    /// failure) so the reservation is always released.
-    #[allow(clippy::too_many_arguments)]
-    async fn reserve_unspent_notes(
-        &self,
-        id: SubwalletId,
-        amount: u64,
-        outputs: usize,
-    ) -> Result<(Vec<ShieldedNote>, u64, u64), PlatformWalletError> {
-        let mut store = self.store.write().await;
-        let unspent = store
-            .get_unspent_notes(id)
-            .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
-        let (selected, total_input, exact_fee) =
-            select_notes_with_fee(&unspent, amount, outputs, self.sdk.version())?.into_owned();
-        for note in &selected {
-            store
-                .mark_pending(id, &note.nullifier)
-                .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
-        }
-        Ok((selected, total_input, exact_fee))
-    }
+    Ok((spends, anchor))
+}
 
-    /// Promote a successful broadcast: mark the notes spent (which
-    /// also clears any matching pending reservation, see
-    /// [`SubwalletState::mark_spent`]) and queue the changeset for
-    /// the host persister.
-    async fn finalize_pending(
-        &self,
-        id: SubwalletId,
-        notes: &[ShieldedNote],
-    ) -> Result<(), PlatformWalletError> {
-        self.mark_notes_spent(id, notes).await
-    }
-
-    /// Roll back a reservation when the broadcast / wait fails.
-    /// Best-effort and doesn't surface its own errors — the
-    /// caller is already returning the broadcast error.
-    async fn cancel_pending(&self, id: SubwalletId, notes: &[ShieldedNote]) {
-        let mut store = self.store.write().await;
+/// Mark the selected notes as spent for `id`. Also queues a
+/// shielded changeset on the persister so the spent flag reaches
+/// durable storage immediately rather than waiting for the next
+/// nullifier-sync pass to rediscover the spend. Also drops any
+/// matching pending reservation so the confirmed-spent state
+/// and the in-flight-spend state can't disagree.
+async fn mark_notes_spent<S: ShieldedStore>(
+    store: &Arc<RwLock<S>>,
+    persister: Option<&WalletPersister>,
+    wallet_id: WalletId,
+    id: SubwalletId,
+    notes: &[ShieldedNote],
+) -> Result<(), PlatformWalletError> {
+    let mut changeset = ShieldedChangeSet::default();
+    {
+        let mut store = store.write().await;
         for note in notes {
-            if let Err(e) = store.clear_pending(id, &note.nullifier) {
-                tracing::warn!(
-                    error = %e,
-                    "cancel_pending: clear_pending failed; the next nullifier sync will reconcile"
-                );
+            if store
+                .mark_spent(id, &note.nullifier)
+                .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?
+            {
+                changeset.record_nullifier_spent(id, note.nullifier);
             }
+        }
+    }
+    queue_shielded_changeset(persister, wallet_id, changeset);
+    Ok(())
+}
+
+/// Select unspent notes and reserve them against an in-flight
+/// spend in one write-locked critical section.
+///
+/// Combining selection and reservation under a single write lock
+/// is the only thing that prevents two overlapping spend calls
+/// from picking the same notes: with separate read-then-write
+/// phases, the second caller would observe the same
+/// `unspent_notes()` between the first caller's read and write
+/// and proceed to build a duplicate proof that's only rejected
+/// ~30 s later at broadcast time.
+///
+/// The reservation is in-memory only — see
+/// [`ShieldedStore::mark_pending`] for the crash-recovery note.
+/// Callers must pair this with [`finalize_pending`] (on
+/// broadcast success) or [`cancel_pending`] (on failure) so the
+/// reservation is always released.
+async fn reserve_unspent_notes<S: ShieldedStore>(
+    sdk: &Arc<dash_sdk::Sdk>,
+    store: &Arc<RwLock<S>>,
+    id: SubwalletId,
+    amount: u64,
+    outputs: usize,
+) -> Result<(Vec<ShieldedNote>, u64, u64), PlatformWalletError> {
+    let mut store = store.write().await;
+    let unspent = store
+        .get_unspent_notes(id)
+        .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
+    let (selected, total_input, exact_fee) =
+        select_notes_with_fee(&unspent, amount, outputs, sdk.version())?.into_owned();
+    for note in &selected {
+        store
+            .mark_pending(id, &note.nullifier)
+            .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
+    }
+    Ok((selected, total_input, exact_fee))
+}
+
+/// Promote a successful broadcast: mark the notes spent (which
+/// also clears any matching pending reservation, see
+/// [`SubwalletState::mark_spent`]) and queue the changeset for
+/// the host persister.
+async fn finalize_pending<S: ShieldedStore>(
+    store: &Arc<RwLock<S>>,
+    persister: Option<&WalletPersister>,
+    wallet_id: WalletId,
+    id: SubwalletId,
+    notes: &[ShieldedNote],
+) -> Result<(), PlatformWalletError> {
+    mark_notes_spent(store, persister, wallet_id, id, notes).await
+}
+
+/// Roll back a reservation when the broadcast / wait fails.
+/// Best-effort and doesn't surface its own errors — the caller
+/// is already returning the broadcast error.
+async fn cancel_pending<S: ShieldedStore>(
+    store: &Arc<RwLock<S>>,
+    id: SubwalletId,
+    notes: &[ShieldedNote],
+) {
+    let mut store = store.write().await;
+    for note in notes {
+        if let Err(e) = store.clear_pending(id, &note.nullifier) {
+            tracing::warn!(
+                error = %e,
+                "cancel_pending: clear_pending failed; the next nullifier sync will reconcile"
+            );
         }
     }
 }

@@ -1,8 +1,8 @@
 //! Shielded note + nullifier synchronization.
 //!
-//! Phase-2b shape: the heavy lifting lives in three free
-//! functions that take a flat `&[(SubwalletId, AccountViewingKeys)]`
-//! slice and drive a single network-wide SDK fetch per pass:
+//! The heavy lifting lives in three free functions that take a
+//! flat `&[(SubwalletId, AccountViewingKeys)]` slice and drive a
+//! single network-wide SDK fetch per pass:
 //! - [`sync_notes_across`] — fetches encrypted notes once,
 //!   trial-decrypts against the union of every subwallet's IVK,
 //!   appends commitments to the shared tree exactly once per
@@ -10,19 +10,19 @@
 //!   saves decrypted notes scoped per-`SubwalletId`.
 //! - [`check_nullifiers_across`] — privacy-preserving nullifier
 //!   scan per subwallet (the SDK's nullifier-scan API is
-//!   per-checkpoint, so it stays per-subwallet, but no longer
-//!   per-`ShieldedWallet`).
+//!   per-checkpoint, so it stays per-subwallet).
 //! - [`balances_across`] — pure unspent-balance read against
 //!   the shared store.
 //!
-//! Per-wallet [`ShieldedWallet`] methods (`sync_notes`,
-//! `check_nullifiers`, `balances`) remain as thin delegators
-//! that build the one-wallet's slice and call the free
-//! functions; the full-wallet `sync` orchestrator was removed
-//! in Phase 4d.2 (the coordinator's `sync` is now the only
-//! entry point that runs all three in sequence). Phase 4d.3
-//! removes the remaining delegators along with `ShieldedWallet`
-//! itself.
+//! [`NetworkShieldedCoordinator::sync`] drives all three in
+//! sequence against the union of every registered subwallet.
+//! Per-wallet `PlatformWallet` shielded methods read from the
+//! same store via the coordinator handle they're handed at
+//! call time (post-Phase-4d.3 — no more `ShieldedWallet`
+//! wrapper).
+//!
+//! [`NetworkShieldedCoordinator::sync`]:
+//!     super::coordinator::NetworkShieldedCoordinator::sync
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -35,7 +35,6 @@ use tracing::{debug, info, warn};
 
 use super::keys::AccountViewingKeys;
 use super::store::{ShieldedStore, SubwalletId};
-use super::ShieldedWallet;
 use crate::changeset::ShieldedChangeSet;
 use crate::error::PlatformWalletError;
 
@@ -468,7 +467,7 @@ pub(super) async fn check_nullifiers_across<S: ShieldedStore>(
 
 /// Multi-subwallet unspent-balance snapshot. Pure read against
 /// the shared store — does not trigger a sync.
-pub(super) async fn balances_across<S: ShieldedStore>(
+pub(crate) async fn balances_across<S: ShieldedStore>(
     store: &Arc<RwLock<S>>,
     subwallets: &[(SubwalletId, AccountViewingKeys)],
 ) -> Result<BTreeMap<SubwalletId, u64>, PlatformWalletError> {
@@ -481,77 +480,6 @@ pub(super) async fn balances_across<S: ShieldedStore>(
         out.insert(*id, notes.iter().map(|n| n.value).sum());
     }
     Ok(out)
-}
-
-impl<S: ShieldedStore> ShieldedWallet<S> {
-    /// Sync encrypted notes from Platform across every bound
-    /// account of this single wallet.
-    ///
-    /// Delegates to [`sync_notes_across`] under the hood with
-    /// the wallet's own subwallets — Phase 2b kept this surface
-    /// for backward-compat with existing per-wallet callers
-    /// (tests, the fallback path in `ShieldedSyncManager` when no
-    /// coordinator has been configured). Phase 4 removes this
-    /// method along with `ShieldedWallet` itself; the coordinator
-    /// becomes the only sync entry point.
-    pub async fn sync_notes(&self) -> Result<SyncNotesResult, PlatformWalletError> {
-        let account_indices = self.account_indices();
-        if account_indices.is_empty() {
-            return Ok(SyncNotesResult::default());
-        }
-        let subwallets: Vec<(SubwalletId, AccountViewingKeys)> = account_indices
-            .iter()
-            .map(|&account| {
-                let id = self.subwallet_id(account);
-                let views = self.keys_for(account)?.viewing_keys();
-                Ok::<_, PlatformWalletError>((id, views))
-            })
-            .collect::<Result<_, _>>()?;
-
-        let result = sync_notes_across(&self.sdk, &self.store, &subwallets).await?;
-        // Fold per-subwallet counts back into per-account for
-        // this wallet, and queue the consolidated changeset on
-        // the wallet's own persister.
-        let new_notes_per_account = result.per_account_for(self.wallet_id);
-        self.queue_shielded_changeset(result.changeset);
-        Ok(SyncNotesResult {
-            new_notes_per_account,
-            total_scanned: result.total_scanned,
-        })
-    }
-
-    /// Check nullifier status for unspent notes across every
-    /// bound account on this single wallet. Spent notes are
-    /// marked per-subwallet.
-    ///
-    /// Delegates to [`check_nullifiers_across`]; see
-    /// [`sync_notes`](Self::sync_notes) for the Phase 4 deletion
-    /// plan that removes this method along with `ShieldedWallet`.
-    pub async fn check_nullifiers(&self) -> Result<BTreeMap<u32, usize>, PlatformWalletError> {
-        let account_indices = self.account_indices();
-        if account_indices.is_empty() {
-            return Ok(BTreeMap::new());
-        }
-        let subwallets: Vec<(SubwalletId, AccountViewingKeys)> = account_indices
-            .iter()
-            .map(|&account| {
-                let id = self.subwallet_id(account);
-                let views = self.keys_for(account)?.viewing_keys();
-                Ok::<_, PlatformWalletError>((id, views))
-            })
-            .collect::<Result<_, _>>()?;
-
-        let (per_sub, changeset) =
-            check_nullifiers_across(&self.sdk, &self.store, &subwallets).await?;
-        self.queue_shielded_changeset(changeset);
-        // Fold per-subwallet counts back into per-account for
-        // this wallet's caller shape.
-        Ok(per_sub
-            .into_iter()
-            .filter(|(id, _)| id.wallet_id == self.wallet_id)
-            .map(|(id, c)| (id.account_index, c))
-            .collect())
-    }
 }
 
 /// One decrypted note discovered during a sync pass.
