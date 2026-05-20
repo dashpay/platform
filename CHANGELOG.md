@@ -1,3 +1,19 @@
+## [3.1.0-dev.4](https://github.com/dashpay/platform/compare/v3.1.0-dev.3...v3.1.0-dev.4) (2026-05-20)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform-wallet:** add birth_height_override to wallet creation API (#3636)
+
+### Features
+
+* **platform-wallet:** add birth_height_override to wallet creation API ([#3636](https://github.com/dashpay/platform/issues/3636))
+
+
+### Continuous Integration
+
+* **release:** drop 32-bit dashmate pack targets unsupported by Node 24 ([#3709](https://github.com/dashpay/platform/issues/3709))
+
 ## [3.1.0-dev.3](https://github.com/dashpay/platform/compare/v3.1.0-dev.2...v3.1.0-dev.3) (2026-05-20)
 
 
