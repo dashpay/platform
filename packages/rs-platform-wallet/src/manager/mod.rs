@@ -3,7 +3,9 @@
 pub mod accessors;
 pub mod identity_sync;
 mod load;
+pub mod load_outcome;
 pub mod platform_address_sync;
+pub mod rehydrate;
 #[cfg(feature = "shielded")]
 pub mod shielded_sync;
 mod wallet_lifecycle;
@@ -60,6 +62,11 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     #[cfg(feature = "shielded")]
     pub(super) shielded_sync_manager: Arc<ShieldedSyncManager>,
     pub(super) persister: Arc<P>,
+    /// Fan-out for platform-wallet lifecycle events
+    /// ([`PlatformEvent`](crate::events::PlatformEvent)). Held so
+    /// `load_from_persistor` can surface per-wallet skip notifications
+    /// to the app handler via the established channel.
+    pub(super) event_manager: Arc<PlatformEventManager>,
     /// Cancellation token + join handle for the wallet-event adapter
     /// task. Held so [`shutdown`] can stop it cleanly when the manager
     /// is torn down.
@@ -134,6 +141,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             #[cfg(feature = "shielded")]
             shielded_sync_manager: shielded_sync,
             persister,
+            event_manager,
             event_adapter_cancel,
             event_adapter_join: tokio::sync::Mutex::new(Some(event_adapter_join)),
         }

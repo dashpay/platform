@@ -16,9 +16,34 @@ use arc_swap::ArcSwap;
 pub use dash_spv::EventHandler;
 pub use key_wallet_manager::WalletEvent;
 
+use crate::manager::load_outcome::SkipReason;
 use crate::manager::platform_address_sync::PlatformAddressSyncSummary;
 #[cfg(feature = "shielded")]
 use crate::manager::shielded_sync::ShieldedSyncPassSummary;
+use crate::wallet::platform_wallet::WalletId;
+
+/// Platform-wallet lifecycle event surfaced to app handlers.
+///
+/// Distinct from the SPV `EventHandler` stream — these are
+/// platform-specific notifications the app may react to (toast,
+/// telemetry) without threading return values through every call site.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PlatformEvent {
+    /// A persisted wallet was skipped during
+    /// [`load_from_persistor`](crate::PlatformWalletManager::load_from_persistor)
+    /// because its seed material was unavailable. Recoverable: re-run
+    /// the load once the operator provides / unlocks the material.
+    ///
+    /// Carries the (public, non-secret) wallet id and the structural
+    /// [`SkipReason`]; never any secret byte.
+    WalletSkippedOnLoad {
+        /// The skipped wallet's id.
+        wallet_id: WalletId,
+        /// Why it was skipped (seed absent / store locked / store
+        /// error). Never a wrong-seed reason.
+        reason: SkipReason,
+    },
+}
 
 /// Extension of [`EventHandler`] for platform-wallet consumers.
 ///
@@ -43,6 +68,15 @@ pub trait PlatformEventHandler: EventHandler {
     /// [`ShieldedSyncManager`]: crate::manager::shielded_sync::ShieldedSyncManager
     #[cfg(feature = "shielded")]
     fn on_shielded_sync_completed(&self, _summary: &ShieldedSyncPassSummary) {}
+
+    /// Fired once per wallet that
+    /// [`load_from_persistor`](crate::PlatformWalletManager::load_from_persistor)
+    /// skipped because its seed was unavailable.
+    ///
+    /// Default impl is a no-op so existing handlers don't have to care
+    /// (the internal `LockNotifyHandler` / `BalanceUpdateHandler`
+    /// ignore it; only the app handler typically reacts).
+    fn on_platform_event(&self, _event: &PlatformEvent) {}
 }
 
 /// Dispatches events to all registered [`PlatformEventHandler`]s.
@@ -92,6 +126,17 @@ impl PlatformEventManager {
         let handlers = self.handlers.load();
         for h in handlers.iter() {
             h.on_shielded_sync_completed(summary);
+        }
+    }
+
+    /// Dispatch a [`PlatformEvent`] to every handler.
+    ///
+    /// Not on the SPV hot path — called at most once per wallet during
+    /// a single `load_from_persistor` pass.
+    pub fn on_platform_event(&self, event: &PlatformEvent) {
+        let handlers = self.handlers.load();
+        for h in handlers.iter() {
+            h.on_platform_event(event);
         }
     }
 }

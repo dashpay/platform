@@ -1,36 +1,49 @@
 //! Per-wallet portion of [`ClientStartState`](crate::changeset::ClientStartState).
 //!
-//! Everything a single wallet contributes to the startup snapshot: the
-//! key-wallet [`Wallet`] + [`ManagedWalletInfo`] pair, a lean
-//! identity-manager snapshot, and still-unused asset locks bucketed by
-//! account index.
+//! **Keyless by type.** This carries everything needed to *reconstruct*
+//! a wallet — network, birth height, the account manifest, the rebuilt
+//! core-state projection, identities, filtered asset locks — but **no**
+//! [`Wallet`](key_wallet::Wallet) and no seed. The persister can never
+//! mint a `Wallet`; the manager re-derives it from the runtime
+//! `SeedProvider`, runs the wrong-seed gate, then applies this state
+//! (SECRETS.md, enforced structurally).
 
 use std::collections::BTreeMap;
 
 use crate::changeset::identity_manager_start_state::IdentityManagerStartState;
+use crate::changeset::{AccountRegistrationEntry, CoreChangeSet};
 use crate::wallet::asset_lock::tracked::TrackedAssetLock;
 use dashcore::OutPoint;
-use key_wallet::wallet::ManagedWalletInfo;
-use key_wallet::Wallet;
+use key_wallet::Network;
 
-/// Per-wallet slice of the startup snapshot.
+/// Keyless per-wallet slice of the startup snapshot.
 ///
-/// Used as the value type in [`ClientStartState::wallets`](crate::changeset::ClientStartState::wallets).
+/// Used as the value type in
+/// [`ClientStartState::wallets`](crate::changeset::ClientStartState::wallets).
+/// The structural absence of a `Wallet`/seed field is the SECRETS.md
+/// boundary, enforced by type rather than convention.
 #[derive(Debug)]
 pub struct ClientWalletStartState {
-    /// The key-wallet [`Wallet`] to rehydrate on startup. Carries the
-    /// HD key material and account configuration the rest of the
-    /// per-wallet state hangs off of.
-    pub wallet: Wallet,
-    /// Managed wallet info holding non-key-material state (balances,
-    /// account metadata, UTXO set, etc.) for this wallet.
-    pub wallet_info: ManagedWalletInfo,
+    /// Network the wallet is bound to (from `wallet_metadata`).
+    pub network: Network,
+    /// Best estimate of the chain tip at creation time (`0` = scan
+    /// from genesis / unknown).
+    pub birth_height: u32,
+    /// Keyless account manifest — the account-set oracle and the
+    /// per-account xpub cross-check source for the wrong-seed gate.
+    pub account_manifest: Vec<AccountRegistrationEntry>,
+    /// Keyless projection of the persisted core rows (UTXOs, tx
+    /// records, IS-locks, sync watermarks, `last_applied_chain_lock`).
+    /// The manager applies this onto a fresh
+    /// `ManagedWalletInfo::from_wallet` skeleton **after** the
+    /// seed-derived wallet passes the wrong-seed gate. Rebuilt by the
+    /// `core_state::load_state` reader (item B).
+    pub core_state: CoreChangeSet,
     /// Lean snapshot of this wallet's
-    /// [`IdentityManager`](crate::wallet::identity::IdentityManager):
-    /// owned + watched identities, primary selection, and the
-    /// gap-limit scan watermark.
+    /// [`IdentityManager`](crate::wallet::identity::IdentityManager).
     pub identity_manager: IdentityManagerStartState,
-    /// Asset locks that have not yet been consumed by an identity
-    /// registration / top-up, keyed by account index → outpoint.
+    /// Asset locks not yet consumed by an identity registration /
+    /// top-up, keyed by account index → outpoint. Terminal `Consumed`
+    /// rows are already filtered out by the asset-lock reader.
     pub unused_asset_locks: BTreeMap<u32, BTreeMap<OutPoint, TrackedAssetLock>>,
 }
