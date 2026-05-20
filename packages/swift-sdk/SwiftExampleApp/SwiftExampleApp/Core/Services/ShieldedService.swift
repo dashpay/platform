@@ -297,51 +297,47 @@ class ShieldedService: ObservableObject {
         totalNewlySpent = 0
     }
 
-    /// Wipe this wallet's persisted shielded state and re-bind so
-    /// the next sync starts from scratch and the Sync Now button
-    /// keeps working.
+    /// Wipe this wallet's persisted shielded state and stop. The
+    /// service is left unbound — no auto-rebind, no auto-rescan.
     ///
     /// Bare [`reset`] just tears down subscriptions and nils the
     /// in-memory mirror — the SwiftData rows
     /// (`PersistentShieldedNote`, `PersistentShieldedSyncState`)
-    /// survive, and the service becomes unbound so the next Sync
-    /// Now fails with "Shielded service not configured". The user-
-    /// facing Clear button on the Sync Status screen really wants
-    /// "wipe and start over"; this does that.
+    /// survive, so the next bind hydrates the wallet right back to
+    /// the state the user just tried to clear.
+    ///
+    /// The user reaches this through the Clear button on the Sync
+    /// Status screen and wants "delete and walk away" semantics:
+    /// the persisted rows go, the published mirror zeroes out, and
+    /// the service stays inert until the next explicit bind.
+    /// Re-syncing means navigating back through the wallet detail
+    /// screen, which retriggers `rebindWalletScopedServices` and
+    /// rebinds from scratch (SwiftData is empty → Rust's
+    /// `restore_from_snapshot` starts at zero).
     ///
     /// What it does NOT touch:
     ///   * The on-disk commitment-tree SQLite file at
     ///     `dbPath(for:)`. That tree is **per-network** — every
     ///     wallet on the same network shares the same `cmx` stream
     ///     and the same frontier, so deleting it would corrupt
-    ///     other wallets' state. The next sync just re-uses the
-    ///     existing tree leaves (Rust's `sync_notes` skips
-    ///     positions already in the tree).
-    ///   * The Rust-side shielded sub-wallet: `bindShielded` is
-    ///     idempotent and a second call replaces the binding, so
-    ///     we don't need a separate unbind path.
+    ///     other wallets' state. Rust's `sync_notes` already skips
+    ///     positions already in the tree, so re-using the existing
+    ///     leaves on the next bind is the right behaviour.
+    ///   * The manager-wide shielded sync loop. Other wallets
+    ///     bound on the same `PlatformWalletManager` keep syncing.
+    ///   * The Rust-side shielded sub-wallet binding (there's no
+    ///     unbind FFI today; the next `bindShielded` call replaces
+    ///     the binding wholesale).
     ///
-    /// No-op if the service hasn't been bound yet (nothing to
-    /// clear; nothing to rebind to).
+    /// No-op if the service hasn't been bound yet.
     func clearLocalState(modelContext: ModelContext) async {
-        guard
-            let walletManager,
-            let walletId = boundWalletId,
-            let resolver,
-            let network
-        else {
+        guard let walletId = boundWalletId else {
             SDKLogger.log(
                 "ShieldedService.clearLocalState called before initial bind — ignoring",
                 minimumLevel: .medium
             )
             return
         }
-        let accounts = boundAccounts.isEmpty ? [0] : boundAccounts
-
-        // Stash for after the in-memory reset.
-        let pinnedManager = walletManager
-        let pinnedResolver = resolver
-        let pinnedNetwork = network
 
         // 1) Delete this wallet's persisted shielded rows from
         //    SwiftData. Scoped to `walletId` so other wallets'
@@ -362,25 +358,12 @@ class ShieldedService: ObservableObject {
             return
         }
 
-        // 2) Reset the in-memory mirror so the UI shows zeros
-        //    immediately rather than the stale snapshot from the
-        //    last sync event.
+        // 2) Tear down the in-memory mirror + subscriptions. The
+        //    service is now unbound; no further sync events flow
+        //    in and Sync Now will surface "Shielded service not
+        //    configured" until something re-binds (typically the
+        //    next navigation into a wallet detail screen).
         reset()
-
-        // 3) Re-bind so Sync Now works without the user having to
-        //    navigate away and back to trigger
-        //    `rebindWalletScopedServices`. The Rust manager's
-        //    `bindShielded` is idempotent and replaces the
-        //    previous binding; the persister callback's
-        //    `loadShieldedNotes` will now see an empty table and
-        //    Rust's `restore_from_snapshot` will start from zero.
-        bind(
-            walletManager: pinnedManager,
-            walletId: walletId,
-            network: pinnedNetwork,
-            resolver: pinnedResolver,
-            accounts: accounts
-        )
     }
 
     // MARK: - Sync event handling
