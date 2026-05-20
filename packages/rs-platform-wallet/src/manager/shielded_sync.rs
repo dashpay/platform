@@ -29,7 +29,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::events::PlatformEventManager;
 use crate::wallet::platform_wallet::WalletId;
-use crate::wallet::shielded::ShieldedSyncSummary;
+use crate::wallet::shielded::{NetworkShieldedCoordinator, ShieldedSyncSummary};
 use crate::wallet::PlatformWallet;
 
 /// Default cadence — 60s. Shielded sync is heavier than address sync
@@ -123,6 +123,14 @@ impl ShieldedSyncPassSummary {
 pub struct ShieldedSyncManager {
     wallets: Arc<RwLock<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
     event_manager: Arc<PlatformEventManager>,
+    /// Network-scoped shielded coordinator slot, shared with the
+    /// owning `PlatformWalletManager`. When `Some`, `sync_now`
+    /// routes through `coordinator.sync(force)` so the
+    /// network-wide caught-up cooldown applies and a future
+    /// Phase-2b lift can collapse the per-wallet SDK fetches.
+    /// When `None` (shielded support hasn't been configured),
+    /// `sync_now` falls back to the legacy per-wallet iteration.
+    coordinator_slot: Arc<RwLock<Option<Arc<NetworkShieldedCoordinator>>>>,
     /// Cancel token for the background loop, if running.
     background_cancel: StdMutex<Option<CancellationToken>>,
     /// Monotonically increasing generation counter. Bumped on every
@@ -143,10 +151,12 @@ impl ShieldedSyncManager {
     pub fn new(
         wallets: Arc<RwLock<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
         event_manager: Arc<PlatformEventManager>,
+        coordinator_slot: Arc<RwLock<Option<Arc<NetworkShieldedCoordinator>>>>,
     ) -> Self {
         Self {
             wallets,
             event_manager,
+            coordinator_slot,
             background_cancel: StdMutex::new(None),
             background_generation: AtomicU64::new(0),
             interval_secs: AtomicU64::new(DEFAULT_SYNC_INTERVAL_SECS),
@@ -285,34 +295,61 @@ impl ShieldedSyncManager {
             return ShieldedSyncPassSummary::default();
         }
 
-        let snapshot: Vec<(WalletId, Arc<PlatformWallet>)> = {
-            let wallets = self.wallets.read().await;
-            wallets.iter().map(|(id, w)| (*id, Arc::clone(w))).collect()
+        // Phase 2a: if shielded support has been configured on the
+        // owning manager, route through the coordinator so the
+        // network-wide caught-up cooldown applies and a future
+        // Phase-2b lift can collapse the per-wallet SDK fetches.
+        // Snapshot the coordinator Arc and release the slot lock
+        // before awaiting so a concurrent `configure_shielded`
+        // can't deadlock against our pass.
+        let coordinator_snapshot: Option<Arc<NetworkShieldedCoordinator>> = {
+            let slot = self.coordinator_slot.read().await;
+            slot.as_ref().map(Arc::clone)
         };
 
-        let mut summary = ShieldedSyncPassSummary::default();
-        for (wallet_id, wallet) in snapshot {
-            let outcome = match wallet.shielded_sync(force).await {
-                Ok(Some(result)) => WalletShieldedOutcome::Ok(result),
-                Ok(None) => WalletShieldedOutcome::Skipped,
-                Err(e) => {
-                    tracing::warn!(
-                        "Shielded sync failed for wallet {}: {}",
-                        hex::encode(wallet_id),
-                        e
-                    );
-                    WalletShieldedOutcome::Err(e.to_string())
-                }
+        let mut summary = if let Some(coordinator) = coordinator_snapshot {
+            coordinator.sync(force).await
+        } else {
+            // Pre-configure fallback: legacy per-wallet iteration.
+            // Used when no wallet on this manager has ever called
+            // `configure_shielded` (e.g. in tests / non-shielded
+            // builds with the feature on but not exercised).
+            let snapshot: Vec<(WalletId, Arc<PlatformWallet>)> = {
+                let wallets = self.wallets.read().await;
+                wallets.iter().map(|(id, w)| (*id, Arc::clone(w))).collect()
             };
-            summary.wallet_results.insert(wallet_id, outcome);
-        }
+
+            let mut s = ShieldedSyncPassSummary::default();
+            for (wallet_id, wallet) in snapshot {
+                let outcome = match wallet.shielded_sync(force).await {
+                    Ok(Some(result)) => WalletShieldedOutcome::Ok(result),
+                    Ok(None) => WalletShieldedOutcome::Skipped,
+                    Err(e) => {
+                        tracing::warn!(
+                            "Shielded sync failed for wallet {}: {}",
+                            hex::encode(wallet_id),
+                            e
+                        );
+                        WalletShieldedOutcome::Err(e.to_string())
+                    }
+                };
+                s.wallet_results.insert(wallet_id, outcome);
+            }
+            s
+        };
 
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_secs())
             .unwrap_or(0);
-        summary.sync_unix_seconds = now;
-        self.last_sync_unix.store(now, Ordering::Release);
+        // Honor a non-zero timestamp from the coordinator (it
+        // stamps `sync_unix_seconds` itself), and stamp our own
+        // for the fallback path.
+        if summary.sync_unix_seconds == 0 {
+            summary.sync_unix_seconds = now;
+        }
+        self.last_sync_unix
+            .store(summary.sync_unix_seconds, Ordering::Release);
         self.is_syncing.store(false, Ordering::Release);
 
         self.event_manager.on_shielded_sync_completed(&summary);

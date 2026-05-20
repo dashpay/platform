@@ -131,9 +131,14 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             Arc::clone(&persister),
         ));
         #[cfg(feature = "shielded")]
+        let shielded_coordinator: Arc<
+            RwLock<Option<Arc<crate::wallet::shielded::NetworkShieldedCoordinator>>>,
+        > = Arc::new(RwLock::new(None));
+        #[cfg(feature = "shielded")]
         let shielded_sync = Arc::new(ShieldedSyncManager::new(
             Arc::clone(&wallets),
             Arc::clone(&event_manager),
+            Arc::clone(&shielded_coordinator),
         ));
         Self {
             sdk,
@@ -146,7 +151,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             #[cfg(feature = "shielded")]
             shielded_sync_manager: shielded_sync,
             #[cfg(feature = "shielded")]
-            shielded_coordinator: Arc::new(RwLock::new(None)),
+            shielded_coordinator,
             persister,
             event_adapter_cancel,
             event_adapter_join: tokio::sync::Mutex::new(Some(event_adapter_join)),
@@ -203,12 +208,15 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             self.sdk.network,
             db_path,
             store,
-            // Persister attaches in Phase 2 when the coordinator
-            // owns the sync loop and emits the consolidated
-            // changeset. For Phase 1 the per-wallet `ShieldedWallet`
-            // still holds its own persister handle and queues
-            // changesets exactly as before.
+            // Persister attaches in Phase 2b when the coordinator
+            // owns the actual fetch / decrypt loop and emits the
+            // consolidated changeset. In Phase 2a the per-wallet
+            // `ShieldedWallet` still holds its own persister
+            // handle and queues changesets exactly as before;
+            // the coordinator only owns the cooldown gate and
+            // the per-wallet iteration.
             None,
+            Arc::clone(&self.wallets),
         ));
         *slot = Some(coordinator);
         Ok(())

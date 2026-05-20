@@ -314,12 +314,15 @@ impl PlatformWallet {
         &self,
         seed: &[u8],
         accounts: &[u32],
-        store: Arc<RwLock<FileBackedShieldedStore>>,
+        coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
     ) -> Result<(), PlatformWalletError> {
-        // The store is sourced by the caller from the
-        // manager-level `NetworkShieldedCoordinator` — every
-        // wallet on the same network shares one SQLite handle.
+        // The store comes from the network-scoped coordinator —
+        // every wallet on the same network shares one SQLite
+        // handle. The bind also self-registers the wallet's
+        // viewing-key set on the coordinator so future sync
+        // passes (driven by the coordinator) iterate it.
         // See `PlatformWalletManager::configure_shielded`.
+        let store = Arc::clone(coordinator.store());
         let network = self.sdk.network;
         let mut wallet = ShieldedWallet::from_seed_accounts(
             Arc::clone(&self.sdk),
@@ -360,8 +363,30 @@ impl PlatformWallet {
             }
         }
 
+        // Snapshot the viewing-key subset for coordinator
+        // registration. Privilege separation: only FVK / IVK /
+        // OVK / default address cross to the coordinator; the
+        // `SpendAuthorizingKey` stays here on the per-wallet
+        // side inside `OrchardKeySet`.
+        let account_views: std::collections::BTreeMap<u32, super::shielded::AccountViewingKeys> =
+            wallet
+                .account_indices()
+                .into_iter()
+                .filter_map(|account| {
+                    wallet
+                        .keys_for(account)
+                        .ok()
+                        .map(|ks| (account, ks.viewing_keys()))
+                })
+                .collect();
+
         let mut slot = self.shielded.write().await;
         *slot = Some(wallet);
+        drop(slot);
+
+        coordinator
+            .register_wallet(self.wallet_id, account_views)
+            .await;
         Ok(())
     }
 

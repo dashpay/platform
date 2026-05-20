@@ -286,9 +286,11 @@ pub unsafe extern "C" fn platform_wallet_manager_bind_shielded(
     drop(mnemonic);
 
     // Look up the wallet + the network-scoped shielded coordinator
-    // on the manager. The coordinator owns the single SQLite handle;
-    // we hand its store down to `bind_shielded` so this wallet's
-    // `ShieldedWallet` reuses it instead of opening its own.
+    // on the manager. The coordinator owns the single SQLite handle
+    // *and* the per-network sync-coordination registry; we hand it
+    // to `bind_shielded` so the wallet reuses the shared store and
+    // self-registers its viewing keys for the coordinator-driven
+    // sync loop.
     let lookup = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
         runtime().block_on(async {
             let wallet = manager.get_wallet(&wallet_id).await;
@@ -315,12 +317,11 @@ pub unsafe extern "C" fn platform_wallet_manager_bind_shielded(
             );
         }
     };
-    let shared_store = std::sync::Arc::clone(coordinator.store());
 
     if let Err(e) = runtime().block_on(wallet_arc.bind_shielded(
         seed.as_ref(),
         accounts.as_slice(),
-        shared_store,
+        &coordinator,
     )) {
         return PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
