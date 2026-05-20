@@ -109,11 +109,18 @@ impl<S: ShieldedStore> ShieldedWallet<S> {
     ///
     /// `accounts` maps ZIP-32 account index → [`OrchardKeySet`].
     /// At least one account must be supplied.
+    ///
+    /// `store` is the shared, network-scoped commitment-tree
+    /// store handed in by the caller. Every wallet on the same
+    /// network manager should pass the same `Arc` clone — the
+    /// chain-wide Orchard tree only needs one SQLite handle per
+    /// network. See `NetworkShieldedCoordinator` for the layer
+    /// that owns that single handle on Phase 1+.
     pub fn from_keysets(
         sdk: Arc<dash_sdk::Sdk>,
         wallet_id: WalletId,
         accounts: BTreeMap<u32, OrchardKeySet>,
-        store: S,
+        store: Arc<RwLock<S>>,
     ) -> Result<Self, PlatformWalletError> {
         if accounts.is_empty() {
             return Err(PlatformWalletError::ShieldedKeyDerivation(
@@ -128,7 +135,7 @@ impl<S: ShieldedStore> ShieldedWallet<S> {
             sdk,
             wallet_id,
             accounts,
-            store: Arc::new(RwLock::new(store)),
+            store,
             persister: None,
             last_caught_up_at: std::sync::Mutex::new(None),
         })
@@ -220,7 +227,7 @@ impl<S: ShieldedStore> ShieldedWallet<S> {
         seed: &[u8],
         network: dashcore::Network,
         accounts: &[u32],
-        store: S,
+        store: Arc<RwLock<S>>,
     ) -> Result<Self, PlatformWalletError> {
         if accounts.is_empty() {
             return Err(PlatformWalletError::ShieldedKeyDerivation(

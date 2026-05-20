@@ -164,9 +164,8 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_sync_sync_now(
 // ---------------------------------------------------------------------------
 
 /// Derive Orchard keys for the given wallet from the host-supplied
-/// mnemonic resolver, open the per-network commitment tree at
-/// `db_path`, and bind the resulting [`ShieldedWallet`] to the
-/// `PlatformWallet`.
+/// mnemonic resolver and register the resulting accounts on the
+/// network-scoped shielded coordinator.
 ///
 /// `accounts_ptr` / `accounts_len` describe the ZIP-32 account
 /// indices to derive. The slice must be non-empty and at most
@@ -181,23 +180,22 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_sync_sync_now(
 /// before this function returns; only the per-account FVK / IVK /
 /// OVK / default payment addresses survive on the wallet.
 ///
-/// `db_path` is owned by the host (typically
-/// `<docs>/shielded_tree_<network>.sqlite`). The same path is
-/// fine to share across wallets on the same network — the
-/// commitment tree is global per network; decrypted notes are
-/// scoped per `(wallet_id, account_index)` inside the store.
+/// **Prerequisite**: the host must have already called
+/// [`platform_wallet_manager_configure_shielded`] with the
+/// per-network SQLite path before invoking this function — the
+/// shared commitment-tree handle is opened there, not here.
+/// Calling `bind_shielded` before `configure_shielded` returns
+/// `ErrorWalletOperation`.
 ///
 /// Idempotent: a second call replaces the previously-bound
-/// shielded wallet.
+/// shielded wallet on the same `wallet_id`.
 ///
 /// # Safety
 /// - `wallet_id_bytes` must point at 32 readable bytes.
 /// - `accounts_ptr` must point at `accounts_len` readable `u32`s.
 /// - `mnemonic_resolver_handle` must come from
 ///   [`crate::dash_sdk_mnemonic_resolver_create`].
-/// - `db_path_cstr` must be a valid NUL-terminated UTF-8 C string.
 ///
-/// [`ShieldedWallet`]: platform_wallet::wallet::shielded::ShieldedWallet
 /// [`OrchardKeySet`]: platform_wallet::wallet::shielded::OrchardKeySet
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_bind_shielded(
@@ -206,11 +204,9 @@ pub unsafe extern "C" fn platform_wallet_manager_bind_shielded(
     mnemonic_resolver_handle: *mut MnemonicResolverHandle,
     accounts_ptr: *const u32,
     accounts_len: usize,
-    db_path_cstr: *const c_char,
 ) -> PlatformWalletFFIResult {
     check_ptr!(wallet_id_bytes);
     check_ptr!(mnemonic_resolver_handle);
-    check_ptr!(db_path_cstr);
     check_ptr!(accounts_ptr);
     if accounts_len == 0 || accounts_len > 64 {
         return PlatformWalletFFIResult::err(
@@ -222,16 +218,6 @@ pub unsafe extern "C" fn platform_wallet_manager_bind_shielded(
 
     let mut wallet_id = [0u8; 32];
     std::ptr::copy_nonoverlapping(wallet_id_bytes, wallet_id.as_mut_ptr(), 32);
-
-    let db_path = match CStr::from_ptr(db_path_cstr).to_str() {
-        Ok(s) => PathBuf::from(s),
-        Err(e) => {
-            return PlatformWalletFFIResult::err(
-                PlatformWalletFFIResultCode::ErrorUtf8Conversion,
-                format!("db_path is not valid UTF-8: {e}"),
-            );
-        }
-    };
 
     // Resolve mnemonic via the host callback.
     let mut mnemonic_buf: Zeroizing<[u8; MNEMONIC_RESOLVER_BUFFER_CAPACITY]> =
@@ -299,13 +285,18 @@ pub unsafe extern "C" fn platform_wallet_manager_bind_shielded(
     let seed: Zeroizing<[u8; 64]> = Zeroizing::new(mnemonic.to_seed(""));
     drop(mnemonic);
 
-    // Look up the wallet on the manager and bind shielded.
-    let wallet_arc = {
-        let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
-            runtime().block_on(manager.get_wallet(&wallet_id))
-        });
-        unwrap_option_or_return!(option)
-    };
+    // Look up the wallet + the network-scoped shielded coordinator
+    // on the manager. The coordinator owns the single SQLite handle;
+    // we hand its store down to `bind_shielded` so this wallet's
+    // `ShieldedWallet` reuses it instead of opening its own.
+    let lookup = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
+        runtime().block_on(async {
+            let wallet = manager.get_wallet(&wallet_id).await;
+            let coordinator = manager.shielded_coordinator().await;
+            (wallet, coordinator)
+        })
+    });
+    let (wallet_arc, coordinator) = unwrap_option_or_return!(lookup);
     let wallet_arc = match wallet_arc {
         Some(w) => w,
         None => {
@@ -315,16 +306,76 @@ pub unsafe extern "C" fn platform_wallet_manager_bind_shielded(
             );
         }
     };
+    let coordinator = match coordinator {
+        Some(c) => c,
+        None => {
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorWalletOperation,
+                "shielded support not configured — call platform_wallet_manager_configure_shielded first",
+            );
+        }
+    };
+    let shared_store = std::sync::Arc::clone(coordinator.store());
 
-    if let Err(e) =
-        runtime().block_on(wallet_arc.bind_shielded(seed.as_ref(), accounts.as_slice(), &db_path))
-    {
+    if let Err(e) = runtime().block_on(wallet_arc.bind_shielded(
+        seed.as_ref(),
+        accounts.as_slice(),
+        shared_store,
+    )) {
         return PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
             format!("bind_shielded failed: {e}"),
         );
     }
 
+    PlatformWalletFFIResult::ok()
+}
+
+// ---------------------------------------------------------------------------
+// Configure shielded (network-scoped)
+// ---------------------------------------------------------------------------
+
+/// Configure the network-scoped shielded coordinator for this
+/// manager. Opens (or creates) the per-network commitment-tree
+/// SQLite file at `db_path_cstr` and installs a coordinator that
+/// every subsequent `platform_wallet_manager_bind_shielded` call
+/// reuses — one SQLite handle per network manager, regardless of
+/// how many wallets bind shielded.
+///
+/// Must be called **before** any `bind_shielded` on this manager.
+/// Calling it again with the same path is a no-op (idempotent).
+/// Calling it again with a different path returns
+/// `ErrorWalletOperation`: the SQLite handle is opened once and
+/// can't be repointed mid-flight.
+///
+/// # Safety
+/// - `db_path_cstr` must be a valid NUL-terminated UTF-8 C string.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_configure_shielded(
+    handle: Handle,
+    db_path_cstr: *const c_char,
+) -> PlatformWalletFFIResult {
+    check_ptr!(db_path_cstr);
+    let db_path = match CStr::from_ptr(db_path_cstr).to_str() {
+        Ok(s) => PathBuf::from(s),
+        Err(e) => {
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorUtf8Conversion,
+                format!("db_path is not valid UTF-8: {e}"),
+            );
+        }
+    };
+
+    let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
+        runtime().block_on(manager.configure_shielded(&db_path))
+    });
+    let result = unwrap_option_or_return!(option);
+    if let Err(e) = result {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorWalletOperation,
+            format!("configure_shielded failed: {e}"),
+        );
+    }
     PlatformWalletFFIResult::ok()
 }
 

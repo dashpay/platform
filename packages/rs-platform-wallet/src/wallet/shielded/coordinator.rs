@@ -36,6 +36,7 @@
 //! Phase 1+.
 
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use tokio::sync::RwLock;
@@ -64,6 +65,13 @@ pub struct NetworkShieldedCoordinator {
     /// construction and never mutated — networks each get their
     /// own coordinator instance.
     network: dashcore::Network,
+
+    /// On-disk path to `shielded_tree_<network>.sqlite`. Stored so
+    /// subsequent `configure_shielded` calls on the same manager
+    /// can fail loudly if a caller passes a mismatched path
+    /// (design-doc choice (c): explicit error rather than
+    /// silently honor first or silently honor second).
+    db_path: PathBuf,
 
     /// The single SQLite handle into `shielded_tree_<network>.sqlite`.
     /// Both the commitment tree (frontier, checkpoints, marked
@@ -117,12 +125,14 @@ impl NetworkShieldedCoordinator {
     pub fn new(
         sdk: Arc<dash_sdk::Sdk>,
         network: dashcore::Network,
+        db_path: PathBuf,
         store: FileBackedShieldedStore,
         persister: Option<WalletPersister>,
     ) -> Self {
         Self {
             sdk,
             network,
+            db_path,
             store: Arc::new(RwLock::new(store)),
             accounts: Arc::new(RwLock::new(BTreeMap::new())),
             persister,
@@ -135,6 +145,13 @@ impl NetworkShieldedCoordinator {
     /// coordinator agree on the network.
     pub fn network(&self) -> dashcore::Network {
         self.network
+    }
+
+    /// The on-disk SQLite path the coordinator opened. Used by
+    /// `PlatformWalletManager::configure_shielded` to verify
+    /// subsequent calls pass the same path.
+    pub fn db_path(&self) -> &std::path::Path {
+        &self.db_path
     }
 
     /// Reference to the shared store. The full sync / spend

@@ -158,11 +158,18 @@ class ShieldedService: ObservableObject {
         let dbPath = Self.dbPath(for: network)
         let sortedAccounts = Array(Set(accounts)).sorted()
         do {
+            // The per-network SQLite tree handle now lives on the
+            // manager (one shared `NetworkShieldedCoordinator`),
+            // not per-wallet. `configureShielded` is idempotent at
+            // the path level — first call opens the file, every
+            // subsequent same-path call no-ops. Has to run before
+            // `bindShielded`; doing it inline keeps the call shape
+            // simple and avoids a separate bootstrap step.
+            try walletManager.configureShielded(dbPath: dbPath)
             try walletManager.bindShielded(
                 walletId: walletId,
                 resolver: resolver,
-                accounts: sortedAccounts,
-                dbPath: dbPath
+                accounts: sortedAccounts
             )
             isBound = true
             lastError = nil

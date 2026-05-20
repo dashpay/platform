@@ -80,11 +80,15 @@ extension PlatformWalletManager {
     ///
     /// Idempotent: calling again replaces the previously-bound
     /// shielded wallet.
+    ///
+    /// **Prerequisite**: [`configureShielded(dbPath:)`] must have
+    /// been called on this manager first — the per-network
+    /// SQLite handle is opened there. `bindShielded` reuses it
+    /// across every wallet.
     public func bindShielded(
         walletId: Data,
         resolver: MnemonicResolver,
-        accounts: [UInt32] = [0],
-        dbPath: String
+        accounts: [UInt32] = [0]
     ) throws {
         guard isConfigured, handle != NULL_HANDLE else {
             throw PlatformWalletError.invalidHandle(
@@ -119,17 +123,35 @@ extension PlatformWalletManager {
                         "accounts baseAddress is nil"
                     )
                 }
-                try dbPath.withCString { dbPathPtr in
-                    try platform_wallet_manager_bind_shielded(
-                        handle,
-                        walletIdPtr,
-                        resolverHandle,
-                        accountsPtr,
-                        UInt(accountsBuf.count),
-                        dbPathPtr
-                    ).check()
-                }
+                try platform_wallet_manager_bind_shielded(
+                    handle,
+                    walletIdPtr,
+                    resolverHandle,
+                    accountsPtr,
+                    UInt(accountsBuf.count)
+                ).check()
             }
+        }
+    }
+
+    /// Configure the network-scoped shielded coordinator. Opens
+    /// the per-network commitment-tree SQLite file at `dbPath`
+    /// and installs a single shared handle every subsequent
+    /// [`bindShielded`] call reuses.
+    ///
+    /// Must be called once before any `bindShielded` on this
+    /// manager. Idempotent: a second call with the same `dbPath`
+    /// is a no-op; a second call with a different `dbPath`
+    /// throws — the SQLite handle is opened once per manager and
+    /// can't be repointed mid-flight.
+    public func configureShielded(dbPath: String) throws {
+        guard isConfigured, handle != NULL_HANDLE else {
+            throw PlatformWalletError.invalidHandle(
+                "PlatformWalletManager not configured"
+            )
+        }
+        try dbPath.withCString { dbPathPtr in
+            try platform_wallet_manager_configure_shielded(handle, dbPathPtr).check()
         }
     }
 

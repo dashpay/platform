@@ -24,8 +24,6 @@ use crate::changeset::{
 };
 #[cfg(feature = "shielded")]
 use crate::error::PlatformWalletError;
-#[cfg(feature = "shielded")]
-use std::path::Path;
 
 /// Unique identifier for a wallet (32-byte hash).
 pub type WalletId = [u8; 32];
@@ -316,13 +314,12 @@ impl PlatformWallet {
         &self,
         seed: &[u8],
         accounts: &[u32],
-        db_path: impl AsRef<Path>,
+        store: Arc<RwLock<FileBackedShieldedStore>>,
     ) -> Result<(), PlatformWalletError> {
-        // Open / create the SQLite-backed commitment tree first so
-        // any I/O failure surfaces before we touch the wallet's
-        // existing shielded slot.
-        let store = FileBackedShieldedStore::open_path(db_path, 100)
-            .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
+        // The store is sourced by the caller from the
+        // manager-level `NetworkShieldedCoordinator` — every
+        // wallet on the same network shares one SQLite handle.
+        // See `PlatformWalletManager::configure_shielded`.
         let network = self.sdk.network;
         let mut wallet = ShieldedWallet::from_seed_accounts(
             Arc::clone(&self.sdk),
