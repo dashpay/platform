@@ -242,19 +242,22 @@ fn walk_cbor_for_key<'a>(data: &'a ciborium::Value, keys: &[&str]) -> Option<&'a
 pub(super) fn decode_consensus_error(info_base64: String) -> Option<Vec<u8>> {
     use ciborium::value::Value;
 
-    tracing::trace!(?info_base64, "decode_consensus_error: received info");
-    let decoded_bytes = base64_decode(&info_base64).or_else(|| {
-        tracing::debug!("Failed to base64-decode consensus error info");
-        None
-    })?;
-    if decoded_bytes.len() > MAX_CBOR_INPUT_SIZE {
+    let len = base64::decoded_len_estimate(info_base64.len());
+    if len > MAX_CBOR_INPUT_SIZE {
         tracing::debug!(
-            len = decoded_bytes.len(),
+            len,
             max = MAX_CBOR_INPUT_SIZE,
             "consensus error info exceeds CBOR size cap; refusing to decode"
         );
         return None;
     }
+
+    tracing::trace!(?info_base64, "decode_consensus_error: received info");
+    let decoded_bytes = base64_decode(&info_base64).or_else(|| {
+        tracing::debug!("Failed to base64-decode consensus error info");
+        None
+    })?;
+
     tracing::trace!(hex = %hex::encode(&decoded_bytes), len = decoded_bytes.len(), "decode_consensus_error: base64 decoded bytes");
     let raw_value: Value = decode_cbor_value(&decoded_bytes).or_else(|| {
         tracing::debug!("Failed to decode drive error info from CBOR");
@@ -305,19 +308,18 @@ pub(super) fn decode_consensus_error(info_base64: String) -> Option<Vec<u8>> {
 /// can fall back to the raw string. The base64 step accepts any base64-
 /// shaped input; non-CBOR bytes are filtered out by the CBOR step.
 fn decode_data_message(data: &str) -> Option<String> {
-    // Failure of either step is the expected fall-through for plain-text data
-    // fields, so we deliberately do not log here — `base64_decode` is a pure
-    // decoder and CBOR failure on plain text is normal.
-    let decoded_bytes = base64_decode(data)?;
-
-    if decoded_bytes.len() > MAX_CBOR_INPUT_SIZE {
+    if data.len() > MAX_CBOR_INPUT_SIZE {
         tracing::debug!(
-            len = decoded_bytes.len(),
+            len = data.len(),
             max = MAX_CBOR_INPUT_SIZE,
             "data field exceeds CBOR size cap; refusing to decode"
         );
         return None;
     }
+    // Failure of either step is the expected fall-through for plain-text data
+    // fields, so we deliberately do not log here — `base64_decode` is a pure
+    // decoder and CBOR failure on plain text is normal.
+    let decoded_bytes = base64_decode(data)?;
 
     let raw_value = decode_cbor_value(&decoded_bytes)?;
 
