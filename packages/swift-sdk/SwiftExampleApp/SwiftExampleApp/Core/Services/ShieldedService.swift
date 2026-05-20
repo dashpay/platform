@@ -357,11 +357,24 @@ class ShieldedService: ObservableObject {
     ///     rows we're deleting; it restarts when something binds
     ///     (either `manualSync` self-binding or
     ///     `rebindWalletScopedServices` firing on a navigation).
+    ///   * The per-network commitment-tree SQLite file at
+    ///     `dbPath(for:)`. Earlier revisions of this helper
+    ///     unlinked it for a "true clean slate", but with no
+    ///     unbind FFI the Rust-side `FileBackedShieldedStore`
+    ///     keeps the SQLite handle open across the wipe — yanking
+    ///     the file (plus -wal / -shm / -journal sidecars) out
+    ///     from under a live connection is a SQLite-documented
+    ///     corruption pattern, and the corruption it causes is
+    ///     precisely the "Merkle witness unavailable" class of
+    ///     failures the wipe was meant to defuse. The tree's
+    ///     existing leaves are still correct (just chain history);
+    ///     the marked-position auth paths survive; and re-sync
+    ///     with an empty SwiftData snapshot re-decrypts every
+    ///     note while `append_commitment` skips already-appended
+    ///     positions, so the tree stays consistent across rebind.
     ///   * The Rust-side shielded sub-wallet binding (there's no
     ///     unbind FFI today; the next `bindShielded` call replaces
-    ///     the binding wholesale, and the freshly-bound store
-    ///     starts empty because both the SwiftData snapshot and
-    ///     the SQLite tree are gone).
+    ///     the binding wholesale).
     ///   * The stashed credentials on the service itself — bare
     ///     [`reset`] would nil them, leaving the user with no
     ///     path back to a synced state from this screen. The
@@ -375,12 +388,11 @@ class ShieldedService: ObservableObject {
     /// (the symptom the user reported when "Clear" left a row
     /// behind for a non-active wallet).
     func clearLocalState(modelContext: ModelContext) async {
-        // Capture the network + manager BEFORE `reset()` nils
-        // them out. The network drives the per-network SQLite
-        // path; the manager is needed to stop the background
-        // shielded sync loop so Rust doesn't rewrite the rows we
-        // just wiped.
-        let networkForDB = network
+        // Capture the manager before the soft-cleanup below
+        // touches anything, so we can stop the background loop
+        // first. (We used to capture `network` here too for the
+        // per-network SQLite delete; that step is gone — see
+        // doc above for why.)
         let managerForStop = walletManager
 
         // 1) Stop the manager-wide shielded sync loop BEFORE
@@ -422,33 +434,7 @@ class ShieldedService: ObservableObject {
             return
         }
 
-        // 3) Delete the per-network commitment-tree SQLite file
-        //    (plus its WAL/SHM/journal sidecars) so the next
-        //    `bind_shielded` on this network starts the tree at
-        //    leaf 0. Without this the SwiftData snapshot says
-        //    "fresh wallet" but the on-disk tree still carries
-        //    every commitment from prior syncs — and the
-        //    watermark/checkpoint asymmetry that produces is the
-        //    most common source of the "Merkle witness
-        //    unavailable" failures we're chasing.
-        if let networkForDB {
-            let dbPath = Self.dbPath(for: networkForDB)
-            let fm = FileManager.default
-            for suffix in ["", "-wal", "-shm", "-journal"] {
-                let path = dbPath + suffix
-                if fm.fileExists(atPath: path) {
-                    do {
-                        try fm.removeItem(atPath: path)
-                    } catch {
-                        SDKLogger.error(
-                            "ShieldedService.clearLocalState: failed to delete \(path): \(error.localizedDescription)"
-                        )
-                    }
-                }
-            }
-        }
-
-        // 4) Soft cleanup: zero the published mirror + cancel
+        // 3) Soft cleanup: zero the published mirror + cancel
         //    subscriptions, but KEEP the bind credentials
         //    (walletManager / boundWalletId / network / resolver
         //    / boundAccounts) so [`manualSync`] can re-bind on

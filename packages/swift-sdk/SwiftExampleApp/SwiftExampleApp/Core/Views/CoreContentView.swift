@@ -539,15 +539,19 @@ var body: some View {
                         .disabled(shieldedService.isSyncing || !shieldedService.canResume)
 
                         Button {
-                            // Wipe every wallet's persisted shielded
-                            // rows + the per-network commitment-tree
-                            // SQLite, after stopping the manager-wide
-                            // shielded sync loop so the persister
-                            // callback can't immediately re-derive
-                            // what we just deleted. Leaves the
-                            // service unbound — to resume, navigate
-                            // into a wallet detail which retriggers
-                            // `rebindWalletScopedServices`.
+                            // Stop the manager-wide shielded sync
+                            // loop, then wipe every wallet's
+                            // persisted shielded rows (notes +
+                            // sync state). The Swift mirror zeros
+                            // out and the service goes unbound,
+                            // but the bind credentials are kept
+                            // so the user can tap Sync Now to
+                            // self-rebind from this screen — no
+                            // navigation detour required. The
+                            // on-disk SQLite tree is intentionally
+                            // NOT deleted (Rust still holds its
+                            // handle open via FileBackedShieldedStore;
+                            // see clearLocalState's doc).
                             Task {
                                 await shieldedService.clearLocalState(
                                     modelContext: modelContext
