@@ -490,26 +490,23 @@ class ShieldedService: ObservableObject {
         if result.success {
             lastError = nil
             isBound = true
-            // Balance stays current — the Rust cooldown-skip path
-            // still reads `balances()` from local state and
-            // returns it on the summary, so updating here on
-            // every success keeps the displayed shielded balance
-            // accurate without leaking a stale cached value.
-            shieldedBalance = result.balance
 
-            // Suppress counter / timestamp updates only on
-            // cooldown skips. Genuine steady-state caught-up
-            // passes (background loop ran, found nothing) still
-            // advance `lastSyncTime` so users have a live signal
-            // that the loop is running. The previous heuristic —
-            // gating on all-zero scanned/new/spent — froze the
-            // timestamp on healthy idle wallets and conflated the
-            // two skip semantics; the Rust side now distinguishes
-            // them explicitly via `is_cooldown_skip` on
-            // `ShieldedSyncSummary`, marshalled to
-            // `result.cooldownSkip` here. (Per swift-sdk/CLAUDE.md
-            // the policy decision belongs on the Rust side.)
+            // Suppress counter / timestamp / balance updates on
+            // cooldown skips. The Rust side returns
+            // `result.cooldownSkip = true` with zeroed counters
+            // *and* an empty balances payload (`result.balance ==
+            // 0`) because no work was attempted; updating the
+            // host's cached balance would clobber it to zero
+            // every cooldown tick on a wallet that actually has
+            // a balance. Genuine steady-state caught-up passes
+            // (background loop ran, found nothing, returned the
+            // real balance) still advance `lastSyncTime` so users
+            // have a live signal that the loop is running. Per
+            // swift-sdk/CLAUDE.md the policy decision (real sync
+            // vs. cooldown skip) lives on the Rust side; Swift
+            // just marshals the flag.
             if !result.cooldownSkip {
+                shieldedBalance = result.balance
                 lastNewNotes = result.newNotes
                 lastNewlySpent = result.newlySpent
                 lastSyncTime = Date(

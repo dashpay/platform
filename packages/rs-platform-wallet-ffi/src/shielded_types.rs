@@ -34,10 +34,10 @@ pub struct ShieldedSyncWalletResultFFI {
     pub skipped: bool,
     /// `true` when `success` is true but the pass was short-circuited
     /// by the caught-up cooldown — no SDK fetch / trial-decrypt /
-    /// nullifier scan ran. `balance` is still populated from local
-    /// state so the host can keep its balance display current, but
-    /// any counters / timestamps that track *real sync activity*
-    /// should ignore this event. `false` for every pass that
+    /// nullifier scan / balance read ran. When this flag is set,
+    /// every numeric field on this struct is zero / default — the
+    /// host should preserve its prior cached balance and counters
+    /// rather than apply the payload. `false` for every pass that
     /// actually walked Platform.
     pub cooldown_skip: bool,
     /// New decrypted notes detected this pass.

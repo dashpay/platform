@@ -442,10 +442,22 @@ impl<S: ShieldedStore> ShieldedWallet<S> {
                 cooldown_total_secs = super::CAUGHT_UP_COOLDOWN.as_secs(),
                 "Shielded sync skipped — within caught-up cooldown"
             );
+            // The cooldown skip is documented as a no-op (no SDK
+            // fetch / trial-decrypt / nullifier scan) and must
+            // be infallible — a transient `balances()` failure
+            // here would turn a deliberate skip into a sync
+            // error banner on the host even though no real work
+            // was attempted. Return an empty `balances` map and
+            // rely on the host to preserve its cached balance
+            // when it sees `is_cooldown_skip = true`. Balance
+            // can't have changed during the cooldown window
+            // anyway: any spend or receive would have cleared
+            // `last_caught_up_at` via the activity branch at
+            // the bottom of `sync()`, ending the cooldown.
             return Ok(ShieldedSyncSummary {
                 notes_result: SyncNotesResult::default(),
                 newly_spent_per_account: BTreeMap::new(),
-                balances: self.balances().await?,
+                balances: BTreeMap::new(),
                 is_cooldown_skip: true,
             });
         }
