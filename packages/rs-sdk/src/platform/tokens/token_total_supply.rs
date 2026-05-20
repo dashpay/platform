@@ -20,5 +20,6 @@ impl Query<GetTokenTotalSupplyRequest> for Identifier {
 }
 
 impl Fetch for TotalSingleTokenBalance {
+    type Query = GetTokenTotalSupplyRequest;
     type Request = GetTokenTotalSupplyRequest;
 }

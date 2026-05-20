@@ -59,5 +59,6 @@ impl FromProof<DocumentQuery> for DocumentSplitAverages {
 }
 
 impl Fetch for DocumentSplitAverages {
-    type Request = super::document_query::DocumentQuery;
+    type Query = super::document_query::DocumentQuery;
+    type Request = dapi_grpc::platform::v0::GetDocumentsRequest;
 }

@@ -21,5 +21,6 @@ impl Query<GetTokenStatusesRequest> for Vec<Identifier> {
 }
 
 impl FetchMany<Identifier, TokenStatuses> for TokenStatus {
+    type Query = GetTokenStatusesRequest;
     type Request = GetTokenStatusesRequest;
 }

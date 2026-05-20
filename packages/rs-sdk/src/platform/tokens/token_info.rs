@@ -35,6 +35,7 @@ impl Query<GetIdentityTokenInfosRequest> for IdentityTokenInfosQuery {
 }
 
 impl FetchMany<Identifier, IdentityTokenInfos> for IdentityTokenInfo {
+    type Query = GetIdentityTokenInfosRequest;
     type Request = GetIdentityTokenInfosRequest;
 }
 
@@ -70,5 +71,6 @@ impl Query<GetIdentitiesTokenInfosRequest> for IdentitiesTokenInfosQuery {
 // TODO: Implement Fetch (and for others)
 
 impl FetchMany<Identifier, IdentitiesTokenInfos> for IdentityTokenInfo {
+    type Query = GetIdentitiesTokenInfosRequest;
     type Request = GetIdentitiesTokenInfosRequest;
 }

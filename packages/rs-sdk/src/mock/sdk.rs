@@ -5,7 +5,7 @@ use super::MockResponse;
 use crate::{
     platform::{
         types::{evonode::EvoNode, identity::IdentityRequest},
-        DocumentQuery, Fetch, FetchMany, Query,
+        Fetch, FetchMany, Query,
     },
     sync::block_on,
     Error, Sdk,
@@ -133,7 +133,9 @@ impl MockDashPlatformSdk {
             let request_type = basename.split('_').nth(1).unwrap_or_default();
 
             match request_type {
-                "DocumentQuery" => load_expectation::<DocumentQuery>(&mut dapi, filename)?,
+                "GetDocumentsRequest" => {
+                    load_expectation::<proto::GetDocumentsRequest>(&mut dapi, filename)?
+                }
                 "GetEpochsInfoRequest" => {
                     load_expectation::<proto::GetEpochsInfoRequest>(&mut dapi, filename)?
                 }
@@ -315,7 +317,7 @@ impl MockDashPlatformSdk {
     ///     assert_eq!(retrieved, expected);
     /// # });
     /// ```
-    pub async fn expect_fetch<O: Fetch + MockResponse, Q: Query<<O as Fetch>::Request>>(
+    pub async fn expect_fetch<O: Fetch + MockResponse, Q: Query<<O as Fetch>::Query>>(
         &mut self,
         query: Q,
         object: Option<O>,
@@ -327,10 +329,13 @@ impl MockDashPlatformSdk {
         let sdk = sdk_guard
             .as_ref()
             .expect("sdk must be set when creating mock");
-        let grpc_request = query
+        let rich: <O as Fetch>::Query = query
             .query(self.prove(), sdk.as_ref())
             .expect("query must be correct");
-        self.expect(grpc_request, object).await?;
+        let wire: <O as Fetch>::Request = rich
+            .query(self.prove(), sdk.as_ref())
+            .expect("wire encoding must succeed");
+        self.expect(&rich, wire, object).await?;
 
         Ok(self)
     }
@@ -341,17 +346,19 @@ impl MockDashPlatformSdk {
     pub async fn remove_fetch_expectation<O, Q>(&mut self, query: Q) -> bool
     where
         O: Fetch,
-        Q: Query<<O as Fetch>::Request>,
-        <O as Fetch>::Request: TransportRequest,
+        Q: Query<<O as Fetch>::Query>,
     {
         let sdk_guard = self.sdk.load();
         let sdk = sdk_guard
             .as_ref()
             .expect("sdk must be set when creating mock");
-        let grpc_request = query
+        let rich: <O as Fetch>::Query = query
             .query(self.prove(), sdk.as_ref())
             .expect("query must be correct");
-        self.remove(grpc_request).await
+        let wire: <O as Fetch>::Request = rich
+            .query(self.prove(), sdk.as_ref())
+            .expect("wire encoding must succeed");
+        self.remove(&rich, wire).await
     }
 
     /// Expect a [FetchMany] request and return provided object.
@@ -387,7 +394,7 @@ impl MockDashPlatformSdk {
     pub async fn expect_fetch_many<
         K: Ord,
         O: FetchMany<K, R>,
-        Q: Query<<O as FetchMany<K, R>>::Request>,
+        Q: Query<<O as FetchMany<K, R>>::Query>,
         R,
     >(
         &mut self,
@@ -398,8 +405,8 @@ impl MockDashPlatformSdk {
         R: FromIterator<(K, Option<O>)>
             + MockResponse
             + FromProof<
-                <O as FetchMany<K, R>>::Request,
-                Request = <O as FetchMany<K, R>>::Request,
+                <O as FetchMany<K, R>>::Query,
+                Request = <O as FetchMany<K, R>>::Query,
                 Response = <<O as FetchMany<K, R>>::Request as TransportRequest>::Response,
             > + Sync
             + Send
@@ -410,45 +417,51 @@ impl MockDashPlatformSdk {
         let sdk = sdk_guard
             .as_ref()
             .expect("sdk must be set when creating mock");
-        let grpc_request = query
+        let rich: <O as FetchMany<K, R>>::Query = query
             .query(self.prove(), sdk.as_ref())
             .expect("query must be correct");
-        self.expect(grpc_request, objects).await?;
+        let wire: <O as FetchMany<K, R>>::Request = rich
+            .query(self.prove(), sdk.as_ref())
+            .expect("wire encoding must succeed");
+        self.expect(&rich, wire, objects).await?;
 
         Ok(self)
     }
 
     /// Save expectations for a request.
-    async fn expect<I: TransportRequest, O: MockResponse>(
+    ///
+    /// `rich_request` is the user-facing query (what [`FromProof`] binds to) and seeds
+    /// the proof-mock cache key. `wire_request` is the proto that flows over the wire
+    /// and seeds the DAPI executor mock. For non-versioned operations both arguments
+    /// are the same value; for documents the rich form is [`DocumentQuery`] and the
+    /// wire is [`GetDocumentsRequest`].
+    async fn expect<R: Mockable + std::fmt::Debug, W: TransportRequest, O: MockResponse>(
         &mut self,
-        grpc_request: I,
+        rich_request: &R,
+        wire_request: W,
         returned_object: Option<O>,
     ) -> Result<(), Error>
     where
-        I::Response: Default,
+        W::Response: Default,
     {
-        let key = Key::new(&grpc_request);
+        let key = Key::new(rich_request);
 
-        // detect duplicates
         if self.from_proof_expectations.contains_key(&key) {
             return Err(MockError::MockExpectationConflict(format!(
                 "proof expectation key {} already defined for {} request: {:?}",
                 key,
-                std::any::type_name::<I>(),
-                grpc_request
+                std::any::type_name::<R>(),
+                rich_request
             ))
             .into());
         }
 
-        // This expectation will work for from_proof
         self.from_proof_expectations
             .insert(key, returned_object.mock_serialize(self));
 
-        // This expectation will work for execute
         let mut dapi_guard = self.dapi.lock().await;
-        // We don't really care about the response, as it will be mocked by from_proof, so we provide default()
         dapi_guard.expect(
-            &grpc_request,
+            &wire_request,
             &Ok(ExecutionResponse {
                 inner: Default::default(),
                 retries: 0,
@@ -460,12 +473,16 @@ impl MockDashPlatformSdk {
     }
 
     /// Remove expectations for a request.
-    async fn remove<I: TransportRequest>(&mut self, grpc_request: I) -> bool {
-        let key = Key::new(&grpc_request);
+    async fn remove<R: Mockable, W: TransportRequest>(
+        &mut self,
+        rich_request: &R,
+        wire_request: W,
+    ) -> bool {
+        let key = Key::new(rich_request);
         let removed_from_proof = self.from_proof_expectations.remove(&key).is_some();
 
         let mut dapi_guard = self.dapi.lock().await;
-        let removed_from_dapi = dapi_guard.remove(&grpc_request);
+        let removed_from_dapi = dapi_guard.remove(&wire_request);
 
         removed_from_proof || removed_from_dapi
     }
