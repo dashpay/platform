@@ -208,15 +208,6 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             self.sdk.network,
             db_path,
             store,
-            // Persister attaches in Phase 2b when the coordinator
-            // owns the actual fetch / decrypt loop and emits the
-            // consolidated changeset. In Phase 2a the per-wallet
-            // `ShieldedWallet` still holds its own persister
-            // handle and queues changesets exactly as before;
-            // the coordinator only owns the cooldown gate and
-            // the per-wallet iteration.
-            None,
-            Arc::clone(&self.wallets),
         ));
         *slot = Some(coordinator);
         Ok(())

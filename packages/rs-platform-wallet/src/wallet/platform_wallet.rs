@@ -385,7 +385,7 @@ impl PlatformWallet {
         drop(slot);
 
         coordinator
-            .register_wallet(self.wallet_id, account_views)
+            .register_wallet(self.wallet_id, account_views, self.persister.clone())
             .await;
         Ok(())
     }

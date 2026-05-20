@@ -71,6 +71,60 @@ impl ShieldedChangeSet {
     pub fn record_nullifier_checkpoint(&mut self, id: SubwalletId, height: u64, timestamp: u64) {
         self.nullifier_checkpoints.insert(id, (height, timestamp));
     }
+
+    /// Split a consolidated shielded changeset into one
+    /// `ShieldedChangeSet` per `WalletId`. Used by the
+    /// network-scoped coordinator's sync path: the free
+    /// functions (`sync_notes_across`, `check_nullifiers_across`)
+    /// build a single `ShieldedChangeSet` spanning every
+    /// touched subwallet; the caller splits it here so each
+    /// per-wallet `WalletPersister.store(...)` only sees its
+    /// own `wallet_id`'s deltas. Empty per-wallet entries are
+    /// skipped so callers don't queue no-op changesets.
+    pub fn split_by_wallet_id(
+        self,
+    ) -> BTreeMap<crate::wallet::platform_wallet::WalletId, ShieldedChangeSet> {
+        let ShieldedChangeSet {
+            notes_saved,
+            nullifiers_spent,
+            synced_indices,
+            nullifier_checkpoints,
+        } = self;
+        let mut out: BTreeMap<crate::wallet::platform_wallet::WalletId, ShieldedChangeSet> =
+            BTreeMap::new();
+        for (id, notes) in notes_saved {
+            out.entry(id.wallet_id)
+                .or_default()
+                .notes_saved
+                .insert(id, notes);
+        }
+        for (id, nfs) in nullifiers_spent {
+            out.entry(id.wallet_id)
+                .or_default()
+                .nullifiers_spent
+                .insert(id, nfs);
+        }
+        for (id, idx) in synced_indices {
+            out.entry(id.wallet_id)
+                .or_default()
+                .synced_indices
+                .insert(id, idx);
+        }
+        for (id, cp) in nullifier_checkpoints {
+            out.entry(id.wallet_id)
+                .or_default()
+                .nullifier_checkpoints
+                .insert(id, cp);
+        }
+        // Defensive: drop empty entries so the persister doesn't
+        // see noise. `split_by_wallet_id` is called on the result
+        // of a sync pass where at least one map is non-empty
+        // (otherwise the caller would have short-circuited), but
+        // a future caller could legitimately split an
+        // already-empty changeset.
+        out.retain(|_, cs| !cs.is_empty());
+        out
+    }
 }
 
 impl Merge for ShieldedChangeSet {
