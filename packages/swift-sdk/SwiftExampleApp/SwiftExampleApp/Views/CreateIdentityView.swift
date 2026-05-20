@@ -1264,48 +1264,25 @@ struct CreateIdentityView: View {
         else {
             return ""
         }
+        let dash: Double
         switch account.accountType {
         case 14:
             let balance = accountBalance(account)
             if balance == 0 { return "" }
-            return Self.amountString(
-                smallestUnits: balance,
-                decimalsPerWhole: Self.creditsPerDash
-            )
+            dash = Double(balance) / Double(Self.creditsPerDash)
         case 0, 1:
             let available = coreAccountBalanceDuffs(account)
             let defaultDuffs = min(available, Self.defaultCoreFundingDuffs)
             if defaultDuffs == 0 { return "" }
-            return Self.amountString(
-                smallestUnits: defaultDuffs,
-                decimalsPerWhole: Self.duffsPerDash
-            )
+            dash = Double(defaultDuffs) / Double(Self.duffsPerDash)
         default:
             return ""
         }
-    }
-
-    private static func amountString(
-        smallestUnits: UInt64,
-        decimalsPerWhole: UInt64
-    ) -> String {
-        let whole = smallestUnits / decimalsPerWhole
-        let fractional = smallestUnits % decimalsPerWhole
-        if fractional == 0 {
-            return "\(whole)"
-        }
-        let decimalPlaces = String(decimalsPerWhole).count - 1
-        var fractionalStr = String(fractional)
-        if fractionalStr.count < decimalPlaces {
-            fractionalStr = String(
-                repeating: "0",
-                count: decimalPlaces - fractionalStr.count
-            ) + fractionalStr
-        }
-        while fractionalStr.last == "0" {
-            fractionalStr.removeLast()
-        }
-        return fractionalStr.isEmpty ? "\(whole)" : "\(whole).\(fractionalStr)"
+        let truncated = (dash * 10_000).rounded(.down) / 10_000
+        var s = String(format: "%.4f", truncated)
+        while s.last == "0" { s.removeLast() }
+        if s.last == "." { s.removeLast() }
+        return s
     }
 
     /// Parse the amount text back into credits. Returns `nil` on
