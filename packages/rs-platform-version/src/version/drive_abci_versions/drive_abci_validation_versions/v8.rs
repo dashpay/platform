@@ -151,6 +151,13 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V8: DriveAbciValidationVersions =
                 // ownership/revision check). v0 stays for chain
                 // reproducibility on PROTOCOL_VERSION_11 and below.
                 failed_per_transition_action: 1,
+                // PROTOCOL_VERSION_12 (v3.1 hard fork): fetch_documents
+                // helpers bumped to v1 which bill the grovedb cost of
+                // their query_documents calls. v0 stays for PV11 chain
+                // replay (the v0 helpers pass epoch=None and never call
+                // add_operation — byte-identical to pre-PR behavior).
+                fetch_documents_for_transitions_knowing_contract_and_document_type: 1,
+                fetch_document_with_id: 1,
                 data_triggers: DriveAbciValidationDataTriggerAndBindingVersions {
                     bindings: 0,
                     triggers: DriveAbciValidationDataTriggerVersions {
