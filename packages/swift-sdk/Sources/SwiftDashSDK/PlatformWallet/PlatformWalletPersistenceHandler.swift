@@ -2789,7 +2789,7 @@ public class PlatformWalletPersistenceHandler {
             var unspentDescriptor = FetchDescriptor<PersistentTxo>(
                 predicate: #Predicate { $0.isSpent == false }
             )
-            unspentDescriptor.relationshipKeyPathsForPrefetching = [\.account, \.account?.wallet]
+            unspentDescriptor.relationshipKeyPathsForPrefetching = [\.account]
             // Bail with `errored = true` on a SwiftData failure rather
             // than degrading to an empty bucket map. Without this, Rust
             // would see `entry.utxos_count == 0` for every wallet,
