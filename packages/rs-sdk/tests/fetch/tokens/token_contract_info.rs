@@ -49,7 +49,8 @@ async fn test_token_contract_info_query_prove_true() {
     let token_id = Identifier::from_bytes(&[3u8; 32]).unwrap();
     let query = TokenContractInfoQuery { token_id };
 
-    let request = query.query(true).unwrap();
+    let sdk = dash_sdk::Sdk::new_mock();
+    let request = query.query(true, &sdk).unwrap();
 
     match request.version.unwrap() {
         dapi_grpc::platform::v0::get_token_contract_info_request::Version::V0(v0) => {
@@ -64,7 +65,8 @@ async fn test_token_contract_info_query_prove_false() {
     let token_id = Identifier::from_bytes(&[4u8; 32]).unwrap();
     let query = TokenContractInfoQuery { token_id };
 
-    let request = query.query(false).unwrap();
+    let sdk = dash_sdk::Sdk::new_mock();
+    let request = query.query(false, &sdk).unwrap();
 
     match request.version.unwrap() {
         dapi_grpc::platform::v0::get_token_contract_info_request::Version::V0(v0) => {

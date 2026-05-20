@@ -323,7 +323,13 @@ impl MockDashPlatformSdk {
     where
         <<O as Fetch>::Request as TransportRequest>::Response: Default,
     {
-        let grpc_request = query.query(self.prove()).expect("query must be correct");
+        let sdk_guard = self.sdk.load();
+        let sdk = sdk_guard
+            .as_ref()
+            .expect("sdk must be set when creating mock");
+        let grpc_request = query
+            .query(self.prove(), sdk.as_ref())
+            .expect("query must be correct");
         self.expect(grpc_request, object).await?;
 
         Ok(self)
@@ -338,7 +344,13 @@ impl MockDashPlatformSdk {
         Q: Query<<O as Fetch>::Request>,
         <O as Fetch>::Request: TransportRequest,
     {
-        let grpc_request = query.query(self.prove()).expect("query must be correct");
+        let sdk_guard = self.sdk.load();
+        let sdk = sdk_guard
+            .as_ref()
+            .expect("sdk must be set when creating mock");
+        let grpc_request = query
+            .query(self.prove(), sdk.as_ref())
+            .expect("query must be correct");
         self.remove(grpc_request).await
     }
 
@@ -394,7 +406,13 @@ impl MockDashPlatformSdk {
             + Default,
         <<O as FetchMany<K, R>>::Request as TransportRequest>::Response: Default,
     {
-        let grpc_request = query.query(self.prove()).expect("query must be correct");
+        let sdk_guard = self.sdk.load();
+        let sdk = sdk_guard
+            .as_ref()
+            .expect("sdk must be set when creating mock");
+        let grpc_request = query
+            .query(self.prove(), sdk.as_ref())
+            .expect("query must be correct");
         self.expect(grpc_request, objects).await?;
 
         Ok(self)

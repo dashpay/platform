@@ -60,7 +60,6 @@ impl Sdk {
             order_by_clauses: vec![], // Remove ordering by $createdAt as it might not be indexed
             limit,
             start: None,
-            protocol_version_override: None,
         };
 
         let records_identity_documents = Document::fetch_many(self, records_identity_query).await?;
@@ -150,7 +149,6 @@ impl Sdk {
             }],
             limit: limit.unwrap_or(10),
             start: None,
-            protocol_version_override: None,
         };
 
         let documents = Document::fetch_many(self, query).await?;

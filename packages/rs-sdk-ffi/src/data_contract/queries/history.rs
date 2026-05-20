@@ -26,8 +26,9 @@ impl dash_sdk::platform::Query<dash_sdk::dapi_grpc::platform::v0::GetDataContrac
     for DataContractHistoryQuery
 {
     fn query(
-        self,
+        &self,
         prove: bool,
+        _sdk: &dash_sdk::Sdk,
     ) -> Result<dash_sdk::dapi_grpc::platform::v0::GetDataContractHistoryRequest, dash_sdk::Error>
     {
         use dash_sdk::dapi_grpc::platform::v0::get_data_contract_history_request::{

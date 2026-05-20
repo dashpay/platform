@@ -11,7 +11,7 @@ pub struct TokenContractInfoQuery {
 }
 
 impl Query<GetTokenContractInfoRequest> for TokenContractInfoQuery {
-    fn query(self, prove: bool) -> Result<GetTokenContractInfoRequest, Error> {
+    fn query(&self, prove: bool, _sdk: &crate::Sdk) -> Result<GetTokenContractInfoRequest, Error> {
         let request = GetTokenContractInfoRequest {
             version: Some(get_token_contract_info_request::Version::V0(
                 GetTokenContractInfoRequestV0 {
@@ -26,7 +26,7 @@ impl Query<GetTokenContractInfoRequest> for TokenContractInfoQuery {
 }
 
 impl Query<GetTokenContractInfoRequest> for Identifier {
-    fn query(self, prove: bool) -> Result<GetTokenContractInfoRequest, Error> {
-        TokenContractInfoQuery { token_id: self }.query(prove)
+    fn query(&self, prove: bool, sdk: &crate::Sdk) -> Result<GetTokenContractInfoRequest, Error> {
+        TokenContractInfoQuery { token_id: *self }.query(prove, sdk)
     }
 }

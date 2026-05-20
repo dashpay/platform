@@ -127,7 +127,11 @@ pub(crate) async fn setup_sdk_for_test_case<T: TransportRequest + Mockable, Q: Q
     query: Q,
     name_prefix: &str,
 ) -> (String, Sdk) {
-    let key = rs_dapi_client::mock::Key::new(&query.query(true).expect("valid query"));
+    // The key is computed from the wire-encoded request, not from the SDK
+    // state — a throwaway mock SDK is sufficient to satisfy the new
+    // `Query::query(&self, prove, &Sdk)` signature.
+    let key_sdk = Sdk::new_mock();
+    let key = rs_dapi_client::mock::Key::new(&query.query(true, &key_sdk).expect("valid query"));
     let test_case_id = format!("{}_{}", name_prefix, key.encode_hex::<String>());
 
     // create new sdk to ensure that test cases don't interfere with each other

@@ -21,12 +21,16 @@ pub struct IdentityTokenBalancesQuery {
 }
 
 impl Query<GetIdentityTokenBalancesRequest> for IdentityTokenBalancesQuery {
-    fn query(self, prove: bool) -> Result<GetIdentityTokenBalancesRequest, Error> {
+    fn query(
+        &self,
+        prove: bool,
+        _sdk: &crate::Sdk,
+    ) -> Result<GetIdentityTokenBalancesRequest, Error> {
         let request = GetIdentityTokenBalancesRequest {
             version: Some(get_identity_token_balances_request::Version::V0(
                 GetIdentityTokenBalancesRequestV0 {
                     identity_id: self.identity_id.to_vec(),
-                    token_ids: self.token_ids.into_iter().map(|id| id.to_vec()).collect(),
+                    token_ids: self.token_ids.iter().map(|id| id.to_vec()).collect(),
                     prove,
                 },
             )),
@@ -50,15 +54,15 @@ pub struct IdentitiesTokenBalancesQuery {
 }
 
 impl Query<GetIdentitiesTokenBalancesRequest> for IdentitiesTokenBalancesQuery {
-    fn query(self, prove: bool) -> Result<GetIdentitiesTokenBalancesRequest, Error> {
+    fn query(
+        &self,
+        prove: bool,
+        _sdk: &crate::Sdk,
+    ) -> Result<GetIdentitiesTokenBalancesRequest, Error> {
         let request = GetIdentitiesTokenBalancesRequest {
             version: Some(get_identities_token_balances_request::Version::V0(
                 GetIdentitiesTokenBalancesRequestV0 {
-                    identity_ids: self
-                        .identity_ids
-                        .into_iter()
-                        .map(|id| id.to_vec())
-                        .collect(),
+                    identity_ids: self.identity_ids.iter().map(|id| id.to_vec()).collect(),
                     token_id: self.token_id.to_vec(),
                     prove,
                 },
