@@ -46,12 +46,23 @@ const DEFAULT_CAPACITY: usize = 4096;
 /// Zeroize-on-drop wrapper for secret UTF-8 strings (BIP-39 mnemonic,
 /// `EncryptedFileStore` passphrase).
 ///
-/// `Display`, `Deref`, `DerefMut`, `Serialize` are intentionally **not**
-/// implemented; read access is the explicit [`expose_secret`] only.
-/// `Debug` is redacted. The backing buffer is wiped over its full
-/// capacity on drop and best-effort `mlock`ed against swap.
+/// `Display`, `Deref`, `DerefMut`, `Serialize`, `PartialEq`, `Eq` are
+/// intentionally **not** implemented; read access is the explicit
+/// [`expose_secret`] only, and equality goes through
+/// [`subtle::ConstantTimeEq`] (Smythe EDIT-4 — `==` on secret bytes is
+/// forbidden, no exception, so future bridge code cannot inherit a
+/// non-constant-time path). `Debug` is redacted. The backing buffer is
+/// wiped over its full capacity on drop and best-effort `mlock`ed
+/// against swap.
 ///
 /// [`expose_secret`]: SecretString::expose_secret
+///
+/// ```compile_fail
+/// use platform_wallet_storage::secrets::SecretString;
+/// let a = SecretString::new("pw");
+/// let b = SecretString::new("pw");
+/// let _ = a == b; // EDIT-4: `==` on SecretString is forbidden; use ConstantTimeEq::ct_eq
+/// ```
 pub struct SecretString {
     inner: Zeroizing<String>,
     _lock: Option<region::LockGuard>,
@@ -144,23 +155,18 @@ impl fmt::Debug for SecretString {
     }
 }
 
-impl PartialEq for SecretString {
-    /// Best-effort timing-resistant passphrase **UX** equality only.
-    /// Length differences early-return, leaking length through timing;
-    /// this is never used for a security decision (the wrong-seed gate
-    /// uses [`SecretBytes`]' fixed-width `subtle` compare instead) —
-    /// SEC-REQ-3.8.2.
-    fn eq(&self, other: &Self) -> bool {
-        let a = self.expose_secret().as_bytes();
-        let b = other.expose_secret().as_bytes();
-        if a.len() != b.len() {
-            return false;
-        }
-        a.ct_eq(b).into()
+impl ConstantTimeEq for SecretString {
+    /// Constant-time compare over the equal-length region. Unequal
+    /// lengths return `0` without revealing where they differ; the
+    /// only observable is the (non-secret) length difference —
+    /// SEC-REQ-3.8.2, the documented `PartialEq` length-leak caveat
+    /// from the upstream `Secret` fork.
+    fn ct_eq(&self, other: &Self) -> subtle::Choice {
+        self.expose_secret()
+            .as_bytes()
+            .ct_eq(other.expose_secret().as_bytes())
     }
 }
-
-impl Eq for SecretString {}
 
 impl From<String> for SecretString {
     fn from(s: String) -> Self {
@@ -180,9 +186,19 @@ impl From<&str> for SecretString {
 ///
 /// Not `Copy`; `Clone` is intentionally absent to enforce copy
 /// minimization (SEC-REQ-3.5) — move it, or `expose_secret()` and copy
-/// deliberately into another wrapper. `Display`, `Deref`, `Serialize`
-/// are intentionally **not** implemented; `Debug` is redacted; the
+/// deliberately into another wrapper. `Display`, `Deref`, `Serialize`,
+/// `PartialEq`, `Eq` are intentionally **not** implemented; equality
+/// goes through [`subtle::ConstantTimeEq`] only (Smythe EDIT-4 — `==`
+/// on secret bytes is forbidden, no exception, so future bridge code
+/// cannot inherit a non-constant-time path). `Debug` is redacted; the
 /// buffer is wiped on drop and best-effort `mlock`ed.
+///
+/// ```compile_fail
+/// use platform_wallet_storage::secrets::SecretBytes;
+/// let a = SecretBytes::new(vec![0u8; 32]);
+/// let b = SecretBytes::new(vec![0u8; 32]);
+/// let _ = a == b; // EDIT-4: `==` on SecretBytes is forbidden; use ConstantTimeEq::ct_eq
+/// ```
 pub struct SecretBytes {
     inner: Zeroizing<Vec<u8>>,
     _lock: Option<region::LockGuard>,
@@ -246,14 +262,6 @@ impl ConstantTimeEq for SecretBytes {
     }
 }
 
-impl PartialEq for SecretBytes {
-    fn eq(&self, other: &Self) -> bool {
-        self.ct_eq(other).into()
-    }
-}
-
-impl Eq for SecretBytes {}
-
 impl fmt::Debug for SecretBytes {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "SecretBytes([REDACTED; {}])", self.inner.len())
@@ -280,10 +288,14 @@ mod tests {
     }
 
     #[test]
-    fn secret_string_eq_is_value_based() {
-        assert_eq!(SecretString::new("pw"), SecretString::new("pw"));
-        assert_ne!(SecretString::new("pw"), SecretString::new("px"));
-        assert_ne!(SecretString::new("pw"), SecretString::new("pww"));
+    fn secret_string_ct_eq_is_value_based() {
+        // EDIT-4: equality goes through `ConstantTimeEq` only.
+        let same = SecretString::new("pw").ct_eq(&SecretString::new("pw"));
+        let diff = SecretString::new("pw").ct_eq(&SecretString::new("px"));
+        let len_diff = SecretString::new("pw").ct_eq(&SecretString::new("pww"));
+        assert!(bool::from(same));
+        assert!(!bool::from(diff));
+        assert!(!bool::from(len_diff));
     }
 
     #[test]
@@ -318,8 +330,6 @@ mod tests {
         assert!(bool::from(a.ct_eq(&b)));
         assert!(!bool::from(a.ct_eq(&c)));
         assert!(!bool::from(a.ct_eq(&d)));
-        assert_eq!(a, b);
-        assert_ne!(a, c);
     }
 
     #[test]
