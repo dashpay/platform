@@ -204,7 +204,7 @@ pub unsafe fn parse_outputs(
 }
 
 // ---------------------------------------------------------------------------
-// Funding address entry (for fund_from_asset_lock)
+// Funding address entry (for top_up)
 // ---------------------------------------------------------------------------
 
 /// Address entry for asset lock funding. Exactly one must have `has_balance = false`.

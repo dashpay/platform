@@ -1,9 +1,9 @@
-// FundPlatformAddressView.swift
+// TopUpPlatformAddressView.swift
 // SwiftExampleApp
 //
 // Stepped UI for funding a Platform payment address from a Core
 // (SPV) wallet balance. Drives the new `ManagedPlatformAddressWallet
-// .fundFromCoreAssetLock(...)` end-to-end:
+// .topUpFromCore(...)` end-to-end:
 //
 //   1. Build an asset-lock tx from the chosen Core BIP44 account.
 //   2. Wait for the IS-lock (or fall back to ChainLock on timeout).
@@ -20,7 +20,7 @@ import SwiftUI
 import SwiftDashSDK
 import SwiftData
 
-struct FundPlatformAddressView: View {
+struct TopUpPlatformAddressView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject var walletManager: PlatformWalletManager
@@ -35,7 +35,7 @@ struct FundPlatformAddressView: View {
     /// hides the Core-funding-account + amount sections (the asset
     /// lock already exists, those choices were made at original
     /// build time) and routes Submit to
-    /// `ManagedPlatformAddressWallet.resumeFundFromAssetLock` instead
+    /// `ManagedPlatformAddressWallet.resumeTopUpFromAssetLock` instead
     /// of building a fresh lock. The user still picks the recipient
     /// platform address because the orphan lock doesn't carry that
     /// information — it's set at ST-submission time.
@@ -63,15 +63,15 @@ struct FundPlatformAddressView: View {
     /// Pre-submit error (e.g. KeychainSigner / handle lookup failed
     /// synchronously before the FFI call). In-flight failures land
     /// on the controller's `.failed` phase and are rendered by
-    /// `AddressFundingProgressView`'s terminal section instead.
+    /// `AddressTopUpProgressView`'s terminal section instead.
     @State private var submitError: SubmitError? = nil
 
     /// Controller for the in-flight funding attempt. Non-nil swaps
-    /// the form body for `AddressFundingProgressSection` + a
+    /// the form body for `AddressTopUpProgressSection` + a
     /// terminal section that follows the controller's phase.
-    /// Lifetime-owned by `walletManager.addressFundingCoordinator`
+    /// Lifetime-owned by `walletManager.addressTopUpCoordinator`
     /// so view dismissal mid-flight doesn't lose the work.
-    @State private var activeController: AddressFundingController? = nil
+    @State private var activeController: AddressTopUpController? = nil
 
     /// 1 DASH = 1e8 duffs (Core side). The asset-lock builder takes
     /// duffs; we convert here for display ergonomics only.
@@ -92,7 +92,7 @@ struct FundPlatformAddressView: View {
                     // not nested; the progress section + terminal
                     // section follow the same shape as
                     // `RegistrationProgressView`.
-                    AddressFundingProgressSection(controller: controller)
+                    AddressTopUpProgressSection(controller: controller)
                     progressTerminalSection(controller: controller)
                 } else if resumeFromLock != nil {
                     // Resume mode: the asset lock + amount + Core
@@ -118,7 +118,7 @@ struct FundPlatformAddressView: View {
                     }
                 }
             }
-            .navigationTitle("Fund Platform Address")
+            .navigationTitle("Top Up Platform Address")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -128,7 +128,7 @@ struct FundPlatformAddressView: View {
             }
             .alert(item: $submitError) { err in
                 Alert(
-                    title: Text("Could not fund address"),
+                    title: Text("Could not top up address"),
                     message: Text(err.message),
                     dismissButton: .default(Text("OK"))
                 )
@@ -185,7 +185,7 @@ struct FundPlatformAddressView: View {
                 }
             }
         } header: {
-            Text("Core Funding Source")
+            Text("Core Source")
         } footer: {
             Text("The selected Core account's UTXOs are locked into an asset lock; the locked DASH becomes Platform credits on the destination address.")
         }
@@ -271,7 +271,7 @@ struct FundPlatformAddressView: View {
                 submit()
             } label: {
                 HStack {
-                    Text(resumeFromLock == nil ? "Fund Address" : "Resume Funding")
+                    Text(resumeFromLock == nil ? "Top Up" : "Resume Top Up")
                     Spacer()
                 }
                 .foregroundColor(.white)
@@ -318,12 +318,12 @@ struct FundPlatformAddressView: View {
 
     /// Inline terminal section that follows the controller's
     /// `.completed` / `.failed` phase. Mirrors the
-    /// `terminalSection` shape on `AddressFundingProgressView`,
+    /// `terminalSection` shape on `AddressTopUpProgressView`,
     /// but embedded directly in this view's `Form` so the user
     /// gets the full result without a separate navigation push.
     @ViewBuilder
     private func progressTerminalSection(
-        controller: AddressFundingController
+        controller: AddressTopUpController
     ) -> some View {
         switch controller.phase {
         case .completed(let newBalance):
@@ -340,7 +340,7 @@ struct FundPlatformAddressView: View {
                             .font(.system(.body, design: .monospaced))
                     }
                     Button {
-                        walletManager.addressFundingCoordinator.dismiss(
+                        walletManager.addressTopUpCoordinator.dismiss(
                             walletId: controller.walletId,
                             platformAccountIndex: controller.platformAccountIndex,
                             recipientHash: controller.recipientHash
@@ -357,7 +357,7 @@ struct FundPlatformAddressView: View {
         case .failed(let message):
             Section {
                 VStack(alignment: .leading, spacing: 8) {
-                    Label("Funding failed", systemImage: "xmark.octagon.fill")
+                    Label("Top Up failed", systemImage: "xmark.octagon.fill")
                         .foregroundColor(.red)
                         .font(.headline)
                     Text(message)
@@ -365,7 +365,7 @@ struct FundPlatformAddressView: View {
                         .foregroundColor(.primary)
                         .textSelection(.enabled)
                     Button("Dismiss") {
-                        walletManager.addressFundingCoordinator.dismiss(
+                        walletManager.addressTopUpCoordinator.dismiss(
                             walletId: controller.walletId,
                             platformAccountIndex: controller.platformAccountIndex,
                             recipientHash: controller.recipientHash
@@ -534,12 +534,12 @@ struct FundPlatformAddressView: View {
                 return
             }
             body = {
-                let updates = try await addressWallet.resumeFundFromAssetLock(
+                let updates = try await addressWallet.resumeTopUpFromAssetLock(
                     outPointTxid: parsed.txid,
                     outPointVout: parsed.vout,
                     platformAccountIndex: platformAcct,
                     recipients: [
-                        ManagedPlatformAddressWallet.FundingRecipient(
+                        ManagedPlatformAddressWallet.TopUpRecipient(
                             addressType: recipientType,
                             hash: recipientHash,
                             credits: nil
@@ -558,12 +558,12 @@ struct FundPlatformAddressView: View {
                 let duffs = parsedDuffs
             else { return }
             body = {
-                let updates = try await addressWallet.fundFromCoreAssetLock(
+                let updates = try await addressWallet.topUpFromCore(
                     amountDuffs: duffs,
                     fundingAccountIndex: fundingAccountIndex,
                     platformAccountIndex: platformAcct,
                     recipients: [
-                        ManagedPlatformAddressWallet.FundingRecipient(
+                        ManagedPlatformAddressWallet.TopUpRecipient(
                             addressType: recipientType,
                             hash: recipientHash,
                             credits: nil
@@ -588,7 +588,7 @@ struct FundPlatformAddressView: View {
         // Single-flight gate via the coordinator. The same slot
         // re-presents the existing controller on a duplicate tap
         // so two FFI calls never race for the same asset lock.
-        let coordinator = walletManager.addressFundingCoordinator
+        let coordinator = walletManager.addressTopUpCoordinator
         let controller = coordinator.startFunding(
             walletId: walletId,
             platformAccountIndex: platformAcct,
@@ -602,7 +602,7 @@ struct FundPlatformAddressView: View {
         // progress section in place of the form. The controller's
         // canonical lifetime owner is the coordinator — if the user
         // dismisses the sheet mid-flight, the same controller is
-        // reachable via the "Pending Platform Funding" section on
+        // reachable via the "Pending Platform Top Ups" section on
         // the wallet detail screen.
         activeController = controller
     }

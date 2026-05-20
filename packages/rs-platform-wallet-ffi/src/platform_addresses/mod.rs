@@ -2,16 +2,14 @@
 //!
 //! Mirrors the structure of `platform_wallet::wallet::platform_addresses`.
 
-mod fund_from_asset_lock;
-mod fund_with_funding;
 mod sync;
+mod top_up;
 mod transfer;
 mod wallet;
 mod withdrawal;
 
 // Re-export all FFI types and functions.
-pub use fund_from_asset_lock::*;
-pub use fund_with_funding::*;
+pub use top_up::*;
 pub use sync::*;
 pub use transfer::*;
 pub use wallet::*;

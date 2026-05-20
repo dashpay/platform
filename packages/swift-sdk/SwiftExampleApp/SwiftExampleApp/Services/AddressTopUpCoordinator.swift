@@ -14,7 +14,7 @@ import SwiftDashSDK
 /// from double-tapping the same address-funding submission during
 /// the asset-lock broadcast window.
 @MainActor
-final class AddressFundingCoordinator: ObservableObject {
+final class AddressTopUpCoordinator: ObservableObject {
     /// Composite key — needs `Hashable` so the map can index by it.
     /// `walletId` is 32 raw bytes; `recipientHash` is 20 raw bytes;
     /// `platformAccountIndex` is the DIP-17 account that owns the
@@ -26,9 +26,9 @@ final class AddressFundingCoordinator: ObservableObject {
     }
 
     /// Active controllers keyed by slot. Stored as `@Published` so
-    /// the "Pending Platform Funding" row on the Wallet Detail
+    /// the "Pending Platform Top Ups" row on the Wallet Detail
     /// screen can observe map mutations via `objectWillChange`.
-    @Published private(set) var controllers: [SlotKey: AddressFundingController] = [:]
+    @Published private(set) var controllers: [SlotKey: AddressTopUpController] = [:]
 
     /// True when at least one slot is currently in flight (phase
     /// `.inFlight`). Used by the network toggle's `.disabled(_:)`
@@ -49,7 +49,7 @@ final class AddressFundingCoordinator: ObservableObject {
         walletId: Data,
         platformAccountIndex: UInt32,
         recipientHash: Data
-    ) -> AddressFundingController? {
+    ) -> AddressTopUpController? {
         controllers[
             SlotKey(
                 walletId: walletId,
@@ -63,7 +63,7 @@ final class AddressFundingCoordinator: ObservableObject {
     /// last submit (most recent first). Used by the "Pending
     /// Platform Funding" row so dismissed-but-still-running flows
     /// remain reachable.
-    func activeControllers() -> [AddressFundingController] {
+    func activeControllers() -> [AddressTopUpController] {
         controllers.values.sorted { lhs, rhs in
             (lhs.lastSubmittedAt ?? .distantPast) > (rhs.lastSubmittedAt ?? .distantPast)
         }
@@ -71,8 +71,8 @@ final class AddressFundingCoordinator: ObservableObject {
 
     /// Start a funding for the slot, or reuse an existing
     /// controller if one is already in flight for it. Returns the
-    /// controller for `FundPlatformAddressView` to bind a
-    /// `AddressFundingProgressView` against.
+    /// controller for `TopUpPlatformAddressView` to bind a
+    /// `AddressTopUpProgressView` against.
     ///
     /// Single-flighting is enforced here at the coordinator level
     /// because the controller's `submit()` only guards within its
@@ -85,7 +85,7 @@ final class AddressFundingCoordinator: ObservableObject {
         recipientHash: Data,
         recipientType: UInt8,
         body: @escaping () async throws -> UInt64
-    ) -> AddressFundingController {
+    ) -> AddressTopUpController {
         let key = SlotKey(
             walletId: walletId,
             platformAccountIndex: platformAccountIndex,
@@ -110,7 +110,7 @@ final class AddressFundingCoordinator: ObservableObject {
                 return existing
             }
         }
-        let controller = AddressFundingController(
+        let controller = AddressTopUpController(
             walletId: walletId,
             platformAccountIndex: platformAccountIndex,
             recipientHash: recipientHash,
@@ -148,7 +148,7 @@ final class AddressFundingCoordinator: ObservableObject {
     /// `RegistrationCoordinator`.
     private func scheduleRetentionSweep(
         key: SlotKey,
-        controller: AddressFundingController
+        controller: AddressTopUpController
     ) {
         Task { [weak self, weak controller] in
             guard let controller = controller else { return }

@@ -7,8 +7,7 @@
 //!
 //! ## Pipeline
 //!
-//! 1. **Pre-flight** — exactly-one-`None`-recipient invariant
-//!    (matches [`PlatformAddressWallet::fund_from_asset_lock`]); each
+//! 1. **Pre-flight** — exactly-one-`None`-recipient invariant; each
 //!    address must belong to the supplied platform-payment account.
 //! 2. **Resolve funding** — delegate to the shared
 //!    [`AssetLockManager::resolve_funding_with_is_timeout_fallback`].
@@ -128,7 +127,7 @@ impl PlatformAddressWallet {
     /// work; resume picks the lock back up via
     /// `FromExistingAssetLock`.
     #[allow(clippy::too_many_arguments)]
-    pub async fn fund_addresses_with_funding<S, AS>(
+    pub async fn top_up<S, AS>(
         &self,
         funding: AssetLockFunding,
         platform_account_index: u32,
@@ -142,9 +141,8 @@ impl PlatformAddressWallet {
         S: Signer<PlatformAddress> + Send + Sync,
         AS: ::key_wallet::signer::Signer + Send + Sync,
     {
-        // Step 1: pre-flight. Identical invariants to the existing
-        // `fund_from_asset_lock` raw-key path; failing fast here
-        // avoids broadcasting an unfundable asset-lock tx.
+        // Step 1: pre-flight. Failing fast here avoids broadcasting
+        // an unfundable asset-lock tx.
         validate_recipient_addresses(self, platform_account_index, &addresses).await?;
 
         // Step 2: resolve funding. `AssetLockAddressTopUp` selects the
@@ -331,14 +329,7 @@ impl PlatformAddressWallet {
     /// Apply proof-attested credit balances to the
     /// `ManagedPlatformAccount` for each recipient address, emitting
     /// a `PlatformAddressChangeSet` describing the new balances.
-    ///
-    /// Shared between
-    /// [`fund_addresses_with_funding`](Self::fund_addresses_with_funding)
-    /// and the existing raw-key
-    /// [`fund_from_asset_lock`](Self::fund_from_asset_lock) so the
-    /// two paths can't drift apart on the post-success bookkeeping
-    /// shape.
-    pub(super) async fn write_address_balances_changeset(
+    async fn write_address_balances_changeset(
         &self,
         platform_account_index: u32,
         address_infos: &AddressInfos,
@@ -428,7 +419,7 @@ async fn validate_recipient_addresses(
 ) -> Result<(), PlatformWalletError> {
     if addresses.is_empty() {
         return Err(PlatformWalletError::AddressOperation(
-            "fund_addresses_with_funding requires at least one recipient address".to_string(),
+            "top_up requires at least one recipient address".to_string(),
         ));
     }
 

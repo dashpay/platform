@@ -28,8 +28,8 @@ struct WalletDetailView: View {
     @State private var showSendTransaction = false
     @State private var showWalletInfo = false
     @State private var showFundPlatformAddress = false
-    /// Bound by `PendingPlatformFundingsList`'s Resume row. Setting
-    /// non-nil presents `FundPlatformAddressView` in resume mode
+    /// Bound by `PendingPlatformTopUpsList`'s Resume row. Setting
+    /// non-nil presents `TopUpPlatformAddressView` in resume mode
     /// against this lock's outpoint.
     @State private var resumingAssetLock: PersistentAssetLock?
 
@@ -117,8 +117,8 @@ struct WalletDetailView: View {
             // nothing when there's no in-flight controller and no
             // orphan asset-lock row, so a freshly-synced wallet
             // with nothing pending doesn't see an empty card.
-            PendingPlatformFundingsList(
-                coordinator: walletManager.addressFundingCoordinator,
+            PendingPlatformTopUpsList(
+                coordinator: walletManager.addressTopUpCoordinator,
                 walletId: wallet.walletId,
                 assetLocks: walletAssetLocks,
                 resumingAssetLock: $resumingAssetLock
@@ -206,13 +206,13 @@ struct WalletDetailView: View {
             }
         }
         .sheet(isPresented: $showFundPlatformAddress) {
-            FundPlatformAddressView(wallet: wallet)
+            TopUpPlatformAddressView(wallet: wallet)
         }
         .sheet(item: $resumingAssetLock) { lock in
             // Resume mode: the Fund view branches on `resumeFromLock`
-            // and routes Submit to `resumeFundFromAssetLock` against
+            // and routes Submit to `resumeTopUpFromAssetLock` against
             // this lock's outpoint instead of building a fresh one.
-            FundPlatformAddressView(wallet: wallet, resumeFromLock: lock)
+            TopUpPlatformAddressView(wallet: wallet, resumeFromLock: lock)
         }
         .onAppear { appUIState.showWalletsSyncDetails = false }
     }
@@ -786,7 +786,7 @@ struct BalanceCardView: View {
                     trailingAction: onFundPlatform.map { fund in
                         WalletBalanceRow.TrailingAction(
                             systemImage: "plus.circle.fill",
-                            accessibilityLabel: "Fund Platform Balance from Core",
+                            accessibilityLabel: "Top Up Platform Balance from Core",
                             action: fund
                         )
                     }

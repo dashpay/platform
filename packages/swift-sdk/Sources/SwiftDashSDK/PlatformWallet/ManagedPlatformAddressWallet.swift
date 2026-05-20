@@ -372,13 +372,13 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
 
     // MARK: - Fund from Core asset lock
 
-    /// Recipient entry for `fundFromCoreAssetLock(...)`.
+    /// Recipient entry for `topUpFromCore(...)`.
     ///
     /// Exactly one entry per call must have `credits = nil` — that
     /// address receives the remainder after explicit outputs and fees
     /// (the asset lock is consumed in full, so a remainder bucket is
     /// mandatory).
-    public struct FundingRecipient: Sendable {
+    public struct TopUpRecipient: Sendable {
         /// `0 = P2PKH`, `1 = P2SH`. Mirrors the Rust-side `PlatformAddress` discriminant.
         public let addressType: UInt8
         /// 20-byte address hash.
@@ -422,14 +422,14 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
     /// Returns the list of `UpdatedBalance`s for each recipient, with
     /// the new proof-attested credit balance.
     @discardableResult
-    public func fundFromCoreAssetLock(
+    public func topUpFromCore(
         amountDuffs: UInt64,
         fundingAccountIndex: UInt32,
         platformAccountIndex: UInt32,
-        recipients: [FundingRecipient],
+        recipients: [TopUpRecipient],
         signer: KeychainSigner
     ) async throws -> [UpdatedBalance] {
-        try fundFromCoreAssetLockPreflight(recipients: recipients)
+        try topUpFromCorePreflight(recipients: recipients)
         let handle = self.handle
         let signerHandle = signer.handle
         let recipientRows = recipients
@@ -467,7 +467,7 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
             let result = withExtendedLifetime((signer, coreSigner)) {
                 ffiAddresses.withUnsafeBufferPointer { addrBp in
                     feeRows.withUnsafeBufferPointer { feeBp in
-                        platform_address_wallet_fund_with_funding_signer(
+                        platform_address_wallet_top_up_signer(
                             handle,
                             amountDuffs,
                             fundingAccountIndex,
@@ -493,7 +493,7 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
     /// Resume a stuck platform-address funding flow from an already-
     /// tracked asset lock by outpoint.
     ///
-    /// Sibling to [`fundFromCoreAssetLock`]: the wallet-balance variant
+    /// Sibling to [`topUpFromCore`]: the wallet-balance variant
     /// builds a fresh asset-lock transaction; this variant picks up a
     /// lock that's already tracked (Broadcast / InstantSendLocked /
     /// ChainLocked) and drives whatever stages remain. Use case mirrors
@@ -510,11 +510,11 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
     ///   - outPointVout: Funding output index (always 0 for asset
     ///     locks built by this wallet, but kept for generality).
     @discardableResult
-    public func resumeFundFromAssetLock(
+    public func resumeTopUpFromAssetLock(
         outPointTxid: Data,
         outPointVout: UInt32,
         platformAccountIndex: UInt32,
-        recipients: [FundingRecipient],
+        recipients: [TopUpRecipient],
         signer: KeychainSigner
     ) async throws -> [UpdatedBalance] {
         guard outPointTxid.count == 32 else {
@@ -522,7 +522,7 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
                 "outPointTxid must be exactly 32 bytes (was \(outPointTxid.count))"
             )
         }
-        try fundFromCoreAssetLockPreflight(recipients: recipients)
+        try topUpFromCorePreflight(recipients: recipients)
         let handle = self.handle
         let signerHandle = signer.handle
         let recipientRows = recipients
@@ -565,7 +565,7 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
             let result = withExtendedLifetime((signer, coreSigner)) {
                 ffiAddresses.withUnsafeBufferPointer { addrBp in
                     feeRows.withUnsafeBufferPointer { feeBp in
-                        platform_address_wallet_resume_fund_with_existing_asset_lock_signer(
+                        platform_address_wallet_resume_top_up_with_existing_asset_lock_signer(
                             handle,
                             &outPoint,
                             platformAccountIndex,
@@ -591,8 +591,8 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
     /// side enforces the same invariants — we duplicate them here so
     /// the user gets a synchronous error before paying for the Task
     /// detach + handle marshaling.
-    private func fundFromCoreAssetLockPreflight(
-        recipients: [FundingRecipient]
+    private func topUpFromCorePreflight(
+        recipients: [TopUpRecipient]
     ) throws {
         guard !recipients.isEmpty else {
             throw PlatformWalletError.invalidParameter("recipients is empty")
@@ -606,7 +606,7 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
         for r in recipients {
             guard r.hash.count == 20 else {
                 throw PlatformWalletError.invalidParameter(
-                    "FundingRecipient.hash must be exactly 20 bytes (got \(r.hash.count))"
+                    "TopUpRecipient.hash must be exactly 20 bytes (got \(r.hash.count))"
                 )
             }
         }

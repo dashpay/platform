@@ -32,11 +32,11 @@ import SwiftDashSDK
 /// the lock.
 ///
 /// `.completed` is the *terminal* state and is not a separate step;
-/// the parent `AddressFundingProgressView` renders the "Address
+/// the parent `AddressTopUpProgressView` renders the "Address
 /// funded" banner + the new balance below this section. `.failed`
 /// marks the current step with the error icon + message.
-struct AddressFundingProgressSection: View {
-    @ObservedObject var controller: AddressFundingController
+struct AddressTopUpProgressSection: View {
+    @ObservedObject var controller: AddressTopUpController
 
     /// Asset-lock rows for this wallet, filtered to the
     /// AssetLockAddressTopUp variant (discriminant `4`). Queried
@@ -55,7 +55,7 @@ struct AddressFundingProgressSection: View {
     /// `AssetLockManager`'s 300 s IS wait.
     private static let instantLockTimeout: TimeInterval = 300.0
 
-    init(controller: AddressFundingController) {
+    init(controller: AddressTopUpController) {
         self.controller = controller
         let walletId = controller.walletId
         // `fundingTypeRaw == 4` is `AssetLockFundingType::AssetLockAddressTopUp`
@@ -97,7 +97,7 @@ struct AddressFundingProgressSection: View {
                     }
                 }
             } header: {
-                Text("Funding Progress")
+                Text("Top Up Progress")
             } footer: {
                 Text(footerText(step: step, isFailed: isFailed))
                     .font(.caption2)
@@ -118,7 +118,7 @@ struct AddressFundingProgressSection: View {
             return 1
         case .completed:
             // No visible "funded" step — terminalSection on
-            // `AddressFundingProgressView` carries that state.
+            // `AddressTopUpProgressView` carries that state.
             // Return 6 so every step row (1...5) is marked `.done`.
             return 6
         case .failed:
@@ -321,23 +321,23 @@ struct AddressFundingProgressSection: View {
 }
 
 /// Standalone navigation destination for an address funding in
-/// flight, completed, or failed. Pushed from `FundPlatformAddressView`
-/// on submit and (later) from the "Resumable Funding" surface.
-struct AddressFundingProgressView: View {
-    @ObservedObject var controller: AddressFundingController
+/// flight, completed, or failed. Pushed from `TopUpPlatformAddressView`
+/// on submit and (later) from the "Resumable Top Up" surface.
+struct AddressTopUpProgressView: View {
+    @ObservedObject var controller: AddressTopUpController
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var walletManager: PlatformWalletManager
 
-    init(controller: AddressFundingController) {
+    init(controller: AddressTopUpController) {
         self.controller = controller
     }
 
     var body: some View {
         Form {
-            AddressFundingProgressSection(controller: controller)
+            AddressTopUpProgressSection(controller: controller)
             terminalSection
         }
-        .navigationTitle("Fund Platform Address")
+        .navigationTitle("Top Up Platform Address")
         .navigationBarTitleDisplayMode(.inline)
     }
 
@@ -358,7 +358,7 @@ struct AddressFundingProgressView: View {
                             .font(.system(.body, design: .monospaced))
                     }
                     Button {
-                        walletManager.addressFundingCoordinator.dismiss(
+                        walletManager.addressTopUpCoordinator.dismiss(
                             walletId: controller.walletId,
                             platformAccountIndex: controller.platformAccountIndex,
                             recipientHash: controller.recipientHash
@@ -375,7 +375,7 @@ struct AddressFundingProgressView: View {
         case .failed(let message):
             Section {
                 VStack(alignment: .leading, spacing: 8) {
-                    Label("Funding failed", systemImage: "xmark.octagon.fill")
+                    Label("Top Up failed", systemImage: "xmark.octagon.fill")
                         .foregroundColor(.red)
                         .font(.headline)
                     Text(message)
@@ -383,7 +383,7 @@ struct AddressFundingProgressView: View {
                         .foregroundColor(.primary)
                         .textSelection(.enabled)
                     // Dismissal path mirroring the inline terminal
-                    // section in `FundPlatformAddressView`. Without
+                    // section in `TopUpPlatformAddressView`. Without
                     // this the only way to clear a `.failed`
                     // controller from a pushed progress view was to
                     // relaunch the app — the `Pending Platform
@@ -391,7 +391,7 @@ struct AddressFundingProgressView: View {
                     // outside a List, so neither surface had a
                     // working dismissal.
                     Button {
-                        walletManager.addressFundingCoordinator.dismiss(
+                        walletManager.addressTopUpCoordinator.dismiss(
                             walletId: controller.walletId,
                             platformAccountIndex: controller.platformAccountIndex,
                             recipientHash: controller.recipientHash

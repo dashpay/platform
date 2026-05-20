@@ -30,7 +30,7 @@ pub struct PlatformAddressWallet {
     /// transfer/withdraw paths take `read` for key_source lookups.
     pub(crate) provider: Arc<RwLock<Option<PlatformPaymentAddressProvider>>>,
     /// Shared asset-lock manager. Threaded in so the orchestrated
-    /// `fund_addresses_with_funding` path can drive
+    /// `top_up` path can drive
     /// build → IS-or-CL wait → consume on the same tracked locks
     /// every other sub-wallet sees. Cloned `Arc`, not owned.
     pub(crate) asset_locks: Arc<AssetLockManager<SpvBroadcaster>>,
