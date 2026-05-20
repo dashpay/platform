@@ -57,18 +57,20 @@ fn _object_safety_check(persister: SqlitePersister) {
         std::sync::Arc::new(persister);
 }
 
-// `SecretStore` must be object-safe and its error `Send + Sync`, so a
-// backend can be held behind `Arc<dyn SecretStore>` and its errors
-// crossed between threads / FFI.
+// The keyring SPI must be object-safe and its error `Send + Sync`, so
+// a backend can be held behind `Arc<dyn CredentialStoreApi + Send +
+// Sync>` and its errors crossed between threads / FFI.
 #[cfg(feature = "secrets")]
 #[allow(dead_code)]
 const fn _secrets_send_sync_check<T: Send + Sync>() {}
 #[cfg(feature = "secrets")]
 const _: () = {
-    _secrets_send_sync_check::<secrets::SecretStoreError>();
+    _secrets_send_sync_check::<keyring_core::Error>();
+    _secrets_send_sync_check::<secrets::FileStoreError>();
 };
 #[cfg(feature = "secrets")]
 #[allow(dead_code)]
-fn _secret_store_object_safety_check(store: secrets::EncryptedFileStore) {
-    let _: std::sync::Arc<dyn secrets::SecretStore> = std::sync::Arc::new(store);
+fn _credential_store_object_safety_check(store: secrets::EncryptedFileStore) {
+    let _: std::sync::Arc<dyn keyring_core::api::CredentialStoreApi + Send + Sync> =
+        std::sync::Arc::new(store);
 }

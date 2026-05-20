@@ -1,52 +1,60 @@
 //! Out-of-band storage for wallet secret material (mnemonic / seed /
 //! xpriv), kept entirely off the SQLite persister's data path.
 //!
-//! Enabled by the opt-in `secrets` feature (never on by `default`).
+//! The SPI is upstream's
+//! [`keyring_core::api::CredentialStoreApi`] / [`CredentialApi`].
+//! This crate contributes:
+//!
+//! - [`EncryptedFileStore`] — Argon2id + XChaCha20-Poly1305 vault file
+//!   `CredentialStoreApi` implementation. Recommended on **headless /
+//!   server** hosts; fully self-contained, no environment caveat.
+//! - [`default_credential_store`] — opens the platform OS keyring as a
+//!   `CredentialStoreApi`, fail-closed with
+//!   [`keyring_core::Error::NoDefaultStore`] on headless Linux
+//!   (SEC-REQ-2.1.3 / AR-4). Recommended on **desktop** OSes.
+//! - [`SecretBytes`] / [`SecretString`] — zeroize-on-drop wrappers
+//!   applied at the consumer seam (the upstream SPI returns bare
+//!   `Vec<u8>` from `get_secret`; we re-wrap immediately).
+//! - [`FileStoreError`] / [`FileStoreFailure`] — file-backend
+//!   construction errors + the unit-only marker bridged into
+//!   `keyring_core::Error` for the `CredentialApi` seam.
+//!
+//! [`CredentialApi`]: keyring_core::api::CredentialApi
+//! [`CredentialStoreApi`]: keyring_core::api::CredentialStoreApi
+//!
 //! Everything secret-bearing lives under this `src/secrets/` tree by
 //! design: `tests/secrets_scan.rs` scans only `src/sqlite/schema/` +
 //! `migrations/` and exempts this module, so this module owns its own
 //! review discipline (`tests/secrets_guard.rs`, SEC-REQ-4.5/4.5.1).
 //!
-//! # Backends & selection
-//!
-//! Two production backends ship; **selection is an explicit operator
-//! decision — there is no silent fallback between them** (SEC-REQ-2.1.3
-//! / AR-4):
-//!
-//! - [`KeyringStore`] — OS keyring. Recommended default on **desktop**
-//!   OSes. Fails closed on headless Linux (no Secret Service) with a
-//!   typed [`SecretStoreError::BackendUnavailable`], never a degraded
-//!   plaintext store.
-//! - [`EncryptedFileStore`] — Argon2id + XChaCha20-Poly1305 vault file.
-//!   Recommended default on **headless / server** hosts; fully
-//!   self-contained, no environment caveat.
-//!
-//! [`MemoryStore`] is test-only and gated so it is unreachable from
-//! production builds.
-//!
 //! # Memory hygiene
 //!
-//! Secrets cross every boundary inside [`SecretBytes`] / [`SecretString`]
-//! (zeroize-on-drop, redacting `Debug`, no `Display`/`Serialize`,
-//! best-effort `mlock`). Errors are a concrete enum with no secret in
-//! any variant.
+//! The upstream SPI returns `Vec<u8>` from `get_secret`. Consumers
+//! MUST wrap it via [`SecretBytes::new`] **immediately** (no named
+//! intermediate `Vec` binding) so the bare buffer's window is zero
+//! statements (Smythe EDIT-1): `SecretBytes::new` `std::mem::take`s
+//! the `Vec` into a `Zeroizing<Vec<u8>>` without copying.
+//!
+//! # Backend selection
+//!
+//! Selection is an explicit operator decision — there is no silent
+//! fallback between [`EncryptedFileStore`] and the OS keyring
+//! (SEC-REQ-2.1.3 / AR-4).
 
-mod error;
 mod file;
 mod keyring;
 mod secret;
-mod store;
 mod validate;
 
 #[cfg(any(test, feature = "__secrets-test-helpers"))]
 mod memory;
 
-pub use error::SecretStoreError;
-pub use file::EncryptedFileStore;
-pub use keyring::KeyringStore;
+pub use file::error::FileStoreError;
+pub use file::error_bridge::{downcast_failure, FileStoreFailure};
+pub use file::{EncryptedFileCredential, EncryptedFileStore, SERVICE_PREFIX};
+pub use keyring::default_credential_store;
 pub use secret::{SecretBytes, SecretString};
-pub use store::SecretStore;
 pub use validate::WalletId;
 
 #[cfg(any(test, feature = "__secrets-test-helpers"))]
-pub use memory::MemoryStore;
+pub use memory::{MemoryCredential, MemoryCredentialStore};

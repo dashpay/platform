@@ -23,7 +23,7 @@
 //! fails its tag, so a mismatched key is rejected before any entry is
 //! written or read (no mixed-key corruption).
 
-use super::super::error::SecretStoreError;
+use super::error::FileStoreError;
 use super::crypto::{KdfParams, NONCE_LEN, SALT_LEN};
 
 pub(crate) const MAGIC: &[u8; 9] = b"PWSVAULT1";
@@ -111,29 +111,29 @@ struct Reader<'a> {
 }
 
 impl<'a> Reader<'a> {
-    fn take(&mut self, n: usize) -> Result<&'a [u8], SecretStoreError> {
+    fn take(&mut self, n: usize) -> Result<&'a [u8], FileStoreError> {
         let end = self
             .pos
             .checked_add(n)
-            .ok_or(SecretStoreError::MalformedVault)?;
+            .ok_or(FileStoreError::MalformedVault)?;
         let s = self
             .buf
             .get(self.pos..end)
-            .ok_or(SecretStoreError::MalformedVault)?;
+            .ok_or(FileStoreError::MalformedVault)?;
         self.pos = end;
         Ok(s)
     }
 
-    fn u8(&mut self) -> Result<u8, SecretStoreError> {
+    fn u8(&mut self) -> Result<u8, FileStoreError> {
         Ok(self.take(1)?[0])
     }
 
-    fn u16(&mut self) -> Result<u16, SecretStoreError> {
+    fn u16(&mut self) -> Result<u16, FileStoreError> {
         let b = self.take(2)?;
         Ok(u16::from_le_bytes([b[0], b[1]]))
     }
 
-    fn u32(&mut self) -> Result<u32, SecretStoreError> {
+    fn u32(&mut self) -> Result<u32, FileStoreError> {
         let b = self.take(4)?;
         Ok(u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
     }
@@ -141,24 +141,24 @@ impl<'a> Reader<'a> {
 
 /// Parse a vault. Refuses unknown magic/version (fail closed,
 /// SEC-REQ-2.2.9); parameter floors are enforced later at derive time.
-pub(crate) fn deserialize(buf: &[u8]) -> Result<(Header, Vec<Entry>), SecretStoreError> {
+pub(crate) fn deserialize(buf: &[u8]) -> Result<(Header, Vec<Entry>), FileStoreError> {
     let mut r = Reader { buf, pos: 0 };
     if r.take(MAGIC.len())? != MAGIC {
-        return Err(SecretStoreError::MalformedVault);
+        return Err(FileStoreError::MalformedVault);
     }
     let version = r.u32()?;
     if version != FORMAT_VERSION {
-        return Err(SecretStoreError::VersionUnsupported { found: version });
+        return Err(FileStoreError::VersionUnsupported { found: version });
     }
     if r.u8()? != KDF_ID_ARGON2ID {
-        return Err(SecretStoreError::MalformedVault);
+        return Err(FileStoreError::MalformedVault);
     }
     let m_kib = r.u32()?;
     let t = r.u32()?;
     let p = r.u32()?;
     let salt_len = r.u8()? as usize;
     if salt_len != SALT_LEN {
-        return Err(SecretStoreError::MalformedVault);
+        return Err(FileStoreError::MalformedVault);
     }
     let mut salt = [0u8; SALT_LEN];
     salt.copy_from_slice(r.take(SALT_LEN)?);
@@ -171,7 +171,7 @@ pub(crate) fn deserialize(buf: &[u8]) -> Result<(Header, Vec<Entry>), SecretStor
     while r.pos < buf.len() {
         let label_len = r.u16()? as usize;
         let label = std::str::from_utf8(r.take(label_len)?)
-            .map_err(|_| SecretStoreError::MalformedVault)?
+            .map_err(|_| FileStoreError::MalformedVault)?
             .to_string();
         let mut nonce = [0u8; NONCE_LEN];
         nonce.copy_from_slice(r.take(NONCE_LEN)?);
@@ -251,14 +251,14 @@ mod tests {
     fn rejects_bad_magic_and_unknown_version() {
         assert!(matches!(
             deserialize(b"NOPENOPE...."),
-            Err(SecretStoreError::MalformedVault)
+            Err(FileStoreError::MalformedVault)
         ));
         let mut bytes = serialize(&test_header(), &[]);
         let v = MAGIC.len();
         bytes[v..v + 4].copy_from_slice(&999u32.to_le_bytes());
         assert!(matches!(
             deserialize(&bytes),
-            Err(SecretStoreError::VersionUnsupported { found: 999 })
+            Err(FileStoreError::VersionUnsupported { found: 999 })
         ));
     }
 
@@ -267,7 +267,7 @@ mod tests {
         let bytes = serialize(&test_header(), &[]);
         assert!(matches!(
             deserialize(&bytes[..bytes.len() - 5]),
-            Err(SecretStoreError::MalformedVault)
+            Err(FileStoreError::MalformedVault)
         ));
     }
 }

@@ -2,44 +2,58 @@
 //! (SEC-REQ-4.1 / 4.4 / 4.5, TC-082 parity).
 //!
 //! Compiled only with `--features secrets`. Uses `EncryptedFileStore`
-//! (always available under `secrets`); `MemoryStore` is intentionally
-//! unreachable here (SEC-REQ-2.3.1) — it is exercised only by the
-//! crate's in-module unit tests.
+//! (always available under `secrets`); `MemoryCredentialStore` is
+//! intentionally unreachable here (SEC-REQ-2.3.1) — it is exercised
+//! only by the crate's own in-module unit tests behind
+//! `__secrets-test-helpers`.
 
 #![cfg(feature = "secrets")]
 
 use std::path::Path;
+use std::sync::Arc;
 
+use keyring_core::api::CredentialStoreApi;
+use keyring_core::{Error as KeyringError, Result as KeyringResult};
 use platform_wallet_storage::secrets::{
-    EncryptedFileStore, SecretBytes, SecretStore, SecretStoreError, SecretString, WalletId,
+    downcast_failure, EncryptedFileStore, FileStoreFailure, SecretBytes, SecretString, WalletId,
+    SERVICE_PREFIX,
 };
 
 fn open(dir: &Path) -> EncryptedFileStore {
     EncryptedFileStore::open(dir, SecretString::new("test-pass")).unwrap()
 }
 
-/// `SecretStore::get` returns `Option<SecretBytes>`, never a bare
-/// `Vec<u8>` (SEC-REQ-4.1). This binding only compiles if the type is
-/// exactly that.
+fn service(w: WalletId) -> String {
+    format!("{SERVICE_PREFIX}{}", w.to_hex())
+}
+
+/// `CredentialApi::get_secret` returns `Vec<u8>` per upstream — we
+/// re-wrap it via `SecretBytes::new` at the consumer seam (no named
+/// intermediate `Vec` binding, Smythe EDIT-1). This binding only
+/// compiles when the re-wrap type is exactly `SecretBytes`.
 #[test]
-fn get_returns_zeroizing_wrapper_not_vec() {
+fn get_secret_rewraps_into_zeroizing_at_consumer_seam() {
     let dir = tempfile::tempdir().unwrap();
     let s = open(dir.path());
     let w = WalletId::from([1; 32]);
-    s.put(w, "seed", b"abc").unwrap();
-    let got: Option<SecretBytes> = s.get(w, "seed").unwrap();
-    assert_eq!(got.unwrap().expose_secret(), b"abc");
+    let entry = s.build(&service(w), "seed", None).unwrap();
+    entry.set_secret(b"abc").unwrap();
+    let wrapped: SecretBytes = SecretBytes::new(entry.get_secret().unwrap());
+    assert_eq!(wrapped.expose_secret(), b"abc");
 }
 
-/// The secrets module is reachable, compiles, and round-trips through
-/// `dyn SecretStore` (SEC-REQ-4.5 positive build guard).
+/// The secrets module is reachable and the store is object-safe
+/// behind `Arc<dyn CredentialStoreApi + Send + Sync>` (SEC-REQ-4.5
+/// positive build guard).
 #[test]
 fn secrets_tree_builds_and_is_object_safe() {
     let dir = tempfile::tempdir().unwrap();
-    let s: std::sync::Arc<dyn SecretStore> = std::sync::Arc::new(open(dir.path()));
+    let s: Arc<dyn CredentialStoreApi + Send + Sync> = Arc::new(open(dir.path()));
     let w = WalletId::from([9; 32]);
-    s.put(w, "bip39_mnemonic", b"x").unwrap();
-    assert!(s.get(w, "bip39_mnemonic").unwrap().is_some());
+    let entry: KeyringResult<_> = s.build(&service(w), "bip39_mnemonic", None);
+    entry.unwrap().set_secret(b"x").unwrap();
+    let e2 = s.build(&service(w), "bip39_mnemonic", None).unwrap();
+    assert_eq!(e2.get_secret().unwrap(), b"x");
 }
 
 /// No `Box<dyn Error>` in the `secrets` tree's public surface — TC-082
@@ -72,8 +86,6 @@ fn no_box_dyn_error_in_secrets_src() {
                 continue;
             };
             for (i, line) in body.lines().enumerate() {
-                // The rule bans the *type* in code; prose explaining
-                // the rule (doc/line comments) is not a violation.
                 let trimmed = line.trim_start();
                 if trimmed.starts_with("//") || trimmed.starts_with("*") {
                     continue;
@@ -87,24 +99,36 @@ fn no_box_dyn_error_in_secrets_src() {
     }
 }
 
-/// The error enum carries no secret in `Display` (SEC-REQ-2.0.1 /
-/// 3.3 / CWE-209).
+/// The bridged `keyring_core::Error` carries no secret in `Display`
+/// (SEC-REQ-2.0.1 / 3.3 / CWE-209). Per Smythe EDIT-2, `{:?}` is the
+/// dangerous shape (it can echo `BadEncoding(Vec<u8>)` /
+/// `BadDataFormat(Vec<u8>, _)`); the file backend never constructs
+/// those variants with secret bytes, and our consumers must not
+/// `{:?}`-print `keyring_core::Error` either (see `secrets_guard`).
 #[test]
 fn error_display_is_static_and_secret_free() {
     let dir = tempfile::tempdir().unwrap();
     let store = open(dir.path());
     let w = WalletId::from([4; 32]);
-    store.put(w, "seed", b"PLAINTEXTNEEDLE").unwrap();
+    let entry = store.build(&service(w), "seed", None).unwrap();
+    entry.set_secret(b"PLAINTEXTNEEDLE").unwrap();
+
     let bad = EncryptedFileStore::open(dir.path(), SecretString::new("wrong-pass")).unwrap();
-    let err = bad.get(w, "seed").unwrap_err();
+    let err = bad
+        .build(&service(w), "seed", None)
+        .unwrap()
+        .get_secret()
+        .unwrap_err();
     let rendered = format!("{err}");
     assert!(!rendered.contains("PLAINTEXTNEEDLE"));
     assert!(!rendered.contains("wrong-pass"));
-    assert_eq!(rendered, "wrong passphrase");
+    assert_eq!(downcast_failure(&err), Some(FileStoreFailure::WrongPassphrase));
 
-    let inv = store.put(w, "../bad", b"x").unwrap_err();
-    assert!(matches!(inv, SecretStoreError::InvalidLabel));
-    assert_eq!(format!("{inv}"), "invalid label");
+    let inv = store.build(&service(w), "../bad", None).unwrap_err();
+    match inv {
+        KeyringError::Invalid(attr, _) => assert_eq!(attr, "user"),
+        other => panic!("expected Invalid, got {other:?}"),
+    }
 }
 
 /// `SecretBytes`/`SecretString` `Debug` is redacted at the API

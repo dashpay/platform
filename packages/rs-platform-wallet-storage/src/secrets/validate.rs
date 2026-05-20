@@ -1,13 +1,11 @@
-//! Input validation for the `SecretStore` key space (SEC-REQ-4.3).
+//! Input validation for the `secrets` key space (SEC-REQ-4.3).
 //!
 //! `wallet_id` is fixed-width 32 bytes — enforced by the [`WalletId`]
 //! type, not at runtime. `label` is reject-not-sanitize against a
 //! strict allowlist before any backend maps it to a filename or a
 //! keyring attribute (CWE-22 path traversal, CWE-20 improper input).
 
-use super::error::SecretStoreError;
-
-/// A 32-byte wallet identifier — the `SecretStore` namespace key.
+/// A 32-byte wallet identifier — the per-vault namespace key.
 ///
 /// Public correlation material, **not** a secret (Smythe §1.1): it is
 /// derived from public wallet state, never from the seed's private
@@ -37,10 +35,15 @@ impl From<[u8; 32]> for WalletId {
 /// Maximum `label` length, matching the allowlist's `{1,64}` bound.
 const MAX_LABEL_LEN: usize = 64;
 
+/// Marker returned by [`validated_label`] on rejection. Backend
+/// adapters lift this into their own typed error.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct InvalidLabel;
+
 /// Validate a `label` against `^[A-Za-z0-9._-]{1,64}$` and return it
 /// unchanged on success. Rejects (never sanitizes) so a traversal /
 /// attribute-injection attempt is a hard error, not silently rewritten.
-pub(crate) fn validated_label(label: &str) -> Result<&str, SecretStoreError> {
+pub(crate) fn validated_label(label: &str) -> Result<&str, InvalidLabel> {
     let ok = (1..=MAX_LABEL_LEN).contains(&label.len())
         && label
             .bytes()
@@ -48,7 +51,7 @@ pub(crate) fn validated_label(label: &str) -> Result<&str, SecretStoreError> {
     if ok {
         Ok(label)
     } else {
-        Err(SecretStoreError::InvalidLabel)
+        Err(InvalidLabel)
     }
 }
 
@@ -72,20 +75,20 @@ mod tests {
     #[test]
     fn rejects_traversal_and_injection() {
         for bad in [
-            "",              // empty
-            &"a".repeat(65), // too long
-            "../etc/passwd", // path traversal
-            "a/b",           // separator
-            "a\\b",          // windows separator
-            "a b",           // space
-            "lab\0el",       // NUL
-            "lab\nel",       // newline
-            "café",          // non-ASCII
-            "a:b",           // keyring attribute delimiter
-            "a;DROP TABLE",  // sql-ish
+            "",
+            &"a".repeat(65),
+            "../etc/passwd",
+            "a/b",
+            "a\\b",
+            "a b",
+            "lab\0el",
+            "lab\nel",
+            "café",
+            "a:b",
+            "a;DROP TABLE",
         ] {
             assert!(
-                matches!(validated_label(bad), Err(SecretStoreError::InvalidLabel)),
+                validated_label(bad).is_err(),
                 "should reject {bad:?}"
             );
         }
