@@ -297,7 +297,7 @@ class ShieldedService: ObservableObject {
         totalNewlySpent = 0
     }
 
-    /// Wipe this wallet's persisted shielded state and stop. The
+    /// Wipe every wallet's persisted shielded state and stop. The
     /// service is left unbound — no auto-rebind, no auto-rescan.
     ///
     /// Bare [`reset`] just tears down subscriptions and nils the
@@ -306,51 +306,45 @@ class ShieldedService: ObservableObject {
     /// survive, so the next bind hydrates the wallet right back to
     /// the state the user just tried to clear.
     ///
-    /// The user reaches this through the Clear button on the Sync
-    /// Status screen and wants "delete and walk away" semantics:
-    /// the persisted rows go, the published mirror zeroes out, and
-    /// the service stays inert until the next explicit bind.
-    /// Re-syncing means navigating back through the wallet detail
-    /// screen, which retriggers `rebindWalletScopedServices` and
-    /// rebinds from scratch (SwiftData is empty → Rust's
-    /// `restore_from_snapshot` starts at zero).
+    /// The user reaches this through the Clear button on the
+    /// **global** Sync Status surface, not a per-wallet screen.
+    /// "Clear" therefore wipes every wallet's shielded rows + the
+    /// per-network commitment-tree SQLite file, so re-binding any
+    /// wallet on this network walks back through the cmx stream
+    /// from genesis. Re-syncing means navigating back into a
+    /// wallet detail (which retriggers
+    /// `rebindWalletScopedServices`).
     ///
     /// What it does NOT touch:
-    ///   * The on-disk commitment-tree SQLite file at
-    ///     `dbPath(for:)`. That tree is **per-network** — every
-    ///     wallet on the same network shares the same `cmx` stream
-    ///     and the same frontier, so deleting it would corrupt
-    ///     other wallets' state. Rust's `sync_notes` already skips
-    ///     positions already in the tree, so re-using the existing
-    ///     leaves on the next bind is the right behaviour.
-    ///   * The manager-wide shielded sync loop. Other wallets
-    ///     bound on the same `PlatformWalletManager` keep syncing.
+    ///   * The manager-wide shielded sync loop. The next bind
+    ///     re-attaches a fresh subscription.
     ///   * The Rust-side shielded sub-wallet binding (there's no
     ///     unbind FFI today; the next `bindShielded` call replaces
-    ///     the binding wholesale).
+    ///     the binding wholesale, and the freshly-bound store
+    ///     starts empty because both the SwiftData snapshot and
+    ///     the SQLite tree are gone).
     ///
-    /// No-op if the service hasn't been bound yet.
+    /// Per-wallet scoping was tried first and rejected because the
+    /// Clear button doesn't carry wallet context — other wallets'
+    /// `PersistentShieldedSyncState` rows would silently survive
+    /// (the symptom the user reported when "Clear" left a row
+    /// behind for a non-active wallet).
     func clearLocalState(modelContext: ModelContext) async {
-        guard let walletId = boundWalletId else {
-            SDKLogger.log(
-                "ShieldedService.clearLocalState called before initial bind — ignoring",
-                minimumLevel: .medium
-            )
-            return
-        }
+        // Capture the network BEFORE `reset()` nils it out so we
+        // can locate the per-network SQLite tree file. May still
+        // be nil if `bind` never ran this session; in that case
+        // there's no DB to delete and the SwiftData wipe is the
+        // whole job.
+        let networkForDB = network
 
-        // 1) Delete this wallet's persisted shielded rows from
-        //    SwiftData. Scoped to `walletId` so other wallets'
-        //    state on the same SwiftData store stays intact.
+        // 1) Delete every shielded SwiftData row across all
+        //    wallets on this device. The Clear button is on the
+        //    global Sync Status surface, so its semantics are
+        //    "blow away shielded persistence", not "scope to one
+        //    wallet".
         do {
-            try modelContext.delete(
-                model: PersistentShieldedNote.self,
-                where: #Predicate { $0.walletId == walletId }
-            )
-            try modelContext.delete(
-                model: PersistentShieldedSyncState.self,
-                where: #Predicate { $0.walletId == walletId }
-            )
+            try modelContext.delete(model: PersistentShieldedNote.self)
+            try modelContext.delete(model: PersistentShieldedSyncState.self)
             try modelContext.save()
         } catch {
             lastError = "Failed to wipe persisted shielded state: \(error.localizedDescription)"
@@ -358,7 +352,33 @@ class ShieldedService: ObservableObject {
             return
         }
 
-        // 2) Tear down the in-memory mirror + subscriptions. The
+        // 2) Delete the per-network commitment-tree SQLite file
+        //    (plus its WAL/SHM/journal sidecars) so the next
+        //    `bind_shielded` on this network starts the tree at
+        //    leaf 0. Without this the SwiftData snapshot says
+        //    "fresh wallet" but the on-disk tree still carries
+        //    every commitment from prior syncs — and the
+        //    watermark/checkpoint asymmetry that produces is the
+        //    most common source of the "Merkle witness
+        //    unavailable" failures we're chasing.
+        if let networkForDB {
+            let dbPath = Self.dbPath(for: networkForDB)
+            let fm = FileManager.default
+            for suffix in ["", "-wal", "-shm", "-journal"] {
+                let path = dbPath + suffix
+                if fm.fileExists(atPath: path) {
+                    do {
+                        try fm.removeItem(atPath: path)
+                    } catch {
+                        SDKLogger.error(
+                            "ShieldedService.clearLocalState: failed to delete \(path): \(error.localizedDescription)"
+                        )
+                    }
+                }
+            }
+        }
+
+        // 3) Tear down the in-memory mirror + subscriptions. The
         //    service is now unbound; no further sync events flow
         //    in and Sync Now will surface "Shielded service not
         //    configured" until something re-binds (typically the
