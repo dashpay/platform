@@ -111,14 +111,25 @@ pub trait Query<T: TransportRequest + Mockable>: Send + Debug + Clone {
 
 impl<T> Query<T> for T
 where
-    T: TransportRequest + Sized + Send + Sync + Clone + Debug,
+    T: TransportRequest + Sized + Send + Sync + Clone + Debug + 'static,
     T::Response: Send + Sync + Debug,
 {
-    fn query(&self, prove: bool, _sdk: &crate::Sdk) -> Result<T, Error> {
+    fn query(&self, prove: bool, sdk: &crate::Sdk) -> Result<T, Error> {
         if !prove {
             tracing::warn!(request= ?self, "sending query without proof, ensure data is trusted");
         }
-        Ok(self.clone())
+        let mut cloned = self.clone();
+        // `DocumentQuery::execute_transport` needs `sdk.version()` for
+        // V0 vs V1 wire dispatch (see `DocumentQuery::wire_protocol_version`).
+        // The blanket impl is the only `Query<DocumentQuery>` path the
+        // `Fetch` / `FetchMany` trampolines reach (since `Fetch::Request
+        // = DocumentQuery`), so pin the protocol version here via a
+        // runtime downcast. Every other request type goes through this
+        // branch as a no-op.
+        if let Some(dq) = (&mut cloned as &mut dyn std::any::Any).downcast_mut::<DocumentQuery>() {
+            dq.wire_protocol_version = Some(sdk.version().protocol_version);
+        }
+        Ok(cloned)
     }
 }
 

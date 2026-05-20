@@ -330,9 +330,10 @@ impl Sdk {
             .fetch_max(received_version, Ordering::Relaxed);
         if previous < received_version {
             tracing::info!(
-                old_version = previous,
-                new_version = received_version,
-                "protocol version updated from network metadata"
+                target: "dash_sdk::protocol_version",
+                from = previous,
+                to = received_version,
+                "ratcheting protocol version upward"
             );
         }
     }

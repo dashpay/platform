@@ -108,6 +108,24 @@ pub struct DocumentQuery {
     pub limit: u32,
     /// first object to start with
     pub start: Option<Start>,
+    /// Protocol version pinned by [`crate::platform::Query::query`] from
+    /// [`Sdk::version`](crate::Sdk::version) at fetch time. `execute_transport`
+    /// reads this to dispatch V0 vs V1 wire encoding. `None` only when the
+    /// `DocumentQuery` was hand-built and pushed straight through
+    /// [`TransportRequest::execute_transport`] without going via the SDK
+    /// fetch trampoline — that path falls back to
+    /// [`PlatformVersion::latest`] and is documented on the trait method.
+    ///
+    /// Excluded from the mock-key serialization (`#[serde(skip)]`): the
+    /// pinned version is a transport-side dispatch input, not part of
+    /// the query's identity. Including it would invalidate every
+    /// captured `DocumentQuery` mock vector the moment the SDK is
+    /// pointed at a different protocol version. The wire envelope that
+    /// actually leaves the SDK (V0 vs V1 `GetDocumentsRequest`) is the
+    /// thing that varies with this field — and that's the layer mock
+    /// fixtures capture downstream.
+    #[cfg_attr(feature = "mocks", serde(skip))]
+    pub wire_protocol_version: Option<u32>,
 }
 
 impl DocumentQuery {
@@ -132,6 +150,7 @@ impl DocumentQuery {
             order_by_clauses: vec![],
             limit: 0,
             start: None,
+            wire_protocol_version: None,
         })
     }
 
@@ -300,24 +319,48 @@ impl TransportRequest for DocumentQuery {
         client: &'c mut Self::Client,
         settings: &AppliedRequestSettings,
     ) -> BoxFuture<'c, Result<Self::Response, TransportError>> {
-        // `TryFrom<DocumentQuery> for GetDocumentsRequest` became
-        // fallible once `where_clause_to_proto` / `having_clause_to_proto`
-        // / `value_to_proto` started rejecting `Value` variants
-        // that have no wire-format counterpart (`Map`, future
-        // `Value` additions, …). Propagate the conversion failure
-        // as a `TransportError::Grpc(Status::invalid_argument(...))`
-        // so the SDK surfaces a normal request error instead of
-        // panicking the process.
-        let request: GetDocumentsRequest = match self.try_into() {
-            Ok(r) => r,
-            Err(e) => {
-                let status = dapi_grpc::tonic::Status::invalid_argument(format!(
-                    "DocumentQuery contains values that can't be encoded on the v1 \
-                     wire: {e}"
-                ));
-                return Box::pin(async move { Err(TransportError::Grpc(status)) });
+        // Dispatch V0 vs V1 wire encoding from the protocol version pinned
+        // by `Query<DocumentQuery> for DocumentQuery` at fetch time
+        // (`sdk.version()`). Direct callers that built a `DocumentQuery`
+        // without going through the SDK fetch trampoline have no
+        // protocol version in hand — fall back to
+        // [`PlatformVersion::latest`] and emit a debug trace so the
+        // ambient default never reappears silently.
+        let platform_version = match self
+            .wire_protocol_version
+            .and_then(|v| PlatformVersion::get(v).ok())
+        {
+            Some(pv) => pv,
+            None => {
+                tracing::debug!(
+                    target: "dash_sdk::query_encoder",
+                    wire_protocol_version = ?self.wire_protocol_version,
+                    "DocumentQuery::execute_transport called without a pinned protocol \
+                     version; falling back to PlatformVersion::latest()"
+                );
+                PlatformVersion::latest()
             }
         };
+
+        // `TryFromPlatformVersioned<DocumentQuery>` can fail when
+        // `where_clause_to_proto` / `having_clause_to_proto` /
+        // `value_to_proto` rejects `Value` variants with no wire-format
+        // counterpart (`Map`, future `Value` additions, …), or when the
+        // V0 wire encoder is asked to carry a v1-only surface
+        // (SELECT/GROUP BY/HAVING). Propagate the conversion failure as
+        // a `TransportError::Grpc(Status::invalid_argument(...))` so the
+        // SDK surfaces a normal request error instead of panicking.
+        let request: GetDocumentsRequest =
+            match GetDocumentsRequest::try_from_platform_versioned(self, platform_version) {
+                Ok(r) => r,
+                Err(e) => {
+                    let status = dapi_grpc::tonic::Status::invalid_argument(format!(
+                        "DocumentQuery cannot be encoded on the selected GetDocuments \
+                         wire version: {e}"
+                    ));
+                    return Box::pin(async move { Err(TransportError::Grpc(status)) });
+                }
+            };
         request.execute_transport(client, settings)
     }
 }
@@ -393,19 +436,6 @@ impl FromProof<DocumentQuery> for drive_proof_verifier::types::Documents {
     }
 }
 
-impl TryFrom<DocumentQuery> for platform_proto::GetDocumentsRequest {
-    type Error = Error;
-    /// Convert without an explicit [`PlatformVersion`] — encodes against
-    /// [`PlatformVersion::latest`]. Callers that need version-aware
-    /// dispatch (V0 vs V1) should go through the [`Fetch`] / [`FetchMany`]
-    /// trampolines (which pass the SDK's currently-known version to
-    /// [`Query::query`](crate::platform::Query::query)) or call
-    /// [`DocumentQuery::try_into_request_for_version`] directly.
-    fn try_from(dapi_request: DocumentQuery) -> Result<Self, Self::Error> {
-        Self::try_from_platform_versioned(dapi_request, PlatformVersion::latest())
-    }
-}
-
 /// Version-aware encoder. The dispatch is driven by the
 /// `drive_abci.query.document_query` feature-version on
 /// [`PlatformVersion`]: `0` → V0 wire (used by v3.0 testnet), `1` →
@@ -432,6 +462,9 @@ impl TryFromPlatformVersioned<DocumentQuery> for GetDocumentsRequest {
             order_by_clauses,
             limit,
             start,
+            // The pin only steers which `PlatformVersion` reaches this
+            // function; once we're here the dispatch is locked in.
+            wire_protocol_version: _,
         } = value;
 
         let feature_version = platform_version
@@ -439,6 +472,13 @@ impl TryFromPlatformVersioned<DocumentQuery> for GetDocumentsRequest {
             .query
             .document_query
             .default_current_version;
+
+        tracing::debug!(
+            target: "dash_sdk::query_encoder",
+            feature_version,
+            protocol_version = platform_version.protocol_version,
+            "encoding GetDocumentsRequest"
+        );
 
         match feature_version {
             0 => encode_v0(
@@ -654,6 +694,7 @@ impl<'a> From<&'a DriveDocumentQuery<'a>> for DocumentQuery {
             order_by_clauses,
             limit,
             start,
+            wire_protocol_version: None,
         }
     }
 }
@@ -688,6 +729,7 @@ impl<'a> From<DriveDocumentQuery<'a>> for DocumentQuery {
             order_by_clauses,
             limit,
             start,
+            wire_protocol_version: None,
         }
     }
 }
