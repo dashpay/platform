@@ -43,17 +43,6 @@ use crate::error::PlatformWalletError;
 use crate::wallet::persister::WalletPersister;
 use crate::wallet::platform_wallet::WalletId;
 
-/// Per-account state held inside a [`ShieldedWallet`].
-///
-/// Crate-private — callers go through `ShieldedWallet`'s
-/// per-account helpers (`default_address(account)`,
-/// `balance(account)`, etc.). Held by value (not behind a lock)
-/// because the parent wallet's `RwLock<S>` already serializes
-/// access, and key material is read-only after derivation.
-pub(super) struct AccountState {
-    pub(super) keys: OrchardKeySet,
-}
-
 /// Feature-gated multi-account shielded wallet.
 ///
 /// One [`ShieldedWallet`] lives inside one [`PlatformWallet`] and
@@ -70,7 +59,7 @@ pub struct ShieldedWallet<S: ShieldedStore> {
     /// [`SubwalletId`] for every store call.
     pub(super) wallet_id: WalletId,
     /// Bound Orchard accounts, keyed by ZIP-32 account index.
-    pub(super) accounts: BTreeMap<u32, AccountState>,
+    pub(super) accounts: BTreeMap<u32, OrchardKeySet>,
     /// Pluggable storage backend behind a shared async lock. The
     /// commitment tree inside is global per network; notes are
     /// scoped per-subwallet by the store's `SubwalletId` keying.
@@ -114,10 +103,6 @@ impl<S: ShieldedStore> ShieldedWallet<S> {
                 "shielded wallet requires at least one account".to_string(),
             ));
         }
-        let accounts = accounts
-            .into_iter()
-            .map(|(idx, keys)| (idx, AccountState { keys }))
-            .collect();
         Ok(Self {
             sdk,
             wallet_id,
@@ -250,7 +235,7 @@ impl<S: ShieldedStore> ShieldedWallet<S> {
             return Ok(());
         }
         let keys = OrchardKeySet::from_seed(seed, network, account)?;
-        self.accounts.insert(account, AccountState { keys });
+        self.accounts.insert(account, keys);
         Ok(())
     }
 
@@ -266,7 +251,7 @@ impl<S: ShieldedStore> ShieldedWallet<S> {
 
     /// Borrow the keyset for `account`.
     pub(super) fn keys_for(&self, account: u32) -> Result<&OrchardKeySet, PlatformWalletError> {
-        self.accounts.get(&account).map(|s| &s.keys).ok_or_else(|| {
+        self.accounts.get(&account).ok_or_else(|| {
             PlatformWalletError::ShieldedKeyDerivation(format!(
                 "shielded account {account} not bound"
             ))
