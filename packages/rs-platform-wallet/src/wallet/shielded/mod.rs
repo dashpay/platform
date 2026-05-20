@@ -80,7 +80,27 @@ pub struct ShieldedWallet<S: ShieldedStore> {
     /// watermarks. `None` means in-memory only — useful for
     /// tests and short-lived wallets.
     pub(super) persister: Option<WalletPersister>,
+    /// Timestamp of the last sync pass that observed no new
+    /// commitments or newly-spent nullifiers. Honored as a
+    /// cooldown by [`sync(force=false)`](Self::sync) so the
+    /// background loop doesn't re-fetch and re-trial-decrypt the
+    /// same partial chunk every cadence interval — a Platform
+    /// partial chunk's `next_start_index` is intentionally pinned
+    /// at its chunk-start (the buffer chunk is mutable until
+    /// full), and chunk-alignment in [`sync_notes`](Self::sync_notes)
+    /// then re-fetches it on every pass. Manual user-initiated
+    /// syncs pass `force=true` and ignore this. Cleared whenever
+    /// a sync observes new positions or new spends so the next
+    /// pass runs immediately.
+    pub(super) last_caught_up_at: std::sync::Mutex<Option<std::time::Instant>>,
 }
+
+/// How long after a no-op sync the background loop should skip
+/// further passes. Tuned against the wallet's typical 60s sync
+/// cadence — halves wire calls in steady-state while keeping
+/// "new notes" discovery latency bounded at one cooldown window
+/// plus the next loop tick. Manual `force=true` syncs bypass.
+pub(super) const CAUGHT_UP_COOLDOWN: std::time::Duration = std::time::Duration::from_secs(30);
 
 impl<S: ShieldedStore> ShieldedWallet<S> {
     /// Construct a [`ShieldedWallet`] from pre-derived keysets.
@@ -108,6 +128,7 @@ impl<S: ShieldedStore> ShieldedWallet<S> {
             accounts,
             store: Arc::new(RwLock::new(store)),
             persister: None,
+            last_caught_up_at: std::sync::Mutex::new(None),
         })
     }
 

@@ -416,10 +416,13 @@ impl PlatformWallet {
     /// surfacing an error). Returns `Ok(Some(summary))` after a
     /// successful pass, or `Err(_)` if the underlying sync failed.
     #[cfg(feature = "shielded")]
-    pub async fn shielded_sync(&self) -> Result<Option<ShieldedSyncSummary>, PlatformWalletError> {
+    pub async fn shielded_sync(
+        &self,
+        force: bool,
+    ) -> Result<Option<ShieldedSyncSummary>, PlatformWalletError> {
         let guard = self.shielded.read().await;
         match guard.as_ref() {
-            Some(wallet) => Ok(Some(wallet.sync().await?)),
+            Some(wallet) => Ok(Some(wallet.sync(force).await?)),
             None => Ok(None),
         }
     }

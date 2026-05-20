@@ -139,12 +139,20 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_sync_set_interval(
 }
 
 /// Run one shielded sync pass across all registered wallets.
+///
+/// This is the user-initiated entry point (the host's "Sync Now"
+/// button), so `force=true` is passed through to bypass the
+/// per-wallet caught-up cooldown: a user who just sent a
+/// transaction and taps the button should see the resulting
+/// note immediately, not wait out the cooldown. The background
+/// loop in `ShieldedSyncManager::start()` uses `force=false`
+/// and honors the cooldown.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_shielded_sync_sync_now(
     handle: Handle,
 ) -> PlatformWalletFFIResult {
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
-        runtime().block_on(manager.shielded_sync().sync_now());
+        runtime().block_on(manager.shielded_sync().sync_now(true));
     });
     unwrap_option_or_return!(option);
     PlatformWalletFFIResult::ok()
@@ -415,7 +423,10 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_sync_wallet(
     std::ptr::copy_nonoverlapping(wallet_id_bytes, wallet_id.as_mut_ptr(), 32);
 
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
-        runtime().block_on(manager.shielded_sync().sync_wallet(&wallet_id))
+        // Per-wallet sync_wallet is exclusively a user-initiated
+        // entry point — same `force=true` reasoning as
+        // `platform_wallet_manager_shielded_sync_sync_now`.
+        runtime().block_on(manager.shielded_sync().sync_wallet(&wallet_id, true))
     });
     let result = unwrap_option_or_return!(option);
     match result {

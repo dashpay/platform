@@ -221,7 +221,14 @@ impl ShieldedSyncManager {
                             break;
                         }
 
-                        this.sync_now().await;
+                        // Background-loop cadence — honor the
+                        // per-wallet caught-up cooldown so a
+                        // sleepy network doesn't refetch +
+                        // re-trial-decrypt the partial buffer
+                        // chunk every interval. User-initiated
+                        // syncs pass `force=true` to the FFI
+                        // entry point below and bypass this.
+                        this.sync_now(false).await;
 
                         let interval = this.interval();
                         tokio::select! {
@@ -260,9 +267,16 @@ impl ShieldedSyncManager {
 
     /// Run one sync pass across every registered wallet.
     ///
+    /// `force` is propagated to each wallet's
+    /// [`shielded_sync(force)`](crate::wallet::PlatformWallet::shielded_sync):
+    /// the background loop passes `false` to honor the per-wallet
+    /// caught-up cooldown; user-initiated paths (the manual
+    /// "Sync Now" FFI) pass `true` so a tap always re-checks
+    /// Platform.
+    ///
     /// If a pass is already in flight, returns an empty summary and
     /// skips — the caller can inspect [`is_syncing`] to distinguish.
-    pub async fn sync_now(&self) -> ShieldedSyncPassSummary {
+    pub async fn sync_now(&self, force: bool) -> ShieldedSyncPassSummary {
         if self
             .is_syncing
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
@@ -278,7 +292,7 @@ impl ShieldedSyncManager {
 
         let mut summary = ShieldedSyncPassSummary::default();
         for (wallet_id, wallet) in snapshot {
-            let outcome = match wallet.shielded_sync().await {
+            let outcome = match wallet.shielded_sync(force).await {
                 Ok(Some(result)) => WalletShieldedOutcome::Ok(result),
                 Ok(None) => WalletShieldedOutcome::Skipped,
                 Err(e) => {
@@ -322,6 +336,7 @@ impl ShieldedSyncManager {
     pub async fn sync_wallet(
         &self,
         wallet_id: &WalletId,
+        force: bool,
     ) -> Result<Option<ShieldedSyncSummary>, crate::error::PlatformWalletError> {
         let wallet = {
             let wallets = self.wallets.read().await;
@@ -346,7 +361,7 @@ impl ShieldedSyncManager {
             return Ok(None);
         }
 
-        let result = wallet.shielded_sync().await;
+        let result = wallet.shielded_sync(force).await;
 
         self.is_syncing.store(false, Ordering::Release);
         result

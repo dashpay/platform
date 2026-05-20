@@ -30,7 +30,13 @@ const CHUNK_SIZE: u64 = 2048;
 pub struct SyncNotesResult {
     /// Per-account count of new notes discovered in this pass.
     pub new_notes_per_account: BTreeMap<u32, usize>,
-    /// Total encrypted notes scanned.
+    /// Number of **new** positions scanned this pass — i.e.
+    /// commitments at positions `>= already_have` that the SDK
+    /// returned. Re-scanned positions (the partial-chunk
+    /// re-fetch that Platform's chunked sync semantics force on
+    /// every pass while the buffer chunk is mutable) are
+    /// excluded so the cumulative counter the host displays
+    /// reflects "new work seen", not wire-level fetch volume.
     pub total_scanned: u64,
 }
 
@@ -278,9 +284,19 @@ impl<S: ShieldedStore> ShieldedWallet<S> {
             new_index, "Shielded sync finished"
         );
 
+        // Report only the **new** positions observed this pass.
+        // The SDK's `total_notes_scanned` counts every commitment
+        // in the fetched chunks, but Platform's chunked-sync
+        // semantics re-fetch the partial chunk every cadence
+        // (the buffer chunk is mutable until full), so the raw
+        // wire count climbs by the chunk size every pass on a
+        // sleepy network even though nothing changed. Subtract
+        // `already_have` so the host counter reflects newly-seen
+        // positions instead of wire volume.
+        let scanned_new = (aligned_start + result.total_notes_scanned).saturating_sub(already_have);
         Ok(SyncNotesResult {
             new_notes_per_account,
-            total_scanned: result.total_notes_scanned,
+            total_scanned: scanned_new,
         })
     }
 
@@ -383,10 +399,57 @@ impl<S: ShieldedStore> ShieldedWallet<S> {
     }
 
     /// Full sync: notes + nullifiers + per-account balance summary.
-    pub async fn sync(&self) -> Result<ShieldedSyncSummary, PlatformWalletError> {
+    ///
+    /// `force` controls whether the [caught-up cooldown](super::CAUGHT_UP_COOLDOWN)
+    /// is honored. The background sync loop passes `force=false`
+    /// so a no-op pass (no new positions, no newly-spent
+    /// nullifiers) suppresses the next pass for the cooldown
+    /// window — without this the SDK's chunked sync forces a
+    /// fresh fetch + trial-decrypt of the (partial) tail chunk
+    /// on every cadence interval. User-initiated paths (the
+    /// "Sync Now" button) pass `force=true` and always run, so
+    /// a user who just sent a transaction sees the new note on
+    /// the next tap rather than waiting out the cooldown.
+    pub async fn sync(&self, force: bool) -> Result<ShieldedSyncSummary, PlatformWalletError> {
+        if !force {
+            if let Ok(guard) = self.last_caught_up_at.lock() {
+                if let Some(when) = *guard {
+                    let elapsed = when.elapsed();
+                    if elapsed < super::CAUGHT_UP_COOLDOWN {
+                        debug!(
+                            elapsed_secs = elapsed.as_secs(),
+                            cooldown_secs = super::CAUGHT_UP_COOLDOWN.as_secs(),
+                            "Shielded sync skipped — within caught-up cooldown"
+                        );
+                        return Ok(ShieldedSyncSummary {
+                            notes_result: SyncNotesResult::default(),
+                            newly_spent_per_account: BTreeMap::new(),
+                            balances: self.balances().await?,
+                        });
+                    }
+                }
+            }
+        }
+
         let notes_result = self.sync_notes().await?;
         let newly_spent_per_account = self.check_nullifiers().await?;
         let balances = self.balances().await?;
+
+        // Mark caught-up only when this pass observed nothing
+        // new on either axis. Any activity (new positions or new
+        // spends) clears the timestamp so the next pass runs
+        // immediately rather than back-pressuring fresh work
+        // behind the cooldown.
+        let was_no_op =
+            notes_result.total_scanned == 0 && newly_spent_per_account.values().all(|&n| n == 0);
+        if let Ok(mut guard) = self.last_caught_up_at.lock() {
+            if was_no_op {
+                *guard = Some(std::time::Instant::now());
+            } else {
+                *guard = None;
+            }
+        }
+
         Ok(ShieldedSyncSummary {
             notes_result,
             newly_spent_per_account,
