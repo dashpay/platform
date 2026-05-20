@@ -107,7 +107,6 @@
 * **platform-wallet:** PR-15 — shielded pool with storage abstraction
 * **platform-wallet:** PR-16 — AssetLockFinalityEvent tracking
 * **platform-wallet:** PR-17 — adopt dashcore asset lock builder, closes [rust-dashcore#604](https://github.com/dashpay/rust-dashcore/issues/604)
-* **platform-wallet:** PR-17 — adopt dashcore asset lock builder, closes [rust-dashcore#604](https://github.com/dashpay/rust-dashcore/issues/604)
 * **platform-wallet:** PR-2 — per-address data, signing, asset locks
 * **platform-wallet:** PR-2 — signing, per-address data, asset locks, payments
 * **platform-wallet:** PR-3 — IdentityWallet with real SDK calls + IdentitySigner
@@ -166,7 +165,6 @@
 * **swift-sdk:** add CoreWallet and AssetLock Swift wrappers
 * **swift-sdk:** add full shielded pool (ZK) support for iOS ([#3348](https://github.com/dashpay/platform/issues/3348))
 * **swift-sdk:** add mnemonic storage to WalletStorage ([#3477](https://github.com/dashpay/platform/issues/3477))
-* **swift-sdk:** add mnemonic storage to WalletStorage ([#3477](https://github.com/dashpay/platform/issues/3477))
 * **swift-sdk:** add state transitions ([#3008](https://github.com/dashpay/platform/issues/3008))
 * **swift-sdk:** add Storage Explorer to browse all SwiftData models
 * **swift-sdk:** add support for v3 queries ([#3004](https://github.com/dashpay/platform/issues/3004))
@@ -190,7 +188,7 @@
 * **swift-sdk:** registerIdentityFromAddresses wrapper
 * **swift-sdk:** reorder wallet accounts + platform-specific detail
 * **swift-sdk:** send transaction ([#3130](https://github.com/dashpay/platform/issues/3130))
-* **swift-sdk:** show balance + enforce unselectable zero-balance rows, closes [#0](https://github.com/dashpay/platform/issues/0) [#0](https://github.com/dashpay/platform/issues/0)
+* **swift-sdk:** show balance + enforce unselectable zero-balance rows
 * **swift-sdk:** show derivation path on Receive Dash
 * **swift-sdk:** show public key hex on Receive Dash
 * **swift-sdk:** split Storage Explorer Core vs Platform addresses
@@ -730,7 +728,7 @@
 * **platform-wallet:** apply reviewer feedback on Phase 9a-2
 * **platform-wallet:** apply_changeset consumes changeset by value
 * **platform-wallet:** ArcSwap event manager + balance update via events
-* **platform-wallet:** B2-B4 — all mutation methods persist internally, closes [#155](https://github.com/dashpay/platform/issues/155)
+* **platform-wallet:** B2-B4 — all mutation methods persist internally
 * **platform-wallet:** carry sync watermark in PlatformAddressChangeSet
 * **platform-wallet:** check BIP44 account first for asset lock tx lookup
 * **platform-wallet:** clean up CoreWallet, add broadcaster
@@ -764,7 +762,7 @@
 * **platform-wallet:** mutation methods return changesets (Phase 9a-2)
 * **platform-wallet:** persist changesets internally, add metrics to SyncResult, drop removed field
 * **platform-wallet:** PlatformAddressChangeSet carries AddressFunds
-* **platform-wallet:** PlatformWalletPersistence::store() returns Result, closes [#5](https://github.com/dashpay/platform/issues/5)
+* **platform-wallet:** PlatformWalletPersistence::store() returns Result
 * **platform-wallet:** PR-18 — remove CoreWallet convenience wrappers
 * **platform-wallet:** register_from_addresses takes two signers
 * **platform-wallet:** remove 9 dead AssetLockManager methods
@@ -807,7 +805,6 @@
 * **platform-wallet:** use OutPoint in recover_asset_lock_blocking and resolve_status
 * rs-platform-wallet-ffi error framework ([#3566](https://github.com/dashpay/platform/issues/3566))
 * **rs-sdk:** async AddressProvider callbacks ([#3495](https://github.com/dashpay/platform/issues/3495))
-* **rs-sdk:** async AddressProvider callbacks ([#3495](https://github.com/dashpay/platform/issues/3495))
 * **rs-sdk:** generic AddressProvider::Tag and iterator-returning provider methods
 * **sdk:** rewrite NonceCache with LRU eviction, drift detection, and structured errors ([#3111](https://github.com/dashpay/platform/issues/3111))
 * simplify derive_account_xpub to use AccountType
@@ -825,7 +822,7 @@
 * **swift-sdk:** drop denormalized PersistentIdentity.walletId
 * **swift-sdk:** extract key management logic into centralized KeyManager ([#3033](https://github.com/dashpay/platform/issues/3033))
 * **swift-sdk:** extract validation logic ([#3042](https://github.com/dashpay/platform/issues/3042))
-* **swift-sdk:** group Core Addresses by account, not per-pool, closes [#3](https://github.com/dashpay/platform/issues/3)
+* **swift-sdk:** group Core Addresses by account, not per-pool
 * **swift-sdk:** key management ([#3050](https://github.com/dashpay/platform/issues/3050))
 * **swift-sdk:** lean down stale app and SDK layers ([#3539](https://github.com/dashpay/platform/issues/3539))
 * **swift-sdk:** PlatformWalletManager as ObservableObject
