@@ -213,29 +213,32 @@ pub async fn shield<Sig: Signer<PlatformAddress>, P: OrchardProver>(
 
     trace!("Shield credits: state transition built, broadcasting...");
     let network = sdk.network;
-    state_transition.broadcast(sdk, None).await.map_err(|e| {
-        if let Some(rich) = addresses_not_enough_funds(&e) {
-            let claimed = claimed_inputs
-                .iter()
-                .map(|(addr, (nonce, credits))| {
-                    format!(
-                        "{}=(nonce {nonce}, {credits} credits)",
-                        addr.to_bech32m_string(network)
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join(", ");
-            PlatformWalletError::ShieldedBroadcastFailed(format!(
-                "addresses not enough funds: required {} credits; \
+    state_transition
+        .broadcast_and_wait::<StateTransitionProofResult>(sdk, None)
+        .await
+        .map_err(|e| {
+            if let Some(rich) = addresses_not_enough_funds(&e) {
+                let claimed = claimed_inputs
+                    .iter()
+                    .map(|(addr, (nonce, credits))| {
+                        format!(
+                            "{}=(nonce {nonce}, {credits} credits)",
+                            addr.to_bech32m_string(network)
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                PlatformWalletError::ShieldedBroadcastFailed(format!(
+                    "addresses not enough funds: required {} credits; \
                      claimed inputs [{}]; platform sees [{}]",
-                rich.required_balance(),
-                claimed,
-                format_addresses_with_info(rich.addresses_with_info(), network),
-            ))
-        } else {
-            PlatformWalletError::ShieldedBroadcastFailed(e.to_string())
-        }
-    })?;
+                    rich.required_balance(),
+                    claimed,
+                    format_addresses_with_info(rich.addresses_with_info(), network),
+                ))
+            } else {
+                PlatformWalletError::ShieldedBroadcastFailed(e.to_string())
+            }
+        })?;
 
     info!(account, credits = amount, "Shield broadcast succeeded");
     Ok(())
@@ -278,7 +281,7 @@ pub async fn shield_from_asset_lock<P: OrchardProver>(
 
     trace!("Shield from asset lock: state transition built, broadcasting...");
     state_transition
-        .broadcast(sdk, None)
+        .broadcast_and_wait::<StateTransitionProofResult>(sdk, None)
         .await
         .map_err(|e| PlatformWalletError::ShieldedBroadcastFailed(e.to_string()))?;
 

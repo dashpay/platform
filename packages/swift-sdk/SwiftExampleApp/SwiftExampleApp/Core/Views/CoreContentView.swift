@@ -9,12 +9,13 @@ struct CoreContentView: View {
     @EnvironmentObject var platformBalanceSyncService: PlatformBalanceSyncService
     @EnvironmentObject var shieldedService: ShieldedService
     /// Threaded into `ShieldedService.clearLocalState(modelContext:)`
-    /// so the Clear button can scope its delete-by-predicate to
-    /// the bound wallet's persisted rows.
+    /// so the global shielded Clear action can wipe persisted
+    /// rows across wallets on the active device.
     @Environment(\.modelContext) private var modelContext
     @State private var showProofDetail = false
     @State private var masternodesEnabled: Bool = true
     @State private var platformSyncExpanded: Bool = false
+    @State private var showShieldedClearConfirmation = false
     // Progress values come from PlatformWalletManager (polled from FFI each second)
 
     /// All persisted platform addresses across every wallet. Summed
@@ -539,26 +540,9 @@ var body: some View {
                         .disabled(shieldedService.isSyncing || !shieldedService.canResume)
 
                         Button {
-                            // Stop the manager-wide shielded sync
-                            // loop, then wipe every wallet's
-                            // persisted shielded rows (notes +
-                            // sync state). The Swift mirror zeros
-                            // out and the service goes unbound,
-                            // but the bind credentials are kept
-                            // so the user can tap Sync Now to
-                            // self-rebind from this screen — no
-                            // navigation detour required. The
-                            // on-disk SQLite tree is intentionally
-                            // NOT deleted (Rust still holds its
-                            // handle open via FileBackedShieldedStore;
-                            // see clearLocalState's doc).
-                            Task {
-                                await shieldedService.clearLocalState(
-                                    modelContext: modelContext
-                                )
-                            }
+                            showShieldedClearConfirmation = true
                         } label: {
-                            Text("Clear")
+                            Text("Clear Shielded Data")
                                 .font(.caption)
                                 .fontWeight(.medium)
                         }
@@ -595,6 +579,35 @@ var body: some View {
             NavigationStack {
                 ProofDetailView(proofData: platformBalanceSyncService.lastRecentProof)
             }
+        }
+        .confirmationDialog(
+            "Clear shielded sync data for every wallet on this device?",
+            isPresented: $showShieldedClearConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Clear Shielded Data", role: .destructive) {
+                // Stop the manager-wide shielded sync loop, then
+                // wipe every wallet's persisted shielded rows
+                // (notes + sync state). The Swift mirror zeros
+                // out and the service goes unbound, but the bind
+                // credentials are kept so the user can tap
+                // Sync Now to self-rebind from this screen — no
+                // navigation detour required. The on-disk SQLite
+                // tree is intentionally NOT deleted (Rust still
+                // holds its handle open via
+                // FileBackedShieldedStore; see clearLocalState's
+                // doc).
+                Task {
+                    await shieldedService.clearLocalState(
+                        modelContext: modelContext
+                    )
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(
+                "This removes persisted shielded notes and sync state for all wallets on this device. Use Sync Now afterward to rebind and rescan."
+            )
         }
     }
 
