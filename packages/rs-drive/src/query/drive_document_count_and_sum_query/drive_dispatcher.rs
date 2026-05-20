@@ -1,36 +1,38 @@
 //! Joint count-and-sum dispatcher entry point for the AVG no-prove
 //! path.
 //!
-//! Resolves [issue #3687](https://github.com/dashpay/platform/issues/3687):
-//! consumes a [`DocumentAverageRequest`] with `prove = false` and
-//! routes it through one of three joint per-mode executors
-//! (`Total` / `PerInValue` / `RangeNoProof`), each of which walks
-//! grovedb once and reads `(count, sum)` from every visited
-//! count-sum-bearing element. The dispatcher delegates routing to
-//! sum's versioned mode-detection table — see [the routing
+//! Consumes a [`DocumentAverageRequest`] with `prove = false` and
+//! dispatches to one of three per-mode executors (`Total` /
+//! `PerInValue` / `RangeNoProof`) based on sum's versioned mode-
+//! detection table — see [the routing
 //! table](crate::query::drive_document_sum_query::mode_detection) for
-//! the contract.
+//! the per-shape contract.
 //!
-//! # Perf characteristic
+//! # Per-shape cost
 //!
-//! One grovedb walk per AVG no-prove query (compared to the pre-#3687
-//! composition of two parallel walks zipped at the dispatcher). The
-//! `PerInValue` and compound-aggregate range branches still issue
-//! multiple per-In sub-reads, but each of those is a single grovedb
-//! call yielding `(count, sum)` together rather than the two parallel
-//! calls the composition did before.
+//! - `Total` / `PerInValue`: point-lookup walk against the index;
+//!   one grovedb read per In branch yielding `(count, sum)` together
+//!   via [`grovedb::Element::count_sum_value_or_default`].
+//! - `RangeNoProof` distinct (`GroupByRange` / `GroupByCompound` +
+//!   range): one grovedb walk against the
+//!   `ProvableCountProvableSumTree` terminators of
+//!   `distinct_sum_path_query`, bounded by the request's `limit`
+//!   (default `drive_config.default_query_limit`, capped at
+//!   `drive_config.max_query_limit`).
+//! - `RangeNoProof` aggregate (`Aggregate` / `GroupByIn` + range):
+//!   grovedb's merk-internal `query_aggregate_count` +
+//!   `query_aggregate_sum` accumulators (each O(log n)) under a
+//!   shared read transaction. Compound `In + range` per-In fans out
+//!   (≤100 branches × 2 accumulator calls).
 //!
 //! # Atomicity
 //!
-//! - `Total` and the distinct `RangeNoProof` branch issue exactly one
-//!   grovedb read each; atomicity is inherent (one read sees one
-//!   snapshot).
-//! - The `PerInValue` branch and (under the unified walk) the
-//!   compound-aggregate `RangeNoProof` branch issue multiple per-In
-//!   reads. Their executors open a short-lived shared read transaction
-//!   internally when `transaction.is_none()` so the per-In reads see a
-//!   consistent snapshot. The previous AVG dispatcher's shared-tx
-//!   plumbing moved into those executors.
+//! Executors that issue multiple grovedb reads (`PerInValue`, the
+//! aggregate `RangeNoProof` branch, and its compound `In + range`
+//! per-In fan-out) open a short-lived shared read transaction
+//! internally when `transaction.is_none()` so the sub-reads see a
+//! consistent grovedb snapshot. Executors that issue exactly one
+//! read get atomicity for free.
 
 use super::super::drive_document_average_query::{
     AverageMode, DocumentAverageRequest, DocumentAverageResponse,
