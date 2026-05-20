@@ -330,14 +330,39 @@ class ShieldedService: ObservableObject {
     /// (the symptom the user reported when "Clear" left a row
     /// behind for a non-active wallet).
     func clearLocalState(modelContext: ModelContext) async {
-        // Capture the network BEFORE `reset()` nils it out so we
-        // can locate the per-network SQLite tree file. May still
-        // be nil if `bind` never ran this session; in that case
-        // there's no DB to delete and the SwiftData wipe is the
-        // whole job.
+        // Capture the network + manager BEFORE `reset()` nils
+        // them out. The network drives the per-network SQLite
+        // path; the manager is needed to stop the background
+        // shielded sync loop so Rust doesn't rewrite the rows we
+        // just wiped.
         let networkForDB = network
+        let managerForStop = walletManager
 
-        // 1) Delete every shielded SwiftData row across all
+        // 1) Stop the manager-wide shielded sync loop BEFORE
+        //    touching state on disk. The Swift `ShieldedService`
+        //    is per-wallet-at-a-time, but the Rust
+        //    `PlatformWalletManager` keeps **every** wallet that
+        //    ever ran `bind_shielded` bound at the Rust level,
+        //    and the background sync iterates all of them on its
+        //    own cadence. If we don't stop the loop, the next
+        //    pass fires per wallet and the persister callback
+        //    immediately re-creates the `PersistentShieldedNote`
+        //    / `PersistentShieldedSyncState` rows we're about to
+        //    delete (this is exactly the "Clear left a row
+        //    behind / re-derived a fresh row" symptom we saw on
+        //    the prior attempt). Stopping is best-effort —
+        //    failure logs but doesn't abort the wipe.
+        if let managerForStop {
+            do {
+                try managerForStop.stopShieldedSync()
+            } catch {
+                SDKLogger.error(
+                    "ShieldedService.clearLocalState: stopShieldedSync failed: \(error.localizedDescription)"
+                )
+            }
+        }
+
+        // 2) Delete every shielded SwiftData row across all
         //    wallets on this device. The Clear button is on the
         //    global Sync Status surface, so its semantics are
         //    "blow away shielded persistence", not "scope to one
@@ -352,7 +377,7 @@ class ShieldedService: ObservableObject {
             return
         }
 
-        // 2) Delete the per-network commitment-tree SQLite file
+        // 3) Delete the per-network commitment-tree SQLite file
         //    (plus its WAL/SHM/journal sidecars) so the next
         //    `bind_shielded` on this network starts the tree at
         //    leaf 0. Without this the SwiftData snapshot says
@@ -378,11 +403,13 @@ class ShieldedService: ObservableObject {
             }
         }
 
-        // 3) Tear down the in-memory mirror + subscriptions. The
+        // 4) Tear down the in-memory mirror + subscriptions. The
         //    service is now unbound; no further sync events flow
         //    in and Sync Now will surface "Shielded service not
         //    configured" until something re-binds (typically the
-        //    next navigation into a wallet detail screen).
+        //    next navigation into a wallet detail screen, which
+        //    also restarts the manager-wide sync via
+        //    `rebindWalletScopedServices`).
         reset()
     }
 
