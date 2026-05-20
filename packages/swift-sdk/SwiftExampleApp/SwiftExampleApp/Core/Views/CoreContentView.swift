@@ -8,6 +8,10 @@ struct CoreContentView: View {
     @EnvironmentObject var appUIState: AppUIState
     @EnvironmentObject var platformBalanceSyncService: PlatformBalanceSyncService
     @EnvironmentObject var shieldedService: ShieldedService
+    /// Threaded into `ShieldedService.clearLocalState(modelContext:)`
+    /// so the Clear button can scope its delete-by-predicate to
+    /// the bound wallet's persisted rows.
+    @Environment(\.modelContext) private var modelContext
     @State private var showProofDetail = false
     @State private var masternodesEnabled: Bool = true
     @State private var platformSyncExpanded: Bool = false
@@ -527,7 +531,18 @@ var body: some View {
                         .disabled(shieldedService.isSyncing)
 
                         Button {
-                            shieldedService.reset()
+                            // Wipe this wallet's persisted shielded
+                            // rows (notes + sync state) AND re-bind
+                            // so the next Sync Now starts from
+                            // scratch — bare `reset()` left the
+                            // service unbound, surfacing "Shielded
+                            // service not configured" on the next
+                            // press.
+                            Task {
+                                await shieldedService.clearLocalState(
+                                    modelContext: modelContext
+                                )
+                            }
                         } label: {
                             Text("Clear")
                                 .font(.caption)

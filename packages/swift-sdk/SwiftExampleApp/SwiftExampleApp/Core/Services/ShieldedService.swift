@@ -11,6 +11,7 @@
 import Foundation
 import SwiftUI
 import Combine
+import SwiftData
 import SwiftDashSDK
 
 /// Observable service mirroring Rust-owned shielded sync state.
@@ -294,6 +295,92 @@ class ShieldedService: ObservableObject {
         totalScanned = 0
         totalNewNotes = 0
         totalNewlySpent = 0
+    }
+
+    /// Wipe this wallet's persisted shielded state and re-bind so
+    /// the next sync starts from scratch and the Sync Now button
+    /// keeps working.
+    ///
+    /// Bare [`reset`] just tears down subscriptions and nils the
+    /// in-memory mirror — the SwiftData rows
+    /// (`PersistentShieldedNote`, `PersistentShieldedSyncState`)
+    /// survive, and the service becomes unbound so the next Sync
+    /// Now fails with "Shielded service not configured". The user-
+    /// facing Clear button on the Sync Status screen really wants
+    /// "wipe and start over"; this does that.
+    ///
+    /// What it does NOT touch:
+    ///   * The on-disk commitment-tree SQLite file at
+    ///     `dbPath(for:)`. That tree is **per-network** — every
+    ///     wallet on the same network shares the same `cmx` stream
+    ///     and the same frontier, so deleting it would corrupt
+    ///     other wallets' state. The next sync just re-uses the
+    ///     existing tree leaves (Rust's `sync_notes` skips
+    ///     positions already in the tree).
+    ///   * The Rust-side shielded sub-wallet: `bindShielded` is
+    ///     idempotent and a second call replaces the binding, so
+    ///     we don't need a separate unbind path.
+    ///
+    /// No-op if the service hasn't been bound yet (nothing to
+    /// clear; nothing to rebind to).
+    func clearLocalState(modelContext: ModelContext) async {
+        guard
+            let walletManager,
+            let walletId = boundWalletId,
+            let resolver,
+            let network
+        else {
+            SDKLogger.log(
+                "ShieldedService.clearLocalState called before initial bind — ignoring",
+                minimumLevel: .medium
+            )
+            return
+        }
+        let accounts = boundAccounts.isEmpty ? [0] : boundAccounts
+
+        // Stash for after the in-memory reset.
+        let pinnedManager = walletManager
+        let pinnedResolver = resolver
+        let pinnedNetwork = network
+
+        // 1) Delete this wallet's persisted shielded rows from
+        //    SwiftData. Scoped to `walletId` so other wallets'
+        //    state on the same SwiftData store stays intact.
+        do {
+            try modelContext.delete(
+                model: PersistentShieldedNote.self,
+                where: #Predicate { $0.walletId == walletId }
+            )
+            try modelContext.delete(
+                model: PersistentShieldedSyncState.self,
+                where: #Predicate { $0.walletId == walletId }
+            )
+            try modelContext.save()
+        } catch {
+            lastError = "Failed to wipe persisted shielded state: \(error.localizedDescription)"
+            SDKLogger.error(lastError ?? "")
+            return
+        }
+
+        // 2) Reset the in-memory mirror so the UI shows zeros
+        //    immediately rather than the stale snapshot from the
+        //    last sync event.
+        reset()
+
+        // 3) Re-bind so Sync Now works without the user having to
+        //    navigate away and back to trigger
+        //    `rebindWalletScopedServices`. The Rust manager's
+        //    `bindShielded` is idempotent and replaces the
+        //    previous binding; the persister callback's
+        //    `loadShieldedNotes` will now see an empty table and
+        //    Rust's `restore_from_snapshot` will start from zero.
+        bind(
+            walletManager: pinnedManager,
+            walletId: walletId,
+            network: pinnedNetwork,
+            resolver: pinnedResolver,
+            accounts: accounts
+        )
     }
 
     // MARK: - Sync event handling
