@@ -18,6 +18,36 @@ import SwiftData
 ///    Rust side from these rows so an in-flight registration that
 ///    was interrupted by an app kill can resume from the latest
 ///    status without rebroadcasting the asset-lock transaction.
+///
+/// ## Destination conventions per funding type
+///
+/// The destination of the asset lock — what was funded — is stored
+/// in different fields depending on `fundingTypeRaw`. Each funding
+/// type owns one typed field-family rather than sharing a
+/// polymorphic `destinationBytes: Data?` blob; the typed shape
+/// keeps SwiftData predicates working and makes per-type queries
+/// readable.
+///
+/// - **Identity** (`fundingTypeRaw ∈ {0, 1, 2, 3}` —
+///   IdentityRegistration / IdentityTopUp / IdentityTopUpNotBound /
+///   IdentityInvitation): `identityIndexRaw` carries the HD slot of
+///   the destination identity. The identity row itself can be
+///   resolved via `PersistentIdentity` joined on
+///   `(walletId, identityIndex)`.
+///
+/// - **Platform address** (`fundingTypeRaw == 4` —
+///   AssetLockAddressTopUp):
+///   `recipientPlatformAddressHash` + `recipientPlatformAddressType`
+///   identify the destination. Set by Swift on the controller's
+///   `.completed` phase because the recipient is picked at
+///   ST-submit time on the host side; Rust never sees it.
+///
+/// - **Shielded address** (`fundingTypeRaw == 5` —
+///   AssetLockShieldedAddressTopUp, not yet wired): will add a
+///   dedicated `recipientShielded*` field family when the
+///   shielded-funding flow lands. Keep this convention — one typed
+///   field-family per funding type rather than a polymorphic
+///   `destinationBytes` blob.
 @Model
 public final class PersistentAssetLock {
     /// Index `walletId` so per-wallet asset-lock scans (the progress
