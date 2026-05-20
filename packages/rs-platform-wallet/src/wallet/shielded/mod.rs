@@ -16,6 +16,7 @@
 //!   wallet's Orchard accounts (`BTreeMap<u32, OrchardKeySet>`),
 //!   the shared store, and the SDK together.
 
+pub mod coordinator;
 pub mod file_store;
 pub mod keys;
 pub mod note_selection;
@@ -24,8 +25,9 @@ pub mod prover;
 pub mod store;
 pub mod sync;
 
+pub use coordinator::NetworkShieldedCoordinator;
 pub use file_store::{FileBackedShieldedStore, FileShieldedStoreError};
-pub use keys::OrchardKeySet;
+pub use keys::{AccountViewingKeys, OrchardKeySet};
 pub use prover::CachedOrchardProver;
 pub use store::{InMemoryShieldedStore, ShieldedNote, ShieldedStore, SubwalletId};
 pub use sync::{ShieldedSyncSummary, SyncNotesResult};
