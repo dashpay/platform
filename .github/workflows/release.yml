@@ -129,7 +129,7 @@ jobs:
       - name: Setup Node.JS
         uses: ./.github/actions/nodejs
         with:
-          node-version: 24
+          node-version: 24.14.1
 
       - name: Publish NPM packages
         run: yarn workspaces foreach --all --no-private --parallel npm publish --tolerate-republish --access public --tag ${{ steps.tag.outputs.result }}

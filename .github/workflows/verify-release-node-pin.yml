@@ -1,0 +1,52 @@
+name: Verify release Node.JS pin
+
+# Mirrors the two-step `Setup Node.JS` pattern from release.yml
+# (release-npm job) to prove that the second setup-node call does
+# not switch Node minor versions and break native postinstall scripts
+# (bufferutil, utf-8-validate, unrs-resolver, @pshenmic/zeromq).
+#
+# Background: when the second call passed `node-version: 24`,
+# actions/setup-node resolved it to the latest 24.x in the runner
+# cache (24.15.0), which ships a regression in the ESM CJS translator
+# that raises EBADF: bad file descriptor, fstat during postinstalls.
+# Pinning to 24.14.1 (matching the composite action's default) avoids it.
+#
+# Safe to delete once the fix has shipped and the next release is green.
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
+      - .github/workflows/verify-release-node-pin.yml
+      - .github/actions/nodejs/**
+
+jobs:
+  verify-two-step-install:
+    name: Two-step yarn install survives node-version pin
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      # First Setup Node.JS — composite action default (24.14.1).
+      # Internally runs `yarn install --inline-builds`.
+      - name: Setup Node.JS (composite default)
+        uses: ./.github/actions/nodejs
+
+      # Second Setup Node.JS — re-setup pattern from release.yml,
+      # exercising the same `node-version: 24.14.1` pin that the fix
+      # introduces. Internally runs `yarn install --inline-builds`
+      # again under the (possibly newly-installed) Node binary,
+      # which is where the original failure surfaced.
+      - name: Setup Node.JS (release.yml re-setup, pinned)
+        uses: ./.github/actions/nodejs
+        with:
+          node-version: 24.14.1
+
+      - name: Report Node version after second setup
+        run: node --version
+
+      - name: Confirm yarn workspaces resolve
+        run: yarn workspaces list --json | head -5
