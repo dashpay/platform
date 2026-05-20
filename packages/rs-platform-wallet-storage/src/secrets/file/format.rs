@@ -23,8 +23,8 @@
 //! fails its tag, so a mismatched key is rejected before any entry is
 //! written or read (no mixed-key corruption).
 
-use super::error::FileStoreError;
 use super::crypto::{KdfParams, NONCE_LEN, SALT_LEN};
+use super::error::FileStoreError;
 
 pub(crate) const MAGIC: &[u8; 9] = b"PWSVAULT1";
 pub(crate) const FORMAT_VERSION: u32 = 2;

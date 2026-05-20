@@ -76,10 +76,7 @@ struct EncryptedFileStoreInner {
 impl EncryptedFileStore {
     /// Open (or prepare to create) a vault store rooted at `dir`,
     /// unlocked by `passphrase`. `dir` is created if missing.
-    pub fn open(
-        dir: impl AsRef<Path>,
-        passphrase: SecretString,
-    ) -> Result<Self, FileStoreError> {
+    pub fn open(dir: impl AsRef<Path>, passphrase: SecretString) -> Result<Self, FileStoreError> {
         let dir = dir.as_ref().to_path_buf();
         fs::create_dir_all(&dir)?;
         Ok(Self {
@@ -98,8 +95,8 @@ impl EncryptedFileStore {
     ) -> Result<(), FileStoreError> {
         // The store must hold a unique reference so the swap is
         // observable to every outstanding credential consistently.
-        let inner = Arc::get_mut(&mut self.inner)
-            .expect("rekey requires exclusive access to the store");
+        let inner =
+            Arc::get_mut(&mut self.inner).expect("rekey requires exclusive access to the store");
         inner.rekey(wallet_id, new_passphrase)
     }
 
@@ -109,10 +106,7 @@ impl EncryptedFileStore {
     }
 
     #[cfg(test)]
-    fn read_vault(
-        &self,
-        path: &Path,
-    ) -> Result<Option<(Header, Vec<VaultEntry>)>, FileStoreError> {
+    fn read_vault(&self, path: &Path) -> Result<Option<(Header, Vec<VaultEntry>)>, FileStoreError> {
         self.inner.read_vault(path)
     }
 
@@ -184,10 +178,7 @@ impl EncryptedFileStoreInner {
     /// Read + parse a vault file, or `None` if it does not exist.
     /// Refuses a pre-existing file with looser-than-0600 perms
     /// (SEC-REQ-2.2.10).
-    fn read_vault(
-        &self,
-        path: &Path,
-    ) -> Result<Option<(Header, Vec<VaultEntry>)>, FileStoreError> {
+    fn read_vault(&self, path: &Path) -> Result<Option<(Header, Vec<VaultEntry>)>, FileStoreError> {
         match fs::metadata(path) {
             Ok(meta) => {
                 check_perms(&meta)?;
@@ -270,12 +261,7 @@ impl EncryptedFileStoreInner {
     }
 
     /// `put` — overwrite-safe atomic seal under `(wallet_id, label)`.
-    fn put(
-        &self,
-        wallet_id: &WalletId,
-        label: &str,
-        bytes: &[u8],
-    ) -> Result<(), FileStoreError> {
+    fn put(&self, wallet_id: &WalletId, label: &str, bytes: &[u8]) -> Result<(), FileStoreError> {
         let label = validated_label(label)?.to_string();
         let path = self.vault_path(wallet_id);
         let (header, key, mut entries) = match self.read_vault(&path)? {
@@ -302,11 +288,7 @@ impl EncryptedFileStoreInner {
     /// `get` — returns the raw plaintext as `Vec<u8>` (the upstream
     /// SPI contract). Callers wrap into [`SecretBytes`] at the seam.
     /// `NoEntry`-shaped absence rides as `Ok(None)`.
-    fn get(
-        &self,
-        wallet_id: &WalletId,
-        label: &str,
-    ) -> Result<Option<Vec<u8>>, FileStoreError> {
+    fn get(&self, wallet_id: &WalletId, label: &str) -> Result<Option<Vec<u8>>, FileStoreError> {
         let label = validated_label(label)?;
         let path = self.vault_path(wallet_id);
         let Some((header, entries)) = self.read_vault(&path)? else {
@@ -815,7 +797,10 @@ mod tests {
     fn persistence_is_until_delete() {
         let dir = tempfile::tempdir().unwrap();
         let s = store(dir.path());
-        assert!(matches!(s.persistence(), CredentialPersistence::UntilDelete));
+        assert!(matches!(
+            s.persistence(),
+            CredentialPersistence::UntilDelete
+        ));
         assert_eq!(s.vendor(), VENDOR);
         assert_eq!(s.id(), STORE_ID);
     }

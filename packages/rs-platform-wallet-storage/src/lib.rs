@@ -1,12 +1,15 @@
 //! Storage backends for the `platform-wallet` crate.
 //!
-//! Today this crate ships the SQLite-backed
-//! [`sqlite::SqlitePersister`] implementation of
-//! [`PlatformWalletPersistence`](platform_wallet::changeset::PlatformWalletPersistence).
-//! The crate is structured so a future `secrets` submodule — a
-//! `SecretStore` for mnemonic / private-key material, sketched in
-//! [`SECRETS.md`](../SECRETS.md) — can ship alongside it without a
-//! crate split.
+//! The SQLite-backed [`sqlite::SqlitePersister`] implements
+//! [`PlatformWalletPersistence`](platform_wallet::changeset::PlatformWalletPersistence)
+//! for the persister DTO (public wallet state — no secrets).
+//!
+//! The [`secrets`] submodule implements
+//! `keyring_core::api::CredentialStoreApi` for an Argon2id +
+//! XChaCha20-Poly1305 vault ([`secrets::EncryptedFileStore`]) and
+//! exposes [`secrets::default_credential_store`] for the platform OS
+//! keyring. See [`SECRETS.md`](../SECRETS.md) for the full key shape,
+//! memory-hygiene contract, and audit hooks.
 //!
 //! ## Canonical type paths
 //!

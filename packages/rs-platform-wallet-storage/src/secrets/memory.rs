@@ -51,7 +51,8 @@ impl MemoryCredentialStore {
 
 impl std::fmt::Debug for MemoryCredentialStore {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("MemoryCredentialStore").finish_non_exhaustive()
+        f.debug_struct("MemoryCredentialStore")
+            .finish_non_exhaustive()
     }
 }
 
@@ -108,7 +109,10 @@ impl std::fmt::Debug for MemoryCredential {
 
 impl CredentialApi for MemoryCredential {
     fn set_secret(&self, secret: &[u8]) -> KeyringResult<()> {
-        let mut m = self.map.lock().expect("MemoryCredentialStore mutex poisoned");
+        let mut m = self
+            .map
+            .lock()
+            .expect("MemoryCredentialStore mutex poisoned");
         m.insert(
             (self.service.clone(), self.user.clone()),
             SecretBytes::from_slice(secret),
@@ -117,7 +121,10 @@ impl CredentialApi for MemoryCredential {
     }
 
     fn get_secret(&self) -> KeyringResult<Vec<u8>> {
-        let m = self.map.lock().expect("MemoryCredentialStore mutex poisoned");
+        let m = self
+            .map
+            .lock()
+            .expect("MemoryCredentialStore mutex poisoned");
         match m.get(&(self.service.clone(), self.user.clone())) {
             Some(v) => Ok(v.expose_secret().to_vec()),
             None => Err(KeyringError::NoEntry),
@@ -125,7 +132,10 @@ impl CredentialApi for MemoryCredential {
     }
 
     fn delete_credential(&self) -> KeyringResult<()> {
-        let mut m = self.map.lock().expect("MemoryCredentialStore mutex poisoned");
+        let mut m = self
+            .map
+            .lock()
+            .expect("MemoryCredentialStore mutex poisoned");
         match m.remove(&(self.service.clone(), self.user.clone())) {
             Some(_) => Ok(()),
             None => Err(KeyringError::NoEntry),

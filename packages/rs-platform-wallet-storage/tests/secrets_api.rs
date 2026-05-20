@@ -122,7 +122,10 @@ fn error_display_is_static_and_secret_free() {
     let rendered = format!("{err}");
     assert!(!rendered.contains("PLAINTEXTNEEDLE"));
     assert!(!rendered.contains("wrong-pass"));
-    assert_eq!(downcast_failure(&err), Some(FileStoreFailure::WrongPassphrase));
+    assert_eq!(
+        downcast_failure(&err),
+        Some(FileStoreFailure::WrongPassphrase)
+    );
 
     let inv = store.build(&service(w), "../bad", None).unwrap_err();
     match inv {

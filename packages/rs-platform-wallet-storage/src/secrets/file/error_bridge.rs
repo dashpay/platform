@@ -81,9 +81,13 @@ pub fn into_keyring(e: FileStoreError) -> KeyringError {
         }
         FileStoreError::Decrypt => bad_format(FileStoreFailure::Decrypt),
         FileStoreError::KdfFailure => bad_format(FileStoreFailure::KdfFailure),
-        FileStoreError::VersionUnsupported { .. } => bad_format(FileStoreFailure::VersionUnsupported),
+        FileStoreError::VersionUnsupported { .. } => {
+            bad_format(FileStoreFailure::VersionUnsupported)
+        }
         FileStoreError::MalformedVault => bad_format(FileStoreFailure::MalformedVault),
-        FileStoreError::InsecurePermissions { .. } => bad_format(FileStoreFailure::InsecurePermissions),
+        FileStoreError::InsecurePermissions { .. } => {
+            bad_format(FileStoreFailure::InsecurePermissions)
+        }
         FileStoreError::InvalidLabel => {
             KeyringError::Invalid("user".to_string(), "label allowlist violation".to_string())
         }
@@ -115,19 +119,16 @@ pub fn downcast_failure(e: &KeyringError) -> Option<FileStoreFailure> {
 }
 
 fn marker_from_message(s: &str) -> Option<FileStoreFailure> {
-    for f in [
+    [
         FileStoreFailure::Decrypt,
         FileStoreFailure::KdfFailure,
         FileStoreFailure::VersionUnsupported,
         FileStoreFailure::MalformedVault,
         FileStoreFailure::InsecurePermissions,
         FileStoreFailure::WrongPassphrase,
-    ] {
-        if s == f.to_string() {
-            return Some(f);
-        }
-    }
-    None
+    ]
+    .into_iter()
+    .find(|f| s == f.to_string())
 }
 
 #[cfg(test)]
@@ -153,7 +154,10 @@ mod tests {
                 FileStoreError::VersionUnsupported { found: 999 },
                 FileStoreFailure::VersionUnsupported,
             ),
-            (FileStoreError::MalformedVault, FileStoreFailure::MalformedVault),
+            (
+                FileStoreError::MalformedVault,
+                FileStoreFailure::MalformedVault,
+            ),
             (
                 FileStoreError::InsecurePermissions { mode: 0o644 },
                 FileStoreFailure::InsecurePermissions,

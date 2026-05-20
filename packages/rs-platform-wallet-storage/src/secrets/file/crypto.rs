@@ -7,8 +7,8 @@ use chacha20poly1305::aead::Aead;
 use chacha20poly1305::{KeyInit, XChaCha20Poly1305, XNonce};
 use getrandom::getrandom;
 
-use super::error::FileStoreError;
 use super::super::secret::SecretBytes;
+use super::error::FileStoreError;
 
 /// Argon2 parameter floors (SEC-REQ-2.2.2) — derivation MUST NOT use
 /// anything weaker; a header declaring less is refused.

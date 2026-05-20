@@ -87,10 +87,7 @@ mod tests {
             "a:b",
             "a;DROP TABLE",
         ] {
-            assert!(
-                validated_label(bad).is_err(),
-                "should reject {bad:?}"
-            );
+            assert!(validated_label(bad).is_err(), "should reject {bad:?}");
         }
     }
 

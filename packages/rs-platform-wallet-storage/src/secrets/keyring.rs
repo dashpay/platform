@@ -46,14 +46,13 @@ use keyring_core::Error as KeyringError;
 /// The returned `Arc` may be passed straight to
 /// [`keyring_core::set_default_store`] or used directly to build
 /// entries.
-pub fn default_credential_store(
-) -> Result<Arc<dyn CredentialStoreApi + Send + Sync>, KeyringError> {
+pub fn default_credential_store() -> Result<Arc<dyn CredentialStoreApi + Send + Sync>, KeyringError>
+{
     platform_default_store()
 }
 
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
-fn platform_default_store(
-) -> Result<Arc<dyn CredentialStoreApi + Send + Sync>, KeyringError> {
+fn platform_default_store() -> Result<Arc<dyn CredentialStoreApi + Send + Sync>, KeyringError> {
     // Prefer the kernel keyutils store; fall back to Secret Service.
     // Both failing (headless, no session keyring, no D-Bus) is
     // fail-closed by design (SEC-REQ-2.1.3 / AR-4).
@@ -67,8 +66,7 @@ fn platform_default_store(
 }
 
 #[cfg(target_os = "macos")]
-fn platform_default_store(
-) -> Result<Arc<dyn CredentialStoreApi + Send + Sync>, KeyringError> {
+fn platform_default_store() -> Result<Arc<dyn CredentialStoreApi + Send + Sync>, KeyringError> {
     match apple_native_keyring_store::Store::new() {
         Ok(s) => Ok(s),
         Err(_) => Err(KeyringError::NoDefaultStore),
@@ -76,8 +74,7 @@ fn platform_default_store(
 }
 
 #[cfg(target_os = "windows")]
-fn platform_default_store(
-) -> Result<Arc<dyn CredentialStoreApi + Send + Sync>, KeyringError> {
+fn platform_default_store() -> Result<Arc<dyn CredentialStoreApi + Send + Sync>, KeyringError> {
     match windows_native_keyring_store::Store::new() {
         Ok(s) => Ok(s),
         Err(_) => Err(KeyringError::NoDefaultStore),
@@ -90,8 +87,7 @@ fn platform_default_store(
     target_os = "macos",
     target_os = "windows"
 )))]
-fn platform_default_store(
-) -> Result<Arc<dyn CredentialStoreApi + Send + Sync>, KeyringError> {
+fn platform_default_store() -> Result<Arc<dyn CredentialStoreApi + Send + Sync>, KeyringError> {
     Err(KeyringError::NoDefaultStore)
 }
 
