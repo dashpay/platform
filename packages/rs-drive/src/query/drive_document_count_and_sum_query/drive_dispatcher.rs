@@ -147,6 +147,38 @@ impl Drive {
                     carrier_outer_limit: None,
                     left_to_right: order_by_ascending,
                 };
+                // Limit applies only to the distinct branches — the
+                // aggregate branches return a single collapsed pair
+                // bounded by grovedb's merk-internal accumulators
+                // (`query_aggregate_count` / `query_aggregate_sum`)
+                // regardless of how many documents match. For distinct
+                // mirror count's no-proof distinct policy: fall back to
+                // `drive_config.default_query_limit` when unset, clamp
+                // to `drive_config.max_query_limit` when over. Mirrors
+                // [`DocumentAverageRequest::limit`]'s documented
+                // no-proof contract.
+                let effective_limit = if return_distinct {
+                    Some(
+                        request
+                            .limit
+                            .unwrap_or(request.drive_config.default_query_limit as u32)
+                            .min(request.drive_config.max_query_limit as u32),
+                    )
+                } else {
+                    None
+                };
+                let limit_u16 = effective_limit
+                    .map(|l| {
+                        u16::try_from(l).map_err(|_| {
+                            Error::Query(crate::error::query::QuerySyntaxError::Unsupported(
+                                format!(
+                                    "limit {} exceeds u16::MAX for distinct AVG no-proof walk",
+                                    l
+                                ),
+                            ))
+                        })
+                    })
+                    .transpose()?;
                 let response = self.execute_document_count_and_sum_range_no_proof(
                     contract_id,
                     request.document_type,
@@ -154,6 +186,7 @@ impl Drive {
                     where_clauses,
                     sum_property,
                     options,
+                    limit_u16,
                     transaction,
                     platform_version,
                 )?;

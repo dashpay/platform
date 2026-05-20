@@ -1586,4 +1586,235 @@ mod tests {
             assert_eq!(joint_sum, sum_by_key.get(key).unwrap());
         }
     }
+
+    /// Distinct AVG no-proof MUST honor the request's `limit` —
+    /// `GroupByRange` over a wide range should truncate to the
+    /// caller's `limit` rather than enumerate every distinct in-range
+    /// terminator. Regression test for the joint dispatcher's
+    /// `RangeNoProof` distinct branch: prior to the P2 fix the
+    /// dispatcher hard-coded `None` into `distinct_sum_path_query`,
+    /// silently returning every matching key.
+    #[test]
+    fn distinct_avg_no_proof_honors_explicit_limit() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let data_contract = build_widget_contract_pcps();
+        drive
+            .apply_contract(
+                &data_contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("apply contract");
+
+        // Five distinct color buckets so a `limit = 2` request must
+        // truncate the result set; otherwise the executor would emit
+        // all five.
+        let docs = [
+            ("red", 5u64),
+            ("green", 7),
+            ("blue", 2),
+            ("yellow", 4),
+            ("purple", 9),
+        ];
+        for (i, (color, amount)) in docs.iter().enumerate() {
+            insert_widget(&drive, &data_contract, i, color, *amount);
+        }
+
+        let document_type = data_contract
+            .document_type_for_name("widget")
+            .expect("widget");
+        let drive_config = DriveConfig::default();
+
+        let color_ge_a = WhereClause {
+            field: "color".to_string(),
+            operator: WhereOperator::GreaterThanOrEquals,
+            value: Value::Text("a".to_string()),
+        };
+
+        let request = DocumentAverageRequest {
+            contract: &data_contract,
+            document_type,
+            sum_property: "amount".to_string(),
+            where_clauses: vec![color_ge_a],
+            order_clauses: Vec::new(),
+            mode: AverageMode::GroupByRange,
+            limit: Some(2),
+            prove: false,
+            drive_config: &drive_config,
+        };
+
+        let response = drive
+            .execute_document_average_request(request, None, platform_version)
+            .expect("dispatcher should succeed");
+        let entries = match response {
+            DocumentAverageResponse::Entries(e) => e,
+            other => panic!("expected Entries, got {:?}", other),
+        };
+        assert_eq!(
+            entries.len(),
+            2,
+            "distinct AVG no-proof must apply the request's `limit = 2` and \
+             return exactly 2 entries; got {entries:?}"
+        );
+    }
+
+    /// Distinct AVG no-proof with `limit = None` must default to
+    /// `drive_config.default_query_limit`, not enumerate every
+    /// distinct key. Regression test for the same hard-coded `None`
+    /// the prior implementation passed.
+    #[test]
+    fn distinct_avg_no_proof_defaults_limit_to_operator_default_query_limit() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let data_contract = build_widget_contract_pcps();
+        drive
+            .apply_contract(
+                &data_contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("apply contract");
+
+        // Five distinct buckets and an operator-tuned
+        // `default_query_limit = 3`. The dispatcher must honor the
+        // operator's runtime default on the no-proof path (this is
+        // explicitly documented as DIFFERENT from the prove path,
+        // which uses the compile-time constant for byte-stability of
+        // proof reconstruction). A regression that leaves limit as
+        // `None` would emit all 5 entries.
+        let docs = [
+            ("red", 5u64),
+            ("green", 7),
+            ("blue", 2),
+            ("yellow", 4),
+            ("purple", 9),
+        ];
+        for (i, (color, amount)) in docs.iter().enumerate() {
+            insert_widget(&drive, &data_contract, i, color, *amount);
+        }
+
+        let document_type = data_contract
+            .document_type_for_name("widget")
+            .expect("widget");
+        let drive_config = DriveConfig {
+            default_query_limit: 3,
+            ..Default::default()
+        };
+
+        let color_ge_a = WhereClause {
+            field: "color".to_string(),
+            operator: WhereOperator::GreaterThanOrEquals,
+            value: Value::Text("a".to_string()),
+        };
+        let request = DocumentAverageRequest {
+            contract: &data_contract,
+            document_type,
+            sum_property: "amount".to_string(),
+            where_clauses: vec![color_ge_a],
+            order_clauses: Vec::new(),
+            mode: AverageMode::GroupByRange,
+            limit: None,
+            prove: false,
+            drive_config: &drive_config,
+        };
+
+        let response = drive
+            .execute_document_average_request(request, None, platform_version)
+            .expect("dispatcher should succeed");
+        let entries = match response {
+            DocumentAverageResponse::Entries(e) => e,
+            other => panic!("expected Entries, got {:?}", other),
+        };
+        assert_eq!(
+            entries.len(),
+            3,
+            "distinct AVG no-proof with `limit = None` must default to \
+             `drive_config.default_query_limit` (= 3 here) rather than \
+             enumerating all 5 distinct keys; got {entries:?}"
+        );
+    }
+
+    /// Distinct AVG no-proof with `limit > max_query_limit` must
+    /// clamp to `max_query_limit`, not return an error. Mirrors
+    /// count's no-proof distinct-walk clamp policy (documented in
+    /// `DocumentAverageRequest::limit`).
+    #[test]
+    fn distinct_avg_no_proof_clamps_limit_to_max_query_limit() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let data_contract = build_widget_contract_pcps();
+        drive
+            .apply_contract(
+                &data_contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("apply contract");
+
+        let docs = [
+            ("red", 5u64),
+            ("green", 7),
+            ("blue", 2),
+            ("yellow", 4),
+            ("purple", 9),
+        ];
+        for (i, (color, amount)) in docs.iter().enumerate() {
+            insert_widget(&drive, &data_contract, i, color, *amount);
+        }
+
+        let document_type = data_contract
+            .document_type_for_name("widget")
+            .expect("widget");
+        // Operator-tuned `max_query_limit = 2`. An explicit `limit =
+        // 4` MUST clamp to 2 (no-proof policy; the prove path errors
+        // on this combination instead — see the
+        // `range_distinct_avg_proof_rejects_limit_over_max` test
+        // above for the prove counterpart).
+        let drive_config = DriveConfig {
+            default_query_limit: 100,
+            max_query_limit: 2,
+            ..Default::default()
+        };
+
+        let color_ge_a = WhereClause {
+            field: "color".to_string(),
+            operator: WhereOperator::GreaterThanOrEquals,
+            value: Value::Text("a".to_string()),
+        };
+        let request = DocumentAverageRequest {
+            contract: &data_contract,
+            document_type,
+            sum_property: "amount".to_string(),
+            where_clauses: vec![color_ge_a],
+            order_clauses: Vec::new(),
+            mode: AverageMode::GroupByRange,
+            limit: Some(4),
+            prove: false,
+            drive_config: &drive_config,
+        };
+
+        let response = drive
+            .execute_document_average_request(request, None, platform_version)
+            .expect("dispatcher should succeed (no-proof clamps, never errors)");
+        let entries = match response {
+            DocumentAverageResponse::Entries(e) => e,
+            other => panic!("expected Entries, got {:?}", other),
+        };
+        assert_eq!(
+            entries.len(),
+            2,
+            "distinct AVG no-proof must clamp `limit = 4` to \
+             `max_query_limit = 2`; got {entries:?}"
+        );
+    }
 }
