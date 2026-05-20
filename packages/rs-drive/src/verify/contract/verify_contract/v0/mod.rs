@@ -4,6 +4,7 @@ use crate::drive::contract::paths::{contract_keeping_history_root_path, contract
 use crate::drive::Drive;
 use crate::error::proof::ProofError;
 use crate::error::Error;
+use crate::verify::contract::retry_contract_verification_with_history;
 use crate::verify::RootHash;
 use dpp::prelude::DataContract;
 use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
@@ -53,52 +54,23 @@ impl Drive {
             platform_version,
         );
 
-        // When the caller doesn't know whether the contract keeps history, retry with
-        // history enabled to recover historical contracts whose non-historical attempt
-        // either errored or produced an absence proof. A successful retry returning a
-        // contract supersedes both cases. If the retry does not produce a contract,
-        // the original outcome is preserved: Ok((_, None)) absence proofs remain valid
-        // for genuinely missing contracts, and original errors are returned unchanged.
-        if contract_known_keeps_history.is_none() {
-            match &result {
-                Ok((_, Some(_))) => return result,
-                Ok((_, None)) => {
-                    tracing::debug!(
-                        ?contract_id,
-                        "retrying contract verification with history enabled after absence"
-                    );
-                    let retry = Self::verify_contract_v0_given_history(
-                        proof,
-                        true,
-                        is_proof_subset,
-                        in_multiple_contract_proof_form,
-                        contract_id,
-                        platform_version,
-                    );
-                    if let Ok((_, Some(_))) = retry {
-                        return retry;
-                    }
-                }
-                Err(_) => {
-                    tracing::debug!(
-                        ?contract_id,
-                        "retrying contract verification with history enabled after error"
-                    );
-                    let retry = Self::verify_contract_v0_given_history(
-                        proof,
-                        true,
-                        is_proof_subset,
-                        in_multiple_contract_proof_form,
-                        contract_id,
-                        platform_version,
-                    );
-                    if retry.is_ok() {
-                        return retry;
-                    }
-                }
-            }
-        }
-        result
+        retry_contract_verification_with_history(
+            result,
+            contract_known_keeps_history,
+            contract_id,
+            in_multiple_contract_proof_form,
+            || {
+                Self::verify_contract_v0_given_history(
+                    proof,
+                    true,
+                    is_proof_subset,
+                    in_multiple_contract_proof_form,
+                    contract_id,
+                    platform_version,
+                )
+            },
+            |(_, contract)| contract.is_some(),
+        )
     }
 
     fn verify_contract_v0_given_history(
