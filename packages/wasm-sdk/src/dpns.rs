@@ -282,7 +282,6 @@ impl WasmSdk {
             order_by_clauses: vec![],
             limit: resolve_dpns_usernames_limit(limit),
             start: None,
-            wire_protocol_version: None,
         };
 
         let (documents_result, metadata, proof) =

@@ -64,5 +64,6 @@ impl FromProof<DocumentQuery> for DocumentSplitCounts {
 }
 
 impl Fetch for DocumentSplitCounts {
-    type Request = DocumentQuery;
+    type Query = DocumentQuery;
+    type Request = dapi_grpc::platform::v0::GetDocumentsRequest;
 }

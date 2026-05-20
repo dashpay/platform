@@ -367,14 +367,14 @@ impl Sdk {
         &self,
         request: O::Request,
         response: O::Response,
+        method_name: &'static str,
     ) -> Result<(Option<O>, ResponseMetadata, Proof), Error>
     where
-        O::Request: Mockable + TransportRequest,
+        O::Request: Mockable,
     {
         let provider = self
             .context_provider()
             .ok_or(drive_proof_verifier::Error::ContextProviderNotSet)?;
-        let method_name = request.method_name();
 
         let (object, metadata, proof) = match self.inner {
             SdkInstance::Dapi { .. } => O::maybe_from_proof_with_metadata(

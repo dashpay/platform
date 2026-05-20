@@ -41,6 +41,7 @@ impl Query<GetIdentityTokenBalancesRequest> for IdentityTokenBalancesQuery {
 }
 
 impl FetchMany<Identifier, IdentityTokenBalances> for TokenAmount {
+    type Query = GetIdentityTokenBalancesRequest;
     type Request = GetIdentityTokenBalancesRequest;
 }
 
@@ -74,5 +75,6 @@ impl Query<GetIdentitiesTokenBalancesRequest> for IdentitiesTokenBalancesQuery {
 }
 
 impl FetchMany<Identifier, IdentitiesTokenBalances> for TokenAmount {
+    type Query = GetIdentitiesTokenBalancesRequest;
     type Request = GetIdentitiesTokenBalancesRequest;
 }

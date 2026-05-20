@@ -71,5 +71,6 @@ impl Query<GetTokenPreProgrammedDistributionsRequest> for TokenPreProgrammedDist
 }
 
 impl Fetch for TokenPreProgrammedDistributions {
+    type Query = GetTokenPreProgrammedDistributionsRequest;
     type Request = GetTokenPreProgrammedDistributionsRequest;
 }

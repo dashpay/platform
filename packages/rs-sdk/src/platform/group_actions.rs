@@ -44,6 +44,7 @@ impl Query<GetGroupInfoRequest> for GroupQuery {
 }
 
 impl Fetch for Group {
+    type Query = GetGroupInfoRequest;
     type Request = GetGroupInfoRequest;
 }
 
@@ -83,6 +84,7 @@ impl Query<GetGroupInfosRequest> for GroupInfosQuery {
 }
 
 impl FetchMany<GroupContractPosition, Groups> for Group {
+    type Query = GetGroupInfosRequest;
     type Request = GetGroupInfosRequest;
 }
 
@@ -128,6 +130,7 @@ impl Query<GetGroupActionsRequest> for GroupActionsQuery {
 }
 
 impl FetchMany<Identifier, GroupActions> for GroupAction {
+    type Query = GetGroupActionsRequest;
     type Request = GetGroupActionsRequest;
 }
 
@@ -163,5 +166,6 @@ impl Query<GetGroupActionSignersRequest> for GroupActionSignersQuery {
 }
 
 impl FetchMany<Identifier, GroupActionSigners> for GroupMemberPower {
+    type Query = GetGroupActionSignersRequest;
     type Request = GetGroupActionSignersRequest;
 }
