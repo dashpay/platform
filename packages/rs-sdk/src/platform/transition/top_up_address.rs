@@ -58,6 +58,7 @@ pub trait TopUpAddress<S: Signer<PlatformAddress>> {
     /// (`keep-invalid-txs-in-cache = true` in dashmate's
     /// mainnet/testnet templates). `None` / unset = unaltered fees.
     #[cfg(feature = "core_key_wallet")]
+    #[allow(clippy::too_many_arguments)]
     async fn top_up_with_signers<AS>(
         &self,
         sdk: &Sdk,
@@ -102,6 +103,7 @@ where
     }
 
     #[cfg(feature = "core_key_wallet")]
+    #[allow(clippy::too_many_arguments)]
     async fn top_up_with_signers<AS>(
         &self,
         sdk: &Sdk,
@@ -165,6 +167,7 @@ impl<S: Signer<PlatformAddress>> TopUpAddress<S> for AddressesWithBalances {
     }
 
     #[cfg(feature = "core_key_wallet")]
+    #[allow(clippy::too_many_arguments)]
     async fn top_up_with_signers<AS>(
         &self,
         sdk: &Sdk,
