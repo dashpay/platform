@@ -168,6 +168,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             order_by_clauses: vec![],
             limit: 1,
             start: None,
+            wire_protocol_version: None,
         };
 
         let docs = Document::fetch_many(&self.sdk, query)
@@ -441,6 +442,7 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 order_by_clauses: vec![],
                 limit: 1,
                 start: None,
+                wire_protocol_version: None,
             };
 
             let docs = Document::fetch_many(&self.sdk, query)
