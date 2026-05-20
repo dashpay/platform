@@ -24,7 +24,7 @@
 //! [`NetworkShieldedCoordinator::sync`]:
 //!     super::coordinator::NetworkShieldedCoordinator::sync
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use dash_sdk::platform::shielded::nullifier_sync::{NullifierSyncCheckpoint, NullifierSyncConfig};
@@ -252,17 +252,32 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
         }
     }
 
-    // Build the union of "owned" positions for tree marking.
-    let owned_positions: BTreeSet<u64> = decrypted_by_subwallet
-        .values()
-        .flat_map(|v| v.iter().map(|n| n.position))
-        .collect();
-
     let mut store = store.write().await;
 
-    // Append every commitment to the shared tree exactly once
-    // per position. Skip positions already in the tree (re-scan
-    // after a partial chunk advance).
+    // Append every commitment to the shared tree exactly once per
+    // position, ALWAYS retained (`marked = true`). Skip positions
+    // already in the tree (re-scan after a partial chunk advance).
+    //
+    // Why mark every position rather than only owned ones: the
+    // commitment tree is a single chain-wide structure shared by
+    // every wallet on the network (the whole point of the
+    // coordinator refactor — one SQLite handle, not N). Ownership
+    // is decided per-pass by trial-decryption, but wallets bind at
+    // *different* times. If wallet A syncs first (driver IVK owns
+    // nothing) the positions get appended; when wallet B binds
+    // later and discovers its note at one of those positions,
+    // shardtree has no way to retroactively mark it — the auth
+    // path was already discarded as `Ephemeral`, and the note
+    // becomes permanently unwitnessable (balance shows, spend
+    // fails with "Merkle witness unavailable"). Marking every
+    // position makes the shared tree witness-complete regardless
+    // of bind ordering; per-wallet ownership is tracked
+    // separately in the per-`SubwalletId` notes store, so privacy
+    // / accounting is unaffected. The cost is retained auth paths
+    // for non-owned positions (O(commitments) storage); acceptable
+    // for correctness, and the shielded pool is small. A future
+    // optimization can prune auth paths for positions no live
+    // subwallet owns once all wallets have caught past them.
     let mut appended = 0u32;
     for (i, raw_note) in result.all_notes.iter().enumerate() {
         let global_pos = aligned_start + i as u64;
@@ -273,9 +288,8 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
             raw_note.cmx.as_slice().try_into().map_err(|_| {
                 PlatformWalletError::ShieldedSyncFailed("Invalid cmx length".into())
             })?;
-        let is_ours = owned_positions.contains(&global_pos);
         store
-            .append_commitment(&cmx_bytes, is_ours)
+            .append_commitment(&cmx_bytes, true)
             .map_err(|e| PlatformWalletError::ShieldedTreeUpdateFailed(e.to_string()))?;
         appended += 1;
     }

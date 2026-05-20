@@ -257,7 +257,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_withdraw(
 /// # Safety
 /// - `wallet_id_bytes` must point to 32 readable bytes.
 /// - `signer_address_handle` must be a valid, non-destroyed
-///   `*mut SignerHandle` that outlives this call and points at a
+///   `*const SignerHandle` that outlives this call and points at a
 ///   `VTableSigner` with the callback variant (the native variant
 ///   doesn't satisfy `Signer<PlatformAddress>`).
 #[no_mangle]
@@ -267,7 +267,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_shield(
     shielded_account: u32,
     payment_account: u32,
     amount: u64,
-    signer_address_handle: *mut SignerHandle,
+    signer_address_handle: *const SignerHandle,
 ) -> PlatformWalletFFIResult {
     check_ptr!(wallet_id_bytes);
     check_ptr!(signer_address_handle);
@@ -280,17 +280,17 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_shield(
         Err(result) => return result,
     };
 
-    // SAFETY: the caller retains ownership of the signer handle
-    // and guarantees it outlives this call. We block until the
-    // worker future completes, so the `'static` lifetime we paint
-    // on the borrow does not actually outlive the host's handle.
-    // `VTableSigner` is `Send + Sync` per its `unsafe impl` in
-    // rs-sdk-ffi, so `&'static VTableSigner` is automatically
-    // `Send + 'static` — exactly what `block_on_worker` needs.
-    let address_signer: &'static VTableSigner =
-        std::mem::transmute::<&VTableSigner, &'static VTableSigner>(
-            &*(signer_address_handle as *const VTableSigner),
-        );
+    // Round-trip the signer pointer through `usize` so the worker
+    // future captures only plain `Send + 'static` data and
+    // re-materializes the borrow INSIDE the task — never a
+    // fabricated `&'static` borrow of a host-owned vtable across
+    // the FFI boundary. The caller's documented contract is that
+    // the handle outlives this call, and `block_on_worker` blocks
+    // the calling frame until the task completes, so the borrow is
+    // valid for the task's whole lifetime. Avoids the latent UAF /
+    // signing-oracle hazard if `block_on_worker` ever stops being
+    // synchronous (cancellation, timeout, alternate executor).
+    let signer_addr = signer_address_handle as usize;
 
     // Run the proof on a worker thread (8 MB stack). Halo 2 circuit
     // synthesis recurses past the ~512 KB iOS dispatch-thread stack
@@ -298,6 +298,10 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_shield(
     // `synthesize(... measure(pass))` call when polled on the
     // calling thread.
     let result = block_on_worker(async move {
+        // SAFETY: re-materialize the borrow under the caller's
+        // documented lifetime contract; valid for the duration of
+        // this synchronously-awaited task.
+        let address_signer: &VTableSigner = &*(signer_addr as *const VTableSigner);
         let prover = CachedOrchardProver::new();
         wallet
             .shielded_shield_from_account(

@@ -20,6 +20,7 @@ use std::sync::Mutex;
 use grovedb_commitment_tree::{ClientPersistentCommitmentTree, Position, Retention};
 
 use super::store::{ShieldedNote, ShieldedStore, SubwalletId, SubwalletState};
+use crate::wallet::platform_wallet::WalletId;
 
 /// Error type for [`FileBackedShieldedStore`].
 #[derive(Debug)]
@@ -197,5 +198,93 @@ impl ShieldedStore for FileBackedShieldedStore {
     ) -> Result<(), Self::Error> {
         self.subwallets.entry(id).or_default().nullifier_checkpoint = Some((height, timestamp));
         Ok(())
+    }
+
+    fn purge_wallet(&mut self, wallet_id: WalletId) -> Result<(), Self::Error> {
+        // Per-subwallet note / watermark / checkpoint state is
+        // in-memory only (`subwallets`); the commitment tree in
+        // SQLite is chain-wide and intentionally left intact.
+        self.subwallets.retain(|id, _| id.wallet_id != wallet_id);
+        Ok(())
+    }
+
+    fn purge_all_subwallets(&mut self) -> Result<(), Self::Error> {
+        self.subwallets.clear();
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Unique temp path for a test tree (no `tempfile` dev-dep).
+    fn temp_tree_path(tag: &str) -> std::path::PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!("shielded_tree_test_{tag}_{nanos}.sqlite"))
+    }
+
+    /// Regression test for the "Shielded Merkle witness
+    /// unavailable" spend failure (multi-wallet shared-tree bug).
+    ///
+    /// Root cause: the shared commitment tree previously appended
+    /// commitments as `Ephemeral` unless the owning wallet's IVK
+    /// recognized them in that very sync pass. With multiple
+    /// wallets sharing one tree and binding at different times, a
+    /// note appended before its owner bound stayed Ephemeral
+    /// forever — shardtree has no retroactive marking — so the
+    /// balance showed but the spend failed to build a witness.
+    /// Observed on-disk symptom: every position un-witnessable
+    /// (missing internal nodes at `Level(2) index 0` /
+    /// `Level(1) index 2`).
+    ///
+    /// The fix: the shared tree marks EVERY position
+    /// (`append_commitment(.., true)`); per-wallet ownership is
+    /// tracked separately in the notes store. This test asserts
+    /// that a fully-marked tree witnesses every position —
+    /// including the rightmost (frontier) leaf whose sibling
+    /// doesn't exist yet — across a persist + reload cycle (the
+    /// cross-session round-trip a real wallet does between sync
+    /// and spend).
+    #[test]
+    fn all_marked_tree_witnesses_every_position_after_reload() {
+        let path = temp_tree_path("all_marked");
+        let mut store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+
+        // Mirror the real failing wallet's tree shape: 6
+        // commitments, single checkpoint at the tip. The fix
+        // marks ALL of them regardless of ownership.
+        const N: u64 = 6;
+        for i in 0..N {
+            let mut cmx = [0u8; 32];
+            cmx[0] = (i as u8) + 1; // distinct non-zero leaves
+            store.append_commitment(&cmx, true).unwrap();
+        }
+        store.checkpoint_tree(N as u32).unwrap();
+
+        // Persist to SQLite and reopen — the wallet builds the
+        // tree in one app session and witnesses it (at spend
+        // time) in a later one.
+        drop(store);
+        let store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+
+        let mut failures = Vec::new();
+        for pos in 0..N {
+            match store.witness(pos) {
+                Ok(Some(_)) => {}
+                Ok(None) => failures.push(format!("position {pos}: witness returned None")),
+                Err(e) => failures.push(format!("position {pos}: {e}")),
+            }
+        }
+
+        let _ = std::fs::remove_file(&path);
+
+        assert!(
+            failures.is_empty(),
+            "every position in a fully-marked tree must be witnessable, but: {failures:?}"
+        );
     }
 }

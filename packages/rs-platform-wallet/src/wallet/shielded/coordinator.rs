@@ -223,16 +223,31 @@ impl NetworkShieldedCoordinator {
     }
 
     /// Remove every account belonging to `wallet_id` from the
-    /// coordinator's registry and drop the persister handle.
-    /// No-op if the wallet wasn't registered. Called when a
-    /// wallet is unregistered from the manager or when its
-    /// shielded binding is cleared.
+    /// coordinator's registry, drop the persister handle, and
+    /// purge the wallet's per-subwallet store state (decrypted
+    /// notes, spent marks, `last_synced_note_index`, nullifier
+    /// checkpoints). The shared commitment tree is left intact —
+    /// it's a chain-wide structure, not per-wallet. No-op for
+    /// parts that weren't present. Called when a wallet is
+    /// removed from the manager.
+    ///
+    /// Purging the store watermark matters: without it, a later
+    /// re-bind of the same wallet would resume from the stale
+    /// `last_synced_note_index` and silently skip re-emitting its
+    /// notes to the host.
     pub async fn unregister_wallet(&self, wallet_id: WalletId) {
         self.accounts
             .write()
             .await
             .retain(|id, _| id.wallet_id != wallet_id);
         self.persisters.write().await.remove(&wallet_id);
+        if let Err(e) = self.store.write().await.purge_wallet(wallet_id) {
+            tracing::warn!(
+                wallet_id = %hex::encode(wallet_id),
+                error = %e,
+                "Failed to purge per-subwallet store state on unregister"
+            );
+        }
     }
 
     /// Currently-registered subwallet ids (snapshot, ascending
@@ -319,17 +334,28 @@ impl NetworkShieldedCoordinator {
         Ok(())
     }
 
-    /// Drop every wallet registration and reset the cooldown
-    /// stamp. The single SQLite handle (commitment tree) stays
-    /// open — Clear semantics on the host side are "wipe my
-    /// persistence and start re-syncing from index 0 on the
-    /// shared tree", not "blow away the chain-wide cache".
+    /// Drop every wallet registration, purge all per-subwallet
+    /// store state (notes, spent marks, sync watermarks,
+    /// nullifier checkpoints), and reset the cooldown stamp. The
+    /// single SQLite handle (commitment tree) stays open — Clear
+    /// semantics on the host side are "wipe my persistence and
+    /// start re-syncing from index 0 on the shared tree", not
+    /// "blow away the chain-wide cache".
+    ///
+    /// Purging the in-memory `subwallets` store is what actually
+    /// delivers the "re-sync from index 0" contract: the sync
+    /// pass derives `already_have` from each subwallet's
+    /// `last_synced_note_index`, so leaving stale watermarks
+    /// behind would make a same-session re-bind report
+    /// caught-up and never re-emit notes to the host (it would
+    /// only work after a process restart that drops the
+    /// in-memory state). Clearing it here closes that gap.
     ///
     /// Used by [`platform_wallet_manager_shielded_clear`] (the
     /// host's Clear button). The host then wipes its own
     /// per-wallet persistence (e.g. SwiftData rows) — Rust can't
     /// reach that layer — and the next `bind_shielded` call
-    /// repopulates the registries.
+    /// repopulates the registries and resyncs from scratch.
     ///
     /// Resets the cooldown to `None` so the first post-clear
     /// background sync pass runs immediately rather than honoring
@@ -340,6 +366,9 @@ impl NetworkShieldedCoordinator {
     pub async fn clear(&self) {
         self.accounts.write().await.clear();
         self.persisters.write().await.clear();
+        if let Err(e) = self.store.write().await.purge_all_subwallets() {
+            tracing::warn!(error = %e, "Failed to purge subwallet store state on clear");
+        }
         if let Ok(mut g) = self.last_caught_up_at.lock() {
             *g = None;
         }

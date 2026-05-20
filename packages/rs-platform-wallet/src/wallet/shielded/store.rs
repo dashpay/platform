@@ -27,6 +27,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error as StdError;
 use std::fmt;
 
+use crate::wallet::platform_wallet::WalletId;
+
 /// Identifies a single shielded "subwallet" — one Orchard account
 /// within one wallet. Used to scope notes, nullifier indices, and
 /// sync watermarks inside a [`ShieldedStore`] so a single store
@@ -129,9 +131,17 @@ pub trait ShieldedStore: Send + Sync {
 
     /// Append a note commitment to the shared tree.
     ///
-    /// `marked` should be `true` if **any** tracked subwallet owns
-    /// this position. The tree only retains authentication paths
-    /// for marked positions; unmarked positions are pruned.
+    /// `marked` controls whether shardtree retains the
+    /// authentication path for this position (Marked) or prunes it
+    /// (Ephemeral). The sync path passes `true` for **every**
+    /// position: the tree is a chain-wide structure shared by all
+    /// wallets, and wallets bind at different times, so deciding
+    /// retention from "is this position owned right now" loses the
+    /// ability to witness a note whose owner binds later
+    /// (shardtree can't retroactively mark). Per-wallet ownership
+    /// is tracked separately in the per-`SubwalletId` note store.
+    /// The `marked` parameter is kept for store-level flexibility
+    /// and tests.
     fn append_commitment(&mut self, cmx: &[u8; 32], marked: bool) -> Result<(), Self::Error>;
 
     /// Create a tree checkpoint at the given identifier.
@@ -170,6 +180,23 @@ pub trait ShieldedStore: Send + Sync {
         height: u64,
         timestamp: u64,
     ) -> Result<(), Self::Error>;
+
+    // ── Per-subwallet lifecycle ────────────────────────────────────────
+
+    /// Drop ALL in-memory per-subwallet state (decrypted notes,
+    /// spent marks, `last_synced_note_index`, nullifier
+    /// checkpoints, pending reservations) for every subwallet
+    /// belonging to `wallet_id`. The shared commitment tree is
+    /// left untouched — it's a chain-wide structure, not
+    /// per-wallet. Used when a wallet is removed or its shielded
+    /// binding is cleared so a later re-bind resyncs from index 0
+    /// rather than resuming behind the stale watermark.
+    fn purge_wallet(&mut self, wallet_id: WalletId) -> Result<(), Self::Error>;
+
+    /// Drop ALL in-memory per-subwallet state for every subwallet
+    /// of every wallet. The shared commitment tree is left
+    /// untouched. Used by `NetworkShieldedCoordinator::clear()`.
+    fn purge_all_subwallets(&mut self) -> Result<(), Self::Error>;
 }
 
 // ── Per-subwallet bookkeeping ──────────────────────────────────────────
@@ -400,6 +427,16 @@ impl ShieldedStore for InMemoryShieldedStore {
         timestamp: u64,
     ) -> Result<(), Self::Error> {
         self.subwallets.entry(id).or_default().nullifier_checkpoint = Some((height, timestamp));
+        Ok(())
+    }
+
+    fn purge_wallet(&mut self, wallet_id: WalletId) -> Result<(), Self::Error> {
+        self.subwallets.retain(|id, _| id.wallet_id != wallet_id);
+        Ok(())
+    }
+
+    fn purge_all_subwallets(&mut self) -> Result<(), Self::Error> {
+        self.subwallets.clear();
         Ok(())
     }
 }
