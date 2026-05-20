@@ -201,10 +201,13 @@ impl DocumentQuery {
     /// [`DocumentSplitCounts::fetch`] (per-group entries,
     /// non-empty `group_by`).
     ///
-    /// `SUM` / `AVG` and `COUNT(field)` are accepted by the SDK
-    /// but the server rejects them today with `Unsupported("…
-    /// is not yet implemented")` — the surface is shipped first
-    /// and execution lands later.
+    /// Server capability today: `Documents`, `COUNT(*)`,
+    /// `SUM(<field>)`, and `AVG(<field>)` are evaluated
+    /// end-to-end. `COUNT(<field>)`, `MIN(<field>)`, and
+    /// `MAX(<field>)` are accepted by the SDK but rejected by the
+    /// server with `Unsupported("SELECT … is not yet
+    /// implemented")` — the surface is shipped first and
+    /// execution lands later.
     pub fn with_select(mut self, select: SelectProjection) -> Self {
         self.select = select;
         self
