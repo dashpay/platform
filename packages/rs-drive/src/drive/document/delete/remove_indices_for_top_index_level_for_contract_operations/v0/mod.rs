@@ -158,13 +158,26 @@ impl Drive {
             index_path_info.push(document_top_field)?;
             // the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId/<ownerId>
 
+            // The recursive dispatcher takes `parent_value_tree_type:
+            // TreeType` (so v1's cost-estimation can distinguish sum-
+            // bearing parents from `NormalTree`). v0 of the top-level
+            // walker only ever sees pre-v3 contracts whose sub-levels
+            // collapse to `CountTree` (range_countable) or
+            // `NormalTree`. Round-tripping the bool through TreeType
+            // and back is bit-identical to v3.1-dev's behavior on the
+            // v0 recursive arm.
+            let parent_value_tree_type = if sub_level_range_countable {
+                TreeType::CountTree
+            } else {
+                TreeType::NormalTree
+            };
             self.remove_indices_for_index_level_for_contract_operations(
                 document_and_contract_info,
                 index_path_info,
                 sub_level,
                 any_fields_null,
                 all_fields_null,
-                sub_level_range_countable,
+                parent_value_tree_type,
                 &storage_flags,
                 previous_batch_operations,
                 estimated_costs_only_with_layer_info,
