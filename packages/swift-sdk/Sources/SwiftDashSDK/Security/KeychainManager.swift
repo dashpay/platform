@@ -640,7 +640,25 @@ extension KeychainManager {
         // Delete-then-add pattern lets the row settle into the new
         // `kSecValueData` + `kSecAttrGeneric` without fighting
         // SecItemUpdate's attribute-preservation quirks.
-        SecItemDelete(query as CFDictionary)
+        //
+        // The DELETE query must be ATTRIBUTE-ONLY: Apple Keychain
+        // treats `kSecValueData` and `kSecAttrGeneric` (the value
+        // payloads) as *value filters* on delete queries — including
+        // them would only delete rows whose data ALREADY equals the
+        // new bytes, which by definition is never true on an update.
+        // Without this fix, every prior failed attempt left a stale
+        // row that we could neither delete (data mismatch) nor add
+        // (uniqueness conflict on service+account → errSecDuplicateItem).
+        var deleteQuery: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: serviceName,
+            kSecAttrAccount as String: account,
+        ]
+        if let accessGroup = accessGroup {
+            deleteQuery[kSecAttrAccessGroup as String] = accessGroup
+        }
+        SecItemDelete(deleteQuery as CFDictionary)
+
         let status = SecItemAdd(query as CFDictionary, nil)
         return status == errSecSuccess ? account : nil
     }

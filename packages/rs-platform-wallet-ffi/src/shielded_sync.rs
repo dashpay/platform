@@ -17,15 +17,15 @@ use platform_wallet::wallet::shielded::ShieldedSyncSummary;
 
 use zeroize::Zeroizing;
 
-use crate::derive_and_persist_callbacks::{
-    mnemonic_resolver_result, MnemonicResolverHandle, MNEMONIC_RESOLVER_BUFFER_CAPACITY,
-};
 use crate::error::*;
 use crate::handle::*;
 use crate::identity_keys_from_mnemonic::parse_mnemonic_any_language;
 use crate::runtime::runtime;
 use crate::shielded_types::ShieldedSyncWalletResultFFI;
 use crate::{check_ptr, unwrap_option_or_return};
+use rs_sdk_ffi::{
+    mnemonic_resolver_result, MnemonicResolverHandle, MNEMONIC_RESOLVER_BUFFER_CAPACITY,
+};
 
 impl ShieldedSyncWalletResultFFI {
     pub(crate) fn ok(wallet_id: [u8; 32], summary: &ShieldedSyncSummary) -> Self {

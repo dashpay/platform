@@ -110,6 +110,9 @@ struct StorageExplorerView: View {
             modelRow("Pending Inputs", icon: "hourglass", type: PersistentPendingInput.self) {
                 PendingInputStorageListView(network: network)
             }
+            modelRow("Asset Locks", icon: "lock.shield", type: PersistentAssetLock.self) {
+                AssetLockStorageListView(network: network)
+            }
             modelRow("Manager Metadata", icon: "gearshape.2", type: PersistentWalletManagerMetadata.self) {
                 WalletManagerMetadataStorageListView(network: network)
             }
@@ -263,6 +266,9 @@ struct StorageExplorerView: View {
             walletsOnNetwork.contains($0.walletId)
         }
         filteredCount(PersistentShieldedSyncState.self) {
+            walletsOnNetwork.contains($0.walletId)
+        }
+        filteredCount(PersistentAssetLock.self) {
             walletsOnNetwork.contains($0.walletId)
         }
 

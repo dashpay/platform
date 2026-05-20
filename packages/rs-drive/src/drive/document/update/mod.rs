@@ -2610,4 +2610,478 @@ mod tests {
             "expected DataContractNotFound, got {err:?}"
         );
     }
+
+    /// Regression test for the summable-index update bug at
+    /// `update_document_for_contract_operations/v0`: when an index has
+    /// `summable: "<prop>"` set and a document update changes ONLY the
+    /// summed property (keeping every index key the same), the v0
+    /// dispatcher hits the `change_occurred_on_index == false` branch
+    /// and emits a `batch_refresh_reference` op.
+    ///
+    /// Before the fix, `batch_refresh_reference_v0` only accepted
+    /// `Element::Reference` and returned `CorruptedCodeExecution` on
+    /// the `Element::ReferenceWithSumItem` that the summable-aware
+    /// per-index reference builder emits. The user-visible symptom
+    /// was: a benign no-op `update_document_for_contract` call to
+    /// rewrite the summed value would fail with a 500-equivalent
+    /// server error, and the ancestor sum aggregates would never
+    /// pick up the delta — silently wedging anything trying to
+    /// keep a sum index in sync with a mutable document.
+    ///
+    /// Post-fix, `batch_refresh_reference_v0` dispatches on the
+    /// element variant and emits a sum-item override
+    /// `RefreshReference` op for `ReferenceWithSumItem` inputs, so
+    /// ancestor sum trees propagate the delta automatically (grovedb
+    /// `refresh_reference_with_sum_item_op` semantics).
+    ///
+    /// The test exercises the full update path end-to-end:
+    ///   1. Build a v12 contract with a `byColor` index that's
+    ///      `summable: "amount" + countable: "countable"` (no range
+    ///      axes — this is the point-lookup SUM/AVG shape).
+    ///   2. Insert a `widget` with `color="red", amount=5`.
+    ///   3. Update the same document to `amount=42` (color unchanged
+    ///      so every index key is identical — refresh path, not
+    ///      insert-then-delete path).
+    ///   4. The update MUST succeed (regression: previously failed
+    ///      with `CorruptedCodeExecution`).
+    #[test]
+    fn summable_index_update_keeps_unchanged_keys_via_refresh_path() {
+        use crate::util::object_size_info::DocumentAndContractInfo;
+        use dpp::data_contract::DataContractFactory;
+        use dpp::document::DocumentV0;
+        use dpp::platform_value::{platform_value, Value};
+
+        const PROTOCOL_VERSION_V12: u32 = 12;
+
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let factory =
+            DataContractFactory::new(PROTOCOL_VERSION_V12).expect("expected to create factory");
+        let document_schema = platform_value!({
+            "type": "object",
+            // `documentMutable: true` — without this the doctype is
+            // immutable and `update_document_for_contract` rejects at
+            // the head with `UpdatingReadOnlyImmutableDocument` (the
+            // pre-refresh-path gate) before reaching the bug.
+            "documentsMutable": true,
+            "properties": {
+                "color":  {"type": "string",  "position": 0, "maxLength": 32},
+                "amount": {"type": "integer", "position": 1, "minimum": 0, "maximum": 1000},
+            },
+            "required": ["color", "amount"],
+            "indices": [{
+                "name": "byColor",
+                "properties": [{"color": "asc"}],
+                "summable":  "amount",
+                "countable": "countable",
+            }],
+            "additionalProperties": false,
+        });
+        let schemas = platform_value!({ "widget": document_schema });
+        let data_contract = factory
+            .create_with_value_config(
+                dpp::tests::utils::generate_random_identifier_struct(),
+                0,
+                schemas,
+                None,
+                None,
+            )
+            .expect("create data contract")
+            .data_contract_owned();
+
+        drive
+            .apply_contract(
+                &data_contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("apply contract");
+
+        let document_type = data_contract
+            .document_type_for_name("widget")
+            .expect("widget type exists");
+
+        // Insert: `color="red", amount=5`. `add_document_for_contract`
+        // writes a `ReferenceWithSumItem(sum=5)` to the byColor index
+        // and the doctype-level primary-key sum tree picks up +5.
+        let doc_id = Identifier::from([7u8; 32]);
+        let mut properties_initial = BTreeMap::new();
+        properties_initial.insert("color".to_string(), Value::Text("red".to_string()));
+        properties_initial.insert("amount".to_string(), Value::U64(5));
+        let document_initial: dpp::document::Document = DocumentV0 {
+            id: doc_id,
+            owner_id: Identifier::from([0u8; 32]),
+            properties: properties_initial,
+            revision: Some(1),
+            created_at: None,
+            updated_at: None,
+            transferred_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            transferred_at_block_height: None,
+            created_at_core_block_height: None,
+            updated_at_core_block_height: None,
+            transferred_at_core_block_height: None,
+            creator_id: None,
+        }
+        .into();
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
+
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((&document_initial, storage_flags.clone())),
+                        owner_id: None,
+                    },
+                    contract: &data_contract,
+                    document_type,
+                },
+                false,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("insert widget");
+
+        // Update: keep `color="red"` (index key unchanged, hits the
+        // no-key-change refresh branch) but change `amount` 5 → 42.
+        // This is the exact shape that previously errored:
+        //   - `change_occurred_on_index == false`
+        //   - `index.summable.is_some()` → builds `ReferenceWithSumItem`
+        //   - `batch_refresh_reference_v0` rejects with
+        //     `CorruptedCodeExecution` pre-fix.
+        let mut properties_updated = BTreeMap::new();
+        properties_updated.insert("color".to_string(), Value::Text("red".to_string()));
+        properties_updated.insert("amount".to_string(), Value::U64(42));
+        let document_updated: dpp::document::Document = DocumentV0 {
+            id: doc_id,
+            owner_id: Identifier::from([0u8; 32]),
+            properties: properties_updated,
+            revision: Some(2),
+            created_at: None,
+            updated_at: None,
+            transferred_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            transferred_at_block_height: None,
+            created_at_core_block_height: None,
+            updated_at_core_block_height: None,
+            transferred_at_core_block_height: None,
+            creator_id: None,
+        }
+        .into();
+
+        drive
+            .update_document_for_contract(
+                &document_updated,
+                &data_contract,
+                document_type,
+                None,
+                BlockInfo::default(),
+                true,
+                storage_flags,
+                None,
+                platform_version,
+                None,
+            )
+            .expect(
+                "summable-index update with unchanged keys must succeed; pre-fix this returned \
+                 CorruptedCodeExecution from batch_refresh_reference_v0 because the helper only \
+                 accepted Element::Reference and the summable index builds an \
+                 Element::ReferenceWithSumItem",
+            );
+
+        // Verify the byColor index aggregate picked up the delta:
+        // pre-update SUM where color="red" should equal 5 (initial),
+        // post-update SUM should equal 42 (rewritten via the
+        // refresh-with-sum-item op the helper now emits). Anything
+        // other than 42 here means the refresh op didn't carry the
+        // new sum_value through to ancestor sum trees, which is the
+        // *second* half of the regression: even if the call returned
+        // Ok, the aggregate had to actually update.
+        use crate::config::DriveConfig;
+        use crate::query::drive_document_sum_query::{
+            DocumentSumRequest, DocumentSumResponse, SumMode,
+        };
+        use crate::query::{WhereClause, WhereOperator};
+        let drive_config = DriveConfig::default();
+        let color_eq_red = WhereClause {
+            field: "color".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Text("red".to_string()),
+        };
+        let sum_request = DocumentSumRequest {
+            contract: &data_contract,
+            document_type,
+            sum_property: "amount".to_string(),
+            where_clauses: vec![color_eq_red],
+            order_clauses: Vec::new(),
+            mode: SumMode::Aggregate,
+            limit: None,
+            prove: false,
+            drive_config: &drive_config,
+        };
+        let sum_response = drive
+            .execute_document_sum_request(sum_request, None, platform_version)
+            .expect("point-lookup SUM no-proof on byColor where color=red");
+        // `SumMode::Aggregate` with a no-range Equal `where` resolves
+        // to the point-lookup arm and collapses the per-key entries
+        // into a single `Aggregate(i64)` response (the no-proof side
+        // mirrors the prove side's verifier-folded shape). Anything
+        // other than 42 means the refresh op didn't propagate the
+        // new sum_value into the ancestor sum tree.
+        match sum_response {
+            DocumentSumResponse::Aggregate(total) => assert_eq!(
+                total, 42,
+                "expected the byColor `color=red` aggregate to reflect the updated \
+                 `amount=42` after the in-place refresh; got {total}. A mismatch here means \
+                 batch_refresh_reference_v0 emitted a refresh op that didn't propagate the \
+                 new sum_value into the ancestor sum tree."
+            ),
+            DocumentSumResponse::Entries(entries) => {
+                let total: i64 = entries.iter().filter_map(|e| e.sum).sum();
+                assert_eq!(
+                    total, 42,
+                    "expected the byColor `color=red` aggregate to reflect the updated \
+                     `amount=42` after the in-place refresh; got {total} from Entries shape"
+                );
+            }
+            other => panic!(
+                "expected Aggregate or Entries response from point-lookup SUM, got {other:?}"
+            ),
+        }
+    }
+
+    /// Regression test for the key-changing-update tree-type bug in
+    /// `update_document_for_contract_operations/v0` — the
+    /// inconsistency the reviewer caught at the four
+    /// `batch_insert_empty_tree_if_not_exists` call sites that were
+    /// hardcoded to `TreeType::NormalTree`.
+    ///
+    /// Pre-fix behavior: when an update moved a document into a
+    /// previously-unseen branch under an aggregate (summable +
+    /// countable) index, the update path materialized the new
+    /// top-level value tree (and any inner branches) as
+    /// `NormalTree`. The insert path, by contrast, would have
+    /// materialized those same branches as
+    /// `CountSumTree` / `ProvableCount*Tree` etc. via the v1
+    /// dispatch in
+    /// `add_indices_for_index_level_for_contract_operations_v1`.
+    /// Two nodes whose pre-state had a doc in branch X and then
+    /// inserted (or updated-into) branch Y would commit to different
+    /// merk roots — consensus break.
+    ///
+    /// Setup: a v12 contract with a `byColor` index that's
+    /// `summable: "amount" + countable: "countable"` (no range
+    /// axes). Insert a `widget` at `color="red"` (creates the
+    /// "red" branch's value tree as `CountSumTree` via the
+    /// insert path), then update the same widget to
+    /// `color="blue"` (moves into a previously-unseen "blue"
+    /// branch — which the update path materializes via the
+    /// fixed dispatch). Finally, SUM the index under `color="blue"`
+    /// and assert the aggregate equals the doc's amount: a
+    /// mismatch means either the new branch landed as the wrong
+    /// `TreeType` (no count/sum carrier) OR the reference under
+    /// it didn't propagate the sum_value through the right
+    /// ancestor tree type.
+    ///
+    /// Companion to
+    /// `summable_index_update_keeps_unchanged_keys_via_refresh_path`
+    /// above, which covers the no-key-change refresh arm.
+    #[test]
+    fn summable_index_update_changes_key_into_new_branch_materializes_aggregate_tree_type() {
+        use crate::config::DriveConfig;
+        use crate::query::drive_document_sum_query::{
+            DocumentSumRequest, DocumentSumResponse, SumMode,
+        };
+        use crate::query::{WhereClause, WhereOperator};
+        use crate::util::object_size_info::DocumentAndContractInfo;
+        use dpp::data_contract::DataContractFactory;
+        use dpp::document::DocumentV0;
+        use dpp::platform_value::{platform_value, Value};
+
+        const PROTOCOL_VERSION_V12: u32 = 12;
+
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let factory =
+            DataContractFactory::new(PROTOCOL_VERSION_V12).expect("expected to create factory");
+        let document_schema = platform_value!({
+            "type": "object",
+            "documentsMutable": true,
+            "properties": {
+                "color":  {"type": "string",  "position": 0, "maxLength": 32},
+                "amount": {"type": "integer", "position": 1, "minimum": 0, "maximum": 1000},
+            },
+            "required": ["color", "amount"],
+            "indices": [{
+                "name": "byColor",
+                "properties": [{"color": "asc"}],
+                "summable":  "amount",
+                "countable": "countable",
+            }],
+            "additionalProperties": false,
+        });
+        let schemas = platform_value!({ "widget": document_schema });
+        let data_contract = factory
+            .create_with_value_config(
+                dpp::tests::utils::generate_random_identifier_struct(),
+                0,
+                schemas,
+                None,
+                None,
+            )
+            .expect("create data contract")
+            .data_contract_owned();
+
+        drive
+            .apply_contract(
+                &data_contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("apply contract");
+
+        let document_type = data_contract
+            .document_type_for_name("widget")
+            .expect("widget type exists");
+
+        // Insert with color="red", amount=11. The insert path
+        // creates the "red" value tree as CountSumTree.
+        let doc_id = Identifier::from([9u8; 32]);
+        let mut properties_initial = BTreeMap::new();
+        properties_initial.insert("color".to_string(), Value::Text("red".to_string()));
+        properties_initial.insert("amount".to_string(), Value::U64(11));
+        let document_initial: dpp::document::Document = DocumentV0 {
+            id: doc_id,
+            owner_id: Identifier::from([0u8; 32]),
+            properties: properties_initial,
+            revision: Some(1),
+            created_at: None,
+            updated_at: None,
+            transferred_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            transferred_at_block_height: None,
+            created_at_core_block_height: None,
+            updated_at_core_block_height: None,
+            transferred_at_core_block_height: None,
+            creator_id: None,
+        }
+        .into();
+        let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((&document_initial, storage_flags.clone())),
+                        owner_id: None,
+                    },
+                    contract: &data_contract,
+                    document_type,
+                },
+                false,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("insert widget");
+
+        // Update: change color "red" → "blue", amount 11 → 17.
+        // The "blue" branch doesn't exist yet — the update path
+        // has to create it. Pre-fix, that branch landed as
+        // NormalTree (no aggregate carrier); post-fix, it lands
+        // as CountSumTree, matching the insert path.
+        let mut properties_updated = BTreeMap::new();
+        properties_updated.insert("color".to_string(), Value::Text("blue".to_string()));
+        properties_updated.insert("amount".to_string(), Value::U64(17));
+        let document_updated: dpp::document::Document = DocumentV0 {
+            id: doc_id,
+            owner_id: Identifier::from([0u8; 32]),
+            properties: properties_updated,
+            revision: Some(2),
+            created_at: None,
+            updated_at: None,
+            transferred_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            transferred_at_block_height: None,
+            created_at_core_block_height: None,
+            updated_at_core_block_height: None,
+            transferred_at_core_block_height: None,
+            creator_id: None,
+        }
+        .into();
+        drive
+            .update_document_for_contract(
+                &document_updated,
+                &data_contract,
+                document_type,
+                None,
+                BlockInfo::default(),
+                true,
+                storage_flags,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("key-changing update on aggregate index must succeed");
+
+        // Walk: SUM where color="blue" — drives the point-lookup
+        // SUM arm under the byColor index. The "blue" value tree
+        // is the one materialized by the UPDATE path. If it landed
+        // as NormalTree (pre-fix), no sum_value carrier exists at
+        // the parent; the SUM either errors or returns 0. Post-fix
+        // it's CountSumTree and the aggregate equals 17.
+        let drive_config = DriveConfig::default();
+        let color_eq_blue = WhereClause {
+            field: "color".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Text("blue".to_string()),
+        };
+        let sum_request = DocumentSumRequest {
+            contract: &data_contract,
+            document_type,
+            sum_property: "amount".to_string(),
+            where_clauses: vec![color_eq_blue],
+            order_clauses: Vec::new(),
+            mode: SumMode::Aggregate,
+            limit: None,
+            prove: false,
+            drive_config: &drive_config,
+        };
+        let sum_response = drive
+            .execute_document_sum_request(sum_request, None, platform_version)
+            .expect(
+                "point-lookup SUM on update-materialized branch must succeed; pre-fix the \
+                 branch landed as NormalTree and the dispatcher would fail (or silently \
+                 return 0) because there's no count+sum aggregate at the parent",
+            );
+        match sum_response {
+            DocumentSumResponse::Aggregate(total) => assert_eq!(
+                total, 17,
+                "SUM(amount) where color=blue must equal 17 — the updated value. Got {total}; \
+                 pre-fix the update path created the 'blue' branch as NormalTree, dropping \
+                 the per-doc sum contribution at the value-tree's parent."
+            ),
+            DocumentSumResponse::Entries(entries) => {
+                let total: i64 = entries.iter().filter_map(|e| e.sum).sum();
+                assert_eq!(total, 17, "expected 17, got {total} via Entries shape");
+            }
+            other => panic!("expected Aggregate or Entries, got {other:?}"),
+        }
+    }
 }

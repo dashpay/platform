@@ -584,8 +584,7 @@ var body: some View {
                 dataDir: dataDirURL.path,
                 network: platformState.currentNetwork,
                 peers: peers,
-                restrictToConfiguredPeers: restrictToConfiguredPeers,
-                masternodeSyncEnabled: masternodesEnabled
+                restrictToConfiguredPeers: restrictToConfiguredPeers
             )
             try walletManager.startSpv(config: config)
         } catch {

@@ -88,6 +88,54 @@ final class WalletDeletionTests: XCTestCase {
         XCTAssertEqual(transactions.first?.txid, liveTx.txid)
     }
 
+    func testDeleteWalletDataRemovesAssetLockRowsAndPreservesOtherWallets() throws {
+        // Regression test for the Codex P2 wallet-deletion finding on
+        // dashpay/platform#3634: `deleteWalletData` previously left
+        // `PersistentAssetLock` rows behind, so the wallet-load path
+        // (`loadCachedAssetLocksOnQueue`) would resurrect stale
+        // Pending / Resumable asset-lock state on a delete-then-
+        // reimport of the same walletId.
+        let container = try DashModelContainer.createInMemory()
+        let context = ModelContext(container)
+        let walletId = Data(repeating: 0xa1, count: 32)
+        let siblingId = Data(repeating: 0xb2, count: 32)
+
+        context.insert(PersistentWallet(walletId: walletId, network: .testnet))
+        context.insert(PersistentWallet(walletId: siblingId, network: .testnet))
+
+        let doomedLock = PersistentAssetLock(
+            outPointHex: "deadbeef:0",
+            walletId: walletId,
+            transactionBytes: Data([0x01, 0x02, 0x03]),
+            fundingTypeRaw: 0,
+            identityIndexRaw: 0,
+            accountIndexRaw: 0,
+            amountDuffs: 100_000_000,
+            statusRaw: 1
+        )
+        let siblingLock = PersistentAssetLock(
+            outPointHex: "cafebabe:1",
+            walletId: siblingId,
+            transactionBytes: Data([0x04, 0x05, 0x06]),
+            fundingTypeRaw: 0,
+            identityIndexRaw: 0,
+            accountIndexRaw: 0,
+            amountDuffs: 200_000_000,
+            statusRaw: 2
+        )
+        context.insert(doomedLock)
+        context.insert(siblingLock)
+        try context.save()
+
+        let handler = PlatformWalletPersistenceHandler(modelContainer: container, network: .testnet)
+        try handler.deleteWalletData(walletId: walletId)
+
+        let remaining = try fetch(PersistentAssetLock.self, in: container)
+        XCTAssertEqual(remaining.count, 1)
+        XCTAssertEqual(remaining.first?.walletId, siblingId)
+        XCTAssertEqual(remaining.first?.outPointHex, "cafebabe:1")
+    }
+
     func testDeleteWalletDataKeepsNetworkSyncStateWhenSiblingWalletRemains() throws {
         let container = try DashModelContainer.createInMemory()
         let context = ModelContext(container)

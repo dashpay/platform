@@ -23,6 +23,15 @@ PACKAGE="rs-unified-sdk-ffi"
 XCFRAMEWORK="$SCRIPT_DIR/DashSDKFFI.xcframework"
 PROFILE="dev" # Rust doesn't allow us to use "debug" for some reason, the profile name internally is dev
 
+# Crates whose cbindgen-generated headers ship in the unified framework.
+# Order matters: earlier headers define types referenced by later ones.
+INCLUDED_CRATES=(
+  dash-network
+  key-wallet-ffi
+  rs-sdk-ffi
+  platform-wallet-ffi
+)
+
 # -------------------------------
 # Flags
 # -------------------------------
@@ -122,19 +131,40 @@ fi
 
 inject_modulemap() {
   local HEADERS_DIR="$1"
+  local dir name keep c
 
-  # Create umbrella header that includes all FFI headers in dependency order
-  cat > "$HEADERS_DIR/DashSDKFFI.h" << 'EOF'
-#ifndef DASHSDKFFI_H
-#define DASHSDKFFI_H
+  for dir in "$HEADERS_DIR"/*/; do
+    [[ -d "$dir" ]] || continue
+    name=$(basename "$dir")
+    keep=0
+    for c in "${INCLUDED_CRATES[@]}"; do
+      if [[ "$c" == "$name" ]]; then
+        keep=1
+        break
+      fi
+    done
+    if (( ! keep )); then
+      rm -rf "$dir"
+      log_info "  → pruned orphan header dir: $name"
+    fi
+  done
 
-#include "dash-network/dash-network.h"
-#include "key-wallet-ffi/key-wallet-ffi.h"
-#include "rs-sdk-ffi/rs-sdk-ffi.h"
-#include "platform-wallet-ffi/platform-wallet-ffi.h"
+  for c in "${INCLUDED_CRATES[@]}"; do
+    if [[ ! -f "$HEADERS_DIR/$c/$c.h" ]]; then
+      log_error "Missing header: $HEADERS_DIR/$c/$c.h"
+      log_error "  → ensure '$c' is a dependency of $PACKAGE"
+      exit 1
+    fi
+  done
 
-#endif
-EOF
+  {
+    printf '#ifndef DASHSDKFFI_H\n'
+    printf '#define DASHSDKFFI_H\n\n'
+    for c in "${INCLUDED_CRATES[@]}"; do
+      printf '#include "%s/%s.h"\n' "$c" "$c"
+    done
+    printf '\n#endif\n'
+  } > "$HEADERS_DIR/DashSDKFFI.h"
 
   cat > "$HEADERS_DIR/module.modulemap" << 'EOF'
 module DashSDKFFI {
