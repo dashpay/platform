@@ -30,6 +30,7 @@ export type GroveElementType =
   | "itemWithSumItem"
   | "referenceWithSumItem"
   | "provableCountSumTree"
+  | "provableCountProvableSumTree"
   | "provableSumTree"
   | "commitmentTree"
   | "mmrTree"
@@ -47,6 +48,7 @@ export type GroveElementType =
   | "nonCountedItemWithSumItem"
   | "nonCountedReferenceWithSumItem"
   | "nonCountedProvableCountSumTree"
+  | "nonCountedProvableCountProvableSumTree"
   | "nonCountedProvableSumTree"
   | "nonCountedCommitmentTree"
   | "nonCountedMmrTree"
@@ -56,11 +58,13 @@ export type GroveElementType =
   | "notSummedBigSumTree"
   | "notSummedCountSumTree"
   | "notSummedProvableCountSumTree"
+  | "notSummedProvableCountProvableSumTree"
   | "notSummedProvableSumTree"
   | "notCountedOrSummedSumTree"
   | "notCountedOrSummedBigSumTree"
   | "notCountedOrSummedCountSumTree"
   | "notCountedOrSummedProvableCountSumTree"
+  | "notCountedOrSummedProvableCountProvableSumTree"
   | "notCountedOrSummedProvableSumTree";
 "#;
 
@@ -862,6 +866,7 @@ fn element_sum(element: &Element) -> Option<i128> {
         Element::CountSumTree(_, _, sum, _) => Some(*sum as i128),
         Element::ItemWithSumItem(_, sum, _) => Some(*sum as i128),
         Element::ProvableCountSumTree(_, _, sum, _) => Some(*sum as i128),
+        Element::ProvableCountProvableSumTree(_, _, sum, _) => Some(*sum as i128),
         Element::ReferenceWithSumItem(_, _, sum, _) => Some(*sum as i128),
         Element::ProvableSumTree(_, sum, _) => Some(*sum as i128),
         Element::NonCounted(inner)
@@ -909,6 +914,7 @@ fn element_type_name(element: &Element) -> &'static str {
         Element::ItemWithSumItem(_, _, _) => "itemWithSumItem",
         Element::ReferenceWithSumItem(_, _, _, _) => "referenceWithSumItem",
         Element::ProvableCountSumTree(_, _, _, _) => "provableCountSumTree",
+        Element::ProvableCountProvableSumTree(_, _, _, _) => "provableCountProvableSumTree",
         Element::ProvableSumTree(_, _, _) => "provableSumTree",
         Element::CommitmentTree(_, _, _) => "commitmentTree",
         Element::MmrTree(_, _) => "mmrTree",
@@ -934,6 +940,9 @@ fn non_counted_element_type_name(element: &Element) -> &'static str {
         Element::ItemWithSumItem(_, _, _) => "nonCountedItemWithSumItem",
         Element::ReferenceWithSumItem(_, _, _, _) => "nonCountedReferenceWithSumItem",
         Element::ProvableCountSumTree(_, _, _, _) => "nonCountedProvableCountSumTree",
+        Element::ProvableCountProvableSumTree(_, _, _, _) => {
+            "nonCountedProvableCountProvableSumTree"
+        }
         Element::ProvableSumTree(_, _, _) => "nonCountedProvableSumTree",
         Element::CommitmentTree(_, _, _) => "nonCountedCommitmentTree",
         Element::MmrTree(_, _) => "nonCountedMmrTree",
@@ -951,6 +960,9 @@ fn not_summed_element_type_name(element: &Element) -> &'static str {
         Element::BigSumTree(_, _, _) => "notSummedBigSumTree",
         Element::CountSumTree(_, _, _, _) => "notSummedCountSumTree",
         Element::ProvableCountSumTree(_, _, _, _) => "notSummedProvableCountSumTree",
+        Element::ProvableCountProvableSumTree(_, _, _, _) => {
+            "notSummedProvableCountProvableSumTree"
+        }
         Element::ProvableSumTree(_, _, _) => "notSummedProvableSumTree",
         _ => element_type_name(element),
     }
@@ -962,6 +974,9 @@ fn not_counted_or_summed_element_type_name(element: &Element) -> &'static str {
         Element::BigSumTree(_, _, _) => "notCountedOrSummedBigSumTree",
         Element::CountSumTree(_, _, _, _) => "notCountedOrSummedCountSumTree",
         Element::ProvableCountSumTree(_, _, _, _) => "notCountedOrSummedProvableCountSumTree",
+        Element::ProvableCountProvableSumTree(_, _, _, _) => {
+            "notCountedOrSummedProvableCountProvableSumTree"
+        }
         Element::ProvableSumTree(_, _, _) => "notCountedOrSummedProvableSumTree",
         _ => element_type_name(element),
     }
