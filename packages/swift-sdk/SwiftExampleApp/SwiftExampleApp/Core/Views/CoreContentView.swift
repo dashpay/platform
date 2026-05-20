@@ -795,11 +795,25 @@ struct WalletRowView: View {
     /// addresses (no identities) showed "Empty".
     @Query private var addressBalances: [PersistentPlatformAddress]
 
+    /// Per-wallet unspent shielded notes. Same persisted-truth
+    /// source as the Sync Status diagnostic — sum of `value` over
+    /// unspent rows for this wallet, in credits. Without this the
+    /// wallet row's combined DASH total under-reported the wallet's
+    /// real value by every shielded note: a wallet with funds in
+    /// the shielded pool would show Core + Platform on the list but
+    /// silently exclude Shielded.
+    @Query private var shieldedNotes: [PersistentShieldedNote]
+
     init(wallet: PersistentWallet) {
         self.wallet = wallet
         let walletId = wallet.walletId
         _addressBalances = Query(
             filter: #Predicate<PersistentPlatformAddress> { $0.walletId == walletId }
+        )
+        _shieldedNotes = Query(
+            filter: #Predicate<PersistentShieldedNote> {
+                $0.walletId == walletId && !$0.isSpent
+            }
         )
     }
 
@@ -848,12 +862,20 @@ struct WalletRowView: View {
         totals.confirmed + totals.unconfirmed + totals.immature + totals.locked
     }
 
+    /// Sum of unspent shielded note values in credits. Same scale
+    /// as `platformBalance` (1e11 credits/DASH), so it folds into
+    /// the same divisor in [`combinedDashAmount(coreTotal:)`].
+    private var shieldedBalance: UInt64 {
+        shieldedNotes.reduce(UInt64(0)) { $0 &+ $1.value }
+    }
+
     /// Combined wallet balance expressed in DASH for a precomputed
-    /// totals tuple. Core uses 1e8 duffs/DASH; Platform uses 1e11
-    /// credits/DASH.
+    /// totals tuple. Core uses 1e8 duffs/DASH; Platform and Shielded
+    /// both use 1e11 credits/DASH.
     private func combinedDashAmount(coreTotal: UInt64) -> Double {
         Double(coreTotal) / 100_000_000.0
             + Double(platformBalance) / 100_000_000_000.0
+            + Double(shieldedBalance) / 100_000_000_000.0
     }
 
     private var walletIdShort: String {
