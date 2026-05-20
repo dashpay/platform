@@ -64,8 +64,23 @@ pub(super) fn create_contact_request_data_trigger_v1(
         return Ok(result);
     }
 
-    // Recipient identity must exist. Bill the balance-fetch cost via
-    // add_operation on the outer execution_context.
+    // Diff vs `_v0` (recipient identity existence check):
+    //
+    //   _v0: `.fetch_identity_balance(to_user_id, transaction, pv)?`
+    //        — returns just the balance (no cost info). No way to
+    //        bill the grovedb read; the explicit `TODO: Calculate fee
+    //        operations` comment marked the gap.
+    //
+    //   _v1: `.fetch_identity_balance_with_costs(to_user_id,
+    //        block_info, apply=true, transaction, pv)?` — returns
+    //        `(Option<Credits>, FeeResult)`. Bill the FeeResult via
+    //        `add_operation`.
+    //
+    // Why the change: closes T3 from `docs/paid-error-fee-audit.md`.
+    // Contact-request creates would do a grovedb identity-balance
+    // lookup for free on PV11. `apply: true` matches `_v0`'s stateful
+    // query (not the stateless estimated-cost path) so the balance
+    // value returned is byte-identical to `_v0`.
     let (to_identity, balance_fee_result) =
         context.platform.drive.fetch_identity_balance_with_costs(
             to_user_id.to_buffer(),

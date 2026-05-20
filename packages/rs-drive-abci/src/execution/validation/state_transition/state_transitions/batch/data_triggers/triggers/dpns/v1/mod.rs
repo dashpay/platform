@@ -244,8 +244,24 @@ pub(super) fn create_domain_data_trigger_v1(
             block_time_ms: None,
         };
 
-        // Pass Some(epoch) so the real grovedb cost is computed; bill
-        // it via add_operation on the outer execution_context.
+        // Diff vs `_v0` (parent-domain query):
+        //
+        //   _v0: `.query_documents(drive_query, None, is_dry_run, ...)`
+        //        — `epoch=None` short-circuits the cost computation to
+        //        0 inside `query_documents_v0`. The outcome's documents
+        //        are used; the cost is implicitly zero and discarded.
+        //        Net effect: trigger does the read but never charges
+        //        the user for it.
+        //
+        //   _v1: `.query_documents(drive_query, Some(epoch), ...)` and
+        //        immediately `add_operation(PrecalculatedOperation(...))`
+        //        with the real cost. The user now pays for the trigger's
+        //        grovedb read on the outer execution_context.
+        //
+        // Why the change: closes T1 from `docs/paid-error-fee-audit.md`
+        // — DPNS subdomain registrations were a free DoS surface on
+        // PROTOCOL_VERSION_11 because the trigger's parent-domain
+        // lookup ran on the chain but the user paid nothing for it.
         let parent_domain_outcome = context.platform.drive.query_documents(
             drive_query,
             Some(context.platform.state.last_committed_block_epoch_ref()),
@@ -341,7 +357,11 @@ pub(super) fn create_domain_data_trigger_v1(
         block_time_ms: None,
     };
 
-    // Same pattern as the parent-domain query above — bill the cost.
+    // Diff vs `_v0` (preorder query): same change as above. `_v0`
+    // passes `epoch=None` (zero cost, discarded); `_v1` passes
+    // `Some(epoch)` and bills via `add_operation`. Closes T2 — the
+    // preorder lookup runs on every DPNS domain create (not just
+    // subdomain), so the unbilled cost compounded faster than T1.
     let preorder_outcome = context.platform.drive.query_documents(
         drive_query,
         Some(context.platform.state.last_committed_block_epoch_ref()),
