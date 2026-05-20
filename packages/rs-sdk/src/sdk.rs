@@ -674,6 +674,12 @@ pub struct SdkBuilder {
     /// When true, auto-detection of protocol version from network metadata is disabled.
     version_explicit: bool,
 
+    /// Initial protocol version seed for the per-instance atomic. Set via
+    /// [`SdkBuilder::with_initial_version`]. Does NOT imply
+    /// `version_explicit`: auto-detect remains active and can ratchet
+    /// upward via `fetch_max` once the network's version is observed.
+    initial_version: Option<&'static PlatformVersion>,
+
     /// Cache size for data contracts. Used by mock [GrpcContextProvider].
     #[cfg(feature = "mocks")]
     data_contract_cache_size: NonZeroUsize,
@@ -746,6 +752,7 @@ impl Default for SdkBuilder {
 
             version: PlatformVersion::latest(),
             version_explicit: false,
+            initial_version: None,
             #[cfg(not(target_arch = "wasm32"))]
             ca_certificate: None,
 
@@ -870,6 +877,29 @@ impl SdkBuilder {
     pub fn with_version(mut self, version: &'static PlatformVersion) -> Self {
         self.version = version;
         self.version_explicit = true;
+        self
+    }
+
+    /// Set the *initial* protocol version seed for auto-detect mode.
+    ///
+    /// Unlike [`Self::with_version`], this leaves auto-detect active —
+    /// the SDK starts at `version.protocol_version` and ratchets upward
+    /// (via `fetch_max` in `maybe_update_protocol_version`) once the
+    /// network's actual version is observed in response metadata.
+    ///
+    /// Use this when an SDK built against `PlatformVersion::latest()`
+    /// must talk to a network running an older protocol version (e.g.
+    /// a v3.0 testnet from a v3.1+ binary). Without an explicit initial
+    /// version, the SDK's `version()` fallback returns `latest()` until
+    /// the first response is parsed, and the upward-only `fetch_max`
+    /// guard can never ratchet *down* to the older network — leaving
+    /// any version-dispatched encoders (e.g. the documents query) to
+    /// ship a too-new wire shape that the network rejects.
+    ///
+    /// This is additive: callers that don't set it preserve today's
+    /// behaviour exactly.
+    pub fn with_initial_version(mut self, version: &'static PlatformVersion) -> Self {
+        self.initial_version = Some(version);
         self
     }
 
@@ -1004,7 +1034,13 @@ impl SdkBuilder {
                     // network response sets the actual version — even if it's lower
                     // than the binary's latest. When pinned, use the explicit version.
                     protocol_version: Arc::new(atomic::AtomicU32::new(
-                        if self.version_explicit { self.version.protocol_version } else { 0 },
+                        if self.version_explicit {
+                            self.version.protocol_version
+                        } else if let Some(iv) = self.initial_version {
+                            iv.protocol_version
+                        } else {
+                            0
+                        },
                     )),
                     auto_detect_protocol_version: !self.version_explicit,
                     // Note: in the future, we need to securely initialize initial height during Sdk bootstrap or first request.
@@ -1074,7 +1110,13 @@ impl SdkBuilder {
                     proofs:self.proofs,
                     nonce_cache: Default::default(),
                     protocol_version: Arc::new(atomic::AtomicU32::new(
-                        if self.version_explicit { self.version.protocol_version } else { 0 },
+                        if self.version_explicit {
+                            self.version.protocol_version
+                        } else if let Some(iv) = self.initial_version {
+                            iv.protocol_version
+                        } else {
+                            0
+                        },
                     )),
                     auto_detect_protocol_version: !self.version_explicit,
                     context_provider: ArcSwapOption::new(Some(Arc::new(context_provider))),

@@ -92,6 +92,30 @@ pub const DEFAULT_NODES_VOTING_LIMIT: u32 = 100;
 /// As [`Identifier`] implements [Query], the `query` variable in the code
 /// above can be used as a parameter for [Fetch::fetch()](crate::platform::Fetch::fetch())
 /// and [FetchMany::fetch_many()](crate::platform::FetchMany::fetch_many()) methods.
+/// Trampoline hook for requests whose wire encoding depends on the
+/// SDK's currently-known protocol version (today: [`DocumentQuery`]'s
+/// V0 vs V1 [`GetDocumentsRequest`](dapi_grpc::platform::v0::GetDocumentsRequest)
+/// split).
+///
+/// The [`Fetch`](crate::platform::Fetch) /
+/// [`FetchMany`](crate::platform::FetchMany) trampolines call this
+/// right after [`Query::query`] returns the typed request and before
+/// transport. No-op for every request type except [`DocumentQuery`];
+/// the runtime cost is a single [`std::any::TypeId`] comparison per
+/// fetch.
+///
+/// Uses [`std::any::Any`] downcast (not specialization or a trait
+/// method) because the request types are owned by upstream crates
+/// (dapi-grpc, drive) we don't want to touch, and stable Rust has no
+/// other way to dispatch on a generic type's concrete identity.
+pub(crate) fn apply_sdk_protocol_version<R: 'static>(request: &mut R, sdk: &crate::Sdk) {
+    use std::any::Any;
+    let any_mut: &mut dyn Any = request;
+    if let Some(dq) = any_mut.downcast_mut::<DocumentQuery>() {
+        dq.protocol_version_override = Some(sdk.protocol_version_number());
+    }
+}
+
 pub trait Query<T: TransportRequest + Mockable>: Send + Debug + Clone {
     /// Converts the current instance into an instance of the `TransportRequest` type.
     ///
