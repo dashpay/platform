@@ -4737,7 +4737,7 @@ checksum = "19f132c84eca552bf34cab8ec81f1c1dcc229b811638f9d283dceabe58c5569e"
 
 [[package]]
 name = "platform-encryption"
-version = "2.1.1"
+version = "3.1.0-dev.2"
 dependencies = [
  "aes",
  "cbc",
@@ -4843,7 +4843,7 @@ dependencies = [
 
 [[package]]
 name = "platform-wallet-ffi"
-version = "2.1.1"
+version = "3.1.0-dev.2"
 dependencies = [
  "anyhow",
  "bincode",
