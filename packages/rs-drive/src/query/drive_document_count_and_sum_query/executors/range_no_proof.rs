@@ -5,31 +5,19 @@
 //!
 //! ## Aggregate shapes (`Aggregate + range`, `GroupByIn + range`)
 //!
-//! Use grovedb's merk-internal aggregate primitives —
-//! `query_aggregate_count` against the index's
-//! `aggregate_count_path_query` AND `query_aggregate_sum` against the
-//! same index's `aggregate_sum_path_query`. Two O(log n) merk-internal
-//! reads, bounded **regardless of how many documents the range
-//! matches**.
-//!
-//! grovedb's pinned rev does not yet expose a combined no-proof
-//! `query_aggregate_count_and_sum` primitive (its proof-side analog
-//! `AggregateCountAndSumOnRange` exists and is what the AVG prove path
-//! uses). A future optional grovedb optimization could collapse these
-//! into a single merk-internal accumulator; #3687 captures the
-//! follow-up. Crucially, the no-proof path here still uses the
-//! engine-side bounded accumulators — it does NOT walk every matched
-//! PCPS element to fold `(count, sum)` in Rust. That walk shape would
-//! turn a public DAPI endpoint into a request-amplification surface
-//! (O(matching range keys) per request); the bounded accumulators close
-//! that surface and match the worst-case cost the pre-#3687 composed
-//! count + sum dispatchers had.
+//! One `grove.query_aggregate_count_and_sum` call against the index's
+//! `aggregate_count_and_sum_path_query` — a single merk-internal
+//! `(u128, i128)` accumulator (narrowed to `(u64, i64)` at the
+//! grovedb entry point) yielding both metrics in one O(log n)
+//! traversal. Bounded **regardless of how many documents the range
+//! matches**, so the public DAPI surface stays closed against
+//! amplification.
 //!
 //! For compound `(In + range)` (with `In` on a prefix property) the
 //! aggregate primitive can't fork through an `In`; the executor
 //! per-In fans out (≤100 branches per the `In::in_values()` validator
-//! cap) and issues one count + one sum aggregate call per branch under
-//! a shared read transaction. Worst-case 200 merk-internal reads per
+//! cap) and issues one combined accumulator call per branch under a
+//! shared read transaction. Worst-case 100 merk-internal reads per
 //! request, again independent of matched-document count.
 //!
 //! ## Distinct shapes (`GroupByRange + range`, `GroupByCompound + range`)
@@ -39,16 +27,15 @@
 //! `grove_get_raw_path_query` call — the same shape sum's distinct
 //! branch uses — and decode each via
 //! [`grovedb::Element::count_sum_value_or_default`] to populate
-//! [`AverageEntry`] with both `count` and `sum`. **This** is where the
-//! single-walk win lives: one walk yields both axes per visited
-//! element instead of two parallel walks zipped post-hoc. The
-//! distinct walk is bounded by the request's `limit` (default falls
-//! back to `drive_config.default_query_limit`, explicit limits are
-//! clamped to `drive_config.max_query_limit`) so the public-endpoint
-//! amplification surface stays closed on this path too.
+//! [`AverageEntry`] with both `count` and `sum`. One walk yields both
+//! axes per visited element instead of two parallel walks zipped
+//! post-hoc. The distinct walk is bounded by the request's `limit`
+//! (default falls back to `drive_config.default_query_limit`,
+//! explicit limits are clamped to `drive_config.max_query_limit`) so
+//! the public-endpoint amplification surface stays closed on this
+//! path too.
 
 use super::super::super::drive_document_average_query::{AverageEntry, DocumentAverageResponse};
-use super::super::super::drive_document_count_query::DriveDocumentCountQuery;
 use super::super::super::drive_document_sum_query::index_picker::find_range_summable_index_for_where_clauses;
 use super::super::super::drive_document_sum_query::DriveDocumentSumQuery;
 use crate::drive::Drive;
@@ -337,10 +324,12 @@ impl Drive {
     }
 
     /// Flat (no In on prefix) aggregate count + sum: one
-    /// `query_aggregate_count` call against the count path query, one
-    /// `query_aggregate_sum` call against the sum path query, both
-    /// O(log n) at the merk layer. Shared `transaction` enforces
-    /// snapshot consistency across the two reads.
+    /// `query_aggregate_count_and_sum` call against the PCPS path
+    /// query — a single O(log n) merk-internal accumulator yielding
+    /// both metrics from one traversal. The combined no-proof
+    /// primitive landed in grovedb #676; before that this helper had
+    /// to issue two parallel accumulator calls under a shared read
+    /// transaction.
     #[allow(clippy::too_many_arguments)]
     fn flat_aggregate_count_and_sum(
         &self,
@@ -354,21 +343,6 @@ impl Drive {
         drive_version: &dpp::version::drive_versions::DriveVersion,
         platform_version: &PlatformVersion,
     ) -> Result<(u64, i64), Error> {
-        let count_query = DriveDocumentCountQuery {
-            document_type,
-            contract_id,
-            document_type_name: document_type_name.clone(),
-            index,
-            where_clauses: where_clauses.clone(),
-        };
-        let count_path_query = count_query.aggregate_count_path_query(platform_version)?;
-        let CostContext { value, cost: _ } = self.grove.query_aggregate_count(
-            &count_path_query,
-            transaction,
-            &drive_version.grove_version,
-        );
-        let count = value.map_err(|e| Error::GroveDB(Box::new(e)))?;
-
         let sum_query = DriveDocumentSumQuery {
             document_type,
             contract_id,
@@ -377,14 +351,12 @@ impl Drive {
             where_clauses,
             sum_property,
         };
-        let sum_path_query = sum_query.aggregate_sum_path_query(platform_version)?;
-        let CostContext { value, cost: _ } = self.grove.query_aggregate_sum(
-            &sum_path_query,
+        let path_query = sum_query.aggregate_count_and_sum_path_query(platform_version)?;
+        let CostContext { value, cost: _ } = self.grove.query_aggregate_count_and_sum(
+            &path_query,
             transaction,
             &drive_version.grove_version,
         );
-        let sum = value.map_err(|e| Error::GroveDB(Box::new(e)))?;
-
-        Ok((count, sum))
+        value.map_err(|e| Error::GroveDB(Box::new(e)))
     }
 }

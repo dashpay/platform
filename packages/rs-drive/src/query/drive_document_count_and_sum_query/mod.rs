@@ -23,13 +23,12 @@
 //!   `drive_config.default_query_limit`, explicit limits are clamped to
 //!   `drive_config.max_query_limit`).
 //! - **`RangeNoProof` aggregate shapes** (`Aggregate` / `GroupByIn` +
-//!   range): grovedb's merk-internal accumulators —
-//!   `query_aggregate_count` against the count path query AND
-//!   `query_aggregate_sum` against the sum path query — under a shared
-//!   read transaction. Two O(log n) merk-internal reads regardless of
-//!   how many documents the range matches. Compound `In + range` per-In
-//!   fans out (≤100 branches per the `In::in_values()` validator cap)
-//!   and issues one count + one sum accumulator call per branch.
+//!   range): grovedb's combined merk-internal accumulator —
+//!   `query_aggregate_count_and_sum` against the PCPS path query —
+//!   yielding `(u64, i64)` from a single O(log n) traversal. Compound
+//!   `In + range` per-In fans out (≤100 branches per the
+//!   `In::in_values()` validator cap) and issues one combined
+//!   accumulator call per branch under a shared read transaction.
 //!
 //! ## Routing
 //!
@@ -45,16 +44,14 @@
 //!
 //! ## Engine-side primitive note
 //!
-//! grovedb exposes `query_aggregate_sum` and `query_aggregate_count`
-//! as no-prove engine-side accumulators (their proof-side analogs are
-//! `AggregateSumOnRange` / `AggregateCountOnRange`, plus the combined
-//! `AggregateCountAndSumOnRange` the prove path uses). The aggregate
-//! `RangeNoProof` branch issues both no-prove accumulators in
-//! parallel because no combined no-prove primitive exists. A future
-//! `query_aggregate_count_and_sum` grovedb addition could collapse
-//! those two calls into a single merk-internal read, but the current
-//! two-accumulator shape is already in the same O(log n) cost class
-//! and bounded against DAPI amplification.
+//! grovedb exposes `query_aggregate_count_and_sum` as the combined
+//! no-prove accumulator (proof-side analog
+//! `AggregateCountAndSumOnRange` is what the prove path uses for the
+//! same shape). The aggregate `RangeNoProof` branch routes through it
+//! directly — one merk-internal `(u128, i128)` walk per request,
+//! narrowed to `(u64, i64)` at the grovedb entry. Same cost class
+//! and the same shape the prove path uses, just without the proof
+//! envelope.
 
 #[cfg(feature = "server")]
 pub mod drive_dispatcher;

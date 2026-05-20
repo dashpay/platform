@@ -18,7 +18,7 @@ drive = { path = "../rs-drive", default-features = false, features = [
 ] }
 
 drive-proof-verifier = { path = "../rs-drive-proof-verifier", default-features = false }
-grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "ad2492dcdc869a1452b0b10fbed8f9b0de1634c6", features = ["client", "sqlite"], optional = true }
+grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "9db515efe59602e536eb75e79308e0cf8f8474be", features = ["client", "sqlite"], optional = true }
 dash-async = { path = "../rs-dash-async" }
 dash-context-provider = { path = "../rs-context-provider", default-features = false }
 dash-platform-macros = { path = "../rs-dash-platform-macros" }

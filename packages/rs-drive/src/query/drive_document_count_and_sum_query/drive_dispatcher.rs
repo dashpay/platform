@@ -20,10 +20,10 @@
 //!   (default `drive_config.default_query_limit`, capped at
 //!   `drive_config.max_query_limit`).
 //! - `RangeNoProof` aggregate (`Aggregate` / `GroupByIn` + range):
-//!   grovedb's merk-internal `query_aggregate_count` +
-//!   `query_aggregate_sum` accumulators (each O(log n)) under a
-//!   shared read transaction. Compound `In + range` per-In fans out
-//!   (≤100 branches × 2 accumulator calls).
+//!   grovedb's combined `query_aggregate_count_and_sum` accumulator
+//!   (O(log n), yielding `(u64, i64)` in one traversal). Compound
+//!   `In + range` per-In fans out (≤100 branches × 1 accumulator
+//!   call) under a shared read transaction.
 //!
 //! # Atomicity
 //!
@@ -189,8 +189,8 @@ impl Drive {
                 );
                 // Limit applies only to the distinct branches — the
                 // aggregate branches return a single collapsed pair
-                // bounded by grovedb's merk-internal accumulators
-                // (`query_aggregate_count` / `query_aggregate_sum`)
+                // bounded by grovedb's combined merk-internal
+                // accumulator (`query_aggregate_count_and_sum`)
                 // regardless of how many documents match. For distinct
                 // shapes, follow [`DocumentAverageRequest::limit`]'s
                 // documented no-proof contract: fall back to
