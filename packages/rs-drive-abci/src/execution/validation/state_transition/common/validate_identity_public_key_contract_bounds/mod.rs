@@ -74,6 +74,7 @@ mod tests {
     //! v0's behavior is frozen for chain replay — the v0 assertion below pins it.
     use super::v0::validate_identity_public_keys_contract_bounds_v0;
     use super::v1::validate_identity_public_keys_contract_bounds_v1;
+    use super::validate_identity_public_keys_contract_bounds;
     use crate::execution::types::execution_operation::ValidationOperation;
     use crate::execution::types::state_transition_execution_context::{
         StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
@@ -433,6 +434,81 @@ mod tests {
             precalculated[0].processing_fee > 0,
             "expected the not-found lookup to incur a non-zero processing fee; got {:?}",
             precalculated[0]
+        );
+    }
+
+    /// Covers the integration this PR is wiring up — that the public dispatcher actually
+    /// routes to v1 under `PlatformVersion::latest()` (which sets the bounds-validator
+    /// version field to 1) and that the `epoch` parameter is forwarded through. If the
+    /// dispatcher were accidentally routing to v0 — which has the DECRYPTION-branch bug —
+    /// the assertion below would flip from `is_valid` to invalid.
+    #[test]
+    fn dispatcher_routes_to_v1_at_latest_platform_version() {
+        let platform_version = PlatformVersion::latest();
+        // Sanity: `latest` should select v1 of the bounds validator.
+        assert_eq!(
+            platform_version
+                .drive_abci
+                .validation_and_processing
+                .state_transitions
+                .common_validation_methods
+                .validate_identity_public_key_contract_bounds,
+            1,
+            "test premise: latest platform version is expected to select v1; \
+             update this test if the version field moves"
+        );
+
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let contract = build_contract_with_decryption_only_bounds(platform_version);
+        let contract_id = contract.id();
+        platform
+            .drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                None,
+                None,
+                platform_version,
+            )
+            .expect("contract applied");
+
+        let key = make_decryption_key_bound_to_doc_type(contract_id, "note".to_string());
+        let mut execution_context =
+            StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                .expect("execution context");
+        let epoch = Epoch::new(0).expect("epoch 0");
+
+        let result = validate_identity_public_keys_contract_bounds(
+            Identifier::random(),
+            &[key],
+            &platform.drive,
+            &epoch,
+            None,
+            &mut execution_context,
+            platform_version,
+        )
+        .expect("dispatcher returns Ok");
+
+        assert!(
+            result.is_valid(),
+            "dispatcher routed away from v1 (or v1 regressed); got errors: {:?}",
+            result.errors
+        );
+        // Forwarded epoch reaches v1 → billing happens. ≥ 1 entry proves the epoch
+        // parameter is not being dropped en route.
+        let billed_count = execution_context
+            .operations_slice()
+            .iter()
+            .filter(|op| matches!(op, ValidationOperation::PrecalculatedOperation(_)))
+            .count();
+        assert!(
+            billed_count >= 1,
+            "dispatcher must forward epoch to v1 so reads get billed; got {} entries",
+            billed_count
         );
     }
 }
