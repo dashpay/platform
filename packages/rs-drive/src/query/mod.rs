@@ -222,6 +222,13 @@ pub mod drive_document_sum_query;
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod drive_document_average_query;
 
+/// Joint count-and-sum no-prove executor surface — backs the AVG
+/// no-prove path's unified single-walk dispatch. See its module
+/// docstring for the perf / atomicity contract. Server-only because
+/// the surface only fires on the no-prove (server-materialized) path.
+#[cfg(feature = "server")]
+pub mod drive_document_count_and_sum_query;
+
 /// A Query Syntax Validation Result that contains data
 pub type QuerySyntaxValidationResult<TData> = ValidationResult<TData, QuerySyntaxError>;
 

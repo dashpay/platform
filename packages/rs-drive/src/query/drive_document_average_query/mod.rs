@@ -15,15 +15,16 @@
 //! [`book/src/drive/average-index-examples.md`](../../../../../book/src/drive/average-index-examples.md)
 //! for the design and the grades-contract worked example.
 //!
-//! Wired end-to-end: the dispatcher composes the count + sum
-//! executors on the no-proof path under a shared read-transaction
-//! (see [`drive_dispatcher`] module docstring for the atomicity
-//! contract), and the prove path dispatches directly to the PCPS /
-//! primary-key proof executors. A planned follow-up tracked at
-//! [dashpay/platform#3687](https://github.com/dashpay/platform/issues/3687)
-//! will collapse the no-proof path's two-request composition into a
-//! single unified executor that reads both metrics from each visited
-//! PCPS element in one walk.
+//! Wired end-to-end: the dispatcher routes prove-true requests to the
+//! PCPS / primary-key proof executors, and prove-false requests to the
+//! joint single-walk count-and-sum dispatcher at
+//! [`crate::query::drive_document_count_and_sum_query`]. Both paths
+//! read `(count, sum)` from each visited count-sum-bearing element in
+//! a single grovedb walk — see the
+//! [`drive_dispatcher`](drive_dispatcher) module docstring for the
+//! routing details and
+//! [`crate::query::drive_document_count_and_sum_query`] for the
+//! no-prove perf / atomicity contract.
 
 #[cfg(feature = "server")]
 pub mod drive_dispatcher;
