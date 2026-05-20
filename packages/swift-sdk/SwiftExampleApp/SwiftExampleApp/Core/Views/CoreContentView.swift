@@ -881,7 +881,7 @@ struct WalletRowView: View {
     /// as `platformBalance` (1e11 credits/DASH), so it folds into
     /// the same divisor in [`combinedDashAmount(coreTotal:)`].
     private var shieldedBalance: UInt64 {
-        shieldedNotes.reduce(UInt64(0)) { $0 &+ $1.value }
+        shieldedNotes.reduce(UInt64(0)) { $0 + $1.value }
     }
 
     /// Combined wallet balance expressed in DASH for a precomputed
@@ -970,7 +970,7 @@ struct WalletRowView: View {
         // re-invoking the accessor.
         let core = coreBalanceTotals()
         let coreTotal = Self.sumCoreBalance(core)
-        let hasAny = coreTotal > 0 || platformBalance > 0
+        let hasAny = coreTotal > 0 || platformBalance > 0 || shieldedBalance > 0
         return VStack(alignment: .leading, spacing: 6) {
             // Header: label (+ status badges) and total Core balance.
             HStack(alignment: .firstTextBaseline) {
