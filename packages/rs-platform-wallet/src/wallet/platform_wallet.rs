@@ -17,7 +17,7 @@ use super::identity::{IdentityManager, IdentityWallet};
 use super::persister::WalletPersister;
 use super::platform_addresses::PlatformAddressWallet;
 #[cfg(feature = "shielded")]
-use super::shielded::{FileBackedShieldedStore, ShieldedSyncSummary, ShieldedWallet};
+use super::shielded::{FileBackedShieldedStore, ShieldedWallet};
 use crate::broadcaster::SpvBroadcaster;
 use crate::changeset::{
     ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
@@ -428,25 +428,6 @@ impl PlatformWallet {
             .as_ref()
             .map(|w| w.account_indices())
             .unwrap_or_default()
-    }
-
-    /// Run one shielded sync pass on this wallet (covers every
-    /// bound account in a single chain walk).
-    ///
-    /// Returns `Ok(None)` if the shielded sub-wallet hasn't been
-    /// bound (the sync coordinator skips unbound wallets without
-    /// surfacing an error). Returns `Ok(Some(summary))` after a
-    /// successful pass, or `Err(_)` if the underlying sync failed.
-    #[cfg(feature = "shielded")]
-    pub async fn shielded_sync(
-        &self,
-        force: bool,
-    ) -> Result<Option<ShieldedSyncSummary>, PlatformWalletError> {
-        let guard = self.shielded.read().await;
-        match guard.as_ref() {
-            Some(wallet) => Ok(Some(wallet.sync(force).await?)),
-            None => Ok(None),
-        }
     }
 
     /// The default Orchard payment address for `account` on this

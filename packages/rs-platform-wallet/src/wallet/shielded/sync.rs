@@ -16,11 +16,13 @@
 //!   the shared store.
 //!
 //! Per-wallet [`ShieldedWallet`] methods (`sync_notes`,
-//! `check_nullifiers`, `balances`, `sync`) are now thin
-//! delegators that build the one-wallet's slice and call the
-//! free functions. Phase 4 removes them along with
-//! `ShieldedWallet` itself; the coordinator becomes the only
-//! sync entry point.
+//! `check_nullifiers`, `balances`) remain as thin delegators
+//! that build the one-wallet's slice and call the free
+//! functions; the full-wallet `sync` orchestrator was removed
+//! in Phase 4d.2 (the coordinator's `sync` is now the only
+//! entry point that runs all three in sequence). Phase 4d.3
+//! removes the remaining delegators along with `ShieldedWallet`
+//! itself.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -549,31 +551,6 @@ impl<S: ShieldedStore> ShieldedWallet<S> {
             .filter(|(id, _)| id.wallet_id == self.wallet_id)
             .map(|(id, c)| (id.account_index, c))
             .collect())
-    }
-
-    /// Full sync: notes + nullifiers + per-account balance summary.
-    ///
-    /// Per-wallet full-sync. Cooldown handling lives on the
-    /// network-scoped coordinator (see
-    /// [`NetworkShieldedCoordinator::sync`]) — this method
-    /// always walks Platform. `force` is kept for API
-    /// compatibility with pre-Phase-2a callers; the parameter
-    /// is now a no-op and will be removed in Phase 4d alongside
-    /// `ShieldedWallet` itself.
-    ///
-    /// [`NetworkShieldedCoordinator::sync`]:
-    ///     super::coordinator::NetworkShieldedCoordinator::sync
-    pub async fn sync(&self, _force: bool) -> Result<ShieldedSyncSummary, PlatformWalletError> {
-        let notes_result = self.sync_notes().await?;
-        let newly_spent_per_account = self.check_nullifiers().await?;
-        let balances = self.balances().await?;
-
-        Ok(ShieldedSyncSummary {
-            notes_result,
-            newly_spent_per_account,
-            balances,
-            is_cooldown_skip: false,
-        })
     }
 }
 
