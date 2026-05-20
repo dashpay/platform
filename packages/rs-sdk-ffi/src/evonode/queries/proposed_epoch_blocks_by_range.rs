@@ -173,8 +173,9 @@ impl
     > for EvonodesProposedEpochBlocksByRangeQuery
 {
     fn query(
-        self,
+        &self,
         prove: bool,
+        _sdk: &dash_sdk::Sdk,
     ) -> Result<
         dash_sdk::dapi_grpc::platform::v0::GetEvonodesProposedEpochBlocksByRangeRequest,
         dash_sdk::Error,
@@ -186,13 +187,14 @@ impl
             },
         };
 
-        let start = if let Some(start_after) = self.start_after {
+        let start = if let Some(start_after) = self.start_after.as_ref() {
             Some(Start::StartAfter(
-                AsRef::<[u8]>::as_ref(&start_after).to_vec(),
+                AsRef::<[u8]>::as_ref(start_after).to_vec(),
             ))
         } else {
             self.start_at
-                .map(|start_at| Start::StartAt(AsRef::<[u8]>::as_ref(&start_at).to_vec()))
+                .as_ref()
+                .map(|start_at| Start::StartAt(AsRef::<[u8]>::as_ref(start_at).to_vec()))
         };
 
         let request =

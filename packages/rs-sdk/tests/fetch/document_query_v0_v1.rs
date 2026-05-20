@@ -14,9 +14,9 @@
 //!   `count_star()` projection — each returns `Error::Config` rather
 //!   than silently emitting an invalid V0 request the server would
 //!   round-trip and reject.
-//! - Dispatch by SDK version: a `DocumentQuery` whose
-//!   `protocol_version_override` field points at a V0 PlatformVersion
-//!   round-trips through `TryFrom` as V0; default falls back to V1.
+//! - Dispatch by SDK version: an [`Sdk`] seeded at a V0-dispatch
+//!   PlatformVersion encodes a [`DocumentQuery`] via [`Query::query`]
+//!   onto the V0 wire; an SDK at the latest PV encodes onto V1.
 //! - `SdkBuilder::with_initial_version` semantics: builder seeds the
 //!   per-instance protocol_version atomic to the requested value
 //!   without flipping `version_explicit`, so auto-detect remains
@@ -181,24 +181,23 @@ fn v0_rejects_having() {
 }
 
 #[test]
-fn dispatch_by_protocol_version_override_field() {
-    // V1 by default (no override) — preserves pre-version-dispatch
-    // behaviour for callers that bypass the Sdk trampoline.
+fn dispatch_by_sdk_pv() {
+    use dash_sdk::platform::Query;
+
+    // V1 by default — `Query::query` on a latest-PV SDK encodes the V1 wire.
+    let sdk_latest = SdkBuilder::new_mock().build().expect("mock sdk");
     let q = build_basic_document_query();
-    let req: GetDocumentsRequest = q.try_into().expect("encode default");
+    let req = Query::<GetDocumentsRequest>::query(&q, true, &sdk_latest)
+        .expect("encode default via latest-PV sdk");
     assert!(matches!(req.version, Some(ReqVersion::V1(_))));
 
-    // V0 when override points at a v0-dispatch version. The trampoline
-    // populates `protocol_version_override` from
-    // `sdk.protocol_version_number()` before transport; here we set
-    // it directly to exercise the same code path.
+    // V0 when the SDK's known PV's `document_query` feature pins to V0.
+    // We can't seed the `Box::leak`-installed synthetic PV into the
+    // global PlatformVersion table; exercise the equivalent code path
+    // (`encode_get_documents_request` with an explicit PV) via
+    // `try_into_request_for_version` instead.
     let v0_pv = v0_dispatch_version();
-    let q = build_basic_document_query().with_protocol_version_number(v0_pv.protocol_version);
-    // NOTE: `try_into` reads `protocol_version_override` and looks up
-    // `PlatformVersion::get(...)`; `Box::leak`-installed mocks are not
-    // registered in the global table, so this path uses the encoder
-    // helper directly via `try_into_request_for_version`.
-    let req = q
+    let req = build_basic_document_query()
         .try_into_request_for_version(v0_pv)
         .expect("encode via helper");
     assert!(matches!(req.version, Some(ReqVersion::V0(_))));
@@ -270,9 +269,16 @@ fn protocol_version_for_v3_1_dev_keeps_document_query_v1() {
 /// without monkey-patching `PlatformVersion::latest()` clones.
 #[test]
 fn document_query_dispatches_v0_when_sdk_initial_version_is_v3_0_pv() {
+    use dash_sdk::platform::Query;
+
     let pv_v3_0 = PlatformVersion::get(11).expect("PROTOCOL_VERSION_11 exists");
-    let q = build_basic_document_query().with_protocol_version_number(pv_v3_0.protocol_version);
-    let req: GetDocumentsRequest = q.try_into().expect("encode for v3.0 PV");
+    let sdk = SdkBuilder::new_mock()
+        .with_initial_version(pv_v3_0)
+        .build()
+        .expect("mock sdk seeded at PV_11");
+    let q = build_basic_document_query();
+    let req = Query::<GetDocumentsRequest>::query(&q, true, &sdk)
+        .expect("encode for v3.0 PV via Query::query");
     assert!(
         matches!(req.version, Some(ReqVersion::V0(_))),
         "expected V0 dispatch for PROTOCOL_VERSION_11"

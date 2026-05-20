@@ -108,19 +108,6 @@ pub struct DocumentQuery {
     pub limit: u32,
     /// first object to start with
     pub start: Option<Start>,
-    /// Optional protocol-version hint used when encoding to the wire.
-    /// Populated by the [`Fetch`] / [`FetchMany`] trampolines from
-    /// `sdk.protocol_version_number()` immediately before transport.
-    /// `None` (the default) falls back to [`PlatformVersion::latest`]
-    /// so direct `TryFrom<DocumentQuery>` callers (mock fixtures, ad-hoc
-    /// encoding) behave exactly as they did before the v3.0/v3.1 split.
-    ///
-    /// `#[serde(skip)]` keeps mock vectors captured before this field
-    /// existed deserializing cleanly, and prevents the hint from
-    /// leaking into recorded request fixtures (it's an
-    /// execution-time-only annotation, not a request-shape input).
-    #[cfg_attr(feature = "mocks", serde(skip))]
-    pub protocol_version_override: Option<u32>,
 }
 
 impl DocumentQuery {
@@ -145,7 +132,6 @@ impl DocumentQuery {
             order_by_clauses: vec![],
             limit: 0,
             start: None,
-            protocol_version_override: None,
         })
     }
 
@@ -283,20 +269,6 @@ impl DocumentQuery {
         self
     }
 
-    /// Pin the protocol version used to dispatch the wire encoder
-    /// (V0 vs V1). The trampolines in [`crate::platform::Fetch`] and
-    /// [`crate::platform::FetchMany`] populate this from
-    /// [`Sdk::protocol_version_number`] before transport; callers
-    /// constructing requests directly (e.g. for unit tests against a
-    /// recorded fixture, or to talk to an older network without a
-    /// live `Sdk`) can set it explicitly. `None` falls back to
-    /// [`PlatformVersion::latest`] — same shape this conversion has
-    /// always produced before version dispatch landed.
-    pub fn with_protocol_version_number(mut self, protocol_version: u32) -> Self {
-        self.protocol_version_override = Some(protocol_version);
-        self
-    }
-
     /// Convert into the wire-format [`GetDocumentsRequest`] using a
     /// specific [`PlatformVersion`] to pick V0 vs V1. The dispatch
     /// boundary is the document_query feature-version on the
@@ -423,24 +395,14 @@ impl FromProof<DocumentQuery> for drive_proof_verifier::types::Documents {
 
 impl TryFrom<DocumentQuery> for platform_proto::GetDocumentsRequest {
     type Error = Error;
-    /// Convert without an explicit [`PlatformVersion`]. Reads
-    /// [`DocumentQuery::protocol_version_override`] (set by the
-    /// trampolines in [`crate::platform::Fetch`] /
-    /// [`crate::platform::FetchMany`] from `sdk.version()`); falls
-    /// back to [`PlatformVersion::latest`] when unset so callers
-    /// that bypass the trampoline (mock fixtures, direct encoding
-    /// for unit tests) keep their pre-version-dispatch behaviour.
+    /// Convert without an explicit [`PlatformVersion`] — encodes against
+    /// [`PlatformVersion::latest`]. Callers that need version-aware
+    /// dispatch (V0 vs V1) should go through the [`Fetch`] / [`FetchMany`]
+    /// trampolines (which pass the SDK's currently-known version to
+    /// [`Query::query`](crate::platform::Query::query)) or call
+    /// [`DocumentQuery::try_into_request_for_version`] directly.
     fn try_from(dapi_request: DocumentQuery) -> Result<Self, Self::Error> {
-        let pv_number = dapi_request.protocol_version_override;
-        let platform_version = match pv_number {
-            Some(n) => PlatformVersion::get(n).map_err(|e| {
-                Error::Config(format!(
-                    "DocumentQuery.protocol_version_override = {n} is not a known PlatformVersion: {e}"
-                ))
-            })?,
-            None => PlatformVersion::latest(),
-        };
-        encode_get_documents_request(dapi_request, platform_version)
+        encode_get_documents_request(dapi_request, PlatformVersion::latest())
     }
 }
 
@@ -467,7 +429,6 @@ fn encode_get_documents_request(
         order_by_clauses,
         limit,
         start,
-        protocol_version_override: _,
     } = dapi_request;
 
     let feature_version = platform_version
@@ -689,7 +650,6 @@ impl<'a> From<&'a DriveDocumentQuery<'a>> for DocumentQuery {
             order_by_clauses,
             limit,
             start,
-            protocol_version_override: None,
         }
     }
 }
@@ -724,7 +684,6 @@ impl<'a> From<DriveDocumentQuery<'a>> for DocumentQuery {
             order_by_clauses,
             limit,
             start,
-            protocol_version_override: None,
         }
     }
 }
@@ -1027,4 +986,23 @@ fn value_to_proto_at_depth(value: Value, depth: u8) -> Result<ProtoDocumentField
     Ok(ProtoDocumentFieldValue {
         variant: Some(variant),
     })
+}
+
+/// Encode a [`DocumentQuery`] onto the wire using the SDK's
+/// currently-known [`PlatformVersion`] for V0 vs V1 dispatch.
+///
+/// The [`Fetch`] / [`FetchMany`] trampolines themselves route through
+/// the blanket `Query<T> for T` impl (since `Fetch::Request` for
+/// `Document` is `DocumentQuery` itself, not `GetDocumentsRequest`);
+/// this impl is what callers reach for when they need a typed
+/// [`GetDocumentsRequest`] out of a `DocumentQuery` in a context that
+/// has an [`Sdk`] in hand (tests, ad-hoc encoders).
+impl crate::platform::Query<platform_proto::GetDocumentsRequest> for DocumentQuery {
+    fn query(
+        &self,
+        _prove: bool,
+        sdk: &crate::Sdk,
+    ) -> Result<platform_proto::GetDocumentsRequest, Error> {
+        encode_get_documents_request(self.clone(), sdk.version())
+    }
 }

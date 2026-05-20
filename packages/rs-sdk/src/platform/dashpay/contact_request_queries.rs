@@ -54,7 +54,6 @@ impl Sdk {
             order_by_clauses: vec![],
             limit: limit.unwrap_or(100),
             start: None,
-            protocol_version_override: None,
         };
 
         // Fetch the documents
@@ -97,7 +96,6 @@ impl Sdk {
             order_by_clauses: vec![],
             limit: limit.unwrap_or(100),
             start: None,
-            protocol_version_override: None,
         };
 
         // Fetch the documents

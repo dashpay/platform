@@ -101,8 +101,7 @@ where
     ///
     /// This type must implement [`TransportRequest`].
     type Request: TransportRequest
-        + Into<<O as FromProof<<Self as FetchMany<K, O>>::Request>>::Request>
-        + 'static;
+        + Into<<O as FromProof<<Self as FetchMany<K, O>>::Request>>::Request>;
 
     /// Fetch (or search) multiple objects on the Dash Platform
     ///
@@ -208,12 +207,7 @@ where
         query: Q,
         settings: Option<RequestSettings>,
     ) -> Result<(O, ResponseMetadata, Proof), Error> {
-        let mut owned_request = query.query(sdk.prove())?;
-        // Version-aware encoders (DocumentQuery V0/V1) need the SDK's
-        // currently-known protocol version. No-op for every other
-        // request type. See `apply_sdk_protocol_version` for the
-        // dispatch rationale.
-        crate::platform::query::apply_sdk_protocol_version(&mut owned_request, sdk);
+        let owned_request = query.query(sdk.prove(), sdk)?;
         let request = &owned_request;
 
         let fut = |settings: RequestSettings| async move {

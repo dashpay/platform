@@ -69,9 +69,7 @@ where
     /// Most likely, one of the types defined in [`dapi_grpc::platform::v0`].
     ///
     /// This type must implement [`TransportRequest`].
-    type Request: TransportRequest
-        + Into<<Self as FromProof<<Self as Fetch>::Request>>::Request>
-        + 'static;
+    type Request: TransportRequest + Into<<Self as FromProof<<Self as Fetch>::Request>>::Request>;
 
     /// Fetch single object from Platform.
     ///
@@ -160,12 +158,7 @@ where
         query: Q,
         settings: Option<RequestSettings>,
     ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error> {
-        let mut owned_request = query.query(sdk.prove())?;
-        // Version-aware encoders (DocumentQuery V0/V1) need the SDK's
-        // currently-known protocol version. No-op for every other
-        // request type. See `apply_sdk_protocol_version` for the
-        // dispatch rationale.
-        crate::platform::query::apply_sdk_protocol_version(&mut owned_request, sdk);
+        let owned_request = query.query(sdk.prove(), sdk)?;
         let request: &<Self as Fetch>::Request = &owned_request;
 
         let fut = |settings: RequestSettings| async move {
