@@ -365,4 +365,74 @@ mod tests {
             precalculated
         );
     }
+
+    #[test]
+    fn v1_bills_lookup_when_contract_not_found() {
+        // A random (non-system) contract id will miss both the system-contract cache and
+        // storage. The grovedb lookup that determined absence still costs the caller —
+        // assert that v1 bills it via `ContractFetchOutcome::NotFound { fee }`.
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let missing_contract_id = Identifier::random();
+        let key = IdentityPublicKeyInCreationV0 {
+            id: 0,
+            key_type: KeyType::ECDSA_SECP256K1,
+            purpose: Purpose::ENCRYPTION,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: Some(ContractBounds::SingleContract {
+                id: missing_contract_id,
+            }),
+            read_only: false,
+            data: BinaryData::new(vec![0u8; 33]),
+            signature: BinaryData::default(),
+        }
+        .into();
+
+        let mut execution_context =
+            StateTransitionExecutionContext::default_for_platform_version(platform_version)
+                .expect("execution context");
+        let epoch = Epoch::new(0).expect("epoch 0");
+
+        let result = validate_identity_public_keys_contract_bounds_v1(
+            Identifier::random(),
+            &[key],
+            &platform.drive,
+            &epoch,
+            None,
+            &mut execution_context,
+            platform_version,
+        )
+        .expect("v1 returns Ok");
+
+        assert!(!result.is_valid(), "missing contract should be invalid");
+        match &result.errors[0] {
+            ConsensusError::BasicError(BasicError::DataContractNotPresentError(e)) => {
+                assert_eq!(e.data_contract_id(), &missing_contract_id);
+            }
+            other => panic!("expected DataContractNotPresentError, got {:?}", other),
+        }
+
+        let precalculated: Vec<_> = execution_context
+            .operations_slice()
+            .iter()
+            .filter_map(|op| match op {
+                ValidationOperation::PrecalculatedOperation(fee) => Some(fee),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(
+            precalculated.len(),
+            1,
+            "expected exactly one billed entry (the failed grovedb lookup); got: {:?}",
+            precalculated
+        );
+        assert!(
+            precalculated[0].processing_fee > 0,
+            "expected the not-found lookup to incur a non-zero processing fee; got {:?}",
+            precalculated[0]
+        );
+    }
 }

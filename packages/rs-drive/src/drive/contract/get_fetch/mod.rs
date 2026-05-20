@@ -7,4 +7,4 @@ mod get_contract_with_fetch_info;
 mod get_contracts_with_fetch_info;
 pub mod get_system_or_user_contract_with_fee;
 
-pub use get_system_or_user_contract_with_fee::FetchedContract;
+pub use get_system_or_user_contract_with_fee::ContractFetchOutcome;

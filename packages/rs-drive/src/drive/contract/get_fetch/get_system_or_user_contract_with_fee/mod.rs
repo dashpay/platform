@@ -13,12 +13,13 @@ use std::sync::Arc;
 
 /// Outcome of [`Drive::get_system_or_user_contract_with_fee`].
 ///
-/// A bound contract is either served from the in-memory system-contract cache (free —
-/// no grovedb work) or fetched from storage (billed). Callers that need to bill the
-/// underlying read should match `User` and push `fee` into their execution context;
-/// `System` is intentionally free.
+/// A lookup either hits the in-memory system-contract cache (free, no grovedb work),
+/// hits storage and finds a user contract (billed), or hits storage and finds nothing
+/// (also billed — the grovedb lookup still ran). Callers that need to bill the
+/// underlying read should call [`Self::fee`] / [`Self::contract`] or match the variant
+/// directly.
 #[derive(Debug)]
-pub enum FetchedContract {
+pub enum ContractFetchOutcome {
     /// Contract was served from the in-memory `SystemDataContracts` cache. No fee.
     System(Arc<DataContract>),
     /// Contract was fetched from grovedb storage. `fee` covers the read.
@@ -28,33 +29,42 @@ pub enum FetchedContract {
         /// The fee charged for the grovedb read that produced `fetch_info`.
         fee: FeeResult,
     },
+    /// `contract_id` is not a system contract and storage has no entry for it. The
+    /// grovedb lookup that determined this still costs the caller — `fee` covers it.
+    NotFound {
+        /// The fee charged for the grovedb lookup that returned no contract.
+        fee: FeeResult,
+    },
 }
 
-impl FetchedContract {
-    /// Returns a reference to the underlying `DataContract`, regardless of which path
-    /// it came from.
-    pub fn contract(&self) -> &DataContract {
+impl ContractFetchOutcome {
+    /// Returns a reference to the underlying `DataContract`, or `None` for `NotFound`.
+    pub fn contract(&self) -> Option<&DataContract> {
         match self {
-            FetchedContract::System(arc) => arc.as_ref(),
-            FetchedContract::User { fetch_info, .. } => &fetch_info.contract,
+            ContractFetchOutcome::System(arc) => Some(arc.as_ref()),
+            ContractFetchOutcome::User { fetch_info, .. } => Some(&fetch_info.contract),
+            ContractFetchOutcome::NotFound { .. } => None,
         }
     }
 
-    /// Returns the read fee for `User`, or `None` for `System` (which is free).
+    /// Returns the fee for the lookup that produced this outcome:
+    /// - `None` for `System` (served from in-memory cache, no grovedb work).
+    /// - `Some(&fee)` for `User` (cost of the read that returned the contract).
+    /// - `Some(&fee)` for `NotFound` (cost of the read that proved absence).
     pub fn fee(&self) -> Option<&FeeResult> {
         match self {
-            FetchedContract::System(_) => None,
-            FetchedContract::User { fee, .. } => Some(fee),
+            ContractFetchOutcome::System(_) => None,
+            ContractFetchOutcome::User { fee, .. } => Some(fee),
+            ContractFetchOutcome::NotFound { fee } => Some(fee),
         }
     }
 }
 
 impl Drive {
-    /// Resolves `contract_id` either to a system contract from the in-memory cache (free)
-    /// or to a user contract fetched from grovedb (billed at `epoch`).
-    ///
-    /// Returns `Ok(None)` if the id is neither a cached system contract nor present in
-    /// storage.
+    /// Resolves `contract_id` to one of three outcomes:
+    /// - a system contract from the in-memory cache (no fee),
+    /// - a user contract fetched from grovedb (billed at `epoch`),
+    /// - or absence (still billed — the grovedb lookup ran).
     ///
     /// Selects the implementation via
     /// `platform_version.drive.methods.contract.get.get_system_or_user_contract_with_fee`.
@@ -64,7 +74,7 @@ impl Drive {
         epoch: &Epoch,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<Option<FetchedContract>, Error> {
+    ) -> Result<ContractFetchOutcome, Error> {
         match platform_version
             .drive
             .methods

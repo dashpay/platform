@@ -30,7 +30,7 @@ mod update;
 #[cfg(feature = "server")]
 pub use contract_fetch_info::*;
 #[cfg(feature = "server")]
-pub use get_fetch::FetchedContract;
+pub use get_fetch::ContractFetchOutcome;
 
 /// How many contracts to fetch at once. This is an arbitrary number and is needed to prevent
 /// the server from being overloaded with requests.
