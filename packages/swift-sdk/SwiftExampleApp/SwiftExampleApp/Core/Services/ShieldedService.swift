@@ -256,10 +256,13 @@ class ShieldedService: ObservableObject {
     /// rely on the subscription alone to flip it back.
     func manualSync() async {
         guard !isSyncing else { return }
-        guard let walletManager else {
-            lastError = "Shielded service not configured"
-            return
-        }
+        // Unbound after Clear is an intentional state, not an
+        // error — surfacing "Shielded service not configured" in
+        // red made the post-Clear screen look broken. The Sync
+        // Now button is gated on `isBound` in the UI so this
+        // path is normally unreachable; the silent no-op is
+        // belt-and-braces.
+        guard let walletManager else { return }
 
         isSyncing = true
         lastError = nil

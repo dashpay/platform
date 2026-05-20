@@ -528,16 +528,24 @@ var body: some View {
                         .buttonStyle(.borderedProminent)
                         .tint(.purple)
                         .controlSize(.mini)
-                        .disabled(shieldedService.isSyncing)
+                        // Disabled when not bound (post-Clear /
+                        // pre-first-bind) so the button doesn't
+                        // dangle in front of users with nothing
+                        // to do — navigating into a wallet detail
+                        // retriggers `rebindWalletScopedServices`
+                        // and re-enables it.
+                        .disabled(shieldedService.isSyncing || !shieldedService.isBound)
 
                         Button {
-                            // Wipe this wallet's persisted shielded
-                            // rows (notes + sync state) AND re-bind
-                            // so the next Sync Now starts from
-                            // scratch — bare `reset()` left the
-                            // service unbound, surfacing "Shielded
-                            // service not configured" on the next
-                            // press.
+                            // Wipe every wallet's persisted shielded
+                            // rows + the per-network commitment-tree
+                            // SQLite, after stopping the manager-wide
+                            // shielded sync loop so the persister
+                            // callback can't immediately re-derive
+                            // what we just deleted. Leaves the
+                            // service unbound — to resume, navigate
+                            // into a wallet detail which retriggers
+                            // `rebindWalletScopedServices`.
                             Task {
                                 await shieldedService.clearLocalState(
                                     modelContext: modelContext
