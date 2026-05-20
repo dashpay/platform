@@ -256,13 +256,35 @@ class ShieldedService: ObservableObject {
     /// rely on the subscription alone to flip it back.
     func manualSync() async {
         guard !isSyncing else { return }
-        // Unbound after Clear is an intentional state, not an
-        // error — surfacing "Shielded service not configured" in
-        // red made the post-Clear screen look broken. The Sync
-        // Now button is gated on `isBound` in the UI so this
-        // path is normally unreachable; the silent no-op is
-        // belt-and-braces.
         guard let walletManager else { return }
+
+        // If we're unbound (typically because the user pressed
+        // Clear earlier) but still have the bind credentials,
+        // re-bind first so the next `syncShieldedNow()` call
+        // has a Rust-side shielded sub-wallet to walk. Without
+        // this, post-Clear Sync Now would no-op forever and the
+        // user has no path back to a synced state from this
+        // screen.
+        if !isBound, canResume {
+            guard
+                let walletId = boundWalletId,
+                let resolver,
+                let network
+            else { return }
+            let accounts = boundAccounts.isEmpty ? [0] : boundAccounts
+            bind(
+                walletManager: walletManager,
+                walletId: walletId,
+                network: network,
+                resolver: resolver,
+                accounts: accounts
+            )
+            // `bind` is best-effort; if it failed (e.g. the
+            // mnemonic resolver was declined), `isBound` stays
+            // false and `lastError` is populated. Bail rather
+            // than chain a sync that will fail the same way.
+            guard isBound else { return }
+        }
 
         isSyncing = true
         lastError = nil
@@ -273,6 +295,20 @@ class ShieldedService: ObservableObject {
             lastError = "Shielded sync error: \(error.localizedDescription)"
             SDKLogger.log(lastError ?? "", minimumLevel: .medium)
         }
+    }
+
+    /// Whether the service has enough stashed state to perform a
+    /// `bind` on demand from a Clear → Sync Now flow. Distinct
+    /// from [`isBound`]: after Clear we are not currently bound,
+    /// but the credentials live on so [`manualSync`] can rebind
+    /// without the user navigating away from the Sync Status
+    /// screen. False on a fresh session (no bind has ever run)
+    /// or after [`reset`].
+    var canResume: Bool {
+        walletManager != nil
+            && boundWalletId != nil
+            && resolver != nil
+            && network != nil
     }
 
     /// Reset display state. Cancels the manager subscriptions but
@@ -301,31 +337,37 @@ class ShieldedService: ObservableObject {
     }
 
     /// Wipe every wallet's persisted shielded state and stop. The
-    /// service is left unbound — no auto-rebind, no auto-rescan.
-    ///
-    /// Bare [`reset`] just tears down subscriptions and nils the
-    /// in-memory mirror — the SwiftData rows
-    /// (`PersistentShieldedNote`, `PersistentShieldedSyncState`)
-    /// survive, so the next bind hydrates the wallet right back to
-    /// the state the user just tried to clear.
+    /// service is left unbound, but the stashed bind credentials
+    /// (`walletManager` / `boundWalletId` / `network` / `resolver`
+    /// / `boundAccounts`) survive so [`manualSync`] can rebind on
+    /// demand without the user navigating away. The "Sync Now"
+    /// button on the Sync Status screen is the path back —
+    /// pressing it self-binds + syncs from a clean SQLite tree
+    /// and an empty SwiftData snapshot.
     ///
     /// The user reaches this through the Clear button on the
     /// **global** Sync Status surface, not a per-wallet screen.
     /// "Clear" therefore wipes every wallet's shielded rows + the
-    /// per-network commitment-tree SQLite file, so re-binding any
-    /// wallet on this network walks back through the cmx stream
-    /// from genesis. Re-syncing means navigating back into a
-    /// wallet detail (which retriggers
-    /// `rebindWalletScopedServices`).
+    /// per-network commitment-tree SQLite file, so the rebind on
+    /// the next Sync Now walks the cmx stream from genesis.
     ///
     /// What it does NOT touch:
-    ///   * The manager-wide shielded sync loop. The next bind
-    ///     re-attaches a fresh subscription.
+    ///   * The manager-wide shielded sync loop is `stopShieldedSync`'d
+    ///     first so the persister callback can't re-derive the
+    ///     rows we're deleting; it restarts when something binds
+    ///     (either `manualSync` self-binding or
+    ///     `rebindWalletScopedServices` firing on a navigation).
     ///   * The Rust-side shielded sub-wallet binding (there's no
     ///     unbind FFI today; the next `bindShielded` call replaces
     ///     the binding wholesale, and the freshly-bound store
     ///     starts empty because both the SwiftData snapshot and
     ///     the SQLite tree are gone).
+    ///   * The stashed credentials on the service itself — bare
+    ///     [`reset`] would nil them, leaving the user with no
+    ///     path back to a synced state from this screen. The
+    ///     inline soft-cleanup below only zeroes the published
+    ///     mirror; [`canResume`] therefore stays `true` and the
+    ///     Sync Now button stays usable.
     ///
     /// Per-wallet scoping was tried first and rejected because the
     /// Clear button doesn't carry wallet context — other wallets'
@@ -406,14 +448,27 @@ class ShieldedService: ObservableObject {
             }
         }
 
-        // 4) Tear down the in-memory mirror + subscriptions. The
-        //    service is now unbound; no further sync events flow
-        //    in and Sync Now will surface "Shielded service not
-        //    configured" until something re-binds (typically the
-        //    next navigation into a wallet detail screen, which
-        //    also restarts the manager-wide sync via
-        //    `rebindWalletScopedServices`).
-        reset()
+        // 4) Soft cleanup: zero the published mirror + cancel
+        //    subscriptions, but KEEP the bind credentials
+        //    (walletManager / boundWalletId / network / resolver
+        //    / boundAccounts) so [`manualSync`] can re-bind on
+        //    the next Sync Now tap. Bare [`reset`] would nil
+        //    them and leave the user stranded on this screen.
+        syncStateCancellable?.cancel()
+        syncEventCancellable?.cancel()
+        isBound = false
+        isSyncing = false
+        shieldedBalance = 0
+        lastNewNotes = 0
+        lastNewlySpent = 0
+        lastSyncTime = nil
+        lastError = nil
+        orchardDisplayAddress = nil
+        addressesByAccount = [:]
+        syncCountSinceLaunch = 0
+        totalScanned = 0
+        totalNewNotes = 0
+        totalNewlySpent = 0
     }
 
     // MARK: - Sync event handling

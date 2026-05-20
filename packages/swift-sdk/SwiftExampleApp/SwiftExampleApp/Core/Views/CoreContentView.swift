@@ -528,13 +528,15 @@ var body: some View {
                         .buttonStyle(.borderedProminent)
                         .tint(.purple)
                         .controlSize(.mini)
-                        // Disabled when not bound (post-Clear /
-                        // pre-first-bind) so the button doesn't
-                        // dangle in front of users with nothing
-                        // to do — navigating into a wallet detail
-                        // retriggers `rebindWalletScopedServices`
-                        // and re-enables it.
-                        .disabled(shieldedService.isSyncing || !shieldedService.isBound)
+                        // Disabled while a sync is in flight, and
+                        // pre-first-bind when there are no stashed
+                        // credentials to resume from. Post-Clear
+                        // is *not* disabled — `manualSync` rebinds
+                        // on demand from the credentials kept by
+                        // `clearLocalState`, so the user has a
+                        // path back to a synced state without
+                        // having to navigate away.
+                        .disabled(shieldedService.isSyncing || !shieldedService.canResume)
 
                         Button {
                             // Wipe every wallet's persisted shielded
