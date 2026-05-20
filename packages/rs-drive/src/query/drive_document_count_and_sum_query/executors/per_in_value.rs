@@ -22,7 +22,7 @@
 
 use super::super::super::drive_document_average_query::{AverageEntry, DocumentAverageResponse};
 use super::super::super::drive_document_sum_query::index_picker::find_summable_index_for_where_clauses;
-use super::super::super::drive_document_sum_query::{DriveDocumentSumQuery, RangeSumOptions};
+use super::super::super::drive_document_sum_query::DriveDocumentSumQuery;
 use crate::drive::Drive;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
@@ -39,6 +39,11 @@ impl Drive {
     /// grovedb read each, then emits per-In-value
     /// [`AverageEntry { in_key: None, key, count, sum }`] entries.
     ///
+    /// `left_to_right` controls the entry-list ordering; `limit`
+    /// truncates the returned entries (callers compute it from
+    /// `DocumentAverageRequest::limit` with the documented no-proof
+    /// default/clamp policy).
+    ///
     /// Returns [`DocumentAverageResponse::Entries`].
     #[allow(clippy::too_many_arguments)]
     pub fn execute_document_count_and_sum_per_in_value_no_proof(
@@ -48,8 +53,8 @@ impl Drive {
         document_type_name: String,
         where_clauses: Vec<WhereClause>,
         sum_property: String,
-        options: RangeSumOptions,
-        limit: Option<u32>,
+        left_to_right: bool,
+        limit: u16,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<DocumentAverageResponse, Error> {
@@ -195,17 +200,15 @@ impl Drive {
                 sum: Some(sum),
             })
             .collect();
-        if !options.left_to_right {
+        if !left_to_right {
             entries.reverse();
         }
-        // Apply caller's `limit` AFTER ordering — same shape as
-        // count's `execute_document_count_per_in_value_no_proof`. The
-        // BTreeMap iteration was already ascending; an explicit
-        // descending order reverses the vec, then the truncate caps
-        // it at `limit` from the front.
-        if let Some(l) = limit {
-            entries.truncate(l as usize);
-        }
+        // Apply caller's `limit` AFTER ordering: the BTreeMap
+        // iteration was already ascending; an explicit descending
+        // order reverses the vec, then `truncate` caps from the
+        // front to honor the requested direction. Same shape as
+        // count's `execute_document_count_per_in_value_no_proof`.
+        entries.truncate(limit as usize);
         Ok(DocumentAverageResponse::Entries(entries))
     }
 }

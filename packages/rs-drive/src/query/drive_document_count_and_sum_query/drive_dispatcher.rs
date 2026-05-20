@@ -39,7 +39,7 @@ use super::super::drive_document_average_query::{
 };
 use super::super::drive_document_count_query::drive_dispatcher::validate_and_canonicalize_where_clauses;
 use super::super::drive_document_sum_query::mode_detection::detect_sum_mode_from_inputs;
-use super::super::drive_document_sum_query::{DocumentSumMode, RangeSumOptions, SumMode};
+use super::super::drive_document_sum_query::{DocumentSumMode, SumMode};
 use crate::drive::Drive;
 use crate::error::Error;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -151,31 +151,29 @@ impl Drive {
                 platform_version,
             ),
             DocumentSumMode::PerInValue => {
-                let options = RangeSumOptions {
-                    return_distinct_sums_in_range: false,
-                    carrier_outer_limit: None,
-                    left_to_right: order_by_ascending,
-                };
                 // PerInValue's per-In fan-out is bounded by the
-                // `In::in_values()` 100-cap, so the executor's worst-
-                // case backlog is small — but the caller's `limit`
-                // still applies to the entry list returned (mirroring
-                // count's no-proof per-In policy at
-                // `execute_document_count_per_in_value_no_proof`). On
-                // the no-proof path `limit > max_query_limit` clamps
-                // to `max_query_limit`; an unset `limit` is `None`
-                // (no truncation beyond the 100-cap).
+                // `In::in_values()` 100-cap. The caller's `limit`
+                // applies to the returned entry list per
+                // [`DocumentAverageRequest::limit`]'s documented
+                // no-proof contract: unset → fall back to
+                // `drive_config.default_query_limit`, explicit > max
+                // clamps to `drive_config.max_query_limit`. Count's
+                // PerInValue arm hard-codes `MAX_LIMIT_AS_FAILSAFE`
+                // (which contradicts its own documented contract);
+                // the joint dispatcher honors the AVG contract
+                // instead.
                 let per_in_limit = request
                     .limit
-                    .map(|l| l.min(request.drive_config.max_query_limit as u32));
+                    .unwrap_or(request.drive_config.default_query_limit as u32)
+                    .min(request.drive_config.max_query_limit as u32);
                 self.execute_document_count_and_sum_per_in_value_no_proof(
                     contract_id,
                     request.document_type,
                     document_type_name,
                     where_clauses,
                     sum_property,
-                    options,
-                    per_in_limit,
+                    order_by_ascending,
+                    per_in_limit as u16,
                     transaction,
                     platform_version,
                 )
@@ -184,55 +182,42 @@ impl Drive {
                 // Distinct flag set for the GroupByRange /
                 // GroupByCompound shapes (per-distinct-value entries);
                 // cleared for the Aggregate / GroupByIn shapes (single
-                // folded pair). Mirrors sum's dispatcher.
+                // folded pair).
                 let return_distinct = matches!(
                     request.mode,
                     AverageMode::GroupByRange | AverageMode::GroupByCompound
                 );
-                let options = RangeSumOptions {
-                    return_distinct_sums_in_range: return_distinct,
-                    carrier_outer_limit: None,
-                    left_to_right: order_by_ascending,
-                };
                 // Limit applies only to the distinct branches — the
                 // aggregate branches return a single collapsed pair
                 // bounded by grovedb's merk-internal accumulators
                 // (`query_aggregate_count` / `query_aggregate_sum`)
                 // regardless of how many documents match. For distinct
-                // mirror count's no-proof distinct policy: fall back to
+                // shapes, follow [`DocumentAverageRequest::limit`]'s
+                // documented no-proof contract: fall back to
                 // `drive_config.default_query_limit` when unset, clamp
-                // to `drive_config.max_query_limit` when over. Mirrors
-                // [`DocumentAverageRequest::limit`]'s documented
-                // no-proof contract.
-                let effective_limit = if return_distinct {
+                // to `drive_config.max_query_limit` when over. Both
+                // `default_query_limit` and `max_query_limit` are
+                // `u16` in `DriveConfig`, so the `min()` keeps the
+                // result in `u16::MAX` regardless of caller input.
+                let limit_u16 = if return_distinct {
                     Some(
                         request
                             .limit
                             .unwrap_or(request.drive_config.default_query_limit as u32)
-                            .min(request.drive_config.max_query_limit as u32),
+                            .min(request.drive_config.max_query_limit as u32)
+                            as u16,
                     )
                 } else {
                     None
                 };
-                let limit_u16 = effective_limit
-                    .map(|l| {
-                        u16::try_from(l).map_err(|_| {
-                            Error::Query(crate::error::query::QuerySyntaxError::Unsupported(
-                                format!(
-                                    "limit {} exceeds u16::MAX for distinct AVG no-proof walk",
-                                    l
-                                ),
-                            ))
-                        })
-                    })
-                    .transpose()?;
                 let response = self.execute_document_count_and_sum_range_no_proof(
                     contract_id,
                     request.document_type,
                     document_type_name,
                     where_clauses,
                     sum_property,
-                    options,
+                    return_distinct,
+                    order_by_ascending,
                     limit_u16,
                     transaction,
                     platform_version,

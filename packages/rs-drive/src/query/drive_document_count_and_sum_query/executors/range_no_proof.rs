@@ -50,7 +50,7 @@
 use super::super::super::drive_document_average_query::{AverageEntry, DocumentAverageResponse};
 use super::super::super::drive_document_count_query::DriveDocumentCountQuery;
 use super::super::super::drive_document_sum_query::index_picker::find_range_summable_index_for_where_clauses;
-use super::super::super::drive_document_sum_query::{DriveDocumentSumQuery, RangeSumOptions};
+use super::super::super::drive_document_sum_query::DriveDocumentSumQuery;
 use crate::drive::Drive;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
@@ -70,9 +70,8 @@ impl Drive {
     /// Returns either a one-pair [`DocumentAverageResponse::Aggregate`]
     /// (flat / compound aggregate shapes) or per-distinct-value
     /// [`DocumentAverageResponse::Entries`] (`GroupByRange` /
-    /// `GroupByCompound`) depending on
-    /// `options.return_distinct_sums_in_range`. The dispatcher sets
-    /// that flag based on the request's
+    /// `GroupByCompound`) depending on `return_distinct`. The dispatcher
+    /// sets that flag based on the request's
     /// [`super::super::super::drive_document_average_query::AverageMode`].
     ///
     /// `limit` applies only to the distinct branch; the aggregate
@@ -86,7 +85,8 @@ impl Drive {
         document_type_name: String,
         where_clauses: Vec<WhereClause>,
         sum_property: String,
-        options: RangeSumOptions,
+        return_distinct: bool,
+        left_to_right: bool,
         limit: Option<u16>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -112,7 +112,7 @@ impl Drive {
             .iter()
             .any(|wc| wc.operator == WhereOperator::In);
 
-        if !options.return_distinct_sums_in_range {
+        if !return_distinct {
             // Aggregate shape: use grovedb's merk-internal bounded
             // accumulators for `(count, sum)`. Two calls because the
             // combined no-proof primitive doesn't exist yet, but each
@@ -143,7 +143,7 @@ impl Drive {
             sum_property,
         };
         let path_query =
-            sum_query.distinct_sum_path_query(limit, options.left_to_right, platform_version)?;
+            sum_query.distinct_sum_path_query(limit, left_to_right, platform_version)?;
         let base_path_len = path_query.path.len();
 
         let mut drive_operations = vec![];

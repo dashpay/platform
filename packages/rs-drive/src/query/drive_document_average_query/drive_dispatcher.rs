@@ -2164,4 +2164,111 @@ mod tests {
             other => panic!("expected Aggregate, got {:?}", other),
         }
     }
+
+    /// `PerInValue` no-proof AVG with `limit = None` must default to
+    /// `drive_config.default_query_limit` per
+    /// `DocumentAverageRequest::limit`'s documented contract.
+    /// Regression test paired with the explicit-limit case above; pins
+    /// the no-proof contract parity reviewers flagged after the
+    /// initial PerInValue fix landed.
+    #[test]
+    fn per_in_value_avg_no_proof_defaults_limit_to_operator_default_query_limit() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        // Same `summable + countable` `byColor` index as
+        // `per_in_value_avg_no_proof_honors_explicit_limit`, but with
+        // `default_query_limit = 2` and `limit = None` on the request
+        // — the dispatcher must fall back to the operator's runtime
+        // default and truncate the per-In entry list to 2.
+        let factory = DataContractFactory::new(PROTOCOL_VERSION_V12).expect("create factory");
+        let document_schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "color":  {"type": "string",  "position": 0, "maxLength": 32},
+                "amount": {"type": "integer", "position": 1, "minimum": 0, "maximum": 1000},
+            },
+            "required": ["color", "amount"],
+            "indices": [{
+                "name": "byColor",
+                "properties": [{"color": "asc"}],
+                "summable":  "amount",
+                "countable": "countable",
+            }],
+            "additionalProperties": false,
+        });
+        let schemas = platform_value!({ "widget": document_schema });
+        let data_contract = factory
+            .create_with_value_config(
+                dpp::tests::utils::generate_random_identifier_struct(),
+                0,
+                schemas,
+                None,
+                None,
+            )
+            .expect("create data contract")
+            .data_contract_owned();
+        drive
+            .apply_contract(
+                &data_contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("apply contract");
+
+        for (i, (color, amount)) in [("red", 5u64), ("green", 7), ("blue", 2), ("yellow", 4)]
+            .iter()
+            .enumerate()
+        {
+            insert_widget(&drive, &data_contract, i, color, *amount);
+        }
+
+        let document_type = data_contract
+            .document_type_for_name("widget")
+            .expect("widget");
+        let drive_config = DriveConfig {
+            default_query_limit: 2,
+            ..Default::default()
+        };
+
+        let color_in = WhereClause {
+            field: "color".to_string(),
+            operator: WhereOperator::In,
+            value: Value::Array(vec![
+                Value::Text("red".to_string()),
+                Value::Text("green".to_string()),
+                Value::Text("blue".to_string()),
+                Value::Text("yellow".to_string()),
+            ]),
+        };
+        let request = DocumentAverageRequest {
+            contract: &data_contract,
+            document_type,
+            sum_property: "amount".to_string(),
+            where_clauses: vec![color_in],
+            order_clauses: Vec::new(),
+            mode: AverageMode::GroupByIn,
+            limit: None,
+            prove: false,
+            drive_config: &drive_config,
+        };
+
+        let response = drive
+            .execute_document_average_request(request, None, platform_version)
+            .expect("dispatcher should succeed");
+        let entries = match response {
+            DocumentAverageResponse::Entries(e) => e,
+            other => panic!("expected Entries, got {:?}", other),
+        };
+        assert_eq!(
+            entries.len(),
+            2,
+            "PerInValue AVG no-proof with `limit = None` must default to \
+             `drive_config.default_query_limit` (= 2 here) and truncate the \
+             per-In entry list; got {entries:?}"
+        );
+    }
 }
