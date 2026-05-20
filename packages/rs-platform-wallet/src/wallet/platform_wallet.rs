@@ -367,6 +367,17 @@ impl PlatformWallet {
         *slot = Some(keys);
         drop(slot);
 
+        // Rebind is replace-not-merge (the doc contract above).
+        // `register_wallet` replaces the coordinator's `accounts`
+        // entries for this wallet, but it does NOT touch the
+        // store's per-`SubwalletId` state — so a same-process
+        // rebind would otherwise leave stale watermarks, orphaned
+        // accounts dropped from the new bind set, and abandoned
+        // `pending_nullifiers` reservations behind (the latter can
+        // make note selection skip spendable notes). Unregister
+        // first to purge that state; it's a no-op on first bind.
+        coordinator.unregister_wallet(self.wallet_id).await;
+
         // Register on the coordinator BEFORE restoring so the
         // restore path's "is this account registered?" gate
         // sees this wallet's subwallets.
@@ -708,6 +719,18 @@ impl PlatformWallet {
         S: dpp::identity::signer::Signer<dpp::address_funds::PlatformAddress> + Send + Sync,
         P: dpp::shielded::builder::OrchardProver,
     {
+        // Reject zero amount at the boundary. With `amount == 0`
+        // the selection loop exits immediately (claim 0 >= 0) and
+        // the post-loop insufficient-balance check (`0 < 0`)
+        // doesn't fire, so an empty inputs map would otherwise
+        // flow into the ~30 s Halo 2 proof build and fail deep and
+        // opaquely. Non-Swift FFI hosts don't have the UI guard.
+        if amount == 0 {
+            return Err(PlatformWalletError::ShieldedBuildError(
+                "amount must be > 0".to_string(),
+            ));
+        }
+
         // The shield transition uses `DeductFromInput(0)` as its fee
         // strategy. drive-abci interprets that as "after each input
         // address has had its `claim` deducted, take the fee out of
