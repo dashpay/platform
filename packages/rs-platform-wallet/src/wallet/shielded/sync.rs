@@ -553,77 +553,20 @@ impl<S: ShieldedStore> ShieldedWallet<S> {
 
     /// Full sync: notes + nullifiers + per-account balance summary.
     ///
-    /// `force` controls whether the [caught-up cooldown](super::CAUGHT_UP_COOLDOWN)
-    /// is honored. The background sync loop passes `force=false`
-    /// so a no-op pass (no new positions, no newly-spent
-    /// nullifiers) suppresses the next pass for the cooldown
-    /// window — without this the SDK's chunked sync forces a
-    /// fresh fetch + trial-decrypt of the (partial) tail chunk
-    /// on every cadence interval. User-initiated paths (the
-    /// "Sync Now" button) pass `force=true` and always run, so
-    /// a user who just sent a transaction sees the new note on
-    /// the next tap rather than waiting out the cooldown.
-    pub async fn sync(&self, force: bool) -> Result<ShieldedSyncSummary, PlatformWalletError> {
-        // Snapshot the timestamp into a local so the `MutexGuard`
-        // is dropped before any `.await` below — `std::sync::Mutex`
-        // is `!Send` across await points (clippy's
-        // `await_holding_lock` lint flags this) and the rest of
-        // `sync()` is heavily async.
-        let cooldown_remaining: Option<std::time::Duration> = if force {
-            None
-        } else {
-            self.last_caught_up_at
-                .lock()
-                .ok()
-                .and_then(|guard| *guard)
-                .map(|when| super::CAUGHT_UP_COOLDOWN.saturating_sub(when.elapsed()))
-                .filter(|remaining| !remaining.is_zero())
-        };
-
-        if let Some(remaining) = cooldown_remaining {
-            debug!(
-                cooldown_remaining_secs = remaining.as_secs(),
-                cooldown_total_secs = super::CAUGHT_UP_COOLDOWN.as_secs(),
-                "Shielded sync skipped — within caught-up cooldown"
-            );
-            // The cooldown skip is documented as a no-op (no SDK
-            // fetch / trial-decrypt / nullifier scan) and must
-            // be infallible — a transient `balances()` failure
-            // here would turn a deliberate skip into a sync
-            // error banner on the host even though no real work
-            // was attempted. Return an empty `balances` map and
-            // rely on the host to preserve its cached balance
-            // when it sees `is_cooldown_skip = true`. Balance
-            // can't have changed during the cooldown window
-            // anyway: any spend or receive would have cleared
-            // `last_caught_up_at` via the activity branch at
-            // the bottom of `sync()`, ending the cooldown.
-            return Ok(ShieldedSyncSummary {
-                notes_result: SyncNotesResult::default(),
-                newly_spent_per_account: BTreeMap::new(),
-                balances: BTreeMap::new(),
-                is_cooldown_skip: true,
-            });
-        }
-
+    /// Per-wallet full-sync. Cooldown handling lives on the
+    /// network-scoped coordinator (see
+    /// [`NetworkShieldedCoordinator::sync`]) — this method
+    /// always walks Platform. `force` is kept for API
+    /// compatibility with pre-Phase-2a callers; the parameter
+    /// is now a no-op and will be removed in Phase 4d alongside
+    /// `ShieldedWallet` itself.
+    ///
+    /// [`NetworkShieldedCoordinator::sync`]:
+    ///     super::coordinator::NetworkShieldedCoordinator::sync
+    pub async fn sync(&self, _force: bool) -> Result<ShieldedSyncSummary, PlatformWalletError> {
         let notes_result = self.sync_notes().await?;
         let newly_spent_per_account = self.check_nullifiers().await?;
         let balances = self.balances().await?;
-
-        // Mark caught-up only when this pass observed nothing
-        // new on either axis. Any activity (new positions or new
-        // spends) clears the timestamp so the next pass runs
-        // immediately rather than back-pressuring fresh work
-        // behind the cooldown.
-        let was_no_op =
-            notes_result.total_scanned == 0 && newly_spent_per_account.values().all(|&n| n == 0);
-        if let Ok(mut guard) = self.last_caught_up_at.lock() {
-            if was_no_op {
-                *guard = Some(std::time::Instant::now());
-            } else {
-                *guard = None;
-            }
-        }
 
         Ok(ShieldedSyncSummary {
             notes_result,
