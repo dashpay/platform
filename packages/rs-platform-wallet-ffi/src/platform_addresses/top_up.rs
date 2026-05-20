@@ -243,7 +243,18 @@ pub(super) unsafe fn decode_funding_addresses(
         } else {
             None
         };
-        address_map.insert(addr, balance);
+        // Reject duplicates rather than silently collapsing them.
+        // The Swift wrapper's `topUpFromCorePreflight` already
+        // dedupes client-side, but this is the FFI boundary —
+        // callers other than our Swift code (or a future Swift
+        // bug) could pass duplicates and we'd silently lose the
+        // earlier entry's amount.
+        if address_map.insert(addr, balance).is_some() {
+            return Err(PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                "duplicate platform address in funding request".to_string(),
+            ));
+        }
     }
     Ok(address_map)
 }

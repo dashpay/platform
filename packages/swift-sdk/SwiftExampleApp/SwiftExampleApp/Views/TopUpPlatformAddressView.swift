@@ -172,7 +172,7 @@ struct TopUpPlatformAddressView: View {
         let options = coreAccountOptions
         Section {
             if options.isEmpty {
-                Text("No Core (BIP44 standard) accounts on this wallet.")
+                Text("No spendable Core (BIP44 standard) accounts on this wallet.")
                     .font(.caption)
                     .foregroundColor(.secondary)
             } else {
@@ -392,21 +392,25 @@ struct TopUpPlatformAddressView: View {
     }
 
     private var coreAccountOptions: [CoreAccountOption] {
-        // Surface Core BIP44 standard accounts only. The compound
-        // filter `typeTag == 0 && standardTag == 0` matches BIP44
+        // Surface Core BIP44 standard accounts with spendable
+        // balance only. The compound filter
+        // `typeTag == 0 && standardTag == 0` matches BIP44
         // (Standard, BIP44-tagged) — `standardTag` alone would
         // include PlatformPayment / CoinJoin / Identity* accounts
-        // because those leave `standardTag` at its `0` default
-        // (meaningless for non-Standard variants), surfacing
-        // duplicate "Account #0" rows in the picker.
+        // because those leave `standardTag` at its `0` default,
+        // surfacing duplicate "Account #0" rows.
         //
         // Balance reads from the live FFI (`accountBalances(for:)`)
         // not `PersistentAccount.balanceConfirmed` — the SwiftData
         // field is populated by the persister callback and lags
         // the in-memory Rust state, so a freshly-synced wallet
         // would show zero here even with spendable Core funds.
+        //
+        // Zero-balance accounts are excluded so the picker can't
+        // present a submit path that's guaranteed to fail at the
+        // Rust-side UTXO selection stage.
         walletManager.accountBalances(for: wallet.walletId)
-            .filter { $0.typeTag == 0 && $0.standardTag == 0 }
+            .filter { $0.typeTag == 0 && $0.standardTag == 0 && $0.confirmed > 0 }
             .sorted { $0.index < $1.index }
             .map {
                 CoreAccountOption(
@@ -414,6 +418,14 @@ struct TopUpPlatformAddressView: View {
                     balanceDuffs: $0.confirmed
                 )
             }
+    }
+
+    /// Confirmed balance of the currently-selected Core funding
+    /// account, or `0` if no account is selected. Used by
+    /// `canSubmit` to gate submission on `balance >= parsedDuffs`.
+    private var selectedCoreAccountBalanceDuffs: UInt64 {
+        guard let idx = fundingCoreAccountIndex else { return 0 }
+        return coreAccountOptions.first(where: { $0.accountIndex == idx })?.balanceDuffs ?? 0
     }
 
     private var platformAccountOptions: [PlatformAccountOption] {
@@ -456,10 +468,12 @@ struct TopUpPlatformAddressView: View {
                 && selectedRecipientHash != nil
                 && activeController == nil
         }
+        let amount = parsedDuffs ?? 0
         return fundingCoreAccountIndex != nil
             && platformAccountIndex != nil
             && selectedRecipientHash != nil
-            && (parsedDuffs ?? 0) >= Self.minDuffs
+            && amount >= Self.minDuffs
+            && selectedCoreAccountBalanceDuffs >= amount
             && activeController == nil
     }
 
