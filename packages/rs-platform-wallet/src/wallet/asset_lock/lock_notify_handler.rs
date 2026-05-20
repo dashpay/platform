@@ -22,12 +22,28 @@ impl LockNotifyHandler {
 
 impl EventHandler for LockNotifyHandler {
     fn on_sync_event(&self, event: &dash_spv::sync::SyncEvent) {
-        if matches!(
-            event,
-            dash_spv::sync::SyncEvent::InstantLockReceived { .. }
-                | dash_spv::sync::SyncEvent::ChainLockReceived { .. }
-        ) {
-            self.notify.notify_waiters();
+        // Demoted to `debug!` — these events arrive at network
+        // frequency on a synced node (every 2.5min for CL on
+        // mainnet, plus per-tx IS events). Operator visibility into
+        // *what we did* with each event lives on the consumer side
+        // (`wait_for_proof`); this handler just wakes them.
+        match event {
+            dash_spv::sync::SyncEvent::InstantLockReceived { .. } => {
+                tracing::debug!("LockNotifyHandler: InstantLockReceived — waking waiters");
+                self.notify.notify_waiters();
+            }
+            dash_spv::sync::SyncEvent::ChainLockReceived {
+                chain_lock,
+                validated,
+            } => {
+                tracing::debug!(
+                    chain_lock_height = chain_lock.block_height,
+                    validated,
+                    "LockNotifyHandler: ChainLockReceived — waking waiters"
+                );
+                self.notify.notify_waiters();
+            }
+            _ => {}
         }
     }
 }

@@ -9,7 +9,7 @@ use thiserror::Error;
 #[derive(
     Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
 )]
-#[error("BlockBasedDistribution interval is too short: {interval}. Minimum allowed is 100.")]
+#[error("BlockBasedDistribution interval is too short: {interval}. It is below the network-required minimum.")]
 #[platform_serialize(unversioned)]
 pub struct InvalidTokenDistributionBlockIntervalTooShortError {
     interval: BlockHeightInterval,

@@ -3,10 +3,35 @@ import SwiftDashSDK
 
 struct TransactionDetailView: View {
     let transaction: PersistentTransaction
+    /// Override amount for asset-lock txs. The wallet's `netAmount`
+    /// shows ~0 for these (credit output is structurally self-owned),
+    /// so the list view passes the linked
+    /// `PersistentAssetLock.amountDuffs`. `nil` for non-asset-lock
+    /// rows OR consumed asset locks whose tracking row was cleaned
+    /// up after successful identity registration.
+    var assetLockAmountDuffs: Int64? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var showCopiedAlert = false
 
+    /// Amount label rendered prominently at the top of the sheet.
+    /// Same precedence rule as the row: asset-lock duffs when we
+    /// have them, else an explicit "amount unknown" label for the
+    /// historical-asset-lock case (rather than the misleading
+    /// `+0.00000000 DASH` from `transaction.formattedAmount`).
+    private var displayAmount: String {
+        if transaction.isAssetLock {
+            if let duffs = assetLockAmountDuffs {
+                let dash = Double(duffs) / 100_000_000.0
+                return String(format: "-%.8f DASH", dash)
+            }
+            return "Asset Lock (amount unknown)"
+        }
+        return transaction.formattedAmount
+    }
+
     private var typeDescription: String {
+        if transaction.isAssetLock { return "Asset Lock" }
+        if transaction.isAssetUnlock { return "Asset Unlock" }
         switch transaction.netAmount {
         case let amount where amount > 0:
             return "Received"
@@ -18,6 +43,8 @@ struct TransactionDetailView: View {
     }
 
     private var typeIcon: String {
+        if transaction.isAssetLock { return "lock.fill" }
+        if transaction.isAssetUnlock { return "lock.open.fill" }
         switch transaction.netAmount {
         case let amount where amount > 0:
             return "arrow.down.circle.fill"
@@ -29,6 +56,9 @@ struct TransactionDetailView: View {
     }
 
     private var typeColor: Color {
+        if transaction.isAssetLock || transaction.isAssetUnlock {
+            return .purple
+        }
         switch transaction.netAmount {
         case let amount where amount > 0:
             return .green
@@ -72,7 +102,7 @@ struct TransactionDetailView: View {
                             .font(.headline)
                             .foregroundColor(.secondary)
 
-                        Text(transaction.formattedAmount)
+                        Text(displayAmount)
                             .font(.system(size: 32, weight: .bold, design: .rounded))
                             .foregroundColor(typeColor)
                     }

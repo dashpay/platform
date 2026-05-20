@@ -8,8 +8,14 @@ pub struct DriveAbciQueryVersions {
     pub response_metadata: FeatureVersion,
     pub proofs_query: FeatureVersion,
     pub document_query: FeatureVersionBounds,
-    pub document_count_query: FeatureVersionBounds,
-    pub document_split_count_query: FeatureVersionBounds,
+    /// Per-helper version slots for internal v1-document-query
+    /// routing helpers. Separate from `document_query` (which
+    /// versions the wire surface) because the helper output is
+    /// consensus-relevant on the query path — adjusting the
+    /// `(group_by × where)` routing table is a behavior change a
+    /// future protocol version may need to make without re-cutting
+    /// the wire shape.
+    pub document_query_helpers: DriveAbciDocumentQueryHelperVersions,
     pub prefunded_specialized_balances: DriveAbciQueryPrefundedSpecializedBalancesVersions,
     pub identity_based_queries: DriveAbciQueryIdentityVersions,
     pub token_queries: DriveAbciQueryTokenVersions,
@@ -20,6 +26,15 @@ pub struct DriveAbciQueryVersions {
     pub group_queries: DriveAbciQueryGroupVersions,
     pub address_funds_queries: DriveAbciQueryAddressFundsVersions,
     pub shielded_queries: DriveAbciQueryShieldedVersions,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveAbciDocumentQueryHelperVersions {
+    /// Version of the helper that picks the `(group_by × where)`
+    /// mode for `SELECT COUNT / SUM / AVG` and enforces the
+    /// per-mode `accepts_limit()` contract. See
+    /// `query::document_query::v1::compute_aggregate_mode_and_check_limit`.
+    pub compute_aggregate_mode_and_check_limit: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]
