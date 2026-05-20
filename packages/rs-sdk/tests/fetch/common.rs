@@ -1,4 +1,8 @@
-use dash_sdk::{mock::Mockable, platform::Query, Sdk};
+use dash_sdk::{
+    mock::Mockable,
+    platform::{Query, QueryContext},
+    Sdk,
+};
 use dpp::data_contract::config::DataContractConfig;
 use dpp::{data_contract::DataContractFactory, prelude::Identifier};
 use hex::ToHex;
@@ -127,7 +131,13 @@ pub(crate) async fn setup_sdk_for_test_case<T: TransportRequest + Mockable, Q: Q
     query: Q,
     name_prefix: &str,
 ) -> (String, Sdk) {
-    let key = rs_dapi_client::mock::Key::new(&query.query(true).expect("valid query"));
+    let settings = rs_dapi_client::RequestSettings::default();
+    let ctx = QueryContext {
+        request_settings: &settings,
+        protocol_version: dpp::version::PlatformVersion::latest(),
+        prove: true,
+    };
+    let key = rs_dapi_client::mock::Key::new(&query.query(&ctx).expect("valid query"));
     let test_case_id = format!("{}_{}", name_prefix, key.encode_hex::<String>());
 
     // create new sdk to ensure that test cases don't interfere with each other

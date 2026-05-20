@@ -153,8 +153,8 @@ impl
     > for EvonodesProposedEpochBlocksByIdsQuery
 {
     fn query(
-        self,
-        prove: bool,
+        &self,
+        ctx: &dash_sdk::platform::QueryContext<'_>,
     ) -> Result<
         dash_sdk::dapi_grpc::platform::v0::GetEvonodesProposedEpochBlocksByIdsRequest,
         dash_sdk::Error,
@@ -165,14 +165,15 @@ impl
             },
         };
 
+        let prove = ctx.prove;
         let request =
             dash_sdk::dapi_grpc::platform::v0::GetEvonodesProposedEpochBlocksByIdsRequest {
                 version: Some(Version::V0(GetEvonodesProposedEpochBlocksByIdsRequestV0 {
                     epoch: self.epoch,
                     ids: self
                         .pro_tx_hashes
-                        .into_iter()
-                        .map(|hash| AsRef::<[u8]>::as_ref(&hash).to_vec())
+                        .iter()
+                        .map(|hash| AsRef::<[u8]>::as_ref(hash).to_vec())
                         .collect(),
                     prove,
                 })),

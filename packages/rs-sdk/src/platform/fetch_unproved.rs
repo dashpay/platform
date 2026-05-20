@@ -71,7 +71,8 @@ where
         >,
     {
         // Default implementation
-        let request: &<Self as FetchUnproved>::Request = &query.query(false)?;
+        let ctx = sdk.query_context().without_proofs();
+        let request: &<Self as FetchUnproved>::Request = &query.query(&ctx)?;
         let closure = move |local_settings: RequestSettings| async move {
             // Execute the request using the Sdk instance
             let ExecutionResponse {

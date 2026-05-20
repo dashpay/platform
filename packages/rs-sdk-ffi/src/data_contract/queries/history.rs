@@ -26,10 +26,11 @@ impl dash_sdk::platform::Query<dash_sdk::dapi_grpc::platform::v0::GetDataContrac
     for DataContractHistoryQuery
 {
     fn query(
-        self,
-        prove: bool,
+        &self,
+        ctx: &dash_sdk::platform::QueryContext<'_>,
     ) -> Result<dash_sdk::dapi_grpc::platform::v0::GetDataContractHistoryRequest, dash_sdk::Error>
     {
+        let prove = ctx.prove;
         use dash_sdk::dapi_grpc::platform::v0::get_data_contract_history_request::{
             GetDataContractHistoryRequestV0, Version,
         };
