@@ -20,10 +20,24 @@ fi
 
 FLAGS=""
 
-if [[ "$COMMAND" == "tarballs" ]]
-then
-  FLAGS="--no-xz --targets=linux-arm,linux-x64"
-fi
+# Node 24+ does not publish 32-bit binaries (linux-armv7l, win-x86), so we
+# must explicitly drop those targets from oclif's default lists; otherwise
+# `oclif pack` 404s while downloading the embedded Node runtime.
+#   - tarballs default: oclif builds whatever we pass; we previously passed
+#     `linux-arm` (= armv7l). Replace with linux-arm64.
+#   - deb default targets: linux-x64, linux-arm (armv7l), linux-arm64 — drop arm.
+#   - win default targets: win32-x64, win32-x86 — drop x86.
+case "$COMMAND" in
+  tarballs)
+    FLAGS="--no-xz --targets=linux-arm64,linux-x64"
+    ;;
+  deb)
+    FLAGS="--targets=linux-x64,linux-arm64"
+    ;;
+  win)
+    FLAGS="--targets=win32-x64"
+    ;;
+esac
 
 FULL_PATH=$(realpath "$0")
 DIR_PATH=$(dirname "$FULL_PATH")
