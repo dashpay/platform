@@ -101,14 +101,12 @@ impl Drive {
         }
 
         // Validate + canonicalize the structured `where_clauses` —
-        // same rejections / canonicalization the regular document-
-        // query path runs, kept here so the AVG no-prove surface
-        // keeps the accept/reject contract it had pre-#3690 when the
-        // composition path ran the validator via count's dispatcher.
-        // Must run BEFORE `detect_sum_mode_from_inputs` because the
-        // canonicalizer collapses `[> A, < B]` pairs into a single
-        // `between*` clause whose presence changes the routing
-        // decision. See
+        // same rejections / canonicalization the count and document-
+        // query surfaces apply, kept here so the AVG no-prove surface
+        // shares the same accept/reject contract. Must run BEFORE
+        // `detect_sum_mode_from_inputs` because the canonicalizer
+        // collapses `[> A, < B]` pairs into a single `between*`
+        // clause whose presence changes the routing decision. See
         // [`validate_and_canonicalize_where_clauses`]'s docstring for
         // the catalog of rejections.
         let where_clauses = validate_and_canonicalize_where_clauses(request.where_clauses)?;
@@ -232,13 +230,11 @@ impl Drive {
                 // that case — see its `execute_range_sum_no_proof`
                 // compound-summed branch). The joint executor returns
                 // `Aggregate { count, sum }` for the !distinct shape
-                // because it has both metrics on hand; we re-shape into
-                // `Entries(vec![one_entry])` here when the caller asked
-                // for a non-Aggregate mode so the wire shape matches
-                // what an independent sum + count GroupByIn dispatch
-                // would produce. Without this re-shape, GroupByIn +
-                // range AVG silently changes wire shape from `Entries`
-                // (pre-#3687) to `Aggregate`.
+                // because it has both metrics on hand; we re-shape
+                // into `Entries(vec![one_entry])` here when the
+                // caller asked for a non-Aggregate mode so the wire
+                // shape matches what an independent sum + count
+                // GroupByIn dispatch would produce.
                 // Strict mode×shape pairing. Every legal combination
                 // is named explicitly; any other pairing surfaces as
                 // `CorruptedCodeExecution` rather than silently

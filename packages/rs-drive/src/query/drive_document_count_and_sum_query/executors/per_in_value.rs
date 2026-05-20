@@ -10,15 +10,11 @@
 //! ## Atomicity
 //!
 //! The per-In fan-out issues one grovedb read per In branch. When the
-//! caller didn't provide a transaction, we open a short-lived shared
-//! read transaction internally and reuse it across every per-branch
-//! read so the joint executor sees a single grovedb snapshot. This is
-//! the same atomicity contract the pre-#3687 AVG dispatcher
-//! implemented at the dispatcher layer, moved here because the
-//! dispatcher itself now does only a single executor call per AVG
-//! request — the multi-read concern is purely an internal property of
-//! this executor (and its `range_no_proof` sibling, which has the same
-//! per-In fan-out shape for the compound-flat-summed branch).
+//! caller didn't provide a transaction the executor opens a short-
+//! lived shared read transaction internally and reuses it across every
+//! per-branch read so the (count, sum) pair sees a single grovedb
+//! snapshot. The compound-aggregate `range_no_proof` sibling does the
+//! same on its per-In fan-out branch.
 
 use super::super::super::drive_document_average_query::{AverageEntry, DocumentAverageResponse};
 use super::super::super::drive_document_sum_query::index_picker::find_summable_index_for_where_clauses;

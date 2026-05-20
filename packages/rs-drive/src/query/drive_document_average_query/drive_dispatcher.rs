@@ -14,18 +14,16 @@
 //!   `(mode, where_clauses)`. The prove path's per-shape rules are
 //!   unchanged.
 //!
-//! ## Why the unified single-walk dispatch
+//! ## Joint dispatch
 //!
-//! The previous implementation composed parallel
-//! `DocumentCountRequest` + `DocumentSumRequest` calls on the no-prove
-//! path under a shared read transaction and zipped the responses. That
-//! shape was correct (the shared transaction guaranteed atomicity)
-//! but did twice the grovedb work strictly necessary, and required
-//! count's and sum's routing tables to stay in lock-step for AVG to
-//! compose correctly (PR #3661 caught one drift bug). The single-walk
-//! dispatcher in [`crate::query::drive_document_count_and_sum_query`]
-//! replaces both concerns: one routing table (sum's), one grovedb
-//! walk per AVG no-prove query, halving the per-query work.
+//! The no-prove dispatcher at
+//! [`crate::query::drive_document_count_and_sum_query`] reads
+//! `(count, sum)` together — via grovedb's combined
+//! `query_aggregate_count_and_sum` accumulator on the aggregate range
+//! branch, and via a single PCPS walk on the distinct-grouped branch.
+//! Routing reuses sum's versioned mode-detection table so the
+//! `(where_clauses × mode)` → executor decision has a single source
+//! of truth shared with the count and sum surfaces.
 //!
 //! ## Prove path shapes (unchanged)
 //!
@@ -68,12 +66,10 @@ impl Drive {
     ///
     /// Splits prove vs. no-prove at the top level:
     /// - `prove = true` → routes to
-    ///   [`Self::execute_document_average_prove`], unchanged from the
-    ///   pre-#3687 implementation.
+    ///   [`Self::execute_document_average_prove`].
     /// - `prove = false` → routes to
     ///   [`Self::execute_document_count_and_sum_request`], the joint
-    ///   single-walk dispatcher that replaces the previous parallel
-    ///   count + sum composition.
+    ///   dispatcher that reads `(count, sum)` together.
     pub fn execute_document_average_request(
         &self,
         request: DocumentAverageRequest,
@@ -854,8 +850,8 @@ mod tests {
     // AND independently issue separate count + sum requests under
     // the same transaction. Assert the joint executor's
     // `(count, sum)` matches the zipped pair from the independent
-    // calls. This pins parity with the pre-#3687 double-dispatch
-    // behaviour.
+    // count + sum surfaces — a cross-check the joint and per-surface
+    // dispatchers cannot silently disagree.
 
     use crate::query::drive_document_average_query::AverageEntry;
     use crate::query::drive_document_count_query::{
@@ -1869,12 +1865,12 @@ mod tests {
     }
 
     /// AVG no-proof dispatcher must run
-    /// `validate_and_canonicalize_where_clauses` — same shape contract
-    /// the pre-#3690 composition path inherited from count's
-    /// dispatcher. Pin a representative rejection: a duplicate Equal
-    /// on the same field. Without the validator the executor would
-    /// either succeed with a silently-collapsed shape or fail downstream
-    /// with a less precise error.
+    /// `validate_and_canonicalize_where_clauses` so it shares the same
+    /// accept/reject contract as the count and document-query
+    /// surfaces. Pin a representative rejection: a duplicate Equal on
+    /// the same field. Without the validator the executor would
+    /// either succeed with a silently-collapsed shape or fail
+    /// downstream with a less precise error.
     #[test]
     fn joint_dispatcher_runs_validate_and_canonicalize_where_clauses() {
         let drive = setup_drive_with_initial_state_structure(None);

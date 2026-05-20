@@ -100,12 +100,13 @@ impl Drive {
             .any(|wc| wc.operator == WhereOperator::In);
 
         if !return_distinct {
-            // Aggregate shape: use grovedb's merk-internal bounded
-            // accumulators for `(count, sum)`. Two calls because the
-            // combined no-proof primitive doesn't exist yet, but each
-            // is O(log n) — strictly bounded regardless of how many
-            // documents the range matches. This is the same cost class
-            // the pre-#3687 composed count + sum dispatchers had.
+            // Aggregate shape: one combined merk-internal accumulator
+            // call (`query_aggregate_count_and_sum`) yielding
+            // `(u64, i64)` in O(log n) — strictly bounded regardless
+            // of how many documents the range matches. Compound
+            // `In + range` per-In fans out to one accumulator call
+            // per branch under a shared read transaction (see
+            // `aggregate_range_count_and_sum` below).
             return self.aggregate_range_count_and_sum(
                 contract_id,
                 document_type,
@@ -189,14 +190,12 @@ impl Drive {
     }
 
     /// Aggregate-range branch: returns `(count, sum)` via grovedb's
-    /// merk-internal bounded accumulators. Two calls per branch
-    /// (count + sum); compound `In + range` per-In fans out and sums
-    /// per-branch totals.
-    ///
-    /// All branches share a read transaction (opened internally when
-    /// the caller didn't supply one) so the count and sum reads see
-    /// the same grovedb snapshot — same atomicity contract the
-    /// pre-#3687 dispatcher implemented across its two sub-dispatches.
+    /// combined `query_aggregate_count_and_sum` accumulator. One call
+    /// for the flat shape; compound `In + range` per-In fans out and
+    /// sums per-branch totals (one accumulator call per branch). All
+    /// branches share a read transaction (opened internally when the
+    /// caller didn't supply one) so per-In sub-reads see the same
+    /// grovedb snapshot.
     #[allow(clippy::too_many_arguments)]
     fn aggregate_range_count_and_sum(
         &self,
@@ -326,10 +325,7 @@ impl Drive {
     /// Flat (no In on prefix) aggregate count + sum: one
     /// `query_aggregate_count_and_sum` call against the PCPS path
     /// query — a single O(log n) merk-internal accumulator yielding
-    /// both metrics from one traversal. The combined no-proof
-    /// primitive landed in grovedb #676; before that this helper had
-    /// to issue two parallel accumulator calls under a shared read
-    /// transaction.
+    /// both metrics from one traversal.
     #[allow(clippy::too_many_arguments)]
     fn flat_aggregate_count_and_sum(
         &self,
