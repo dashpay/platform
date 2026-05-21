@@ -435,8 +435,10 @@ where
     None
 }
 
-/// `[DeductFromInput(0)]` selector. Order-agnostic: walks `candidates` as-is
-/// and picks the smallest covering prefix.
+/// `[DeductFromInput(0)]` selector. Defensively re-sorts `candidates`
+/// balance-descending before growing the covering prefix, so test and
+/// future direct callers can pass any order without silently picking a
+/// larger-than-needed prefix.
 ///
 /// Produces an inputs map satisfying:
 /// 1. `Σ selected.values() == total_output`.
@@ -458,12 +460,17 @@ where
 ///    target rather than producing a sub-minimum input.
 /// 5. Defensive invariant checks.
 fn select_inputs_deduct_from_input(
-    candidates: Vec<(PlatformAddress, Credits)>,
+    mut candidates: Vec<(PlatformAddress, Credits)>,
     outputs: &BTreeMap<PlatformAddress, Credits>,
     total_output: Credits,
     fee_strategy: &[AddressFundsFeeStrategyStep],
     platform_version: &PlatformVersion,
 ) -> Result<BTreeMap<PlatformAddress, Credits>, PlatformWalletError> {
+    // Defensive sort: the prefix-grow loop assumes balance-descending order so
+    // we pick the smallest covering prefix. Production callers pre-sort via
+    // `build_auto_select_candidates`; this keeps direct test / future callers
+    // from silently picking a worse prefix.
+    candidates.sort_by(|a, b| b.1.cmp(&a.1));
     if !matches!(
         fee_strategy,
         [AddressFundsFeeStrategyStep::DeductFromInput(0)]
@@ -649,6 +656,12 @@ fn select_inputs_deduct_from_input(
 /// guards against direct test/future-caller invocations that skip the
 /// pre-filter and would otherwise produce a sub-minimum prefix entry.
 ///
+/// **Order invariant**: the trim logic assumes balance-descending order
+/// so the smallest balance lands at the end of the prefix. The selector
+/// defensively re-sorts the input — test and future direct callers can
+/// pass candidates in any order without silently miscomputing the
+/// donor-lift in Phase 3.
+///
 /// Algorithm:
 /// 1. Grow the prefix until `Σ balances ≥ total_output`.
 /// 2. Trim the last prefix entry by `surplus = Σ − total_output` so
@@ -662,12 +675,17 @@ fn select_inputs_deduct_from_input(
 ///    leave the fee uncovered.
 /// 5. Defensive invariant checks.
 fn select_inputs_reduce_output(
-    candidates: Vec<(PlatformAddress, Credits)>,
+    mut candidates: Vec<(PlatformAddress, Credits)>,
     outputs: &BTreeMap<PlatformAddress, Credits>,
     total_output: Credits,
     fee_strategy: &[AddressFundsFeeStrategyStep],
     platform_version: &PlatformVersion,
 ) -> Result<BTreeMap<PlatformAddress, Credits>, PlatformWalletError> {
+    // Defensive sort: the Phase-2 trim and Phase-3 donor-lift both rely on
+    // balance-descending order so the smallest balance lands last. Production
+    // callers already pre-sort via `build_auto_select_candidates`, but direct
+    // test / future callers would otherwise silently misbehave.
+    candidates.sort_by(|a, b| b.1.cmp(&a.1));
     if !matches!(fee_strategy, [AddressFundsFeeStrategyStep::ReduceOutput(0)]) {
         return Err(PlatformWalletError::AddressOperation(
             "select_inputs_reduce_output only supports fee_strategy = \
@@ -1034,7 +1052,11 @@ mod auto_select_tests {
         assert!(addr_b_balance - 10_000_000 >= fee);
 
         // Cross-check: the fixed selector at the same fixture produces a
-        // map that DOES leave headroom on addr_a.
+        // map drive's fee deduction accepts. The defensive
+        // balance-descending sort (QA-003) puts addr_b first; addr_b alone
+        // covers `total_output + fee`, so the single-input prefix
+        // `{addr_b: 30_000_000}` is what the fixed selector ships, and
+        // addr_b retains 20M of headroom for the fee.
         let fixed = select_inputs_deduct_from_input(
             vec![(addr_a, addr_a_balance), (addr_b, addr_b_balance)],
             &outputs,
@@ -1043,31 +1065,36 @@ mod auto_select_tests {
             pv,
         )
         .expect("fixed selector");
-        let min_input = pv.dpp.state_transitions.address_funds.min_input_amount;
-        assert_eq!(fixed.get(&addr_a), Some(&min_input));
-        assert_eq!(fixed.keys().next(), Some(&addr_a));
+        assert_eq!(fixed.get(&addr_b), Some(&total_output));
+        assert!(!fixed.contains_key(&addr_a));
         assert_selection_validates(&fixed, &outputs, fee_strategy, pv);
     }
 
     /// Phase 1 covers `total_output + fee` but the lex-smallest entry has no
     /// headroom for the fee. Selection must error out rather than ship a
     /// transition the validator will reject.
+    ///
+    /// Fixture: the lex-smallest address has a balance below `min_input + fee`
+    /// (so its `fee_target_min` saturates to `min_input` while
+    /// `fee_target_max = balance − fee` is below that), and the larger peer
+    /// undershoots covering alone — together they cover, but the
+    /// lex-smallest entry cannot retain `estimated_fee` after consumption.
     #[test]
     fn fee_headroom_violation_errors() {
-        let addr_a = p2pkh(0x01);
-        let addr_b = p2pkh(0x02);
+        let addr_tiny = p2pkh(0x01); // lex-smallest → fee target after the prefix grows
+        let addr_b = p2pkh(0xA0);
         let target = p2pkh(0x99);
         let pv = LATEST_PLATFORM_VERSION;
-        let min_input = pv.dpp.state_transitions.address_funds.min_input_amount;
 
-        // addr_a holds exactly `min_input_amount` — no remaining balance for
-        // the fee. addr_b lets Phase 1 succeed, so the headroom violation
-        // must be caught in Phase 3.
-        let addr_a_balance = min_input;
-        let total_output = 10_000_000u64;
-        let addr_b_balance = 20_000_000u64;
+        let total_output = 30_000_000u64;
+        // addr_b alone undershoots `total_output + fee_1in ≈ 36.5M`, so the
+        // prefix must include addr_tiny.
+        let addr_b_balance = 35_000_000u64;
+        // addr_tiny < fee_1in + min_input ≈ 6.6M → no fee headroom after the
+        // sub-min-floor consumption.
+        let addr_tiny_balance = 6_000_000u64;
         let outputs = outputs_for(target, total_output);
-        let candidates = vec![(addr_a, addr_a_balance), (addr_b, addr_b_balance)];
+        let candidates = vec![(addr_tiny, addr_tiny_balance), (addr_b, addr_b_balance)];
         let fee_strategy = vec![AddressFundsFeeStrategyStep::DeductFromInput(0)];
 
         let err =
