@@ -222,29 +222,38 @@ pub async fn shield<Sig: Signer<PlatformAddress>, P: OrchardProver>(
 
     trace!("Shield credits: state transition built, broadcasting...");
     let network = sdk.network;
-    state_transition.broadcast(sdk, None).await.map_err(|e| {
-        if let Some(rich) = addresses_not_enough_funds(&e) {
-            let claimed = claimed_inputs
-                .iter()
-                .map(|(addr, (nonce, credits))| {
-                    format!(
-                        "{}=(nonce {nonce}, {credits} credits)",
-                        addr.to_bech32m_string(network)
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join(", ");
-            PlatformWalletError::ShieldedBroadcastFailed(format!(
-                "addresses not enough funds: required {} credits; \
+    // Wait for proven execution (not just relay-ACK) so the host only
+    // sees success once Platform has actually included the transition —
+    // matching the spend-side flows (unshield/transfer/withdraw). A
+    // DAPI-level ACK alone could otherwise mask a later Platform
+    // rejection. The proven result is discarded; we only need the
+    // confirmation.
+    state_transition
+        .broadcast_and_wait::<StateTransitionProofResult>(sdk, None)
+        .await
+        .map_err(|e| {
+            if let Some(rich) = addresses_not_enough_funds(&e) {
+                let claimed = claimed_inputs
+                    .iter()
+                    .map(|(addr, (nonce, credits))| {
+                        format!(
+                            "{}=(nonce {nonce}, {credits} credits)",
+                            addr.to_bech32m_string(network)
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                PlatformWalletError::ShieldedBroadcastFailed(format!(
+                    "addresses not enough funds: required {} credits; \
                      claimed inputs [{}]; platform sees [{}]",
-                rich.required_balance(),
-                claimed,
-                format_addresses_with_info(rich.addresses_with_info(), network),
-            ))
-        } else {
-            PlatformWalletError::ShieldedBroadcastFailed(e.to_string())
-        }
-    })?;
+                    rich.required_balance(),
+                    claimed,
+                    format_addresses_with_info(rich.addresses_with_info(), network),
+                ))
+            } else {
+                PlatformWalletError::ShieldedBroadcastFailed(e.to_string())
+            }
+        })?;
 
     info!(account, credits = amount, "Shield broadcast succeeded");
     Ok(())
@@ -286,8 +295,13 @@ pub async fn shield_from_asset_lock<P: OrchardProver>(
     .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
 
     trace!("Shield from asset lock: state transition built, broadcasting...");
+    // Wait for proven execution rather than relay-ACK. This matters most
+    // for Type 18: the asset-lock proof is single-use, so a false-
+    // positive success on a transition Platform later rejects would
+    // strand the user's L1 outpoint with no in-app signal. The proven
+    // result is discarded; we only need the confirmation.
     state_transition
-        .broadcast(sdk, None)
+        .broadcast_and_wait::<StateTransitionProofResult>(sdk, None)
         .await
         .map_err(|e| PlatformWalletError::ShieldedBroadcastFailed(e.to_string()))?;
 
