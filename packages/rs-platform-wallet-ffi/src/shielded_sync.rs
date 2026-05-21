@@ -65,13 +65,19 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_sync_start(
     PlatformWalletFFIResult::ok()
 }
 
-/// Stop the shielded sync manager if it is running.
+/// Stop the shielded sync manager and wait for any in-flight pass to
+/// drain before returning. No-op if not running.
+///
+/// Uses [`quiesce`](crate-internal) rather than cancel-only stop so the
+/// host-facing contract is honest: once this returns, no sync pass is
+/// running and none will emit further completion events or persistence
+/// callbacks. The call blocks until a pass already underway finishes.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_shielded_sync_stop(
     handle: Handle,
 ) -> PlatformWalletFFIResult {
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
-        manager.shielded_sync().stop();
+        runtime().block_on(manager.shielded_sync().quiesce());
     });
     unwrap_option_or_return!(option);
     PlatformWalletFFIResult::ok()
@@ -408,10 +414,15 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_clear(
     handle: Handle,
 ) -> PlatformWalletFFIResult {
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
-        // Stop the loop first so the next pass can't race the
-        // registry clear and observe a half-emptied state.
-        manager.shielded_sync().stop();
+        // Quiesce first — cancel the loop AND wait for any in-flight
+        // pass to fully drain — before wiping the registries. A
+        // cancel-only stop() would let a pass that already started
+        // finish and route stale results back through the persister
+        // after Clear returns, defeating the local-data-erasure
+        // boundary the user expects (especially when Clear is invoked
+        // in response to a perceived device compromise).
         runtime().block_on(async {
+            manager.shielded_sync().quiesce().await;
             if let Some(coord) = manager.shielded_coordinator().await {
                 coord.clear().await;
             }
