@@ -564,14 +564,14 @@ fn select_inputs_deduct_from_input(
         )));
     };
 
-    // Sub-minimum tail consumptions fold back into the fee target;
-    // `validate_structure` would otherwise reject `InputBelowMinimumError`.
-    let mut fee_target_consumed = fee_target_min;
-    let fee_target_max = fee_target_balance.saturating_sub(estimated_fee);
+    // Sub-minimum tail consumptions fold back into the fee target; the
+    // post-Phase-4 recompute below resolves the final fee target consumption
+    // against the *actual* selected input count (QA-004). The Phase-1
+    // `estimated_fee` is intentionally shadowed below.
+    let _ = estimated_fee;
     let mut selected: BTreeMap<PlatformAddress, Credits> = BTreeMap::new();
 
-    let mut remaining = total_output.saturating_sub(fee_target_consumed);
-    let mut residue_to_fee_target: Credits = 0;
+    let mut remaining = total_output.saturating_sub(fee_target_min);
     for (addr, bal) in prefix.iter() {
         if *addr == fee_target_addr {
             continue;
@@ -584,7 +584,8 @@ fn select_inputs_deduct_from_input(
             continue;
         }
         if tentative < min_input_amount {
-            residue_to_fee_target = residue_to_fee_target.saturating_add(tentative);
+            // Sub-min residue folds into the fee target via the
+            // post-Phase-4 recompute below; do not insert here.
             remaining = remaining.saturating_sub(tentative);
             continue;
         }
@@ -592,24 +593,32 @@ fn select_inputs_deduct_from_input(
         remaining = remaining.saturating_sub(tentative);
     }
 
-    if residue_to_fee_target > 0 {
-        let new_consumed = fee_target_consumed.saturating_add(residue_to_fee_target);
-        // Unreachable given Phase 3's headroom check.
-        debug_assert!(
-            new_consumed <= fee_target_max,
-            "fee target consumption {} exceeds max {} after residue fold",
-            new_consumed,
-            fee_target_max,
-        );
-        if new_consumed > fee_target_max {
-            return Err(PlatformWalletError::AddressOperation(format!(
-                "Cannot satisfy fee headroom after redistributing sub-minimum tail \
-                 inputs: fee-target {fee_target_addr} would consume {new_consumed} \
-                 (balance {fee_target_balance}, max {fee_target_max}), leaving \
-                 less than estimated fee {estimated_fee} of remaining balance",
-            )));
-        }
-        fee_target_consumed = new_consumed;
+    // QA-004: Phase 1 estimates the fee against `prefix.len()`, but the
+    // residue-fold above can leave `selected.len() < prefix.len()`. The
+    // headroom recheck below uses the actual selected count's estimated
+    // fee — over-estimating would reject feasible selections. If the
+    // recomputed fee_target_min still fits within the recomputed
+    // fee_target_max, keep going; otherwise we genuinely lack headroom.
+    let selected_input_count = selected.len() + 1; // + fee target
+    let estimated_fee = PlatformAddressWallet::estimate_fee_for_inputs(
+        selected_input_count,
+        output_count,
+        fee_strategy,
+        outputs,
+        platform_version,
+    );
+    let other_total: Credits = selected.values().copied().sum();
+    let fee_target_consumed = std::cmp::max(
+        min_input_amount,
+        total_output.saturating_sub(other_total),
+    );
+    let fee_target_max = fee_target_balance.saturating_sub(estimated_fee);
+    if fee_target_consumed > fee_target_max {
+        return Err(PlatformWalletError::AddressOperation(format!(
+            "Cannot satisfy fee headroom after Phase-4 fee recompute: fee-target \
+             {fee_target_addr} would consume {fee_target_consumed} (balance \
+             {fee_target_balance}, max {fee_target_max} after fee {estimated_fee})",
+        )));
     }
 
     selected.insert(fee_target_addr, fee_target_consumed);
@@ -1151,6 +1160,56 @@ mod auto_select_tests {
         let input_sum: Credits = selected.values().sum();
         assert_eq!(input_sum, total_output);
 
+        assert_selection_validates(&selected, &outputs, fee_strategy, pv);
+    }
+
+    /// QA-004: Phase 1 sizes `estimated_fee` against `prefix.len()`, but the
+    /// residue-fold can leave `selected.len() < prefix.len()`. The post-Phase-4
+    /// recompute against the *actual* selected count must use the smaller fee
+    /// — otherwise feasible selections get falsely rejected as
+    /// "Cannot satisfy fee headroom".
+    ///
+    /// Fixture: 3-entry prefix; the middle sub-min entry folds into the fee
+    /// target, so `selected = {fee_target, addr_z}` has len 2. The Phase-1
+    /// fee_3in would over-bound the fee target's headroom; the post-Phase-4
+    /// recompute with fee_2in must succeed.
+    #[test]
+    fn fee_recompute_after_residue_fold_succeeds() {
+        let addr_x = p2pkh(0x01); // lex-smallest → fee target
+        let addr_y = p2pkh(0x02); // sub-min residue, folds away
+        let addr_z = p2pkh(0x03); // peer
+        let target = p2pkh(0x99);
+        let pv = LATEST_PLATFORM_VERSION;
+        let min_input = pv.dpp.state_transitions.address_funds.min_input_amount;
+
+        // Numbers: same shape as `non_fee_target_below_min_input_redistributes`
+        // — prefix [x,y,z] is needed by Phase-1 fee_3in, but final selected
+        // is {x,z} so fee_2in applies. Both paths converge here because the
+        // headroom is large; this asserts no false rejection.
+        let total_output = 4_000_000u64;
+        let candidates = vec![
+            (addr_x, 10_000_000u64),
+            (addr_y, 80_000u64), // < min_input → folds into fee target
+            (addr_z, 2_000_000u64),
+        ];
+        let outputs = outputs_for(target, total_output);
+        let fee_strategy = vec![AddressFundsFeeStrategyStep::DeductFromInput(0)];
+
+        let selected = select_inputs_deduct_from_input(
+            candidates,
+            &outputs,
+            total_output,
+            &fee_strategy,
+            pv,
+        )
+        .expect("post-Phase-4 fee recompute must accept the selection");
+
+        assert_eq!(selected.len(), 2, "y folded into fee target");
+        assert!(!selected.contains_key(&addr_y));
+        for (addr, amount) in &selected {
+            assert!(*amount >= min_input, "{addr} consumes {amount}");
+        }
+        assert_eq!(selected.values().copied().sum::<Credits>(), total_output);
         assert_selection_validates(&selected, &outputs, fee_strategy, pv);
     }
 
