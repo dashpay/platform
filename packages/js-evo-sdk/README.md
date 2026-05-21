@@ -39,6 +39,26 @@ const epoch = await sdk.epoch.current();
 console.log('Current epoch:', epoch.index);
 ```
 
+### Configuration
+
+`EvoSDK` accepts the following options:
+
+| Option | Type | Default | Notes |
+|--------|------|---------|-------|
+| `network` | `'testnet' \| 'mainnet' \| 'local'` | `'testnet'` | Target network. |
+| `trusted` | `boolean` | `false` | When `true`, pre-fetches quorum keys for proof verification. Required for default query methods. |
+| `proofs` | `boolean` | `true` | Setting to `false` disables proof requests where supported, but unproved mode is limited — several query paths (e.g. document fetches) force proofs regardless, and some query builders reject the unproved path. Mainly intended for mock/offline replay. |
+| `version` | `number` | latest | Platform protocol version. |
+| `logs` | `string` | — | Tracing/log filter for the underlying Wasm SDK. Accepts simple levels (`'info'`, `'debug'`, …) or a full `EnvFilter` string. |
+| `settings` | `{ connectTimeoutMs?, timeoutMs?, retries?, banFailedAddress? }` | — | DAPI client transport settings. |
+
+Preset factories are available as convenience: `EvoSDK.testnet()`, `EvoSDK.mainnet()`, `EvoSDK.testnetTrusted()`, `EvoSDK.mainnetTrusted()`, `EvoSDK.local()`, and `EvoSDK.localTrusted()` (the last two target a dashmate local node).
+
+Two static helpers are also exported:
+
+- `await EvoSDK.setLogLevel(filter)` — configure the underlying Wasm SDK's tracing globally.
+- `await EvoSDK.getLatestVersionNumber()` — return the latest Platform protocol version supported by the bundled Wasm SDK.
+
 ## Facades
 
 The SDK organises its API into domain-specific facades, each accessible as a property on the `EvoSDK` instance:
@@ -57,8 +77,9 @@ The SDK organises its API into domain-specific facades, each accessible as a pro
 | [`sdk.system`](src/system/facade.ts) | System status, quorum info, and total credits |
 | [`sdk.group`](src/group/facade.ts) | Group membership, actions, and contested resources |
 | [`sdk.voting`](src/voting/facade.ts) | Contested resource vote states and polls |
+| [`sdk.shielded`](src/shielded/facade.ts) | Query shielded pool state, encrypted notes, anchors, and nullifier status |
 
-A `wallet` namespace is also exported with utilities for mnemonic generation, key derivation, address validation, and message signing.
+A `wallet` namespace is also exported with utilities for BIP39 mnemonic generation and validation, BIP44/DIP9/DIP13 key derivation (path helpers included), extended-key conversion (`xprvToXpub`, `deriveChildPublicKey`), key-pair generation and import (`generateKeyPair`, `keyPairFromWif`, `keyPairFromHex`), public-key-to-address conversion, address validation, message signing, and Dashpay contact-key derivation. See [`src/wallet/functions.ts`](src/wallet/functions.ts) for the full list.
 
 ## Contributing
 

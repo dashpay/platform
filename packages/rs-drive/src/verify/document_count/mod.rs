@@ -10,6 +10,12 @@
 /// Aggregate-count proof verification (`AggregateCountOnRange`
 /// primitive) — returns a single `u64`.
 pub mod verify_aggregate_count_proof;
+/// Carrier-aggregate-count proof verification (carrier
+/// `AggregateCountOnRange` composition with outer `Keys` per
+/// grovedb PR #663) — returns one `(in_key, u64)` per resolved In
+/// branch. Used by `group_by = [in_field]` count queries that
+/// carry both an `In` clause and a range clause.
+pub mod verify_carrier_aggregate_count_proof;
 /// Distinct-count proof verification (regular range proof against a
 /// `ProvableCountTree`) — returns the per-`(in_key, key)` entries the
 /// proof commits to.

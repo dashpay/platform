@@ -18,17 +18,20 @@ drive = { path = "../rs-drive", default-features = false, features = [
 ] }
 
 drive-proof-verifier = { path = "../rs-drive-proof-verifier", default-features = false }
-grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "a917d92d2477672eed73c4c08e53e93449a6a094", features = ["client", "sqlite"], optional = true }
+grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "60f29685172653f6007e63d0916bce4633bc23b9", features = [
+  "client",
+  "sqlite",
+], optional = true }
 dash-async = { path = "../rs-dash-async" }
 dash-context-provider = { path = "../rs-context-provider", default-features = false }
 dash-platform-macros = { path = "../rs-dash-platform-macros" }
 platform-encryption = { path = "../rs-platform-encryption" }
 http = { version = "1.1" }
+ciborium = { version = "0.2.2" }
 thiserror = "2.0.17"
 tokio = { version = "1.40", features = ["macros", "time"] }
 tokio-util = { version = "0.7.12" }
 async-trait = { version = "0.1.83" }
-ciborium = { version = "0.2.2" }
 serde = { version = "1.0.219", default-features = false, features = [
   "rc",
 ], optional = true }
@@ -155,7 +158,7 @@ core_rpc_client = ["dpp/core_rpc_client"]
 shielded = ["dep:grovedb-commitment-tree", "dpp/shielded-client"]
 
 # Platform wallet support
-wallet = ["core_key_wallet_manager", "core_key_wallet",]
+wallet = ["core_key_wallet_manager", "core_key_wallet"]
 
 [[example]]
 

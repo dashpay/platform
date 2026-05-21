@@ -3,6 +3,7 @@ use std::collections::BTreeSet;
 use dashcore::{Address as DashAddress, OutPoint, Transaction};
 use key_wallet::account::account_type::StandardAccountType;
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+use key_wallet::signer::Signer;
 use key_wallet::transaction_checking::{TransactionContext, WalletTransactionChecker};
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 
@@ -29,16 +30,30 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
 
     /// Build, sign, and broadcast a payment to the given addresses.
     ///
-    /// Uses key-wallet's [`TransactionBuilder`] for UTXO selection, fee estimation, and signing.
-    /// Change is sent to the next internal address of the specified account. Concurrent calls on
-    /// the same wallet handle are race-safe via the reservation set in [`super::reservations`]:
-    /// the second caller short-circuits with [`PlatformWalletError::NoSpendableInputs`] before
-    /// touching the network if all UTXOs are reserved by an in-flight broadcast.
-    pub async fn send_to_addresses(
+    /// Uses key-wallet's
+    /// [`TransactionBuilder`](key_wallet::wallet::managed_wallet_info::transaction_builder::TransactionBuilder)
+    /// for UTXO selection, fee estimation, and signing. Change is sent to
+    /// the next internal address of the specified account.
+    ///
+    /// Concurrent calls on the same wallet handle are race-safe via the
+    /// reservation set in [`super::reservations`]: the second caller
+    /// short-circuits with [`PlatformWalletError::NoSpendableInputs`]
+    /// before touching the network if all UTXOs are reserved by an
+    /// in-flight broadcast.
+    ///
+    /// Signing is delegated to the caller-supplied
+    /// [`Signer`](key_wallet::signer::Signer) via the
+    /// `impl<S: Signer> TransactionSigner for S` blanket in
+    /// `key-wallet`'s `transaction_builder.rs`. For Swift wallets this
+    /// is typically a `MnemonicResolverCoreSigner` from
+    /// `platform-wallet-ffi`, backed by the Keychain-resolver vtable so
+    /// private keys never cross the FFI boundary.
+    pub async fn send_to_addresses<S: Signer>(
         &self,
         account_type: StandardAccountType,
         account_index: u32,
         outputs: Vec<(DashAddress, u64)>,
+        signer: &S,
     ) -> Result<Transaction, PlatformWalletError> {
         use key_wallet::wallet::managed_wallet_info::coin_selection::SelectionStrategy;
         use key_wallet::wallet::managed_wallet_info::transaction_builder::TransactionBuilder;
@@ -145,7 +160,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             }
 
             let (tx, _fee) = builder
-                .build_signed(wallet, |addr| {
+                .build_signed(signer, |addr| {
                     managed_account.address_derivation_path(&addr)
                 })
                 .await
@@ -438,6 +453,78 @@ mod tests {
     use crate::wallet::platform_wallet::PlatformWalletInfo;
     use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 
+    /// In-memory `Signer` for tests — mirrors the one in key-wallet's own
+    /// transaction-building tests. Backed by the mnemonic wallet's root
+    /// extended private key, so derivation paths from the funded account
+    /// resolve to the keys that actually own the seeded UTXO.
+    struct InMemorySigner {
+        root: key_wallet::wallet::root_extended_keys::RootExtendedPrivKey,
+        network: Network,
+    }
+
+    const IN_MEMORY_METHODS: &[key_wallet::signer::SignerMethod] =
+        &[key_wallet::signer::SignerMethod::Digest];
+
+    #[async_trait]
+    impl key_wallet::signer::Signer for InMemorySigner {
+        type Error = String;
+
+        fn supported_methods(&self) -> &[key_wallet::signer::SignerMethod] {
+            IN_MEMORY_METHODS
+        }
+
+        async fn sign_ecdsa(
+            &self,
+            path: &key_wallet::bip32::DerivationPath,
+            sighash: [u8; 32],
+        ) -> Result<
+            (
+                dashcore::secp256k1::ecdsa::Signature,
+                dashcore::secp256k1::PublicKey,
+            ),
+            Self::Error,
+        > {
+            let secp = dashcore::secp256k1::Secp256k1::new();
+            let xpriv = self
+                .root
+                .to_extended_priv_key(self.network)
+                .derive_priv(&secp, path)
+                .map_err(|e| e.to_string())?;
+            let msg = dashcore::secp256k1::Message::from_digest(sighash);
+            let sig = secp.sign_ecdsa(&msg, &xpriv.private_key);
+            let pk = dashcore::secp256k1::PublicKey::from_secret_key(&secp, &xpriv.private_key);
+            Ok((sig, pk))
+        }
+
+        async fn public_key(
+            &self,
+            path: &key_wallet::bip32::DerivationPath,
+        ) -> Result<dashcore::secp256k1::PublicKey, Self::Error> {
+            let secp = dashcore::secp256k1::Secp256k1::new();
+            let xpriv = self
+                .root
+                .to_extended_priv_key(self.network)
+                .derive_priv(&secp, path)
+                .map_err(|e| e.to_string())?;
+            Ok(dashcore::secp256k1::PublicKey::from_secret_key(
+                &secp,
+                &xpriv.private_key,
+            ))
+        }
+    }
+
+    fn root_from(
+        wallet: &key_wallet::wallet::Wallet,
+    ) -> key_wallet::wallet::root_extended_keys::RootExtendedPrivKey {
+        match &wallet.wallet_type {
+            key_wallet::wallet::WalletType::Mnemonic {
+                root_extended_private_key,
+                ..
+            } => root_extended_private_key.clone(),
+            _ => unreachable!("test wallets are mnemonic"),
+        }
+    }
+
     /// Mock broadcaster that gates the broadcast on an external `Notify`.
     /// `entered` fires the moment `broadcast()` is awaited — by then the
     /// caller has reserved its outpoints and dropped the wallet write lock.
@@ -481,18 +568,24 @@ mod tests {
     /// Build a single-wallet `WalletManager` containing one BIP-44
     /// account (index 0) funded with one large UTXO at the account's
     /// first receive address. Returns the wallet manager handle, the
-    /// wallet id, and a recipient address (a separate derived address
-    /// in the same account — funding/sending to the same address is
-    /// not the property under test).
+    /// wallet id, a recipient address (a separate derived address in the
+    /// same account — funding/sending to the same address is not the
+    /// property under test), and a signer backed by the wallet's
+    /// mnemonic root so `build_signed` can sign the seeded UTXO.
     fn build_funded_wallet_manager(
         utxo_value: u64,
     ) -> (
         Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
         crate::wallet::platform_wallet::WalletId,
         DashAddress,
+        InMemorySigner,
     ) {
         let wallet = Wallet::new_random(Network::Testnet, WalletAccountCreationOptions::Default)
             .expect("test wallet");
+        let signer = InMemorySigner {
+            root: root_from(&wallet),
+            network: Network::Testnet,
+        };
 
         let xpub = wallet
             .accounts
@@ -557,7 +650,7 @@ mod tests {
                 .expect("derive recipient")
         };
 
-        (Arc::new(RwLock::new(wm)), wallet_id, recipient)
+        (Arc::new(RwLock::new(wm)), wallet_id, recipient, signer)
     }
 
     fn make_core_wallet_for_manager<B: TransactionBroadcaster + ?Sized>(
@@ -582,7 +675,8 @@ mod tests {
     async fn concurrent_same_utxo_sends_resolve_via_reservation_set() {
         use key_wallet::account::account_type::StandardAccountType;
 
-        let (wm, wallet_id, recipient) = build_funded_wallet_manager(2_000_000);
+        let (wm, wallet_id, recipient, signer) = build_funded_wallet_manager(2_000_000);
+        let signer = Arc::new(signer);
         let gate = Arc::new(Notify::new());
         let entered = Arc::new(Notify::new());
         let broadcaster = Arc::new(GatedBroadcaster {
@@ -605,9 +699,15 @@ mod tests {
         // under the wallet write lock, drop the lock, and block on the
         // broadcast `Notify`.
         let core_a = core.clone();
+        let signer_a = Arc::clone(&signer);
         let a_handle = tokio::spawn(async move {
             core_a
-                .send_to_addresses(StandardAccountType::BIP44Account, 0, outputs_a)
+                .send_to_addresses(
+                    StandardAccountType::BIP44Account,
+                    0,
+                    outputs_a,
+                    signer_a.as_ref(),
+                )
                 .await
         });
 
@@ -618,7 +718,12 @@ mod tests {
         // Caller B starts now. The wallet's only UTXO is reserved by A,
         // so B's spendable snapshot is empty → `NoSpendableInputs`.
         let b_result = core
-            .send_to_addresses(StandardAccountType::BIP44Account, 0, outputs_b)
+            .send_to_addresses(
+                StandardAccountType::BIP44Account,
+                0,
+                outputs_b,
+                signer.as_ref(),
+            )
             .await;
 
         match &b_result {
@@ -661,7 +766,7 @@ mod tests {
     async fn broadcast_failure_releases_reservation_for_retry() {
         use key_wallet::account::account_type::StandardAccountType;
 
-        let (wm, wallet_id, recipient) = build_funded_wallet_manager(2_000_000);
+        let (wm, wallet_id, recipient, signer) = build_funded_wallet_manager(2_000_000);
         let broadcaster: Arc<dyn TransactionBroadcaster> = Arc::new(FailingBroadcaster);
         let core = make_core_wallet_for_manager(wm, wallet_id, broadcaster);
 
@@ -671,7 +776,12 @@ mod tests {
         // reservation released. The change-address index is also rolled
         // back by virtue of #3585's peek-then-commit pattern.
         let first = core
-            .send_to_addresses(StandardAccountType::BIP44Account, 0, outputs.clone())
+            .send_to_addresses(
+                StandardAccountType::BIP44Account,
+                0,
+                outputs.clone(),
+                &signer,
+            )
             .await;
         assert!(
             matches!(first, Err(PlatformWalletError::TransactionBroadcast(_))),
@@ -681,7 +791,7 @@ mod tests {
         // Reservation released: the second call must reach the broadcaster (same UTXO visible),
         // not short-circuit with `NoSpendableInputs` (which would indicate a leaked reservation).
         let second = core
-            .send_to_addresses(StandardAccountType::BIP44Account, 0, outputs)
+            .send_to_addresses(StandardAccountType::BIP44Account, 0, outputs, &signer)
             .await;
         match second {
             Err(PlatformWalletError::TransactionBroadcast(_)) => {
@@ -708,7 +818,7 @@ mod tests {
     async fn builder_error_text_contract_for_no_inputs() {
         use key_wallet::account::account_type::StandardAccountType;
 
-        let (wm, wallet_id, recipient) = build_funded_wallet_manager(2_000_000);
+        let (wm, wallet_id, recipient, signer) = build_funded_wallet_manager(2_000_000);
         let broadcaster: Arc<dyn TransactionBroadcaster> = Arc::new(FailingBroadcaster);
         let core = make_core_wallet_for_manager(wm, wallet_id, broadcaster);
 
@@ -720,7 +830,7 @@ mod tests {
         let _guard = core.reservations.reserve(vec![outpoint]);
 
         let result = core
-            .send_to_addresses(StandardAccountType::BIP44Account, 0, outputs)
+            .send_to_addresses(StandardAccountType::BIP44Account, 0, outputs, &signer)
             .await;
 
         assert!(
