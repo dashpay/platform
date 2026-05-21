@@ -193,3 +193,60 @@ impl Sdk {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::SdkBuilder;
+    use dpp::dashcore::Network;
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[ignore] // Requires network connection
+    async fn test_dpns_queries() {
+        use rs_sdk_trusted_context_provider::TrustedHttpContextProvider;
+        use std::num::NonZeroUsize;
+
+        // Create trusted context provider for testnet
+        let context_provider = TrustedHttpContextProvider::new(
+            Network::Testnet,
+            None,                            // No devnet name
+            NonZeroUsize::new(100).unwrap(), // Cache size
+        )
+        .expect("Failed to create context provider");
+
+        // Create SDK with testnet configuration and trusted context provider
+        let address_list = "https://52.12.176.90:1443"
+            .parse()
+            .expect("Failed to parse address");
+        let sdk = SdkBuilder::new(address_list)
+            .with_network(Network::Testnet)
+            .with_context_provider(context_provider)
+            .build()
+            .expect("Failed to create SDK");
+
+        // Test search
+        let results = sdk.search_dpns_names("test", Some(5)).await.unwrap();
+        println!("Search results for 'test': {:?}", results);
+
+        // Test availability check
+        let is_available = sdk
+            .check_dpns_name_availability("somerandomunusedname123456")
+            .await
+            .unwrap();
+        assert!(is_available, "Random name should be available");
+
+        // Test resolve (if we know a name exists)
+        if let Ok(Some(identity_id)) = sdk
+            .resolve_dpns_name_to_identity("therealslimshaddy5")
+            .await
+        {
+            println!("'therealslimshaddy5' resolves to identity: {}", identity_id);
+
+            // Test get usernames by identity
+            let usernames = sdk
+                .get_dpns_usernames_by_identity(identity_id, Some(5))
+                .await
+                .unwrap();
+            println!("Usernames for identity {}: {:?}", identity_id, usernames);
+        }
+    }
+}
