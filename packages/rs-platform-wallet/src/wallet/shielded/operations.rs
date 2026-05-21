@@ -69,6 +69,30 @@ fn addresses_not_enough_funds(
     }
 }
 
+/// Try to extract the per-address `AddressNotEnoughFundsError` that the
+/// pre-flight `fetch_inputs_with_nonce` hard balance check raises when a
+/// single input is short. Mirrors [`addresses_not_enough_funds`] (the
+/// plural broadcast-side variant) so the pre-broadcast failure can carry
+/// the same structured `(address, balance, required)` info across the
+/// FFI instead of collapsing to an opaque stringified error.
+fn address_not_enough_funds(
+    e: &dash_sdk::Error,
+) -> Option<&dpp::consensus::state::address_funds::AddressNotEnoughFundsError> {
+    use dpp::consensus::state::state_error::StateError;
+    use dpp::consensus::ConsensusError;
+    use dpp::ProtocolError;
+
+    let consensus: &ConsensusError = match e {
+        dash_sdk::Error::Protocol(ProtocolError::ConsensusError(boxed)) => boxed.as_ref(),
+        dash_sdk::Error::StateTransitionBroadcastError(s) => s.cause.as_ref()?,
+        _ => return None,
+    };
+    match consensus {
+        ConsensusError::StateError(StateError::AddressNotEnoughFundsError(err)) => Some(err),
+        _ => None,
+    }
+}
+
 /// Format a one-line `addresses_with_info` summary for diagnostics —
 /// each entry rendered as `<bech32m_addr>=(nonce <n>, <c> credits)`,
 /// matching what the wallet UI shows.
@@ -147,9 +171,23 @@ pub async fn shield<Sig: Signer<PlatformAddress>, P: OrchardProver>(
     // nonce — bail loudly here instead).
     use dash_sdk::platform::transition::fetch_inputs_with_nonce;
 
-    let fetched = fetch_inputs_with_nonce(sdk, &inputs)
-        .await
-        .map_err(|e| PlatformWalletError::ShieldedBuildError(format!("fetch input nonces: {e}")))?;
+    let fetched = fetch_inputs_with_nonce(sdk, &inputs).await.map_err(|e| {
+        // The hard balance check is the common pre-broadcast failure;
+        // surface its structured (address, balance, required) info as a
+        // diagnostic string rather than the opaque `{e}` form, matching
+        // the richness of the broadcast-side handler below. The FFI
+        // shape is unchanged (the host still receives a string body).
+        if let Some(short) = address_not_enough_funds(&e) {
+            PlatformWalletError::ShieldedBuildError(format!(
+                "shield input {} has insufficient balance: requires {} credits, has {}",
+                short.address().to_bech32m_string(sdk.network),
+                short.required_balance(),
+                short.balance(),
+            ))
+        } else {
+            PlatformWalletError::ShieldedBuildError(format!("fetch input nonces: {e}"))
+        }
+    })?;
 
     let mut inputs_with_nonce: BTreeMap<PlatformAddress, (u32, Credits)> = BTreeMap::new();
     for (addr, (nonce, credits)) in fetched {
