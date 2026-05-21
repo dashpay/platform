@@ -120,7 +120,11 @@ impl PerAccountPlatformAddressState {
     ///
     /// Used by `PlatformAddressWallet::initialize_from_persisted` to
     /// push the persisted balances onto each `ManagedPlatformAccount`
-    /// before the provider takes over.
+    /// before the provider takes over — without this, spend paths
+    /// that enumerate funded addresses (e.g.
+    /// `shielded_shield_from_account`) read `available = 0` after a
+    /// restart until the first BLAST sync repopulates the in-memory
+    /// `address_balances` map.
     pub(crate) fn found(&self) -> &BTreeMap<PlatformP2PKHAddress, AddressFunds> {
         &self.found
     }
