@@ -8,11 +8,11 @@ use crate::settings::PutSettingsInput;
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dash_sdk::dpp::data_contract::document_type::DocumentType;
 use dash_sdk::dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
-use dash_sdk::dpp::util::entropy_generator::{DefaultEntropyGenerator, EntropyGenerator};
 use dash_sdk::dpp::fee::Credits;
 use dash_sdk::dpp::identity::IdentityPublicKey;
 use dash_sdk::dpp::platform_value::Identifier;
 use dash_sdk::dpp::tokens::token_payment_info::TokenPaymentInfo;
+use dash_sdk::dpp::util::entropy_generator::{DefaultEntropyGenerator, EntropyGenerator};
 use dash_sdk::platform::documents::transitions::DocumentDeleteTransitionBuilder;
 use dash_sdk::platform::transition::purchase_document::PurchaseDocument;
 use dash_sdk::platform::transition::put_document::PutDocument;
@@ -179,9 +179,9 @@ impl WasmSdk {
                 WasmSdkError::invalid_argument("Document entropy must be exactly 32 bytes")
             })?,
             None => {
-                let entropy = DefaultEntropyGenerator
-                    .generate()
-                    .map_err(|e| WasmSdkError::generic(format!("Failed to generate entropy: {e}")))?;
+                let entropy = DefaultEntropyGenerator.generate().map_err(|e| {
+                    WasmSdkError::generic(format!("Failed to generate entropy: {e}"))
+                })?;
                 let new_id = Document::generate_document_id_v0(
                     &contract_id,
                     &document.owner_id(),
