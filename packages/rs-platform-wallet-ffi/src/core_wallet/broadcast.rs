@@ -70,17 +70,32 @@ pub unsafe extern "C" fn core_wallet_send_to_addresses(
     check_ptr!(out_tx_bytes);
     check_ptr!(out_tx_len);
 
-    let mut outputs = Vec::with_capacity(count);
-    let addr_ptrs = std::slice::from_raw_parts(addresses, count);
-    let amount_slice = std::slice::from_raw_parts(amounts, count);
+    // `std::slice::from_raw_parts` requires a non-null, properly
+    // aligned pointer even for `len == 0`. Swift's empty
+    // `Array.withUnsafeBufferPointer.baseAddress` returns `nil`, so
+    // the `count == 0` path is allowed to ship null `addresses` /
+    // `amounts` — guard against constructing the slice in that case.
+    let outputs: Vec<(dashcore::Address, u64)> = if count == 0 {
+        Vec::new()
+    } else {
+        let addr_ptrs = std::slice::from_raw_parts(addresses, count);
+        let amount_slice = std::slice::from_raw_parts(amounts, count);
 
-    for i in 0..count {
-        let c_str = unwrap_result_or_return!(std::ffi::CStr::from_ptr(addr_ptrs[i]).to_str());
-
-        let addr = unwrap_result_or_return!(dashcore::Address::from_str(c_str)).assume_checked();
-
-        outputs.push((addr, amount_slice[i]));
-    }
+        let mut outputs = Vec::with_capacity(count);
+        for i in 0..count {
+            if addr_ptrs[i].is_null() {
+                return PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorNullPointer,
+                    format!("null address pointer at index {i}"),
+                );
+            }
+            let c_str = unwrap_result_or_return!(std::ffi::CStr::from_ptr(addr_ptrs[i]).to_str());
+            let addr =
+                unwrap_result_or_return!(dashcore::Address::from_str(c_str)).assume_checked();
+            outputs.push((addr, amount_slice[i]));
+        }
+        outputs
+    };
 
     use key_wallet::account::account_type::StandardAccountType;
     let std_account_type = match account_type {
@@ -132,5 +147,95 @@ pub unsafe extern "C" fn core_wallet_send_to_addresses(
 pub unsafe extern "C" fn core_wallet_free_tx_bytes(bytes: *mut u8, len: usize) {
     if !bytes.is_null() && len > 0 {
         let _ = Box::from_raw(std::ptr::slice_from_raw_parts_mut(bytes, len));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::handle::NULL_HANDLE;
+
+    /// `count == 0` MUST NOT touch `addresses` / `amounts` — Swift's
+    /// empty `Array.withUnsafeBufferPointer.baseAddress` gives `nil`,
+    /// and `slice::from_raw_parts` is UB on a null pointer regardless
+    /// of length. Pass `NULL_HANDLE` so the storage lookup short-
+    /// circuits to `NotFound` before any wallet code runs — we only
+    /// care that input marshalling did not blow up.
+    #[test]
+    fn send_to_addresses_zero_count_null_pointers_is_safe() {
+        // Use a non-null but fake signer pointer; the closure that
+        // would dereference it is never entered because `NULL_HANDLE`
+        // makes `with_item` return `None`.
+        let fake_signer = 0x1 as *mut MnemonicResolverHandle;
+        let mut out_tx: *mut u8 = std::ptr::null_mut();
+        let mut out_len: usize = 0;
+
+        let result = unsafe {
+            core_wallet_send_to_addresses(
+                NULL_HANDLE,
+                0, // BIP44Account
+                0,
+                std::ptr::null(), // null addresses — allowed because count == 0
+                std::ptr::null(), // null amounts — allowed because count == 0
+                0,
+                fake_signer,
+                &mut out_tx,
+                &mut out_len,
+            )
+        };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::NotFound);
+    }
+
+    /// Non-null `addresses` array with `count == 0` is also fine.
+    #[test]
+    fn send_to_addresses_zero_count_nonnull_pointers_is_safe() {
+        let dummy_addr: *const c_char = std::ptr::null();
+        let dummy_amount: u64 = 0;
+        let addrs: [*const c_char; 1] = [dummy_addr];
+        let amts: [u64; 1] = [dummy_amount];
+        let fake_signer = 0x1 as *mut MnemonicResolverHandle;
+        let mut out_tx: *mut u8 = std::ptr::null_mut();
+        let mut out_len: usize = 0;
+
+        let result = unsafe {
+            core_wallet_send_to_addresses(
+                NULL_HANDLE,
+                0,
+                0,
+                addrs.as_ptr(),
+                amts.as_ptr(),
+                0, // count = 0 → array contents ignored
+                fake_signer,
+                &mut out_tx,
+                &mut out_len,
+            )
+        };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::NotFound);
+    }
+
+    /// A null entry inside the address array must surface as
+    /// `ErrorNullPointer`, not UB.
+    #[test]
+    fn send_to_addresses_null_element_is_rejected() {
+        let addrs: [*const c_char; 2] = [std::ptr::null(), std::ptr::null()];
+        let amts: [u64; 2] = [1, 2];
+        let fake_signer = 0x1 as *mut MnemonicResolverHandle;
+        let mut out_tx: *mut u8 = std::ptr::null_mut();
+        let mut out_len: usize = 0;
+
+        let result = unsafe {
+            core_wallet_send_to_addresses(
+                NULL_HANDLE,
+                0,
+                0,
+                addrs.as_ptr(),
+                amts.as_ptr(),
+                2,
+                fake_signer,
+                &mut out_tx,
+                &mut out_len,
+            )
+        };
+        assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorNullPointer);
     }
 }
