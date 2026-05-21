@@ -34,7 +34,7 @@ pub struct TokenPreProgrammedDistributionsStartAtInfo {
 impl Query<GetTokenPreProgrammedDistributionsRequest> for TokenPreProgrammedDistributionsQuery {
     fn query(
         &self,
-        ctx: &crate::platform::QueryContext<'_>,
+        ctx: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetTokenPreProgrammedDistributionsRequest, Error> {
         let prove = ctx.prove;
         if !prove {

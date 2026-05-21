@@ -23,7 +23,7 @@ pub struct IdentityTokenBalancesQuery {
 impl Query<GetIdentityTokenBalancesRequest> for IdentityTokenBalancesQuery {
     fn query(
         &self,
-        ctx: &crate::platform::QueryContext<'_>,
+        ctx: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetIdentityTokenBalancesRequest, Error> {
         let prove = ctx.prove;
         let request = GetIdentityTokenBalancesRequest {
@@ -57,7 +57,7 @@ pub struct IdentitiesTokenBalancesQuery {
 impl Query<GetIdentitiesTokenBalancesRequest> for IdentitiesTokenBalancesQuery {
     fn query(
         &self,
-        ctx: &crate::platform::QueryContext<'_>,
+        ctx: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetIdentitiesTokenBalancesRequest, Error> {
         let prove = ctx.prove;
         let request = GetIdentitiesTokenBalancesRequest {

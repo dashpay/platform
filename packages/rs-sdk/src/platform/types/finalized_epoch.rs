@@ -42,7 +42,7 @@ impl From<(EpochIndex, EpochIndex)> for FinalizedEpochQuery {
 impl Query<GetFinalizedEpochInfosRequest> for FinalizedEpochQuery {
     fn query(
         &self,
-        ctx: &crate::platform::QueryContext<'_>,
+        ctx: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetFinalizedEpochInfosRequest, Error> {
         let prove = ctx.prove;
         if !prove {
@@ -65,7 +65,7 @@ impl Query<GetFinalizedEpochInfosRequest> for FinalizedEpochQuery {
 impl Query<GetFinalizedEpochInfosRequest> for (EpochIndex, EpochIndex) {
     fn query(
         &self,
-        ctx: &crate::platform::QueryContext<'_>,
+        ctx: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetFinalizedEpochInfosRequest, Error> {
         FinalizedEpochQuery::from(*self).query(ctx)
     }

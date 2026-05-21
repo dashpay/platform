@@ -37,7 +37,7 @@ delegate_enum! {
 }
 
 impl Query<IdentityRequest> for dpp::prelude::Identifier {
-    fn query(&self, ctx: &crate::platform::QueryContext<'_>) -> Result<IdentityRequest, Error> {
+    fn query(&self, ctx: &crate::platform::QuerySettings<'_>) -> Result<IdentityRequest, Error> {
         let prove = ctx.prove;
         if !prove {
             unimplemented!("queries without proofs are not supported yet");
@@ -60,7 +60,7 @@ impl Query<IdentityRequest> for dpp::prelude::Identifier {
 pub struct PublicKeyHash(pub [u8; 20]);
 
 impl Query<IdentityRequest> for PublicKeyHash {
-    fn query(&self, ctx: &crate::platform::QueryContext<'_>) -> Result<IdentityRequest, Error> {
+    fn query(&self, ctx: &crate::platform::QuerySettings<'_>) -> Result<IdentityRequest, Error> {
         let prove = ctx.prove;
         if !prove {
             unimplemented!("queries without proofs are not supported yet");
@@ -86,7 +86,7 @@ pub struct NonUniquePublicKeyHashQuery {
 }
 
 impl Query<IdentityRequest> for NonUniquePublicKeyHashQuery {
-    fn query(&self, ctx: &crate::platform::QueryContext<'_>) -> Result<IdentityRequest, Error> {
+    fn query(&self, ctx: &crate::platform::QuerySettings<'_>) -> Result<IdentityRequest, Error> {
         let prove = ctx.prove;
         if !prove {
             unimplemented!("queries without proofs are not supported yet");
@@ -112,7 +112,7 @@ impl Query<IdentityRequest> for NonUniquePublicKeyHashQuery {
 impl Query<GetIdentityBalanceRequest> for dpp::prelude::Identifier {
     fn query(
         &self,
-        ctx: &crate::platform::QueryContext<'_>,
+        ctx: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetIdentityBalanceRequest, Error> {
         let prove = ctx.prove;
         if !prove {
@@ -133,7 +133,7 @@ impl Query<GetIdentityBalanceRequest> for dpp::prelude::Identifier {
 impl Query<GetIdentityNonceRequest> for dpp::prelude::Identifier {
     fn query(
         &self,
-        ctx: &crate::platform::QueryContext<'_>,
+        ctx: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetIdentityNonceRequest, Error> {
         let prove = ctx.prove;
         if !prove {
@@ -158,7 +158,7 @@ impl Query<GetIdentityContractNonceRequest>
 {
     fn query(
         &self,
-        ctx: &crate::platform::QueryContext<'_>,
+        ctx: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetIdentityContractNonceRequest, Error> {
         let prove = ctx.prove;
         if !prove {
@@ -183,7 +183,7 @@ impl Query<GetIdentityContractNonceRequest>
 impl Query<GetIdentityBalanceAndRevisionRequest> for dpp::prelude::Identifier {
     fn query(
         &self,
-        ctx: &crate::platform::QueryContext<'_>,
+        ctx: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetIdentityBalanceAndRevisionRequest, Error> {
         let prove = ctx.prove;
         if !prove {
@@ -203,7 +203,7 @@ impl Query<GetIdentityBalanceAndRevisionRequest> for dpp::prelude::Identifier {
 impl Query<GetIdentitiesBalancesRequest> for Vec<dpp::prelude::Identifier> {
     fn query(
         &self,
-        ctx: &crate::platform::QueryContext<'_>,
+        ctx: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetIdentitiesBalancesRequest, Error> {
         let prove = ctx.prove;
         if !prove {

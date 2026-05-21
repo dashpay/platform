@@ -1,6 +1,6 @@
 use dash_sdk::{
     mock::Mockable,
-    platform::{Query, QueryContext},
+    platform::{Query, QuerySettings},
     Sdk,
 };
 use dpp::data_contract::config::DataContractConfig;
@@ -132,7 +132,7 @@ pub(crate) async fn setup_sdk_for_test_case<T: TransportRequest + Mockable, Q: Q
     name_prefix: &str,
 ) -> (String, Sdk) {
     let settings = rs_dapi_client::RequestSettings::default();
-    let ctx = QueryContext {
+    let ctx = QuerySettings {
         request_settings: &settings,
         protocol_version: dpp::version::PlatformVersion::latest(),
         prove: true,

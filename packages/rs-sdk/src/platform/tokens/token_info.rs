@@ -21,7 +21,7 @@ pub struct IdentityTokenInfosQuery {
 impl Query<GetIdentityTokenInfosRequest> for IdentityTokenInfosQuery {
     fn query(
         &self,
-        ctx: &crate::platform::QueryContext<'_>,
+        ctx: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetIdentityTokenInfosRequest, Error> {
         let prove = ctx.prove;
         let request = GetIdentityTokenInfosRequest {
@@ -55,7 +55,7 @@ pub struct IdentitiesTokenInfosQuery {
 impl Query<GetIdentitiesTokenInfosRequest> for IdentitiesTokenInfosQuery {
     fn query(
         &self,
-        ctx: &crate::platform::QueryContext<'_>,
+        ctx: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetIdentitiesTokenInfosRequest, Error> {
         let prove = ctx.prove;
         let request = GetIdentitiesTokenInfosRequest {

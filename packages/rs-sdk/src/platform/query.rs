@@ -97,17 +97,17 @@ pub trait Query<T: Mockable>: Send + Debug + Clone {
     ///
     /// # Arguments
     ///
-    /// * `ctx` - A [`QueryContext`](crate::platform::QueryContext) borrowing the encoder
+    /// * `ctx` - A [`QuerySettings`](crate::platform::QuerySettings) borrowing the encoder
     ///   inputs from the SDK: protocol version (used by encoders that pick wire shapes
     ///   per version — today only [`DocumentQuery`]'s V0/V1 split), `prove` flag,
     ///   and request settings. Construct from an SDK via
-    ///   [`Sdk::query_context`](crate::Sdk::query_context), or directly in unit tests
+    ///   [`Sdk::query_settings`](crate::Sdk::query_settings), or directly in unit tests
     ///   that want to exercise the encoder without spinning up an `Sdk`.
     ///
     /// # Returns
     /// On success, this method yields an instance of the `TransportRequest` type (`T`).
     /// On failure, it yields an [`Error`].
-    fn query(&self, ctx: &crate::platform::QueryContext<'_>) -> Result<T, Error>;
+    fn query(&self, ctx: &crate::platform::QuerySettings<'_>) -> Result<T, Error>;
 }
 
 impl<T> Query<T> for T
@@ -115,7 +115,7 @@ where
     T: TransportRequest + Sized + Send + Sync + Clone + Debug,
     T::Response: Send + Sync + Debug,
 {
-    fn query(&self, ctx: &crate::platform::QueryContext<'_>) -> Result<T, Error> {
+    fn query(&self, ctx: &crate::platform::QuerySettings<'_>) -> Result<T, Error> {
         let prove = ctx.prove;
         if !prove {
             tracing::warn!(request= ?self, "sending query without proof, ensure data is trusted");
@@ -127,7 +127,7 @@ where
 impl Query<proto::GetDataContractRequest> for Identifier {
     fn query(
         &self,
-        ctx: &crate::platform::QueryContext<'_>,
+        ctx: &crate::platform::QuerySettings<'_>,
     ) -> Result<proto::GetDataContractRequest, Error> {
         let prove = ctx.prove;
         if !prove {
@@ -145,7 +145,7 @@ impl Query<proto::GetDataContractRequest> for Identifier {
 impl Query<proto::GetDataContractsRequest> for Vec<Identifier> {
     fn query(
         &self,
-        ctx: &crate::platform::QueryContext<'_>,
+        ctx: &crate::platform::QuerySettings<'_>,
     ) -> Result<proto::GetDataContractsRequest, Error> {
         let prove = ctx.prove;
         if !prove {
@@ -163,7 +163,7 @@ impl Query<proto::GetDataContractsRequest> for Vec<Identifier> {
 impl Query<proto::GetDataContractHistoryRequest> for LimitQuery<(Identifier, u64)> {
     fn query(
         &self,
-        ctx: &crate::platform::QueryContext<'_>,
+        ctx: &crate::platform::QuerySettings<'_>,
     ) -> Result<proto::GetDataContractHistoryRequest, Error> {
         let prove = ctx.prove;
         if !prove {
@@ -189,7 +189,7 @@ impl Query<proto::GetIdentityKeysRequest> for Identifier {
     /// Get all keys for an identity with provided identifier.
     fn query(
         &self,
-        ctx: &crate::platform::QueryContext<'_>,
+        ctx: &crate::platform::QuerySettings<'_>,
     ) -> Result<proto::GetIdentityKeysRequest, Error> {
         let prove = ctx.prove;
         if !prove {
@@ -268,7 +268,7 @@ impl Query<proto::GetIdentityKeysRequest> for IdentityKeysQuery {
     /// Get specific keys for an identity.
     fn query(
         &self,
-        ctx: &crate::platform::QueryContext<'_>,
+        ctx: &crate::platform::QuerySettings<'_>,
     ) -> Result<proto::GetIdentityKeysRequest, Error> {
         let prove = ctx.prove;
         if !prove {
@@ -298,7 +298,7 @@ impl Query<proto::GetIdentityKeysRequest> for IdentityKeysQuery {
 impl Query<GetAddressInfoRequest> for PlatformAddress {
     fn query(
         &self,
-        ctx: &crate::platform::QueryContext<'_>,
+        ctx: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetAddressInfoRequest, Error> {
         let prove = ctx.prove;
         if !prove {
@@ -319,7 +319,7 @@ impl Query<GetAddressInfoRequest> for PlatformAddress {
 impl Query<GetAddressesInfosRequest> for BTreeSet<PlatformAddress> {
     fn query(
         &self,
-        ctx: &crate::platform::QueryContext<'_>,
+        ctx: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetAddressesInfosRequest, Error> {
         let prove = ctx.prove;
         if !prove {
@@ -339,7 +339,7 @@ impl Query<GetAddressesInfosRequest> for BTreeSet<PlatformAddress> {
 impl Query<GetAddressesTrunkStateRequest> for () {
     fn query(
         &self,
-        ctx: &crate::platform::QueryContext<'_>,
+        ctx: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetAddressesTrunkStateRequest, Error> {
         let prove = ctx.prove;
         if !prove {
@@ -355,7 +355,7 @@ impl Query<GetAddressesTrunkStateRequest> for () {
 }
 
 impl Query<DocumentQuery> for DriveDocumentQuery<'_> {
-    fn query(&self, ctx: &crate::platform::QueryContext<'_>) -> Result<DocumentQuery, Error> {
+    fn query(&self, ctx: &crate::platform::QuerySettings<'_>) -> Result<DocumentQuery, Error> {
         let prove = ctx.prove;
         if !prove {
             // dash-sdk only serves proof-verified responses. Raw,
@@ -379,7 +379,7 @@ impl Query<DocumentQuery> for DriveDocumentQuery<'_> {
 // can use a [`DocumentQuery`] both as the user-supplied `Q` and as the
 // rich `Self::Query` produced by `Q::query(sdk)`.
 impl Query<DocumentQuery> for DocumentQuery {
-    fn query(&self, ctx: &crate::platform::QueryContext<'_>) -> Result<DocumentQuery, Error> {
+    fn query(&self, ctx: &crate::platform::QuerySettings<'_>) -> Result<DocumentQuery, Error> {
         let prove = ctx.prove;
         if !prove {
             tracing::warn!(request= ?self, "sending query without proof, ensure data is trusted");
@@ -438,7 +438,7 @@ impl<Q> From<Q> for LimitQuery<Q> {
 impl<E: Into<EpochQuery> + Clone + Debug + Send> Query<GetEpochsInfoRequest> for LimitQuery<E> {
     fn query(
         &self,
-        ctx: &crate::platform::QueryContext<'_>,
+        ctx: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetEpochsInfoRequest, Error> {
         let prove = ctx.prove;
         if !prove {
@@ -461,7 +461,7 @@ impl<E: Into<EpochQuery> + Clone + Debug + Send> Query<GetEpochsInfoRequest> for
 impl Query<GetEpochsInfoRequest> for EpochIndex {
     fn query(
         &self,
-        ctx: &crate::platform::QueryContext<'_>,
+        ctx: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetEpochsInfoRequest, Error> {
         LimitQuery {
             query: *self,
@@ -475,7 +475,7 @@ impl Query<GetEpochsInfoRequest> for EpochIndex {
 impl Query<GetProtocolVersionUpgradeStateRequest> for () {
     fn query(
         &self,
-        ctx: &crate::platform::QueryContext<'_>,
+        ctx: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetProtocolVersionUpgradeStateRequest, Error> {
         let prove = ctx.prove;
         if !prove {
@@ -489,7 +489,7 @@ impl Query<GetProtocolVersionUpgradeStateRequest> for () {
 impl Query<GetProtocolVersionUpgradeVoteStatusRequest> for LimitQuery<Option<ProTxHash>> {
     fn query(
         &self,
-        ctx: &crate::platform::QueryContext<'_>,
+        ctx: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetProtocolVersionUpgradeVoteStatusRequest, Error> {
         let prove = ctx.prove;
         if !prove {
@@ -510,7 +510,7 @@ impl Query<GetProtocolVersionUpgradeVoteStatusRequest> for LimitQuery<Option<Pro
 impl Query<GetProtocolVersionUpgradeVoteStatusRequest> for Option<ProTxHash> {
     fn query(
         &self,
-        ctx: &crate::platform::QueryContext<'_>,
+        ctx: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetProtocolVersionUpgradeVoteStatusRequest, Error> {
         LimitQuery::from(*self).query(ctx)
     }
@@ -520,7 +520,7 @@ impl Query<GetProtocolVersionUpgradeVoteStatusRequest> for Option<ProTxHash> {
 impl Query<GetProtocolVersionUpgradeVoteStatusRequest> for ProTxHash {
     fn query(
         &self,
-        ctx: &crate::platform::QueryContext<'_>,
+        ctx: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetProtocolVersionUpgradeVoteStatusRequest, Error> {
         Some(*self).query(ctx)
     }
@@ -530,7 +530,7 @@ impl Query<GetProtocolVersionUpgradeVoteStatusRequest> for ProTxHash {
 impl Query<GetProtocolVersionUpgradeVoteStatusRequest> for LimitQuery<ProTxHash> {
     fn query(
         &self,
-        ctx: &crate::platform::QueryContext<'_>,
+        ctx: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetProtocolVersionUpgradeVoteStatusRequest, Error> {
         LimitQuery {
             query: Some(self.query),
@@ -544,7 +544,7 @@ impl Query<GetProtocolVersionUpgradeVoteStatusRequest> for LimitQuery<ProTxHash>
 impl Query<GetContestedResourcesRequest> for VotePollsByDocumentTypeQuery {
     fn query(
         &self,
-        ctx: &crate::platform::QueryContext<'_>,
+        ctx: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetContestedResourcesRequest, Error> {
         let prove = ctx.prove;
         if !prove {
@@ -558,7 +558,7 @@ impl Query<GetContestedResourcesRequest> for VotePollsByDocumentTypeQuery {
 impl Query<GetContestedResourcesRequest> for LimitQuery<GetContestedResourcesRequest> {
     fn query(
         &self,
-        ctx: &crate::platform::QueryContext<'_>,
+        ctx: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetContestedResourcesRequest, Error> {
         use proto::get_contested_resources_request::{
             get_contested_resources_request_v0::StartAtValueInfo, Version,
@@ -589,7 +589,7 @@ impl Query<GetContestedResourcesRequest> for LimitQuery<GetContestedResourcesReq
 impl Query<GetContestedResourceVoteStateRequest> for ContestedDocumentVotePollDriveQuery {
     fn query(
         &self,
-        ctx: &crate::platform::QueryContext<'_>,
+        ctx: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetContestedResourceVoteStateRequest, Error> {
         let prove = ctx.prove;
         if !prove {
@@ -608,7 +608,7 @@ impl Query<GetContestedResourceVoteStateRequest>
 {
     fn query(
         &self,
-        ctx: &crate::platform::QueryContext<'_>,
+        ctx: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetContestedResourceVoteStateRequest, Error> {
         let prove = ctx.prove;
         use proto::get_contested_resource_vote_state_request::get_contested_resource_vote_state_request_v0::StartAtIdentifierInfo;
@@ -639,7 +639,7 @@ impl Query<GetContestedResourceVotersForIdentityRequest>
 {
     fn query(
         &self,
-        ctx: &crate::platform::QueryContext<'_>,
+        ctx: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetContestedResourceVotersForIdentityRequest, Error> {
         let prove = ctx.prove;
         if !prove {
@@ -658,7 +658,7 @@ impl Query<GetContestedResourceVotersForIdentityRequest>
 {
     fn query(
         &self,
-        ctx: &crate::platform::QueryContext<'_>,
+        ctx: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetContestedResourceVotersForIdentityRequest, Error> {
         use proto::get_contested_resource_voters_for_identity_request::{
             get_contested_resource_voters_for_identity_request_v0::StartAtIdentifierInfo, Version,
@@ -691,7 +691,7 @@ impl Query<GetEvonodesProposedEpochBlocksByRangeRequest>
 {
     fn query(
         &self,
-        ctx: &crate::platform::QueryContext<'_>,
+        ctx: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetEvonodesProposedEpochBlocksByRangeRequest, Error> {
         use proto::get_evonodes_proposed_epoch_blocks_by_range_request::{
             get_evonodes_proposed_epoch_blocks_by_range_request_v0::Start, Version,
@@ -727,7 +727,7 @@ impl Query<GetContestedResourceIdentityVotesRequest>
 {
     fn query(
         &self,
-        ctx: &crate::platform::QueryContext<'_>,
+        ctx: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetContestedResourceIdentityVotesRequest, Error> {
         let prove = ctx.prove;
         if !prove {
@@ -744,7 +744,7 @@ impl Query<GetContestedResourceIdentityVotesRequest>
 impl Query<GetContestedResourceIdentityVotesRequest> for ProTxHash {
     fn query(
         &self,
-        ctx: &crate::platform::QueryContext<'_>,
+        ctx: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetContestedResourceIdentityVotesRequest, Error> {
         let prove = ctx.prove;
         if !prove {
@@ -765,7 +765,7 @@ impl Query<GetContestedResourceIdentityVotesRequest> for ProTxHash {
 impl Query<GetVotePollsByEndDateRequest> for VotePollsByEndDateDriveQuery {
     fn query(
         &self,
-        ctx: &crate::platform::QueryContext<'_>,
+        ctx: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetVotePollsByEndDateRequest, Error> {
         let prove = ctx.prove;
         if !prove {
@@ -779,7 +779,7 @@ impl Query<GetVotePollsByEndDateRequest> for VotePollsByEndDateDriveQuery {
 impl Query<GetPrefundedSpecializedBalanceRequest> for Identifier {
     fn query(
         &self,
-        ctx: &crate::platform::QueryContext<'_>,
+        ctx: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetPrefundedSpecializedBalanceRequest, Error> {
         let prove = ctx.prove;
         if !prove {
@@ -807,7 +807,7 @@ impl VoteQuery {
 impl Query<GetContestedResourceIdentityVotesRequest> for VoteQuery {
     fn query(
         &self,
-        ctx: &crate::platform::QueryContext<'_>,
+        ctx: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetContestedResourceIdentityVotesRequest, Error> {
         let prove = ctx.prove;
         if !prove {
@@ -833,7 +833,7 @@ impl Query<GetContestedResourceIdentityVotesRequest> for VoteQuery {
 impl Query<GetContestedResourceIdentityVotesRequest> for LimitQuery<VoteQuery> {
     fn query(
         &self,
-        ctx: &crate::platform::QueryContext<'_>,
+        ctx: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetContestedResourceIdentityVotesRequest, Error> {
         let prove = ctx.prove;
         if !prove {
@@ -863,7 +863,7 @@ impl Query<GetContestedResourceIdentityVotesRequest> for LimitQuery<VoteQuery> {
 impl Query<GetPathElementsRequest> for KeysInPath {
     fn query(
         &self,
-        ctx: &crate::platform::QueryContext<'_>,
+        ctx: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetPathElementsRequest, Error> {
         let prove = ctx.prove;
         if !prove {
@@ -887,7 +887,7 @@ impl Query<GetPathElementsRequest> for KeysInPath {
 impl Query<GetTotalCreditsInPlatformRequest> for NoParamQuery {
     fn query(
         &self,
-        ctx: &crate::platform::QueryContext<'_>,
+        ctx: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetTotalCreditsInPlatformRequest, Error> {
         let prove = ctx.prove;
         if !prove {
@@ -907,7 +907,7 @@ impl Query<GetTotalCreditsInPlatformRequest> for NoParamQuery {
 impl Query<GetCurrentQuorumsInfoRequest> for NoParamQuery {
     fn query(
         &self,
-        ctx: &crate::platform::QueryContext<'_>,
+        ctx: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetCurrentQuorumsInfoRequest, Error> {
         let prove = ctx.prove;
         if prove {
@@ -929,7 +929,7 @@ impl Query<GetCurrentQuorumsInfoRequest> for NoParamQuery {
 impl Query<GetEvonodesProposedEpochBlocksByRangeRequest> for LimitQuery<Option<EpochIndex>> {
     fn query(
         &self,
-        ctx: &crate::platform::QueryContext<'_>,
+        ctx: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetEvonodesProposedEpochBlocksByRangeRequest, Error> {
         let prove = ctx.prove;
         if !prove {
@@ -957,7 +957,7 @@ impl Query<GetEvonodesProposedEpochBlocksByRangeRequest> for LimitQuery<Option<E
 }
 
 impl Query<GetStatusRequest> for EvoNode {
-    fn query(&self, _ctx: &crate::platform::QueryContext<'_>) -> Result<GetStatusRequest, Error> {
+    fn query(&self, _ctx: &crate::platform::QuerySettings<'_>) -> Result<GetStatusRequest, Error> {
         // ignore proof
 
         let request: GetStatusRequest = GetStatusRequest {
@@ -971,7 +971,7 @@ impl Query<GetStatusRequest> for EvoNode {
 impl Query<GetTokenDirectPurchasePricesRequest> for &[Identifier] {
     fn query(
         &self,
-        ctx: &crate::platform::QueryContext<'_>,
+        ctx: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetTokenDirectPurchasePricesRequest, Error> {
         let prove = ctx.prove;
         if !prove {
@@ -1003,7 +1003,7 @@ pub struct TokenLastClaimQuery {
 impl Query<GetTokenPerpetualDistributionLastClaimRequest> for TokenLastClaimQuery {
     fn query(
         &self,
-        ctx: &crate::platform::QueryContext<'_>,
+        ctx: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetTokenPerpetualDistributionLastClaimRequest, Error> {
         let prove = ctx.prove;
         if !prove {
@@ -1039,7 +1039,7 @@ pub struct ProposerBlockCountByIdsQuery {
 impl Query<GetEvonodesProposedEpochBlocksByIdsRequest> for ProposerBlockCountByIdsQuery {
     fn query(
         &self,
-        ctx: &crate::platform::QueryContext<'_>,
+        ctx: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetEvonodesProposedEpochBlocksByIdsRequest, Error> {
         let prove = ctx.prove;
         if !prove {
@@ -1071,7 +1071,7 @@ impl Query<GetEvonodesProposedEpochBlocksByIdsRequest> for ProposerBlockCountByI
 impl Query<GetEvonodesProposedEpochBlocksByIdsRequest> for (EpochIndex, Vec<ProTxHash>) {
     fn query(
         &self,
-        ctx: &crate::platform::QueryContext<'_>,
+        ctx: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetEvonodesProposedEpochBlocksByIdsRequest, Error> {
         let (epoch, pro_tx_hashes) = self;
         ProposerBlockCountByIdsQuery {
@@ -1099,7 +1099,7 @@ impl RecentAddressBalanceChangesQuery {
 impl Query<proto::GetRecentAddressBalanceChangesRequest> for RecentAddressBalanceChangesQuery {
     fn query(
         &self,
-        ctx: &crate::platform::QueryContext<'_>,
+        ctx: &crate::platform::QuerySettings<'_>,
     ) -> Result<proto::GetRecentAddressBalanceChangesRequest, Error> {
         let prove = ctx.prove;
         if !prove {
@@ -1139,7 +1139,7 @@ impl Query<proto::GetRecentCompactedAddressBalanceChangesRequest>
 {
     fn query(
         &self,
-        ctx: &crate::platform::QueryContext<'_>,
+        ctx: &crate::platform::QuerySettings<'_>,
     ) -> Result<proto::GetRecentCompactedAddressBalanceChangesRequest, Error> {
         let prove = ctx.prove;
         if !prove {
@@ -1164,7 +1164,7 @@ impl Query<proto::GetRecentCompactedAddressBalanceChangesRequest>
 impl Query<GetShieldedPoolStateRequest> for NoParamQuery {
     fn query(
         &self,
-        ctx: &crate::platform::QueryContext<'_>,
+        ctx: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetShieldedPoolStateRequest, Error> {
         let prove = ctx.prove;
         if !prove {
@@ -1182,7 +1182,7 @@ impl Query<GetShieldedPoolStateRequest> for NoParamQuery {
 impl Query<GetShieldedAnchorsRequest> for NoParamQuery {
     fn query(
         &self,
-        ctx: &crate::platform::QueryContext<'_>,
+        ctx: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetShieldedAnchorsRequest, Error> {
         let prove = ctx.prove;
         if !prove {
@@ -1200,7 +1200,7 @@ impl Query<GetShieldedAnchorsRequest> for NoParamQuery {
 impl Query<GetMostRecentShieldedAnchorRequest> for NoParamQuery {
     fn query(
         &self,
-        ctx: &crate::platform::QueryContext<'_>,
+        ctx: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetMostRecentShieldedAnchorRequest, Error> {
         let prove = ctx.prove;
         if !prove {
@@ -1220,7 +1220,7 @@ impl Query<GetMostRecentShieldedAnchorRequest> for NoParamQuery {
 impl Query<GetShieldedEncryptedNotesRequest> for ShieldedEncryptedNotesQuery {
     fn query(
         &self,
-        ctx: &crate::platform::QueryContext<'_>,
+        ctx: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetShieldedEncryptedNotesRequest, Error> {
         let prove = ctx.prove;
         if !prove {
@@ -1242,7 +1242,7 @@ impl Query<GetShieldedEncryptedNotesRequest> for ShieldedEncryptedNotesQuery {
 impl Query<GetShieldedNullifiersRequest> for ShieldedNullifiersQuery {
     fn query(
         &self,
-        ctx: &crate::platform::QueryContext<'_>,
+        ctx: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetShieldedNullifiersRequest, Error> {
         let prove = ctx.prove;
         if !prove {
@@ -1263,7 +1263,7 @@ impl Query<GetShieldedNullifiersRequest> for ShieldedNullifiersQuery {
 impl Query<GetNullifiersTrunkStateRequest> for NullifiersTrunkQuery {
     fn query(
         &self,
-        ctx: &crate::platform::QueryContext<'_>,
+        ctx: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetNullifiersTrunkStateRequest, Error> {
         let prove = ctx.prove;
         if !prove {

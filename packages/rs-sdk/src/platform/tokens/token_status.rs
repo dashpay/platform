@@ -8,7 +8,7 @@ use drive_proof_verifier::types::token_status::TokenStatuses;
 impl Query<GetTokenStatusesRequest> for Vec<Identifier> {
     fn query(
         &self,
-        ctx: &crate::platform::QueryContext<'_>,
+        ctx: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetTokenStatusesRequest, Error> {
         let prove = ctx.prove;
         let request = GetTokenStatusesRequest {

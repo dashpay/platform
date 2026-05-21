@@ -332,10 +332,10 @@ impl MockDashPlatformSdk {
         // INTENTIONAL(SEC-001): test-harness fail-fast — encoder errors for V1-only DocumentQuery features
         // against a V0 PlatformVersion should crash the test setup loudly rather than silently propagate.
         let rich: <O as Fetch>::Query = query
-            .query(&sdk.query_context())
+            .query(&sdk.query_settings())
             .expect("query must be correct");
         let wire: <O as Fetch>::Request = rich
-            .query(&sdk.query_context())
+            .query(&sdk.query_settings())
             .expect("wire encoding must succeed");
         self.expect(&rich, wire, object).await?;
 
@@ -357,10 +357,10 @@ impl MockDashPlatformSdk {
         // INTENTIONAL(SEC-001): test-harness fail-fast — encoder errors for V1-only DocumentQuery features
         // against a V0 PlatformVersion should crash the test setup loudly rather than silently propagate.
         let rich: <O as Fetch>::Query = query
-            .query(&sdk.query_context())
+            .query(&sdk.query_settings())
             .expect("query must be correct");
         let wire: <O as Fetch>::Request = rich
-            .query(&sdk.query_context())
+            .query(&sdk.query_settings())
             .expect("wire encoding must succeed");
         self.remove(&rich, wire).await
     }
@@ -424,10 +424,10 @@ impl MockDashPlatformSdk {
         // INTENTIONAL(SEC-001): test-harness fail-fast — encoder errors for V1-only DocumentQuery features
         // against a V0 PlatformVersion should crash the test setup loudly rather than silently propagate.
         let rich: <O as FetchMany<K, R>>::Query = query
-            .query(&sdk.query_context())
+            .query(&sdk.query_settings())
             .expect("query must be correct");
         let wire: <O as FetchMany<K, R>>::Request = rich
-            .query(&sdk.query_context())
+            .query(&sdk.query_settings())
             .expect("wire encoding must succeed");
         self.expect(&rich, wire, objects).await?;
 

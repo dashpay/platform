@@ -13,7 +13,7 @@ pub struct TokenContractInfoQuery {
 impl Query<GetTokenContractInfoRequest> for TokenContractInfoQuery {
     fn query(
         &self,
-        ctx: &crate::platform::QueryContext<'_>,
+        ctx: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetTokenContractInfoRequest, Error> {
         let prove = ctx.prove;
         let request = GetTokenContractInfoRequest {
@@ -32,7 +32,7 @@ impl Query<GetTokenContractInfoRequest> for TokenContractInfoQuery {
 impl Query<GetTokenContractInfoRequest> for Identifier {
     fn query(
         &self,
-        ctx: &crate::platform::QueryContext<'_>,
+        ctx: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetTokenContractInfoRequest, Error> {
         TokenContractInfoQuery { token_id: *self }.query(ctx)
     }

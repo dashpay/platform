@@ -174,7 +174,7 @@ impl
 {
     fn query(
         &self,
-        ctx: &dash_sdk::platform::QueryContext<'_>,
+        ctx: &dash_sdk::platform::QuerySettings<'_>,
     ) -> Result<
         dash_sdk::dapi_grpc::platform::v0::GetEvonodesProposedEpochBlocksByRangeRequest,
         dash_sdk::Error,

@@ -30,7 +30,10 @@ pub struct GroupQuery {
 }
 
 impl Query<GetGroupInfoRequest> for GroupQuery {
-    fn query(&self, ctx: &crate::platform::QueryContext<'_>) -> Result<GetGroupInfoRequest, Error> {
+    fn query(
+        &self,
+        ctx: &crate::platform::QuerySettings<'_>,
+    ) -> Result<GetGroupInfoRequest, Error> {
         let prove = ctx.prove;
         let request = GetGroupInfoRequest {
             version: Some(get_group_info_request::Version::V0(GetGroupInfoRequestV0 {
@@ -65,7 +68,7 @@ pub struct GroupInfosQuery {
 impl Query<GetGroupInfosRequest> for GroupInfosQuery {
     fn query(
         &self,
-        ctx: &crate::platform::QueryContext<'_>,
+        ctx: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetGroupInfosRequest, Error> {
         let prove = ctx.prove;
         let request = GetGroupInfosRequest {
@@ -113,7 +116,7 @@ pub struct GroupActionsQuery {
 impl Query<GetGroupActionsRequest> for GroupActionsQuery {
     fn query(
         &self,
-        ctx: &crate::platform::QueryContext<'_>,
+        ctx: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetGroupActionsRequest, Error> {
         let prove = ctx.prove;
         let request = GetGroupActionsRequest {
@@ -159,7 +162,7 @@ pub struct GroupActionSignersQuery {
 impl Query<GetGroupActionSignersRequest> for GroupActionSignersQuery {
     fn query(
         &self,
-        ctx: &crate::platform::QueryContext<'_>,
+        ctx: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetGroupActionSignersRequest, Error> {
         let prove = ctx.prove;
         let request = GetGroupActionSignersRequest {

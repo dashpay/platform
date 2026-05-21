@@ -218,7 +218,7 @@ where
         query: Q,
         settings: Option<RequestSettings>,
     ) -> Result<(O, ResponseMetadata, Proof), Error> {
-        let ctx = sdk.query_context();
+        let ctx = sdk.query_settings();
         let owned_rich: <Self as FetchMany<K, O>>::Query = query.query(&ctx)?;
         let owned_wire: <Self as FetchMany<K, O>>::Request = owned_rich.query(&ctx)?;
         let rich = &owned_rich;

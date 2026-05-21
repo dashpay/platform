@@ -1,6 +1,6 @@
 use crate::fetch::common::setup_logs;
 use dash_sdk::platform::tokens::token_contract_info::TokenContractInfoQuery;
-use dash_sdk::platform::{Fetch, Identifier, Query, QueryContext};
+use dash_sdk::platform::{Fetch, Identifier, Query, QuerySettings};
 use dash_sdk::Sdk;
 use dpp::tokens::contract_info::TokenContractInfo;
 use dpp::version::PlatformVersion;
@@ -52,7 +52,7 @@ async fn test_token_contract_info_query_prove_true() {
     let query = TokenContractInfoQuery { token_id };
 
     let settings = RequestSettings::default();
-    let ctx = QueryContext {
+    let ctx = QuerySettings {
         request_settings: &settings,
         protocol_version: PlatformVersion::latest(),
         prove: true,
@@ -73,7 +73,7 @@ async fn test_token_contract_info_query_prove_false() {
     let query = TokenContractInfoQuery { token_id };
 
     let settings = RequestSettings::default();
-    let ctx = QueryContext {
+    let ctx = QuerySettings {
         request_settings: &settings,
         protocol_version: PlatformVersion::latest(),
         prove: false,

@@ -174,7 +174,7 @@ where
         query: Q,
         settings: Option<RequestSettings>,
     ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error> {
-        let ctx = sdk.query_context();
+        let ctx = sdk.query_settings();
         let owned_rich: <Self as Fetch>::Query = query.query(&ctx)?;
         let owned_wire: <Self as Fetch>::Request = owned_rich.query(&ctx)?;
         let rich = &owned_rich;

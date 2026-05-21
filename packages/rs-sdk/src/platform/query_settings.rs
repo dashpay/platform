@@ -1,11 +1,11 @@
-//! Query encoding context.
+//! Query encoding settings.
 //!
-//! [`QueryContext`] is a small, borrow-style bundle handed to
+//! [`QuerySettings`] is a small, borrow-style bundle handed to
 //! [`crate::platform::query::Query::query`] implementations so they can encode
 //! a user-facing query into a wire `TransportRequest` without taking a full
 //! `&Sdk` dependency. This keeps the encoder layer free of `Sdk`-shaped
 //! transitive deps (transport, mock cache, nonce cache, context provider, …)
-//! and lets unit tests construct a context directly without spinning up
+//! and lets unit tests construct settings directly without spinning up
 //! `Sdk::new_mock()`.
 //!
 //! The fields are the minimum surface a wire encoder needs today:
@@ -19,13 +19,13 @@
 use dpp::version::PlatformVersion;
 use rs_dapi_client::RequestSettings;
 
-/// Context passed to [`crate::platform::query::Query::query`] for encoding a
+/// Settings passed to [`crate::platform::query::Query::query`] for encoding a
 /// user-facing query into a wire `TransportRequest`.
 ///
-/// Construct via [`crate::Sdk::query_context`] for normal use, or directly in
+/// Construct via [`crate::Sdk::query_settings`] for normal use, or directly in
 /// unit tests that want to exercise the encoder without an `Sdk`.
 #[derive(Debug, Clone, Copy)]
-pub struct QueryContext<'a> {
+pub struct QuerySettings<'a> {
     /// Transport-layer settings (timeouts, retries, TLS, ban behaviour).
     /// Not consulted by any current encoder; threaded for forward compatibility.
     pub request_settings: &'a RequestSettings,
@@ -37,7 +37,7 @@ pub struct QueryContext<'a> {
     pub prove: bool,
 }
 
-impl<'a> QueryContext<'a> {
+impl<'a> QuerySettings<'a> {
     /// Cheap derivative with proofs forced off — used by `FetchUnproved`.
     pub fn without_proofs(&self) -> Self {
         Self {

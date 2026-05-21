@@ -945,11 +945,11 @@ fn value_to_proto_at_depth(value: Value, depth: u8) -> Result<ProtoDocumentField
 /// document aggregate views) split `Fetch::Query = DocumentQuery` (rich,
 /// what `FromProof` binds to) from `Fetch::Request = GetDocumentsRequest`
 /// (wire); this impl is the rich→wire step the trampoline invokes via
-/// `Query::query(&rich, &sdk.query_context())`.
+/// `Query::query(&rich, &sdk.query_settings())`.
 impl crate::platform::Query<platform_proto::GetDocumentsRequest> for DocumentQuery {
     fn query(
         &self,
-        ctx: &crate::platform::QueryContext<'_>,
+        ctx: &crate::platform::QuerySettings<'_>,
     ) -> Result<platform_proto::GetDocumentsRequest, Error> {
         GetDocumentsRequest::try_from_platform_versioned(self.clone(), ctx.protocol_version)
     }

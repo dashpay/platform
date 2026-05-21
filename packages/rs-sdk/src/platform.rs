@@ -18,7 +18,7 @@ mod fetch_unproved;
 pub mod group_actions;
 pub mod identities_contract_keys_query;
 pub mod query;
-pub mod query_context;
+pub mod query_settings;
 #[cfg(feature = "shielded")]
 pub mod shielded;
 pub mod tokens;
@@ -47,5 +47,5 @@ pub use {
         RecentAddressBalanceChangesQuery, RecentCompactedAddressBalanceChangesQuery,
         DEFAULT_EPOCH_QUERY_LIMIT,
     },
-    query_context::QueryContext,
+    query_settings::QuerySettings,
 };

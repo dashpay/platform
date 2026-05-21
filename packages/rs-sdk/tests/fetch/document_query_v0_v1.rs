@@ -181,23 +181,23 @@ fn v0_rejects_having() {
 }
 
 #[test]
-fn encoder_dispatches_v0_via_query_context_without_sdk() {
-    use dash_sdk::platform::{Query, QueryContext};
+fn encoder_dispatches_v0_via_query_settings_without_sdk() {
+    use dash_sdk::platform::{Query, QuerySettings};
     use rs_dapi_client::RequestSettings;
 
-    // The whole point of QueryContext: encoder is testable without
+    // The whole point of QuerySettings: encoder is testable without
     // `Sdk::new_mock()`. Construct the context directly from a
     // PlatformVersion whose document_query is pinned to V0 dispatch
     // and assert the wire shape comes out V0.
     let v0_pv = v0_dispatch_version();
     let settings = RequestSettings::default();
-    let ctx = QueryContext {
+    let ctx = QuerySettings {
         request_settings: &settings,
         protocol_version: v0_pv,
         prove: true,
     };
     let q = build_basic_document_query();
-    let req: GetDocumentsRequest = q.query(&ctx).expect("encode via QueryContext");
+    let req: GetDocumentsRequest = q.query(&ctx).expect("encode via QuerySettings");
     assert!(
         matches!(req.version, Some(ReqVersion::V0(_))),
         "expected V0 dispatch when ctx.protocol_version pins document_query to v0"
@@ -205,13 +205,13 @@ fn encoder_dispatches_v0_via_query_context_without_sdk() {
 
     // Same query, latest PlatformVersion (V1 dispatch) — should now
     // emit V1 wire bytes through the same code path.
-    let latest_ctx = QueryContext {
+    let latest_ctx = QuerySettings {
         request_settings: &settings,
         protocol_version: PlatformVersion::latest(),
         prove: true,
     };
     let q = build_basic_document_query();
-    let req: GetDocumentsRequest = q.query(&latest_ctx).expect("encode via QueryContext");
+    let req: GetDocumentsRequest = q.query(&latest_ctx).expect("encode via QuerySettings");
     assert!(
         matches!(req.version, Some(ReqVersion::V1(_))),
         "expected V1 dispatch when ctx.protocol_version is latest"
@@ -220,10 +220,9 @@ fn encoder_dispatches_v0_via_query_context_without_sdk() {
 
 #[test]
 fn sdk_builder_with_initial_version_seeds_atomic_without_pinning() {
-    // Auto-detect default: the atomic seeds to 0, `version()` falls
-    // back to `latest()` until the first response arrives. The test
-    // SDK is a mock with no live network, so `version()` should
-    // simply return `latest()`.
+    // Auto-detect default: the atomic seeds to `self.version` (which
+    // defaults to `latest()`). `version()` therefore returns `latest()`
+    // until the first response ratchets the atomic upward.
     let sdk_default = SdkBuilder::new_mock().build().expect("mock sdk");
     assert_eq!(
         sdk_default.version().protocol_version,
@@ -284,18 +283,18 @@ fn protocol_version_for_v3_1_dev_keeps_document_query_v1() {
 /// without monkey-patching `PlatformVersion::latest()` clones.
 #[test]
 fn document_query_dispatches_v0_when_sdk_initial_version_is_v3_0_pv() {
-    use dash_sdk::platform::{Query, QueryContext};
+    use dash_sdk::platform::{Query, QuerySettings};
     use rs_dapi_client::RequestSettings;
 
     let pv_v3_0 = PlatformVersion::get(11).expect("PROTOCOL_VERSION_11 exists");
     let settings = RequestSettings::default();
-    let ctx = QueryContext {
+    let ctx = QuerySettings {
         request_settings: &settings,
         protocol_version: pv_v3_0,
         prove: true,
     };
     let q = build_basic_document_query();
-    let req: GetDocumentsRequest = q.query(&ctx).expect("encode for v3.0 PV via QueryContext");
+    let req: GetDocumentsRequest = q.query(&ctx).expect("encode for v3.0 PV via QuerySettings");
     assert!(
         matches!(req.version, Some(ReqVersion::V0(_))),
         "expected V0 dispatch for PROTOCOL_VERSION_11"
