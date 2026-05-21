@@ -102,7 +102,8 @@ impl FromProof<DocumentQuery> for DocumentAverage {
 }
 
 impl Fetch for DocumentAverage {
-    type Request = super::document_query::DocumentQuery;
+    type Query = super::document_query::DocumentQuery;
+    type Request = dapi_grpc::platform::v0::GetDocumentsRequest;
 }
 
 #[cfg(test)]

@@ -46,6 +46,22 @@ public class PlatformWalletManager: ObservableObject {
     /// Last completed shielded sync event emitted by Rust.
     @Published public internal(set) var lastShieldedSyncEvent: ShieldedSyncEvent?
 
+    /// When true, `handleShieldedSyncCompleted` drops incoming events
+    /// instead of publishing them. Set by `stopShieldedSync` /
+    /// `clearShielded` (after the Rust drain returns) and cleared by any
+    /// sync-start (`startShieldedSync` / `syncShieldedNow`). The Rust
+    /// quiesce barrier guarantees no persistence after stop/clear, but
+    /// the completion callback is re-dispatched onto this `@MainActor`,
+    /// so a final, already-dispatched event can land just after stop/
+    /// clear returns; this gate keeps the published `lastShieldedSyncEvent`
+    /// honest for every SDK consumer (not just the example app). Both
+    /// stop/clear are synchronous on the main actor, so the flag is set
+    /// before the enqueued trailing-event task can run.
+    ///
+    /// `internal` (not `private`) because the shielded lifecycle methods
+    /// that read/write it live in an extension in a separate file.
+    var suppressShieldedCompletionEvents: Bool = false
+
     /// All wallets currently held by the Rust-side
     /// `PlatformWalletManager`, keyed by the 32-byte wallet id.
     ///
