@@ -68,10 +68,21 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_sync_start(
 /// Stop the shielded sync manager and wait for any in-flight pass to
 /// drain before returning. No-op if not running.
 ///
-/// Uses [`quiesce`](crate-internal) rather than cancel-only stop so the
-/// host-facing contract is honest: once this returns, no sync pass is
-/// running and none will emit further completion events or persistence
-/// callbacks. The call blocks until a pass already underway finishes.
+/// Uses `quiesce` rather than cancel-only stop, so on return: the loop
+/// is cancelled, no new pass will start, and any in-flight pass has
+/// fully drained — its **persistence callbacks have completed** (no
+/// note/sync-state row can be written after this returns) and its
+/// completion-event *dispatch* on the Rust side has run.
+///
+/// Caveat on host-observed events: a host that marshals the completion
+/// callback onto its own executor (e.g. the Swift trampoline hops it to
+/// the `@MainActor`) may still observe that final, already-dispatched
+/// event land *after* this call returns — Rust controls when the event
+/// is dispatched, not when the host's run loop applies it. The drain
+/// guarantee above (no further persistence, no new pass) is the
+/// load-bearing part; hosts that must ignore a trailing UI event should
+/// gate their handler on their own post-stop/post-clear state (the
+/// example app drops events while unbound).
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_shielded_sync_stop(
     handle: Handle,
