@@ -12,7 +12,6 @@ use drive::query::{DriveDocumentQuery, OrderClause, WhereClause};
 
 /// Given some data contract ID, document type and document ID, when I fetch it, then I get it.
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-#[ignore = "vectors require regeneration after Fetch::Query/Fetch::Request split (γ refactor); see commit body"]
 async fn document_read() {
     setup_logs();
 
@@ -80,7 +79,6 @@ async fn document_read_no_contract() {
 /// Given some data contract ID, document type and non-existing document ID, when I fetch it, I get zero documents but
 /// no error.
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-#[ignore = "vectors require regeneration after Fetch::Query/Fetch::Request split (γ refactor); see commit body"]
 async fn document_read_no_document() {
     setup_logs();
 
@@ -107,7 +105,6 @@ async fn document_read_no_document() {
 /// Given some data contract ID and document type with at least one document, when I fetch many documents using DriveQuery
 /// as a query, then I get one or more items.
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-#[ignore = "vectors require regeneration after Fetch::Query/Fetch::Request split (γ refactor); see commit body"]
 async fn document_list_drive_query() {
     setup_logs();
 
@@ -153,7 +150,6 @@ async fn document_list_drive_query() {
 /// Given some data contract ID and document type with at least one document, when I list documents using DocumentQuery
 /// as a query, then I get one or more items.
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-#[ignore = "vectors require regeneration after Fetch::Query/Fetch::Request split (γ refactor); see commit body"]
 async fn document_list_document_query() {
     setup_logs();
 
