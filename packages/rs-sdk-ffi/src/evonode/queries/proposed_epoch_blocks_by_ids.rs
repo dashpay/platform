@@ -165,7 +165,6 @@ impl
             },
         };
 
-        let prove = ctx.prove;
         let request =
             dash_sdk::dapi_grpc::platform::v0::GetEvonodesProposedEpochBlocksByIdsRequest {
                 version: Some(Version::V0(GetEvonodesProposedEpochBlocksByIdsRequestV0 {
@@ -175,7 +174,7 @@ impl
                         .iter()
                         .map(|hash| AsRef::<[u8]>::as_ref(hash).to_vec())
                         .collect(),
-                    prove,
+                    prove: ctx.prove,
                 })),
             };
 

@@ -186,7 +186,6 @@ impl
             },
         };
 
-        let prove = ctx.prove;
         let start = if let Some(start_after) = self.start_after.as_ref() {
             Some(Start::StartAfter(
                 AsRef::<[u8]>::as_ref(start_after).to_vec(),
@@ -204,7 +203,7 @@ impl
                         epoch: self.epoch,
                         limit: None, // Limit is handled by LimitQuery wrapper
                         start,
-                        prove,
+                        prove: ctx.prove,
                     },
                 )),
             };
