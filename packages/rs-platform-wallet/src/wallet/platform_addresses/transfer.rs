@@ -2,11 +2,11 @@ use std::collections::BTreeMap;
 
 use dpp::address_funds::{AddressFundsFeeStrategy, AddressFundsFeeStrategyStep, PlatformAddress};
 use dpp::fee::Credits;
-use indexmap::IndexMap;
 use dpp::identity::signer::Signer;
 use dpp::state_transition::address_funds_transfer_transition::AddressFundsTransferTransition;
 use dpp::version::PlatformVersion;
 use dpp::version::LATEST_PLATFORM_VERSION;
+use indexmap::IndexMap;
 use key_wallet::PlatformP2PKHAddress;
 
 use crate::changeset::Merge;
@@ -14,8 +14,8 @@ use crate::wallet::PlatformAddressWallet;
 use crate::{PlatformAddressChangeSet, PlatformWalletError};
 use dash_sdk::platform::transition::transfer_address_funds::TransferAddressFunds;
 
-use super::{checked_sum_credits, saturating_sum_credits};
 pub use super::InputSelection;
+use super::{checked_sum_credits, saturating_sum_credits};
 
 impl PlatformAddressWallet {
     /// Transfer credits between platform addresses.
@@ -650,10 +650,8 @@ fn select_inputs_deduct_from_input(
         platform_version,
     );
     let other_total: Credits = selected.values().copied().sum();
-    let fee_target_consumed = std::cmp::max(
-        min_input_amount,
-        total_output.saturating_sub(other_total),
-    );
+    let fee_target_consumed =
+        std::cmp::max(min_input_amount, total_output.saturating_sub(other_total));
     let fee_target_max = fee_target_balance.saturating_sub(estimated_fee);
     if fee_target_consumed > fee_target_max {
         return Err(PlatformWalletError::AddressOperation(format!(
@@ -1237,14 +1235,9 @@ mod auto_select_tests {
         let outputs = outputs_for(target, total_output);
         let fee_strategy = vec![AddressFundsFeeStrategyStep::DeductFromInput(0)];
 
-        let selected = select_inputs_deduct_from_input(
-            candidates,
-            &outputs,
-            total_output,
-            &fee_strategy,
-            pv,
-        )
-        .expect("post-Phase-4 fee recompute must accept the selection");
+        let selected =
+            select_inputs_deduct_from_input(candidates, &outputs, total_output, &fee_strategy, pv)
+                .expect("post-Phase-4 fee recompute must accept the selection");
 
         assert_eq!(selected.len(), 2, "y folded into fee target");
         assert!(!selected.contains_key(&addr_y));
