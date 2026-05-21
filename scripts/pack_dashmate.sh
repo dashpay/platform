@@ -20,24 +20,18 @@ fi
 
 FLAGS=""
 
-# Node 24+ does not publish 32-bit binaries (linux-armv7l, win-x86), so we
-# must explicitly drop those targets from oclif's default lists; otherwise
-# `oclif pack` 404s while downloading the embedded Node runtime.
-#   - tarballs default: oclif builds whatever we pass; we previously passed
-#     `linux-arm` (= armv7l). Replace with linux-arm64.
-#   - deb default targets: linux-x64, linux-arm (armv7l), linux-arm64 — drop arm.
-#   - win default targets: win32-x64, win32-x86 — drop x86.
-case "$COMMAND" in
-  tarballs)
-    FLAGS="--no-xz --targets=linux-arm64,linux-x64"
-    ;;
-  deb)
-    FLAGS="--targets=linux-x64,linux-arm64"
-    ;;
-  win)
-    FLAGS="--targets=win32-x64"
-    ;;
-esac
+# Limit `oclif pack tarballs` to the linux subset of `oclif.update.node.targets`
+# in packages/dashmate/package.json — without this it would emit tarballs for
+# every configured target (linux + win + darwin), and we only ship linux
+# tarballs as release artifacts.
+#
+# `pack deb`, `pack win`, and `pack macos` read `oclif.update.node.targets`
+# directly and filter to their own platform; no per-command flag needed.
+# Note: `pack deb` in oclif 4.0.3 rejects `--targets` as an unknown flag.
+if [[ "$COMMAND" == "tarballs" ]]
+then
+  FLAGS="--no-xz --targets=linux-arm64,linux-x64"
+fi
 
 FULL_PATH=$(realpath "$0")
 DIR_PATH=$(dirname "$FULL_PATH")
