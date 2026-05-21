@@ -414,19 +414,14 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_clear(
     handle: Handle,
 ) -> PlatformWalletFFIResult {
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
-        // Quiesce first — cancel the loop AND wait for any in-flight
-        // pass to fully drain — before wiping the registries. A
-        // cancel-only stop() would let a pass that already started
-        // finish and route stale results back through the persister
-        // after Clear returns, defeating the local-data-erasure
-        // boundary the user expects (especially when Clear is invoked
-        // in response to a perceived device compromise).
-        runtime().block_on(async {
-            manager.shielded_sync().quiesce().await;
-            if let Some(coord) = manager.shielded_coordinator().await {
-                coord.clear().await;
-            }
-        });
+        // Single library call: `clear_shielded` quiesces the sync
+        // manager (cancel + drain the in-flight pass, incl. persister
+        // fan-out, so nothing re-persists after Clear) and then clears
+        // the coordinator registries. Keeping the quiesce+clear
+        // sequencing in the library (not stitched here) follows the
+        // FFI's "resolve handle, call one function, marshal result"
+        // contract.
+        runtime().block_on(manager.clear_shielded());
     });
     unwrap_option_or_return!(option);
     PlatformWalletFFIResult::ok()
