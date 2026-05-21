@@ -41,6 +41,35 @@ impl DocumentsBatchStateTransitionStateValidationV1 for BatchTransition {
         execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+        // Diff vs `_v0`:
+        //
+        //   _v0: creates a `StateTransitionExecutionContext::default(...)`
+        //        local at the top of the fn and passes `&mut local` to
+        //        `try_into_action_v0`. Every per-transition fee_result
+        //        accumulated inside the transformer
+        //        (`try_from_borrowed_*_with_contract_lookup`) lands in
+        //        the local, which is dropped on return. The user pays
+        //        nothing for the transformer-phase reads.
+        //
+        //   _v1: skips the local allocation. Passes the OUTER
+        //        `execution_context` (threaded down by the processor)
+        //        directly into `try_into_action_v0`. Per-transition
+        //        fee_results now reach the user's bill via the existing
+        //        `ValidationOperation::add_many_to_fee_result` plumbing
+        //        in `execute_event/v0/mod.rs`.
+        //
+        // Why the change: closes B7 from `docs/paid-error-fee-audit.md`
+        // — the dominant transformer-phase fee leak. Token group action
+        // confirmer fees, for example, were silently dropped on PV11
+        // because the local-ctx-drop swallowed the 3 grovedb reads
+        // (~30K credits) `try_from_borrowed_base_transition_with_contract_lookup`
+        // performs.
+        //
+        // The transformer body itself (`try_into_action_v0` and its
+        // helpers in `transformer/v0/mod.rs`) is unchanged — both v0
+        // and v1 wrappers call the same function. The only difference
+        // is which execution_context lives long enough to be read by
+        // the fee-accumulation step downstream.
         let validation_result = self.try_into_action_v0(
             platform,
             block_info,
