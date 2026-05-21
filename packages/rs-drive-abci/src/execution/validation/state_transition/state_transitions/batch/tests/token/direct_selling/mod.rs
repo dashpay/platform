@@ -17,9 +17,30 @@ mod token_selling_tests {
 
     #[tokio::test]
     async fn test_successful_direct_purchase_single_price() {
-        let platform_version = PlatformVersion::latest();
+        run_successful_direct_purchase_single_price_at_protocol_version(
+            PlatformVersion::latest().protocol_version,
+            699_868_122_220,
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_11: pre-B4/B7 buyer balance — query_documents +
+    /// transformer-phase reads were dropped, so the buyer paid 7,900
+    /// credits less in fees. Pinned so v11 chain history stays
+    /// bit-for-bit reproducible.
+    #[tokio::test]
+    async fn test_successful_direct_purchase_single_price_protocol_version_11() {
+        run_successful_direct_purchase_single_price_at_protocol_version(11, 699_868_130_120).await;
+    }
+
+    async fn run_successful_direct_purchase_single_price_at_protocol_version(
+        protocol_version: dpp::version::ProtocolVersion,
+        expected_buyer_credit_balance: dpp::fee::Credits,
+    ) {
+        let platform_version = PlatformVersion::get(protocol_version)
+            .expect("expected platform version for the requested protocol_version");
         let mut platform = TestPlatformBuilder::new()
-            .with_latest_protocol_version()
+            .with_initial_protocol_version(protocol_version)
             .build_with_mock_rpc()
             .set_genesis_state();
 
@@ -155,7 +176,12 @@ mod token_selling_tests {
             .drive
             .fetch_identity_balance(buyer.id().to_buffer(), None, platform_version)
             .expect("expected to fetch credit balance");
-        assert_eq!(buyer_credit_balance, Some(699_868_122_220)); // 10.0 - 3.0 spent - fees =~ 7 dash left
+        assert_eq!(
+            buyer_credit_balance,
+            Some(expected_buyer_credit_balance),
+            "PROTOCOL_VERSION_{}: buyer credit balance after direct purchase must match the version-specific baseline (10.0 - 3.0 spent - fees =~ 7 dash left)",
+            protocol_version,
+        );
     }
 
     #[tokio::test]
@@ -244,9 +270,34 @@ mod token_selling_tests {
 
     #[tokio::test]
     async fn test_direct_purchase_single_price_not_paying_full_price() {
-        let platform_version = PlatformVersion::latest();
+        run_direct_purchase_single_price_not_paying_full_price_at_protocol_version(
+            PlatformVersion::latest().protocol_version,
+            999_987_864_860,
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_11: pre-B4/B7 bump-only buyer balance — under v0
+    /// the failed purchase still bumps the nonce but doesn't bill the
+    /// extra read costs (7,900 credits). Pinned so v11 chain history
+    /// stays bit-for-bit reproducible.
+    #[tokio::test]
+    async fn test_direct_purchase_single_price_not_paying_full_price_protocol_version_11() {
+        run_direct_purchase_single_price_not_paying_full_price_at_protocol_version(
+            11,
+            999_987_872_760,
+        )
+        .await;
+    }
+
+    async fn run_direct_purchase_single_price_not_paying_full_price_at_protocol_version(
+        protocol_version: dpp::version::ProtocolVersion,
+        expected_buyer_credit_balance: dpp::fee::Credits,
+    ) {
+        let platform_version = PlatformVersion::get(protocol_version)
+            .expect("expected platform version for the requested protocol_version");
         let mut platform = TestPlatformBuilder::new()
-            .with_latest_protocol_version()
+            .with_initial_protocol_version(protocol_version)
             .build_with_mock_rpc()
             .set_genesis_state();
 
@@ -362,7 +413,12 @@ mod token_selling_tests {
             .drive
             .fetch_identity_balance(buyer.id().to_buffer(), None, platform_version)
             .expect("expected to fetch credit balance");
-        assert_eq!(buyer_credit_balance, Some(999_987_864_860)); // 10.0 - bump action fees
+        assert_eq!(
+            buyer_credit_balance,
+            Some(expected_buyer_credit_balance),
+            "PROTOCOL_VERSION_{}: buyer credit balance after failed direct purchase must match the version-specific baseline (10.0 - bump action fees)",
+            protocol_version,
+        );
     }
 
     #[tokio::test]

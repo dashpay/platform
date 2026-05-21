@@ -21,9 +21,38 @@ mod dpns_tests {
 
     #[tokio::test]
     async fn test_dpns_contract_references_with_no_contested_unique_index() {
-        let platform_version = PlatformVersion::latest();
+        run_dpns_contract_references_with_no_contested_unique_index_at_protocol_version(
+            PlatformVersion::latest().protocol_version,
+            6_010_380,
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_11: pre-T1/T2 fee — `create_domain_data_trigger_v0`
+    /// runs the same parent-domain + preorder queries but discards their
+    /// cost (epoch=None → `query_documents` cost short-circuits to 0,
+    /// trigger context's add_operation never called on v0). Pinned so
+    /// v11 chain history stays bit-for-bit reproducible.
+    ///
+    /// Delta vs PV12: 6_010_380 - 5_978_080 = 32_300 credits = T1 + T2
+    /// query costs across 3 subdomain creates (~10,767 per transition,
+    /// or ~5,383 per query).
+    #[tokio::test]
+    async fn test_dpns_contract_references_with_no_contested_unique_index_protocol_version_11() {
+        run_dpns_contract_references_with_no_contested_unique_index_at_protocol_version(
+            11, 5_978_080,
+        )
+        .await;
+    }
+
+    async fn run_dpns_contract_references_with_no_contested_unique_index_at_protocol_version(
+        protocol_version: dpp::version::ProtocolVersion,
+        expected_processing_fee: dpp::fee::Credits,
+    ) {
+        let platform_version = PlatformVersion::get(protocol_version)
+            .expect("expected platform version for the requested protocol_version");
         let mut platform = TestPlatformBuilder::new()
-            .with_latest_protocol_version()
+            .with_initial_protocol_version(protocol_version)
             .build_with_mock_rpc()
             .set_genesis_state();
 
@@ -387,12 +416,14 @@ mod dpns_tests {
 
         // T1/T2 regression pin: the DPNS `create_domain_data_trigger`
         // runs two `query_documents` calls per transition (parent-domain
-        // + preorder). The accumulated cost is billed via the trigger's
-        // returned `FeeResult` on `transform_into_action: 1`.
+        // + preorder). On PV12+ (`transform_into_action: 1`) the
+        // accumulated cost is billed via the trigger's returned
+        // `FeeResult`. On PV11 the cost is discarded.
         assert_eq!(
             processing_result.aggregated_fees().processing_fee,
-            6_010_380, // 3 subdomain creates: T1 + T2 query costs billed per transition
-            "DPNS domain create fee must include T1 parent-domain + T2 preorder query costs"
+            expected_processing_fee,
+            "PROTOCOL_VERSION_{}: DPNS domain create fee must match the version-specific baseline (T1 parent-domain + T2 preorder query costs billed only at PV12+)",
+            protocol_version,
         );
 
         let mut order_by = IndexMap::new();
