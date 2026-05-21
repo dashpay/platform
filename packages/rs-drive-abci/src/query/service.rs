@@ -22,13 +22,14 @@ use dapi_grpc::platform::v0::{
     GetContestedResourcesRequest, GetContestedResourcesResponse, GetCurrentQuorumsInfoRequest,
     GetCurrentQuorumsInfoResponse, GetDataContractHistoryRequest, GetDataContractHistoryResponse,
     GetDataContractRequest, GetDataContractResponse, GetDataContractsRequest,
-    GetDataContractsResponse, GetDocumentsRequest, GetDocumentsResponse, GetEpochsInfoRequest,
-    GetEpochsInfoResponse, GetEvonodesProposedEpochBlocksByIdsRequest,
-    GetEvonodesProposedEpochBlocksByRangeRequest, GetEvonodesProposedEpochBlocksResponse,
-    GetFinalizedEpochInfosRequest, GetFinalizedEpochInfosResponse, GetGroupActionSignersRequest,
-    GetGroupActionSignersResponse, GetGroupActionsRequest, GetGroupActionsResponse,
-    GetGroupInfoRequest, GetGroupInfoResponse, GetGroupInfosRequest, GetGroupInfosResponse,
-    GetIdentitiesBalancesRequest, GetIdentitiesBalancesResponse, GetIdentitiesContractKeysRequest,
+    GetDataContractsResponse, GetDocumentHistoryRequest, GetDocumentHistoryResponse,
+    GetDocumentsRequest, GetDocumentsResponse, GetEpochsInfoRequest, GetEpochsInfoResponse,
+    GetEvonodesProposedEpochBlocksByIdsRequest, GetEvonodesProposedEpochBlocksByRangeRequest,
+    GetEvonodesProposedEpochBlocksResponse, GetFinalizedEpochInfosRequest,
+    GetFinalizedEpochInfosResponse, GetGroupActionSignersRequest, GetGroupActionSignersResponse,
+    GetGroupActionsRequest, GetGroupActionsResponse, GetGroupInfoRequest, GetGroupInfoResponse,
+    GetGroupInfosRequest, GetGroupInfosResponse, GetIdentitiesBalancesRequest,
+    GetIdentitiesBalancesResponse, GetIdentitiesContractKeysRequest,
     GetIdentitiesContractKeysResponse, GetIdentitiesTokenBalancesRequest,
     GetIdentitiesTokenBalancesResponse, GetIdentitiesTokenInfosRequest,
     GetIdentitiesTokenInfosResponse, GetIdentityBalanceAndRevisionRequest,
@@ -389,6 +390,18 @@ impl PlatformService for QueryService {
             request,
             Platform::<DefaultCoreRPC>::query_data_contracts,
             "get_data_contracts",
+        )
+        .await
+    }
+
+    async fn get_document_history(
+        &self,
+        request: Request<GetDocumentHistoryRequest>,
+    ) -> Result<Response<GetDocumentHistoryResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_document_history,
+            "get_document_history",
         )
         .await
     }

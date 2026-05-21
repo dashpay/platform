@@ -25,6 +25,8 @@ use grovedb::Element;
 mod delete;
 #[cfg(feature = "server")]
 mod estimation_costs;
+#[cfg(any(feature = "server", feature = "fixtures-and-mocks"))]
+mod get_fetch;
 #[cfg(feature = "server")]
 mod index_uniqueness;
 #[cfg(any(feature = "server", feature = "fixtures-and-mocks"))]
@@ -43,6 +45,12 @@ pub mod paths;
 /// Primary key tree type resolution
 #[cfg(feature = "server")]
 pub mod primary_key_tree_type;
+#[cfg(feature = "server")]
+pub(crate) mod prove;
+
+/// How many document history entries to fetch at once. This mirrors contract history
+/// and prevents unbounded history reads.
+pub const MAX_DOCUMENT_HISTORY_FETCH_LIMIT: u16 = 10;
 
 #[cfg(feature = "server")]
 /// Creates a reference to a document.

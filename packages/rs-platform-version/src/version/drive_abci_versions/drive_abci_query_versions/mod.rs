@@ -9,6 +9,7 @@ pub struct DriveAbciQueryVersions {
     pub response_metadata: FeatureVersion,
     pub proofs_query: FeatureVersion,
     pub document_query: FeatureVersionBounds,
+    pub document_history: FeatureVersionBounds,
     /// Per-helper version slots for internal v1-document-query
     /// routing helpers. Separate from `document_query` (which
     /// versions the wire surface) because the helper output is
