@@ -564,10 +564,7 @@ fn encode_v0(
             // meaningless explicit-zero; we translate by clamping
             // to 0 only when the caller meant "unset".
             limit,
-            start: start.map(|s| match s {
-                Start::StartAfter(b) => Start::StartAfter(b),
-                Start::StartAt(b) => Start::StartAt(b),
-            }),
+            start,
             prove: true,
         })),
     })

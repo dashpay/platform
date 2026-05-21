@@ -118,7 +118,7 @@ where
     fn query(&self, ctx: &crate::platform::QueryContext<'_>) -> Result<T, Error> {
         let prove = ctx.prove;
         if !prove {
-            tracing::warn!(request= ?self, "sending query without proof, ensure data is trusted");
+            unimplemented!("queries without proofs are not supported yet");
         }
         Ok(self.clone())
     }
@@ -358,15 +358,7 @@ impl Query<DocumentQuery> for DriveDocumentQuery<'_> {
     fn query(&self, ctx: &crate::platform::QueryContext<'_>) -> Result<DocumentQuery, Error> {
         let prove = ctx.prove;
         if !prove {
-            // dash-sdk only serves proof-verified responses. Raw,
-            // unverified gRPC responses are out of scope for the
-            // SDK fetch path — callers needing unverified data
-            // should talk to DAPI directly via rs-dapi-client.
-            return Err(Error::Config(
-                "dash-sdk does not support non-proven queries; proof verification is \
-                 mandatory on the SDK fetch path"
-                    .to_string(),
-            ));
+            unimplemented!("queries without proofs are not supported yet");
         }
         let q: DocumentQuery = self.into();
         Ok(q)
@@ -382,7 +374,7 @@ impl Query<DocumentQuery> for DocumentQuery {
     fn query(&self, ctx: &crate::platform::QueryContext<'_>) -> Result<DocumentQuery, Error> {
         let prove = ctx.prove;
         if !prove {
-            tracing::warn!(request= ?self, "sending query without proof, ensure data is trusted");
+            unimplemented!("queries without proofs are not supported yet");
         }
         Ok(self.clone())
     }

@@ -100,6 +100,10 @@ where
     /// for the rationale; the split lets [`Self::Request`] be the
     /// protocol-version-aware wire encoding while keeping the proof
     /// verifier surface PV-agnostic.
+    //
+    // Associated-type defaults are nightly-only (RFC 2532); each impl
+    // must spell out `type Query = Self::Request;` when the rich and
+    // wire forms coincide.
     type Query: Query<<Self as FetchMany<K, O>>::Request>
         + dapi_grpc::mock::Mockable
         + Clone

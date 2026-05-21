@@ -329,6 +329,8 @@ impl MockDashPlatformSdk {
         let sdk = sdk_guard
             .as_ref()
             .expect("sdk must be set when creating mock");
+        // INTENTIONAL(SEC-001): test-harness fail-fast — encoder errors for V1-only DocumentQuery features
+        // against a V0 PlatformVersion should crash the test setup loudly rather than silently propagate.
         let rich: <O as Fetch>::Query = query
             .query(&sdk.query_context())
             .expect("query must be correct");
@@ -352,6 +354,8 @@ impl MockDashPlatformSdk {
         let sdk = sdk_guard
             .as_ref()
             .expect("sdk must be set when creating mock");
+        // INTENTIONAL(SEC-001): test-harness fail-fast — encoder errors for V1-only DocumentQuery features
+        // against a V0 PlatformVersion should crash the test setup loudly rather than silently propagate.
         let rich: <O as Fetch>::Query = query
             .query(&sdk.query_context())
             .expect("query must be correct");
@@ -417,6 +421,8 @@ impl MockDashPlatformSdk {
         let sdk = sdk_guard
             .as_ref()
             .expect("sdk must be set when creating mock");
+        // INTENTIONAL(SEC-001): test-harness fail-fast — encoder errors for V1-only DocumentQuery features
+        // against a V0 PlatformVersion should crash the test setup loudly rather than silently propagate.
         let rich: <O as FetchMany<K, R>>::Query = query
             .query(&sdk.query_context())
             .expect("query must be correct");

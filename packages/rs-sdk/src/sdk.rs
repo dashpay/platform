@@ -913,6 +913,11 @@ impl SdkBuilder {
     ///
     /// This is additive: callers that don't set it preserve today's
     /// behaviour exactly.
+    ///
+    /// **Caveat**: this protection only holds for encoders whose
+    /// `drive_abci.query.<name>.default_current_version` is correctly pinned per
+    /// historical PV. New versioned encoders must follow the same per-PV pinning
+    /// pattern as `document_query`.
     pub fn with_initial_version(mut self, version: &'static PlatformVersion) -> Self {
         self.initial_version = Some(version);
         self

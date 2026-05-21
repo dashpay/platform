@@ -74,6 +74,10 @@ where
     /// for versioned ones (e.g. documents) it stays the rich pre-wire
     /// form (e.g. [`DocumentQuery`]) so the proof verifier keeps its
     /// context (data contract, document type) without re-fetching.
+    //
+    // Associated-type defaults are nightly-only (RFC 2532); each impl
+    // must spell out `type Query = Self::Request;` when the rich and
+    // wire forms coincide.
     type Query: Query<<Self as Fetch>::Request> + Mockable + Clone + Debug + Send + Sync;
 
     /// Wire-encoded request that hits the network. Implements
