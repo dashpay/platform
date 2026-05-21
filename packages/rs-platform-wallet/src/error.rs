@@ -76,13 +76,21 @@ pub enum PlatformWalletError {
 
     #[error(
         "no selectable inputs: only funded addresses appear as destinations \
-         (funded_outputs={funded_outputs:?}, min_input_amount={min_input_amount}); \
+         (funded_outputs={funded_outputs:?}, sub_min_count={sub_min_count}, \
+         sub_min_aggregate={sub_min_aggregate}, min_input_amount={min_input_amount}); \
          rotate to a fresh receive address, consolidate funds, or use \
          InputSelection::Explicit"
     )]
     OnlyOutputAddressesFunded {
         /// Funded addresses dropped by the input-equals-output filter.
         funded_outputs: Vec<PlatformAddress>,
+        /// Number of additional addresses with a positive balance below
+        /// `min_input_amount`. Preserved even though the output-collision
+        /// signal is the typically-actionable fix, so a UI rotating to a
+        /// fresh receive address has the dust breadcrumb on the next try.
+        sub_min_count: usize,
+        /// Aggregate of the sub-minimum balances counted in `sub_min_count`.
+        sub_min_aggregate: Credits,
         /// Per-input minimum from the active platform version.
         min_input_amount: Credits,
     },

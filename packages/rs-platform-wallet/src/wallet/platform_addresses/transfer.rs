@@ -422,6 +422,8 @@ where
     if !funded_outputs.is_empty() {
         return Some(PlatformWalletError::OnlyOutputAddressesFunded {
             funded_outputs,
+            sub_min_count,
+            sub_min_aggregate,
             min_input_amount,
         });
     }
@@ -1322,9 +1324,13 @@ mod auto_select_tests {
         {
             PlatformWalletError::OnlyOutputAddressesFunded {
                 funded_outputs,
+                sub_min_count,
+                sub_min_aggregate,
                 min_input_amount,
             } => {
                 assert_eq!(funded_outputs, vec![addr_out]);
+                assert_eq!(sub_min_count, 0);
+                assert_eq!(sub_min_aggregate, 0);
                 assert_eq!(min_input_amount, min_input);
             }
             other => panic!("expected OnlyOutputAddressesFunded, got {other:?}"),
@@ -1348,13 +1354,20 @@ mod auto_select_tests {
             other => panic!("expected OnlyDustInputs, got {other:?}"),
         }
 
-        // Both: collision wins.
+        // Both: collision wins, dust info is preserved as auxiliary fields.
         let both = [(addr_out, min_input * 5), (addr_dust, min_input / 3)];
         match detect_no_selectable_inputs(both.iter().copied(), &outputs, min_input)
             .expect("combined case")
         {
-            PlatformWalletError::OnlyOutputAddressesFunded { funded_outputs, .. } => {
+            PlatformWalletError::OnlyOutputAddressesFunded {
+                funded_outputs,
+                sub_min_count,
+                sub_min_aggregate,
+                ..
+            } => {
                 assert_eq!(funded_outputs, vec![addr_out]);
+                assert_eq!(sub_min_count, 1);
+                assert_eq!(sub_min_aggregate, min_input / 3);
             }
             other => panic!("expected OnlyOutputAddressesFunded, got {other:?}"),
         }
