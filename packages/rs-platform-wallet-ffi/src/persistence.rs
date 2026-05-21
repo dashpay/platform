@@ -1336,6 +1336,34 @@ impl PlatformWalletPersistence for FFIPersister {
 
             let mut shielded_state = ShieldedSyncStartState::default();
 
+            // Fail fast on a half-wired callback pair: a loader without
+            // its matching free callback leaks the host-allocated buffer
+            // on every successful load (the guard's `Drop` is a no-op
+            // when `free_fn` is `None`).
+            if self.callbacks.on_load_shielded_notes_fn.is_some()
+                != self.callbacks.on_load_shielded_notes_free_fn.is_some()
+            {
+                return Err(
+                    "on_load_shielded_notes_fn and on_load_shielded_notes_free_fn must be \
+                     provided together"
+                        .to_string()
+                        .into(),
+                );
+            }
+            if self.callbacks.on_load_shielded_sync_states_fn.is_some()
+                != self
+                    .callbacks
+                    .on_load_shielded_sync_states_free_fn
+                    .is_some()
+            {
+                return Err(
+                    "on_load_shielded_sync_states_fn and on_load_shielded_sync_states_free_fn \
+                     must be provided together"
+                        .to_string()
+                        .into(),
+                );
+            }
+
             // 1) notes
             if let Some(load_notes) = self.callbacks.on_load_shielded_notes_fn {
                 let mut notes_ptr: *const ShieldedNoteRestoreFFI = std::ptr::null();

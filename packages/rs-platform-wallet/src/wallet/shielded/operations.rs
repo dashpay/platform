@@ -354,7 +354,19 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
 
     match result {
         Ok(()) => {
-            finalize_pending(store, persister, wallet_id, id, &selected_notes).await?;
+            // Broadcast already succeeded; spent-state bookkeeping is
+            // best-effort. Surfacing a local write failure as a send
+            // failure here would invite duplicate retries — the next
+            // nullifier sync reconciles any drift.
+            if let Err(e) = finalize_pending(store, persister, wallet_id, id, &selected_notes).await
+            {
+                warn!(
+                    account,
+                    error = %e,
+                    "Unshield broadcast succeeded but local spent-state update failed; \
+                     will heal on next sync"
+                );
+            }
             info!(account, credits = amount, "Unshield broadcast succeeded");
             Ok(())
         }
@@ -428,7 +440,16 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
 
     match result {
         Ok(()) => {
-            finalize_pending(store, persister, wallet_id, id, &selected_notes).await?;
+            // Best-effort post-broadcast bookkeeping (see unshield).
+            if let Err(e) = finalize_pending(store, persister, wallet_id, id, &selected_notes).await
+            {
+                warn!(
+                    account,
+                    error = %e,
+                    "Shielded transfer broadcast succeeded but local spent-state update \
+                     failed; will heal on next sync"
+                );
+            }
             info!(
                 account,
                 credits = amount,
@@ -508,7 +529,16 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
 
     match result {
         Ok(()) => {
-            finalize_pending(store, persister, wallet_id, id, &selected_notes).await?;
+            // Best-effort post-broadcast bookkeeping (see unshield).
+            if let Err(e) = finalize_pending(store, persister, wallet_id, id, &selected_notes).await
+            {
+                warn!(
+                    account,
+                    error = %e,
+                    "Shielded withdrawal broadcast succeeded but local spent-state update \
+                     failed; will heal on next sync"
+                );
+            }
             info!(
                 account,
                 credits = amount,

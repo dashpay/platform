@@ -775,7 +775,7 @@ impl PlatformWallet {
             // sorted by address bytes — that determines BTreeMap
             // key order downstream and therefore which input ends
             // up at index 0.
-            let mut candidates: Vec<(dpp::address_funds::PlatformAddress, u64)> = account
+            let candidates: Vec<(dpp::address_funds::PlatformAddress, u64)> = account
                 .addresses
                 .addresses
                 .values()
@@ -793,73 +793,11 @@ impl PlatformWallet {
                     }
                 })
                 .collect();
-            candidates.sort_by_key(|(addr, _)| *addr);
-
-            // The address that will be the bundle's `input_0` must
-            // have balance > FEE_RESERVE so we can claim at least 1
-            // credit while leaving the reserve untouched. Skip any
-            // leading dust address that can't satisfy that — the
-            // next address up will become input 0 instead. If
-            // every funded address is below the reserve, fail fast:
-            // the network would reject the broadcast on the
-            // boundary anyway, only after we've spent ~30 s
-            // building the Halo 2 proof.
-            let Some(viable_input_0) = candidates
-                .iter()
-                .position(|(_, balance)| *balance > FEE_RESERVE_CREDITS)
-            else {
-                let total: u64 = candidates.iter().map(|(_, b)| b).sum();
-                return Err(PlatformWalletError::ShieldedInsufficientBalance {
-                    available: total,
-                    required: amount.saturating_add(FEE_RESERVE_CREDITS),
-                });
-            };
-            let usable: &[(dpp::address_funds::PlatformAddress, u64)] =
-                &candidates[viable_input_0..];
-
-            let total_usable: u64 = usable.iter().map(|(_, b)| b).sum();
-            let needed = amount.saturating_add(FEE_RESERVE_CREDITS);
-            if total_usable < needed {
-                return Err(PlatformWalletError::ShieldedInsufficientBalance {
-                    available: total_usable,
-                    required: needed,
-                });
-            }
-
-            // Walk usable inputs in BTreeMap order, claiming only
-            // what's needed to cover `amount`. The fee reserve is
-            // taken off input 0's max claim so its post-claim
-            // remaining stays ≥ FEE_RESERVE_CREDITS for the
-            // network's `DeductFromInput(0)` step.
-            let mut chosen: std::collections::BTreeMap<
-                dpp::address_funds::PlatformAddress,
-                dpp::fee::Credits,
-            > = std::collections::BTreeMap::new();
-            let mut accumulated_claim: u64 = 0;
-            for (i, (addr, balance)) in usable.iter().enumerate() {
-                if accumulated_claim >= amount {
-                    break;
-                }
-                let max_claim = if i == 0 {
-                    balance.saturating_sub(FEE_RESERVE_CREDITS)
-                } else {
-                    *balance
-                };
-                let still_need = amount - accumulated_claim;
-                let claim = max_claim.min(still_need);
-                if claim > 0 {
-                    chosen.insert(*addr, claim);
-                    accumulated_claim = accumulated_claim.saturating_add(claim);
-                }
-            }
-
-            if accumulated_claim < amount {
-                return Err(PlatformWalletError::ShieldedInsufficientBalance {
-                    available: accumulated_claim,
-                    required: amount,
-                });
-            }
-            chosen
+            // Selection rules live in `select_shield_inputs` (pure +
+            // unit-tested): sort by address, skip leading dust below the
+            // reserve, reserve fee headroom only on input 0, then claim
+            // in BTreeMap order up to `amount`.
+            select_shield_inputs(candidates, amount, FEE_RESERVE_CREDITS)?
         };
 
         let guard = self.shielded_keys.read().await;
@@ -1078,5 +1016,158 @@ impl DerefMut for WalletStateWriteGuard<'_> {
         self.guard
             .get_wallet_info_mut(&self.wallet_id)
             .expect("wallet exists in guard")
+    }
+}
+
+/// Select shield (Type 15) inputs from funded `(address, balance)`
+/// candidates.
+///
+/// Pure and deterministic so the selection rules are unit-testable
+/// independent of the wallet manager — a future refactor can't silently
+/// reintroduce the old `viable_input_0` dust/fee-reserve bug without
+/// tripping a test. The rules:
+///   * sort by address bytes — this fixes which input lands at index 0,
+///     and the network deducts the transition fee from input 0
+///     (`DeductFromInput(0)`);
+///   * skip any leading address with balance `<= fee_reserve` — input 0
+///     must keep at least `fee_reserve` unclaimed for the fee step;
+///   * claim in BTreeMap order only up to `amount`, taking the reserve
+///     headroom off input 0 alone.
+///
+/// Errors with [`PlatformWalletError::ShieldedInsufficientBalance`] when
+/// no viable input 0 exists, when usable balance can't cover
+/// `amount + fee_reserve`, or when the walk can't accumulate `amount`.
+#[cfg(feature = "shielded")]
+fn select_shield_inputs(
+    mut candidates: Vec<(dpp::address_funds::PlatformAddress, u64)>,
+    amount: u64,
+    fee_reserve: u64,
+) -> Result<
+    std::collections::BTreeMap<dpp::address_funds::PlatformAddress, dpp::fee::Credits>,
+    PlatformWalletError,
+> {
+    candidates.sort_by_key(|(addr, _)| *addr);
+
+    let Some(viable_input_0) = candidates
+        .iter()
+        .position(|(_, balance)| *balance > fee_reserve)
+    else {
+        let total: u64 = candidates.iter().map(|(_, b)| b).sum();
+        return Err(PlatformWalletError::ShieldedInsufficientBalance {
+            available: total,
+            required: amount.saturating_add(fee_reserve),
+        });
+    };
+    let usable = &candidates[viable_input_0..];
+
+    let total_usable: u64 = usable.iter().map(|(_, b)| b).sum();
+    let needed = amount.saturating_add(fee_reserve);
+    if total_usable < needed {
+        return Err(PlatformWalletError::ShieldedInsufficientBalance {
+            available: total_usable,
+            required: needed,
+        });
+    }
+
+    let mut chosen: std::collections::BTreeMap<
+        dpp::address_funds::PlatformAddress,
+        dpp::fee::Credits,
+    > = std::collections::BTreeMap::new();
+    let mut accumulated_claim: u64 = 0;
+    for (i, (addr, balance)) in usable.iter().enumerate() {
+        if accumulated_claim >= amount {
+            break;
+        }
+        let max_claim = if i == 0 {
+            balance.saturating_sub(fee_reserve)
+        } else {
+            *balance
+        };
+        let still_need = amount - accumulated_claim;
+        let claim = max_claim.min(still_need);
+        if claim > 0 {
+            chosen.insert(*addr, claim);
+            accumulated_claim = accumulated_claim.saturating_add(claim);
+        }
+    }
+
+    if accumulated_claim < amount {
+        return Err(PlatformWalletError::ShieldedInsufficientBalance {
+            available: accumulated_claim,
+            required: amount,
+        });
+    }
+    Ok(chosen)
+}
+
+#[cfg(all(test, feature = "shielded"))]
+mod shield_input_selection_tests {
+    use super::*;
+    use dpp::address_funds::PlatformAddress;
+
+    const RESERVE: u64 = 1_000_000_000;
+
+    fn addr(b: u8) -> PlatformAddress {
+        PlatformAddress::P2pkh([b; 20])
+    }
+
+    #[test]
+    fn skips_leading_dust_address_below_reserve() {
+        // addr(1) sorts first but is dust (== reserve, not > reserve);
+        // addr(2) must become input 0.
+        let candidates = vec![(addr(1), RESERVE), (addr(2), 5 * RESERVE)];
+        let chosen = select_shield_inputs(candidates, 2 * RESERVE, RESERVE).unwrap();
+        assert!(
+            !chosen.contains_key(&addr(1)),
+            "dust leading address must be skipped"
+        );
+        assert_eq!(chosen.get(&addr(2)), Some(&(2 * RESERVE)));
+    }
+
+    #[test]
+    fn balance_exactly_at_reserve_is_not_viable_input_0() {
+        // Strict `> reserve`: a sole address holding exactly the reserve
+        // cannot be input 0.
+        let candidates = vec![(addr(1), RESERVE)];
+        let err = select_shield_inputs(candidates, 1, RESERVE).unwrap_err();
+        assert!(matches!(
+            err,
+            PlatformWalletError::ShieldedInsufficientBalance { available, required }
+                if available == RESERVE && required == 1 + RESERVE
+        ));
+    }
+
+    #[test]
+    fn amount_equal_to_total_minus_reserve_claims_exactly_amount() {
+        // Single address holding exactly amount + reserve: claim ==
+        // amount, leaving the full reserve for DeductFromInput(0).
+        let amount = 3 * RESERVE;
+        let candidates = vec![(addr(1), amount + RESERVE)];
+        let chosen = select_shield_inputs(candidates, amount, RESERVE).unwrap();
+        assert_eq!(chosen.len(), 1);
+        assert_eq!(chosen.get(&addr(1)), Some(&amount));
+    }
+
+    #[test]
+    fn accumulates_across_inputs_reserving_only_on_input_0() {
+        let amount = 5 * RESERVE;
+        // input 0 (addr 1) holds 2*reserve → contributes reserve after
+        // its headroom; addr 2 covers the rest.
+        let candidates = vec![(addr(1), 2 * RESERVE), (addr(2), 5 * RESERVE)];
+        let chosen = select_shield_inputs(candidates, amount, RESERVE).unwrap();
+        assert_eq!(chosen.get(&addr(1)), Some(&RESERVE));
+        assert_eq!(chosen.get(&addr(2)), Some(&(4 * RESERVE)));
+        assert_eq!(chosen.values().sum::<u64>(), amount);
+    }
+
+    #[test]
+    fn insufficient_usable_balance_errors() {
+        // Needs amount + reserve = 5*reserve, only 2*reserve available.
+        let candidates = vec![(addr(1), 2 * RESERVE)];
+        let err = select_shield_inputs(candidates, 4 * RESERVE, RESERVE).unwrap_err();
+        assert!(matches!(
+            err,
+            PlatformWalletError::ShieldedInsufficientBalance { .. }
+        ));
     }
 }

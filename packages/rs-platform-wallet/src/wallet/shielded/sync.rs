@@ -112,11 +112,13 @@ impl ShieldedSyncSummary {
 pub struct MultiSyncNotesResult {
     /// Per-subwallet count of new notes discovered in this pass.
     pub per_subwallet_new_notes: BTreeMap<SubwalletId, usize>,
-    /// New positions observed this pass — the number of
-    /// commitments actually appended to the shared tree (positions
-    /// `>= tree_size`). Re-scanned positions the tree already held
-    /// are excluded. See [`SyncNotesResult::total_scanned`] for the
-    /// rationale.
+    /// Wire-level scan volume this pass — encrypted notes pulled from
+    /// Platform (decrypted + skipped), computed as `(aligned_start +
+    /// total_notes_scanned).saturating_sub(already_have)`. This is the
+    /// host-visible "Scanned" counter and is deliberately NOT the count
+    /// of newly-appended tree positions (the tree_size append gate makes
+    /// the two diverge on re-fetch). See
+    /// [`SyncNotesResult::total_scanned`] for the rationale.
     pub total_scanned: u64,
     /// Accumulated persistence changeset spanning every touched
     /// subwallet. The caller decides whether to queue it on the
@@ -337,7 +339,16 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
         let new_tree_size = store
             .tree_size()
             .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
-        let checkpoint_id: u32 = new_tree_size.try_into().unwrap_or(u32::MAX);
+        // Hard-fail rather than saturate at u32::MAX: a saturated id
+        // would reintroduce shardtree's silent-dedup (every checkpoint
+        // past the ceiling pins to the same id) — the exact corruption
+        // this monotonic-id scheme exists to avoid. Unreachable today
+        // (>4.29B notes scanned) but fail loudly before proving.
+        let checkpoint_id: u32 = new_tree_size.try_into().map_err(|_| {
+            PlatformWalletError::ShieldedTreeUpdateFailed(format!(
+                "commitment tree size {new_tree_size} exceeds u32 checkpoint-id range"
+            ))
+        })?;
         store
             .checkpoint_tree(checkpoint_id)
             .map_err(|e| PlatformWalletError::ShieldedTreeUpdateFailed(e.to_string()))?;
@@ -414,12 +425,18 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
         new_index, "Multi-subwallet shielded sync finished"
     );
 
-    // Genuinely new positions this pass = what we actually added
-    // to the shared tree (positions `>= tree_size`). Re-scanned
-    // positions the tree already held are excluded.
+    // `total_scanned` keeps its host-visible meaning: wire-level scan
+    // volume this pass (encrypted notes pulled — decrypted + skipped),
+    // matching the exported FFI/Swift/UI "Scanned" contract. This is
+    // intentionally NOT `appended`: the tree_size append gate makes the
+    // two diverge whenever the SDK re-fetches positions the tree
+    // already holds (chunk-boundary realignment, lagging-subwallet
+    // rewind), and the host counter is documented as scan throughput,
+    // not tree growth.
+    let scanned_volume = (aligned_start + result.total_notes_scanned).saturating_sub(already_have);
     Ok(MultiSyncNotesResult {
         per_subwallet_new_notes,
-        total_scanned: appended as u64,
+        total_scanned: scanned_volume,
         changeset,
     })
 }
