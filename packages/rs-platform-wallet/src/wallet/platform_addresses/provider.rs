@@ -425,9 +425,11 @@ impl PlatformPaymentAddressProvider {
         &mut self,
         result: &AddressSyncResult<PlatformAddressTag, PlatformP2PKHAddress>,
     ) {
-        self.sync_height = result.new_sync_height;
-        self.sync_timestamp = result.new_sync_timestamp;
-        self.last_known_recent_block = result.last_known_recent_block;
+        self.sync_height = self.sync_height.max(result.new_sync_height);
+        self.sync_timestamp = self.sync_timestamp.max(result.new_sync_timestamp);
+        self.last_known_recent_block = self
+            .last_known_recent_block
+            .max(result.last_known_recent_block);
     }
 
     /// Current `last_known_recent_block` watermark.
