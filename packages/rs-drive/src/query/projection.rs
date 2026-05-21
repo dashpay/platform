@@ -15,11 +15,19 @@
 //! Shared between the wire-decoding layer
 //! (`rs-drive-abci/src/query/document_query/v1/conversions.rs`)
 //! and the SDK's request builder
-//! (`rs-sdk/src/platform/documents/document_query.rs`). Today the
-//! server only evaluates [`SelectFunction::Documents`] and the
-//! `field`-less form of [`SelectFunction::Count`]; the other
-//! shapes are wire-stable but rejected with
-//! `QuerySyntaxError::Unsupported("… is not yet implemented")`.
+//! (`rs-sdk/src/platform/documents/document_query.rs`). Server
+//! capability today: [`SelectFunction::Documents`],
+//! [`SelectFunction::Count`] with empty `field` (= `COUNT(*)`),
+//! [`SelectFunction::Sum`], and [`SelectFunction::Avg`] route
+//! through the drive count / sum / average dispatchers and are
+//! evaluated end-to-end (no-proof and proof paths).
+//! [`SelectFunction::Count`] with non-empty `field` (=
+//! `COUNT(field)`), [`SelectFunction::Min`], and
+//! [`SelectFunction::Max`] are wire-stable but rejected at routing
+//! time with `QuerySyntaxError::Unsupported("SELECT … is not yet
+//! implemented")` — the surface is shipped first so callers can
+//! encode against it, with execution landing later without
+//! another version bump.
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -42,12 +50,17 @@ pub enum SelectFunction {
     /// supported COUNT shape — the `field`-bearing form is
     /// reserved for future server capability.
     Count,
-    /// `SUM(field)`. Required field; numeric typed. Currently
-    /// always rejected with "not yet implemented".
+    /// `SUM(field)`. Required field; numeric typed. Routed
+    /// end-to-end through the drive sum dispatcher (no-proof and
+    /// proof paths both terminate at grovedb's aggregate-sum /
+    /// sum-tree-walk primitives — see
+    /// `crate::query::drive_document_sum_query`).
     Sum,
     /// `AVG(field)`. Required field; numeric typed. Result is
-    /// `f64`. Currently always rejected with "not yet
-    /// implemented".
+    /// `f64`. Routed end-to-end through the drive average
+    /// dispatcher, which composes count and sum walks under the
+    /// hood (no separate average primitive on the grovedb side) —
+    /// see `crate::query::drive_document_average_query`.
     Avg,
     /// `MIN(field)` — smallest value of `field` in each group
     /// (or across all matching rows when `group_by` is empty).

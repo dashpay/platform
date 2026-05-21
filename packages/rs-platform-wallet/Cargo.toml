@@ -9,7 +9,7 @@ description = "Platform wallet with identity management support"
 [dependencies]
 # Dash Platform packages
 dpp = { path = "../rs-dpp" }
-dash-sdk = { path = "../rs-sdk", default-features = false, features = ["dashpay-contract", "dpns-contract"] }
+dash-sdk = { path = "../rs-sdk", default-features = false, features = ["dashpay-contract", "dpns-contract", "wallet"] }
 platform-encryption = { path = "../rs-platform-encryption" }
 
 # Key wallet dependencies (from rust-dashcore)
@@ -48,16 +48,20 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 zeroize = "1"
 
 # Shielded pool (optional, behind `shielded` feature)
-grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "352c2f5504fba8795e8ed1056753bfd73c13b4cc", optional = true }
+grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "60f29685172653f6007e63d0916bce4633bc23b9", optional = true }
 zip32 = { version = "0.2.0", default-features = false, optional = true }
 
 [dev-dependencies]
 rand = "0.8"
 static_assertions = "1.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+# `test-util` brings `tokio::time::pause` / `tokio::test(start_paused = true)`
+# so the time-driven retry logic in `submit_with_cl_height_retry` can be
+# tested deterministically without sleeping wall-clock seconds.
+tokio = { version = "1", features = ["sync", "rt", "time", "macros", "test-util"] }
 # Re-enable the SDK with mocks feature for test-only mock builders;
 # the non-test build keeps the leaner default-feature SDK above.
-dash-sdk = { path = "../rs-sdk", default-features = false, features = ["dashpay-contract", "dpns-contract", "mocks"] }
+dash-sdk = { path = "../rs-sdk", default-features = false, features = ["dashpay-contract", "dpns-contract", "wallet", "mocks"] }
 
 
 [features]

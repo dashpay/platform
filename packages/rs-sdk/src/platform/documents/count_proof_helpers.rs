@@ -172,12 +172,15 @@ pub(super) fn verify_count_query(
     // Driver-side detect_mode is the single source of truth — the
     // SDK calling it directly is what keeps the verifier in sync
     // with whatever new prove-mode lands next.
-    let resolved_mode =
-        DriveDocumentCountQuery::detect_mode(&request.where_clauses, count_mode, true).map_err(
-            |e| drive_proof_verifier::Error::RequestError {
-                error: format!("count-mode detection failed: {e}"),
-            },
-        )?;
+    let resolved_mode = DriveDocumentCountQuery::detect_mode_versioned(
+        &request.where_clauses,
+        count_mode,
+        true,
+        platform_version,
+    )
+    .map_err(|e| drive_proof_verifier::Error::RequestError {
+        error: format!("count-mode detection failed: {e}"),
+    })?;
 
     // Special-case: empty where-clauses on a `documents_countable`
     // doctype proves the primary-key CountTree element directly,

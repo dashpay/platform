@@ -1,6 +1,7 @@
 use dashcore::{Address as DashAddress, Transaction};
 use key_wallet::account::account_type::StandardAccountType;
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+use key_wallet::signer::Signer;
 
 use crate::broadcaster::TransactionBroadcaster;
 use crate::{CoreWallet, PlatformWalletError};
@@ -25,9 +26,19 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
 
     /// Build, sign, and broadcast a payment to the given addresses.
     ///
-    /// Uses key-wallet's [`TransactionBuilder`] for UTXO selection, fee
-    /// estimation, and signing. Change is sent to the next internal address
-    /// of the specified account.
+    /// Uses key-wallet's
+    /// [`TransactionBuilder`](key_wallet::wallet::managed_wallet_info::transaction_builder::TransactionBuilder)
+    /// for UTXO selection, fee estimation, and signing. Change is sent to
+    /// the next internal address of the specified account.
+    ///
+    /// Signing is delegated to the caller-supplied
+    /// [`Signer`](key_wallet::signer::Signer) via the
+    /// `impl<S: Signer> TransactionSigner for S` blanket in
+    /// `key-wallet`'s `transaction_builder.rs`. For Swift wallets this
+    /// is typically a
+    /// [`MnemonicResolverCoreSigner`](crate::wallet::asset_lock::build)
+    /// from `platform-wallet-ffi`, backed by the Keychain-resolver
+    /// vtable so private keys never cross the FFI boundary.
     ///
     /// **Note (smell):** the body of this method is a near-duplicate of
     /// `ManagedWalletInfo::build_and_sign_transaction` in `key-wallet`
@@ -35,11 +46,12 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     /// It's reimplemented here because the upstream helper is BIP-44-only,
     /// parametrizing upstream on `AccountTypePreference` so it picks
     /// `standard_bip{32,44}_accounts` would be a trivial change
-    pub async fn send_to_addresses(
+    pub async fn send_to_addresses<S: Signer>(
         &self,
         account_type: StandardAccountType,
         account_index: u32,
         outputs: Vec<(DashAddress, u64)>,
+        signer: &S,
     ) -> Result<Transaction, PlatformWalletError> {
         use key_wallet::wallet::managed_wallet_info::coin_selection::SelectionStrategy;
         use key_wallet::wallet::managed_wallet_info::transaction_builder::TransactionBuilder;
@@ -108,6 +120,11 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                 ),
             };
 
+            // The blanket `impl<S: Signer> TransactionSigner for S` in
+            // `key-wallet/src/wallet/managed_wallet_info/transaction_builder.rs:482`
+            // makes the signer drop-in for the previously `Wallet`-backed
+            // path; the funds-derived `address_derivation_path` lookup is
+            // unchanged.
             let mut builder = TransactionBuilder::new()
                 .set_current_height(current_height)
                 .set_selection_strategy(SelectionStrategy::LargestFirst)
@@ -117,7 +134,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             }
 
             let (tx, _fee) = builder
-                .build_signed(wallet, |addr| {
+                .build_signed(signer, |addr| {
                     managed_account.address_derivation_path(&addr)
                 })
                 .await
