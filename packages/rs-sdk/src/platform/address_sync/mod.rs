@@ -1867,4 +1867,151 @@ mod tests {
             "post-snapshot address still recovered after refresh"
         );
     }
+
+    // ── CMT-003 regression guards ────────────────────────────────────
+    //
+    // CMT-003 (thepastaclaw): a foreign-wallet address (one the provider
+    // has never derived and never will) must NOT trigger a refresh storm,
+    // a warn-log flood, or any insertion into `result.found`. The
+    // pre-refactor code refreshed per-block and logged at `warn` for
+    // every cross-wallet address — these guards pin the corrected
+    // end-of-pass behavior.
+
+    /// A foreign address (not in the lookup, never produced by the
+    /// provider) is silently ignored — no `on_address_found`, no
+    /// `result.found` insert, no `result.absent` mutation.
+    #[tokio::test]
+    async fn cmt_003_foreign_address_is_ignored_without_refresh_storm() {
+        use async_trait::async_trait;
+
+        struct CountingNoopProvider {
+            pending_polls: std::sync::atomic::AtomicUsize,
+            found_calls: usize,
+        }
+
+        #[async_trait]
+        impl AddressProvider for CountingNoopProvider {
+            type Tag = u32;
+            type Address = PlatformAddress;
+
+            fn gap_limit(&self) -> AddressIndex {
+                0
+            }
+
+            fn pending_addresses(&self) -> impl Iterator<Item = (Self::Tag, Self::Address)> + '_ {
+                self.pending_polls
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                std::iter::empty()
+            }
+
+            async fn on_address_found(
+                &mut self,
+                _tag: Self::Tag,
+                _address: &Self::Address,
+                _funds: AddressFunds,
+            ) {
+                self.found_calls += 1;
+            }
+
+            async fn on_address_absent(&mut self, _tag: Self::Tag, _address: &Self::Address) {}
+
+            fn current_balances(
+                &self,
+            ) -> impl Iterator<Item = (Self::Tag, Self::Address, AddressFunds)> + '_ {
+                std::iter::empty()
+            }
+        }
+
+        let mine = p2pkh(0x01);
+        let foreign_1 = p2pkh(0xF1);
+        let foreign_2 = p2pkh(0xF2);
+        let foreign_3 = p2pkh(0xF3);
+
+        let mut lookup: HashMap<Vec<u8>, (u32, PlatformAddress)> = HashMap::new();
+        lookup.insert(mine.to_bytes(), (1u32, mine));
+
+        let mut result: AddressSyncResult<u32, PlatformAddress> = AddressSyncResult::new();
+        let mut provider = CountingNoopProvider {
+            pending_polls: std::sync::atomic::AtomicUsize::new(0),
+            found_calls: 0,
+        };
+        let mut pending_unknown: Vec<PendingUnknownChange> = Vec::new();
+
+        // Three separate "blocks" (representing the per-entry calls
+        // inside `incremental_catch_up`), every change but the first
+        // belongs to another wallet.
+        for (addr, credits) in [
+            (&mine, 1_000),
+            (&foreign_1, 5_000),
+            (&foreign_2, 5_000),
+            (&foreign_3, 5_000),
+        ] {
+            let op = BlockAwareCreditOperation::SetCredits(credits);
+            let changes = [(addr, AddressBalanceChange::Compacted(&op))];
+            apply_block_changes(
+                &lookup,
+                changes.iter().map(|(a, c)| (*a, *c)),
+                0,
+                &mut provider,
+                &mut result,
+                &mut pending_unknown,
+            )
+            .await;
+        }
+
+        // CMT-001 contract: per-block apply must NEVER refresh the
+        // provider — the refresh runs once, at end of pass.
+        assert_eq!(
+            provider
+                .pending_polls
+                .load(std::sync::atomic::Ordering::Relaxed),
+            0,
+            "no per-block pending_addresses() polls — refresh is end-of-pass only"
+        );
+
+        // The end-of-pass refresh runs exactly once.
+        refresh_and_replay_unknown(&lookup, pending_unknown, &mut provider, &mut result).await;
+        assert_eq!(
+            provider
+                .pending_polls
+                .load(std::sync::atomic::Ordering::Relaxed),
+            1,
+            "end-of-pass refresh must poll the provider exactly once"
+        );
+
+        // Foreign addresses must not surface as `found` or fire callbacks.
+        assert_eq!(
+            result.found.len(),
+            1,
+            "only the known address is in `found` (foreign addresses ignored)"
+        );
+        assert_eq!(
+            result.found.get(&(1u32, mine)).map(|f| f.balance),
+            Some(1_000),
+            "known address applied"
+        );
+        assert!(
+            !result
+                .found
+                .keys()
+                .any(|(_, a)| *a == foreign_1 || *a == foreign_2 || *a == foreign_3),
+            "no foreign address may be inserted into `result.found`"
+        );
+        assert!(
+            result.absent.is_empty(),
+            "foreign addresses must not be marked `absent` either"
+        );
+        assert_eq!(
+            provider.found_calls, 1,
+            "on_address_found fires only for the known address"
+        );
+
+        // Found ∩ Absent stays disjoint (CMT-001 invariant).
+        for key in result.found.keys() {
+            assert!(
+                !result.absent.contains(key),
+                "found ∩ absent must be empty (CMT-001): {key:?} in both"
+            );
+        }
+    }
 }
