@@ -76,6 +76,12 @@ pub enum PlatformWalletFFIResultCode {
     ErrorInvalidIdentifier = 10,
     ErrorMemoryAllocation = 11,
     ErrorUtf8Conversion = 12,
+    /// `PlatformWalletError::OnlyOutputAddressesFunded`: auto-selection
+    /// found that every funded address is also a destination output.
+    ErrorOnlyOutputAddressesFunded = 13,
+    /// `PlatformWalletError::OnlyDustInputs`: auto-selection found that
+    /// every funded address is below `min_input_amount`.
+    ErrorOnlyDustInputs = 14,
 
     NotFound = 98, // Used exclusively for all the Option that are retuned as errors
     ErrorUnknown = 99,
@@ -156,7 +162,16 @@ impl<T> From<Option<T>> for PlatformWalletFFIResult {
 
 impl From<PlatformWalletError> for PlatformWalletFFIResult {
     fn from(error: PlatformWalletError) -> Self {
-        PlatformWalletFFIResult::err(PlatformWalletFFIResultCode::ErrorUnknown, error.to_string())
+        let code = match &error {
+            PlatformWalletError::OnlyOutputAddressesFunded { .. } => {
+                PlatformWalletFFIResultCode::ErrorOnlyOutputAddressesFunded
+            }
+            PlatformWalletError::OnlyDustInputs { .. } => {
+                PlatformWalletFFIResultCode::ErrorOnlyDustInputs
+            }
+            _ => PlatformWalletFFIResultCode::ErrorUnknown,
+        };
+        PlatformWalletFFIResult::err(code, error.to_string())
     }
 }
 
@@ -366,6 +381,42 @@ mod tests {
             platform_wallet_ffi_result_free(&mut r);
         }
         assert!(r.message.is_null());
+    }
+
+    /// CMT-003: typed `PlatformWalletError` variants route to the
+    /// dedicated FFI codes, not the catch-all `ErrorUnknown`.
+    #[test]
+    fn typed_errors_route_to_dedicated_codes() {
+        use dpp::address_funds::PlatformAddress;
+        let cases: Vec<(PlatformWalletError, PlatformWalletFFIResultCode)> = vec![
+            (
+                PlatformWalletError::OnlyOutputAddressesFunded {
+                    funded_outputs: vec![PlatformAddress::P2pkh([0u8; 20])],
+                    sub_min_count: 0,
+                    sub_min_aggregate: 0,
+                    min_input_amount: 100_000,
+                },
+                PlatformWalletFFIResultCode::ErrorOnlyOutputAddressesFunded,
+            ),
+            (
+                PlatformWalletError::OnlyDustInputs {
+                    sub_min_count: 2,
+                    sub_min_aggregate: 12_345,
+                    min_input_amount: 100_000,
+                },
+                PlatformWalletFFIResultCode::ErrorOnlyDustInputs,
+            ),
+            (
+                PlatformWalletError::AddressOperation("plain string".to_string()),
+                PlatformWalletFFIResultCode::ErrorUnknown,
+            ),
+        ];
+
+        for (err, expected) in cases {
+            let result: PlatformWalletFFIResult = err.into();
+            assert_eq!(result.code, expected);
+            assert!(!result.message.is_null());
+        }
     }
 
     #[test]
