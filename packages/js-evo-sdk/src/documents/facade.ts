@@ -38,7 +38,7 @@ export class DocumentsFacade {
     return w.getDocumentWithProofInfo(contractId, type, documentId);
   }
 
-  async create(options: wasm.DocumentCreateOptions): Promise<void> {
+  async create(options: wasm.DocumentCreateOptions): Promise<wasm.Document> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.documentCreate(options);
   }

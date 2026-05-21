@@ -54,7 +54,7 @@ describe('DocumentsFacade', () => {
     });
 
     // Stub transition methods
-    documentCreateStub = this.sinon.stub(wasmSdk, 'documentCreate').resolves();
+    documentCreateStub = this.sinon.stub(wasmSdk, 'documentCreate').resolves(document);
     documentReplaceStub = this.sinon.stub(wasmSdk, 'documentReplace').resolves();
     documentDeleteStub = this.sinon.stub(wasmSdk, 'documentDelete').resolves();
     documentTransferStub = this.sinon.stub(wasmSdk, 'documentTransfer').resolves();
@@ -126,9 +126,10 @@ describe('DocumentsFacade', () => {
         tokenPaymentInfo,
       };
 
-      await client.documents.create(options);
+      const result = await client.documents.create(options);
 
       expect(documentCreateStub).to.be.calledOnceWithExactly(options);
+      expect(result).to.equal(document);
     });
   });
 
