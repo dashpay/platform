@@ -77,6 +77,12 @@ struct CreateIdentityView: View {
     /// processing fee is deducted.
     private static let defaultCoreFundingDuffs: UInt64 = 250_000
 
+    /// Decimal places the amount prefill is truncated to. Capping
+    /// the prefilled value at `floor(balance, 0.0001 DASH)` keeps
+    /// the parsed-back credits at or below the actual balance so
+    /// `canSubmit` doesn't trip on a `%g`-style rounding overflow.
+    private static let prefillDecimalPlaces: Int = 4
+
     /// All locally-persisted wallets. Drives the Source Wallet
     /// picker along with the synthetic "no wallet" sentinel.
     @Query(sort: \PersistentWallet.createdAt) private var wallets: [PersistentWallet]
@@ -1278,8 +1284,9 @@ struct CreateIdentityView: View {
         default:
             return ""
         }
-        let truncated = (dash * 10_000).rounded(.down) / 10_000
-        var s = String(format: "%.4f", truncated)
+        let scale = pow(10.0, Double(Self.prefillDecimalPlaces))
+        let truncated = (dash * scale).rounded(.down) / scale
+        var s = String(format: "%.\(Self.prefillDecimalPlaces)f", truncated)
         while s.last == "0" { s.removeLast() }
         if s.last == "." { s.removeLast() }
         return s
