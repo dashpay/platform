@@ -59,6 +59,11 @@ public struct ShieldedSyncEvent: Sendable {
 
 extension PlatformWalletManager {
     func handleShieldedSyncCompleted(_ event: ShieldedSyncEvent) {
+        // Drop a trailing event that the Rust drain already dispatched
+        // but the main actor only delivers after stop/clear returned
+        // (see `suppressShieldedCompletionEvents`). Any sync-start clears
+        // the flag, so legitimate events are never suppressed.
+        guard !suppressShieldedCompletionEvents else { return }
         lastShieldedSyncEvent = event
     }
 
@@ -176,6 +181,8 @@ extension PlatformWalletManager {
         if let intervalSeconds {
             try setShieldedSyncInterval(seconds: intervalSeconds)
         }
+        // A new sync run should publish its completion events again.
+        suppressShieldedCompletionEvents = false
         try platform_wallet_manager_shielded_sync_start(handle).check()
     }
 
@@ -186,6 +193,9 @@ extension PlatformWalletManager {
             )
         }
         try platform_wallet_manager_shielded_sync_stop(handle).check()
+        // The Rust drain returned; suppress any trailing completion
+        // event the main actor delivers after this point.
+        suppressShieldedCompletionEvents = true
     }
 
     /// Reset the Rust-side shielded state on this manager:
@@ -209,6 +219,10 @@ extension PlatformWalletManager {
             )
         }
         try platform_wallet_manager_shielded_clear(handle).check()
+        // The Rust drain returned; suppress any trailing completion
+        // event the main actor delivers after Clear (it would otherwise
+        // briefly repopulate the mirror the host is about to wipe).
+        suppressShieldedCompletionEvents = true
     }
 
     public func isShieldedSyncRunning() throws -> Bool {
@@ -259,6 +273,9 @@ extension PlatformWalletManager {
                 "PlatformWalletManager not configured"
             )
         }
+        // A user-initiated sync should publish its completion event even
+        // if a prior stop/clear had suppressed events.
+        suppressShieldedCompletionEvents = false
         let handle = self.handle
         try await Task.detached(priority: .userInitiated) {
             try platform_wallet_manager_shielded_sync_sync_now(handle).check()
