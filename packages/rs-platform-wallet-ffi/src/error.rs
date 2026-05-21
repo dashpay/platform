@@ -410,27 +410,43 @@ mod tests {
     /// message string.
     #[test]
     fn no_selectable_inputs_maps_to_dedicated_code() {
+        use dpp::address_funds::PlatformAddress;
         use key_wallet::account::StandardAccountType;
-        let err = PlatformWalletError::NoSpendableInputs {
-            account_type: StandardAccountType::BIP44Account,
-            account_index: 0,
-            context: "wallet empty in test".to_string(),
-        };
-        let rendered = err.to_string();
-        let result: PlatformWalletFFIResult = err.into();
-        assert_eq!(
-            result.code,
-            PlatformWalletFFIResultCode::ErrorNoSelectableInputs
-        );
-        assert!(!result.message.is_null());
-        let msg = unsafe { std::ffi::CStr::from_ptr(result.message) }
-            .to_string_lossy()
-            .into_owned();
-        assert_eq!(msg, rendered);
-        assert!(
-            msg.contains("no spendable inputs"),
-            "Display payload must survive: {msg}"
-        );
+
+        let cases: Vec<PlatformWalletError> = vec![
+            PlatformWalletError::NoSpendableInputs {
+                account_type: StandardAccountType::BIP44Account,
+                account_index: 0,
+                context: "wallet empty in test".to_string(),
+            },
+            PlatformWalletError::OnlyOutputAddressesFunded {
+                funded_outputs: Vec::<PlatformAddress>::new(),
+                min_input_amount: 1_000,
+            },
+            PlatformWalletError::OnlyDustInputs {
+                sub_min_count: 3,
+                sub_min_aggregate: 500,
+                min_input_amount: 1_000,
+            },
+        ];
+
+        for err in cases {
+            let rendered = err.to_string();
+            let result: PlatformWalletFFIResult = err.into();
+            assert_eq!(
+                result.code,
+                PlatformWalletFFIResultCode::ErrorNoSelectableInputs,
+                "variant should map to ErrorNoSelectableInputs (rendered: {rendered})"
+            );
+            assert!(!result.message.is_null());
+            let msg = unsafe { std::ffi::CStr::from_ptr(result.message) }
+                .to_string_lossy()
+                .into_owned();
+            assert_eq!(
+                msg, rendered,
+                "Display payload must survive the FFI boundary verbatim"
+            );
+        }
     }
 
     /// Other wallet-error variants without a dedicated FFI arm still
