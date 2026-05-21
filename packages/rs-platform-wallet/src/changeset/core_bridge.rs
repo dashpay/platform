@@ -354,5 +354,6 @@ impl CoreChangeSet {
             && self.last_processed_height.is_none()
             && self.synced_height.is_none()
             && self.last_applied_chain_lock.is_none()
+            && self.addresses_derived.is_empty()
     }
 }
