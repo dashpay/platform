@@ -294,6 +294,10 @@ impl PlatformAddressWallet {
     ) -> Result<BTreeMap<PlatformAddress, Credits>, PlatformWalletError> {
         let total_output: Credits = saturating_sum_credits(outputs.values().copied());
 
+        // TODO(QA-007): pre-existing read-snapshot vs broadcast race; new
+        // headroom math leans harder on snapshot. Hold guard across
+        // snapshot+broadcast+update, or re-validate headroom right before
+        // broadcast.
         let wm = self.wallet_manager.read().await;
         let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
             PlatformWalletError::WalletNotFound(format!(
