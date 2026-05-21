@@ -190,9 +190,9 @@ fn encoder_dispatches_v0_via_query_settings_without_sdk() {
     // PlatformVersion whose document_query is pinned to V0 dispatch
     // and assert the wire shape comes out V0.
     let v0_pv = v0_dispatch_version();
-    let settings = RequestSettings::default();
+    let request_settings = RequestSettings::default();
     let settings = QuerySettings {
-        request_settings: &settings,
+        request_settings: &request_settings,
         protocol_version: v0_pv,
         prove: true,
     };
@@ -205,13 +205,13 @@ fn encoder_dispatches_v0_via_query_settings_without_sdk() {
 
     // Same query, latest PlatformVersion (V1 dispatch) — should now
     // emit V1 wire bytes through the same code path.
-    let latest_ctx = QuerySettings {
-        request_settings: &settings,
+    let latest_settings = QuerySettings {
+        request_settings: &request_settings,
         protocol_version: PlatformVersion::latest(),
         prove: true,
     };
     let q = build_basic_document_query();
-    let req: GetDocumentsRequest = q.query(&latest_ctx).expect("encode via QuerySettings");
+    let req: GetDocumentsRequest = q.query(&latest_settings).expect("encode via QuerySettings");
     assert!(
         matches!(req.version, Some(ReqVersion::V1(_))),
         "expected V1 dispatch when settings.protocol_version is latest"
@@ -287,9 +287,9 @@ fn document_query_dispatches_v0_when_sdk_initial_version_is_v3_0_pv() {
     use rs_dapi_client::RequestSettings;
 
     let pv_v3_0 = PlatformVersion::get(11).expect("PROTOCOL_VERSION_11 exists");
-    let settings = RequestSettings::default();
+    let request_settings = RequestSettings::default();
     let settings = QuerySettings {
-        request_settings: &settings,
+        request_settings: &request_settings,
         protocol_version: pv_v3_0,
         prove: true,
     };

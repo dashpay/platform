@@ -51,9 +51,9 @@ async fn test_token_contract_info_query_prove_true() {
     let token_id = Identifier::from_bytes(&[3u8; 32]).unwrap();
     let query = TokenContractInfoQuery { token_id };
 
-    let settings = RequestSettings::default();
+    let request_settings = RequestSettings::default();
     let settings = QuerySettings {
-        request_settings: &settings,
+        request_settings: &request_settings,
         protocol_version: PlatformVersion::latest(),
         prove: true,
     };
@@ -72,9 +72,9 @@ async fn test_token_contract_info_query_prove_false() {
     let token_id = Identifier::from_bytes(&[4u8; 32]).unwrap();
     let query = TokenContractInfoQuery { token_id };
 
-    let settings = RequestSettings::default();
+    let request_settings = RequestSettings::default();
     let settings = QuerySettings {
-        request_settings: &settings,
+        request_settings: &request_settings,
         protocol_version: PlatformVersion::latest(),
         prove: false,
     };
