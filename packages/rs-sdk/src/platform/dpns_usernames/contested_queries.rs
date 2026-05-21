@@ -505,9 +505,7 @@ mod tests {
     #[ignore] // Requires network connection
     async fn test_contested_queries() {
         // Create SDK with testnet configuration
-        let address_list = "https://52.12.176.90:1443"
-            .parse()
-            .expect("Failed to parse address");
+        let address_list = super::super::test_address::test_address_list();
 
         // Create trusted context provider for testnet
         let context_provider = TrustedHttpContextProvider::new(
@@ -724,9 +722,7 @@ mod tests {
         use std::time::{SystemTime, UNIX_EPOCH};
 
         // Create SDK with testnet configuration
-        let address_list = "https://52.12.176.90:1443"
-            .parse()
-            .expect("Failed to parse address");
+        let address_list = super::super::test_address::test_address_list();
 
         // Create trusted context provider for testnet
         let context_provider = TrustedHttpContextProvider::new(
@@ -882,9 +878,7 @@ mod tests {
     #[ignore] // Requires network connection
     async fn test_get_contested_non_resolved_usernames() {
         // Create SDK with testnet configuration
-        let address_list = "https://52.12.176.90:1443"
-            .parse()
-            .expect("Failed to parse address");
+        let address_list = super::super::test_address::test_address_list();
 
         // Create trusted context provider for testnet
         let context_provider = TrustedHttpContextProvider::new(
@@ -1024,9 +1018,7 @@ mod tests {
     #[ignore] // Requires network connection
     async fn test_get_non_resolved_dpns_contests_for_identity() {
         // Create SDK with testnet configuration
-        let address_list = "https://52.12.176.90:1443"
-            .parse()
-            .expect("Failed to parse address");
+        let address_list = super::super::test_address::test_address_list();
 
         // Create trusted context provider for testnet
         let context_provider = TrustedHttpContextProvider::new(
