@@ -89,8 +89,8 @@ impl From<EpochIndex> for EpochQuery {
 impl Query<GetEpochsInfoRequest> for EpochQuery {
     fn query(
         &self,
-        ctx: &crate::platform::QuerySettings<'_>,
+        settings: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetEpochsInfoRequest, Error> {
-        LimitQuery::from(self.clone()).query(ctx)
+        LimitQuery::from(self.clone()).query(settings)
     }
 }

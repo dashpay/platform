@@ -52,12 +52,12 @@ async fn test_token_contract_info_query_prove_true() {
     let query = TokenContractInfoQuery { token_id };
 
     let settings = RequestSettings::default();
-    let ctx = QuerySettings {
+    let settings = QuerySettings {
         request_settings: &settings,
         protocol_version: PlatformVersion::latest(),
         prove: true,
     };
-    let request = query.query(&ctx).unwrap();
+    let request = query.query(&settings).unwrap();
 
     match request.version.unwrap() {
         dapi_grpc::platform::v0::get_token_contract_info_request::Version::V0(v0) => {
@@ -73,12 +73,12 @@ async fn test_token_contract_info_query_prove_false() {
     let query = TokenContractInfoQuery { token_id };
 
     let settings = RequestSettings::default();
-    let ctx = QuerySettings {
+    let settings = QuerySettings {
         request_settings: &settings,
         protocol_version: PlatformVersion::latest(),
         prove: false,
     };
-    let request = query.query(&ctx).unwrap();
+    let request = query.query(&settings).unwrap();
 
     match request.version.unwrap() {
         dapi_grpc::platform::v0::get_token_contract_info_request::Version::V0(v0) => {

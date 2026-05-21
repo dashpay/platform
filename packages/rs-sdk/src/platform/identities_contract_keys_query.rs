@@ -67,9 +67,9 @@ impl TryFrom<IdentitiesContractKeysQuery> for GetIdentitiesContractKeysRequest {
 impl Query<GetIdentitiesContractKeysRequest> for IdentitiesContractKeysQuery {
     fn query(
         &self,
-        ctx: &crate::platform::QuerySettings<'_>,
+        settings: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetIdentitiesContractKeysRequest, Error> {
-        let prove = ctx.prove;
+        let prove = settings.prove;
         let IdentitiesContractKeysQuery {
             identities_ids,
             contract_id,

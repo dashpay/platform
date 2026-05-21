@@ -191,16 +191,16 @@ fn encoder_dispatches_v0_via_query_settings_without_sdk() {
     // and assert the wire shape comes out V0.
     let v0_pv = v0_dispatch_version();
     let settings = RequestSettings::default();
-    let ctx = QuerySettings {
+    let settings = QuerySettings {
         request_settings: &settings,
         protocol_version: v0_pv,
         prove: true,
     };
     let q = build_basic_document_query();
-    let req: GetDocumentsRequest = q.query(&ctx).expect("encode via QuerySettings");
+    let req: GetDocumentsRequest = q.query(&settings).expect("encode via QuerySettings");
     assert!(
         matches!(req.version, Some(ReqVersion::V0(_))),
-        "expected V0 dispatch when ctx.protocol_version pins document_query to v0"
+        "expected V0 dispatch when settings.protocol_version pins document_query to v0"
     );
 
     // Same query, latest PlatformVersion (V1 dispatch) — should now
@@ -214,7 +214,7 @@ fn encoder_dispatches_v0_via_query_settings_without_sdk() {
     let req: GetDocumentsRequest = q.query(&latest_ctx).expect("encode via QuerySettings");
     assert!(
         matches!(req.version, Some(ReqVersion::V1(_))),
-        "expected V1 dispatch when ctx.protocol_version is latest"
+        "expected V1 dispatch when settings.protocol_version is latest"
     );
 }
 
@@ -288,13 +288,15 @@ fn document_query_dispatches_v0_when_sdk_initial_version_is_v3_0_pv() {
 
     let pv_v3_0 = PlatformVersion::get(11).expect("PROTOCOL_VERSION_11 exists");
     let settings = RequestSettings::default();
-    let ctx = QuerySettings {
+    let settings = QuerySettings {
         request_settings: &settings,
         protocol_version: pv_v3_0,
         prove: true,
     };
     let q = build_basic_document_query();
-    let req: GetDocumentsRequest = q.query(&ctx).expect("encode for v3.0 PV via QuerySettings");
+    let req: GetDocumentsRequest = q
+        .query(&settings)
+        .expect("encode for v3.0 PV via QuerySettings");
     assert!(
         matches!(req.version, Some(ReqVersion::V0(_))),
         "expected V0 dispatch for PROTOCOL_VERSION_11"

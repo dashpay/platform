@@ -438,9 +438,9 @@ impl MockDashPlatformSdk {
         let sdk = sdk_guard
             .as_ref()
             .expect("sdk must be set when creating mock");
-        let ctx = sdk.query_settings();
-        let rich: R = query.query(&ctx).expect("query must be correct");
-        let wire: W = rich.query(&ctx).expect("wire encoding must succeed");
+        let settings = sdk.query_settings();
+        let rich: R = query.query(&settings).expect("query must be correct");
+        let wire: W = rich.query(&settings).expect("wire encoding must succeed");
         (rich, wire)
     }
 

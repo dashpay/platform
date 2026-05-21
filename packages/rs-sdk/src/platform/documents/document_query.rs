@@ -953,8 +953,8 @@ fn value_to_proto_at_depth(value: Value, depth: u8) -> Result<ProtoDocumentField
 impl crate::platform::Query<platform_proto::GetDocumentsRequest> for DocumentQuery {
     fn query(
         &self,
-        ctx: &crate::platform::QuerySettings<'_>,
+        settings: &crate::platform::QuerySettings<'_>,
     ) -> Result<platform_proto::GetDocumentsRequest, Error> {
-        GetDocumentsRequest::try_from_platform_versioned(self.clone(), ctx.protocol_version)
+        GetDocumentsRequest::try_from_platform_versioned(self.clone(), settings.protocol_version)
     }
 }

@@ -7,9 +7,9 @@ pub use dpp::balances::total_single_token_balance::TotalSingleTokenBalance;
 impl Query<GetTokenTotalSupplyRequest> for Identifier {
     fn query(
         &self,
-        ctx: &crate::platform::QuerySettings<'_>,
+        settings: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetTokenTotalSupplyRequest, Error> {
-        let prove = ctx.prove;
+        let prove = settings.prove;
         let request = GetTokenTotalSupplyRequest {
             version: Some(get_token_total_supply_request::Version::V0(
                 GetTokenTotalSupplyRequestV0 {

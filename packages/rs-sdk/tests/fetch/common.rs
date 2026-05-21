@@ -132,12 +132,12 @@ pub(crate) async fn setup_sdk_for_test_case<T: TransportRequest + Mockable, Q: Q
     name_prefix: &str,
 ) -> (String, Sdk) {
     let settings = rs_dapi_client::RequestSettings::default();
-    let ctx = QuerySettings {
+    let settings = QuerySettings {
         request_settings: &settings,
         protocol_version: dpp::version::PlatformVersion::latest(),
         prove: true,
     };
-    let key = rs_dapi_client::mock::Key::new(&query.query(&ctx).expect("valid query"));
+    let key = rs_dapi_client::mock::Key::new(&query.query(&settings).expect("valid query"));
     let test_case_id = format!("{}_{}", name_prefix, key.encode_hex::<String>());
 
     // create new sdk to ensure that test cases don't interfere with each other

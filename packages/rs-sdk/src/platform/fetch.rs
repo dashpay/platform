@@ -172,17 +172,17 @@ where
     async fn fetch_with_metadata_and_proof<Q: Query<<Self as Fetch>::Query>>(
         sdk: &Sdk,
         query: Q,
-        settings: Option<RequestSettings>,
+        request_settings: Option<RequestSettings>,
     ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error> {
-        let ctx = sdk.query_settings();
-        let owned_rich: <Self as Fetch>::Query = query.query(&ctx)?;
+        let settings = sdk.query_settings();
+        let owned_rich: <Self as Fetch>::Query = query.query(&settings)?;
         // INTENTIONAL(CMT-008, #3711): For the common case `Self::Query = Self::Request`,
-        // the blanket `Query<T> for T` impl turns the `query.query(ctx)` step into a
+        // the blanket `Query<T> for T` impl turns the `query.query(settings)` step into a
         // pure clone of the same owned request. Real but micro-cost (~63 impls hit
         // this path). Specializing via a `fn encode_request_owned()` default method on
         // `Fetch` would eliminate the clone — deferred as future-perf work; trait shape
         // is intentionally uniform for now.
-        let owned_wire: <Self as Fetch>::Request = owned_rich.query(&ctx)?;
+        let owned_wire: <Self as Fetch>::Request = owned_rich.query(&settings)?;
         let rich = &owned_rich;
         let wire = &owned_wire;
 
@@ -224,11 +224,13 @@ where
             })
         };
 
-        let settings = sdk
+        let retry_settings = sdk
             .dapi_client_settings
-            .override_by(settings.unwrap_or_default());
+            .override_by(request_settings.unwrap_or_default());
 
-        retry(sdk.address_list(), settings, fut).await.into_inner()
+        retry(sdk.address_list(), retry_settings, fut)
+            .await
+            .into_inner()
     }
 
     /// Fetch single object from Platform.

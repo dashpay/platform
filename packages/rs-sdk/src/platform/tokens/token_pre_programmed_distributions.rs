@@ -34,9 +34,9 @@ pub struct TokenPreProgrammedDistributionsStartAtInfo {
 impl Query<GetTokenPreProgrammedDistributionsRequest> for TokenPreProgrammedDistributionsQuery {
     fn query(
         &self,
-        ctx: &crate::platform::QuerySettings<'_>,
+        settings: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetTokenPreProgrammedDistributionsRequest, Error> {
-        let prove = ctx.prove;
+        let prove = settings.prove;
         if !prove {
             unimplemented!("queries without proofs are not supported yet");
         }

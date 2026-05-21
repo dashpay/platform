@@ -42,9 +42,9 @@ impl From<(EpochIndex, EpochIndex)> for FinalizedEpochQuery {
 impl Query<GetFinalizedEpochInfosRequest> for FinalizedEpochQuery {
     fn query(
         &self,
-        ctx: &crate::platform::QuerySettings<'_>,
+        settings: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetFinalizedEpochInfosRequest, Error> {
-        let prove = ctx.prove;
+        let prove = settings.prove;
         if !prove {
             unimplemented!("queries without proofs are not supported yet");
         }
@@ -65,8 +65,8 @@ impl Query<GetFinalizedEpochInfosRequest> for FinalizedEpochQuery {
 impl Query<GetFinalizedEpochInfosRequest> for (EpochIndex, EpochIndex) {
     fn query(
         &self,
-        ctx: &crate::platform::QuerySettings<'_>,
+        settings: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetFinalizedEpochInfosRequest, Error> {
-        FinalizedEpochQuery::from(*self).query(ctx)
+        FinalizedEpochQuery::from(*self).query(settings)
     }
 }
