@@ -97,6 +97,15 @@ pub struct PlatformWallet {
     #[cfg(feature = "shielded")]
     pub(crate) shielded_keys:
         Arc<RwLock<Option<std::collections::BTreeMap<u32, super::shielded::OrchardKeySet>>>>,
+    /// Per-wallet single-flight guard for shield-class operations
+    /// (Type 15). Two concurrent `shield` calls on one wallet would
+    /// each fetch the same address nonce and build with `nonce + 1`, so
+    /// the second to reach drive-abci is rejected as a replay after a
+    /// ~30 s proof. Holding this across fetch → build → broadcast
+    /// serializes the double-tap / retry-while-proving case. `Arc` so
+    /// cloned wallet handles share the one lock.
+    #[cfg(feature = "shielded")]
+    pub(crate) shield_guard: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl PlatformWallet {
@@ -300,6 +309,8 @@ impl PlatformWallet {
             balance,
             #[cfg(feature = "shielded")]
             shielded_keys: Arc::new(RwLock::new(None)),
+            #[cfg(feature = "shielded")]
+            shield_guard: Arc::new(tokio::sync::Mutex::new(())),
         }
     }
 
@@ -731,6 +742,12 @@ impl PlatformWallet {
             ));
         }
 
+        // Single-flight: serialize shield-class ops on this wallet so
+        // two concurrent calls can't fetch + build with the same
+        // address nonce (the second would be rejected as a replay after
+        // a ~30 s proof). Held across selection → build → broadcast.
+        let _shield_guard = self.shield_guard.lock().await;
+
         // The shield transition uses `DeductFromInput(0)` as its fee
         // strategy. drive-abci interprets that as "after each input
         // address has had its `claim` deducted, take the fee out of
@@ -945,6 +962,8 @@ impl Clone for PlatformWallet {
             balance: self.balance.clone(),
             #[cfg(feature = "shielded")]
             shielded_keys: self.shielded_keys.clone(),
+            #[cfg(feature = "shielded")]
+            shield_guard: self.shield_guard.clone(),
         }
     }
 }

@@ -136,55 +136,26 @@ pub async fn shield<Sig: Signer<PlatformAddress>, P: OrchardProver>(
 ) -> Result<(), PlatformWalletError> {
     let recipient_addr = default_orchard_address(keys)?;
 
-    // Fetch the current address nonces from Platform. Each input
-    // address has a per-address nonce that the next state
-    // transition must use as `last_used + 1`.
-    use dash_sdk::platform::FetchMany;
-    use dash_sdk::query_types::AddressInfo;
-    use std::collections::BTreeSet;
+    // Reuse rs-sdk's canonical fetch + hard balance check rather than
+    // re-implementing the fetch-and-validate dance. Unlike the old
+    // warn-and-proceed path, `fetch_inputs_with_nonce` errors with
+    // `AddressNotEnoughFundsError` when any input is short, so we fail
+    // before paying the ~30 s Halo 2 proof for a transition drive-abci
+    // would reject. It returns the *current* on-chain nonces; we apply
+    // a checked increment (the canonical `nonce_inc` uses an unchecked
+    // `+ 1`, which would wrap an address at u32::MAX into a replay
+    // nonce — bail loudly here instead).
+    use dash_sdk::platform::transition::fetch_inputs_with_nonce;
 
-    let address_set: BTreeSet<PlatformAddress> = inputs.keys().copied().collect();
-    let infos = AddressInfo::fetch_many(sdk, address_set)
+    let fetched = fetch_inputs_with_nonce(sdk, &inputs)
         .await
         .map_err(|e| PlatformWalletError::ShieldedBuildError(format!("fetch input nonces: {e}")))?;
 
     let mut inputs_with_nonce: BTreeMap<PlatformAddress, (u32, Credits)> = BTreeMap::new();
-    for (addr, credits) in inputs {
-        let info = infos
-            .get(&addr)
-            .and_then(|opt| opt.as_ref())
-            .ok_or_else(|| {
-                PlatformWalletError::ShieldedBuildError(format!(
-                    "input address not found on platform: {:?}",
-                    addr
-                ))
-            })?;
-        if info.balance < credits {
-            warn!(
-                address = ?addr,
-                claimed_credits = credits,
-                platform_balance = info.balance,
-                platform_nonce = info.nonce,
-                "Shield input claims more credits than Platform reports — broadcast will likely fail"
-            );
-        } else {
-            info!(
-                address = ?addr,
-                claimed_credits = credits,
-                platform_balance = info.balance,
-                platform_nonce = info.nonce,
-                "Shield input"
-            );
-        }
-        // `AddressNonce` is `u32`; `info.nonce + 1` would wrap
-        // silently in release once an address reaches u32::MAX.
-        // drive-abci treats wrap-to-0 as a replay and rejects it
-        // after the wallet has spent ~30 s on a Halo 2 proof.
-        // Bail loudly here instead.
-        let next_nonce = info.nonce.checked_add(1).ok_or_else(|| {
+    for (addr, (nonce, credits)) in fetched {
+        let next_nonce = nonce.checked_add(1).ok_or_else(|| {
             PlatformWalletError::ShieldedBuildError(format!(
-                "input address nonce exhausted on platform: {:?}",
-                addr
+                "input address nonce exhausted on platform: {addr:?}"
             ))
         })?;
         inputs_with_nonce.insert(addr, (next_nonce, credits));
