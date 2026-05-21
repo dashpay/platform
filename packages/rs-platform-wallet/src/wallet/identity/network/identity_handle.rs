@@ -467,18 +467,16 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         })
     }
 
-    /// Extract the outpoint from an asset lock proof.
-    ///
-    /// For instant proofs, this is the txid of the embedded transaction
-    /// combined with the output index from the proof.
-    /// For chain proofs, this is the out_point directly.
-    pub(super) fn out_point_from_proof(proof: &AssetLockProof) -> Option<dashcore::OutPoint> {
+    /// Extract the outpoint from an asset lock proof. Total over the
+    /// `AssetLockProof` enum — neither variant can fail to produce an
+    /// outpoint (Instant: derived from embedded tx + output index;
+    /// Chain: carried directly as `out_point`).
+    pub(super) fn out_point_from_proof(proof: &AssetLockProof) -> dashcore::OutPoint {
         match proof {
-            AssetLockProof::Instant(instant) => Some(dashcore::OutPoint::new(
-                instant.transaction().txid(),
-                instant.output_index(),
-            )),
-            AssetLockProof::Chain(chain) => Some(chain.out_point),
+            AssetLockProof::Instant(instant) => {
+                dashcore::OutPoint::new(instant.transaction().txid(), instant.output_index())
+            }
+            AssetLockProof::Chain(chain) => chain.out_point,
         }
     }
 }

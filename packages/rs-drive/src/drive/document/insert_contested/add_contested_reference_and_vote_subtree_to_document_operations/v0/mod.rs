@@ -75,6 +75,8 @@ impl Drive {
                             storage_flags.map(|s| s.serialized_size()),
                             1,
                         )),
+                        items_with_sum_item_size: None,
+                        references_with_sum_item_size: None,
                     },
                 },
             );

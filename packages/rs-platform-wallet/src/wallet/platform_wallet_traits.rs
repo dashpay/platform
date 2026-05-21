@@ -6,6 +6,7 @@
 use std::collections::BTreeSet;
 
 use async_trait::async_trait;
+use dashcore::ephemerealdata::chain_lock::ChainLock;
 use dashcore::ephemerealdata::instant_lock::InstantLock;
 use dashcore::prelude::CoreBlockHeight;
 use dashcore::{Address as DashAddress, Transaction, Txid};
@@ -17,7 +18,9 @@ use key_wallet::transaction_checking::account_checker::TransactionCheckResult;
 use key_wallet::transaction_checking::TransactionContext;
 use key_wallet::transaction_checking::WalletTransactionChecker;
 use key_wallet::wallet::managed_wallet_info::managed_account_operations::ManagedAccountOperations;
-use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+use key_wallet::wallet::managed_wallet_info::wallet_info_interface::{
+    ApplyChainLockOutcome, WalletInfoInterface,
+};
 use key_wallet::wallet::managed_wallet_info::TransactionRecord;
 use key_wallet::{Network, Utxo, Wallet, WalletCoreBalance};
 
@@ -158,6 +161,35 @@ impl WalletInfoInterface for PlatformWalletInfo {
 
     fn monitor_revision(&self) -> u64 {
         self.core_wallet.monitor_revision()
+    }
+
+    // Delegate the chain-lock methods to the inner `ManagedWalletInfo`.
+    //
+    // Without these delegations, `WalletInfoInterface`'s default impls
+    // kick in (no-op `apply_chain_lock` returning an empty BTreeMap;
+    // `last_applied_chain_lock` returning `None`). That's the bug behind
+    // "stuck asset lock #10": upstream's
+    // `spawn_chainlock_wallet_dispatch` task receives every validated
+    // `ChainLockReceived` event and calls
+    // `wallet.write().await.apply_chain_lock(...)`, but our
+    // `PlatformWalletInfo` was hitting the trait default — promotion
+    // never fired and `metadata.last_applied_chain_lock` stayed `None`.
+    fn last_applied_chain_lock(&self) -> Option<&ChainLock> {
+        self.core_wallet.last_applied_chain_lock()
+    }
+
+    fn apply_chain_lock(&mut self, chain_lock: ChainLock) -> ApplyChainLockOutcome {
+        let cl_height = chain_lock.block_height;
+        let outcome = self.core_wallet.apply_chain_lock(chain_lock);
+        let total_promoted: usize = outcome.locked_transactions.values().map(|v| v.len()).sum();
+        tracing::debug!(
+            cl_height,
+            total_promoted,
+            accounts_with_promotions = outcome.locked_transactions.len(),
+            metadata_advanced = outcome.metadata_advanced,
+            "apply_chain_lock delegated"
+        );
+        outcome
     }
 }
 

@@ -52,12 +52,12 @@ enum-map = { version = "2.0.3", optional = true }
 intmap = { version = "3.0.1", features = ["serde"], optional = true }
 chrono = { version = "0.4.35", optional = true }
 itertools = { version = "0.13", optional = true }
-grovedb = { git = "https://github.com/dashpay/grovedb", rev = "352c2f5504fba8795e8ed1056753bfd73c13b4cc", optional = true, default-features = false }
-grovedb-costs = { git = "https://github.com/dashpay/grovedb", rev = "352c2f5504fba8795e8ed1056753bfd73c13b4cc", optional = true }
-grovedb-path = { git = "https://github.com/dashpay/grovedb", rev = "352c2f5504fba8795e8ed1056753bfd73c13b4cc" }
-grovedb-storage = { git = "https://github.com/dashpay/grovedb", rev = "352c2f5504fba8795e8ed1056753bfd73c13b4cc", optional = true }
-grovedb-version = { git = "https://github.com/dashpay/grovedb", rev = "352c2f5504fba8795e8ed1056753bfd73c13b4cc" }
-grovedb-epoch-based-storage-flags = { git = "https://github.com/dashpay/grovedb", rev = "352c2f5504fba8795e8ed1056753bfd73c13b4cc" }
+grovedb = { git = "https://github.com/dashpay/grovedb", rev = "60f29685172653f6007e63d0916bce4633bc23b9", optional = true, default-features = false }
+grovedb-costs = { git = "https://github.com/dashpay/grovedb", rev = "60f29685172653f6007e63d0916bce4633bc23b9", optional = true }
+grovedb-path = { git = "https://github.com/dashpay/grovedb", rev = "60f29685172653f6007e63d0916bce4633bc23b9" }
+grovedb-storage = { git = "https://github.com/dashpay/grovedb", rev = "60f29685172653f6007e63d0916bce4633bc23b9", optional = true }
+grovedb-version = { git = "https://github.com/dashpay/grovedb", rev = "60f29685172653f6007e63d0916bce4633bc23b9" }
+grovedb-epoch-based-storage-flags = { git = "https://github.com/dashpay/grovedb", rev = "60f29685172653f6007e63d0916bce4633bc23b9" }
 
 [dev-dependencies]
 criterion = "0.5"
@@ -86,6 +86,14 @@ harness = false
 
 [[bench]]
 name = "document_count_worst_case"
+harness = false
+
+[[bench]]
+name = "document_sum_worst_case"
+harness = false
+
+[[bench]]
+name = "document_average_worst_case"
 harness = false
 
 [features]
