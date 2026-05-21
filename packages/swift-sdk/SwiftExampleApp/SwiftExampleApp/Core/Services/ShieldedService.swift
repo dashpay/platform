@@ -497,6 +497,17 @@ class ShieldedService: ObservableObject {
     // MARK: - Sync event handling
 
     private func handleShieldedSyncEvent(_ event: ShieldedSyncEvent) {
+        // Drop completion events that arrive while unbound. Clear
+        // (`clearLocalState`) sets `isBound = false` and cancels this
+        // subscription, but the Rust completion event is hopped onto the
+        // main actor and a final, already-dispatched one can land just
+        // after Clear returns — applying it would briefly repopulate the
+        // mirror Clear just zeroed. The Rust quiesce barrier already
+        // guarantees no *persistence* happens after Clear; this guards
+        // the in-memory display mirror. `bind()` sets `isBound = true`
+        // before its sync events flow, so a legitimate post-bind event
+        // is never dropped.
+        guard isBound else { return }
         guard let walletId = boundWalletId,
               let result = event.result(for: walletId) else {
             return

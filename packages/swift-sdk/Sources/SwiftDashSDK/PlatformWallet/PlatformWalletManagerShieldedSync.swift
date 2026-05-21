@@ -105,6 +105,11 @@ extension PlatformWalletManager {
                 "accounts must be non-empty"
             )
         }
+        guard accounts.count <= 64 else {
+            throw PlatformWalletError.invalidParameter(
+                "accounts must contain at most 64 entries"
+            )
+        }
         guard let resolverHandle = resolver.handle else {
             throw PlatformWalletError.invalidParameter(
                 "MnemonicResolver has no handle"

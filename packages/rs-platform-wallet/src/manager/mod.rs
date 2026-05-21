@@ -227,6 +227,24 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             .map(Arc::clone)
     }
 
+    /// Tear down shielded sync state for a Clear / wipe flow.
+    ///
+    /// Single library entry point so the FFI stays a one-call bridge:
+    /// first **quiesce** the sync manager (cancel the loop *and* drain
+    /// any in-flight pass, including its persister-callback fan-out, so
+    /// nothing can re-persist notes after this returns), then **clear**
+    /// the network coordinator's per-subwallet registries. Idempotent —
+    /// the coordinator step is a no-op when shielded support was never
+    /// configured. The per-network commitment-tree SQLite file is left
+    /// intact (chain-wide data; the next bind re-syncs against it).
+    #[cfg(feature = "shielded")]
+    pub async fn clear_shielded(&self) {
+        self.shielded_sync_manager.quiesce().await;
+        if let Some(coord) = self.shielded_coordinator().await {
+            coord.clear().await;
+        }
+    }
+
     /// Stop all background tasks and wait for them to exit.
     ///
     /// Stops the periodic coordinators (`PlatformAddressSyncManager`,

@@ -112,8 +112,12 @@ impl ShieldedSyncSummary {
 pub struct MultiSyncNotesResult {
     /// Per-subwallet count of new notes discovered in this pass.
     pub per_subwallet_new_notes: BTreeMap<SubwalletId, usize>,
-    /// New positions observed this pass — `(aligned_start +
-    /// total_notes_scanned).saturating_sub(already_have)`. See
+    /// Wire-level scan volume this pass — encrypted notes pulled from
+    /// Platform (decrypted + skipped), computed as `(aligned_start +
+    /// total_notes_scanned).saturating_sub(already_have)`. This is the
+    /// host-visible "Scanned" counter and is deliberately NOT the count
+    /// of newly-appended tree positions (the tree_size append gate makes
+    /// the two diverge on re-fetch). See
     /// [`SyncNotesResult::total_scanned`] for the rationale.
     pub total_scanned: u64,
     /// Accumulated persistence changeset spanning every touched
@@ -171,26 +175,43 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
         return Ok(MultiSyncNotesResult::default());
     }
 
-    // Snapshot the lowest per-subwallet watermark — the canonical
-    // tree-fetch start. Defensive `min` across subwallets: in
-    // practice we wipe-and-re-sync on account add so every
-    // subwallet shares the same watermark.
-    let already_have = {
+    // Snapshot each subwallet's watermark and the shared tree's
+    // current leaf count. Two distinct quantities drive the rest
+    // of this pass:
+    //   * `already_have` = the LOWEST per-subwallet watermark.
+    //     Drives the SDK fetch start so a lagging (e.g. late-bound)
+    //     subwallet's notes are re-scanned. A caught-up subwallet
+    //     shares the same watermark, so in the common case this is
+    //     just that one value.
+    //   * `tree_size` = the number of commitments already in the
+    //     shared tree. Drives the append gate (below) so the
+    //     re-fetch from a chunk boundary doesn't double-append
+    //     positions the tree already holds.
+    // The per-subwallet `watermarks` map gates note saving so a
+    // caught-up subwallet doesn't re-derive nullifiers for notes
+    // it already stored, while a lagging one still saves from its
+    // own start.
+    let (watermarks, already_have, tree_size) = {
         let store = store.read().await;
+        let mut watermarks: BTreeMap<SubwalletId, u64> = BTreeMap::new();
         let mut min_idx: Option<u64> = None;
         for (id, _) in subwallets {
             let idx = store
                 .last_synced_note_index(*id)
                 .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
+            watermarks.insert(*id, idx);
             min_idx = Some(min_idx.map_or(idx, |m| m.min(idx)));
         }
-        min_idx.unwrap_or(0)
+        let tree_size = store
+            .tree_size()
+            .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
+        (watermarks, min_idx.unwrap_or(0), tree_size)
     };
     let aligned_start = (already_have / CHUNK_SIZE) * CHUNK_SIZE;
 
     info!(
         subwallets = subwallets.len(),
-        already_have, aligned_start, "Starting multi-subwallet shielded note sync"
+        already_have, aligned_start, tree_size, "Starting multi-subwallet shielded note sync"
     );
 
     // Fetch + trial-decrypt with the FIRST subwallet's IVK in
@@ -256,7 +277,16 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
 
     // Append every commitment to the shared tree exactly once per
     // position, ALWAYS retained (`marked = true`). Skip positions
-    // already in the tree (re-scan after a partial chunk advance).
+    // already in the tree (`global_pos < tree_size`) — the SDK
+    // re-fetches from a chunk boundary every pass while the buffer
+    // chunk is mutable, and a lagging subwallet rewinds that start
+    // even further, so `all_notes` routinely overlaps positions the
+    // tree already holds. Gating on the tree's own leaf count (NOT
+    // a per-subwallet watermark) is what makes the append
+    // idempotent: re-appending an existing position duplicates a
+    // leaf, corrupts shardtree's internal nodes, and makes
+    // per-position witnesses resolve against roots Platform never
+    // recorded ("Anchor not found in the recorded anchors tree").
     //
     // Why mark every position rather than only owned ones: the
     // commitment tree is a single chain-wide structure shared by
@@ -281,7 +311,7 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
     let mut appended = 0u32;
     for (i, raw_note) in result.all_notes.iter().enumerate() {
         let global_pos = aligned_start + i as u64;
-        if global_pos < already_have {
+        if global_pos < tree_size {
             continue;
         }
         let cmx_bytes: [u8; 32] =
@@ -295,17 +325,30 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
     }
 
     if appended > 0 {
-        // Use the high-water position as the checkpoint id (not
-        // `result.next_start_index`, which rewinds to the last
-        // partial chunk's start and can therefore be the same
-        // value across consecutive syncs). shardtree's
-        // `checkpoint(id)` silently dedups duplicate ids; a
-        // non-monotonic id leaves depth-0 pinned at the first
-        // checkpoint while later appends extend the tree past
-        // it, and the witness at depth 0 then reflects a state
-        // Platform never recorded.
-        let new_index = aligned_start + result.total_notes_scanned;
-        let checkpoint_id: u32 = new_index.try_into().unwrap_or(u32::MAX);
+        // Checkpoint at the tree's true post-append leaf count. The
+        // tree only ever grows, so this id is strictly monotonic
+        // and collision-free across consecutive syncs — unlike
+        // `result.next_start_index` (rewinds to the last partial
+        // chunk's start) or `aligned_start + total_notes_scanned`
+        // (can repeat when a lagging subwallet rewinds the fetch).
+        // shardtree's `checkpoint(id)` silently dedups duplicate
+        // ids; a non-monotonic id pins depth-0 at the first
+        // checkpoint while later appends extend the tree past it,
+        // so the depth-0 witness then reflects a state Platform
+        // never recorded.
+        let new_tree_size = store
+            .tree_size()
+            .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
+        // Hard-fail rather than saturate at u32::MAX: a saturated id
+        // would reintroduce shardtree's silent-dedup (every checkpoint
+        // past the ceiling pins to the same id) — the exact corruption
+        // this monotonic-id scheme exists to avoid. Unreachable today
+        // (>4.29B notes scanned) but fail loudly before proving.
+        let checkpoint_id: u32 = new_tree_size.try_into().map_err(|_| {
+            PlatformWalletError::ShieldedTreeUpdateFailed(format!(
+                "commitment tree size {new_tree_size} exceeds u32 checkpoint-id range"
+            ))
+        })?;
         store
             .checkpoint_tree(checkpoint_id)
             .map_err(|e| PlatformWalletError::ShieldedTreeUpdateFailed(e.to_string()))?;
@@ -323,8 +366,16 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
         let Some((_, views)) = subwallets.iter().find(|(s, _)| s == id) else {
             continue;
         };
+        // Gate on THIS subwallet's own watermark (not the network
+        // min): a caught-up subwallet skips re-deriving nullifiers
+        // for notes it already stored, while a lagging one still
+        // saves everything from its own start. `save_note` is an
+        // idempotent overwrite-by-nullifier, so a stray re-save is
+        // harmless — but gating per-subwallet keeps the
+        // `per_subwallet_new_notes` count honest.
+        let sub_watermark = watermarks.get(id).copied().unwrap_or(0);
         for d in discovered {
-            if d.position < already_have {
+            if d.position < sub_watermark {
                 continue;
             }
             let nullifier = d.note.nullifier(&views.full_viewing_key);
@@ -374,10 +425,18 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
         new_index, "Multi-subwallet shielded sync finished"
     );
 
-    let scanned_new = (aligned_start + result.total_notes_scanned).saturating_sub(already_have);
+    // `total_scanned` keeps its host-visible meaning: wire-level scan
+    // volume this pass (encrypted notes pulled — decrypted + skipped),
+    // matching the exported FFI/Swift/UI "Scanned" contract. This is
+    // intentionally NOT `appended`: the tree_size append gate makes the
+    // two diverge whenever the SDK re-fetches positions the tree
+    // already holds (chunk-boundary realignment, lagging-subwallet
+    // rewind), and the host counter is documented as scan throughput,
+    // not tree growth.
+    let scanned_volume = (aligned_start + result.total_notes_scanned).saturating_sub(already_have);
     Ok(MultiSyncNotesResult {
         per_subwallet_new_notes,
-        total_scanned: scanned_new,
+        total_scanned: scanned_volume,
         changeset,
     })
 }

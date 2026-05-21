@@ -59,10 +59,11 @@ struct AccountListView: View {
     /// `ShieldedService.bind` has populated the list — which
     /// happens once per wallet detail open.
     private var shieldedAccountsForThisWallet: [UInt32] {
-        // Filter by wallet id so navigating between wallet
-        // details doesn't briefly show the previous wallet's
-        // accounts before the singleton service rebinds.
-        guard shieldedService.boundAccounts.isEmpty == false else { return [] }
+        // Gate on the service's currently-bound wallet id so navigating
+        // between wallet details doesn't briefly show the *previous*
+        // wallet's shielded accounts before the singleton service
+        // finishes rebinding to this wallet.
+        guard shieldedService.boundWalletId == wallet.walletId else { return [] }
         return shieldedService.boundAccounts
     }
 

@@ -425,48 +425,13 @@ var body: some View {
                         Spacer()
                     }
 
-                    // Shielded balance
-                    HStack {
-                        Text("Shielded Balance")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                        Spacer()
-                        if shieldedService.shieldedBalance > 0 {
-                            Text(formatCredits(shieldedService.shieldedBalance))
-                                .font(.subheadline)
-                                .fontWeight(.medium)
-                        } else {
-                            Text("0")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-
-                    // Orchard address
-                    if let address = shieldedService.orchardDisplayAddress {
-                        HStack {
-                            Text("Orchard Address")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                            Spacer()
-                            Text(address.prefix(12) + "..." + address.suffix(8))
-                                .font(.caption)
-                                .fontWeight(.medium)
-                                .foregroundColor(.purple)
-                        }
-                    }
-
-                    // Per-account synced-index + persisted balance,
-                    // read straight from SwiftData. The persisted
-                    // balance is a cross-check against
-                    // `ShieldedService.shieldedBalance` (which is
-                    // mirrored from Rust sync events): when the two
-                    // disagree, the divergence is in the event path;
-                    // when both agree at zero while notes exist, the
-                    // divergence is on the persister / restore side.
-                    ShieldedSyncIndexRows(
-                        boundWalletId: shieldedService.boundWalletId
-                    )
+                    // Aggregate shielded balance + notes-synced
+                    // watermark across every wallet/account on disk.
+                    // Read straight from SwiftData (network-wide, no
+                    // wallet scoping) so the figures survive restart
+                    // and reflect the whole pool rather than a single
+                    // bound wallet.
+                    ShieldedNetworkSummaryRows(walletIds: walletIdsOnNetwork)
 
                     // Sync counters since launch — `total_scanned`
                     // is the wire-level encrypted-note count (every
@@ -1264,84 +1229,97 @@ extension CoreContentView {
     }
 }
 
-// MARK: - ShieldedSyncIndexRows
+// MARK: - ShieldedNetworkSummaryRows
 
-/// Per-account commitment-tree + persisted-balance summary for the
-/// currently-bound shielded wallet.
+/// Network-wide shielded summary: aggregate unspent balance and the
+/// notes-synced watermark across every wallet/account **on the active
+/// network**.
 ///
-/// Two diagnostics that don't otherwise have a UI surface:
+/// Both figures are read **directly from SwiftData** (scoped to the
+/// active network via `walletIds`) rather than from the
+/// `ShieldedService.shieldedBalance` mirror that's updated
+/// per-bound-wallet from sync events, so they survive restart and
+/// reflect the whole on-network pool:
 ///
-///   * **Synced Index** — global note index up to which each
-///     subwallet has appended commitments to the local tree.
-///     Useful when local and Platform anchors disagree
-///     (anchor-mismatch / ShieldedTreeDiverged at spend time).
+///   * **Total Shielded Balance** — sum of `value` over every unspent
+///     `PersistentShieldedNote` whose wallet is on this network.
 ///
-///   * **Balance (persisted)** — sum of unspent
-///     `PersistentShieldedNote.value` for each bound subwallet,
-///     read **directly from SwiftData** rather than via the
-///     `ShieldedService.shieldedBalance` mirror that's updated
-///     from sync events. When the two numbers disagree, the bug
-///     is in the Rust→Swift event path; when they agree at zero
-///     while notes exist, the bug is in the persister callback or
-///     the cold-start restore.
-///
-/// The account label is suppressed when only one account is
-/// bound — the redundant `acct 0` is just visual noise in the
-/// single-account default.
-private struct ShieldedSyncIndexRows: View {
-    let boundWalletId: Data?
-
-    @Query(sort: [SortDescriptor(\PersistentShieldedSyncState.accountIndex)])
-    private var syncStateRows: [PersistentShieldedSyncState]
+///   * **Notes Synced** — the highest `lastSyncedIndex` across this
+///     network's `PersistentShieldedSyncState` rows. The Orchard
+///     commitment tree is chain-wide and shared by every wallet/account
+///     **on a given network**, so each subwallet advances toward the
+///     same tip; the max is the furthest-scanned position and climbs as
+///     sync progresses. Scoping matters: trees are per-chain, so a
+///     `max()` across networks would blend unrelated tip positions.
+private struct ShieldedNetworkSummaryRows: View {
+    /// Wallet ids on the active network. Both queries are filtered
+    /// against this so a multi-network install (e.g. regtest + testnet)
+    /// doesn't blend balances or take a watermark `max()` across
+    /// unrelated per-chain commitment trees — matching the Platform
+    /// Sync Status section's `walletIdsOnNetwork` scoping.
+    let walletIds: Set<Data>
 
     @Query private var allNotes: [PersistentShieldedNote]
+    @Query private var syncStates: [PersistentShieldedSyncState]
 
-    private var scopedSyncRows: [PersistentShieldedSyncState] {
-        guard let id = boundWalletId else { return [] }
-        return syncStateRows.filter { $0.walletId == id }
-    }
-
-    /// Sum of `value` over unspent notes for `(boundWalletId,
-    /// account)`. Reads SwiftData directly — independent of the
-    /// in-memory shielded wallet's `balance_total()`.
-    private func persistedBalance(account: UInt32) -> UInt64 {
-        guard let id = boundWalletId else { return 0 }
-        return allNotes
-            .lazy
-            .filter { $0.walletId == id && $0.accountIndex == account && !$0.isSpent }
+    /// Sum of `value` over this network's unspent notes, in credits.
+    private var totalUnspentCredits: UInt64 {
+        allNotes.lazy
+            .filter { !$0.isSpent && walletIds.contains($0.walletId) }
             .reduce(UInt64(0)) { $0 &+ $1.value }
     }
 
+    /// Furthest-scanned commitment-tree index across this network's subwallets.
+    private var notesSynced: UInt64 {
+        syncStates.lazy
+            .filter { walletIds.contains($0.walletId) }
+            .map(\.lastSyncedIndex)
+            .max() ?? 0
+    }
+
+    /// 1 DASH = 100,000,000,000 credits — matches `formatCredits`.
+    private func formatCredits(_ credits: UInt64) -> String {
+        let dash = Double(credits) / 100_000_000_000.0
+        let formatter = NumberFormatter()
+        formatter.minimumFractionDigits = 0
+        formatter.maximumFractionDigits = 8
+        formatter.numberStyle = .decimal
+        formatter.groupingSeparator = ","
+        formatter.decimalSeparator = "."
+        if let formatted = formatter.string(from: NSNumber(value: dash)) {
+            return "\(formatted) DASH"
+        }
+        return String(format: "%.4f DASH", dash)
+    }
+
     var body: some View {
-        if !scopedSyncRows.isEmpty {
-            VStack(spacing: 4) {
-                HStack {
-                    Text("Per-Account State")
+        VStack(spacing: 8) {
+            // Aggregate unspent balance across all wallets.
+            HStack {
+                Text("Total Shielded Balance")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                Spacer()
+                if totalUnspentCredits > 0 {
+                    Text(formatCredits(totalUnspentCredits))
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                } else {
+                    Text("0")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
-                    Spacer()
                 }
-                let showAccountLabel = scopedSyncRows.count > 1
-                ForEach(scopedSyncRows, id: \.accountIndex) { row in
-                    HStack(spacing: 8) {
-                        if showAccountLabel {
-                            Text("acct \(row.accountIndex)")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                        Text("idx \(row.lastSyncedIndex)")
-                            .font(.system(.caption, design: .monospaced))
-                        if row.hasNullifierCheckpoint {
-                            Text("nf h \(row.nullifierCheckpointHeight)")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                        }
-                        Spacer()
-                        Text("\(persistedBalance(account: row.accountIndex)) credits")
-                            .font(.system(.caption, design: .monospaced))
-                            .fontWeight(.medium)
-                    }
-                }
+            }
+
+            // Notes-synced watermark — climbs as sync progresses.
+            HStack {
+                Text("Notes Synced")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                Spacer()
+                Text(notesSynced, format: .number)
+                    .font(.system(.caption, design: .monospaced))
+                    .fontWeight(.medium)
             }
         }
     }

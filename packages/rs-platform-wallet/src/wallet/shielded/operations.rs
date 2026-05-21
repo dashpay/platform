@@ -69,6 +69,30 @@ fn addresses_not_enough_funds(
     }
 }
 
+/// Try to extract the per-address `AddressNotEnoughFundsError` that the
+/// pre-flight `fetch_inputs_with_nonce` hard balance check raises when a
+/// single input is short. Mirrors [`addresses_not_enough_funds`] (the
+/// plural broadcast-side variant) so the pre-broadcast failure can carry
+/// the same structured `(address, balance, required)` info across the
+/// FFI instead of collapsing to an opaque stringified error.
+fn address_not_enough_funds(
+    e: &dash_sdk::Error,
+) -> Option<&dpp::consensus::state::address_funds::AddressNotEnoughFundsError> {
+    use dpp::consensus::state::state_error::StateError;
+    use dpp::consensus::ConsensusError;
+    use dpp::ProtocolError;
+
+    let consensus: &ConsensusError = match e {
+        dash_sdk::Error::Protocol(ProtocolError::ConsensusError(boxed)) => boxed.as_ref(),
+        dash_sdk::Error::StateTransitionBroadcastError(s) => s.cause.as_ref()?,
+        _ => return None,
+    };
+    match consensus {
+        ConsensusError::StateError(StateError::AddressNotEnoughFundsError(err)) => Some(err),
+        _ => None,
+    }
+}
+
 /// Format a one-line `addresses_with_info` summary for diagnostics —
 /// each entry rendered as `<bech32m_addr>=(nonce <n>, <c> credits)`,
 /// matching what the wallet UI shows.
@@ -136,55 +160,40 @@ pub async fn shield<Sig: Signer<PlatformAddress>, P: OrchardProver>(
 ) -> Result<(), PlatformWalletError> {
     let recipient_addr = default_orchard_address(keys)?;
 
-    // Fetch the current address nonces from Platform. Each input
-    // address has a per-address nonce that the next state
-    // transition must use as `last_used + 1`.
-    use dash_sdk::platform::FetchMany;
-    use dash_sdk::query_types::AddressInfo;
-    use std::collections::BTreeSet;
+    // Reuse rs-sdk's canonical fetch + hard balance check rather than
+    // re-implementing the fetch-and-validate dance. Unlike the old
+    // warn-and-proceed path, `fetch_inputs_with_nonce` errors with
+    // `AddressNotEnoughFundsError` when any input is short, so we fail
+    // before paying the ~30 s Halo 2 proof for a transition drive-abci
+    // would reject. It returns the *current* on-chain nonces; we apply
+    // a checked increment (the canonical `nonce_inc` uses an unchecked
+    // `+ 1`, which would wrap an address at u32::MAX into a replay
+    // nonce — bail loudly here instead).
+    use dash_sdk::platform::transition::fetch_inputs_with_nonce;
 
-    let address_set: BTreeSet<PlatformAddress> = inputs.keys().copied().collect();
-    let infos = AddressInfo::fetch_many(sdk, address_set)
-        .await
-        .map_err(|e| PlatformWalletError::ShieldedBuildError(format!("fetch input nonces: {e}")))?;
+    let fetched = fetch_inputs_with_nonce(sdk, &inputs).await.map_err(|e| {
+        // The hard balance check is the common pre-broadcast failure;
+        // surface its structured (address, balance, required) info as a
+        // diagnostic string rather than the opaque `{e}` form, matching
+        // the richness of the broadcast-side handler below. The FFI
+        // shape is unchanged (the host still receives a string body).
+        if let Some(short) = address_not_enough_funds(&e) {
+            PlatformWalletError::ShieldedBuildError(format!(
+                "shield input {} has insufficient balance: requires {} credits, has {}",
+                short.address().to_bech32m_string(sdk.network),
+                short.required_balance(),
+                short.balance(),
+            ))
+        } else {
+            PlatformWalletError::ShieldedBuildError(format!("fetch input nonces: {e}"))
+        }
+    })?;
 
     let mut inputs_with_nonce: BTreeMap<PlatformAddress, (u32, Credits)> = BTreeMap::new();
-    for (addr, credits) in inputs {
-        let info = infos
-            .get(&addr)
-            .and_then(|opt| opt.as_ref())
-            .ok_or_else(|| {
-                PlatformWalletError::ShieldedBuildError(format!(
-                    "input address not found on platform: {:?}",
-                    addr
-                ))
-            })?;
-        if info.balance < credits {
-            warn!(
-                address = ?addr,
-                claimed_credits = credits,
-                platform_balance = info.balance,
-                platform_nonce = info.nonce,
-                "Shield input claims more credits than Platform reports — broadcast will likely fail"
-            );
-        } else {
-            info!(
-                address = ?addr,
-                claimed_credits = credits,
-                platform_balance = info.balance,
-                platform_nonce = info.nonce,
-                "Shield input"
-            );
-        }
-        // `AddressNonce` is `u32`; `info.nonce + 1` would wrap
-        // silently in release once an address reaches u32::MAX.
-        // drive-abci treats wrap-to-0 as a replay and rejects it
-        // after the wallet has spent ~30 s on a Halo 2 proof.
-        // Bail loudly here instead.
-        let next_nonce = info.nonce.checked_add(1).ok_or_else(|| {
+    for (addr, (nonce, credits)) in fetched {
+        let next_nonce = nonce.checked_add(1).ok_or_else(|| {
             PlatformWalletError::ShieldedBuildError(format!(
-                "input address nonce exhausted on platform: {:?}",
-                addr
+                "input address nonce exhausted on platform: {addr:?}"
             ))
         })?;
         inputs_with_nonce.insert(addr, (next_nonce, credits));
@@ -213,6 +222,12 @@ pub async fn shield<Sig: Signer<PlatformAddress>, P: OrchardProver>(
 
     trace!("Shield credits: state transition built, broadcasting...");
     let network = sdk.network;
+    // Wait for proven execution (not just relay-ACK) so the host only
+    // sees success once Platform has actually included the transition —
+    // matching the spend-side flows (unshield/transfer/withdraw). A
+    // DAPI-level ACK alone could otherwise mask a later Platform
+    // rejection. The proven result is discarded; we only need the
+    // confirmation.
     state_transition
         .broadcast_and_wait::<StateTransitionProofResult>(sdk, None)
         .await
@@ -280,6 +295,11 @@ pub async fn shield_from_asset_lock<P: OrchardProver>(
     .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
 
     trace!("Shield from asset lock: state transition built, broadcasting...");
+    // Wait for proven execution rather than relay-ACK. This matters most
+    // for Type 18: the asset-lock proof is single-use, so a false-
+    // positive success on a transition Platform later rejects would
+    // strand the user's L1 outpoint with no in-app signal. The proven
+    // result is discarded; we only need the confirmation.
     state_transition
         .broadcast_and_wait::<StateTransitionProofResult>(sdk, None)
         .await
@@ -357,7 +377,29 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
 
     match result {
         Ok(()) => {
-            finalize_pending(store, persister, wallet_id, id, &selected_notes).await?;
+            // Broadcast already succeeded; spent-state bookkeeping is
+            // best-effort. Surfacing a local write failure as a send
+            // failure here would invite duplicate retries — the next
+            // nullifier sync reconciles any drift.
+            //
+            // No double-spend follows from this downgrade: the
+            // authoritative no-reuse guarantee is the on-chain nullifier
+            // set, not this local mark. Worst case, before the next
+            // nullifier sync runs the note is re-selected and a second
+            // spend is built + proven, then rejected at broadcast with a
+            // nullifier-already-used error — wasted ~30 s proof, never
+            // fund loss. (`pending_nullifiers` is in-memory only, so it
+            // does not protect across a process restart in this window;
+            // the on-chain set does.)
+            if let Err(e) = finalize_pending(store, persister, wallet_id, id, &selected_notes).await
+            {
+                warn!(
+                    account,
+                    error = %e,
+                    "Unshield broadcast succeeded but local spent-state update failed; \
+                     will heal on next sync"
+                );
+            }
             info!(account, credits = amount, "Unshield broadcast succeeded");
             Ok(())
         }
@@ -431,7 +473,16 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
 
     match result {
         Ok(()) => {
-            finalize_pending(store, persister, wallet_id, id, &selected_notes).await?;
+            // Best-effort post-broadcast bookkeeping (see unshield).
+            if let Err(e) = finalize_pending(store, persister, wallet_id, id, &selected_notes).await
+            {
+                warn!(
+                    account,
+                    error = %e,
+                    "Shielded transfer broadcast succeeded but local spent-state update \
+                     failed; will heal on next sync"
+                );
+            }
             info!(
                 account,
                 credits = amount,
@@ -511,7 +562,16 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
 
     match result {
         Ok(()) => {
-            finalize_pending(store, persister, wallet_id, id, &selected_notes).await?;
+            // Best-effort post-broadcast bookkeeping (see unshield).
+            if let Err(e) = finalize_pending(store, persister, wallet_id, id, &selected_notes).await
+            {
+                warn!(
+                    account,
+                    error = %e,
+                    "Shielded withdrawal broadcast succeeded but local spent-state update \
+                     failed; will heal on next sync"
+                );
+            }
             info!(
                 account,
                 credits = amount,

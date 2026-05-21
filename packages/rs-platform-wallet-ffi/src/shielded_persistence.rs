@@ -64,7 +64,9 @@ pub struct ShieldedNullifierSpentFFI {
 pub struct ShieldedSyncedIndexFFI {
     pub wallet_id: [u8; 32],
     pub account_index: u32,
-    /// Highest global commitment-tree index the subwallet has scanned.
+    /// Sync watermark: count of note positions scanned = the next
+    /// global commitment-tree index to scan (exclusive). `0` = nothing
+    /// scanned yet.
     pub last_synced_index: u64,
 }
 

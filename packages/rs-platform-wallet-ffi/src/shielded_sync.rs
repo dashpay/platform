@@ -65,13 +65,30 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_sync_start(
     PlatformWalletFFIResult::ok()
 }
 
-/// Stop the shielded sync manager if it is running.
+/// Stop the shielded sync manager and wait for any in-flight pass to
+/// drain before returning. No-op if not running.
+///
+/// Uses `quiesce` rather than cancel-only stop, so on return: the loop
+/// is cancelled, no new pass will start, and any in-flight pass has
+/// fully drained — its **persistence callbacks have completed** (no
+/// note/sync-state row can be written after this returns) and its
+/// completion-event *dispatch* on the Rust side has run.
+///
+/// Caveat on host-observed events: a host that marshals the completion
+/// callback onto its own executor (e.g. the Swift trampoline hops it to
+/// the `@MainActor`) may still observe that final, already-dispatched
+/// event land *after* this call returns — Rust controls when the event
+/// is dispatched, not when the host's run loop applies it. The drain
+/// guarantee above (no further persistence, no new pass) is the
+/// load-bearing part; hosts that must ignore a trailing UI event should
+/// gate their handler on their own post-stop/post-clear state (the
+/// example app drops events while unbound).
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_shielded_sync_stop(
     handle: Handle,
 ) -> PlatformWalletFFIResult {
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
-        manager.shielded_sync().stop();
+        runtime().block_on(manager.shielded_sync().quiesce());
     });
     unwrap_option_or_return!(option);
     PlatformWalletFFIResult::ok()
@@ -408,14 +425,14 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_clear(
     handle: Handle,
 ) -> PlatformWalletFFIResult {
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
-        // Stop the loop first so the next pass can't race the
-        // registry clear and observe a half-emptied state.
-        manager.shielded_sync().stop();
-        runtime().block_on(async {
-            if let Some(coord) = manager.shielded_coordinator().await {
-                coord.clear().await;
-            }
-        });
+        // Single library call: `clear_shielded` quiesces the sync
+        // manager (cancel + drain the in-flight pass, incl. persister
+        // fan-out, so nothing re-persists after Clear) and then clears
+        // the coordinator registries. Keeping the quiesce+clear
+        // sequencing in the library (not stitched here) follows the
+        // FFI's "resolve handle, call one function, marshal result"
+        // contract.
+        runtime().block_on(manager.clear_shielded());
     });
     unwrap_option_or_return!(option);
     PlatformWalletFFIResult::ok()

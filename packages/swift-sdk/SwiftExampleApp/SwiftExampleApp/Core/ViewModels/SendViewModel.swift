@@ -117,7 +117,19 @@ class SendViewModel: ObservableObject {
     var amountDuffs: UInt64? { amount }
 
     var canSend: Bool {
-        detectedFlow != nil && amountDuffs != nil && !isSending
+        guard let flow = detectedFlow, !isSending else { return false }
+        // Gate on the scaled integer for the *active* flow's unit, not
+        // just non-nil. A sub-unit amount (e.g. "0.000000001" in DASH)
+        // parses to 0 once scaled; sending that reaches the backend as a
+        // zero-value transfer. Core/L1 settles in duffs (1e8); every
+        // credits-ledger flow settles in credits (1e11).
+        switch flow {
+        case .coreToCore:
+            return (amountDuffs ?? 0) > 0
+        case .platformToPlatform, .platformToShielded,
+             .shieldedToShielded, .shieldedToPlatform, .shieldedToCore:
+            return (amountCredits ?? 0) > 0
+        }
     }
 
     /// Determine which fund sources are available based on destination and balances.
@@ -390,8 +402,30 @@ class SendViewModel: ObservableObject {
                     return
                 }
                 _ = platformState
-                _ = shieldedService
                 _ = sdk
+                // `shieldedShield` has no recipient parameter — Rust
+                // always shields into this wallet's own default Orchard
+                // address (shieldedAccount 0). If the user typed a
+                // *different* Orchard address we'd report success while
+                // nothing reached that recipient, so constrain this path
+                // to self-shield only.
+                let enteredRecipient = recipientAddress
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                let ownShieldedAddress =
+                    shieldedService.addressesByAccount[0]
+                    ?? shieldedService.orchardDisplayAddress
+                if !enteredRecipient.isEmpty,
+                   enteredRecipient != ownShieldedAddress {
+                    // Don't advertise "leave it blank": a blank recipient
+                    // clears `detectedFlow` upstream (detectAddressType →
+                    // updateFlow), so `canSend` disables the button and
+                    // this branch is only reachable with a non-empty
+                    // address. Tell the user to enter their own.
+                    error = "Shield always sends to your own shielded "
+                        + "address; enter your own shielded address as "
+                        + "the recipient"
+                    return
+                }
                 let signer = KeychainSigner(modelContainer: modelContext.container)
                 try await walletManager.shieldedShield(
                     walletId: wallet.walletId,

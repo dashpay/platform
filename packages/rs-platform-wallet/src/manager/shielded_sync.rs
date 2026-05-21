@@ -149,6 +149,13 @@ pub struct ShieldedSyncManager {
     background_generation: AtomicU64,
     interval_secs: AtomicU64,
     is_syncing: AtomicBool,
+    /// Set by [`quiesce`](Self::quiesce) to gate new passes while it
+    /// drains an in-flight one. `sync_now` / `sync_wallet` bail (after
+    /// taking the `is_syncing` slot) when this is set, so once `quiesce`
+    /// observes `is_syncing == false` no further pass can start — giving
+    /// Clear / stop a real "no more host-visible mutations" barrier that
+    /// cancel-only [`stop`](Self::stop) does not provide.
+    quiescing: AtomicBool,
     /// Unix seconds of the last completed pass. `0` = never.
     last_sync_unix: AtomicU64,
 }
@@ -165,6 +172,7 @@ impl ShieldedSyncManager {
             background_generation: AtomicU64::new(0),
             interval_secs: AtomicU64::new(DEFAULT_SYNC_INTERVAL_SECS),
             is_syncing: AtomicBool::new(false),
+            quiescing: AtomicBool::new(false),
             last_sync_unix: AtomicU64::new(0),
         }
     }
@@ -268,6 +276,13 @@ impl ShieldedSyncManager {
     }
 
     /// Stop the background sync loop. No-op if not running.
+    ///
+    /// **Cancel-only**: this requests cancellation and returns
+    /// immediately. A pass already inside `sync_now` /
+    /// `coordinator.sync()` keeps running to completion (including its
+    /// persister-callback fan-out). For a real "nothing is running and
+    /// nothing more will be persisted" barrier — required by Clear,
+    /// unregister, and rebind — use [`quiesce`](Self::quiesce).
     pub fn stop(&self) {
         if let Some(token) = self
             .background_cancel
@@ -277,6 +292,32 @@ impl ShieldedSyncManager {
         {
             token.cancel();
         }
+    }
+
+    /// Cancel the background loop **and wait for any in-flight sync pass
+    /// to fully drain** before returning — a real quiescence barrier,
+    /// unlike cancel-only [`stop`](Self::stop).
+    ///
+    /// After this returns, no sync pass is running and none can start
+    /// until the next [`start`](Self::start) / `sync_now`, so a caller
+    /// that immediately mutates state a pass touches (Clear's registry
+    /// wipe + the host's SwiftData delete; wallet unregister; rebind)
+    /// cannot be raced by a pass that re-persists notes after the caller
+    /// believed sync had stopped.
+    ///
+    /// Mechanism: set the `quiescing` gate so any pass that hasn't yet
+    /// taken the `is_syncing` slot bails, cancel the loop, then wait for
+    /// `is_syncing` to clear. `is_syncing` is held for the whole pass
+    /// including the persister fan-out, so its falling edge (with the
+    /// gate up) is a sound "fully drained" signal. The gate is reopened
+    /// before returning so a later start/sync works normally.
+    pub async fn quiesce(&self) {
+        self.quiescing.store(true, Ordering::Release);
+        self.stop();
+        while self.is_syncing.load(Ordering::Acquire) {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        self.quiescing.store(false, Ordering::Release);
     }
 
     /// Run one sync pass across every registered wallet.
@@ -296,6 +337,14 @@ impl ShieldedSyncManager {
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
             .is_err()
         {
+            return ShieldedSyncPassSummary::default();
+        }
+
+        // A `quiesce()` may have raised the gate between our CAS and
+        // here; if so, release the slot and bail without running a pass
+        // so the drain can complete and Clear/stop get a true barrier.
+        if self.quiescing.load(Ordering::Acquire) {
+            self.is_syncing.store(false, Ordering::Release);
             return ShieldedSyncPassSummary::default();
         }
 
@@ -331,9 +380,17 @@ impl ShieldedSyncManager {
         }
         self.last_sync_unix
             .store(summary.sync_unix_seconds, Ordering::Release);
-        self.is_syncing.store(false, Ordering::Release);
 
+        // Dispatch the completion event BEFORE clearing `is_syncing`.
+        // `quiesce()` drains on the falling edge of `is_syncing`, so if
+        // we cleared the flag first a stop/clear caller could unblock
+        // while this completion event (FFI callback → Swift
+        // `handleShieldedSyncCompleted`) is still pending — surfacing a
+        // stale post-stop/post-clear event. Holding the flag across the
+        // dispatch makes quiesce's barrier cover the event too.
         self.event_manager.on_shielded_sync_completed(&summary);
+
+        self.is_syncing.store(false, Ordering::Release);
 
         summary
     }
@@ -375,6 +432,13 @@ impl ShieldedSyncManager {
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
             .is_err()
         {
+            return Ok(None);
+        }
+
+        // Bail if a `quiesce()` raised the gate after our CAS (see
+        // `sync_now`) so the drain barrier holds.
+        if self.quiescing.load(Ordering::Acquire) {
+            self.is_syncing.store(false, Ordering::Release);
             return Ok(None);
         }
 
