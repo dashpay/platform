@@ -45,10 +45,10 @@ use dashcore::secp256k1::Secp256k1;
 use key_wallet::bip32::{DerivationPath, ExtendedPrivKey};
 use zeroize::Zeroizing;
 
-use crate::derive_and_persist_callbacks::{
+use crate::identity_keys_from_mnemonic::parse_mnemonic_any_language;
+use rs_sdk_ffi::{
     mnemonic_resolver_result, MnemonicResolverHandle, MNEMONIC_RESOLVER_BUFFER_CAPACITY,
 };
-use crate::identity_keys_from_mnemonic::parse_mnemonic_any_language;
 
 // One-byte error tags. Mirror the shape of
 // `signer_simple::SIGN_WITH_MNEMONIC_ERR_*` so call sites already
@@ -200,16 +200,27 @@ pub unsafe extern "C" fn dash_sdk_sign_with_mnemonic_resolver_and_path(
     };
 
     let kw_network: Network = network.into();
-    let master = match ExtendedPrivKey::new_master(kw_network, seed.as_ref()) {
+    let mut master = match ExtendedPrivKey::new_master(kw_network, seed.as_ref()) {
         Ok(m) => m,
         Err(_) => return fail(SIGN_WITH_RESOLVER_ERR_DERIVATION),
     };
     let secp = Secp256k1::new();
-    let derived = match master.derive_priv(&secp, &path) {
+    let mut derived = match master.derive_priv(&secp, &path) {
         Ok(d) => d,
         Err(_) => return fail(SIGN_WITH_RESOLVER_ERR_DERIVATION),
     };
     let secret_bytes: Zeroizing<[u8; 32]> = Zeroizing::new(derived.private_key.secret_bytes());
+
+    // TODO(upstream): `key_wallet::bip32::ExtendedPrivKey` has no
+    // `Drop` / `Zeroize` impl — the inner `secp256k1::SecretKey`
+    // scalars on `master` and `derived` would otherwise drop un-wiped.
+    // Proper fix is a `Zeroize` / `ZeroizeOnDrop` impl in
+    // `dashpay/rust-dashcore`'s `key-wallet/src/bip32.rs`; until that
+    // lands, wipe the two SecretKey fields explicitly here. Mirrored
+    // in the sibling Rust signer at
+    // `rs-sdk-ffi/src/mnemonic_resolver_core_signer.rs::derive_priv`.
+    master.private_key.non_secure_erase();
+    derived.private_key.non_secure_erase();
 
     // ---- Sign ---------------------------------------------------------------
     let data_slice: &[u8] = if data_len == 0 {
@@ -237,9 +248,7 @@ pub unsafe extern "C" fn dash_sdk_sign_with_mnemonic_resolver_and_path(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::derive_and_persist_callbacks::{
-        dash_sdk_mnemonic_resolver_create, dash_sdk_mnemonic_resolver_destroy,
-    };
+    use rs_sdk_ffi::{dash_sdk_mnemonic_resolver_create, dash_sdk_mnemonic_resolver_destroy};
     use std::ffi::CString;
 
     /// English BIP-39 test vector (all-zero entropy).
@@ -275,9 +284,7 @@ mod tests {
 
     unsafe extern "C" fn noop_destroy(_ctx: *mut c_void) {}
 
-    fn make_resolver(
-        cb: crate::derive_and_persist_callbacks::MnemonicResolveCallback,
-    ) -> *mut MnemonicResolverHandle {
+    fn make_resolver(cb: rs_sdk_ffi::MnemonicResolveCallback) -> *mut MnemonicResolverHandle {
         unsafe { dash_sdk_mnemonic_resolver_create(std::ptr::null_mut(), cb, noop_destroy) }
     }
 

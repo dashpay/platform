@@ -47,7 +47,7 @@
 use key_wallet::wallet::Wallet;
 
 use crate::changeset::PlatformWalletChangeSet;
-use crate::wallet::asset_lock::tracked::TrackedAssetLock;
+use crate::wallet::asset_lock::tracked::{AssetLockStatus, TrackedAssetLock};
 use crate::wallet::platform_wallet::PlatformWalletInfo;
 
 /// Errors returned by [`PlatformWalletInfo::apply_changeset`] and the
@@ -277,21 +277,36 @@ impl PlatformWalletInfo {
         //    field difference is `amount_duffs` vs `amount`. The
         //    `Transaction` inside the entry transfers ownership
         //    directly into the wallet map with no clone.
+        //
+        //    `Consumed` is the terminal post-consumption state: it
+        //    means an identity registration / top-up has burned this
+        //    asset lock. We drop the entry from the in-memory map
+        //    (the wallet has no further use for it; nothing should be
+        //    waiting on its proof) but the changeset's `asset_locks`
+        //    entry still flows through to the Swift persister so the
+        //    `PersistentAssetLock` row is upserted with `statusRaw=4`
+        //    for historical lookups (e.g. the Transactions list
+        //    rendering the original locked amount on a consumed
+        //    funding tx).
         if let Some(al_cs) = asset_locks {
             for (out_point, entry) in al_cs.asset_locks {
-                self.tracked_asset_locks.insert(
-                    out_point,
-                    TrackedAssetLock {
-                        out_point: entry.out_point,
-                        transaction: entry.transaction,
-                        account_index: entry.account_index,
-                        funding_type: entry.funding_type,
-                        identity_index: entry.identity_index,
-                        amount: entry.amount_duffs,
-                        status: entry.status,
-                        proof: entry.proof,
-                    },
-                );
+                if entry.status == AssetLockStatus::Consumed {
+                    self.tracked_asset_locks.remove(&out_point);
+                } else {
+                    self.tracked_asset_locks.insert(
+                        out_point,
+                        TrackedAssetLock {
+                            out_point: entry.out_point,
+                            transaction: entry.transaction,
+                            account_index: entry.account_index,
+                            funding_type: entry.funding_type,
+                            identity_index: entry.identity_index,
+                            amount: entry.amount_duffs,
+                            status: entry.status,
+                            proof: entry.proof,
+                        },
+                    );
+                }
             }
             for out_point in al_cs.removed {
                 self.tracked_asset_locks.remove(&out_point);
