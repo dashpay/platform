@@ -1,18 +1,17 @@
 //! Network-integration tests for DPNS username helpers on `dash_sdk::Sdk`.
 //!
-//! These tests are `#[ignore]` by default — they require a live testnet (or SSH-tunnel)
-//! configured through `packages/rs-sdk/tests/.env` via the shared [`Config`] harness
-//! (`DASH_SDK_PLATFORM_HOST` / `DASH_SDK_PLATFORM_PORT` / `DASH_SDK_PLATFORM_SSL`).
+//! These tests are `#[ignore]` by default — they require a live Platform endpoint
+//! (testnet, devnet, or SSH tunnel) plus a reachable Dash Core RPC, all configured
+//! through `packages/rs-sdk/tests/.env` (`DASH_SDK_PLATFORM_HOST/PORT/SSL`,
+//! `DASH_SDK_CORE_HOST/PORT/USER/PASSWORD`). They use the shared [`Config`] harness
+//! exactly like the rest of `tests/fetch/*`, so quorum info comes from the local
+//! Core RPC instead of a hardcoded HTTP context endpoint.
 //!
 //! Run with:
 //! ```sh
 //! cargo test -p dash-sdk --features generate-test-vectors -- --include-ignored
 //! ```
 
-// Re-mount the shared `fetch` test harness modules so we can reuse `Config`
-// (which loads `tests/.env` via `dotenvy`/`envy`) without copy-pasting it.
-// Config internally references `crate::fetch::generated_data`, so we preserve
-// that path by nesting the re-mounts under a `fetch` module.
 #[allow(dead_code, unused_imports)]
 mod fetch {
     #[path = "../fetch/config.rs"]
@@ -21,36 +20,14 @@ mod fetch {
     pub mod generated_data;
 }
 
-use dash_sdk::{Sdk, SdkBuilder};
-use dpp::dashcore::Network;
+use dash_sdk::Sdk;
 use dpp::prelude::Identifier;
-use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
-use dpp::version::PlatformVersion;
 use fetch::config::Config;
-use rs_sdk_trusted_context_provider::TrustedHttpContextProvider;
-use std::num::NonZeroUsize;
 
-fn build_testnet_context_provider() -> TrustedHttpContextProvider {
-    TrustedHttpContextProvider::new(Network::Testnet, None, NonZeroUsize::new(100).unwrap())
-        .expect("Failed to create context provider")
-}
-
-/// Build a testnet `Sdk` using the `tests/.env` harness, with the DPNS system contract
-/// pre-loaded into the context provider so proof-verified DPNS queries don't need a
-/// network round-trip for the contract itself.
-fn build_testnet_sdk() -> Sdk {
-    let cfg = Config::new();
-    let context_provider = build_testnet_context_provider();
-
-    let dpns = load_system_data_contract(SystemDataContract::DPNS, PlatformVersion::latest())
-        .expect("Failed to load DPNS system data contract");
-    context_provider.add_known_contract(dpns);
-
-    SdkBuilder::new(cfg.address_list())
-        .with_network(Network::Testnet)
-        .with_context_provider(context_provider)
-        .build()
-        .expect("Failed to create SDK")
+/// Build an SDK wired through the standard `tests/.env` harness, with a fresh
+/// per-test namespace so dump dirs don't collide when regenerating vectors.
+async fn build_testnet_sdk(namespace: &str) -> Sdk {
+    Config::new().setup_api(namespace).await
 }
 
 // ---------------------------------------------------------------------------
@@ -60,7 +37,7 @@ fn build_testnet_sdk() -> Sdk {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore] // Requires network connection
 async fn test_dpns_queries() {
-    let sdk = build_testnet_sdk();
+    let sdk = build_testnet_sdk("dpns_queries").await;
 
     let results = sdk.search_dpns_names("test", Some(5)).await.unwrap();
     println!("Search results for 'test': {:?}", results);
@@ -92,7 +69,7 @@ async fn test_dpns_queries() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore] // Requires network connection
 async fn test_contested_queries() {
-    let sdk = build_testnet_sdk();
+    let sdk = build_testnet_sdk("contested_queries").await;
 
     println!("Testing get_contested_dpns_usernames...");
     let all_contested = sdk
@@ -249,7 +226,7 @@ async fn test_contested_queries() {
 async fn test_get_current_dpns_contests() {
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    let sdk = build_testnet_sdk();
+    let sdk = build_testnet_sdk("get_current_dpns_contests").await;
 
     println!("Testing get_current_dpns_contests...");
 
@@ -374,7 +351,7 @@ async fn test_get_current_dpns_contests() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore] // Requires network connection
 async fn test_get_contested_non_resolved_usernames() {
-    let sdk = build_testnet_sdk();
+    let sdk = build_testnet_sdk("contested_non_resolved_usernames").await;
 
     println!("Testing get_contested_non_resolved_usernames...");
 
@@ -481,7 +458,7 @@ async fn test_get_contested_non_resolved_usernames() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore] // Requires network connection
 async fn test_get_non_resolved_dpns_contests_for_identity() {
-    let sdk = build_testnet_sdk();
+    let sdk = build_testnet_sdk("non_resolved_dpns_contests_for_identity").await;
 
     println!("Testing get_non_resolved_dpns_contests_for_identity...");
 
@@ -577,8 +554,7 @@ async fn test_get_non_resolved_dpns_contests_for_identity() {
 }
 
 // ---------------------------------------------------------------------------
-// Relocated from tests/dpns_queries_test.rs — previously hardcoded the same
-// testnet IP, now wired through the same `Config` harness.
+// Relocated from tests/dpns_queries_test.rs
 // ---------------------------------------------------------------------------
 
 // Test values from wasm-sdk docs.html
@@ -589,7 +565,7 @@ const TEST_PREFIX: &str = "ali";
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore] // Requires network connection
 async fn test_dpns_queries_from_docs() {
-    let sdk = build_testnet_sdk();
+    let sdk = build_testnet_sdk("dpns_queries_from_docs").await;
 
     let is_available = sdk
         .check_dpns_name_availability(TEST_USERNAME)
@@ -653,7 +629,7 @@ async fn test_dpns_queries_from_docs() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore] // Requires network connection
 async fn test_dpns_search_variations() {
-    let sdk = build_testnet_sdk();
+    let sdk = build_testnet_sdk("dpns_search_variations").await;
 
     let test_prefixes = vec!["a", "test", "d", "dash", "demo", "user"];
 
