@@ -214,9 +214,7 @@ mod tests {
         .expect("Failed to create context provider");
 
         // Create SDK with testnet configuration and trusted context provider
-        let address_list = "https://52.12.176.90:1443"
-            .parse()
-            .expect("Failed to parse address");
+        let address_list = super::super::test_address::test_address_list();
         let sdk = SdkBuilder::new(address_list)
             .with_network(Network::Testnet)
             .with_context_provider(context_provider)

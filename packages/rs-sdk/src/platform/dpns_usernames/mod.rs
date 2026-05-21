@@ -1,5 +1,7 @@
 mod contested_queries;
 mod queries;
+#[cfg(test)]
+mod test_address;
 
 pub use contested_queries::ContestedDpnsUsername;
 pub use queries::DpnsUsername;
