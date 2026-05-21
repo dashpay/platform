@@ -18,12 +18,28 @@ mod withdrawal;
 
 /// Saturating sum over `Credits` (== `u64`) — total credit supply is far
 /// below `u64::MAX`, so saturation is unreachable in practice but the policy
-/// keeps debug-build panics off the table.
+/// keeps debug-build panics off the table. Use this only for sums over
+/// wallet-derived balances; for caller-supplied input maps prefer
+/// [`checked_sum_credits`] so a bogus FFI input is reported as
+/// [`crate::PlatformWalletError::InputSumOverflow`] rather than silently
+/// saturating to `u64::MAX`.
 pub(crate) fn saturating_sum_credits<I>(iter: I) -> Credits
 where
     I: IntoIterator<Item = Credits>,
 {
     iter.into_iter().fold(0u64, Credits::saturating_add)
+}
+
+/// Checked sum over `Credits` for caller-supplied input maps. Returns
+/// [`crate::PlatformWalletError::InputSumOverflow`] on overflow so a
+/// bogus FFI caller cannot trigger a silent saturation downstream.
+pub(crate) fn checked_sum_credits<I>(iter: I) -> Result<Credits, crate::PlatformWalletError>
+where
+    I: IntoIterator<Item = Credits>,
+{
+    iter.into_iter()
+        .try_fold(0u64, |acc, c| acc.checked_add(c))
+        .ok_or(crate::PlatformWalletError::InputSumOverflow)
 }
 
 pub use provider::{

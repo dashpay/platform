@@ -13,7 +13,7 @@ use crate::wallet::PlatformAddressWallet;
 use crate::{PlatformAddressChangeSet, PlatformWalletError};
 use dash_sdk::platform::transition::transfer_address_funds::TransferAddressFunds;
 
-use super::saturating_sum_credits;
+use super::{checked_sum_credits, saturating_sum_credits};
 pub use super::InputSelection;
 
 impl PlatformAddressWallet {
@@ -210,14 +210,14 @@ impl PlatformAddressWallet {
             InputSelection::Explicit(ref inputs) => {
                 validate_change_address(&change_addr, &user_outputs, inputs.keys())?;
                 (
-                    saturating_sum_credits(inputs.values().copied()),
+                    checked_sum_credits(inputs.values().copied())?,
                     InputSelection::Explicit(inputs.clone()),
                 )
             }
             InputSelection::ExplicitWithNonces(ref inputs) => {
                 validate_change_address(&change_addr, &user_outputs, inputs.keys())?;
                 (
-                    saturating_sum_credits(inputs.values().map(|(_n, c)| *c)),
+                    checked_sum_credits(inputs.values().map(|(_n, c)| *c))?,
                     InputSelection::ExplicitWithNonces(inputs.clone()),
                 )
             }
