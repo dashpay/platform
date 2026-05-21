@@ -102,6 +102,22 @@ pub enum PlatformWalletError {
         min_input_amount: Credits,
     },
 
+    #[error(
+        "change output amount {change_amount} is below the protocol per-output \
+         minimum {min_output_amount}; raise the input sum or drop the change \
+         address so the residual would exceed the minimum"
+    )]
+    ChangeBelowMinimumOutput {
+        /// `Σ inputs − Σ user_outputs` — the residual that would have been
+        /// routed to the change output.
+        change_amount: Credits,
+        /// Per-output minimum from the active platform version.
+        min_output_amount: Credits,
+    },
+
+    #[error("input sum overflow: caller-supplied input balances exceed u64::MAX")]
+    InputSumOverflow,
+
     #[error("Platform address not found in wallet: {0}")]
     AddressNotFound(String),
 

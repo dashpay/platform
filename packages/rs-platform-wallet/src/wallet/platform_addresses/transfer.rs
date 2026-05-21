@@ -231,8 +231,9 @@ impl PlatformAddressWallet {
             }
         };
 
+        let version = platform_version.unwrap_or(LATEST_PLATFORM_VERSION);
         let outputs_with_change =
-            augment_outputs_with_change(user_outputs, change_addr, input_sum)?;
+            augment_outputs_with_change(user_outputs, change_addr, input_sum, version)?;
 
         self.transfer(
             account_index,
@@ -847,12 +848,14 @@ where
 /// Augment `user_outputs` with an explicit change output absorbing the
 /// surplus `Σ inputs − Σ user_outputs`. Caller MUST invoke
 /// [`validate_change_address`] first to rule out collisions; this fn
-/// re-checks the user_outputs side defensively and rejects the
-/// no-surplus case.
+/// re-checks the user_outputs side defensively, rejects the no-surplus
+/// case, and rejects residuals below the protocol per-output minimum
+/// (`OutputBelowMinimumError`, code 10810).
 fn augment_outputs_with_change(
     mut user_outputs: BTreeMap<PlatformAddress, Credits>,
     change_addr: PlatformAddress,
     input_sum: Credits,
+    platform_version: &PlatformVersion,
 ) -> Result<BTreeMap<PlatformAddress, Credits>, PlatformWalletError> {
     if user_outputs.contains_key(&change_addr) {
         return Err(PlatformWalletError::AddressOperation(format!(
@@ -870,6 +873,17 @@ fn augment_outputs_with_change(
         )));
     }
     let change_amount = input_sum.saturating_sub(user_output_sum);
+    let min_output_amount = platform_version
+        .dpp
+        .state_transitions
+        .address_funds
+        .min_output_amount;
+    if change_amount < min_output_amount {
+        return Err(PlatformWalletError::ChangeBelowMinimumOutput {
+            change_amount,
+            min_output_amount,
+        });
+    }
     user_outputs.insert(change_addr, change_amount);
     Ok(user_outputs)
 }
@@ -1274,8 +1288,9 @@ mod auto_select_tests {
         let user_target = p2pkh(0x22);
         let change_addr = p2pkh(0x33);
         let user_outputs = outputs_for(user_target, 5_000_000);
-        let outputs =
-            augment_outputs_with_change(user_outputs, change_addr, 60_000_000).expect("augment");
+        let pv = LATEST_PLATFORM_VERSION;
+        let outputs = augment_outputs_with_change(user_outputs, change_addr, 60_000_000, pv)
+            .expect("augment");
         assert_eq!(outputs.len(), 2);
         assert_eq!(outputs.get(&user_target), Some(&5_000_000));
         assert_eq!(
@@ -1296,7 +1311,8 @@ mod auto_select_tests {
     fn augment_outputs_with_change_rejects_duplicate_address() {
         let target = p2pkh(0x44);
         let user_outputs = outputs_for(target, 5_000_000);
-        let err = augment_outputs_with_change(user_outputs, target, 60_000_000)
+        let pv = LATEST_PLATFORM_VERSION;
+        let err = augment_outputs_with_change(user_outputs, target, 60_000_000, pv)
             .expect_err("change_addr equal to user output must be rejected");
         match err {
             PlatformWalletError::AddressOperation(msg) => {
@@ -1317,13 +1333,44 @@ mod auto_select_tests {
         let target = p2pkh(0x55);
         let change_addr = p2pkh(0x66);
         let user_outputs = outputs_for(target, 60_000_000);
-        let err = augment_outputs_with_change(user_outputs, change_addr, 60_000_000)
+        let pv = LATEST_PLATFORM_VERSION;
+        let err = augment_outputs_with_change(user_outputs, change_addr, 60_000_000, pv)
             .expect_err("equal sums must be rejected: nothing to route as change");
         match err {
             PlatformWalletError::AddressOperation(msg) => {
                 assert!(msg.contains("no surplus"), "unexpected message: {msg}");
             }
             other => panic!("expected AddressOperation, got {other:?}"),
+        }
+    }
+
+    /// QA-001: residual in the `(0, min_output_amount)` band must be rejected
+    /// before the chain does (`OutputBelowMinimumError`, code 10810). The
+    /// existing tests cover residual=0 (no-surplus) and residual=55M (well
+    /// above min); this fills the gap in the middle.
+    #[test]
+    fn augment_outputs_with_change_rejects_sub_minimum_residual() {
+        let target = p2pkh(0x77);
+        let change_addr = p2pkh(0x88);
+        let pv = LATEST_PLATFORM_VERSION;
+        let min_output = pv.dpp.state_transitions.address_funds.min_output_amount;
+        // Pick a residual strictly between 0 and min_output_amount.
+        let residual = min_output - 1;
+        let user_output_amount = 5_000_000u64;
+        let user_outputs = outputs_for(target, user_output_amount);
+        let input_sum = user_output_amount + residual;
+
+        let err = augment_outputs_with_change(user_outputs, change_addr, input_sum, pv)
+            .expect_err("sub-min residual must be rejected pre-broadcast");
+        match err {
+            PlatformWalletError::ChangeBelowMinimumOutput {
+                change_amount,
+                min_output_amount,
+            } => {
+                assert_eq!(change_amount, residual);
+                assert_eq!(min_output_amount, min_output);
+            }
+            other => panic!("expected ChangeBelowMinimumOutput, got {other:?}"),
         }
     }
 
