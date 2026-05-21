@@ -64,7 +64,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             ));
         }
 
-        let (tx, xpub, _reservation) = {
+        let (tx, _reservation) = {
             let mut wm = self.wallet_manager.write().await;
             let (wallet, info) = wm.get_wallet_and_info_mut(&self.wallet_id).ok_or_else(|| {
                 crate::error::PlatformWalletError::WalletNotFound(
@@ -142,18 +142,41 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                 });
             }
 
-            // Peek at the next change address without advancing the derivation
-            // index. We commit the advance only after post-build revalidation
-            // succeeds, so a revalidation failure does not burn an index and
-            // widen the gap-limit window on retry.
-            let change_addr = managed_account
-                .next_change_address(Some(&xpub), false)
-                .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
+            // Pick the next change address. Peek (advance=false) first; if the
+            // peeked address is already pending from a concurrent in-flight
+            // send (CMT-006), advance the derivation index and peek again
+            // until we find one that is not pending. The final chosen
+            // address is committed (advance=true) inside this same write
+            // lock and inserted into the reservation set so a concurrent
+            // caller can never select the same change address. Advancing
+            // burns at most one index per concurrent in-flight send — a
+            // bounded, acceptable cost for privacy.
+            let pending_change = self.reservations.pending_change_snapshot();
+            let change_addr = loop {
+                let peeked = managed_account
+                    .next_change_address(Some(&xpub), false)
+                    .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
+                if !pending_change.contains(&peeked) {
+                    // Commit the advance now (under the same write lock as
+                    // the outpoint reservation below). On broadcast failure
+                    // a single index is burned — acceptable; on success the
+                    // pending-change entry is released when the guard drops
+                    // post-`check_core_transaction`.
+                    let _ = managed_account
+                        .next_change_address(Some(&xpub), true)
+                        .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
+                    break peeked;
+                }
+                // Burn this index by advancing past it and try again.
+                let _ = managed_account
+                    .next_change_address(Some(&xpub), true)
+                    .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
+            };
 
             let mut builder = TransactionBuilder::new()
                 .set_current_height(current_height)
                 .set_selection_strategy(SelectionStrategy::LargestFirst)
-                .set_change_address(change_addr)
+                .set_change_address(change_addr.clone())
                 .add_inputs(spendable.iter().cloned());
             for (addr, amount) in &outputs {
                 builder = builder.add_output(addr, *amount);
@@ -165,9 +188,11 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                 })
                 .await
                 .map_err(|e| {
-                    // Map coin-selection failures to `NoSpendableInputs`. The string-match is
-                    // brittle against upstream rephrasing and is currently unpinned by tests.
-                    // TODO(typed-wrapper): drop once upstream exposes `SelectionError` typed via BuilderError.
+                    // TODO(CMT-005, #3585): Brittle substring match against upstream Display impl.
+                    // Pinned key-wallet exposes typed BuilderError::CoinSelection(SelectionError::…)
+                    // (InsufficientFunds, NoUtxosAvailable). Pattern-match the enum here once the
+                    // classification can be threaded through `build_signed`'s error type. Deferred
+                    // pending a focused refactor with test coverage for the typed variants.
                     let msg = e.to_string();
                     if msg.contains("Insufficient funds") || msg.contains("No UTXOs available") {
                         PlatformWalletError::NoSpendableInputs {
@@ -215,11 +240,14 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             }
 
             // Reserve before releasing the lock so the next caller sees these outpoints
-            // filtered out. Guard held until `check_core_transaction` marks them spent
-            // (success) or the error unwinds (failure → outpoints released for retry).
-            let reservation = self.reservations.reserve(selected.into_iter().collect());
+            // filtered out *and* skips the peeked change address. Guard held until
+            // `check_core_transaction` marks them spent (success) or the error
+            // unwinds (failure → outpoints released for retry).
+            let reservation = self
+                .reservations
+                .reserve(selected.into_iter().collect(), Some(change_addr.clone()));
 
-            (tx, xpub, reservation)
+            (tx, reservation)
         };
 
         // Broadcast first — on error we leave wallet state untouched so the caller can retry.
@@ -230,43 +258,25 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
         // Mark inputs spent under the write lock, transitioning them from "reserved" to "spent"
         // before the reservation guard drops — no observable gap for concurrent callers.
         // Warning paths below do NOT return Err: the network already accepted the tx.
+        //
+        // CMT-003: the reservation is released *only* when both
+        //   (a) the wallet lookup succeeded, and
+        //   (b) `check_core_transaction` recognised the tx as relevant (i.e. it marked
+        //       the inputs as spent in `managed_account.utxos`).
+        // If either fails, releasing the reservation would let a concurrent caller
+        // select the same UTXO and produce a double-spend on the network. The change
+        // index was already committed inside the build write lock above, so a single
+        // gap is acceptable — leak the reservation until a full sync reconciles.
+        let mut reconciled = false;
         {
             let mut wm = self.wallet_manager.write().await;
             if let Some((wallet, info)) = wm.get_wallet_mut_and_info_mut(&self.wallet_id) {
-                // Commit the change-address advance post-broadcast; doing it before would burn
-                // a derivation index on network rejection, widening the gap-limit window.
-                let change_account = match account_type {
-                    StandardAccountType::BIP44Account => info
-                        .core_wallet
-                        .accounts
-                        .standard_bip44_accounts
-                        .get_mut(&account_index),
-                    StandardAccountType::BIP32Account => info
-                        .core_wallet
-                        .accounts
-                        .standard_bip32_accounts
-                        .get_mut(&account_index),
-                };
-                if let Some(change_account) = change_account {
-                    if let Err(e) = change_account.next_change_address(Some(&xpub), true) {
-                        // Broadcast already succeeded; surface as a warning
-                        // rather than an error so the caller still sees the
-                        // tx hash. A later sync reconciles the index.
-                        tracing::warn!(
-                            target: "platform_wallet::broadcast",
-                            event = "post_broadcast_change_index_advance_failed",
-                            txid = %tx.txid(),
-                            wallet_id = %hex::encode(self.wallet_id),
-                            error = %e,
-                            "failed to advance change-address index after successful broadcast"
-                        );
-                    }
-                }
-
                 let check_result = info
                     .check_core_transaction(&tx, TransactionContext::Mempool, wallet, true, true)
                     .await;
-                if !check_result.is_relevant {
+                if check_result.is_relevant {
+                    reconciled = true;
+                } else {
                     // Own-built tx unrecognised by our checker is an internal invariant
                     // violation, not a transient. Stable event field for operator alerting.
                     tracing::error!(
@@ -290,9 +300,23 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             }
         }
 
-        // Explicit drop: inputs are already marked spent above; no gap between
-        // "reservation released" and "spent visible" to concurrent callers.
-        drop(_reservation);
+        if reconciled {
+            // Inputs are now marked spent; safe to release reservation.
+            _reservation.release_after_commit();
+        } else {
+            // Broadcast succeeded but state could not be reconciled. Releasing the
+            // reservation now risks a concurrent send re-selecting the same UTXO and
+            // producing a double-spend the network would reject. Keep it held until
+            // a future sync reconciles — a wallet restart is the eventual relief.
+            tracing::warn!(
+                target: "platform_wallet::broadcast",
+                event = "post_broadcast_reservation_leaked_until_sync",
+                txid = %tx.txid(),
+                wallet_id = %hex::encode(self.wallet_id),
+                "leaking outpoint reservation: post-broadcast reconciliation failed"
+            );
+            _reservation.leak_until_sync();
+        }
 
         Ok(tx)
     }
@@ -808,6 +832,88 @@ mod tests {
         }
     }
 
+    /// CMT-003: if `check_core_transaction` returns `is_relevant = false`
+    /// after a successful broadcast (an internal invariant violation but a
+    /// real-world possibility on a corrupted/stale wallet state), the
+    /// reservation must stay held — releasing it could let a concurrent
+    /// caller select the same already-broadcast outpoint and produce a
+    /// double-spend the network would reject.
+    ///
+    /// We force `is_relevant = false` by clearing the funding account's
+    /// address-pool entries between the broadcast and the reconcile step;
+    /// the post-broadcast `check_core_transaction` then matches nothing.
+    #[tokio::test]
+    async fn unreconciled_broadcast_keeps_reservation_held() {
+        use key_wallet::account::account_type::StandardAccountType;
+
+        let (wm, wallet_id, recipient, signer) = build_funded_wallet_manager(2_000_000);
+        let signer = Arc::new(signer);
+
+        let gate = Arc::new(Notify::new());
+        let entered = Arc::new(Notify::new());
+        let broadcaster = Arc::new(GatedBroadcaster {
+            gate: Arc::clone(&gate),
+            entered: Arc::clone(&entered),
+            calls: AtomicUsize::new(0),
+            succeed: true,
+        });
+
+        let core = make_core_wallet_for_manager(
+            Arc::clone(&wm),
+            wallet_id,
+            Arc::clone(&broadcaster) as Arc<dyn TransactionBroadcaster>,
+        );
+
+        let outputs = vec![(recipient.clone(), 100_000)];
+
+        let core_send = core.clone();
+        let signer_send = Arc::clone(&signer);
+        let handle = tokio::spawn(async move {
+            core_send
+                .send_to_addresses(
+                    StandardAccountType::BIP44Account,
+                    0,
+                    outputs,
+                    signer_send.as_ref(),
+                )
+                .await
+        });
+
+        // Wait until the broadcast call has been entered — by then the
+        // outpoint is reserved, the change index is committed, and the
+        // wallet write lock has been released.
+        entered.notified().await;
+
+        // Sabotage the wallet so `check_core_transaction` cannot match
+        // anything. Clearing the account-collection map entirely is the
+        // surest way: with no accounts the checker walks zero entries.
+        {
+            let mut wm_guard = wm.write().await;
+            let info = wm_guard.get_wallet_info_mut(&wallet_id).expect("info");
+            info.core_wallet.accounts.standard_bip44_accounts.clear();
+        }
+
+        // Capture the reservation's outpoint *before* releasing the gate
+        // so the assertion target is stable.
+        let funding_outpoint = OutPoint::new(Txid::from_byte_array([7u8; 32]), 0);
+
+        // Release the broadcast — the post-broadcast reconcile sees
+        // `is_relevant=false` and (per CMT-003) leaks the reservation.
+        gate.notify_one();
+
+        let result = handle.await.expect("task panicked");
+        assert!(
+            result.is_ok(),
+            "send_to_addresses must succeed when broadcast succeeds; got: {result:?}"
+        );
+
+        assert!(
+            core.reservations.contains(&funding_outpoint),
+            "reservation must remain held when post-broadcast reconcile fails (is_relevant=false), \
+             otherwise a concurrent caller could re-select the same already-broadcast outpoint"
+        );
+    }
+
     /// Pins the early-exit guard: when the spendable snapshot is empty
     /// (e.g. all UTXOs reserved by in-flight broadcasts), `send_to_addresses`
     /// surfaces `NoSpendableInputs` without invoking the builder.
@@ -827,7 +933,7 @@ mod tests {
         // Reserve the wallet's only outpoint so the spendable snapshot is
         // empty for the next caller, exercising the early-exit guard.
         let outpoint = OutPoint::new(Txid::from_byte_array([7u8; 32]), 0);
-        let _guard = core.reservations.reserve(vec![outpoint]);
+        let _guard = core.reservations.reserve(vec![outpoint], None);
 
         let result = core
             .send_to_addresses(StandardAccountType::BIP44Account, 0, outputs, &signer)
