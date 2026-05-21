@@ -3685,9 +3685,37 @@ mod token_burn_tests {
     /// (see commit message of the version bump for the recorded delta).
     #[tokio::test]
     async fn test_token_burn_group_action_confirmer_fee_includes_transformer_reads() {
-        let platform_version = PlatformVersion::latest();
+        run_token_burn_group_action_confirmer_fee_includes_transformer_reads_at_protocol_version(
+            PlatformVersion::latest().protocol_version,
+            4_319_240,
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_11: pre-B7 fee — the transformer's local execution
+    /// context was dropped, so the three group-action drive reads
+    /// (fetch_action_is_closed +
+    /// fetch_action_id_signers_power_and_add_operations +
+    /// fetch_active_action_info_and_add_operations) cost 30_820 credits
+    /// that were not billed. Pinned so v11 chain history stays bit-for-bit
+    /// reproducible.
+    #[tokio::test]
+    async fn test_token_burn_group_action_confirmer_fee_includes_transformer_reads_protocol_version_11(
+    ) {
+        run_token_burn_group_action_confirmer_fee_includes_transformer_reads_at_protocol_version(
+            11, 4_288_420,
+        )
+        .await;
+    }
+
+    async fn run_token_burn_group_action_confirmer_fee_includes_transformer_reads_at_protocol_version(
+        protocol_version: dpp::version::ProtocolVersion,
+        expected_processing_fee: dpp::fee::Credits,
+    ) {
+        let platform_version = PlatformVersion::get(protocol_version)
+            .expect("expected platform version for the requested protocol_version");
         let mut platform = TestPlatformBuilder::new()
-            .with_latest_protocol_version()
+            .with_initial_protocol_version(protocol_version)
             .build_with_mock_rpc()
             .set_genesis_state();
 
@@ -3852,8 +3880,9 @@ mod token_burn_tests {
         //     previously billed to a dropped context.
         assert_eq!(
             confirmer_result.aggregated_fees().processing_fee,
-            4_319_240,
-            "confirmer step must bill the three group-action drive reads"
+            expected_processing_fee,
+            "PROTOCOL_VERSION_{}: confirmer step processing fee must match the version-specific baseline (transformer-phase group-action reads billed at PV12+, dropped at PV11)",
+            protocol_version,
         );
     }
 }
