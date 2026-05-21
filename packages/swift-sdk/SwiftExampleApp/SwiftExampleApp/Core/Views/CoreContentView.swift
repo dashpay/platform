@@ -430,7 +430,7 @@ var body: some View {
                     // wallet scoping) so the figures survive restart
                     // and reflect the whole pool rather than a single
                     // bound wallet.
-                    ShieldedNetworkSummaryRows()
+                    ShieldedNetworkSummaryRows(walletIds: walletIdsOnNetwork)
 
                     // Sync counters since launch — `total_scanned`
                     // is the wire-level encrypted-note count (every
@@ -1219,34 +1219,49 @@ extension CoreContentView {
 // MARK: - ShieldedNetworkSummaryRows
 
 /// Network-wide shielded summary: aggregate unspent balance and the
-/// notes-synced watermark across **every** wallet/account on disk.
+/// notes-synced watermark across every wallet/account **on the active
+/// network**.
 ///
-/// Both figures are read **directly from SwiftData** (no wallet
-/// scoping) rather than from the `ShieldedService.shieldedBalance`
-/// mirror that's updated per-bound-wallet from sync events, so they
-/// survive restart and reflect the entire pool:
+/// Both figures are read **directly from SwiftData** (scoped to the
+/// active network via `walletIds`) rather than from the
+/// `ShieldedService.shieldedBalance` mirror that's updated
+/// per-bound-wallet from sync events, so they survive restart and
+/// reflect the whole on-network pool:
 ///
-///   * **Total Shielded Balance** — sum of `value` over every
-///     unspent `PersistentShieldedNote`, in credits.
+///   * **Total Shielded Balance** — sum of `value` over every unspent
+///     `PersistentShieldedNote` whose wallet is on this network.
 ///
-///   * **Notes Synced** — the highest `lastSyncedIndex` across all
-///     `PersistentShieldedSyncState` rows. The Orchard commitment
-///     tree is chain-wide and shared by every wallet/account, so
-///     each subwallet advances toward the same tip; the max is the
-///     furthest-scanned position and climbs as sync progresses
-///     across tens of thousands of notes.
+///   * **Notes Synced** — the highest `lastSyncedIndex` across this
+///     network's `PersistentShieldedSyncState` rows. The Orchard
+///     commitment tree is chain-wide and shared by every wallet/account
+///     **on a given network**, so each subwallet advances toward the
+///     same tip; the max is the furthest-scanned position and climbs as
+///     sync progresses. Scoping matters: trees are per-chain, so a
+///     `max()` across networks would blend unrelated tip positions.
 private struct ShieldedNetworkSummaryRows: View {
+    /// Wallet ids on the active network. Both queries are filtered
+    /// against this so a multi-network install (e.g. regtest + testnet)
+    /// doesn't blend balances or take a watermark `max()` across
+    /// unrelated per-chain commitment trees — matching the Platform
+    /// Sync Status section's `walletIdsOnNetwork` scoping.
+    let walletIds: Set<Data>
+
     @Query private var allNotes: [PersistentShieldedNote]
     @Query private var syncStates: [PersistentShieldedSyncState]
 
-    /// Sum of `value` over every unspent note, in credits.
+    /// Sum of `value` over this network's unspent notes, in credits.
     private var totalUnspentCredits: UInt64 {
-        allNotes.lazy.filter { !$0.isSpent }.reduce(UInt64(0)) { $0 &+ $1.value }
+        allNotes.lazy
+            .filter { !$0.isSpent && walletIds.contains($0.walletId) }
+            .reduce(UInt64(0)) { $0 &+ $1.value }
     }
 
-    /// Furthest-scanned commitment-tree index across all subwallets.
+    /// Furthest-scanned commitment-tree index across this network's subwallets.
     private var notesSynced: UInt64 {
-        syncStates.map(\.lastSyncedIndex).max() ?? 0
+        syncStates.lazy
+            .filter { walletIds.contains($0.walletId) }
+            .map(\.lastSyncedIndex)
+            .max() ?? 0
     }
 
     /// 1 DASH = 100,000,000,000 credits — matches `formatCredits`.

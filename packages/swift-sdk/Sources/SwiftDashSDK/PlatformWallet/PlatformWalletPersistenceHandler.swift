@@ -2316,6 +2316,22 @@ public class PlatformWalletPersistenceHandler {
         return row
     }
 
+    /// Wallet ids belonging to the handler's bound network, used to
+    /// scope the shielded loaders the same way `loadWalletList()` scopes
+    /// its wallet fetch. Returns `nil` when the handler has no bound
+    /// network (legacy callers that haven't threaded `network` through),
+    /// signalling "don't filter" so those paths keep their pre-refactor
+    /// cross-network behavior. Caller must be on `onQueue`.
+    private func inNetworkWalletIds() -> Set<Data>? {
+        guard let network = self.network else { return nil }
+        let raw = network.rawValue
+        let descriptor = FetchDescriptor<PersistentWallet>(
+            predicate: #Predicate { $0.networkRaw == raw }
+        )
+        let wallets = (try? backgroundContext.fetch(descriptor)) ?? []
+        return Set(wallets.map { $0.walletId })
+    }
+
     /// Build the host-allocated `ShieldedNoteRestoreFFI` array Rust
     /// reads at boot. The allocation is tracked in
     /// `shieldedLoadAllocations` and freed by
@@ -2330,12 +2346,19 @@ public class PlatformWalletPersistenceHandler {
         var resultErrored = false
         onQueue {
             let descriptor = FetchDescriptor<PersistentShieldedNote>()
-            let rows: [PersistentShieldedNote]
+            var rows: [PersistentShieldedNote]
             do {
                 rows = try backgroundContext.fetch(descriptor)
             } catch {
                 resultErrored = true
                 return
+            }
+            // Scope to the handler's bound network so a per-network
+            // manager never rehydrates another network's shielded notes
+            // (the commitment tree DB is network-scoped). `nil` ids =>
+            // no in-network wallets => nothing to restore.
+            if let inNetworkIds = self.inNetworkWalletIds() {
+                rows = rows.filter { inNetworkIds.contains($0.walletId) }
             }
             if rows.isEmpty {
                 return
@@ -2432,12 +2455,18 @@ public class PlatformWalletPersistenceHandler {
         var resultErrored = false
         onQueue {
             let descriptor = FetchDescriptor<PersistentShieldedSyncState>()
-            let rows: [PersistentShieldedSyncState]
+            var rows: [PersistentShieldedSyncState]
             do {
                 rows = try backgroundContext.fetch(descriptor)
             } catch {
                 resultErrored = true
                 return
+            }
+            // Same network scoping as `loadShieldedNotes` — keep both
+            // loaders consistent so a per-network manager doesn't restore
+            // foreign-network sync watermarks.
+            if let inNetworkIds = self.inNetworkWalletIds() {
+                rows = rows.filter { inNetworkIds.contains($0.walletId) }
             }
             if rows.isEmpty {
                 return
