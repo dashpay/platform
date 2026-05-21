@@ -380,9 +380,17 @@ impl ShieldedSyncManager {
         }
         self.last_sync_unix
             .store(summary.sync_unix_seconds, Ordering::Release);
-        self.is_syncing.store(false, Ordering::Release);
 
+        // Dispatch the completion event BEFORE clearing `is_syncing`.
+        // `quiesce()` drains on the falling edge of `is_syncing`, so if
+        // we cleared the flag first a stop/clear caller could unblock
+        // while this completion event (FFI callback → Swift
+        // `handleShieldedSyncCompleted`) is still pending — surfacing a
+        // stale post-stop/post-clear event. Holding the flag across the
+        // dispatch makes quiesce's barrier cover the event too.
         self.event_manager.on_shielded_sync_completed(&summary);
+
+        self.is_syncing.store(false, Ordering::Release);
 
         summary
     }
