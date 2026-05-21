@@ -20,7 +20,9 @@ public final class PersistentShieldedSyncState {
 
     public var walletId: Data
     public var accountIndex: UInt32
-    /// Highest global commitment-tree index that the subwallet has scanned.
+    /// Sync watermark: count of note positions scanned = the next global
+    /// commitment-tree index to scan (exclusive). `0` = nothing scanned
+    /// yet — *not* the last index scanned.
     public var lastSyncedIndex: UInt64
     /// Whether the optional `(height, timestamp)` nullifier
     /// checkpoint is populated. SwiftData predicate compilation is

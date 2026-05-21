@@ -174,10 +174,14 @@ pub trait ShieldedStore: Send + Sync {
 
     // ── Sync state (per-subwallet) ─────────────────────────────────────
 
-    /// The last global note index that was synced for `id`.
+    /// Sync watermark for `id`: the count of note positions already
+    /// scanned, i.e. the next global commitment-tree index to scan.
+    /// `0` means nothing scanned yet; `N` means positions `0..N` are
+    /// done. Exclusive upper bound — *not* the last index scanned
+    /// (scanning through position `N-1` sets this to `N`).
     fn last_synced_note_index(&self, id: SubwalletId) -> Result<u64, Self::Error>;
 
-    /// Persist the last synced note index for `id`.
+    /// Persist the sync watermark (next index to scan) for `id`.
     fn set_last_synced_note_index(
         &mut self,
         id: SubwalletId,
@@ -225,7 +229,8 @@ pub(super) struct SubwalletState {
     pub notes: Vec<ShieldedNote>,
     /// Nullifier → index into `notes`, for O(1) `mark_spent`.
     pub nullifier_index: BTreeMap<[u8; 32], usize>,
-    /// Highest global note index ever scanned.
+    /// Sync watermark: count of note positions scanned = the next
+    /// global index to scan (exclusive). `0` = nothing scanned yet.
     pub last_synced_index: u64,
     /// `(height, timestamp)` from the most recent nullifier sync.
     pub nullifier_checkpoint: Option<(u64, u64)>,

@@ -25,7 +25,8 @@ pub struct ShieldedSubwalletStartState {
     /// in-memory store reflects what nullifier sync has already
     /// established.
     pub notes: Vec<ShieldedNote>,
-    /// Highest global note index that the subwallet has scanned.
+    /// Sync watermark: count of note positions scanned = the next
+    /// global index to scan (exclusive). `0` = nothing scanned yet.
     pub last_synced_index: u64,
     /// Last `(height, timestamp)` nullifier sync checkpoint.
     pub nullifier_checkpoint: Option<(u64, u64)>,
