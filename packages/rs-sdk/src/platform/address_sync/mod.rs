@@ -782,6 +782,11 @@ where
                     nonce,
                     balance: new_balance,
                 };
+                // CMT-001: an address proven absent by the tree scan
+                // may legitimately become found here on a chain-confirmed
+                // balance change. Drop the stale `absent` marker so
+                // `found` and `absent` stay disjoint.
+                result.absent.remove(&result_key);
                 result.found.insert(result_key, funds);
                 applied.push((tag, address, funds));
             }
@@ -1707,6 +1712,136 @@ mod tests {
                 .iter()
                 .any(|(t, a, f)| *t == 7 && *a == late && f.balance == 42_000),
             "on_address_found must fire for the recovered post-snapshot address"
+        );
+    }
+
+    /// CMT-001 (coderabbitai): an address marked `absent` by the tree
+    /// scan and then re-discovered as `found` during the catch-up phase
+    /// must leave the two sets disjoint. Pre-fix the catch-up only
+    /// inserted into `found` and never pruned `absent`, so the same
+    /// `(tag, address)` could appear in both — internally inconsistent.
+    #[test]
+    fn cmt_001_catch_up_prunes_absent_when_address_is_rediscovered() {
+        let tag: u32 = 1;
+        let addr = p2pkh(0x42);
+
+        let mut lookup: HashMap<Vec<u8>, (u32, PlatformAddress)> = HashMap::new();
+        lookup.insert(addr.to_bytes(), (tag, addr));
+
+        // Tree scan proved the address absent (matches the path at L171
+        // / L223 in this file).
+        let mut result: AddressSyncResult<u32, PlatformAddress> = AddressSyncResult::new();
+        result.absent.insert((tag, addr));
+
+        // Catch-up: the platform reports a chain-confirmed balance for
+        // the same address that the tree scan had marked absent.
+        let op = CreditOperation::SetCredits(12_345);
+        let changes = [(&addr, AddressBalanceChange::Recent(&op))];
+
+        let outcome = apply_address_changes(
+            &lookup,
+            changes.iter().map(|(a, c)| (*a, *c)),
+            0,
+            &mut result,
+        );
+
+        assert_eq!(
+            outcome.applied,
+            vec![(
+                tag,
+                addr,
+                AddressFunds {
+                    nonce: 0,
+                    balance: 12_345,
+                }
+            )]
+        );
+        assert_eq!(
+            result.found.get(&(tag, addr)).map(|f| f.balance),
+            Some(12_345),
+            "rediscovered address must be in `found`"
+        );
+        assert!(
+            !result.absent.contains(&(tag, addr)),
+            "rediscovered address must be pruned from `absent` (CMT-001)"
+        );
+
+        // Stronger invariant: the two sets are globally disjoint.
+        for key in result.found.keys() {
+            assert!(
+                !result.absent.contains(key),
+                "found ∩ absent must be empty (CMT-001): {key:?} in both"
+            );
+        }
+    }
+
+    /// End-to-end CMT-001 guard via `apply_block_changes`: the same
+    /// invariant must hold after the full per-block apply path runs
+    /// (including the Found-025 refresh/replay branch).
+    #[tokio::test]
+    async fn cmt_001_apply_block_changes_keeps_found_and_absent_disjoint() {
+        use async_trait::async_trait;
+
+        struct NoopProvider;
+
+        #[async_trait]
+        impl AddressProvider for NoopProvider {
+            type Tag = u32;
+            type Address = PlatformAddress;
+
+            fn gap_limit(&self) -> AddressIndex {
+                0
+            }
+
+            fn pending_addresses(&self) -> impl Iterator<Item = (Self::Tag, Self::Address)> + '_ {
+                std::iter::empty()
+            }
+
+            async fn on_address_found(
+                &mut self,
+                _tag: Self::Tag,
+                _address: &Self::Address,
+                _funds: AddressFunds,
+            ) {
+            }
+
+            async fn on_address_absent(&mut self, _tag: Self::Tag, _address: &Self::Address) {}
+
+            fn current_balances(
+                &self,
+            ) -> impl Iterator<Item = (Self::Tag, Self::Address, AddressFunds)> + '_ {
+                std::iter::empty()
+            }
+        }
+
+        let tag: u32 = 5;
+        let addr = p2pkh(0x99);
+
+        let mut lookup: HashMap<Vec<u8>, (u32, PlatformAddress)> = HashMap::new();
+        lookup.insert(addr.to_bytes(), (tag, addr));
+
+        let mut result: AddressSyncResult<u32, PlatformAddress> = AddressSyncResult::new();
+        result.absent.insert((tag, addr));
+
+        let op = BlockAwareCreditOperation::SetCredits(7_777);
+        let changes = [(&addr, AddressBalanceChange::Compacted(&op))];
+
+        apply_block_changes(
+            &mut lookup,
+            changes.iter().map(|(a, c)| (*a, *c)),
+            0,
+            &mut NoopProvider,
+            &mut result,
+        )
+        .await;
+
+        assert_eq!(
+            result.found.get(&(tag, addr)).map(|f| f.balance),
+            Some(7_777),
+        );
+        assert!(
+            !result.absent.contains(&(tag, addr)),
+            "apply_block_changes must keep found/absent disjoint (CMT-001)"
         );
     }
 
