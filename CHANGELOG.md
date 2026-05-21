@@ -1,3 +1,36 @@
+## [3.1.0-dev.5](https://github.com/dashpay/platform/compare/v3.1.0-dev.4...v3.1.0-dev.5) (2026-05-21)
+
+
+### Bug Fixes
+
+* **dpp:** remove erroneous keywords field from document-meta schema and fix contract keywords docs ([#3471](https://github.com/dashpay/platform/issues/3471))
+
+
+### Continuous Integration
+
+* **release:** fix dashmate deb pack by configuring oclif targets ([#3713](https://github.com/dashpay/platform/issues/3713))
+
+
+### Documentation
+
+* **sdk:** update js-evo-sdk README for configuration, shielded facade, and wallet utilities ([#3701](https://github.com/dashpay/platform/issues/3701))
+
+## [3.1.0-dev.4](https://github.com/dashpay/platform/compare/v3.1.0-dev.3...v3.1.0-dev.4) (2026-05-20)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform-wallet:** add birth_height_override to wallet creation API (#3636)
+
+### Features
+
+* **platform-wallet:** add birth_height_override to wallet creation API ([#3636](https://github.com/dashpay/platform/issues/3636))
+
+
+### Continuous Integration
+
+* **release:** drop 32-bit dashmate pack targets unsupported by Node 24 ([#3709](https://github.com/dashpay/platform/issues/3709))
+
 ## [3.1.0-dev.3](https://github.com/dashpay/platform/compare/v3.1.0-dev.2...v3.1.0-dev.3) (2026-05-20)
 
 
