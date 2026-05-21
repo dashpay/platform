@@ -678,9 +678,9 @@ async fn incremental_catch_up<P: AddressProvider>(
         }
     }
 
-    // Single end-of-pass Found-025 recovery (CMT-001/CMT-006/CMT-007):
-    // foreign-wallet addresses fall out cheaply at the extras-intersection
-    // check, so no refresh storm and no warn-log flood on multi-wallet chains.
+    // Single end-of-pass recovery: foreign-wallet addresses fall out at
+    // the extras-intersection check, so no per-block refresh and no log
+    // flood on multi-wallet chains.
     refresh_and_replay_unknown(key_to_tag, pending_unknown, provider, result).await;
 
     result.new_sync_height = current_height.max(observed_tip_height);
@@ -694,7 +694,7 @@ async fn incremental_catch_up<P: AddressProvider>(
     Ok(())
 }
 
-// ── Pure changes-application seam (Found-025) ─────────────────────────
+// ── Address-balance change application ────────────────────────────────
 
 /// A single address balance change, abstracting the recent (`CreditOperation`)
 /// and compacted (`BlockAwareCreditOperation`) shapes so one pure function can
@@ -761,7 +761,7 @@ impl OwnedAddressBalanceChange {
 
 /// A single change for an address that wasn't in the entry-time snapshot.
 /// Buffered across the catch-up pass and replayed once at the end after a
-/// single `pending_addresses()` refresh (Found-025, CMT-001).
+/// single `pending_addresses()` refresh.
 pub(crate) struct PendingUnknownChange {
     /// Raw GroveDB key bytes — joined against the refreshed lookup.
     key: Vec<u8>,
@@ -775,12 +775,9 @@ pub(crate) struct PendingUnknownChange {
 /// Apply one block's changes against the borrowed entry-time lookup, drive
 /// `on_address_found` for every known address whose balance moved, and
 /// append unknown-address changes to `pending_unknown` for a single
-/// end-of-pass refresh + replay (CMT-001).
-///
-/// Pre-refactor this function refreshed the provider per-block; on
-/// populated multi-wallet chains that meant a refresh storm + warn-log
-/// flood, because every other wallet's address looked "unknown". The
-/// refresh now runs exactly once at the end of `incremental_catch_up`.
+/// end-of-pass refresh + replay. The refresh is deliberately deferred so
+/// foreign-wallet addresses on a shared chain do not trigger a per-block
+/// provider poll.
 async fn apply_block_changes<'a, P, I>(
     address_lookup: &HashMap<Vec<u8>, (P::Tag, P::Address)>,
     changes: I,
@@ -807,8 +804,11 @@ async fn apply_block_changes<'a, P, I>(
             let new_balance = change.new_balance(current_balance, current_height);
 
             if new_balance != current_balance {
-                // TODO(CMT-002): synthesized nonce=0 (see same TODO in
-                // `apply_address_changes` for full rationale).
+                // TODO: incremental RPCs carry only balance deltas, never
+                // nonces — addresses first seen here get nonce=0. Clients
+                // recover via `AddressInvalidNonceError.expected_nonce`;
+                // a proper fix would fetch authoritative `AddressFunds`
+                // or model `nonce` as `Option<u32>`.
                 let nonce = result.found.get(&result_key).map(|f| f.nonce).unwrap_or(0);
                 let funds = AddressFunds {
                     nonce,
@@ -832,11 +832,12 @@ async fn apply_block_changes<'a, P, I>(
     }
 }
 
-/// End-of-pass Found-025 recovery. Re-polls `pending_addresses()` exactly
-/// once, builds a small `extras` map of newly-derived addresses, and
-/// replays only the buffered changes that match an extras entry. Foreign
-/// (other-wallet) addresses fall out cheaply at the intersection check —
-/// no refresh storm, no warn-log flood (CMT-001/CMT-006/CMT-007).
+/// End-of-pass recovery for addresses missing from the entry-time
+/// snapshot. Re-polls `pending_addresses()` exactly once, builds a small
+/// `extras` map of newly-derived addresses, and replays only the buffered
+/// changes that match an `extras` entry. Foreign (other-wallet) addresses
+/// fall out at the intersection check — no provider refresh storm, no
+/// log flood.
 async fn refresh_and_replay_unknown<P: AddressProvider>(
     key_to_tag: &HashMap<Vec<u8>, (P::Tag, P::Address)>,
     pending_unknown: Vec<PendingUnknownChange>,
@@ -864,11 +865,10 @@ async fn refresh_and_replay_unknown<P: AddressProvider>(
 
     if extras.is_empty() {
         // Common case on a populated multi-wallet chain: every buffered
-        // unknown belongs to another wallet. Demoted to `debug` so it
-        // does not flood operator logs (CMT-007).
+        // unknown belongs to another wallet.
         debug!(
             "Address sync: {} platform-reported balance change(s) reference \
-             address(es) not tracked by this wallet; ignoring (Found-025)",
+             address(es) not tracked by this wallet; ignoring",
             pending_unknown.len()
         );
         return;
@@ -899,7 +899,7 @@ async fn refresh_and_replay_unknown<P: AddressProvider>(
             .new_balance(current_balance, pending.current_height);
 
         if new_balance != current_balance {
-            // TODO(CMT-002): same synthesized nonce=0 gap as above.
+            // TODO: same synthesized nonce=0 gap as the forward pass.
             let nonce = result.found.get(&result_key).map(|f| f.nonce).unwrap_or(0);
             let funds = AddressFunds {
                 nonce,
@@ -919,7 +919,7 @@ async fn refresh_and_replay_unknown<P: AddressProvider>(
         debug!(
             "Address sync: {} platform-reported balance change(s) reference \
              address(es) not tracked by this wallet (refresh recovered {} \
-             other(s)); ignoring the untracked entries (Found-025)",
+             other(s)); ignoring the untracked entries",
             still_unknown,
             replay_applied.len()
         );
@@ -1585,12 +1585,7 @@ mod tests {
         );
     }
 
-    // ── Found-025 regression guards ──────────────────────────────────
-    //
-    // Found-025: `incremental_catch_up` originally had no `else` on the
-    // lookup miss — a balance change the platform returned for an address
-    // derived *after* the entry-time snapshot was silently dropped. The
-    // guards below pin the corrected end-of-pass refresh + replay shape.
+    // ── End-of-pass refresh + replay regression guards ─────────────────
 
     use dpp::address_funds::PlatformAddress;
     use dpp::balances::credits::BlockAwareCreditOperation;
@@ -1599,13 +1594,11 @@ mod tests {
         PlatformAddress::P2pkh([byte; 20])
     }
 
-    /// End-to-end guard: a provider that derives a fresh address mid-pass
-    /// (so the entry-time lookup misses it) gets the balance applied AND
-    /// `on_address_found` fired after the end-of-pass Found-025 refresh.
-    /// Mirrors `incremental_catch_up`: per-block apply buffers misses,
-    /// `refresh_and_replay_unknown` runs once at the end.
+    /// A provider that derives a fresh address mid-pass — so the
+    /// entry-time lookup misses it — gets the balance applied AND
+    /// `on_address_found` fired after the end-of-pass refresh.
     #[tokio::test]
-    async fn found_025_apply_block_changes_recovers_post_snapshot_address() {
+    async fn apply_block_changes_recovers_post_snapshot_address() {
         use async_trait::async_trait;
 
         struct GrowingProvider {
@@ -1669,7 +1662,7 @@ mod tests {
         .await;
 
         // Per-block apply must NOT touch the provider for unknowns —
-        // the refresh is deferred to end-of-pass (CMT-001).
+        // the refresh is deferred to end-of-pass.
         assert!(
             provider.found.is_empty(),
             "no on_address_found before end-of-pass refresh"
@@ -1681,7 +1674,7 @@ mod tests {
         assert_eq!(
             result.found.get(&(7u32, late)).map(|f| f.balance),
             Some(42_000),
-            "post-snapshot address balance must be applied after refresh (Found-025)"
+            "post-snapshot address balance must be applied after refresh"
         );
         assert!(
             provider
@@ -1692,10 +1685,11 @@ mod tests {
         );
     }
 
-    /// End-to-end CMT-001 guard via `apply_block_changes`: the same
-    /// invariant must hold after the full per-block apply path runs.
+    /// A known address proven absent by the tree scan but re-discovered
+    /// by an incremental change is moved into `found` and pruned from
+    /// `absent`, keeping the two sets disjoint.
     #[tokio::test]
-    async fn cmt_001_apply_block_changes_keeps_found_and_absent_disjoint() {
+    async fn apply_block_changes_keeps_found_and_absent_disjoint_on_catch_up() {
         use async_trait::async_trait;
 
         struct NoopProvider;
@@ -1759,7 +1753,7 @@ mod tests {
         );
         assert!(
             !result.absent.contains(&(tag, addr)),
-            "apply_block_changes must keep found/absent disjoint (CMT-001)"
+            "apply_block_changes must keep found/absent disjoint"
         );
         assert!(
             pending_unknown.is_empty(),
@@ -1767,11 +1761,11 @@ mod tests {
         );
     }
 
-    /// The Found-025 refresh must not double-count a known address's
+    /// The end-of-pass refresh must not double-count a known address's
     /// `AddToCredits` delta when it replays the unknown subset in the
     /// same block (the replay must exclude already-applied addresses).
     #[tokio::test]
-    async fn found_025_known_delta_not_double_counted_on_refresh() {
+    async fn refresh_does_not_double_count_known_address_delta() {
         use async_trait::async_trait;
 
         let known = p2pkh(0x11);
@@ -1868,20 +1862,12 @@ mod tests {
         );
     }
 
-    // ── CMT-003 regression guards ────────────────────────────────────
-    //
-    // CMT-003 (thepastaclaw): a foreign-wallet address (one the provider
-    // has never derived and never will) must NOT trigger a refresh storm,
-    // a warn-log flood, or any insertion into `result.found`. The
-    // pre-refactor code refreshed per-block and logged at `warn` for
-    // every cross-wallet address — these guards pin the corrected
-    // end-of-pass behavior.
-
     /// A foreign address (not in the lookup, never produced by the
     /// provider) is silently ignored — no `on_address_found`, no
-    /// `result.found` insert, no `result.absent` mutation.
+    /// `result.found` insert, no `result.absent` mutation, and exactly
+    /// one provider refresh for the whole pass.
     #[tokio::test]
-    async fn cmt_003_foreign_address_is_ignored_without_refresh_storm() {
+    async fn apply_block_changes_ignores_foreign_address_without_refresh_storm() {
         use async_trait::async_trait;
 
         struct CountingNoopProvider {
@@ -1959,8 +1945,8 @@ mod tests {
             .await;
         }
 
-        // CMT-001 contract: per-block apply must NEVER refresh the
-        // provider — the refresh runs once, at end of pass.
+        // Per-block apply must NEVER refresh the provider — the refresh
+        // runs once, at end of pass.
         assert_eq!(
             provider
                 .pending_polls
@@ -2006,11 +1992,11 @@ mod tests {
             "on_address_found fires only for the known address"
         );
 
-        // Found ∩ Absent stays disjoint (CMT-001 invariant).
+        // `found` and `absent` stay disjoint.
         for key in result.found.keys() {
             assert!(
                 !result.absent.contains(key),
-                "found ∩ absent must be empty (CMT-001): {key:?} in both"
+                "found ∩ absent must be empty: {key:?} in both"
             );
         }
     }
