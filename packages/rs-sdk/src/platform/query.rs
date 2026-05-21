@@ -4,6 +4,7 @@
 use super::types::epoch::EpochQuery;
 use super::types::evonode::EvoNode;
 use crate::error::Error;
+use crate::platform::documents::document_history_query::DocumentHistoryQuery;
 use crate::platform::documents::document_query::DocumentQuery;
 use dapi_grpc::mock::Mockable;
 use dapi_grpc::platform::v0::get_contested_resource_identity_votes_request::GetContestedResourceIdentityVotesRequestV0;
@@ -178,6 +179,28 @@ impl Query<proto::GetDataContractHistoryRequest> for LimitQuery<(Identifier, u64
                     limit: self.limit,
                     offset: None,
                     start_at_ms,
+                    prove,
+                },
+            )),
+        })
+    }
+}
+
+impl Query<proto::GetDocumentHistoryRequest> for DocumentHistoryQuery {
+    fn query(self, prove: bool) -> Result<proto::GetDocumentHistoryRequest, Error> {
+        if !prove {
+            unimplemented!("queries without proofs are not supported yet");
+        }
+
+        Ok(proto::GetDocumentHistoryRequest {
+            version: Some(proto::get_document_history_request::Version::V0(
+                proto::get_document_history_request::GetDocumentHistoryRequestV0 {
+                    data_contract_id: self.data_contract_id.to_vec(),
+                    document_type_name: self.document_type_name,
+                    document_id: self.document_id.to_vec(),
+                    limit: self.limit,
+                    offset: self.offset,
+                    start_at_ms: self.start_at_ms,
                     prove,
                 },
             )),

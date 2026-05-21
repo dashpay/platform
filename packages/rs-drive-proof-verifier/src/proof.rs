@@ -39,7 +39,7 @@ use dapi_grpc::platform::v0::get_protocol_version_upgrade_vote_status_request::{
 use dapi_grpc::platform::v0::security_level_map::KeyKindRequestType as GrpcKeyKind;
 use dapi_grpc::platform::v0::{
     get_address_info_request, get_addresses_infos_request,
-    get_contested_resource_identity_votes_request, get_data_contract_history_request, get_data_contract_request, get_data_contracts_request, get_epochs_info_request, get_evonodes_proposed_epoch_blocks_by_ids_request, get_evonodes_proposed_epoch_blocks_by_range_request, get_finalized_epoch_infos_request, get_identities_balances_request, get_identities_contract_keys_request, get_identity_balance_and_revision_request, get_identity_balance_request, get_identity_by_non_unique_public_key_hash_request,
+    get_contested_resource_identity_votes_request, get_data_contract_history_request, get_data_contract_request, get_data_contracts_request, get_document_history_request, get_epochs_info_request, get_evonodes_proposed_epoch_blocks_by_ids_request, get_evonodes_proposed_epoch_blocks_by_range_request, get_finalized_epoch_infos_request, get_identities_balances_request, get_identities_contract_keys_request, get_identity_balance_and_revision_request, get_identity_balance_request, get_identity_by_non_unique_public_key_hash_request,
     get_identity_by_public_key_hash_request, get_identity_contract_nonce_request, get_identity_keys_request, get_identity_nonce_request, get_identity_request, get_path_elements_request, get_prefunded_specialized_balance_request, GetContestedResourceVotersForIdentityRequest, GetContestedResourceVotersForIdentityResponse, GetPathElementsRequest, GetPathElementsResponse, GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeStateResponse, GetProtocolVersionUpgradeVoteStatusRequest, GetProtocolVersionUpgradeVoteStatusResponse, Proof, ResponseMetadata
 };
 use dapi_grpc::platform::{
@@ -51,6 +51,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::EpochIndex;
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dpp::core_subsidy::NetworkCoreSubsidy;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::{Network, ProTxHash};
 use dpp::document::{Document, DocumentV0Getters};
@@ -1411,6 +1412,85 @@ impl FromProof<platform::GetDataContractHistoryRequest> for DataContractHistory 
         let (root_hash, maybe_history) = Drive::verify_contract_history(
             &proof.grovedb_proof,
             id.into_buffer(),
+            start_at_ms,
+            limit,
+            offset,
+            platform_version,
+        )
+        .map_drive_error(proof, mtd)?;
+
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+        Ok((
+            maybe_history.map(IndexMap::from_iter),
+            mtd.clone(),
+            proof.clone(),
+        ))
+    }
+}
+
+impl FromProof<platform::GetDocumentHistoryRequest> for DocumentHistory {
+    type Request = platform::GetDocumentHistoryRequest;
+    type Response = platform::GetDocumentHistoryResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        _network: Network,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
+    where
+        Self: Sized + 'a,
+    {
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+
+        let (contract_id, document_type_name, document_id, limit, offset, start_at_ms) =
+            match request.version.ok_or(Error::EmptyVersion)? {
+                get_document_history_request::Version::V0(v0) => {
+                    let contract_id =
+                        Identifier::from_bytes(&v0.data_contract_id).map_err(|e| {
+                            Error::ProtocolError {
+                                error: e.to_string(),
+                            }
+                        })?;
+                    let document_id = Identifier::from_bytes(&v0.document_id).map_err(|e| {
+                        Error::ProtocolError {
+                            error: e.to_string(),
+                        }
+                    })?;
+                    let limit = u32_to_u16_opt(v0.limit.unwrap_or_default())?;
+                    let offset = u32_to_u16_opt(v0.offset.unwrap_or_default())?;
+                    (
+                        contract_id,
+                        v0.document_type_name,
+                        document_id,
+                        limit,
+                        offset,
+                        v0.start_at_ms,
+                    )
+                }
+            };
+
+        let data_contract = provider
+            .get_data_contract(&contract_id, platform_version)?
+            .ok_or(Error::NotFound)?;
+        let document_type = data_contract
+            .document_type_for_name(&document_type_name)
+            .map_err(|e| Error::ProtocolError {
+                error: e.to_string(),
+            })?;
+
+        let (root_hash, maybe_history) = Drive::verify_document_history(
+            &proof.grovedb_proof,
+            contract_id.into_buffer(),
+            &document_type_name,
+            document_type,
+            document_id.into_buffer(),
             start_at_ms,
             limit,
             offset,
@@ -2847,6 +2927,7 @@ macro_rules! define_length {
 
 define_length!(DataContract);
 define_length!(DataContractHistory, |d: &DataContractHistory| d.len());
+define_length!(DocumentHistory, |d: &DocumentHistory| d.len());
 define_length!(Document);
 define_length!(Identity);
 define_length!(IdentityBalance);

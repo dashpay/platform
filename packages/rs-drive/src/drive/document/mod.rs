@@ -37,6 +37,12 @@ mod insert_contested;
 pub mod query;
 #[cfg(any(feature = "server", feature = "fixtures-and-mocks"))]
 mod update;
+#[cfg(all(
+    feature = "verify",
+    not(any(feature = "server", feature = "fixtures-and-mocks"))
+))]
+#[path = "query/fetch_document_history_query/mod.rs"]
+mod verify_fetch_document_history_query;
 
 /// paths
 #[cfg(any(feature = "server", feature = "verify"))]

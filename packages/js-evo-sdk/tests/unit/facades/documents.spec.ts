@@ -19,6 +19,8 @@ describe('DocumentsFacade', () => {
   // Stub references for type-safe assertions
   let getDocumentsStub: SinonStub;
   let getDocumentsWithProofInfoStub: SinonStub;
+  let getDocumentHistoryStub: SinonStub;
+  let getDocumentHistoryWithProofInfoStub: SinonStub;
   let getDocumentStub: SinonStub;
   let getDocumentWithProofInfoStub: SinonStub;
   let documentCreateStub: SinonStub;
@@ -42,6 +44,15 @@ describe('DocumentsFacade', () => {
     // Stub query methods
     getDocumentsStub = this.sinon.stub(wasmSdk, 'getDocuments').resolves(new Map());
     getDocumentsWithProofInfoStub = this.sinon.stub(wasmSdk, 'getDocumentsWithProofInfo').resolves({
+      data: new Map(),
+      proof: {},
+      metadata: {},
+    });
+    getDocumentHistoryStub = this.sinon.stub(wasmSdk, 'getDocumentHistory').resolves(new Map());
+    getDocumentHistoryWithProofInfoStub = this.sinon.stub(
+      wasmSdk,
+      'getDocumentHistoryWithProofInfo',
+    ).resolves({
       data: new Map(),
       proof: {},
       metadata: {},
@@ -88,6 +99,37 @@ describe('DocumentsFacade', () => {
       await client.documents.queryWithProof(query);
 
       expect(getDocumentsWithProofInfoStub).to.be.calledOnceWithExactly(query);
+    });
+  });
+
+  describe('history()', () => {
+    it('should fetch document history', async () => {
+      const query = {
+        dataContractId: 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec',
+        documentTypeName: 'note',
+        documentId: '4mZmxva49PBb7BE7srw9o3gixvDfj1dAx1K6z4A7P9Ah',
+        startAtMs: 1000,
+        limit: 10,
+        offset: 1,
+      };
+
+      await client.documents.history(query);
+
+      expect(getDocumentHistoryStub).to.be.calledOnceWithExactly(query);
+    });
+  });
+
+  describe('historyWithProof()', () => {
+    it('should fetch document history with proof metadata', async () => {
+      const query = {
+        dataContractId: 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec',
+        documentTypeName: 'note',
+        documentId: '4mZmxva49PBb7BE7srw9o3gixvDfj1dAx1K6z4A7P9Ah',
+      };
+
+      await client.documents.historyWithProof(query);
+
+      expect(getDocumentHistoryWithProofInfoStub).to.be.calledOnceWithExactly(query);
     });
   });
 
