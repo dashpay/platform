@@ -15,6 +15,7 @@ use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 use dpp::identifier::Identifier;
 use dpp::validation::ValidationResult;
 use dpp::version::PlatformVersion;
+use drive::drive::document::MAX_DOCUMENT_HISTORY_FETCH_LIMIT;
 use drive::util::grove_operations::GroveDBToUse;
 
 impl<C> Platform<C> {
@@ -47,8 +48,17 @@ impl<C> Platform<C> {
 
         let limit = check_validation_result_with_data!(limit
             .map(|limit| {
-                u16::try_from(limit)
-                    .map_err(|_| QueryError::InvalidArgument("limit out of bounds".to_string()))
+                let limit = u16::try_from(limit)
+                    .map_err(|_| QueryError::InvalidArgument("limit out of bounds".to_string()))?;
+
+                if !(1..=MAX_DOCUMENT_HISTORY_FETCH_LIMIT).contains(&limit) {
+                    return Err(QueryError::InvalidArgument(format!(
+                        "limit {} out of bounds of [1, {}]",
+                        limit, MAX_DOCUMENT_HISTORY_FETCH_LIMIT,
+                    )));
+                }
+
+                Ok(limit)
             })
             .transpose());
 
