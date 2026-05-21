@@ -15,6 +15,19 @@ import DashSDKFFI
 /// Use as a root `@StateObject` and pass via `.environmentObject(_:)`.
 /// Views observe `@Published` properties directly — no coordinator
 /// class in the middle.
+/// Lock-guarded monotonic generation counter, safe to read and bump from
+/// any thread. Used to drop shielded sync completion events that belong
+/// to a generation already superseded by a `stop`/`clear`, even when a
+/// restart happens in the same `@MainActor` turn (a plain boolean gate
+/// can't, because the restart re-opens the gate before the stale,
+/// previously-enqueued completion task runs).
+final class ShieldedSyncGenerationCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: UInt64 = 0
+    func current() -> UInt64 { lock.withLock { value } }
+    @discardableResult func bump() -> UInt64 { lock.withLock { value &+= 1; return value } }
+}
+
 @MainActor
 public class PlatformWalletManager: ObservableObject {
     // MARK: - Published observables
@@ -46,21 +59,26 @@ public class PlatformWalletManager: ObservableObject {
     /// Last completed shielded sync event emitted by Rust.
     @Published public internal(set) var lastShieldedSyncEvent: ShieldedSyncEvent?
 
-    /// When true, `handleShieldedSyncCompleted` drops incoming events
-    /// instead of publishing them. Set by `stopShieldedSync` /
-    /// `clearShielded` (after the Rust drain returns) and cleared by any
-    /// sync-start (`startShieldedSync` / `syncShieldedNow`). The Rust
-    /// quiesce barrier guarantees no persistence after stop/clear, but
-    /// the completion callback is re-dispatched onto this `@MainActor`,
-    /// so a final, already-dispatched event can land just after stop/
-    /// clear returns; this gate keeps the published `lastShieldedSyncEvent`
-    /// honest for every SDK consumer (not just the example app). Both
-    /// stop/clear are synchronous on the main actor, so the flag is set
-    /// before the enqueued trailing-event task can run.
+    /// Monotonic generation for shielded sync passes. Each `stop`/`clear`
+    /// bumps it; the FFI completion callback snapshots the generation at
+    /// enqueue time and `handleShieldedSyncCompleted` drops any event whose
+    /// snapshot no longer matches the current generation.
     ///
-    /// `internal` (not `private`) because the shielded lifecycle methods
-    /// that read/write it live in an extension in a separate file.
-    var suppressShieldedCompletionEvents: Bool = false
+    /// The Rust quiesce barrier guarantees no persistence after stop/clear,
+    /// but the completion callback is re-dispatched onto this `@MainActor`,
+    /// so a final, already-dispatched event can land just after stop/clear
+    /// returns. A plain boolean gate is bypassable: a caller can stop (set
+    /// the flag) and restart (clear the flag) in the same actor turn, which
+    /// re-opens the gate before the stale, previously-enqueued completion
+    /// task runs — so the old event leaks into the new run. Tying
+    /// suppression to a generation closes that race: the stale task carries
+    /// the pre-stop generation, the restart does not reset the counter, so
+    /// the snapshot mismatches and the event is dropped even on a same-turn
+    /// restart.
+    ///
+    /// `nonisolated` + lock-guarded so the FFI callback thread can snapshot
+    /// it without hopping onto the main actor first.
+    nonisolated let shieldedSyncGeneration = ShieldedSyncGenerationCounter()
 
     /// All wallets currently held by the Rust-side
     /// `PlatformWalletManager`, keyed by the 32-byte wallet id.

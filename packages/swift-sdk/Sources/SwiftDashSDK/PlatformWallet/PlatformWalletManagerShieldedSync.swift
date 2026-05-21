@@ -58,12 +58,14 @@ public struct ShieldedSyncEvent: Sendable {
 }
 
 extension PlatformWalletManager {
-    func handleShieldedSyncCompleted(_ event: ShieldedSyncEvent) {
-        // Drop a trailing event that the Rust drain already dispatched
-        // but the main actor only delivers after stop/clear returned
-        // (see `suppressShieldedCompletionEvents`). Any sync-start clears
-        // the flag, so legitimate events are never suppressed.
-        guard !suppressShieldedCompletionEvents else { return }
+    func handleShieldedSyncCompleted(_ event: ShieldedSyncEvent, generation: UInt64) {
+        // Drop a trailing event that the Rust drain already dispatched but
+        // the main actor only delivers after stop/clear returned. The FFI
+        // callback snapshots `shieldedSyncGeneration` at enqueue time; a
+        // stop/clear bumps the counter, so a stale event's snapshot no
+        // longer matches and is dropped — even if a restart happened in the
+        // same actor turn (the restart does not reset the counter).
+        guard generation == shieldedSyncGeneration.current() else { return }
         lastShieldedSyncEvent = event
     }
 
@@ -181,8 +183,10 @@ extension PlatformWalletManager {
         if let intervalSeconds {
             try setShieldedSyncInterval(seconds: intervalSeconds)
         }
-        // A new sync run should publish its completion events again.
-        suppressShieldedCompletionEvents = false
+        // No generation reset needed: events emitted by this new run
+        // snapshot the current generation, so they pass the guard. A
+        // trailing event from a prior, stopped run still carries the older
+        // generation and is dropped.
         try platform_wallet_manager_shielded_sync_start(handle).check()
     }
 
@@ -193,9 +197,10 @@ extension PlatformWalletManager {
             )
         }
         try platform_wallet_manager_shielded_sync_stop(handle).check()
-        // The Rust drain returned; suppress any trailing completion
-        // event the main actor delivers after this point.
-        suppressShieldedCompletionEvents = true
+        // The Rust drain returned; bump the generation so any trailing
+        // completion event the main actor delivers after this point is
+        // dropped (its snapshot predates this bump).
+        shieldedSyncGeneration.bump()
     }
 
     /// Reset the Rust-side shielded state on this manager:
@@ -219,10 +224,11 @@ extension PlatformWalletManager {
             )
         }
         try platform_wallet_manager_shielded_clear(handle).check()
-        // The Rust drain returned; suppress any trailing completion
-        // event the main actor delivers after Clear (it would otherwise
-        // briefly repopulate the mirror the host is about to wipe).
-        suppressShieldedCompletionEvents = true
+        // The Rust drain returned; bump the generation so any trailing
+        // completion event the main actor delivers after Clear is dropped
+        // (it would otherwise briefly repopulate the mirror the host is
+        // about to wipe).
+        shieldedSyncGeneration.bump()
     }
 
     public func isShieldedSyncRunning() throws -> Bool {
@@ -273,9 +279,9 @@ extension PlatformWalletManager {
                 "PlatformWalletManager not configured"
             )
         }
-        // A user-initiated sync should publish its completion event even
-        // if a prior stop/clear had suppressed events.
-        suppressShieldedCompletionEvents = false
+        // No generation reset needed: this run's completion event snapshots
+        // the current generation and passes the guard, while a trailing
+        // event from a prior stopped run still carries the older generation.
         let handle = self.handle
         try await Task.detached(priority: .userInitiated) {
             try platform_wallet_manager_shielded_sync_sync_now(handle).check()
@@ -586,7 +592,12 @@ func shieldedSyncCompletedCallback(
         walletResults: results
     )
 
+    // Snapshot the generation now, on the FFI callback thread, BEFORE the
+    // event is enqueued onto the main actor. A subsequent stop/clear bumps
+    // the counter, so this trailing event is dropped when it finally runs.
+    let generation = handler.manager?.shieldedSyncGeneration.current() ?? 0
+
     Task { @MainActor [weak manager = handler.manager] in
-        manager?.handleShieldedSyncCompleted(event)
+        manager?.handleShieldedSyncCompleted(event, generation: generation)
     }
 }
