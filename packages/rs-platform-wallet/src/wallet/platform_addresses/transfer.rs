@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use dpp::address_funds::{AddressFundsFeeStrategy, AddressFundsFeeStrategyStep, PlatformAddress};
 use dpp::fee::Credits;
+use indexmap::IndexMap;
 use dpp::identity::signer::Signer;
 use dpp::state_transition::address_funds_transfer_transition::AddressFundsTransferTransition;
 use dpp::version::PlatformVersion;
@@ -23,6 +24,14 @@ impl PlatformAddressWallet {
     /// from the account via [`InputSelection::Auto`]. When `platform_version`
     /// is `None`, [`LATEST_PLATFORM_VERSION`] drives fee estimation.
     ///
+    /// `outputs` preserves the caller's insertion order — useful for
+    /// debugging and UI — but **DPP transitions store outputs in a
+    /// `BTreeMap` keyed by lex-smallest address**. Under
+    /// `[ReduceOutput(0)]`, "output 0" is therefore the lex-smallest
+    /// entry, not the first-inserted. Callers that need the fee to come
+    /// out of a specific output must ensure that output is the
+    /// lex-smallest key, or switch to `[DeductFromInput(0)]`.
+    ///
     /// `address_signer` produces ECDSA signatures for the input
     /// [`PlatformAddress`]es; the wallet itself holds no key material —
     /// callers supply a seed-backed, hardware, or FFI-trampoline signer.
@@ -30,11 +39,13 @@ impl PlatformAddressWallet {
         &self,
         account_index: u32,
         input_selection: InputSelection,
-        outputs: BTreeMap<PlatformAddress, Credits>,
+        outputs: IndexMap<PlatformAddress, Credits>,
         fee_strategy: AddressFundsFeeStrategy,
         platform_version: Option<&PlatformVersion>,
         address_signer: &S,
     ) -> Result<PlatformAddressChangeSet, PlatformWalletError> {
+        // DPP transitions are BTreeMap-keyed; convert at the public boundary.
+        let outputs: BTreeMap<PlatformAddress, Credits> = outputs.into_iter().collect();
         if outputs.is_empty() {
             return Err(PlatformWalletError::AddressOperation(
                 "Transfer requires at least one output address".to_string(),
@@ -187,7 +198,7 @@ impl PlatformAddressWallet {
         &self,
         account_index: u32,
         input_selection: InputSelection,
-        user_outputs: BTreeMap<PlatformAddress, Credits>,
+        user_outputs: IndexMap<PlatformAddress, Credits>,
         output_change_address: Option<PlatformAddress>,
         fee_strategy: AddressFundsFeeStrategy,
         platform_version: Option<&PlatformVersion>,
@@ -205,6 +216,29 @@ impl PlatformAddressWallet {
                 )
                 .await;
         };
+        // DPP transitions are BTreeMap-keyed; convert at the public
+        // boundary. The lex-ordering caveat documented on
+        // [`Self::transfer`] applies here too — under `[ReduceOutput(0)]`
+        // a lex-smaller `change_addr` would silently absorb the fee. That
+        // is rejected below.
+        let user_outputs: BTreeMap<PlatformAddress, Credits> = user_outputs.into_iter().collect();
+        if matches!(
+            fee_strategy.as_slice(),
+            [AddressFundsFeeStrategyStep::ReduceOutput(0)]
+        ) {
+            if let Some((smallest_user, _)) = user_outputs.iter().next() {
+                if &change_addr < smallest_user {
+                    return Err(PlatformWalletError::AddressOperation(format!(
+                        "[ReduceOutput(0)] + Some(change_addr): change_addr \
+                         {change_addr:?} is lex-smaller than every user output \
+                         (smallest user output: {smallest_user:?}); under DPP's \
+                         BTreeMap ordering it would silently become \"output 0\" \
+                         and absorb the fee instead of the caller-declared target. \
+                         Pick a lex-larger change_addr or use [DeductFromInput(0)]."
+                    )));
+                }
+            }
+        }
 
         let (input_sum, augmented_selection) = match input_selection {
             InputSelection::Explicit(ref inputs) => {
@@ -234,6 +268,8 @@ impl PlatformAddressWallet {
         let version = platform_version.unwrap_or(LATEST_PLATFORM_VERSION);
         let outputs_with_change =
             augment_outputs_with_change(user_outputs, change_addr, input_sum, version)?;
+        let outputs_with_change: IndexMap<PlatformAddress, Credits> =
+            outputs_with_change.into_iter().collect();
 
         self.transfer(
             account_index,
@@ -1635,7 +1671,8 @@ mod auto_select_tests {
         let wallet = PlatformAddressWallet::new(sdk, wallet_manager, [0u8; 32], persister);
 
         let signer = NullSigner;
-        let outputs = outputs_for(p2pkh(0x77), 10_000_000);
+        let outputs: IndexMap<PlatformAddress, Credits> =
+            outputs_for(p2pkh(0x77), 10_000_000).into_iter().collect();
         let change_addr = p2pkh(0x88);
         let fee_strategy = vec![AddressFundsFeeStrategyStep::ReduceOutput(0)];
 

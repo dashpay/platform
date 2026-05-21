@@ -182,18 +182,23 @@ pub struct AddressBalanceEntryFFI {
     pub address_index: u32,
 }
 
-/// Parse output entries into a BTreeMap.
+/// Parse output entries into an insertion-ordered `IndexMap`.
+///
+/// Mirrors `platform-wallet`'s public-API output ordering (QA-002): the
+/// wallet preserves the caller's order for UI/debug while DPP still
+/// keys the transition by lex-smallest address. Use `IndexMap` here so
+/// the caller's array order survives the FFI boundary.
 ///
 /// # Safety
 /// `ptr` must point to `count` valid elements.
 pub unsafe fn parse_outputs(
     ptr: *const AddressBalanceEntryFFI,
     count: usize,
-) -> Result<BTreeMap<PlatformAddress, Credits>, &'static str> {
+) -> Result<indexmap::IndexMap<PlatformAddress, Credits>, &'static str> {
     if ptr.is_null() && count > 0 {
         return Err("Null output pointer with non-zero count");
     }
-    let mut map = BTreeMap::new();
+    let mut map = indexmap::IndexMap::new();
     if count > 0 {
         for entry in std::slice::from_raw_parts(ptr, count) {
             let addr = PlatformAddress::try_from(entry.address)?;
