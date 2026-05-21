@@ -8,9 +8,38 @@ mod deletion_tests {
 
     #[tokio::test]
     async fn test_document_delete_on_document_type_that_is_mutable_and_can_be_deleted() {
-        let platform_version = PlatformVersion::latest();
+        run_document_delete_on_document_type_that_is_mutable_and_can_be_deleted_at_protocol_version(
+            PlatformVersion::latest().protocol_version,
+            1678920,
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_11: pre-B7 fee — the transformer's local execution
+    /// context was dropped, so the user wasn't charged for the per-transition
+    /// grovedb reads `try_from_borrowed_*_with_contract_lookup` performs.
+    /// Pinned so v11 chain history stays bit-for-bit reproducible.
+    #[tokio::test]
+    async fn test_document_delete_on_document_type_that_is_mutable_and_can_be_deleted_protocol_version_11(
+    ) {
+        run_document_delete_on_document_type_that_is_mutable_and_can_be_deleted_at_protocol_version(
+            11, 1666860,
+        )
+        .await;
+    }
+
+    /// Helper for the paired happy-path delete fee test. Same scenario is
+    /// exercised at PROTOCOL_VERSION_11 (transformer reads dropped) and at
+    /// PROTOCOL_VERSION_12+ (transformer reads billed via outer execution
+    /// context — see B7 in `docs/paid-error-fee-audit.md`).
+    async fn run_document_delete_on_document_type_that_is_mutable_and_can_be_deleted_at_protocol_version(
+        protocol_version: dpp::version::ProtocolVersion,
+        expected_processing_fee: dpp::fee::Credits,
+    ) {
+        let platform_version = PlatformVersion::get(protocol_version)
+            .expect("expected platform version for the requested protocol_version");
         let mut platform = TestPlatformBuilder::new()
-            .with_latest_protocol_version()
+            .with_initial_protocol_version(protocol_version)
             .build_with_mock_rpc()
             .set_genesis_state();
 
@@ -143,7 +172,12 @@ mod deletion_tests {
 
         assert_eq!(processing_result.valid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 1678920);
+        assert_eq!(
+            processing_result.aggregated_fees().processing_fee,
+            expected_processing_fee,
+            "PROTOCOL_VERSION_{}: happy-path delete processing fee must match the version-specific baseline",
+            protocol_version,
+        );
 
         let issues = platform
             .drive
@@ -329,16 +363,38 @@ mod deletion_tests {
 
     #[tokio::test]
     async fn test_document_delete_on_document_type_that_is_not_mutable_and_can_be_deleted() {
+        run_document_delete_on_document_type_that_is_not_mutable_and_can_be_deleted_at_protocol_version(
+            PlatformVersion::latest().protocol_version,
+            2778700,
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_11: pre-B7 fee — see sibling docs above. Pinned so
+    /// v11 chain history stays bit-for-bit reproducible.
+    #[tokio::test]
+    async fn test_document_delete_on_document_type_that_is_not_mutable_and_can_be_deleted_protocol_version_11(
+    ) {
+        run_document_delete_on_document_type_that_is_not_mutable_and_can_be_deleted_at_protocol_version(
+            11, 2762400,
+        )
+        .await;
+    }
+
+    async fn run_document_delete_on_document_type_that_is_not_mutable_and_can_be_deleted_at_protocol_version(
+        protocol_version: dpp::version::ProtocolVersion,
+        expected_processing_fee: dpp::fee::Credits,
+    ) {
         let mut platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(protocol_version)
             .build_with_mock_rpc()
             .set_initial_state_structure();
 
         let contract_path = "tests/supporting_files/contract/dashpay/dashpay-contract-contact-request-not-mutable-and-can-be-deleted.json";
 
         let platform_state = platform.state.load();
-        let platform_version = platform_state
-            .current_platform_version()
-            .expect("expected to get current platform version");
+        let platform_version = PlatformVersion::get(protocol_version)
+            .expect("expected platform version for the requested protocol_version");
 
         // let's construct the grovedb structure for the card game data contract
         let dashpay_contract = json_document_to_contract(contract_path, true, platform_version)
@@ -488,7 +544,12 @@ mod deletion_tests {
 
         assert_eq!(processing_result.valid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 2778700);
+        assert_eq!(
+            processing_result.aggregated_fees().processing_fee,
+            expected_processing_fee,
+            "PROTOCOL_VERSION_{}: happy-path delete (non-mutable doc) processing fee must match the version-specific baseline",
+            protocol_version,
+        );
 
         let issues = platform
             .drive
@@ -657,9 +718,34 @@ mod deletion_tests {
 
     #[tokio::test]
     async fn test_document_delete_that_does_not_yet_exist() {
-        let platform_version = PlatformVersion::latest();
+        run_document_delete_that_does_not_yet_exist_at_protocol_version(
+            PlatformVersion::latest().protocol_version,
+            520340,
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_11: pre-B7 fee — the transformer's local execution
+    /// context was dropped, so the per-transition grovedb reads
+    /// `try_from_borrowed_*_with_contract_lookup` performs were not billed.
+    /// Pinned so v11 chain history stays bit-for-bit reproducible.
+    #[tokio::test]
+    async fn test_document_delete_that_does_not_yet_exist_protocol_version_11() {
+        run_document_delete_that_does_not_yet_exist_at_protocol_version(11, 516040).await;
+    }
+
+    /// Helper for the paired delete-that-does-not-yet-exist fee test.
+    /// PROTOCOL_VERSION_11 yields the pre-B7 bump-only fee (transformer
+    /// reads dropped); PROTOCOL_VERSION_12+ adds the reads — see B7 in
+    /// `docs/paid-error-fee-audit.md`.
+    async fn run_document_delete_that_does_not_yet_exist_at_protocol_version(
+        protocol_version: dpp::version::ProtocolVersion,
+        expected_processing_fee: dpp::fee::Credits,
+    ) {
+        let platform_version = PlatformVersion::get(protocol_version)
+            .expect("expected platform version for the requested protocol_version");
         let mut platform = TestPlatformBuilder::new()
-            .with_latest_protocol_version()
+            .with_initial_protocol_version(protocol_version)
             .build_with_mock_rpc()
             .set_genesis_state();
 
@@ -744,7 +830,12 @@ mod deletion_tests {
 
         assert_eq!(processing_result.valid_count(), 0);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 520340);
+        assert_eq!(
+            processing_result.aggregated_fees().processing_fee,
+            expected_processing_fee,
+            "PROTOCOL_VERSION_{}: delete-that-does-not-yet-exist processing fee must match the version-specific baseline",
+            protocol_version,
+        );
     }
     #[tokio::test]
     async fn test_document_deletion_that_needs_a_token() {
