@@ -42,7 +42,6 @@ use tokio::sync::{Mutex, OwnedMutexGuard};
 #[derive(Debug)]
 pub struct MockDashPlatformSdk {
     from_proof_expectations: BTreeMap<Key, Vec<u8>>,
-    platform_version: &'static PlatformVersion,
     dapi: Arc<Mutex<MockDapiClient>>,
     sdk: ArcSwapOption<Sdk>,
 }
@@ -66,10 +65,9 @@ impl MockDashPlatformSdk {
     /// ## Note
     ///
     /// You have to call [MockDashPlatformSdk::set_sdk()] to set sdk, otherwise Mock SDK will panic.
-    pub(crate) fn new(version: &'static PlatformVersion, dapi: Arc<Mutex<MockDapiClient>>) -> Self {
+    pub(crate) fn new(dapi: Arc<Mutex<MockDapiClient>>) -> Self {
         Self {
             from_proof_expectations: Default::default(),
-            platform_version: version,
             dapi,
             sdk: ArcSwapOption::new(None),
         }
@@ -79,8 +77,21 @@ impl MockDashPlatformSdk {
         self.sdk.store(Some(Arc::new(sdk)));
     }
 
+    /// Returns the current `PlatformVersion` from the outer [`Sdk`]'s
+    /// auto-detect-aware atomic. Both request-encode (`sdk.query_settings()`)
+    /// and proof-decode (`parse_proof_with_metadata`) read through this
+    /// single source, so a mock ratchet from response metadata is visible
+    /// to both paths.
+    ///
+    /// ## Panics
+    ///
+    /// Panics when sdk is not set during initialization.
     pub(crate) fn version<'v>(&self) -> &'v PlatformVersion {
-        self.platform_version
+        if let Some(sdk) = self.sdk.load().as_ref() {
+            sdk.version()
+        } else {
+            panic!("sdk must be set when creating mock ")
+        }
     }
 
     /// Load all expectations from files in a directory asynchronously.
@@ -325,18 +336,8 @@ impl MockDashPlatformSdk {
     where
         <<O as Fetch>::Request as TransportRequest>::Response: Default,
     {
-        let sdk_guard = self.sdk.load();
-        let sdk = sdk_guard
-            .as_ref()
-            .expect("sdk must be set when creating mock");
-        // INTENTIONAL(SEC-001): test-harness fail-fast — encoder errors for V1-only DocumentQuery features
-        // against a V0 PlatformVersion should crash the test setup loudly rather than silently propagate.
-        let rich: <O as Fetch>::Query = query
-            .query(&sdk.query_settings())
-            .expect("query must be correct");
-        let wire: <O as Fetch>::Request = rich
-            .query(&sdk.query_settings())
-            .expect("wire encoding must succeed");
+        let (rich, wire) =
+            self.encode_rich_to_wire::<Q, <O as Fetch>::Query, <O as Fetch>::Request>(query);
         self.expect(&rich, wire, object).await?;
 
         Ok(self)
@@ -350,18 +351,8 @@ impl MockDashPlatformSdk {
         O: Fetch,
         Q: Query<<O as Fetch>::Query>,
     {
-        let sdk_guard = self.sdk.load();
-        let sdk = sdk_guard
-            .as_ref()
-            .expect("sdk must be set when creating mock");
-        // INTENTIONAL(SEC-001): test-harness fail-fast — encoder errors for V1-only DocumentQuery features
-        // against a V0 PlatformVersion should crash the test setup loudly rather than silently propagate.
-        let rich: <O as Fetch>::Query = query
-            .query(&sdk.query_settings())
-            .expect("query must be correct");
-        let wire: <O as Fetch>::Request = rich
-            .query(&sdk.query_settings())
-            .expect("wire encoding must succeed");
+        let (rich, wire) =
+            self.encode_rich_to_wire::<Q, <O as Fetch>::Query, <O as Fetch>::Request>(query);
         self.remove(&rich, wire).await
     }
 
@@ -417,21 +408,40 @@ impl MockDashPlatformSdk {
             + Default,
         <<O as FetchMany<K, R>>::Request as TransportRequest>::Response: Default,
     {
+        let (rich, wire) = self
+            .encode_rich_to_wire::<Q, <O as FetchMany<K, R>>::Query, <O as FetchMany<K, R>>::Request>(
+                query,
+            );
+        self.expect(&rich, wire, objects).await?;
+
+        Ok(self)
+    }
+
+    /// Encode a user-facing `query` first into its rich form (`R`) and
+    /// then into its wire form (`W`), both against the SDK's current
+    /// `QuerySettings`. Returns `(rich, wire)` for use as proof-mock /
+    /// DAPI-mock expectation keys.
+    ///
+    /// ## Panics
+    ///
+    /// INTENTIONAL(SEC-001): test-harness fail-fast — encoder errors
+    /// for V1-only `DocumentQuery` features against a V0
+    /// `PlatformVersion` crash the test setup loudly rather than
+    /// silently propagate. Panics also if `set_sdk` was not called.
+    fn encode_rich_to_wire<Q, R, W>(&self, query: Q) -> (R, W)
+    where
+        Q: Query<R>,
+        R: Query<W> + Mockable,
+        W: TransportRequest,
+    {
         let sdk_guard = self.sdk.load();
         let sdk = sdk_guard
             .as_ref()
             .expect("sdk must be set when creating mock");
-        // INTENTIONAL(SEC-001): test-harness fail-fast — encoder errors for V1-only DocumentQuery features
-        // against a V0 PlatformVersion should crash the test setup loudly rather than silently propagate.
-        let rich: <O as FetchMany<K, R>>::Query = query
-            .query(&sdk.query_settings())
-            .expect("query must be correct");
-        let wire: <O as FetchMany<K, R>>::Request = rich
-            .query(&sdk.query_settings())
-            .expect("wire encoding must succeed");
-        self.expect(&rich, wire, objects).await?;
-
-        Ok(self)
+        let ctx = sdk.query_settings();
+        let rich: R = query.query(&ctx).expect("query must be correct");
+        let wire: W = rich.query(&ctx).expect("wire encoding must succeed");
+        (rich, wire)
     }
 
     /// Save expectations for a request.

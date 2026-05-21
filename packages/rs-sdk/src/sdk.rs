@@ -904,8 +904,10 @@ impl SdkBuilder {
     /// any version-dispatched encoders (e.g. the documents query) to
     /// ship a too-new wire shape that the network rejects.
     ///
-    /// This mutates only `self.version`; `version_explicit` stays
-    /// `false`, so auto-detect remains active.
+    /// Seeds `self.version` and resets `version_explicit` to `false`, so
+    /// auto-detect is (re-)enabled. Builder chains use last-write-wins:
+    /// calling `with_initial_version` after `with_version` restores
+    /// auto-detect rather than silently keeping it disabled.
     ///
     /// **Caveat**: this protection only holds for encoders whose
     /// `drive_abci.query.<name>.default_current_version` is correctly pinned per
@@ -913,6 +915,7 @@ impl SdkBuilder {
     /// pattern as `document_query`.
     pub fn with_initial_version(mut self, version: &'static PlatformVersion) -> Self {
         self.version = version;
+        self.version_explicit = false;
         self
     }
 
@@ -1102,7 +1105,7 @@ impl SdkBuilder {
                     Box::new(cp)
                 }
                 );
-                let mock_sdk = MockDashPlatformSdk::new(self.version, Arc::clone(&dapi));
+                let mock_sdk = MockDashPlatformSdk::new(Arc::clone(&dapi));
                 let mock_sdk = Arc::new(Mutex::new(mock_sdk));
                 let sdk= Sdk {
                     network: self.network,
@@ -1578,6 +1581,86 @@ mod test {
         sdk.verify_response_metadata("test", &metadata)
             .expect("metadata should be valid");
         assert_eq!(sdk.protocol_version_number(), 1);
+    }
+
+    #[test]
+    fn test_with_initial_version_after_with_version_restores_auto_detect() {
+        use dpp::version::PlatformVersion;
+
+        // Last-write-wins composability: a later `with_initial_version`
+        // must re-enable auto-detect that an earlier `with_version`
+        // disabled.
+        let v_latest = PlatformVersion::latest();
+        let v_old = PlatformVersion::get(1).expect("PV 1 exists");
+
+        let sdk = SdkBuilder::new_mock()
+            .with_version(v_latest)
+            .with_initial_version(v_old)
+            .build()
+            .expect("mock Sdk should be created");
+
+        assert_eq!(
+            sdk.protocol_version_number(),
+            v_old.protocol_version,
+            "with_initial_version must overwrite the prior with_version seed"
+        );
+        assert!(
+            sdk.auto_detect_protocol_version,
+            "with_initial_version must restore auto-detect after with_version disabled it"
+        );
+
+        // Ratchet upward via metadata observation works because auto-detect is on.
+        let metadata = ResponseMetadata {
+            protocol_version: v_latest.protocol_version,
+            height: 1,
+            ..Default::default()
+        };
+        sdk.verify_response_metadata("test", &metadata)
+            .expect("metadata should be valid");
+        assert_eq!(sdk.protocol_version_number(), v_latest.protocol_version);
+    }
+
+    #[test]
+    fn test_mock_version_follows_outer_sdk_atomic() {
+        use dpp::version::PlatformVersion;
+
+        // Build a mock SDK with auto-detect, seeded at PV 1. After a
+        // metadata-driven ratchet to a newer PV, both the outer SDK's
+        // `version()` and the inner `MockDashPlatformSdk::version()`
+        // must report the same value — single source of truth.
+        let v_old = PlatformVersion::get(1).expect("PV 1 exists");
+        let v_new = PlatformVersion::latest();
+
+        let mut sdk = SdkBuilder::new_mock()
+            .with_initial_version(v_old)
+            .build()
+            .expect("mock Sdk should be created");
+
+        assert_eq!(sdk.version().protocol_version, v_old.protocol_version);
+        {
+            let mock = sdk.mock();
+            assert_eq!(
+                mock.version().protocol_version,
+                v_old.protocol_version,
+                "mock version must mirror outer SDK before ratchet"
+            );
+        }
+
+        let metadata = ResponseMetadata {
+            protocol_version: v_new.protocol_version,
+            height: 1,
+            ..Default::default()
+        };
+        sdk.verify_response_metadata("test", &metadata)
+            .expect("metadata should be valid");
+
+        assert_eq!(sdk.version().protocol_version, v_new.protocol_version);
+        let mock = sdk.mock();
+        assert_eq!(
+            mock.version().protocol_version,
+            v_new.protocol_version,
+            "mock version must follow outer ratchet (CMT-001 regression)"
+        );
     }
 
     #[test_matrix([90,91,100,109,110], 100, 10, false; "valid time")]

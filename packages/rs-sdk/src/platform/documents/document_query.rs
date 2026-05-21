@@ -565,6 +565,10 @@ fn encode_v0(
             // to 0 only when the caller meant "unset".
             limit,
             start,
+            // `prove: true` hardcoded — same rationale as `encode_v1`:
+            // document fetch always proves; `SdkBuilder::with_proofs(false)`
+            // is a no-op for this path because the `FromProof` decoder
+            // expects the `Proof(...)` response variant.
             prove: true,
         })),
     })
