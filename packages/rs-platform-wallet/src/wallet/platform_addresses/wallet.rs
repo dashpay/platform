@@ -108,6 +108,12 @@ impl PlatformAddressWallet {
         // no read→write upgrade — doing the write-lock dance first
         // keeps both paths simple and avoids exposing a new public
         // accessor on the provider.
+        //
+        // Required by spend paths that enumerate funded addresses
+        // (e.g. `shielded_shield_from_account`): without this, after
+        // a restart they read `available = 0` until the first BLAST
+        // sync repopulates the in-memory map, even though SwiftData
+        // reports a real balance to the UI.
         {
             let mut wm = self.wallet_manager.write().await;
             if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
