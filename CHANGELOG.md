@@ -1,3 +1,20 @@
+## [3.1.0-dev.5](https://github.com/dashpay/platform/compare/v3.1.0-dev.4...v3.1.0-dev.5) (2026-05-21)
+
+
+### Bug Fixes
+
+* **dpp:** remove erroneous keywords field from document-meta schema and fix contract keywords docs ([#3471](https://github.com/dashpay/platform/issues/3471))
+
+
+### Continuous Integration
+
+* **release:** fix dashmate deb pack by configuring oclif targets ([#3713](https://github.com/dashpay/platform/issues/3713))
+
+
+### Documentation
+
+* **sdk:** update js-evo-sdk README for configuration, shielded facade, and wallet utilities ([#3701](https://github.com/dashpay/platform/issues/3701))
+
 ## [3.1.0-dev.4](https://github.com/dashpay/platform/compare/v3.1.0-dev.3...v3.1.0-dev.4) (2026-05-20)
 
 
