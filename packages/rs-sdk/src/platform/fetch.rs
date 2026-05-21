@@ -176,6 +176,12 @@ where
     ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error> {
         let ctx = sdk.query_settings();
         let owned_rich: <Self as Fetch>::Query = query.query(&ctx)?;
+        // INTENTIONAL(CMT-008, #3711): For the common case `Self::Query = Self::Request`,
+        // the blanket `Query<T> for T` impl turns the `query.query(ctx)` step into a
+        // pure clone of the same owned request. Real but micro-cost (~63 impls hit
+        // this path). Specializing via a `fn encode_request_owned()` default method on
+        // `Fetch` would eliminate the clone — deferred as future-perf work; trait shape
+        // is intentionally uniform for now.
         let owned_wire: <Self as Fetch>::Request = owned_rich.query(&ctx)?;
         let rich = &owned_rich;
         let wire = &owned_wire;
