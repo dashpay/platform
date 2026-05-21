@@ -3,6 +3,11 @@ use std::sync::Arc;
 #[cfg(any(feature = "server", feature = "verify"))]
 pub use {
     conditions::{ValueClause, WhereClause, WhereOperator},
+    // Average-query verifier-shareable types — same split as sum:
+    // `AverageEntry` is the per-key `(count, sum)` pair the verifier
+    // returns; `AverageMode` is the SQL-shape input the verifier needs
+    // to rebuild the path query.
+    drive_document_average_query::{AverageEntry, AverageMode},
     // `CountMode` is the SQL-shape contract (Aggregate /
     // GroupByIn / GroupByRange / GroupByCompound) the prover
     // dispatches on; the verifier needs the same enum to route
@@ -12,6 +17,11 @@ pub use {
     drive_document_count_query::{
         CountMode, DocumentCountMode, DriveDocumentCountQuery, SplitCountEntry,
     },
+    // Sum-query verifier-shareable types: `SumEntry` is the per-key
+    // entry type the verifier returns, `SumMode` / `DriveDocumentSumQuery`
+    // are shape inputs the verifier needs to rebuild the path query.
+    // Parallels the count-side exports above.
+    drive_document_sum_query::{DriveDocumentSumQuery, SumEntry, SumMode},
     grovedb::{PathQuery, Query, QueryItem, SizedQuery},
     having::{
         HavingAggregate, HavingAggregateFunction, HavingClause, HavingOperator, HavingRanking,
@@ -31,6 +41,18 @@ pub use {
 pub use drive_document_count_query::{
     DocumentCountRequest, DocumentCountResponse, RangeCountOptions, MAX_LIMIT_AS_FAILSAFE,
 };
+
+// `DocumentSumRequest` / `DocumentSumResponse` / `RangeSumOptions` are
+// the server-side executor inputs and stay `server`-only (parallels
+// the count-side `DocumentCountRequest` etc. above).
+#[cfg(feature = "server")]
+pub use drive_document_sum_query::{DocumentSumRequest, DocumentSumResponse, RangeSumOptions};
+
+// `DocumentAverageRequest` / `DocumentAverageResponse` are the
+// server-side executor inputs for the average surface and stay
+// `server`-only (parallels the sum-side server-only exports above).
+#[cfg(feature = "server")]
+pub use drive_document_average_query::{DocumentAverageRequest, DocumentAverageResponse};
 // Imports available when either "server" or "verify" features are enabled
 #[cfg(any(feature = "server", feature = "verify"))]
 use {
@@ -182,6 +204,30 @@ pub mod token_status_drive_query;
 /// A query to count documents using CountTree elements
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod drive_document_count_query;
+
+/// A query to sum an integer property across documents using SumTree
+/// elements. Parallels [`drive_document_count_query`] for the sum
+/// surface — see `book/src/drive/document-sum-trees.md` for the
+/// design and `book/src/drive/sum-index-examples.md` for the worked
+/// example contract.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod drive_document_sum_query;
+
+/// A query to compute the average of an integer property across
+/// documents using `CountSumTree` / `ProvableCountProvableSumTree`
+/// (PCPS) elements. Averages are NOT computed server-side; the
+/// response carries a `(count, sum)` pair (atomic per group) and the
+/// client divides. See `book/src/drive/average-index-examples.md` for
+/// the worked example contract.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod drive_document_average_query;
+
+/// Joint count-and-sum no-prove executor surface — backs the AVG
+/// no-prove path's unified single-walk dispatch. See its module
+/// docstring for the perf / atomicity contract. Server-only because
+/// the surface only fires on the no-prove (server-materialized) path.
+#[cfg(feature = "server")]
+pub mod drive_document_count_and_sum_query;
 
 /// A Query Syntax Validation Result that contains data
 pub type QuerySyntaxValidationResult<TData> = ValidationResult<TData, QuerySyntaxError>;

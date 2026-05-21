@@ -3034,6 +3034,216 @@ export namespace GetDocumentsResponse {
       }
     }
 
+    export class SumEntry extends jspb.Message {
+      hasInKey(): boolean;
+      clearInKey(): void;
+      getInKey(): Uint8Array | string;
+      getInKey_asU8(): Uint8Array;
+      getInKey_asB64(): string;
+      setInKey(value: Uint8Array | string): void;
+
+      getKey(): Uint8Array | string;
+      getKey_asU8(): Uint8Array;
+      getKey_asB64(): string;
+      setKey(value: Uint8Array | string): void;
+
+      getSum(): string;
+      setSum(value: string): void;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): SumEntry.AsObject;
+      static toObject(includeInstance: boolean, msg: SumEntry): SumEntry.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: SumEntry, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): SumEntry;
+      static deserializeBinaryFromReader(message: SumEntry, reader: jspb.BinaryReader): SumEntry;
+    }
+
+    export namespace SumEntry {
+      export type AsObject = {
+        inKey: Uint8Array | string,
+        key: Uint8Array | string,
+        sum: string,
+      }
+    }
+
+    export class SumEntries extends jspb.Message {
+      clearEntriesList(): void;
+      getEntriesList(): Array<GetDocumentsResponse.GetDocumentsResponseV1.SumEntry>;
+      setEntriesList(value: Array<GetDocumentsResponse.GetDocumentsResponseV1.SumEntry>): void;
+      addEntries(value?: GetDocumentsResponse.GetDocumentsResponseV1.SumEntry, index?: number): GetDocumentsResponse.GetDocumentsResponseV1.SumEntry;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): SumEntries.AsObject;
+      static toObject(includeInstance: boolean, msg: SumEntries): SumEntries.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: SumEntries, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): SumEntries;
+      static deserializeBinaryFromReader(message: SumEntries, reader: jspb.BinaryReader): SumEntries;
+    }
+
+    export namespace SumEntries {
+      export type AsObject = {
+        entriesList: Array<GetDocumentsResponse.GetDocumentsResponseV1.SumEntry.AsObject>,
+      }
+    }
+
+    export class SumResults extends jspb.Message {
+      hasAggregateSum(): boolean;
+      clearAggregateSum(): void;
+      getAggregateSum(): string;
+      setAggregateSum(value: string): void;
+
+      hasEntries(): boolean;
+      clearEntries(): void;
+      getEntries(): GetDocumentsResponse.GetDocumentsResponseV1.SumEntries | undefined;
+      setEntries(value?: GetDocumentsResponse.GetDocumentsResponseV1.SumEntries): void;
+
+      getVariantCase(): SumResults.VariantCase;
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): SumResults.AsObject;
+      static toObject(includeInstance: boolean, msg: SumResults): SumResults.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: SumResults, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): SumResults;
+      static deserializeBinaryFromReader(message: SumResults, reader: jspb.BinaryReader): SumResults;
+    }
+
+    export namespace SumResults {
+      export type AsObject = {
+        aggregateSum: string,
+        entries?: GetDocumentsResponse.GetDocumentsResponseV1.SumEntries.AsObject,
+      }
+
+      export enum VariantCase {
+        VARIANT_NOT_SET = 0,
+        AGGREGATE_SUM = 1,
+        ENTRIES = 2,
+      }
+    }
+
+    export class AverageEntry extends jspb.Message {
+      hasInKey(): boolean;
+      clearInKey(): void;
+      getInKey(): Uint8Array | string;
+      getInKey_asU8(): Uint8Array;
+      getInKey_asB64(): string;
+      setInKey(value: Uint8Array | string): void;
+
+      getKey(): Uint8Array | string;
+      getKey_asU8(): Uint8Array;
+      getKey_asB64(): string;
+      setKey(value: Uint8Array | string): void;
+
+      getCount(): string;
+      setCount(value: string): void;
+
+      getSum(): string;
+      setSum(value: string): void;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): AverageEntry.AsObject;
+      static toObject(includeInstance: boolean, msg: AverageEntry): AverageEntry.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: AverageEntry, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): AverageEntry;
+      static deserializeBinaryFromReader(message: AverageEntry, reader: jspb.BinaryReader): AverageEntry;
+    }
+
+    export namespace AverageEntry {
+      export type AsObject = {
+        inKey: Uint8Array | string,
+        key: Uint8Array | string,
+        count: string,
+        sum: string,
+      }
+    }
+
+    export class AverageEntries extends jspb.Message {
+      clearEntriesList(): void;
+      getEntriesList(): Array<GetDocumentsResponse.GetDocumentsResponseV1.AverageEntry>;
+      setEntriesList(value: Array<GetDocumentsResponse.GetDocumentsResponseV1.AverageEntry>): void;
+      addEntries(value?: GetDocumentsResponse.GetDocumentsResponseV1.AverageEntry, index?: number): GetDocumentsResponse.GetDocumentsResponseV1.AverageEntry;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): AverageEntries.AsObject;
+      static toObject(includeInstance: boolean, msg: AverageEntries): AverageEntries.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: AverageEntries, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): AverageEntries;
+      static deserializeBinaryFromReader(message: AverageEntries, reader: jspb.BinaryReader): AverageEntries;
+    }
+
+    export namespace AverageEntries {
+      export type AsObject = {
+        entriesList: Array<GetDocumentsResponse.GetDocumentsResponseV1.AverageEntry.AsObject>,
+      }
+    }
+
+    export class AverageAggregate extends jspb.Message {
+      getCount(): string;
+      setCount(value: string): void;
+
+      getSum(): string;
+      setSum(value: string): void;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): AverageAggregate.AsObject;
+      static toObject(includeInstance: boolean, msg: AverageAggregate): AverageAggregate.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: AverageAggregate, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): AverageAggregate;
+      static deserializeBinaryFromReader(message: AverageAggregate, reader: jspb.BinaryReader): AverageAggregate;
+    }
+
+    export namespace AverageAggregate {
+      export type AsObject = {
+        count: string,
+        sum: string,
+      }
+    }
+
+    export class AverageResults extends jspb.Message {
+      hasAggregateAverage(): boolean;
+      clearAggregateAverage(): void;
+      getAggregateAverage(): GetDocumentsResponse.GetDocumentsResponseV1.AverageAggregate | undefined;
+      setAggregateAverage(value?: GetDocumentsResponse.GetDocumentsResponseV1.AverageAggregate): void;
+
+      hasEntries(): boolean;
+      clearEntries(): void;
+      getEntries(): GetDocumentsResponse.GetDocumentsResponseV1.AverageEntries | undefined;
+      setEntries(value?: GetDocumentsResponse.GetDocumentsResponseV1.AverageEntries): void;
+
+      getVariantCase(): AverageResults.VariantCase;
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): AverageResults.AsObject;
+      static toObject(includeInstance: boolean, msg: AverageResults): AverageResults.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: AverageResults, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): AverageResults;
+      static deserializeBinaryFromReader(message: AverageResults, reader: jspb.BinaryReader): AverageResults;
+    }
+
+    export namespace AverageResults {
+      export type AsObject = {
+        aggregateAverage?: GetDocumentsResponse.GetDocumentsResponseV1.AverageAggregate.AsObject,
+        entries?: GetDocumentsResponse.GetDocumentsResponseV1.AverageEntries.AsObject,
+      }
+
+      export enum VariantCase {
+        VARIANT_NOT_SET = 0,
+        AGGREGATE_AVERAGE = 1,
+        ENTRIES = 2,
+      }
+    }
+
     export class ResultData extends jspb.Message {
       hasDocuments(): boolean;
       clearDocuments(): void;
@@ -3044,6 +3254,16 @@ export namespace GetDocumentsResponse {
       clearCounts(): void;
       getCounts(): GetDocumentsResponse.GetDocumentsResponseV1.CountResults | undefined;
       setCounts(value?: GetDocumentsResponse.GetDocumentsResponseV1.CountResults): void;
+
+      hasSums(): boolean;
+      clearSums(): void;
+      getSums(): GetDocumentsResponse.GetDocumentsResponseV1.SumResults | undefined;
+      setSums(value?: GetDocumentsResponse.GetDocumentsResponseV1.SumResults): void;
+
+      hasAverages(): boolean;
+      clearAverages(): void;
+      getAverages(): GetDocumentsResponse.GetDocumentsResponseV1.AverageResults | undefined;
+      setAverages(value?: GetDocumentsResponse.GetDocumentsResponseV1.AverageResults): void;
 
       getVariantCase(): ResultData.VariantCase;
       serializeBinary(): Uint8Array;
@@ -3060,12 +3280,16 @@ export namespace GetDocumentsResponse {
       export type AsObject = {
         documents?: GetDocumentsResponse.GetDocumentsResponseV1.Documents.AsObject,
         counts?: GetDocumentsResponse.GetDocumentsResponseV1.CountResults.AsObject,
+        sums?: GetDocumentsResponse.GetDocumentsResponseV1.SumResults.AsObject,
+        averages?: GetDocumentsResponse.GetDocumentsResponseV1.AverageResults.AsObject,
       }
 
       export enum VariantCase {
         VARIANT_NOT_SET = 0,
         DOCUMENTS = 1,
         COUNTS = 2,
+        SUMS = 3,
+        AVERAGES = 4,
       }
     }
 

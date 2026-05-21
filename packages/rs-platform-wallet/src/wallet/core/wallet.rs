@@ -55,6 +55,14 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
         &self.balance
     }
 
+    /// Wallet id this `CoreWallet` operates on. Exposed so FFI
+    /// callers that need to construct a per-call `Signer` (e.g.
+    /// `MnemonicResolverCoreSigner`) can thread the same wallet id
+    /// the resolver callback will receive.
+    pub fn wallet_id(&self) -> WalletId {
+        self.wallet_id
+    }
+
     /// Get the next unused BIP-44 external (receive) address for a specific account.
     pub async fn next_receive_address_for_account(
         &self,

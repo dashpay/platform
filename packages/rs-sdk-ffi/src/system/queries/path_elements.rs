@@ -178,6 +178,9 @@ fn format_element_data(element: &Element) -> String {
         Element::ProvableCountSumTree(_, count, sum, _) => {
             format!("provable_count_sum_tree:{}:{}", count, sum)
         }
+        Element::ProvableCountProvableSumTree(_, count, sum, _) => {
+            format!("provable_count_provable_sum_tree:{}:{}", count, sum)
+        }
         Element::ProvableSumTree(_, sum, _) => format!("provable_sum_tree:{}", sum),
         Element::CommitmentTree(_, _, _) => "commitment_tree".to_string(),
         Element::MmrTree(_, _) => "mmr_tree".to_string(),
@@ -208,6 +211,9 @@ fn format_element_type(element: &Element) -> String {
         Element::ReferenceWithSumItem(_, _, _, _) => "reference_with_sum_item".to_string(),
         Element::ProvableCountTree(_, _, _) => "provable_count_tree".to_string(),
         Element::ProvableCountSumTree(_, _, _, _) => "provable_count_sum_tree".to_string(),
+        Element::ProvableCountProvableSumTree(_, _, _, _) => {
+            "provable_count_provable_sum_tree".to_string()
+        }
         Element::ProvableSumTree(_, _, _) => "provable_sum_tree".to_string(),
         Element::CommitmentTree(_, _, _) => "commitment_tree".to_string(),
         Element::MmrTree(_, _) => "mmr_tree".to_string(),
