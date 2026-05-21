@@ -416,8 +416,14 @@ class SendViewModel: ObservableObject {
                     ?? shieldedService.orchardDisplayAddress
                 if !enteredRecipient.isEmpty,
                    enteredRecipient != ownShieldedAddress {
+                    // Don't advertise "leave it blank": a blank recipient
+                    // clears `detectedFlow` upstream (detectAddressType →
+                    // updateFlow), so `canSend` disables the button and
+                    // this branch is only reachable with a non-empty
+                    // address. Tell the user to enter their own.
                     error = "Shield always sends to your own shielded "
-                        + "address; enter your own address or leave it blank"
+                        + "address; enter your own shielded address as "
+                        + "the recipient"
                     return
                 }
                 let signer = KeychainSigner(modelContainer: modelContext.container)

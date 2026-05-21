@@ -329,6 +329,16 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
             // best-effort. Surfacing a local write failure as a send
             // failure here would invite duplicate retries — the next
             // nullifier sync reconciles any drift.
+            //
+            // No double-spend follows from this downgrade: the
+            // authoritative no-reuse guarantee is the on-chain nullifier
+            // set, not this local mark. Worst case, before the next
+            // nullifier sync runs the note is re-selected and a second
+            // spend is built + proven, then rejected at broadcast with a
+            // nullifier-already-used error — wasted ~30 s proof, never
+            // fund loss. (`pending_nullifiers` is in-memory only, so it
+            // does not protect across a process restart in this window;
+            // the on-chain set does.)
             if let Err(e) = finalize_pending(store, persister, wallet_id, id, &selected_notes).await
             {
                 warn!(
