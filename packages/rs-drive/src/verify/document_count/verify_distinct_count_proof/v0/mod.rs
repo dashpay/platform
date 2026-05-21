@@ -71,7 +71,18 @@ impl DriveDocumentCountQuery<'_> {
                 } else {
                     None
                 };
-                out.push(SplitCountEntry { in_key, key, count });
+                // Distinct-count proof emits one entry per
+                // verified `KVCount` op in the proof — always
+                // `Some(_)`. SDK-side synthesis can add `None`
+                // entries for missing-from-proof keys if the
+                // caller's request named them (only meaningful
+                // for In-grouped paths; range-distinct doesn't
+                // enumerate keys in advance).
+                out.push(SplitCountEntry {
+                    in_key,
+                    key,
+                    count: Some(count),
+                });
             }
         }
         Ok((root_hash, out))

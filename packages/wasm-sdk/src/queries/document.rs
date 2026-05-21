@@ -6,12 +6,12 @@ use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dash_sdk::dpp::document::Document;
 use dash_sdk::dpp::platform_value::Value;
 use dash_sdk::dpp::prelude::Identifier;
-use dash_sdk::platform::documents::document_count_query::DocumentCountQuery;
+use dash_sdk::drive::query::SelectProjection;
 use dash_sdk::platform::documents::document_query::DocumentQuery;
 use dash_sdk::platform::Fetch;
 use dash_sdk::platform::FetchMany;
 use drive::query::{OrderClause, WhereClause, WhereOperator};
-use drive_proof_verifier::DocumentSplitCounts;
+use drive_proof_verifier::{DocumentSplitAverages, DocumentSplitCounts, DocumentSplitSums};
 use js_sys::Map;
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
@@ -97,18 +97,26 @@ export interface DocumentsQuery {
   startAt?: IdentifierLike
 
   /**
-   * Count-query knob: when `true` AND the query carries a range
-   * clause, the server returns per-distinct-value entries within
-   * the range instead of a single sum. Ignored by the regular
-   * document-fetch path.
+   * Count-query knob: SQL-shaped `GROUP BY` field list. Mirrors
+   * the v1 wire's `group_by: repeated string` directly. Ignored
+   * by the regular document-fetch path.
+   *
+   * - `[]` or omitted → aggregate count (a single row).
+   * - `["<in_field>"]` where `<in_field>` matches an `In`
+   *   constraint → per-`In`-value entries (PerInValue).
+   * - `["<range_field>"]` where `<range_field>` matches a range
+   *   constraint → per-distinct-value entries within the range
+   *   (RangeDistinct).
+   * - `["<in_field>", "<range_field>"]` for compound `In + range`
+   *   queries → compound distinct entries.
    *
    * Entry direction comes from the first `orderBy` clause's
    * direction (which also drives walk order on the materialize +
    * prove path); set `orderBy: [["<range_field>", "asc"|"desc"]]`
-   * alongside `returnDistinctCountsInRange: true` to control sort.
-   * @default false
+   * alongside `groupBy: ["<range_field>"]` to control sort.
+   * @default []
    */
-  returnDistinctCountsInRange?: boolean;
+  groupBy?: string[];
 }
 "#;
 
@@ -133,12 +141,13 @@ struct DocumentsQueryInput {
     start_after: Option<IdentifierWasm>,
     #[serde(rename = "startAt", default)]
     start_at: Option<IdentifierWasm>,
-    /// Count-query knob: when `true` AND the query carries a range
-    /// clause, the server returns per-distinct-value entries within
-    /// the range instead of a single sum. Ignored by the regular
-    /// document-fetch path. Default `false`.
-    #[serde(default)]
-    return_distinct_counts_in_range: Option<bool>,
+    /// Count-query knob: SQL-shaped `GROUP BY` field list,
+    /// mirroring the v1 wire `group_by: repeated string` field
+    /// one-to-one. Ignored by the regular document-fetch path.
+    /// See the TypeScript declaration for the supported shapes.
+    /// Default empty (aggregate count).
+    #[serde(rename = "groupBy", default)]
+    group_by: Option<Vec<String>>,
     // Order direction for count results flows through the existing
     // `orderBy` field — the first clause's direction controls
     // split-mode entry ordering and `(In + prove)` walk order. No
@@ -149,9 +158,9 @@ async fn build_documents_query(
     sdk: &WasmSdk,
     input: DocumentsQueryInput,
 ) -> Result<DocumentQuery, WasmSdkError> {
-    // `return_distinct_counts_in_range` on the shared input struct is
-    // a count-query-only knob; the regular document-fetch path
-    // destructured here just drops it.
+    // `group_by` on the shared input struct is a count-query-only
+    // knob; the regular document-fetch path destructured here just
+    // drops it.
     let DocumentsQueryInput {
         data_contract_id,
         document_type_name,
@@ -160,7 +169,7 @@ async fn build_documents_query(
         limit,
         start_after,
         start_at,
-        return_distinct_counts_in_range: _,
+        group_by: _,
     } = input;
 
     let contract_id: Identifier = data_contract_id.into();
@@ -215,41 +224,112 @@ async fn parse_documents_query(
     build_documents_query(sdk, input).await
 }
 
-/// Parse a JS query object into a [`DocumentCountQuery`] — the count-
-/// query analogue of [`parse_documents_query`]. The inner
-/// [`DocumentQuery`] is built from the same `DocumentsQueryInput`
-/// (data-contract / document-type / where-clauses / orderBy), and the
-/// count-specific knobs (`return_distinct_counts_in_range`, `limit`)
-/// are forwarded to the outer `DocumentCountQuery`. The inner
-/// `DocumentQuery.limit` is unused on the count path — count queries
-/// route through `FromProof<DocumentCountQuery>` straight to the
-/// count-tree / aggregate / distinct verifiers, never through
-/// `DriveDocumentQuery`'s document-materialization path — so the
-/// outer-field forwarding is the only thing that controls split-mode
-/// entry pagination.
+/// Parse a JS query object into a [`DocumentQuery`] configured
+/// for the count surface (`select = Count`, with `group_by`
+/// taken directly from the input — no implicit translation).
 ///
-/// `orderBy` clauses ARE consumed by `build_documents_query` and
-/// stored on `document_query.order_by_clauses`, which the SDK request
-/// builder serializes into the wire `order_by` field — the first
-/// clause's direction controls split-mode entry ordering and is
-/// load-bearing for `(In + prove)` walk determinism.
+/// The JS `groupBy` field mirrors the wire's `group_by: repeated
+/// string` one-to-one. Callers ask for exactly the per-group
+/// shape they want; the server rejects unsupported
+/// `(select, group_by, where)` combinations with
+/// `QuerySyntaxError::Unsupported`.
+///
+/// `orderBy` clauses are consumed by `build_documents_query` and
+/// stored on `DocumentQuery.order_by_clauses`, which the SDK
+/// request builder serializes into the wire `order_by` field —
+/// the first clause's direction controls split-mode entry
+/// ordering and is load-bearing for `(In + prove)` walk
+/// determinism.
 async fn parse_documents_count_query(
     sdk: &WasmSdk,
     query: DocumentsQueryJs,
-) -> Result<DocumentCountQuery, WasmSdkError> {
+) -> Result<DocumentQuery, WasmSdkError> {
     let input: DocumentsQueryInput =
         deserialize_required_query(query, "Query object is required", "documents count query")?;
 
-    let return_distinct_counts_in_range = input.return_distinct_counts_in_range.unwrap_or(false);
-    let limit = input.limit;
+    let group_by = input.group_by.clone().unwrap_or_default();
+    // DocumentQuery `limit: u32` uses `0` as the "unset" sentinel
+    // (translated to `None` on the V1 wire's `optional uint32`).
+    // `None` from the JS input maps to that sentinel.
+    let limit = input.limit.unwrap_or(0);
 
     let base_query = build_documents_query(sdk, input).await?;
 
-    Ok(DocumentCountQuery {
-        document_query: base_query,
-        return_distinct_counts_in_range,
-        limit,
-    })
+    Ok(base_query
+        .with_select(SelectProjection::count_star())
+        .with_group_by_fields(group_by)
+        .with_limit(limit))
+}
+
+/// Parse a JS query object into a [`DocumentQuery`] configured for
+/// the SUM surface (`select = Sum(field)`, with `group_by` taken
+/// directly from the input). Sum analog of
+/// [`parse_documents_count_query`].
+///
+/// `sum_property` names the integer document property to aggregate;
+/// must match the doctype-level `documentsSummable` OR a per-index
+/// `summable: "<prop>"` declaration covering the where-clause shape
+/// (the server's index picker enforces this). Empty `sum_property`
+/// is rejected here — `SUM()` with no field has no meaning.
+async fn parse_documents_sum_query(
+    sdk: &WasmSdk,
+    query: DocumentsQueryJs,
+    sum_property: &str,
+) -> Result<DocumentQuery, WasmSdkError> {
+    if sum_property.is_empty() {
+        return Err(WasmSdkError::invalid_argument(
+            "sumProperty must be a non-empty string naming the integer document property \
+             to sum (matches the doctype's `documentsSummable` or a covering index's \
+             `summable: \"<prop>\"`)",
+        ));
+    }
+    let input: DocumentsQueryInput =
+        deserialize_required_query(query, "Query object is required", "documents sum query")?;
+
+    let group_by = input.group_by.clone().unwrap_or_default();
+    let limit = input.limit.unwrap_or(0);
+
+    let base_query = build_documents_query(sdk, input).await?;
+
+    Ok(base_query
+        .with_select(SelectProjection::sum(sum_property))
+        .with_group_by_fields(group_by)
+        .with_limit(limit))
+}
+
+/// Parse a JS query object into a [`DocumentQuery`] configured for
+/// the AVG surface (`select = Avg(field)`, with `group_by` taken
+/// directly from the input). Average analog of
+/// [`parse_documents_count_query`].
+///
+/// The `sum_property` arg names the integer property to average —
+/// AVG reuses the sum-tree indexes (no separate `averageable` flag
+/// is needed at parse time; the server's picker pairs `summable` +
+/// `countable` for the `(count, sum)` shape).
+async fn parse_documents_average_query(
+    sdk: &WasmSdk,
+    query: DocumentsQueryJs,
+    sum_property: &str,
+) -> Result<DocumentQuery, WasmSdkError> {
+    if sum_property.is_empty() {
+        return Err(WasmSdkError::invalid_argument(
+            "sumProperty must be a non-empty string naming the integer document property \
+             to average (matches the doctype's `documentsSummable` / \
+             `documentsAverageable`, or a covering index's `summable: \"<prop>\"`)",
+        ));
+    }
+    let input: DocumentsQueryInput =
+        deserialize_required_query(query, "Query object is required", "documents average query")?;
+
+    let group_by = input.group_by.clone().unwrap_or_default();
+    let limit = input.limit.unwrap_or(0);
+
+    let base_query = build_documents_query(sdk, input).await?;
+
+    Ok(base_query
+        .with_select(SelectProjection::avg(sum_property))
+        .with_group_by_fields(group_by)
+        .with_limit(limit))
 }
 
 /// Parse JSON where clause into WhereClause
@@ -527,10 +607,10 @@ impl WasmSdk {
     ///
     /// Returns a `Map<string, bigint>` keyed by the platform-value-
     /// encoded property value (hex-encoded). For simple total counts
-    /// (no `in` clause and `return_distinct_counts_in_range = false`)
-    /// the map has a single entry with empty-string key —
-    /// `result.get("")` is the total. For per-`In`-value or per-
-    /// distinct-value-in-range modes, each key maps to its count.
+    /// (empty / omitted `groupBy`) the map has a single entry with
+    /// empty-string key — `result.get("")` is the total. For
+    /// per-group modes (non-empty `groupBy`), each key maps to its
+    /// count.
     ///
     /// Query-object knobs (all camelCase on the JS side):
     /// - `where: [[field, op, value], ...]`
@@ -543,22 +623,25 @@ impl WasmSdk {
     ///   range) doesn't read `orderBy` — its builder sorts In keys
     ///   lex-ascending unconditionally for prove/no-proof parity.
     /// - `limit?: number` — caps the number of entries returned in
-    ///   per-key modes. On no-proof paths the server clamps to its
-    ///   `max_query_limit`. On the prove-distinct path the server
-    ///   rejects oversized requests with `InvalidLimit` rather than
-    ///   silently clamping (silent clamping would break proof
-    ///   verification); unset falls back to a compile-time constant
-    ///   the SDK verifier reads, so proof bytes are deterministic
-    ///   across operators regardless of their runtime config.
-    /// - `returnDistinctCountsInRange?: boolean` — when `true` AND
-    ///   the query carries a range clause, returns per-distinct-
-    ///   value entries instead of a single sum.
+    ///   per-group modes. On no-proof paths the server clamps to
+    ///   its `max_query_limit`. On the prove-distinct path the
+    ///   server rejects oversized requests with `InvalidLimit`
+    ///   rather than silently clamping (silent clamping would break
+    ///   proof verification); unset falls back to a compile-time
+    ///   constant the SDK verifier reads, so proof bytes are
+    ///   deterministic across operators regardless of their runtime
+    ///   config.
+    /// - `groupBy?: string[]` — SQL-shaped GROUP BY, mirroring the
+    ///   wire `group_by` field one-to-one. See the `DocumentsQuery`
+    ///   TypeScript declaration for the supported shapes (aggregate
+    ///   / per-`In`-value / per-distinct-range / compound). The
+    ///   server rejects unsupported `(select, group_by, where)`
+    ///   combinations with `QuerySyntaxError::Unsupported`.
     ///
     /// One entry point per `[plain | withProofInfo]` variant covers
-    /// every count mode (total / per-`In`-value / per-distinct-value-
-    /// in-range / summed-over-range) because `DocumentSplitCounts::
-    /// fetch` (which this wraps) dispatches on the request shape
-    /// internally. For compound `In + range + distinct` queries the
+    /// every count mode because `DocumentSplitCounts::fetch` (which
+    /// this wraps) dispatches on the request shape internally. For
+    /// compound `In + range` queries with a 2-field `groupBy` the
     /// per-`(in_key, key)` entries are summed by `key` into the flat
     /// map; callers needing the unmerged compound shape should use a
     /// richer binding (not yet exposed here).
@@ -590,6 +673,113 @@ impl WasmSdk {
             map, metadata, proof,
         ))
     }
+
+    /// Get aggregated sums of an integer property across documents
+    /// matching a query, optionally grouped by an index field.
+    ///
+    /// Sum-side analog of [`Self::get_documents_count`]. One entry
+    /// point per `[plain | withProofInfo]` variant covers every sum
+    /// mode (`Aggregate` / `GroupByIn` / `GroupByRange` /
+    /// `GroupByCompound`); `DocumentSplitSums::fetch` dispatches
+    /// internally on the request shape.
+    ///
+    /// The map values are `bigint` (signed `i64` on the wire); the
+    /// `Aggregate` mode emits a single entry with empty-string key
+    /// carrying the total. `GroupByIn` / `GroupByRange` emit one
+    /// entry per matched group keyed by the hex-encoded canonical
+    /// bytes of the splitting property's value (same convention as
+    /// count's per-In / per-distinct-range maps).
+    ///
+    /// `sumProperty` names the integer document property to
+    /// aggregate. Must match the doctype's `documentsSummable` OR a
+    /// covering index's `summable: "<prop>"` declaration — the
+    /// server's index picker rejects mismatches with a typed
+    /// request error.
+    #[wasm_bindgen(
+        js_name = "getDocumentsSum",
+        unchecked_return_type = "Map<string, bigint>"
+    )]
+    pub async fn get_documents_sum(
+        &self,
+        query: DocumentsQueryJs,
+        sum_property: String,
+    ) -> Result<Map, WasmSdkError> {
+        let sum_query = parse_documents_sum_query(self, query, &sum_property).await?;
+        let splits = DocumentSplitSums::fetch(self.as_ref(), sum_query).await?;
+        split_sums_to_js_map(splits)
+    }
+
+    #[wasm_bindgen(
+        js_name = "getDocumentsSumWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<Map<string, bigint>>"
+    )]
+    pub async fn get_documents_sum_with_proof_info(
+        &self,
+        query: DocumentsQueryJs,
+        sum_property: String,
+    ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
+        let sum_query = parse_documents_sum_query(self, query, &sum_property).await?;
+        let (splits_opt, metadata, proof) =
+            DocumentSplitSums::fetch_with_metadata_and_proof(self.as_ref(), sum_query, None)
+                .await?;
+        let map = split_sums_to_js_map(splits_opt)?;
+
+        Ok(ProofMetadataResponseWasm::from_sdk_parts(
+            map, metadata, proof,
+        ))
+    }
+
+    /// Get the `(count, sum)` pair for the documents matching a query,
+    /// optionally grouped by an index field. Client computes
+    /// `avg = sum / count`.
+    ///
+    /// Average-side analog of [`Self::get_documents_sum`]. Returned
+    /// map values are `{count: bigint, sum: bigint}` per entry; the
+    /// `Aggregate` mode emits a single entry with empty-string key
+    /// carrying the totals. JS callers can divide with whichever
+    /// representation they want (`Number(sum) / Number(count)`,
+    /// BigInt division for integer-truncated, etc.) — the server
+    /// intentionally doesn't pre-divide.
+    ///
+    /// `sumProperty` names the integer document property to
+    /// average. AVG reuses the same `documentsSummable` /
+    /// `documentsAverageable` index machinery as SUM — no separate
+    /// `averageable` flag exists; the server pairs the named
+    /// property's `summable` index with a countable terminator to
+    /// produce the `(count, sum)` shape.
+    #[wasm_bindgen(
+        js_name = "getDocumentsAverage",
+        unchecked_return_type = "Map<string, {count: bigint, sum: bigint}>"
+    )]
+    pub async fn get_documents_average(
+        &self,
+        query: DocumentsQueryJs,
+        sum_property: String,
+    ) -> Result<Map, WasmSdkError> {
+        let avg_query = parse_documents_average_query(self, query, &sum_property).await?;
+        let splits = DocumentSplitAverages::fetch(self.as_ref(), avg_query).await?;
+        split_averages_to_js_map(splits)
+    }
+
+    #[wasm_bindgen(
+        js_name = "getDocumentsAverageWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<Map<string, {count: bigint, sum: bigint}>>"
+    )]
+    pub async fn get_documents_average_with_proof_info(
+        &self,
+        query: DocumentsQueryJs,
+        sum_property: String,
+    ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
+        let avg_query = parse_documents_average_query(self, query, &sum_property).await?;
+        let (splits_opt, metadata, proof) =
+            DocumentSplitAverages::fetch_with_metadata_and_proof(self.as_ref(), avg_query, None)
+                .await?;
+        let map = split_averages_to_js_map(splits_opt)?;
+
+        Ok(ProofMetadataResponseWasm::from_sdk_parts(
+            map, metadata, proof,
+        ))
+    }
 }
 
 /// Convert an `Option<DocumentSplitCounts>` into a JS `Map<string, bigint>`.
@@ -610,4 +800,88 @@ fn split_counts_to_js_map(splits: Option<DocumentSplitCounts>) -> Map {
         }
     }
     map
+}
+
+/// Convert an `Option<DocumentSplitSums>` into a JS `Map<string, bigint>`.
+///
+/// Sum analog of [`split_counts_to_js_map`]. Same hex-encoded keys,
+/// same flat-map fork-merging via
+/// `DocumentSplitSums::try_into_flat_map` (which combines
+/// per-(in_key, key) entries into per-key sums for compound queries
+/// — callers needing the unmerged view should consume
+/// `DocumentSplitSums.0` directly).
+///
+/// Values are `i64` per grovedb's signed SumTree value type.
+/// `bigint` on the JS side preserves the full i64 range that
+/// `Number` can't — avoids the silent precision loss past
+/// `Number.MAX_SAFE_INTEGER` (2^53 - 1) that an `f64` conversion
+/// would introduce.
+///
+/// Returns a `WasmSdkError` if the fold across In-fork branches
+/// crosses the i64 range at any terminator key
+/// (`try_into_flat_map` does `checked_add` on each step). JS sees
+/// a structured error rather than a debug-build panic or a
+/// release-build wrap.
+fn split_sums_to_js_map(splits: Option<DocumentSplitSums>) -> Result<Map, WasmSdkError> {
+    let map = Map::new();
+    if let Some(split_sums) = splits {
+        // `try_into_flat_map` uses `i64::checked_add` and surfaces
+        // overflow as `drive_proof_verifier::Error::RequestError`.
+        // Convert to `WasmSdkError::generic` so JS callers see a
+        // structured error (rather than the debug-build panic /
+        // release-build wrap that the previous unchecked `+=`
+        // would produce on a compound-In merge crossing i64::MAX).
+        let flat = split_sums
+            .try_into_flat_map()
+            .map_err(|e| WasmSdkError::generic(format!("{e}")))?;
+        for (key_bytes, sum) in flat {
+            let key: JsValue = hex::encode(key_bytes).into();
+            map.set(&key, &JsValue::from(sum));
+        }
+    }
+    Ok(map)
+}
+
+/// Convert an `Option<DocumentSplitAverages>` into a JS `Map<string,
+/// {count: bigint, sum: bigint}>`.
+///
+/// Average analog of [`split_counts_to_js_map`]. Per-entry values
+/// are JS objects with `count` (`u64` → `bigint`) and `sum` (`i64`
+/// → `bigint`) fields; the JS caller divides with whichever
+/// representation it prefers (`Number(sum) / Number(count)` for
+/// f64-precision arithmetic, BigInt division for integer-truncated,
+/// or its own arbitrary-precision math). The server intentionally
+/// doesn't pre-divide — `count` and `sum` are independently
+/// load-bearing for downstream filters.
+///
+/// Hex-encoded keys + `try_into_flat_map` fork-merging match the
+/// count and sum helpers' conventions exactly. Returns a
+/// `WasmSdkError` if either the u64 count or the i64 sum fold
+/// crosses its range at any terminator key, matching the
+/// hardening on [`split_sums_to_js_map`].
+fn split_averages_to_js_map(splits: Option<DocumentSplitAverages>) -> Result<Map, WasmSdkError> {
+    let map = Map::new();
+    if let Some(split_averages) = splits {
+        // Same overflow hardening rationale as `split_sums_to_js_map`
+        // above — `try_into_flat_map` uses `u64::checked_add` (count
+        // axis) and `i64::checked_add` (sum axis); either overflow
+        // surfaces as a typed JS error instead of a panic / wrap.
+        let flat = split_averages
+            .try_into_flat_map()
+            .map_err(|e| WasmSdkError::generic(format!("{e}")))?;
+        for (key_bytes, (count, sum)) in flat {
+            let key: JsValue = hex::encode(key_bytes).into();
+            let entry = js_sys::Object::new();
+            // `unwrap` here is safe in WASM — `js_sys::Reflect::set`
+            // only fails on frozen targets, and a freshly-constructed
+            // Object is never frozen. Same pattern existing
+            // ProofMetadataResponseWasm uses internally.
+            js_sys::Reflect::set(&entry, &JsValue::from_str("count"), &JsValue::from(count))
+                .expect("set count on fresh Object");
+            js_sys::Reflect::set(&entry, &JsValue::from_str("sum"), &JsValue::from(sum))
+                .expect("set sum on fresh Object");
+            map.set(&key, &entry);
+        }
+    }
+    Ok(map)
 }

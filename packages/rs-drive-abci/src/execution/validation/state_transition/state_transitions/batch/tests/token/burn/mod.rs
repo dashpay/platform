@@ -180,11 +180,31 @@ mod token_burn_tests {
         assert_eq!(token_balance, Some(0));
     }
 
-    #[tokio::test]
-    async fn test_token_burn_trying_to_burn_more_than_we_have() {
-        let platform_version = PlatformVersion::latest();
+    /// Pins the *tokens-always-pay* invariant for the
+    /// [`ConsensusValidationResult::merge_many`] aggregator change
+    /// (issue #2867): an all-failed single-token-transition batch must
+    /// continue to land as `PaidConsensusError` on every protocol
+    /// version, because the token sub-transformer
+    /// (`try_from_borrowed_token_burn_transition_with_contract_lookup`)
+    /// emits a `BumpIdentityDataContractNonce` action on
+    /// base-validation failure, so each per-token result has
+    /// `data: Some([bump])` and the v1 aggregator never collapses to
+    /// `data: None`.
+    ///
+    /// If a future change drops the bump from the token sub-transformer,
+    /// the v1 aggregator would route the failure to
+    /// `UnpaidConsensusError` and the tx would be removed from the block
+    /// by `prepare_proposal` — different state-root, different
+    /// replay-protection behavior than every prior chain. The paired
+    /// `_protocol_version_11` sibling pins the same invariant under v11
+    /// (legacy aggregator, but the bump emission is identical).
+    async fn run_token_burn_trying_to_burn_more_than_we_have_at_protocol_version(
+        protocol_version: dpp::version::ProtocolVersion,
+    ) {
+        let platform_version = PlatformVersion::get(protocol_version)
+            .expect("expected platform version for the requested protocol_version");
         let mut platform = TestPlatformBuilder::new()
-            .with_latest_protocol_version()
+            .with_initial_protocol_version(protocol_version)
             .build_with_mock_rpc()
             .set_genesis_state();
 
@@ -269,6 +289,24 @@ mod token_burn_tests {
             )
             .expect("expected to fetch token balance");
         assert_eq!(token_balance, Some(100000)); // nothing was burned
+    }
+
+    /// PROTOCOL_VERSION_12+: pins the tokens-always-pay invariant under the
+    /// new v1 aggregator.
+    #[tokio::test]
+    async fn test_token_burn_trying_to_burn_more_than_we_have() {
+        run_token_burn_trying_to_burn_more_than_we_have_at_protocol_version(
+            PlatformVersion::latest().protocol_version,
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_11: pins the same invariant under the legacy v0
+    /// aggregator (the bump emission is identical across versions for
+    /// tokens, so both run paths must produce PaidConsensusError).
+    #[tokio::test]
+    async fn test_token_burn_trying_to_burn_more_than_we_have_protocol_version_11() {
+        run_token_burn_trying_to_burn_more_than_we_have_at_protocol_version(11).await;
     }
 
     #[tokio::test]

@@ -49,15 +49,14 @@ members = [
 ]
 
 [workspace.dependencies]
-dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "53130869e5b9343ae59016323e5e5269e717a8fd" }
-dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", rev = "53130869e5b9343ae59016323e5e5269e717a8fd" }
-dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "53130869e5b9343ae59016323e5e5269e717a8fd" }
-dash-spv-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "53130869e5b9343ae59016323e5e5269e717a8fd" }
-key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "53130869e5b9343ae59016323e5e5269e717a8fd" }
-key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "53130869e5b9343ae59016323e5e5269e717a8fd" }
-key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "53130869e5b9343ae59016323e5e5269e717a8fd" }
-dash-network = { git = "https://github.com/dashpay/rust-dashcore", rev = "53130869e5b9343ae59016323e5e5269e717a8fd" }
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "53130869e5b9343ae59016323e5e5269e717a8fd" }
+dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "cfb01fa751951b628a7272558e93278348b2cd1f" }
+dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", rev = "cfb01fa751951b628a7272558e93278348b2cd1f" }
+dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "cfb01fa751951b628a7272558e93278348b2cd1f" }
+key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "cfb01fa751951b628a7272558e93278348b2cd1f" }
+key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "cfb01fa751951b628a7272558e93278348b2cd1f" }
+key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "cfb01fa751951b628a7272558e93278348b2cd1f" }
+dash-network = { git = "https://github.com/dashpay/rust-dashcore", rev = "cfb01fa751951b628a7272558e93278348b2cd1f" }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "cfb01fa751951b628a7272558e93278348b2cd1f" }
 
 # Optimize heavy crypto crates even in dev/test builds so that
 # Halo 2 proof generation and verification run at near-release speed.
@@ -90,5 +89,5 @@ opt-level = 3
 
 [workspace.package]
 
-version = "3.1.0-dev.1"
+version = "3.1.0-dev.5"
 rust-version = "1.92"

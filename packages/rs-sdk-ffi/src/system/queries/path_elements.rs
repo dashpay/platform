@@ -171,10 +171,17 @@ fn format_element_data(element: &Element) -> String {
         Element::ItemWithSumItem(data, sum, _) => {
             format!("item_with_sum_item:{}:{}", hex::encode(data), sum)
         }
+        Element::ReferenceWithSumItem(reference, _, sum, _) => {
+            format!("reference_with_sum_item:{:?}:{}", reference, sum)
+        }
         Element::ProvableCountTree(_, count, _) => format!("provable_count_tree:{}", count),
         Element::ProvableCountSumTree(_, count, sum, _) => {
             format!("provable_count_sum_tree:{}:{}", count, sum)
         }
+        Element::ProvableCountProvableSumTree(_, count, sum, _) => {
+            format!("provable_count_provable_sum_tree:{}:{}", count, sum)
+        }
+        Element::ProvableSumTree(_, sum, _) => format!("provable_sum_tree:{}", sum),
         Element::CommitmentTree(_, _, _) => "commitment_tree".to_string(),
         Element::MmrTree(_, _) => "mmr_tree".to_string(),
         Element::BulkAppendTree(_, _, _) => "bulk_append_tree".to_string(),
@@ -183,6 +190,9 @@ fn format_element_data(element: &Element) -> String {
         }
         Element::NonCounted(inner) => format!("non_counted({})", format_element_data(inner)),
         Element::NotSummed(inner) => format!("not_summed({})", format_element_data(inner)),
+        Element::NotCountedOrSummed(inner) => {
+            format!("not_counted_or_summed({})", format_element_data(inner))
+        }
     }
 }
 
@@ -198,8 +208,13 @@ fn format_element_type(element: &Element) -> String {
         Element::CountTree(_, _, _) => "count_tree".to_string(),
         Element::CountSumTree(_, _, _, _) => "count_sum_tree".to_string(),
         Element::ItemWithSumItem(_, _, _) => "item_with_sum_item".to_string(),
+        Element::ReferenceWithSumItem(_, _, _, _) => "reference_with_sum_item".to_string(),
         Element::ProvableCountTree(_, _, _) => "provable_count_tree".to_string(),
         Element::ProvableCountSumTree(_, _, _, _) => "provable_count_sum_tree".to_string(),
+        Element::ProvableCountProvableSumTree(_, _, _, _) => {
+            "provable_count_provable_sum_tree".to_string()
+        }
+        Element::ProvableSumTree(_, _, _) => "provable_sum_tree".to_string(),
         Element::CommitmentTree(_, _, _) => "commitment_tree".to_string(),
         Element::MmrTree(_, _) => "mmr_tree".to_string(),
         Element::BulkAppendTree(_, _, _) => "bulk_append_tree".to_string(),
@@ -208,6 +223,9 @@ fn format_element_type(element: &Element) -> String {
         }
         Element::NonCounted(inner) => format!("non_counted({})", format_element_type(inner)),
         Element::NotSummed(inner) => format!("not_summed({})", format_element_type(inner)),
+        Element::NotCountedOrSummed(inner) => {
+            format!("not_counted_or_summed({})", format_element_type(inner))
+        }
     }
 }
 
