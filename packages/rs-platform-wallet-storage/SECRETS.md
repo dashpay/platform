@@ -117,10 +117,14 @@ discriminant — keyring variants carrying raw bytes (`BadEncoding`,
 (CWE-209/CWE-532).
 
 The internal SPI projection `From<FileStoreError> for
-keyring_core::Error` is **lossy and string-only**: every variant
-collapses to a `keyring_core::Error` carrying only a static string, with
-no boxed `FileStoreError` to downcast back out. SPI-only consumers lose
-the structural distinction — which is exactly why `SecretStore` exists.
+keyring_core::Error` keeps the `WrongPassphrase` / `Busy` variants
+recoverable: they ride in `NoStorageAccess` with the typed
+`FileStoreError` boxed as the source, so an SPI-only consumer can recover
+them via `err.source().and_then(|s| s.downcast_ref::<FileStoreError>())`.
+The `BadStoreFormat` group (`Corruption`, `KdfFailure`,
+`VersionUnsupported`, `MalformedVault`, `InsecurePermissions`, `Decrypt`,
+`OsKeyring`) has no box slot and carries only a secret-free string; those
+remain fully typed on the `SecretStore` path.
 
 Per Smythe EDIT-2, `keyring_core::Error` is safe to `Display`
 (`{ }`-format), but `{:?}`-format embeds `BadEncoding(Vec<u8>)` /

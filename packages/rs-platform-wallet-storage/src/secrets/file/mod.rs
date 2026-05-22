@@ -551,13 +551,15 @@ mod tests {
         s.build(&service, label, None).expect("build")
     }
 
-    /// Whether a projected SPI error is the lossy `WrongPassphrase`
-    /// projection. The seam is string-only: `WrongPassphrase` rides in
-    /// `NoStorageAccess` and is distinguished only by its `Display` text
-    /// (the lossless typed distinction lives on the `SecretStore` path).
+    /// Whether a projected SPI error came from a wrong passphrase.
+    /// `WrongPassphrase` rides in `NoStorageAccess` with the typed
+    /// `FileStoreError` boxed as the source, recoverable losslessly.
     fn is_wrong_passphrase(e: &KeyringError) -> bool {
-        matches!(e, KeyringError::NoStorageAccess(src)
-            if src.to_string() == FileStoreError::WrongPassphrase.to_string())
+        matches!(
+            e,
+            KeyringError::NoStorageAccess(src)
+                if matches!(src.downcast_ref::<FileStoreError>(), Some(FileStoreError::WrongPassphrase))
+        )
     }
 
     /// Whether a projected SPI error is the lossy `Corruption`

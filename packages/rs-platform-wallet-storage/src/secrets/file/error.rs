@@ -9,14 +9,14 @@
 //! The `EncryptedFileStore` surfaces this enum at its construction /
 //! `rekey` API; its `keyring_core::api::CredentialApi` /
 //! `CredentialStoreApi` impls project it into `keyring_core::Error` via
-//! [`From`] so SPI callers see a uniform error. That projection is
-//! **lossy and string-only** by design — every variant collapses to a
-//! `keyring_core::Error` whose payload is a static string, with no boxed
-//! `FileStoreError` to downcast back out. The lossless typed path is the
-//! public [`SecretStore`](crate::secrets::SecretStore) API, which returns
-//! `FileStoreError` directly; the `keyring_core::Error` seam is the
-//! internal SPI and the place where the structural distinction is
-//! intentionally dropped.
+//! [`From`] so SPI callers see a uniform error. The `WrongPassphrase` /
+//! `Busy` variants box the typed `FileStoreError` as the
+//! `NoStorageAccess` source, so an SPI consumer can recover them
+//! losslessly via `source().downcast_ref::<FileStoreError>()`; the
+//! `BadStoreFormat` group has no box slot and carries only a secret-free
+//! string. Either way, the fully typed path is the public
+//! [`SecretStore`](crate::secrets::SecretStore) API, which returns
+//! `FileStoreError` directly.
 
 use keyring_core::Error as KeyringError;
 
@@ -150,21 +150,19 @@ impl From<super::super::validate::InvalidLabel> for FileStoreError {
 /// Project a [`FileStoreError`] into `keyring_core::Error` for the
 /// `CredentialApi` / `CredentialStoreApi` SPI seam.
 ///
-/// The projection is **lossy and string-only**: every variant collapses
-/// to a `keyring_core::Error` carrying only a static string, with no
-/// boxed `FileStoreError` to downcast back out. SPI consumers that need
-/// the structural distinction (`WrongPassphrase` vs `Corruption` vs
-/// `Busy`) use the typed [`SecretStore`](crate::secrets::SecretStore) API
-/// instead, which returns `FileStoreError` directly.
-///
 /// - [`WrongPassphrase`] and [`Busy`] ride in
 ///   [`KeyringError::NoStorageAccess`] (operator UX: "ask the operator to
-///   unlock / retry"), distinguished only by their `Display` text.
+///   unlock / retry") with the typed `FileStoreError` boxed as the
+///   source, so an SPI consumer can losslessly recover the variant via
+///   `err.source().and_then(|s| s.downcast_ref::<FileStoreError>())`.
 /// - [`Corruption`], [`KdfFailure`], [`VersionUnsupported`],
 ///   [`MalformedVault`], [`InsecurePermissions`], the internal
 ///   [`Decrypt`], and [`OsKeyring`] collapse into
-///   [`KeyringError::BadStoreFormat`] with a static string (Smythe
-///   EDIT-2: never secret data in a format error).
+///   [`KeyringError::BadStoreFormat`], whose `String` payload has no box
+///   slot, so they carry only a static secret-free string (Smythe
+///   EDIT-2: never secret data in a format error). They remain
+///   losslessly typed on the [`SecretStore`](crate::secrets::SecretStore)
+///   path.
 /// - [`InvalidLabel`] becomes `KeyringError::Invalid("user", _)`.
 /// - [`Io`] becomes [`KeyringError::PlatformFailure`].
 ///
@@ -183,9 +181,7 @@ impl From<FileStoreError> for KeyringError {
     fn from(e: FileStoreError) -> Self {
         use FileStoreError as E;
         match e {
-            E::WrongPassphrase | E::Busy => {
-                KeyringError::NoStorageAccess(Box::new(std::io::Error::other(e.to_string())))
-            }
+            E::WrongPassphrase | E::Busy => KeyringError::NoStorageAccess(Box::new(e)),
             E::Corruption
             | E::KdfFailure
             | E::VersionUnsupported { .. }
@@ -253,17 +249,31 @@ mod tests {
     }
 
     #[test]
-    fn projection_is_string_only_no_downcast() {
-        // The seam is lossy: NoStorageAccess no longer boxes a
-        // FileStoreError, so a downcast back out must fail. The typed
-        // distinction lives on the SecretStore path, not here.
-        let k: KeyringError = FileStoreError::WrongPassphrase.into();
-        match k {
-            KeyringError::NoStorageAccess(src) => {
-                assert!(src.downcast_ref::<FileStoreError>().is_none());
-            }
-            other => panic!("expected NoStorageAccess, got {other:?}"),
+    fn wrong_passphrase_is_recoverable_from_no_storage_access_source() {
+        // WrongPassphrase / Busy box the typed FileStoreError as the
+        // NoStorageAccess source, so an SPI consumer recovers the variant
+        // losslessly via `source().downcast_ref::<FileStoreError>()`.
+        use std::error::Error as _;
+        for original in [FileStoreError::WrongPassphrase, FileStoreError::Busy] {
+            let want = original.to_string();
+            let k: KeyringError = original.into();
+            let recovered = k.source().and_then(|s| s.downcast_ref::<FileStoreError>());
+            assert!(
+                matches!(recovered, Some(e) if e.to_string() == want),
+                "expected recoverable {want}, got {recovered:?}"
+            );
         }
+    }
+
+    #[test]
+    fn bad_store_format_group_renders_secret_free_string() {
+        use std::error::Error as _;
+        let k: KeyringError = FileStoreError::Corruption.into();
+        // No box slot on BadStoreFormat: a static, secret-free message,
+        // nothing to downcast.
+        assert!(matches!(&k, KeyringError::BadStoreFormat(s) if !s.is_empty()));
+        assert!(k.source().is_none());
+        assert!(!format!("{k}").contains("plaintext"));
     }
 
     #[test]

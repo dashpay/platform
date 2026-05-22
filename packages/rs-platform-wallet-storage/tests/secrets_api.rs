@@ -122,20 +122,20 @@ fn error_display_is_static_and_secret_free() {
     let rendered = format!("{err}");
     assert!(!rendered.contains("PLAINTEXTNEEDLE"));
     assert!(!rendered.contains("wrong-pass"));
-    // The SPI seam is lossy and string-only: WrongPassphrase rides in
-    // `NoStorageAccess` and is no longer downcastable back to a typed
-    // `FileStoreError`. The lossless typed distinction is on the
-    // `SecretStore` path, asserted below.
+    // WrongPassphrase rides in `NoStorageAccess` with the typed
+    // FileStoreError boxed as the source, recoverable losslessly.
     match &err {
         KeyringError::NoStorageAccess(src) => {
-            assert_eq!(src.to_string(), FileStoreError::WrongPassphrase.to_string());
-            assert!(src.downcast_ref::<FileStoreError>().is_none());
+            assert!(matches!(
+                src.downcast_ref::<FileStoreError>(),
+                Some(FileStoreError::WrongPassphrase)
+            ));
         }
         other => panic!("expected NoStorageAccess, got {other:?}"),
     }
 
     // Same wrong passphrase through the public `SecretStore`: the typed
-    // distinction survives losslessly.
+    // distinction survives losslessly there too.
     let bad_store = SecretStore::file(dir.path(), SecretString::new("wrong-pass")).unwrap();
     let typed = bad_store.get(&w, "seed").unwrap_err();
     assert!(matches!(typed, FileStoreError::WrongPassphrase));
