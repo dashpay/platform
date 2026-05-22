@@ -76,6 +76,8 @@ pub mod identities;
 pub mod identity_sync;
 pub mod registry;
 pub mod sdk;
+#[cfg(feature = "shielded")]
+pub mod shielded;
 pub mod signer;
 pub mod spv;
 pub mod tokens;
