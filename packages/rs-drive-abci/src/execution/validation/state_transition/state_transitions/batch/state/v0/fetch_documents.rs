@@ -35,6 +35,7 @@ use drive::query::{DriveDocumentQuery, InternalClauses, WhereClause, WhereOperat
 ///   `epoch` and `execution_context` arguments are unused. No fees billed.
 /// - v1 (PROTOCOL_VERSION_12+) — passes `Some(epoch)` to `query_documents`
 ///   and bills the cost via `execution_context.add_operation`.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn fetch_documents_for_transitions_knowing_contract_and_document_type(
     drive: &Drive,
     contract: &DataContract,
@@ -141,6 +142,7 @@ fn fetch_documents_for_transitions_knowing_contract_and_document_type_v0(
 /// `query_documents` so the real grovedb cost is computed; bills it via
 /// `execution_context.add_operation`. Documents returned are
 /// epoch-independent — same as v0.
+#[allow(clippy::too_many_arguments)]
 fn fetch_documents_for_transitions_knowing_contract_and_document_type_v1(
     drive: &Drive,
     contract: &DataContract,
@@ -217,6 +219,7 @@ fn fetch_documents_for_transitions_knowing_contract_and_document_type_v1(
 ///   `add_operation` — matching the pre-PR caller's behavior exactly.
 /// - v1 (PROTOCOL_VERSION_12+) — calls `_v1` which passes `Some(epoch)`
 ///   for the real grovedb cost and bills internally.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn fetch_document_with_id(
     drive: &Drive,
     contract: &DataContract,
@@ -335,6 +338,7 @@ fn fetch_document_with_id_v0(
 /// `query_documents` for the real grovedb cost; bills it via
 /// `execution_context.add_operation`. Document returned is
 /// epoch-independent — same as v0.
+#[allow(clippy::too_many_arguments)]
 fn fetch_document_with_id_v1(
     drive: &Drive,
     contract: &DataContract,
