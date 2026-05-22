@@ -56,7 +56,9 @@ impl SecretString {
         source.zeroize();
         let lock = region::lock(buf.as_ptr(), buf.capacity())
             .map_err(|e| {
-                tracing::debug!("mlock failed for SecretString: {e}");
+                tracing::warn!(
+                    "mlock failed for SecretString; secret may be swappable to disk: {e}"
+                );
                 e
             })
             .ok();
@@ -98,7 +100,9 @@ impl Default for SecretString {
         let s = String::with_capacity(DEFAULT_CAPACITY);
         let lock = region::lock(s.as_ptr(), s.capacity())
             .map_err(|e| {
-                tracing::debug!("mlock failed for SecretString: {e}");
+                tracing::warn!(
+                    "mlock failed for SecretString; secret may be swappable to disk: {e}"
+                );
                 e
             })
             .ok();
@@ -175,7 +179,9 @@ impl SecretBytes {
         let lock = if bytes.capacity() > 0 {
             region::lock(bytes.as_ptr(), bytes.capacity())
                 .map_err(|e| {
-                    tracing::debug!("mlock failed for SecretBytes: {e}");
+                    tracing::warn!(
+                        "mlock failed for SecretBytes; secret may be swappable to disk: {e}"
+                    );
                     e
                 })
                 .ok()

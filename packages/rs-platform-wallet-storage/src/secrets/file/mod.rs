@@ -246,22 +246,30 @@ impl EncryptedFileStoreInner {
         // temp MUST share the destination's parent dir (mirrors
         // sqlite/backup.rs).
         let parent = path.parent().unwrap_or_else(|| Path::new("."));
-        let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
-        // tempfile creates the file private-to-owner on every OS; on Unix
-        // we additionally pin 0600 (belt-and-suspenders). On Windows the
-        // private-by-default ACL is sufficient for v1.
-        set_restrictive_perms(tmp.as_file())?;
-        tmp.as_file_mut().write_all(&serialized)?;
-        tmp.as_file().sync_all()?;
-        tmp.persist(path).map_err(|e| e.error)?;
-        // Windows: directory durability relies on NTFS metadata
-        // journaling; no dir-fsync primitive exists there.
-        #[cfg(unix)]
-        {
-            let d = fs::File::open(parent)?;
-            d.sync_all()?;
-        }
-        Ok(())
+        let write = || -> Result<(), FileStoreError> {
+            let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
+            // tempfile creates the file private-to-owner on every OS; on
+            // Unix we additionally pin 0600 (belt-and-suspenders). On
+            // Windows the private-by-default ACL is sufficient for v1.
+            set_restrictive_perms(tmp.as_file())?;
+            tmp.as_file_mut().write_all(&serialized)?;
+            tmp.as_file().sync_all()?;
+            tmp.persist(path).map_err(|e| e.error)?;
+            // Windows: directory durability relies on NTFS metadata
+            // journaling; no dir-fsync primitive exists there.
+            #[cfg(unix)]
+            {
+                let d = fs::File::open(parent)?;
+                d.sync_all()?;
+            }
+            Ok(())
+        };
+        write().inspect_err(|e| {
+            // Operators must see a failed durable write — paths are
+            // caller-supplied non-secret (FileStoreError::Io doc); Display
+            // only, never the secret.
+            tracing::warn!(error = %e, "failed to write vault file");
+        })
     }
 
     fn rekey(
@@ -282,10 +290,19 @@ impl EncryptedFileStoreInner {
             let aad = format::aad(format::FORMAT_VERSION, wallet_id.as_bytes(), &e.label);
             // `derive_and_verify` already proved the old passphrase via
             // the header token, so an entry tag failure is corruption,
-            // not a wrong passphrase.
+            // not a wrong passphrase. Operators must see this — log the
+            // non-secret wallet-id/label, never the secret. The first such
+            // failure aborts the rekey, so this is not a hot path.
             let pt =
                 crypto::open(&old_key, &e.nonce, &aad, &e.ciphertext).map_err(|err| match err {
-                    FileStoreError::Decrypt => FileStoreError::Corruption,
+                    FileStoreError::Decrypt => {
+                        tracing::error!(
+                            wallet_id = %wallet_id.to_hex(),
+                            label = %e.label,
+                            "vault entry failed integrity check during rekey (corruption or tampering)"
+                        );
+                        FileStoreError::Corruption
+                    }
                     other => other,
                 })?;
             let (nonce, ct) = crypto::seal(&new_key, &aad, pt.expose_secret())?;
@@ -343,8 +360,16 @@ impl EncryptedFileStoreInner {
             Ok(pt) => Ok(Some(pt.expose_secret().to_vec())),
             // The header verify-token already passed, so the passphrase is
             // correct: an entry tag failure here is corruption/tampering,
-            // not a wrong passphrase.
-            Err(FileStoreError::Decrypt) => Err(FileStoreError::Corruption),
+            // not a wrong passphrase. Operators must see this — log the
+            // non-secret wallet-id/label, never the secret.
+            Err(FileStoreError::Decrypt) => {
+                tracing::error!(
+                    wallet_id = %wallet_id.to_hex(),
+                    label = %label,
+                    "vault entry failed integrity check (corruption or tampering)"
+                );
+                Err(FileStoreError::Corruption)
+            }
             Err(e) => Err(e),
         }
     }
