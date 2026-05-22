@@ -25,7 +25,8 @@ use super::bank::{BankWallet, CrossCheckResult};
 use super::bank_identity::{self, BankIdentity};
 use super::bank_rebalance;
 use super::cleanup;
-use super::config::{self, BankCoreGateSource, Config};
+use super::config::{self, BankCoreGateSource, Config, ContextProviderKind};
+use super::context_provider::CompositeContextProvider;
 use super::identity_sync::IdentitySync;
 use super::registry::{EntryStatus, PersistentTestWalletRegistry};
 use super::sdk;
@@ -397,6 +398,25 @@ impl E2eContext {
         // skips the spawn entirely so testnet ChainLock-cycle windows
         // (rust-dashcore #470) don't block the whole suite. Core-
         // dependent tests fail under this flag — see the warn below.
+        // `context_provider=spv` resolves quorum keys from the SPV
+        // runtime, so disabling SPV would leave the SDK on the cache-only
+        // trusted provider whose quorum path can't answer — every
+        // proof-verified query would fail. Surface that loudly; the run
+        // can still exercise non-proof paths but the operator should pick
+        // `context_provider=http` if they need SPV off.
+        if config.disable_spv && config.context_provider == ContextProviderKind::Spv {
+            tracing::warn!(
+                target: "platform_wallet::e2e::harness",
+                disable_spv = config::vars::DISABLE_SPV,
+                context_provider = config::vars::CONTEXT_PROVIDER,
+                "PLATFORM_WALLET_E2E_DISABLE_SPV with context_provider=spv: no \
+                 SPV runtime will be started, so quorum-backed proof verification \
+                 has no source — proof-verified queries WILL fail. Set \
+                 context_provider=http (with a reachable quorums host) if you need \
+                 SPV disabled."
+            );
+        }
+
         let spv_runtime: Option<Arc<SpvRuntime>> = if config.disable_spv {
             tracing::warn!(
                 target: "platform_wallet::e2e::harness",
@@ -421,6 +441,27 @@ impl E2eContext {
             *IN_FLIGHT_SPV.lock().expect("IN_FLIGHT_SPV poisoned") = Some(Arc::clone(&spv_runtime));
             spv::wait_for_mn_list_synced(&spv_runtime, &mn_list_observer, SPV_READY_TIMEOUT)
                 .await?;
+
+            // SPV-mode proof verification: swap the SDK's HTTP quorums
+            // backend for `CompositeContextProvider` now that the mn-list
+            // is synced. Quorum keys come from SPV (no hosted quorums host
+            // — porter publishes none, QA-001); contracts / token configs
+            // still come from the shared `TrustedHttpContextProvider`
+            // cache, so `add_known_contract` (QA-900) is unaffected.
+            // `set_context_provider` is `ArcSwap`-backed, safe post-build.
+            if config.context_provider == ContextProviderKind::Spv {
+                sdk.set_context_provider(CompositeContextProvider::new(
+                    Arc::clone(&spv_runtime),
+                    Arc::clone(&context_provider),
+                ));
+                tracing::info!(
+                    target: "platform_wallet::e2e::harness",
+                    "context_provider=spv: swapped SDK proof-verification \
+                     backend to CompositeContextProvider (quorums via SPV, \
+                     contracts via TrustedHttpContextProvider cache)"
+                );
+            }
+
             Some(spv_runtime)
         };
 

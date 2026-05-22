@@ -1,10 +1,21 @@
-//! `dash_sdk::Sdk` construction. [`build_sdk`] wires
-//! [`TrustedHttpContextProvider`] (the SPV-backed alternative is
-//! deferred — Task #15) and resolves DAPI addresses from
-//! [`Config::dapi_addresses`] or — for mainnet/testnet — delegates to
-//! `SdkBuilder::new_testnet()` / `new_mainnet()` (PR #3570 wires those
-//! up against `dash_network_seeds::evo_seeds(network)` upstream).
-//! Provider URL override: `PLATFORM_WALLET_E2E_TRUSTED_CONTEXT_URL`.
+//! `dash_sdk::Sdk` construction. [`build_sdk`] always builds the SDK
+//! with a [`TrustedHttpContextProvider`] and resolves DAPI addresses
+//! from [`Config::dapi_addresses`] or — for mainnet/testnet — delegates
+//! to `SdkBuilder::new_testnet()` / `new_mainnet()` (PR #3570 wires
+//! those up against `dash_network_seeds::evo_seeds(network)` upstream).
+//!
+//! Two context-provider backends (selected by
+//! [`Config::context_provider`]):
+//! - `http`: the trusted provider is the live proof-verification
+//!   backend; its quorums URL must resolve
+//!   (`PLATFORM_WALLET_E2E_TRUSTED_CONTEXT_URL` override or network
+//!   built-in).
+//! - `spv`: the trusted provider is built as a cache-only contract
+//!   store (anchored at a reachable DAPI host, never fetched) and the
+//!   harness swaps the SDK's active provider to
+//!   [`super::context_provider::CompositeContextProvider`] after the SPV
+//!   mn-list syncs — quorum keys then come from SPV with no hosted
+//!   quorums host (QA-001).
 
 use std::num::NonZeroUsize;
 use std::sync::Arc;
@@ -15,7 +26,7 @@ use dashcore::Network;
 use dpp::version::PlatformVersion;
 use rs_sdk_trusted_context_provider::TrustedHttpContextProvider;
 
-use super::config::Config;
+use super::config::{Config, ContextProviderKind};
 use super::{FrameworkError, FrameworkResult};
 
 /// Initial protocol version the e2e SDK seeds itself at via
@@ -99,30 +110,53 @@ pub fn build_sdk(config: &Config) -> FrameworkResult<(Arc<Sdk>, Arc<TrustedHttpC
     Ok((Arc::new(sdk), Arc::new(context_provider)))
 }
 
-/// Build the trusted HTTP context provider, honoring the optional
-/// `trusted_context_url` override.
+/// Build the [`TrustedHttpContextProvider`].
+///
+/// In [`ContextProviderKind::Http`] mode the provider is the SDK's live
+/// proof-verification backend, so its quorums URL must be reachable
+/// (operator override → network-builtin). In [`ContextProviderKind::Spv`]
+/// mode the harness only uses this provider's known-contracts cache —
+/// quorum lookups route to the SPV runtime via
+/// [`super::context_provider::CompositeContextProvider`] — so the quorums
+/// URL is anchored at the first reachable DAPI host purely to satisfy the
+/// provider's construction-time DNS check (`verify_domain_resolves`). It
+/// is never fetched. This avoids dying on a devnet's missing quorums host
+/// (porter's `quorums.devnet.*` is NXDOMAIN — QA-001).
 fn build_trusted_context_provider(
     network: Network,
     config: &Config,
     cache_size: NonZeroUsize,
 ) -> FrameworkResult<TrustedHttpContextProvider> {
-    let result = match &config.trusted_context_url {
-        Some(url) => {
+    let result = match config.context_provider {
+        ContextProviderKind::Spv => {
+            let cache_url = cache_only_quorums_url(config)?;
             tracing::info!(
                 target: "platform_wallet::e2e::sdk",
-                %url,
-                "using TrustedHttpContextProvider with operator-supplied URL"
+                url = %cache_url,
+                "context_provider=spv: TrustedHttpContextProvider built as a \
+                 cache-only contract store anchored at a reachable DAPI host \
+                 (quorums resolve via SPV; this URL is never fetched)"
             );
-            TrustedHttpContextProvider::new_with_url(network, url.clone(), cache_size)
+            TrustedHttpContextProvider::new_with_url(network, cache_url, cache_size)
         }
-        None => {
-            tracing::info!(
-                target: "platform_wallet::e2e::sdk",
-                ?network,
-                "using TrustedHttpContextProvider with network-builtin URL"
-            );
-            TrustedHttpContextProvider::new(network, None, cache_size)
-        }
+        ContextProviderKind::Http => match &config.trusted_context_url {
+            Some(url) => {
+                tracing::info!(
+                    target: "platform_wallet::e2e::sdk",
+                    %url,
+                    "context_provider=http: TrustedHttpContextProvider with operator-supplied URL"
+                );
+                TrustedHttpContextProvider::new_with_url(network, url.clone(), cache_size)
+            }
+            None => {
+                tracing::info!(
+                    target: "platform_wallet::e2e::sdk",
+                    ?network,
+                    "context_provider=http: TrustedHttpContextProvider with network-builtin URL"
+                );
+                TrustedHttpContextProvider::new(network, None, cache_size)
+            }
+        },
     };
     result.map_err(|e| {
         tracing::error!(
@@ -131,6 +165,26 @@ fn build_trusted_context_provider(
         );
         FrameworkError::Sdk(format!(
             "TrustedHttpContextProvider construction failed: {e}"
+        ))
+    })
+}
+
+/// Pick a reachable URL to anchor the cache-only trusted provider in SPV
+/// mode: the operator-supplied `trusted_context_url` if set (it resolves,
+/// otherwise the operator would have picked `Spv` for a reason), else the
+/// first configured DAPI address (HP nodes are reachable on porter — only
+/// the quorums host is missing). The URL is only DNS-checked at
+/// construction, never fetched.
+fn cache_only_quorums_url(config: &Config) -> FrameworkResult<String> {
+    if let Some(url) = &config.trusted_context_url {
+        return Ok(url.clone());
+    }
+    config.dapi_addresses.first().cloned().ok_or_else(|| {
+        FrameworkError::Config(format!(
+            "context_provider=spv needs a reachable host to anchor the cache-only \
+                 contract store: set {} (a DAPI URL list) or {} (a trusted URL)",
+            super::config::vars::DAPI_ADDRESSES,
+            super::config::vars::TRUSTED_CONTEXT_URL,
         ))
     })
 }
