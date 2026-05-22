@@ -997,12 +997,12 @@ Status by step (see §3.11 below for full step list):
   routed through canonical `ValueConvertible::from_object`.
 
 ### Phase F — Tighten
-- ✅ CI lint that fails on new `to_object` / `to_json` / `from_object` /
-  `from_json` / `into_object` inherent methods on rs-dpp types
-  (`scripts/lint/check_no_new_inherent_conversions.sh`, run from the
-  `tests-rs-workspace.yml` workflow alongside fmt/clippy). Snapshot
-  allowlist with 7 currently-tolerated exceptions (all context-aware
-  methods that take `platform_version`).
+- ⊘ CI lint that fails on new `to_object` / `to_json` / `from_object` /
+  `from_json` / `into_object` inherent methods on rs-dpp types — removed
+  after the last grandfathered passthroughs (`ExtendedDocument::to_json`,
+  `ExtendedDocument::to_json_object_for_validation`, `CreatedDataContract::from_object`)
+  were deleted. With zero remaining inherent conversion methods, the lint
+  has nothing to guard and is more friction than value.
 - ✅ Canonical-pattern reference doc:
   [docs/json-value-conversion-canonical-pattern.md](json-value-conversion-canonical-pattern.md).
   Covers the two traits, decision tree for derive vs hand-roll, tag-key

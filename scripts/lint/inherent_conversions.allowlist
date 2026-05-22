@@ -1,3 +1,0 @@
-packages/rs-dpp/src/data_contract/created_data_contract/mod.rs:    pub fn from_object(
-packages/rs-dpp/src/data_contract/created_data_contract/v0/mod.rs:    pub fn from_object(
-packages/rs-dpp/src/document/extended_document/mod.rs:    pub fn to_json(&self, _platform_version: &PlatformVersion) -> Result<JsonValue, ProtocolError> {

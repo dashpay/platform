@@ -1,12 +1,8 @@
-use dpp::document::{
-    DocumentV0Getters, DocumentV0Setters, ExtendedDocument, EXTENDED_DOCUMENT_IDENTIFIER_FIELDS,
-};
+use dpp::document::{DocumentV0Getters, DocumentV0Setters, ExtendedDocument};
 use serde_json::Value as JsonValue;
 
 use dpp::platform_value::{Bytes32, Value};
 use dpp::prelude::{Identifier, Revision, TimestampMillis};
-
-use dpp::util::json_value::JsonValueExt;
 
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::document::serialization_traits::ExtendedDocumentPlatformConversionMethodsV0;
@@ -21,14 +17,12 @@ use crate::buffer::Buffer;
 use crate::data_contract::DataContractWasm;
 #[allow(deprecated)] // BinaryType is unused in unused code below
 use crate::document::BinaryType;
-use crate::document::{ConversionOptions, DocumentWasm};
+use crate::document::DocumentWasm;
 use crate::errors::RustConversionError;
 use crate::identifier::{identifier_from_js_value, IdentifierWrapper};
-use crate::lodash::lodash_set;
 use crate::metadata::MetadataWasm;
 use crate::utils::{with_serde_to_platform_value, IntoWasm, ToSerdeJSONExt, WithJsError};
 use crate::validation::ValidationResultWasm;
-use crate::with_js_error;
 
 #[wasm_bindgen(js_name=ExtendedDocument)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -271,58 +265,6 @@ impl ExtendedDocumentWasm {
         });
 
         Ok(())
-    }
-
-    #[wasm_bindgen(js_name=toObject)]
-    pub fn to_object(&self, options: &JsValue) -> Result<JsValue, JsValue> {
-        let options: ConversionOptions = if !options.is_undefined() && options.is_object() {
-            let raw_options = options.with_serde_to_json_value()?;
-            serde_json::from_value(raw_options).with_js_error()?
-        } else {
-            Default::default()
-        };
-        let mut value = self.0.to_json_object_for_validation().with_js_error()?;
-
-        let document_type = self.0.document_type().with_js_error()?;
-
-        let identifier_paths = document_type.identifier_paths();
-        let binary_paths = document_type.binary_paths();
-
-        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        let js_value = value.serialize(&serializer)?;
-
-        for path in identifier_paths
-            .iter()
-            .map(|s| s.as_str())
-            .chain(EXTENDED_DOCUMENT_IDENTIFIER_FIELDS)
-        {
-            if let Ok(bytes) = value.remove_value_at_path_into::<Vec<u8>>(path) {
-                let buffer = Buffer::from_bytes_owned(bytes);
-                if !options.skip_identifiers_conversion {
-                    lodash_set(&js_value, path, buffer.into());
-                } else {
-                    let id = IdentifierWrapper::new(buffer.into());
-                    lodash_set(&js_value, path, id.into());
-                }
-            }
-        }
-
-        for path in binary_paths {
-            if let Ok(bytes) = value.remove_value_at_path_into::<Vec<u8>>(path) {
-                let buffer = Buffer::from_bytes(&bytes);
-                lodash_set(&js_value, path, buffer.into());
-            }
-        }
-
-        Ok(js_value)
-    }
-
-    #[wasm_bindgen(js_name=toJSON)]
-    pub fn to_json(&self) -> Result<JsValue, JsValue> {
-        let value = self.0.to_json(PlatformVersion::first()).with_js_error()?;
-        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-
-        with_js_error!(value.serialize(&serializer))
     }
 
     #[wasm_bindgen(js_name=toBuffer)]

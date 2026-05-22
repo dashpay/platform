@@ -350,17 +350,6 @@ impl ExtendedDocument {
         }
     }
 
-    /// Convert the extended document to a JSON object.
-    ///
-    /// Routes through canonical `JsonConvertible::to_json` (Phase D step
-    /// 8 slice A). `platform_version` is accepted for API compatibility
-    /// but isn't load-bearing — the canonical path uses serde directly.
-    #[cfg(feature = "json-conversion")]
-    pub fn to_json(&self, _platform_version: &PlatformVersion) -> Result<JsonValue, ProtocolError> {
-        use crate::serialization::JsonConvertible;
-        JsonConvertible::to_json(self)
-    }
-
     /// Convert the extended document to a pretty JSON object.
     ///
     /// This function is a passthrough to the `to_pretty_json` method.
@@ -411,16 +400,6 @@ impl ExtendedDocument {
     pub fn to_value(&self) -> Result<Value, ProtocolError> {
         match self {
             ExtendedDocument::V0(v0) => v0.to_value(),
-        }
-    }
-
-    /// Convert the extended document to a JSON object for validation.
-    ///
-    /// This function is a passthrough to the `to_json_object_for_validation` method.
-    #[cfg(feature = "json-conversion")]
-    pub fn to_json_object_for_validation(&self) -> Result<JsonValue, ProtocolError> {
-        match self {
-            ExtendedDocument::V0(v0) => v0.to_json_object_for_validation(),
         }
     }
 
@@ -671,30 +650,6 @@ mod test {
         assert_eq!(init_doc.id(), doc.id());
         assert_eq!(init_doc.data_contract_id(), doc.data_contract_id());
         assert_eq!(init_doc.owner_id(), doc.owner_id());
-    }
-
-    #[test]
-    fn test_to_object() {
-        init();
-        let dpns_contract =
-            load_system_data_contract(SystemDataContract::DPNS, LATEST_PLATFORM_VERSION).unwrap();
-        let document_json = get_data_from_file("src/tests/payloads/document_dpns.json").unwrap();
-        let document = ExtendedDocument::from_json_string(
-            &document_json,
-            dpns_contract,
-            LATEST_PLATFORM_VERSION,
-        )
-        .unwrap();
-        let document_object = document.to_json_object_for_validation().unwrap();
-
-        for property in IDENTIFIER_FIELDS {
-            let id = document_object
-                .get(property)
-                .unwrap()
-                .as_array()
-                .expect("the property must be an array");
-            assert_eq!(32, id.len())
-        }
     }
 
     #[test]

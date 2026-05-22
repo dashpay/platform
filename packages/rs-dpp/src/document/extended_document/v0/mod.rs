@@ -520,13 +520,6 @@ impl ExtendedDocumentV0 {
         Ok(self.to_map_value()?.into())
     }
 
-    #[cfg(feature = "json-conversion")]
-    pub fn to_json_object_for_validation(&self) -> Result<JsonValue, ProtocolError> {
-        self.to_value()?
-            .try_into_validating_json()
-            .map_err(ProtocolError::ValueError)
-    }
-
     pub fn hash(&self, platform_version: &PlatformVersion) -> Result<Vec<u8>, ProtocolError> {
         Ok(hash_double_to_vec(
             ExtendedDocumentPlatformConversionMethodsV0::serialize_to_bytes(
@@ -906,24 +899,6 @@ mod tests {
         assert!(
             json_data.is_object(),
             "properties_as_json_data should return a JSON object"
-        );
-    }
-
-    // ================================================================
-    //  to_json_object_for_validation
-    // ================================================================
-
-    #[test]
-    fn to_json_object_for_validation_returns_json_object() {
-        let platform_version = PlatformVersion::latest();
-        let (ext_doc, _) = make_extended_document(platform_version);
-
-        let json_obj = ext_doc
-            .to_json_object_for_validation()
-            .expect("to_json_object_for_validation should succeed");
-        assert!(
-            json_obj.is_object(),
-            "should return a JSON object for validation"
         );
     }
 
@@ -1616,8 +1591,8 @@ mod tests {
     }
 
     // ================================================================
-    //  to_json_object_for_validation fails gracefully when the document
-    //  type name is not in the contract.
+    //  to_pretty_json gracefully handles document_type_name that is not
+    //  in the contract (it doesn't look up the type).
     // ================================================================
 
     #[test]
