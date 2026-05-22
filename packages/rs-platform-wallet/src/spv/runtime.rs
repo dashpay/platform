@@ -103,9 +103,6 @@ impl SpvRuntime {
             .await
             .map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
 
-        let mut client = self.client.write().await;
-        let _ = client.take();
-
         Ok(())
     }
 
@@ -143,10 +140,16 @@ impl SpvRuntime {
             .as_ref()
             .ok_or(PlatformWalletError::SpvNotRunning)?;
 
-        client
+        let result = client
             .run()
             .await
-            .map_err(|e| PlatformWalletError::SpvError(e.to_string()))
+            .map_err(|e| PlatformWalletError::SpvError(e.to_string()));
+
+        drop(client_guard);
+        let mut client = self.client.write().await;
+        let _ = client.take();
+
+        result
     }
 
     /// Stop SPV sync gracefully.
