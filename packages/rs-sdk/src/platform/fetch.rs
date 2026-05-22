@@ -337,6 +337,7 @@ impl Fetch for drive_proof_verifier::types::DataContractHistory {
 }
 
 impl Fetch for drive_proof_verifier::types::DocumentHistory {
+    type Query = platform_proto::GetDocumentHistoryRequest;
     type Request = platform_proto::GetDocumentHistoryRequest;
 }
 

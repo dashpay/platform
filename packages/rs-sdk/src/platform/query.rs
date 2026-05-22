@@ -187,7 +187,11 @@ impl Query<proto::GetDataContractHistoryRequest> for LimitQuery<(Identifier, u64
 }
 
 impl Query<proto::GetDocumentHistoryRequest> for DocumentHistoryQuery {
-    fn query(self, prove: bool) -> Result<proto::GetDocumentHistoryRequest, Error> {
+    fn query(
+        &self,
+        settings: &crate::platform::QuerySettings<'_>,
+    ) -> Result<proto::GetDocumentHistoryRequest, Error> {
+        let prove = settings.prove;
         if !prove {
             unimplemented!("queries without proofs are not supported yet");
         }
@@ -196,7 +200,7 @@ impl Query<proto::GetDocumentHistoryRequest> for DocumentHistoryQuery {
             version: Some(proto::get_document_history_request::Version::V0(
                 proto::get_document_history_request::GetDocumentHistoryRequestV0 {
                     data_contract_id: self.data_contract_id.to_vec(),
-                    document_type_name: self.document_type_name,
+                    document_type_name: self.document_type_name.clone(),
                     document_id: self.document_id.to_vec(),
                     limit: self.limit,
                     offset: self.offset,

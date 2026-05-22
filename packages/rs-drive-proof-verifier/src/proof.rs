@@ -1501,7 +1501,7 @@ impl FromProof<platform::GetDocumentHistoryRequest> for DocumentHistory {
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
         Ok((
-            maybe_history.map(IndexMap::from_iter),
+            maybe_history.and_then(|history| IndexMap::from_iter(history).into_option()),
             mtd.clone(),
             proof.clone(),
         ))
@@ -3300,6 +3300,86 @@ mod tests {
         PlatformVersion::latest()
     }
 
+    struct NoDataContractProvider;
+
+    impl dash_context_provider::ContextProvider for NoDataContractProvider {
+        fn get_data_contract(
+            &self,
+            _id: &dpp::prelude::Identifier,
+            _platform_version: &PlatformVersion,
+        ) -> Result<Option<std::sync::Arc<DataContract>>, dash_context_provider::ContextProviderError>
+        {
+            Ok(None)
+        }
+
+        fn get_token_configuration(
+            &self,
+            _token_id: &dpp::prelude::Identifier,
+        ) -> Result<
+            Option<dpp::data_contract::TokenConfiguration>,
+            dash_context_provider::ContextProviderError,
+        > {
+            panic!("token configuration should not be requested")
+        }
+
+        fn get_quorum_public_key(
+            &self,
+            _quorum_type: u32,
+            _quorum_hash: [u8; 32],
+            _core_chain_locked_height: u32,
+        ) -> Result<[u8; 48], dash_context_provider::ContextProviderError> {
+            panic!("quorum public key should not be requested")
+        }
+
+        fn get_platform_activation_height(
+            &self,
+        ) -> Result<dpp::prelude::CoreBlockHeight, dash_context_provider::ContextProviderError>
+        {
+            panic!("platform activation height should not be requested")
+        }
+    }
+
+    struct StaticDataContractProvider {
+        data_contract: std::sync::Arc<DataContract>,
+    }
+
+    impl dash_context_provider::ContextProvider for StaticDataContractProvider {
+        fn get_data_contract(
+            &self,
+            _id: &dpp::prelude::Identifier,
+            _platform_version: &PlatformVersion,
+        ) -> Result<Option<std::sync::Arc<DataContract>>, dash_context_provider::ContextProviderError>
+        {
+            Ok(Some(self.data_contract.clone()))
+        }
+
+        fn get_token_configuration(
+            &self,
+            _token_id: &dpp::prelude::Identifier,
+        ) -> Result<
+            Option<dpp::data_contract::TokenConfiguration>,
+            dash_context_provider::ContextProviderError,
+        > {
+            panic!("token configuration should not be requested")
+        }
+
+        fn get_quorum_public_key(
+            &self,
+            _quorum_type: u32,
+            _quorum_hash: [u8; 32],
+            _core_chain_locked_height: u32,
+        ) -> Result<[u8; 48], dash_context_provider::ContextProviderError> {
+            panic!("quorum public key should not be requested")
+        }
+
+        fn get_platform_activation_height(
+            &self,
+        ) -> Result<dpp::prelude::CoreBlockHeight, dash_context_provider::ContextProviderError>
+        {
+            panic!("platform activation height should not be requested")
+        }
+    }
+
     /// Build a fully-populated `GetIdentityResponse` shell so that
     /// `response.proof()` and `response.metadata()` both succeed. The
     /// enclosed proof is empty, so any real verification would fail — but
@@ -3314,6 +3394,56 @@ mod tests {
                 metadata: Some(ResponseMetadata::default()),
             })),
         }
+    }
+
+    fn document_history_response_with_proof_and_metadata() -> platform::GetDocumentHistoryResponse {
+        use platform::get_document_history_response::{
+            get_document_history_response_v0::Result as V0Result, GetDocumentHistoryResponseV0,
+            Version,
+        };
+        platform::GetDocumentHistoryResponse {
+            version: Some(Version::V0(GetDocumentHistoryResponseV0 {
+                result: Some(V0Result::Proof(Proof::default())),
+                metadata: Some(ResponseMetadata::default()),
+            })),
+        }
+    }
+
+    fn document_history_request(
+        data_contract_id: Vec<u8>,
+        document_type_name: &str,
+        document_id: Vec<u8>,
+        limit: Option<u32>,
+        offset: Option<u32>,
+    ) -> platform::GetDocumentHistoryRequest {
+        use dapi_grpc::platform::v0::get_document_history_request::GetDocumentHistoryRequestV0;
+        GetDocumentHistoryRequestV0 {
+            data_contract_id,
+            document_type_name: document_type_name.to_string(),
+            document_id,
+            limit,
+            offset,
+            start_at_ms: 0,
+            prove: true,
+        }
+        .into()
+    }
+
+    fn document_history_error(
+        request: platform::GetDocumentHistoryRequest,
+        response: platform::GetDocumentHistoryResponse,
+        provider: &dyn ContextProvider,
+    ) -> Error {
+        <DocumentHistory as FromProof<
+            platform::GetDocumentHistoryRequest,
+        >>::maybe_from_proof_with_metadata(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            provider,
+        )
+        .unwrap_err()
     }
 
     #[test]
@@ -4747,6 +4877,121 @@ mod tests {
         )
         .unwrap_err();
         assert!(matches!(err, Error::RequestError { .. }), "got: {err:?}");
+    }
+
+    #[test]
+    fn document_history_no_proof_when_response_empty() {
+        let request = platform::GetDocumentHistoryRequest::default();
+        let response = platform::GetDocumentHistoryResponse::default();
+        let provider = unreachable_provider();
+
+        let err = document_history_error(request, response, &provider);
+
+        assert!(matches!(err, Error::NoProofInResult), "got: {err:?}");
+    }
+
+    #[test]
+    fn document_history_empty_response_metadata() {
+        use platform::get_document_history_response::{
+            get_document_history_response_v0::Result as V0Result, GetDocumentHistoryResponseV0,
+            Version,
+        };
+        let request = platform::GetDocumentHistoryRequest::default();
+        let response = platform::GetDocumentHistoryResponse {
+            version: Some(Version::V0(GetDocumentHistoryResponseV0 {
+                result: Some(V0Result::Proof(Proof::default())),
+                metadata: None,
+            })),
+        };
+        let provider = unreachable_provider();
+
+        let err = document_history_error(request, response, &provider);
+
+        assert!(matches!(err, Error::EmptyResponseMetadata), "got: {err:?}");
+    }
+
+    #[test]
+    fn document_history_empty_version() {
+        let request = platform::GetDocumentHistoryRequest { version: None };
+        let response = document_history_response_with_proof_and_metadata();
+        let provider = unreachable_provider();
+
+        let err = document_history_error(request, response, &provider);
+
+        assert!(matches!(err, Error::EmptyVersion), "got: {err:?}");
+    }
+
+    #[test]
+    fn document_history_rejects_bad_contract_id_length() {
+        let request =
+            document_history_request(vec![0u8; 5], "niceDocument", vec![1u8; 32], None, None);
+        let response = document_history_response_with_proof_and_metadata();
+        let provider = unreachable_provider();
+
+        let err = document_history_error(request, response, &provider);
+
+        assert!(matches!(err, Error::ProtocolError { .. }), "got: {err:?}");
+    }
+
+    #[test]
+    fn document_history_rejects_bad_document_id_length() {
+        let request =
+            document_history_request(vec![0u8; 32], "niceDocument", vec![1u8; 5], None, None);
+        let response = document_history_response_with_proof_and_metadata();
+        let provider = unreachable_provider();
+
+        let err = document_history_error(request, response, &provider);
+
+        assert!(matches!(err, Error::ProtocolError { .. }), "got: {err:?}");
+    }
+
+    #[test]
+    fn document_history_rejects_overflowing_limit() {
+        let request = document_history_request(
+            vec![0u8; 32],
+            "niceDocument",
+            vec![1u8; 32],
+            Some(100_000),
+            None,
+        );
+        let response = document_history_response_with_proof_and_metadata();
+        let provider = unreachable_provider();
+
+        let err = document_history_error(request, response, &provider);
+
+        assert!(matches!(err, Error::RequestError { .. }), "got: {err:?}");
+    }
+
+    #[test]
+    fn document_history_returns_not_found_when_contract_provider_misses() {
+        let request =
+            document_history_request(vec![0u8; 32], "niceDocument", vec![1u8; 32], None, None);
+        let response = document_history_response_with_proof_and_metadata();
+        let provider = NoDataContractProvider;
+
+        let err = document_history_error(request, response, &provider);
+
+        assert!(matches!(err, Error::NotFound), "got: {err:?}");
+    }
+
+    #[test]
+    fn document_history_rejects_unknown_document_type() {
+        let data_contract = dpp::tests::fixtures::get_data_contract_fixture(
+            None,
+            0,
+            default_platform_version().protocol_version,
+        )
+        .data_contract_owned();
+        let provider = StaticDataContractProvider {
+            data_contract: std::sync::Arc::new(data_contract),
+        };
+        let request =
+            document_history_request(vec![0u8; 32], "missingDocument", vec![1u8; 32], None, None);
+        let response = document_history_response_with_proof_and_metadata();
+
+        let err = document_history_error(request, response, &provider);
+
+        assert!(matches!(err, Error::ProtocolError { .. }), "got: {err:?}");
     }
 
     #[test]
