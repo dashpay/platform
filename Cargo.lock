@@ -4948,7 +4948,7 @@ dependencies = [
 
 [[package]]
 name = "platform-wallet-storage"
-version = "3.1.0-dev.1"
+version = "3.1.0-dev.5"
 dependencies = [
  "assert_cmd",
  "barrel",
