@@ -618,7 +618,7 @@ where
         .transfer(
             super::wallet_factory::DEFAULT_ACCOUNT_INDEX_PUB,
             InputSelection::Explicit(inputs),
-            outputs,
+            outputs.into_iter().collect(),
             fee_strategy,
             Some(platform_version),
             signer,

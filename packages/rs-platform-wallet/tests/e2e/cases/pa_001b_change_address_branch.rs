@@ -94,7 +94,7 @@ async fn pa_001b_change_address_branch_subcase_a() {
         .transfer_with_change_address(
             default_account_index(),
             InputSelection::Explicit(inputs),
-            user_outputs,
+            user_outputs.into_iter().collect(),
             None, // implicit-change branch
             default_fee_strategy_for_test(),
             Some(dpp::version::PlatformVersion::latest()),
@@ -192,7 +192,7 @@ async fn pa_001b_change_address_branch_subcase_b() {
         .transfer_with_change_address(
             default_account_index(),
             InputSelection::Explicit(inputs),
-            user_outputs,
+            user_outputs.into_iter().collect(),
             Some(change_addr),
             default_fee_strategy_for_test(),
             Some(dpp::version::PlatformVersion::latest()),

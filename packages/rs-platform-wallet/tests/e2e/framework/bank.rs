@@ -498,7 +498,7 @@ impl BankWallet {
                     .transfer(
                         DEFAULT_ACCOUNT_INDEX_PUB,
                         InputSelection::Auto,
-                        outputs,
+                        outputs.into_iter().collect(),
                         bank_fee_strategy(),
                         Some(PlatformVersion::latest()),
                         &self.signer,
@@ -1018,6 +1018,8 @@ mod tests {
         // same empty input pool.
         let err = PlatformWalletError::OnlyOutputAddressesFunded {
             funded_outputs: vec![],
+            sub_min_count: 0,
+            sub_min_aggregate: 0,
             min_input_amount: 0,
         };
         assert!(
