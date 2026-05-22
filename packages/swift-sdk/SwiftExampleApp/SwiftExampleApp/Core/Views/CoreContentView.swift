@@ -8,6 +8,10 @@ struct CoreContentView: View {
     @EnvironmentObject var appUIState: AppUIState
     @EnvironmentObject var platformBalanceSyncService: PlatformBalanceSyncService
     @EnvironmentObject var shieldedService: ShieldedService
+    /// Threaded into `ShieldedService.clearLocalState(modelContext:)`
+    /// so the Clear button can scope its delete-by-predicate to
+    /// the bound wallet's persisted rows.
+    @Environment(\.modelContext) private var modelContext
     @State private var showProofDetail = false
     @State private var masternodesEnabled: Bool = true
     @State private var platformSyncExpanded: Bool = false
@@ -420,36 +424,13 @@ var body: some View {
                         Spacer()
                     }
 
-                    // Shielded balance
-                    HStack {
-                        Text("Shielded Balance")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                        Spacer()
-                        if shieldedService.shieldedBalance > 0 {
-                            Text(formatCredits(shieldedService.shieldedBalance))
-                                .font(.subheadline)
-                                .fontWeight(.medium)
-                        } else {
-                            Text("0")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-
-                    // Orchard address
-                    if let address = shieldedService.orchardDisplayAddress {
-                        HStack {
-                            Text("Orchard Address")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                            Spacer()
-                            Text(address.prefix(12) + "..." + address.suffix(8))
-                                .font(.caption)
-                                .fontWeight(.medium)
-                                .foregroundColor(.purple)
-                        }
-                    }
+                    // Aggregate shielded balance + notes-synced
+                    // watermark across every wallet/account on disk.
+                    // Read straight from SwiftData (network-wide, no
+                    // wallet scoping) so the figures survive restart
+                    // and reflect the whole pool rather than a single
+                    // bound wallet.
+                    ShieldedNetworkSummaryRows(walletIds: walletIdsOnNetwork)
 
                     // Sync counters since launch — `total_scanned`
                     // is the wire-level encrypted-note count (every
@@ -512,10 +493,35 @@ var body: some View {
                         .buttonStyle(.borderedProminent)
                         .tint(.purple)
                         .controlSize(.mini)
-                        .disabled(shieldedService.isSyncing)
+                        // Disabled while a sync is in flight, and
+                        // pre-first-bind when there are no stashed
+                        // credentials to resume from. Post-Clear
+                        // is *not* disabled — `manualSync` rebinds
+                        // on demand from the credentials kept by
+                        // `clearLocalState`, so the user has a
+                        // path back to a synced state without
+                        // having to navigate away.
+                        .disabled(shieldedService.isSyncing || !shieldedService.canResume)
 
                         Button {
-                            shieldedService.reset()
+                            // Stop the manager-wide shielded sync
+                            // loop, then wipe every wallet's
+                            // persisted shielded rows (notes +
+                            // sync state). The Swift mirror zeros
+                            // out and the service goes unbound,
+                            // but the bind credentials are kept
+                            // so the user can tap Sync Now to
+                            // self-rebind from this screen — no
+                            // navigation detour required. The
+                            // on-disk SQLite tree is intentionally
+                            // NOT deleted (Rust still holds its
+                            // handle open via FileBackedShieldedStore;
+                            // see clearLocalState's doc).
+                            Task {
+                                await shieldedService.clearLocalState(
+                                    modelContext: modelContext
+                                )
+                            }
                         } label: {
                             Text("Clear")
                                 .font(.caption)
@@ -524,6 +530,16 @@ var body: some View {
                         .buttonStyle(.borderedProminent)
                         .tint(.red)
                         .controlSize(.mini)
+                        // Gated on `isSyncing` to close the
+                        // double-tap window where the user could
+                        // hit Clear *while* a sync is in flight.
+                        // `clearLocalState` calls
+                        // `stopShieldedSync()` first, but stop is
+                        // best-effort and the persister callback
+                        // can still drain rows into SwiftData
+                        // between our delete and the loop
+                        // actually quiescing.
+                        .disabled(shieldedService.isSyncing)
                     }
                 }
                 .padding(.vertical, 4)
@@ -783,11 +799,25 @@ struct WalletRowView: View {
     /// addresses (no identities) showed "Empty".
     @Query private var addressBalances: [PersistentPlatformAddress]
 
+    /// Per-wallet unspent shielded notes. Same persisted-truth
+    /// source as the Sync Status diagnostic — sum of `value` over
+    /// unspent rows for this wallet, in credits. Without this the
+    /// wallet row's combined DASH total under-reported the wallet's
+    /// real value by every shielded note: a wallet with funds in
+    /// the shielded pool would show Core + Platform on the list but
+    /// silently exclude Shielded.
+    @Query private var shieldedNotes: [PersistentShieldedNote]
+
     init(wallet: PersistentWallet) {
         self.wallet = wallet
         let walletId = wallet.walletId
         _addressBalances = Query(
             filter: #Predicate<PersistentPlatformAddress> { $0.walletId == walletId }
+        )
+        _shieldedNotes = Query(
+            filter: #Predicate<PersistentShieldedNote> {
+                $0.walletId == walletId && !$0.isSpent
+            }
         )
     }
 
@@ -836,12 +866,20 @@ struct WalletRowView: View {
         totals.confirmed + totals.unconfirmed + totals.immature + totals.locked
     }
 
+    /// Sum of unspent shielded note values in credits. Same scale
+    /// as `platformBalance` (1e11 credits/DASH), so it folds into
+    /// the same divisor in [`combinedDashAmount(coreTotal:)`].
+    private var shieldedBalance: UInt64 {
+        shieldedNotes.reduce(UInt64(0)) { $0 + $1.value }
+    }
+
     /// Combined wallet balance expressed in DASH for a precomputed
-    /// totals tuple. Core uses 1e8 duffs/DASH; Platform uses 1e11
-    /// credits/DASH.
+    /// totals tuple. Core uses 1e8 duffs/DASH; Platform and Shielded
+    /// both use 1e11 credits/DASH.
     private func combinedDashAmount(coreTotal: UInt64) -> Double {
         Double(coreTotal) / 100_000_000.0
             + Double(platformBalance) / 100_000_000_000.0
+            + Double(shieldedBalance) / 100_000_000_000.0
     }
 
     private var walletIdShort: String {
@@ -921,7 +959,7 @@ struct WalletRowView: View {
         // re-invoking the accessor.
         let core = coreBalanceTotals()
         let coreTotal = Self.sumCoreBalance(core)
-        let hasAny = coreTotal > 0 || platformBalance > 0
+        let hasAny = coreTotal > 0 || platformBalance > 0 || shieldedBalance > 0
         return VStack(alignment: .leading, spacing: 6) {
             // Header: label (+ status badges) and total Core balance.
             HStack(alignment: .firstTextBaseline) {
@@ -1175,5 +1213,101 @@ extension CoreContentView {
             return "\(formatted) DASH"
         }
         return String(format: "%.8f DASH", dash)
+    }
+}
+
+// MARK: - ShieldedNetworkSummaryRows
+
+/// Network-wide shielded summary: aggregate unspent balance and the
+/// notes-synced watermark across every wallet/account **on the active
+/// network**.
+///
+/// Both figures are read **directly from SwiftData** (scoped to the
+/// active network via `walletIds`) rather than from the
+/// `ShieldedService.shieldedBalance` mirror that's updated
+/// per-bound-wallet from sync events, so they survive restart and
+/// reflect the whole on-network pool:
+///
+///   * **Total Shielded Balance** — sum of `value` over every unspent
+///     `PersistentShieldedNote` whose wallet is on this network.
+///
+///   * **Notes Synced** — the highest `lastSyncedIndex` across this
+///     network's `PersistentShieldedSyncState` rows. The Orchard
+///     commitment tree is chain-wide and shared by every wallet/account
+///     **on a given network**, so each subwallet advances toward the
+///     same tip; the max is the furthest-scanned position and climbs as
+///     sync progresses. Scoping matters: trees are per-chain, so a
+///     `max()` across networks would blend unrelated tip positions.
+private struct ShieldedNetworkSummaryRows: View {
+    /// Wallet ids on the active network. Both queries are filtered
+    /// against this so a multi-network install (e.g. regtest + testnet)
+    /// doesn't blend balances or take a watermark `max()` across
+    /// unrelated per-chain commitment trees — matching the Platform
+    /// Sync Status section's `walletIdsOnNetwork` scoping.
+    let walletIds: Set<Data>
+
+    @Query private var allNotes: [PersistentShieldedNote]
+    @Query private var syncStates: [PersistentShieldedSyncState]
+
+    /// Sum of `value` over this network's unspent notes, in credits.
+    private var totalUnspentCredits: UInt64 {
+        allNotes.lazy
+            .filter { !$0.isSpent && walletIds.contains($0.walletId) }
+            .reduce(UInt64(0)) { $0 &+ $1.value }
+    }
+
+    /// Furthest-scanned commitment-tree index across this network's subwallets.
+    private var notesSynced: UInt64 {
+        syncStates.lazy
+            .filter { walletIds.contains($0.walletId) }
+            .map(\.lastSyncedIndex)
+            .max() ?? 0
+    }
+
+    /// 1 DASH = 100,000,000,000 credits — matches `formatCredits`.
+    private func formatCredits(_ credits: UInt64) -> String {
+        let dash = Double(credits) / 100_000_000_000.0
+        let formatter = NumberFormatter()
+        formatter.minimumFractionDigits = 0
+        formatter.maximumFractionDigits = 8
+        formatter.numberStyle = .decimal
+        formatter.groupingSeparator = ","
+        formatter.decimalSeparator = "."
+        if let formatted = formatter.string(from: NSNumber(value: dash)) {
+            return "\(formatted) DASH"
+        }
+        return String(format: "%.4f DASH", dash)
+    }
+
+    var body: some View {
+        VStack(spacing: 8) {
+            // Aggregate unspent balance across all wallets.
+            HStack {
+                Text("Total Shielded Balance")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                Spacer()
+                if totalUnspentCredits > 0 {
+                    Text(formatCredits(totalUnspentCredits))
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                } else {
+                    Text("0")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            // Notes-synced watermark — climbs as sync progresses.
+            HStack {
+                Text("Notes Synced")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                Spacer()
+                Text(notesSynced, format: .number)
+                    .font(.system(.caption, design: .monospaced))
+                    .fontWeight(.medium)
+            }
+        }
     }
 }

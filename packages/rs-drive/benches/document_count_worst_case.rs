@@ -2141,6 +2141,14 @@ fn display_query_items(items: &[grovedb::QueryItem]) -> String {
                 "AggregateCountOnRange({})",
                 display_query_items(std::slice::from_ref(inner))
             ),
+            QueryItem::AggregateSumOnRange(inner) => format!(
+                "AggregateSumOnRange({})",
+                display_query_items(std::slice::from_ref(inner))
+            ),
+            QueryItem::AggregateCountAndSumOnRange(inner) => format!(
+                "AggregateCountAndSumOnRange({})",
+                display_query_items(std::slice::from_ref(inner))
+            ),
         })
         .collect();
     format!("[{}]", pieces.join(", "))

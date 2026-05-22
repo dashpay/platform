@@ -1,6 +1,7 @@
 use crate::error::Error;
 
 use crate::platform_types::platform::PlatformRef;
+use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
 
 use dpp::prelude::ConsensusValidationResult;
@@ -100,6 +101,7 @@ impl IdentityUpdateStateTransitionStateValidationV0 for IdentityUpdateTransition
                 self.identity_id(),
                 self.public_keys_to_add(),
                 drive,
+                platform.state.last_committed_block_epoch_ref(),
                 tx,
                 &mut state_transition_execution_context,
                 platform_version,

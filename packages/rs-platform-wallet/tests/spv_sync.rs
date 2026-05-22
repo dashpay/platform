@@ -182,7 +182,12 @@ async fn test_spv_sync_and_balance() {
     let seed_bytes = mnemonic.to_seed("");
 
     let platform_wallet = manager
-        .create_wallet_from_seed_bytes(network, seed_bytes, WalletAccountCreationOptions::Default)
+        .create_wallet_from_seed_bytes(
+            network,
+            seed_bytes,
+            WalletAccountCreationOptions::Default,
+            None,
+        )
         .await
         .expect("Failed to create platform wallet");
 

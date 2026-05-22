@@ -18,6 +18,10 @@ pub mod merge;
 pub mod platform_address_sync_start_state;
 #[cfg(feature = "serde")]
 pub mod serde_adapters;
+#[cfg(feature = "shielded")]
+pub mod shielded_changeset;
+#[cfg(feature = "shielded")]
+pub mod shielded_sync_start_state;
 pub mod traits;
 
 pub use changeset::{
@@ -33,4 +37,8 @@ pub use core_bridge::spawn_wallet_event_adapter;
 pub use identity_manager_start_state::IdentityManagerStartState;
 pub use merge::Merge;
 pub use platform_address_sync_start_state::PlatformAddressSyncStartState;
+#[cfg(feature = "shielded")]
+pub use shielded_changeset::ShieldedChangeSet;
+#[cfg(feature = "shielded")]
+pub use shielded_sync_start_state::{ShieldedSubwalletStartState, ShieldedSyncStartState};
 pub use traits::{PersistenceError, PlatformWalletPersistence};
