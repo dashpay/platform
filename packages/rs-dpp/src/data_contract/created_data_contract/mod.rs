@@ -192,7 +192,6 @@ impl CreatedDataContract {
             }),
         }
     }
-
 }
 
 impl CreatedDataContractInSerializationFormat {
