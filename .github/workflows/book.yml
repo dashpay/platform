@@ -7,6 +7,12 @@ on:
     paths:
       - 'book/**'
       - 'docs/**'
+      - 'package.json'
+      - 'yarn.lock'
+      - '.yarnrc.yml'
+      - '.pnp.cjs'
+      - '.pnp.loader.mjs'
+      - '.yarn/releases/**'
       - 'Cargo.toml'
       - 'packages/**/Cargo.toml'
       - 'packages/**/*.rs'
