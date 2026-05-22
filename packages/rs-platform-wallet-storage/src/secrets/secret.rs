@@ -51,9 +51,9 @@ const DEFAULT_CAPACITY: usize = 4096;
 /// [`expose_secret`] only, and equality goes through
 /// [`subtle::ConstantTimeEq`] (Smythe EDIT-4 — `==` on secret bytes is
 /// forbidden, no exception, so future bridge code cannot inherit a
-/// non-constant-time path). `Debug` is redacted. The backing buffer is
-/// wiped over its full capacity on drop and best-effort `mlock`ed
-/// against swap.
+/// non-constant-time path). `Debug` is redacted. `Zeroizing<String>`
+/// wipes the buffer over its full capacity on drop; the buffer is
+/// best-effort `mlock`ed against swap.
 ///
 /// [`expose_secret`]: SecretString::expose_secret
 ///
@@ -64,6 +64,9 @@ const DEFAULT_CAPACITY: usize = 4096;
 /// let _ = a == b; // EDIT-4: `==` on SecretString is forbidden; use ConstantTimeEq::ct_eq
 /// ```
 pub struct SecretString {
+    // Field order is load-bearing: `inner` drops (and `Zeroizing` wipes
+    // it) before `_lock` releases the page, so the buffer is wiped while
+    // still mlock'ed.
     inner: Zeroizing<String>,
     _lock: Option<region::LockGuard>,
 }
@@ -113,23 +116,6 @@ impl SecretString {
     /// keeping the trimmed copy inside the wrapper.
     pub fn trimmed(&self) -> Self {
         Self::new(self.inner.trim().to_string())
-    }
-}
-
-impl Drop for SecretString {
-    fn drop(&mut self) {
-        let ptr = self.inner.as_mut_ptr();
-        let cap = self.inner.capacity();
-        if cap > 0 {
-            // SAFETY: `ptr` is the `String`'s allocation, valid and
-            // uniquely borrowed for `cap` bytes during drop. We only
-            // write zeros within `[0, cap)`. This wipes the bytes in
-            // `[len, cap)` that `Zeroizing<String>` (which clears only
-            // `0..len`) would miss.
-            #[allow(unsafe_code)]
-            let slice = unsafe { std::slice::from_raw_parts_mut(ptr, cap) };
-            slice.zeroize();
-        }
     }
 }
 
@@ -200,26 +186,36 @@ impl From<&str> for SecretString {
 /// let _ = a == b; // EDIT-4: `==` on SecretBytes is forbidden; use ConstantTimeEq::ct_eq
 /// ```
 pub struct SecretBytes {
+    // Field order is load-bearing: `inner` drops (and `Zeroizing` wipes
+    // it) before `_lock` releases the page, so the buffer is wiped while
+    // still mlock'ed.
     inner: Zeroizing<Vec<u8>>,
     _lock: Option<region::LockGuard>,
 }
 
 impl SecretBytes {
-    /// Wrap a byte vector, zeroizing the source, best-effort `mlock`ing
-    /// the wrapped buffer.
-    pub fn new(mut bytes: Vec<u8>) -> Self {
-        // `region::lock` rejects a 0-length region (EINVAL), so an empty
-        // `SecretBytes` still locks one page — do not "harmonize" with
-        // `SecretString` and drop the `.max(1)`.
-        let lock = region::lock(bytes.as_ptr(), bytes.capacity().max(1))
-            .map_err(|e| {
-                tracing::debug!("mlock failed for SecretBytes: {e}");
-                e
-            })
-            .ok();
-        let inner = Zeroizing::new(std::mem::take(&mut bytes));
-        bytes.zeroize();
-        Self { inner, _lock: lock }
+    /// Wrap a byte vector, moving it into the wrapper and best-effort
+    /// `mlock`ing the buffer.
+    pub fn new(bytes: Vec<u8>) -> Self {
+        // Lock only a non-empty allocation: an empty `Vec`'s `as_ptr()`
+        // is dangling, and `region::lock` rejects a 0-length region.
+        let lock = if bytes.capacity() > 0 {
+            region::lock(bytes.as_ptr(), bytes.capacity())
+                .map_err(|e| {
+                    tracing::debug!("mlock failed for SecretBytes: {e}");
+                    e
+                })
+                .ok()
+        } else {
+            None
+        };
+        // The move transfers ownership of the allocation into
+        // `Zeroizing`; the source buffer is not copied, so there is
+        // nothing left behind to wipe.
+        Self {
+            inner: Zeroizing::new(bytes),
+            _lock: lock,
+        }
     }
 
     /// A zeroed buffer of `len` bytes, best-effort `mlock`ed — for
@@ -322,6 +318,19 @@ mod tests {
         assert_eq!(b.len(), 3);
         let z = SecretBytes::zeroed(4);
         assert_eq!(z.expose_secret(), &[0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn empty_secret_bytes_constructs_without_mlocking_dangling_ptr() {
+        // A capacity-0 `Vec` has a dangling `as_ptr()`; `new` must not
+        // pass it to `region::lock`. Constructing must not panic and the
+        // wrapper must round-trip as empty.
+        let b = SecretBytes::new(Vec::new());
+        assert!(b.is_empty());
+        assert_eq!(b.len(), 0);
+        assert_eq!(b.expose_secret(), &[] as &[u8]);
+        let z = SecretBytes::zeroed(0);
+        assert!(z.is_empty());
     }
 
     #[test]
