@@ -98,8 +98,12 @@ unwrapped copy is allocated.
   on headless / unknown OS (SEC-REQ-2.1.3 / AR-4) — never a silent
   plaintext fallback. Through `SecretStore`, keyring failures project to
   `FileStoreError::OsKeyring { kind }`, a non-secret discriminant.
-- **`MemoryCredentialStore`** — gated behind `__secrets-test-helpers`;
-  unreachable from production builds.
+- **Tests** — integration tests construct a tempdir-backed
+  `EncryptedFileStore` directly via
+  `EncryptedFileStore::open(tempfile::tempdir()?.path(), SecretString::new("..."))`,
+  or use the public `SecretStore::file(dir.path(), passphrase)` constructor.
+  No special feature flag is required; both are available under the default
+  `secrets` feature.
 
 Backend selection is an explicit operator decision; there is no
 automatic fallback between backends.
