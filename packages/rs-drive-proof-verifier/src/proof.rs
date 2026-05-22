@@ -3346,11 +3346,15 @@ mod tests {
     impl dash_context_provider::ContextProvider for StaticDataContractProvider {
         fn get_data_contract(
             &self,
-            _id: &dpp::prelude::Identifier,
+            id: &dpp::prelude::Identifier,
             _platform_version: &PlatformVersion,
         ) -> Result<Option<std::sync::Arc<DataContract>>, dash_context_provider::ContextProviderError>
         {
-            Ok(Some(self.data_contract.clone()))
+            if self.data_contract.id() == *id {
+                Ok(Some(self.data_contract.clone()))
+            } else {
+                Ok(None)
+            }
         }
 
         fn get_token_configuration(
@@ -4982,11 +4986,12 @@ mod tests {
             default_platform_version().protocol_version,
         )
         .data_contract_owned();
+        let contract_id = data_contract.id().to_vec();
         let provider = StaticDataContractProvider {
             data_contract: std::sync::Arc::new(data_contract),
         };
         let request =
-            document_history_request(vec![0u8; 32], "missingDocument", vec![1u8; 32], None, None);
+            document_history_request(contract_id, "missingDocument", vec![1u8; 32], None, None);
         let response = document_history_response_with_proof_and_metadata();
 
         let err = document_history_error(request, response, &provider);
