@@ -26,8 +26,19 @@ pub mod vars {
     /// Comma-separated list of DAPI addresses overriding the
     /// network default.
     pub const DAPI_ADDRESSES: &str = "PLATFORM_WALLET_E2E_DAPI_ADDRESSES";
-    /// Minimum bank balance (credits) required at startup.
+    /// Minimum bank balance (credits) required at startup. Alias of the
+    /// PLATFORM account-type floor used by the fund planner; kept under
+    /// the historic name for behaviour preservation.
     pub const MIN_BANK_CREDITS: &str = "PLATFORM_WALLET_E2E_MIN_BANK_CREDITS";
+    /// Minimum bank-identity balance (credits) the fund planner keeps as
+    /// fee headroom for the Platform→Core relay. Unset →
+    /// [`DEFAULT_MIN_IDENTITY_CREDITS`].
+    pub const MIN_IDENTITY_CREDITS: &str = "PLATFORM_WALLET_E2E_MIN_IDENTITY_CREDITS";
+    /// Minimum bank shielded-pool balance (credits) the fund planner
+    /// pre-funds via a Platform→Shielded shield (E4). Unset →
+    /// [`DEFAULT_MIN_SHIELDED_CREDITS`] (non-zero, on by default). Set to
+    /// `0` to opt out and skip the prover warm-up.
+    pub const MIN_SHIELDED_CREDITS: &str = "PLATFORM_WALLET_E2E_MIN_SHIELDED_CREDITS";
     /// Workdir base path; slot fallback adds `-N` suffixes.
     pub const WORKDIR: &str = "PLATFORM_WALLET_E2E_WORKDIR";
     /// Optional override for the trusted HTTP context provider URL.
@@ -114,6 +125,28 @@ pub const DEFAULT_BANK_CORE_GATE_TIMEOUT: Duration = Duration::from_secs(180);
 /// Platform address shown in the message to at least this value.
 pub const DEFAULT_MIN_BANK_CREDITS: u64 = 500_000_000;
 
+/// Default minimum bank-identity balance (credits).
+///
+/// 30M = the `BANK_IDENTITY_DRAIN_FEE_RESERVE` the drain helper already
+/// leaves behind; the bank identity is normally drained to Platform and
+/// only needs enough headroom to pay its own transition fees when used as
+/// the Platform→Core relay. Below this the top-up→withdraw chain can
+/// starve on fees.
+pub const DEFAULT_MIN_IDENTITY_CREDITS: Credits = 30_000_000;
+
+/// Default minimum bank shielded-pool balance (credits) — **non-zero, on
+/// by default** (user decision: shielded is pre-funded unless explicitly
+/// disabled).
+///
+/// 500M ≈ 5 tDASH-equivalent: enough for several shield → unshield /
+/// shielded-transfer cycles plus the per-transition Orchard proof fees a
+/// shielded setup suite needs, while staying a small fraction of the
+/// default Platform working balance. Set
+/// [`vars::MIN_SHIELDED_CREDITS`] to `0` to opt out and skip the
+/// prover warm-up entirely. When the prover/coordinator isn't configured
+/// the planner WARNs and skips rather than hanging on proof generation.
+pub const DEFAULT_MIN_SHIELDED_CREDITS: Credits = 500_000_000;
+
 /// Informational floor for the token test suite.
 ///
 /// Token tests (12+ cases, 1-3 identities each) cost ~35B credits per setup.
@@ -143,8 +176,16 @@ pub struct Config {
     /// Optional DAPI address overrides; empty means use the
     /// network default list.
     pub dapi_addresses: Vec<String>,
-    /// Minimum bank balance threshold (credits).
+    /// Minimum bank balance threshold (credits) — the PLATFORM
+    /// account-type floor for the fund planner.
     pub min_bank_credits: u64,
+    /// Minimum bank-identity balance (credits) the planner keeps as relay
+    /// fee headroom. See [`vars::MIN_IDENTITY_CREDITS`].
+    pub min_identity_credits: Credits,
+    /// Minimum bank shielded-pool balance (credits) the planner pre-funds
+    /// via E4. Non-zero default; `0` opts out. See
+    /// [`vars::MIN_SHIELDED_CREDITS`].
+    pub min_shielded_credits: Credits,
     /// Workdir base path; slot fallback adds `-N` suffixes.
     pub workdir_base: PathBuf,
     /// Optional trusted-context-provider URL override. `None` uses
@@ -273,6 +314,8 @@ impl std::fmt::Debug for Config {
             .field("network", &self.network)
             .field("dapi_addresses", &self.dapi_addresses)
             .field("min_bank_credits", &self.min_bank_credits)
+            .field("min_identity_credits", &self.min_identity_credits)
+            .field("min_shielded_credits", &self.min_shielded_credits)
             .field("workdir_base", &self.workdir_base)
             .field("trusted_context_url", &self.trusted_context_url)
             .field("context_provider", &self.context_provider)
@@ -299,6 +342,8 @@ impl Default for Config {
             network,
             dapi_addresses: Vec::new(),
             min_bank_credits: DEFAULT_MIN_BANK_CREDITS,
+            min_identity_credits: DEFAULT_MIN_IDENTITY_CREDITS,
+            min_shielded_credits: DEFAULT_MIN_SHIELDED_CREDITS,
             workdir_base: default_workdir_base(),
             trusted_context_url: None,
             context_provider: ContextProviderKind::resolve(None, network, false),
@@ -408,6 +453,14 @@ impl Config {
             Err(_) => DEFAULT_MIN_BANK_CREDITS,
         };
 
+        // `0` is a valid explicit value for both (identity floor off /
+        // shielded opt-out); `parse_u64_duff_var` accepts it and only
+        // falls back to the default on unset / empty / unparseable.
+        let min_identity_credits =
+            parse_u64_duff_var(vars::MIN_IDENTITY_CREDITS, DEFAULT_MIN_IDENTITY_CREDITS);
+        let min_shielded_credits =
+            parse_u64_duff_var(vars::MIN_SHIELDED_CREDITS, DEFAULT_MIN_SHIELDED_CREDITS);
+
         let workdir_base = std::env::var(vars::WORKDIR)
             .map(PathBuf::from)
             .unwrap_or_else(|_| default_workdir_base());
@@ -470,6 +523,8 @@ impl Config {
             network,
             dapi_addresses,
             min_bank_credits,
+            min_identity_credits,
+            min_shielded_credits,
             workdir_base,
             trusted_context_url,
             context_provider,

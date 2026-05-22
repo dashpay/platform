@@ -23,6 +23,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::bank::{BankWallet, CrossCheckResult};
 use super::bank_identity::{self, BankIdentity};
+use super::bank_plan;
 use super::bank_rebalance;
 use super::cleanup;
 use super::config::{self, BankCoreGateSource, Config, ContextProviderKind};
@@ -634,24 +635,10 @@ impl E2eContext {
             ),
         }
 
-        // Drain any residual bank-identity credits back to the bank's
-        // Platform address (the single Platform-side funding pool —
-        // see [`super::bank_rebalance`]). Runs BEFORE the orphan sweep
-        // and the post-sweep floor check so the floor sees the drained
-        // state. Best-effort: errors are swallowed inside the helper.
-        match bank_rebalance::drain_bank_identity_to_addresses(&bank, &bank_identity).await {
-            Ok(0) => {}
-            Ok(drained) => tracing::info!(
-                target: "platform_wallet::e2e::harness",
-                drained,
-                "bank identity drained back to bank Platform address"
-            ),
-            Err(err) => tracing::warn!(
-                target: "platform_wallet::e2e::harness",
-                error = %err,
-                "bank identity drain failed; continuing"
-            ),
-        }
+        // The bank-identity drain (E3') is no longer a standalone step:
+        // it is the first `Move` the fund planner emits below, so it runs
+        // after the orphan sweep (maximising Platform surplus before the
+        // planner sizes the leaf deficits).
 
         let registry = PersistentTestWalletRegistry::open(workdir.join("test_wallets.json"))?;
 
@@ -753,44 +740,60 @@ impl E2eContext {
             Some(result)
         };
 
-        bank.assert_floor(&config, sweep_recovered, pre_sweep_total, pre_sweep_failed)
-            .await;
-
-        // Opt-in Platform→Core refill: trips when the bank's confirmed
-        // Core balance is below the configured duff threshold. Best-
-        // effort — failures inside the helper are demoted to WARN so
-        // an unreachable Core withdrawal pool doesn't block context
-        // init for Platform-only suites. The chain is slow by design
-        // (top_up_from_addresses → withdraw_credits_with_external_signer
-        // rides the Core withdrawal pool); the threshold gate keeps it
-        // off the hot path on subsequent runs.
-        match bank_rebalance::refill_core_from_platform_if_below_threshold(
-            &bank,
-            &bank_identity,
-            config.core_refill_threshold_duff,
-            config.core_refill_target_duff,
-        )
-        .await
-        {
-            Ok(0) => {}
-            Ok(refilled_duff) => tracing::info!(
-                target: "platform_wallet::e2e::harness",
-                refilled_duff,
-                "bank Core refill issued from Platform address pool"
-            ),
-            Err(err) => tracing::warn!(
-                target: "platform_wallet::e2e::harness",
-                error = %err,
-                "bank Core refill failed; continuing"
-            ),
+        // Smart fund planner. Replaces the old straight-line
+        // drain → assert_floor → refill → assert_core block with one
+        // cost-ordered pass over the four account types (PLATFORM,
+        // IDENTITY, SHIELDED, CORE):
+        //   1. snapshot live balances,
+        //   2. `plan()` — pure, deficit-gated, cheapest-edge-first
+        //      (fast L2 < shield < one-time Core→Platform asset-lock ≪
+        //      Platform→Core withdrawal),
+        //   3. `execute()` — dispatches each Move to the bank_rebalance
+        //      primitives in §3.4 order (drain → bootstrap → top-up →
+        //      shield → withdrawal),
+        //   4. `assert_all_floors()` — unified gate, subsumes the prior
+        //      `assert_floor` (Platform panic) + `assert_core_funded_for_one_pass`
+        //      (Core error).
+        // Idempotent: a re-run with balances already at min emits an
+        // empty plan (only the self-gating drain).
+        let balances = bank_plan::snapshot_balances(&bank, &bank_identity).await;
+        let mins = bank_plan::mins_from_config(&config);
+        match bank_plan::plan(balances, mins) {
+            Ok(plan) => {
+                tracing::info!(
+                    target: "platform_wallet::e2e::harness",
+                    ?balances,
+                    ?mins,
+                    moves = plan.len(),
+                    "fund planner produced plan"
+                );
+                bank_plan::execute(&plan, &bank, &bank_identity, &config).await?;
+            }
+            Err(insufficiency) => {
+                // Single operator-actionable failure: per-type have/need/short
+                // + the two fixed top-up addresses. No partial-subset run.
+                return Err(bank_plan::insufficiency_to_error(&insufficiency, &bank).await);
+            }
         }
 
-        // Preflight: the auto-refill above is best-effort. If the bank
-        // still can't fund a single full pass, every Core-touching case
-        // is doomed — fail fast with the fixed top-up address and the
-        // exact shortfall instead of burning a network slot on a
-        // guaranteed mid-pass starvation.
-        bank_rebalance::assert_core_funded_for_one_pass(&bank).await?;
+        // Re-read balances after execution so the floor gate evaluates
+        // post-plan state.
+        if let Err(err) = bank.sync_and_refresh_floor().await {
+            tracing::warn!(
+                target: "platform_wallet::e2e::harness",
+                error = %err,
+                "post-plan bank resync failed; floor check uses pre-plan balance"
+            );
+        }
+        bank_plan::assert_all_floors(
+            &bank,
+            &bank_identity,
+            &config,
+            sweep_recovered,
+            pre_sweep_total,
+            pre_sweep_failed,
+        )
+        .await?;
 
         // Successful build — ownership of the runtime now lives on
         // the returned `E2eContext`. Clear `IN_FLIGHT_SPV` so the
