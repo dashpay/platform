@@ -33,6 +33,11 @@ pub mod vars {
     /// Optional override for the trusted HTTP context provider URL.
     /// Defaults to the network-builtin endpoint when unset.
     pub const TRUSTED_CONTEXT_URL: &str = "PLATFORM_WALLET_E2E_TRUSTED_CONTEXT_URL";
+    /// Context-provider backend selector: `http` (trusted HTTP quorums
+    /// host) or `spv` (quorum keys resolved from the local SPV runtime's
+    /// masternode list, no hosted quorums service needed). Unset auto-
+    /// selects per network (see [`ContextProviderKind::resolve`]).
+    pub const CONTEXT_PROVIDER: &str = "PLATFORM_WALLET_E2E_CONTEXT_PROVIDER";
     /// Optional override for the SPV P2P port. Unset falls back to
     /// the network default (mainnet 9999, testnet 19999); regtest and
     /// devnet have no default and require this var.
@@ -143,8 +148,14 @@ pub struct Config {
     /// Workdir base path; slot fallback adds `-N` suffixes.
     pub workdir_base: PathBuf,
     /// Optional trusted-context-provider URL override. `None` uses
-    /// the per-network default; devnet requires this override.
+    /// the per-network default; devnet requires this override when the
+    /// `Http` context-provider backend is selected.
     pub trusted_context_url: Option<String>,
+    /// Resolved context-provider backend (HTTP quorums host vs SPV-backed
+    /// quorum lookups). Auto-selected per network when
+    /// [`vars::CONTEXT_PROVIDER`] is unset — see
+    /// [`ContextProviderKind::resolve`].
+    pub context_provider: ContextProviderKind,
     /// SPV P2P port for the active network — resolved at construction
     /// time from the env override or the network default. `None` only
     /// when the network has no default and no override was provided
@@ -185,6 +196,57 @@ pub struct Config {
     pub core_refill_target_duff: u64,
 }
 
+/// Which [`dash_sdk::platform::ContextProvider`] backend the harness
+/// wires for proof verification.
+///
+/// `Http` uses [`rs_sdk_trusted_context_provider::TrustedHttpContextProvider`]
+/// against a hosted quorums service; `Spv` resolves quorum public keys
+/// from the local SPV runtime's masternode list, so no quorums HTTP host
+/// is required (the porter devnet has none — QA-001). Both backends still
+/// serve freshly-deployed contracts / token configurations from the
+/// harness's known-contracts cache.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ContextProviderKind {
+    /// Trusted HTTP quorums service (`TrustedHttpContextProvider`).
+    Http,
+    /// SPV-backed quorum lookups; no hosted quorums host needed.
+    Spv,
+}
+
+impl ContextProviderKind {
+    /// Resolve the effective backend from the env-var raw value
+    /// (`None` = unset) and the active network.
+    ///
+    /// Explicit `spv` / `http` (case-insensitive, trimmed) wins.
+    /// Unset / empty / unrecognised auto-selects: networks with a
+    /// hosted quorums endpoint and either a built-in URL (mainnet /
+    /// testnet) or an operator-supplied `trusted_context_url` use
+    /// `Http`; everything else (devnet / regtest without a trusted URL,
+    /// e.g. porter) uses `Spv`, because there is no quorums host to
+    /// point at and constructing `TrustedHttpContextProvider` would die
+    /// on the bogus host (QA-001).
+    fn resolve(raw: Option<&str>, network: Network, has_trusted_url: bool) -> Self {
+        if let Some(raw) = raw {
+            match raw.trim().to_ascii_lowercase().as_str() {
+                "spv" => return Self::Spv,
+                "http" => return Self::Http,
+                "" => {}
+                other => tracing::warn!(
+                    target: "platform_wallet::e2e::config",
+                    var = vars::CONTEXT_PROVIDER,
+                    value = %other,
+                    "unrecognised context-provider selector; auto-selecting per network"
+                ),
+            }
+        }
+        match network {
+            Network::Mainnet | Network::Testnet => Self::Http,
+            _ if has_trusted_url => Self::Http,
+            _ => Self::Spv,
+        }
+    }
+}
+
 /// Provenance of the resolved bank-Core-gate timeout — surfaced in the
 /// harness init log so operators can tell "default kicked in" from
 /// "operator set the var".
@@ -213,6 +275,7 @@ impl std::fmt::Debug for Config {
             .field("min_bank_credits", &self.min_bank_credits)
             .field("workdir_base", &self.workdir_base)
             .field("trusted_context_url", &self.trusted_context_url)
+            .field("context_provider", &self.context_provider)
             .field("p2p_port", &self.p2p_port)
             .field("bank_identity_id", &self.bank_identity_id)
             .field("bank_core_gate_timeout", &self.bank_core_gate_timeout)
@@ -238,6 +301,7 @@ impl Default for Config {
             min_bank_credits: DEFAULT_MIN_BANK_CREDITS,
             workdir_base: default_workdir_base(),
             trusted_context_url: None,
+            context_provider: ContextProviderKind::resolve(None, network, false),
             p2p_port: default_p2p_port(network),
             bank_identity_id: None,
             bank_core_gate_timeout: Some(DEFAULT_BANK_CORE_GATE_TIMEOUT),
@@ -353,6 +417,12 @@ impl Config {
             .map(|raw| raw.trim().to_string())
             .filter(|s| !s.is_empty());
 
+        let context_provider = ContextProviderKind::resolve(
+            std::env::var(vars::CONTEXT_PROVIDER).ok().as_deref(),
+            network,
+            trusted_context_url.is_some(),
+        );
+
         let p2p_port = match std::env::var(vars::P2P_PORT) {
             Ok(raw) => {
                 let trimmed = raw.trim();
@@ -402,6 +472,7 @@ impl Config {
             min_bank_credits,
             workdir_base,
             trusted_context_url,
+            context_provider,
             p2p_port,
             bank_identity_id,
             bank_core_gate_timeout,
@@ -674,6 +745,61 @@ mod tests {
         let (timeout, src) = parse_bank_core_gate(Some("  120  "));
         assert_eq!(timeout, Some(Duration::from_secs(120)));
         assert_eq!(src, BankCoreGateSource::EnvTimeout);
+    }
+
+    #[test]
+    fn context_provider_explicit_selectors_win() {
+        for net in [Network::Testnet, Network::Devnet, Network::Regtest] {
+            assert_eq!(
+                ContextProviderKind::resolve(Some("spv"), net, true),
+                ContextProviderKind::Spv,
+                "explicit spv on {net:?}"
+            );
+            assert_eq!(
+                ContextProviderKind::resolve(Some("  HTTP "), net, false),
+                ContextProviderKind::Http,
+                "explicit http on {net:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn context_provider_auto_select_per_network() {
+        // Built-in-quorum networks default to HTTP regardless of URL.
+        assert_eq!(
+            ContextProviderKind::resolve(None, Network::Testnet, false),
+            ContextProviderKind::Http
+        );
+        assert_eq!(
+            ContextProviderKind::resolve(None, Network::Mainnet, false),
+            ContextProviderKind::Http
+        );
+        // Devnet with a trusted URL → HTTP; without one → SPV (porter).
+        assert_eq!(
+            ContextProviderKind::resolve(None, Network::Devnet, true),
+            ContextProviderKind::Http
+        );
+        assert_eq!(
+            ContextProviderKind::resolve(None, Network::Devnet, false),
+            ContextProviderKind::Spv
+        );
+        assert_eq!(
+            ContextProviderKind::resolve(None, Network::Regtest, false),
+            ContextProviderKind::Spv
+        );
+    }
+
+    #[test]
+    fn context_provider_unrecognised_falls_back_to_auto() {
+        // Garbage selector behaves as "unset" → per-network auto-select.
+        assert_eq!(
+            ContextProviderKind::resolve(Some("nonsense"), Network::Devnet, false),
+            ContextProviderKind::Spv
+        );
+        assert_eq!(
+            ContextProviderKind::resolve(Some(""), Network::Testnet, false),
+            ContextProviderKind::Http
+        );
     }
 
     #[test]

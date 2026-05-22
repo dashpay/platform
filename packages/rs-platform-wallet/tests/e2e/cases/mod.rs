@@ -50,6 +50,7 @@ pub mod pa_008c_funding_mutex_observable;
 pub mod pa_009_min_input_amount;
 pub mod pa_3040_bug_pin;
 pub mod print_bank_address;
+pub mod print_bank_address_offline;
 // Shielded (Orchard) cases (Wave H — see TEST_SPEC.md ### Shielded (SH))
 #[cfg(feature = "shielded")]
 pub mod sh_001_shield_from_account;
