@@ -350,7 +350,7 @@ pub fn option_array_to_not_found(
 /// Parse loaded public keys from an object (where values are plain objects from toObject)
 pub fn value_to_loaded_public_keys_from_object(
     loaded_public_keys: &JsValue,
-    platform_version: &PlatformVersion,
+    _platform_version: &PlatformVersion,
 ) -> WasmDppResult<BTreeMap<KeyID, IdentityPublicKey>> {
     let mut map = BTreeMap::new();
     let pub_keys_object = try_to_object(loaded_public_keys.clone(), "loadedPublicKeys")?;
@@ -400,7 +400,7 @@ pub fn value_to_loaded_public_keys_from_object(
 /// Parse loaded public keys from JSON (where values are JSON objects from toJSON)
 pub fn value_to_loaded_public_keys_from_json(
     loaded_public_keys: &JsValue,
-    platform_version: &PlatformVersion,
+    _platform_version: &PlatformVersion,
 ) -> WasmDppResult<BTreeMap<KeyID, IdentityPublicKey>> {
     let mut map = BTreeMap::new();
     let pub_keys_object = try_to_object(loaded_public_keys.clone(), "loadedPublicKeys")?;

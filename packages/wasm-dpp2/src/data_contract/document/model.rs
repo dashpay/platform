@@ -25,7 +25,6 @@ use dpp::platform_value::string_encoding::encode;
 use dpp::platform_value::{Value, ValueMapHelper};
 use dpp::util::entropy_generator;
 use dpp::util::entropy_generator::EntropyGenerator;
-use dpp::version::PlatformVersion;
 use serde::Deserialize;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
