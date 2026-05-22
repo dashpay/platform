@@ -23,10 +23,9 @@ mod format;
 
 use std::any::Any;
 use std::collections::HashMap;
-use std::fs::{self, OpenOptions};
+use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use keyring_core::api::{Credential, CredentialApi, CredentialPersistence, CredentialStoreApi};
@@ -38,9 +37,6 @@ use format::{Entry as VaultEntry, Header};
 
 use super::secret::{SecretBytes, SecretString};
 use super::validate::{validated_label, WalletId};
-
-/// Process-local counter for unique temp-file names (C7).
-static COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// Upstream service-prefix for vault entries. The full `service`
 /// string is `SERVICE_PREFIX + hex(wallet_id)`, mapping each wallet
@@ -193,10 +189,16 @@ impl EncryptedFileStoreInner {
         }
     }
 
-    /// Atomically (temp → fsync → rename → dir-fsync) write the vault,
-    /// creating the temp at 0600 via `O_EXCL`+`fchmod` before any
-    /// ciphertext byte is written (SEC-REQ-2.2.10/.11). The temp holds
-    /// only ciphertext+header — never plaintext.
+    /// Atomically replace the vault, cross-platform (SEC-REQ-2.2.10/.11).
+    ///
+    /// Stages into a `NamedTempFile` in the SAME directory (so `persist`
+    /// cannot fail cross-volume), tightens perms to 0600 on Unix before
+    /// any byte is written, then: `write_all` → `sync_all` →
+    /// `persist(path)` → Unix parent-dir fsync. The destination is never
+    /// pre-removed, so a crash leaves either the old or the new vault,
+    /// never an absent one. On `persist` failure the temp drops and
+    /// self-cleans — no manual remove racing it. The temp holds only
+    /// ciphertext+header, never plaintext.
     fn write_vault(
         &self,
         path: &Path,
@@ -204,33 +206,26 @@ impl EncryptedFileStoreInner {
         entries: &[VaultEntry],
     ) -> Result<(), FileStoreError> {
         let serialized = format::serialize(header, entries);
-        // Unique temp name (pid + monotonic counter) created with
-        // O_EXCL — no fixed name and no destination pre-remove, so a
-        // crash can never leave the vault absent and two writers can't
-        // collide on the temp (Marvin QA-004).
-        let unique = COUNTER.fetch_add(1, Ordering::Relaxed);
-        let tmp = path.with_extension(format!("pwsvault.tmp.{}.{unique}", std::process::id()));
-        let result = (|| -> Result<(), FileStoreError> {
-            let mut opts = OpenOptions::new();
-            opts.write(true).create_new(true);
-            set_create_mode(&mut opts);
-            let mut f = opts.open(&tmp)?;
-            enforce_mode_0600(&f)?;
-            f.write_all(&serialized)?;
-            f.sync_all()?;
-            fs::rename(&tmp, path)?;
-            // The directory entry must be fsync'd too, or a crash can
-            // lose the rename (SEC-REQ-2.2.11).
-            if let Some(parent) = path.parent() {
-                let d = fs::File::open(parent)?;
-                d.sync_all()?;
-            }
-            Ok(())
-        })();
-        if result.is_err() {
-            let _ = fs::remove_file(&tmp);
+        // `persist` is atomic-replace only within one filesystem, so the
+        // temp MUST share the destination's parent dir (mirrors
+        // sqlite/backup.rs).
+        let parent = path.parent().unwrap_or_else(|| Path::new("."));
+        let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
+        // tempfile creates the file private-to-owner on every OS; on Unix
+        // we additionally pin 0600 (belt-and-suspenders). On Windows the
+        // private-by-default ACL is sufficient for v1.
+        set_restrictive_perms(tmp.as_file())?;
+        tmp.as_file_mut().write_all(&serialized)?;
+        tmp.as_file().sync_all()?;
+        tmp.persist(path).map_err(|e| e.error)?;
+        // Windows: directory durability relies on NTFS metadata
+        // journaling; no dir-fsync primitive exists there.
+        #[cfg(unix)]
+        {
+            let d = fs::File::open(parent)?;
+            d.sync_all()?;
         }
-        result
+        Ok(())
     }
 
     fn rekey(
@@ -485,29 +480,21 @@ fn check_perms(meta: &fs::Metadata) -> Result<(), FileStoreError> {
     Ok(())
 }
 
+// TODO(CMT-009): Windows ACL read-check deferred — see CMT-009 in PR #3672.
 #[cfg(not(unix))]
 fn check_perms(_meta: &fs::Metadata) -> Result<(), FileStoreError> {
     Ok(())
 }
 
 #[cfg(unix)]
-fn set_create_mode(opts: &mut OpenOptions) {
-    use std::os::unix::fs::OpenOptionsExt;
-    opts.mode(0o600);
-}
-
-#[cfg(not(unix))]
-fn set_create_mode(_opts: &mut OpenOptions) {}
-
-#[cfg(unix)]
-fn enforce_mode_0600(f: &fs::File) -> Result<(), FileStoreError> {
+fn set_restrictive_perms(f: &fs::File) -> Result<(), FileStoreError> {
     use std::os::unix::fs::PermissionsExt;
     f.set_permissions(fs::Permissions::from_mode(0o600))?;
     Ok(())
 }
 
 #[cfg(not(unix))]
-fn enforce_mode_0600(_f: &fs::File) -> Result<(), FileStoreError> {
+fn set_restrictive_perms(_f: &fs::File) -> Result<(), FileStoreError> {
     Ok(())
 }
 
@@ -858,6 +845,53 @@ mod tests {
         let (service, user) = e.get_specifiers().unwrap();
         assert_eq!(service, format!("{SERVICE_PREFIX}{}", wid(1).to_hex()));
         assert_eq!(user, "seed");
+    }
+
+    #[test]
+    fn second_write_over_existing_vault_succeeds() {
+        // CMT-009 regression: the old `fs::rename`-over-existing path
+        // failed on Windows for the second write. `persist` replaces
+        // atomically on every target.
+        let dir = tempfile::tempdir().unwrap();
+        let s = store(dir.path());
+        entry(&s, wid(1), "seed").set_secret(b"v1").unwrap();
+        entry(&s, wid(1), "seed").set_secret(b"v2").unwrap();
+        entry(&s, wid(1), "other").set_secret(b"v3").unwrap();
+        assert_eq!(entry(&s, wid(1), "seed").get_secret().unwrap(), b"v2");
+        assert_eq!(entry(&s, wid(1), "other").get_secret().unwrap(), b"v3");
+        // No staged temp survives a successful persist.
+        let stale: Vec<_> = fs::read_dir(dir.path())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                let n = e.file_name();
+                let n = n.to_string_lossy();
+                n.ends_with(".bak") || n.contains(".tmp")
+            })
+            .collect();
+        assert!(stale.is_empty(), "left stale files: {stale:?}");
+    }
+
+    #[test]
+    fn inflated_kdf_params_fail_before_verify_token_derivation() {
+        // SEC-001 end-to-end: a vault whose JSON declares m_kib = u32::MAX
+        // must be refused with a KDF failure (projected to BadStoreFormat)
+        // at `derive_and_verify` — before the verify-token is derived and
+        // without the ~4 TiB allocation the inflated param would demand.
+        let dir = tempfile::tempdir().unwrap();
+        let s = store(dir.path());
+        entry(&s, wid(1), "seed").set_secret(b"value").unwrap();
+        // Rewrite the on-disk vault's KDF m_kib to u32::MAX via the
+        // header round-trip the test surface exposes.
+        let path = s.vault_path(&wid(1));
+        let (mut header, entries) = s.read_vault(&path).unwrap().unwrap();
+        header.params.m_kib = u32::MAX;
+        s.write_vault(&path, &header, &entries).unwrap();
+        let err = entry(&s, wid(1), "seed").get_secret().unwrap_err();
+        assert!(
+            matches!(&err, KeyringError::BadStoreFormat(msg) if *msg == FileStoreError::KdfFailure.to_string()),
+            "expected KdfFailure projection, got {err:?}"
+        );
     }
 
     #[test]
