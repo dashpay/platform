@@ -15,7 +15,8 @@ use std::sync::Arc;
 use keyring_core::api::CredentialStoreApi;
 use keyring_core::{Error as KeyringError, Result as KeyringResult};
 use platform_wallet_storage::secrets::{
-    EncryptedFileStore, FileStoreError, SecretBytes, SecretString, WalletId, SERVICE_PREFIX,
+    EncryptedFileStore, FileStoreError, SecretBytes, SecretStore, SecretString, WalletId,
+    SERVICE_PREFIX,
 };
 
 fn open(dir: &Path) -> EncryptedFileStore {
@@ -121,13 +122,23 @@ fn error_display_is_static_and_secret_free() {
     let rendered = format!("{err}");
     assert!(!rendered.contains("PLAINTEXTNEEDLE"));
     assert!(!rendered.contains("wrong-pass"));
-    // WrongPassphrase rides in `NoStorageAccess` with the typed error
-    // boxed as the source.
-    let recovered = match &err {
-        KeyringError::NoStorageAccess(src) => src.downcast_ref::<FileStoreError>(),
-        _ => None,
-    };
-    assert!(matches!(recovered, Some(FileStoreError::WrongPassphrase)));
+    // The SPI seam is lossy and string-only: WrongPassphrase rides in
+    // `NoStorageAccess` and is no longer downcastable back to a typed
+    // `FileStoreError`. The lossless typed distinction is on the
+    // `SecretStore` path, asserted below.
+    match &err {
+        KeyringError::NoStorageAccess(src) => {
+            assert_eq!(src.to_string(), FileStoreError::WrongPassphrase.to_string());
+            assert!(src.downcast_ref::<FileStoreError>().is_none());
+        }
+        other => panic!("expected NoStorageAccess, got {other:?}"),
+    }
+
+    // Same wrong passphrase through the public `SecretStore`: the typed
+    // distinction survives losslessly.
+    let bad_store = SecretStore::file(dir.path(), SecretString::new("wrong-pass")).unwrap();
+    let typed = bad_store.get(&w, "seed").unwrap_err();
+    assert!(matches!(typed, FileStoreError::WrongPassphrase));
 
     let inv = store.build(&service(w), "../bad", None).unwrap_err();
     match inv {
