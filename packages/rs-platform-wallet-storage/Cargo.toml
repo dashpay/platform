@@ -160,10 +160,6 @@ secrets = [
     "dep:apple-native-keyring-store",
     "dep:windows-native-keyring-store",
 ]
-# Exposes `secrets::MemoryCredentialStore` (in-RAM test double). Double-underscore
-# prefix = Cargo's "MUST NOT enable from downstream" convention; keeps
-# the test store unreachable from production builds (SEC-REQ-2.3.1).
-__secrets-test-helpers = ["secrets"]
 # Exposes `lock_conn_for_test` / `config_for_test` accessors on
 # `SqlitePersister` so this crate's own integration tests can probe
 # the write connection. The double-underscore prefix follows Cargo's

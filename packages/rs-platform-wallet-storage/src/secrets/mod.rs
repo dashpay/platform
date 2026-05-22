@@ -42,8 +42,8 @@
 //! At the SPI seam the upstream `get_secret` returns `Vec<u8>`;
 //! [`SecretStore::get`] wraps it via [`SecretBytes::new`] **immediately**
 //! (no named intermediate `Vec` binding) so the bare buffer's window is
-//! zero statements (Smythe EDIT-1): `SecretBytes::new` `std::mem::take`s
-//! the `Vec` into a `Zeroizing<Vec<u8>>` without copying.
+//! zero statements: `SecretBytes::new` moves the `Vec` into a
+//! `Zeroizing<Vec<u8>>` without copying.
 //!
 //! # Backend selection
 //!
@@ -57,15 +57,9 @@ mod secret;
 mod store;
 mod validate;
 
-#[cfg(any(test, feature = "__secrets-test-helpers"))]
-mod memory;
-
 pub use file::error::{FileStoreError, OsKeyringErrorKind};
 pub use file::{EncryptedFileCredential, EncryptedFileStore, SERVICE_PREFIX};
 pub use keyring::default_credential_store;
 pub use secret::{SecretBytes, SecretString};
 pub use store::SecretStore;
 pub use validate::WalletId;
-
-#[cfg(any(test, feature = "__secrets-test-helpers"))]
-pub use memory::{MemoryCredential, MemoryCredentialStore};

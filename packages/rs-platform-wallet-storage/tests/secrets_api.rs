@@ -1,11 +1,8 @@
 //! Type-shape + boundary guards for the `secrets` API
-//! (SEC-REQ-4.1 / 4.4 / 4.5, TC-082 parity).
+//! (SEC-REQ-4.1 / 4.4 / 4.5).
 //!
-//! Compiled only with `--features secrets`. Uses `EncryptedFileStore`
-//! (always available under `secrets`); `MemoryCredentialStore` is
-//! intentionally unreachable here (SEC-REQ-2.3.1) — it is exercised
-//! only by the crate's own in-module unit tests behind
-//! `__secrets-test-helpers`.
+//! Compiled only with `--features secrets`. Uses a tempdir-backed
+//! `EncryptedFileStore` (always available under `secrets`).
 
 #![cfg(feature = "secrets")]
 
