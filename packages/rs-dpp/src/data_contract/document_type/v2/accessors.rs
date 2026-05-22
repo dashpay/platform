@@ -206,6 +206,14 @@ impl DocumentTypeV2Getters for DocumentTypeV2 {
     fn range_countable(&self) -> bool {
         self.range_countable
     }
+
+    fn documents_summable(&self) -> Option<&str> {
+        self.documents_summable.as_deref()
+    }
+
+    fn range_summable(&self) -> bool {
+        self.range_summable
+    }
 }
 
 impl DocumentTypeV2Setters for DocumentTypeV2 {
@@ -222,5 +230,23 @@ impl DocumentTypeV2Setters for DocumentTypeV2 {
         if range_countable {
             self.documents_countable = true;
         }
+    }
+
+    fn set_documents_summable(&mut self, property: Option<String>) {
+        let cleared = property.is_none();
+        self.documents_summable = property;
+        if cleared {
+            // Preserve invariant: range_summable requires
+            // documents_summable.is_some()
+            self.range_summable = false;
+        }
+    }
+
+    fn set_range_summable(&mut self, range_summable: bool) {
+        // Normalize unconditionally: `range_summable` requires a property
+        // to sum on, so clamp to false when `documents_summable` is unset.
+        // This way an existing-true-but-inconsistent state can't survive
+        // a setter call — the invariant always holds after this returns.
+        self.range_summable = range_summable && self.documents_summable.is_some();
     }
 }

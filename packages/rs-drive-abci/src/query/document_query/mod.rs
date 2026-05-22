@@ -28,7 +28,7 @@ impl<C> Platform<C> {
     ) -> Result<QueryValidationResult<GetDocumentsResponse>, Error> {
         let Some(version) = version else {
             return Ok(QueryValidationResult::new_with_error(
-                QueryError::DecodingError("could not decode data contracts query".to_string()),
+                QueryError::DecodingError("could not decode documents query".to_string()),
             ));
         };
 

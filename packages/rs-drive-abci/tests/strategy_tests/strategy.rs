@@ -2217,7 +2217,7 @@ impl NetworkStrategy {
                 .expect("failed to sign transaction for instant lock");
         }
 
-        IdentityTopUpTransition::try_from_identity(
+        IdentityTopUpTransition::try_from_identity_with_private_key(
             identity,
             asset_lock_proof,
             secret_key.as_ref(),

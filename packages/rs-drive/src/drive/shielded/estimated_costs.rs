@@ -49,6 +49,10 @@ impl Drive {
                         count_trees_weight: 0,
                         count_sum_trees_weight: 0,
                         non_sum_trees_weight: 2,
+                        provable_sum_trees_weight: 0,
+                        provable_count_trees_weight: 0,
+                        provable_count_sum_trees_weight: 0,
+                        provable_count_provable_sum_trees_weight: 0,
                     },
                     None,
                 ),
@@ -71,6 +75,10 @@ impl Drive {
                         count_trees_weight: 0,
                         count_sum_trees_weight: 0,
                         non_sum_trees_weight: 0,
+                        provable_sum_trees_weight: 0,
+                        provable_count_trees_weight: 0,
+                        provable_count_sum_trees_weight: 0,
+                        provable_count_provable_sum_trees_weight: 0,
                     },
                     None,
                 ),
@@ -104,12 +112,18 @@ impl Drive {
                             count_trees_weight: 1, // permanent nullifiers (ProvableCountTree)
                             count_sum_trees_weight: 1, // recent nullifiers (NotSummed-wrapped CountSumTree)
                             non_sum_trees_weight: 5, // notes (CommitmentTree), anchors, anchors-by-height, compacted nullifiers, expiration time
+                            provable_sum_trees_weight: 0,
+                            provable_count_trees_weight: 0,
+                            provable_count_sum_trees_weight: 0,
+                            provable_count_provable_sum_trees_weight: 0,
                         },
                         None,
                         7, // 7 subtrees: notes, permanent nullifiers, anchors, anchors-by-height, recent nullifiers, compacted nullifiers, expiration time
                     )),
                     items_size: Some((1, 8, None, 1)), // 1 item: total balance (SumItem, i64 = 8 bytes)
                     references_size: None,
+                    items_with_sum_item_size: None,
+                    references_with_sum_item_size: None,
                 },
             },
         );
