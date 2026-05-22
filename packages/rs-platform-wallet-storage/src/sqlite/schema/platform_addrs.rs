@@ -28,6 +28,17 @@ pub fn apply(
                 nonce = excluded.nonce",
         )?;
         for entry in &cs.addresses {
+            // The row is keyed by the outer `wallet_id`; an entry that
+            // names a different wallet would otherwise be mis-filed. The
+            // native FK also rejects an unknown parent, but this typed
+            // error pinpoints the mismatch instead of surfacing a raw
+            // FOREIGN KEY failure.
+            if entry.wallet_id != *wallet_id {
+                return Err(WalletStorageError::WalletIdMismatch {
+                    expected: *wallet_id,
+                    found: entry.wallet_id,
+                });
+            }
             stmt.execute(params![
                 wallet_id.as_slice(),
                 i64::from(entry.account_index),
@@ -209,8 +220,8 @@ pub type LoadAllEntry = (PlatformAddressSyncStartState, usize);
 /// Driven by [`wallet_meta::list_ids`](crate::sqlite::schema::wallet_meta::list_ids):
 /// orphaned `platform_addresses` / `platform_address_sync` rows whose
 /// `wallet_id` is absent from `wallet_metadata` are intentionally NOT
-/// surfaced. FK triggers prevent such orphans; a future re-wire that
-/// needs them must restore the id-union over the area tables.
+/// surfaced. Native foreign keys prevent such orphans; a future re-wire
+/// that needs them must restore the id-union over the area tables.
 pub fn load_all(
     conn: &Connection,
 ) -> Result<std::collections::BTreeMap<WalletId, LoadAllEntry>, WalletStorageError> {

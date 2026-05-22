@@ -80,6 +80,18 @@ pub fn apply(
                 derivation_blob = NULL",
         )?;
         for ((identity_id, key_id), entry) in &cs.upserts {
+            // Reject any disagreement between the map key / outer
+            // wallet_id (what the typed columns are bound from) and the
+            // entry fields (what the serialized blob carries) so the two
+            // representations of a row can never diverge on disk.
+            if entry.identity_id != *identity_id || entry.key_id != *key_id {
+                return Err(WalletStorageError::IdentityKeyEntryMismatch);
+            }
+            if let Some(entry_wallet_id) = entry.wallet_id {
+                if entry_wallet_id != *wallet_id {
+                    return Err(WalletStorageError::IdentityKeyEntryMismatch);
+                }
+            }
             let wire = IdentityKeyWire::from_entry(entry)?;
             let entry_blob = blob::encode(&wire)?;
             stmt.execute(params![
