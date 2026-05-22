@@ -4956,7 +4956,6 @@ dependencies = [
  "hex",
  "humantime",
  "key-wallet",
- "key-wallet-manager",
  "platform-wallet",
  "platform-wallet-storage",
  "predicates",

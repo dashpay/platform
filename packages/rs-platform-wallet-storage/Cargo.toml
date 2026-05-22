@@ -30,7 +30,6 @@ hex = "0.4"
 # in `schema/platform_addrs.rs`. Feature set mirrors sibling
 # `rs-platform-wallet` so the resolver picks identical hashes.
 key-wallet = { workspace = true, optional = true }
-key-wallet-manager = { workspace = true, optional = true }
 dashcore = { workspace = true, optional = true }
 dpp = { path = "../rs-dpp", optional = true }
 dash-sdk = { path = "../rs-sdk", default-features = false, features = [
@@ -81,7 +80,6 @@ default = ["sqlite", "cli"]
 # SQLite-backed persister (`platform_wallet_storage::sqlite`).
 sqlite = [
     "dep:key-wallet",
-    "dep:key-wallet-manager",
     "dep:dashcore",
     "dep:dpp",
     "dep:dash-sdk",
