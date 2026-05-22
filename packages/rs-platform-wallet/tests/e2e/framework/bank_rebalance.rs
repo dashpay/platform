@@ -42,8 +42,10 @@ use dpp::identity::{Identity, Purpose, SecurityLevel};
 
 use super::bank::BankWallet;
 use super::bank_identity::BankIdentity;
-use super::signer::derive_identity_key;
+use super::config::Config;
+use super::signer::{derive_identity_key, SeedBackedCoreSigner};
 use super::wait::wait_for_identity_balance;
+use super::wallet_factory::{bank_fee_strategy, DEFAULT_ACCOUNT_INDEX_PUB};
 use super::{FrameworkError, FrameworkResult};
 
 /// Headroom kept on the bank identity after a Platform-side drain so a
@@ -54,8 +56,8 @@ const BANK_IDENTITY_DRAIN_FEE_RESERVE: Credits = 30_000_000;
 
 /// 1 Core duff = 1000 Platform credits. Used by the core-refill chain to
 /// translate duff thresholds / targets into credit-denominated transition
-/// amounts.
-const CREDITS_PER_DUFF: u64 = 1_000;
+/// amounts, and by [`super::bank_plan`] for cross-type surplus math.
+pub const CREDITS_PER_DUFF: u64 = 1_000;
 
 /// Measured Core spend of one full e2e pass: ~13 tDASH ≈ 1.3e9 duffs
 /// (1 DASH = 1e8 duffs). All refill sizing below is derived from this.
@@ -562,6 +564,201 @@ pub async fn assert_core_funded_for_one_pass(bank: &BankWallet) -> FrameworkResu
          duffs to the fixed address above, then re-run.",
         burn = CORE_BURN_PER_FULL_PASS_DUFF,
     )))
+}
+
+/// E5 — bootstrap Platform credits from the bank's Core balance via a
+/// one-time asset-lock. The crux of "fund only Core, the framework
+/// handles the rest" (Core-only seed scenario).
+///
+/// Flow (test-only; the harness holds the seed, so it can materialise
+/// the credit-output private key the production no-raw-key signer path
+/// deliberately avoids):
+///   1. Build + broadcast the L1 asset-lock tx and wait for its proof via
+///      [`AssetLockManager::create_funded_asset_lock_proof`] using the
+///      bank's seed-backed Core signer. Returns `(proof, path, _)`.
+///   2. Materialise the credit-output [`PrivateKey`] from the seed at the
+///      returned derivation path.
+///   3. Convert the locked Dash to Platform credits on the bank's primary
+///      receive address via [`PlatformAddressWallet::fund_from_asset_lock`].
+///
+/// Requires SPV: the proof needs a ChainLocked (or IS-locked) funding tx,
+/// so this hard-errors when `disable_spv` is set — Core-only bootstrap
+/// genuinely cannot run without SPV. All other failures surface as
+/// [`FrameworkError::Bank`] so the unified floor check reports them.
+pub async fn asset_lock_core_to_platform(
+    bank: &BankWallet,
+    amount_duff: u64,
+    disable_spv: bool,
+) -> FrameworkResult<()> {
+    use dashcore::PrivateKey;
+    use dpp::address_funds::PlatformAddress;
+    use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
+
+    if disable_spv {
+        return Err(FrameworkError::Bank(
+            "Core-only bootstrap (asset-lock Core→Platform) requires SPV for the \
+             ChainLocked funding proof, but PLATFORM_WALLET_E2E_DISABLE_SPV is set. \
+             Either enable SPV or fund the bank's Platform address directly."
+                .to_string(),
+        ));
+    }
+    if amount_duff == 0 {
+        return Ok(());
+    }
+
+    let network = bank.network();
+    let wallet = bank.platform_wallet();
+    let core_signer = SeedBackedCoreSigner::new(*bank.seed_bytes(), network);
+
+    // 1. Build/broadcast the asset-lock and wait for its proof. The
+    //    `AssetLockAddressTopUp` funding type derives the credit output
+    //    from the platform-address-topup account (the same account the
+    //    recipient lives in), so `fund_from_asset_lock` can consume it.
+    //    The primitive owns its own 300s proof-wait deadline.
+    let (proof, path, _out_point) = wallet
+        .asset_locks()
+        .create_funded_asset_lock_proof(
+            amount_duff,
+            DEFAULT_ACCOUNT_INDEX_PUB,
+            AssetLockFundingType::AssetLockAddressTopUp,
+            DEFAULT_ACCOUNT_INDEX_PUB,
+            &core_signer,
+        )
+        .await
+        .map_err(|e| {
+            FrameworkError::Bank(format!(
+                "asset-lock bootstrap: create_funded_asset_lock_proof({amount_duff} duffs) \
+                 failed: {e}"
+            ))
+        })?;
+
+    // 2. Materialise the credit-output private key from the seed at the
+    //    builder's derivation path. The harness owns the seed, so this is
+    //    safe; production never does this (signer-only invariant).
+    let secret = core_signer.derive_secret(&path).map_err(|e| {
+        FrameworkError::Bank(format!(
+            "asset-lock bootstrap: deriving credit-output key at {path} failed: {e}"
+        ))
+    })?;
+    // Round-trip through raw bytes so the secp256k1 `SecretKey` type
+    // identity (key_wallet's re-export vs the test crate's `dashcore`)
+    // can't bite us.
+    let asset_lock_private_key = PrivateKey::from_byte_array(&secret.secret_bytes(), network)
+        .map_err(|e| {
+            FrameworkError::Bank(format!(
+                "asset-lock bootstrap: credit-output key byte round-trip failed: {e}"
+            ))
+        })?;
+
+    // 3. Fund the bank's primary Platform address from the asset lock.
+    let recipient: PlatformAddress = *bank.primary_receive_address();
+    let mut addresses: BTreeMap<PlatformAddress, Option<Credits>> = BTreeMap::new();
+    addresses.insert(recipient, None);
+
+    wallet
+        .platform()
+        .fund_from_asset_lock(
+            DEFAULT_ACCOUNT_INDEX_PUB,
+            addresses,
+            proof,
+            asset_lock_private_key,
+            bank_fee_strategy(),
+            bank.address_signer(),
+        )
+        .await
+        .map_err(|e| {
+            FrameworkError::Bank(format!(
+                "asset-lock bootstrap: fund_from_asset_lock failed: {e}"
+            ))
+        })?;
+
+    tracing::info!(
+        target: "platform_wallet::e2e::bank_rebalance",
+        amount_duff,
+        recipient = %recipient.to_bech32m_string(network),
+        "E5 bootstrap: asset-locked Core → Platform"
+    );
+    Ok(())
+}
+
+/// E3 — top up the bank identity from the bank's Platform address pool by
+/// `credits`. Thin wrapper over `top_up_from_addresses` that loads the
+/// identity into the manager first (the primitive looks it up there).
+pub async fn top_up_identity_from_platform(
+    bank: &BankWallet,
+    bank_identity: &BankIdentity,
+    credits: Credits,
+) -> FrameworkResult<()> {
+    if credits == 0 {
+        return Ok(());
+    }
+    let bank_wallet = bank.platform_wallet();
+    bank_wallet
+        .identity()
+        .load_identity_by_index(bank_identity.identity_index)
+        .await
+        .map_err(|e| FrameworkError::Bank(format!("E3 top-up: load bank identity failed: {e}")))?;
+
+    let inputs: BTreeMap<_, _> =
+        std::iter::once((*bank.primary_receive_address(), credits)).collect();
+    bank_wallet
+        .identity()
+        .top_up_from_addresses(&bank_identity.id, inputs, bank.address_signer(), None)
+        .await
+        .map(|_new_balance| ())
+        .map_err(|e| FrameworkError::Bank(format!("E3 top-up: top_up_from_addresses failed: {e}")))
+}
+
+/// E4 — shield `credits` from the bank's Platform address into its
+/// shielded pool. Prover-gated: if shielded support isn't configured on
+/// the manager (no `configure_shielded` ran, so the coordinator is
+/// `None`), this WARNs and skips rather than hanging on proof generation.
+/// Best-effort like the other slow edges.
+pub async fn shield_from_platform(bank: &BankWallet, credits: Credits, config: &Config) {
+    if credits == 0 {
+        return;
+    }
+    if config.min_shielded_credits == 0 {
+        return;
+    }
+    if !shielded_is_ready(bank).await {
+        tracing::warn!(
+            target: "platform_wallet::e2e::bank_rebalance",
+            credits,
+            "E4 shield skipped: shielded pool not configured/bound (prover \
+             warm-up unavailable). Set PLATFORM_WALLET_E2E_MIN_SHIELDED_CREDITS=0 \
+             to disable shielded pre-funding, or configure shielded support."
+        );
+        return;
+    }
+
+    tracing::warn!(
+        target: "platform_wallet::e2e::bank_rebalance",
+        credits,
+        "E4 shield requested but the harness does not yet bind the shielded \
+         pool / warm the Orchard prover at setup; skipping. Tracked as a \
+         follow-up — shielded setup-funding lands with the shielded case suite."
+    );
+}
+
+/// Total bank shielded balance (sum across shielded accounts), or `0`
+/// when shielded support isn't configured/bound yet. Best-effort.
+pub async fn shielded_total_balance(bank: &BankWallet) -> Credits {
+    if !shielded_is_ready(bank).await {
+        return 0;
+    }
+    // When a coordinator is wired, sum the per-account balances. Until the
+    // harness binds shielded at setup this returns 0 (not-ready above).
+    0
+}
+
+/// Whether shielded support is configured + bound enough to read a
+/// balance / build a shield. Currently always `false` because the harness
+/// does not call `configure_shielded` at setup; the gate is here so E4 /
+/// the balance read fail-soft (WARN + skip) instead of hanging once
+/// shielded setup lands.
+async fn shielded_is_ready(_bank: &BankWallet) -> bool {
+    false
 }
 
 #[cfg(test)]

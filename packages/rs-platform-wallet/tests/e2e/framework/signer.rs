@@ -257,7 +257,12 @@ impl SeedBackedCoreSigner {
         Self { seed, network }
     }
 
-    fn derive_secret(
+    /// Derive the ECDSA secret at `path` from the bound seed. Exposed to
+    /// the framework so the asset-lock bootstrap (E5) can materialise the
+    /// credit-output private key `fund_from_asset_lock` requires — a
+    /// test-only step (the harness owns the seed; production keeps keys
+    /// inside the signer).
+    pub(super) fn derive_secret(
         &self,
         path: &key_wallet::bip32::DerivationPath,
     ) -> Result<key_wallet::dashcore::secp256k1::SecretKey, String> {

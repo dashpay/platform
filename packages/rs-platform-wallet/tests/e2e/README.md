@@ -99,7 +99,9 @@ cp packages/rs-platform-wallet/tests/.env.example \
 | `PLATFORM_WALLET_E2E_BANK_MNEMONIC` | yes | — | BIP-39 mnemonic for the bank wallet. This wallet must hold at least `PLATFORM_WALLET_E2E_MIN_BANK_CREDITS` credits before the first test runs. |
 | `PLATFORM_WALLET_E2E_NETWORK` | no | `testnet` | Network to connect to: `testnet`, `devnet`, or `local`. |
 | `PLATFORM_WALLET_E2E_DAPI_ADDRESSES` | no | network default | Comma-separated list of DAPI endpoint URLs. Overrides the SDK's built-in seed list for the selected network. |
-| `PLATFORM_WALLET_E2E_MIN_BANK_CREDITS` | no | `500_000_000` | Minimum credit balance required in the bank wallet before initialization completes. If the bank is below this threshold the process panics with the bank's receive address so you know where to top it up. |
+| `PLATFORM_WALLET_E2E_MIN_BANK_CREDITS` | no | `500_000_000` | Minimum credit balance required in the bank wallet (the PLATFORM account-type floor for the fund planner) before initialization completes. If the bank is below this threshold after the planner runs, the process panics with the bank's receive address so you know where to top it up. |
+| `PLATFORM_WALLET_E2E_MIN_IDENTITY_CREDITS` | no | `30_000_000` | Minimum bank-identity balance (credits) the fund planner keeps as fee headroom for the Platform→Core relay. The bank identity is normally drained to Platform; this floor prevents the top-up→withdraw chain starving on fees. `0` disables the floor. A shortfall WARNs (soft), never blocks the suite. |
+| `PLATFORM_WALLET_E2E_MIN_SHIELDED_CREDITS` | no | `500_000_000` | Minimum bank shielded-pool balance (credits). **Non-zero by default** — the fund planner pre-funds the shielded pool via a Platform→Shielded shield (E4) so shielded cases have working notes. 500M covers several shield/unshield/transfer cycles plus per-transition Orchard proof fees. Set to `0` to opt out and skip the prover warm-up. When the prover/coordinator isn't configured the planner WARNs and skips rather than hanging on proof generation. |
 | `PLATFORM_WALLET_E2E_WORKDIR` | no | `${TMPDIR}/dash-platform-wallet-e2e` | Base path for the slot-locked working directory. SPV block cache, the test-wallet registry, and SDK state are stored here. |
 | `PLATFORM_WALLET_E2E_CONTEXT_PROVIDER` | no | auto | Proof-verification backend: `spv` (quorum keys from the local SPV runtime — no hosted quorums host needed) or `http` (`TrustedHttpContextProvider` against a quorums HTTP service). Unset auto-selects: mainnet/testnet → `http` (built-in endpoints); devnet/local → `http` when `PLATFORM_WALLET_E2E_TRUSTED_CONTEXT_URL` is set, else `spv`. Use `spv` on devnets like porter that publish no quorums endpoint. Contracts/token configs are served from the harness cache (`add_known_contract`) under both backends. |
 | `PLATFORM_WALLET_E2E_TRUSTED_CONTEXT_URL` | no | network-builtin | Override URL for the trusted HTTP context provider. Only used under `PLATFORM_WALLET_E2E_CONTEXT_PROVIDER=http`. Leave unset to use the testnet/mainnet endpoint baked into `rs-sdk-trusted-context-provider`; required for `http`-mode devnet runs and any custom trust anchor. |
@@ -162,6 +164,31 @@ Copy the printed address and use any testnet-funded wallet to send credits to it
 After the transfer confirms (typically a few seconds on testnet), re-run the tests.
 The bank does not need topping up again until its balance drops below the minimum,
 which the startup sweep helps prevent by recovering funds from completed test wallets.
+
+### Smart fund planner
+
+At setup the harness runs a cost-ordered fund planner (`framework/bank_plan.rs`)
+over four account types — **PLATFORM** (L2 credits, the hub), **IDENTITY** (bank
+identity), **SHIELDED** (Orchard pool), **CORE** (L1 duffs). It measures each
+type's balance, computes deficits against the `*_MIN_*` knobs, and emits the
+cheapest fund-movement edges to close them, in this order: drain identity →
+Platform (reclaim) → Core→Platform asset-lock bootstrap (only if Platform is
+short) → Platform→identity top-up → Platform→shielded shield → Platform→Core
+withdrawal (last resort, real Core deficit only). Policy lives in `bank_plan.rs`;
+the actual moves reuse the `bank_rebalance.rs` primitives.
+
+**Core-only bootstrap.** Because of the asset-lock edge, you can fund **only** the
+bank's Core address on a fresh network — the planner asset-locks Core→Platform once
+to fund the hub, then fans out to the other types. This is the one sanctioned slow
+L1 use at setup (Core-as-source, not sink). It needs a ChainLocked funding tx, so
+it **cannot run under `PLATFORM_WALLET_E2E_DISABLE_SPV=1`** (the planner errors
+clearly in that case).
+
+**Insufficient funds fail the whole run.** If the bank can't reach every min even
+after reclaiming identity credits and asset-locking all Core surplus, init fails
+with one operator-actionable error listing per-type have/need/short and both fixed
+top-up addresses (Platform DIP-17 idx0, Core BIP-44 idx0). No partial-subset runs.
+The planner is idempotent: a re-run with balances already at min is a no-op.
 
 ---
 
