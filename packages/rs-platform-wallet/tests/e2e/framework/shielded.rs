@@ -394,13 +394,18 @@ impl OrchardProver for &TamperingProver {
     }
 }
 
-/// Marker error returned by adversarial hooks whose live wiring lands in
-/// the follow-up wave. Surfaces a clear "not yet wired" rather than a
-/// silent no-op so a premature abuse-case author sees exactly what is
-/// missing.
-const ADVERSARIAL_PENDING: &str =
-    "adversarial injection hook is scaffolded for the SH-020..SH-035 follow-up wave; \
-     wire the raw build/broadcast/mutate body before enabling the abuse case";
+/// Production-gap marker for adversarial hooks that CANNOT reach Drive
+/// with a properly-formed-but-tampered shielded transition because the
+/// wallet exposes no seam to capture a built `SerializedBundle` / raw
+/// spend bytes (see the module-level gap notes and the SH-020/022/024/
+/// 025/026/033/034 case docs). A case hitting this is RED-by-gap: the
+/// finding is the MISSING seam, not a weakened assertion.
+pub const ADVERSARIAL_SEAM_MISSING: &str =
+    "no public seam to capture a built shielded SerializedBundle / raw spend ST bytes — \
+     shielded operations::* build AND broadcast internally (contrast transparent \
+     transfer_capturing_st_bytes), and extract_spends_and_anchor / reserve_unspent_notes / \
+     build_spend_bundle are private. Add a build-only shielded capture seam (returning the \
+     serialized StateTransition before broadcast) to wire this abuse case to the backend.";
 
 /// Build a raw shielded state transition from caller-supplied,
 /// possibly-out-of-range inputs that the guarded wallet wrapper would
@@ -408,9 +413,12 @@ const ADVERSARIAL_PENDING: &str =
 /// `u64`/`i64` boundary for SH-024, duplicate spend for SH-033, stale
 /// anchor for SH-026).
 ///
-/// Seam reserved for the follow-up wave — see [`ADVERSARIAL_PENDING`].
-/// The signature pins the inputs the abuse cases need so they can be
-/// authored against a stable surface.
+/// **Blocked by [`ADVERSARIAL_SEAM_MISSING`].** Constructing a valid-
+/// except-for-the-tamper transition requires real `SpendableNote`s + an
+/// `Anchor` from the wallet's private `extract_spends_and_anchor`, and
+/// the public dpp `build_*_transition` enforce the value/fee/overflow
+/// guards internally — so neither path can emit the out-of-range bundle
+/// these cases need. The signature pins the inputs the abuse cases want.
 #[allow(clippy::too_many_arguments)]
 pub fn build_raw_shielded_transition(
     _kind: RawShieldedKind,
@@ -418,60 +426,116 @@ pub fn build_raw_shielded_transition(
     _value_balance: i64,
     _fee: Option<u64>,
     _proof_override: Option<Vec<u8>>,
-) -> FrameworkResult<()> {
-    Err(FrameworkError::NotImplemented(ADVERSARIAL_PENDING))
+) -> FrameworkResult<Vec<u8>> {
+    Err(FrameworkError::NotImplemented(
+        "build_raw_shielded_transition: see ADVERSARIAL_SEAM_MISSING",
+    ))
 }
 
-/// Broadcast an arbitrary (possibly invalid) state transition directly,
-/// returning the typed backend error so the abuse case can assert the
-/// exact rejection variant. Gated: a no-op-error unless
-/// [`adversarial_enabled`].
+/// Broadcast arbitrary serialized [`StateTransition`] bytes directly,
+/// returning the typed backend error so an abuse case can assert the
+/// exact rejection variant. Bypasses the guarded `shielded_*` methods.
 ///
-/// Seam reserved for the follow-up wave — see [`ADVERSARIAL_PENDING`].
-pub async fn broadcast_raw() -> FrameworkResult<()> {
+/// Gated: refuses unless [`adversarial_enabled`], so a stray malformed
+/// broadcast can't pollute a normal functional run. The seam itself is
+/// real — `StateTransition::deserialize_from_bytes` + `broadcast`
+/// (the same path PA-006 replays through).
+pub async fn broadcast_raw(
+    sdk: &Arc<dash_sdk::Sdk>,
+    state_transition_bytes: &[u8],
+) -> FrameworkResult<()> {
+    use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
+    use dpp::serialization::PlatformDeserializable;
+    use dpp::state_transition::StateTransition;
+
     if !adversarial_enabled() {
         return Err(FrameworkError::Config(format!(
             "broadcast_raw refused: set {ADVERSARIAL_GATE_ENV} to run the abuse pass"
         )));
     }
-    Err(FrameworkError::NotImplemented(ADVERSARIAL_PENDING))
+    let st = StateTransition::deserialize_from_bytes(state_transition_bytes)
+        .map_err(|e| FrameworkError::Wallet(format!("broadcast_raw: deserialize ST: {e}")))?;
+    st.broadcast(sdk.as_ref(), None)
+        .await
+        .map_err(|e| FrameworkError::Sdk(format!("broadcast_raw: {e}")))
 }
 
 /// Flip / truncate / zero bytes in a built transition's serialized
 /// `SerializedBundle` field before broadcast (SH-022/024/025/026/034).
 ///
-/// Seam reserved for the follow-up wave — see [`ADVERSARIAL_PENDING`].
+/// **Blocked by [`ADVERSARIAL_SEAM_MISSING`].** Operates on a captured
+/// valid-build's bytes, which the wallet does not expose.
 pub fn mutate_serialized_bundle(
+    _bytes: &mut [u8],
     _field: BundleField,
     _mutation: BundleMutation,
 ) -> FrameworkResult<()> {
-    Err(FrameworkError::NotImplemented(ADVERSARIAL_PENDING))
+    Err(FrameworkError::NotImplemented(
+        "mutate_serialized_bundle: see ADVERSARIAL_SEAM_MISSING",
+    ))
 }
 
 /// Build a spend directly against a chosen note WITHOUT going through
 /// `reserve_unspent_notes`, for the double-spend (SH-020) and replay
 /// (SH-021) arms.
 ///
-/// Seam reserved for the follow-up wave — see [`ADVERSARIAL_PENDING`].
-pub fn build_against_note() -> FrameworkResult<()> {
-    Err(FrameworkError::NotImplemented(ADVERSARIAL_PENDING))
+/// **Blocked by [`ADVERSARIAL_SEAM_MISSING`].** Requires the private
+/// `extract_spends_and_anchor` + `build_spend_bundle`.
+pub fn build_against_note() -> FrameworkResult<Vec<u8>> {
+    Err(FrameworkError::NotImplemented(
+        "build_against_note: see ADVERSARIAL_SEAM_MISSING",
+    ))
 }
 
-/// Inject a malformed `ShieldedNote` (non-115-byte `note_data`,
-/// corrupted `cmx` / nullifier) into a store, for the serde-abuse
-/// SH-027.
+/// Inject a `ShieldedNote` with caller-controlled `note_data` / `cmx` /
+/// `nullifier` into a store, for the serde-abuse SH-027. A malformed
+/// `note_data` (≠115 bytes) must surface a typed error — never a panic —
+/// when the spend path's `deserialize_note` reads it.
 ///
-/// Seam reserved for the follow-up wave — see [`ADVERSARIAL_PENDING`].
-pub fn seed_malformed_note() -> FrameworkResult<()> {
-    Err(FrameworkError::NotImplemented(ADVERSARIAL_PENDING))
+/// This seam IS achievable through the public `ShieldedStore` trait
+/// (`save_note` + `append_commitment`), so it is wired live. Builds a
+/// note that note-selection will pick (`value > 0`, unspent) but whose
+/// `note_data` the caller controls.
+pub async fn seed_malformed_note<S>(
+    store: &Arc<tokio::sync::RwLock<S>>,
+    id: platform_wallet::wallet::shielded::SubwalletId,
+    value: u64,
+    note_data: Vec<u8>,
+    cmx: [u8; 32],
+    nullifier: [u8; 32],
+) -> FrameworkResult<()>
+where
+    S: platform_wallet::wallet::shielded::ShieldedStore,
+{
+    use platform_wallet::wallet::shielded::{ShieldedNote, ShieldedStore};
+    let note = ShieldedNote {
+        position: 0,
+        cmx,
+        nullifier,
+        block_height: 0,
+        is_spent: false,
+        value,
+        note_data,
+    };
+    let mut guard = store.write().await;
+    guard
+        .save_note(id, &note)
+        .map_err(|e| FrameworkError::Wallet(format!("seed_malformed_note: save_note: {e}")))?;
+    guard
+        .append_commitment(&cmx, true)
+        .map_err(|e| FrameworkError::Wallet(format!("seed_malformed_note: append: {e}")))?;
+    Ok(())
 }
 
 /// Resubmit a captured single-use asset-lock proof, for SH-035
 /// (Core-L1 gated).
 ///
-/// Seam reserved for the follow-up wave — see [`ADVERSARIAL_PENDING`].
+/// **Blocked by [`ADVERSARIAL_SEAM_MISSING`]** plus the SH-018 Core-L1
+/// asset-lock private-key gap (no test seam returns the one-time key).
 pub fn reuse_asset_lock_proof() -> FrameworkResult<()> {
-    Err(FrameworkError::NotImplemented(ADVERSARIAL_PENDING))
+    Err(FrameworkError::NotImplemented(
+        "reuse_asset_lock_proof: see ADVERSARIAL_SEAM_MISSING + SH-018 Core-L1 key gap",
+    ))
 }
 
 /// A scriptable mock sync source for SH-028 (interrupt mid-chunk) and
