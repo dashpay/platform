@@ -22,6 +22,7 @@ struct WalletDetailView: View {
     @EnvironmentObject var walletManager: PlatformWalletManager
     @EnvironmentObject var platformState: AppState
     @EnvironmentObject var appUIState: AppUIState
+    @EnvironmentObject var shieldedService: ShieldedService
     @Environment(\.dismiss) private var dismiss
     let wallet: PersistentWallet
     @State private var showReceiveAddress = false
@@ -201,7 +202,18 @@ struct WalletDetailView: View {
         .sheet(item: $resumingAssetLock) { lock in
             TopUpPlatformAddressView(wallet: wallet, resumeFromLock: lock)
         }
-        .onAppear { appUIState.showWalletsSyncDetails = false }
+        .onAppear {
+            appUIState.showWalletsSyncDetails = false
+            // Repoint the singleton ShieldedService at THIS wallet —
+            // the app-level bind only attaches it to `firstWallet`,
+            // so without this every detail screen would show the
+            // first-bound wallet's shielded balance regardless of
+            // which wallet the user opened.
+            shieldedService.switchTo(walletId: wallet.walletId)
+        }
+        .onChange(of: wallet.walletId) { _, newId in
+            shieldedService.switchTo(walletId: newId)
+        }
     }
 }
 

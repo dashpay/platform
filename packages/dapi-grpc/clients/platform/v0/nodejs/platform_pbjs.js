@@ -24862,6 +24862,1718 @@ $root.org = (function() {
                                 return CountResults;
                             })();
 
+                            GetDocumentsResponseV1.SumEntry = (function() {
+
+                                /**
+                                 * Properties of a SumEntry.
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1
+                                 * @interface ISumEntry
+                                 * @property {Uint8Array|null} [inKey] SumEntry inKey
+                                 * @property {Uint8Array|null} [key] SumEntry key
+                                 * @property {number|Long|null} [sum] SumEntry sum
+                                 */
+
+                                /**
+                                 * Constructs a new SumEntry.
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1
+                                 * @classdesc Represents a SumEntry.
+                                 * @implements ISumEntry
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ISumEntry=} [properties] Properties to set
+                                 */
+                                function SumEntry(properties) {
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * SumEntry inKey.
+                                 * @member {Uint8Array} inKey
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumEntry
+                                 * @instance
+                                 */
+                                SumEntry.prototype.inKey = $util.newBuffer([]);
+
+                                /**
+                                 * SumEntry key.
+                                 * @member {Uint8Array} key
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumEntry
+                                 * @instance
+                                 */
+                                SumEntry.prototype.key = $util.newBuffer([]);
+
+                                /**
+                                 * SumEntry sum.
+                                 * @member {number|Long} sum
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumEntry
+                                 * @instance
+                                 */
+                                SumEntry.prototype.sum = $util.Long ? $util.Long.fromBits(0,0,false) : 0;
+
+                                /**
+                                 * Creates a new SumEntry instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumEntry
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ISumEntry=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumEntry} SumEntry instance
+                                 */
+                                SumEntry.create = function create(properties) {
+                                    return new SumEntry(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified SumEntry message. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumEntry.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumEntry
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ISumEntry} message SumEntry message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                SumEntry.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.inKey != null && Object.hasOwnProperty.call(message, "inKey"))
+                                        writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.inKey);
+                                    if (message.key != null && Object.hasOwnProperty.call(message, "key"))
+                                        writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.key);
+                                    if (message.sum != null && Object.hasOwnProperty.call(message, "sum"))
+                                        writer.uint32(/* id 3, wireType 0 =*/24).sint64(message.sum);
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified SumEntry message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumEntry.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumEntry
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ISumEntry} message SumEntry message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                SumEntry.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes a SumEntry message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumEntry
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumEntry} SumEntry
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                SumEntry.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumEntry();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            message.inKey = reader.bytes();
+                                            break;
+                                        case 2:
+                                            message.key = reader.bytes();
+                                            break;
+                                        case 3:
+                                            message.sum = reader.sint64();
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes a SumEntry message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumEntry
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumEntry} SumEntry
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                SumEntry.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies a SumEntry message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumEntry
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                SumEntry.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.inKey != null && message.hasOwnProperty("inKey"))
+                                        if (!(message.inKey && typeof message.inKey.length === "number" || $util.isString(message.inKey)))
+                                            return "inKey: buffer expected";
+                                    if (message.key != null && message.hasOwnProperty("key"))
+                                        if (!(message.key && typeof message.key.length === "number" || $util.isString(message.key)))
+                                            return "key: buffer expected";
+                                    if (message.sum != null && message.hasOwnProperty("sum"))
+                                        if (!$util.isInteger(message.sum) && !(message.sum && $util.isInteger(message.sum.low) && $util.isInteger(message.sum.high)))
+                                            return "sum: integer|Long expected";
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates a SumEntry message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumEntry
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumEntry} SumEntry
+                                 */
+                                SumEntry.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumEntry)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumEntry();
+                                    if (object.inKey != null)
+                                        if (typeof object.inKey === "string")
+                                            $util.base64.decode(object.inKey, message.inKey = $util.newBuffer($util.base64.length(object.inKey)), 0);
+                                        else if (object.inKey.length >= 0)
+                                            message.inKey = object.inKey;
+                                    if (object.key != null)
+                                        if (typeof object.key === "string")
+                                            $util.base64.decode(object.key, message.key = $util.newBuffer($util.base64.length(object.key)), 0);
+                                        else if (object.key.length >= 0)
+                                            message.key = object.key;
+                                    if (object.sum != null)
+                                        if ($util.Long)
+                                            (message.sum = $util.Long.fromValue(object.sum)).unsigned = false;
+                                        else if (typeof object.sum === "string")
+                                            message.sum = parseInt(object.sum, 10);
+                                        else if (typeof object.sum === "number")
+                                            message.sum = object.sum;
+                                        else if (typeof object.sum === "object")
+                                            message.sum = new $util.LongBits(object.sum.low >>> 0, object.sum.high >>> 0).toNumber();
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from a SumEntry message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumEntry
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumEntry} message SumEntry
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                SumEntry.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.defaults) {
+                                        if (options.bytes === String)
+                                            object.inKey = "";
+                                        else {
+                                            object.inKey = [];
+                                            if (options.bytes !== Array)
+                                                object.inKey = $util.newBuffer(object.inKey);
+                                        }
+                                        if (options.bytes === String)
+                                            object.key = "";
+                                        else {
+                                            object.key = [];
+                                            if (options.bytes !== Array)
+                                                object.key = $util.newBuffer(object.key);
+                                        }
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, false);
+                                            object.sum = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.sum = options.longs === String ? "0" : 0;
+                                    }
+                                    if (message.inKey != null && message.hasOwnProperty("inKey"))
+                                        object.inKey = options.bytes === String ? $util.base64.encode(message.inKey, 0, message.inKey.length) : options.bytes === Array ? Array.prototype.slice.call(message.inKey) : message.inKey;
+                                    if (message.key != null && message.hasOwnProperty("key"))
+                                        object.key = options.bytes === String ? $util.base64.encode(message.key, 0, message.key.length) : options.bytes === Array ? Array.prototype.slice.call(message.key) : message.key;
+                                    if (message.sum != null && message.hasOwnProperty("sum"))
+                                        if (typeof message.sum === "number")
+                                            object.sum = options.longs === String ? String(message.sum) : message.sum;
+                                        else
+                                            object.sum = options.longs === String ? $util.Long.prototype.toString.call(message.sum) : options.longs === Number ? new $util.LongBits(message.sum.low >>> 0, message.sum.high >>> 0).toNumber() : message.sum;
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this SumEntry to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumEntry
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                SumEntry.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return SumEntry;
+                            })();
+
+                            GetDocumentsResponseV1.SumEntries = (function() {
+
+                                /**
+                                 * Properties of a SumEntries.
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1
+                                 * @interface ISumEntries
+                                 * @property {Array.<org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ISumEntry>|null} [entries] SumEntries entries
+                                 */
+
+                                /**
+                                 * Constructs a new SumEntries.
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1
+                                 * @classdesc Represents a SumEntries.
+                                 * @implements ISumEntries
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ISumEntries=} [properties] Properties to set
+                                 */
+                                function SumEntries(properties) {
+                                    this.entries = [];
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * SumEntries entries.
+                                 * @member {Array.<org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ISumEntry>} entries
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumEntries
+                                 * @instance
+                                 */
+                                SumEntries.prototype.entries = $util.emptyArray;
+
+                                /**
+                                 * Creates a new SumEntries instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumEntries
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ISumEntries=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumEntries} SumEntries instance
+                                 */
+                                SumEntries.create = function create(properties) {
+                                    return new SumEntries(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified SumEntries message. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumEntries.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumEntries
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ISumEntries} message SumEntries message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                SumEntries.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.entries != null && message.entries.length)
+                                        for (var i = 0; i < message.entries.length; ++i)
+                                            $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumEntry.encode(message.entries[i], writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified SumEntries message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumEntries.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumEntries
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ISumEntries} message SumEntries message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                SumEntries.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes a SumEntries message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumEntries
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumEntries} SumEntries
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                SumEntries.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumEntries();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            if (!(message.entries && message.entries.length))
+                                                message.entries = [];
+                                            message.entries.push($root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumEntry.decode(reader, reader.uint32()));
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes a SumEntries message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumEntries
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumEntries} SumEntries
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                SumEntries.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies a SumEntries message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumEntries
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                SumEntries.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.entries != null && message.hasOwnProperty("entries")) {
+                                        if (!Array.isArray(message.entries))
+                                            return "entries: array expected";
+                                        for (var i = 0; i < message.entries.length; ++i) {
+                                            var error = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumEntry.verify(message.entries[i]);
+                                            if (error)
+                                                return "entries." + error;
+                                        }
+                                    }
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates a SumEntries message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumEntries
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumEntries} SumEntries
+                                 */
+                                SumEntries.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumEntries)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumEntries();
+                                    if (object.entries) {
+                                        if (!Array.isArray(object.entries))
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumEntries.entries: array expected");
+                                        message.entries = [];
+                                        for (var i = 0; i < object.entries.length; ++i) {
+                                            if (typeof object.entries[i] !== "object")
+                                                throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumEntries.entries: object expected");
+                                            message.entries[i] = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumEntry.fromObject(object.entries[i]);
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from a SumEntries message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumEntries
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumEntries} message SumEntries
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                SumEntries.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.arrays || options.defaults)
+                                        object.entries = [];
+                                    if (message.entries && message.entries.length) {
+                                        object.entries = [];
+                                        for (var j = 0; j < message.entries.length; ++j)
+                                            object.entries[j] = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumEntry.toObject(message.entries[j], options);
+                                    }
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this SumEntries to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumEntries
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                SumEntries.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return SumEntries;
+                            })();
+
+                            GetDocumentsResponseV1.SumResults = (function() {
+
+                                /**
+                                 * Properties of a SumResults.
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1
+                                 * @interface ISumResults
+                                 * @property {number|Long|null} [aggregateSum] SumResults aggregateSum
+                                 * @property {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ISumEntries|null} [entries] SumResults entries
+                                 */
+
+                                /**
+                                 * Constructs a new SumResults.
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1
+                                 * @classdesc Represents a SumResults.
+                                 * @implements ISumResults
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ISumResults=} [properties] Properties to set
+                                 */
+                                function SumResults(properties) {
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * SumResults aggregateSum.
+                                 * @member {number|Long} aggregateSum
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumResults
+                                 * @instance
+                                 */
+                                SumResults.prototype.aggregateSum = $util.Long ? $util.Long.fromBits(0,0,false) : 0;
+
+                                /**
+                                 * SumResults entries.
+                                 * @member {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ISumEntries|null|undefined} entries
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumResults
+                                 * @instance
+                                 */
+                                SumResults.prototype.entries = null;
+
+                                // OneOf field names bound to virtual getters and setters
+                                var $oneOfFields;
+
+                                /**
+                                 * SumResults variant.
+                                 * @member {"aggregateSum"|"entries"|undefined} variant
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumResults
+                                 * @instance
+                                 */
+                                Object.defineProperty(SumResults.prototype, "variant", {
+                                    get: $util.oneOfGetter($oneOfFields = ["aggregateSum", "entries"]),
+                                    set: $util.oneOfSetter($oneOfFields)
+                                });
+
+                                /**
+                                 * Creates a new SumResults instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumResults
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ISumResults=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumResults} SumResults instance
+                                 */
+                                SumResults.create = function create(properties) {
+                                    return new SumResults(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified SumResults message. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumResults.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumResults
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ISumResults} message SumResults message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                SumResults.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.aggregateSum != null && Object.hasOwnProperty.call(message, "aggregateSum"))
+                                        writer.uint32(/* id 1, wireType 0 =*/8).sint64(message.aggregateSum);
+                                    if (message.entries != null && Object.hasOwnProperty.call(message, "entries"))
+                                        $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumEntries.encode(message.entries, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified SumResults message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumResults.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumResults
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ISumResults} message SumResults message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                SumResults.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes a SumResults message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumResults
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumResults} SumResults
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                SumResults.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumResults();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            message.aggregateSum = reader.sint64();
+                                            break;
+                                        case 2:
+                                            message.entries = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumEntries.decode(reader, reader.uint32());
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes a SumResults message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumResults
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumResults} SumResults
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                SumResults.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies a SumResults message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumResults
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                SumResults.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    var properties = {};
+                                    if (message.aggregateSum != null && message.hasOwnProperty("aggregateSum")) {
+                                        properties.variant = 1;
+                                        if (!$util.isInteger(message.aggregateSum) && !(message.aggregateSum && $util.isInteger(message.aggregateSum.low) && $util.isInteger(message.aggregateSum.high)))
+                                            return "aggregateSum: integer|Long expected";
+                                    }
+                                    if (message.entries != null && message.hasOwnProperty("entries")) {
+                                        if (properties.variant === 1)
+                                            return "variant: multiple values";
+                                        properties.variant = 1;
+                                        {
+                                            var error = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumEntries.verify(message.entries);
+                                            if (error)
+                                                return "entries." + error;
+                                        }
+                                    }
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates a SumResults message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumResults
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumResults} SumResults
+                                 */
+                                SumResults.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumResults)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumResults();
+                                    if (object.aggregateSum != null)
+                                        if ($util.Long)
+                                            (message.aggregateSum = $util.Long.fromValue(object.aggregateSum)).unsigned = false;
+                                        else if (typeof object.aggregateSum === "string")
+                                            message.aggregateSum = parseInt(object.aggregateSum, 10);
+                                        else if (typeof object.aggregateSum === "number")
+                                            message.aggregateSum = object.aggregateSum;
+                                        else if (typeof object.aggregateSum === "object")
+                                            message.aggregateSum = new $util.LongBits(object.aggregateSum.low >>> 0, object.aggregateSum.high >>> 0).toNumber();
+                                    if (object.entries != null) {
+                                        if (typeof object.entries !== "object")
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumResults.entries: object expected");
+                                        message.entries = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumEntries.fromObject(object.entries);
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from a SumResults message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumResults
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumResults} message SumResults
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                SumResults.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (message.aggregateSum != null && message.hasOwnProperty("aggregateSum")) {
+                                        if (typeof message.aggregateSum === "number")
+                                            object.aggregateSum = options.longs === String ? String(message.aggregateSum) : message.aggregateSum;
+                                        else
+                                            object.aggregateSum = options.longs === String ? $util.Long.prototype.toString.call(message.aggregateSum) : options.longs === Number ? new $util.LongBits(message.aggregateSum.low >>> 0, message.aggregateSum.high >>> 0).toNumber() : message.aggregateSum;
+                                        if (options.oneofs)
+                                            object.variant = "aggregateSum";
+                                    }
+                                    if (message.entries != null && message.hasOwnProperty("entries")) {
+                                        object.entries = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumEntries.toObject(message.entries, options);
+                                        if (options.oneofs)
+                                            object.variant = "entries";
+                                    }
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this SumResults to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumResults
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                SumResults.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return SumResults;
+                            })();
+
+                            GetDocumentsResponseV1.AverageEntry = (function() {
+
+                                /**
+                                 * Properties of an AverageEntry.
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1
+                                 * @interface IAverageEntry
+                                 * @property {Uint8Array|null} [inKey] AverageEntry inKey
+                                 * @property {Uint8Array|null} [key] AverageEntry key
+                                 * @property {number|Long|null} [count] AverageEntry count
+                                 * @property {number|Long|null} [sum] AverageEntry sum
+                                 */
+
+                                /**
+                                 * Constructs a new AverageEntry.
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1
+                                 * @classdesc Represents an AverageEntry.
+                                 * @implements IAverageEntry
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.IAverageEntry=} [properties] Properties to set
+                                 */
+                                function AverageEntry(properties) {
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * AverageEntry inKey.
+                                 * @member {Uint8Array} inKey
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageEntry
+                                 * @instance
+                                 */
+                                AverageEntry.prototype.inKey = $util.newBuffer([]);
+
+                                /**
+                                 * AverageEntry key.
+                                 * @member {Uint8Array} key
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageEntry
+                                 * @instance
+                                 */
+                                AverageEntry.prototype.key = $util.newBuffer([]);
+
+                                /**
+                                 * AverageEntry count.
+                                 * @member {number|Long} count
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageEntry
+                                 * @instance
+                                 */
+                                AverageEntry.prototype.count = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                                /**
+                                 * AverageEntry sum.
+                                 * @member {number|Long} sum
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageEntry
+                                 * @instance
+                                 */
+                                AverageEntry.prototype.sum = $util.Long ? $util.Long.fromBits(0,0,false) : 0;
+
+                                /**
+                                 * Creates a new AverageEntry instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageEntry
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.IAverageEntry=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageEntry} AverageEntry instance
+                                 */
+                                AverageEntry.create = function create(properties) {
+                                    return new AverageEntry(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified AverageEntry message. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageEntry.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageEntry
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.IAverageEntry} message AverageEntry message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                AverageEntry.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.inKey != null && Object.hasOwnProperty.call(message, "inKey"))
+                                        writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.inKey);
+                                    if (message.key != null && Object.hasOwnProperty.call(message, "key"))
+                                        writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.key);
+                                    if (message.count != null && Object.hasOwnProperty.call(message, "count"))
+                                        writer.uint32(/* id 3, wireType 0 =*/24).uint64(message.count);
+                                    if (message.sum != null && Object.hasOwnProperty.call(message, "sum"))
+                                        writer.uint32(/* id 4, wireType 0 =*/32).sint64(message.sum);
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified AverageEntry message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageEntry.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageEntry
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.IAverageEntry} message AverageEntry message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                AverageEntry.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes an AverageEntry message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageEntry
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageEntry} AverageEntry
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                AverageEntry.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageEntry();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            message.inKey = reader.bytes();
+                                            break;
+                                        case 2:
+                                            message.key = reader.bytes();
+                                            break;
+                                        case 3:
+                                            message.count = reader.uint64();
+                                            break;
+                                        case 4:
+                                            message.sum = reader.sint64();
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes an AverageEntry message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageEntry
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageEntry} AverageEntry
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                AverageEntry.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies an AverageEntry message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageEntry
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                AverageEntry.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.inKey != null && message.hasOwnProperty("inKey"))
+                                        if (!(message.inKey && typeof message.inKey.length === "number" || $util.isString(message.inKey)))
+                                            return "inKey: buffer expected";
+                                    if (message.key != null && message.hasOwnProperty("key"))
+                                        if (!(message.key && typeof message.key.length === "number" || $util.isString(message.key)))
+                                            return "key: buffer expected";
+                                    if (message.count != null && message.hasOwnProperty("count"))
+                                        if (!$util.isInteger(message.count) && !(message.count && $util.isInteger(message.count.low) && $util.isInteger(message.count.high)))
+                                            return "count: integer|Long expected";
+                                    if (message.sum != null && message.hasOwnProperty("sum"))
+                                        if (!$util.isInteger(message.sum) && !(message.sum && $util.isInteger(message.sum.low) && $util.isInteger(message.sum.high)))
+                                            return "sum: integer|Long expected";
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates an AverageEntry message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageEntry
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageEntry} AverageEntry
+                                 */
+                                AverageEntry.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageEntry)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageEntry();
+                                    if (object.inKey != null)
+                                        if (typeof object.inKey === "string")
+                                            $util.base64.decode(object.inKey, message.inKey = $util.newBuffer($util.base64.length(object.inKey)), 0);
+                                        else if (object.inKey.length >= 0)
+                                            message.inKey = object.inKey;
+                                    if (object.key != null)
+                                        if (typeof object.key === "string")
+                                            $util.base64.decode(object.key, message.key = $util.newBuffer($util.base64.length(object.key)), 0);
+                                        else if (object.key.length >= 0)
+                                            message.key = object.key;
+                                    if (object.count != null)
+                                        if ($util.Long)
+                                            (message.count = $util.Long.fromValue(object.count)).unsigned = true;
+                                        else if (typeof object.count === "string")
+                                            message.count = parseInt(object.count, 10);
+                                        else if (typeof object.count === "number")
+                                            message.count = object.count;
+                                        else if (typeof object.count === "object")
+                                            message.count = new $util.LongBits(object.count.low >>> 0, object.count.high >>> 0).toNumber(true);
+                                    if (object.sum != null)
+                                        if ($util.Long)
+                                            (message.sum = $util.Long.fromValue(object.sum)).unsigned = false;
+                                        else if (typeof object.sum === "string")
+                                            message.sum = parseInt(object.sum, 10);
+                                        else if (typeof object.sum === "number")
+                                            message.sum = object.sum;
+                                        else if (typeof object.sum === "object")
+                                            message.sum = new $util.LongBits(object.sum.low >>> 0, object.sum.high >>> 0).toNumber();
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from an AverageEntry message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageEntry
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageEntry} message AverageEntry
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                AverageEntry.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.defaults) {
+                                        if (options.bytes === String)
+                                            object.inKey = "";
+                                        else {
+                                            object.inKey = [];
+                                            if (options.bytes !== Array)
+                                                object.inKey = $util.newBuffer(object.inKey);
+                                        }
+                                        if (options.bytes === String)
+                                            object.key = "";
+                                        else {
+                                            object.key = [];
+                                            if (options.bytes !== Array)
+                                                object.key = $util.newBuffer(object.key);
+                                        }
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, true);
+                                            object.count = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.count = options.longs === String ? "0" : 0;
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, false);
+                                            object.sum = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.sum = options.longs === String ? "0" : 0;
+                                    }
+                                    if (message.inKey != null && message.hasOwnProperty("inKey"))
+                                        object.inKey = options.bytes === String ? $util.base64.encode(message.inKey, 0, message.inKey.length) : options.bytes === Array ? Array.prototype.slice.call(message.inKey) : message.inKey;
+                                    if (message.key != null && message.hasOwnProperty("key"))
+                                        object.key = options.bytes === String ? $util.base64.encode(message.key, 0, message.key.length) : options.bytes === Array ? Array.prototype.slice.call(message.key) : message.key;
+                                    if (message.count != null && message.hasOwnProperty("count"))
+                                        if (typeof message.count === "number")
+                                            object.count = options.longs === String ? String(message.count) : message.count;
+                                        else
+                                            object.count = options.longs === String ? $util.Long.prototype.toString.call(message.count) : options.longs === Number ? new $util.LongBits(message.count.low >>> 0, message.count.high >>> 0).toNumber(true) : message.count;
+                                    if (message.sum != null && message.hasOwnProperty("sum"))
+                                        if (typeof message.sum === "number")
+                                            object.sum = options.longs === String ? String(message.sum) : message.sum;
+                                        else
+                                            object.sum = options.longs === String ? $util.Long.prototype.toString.call(message.sum) : options.longs === Number ? new $util.LongBits(message.sum.low >>> 0, message.sum.high >>> 0).toNumber() : message.sum;
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this AverageEntry to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageEntry
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                AverageEntry.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return AverageEntry;
+                            })();
+
+                            GetDocumentsResponseV1.AverageEntries = (function() {
+
+                                /**
+                                 * Properties of an AverageEntries.
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1
+                                 * @interface IAverageEntries
+                                 * @property {Array.<org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.IAverageEntry>|null} [entries] AverageEntries entries
+                                 */
+
+                                /**
+                                 * Constructs a new AverageEntries.
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1
+                                 * @classdesc Represents an AverageEntries.
+                                 * @implements IAverageEntries
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.IAverageEntries=} [properties] Properties to set
+                                 */
+                                function AverageEntries(properties) {
+                                    this.entries = [];
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * AverageEntries entries.
+                                 * @member {Array.<org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.IAverageEntry>} entries
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageEntries
+                                 * @instance
+                                 */
+                                AverageEntries.prototype.entries = $util.emptyArray;
+
+                                /**
+                                 * Creates a new AverageEntries instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageEntries
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.IAverageEntries=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageEntries} AverageEntries instance
+                                 */
+                                AverageEntries.create = function create(properties) {
+                                    return new AverageEntries(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified AverageEntries message. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageEntries.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageEntries
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.IAverageEntries} message AverageEntries message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                AverageEntries.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.entries != null && message.entries.length)
+                                        for (var i = 0; i < message.entries.length; ++i)
+                                            $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageEntry.encode(message.entries[i], writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified AverageEntries message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageEntries.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageEntries
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.IAverageEntries} message AverageEntries message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                AverageEntries.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes an AverageEntries message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageEntries
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageEntries} AverageEntries
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                AverageEntries.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageEntries();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            if (!(message.entries && message.entries.length))
+                                                message.entries = [];
+                                            message.entries.push($root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageEntry.decode(reader, reader.uint32()));
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes an AverageEntries message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageEntries
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageEntries} AverageEntries
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                AverageEntries.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies an AverageEntries message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageEntries
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                AverageEntries.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.entries != null && message.hasOwnProperty("entries")) {
+                                        if (!Array.isArray(message.entries))
+                                            return "entries: array expected";
+                                        for (var i = 0; i < message.entries.length; ++i) {
+                                            var error = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageEntry.verify(message.entries[i]);
+                                            if (error)
+                                                return "entries." + error;
+                                        }
+                                    }
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates an AverageEntries message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageEntries
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageEntries} AverageEntries
+                                 */
+                                AverageEntries.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageEntries)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageEntries();
+                                    if (object.entries) {
+                                        if (!Array.isArray(object.entries))
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageEntries.entries: array expected");
+                                        message.entries = [];
+                                        for (var i = 0; i < object.entries.length; ++i) {
+                                            if (typeof object.entries[i] !== "object")
+                                                throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageEntries.entries: object expected");
+                                            message.entries[i] = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageEntry.fromObject(object.entries[i]);
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from an AverageEntries message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageEntries
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageEntries} message AverageEntries
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                AverageEntries.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.arrays || options.defaults)
+                                        object.entries = [];
+                                    if (message.entries && message.entries.length) {
+                                        object.entries = [];
+                                        for (var j = 0; j < message.entries.length; ++j)
+                                            object.entries[j] = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageEntry.toObject(message.entries[j], options);
+                                    }
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this AverageEntries to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageEntries
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                AverageEntries.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return AverageEntries;
+                            })();
+
+                            GetDocumentsResponseV1.AverageAggregate = (function() {
+
+                                /**
+                                 * Properties of an AverageAggregate.
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1
+                                 * @interface IAverageAggregate
+                                 * @property {number|Long|null} [count] AverageAggregate count
+                                 * @property {number|Long|null} [sum] AverageAggregate sum
+                                 */
+
+                                /**
+                                 * Constructs a new AverageAggregate.
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1
+                                 * @classdesc Represents an AverageAggregate.
+                                 * @implements IAverageAggregate
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.IAverageAggregate=} [properties] Properties to set
+                                 */
+                                function AverageAggregate(properties) {
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * AverageAggregate count.
+                                 * @member {number|Long} count
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageAggregate
+                                 * @instance
+                                 */
+                                AverageAggregate.prototype.count = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                                /**
+                                 * AverageAggregate sum.
+                                 * @member {number|Long} sum
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageAggregate
+                                 * @instance
+                                 */
+                                AverageAggregate.prototype.sum = $util.Long ? $util.Long.fromBits(0,0,false) : 0;
+
+                                /**
+                                 * Creates a new AverageAggregate instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageAggregate
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.IAverageAggregate=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageAggregate} AverageAggregate instance
+                                 */
+                                AverageAggregate.create = function create(properties) {
+                                    return new AverageAggregate(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified AverageAggregate message. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageAggregate.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageAggregate
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.IAverageAggregate} message AverageAggregate message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                AverageAggregate.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.count != null && Object.hasOwnProperty.call(message, "count"))
+                                        writer.uint32(/* id 1, wireType 0 =*/8).uint64(message.count);
+                                    if (message.sum != null && Object.hasOwnProperty.call(message, "sum"))
+                                        writer.uint32(/* id 2, wireType 0 =*/16).sint64(message.sum);
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified AverageAggregate message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageAggregate.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageAggregate
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.IAverageAggregate} message AverageAggregate message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                AverageAggregate.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes an AverageAggregate message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageAggregate
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageAggregate} AverageAggregate
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                AverageAggregate.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageAggregate();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            message.count = reader.uint64();
+                                            break;
+                                        case 2:
+                                            message.sum = reader.sint64();
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes an AverageAggregate message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageAggregate
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageAggregate} AverageAggregate
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                AverageAggregate.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies an AverageAggregate message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageAggregate
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                AverageAggregate.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.count != null && message.hasOwnProperty("count"))
+                                        if (!$util.isInteger(message.count) && !(message.count && $util.isInteger(message.count.low) && $util.isInteger(message.count.high)))
+                                            return "count: integer|Long expected";
+                                    if (message.sum != null && message.hasOwnProperty("sum"))
+                                        if (!$util.isInteger(message.sum) && !(message.sum && $util.isInteger(message.sum.low) && $util.isInteger(message.sum.high)))
+                                            return "sum: integer|Long expected";
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates an AverageAggregate message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageAggregate
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageAggregate} AverageAggregate
+                                 */
+                                AverageAggregate.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageAggregate)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageAggregate();
+                                    if (object.count != null)
+                                        if ($util.Long)
+                                            (message.count = $util.Long.fromValue(object.count)).unsigned = true;
+                                        else if (typeof object.count === "string")
+                                            message.count = parseInt(object.count, 10);
+                                        else if (typeof object.count === "number")
+                                            message.count = object.count;
+                                        else if (typeof object.count === "object")
+                                            message.count = new $util.LongBits(object.count.low >>> 0, object.count.high >>> 0).toNumber(true);
+                                    if (object.sum != null)
+                                        if ($util.Long)
+                                            (message.sum = $util.Long.fromValue(object.sum)).unsigned = false;
+                                        else if (typeof object.sum === "string")
+                                            message.sum = parseInt(object.sum, 10);
+                                        else if (typeof object.sum === "number")
+                                            message.sum = object.sum;
+                                        else if (typeof object.sum === "object")
+                                            message.sum = new $util.LongBits(object.sum.low >>> 0, object.sum.high >>> 0).toNumber();
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from an AverageAggregate message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageAggregate
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageAggregate} message AverageAggregate
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                AverageAggregate.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.defaults) {
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, true);
+                                            object.count = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.count = options.longs === String ? "0" : 0;
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, false);
+                                            object.sum = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.sum = options.longs === String ? "0" : 0;
+                                    }
+                                    if (message.count != null && message.hasOwnProperty("count"))
+                                        if (typeof message.count === "number")
+                                            object.count = options.longs === String ? String(message.count) : message.count;
+                                        else
+                                            object.count = options.longs === String ? $util.Long.prototype.toString.call(message.count) : options.longs === Number ? new $util.LongBits(message.count.low >>> 0, message.count.high >>> 0).toNumber(true) : message.count;
+                                    if (message.sum != null && message.hasOwnProperty("sum"))
+                                        if (typeof message.sum === "number")
+                                            object.sum = options.longs === String ? String(message.sum) : message.sum;
+                                        else
+                                            object.sum = options.longs === String ? $util.Long.prototype.toString.call(message.sum) : options.longs === Number ? new $util.LongBits(message.sum.low >>> 0, message.sum.high >>> 0).toNumber() : message.sum;
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this AverageAggregate to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageAggregate
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                AverageAggregate.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return AverageAggregate;
+                            })();
+
+                            GetDocumentsResponseV1.AverageResults = (function() {
+
+                                /**
+                                 * Properties of an AverageResults.
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1
+                                 * @interface IAverageResults
+                                 * @property {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.IAverageAggregate|null} [aggregateAverage] AverageResults aggregateAverage
+                                 * @property {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.IAverageEntries|null} [entries] AverageResults entries
+                                 */
+
+                                /**
+                                 * Constructs a new AverageResults.
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1
+                                 * @classdesc Represents an AverageResults.
+                                 * @implements IAverageResults
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.IAverageResults=} [properties] Properties to set
+                                 */
+                                function AverageResults(properties) {
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * AverageResults aggregateAverage.
+                                 * @member {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.IAverageAggregate|null|undefined} aggregateAverage
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageResults
+                                 * @instance
+                                 */
+                                AverageResults.prototype.aggregateAverage = null;
+
+                                /**
+                                 * AverageResults entries.
+                                 * @member {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.IAverageEntries|null|undefined} entries
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageResults
+                                 * @instance
+                                 */
+                                AverageResults.prototype.entries = null;
+
+                                // OneOf field names bound to virtual getters and setters
+                                var $oneOfFields;
+
+                                /**
+                                 * AverageResults variant.
+                                 * @member {"aggregateAverage"|"entries"|undefined} variant
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageResults
+                                 * @instance
+                                 */
+                                Object.defineProperty(AverageResults.prototype, "variant", {
+                                    get: $util.oneOfGetter($oneOfFields = ["aggregateAverage", "entries"]),
+                                    set: $util.oneOfSetter($oneOfFields)
+                                });
+
+                                /**
+                                 * Creates a new AverageResults instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageResults
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.IAverageResults=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageResults} AverageResults instance
+                                 */
+                                AverageResults.create = function create(properties) {
+                                    return new AverageResults(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified AverageResults message. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageResults.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageResults
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.IAverageResults} message AverageResults message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                AverageResults.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.aggregateAverage != null && Object.hasOwnProperty.call(message, "aggregateAverage"))
+                                        $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageAggregate.encode(message.aggregateAverage, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                    if (message.entries != null && Object.hasOwnProperty.call(message, "entries"))
+                                        $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageEntries.encode(message.entries, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified AverageResults message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageResults.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageResults
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.IAverageResults} message AverageResults message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                AverageResults.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes an AverageResults message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageResults
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageResults} AverageResults
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                AverageResults.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageResults();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            message.aggregateAverage = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageAggregate.decode(reader, reader.uint32());
+                                            break;
+                                        case 2:
+                                            message.entries = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageEntries.decode(reader, reader.uint32());
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes an AverageResults message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageResults
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageResults} AverageResults
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                AverageResults.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies an AverageResults message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageResults
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                AverageResults.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    var properties = {};
+                                    if (message.aggregateAverage != null && message.hasOwnProperty("aggregateAverage")) {
+                                        properties.variant = 1;
+                                        {
+                                            var error = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageAggregate.verify(message.aggregateAverage);
+                                            if (error)
+                                                return "aggregateAverage." + error;
+                                        }
+                                    }
+                                    if (message.entries != null && message.hasOwnProperty("entries")) {
+                                        if (properties.variant === 1)
+                                            return "variant: multiple values";
+                                        properties.variant = 1;
+                                        {
+                                            var error = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageEntries.verify(message.entries);
+                                            if (error)
+                                                return "entries." + error;
+                                        }
+                                    }
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates an AverageResults message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageResults
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageResults} AverageResults
+                                 */
+                                AverageResults.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageResults)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageResults();
+                                    if (object.aggregateAverage != null) {
+                                        if (typeof object.aggregateAverage !== "object")
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageResults.aggregateAverage: object expected");
+                                        message.aggregateAverage = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageAggregate.fromObject(object.aggregateAverage);
+                                    }
+                                    if (object.entries != null) {
+                                        if (typeof object.entries !== "object")
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageResults.entries: object expected");
+                                        message.entries = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageEntries.fromObject(object.entries);
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from an AverageResults message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageResults
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageResults} message AverageResults
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                AverageResults.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (message.aggregateAverage != null && message.hasOwnProperty("aggregateAverage")) {
+                                        object.aggregateAverage = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageAggregate.toObject(message.aggregateAverage, options);
+                                        if (options.oneofs)
+                                            object.variant = "aggregateAverage";
+                                    }
+                                    if (message.entries != null && message.hasOwnProperty("entries")) {
+                                        object.entries = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageEntries.toObject(message.entries, options);
+                                        if (options.oneofs)
+                                            object.variant = "entries";
+                                    }
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this AverageResults to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageResults
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                AverageResults.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return AverageResults;
+                            })();
+
                             GetDocumentsResponseV1.ResultData = (function() {
 
                                 /**
@@ -24870,6 +26582,8 @@ $root.org = (function() {
                                  * @interface IResultData
                                  * @property {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.IDocuments|null} [documents] ResultData documents
                                  * @property {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ICountResults|null} [counts] ResultData counts
+                                 * @property {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ISumResults|null} [sums] ResultData sums
+                                 * @property {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.IAverageResults|null} [averages] ResultData averages
                                  */
 
                                 /**
@@ -24903,17 +26617,33 @@ $root.org = (function() {
                                  */
                                 ResultData.prototype.counts = null;
 
+                                /**
+                                 * ResultData sums.
+                                 * @member {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ISumResults|null|undefined} sums
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ResultData
+                                 * @instance
+                                 */
+                                ResultData.prototype.sums = null;
+
+                                /**
+                                 * ResultData averages.
+                                 * @member {org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.IAverageResults|null|undefined} averages
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ResultData
+                                 * @instance
+                                 */
+                                ResultData.prototype.averages = null;
+
                                 // OneOf field names bound to virtual getters and setters
                                 var $oneOfFields;
 
                                 /**
                                  * ResultData variant.
-                                 * @member {"documents"|"counts"|undefined} variant
+                                 * @member {"documents"|"counts"|"sums"|"averages"|undefined} variant
                                  * @memberof org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ResultData
                                  * @instance
                                  */
                                 Object.defineProperty(ResultData.prototype, "variant", {
-                                    get: $util.oneOfGetter($oneOfFields = ["documents", "counts"]),
+                                    get: $util.oneOfGetter($oneOfFields = ["documents", "counts", "sums", "averages"]),
                                     set: $util.oneOfSetter($oneOfFields)
                                 });
 
@@ -24945,6 +26675,10 @@ $root.org = (function() {
                                         $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.Documents.encode(message.documents, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
                                     if (message.counts != null && Object.hasOwnProperty.call(message, "counts"))
                                         $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountResults.encode(message.counts, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                    if (message.sums != null && Object.hasOwnProperty.call(message, "sums"))
+                                        $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumResults.encode(message.sums, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                    if (message.averages != null && Object.hasOwnProperty.call(message, "averages"))
+                                        $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageResults.encode(message.averages, writer.uint32(/* id 4, wireType 2 =*/34).fork()).ldelim();
                                     return writer;
                                 };
 
@@ -24984,6 +26718,12 @@ $root.org = (function() {
                                             break;
                                         case 2:
                                             message.counts = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountResults.decode(reader, reader.uint32());
+                                            break;
+                                        case 3:
+                                            message.sums = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumResults.decode(reader, reader.uint32());
+                                            break;
+                                        case 4:
+                                            message.averages = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageResults.decode(reader, reader.uint32());
                                             break;
                                         default:
                                             reader.skipType(tag & 7);
@@ -25039,6 +26779,26 @@ $root.org = (function() {
                                                 return "counts." + error;
                                         }
                                     }
+                                    if (message.sums != null && message.hasOwnProperty("sums")) {
+                                        if (properties.variant === 1)
+                                            return "variant: multiple values";
+                                        properties.variant = 1;
+                                        {
+                                            var error = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumResults.verify(message.sums);
+                                            if (error)
+                                                return "sums." + error;
+                                        }
+                                    }
+                                    if (message.averages != null && message.hasOwnProperty("averages")) {
+                                        if (properties.variant === 1)
+                                            return "variant: multiple values";
+                                        properties.variant = 1;
+                                        {
+                                            var error = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageResults.verify(message.averages);
+                                            if (error)
+                                                return "averages." + error;
+                                        }
+                                    }
                                     return null;
                                 };
 
@@ -25063,6 +26823,16 @@ $root.org = (function() {
                                         if (typeof object.counts !== "object")
                                             throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ResultData.counts: object expected");
                                         message.counts = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountResults.fromObject(object.counts);
+                                    }
+                                    if (object.sums != null) {
+                                        if (typeof object.sums !== "object")
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ResultData.sums: object expected");
+                                        message.sums = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumResults.fromObject(object.sums);
+                                    }
+                                    if (object.averages != null) {
+                                        if (typeof object.averages !== "object")
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.ResultData.averages: object expected");
+                                        message.averages = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageResults.fromObject(object.averages);
                                     }
                                     return message;
                                 };
@@ -25089,6 +26859,16 @@ $root.org = (function() {
                                         object.counts = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.CountResults.toObject(message.counts, options);
                                         if (options.oneofs)
                                             object.variant = "counts";
+                                    }
+                                    if (message.sums != null && message.hasOwnProperty("sums")) {
+                                        object.sums = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.SumResults.toObject(message.sums, options);
+                                        if (options.oneofs)
+                                            object.variant = "sums";
+                                    }
+                                    if (message.averages != null && message.hasOwnProperty("averages")) {
+                                        object.averages = $root.org.dash.platform.dapi.v0.GetDocumentsResponse.GetDocumentsResponseV1.AverageResults.toObject(message.averages, options);
+                                        if (options.oneofs)
+                                            object.variant = "averages";
                                     }
                                     return object;
                                 };

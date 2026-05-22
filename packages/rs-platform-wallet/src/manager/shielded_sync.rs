@@ -1,21 +1,27 @@
 //! Periodic shielded (Orchard) note + nullifier sync coordinator.
 //!
 //! Mirrors [`PlatformAddressSyncManager`](super::platform_address_sync::PlatformAddressSyncManager):
-//! runs [`PlatformWallet::shielded_sync`] for every wallet that has a
-//! bound [`ShieldedWallet`] on a fixed cadence, and emits a summary
-//! event so UI and persistence layers can react.
+//! drives a single
+//! [`NetworkShieldedCoordinator::sync`](crate::wallet::shielded::NetworkShieldedCoordinator::sync)
+//! pass on a fixed cadence and emits a summary event so UI and
+//! persistence layers can react. The coordinator pass itself
+//! covers every wallet registered on the network in a single
+//! SDK fetch (see the coordinator's module docs).
 //!
-//! Wallets without a bound shielded sub-wallet are silently skipped
-//! — `bind_shielded` is the host's responsibility (it requires
-//! mnemonic access via the keychain resolver), so the manager
-//! shouldn't error out passes just because some wallets aren't yet
-//! shielded-aware.
+//! Empty-coordinator handling: if shielded support hasn't been
+//! configured (no [`configure_shielded`] call has run yet), sync
+//! passes return an empty summary — no wallet on this manager
+//! can have shielded state until the coordinator exists, so
+//! iterating wallets here would just produce noise.
 //!
-//! Not auto-started. Call [`ShieldedSyncManager::start`] once the
-//! shielded sub-wallets are bound.
+//! Not auto-started. Call [`ShieldedSyncManager::start`] once
+//! shielded support has been configured and at least one wallet
+//! has bound.
 //!
-//! Feature-gated behind `shielded` — when the feature is off, the
-//! whole module is omitted from the build.
+//! Feature-gated behind `shielded` — when the feature is off,
+//! the whole module is omitted from the build.
+//!
+//! [`configure_shielded`]: crate::manager::PlatformWalletManager::configure_shielded
 
 use std::collections::BTreeMap;
 use std::sync::{
@@ -29,8 +35,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::events::PlatformEventManager;
 use crate::wallet::platform_wallet::WalletId;
-use crate::wallet::shielded::ShieldedSyncSummary;
-use crate::wallet::PlatformWallet;
+use crate::wallet::shielded::{NetworkShieldedCoordinator, ShieldedSyncSummary};
 
 /// Default cadence — 60s. Shielded sync is heavier than address sync
 /// (chunked at 2048 entries with trial decryption per entry), so this
@@ -103,26 +108,35 @@ impl ShieldedSyncPassSummary {
 
 /// Periodic shielded sync coordinator.
 ///
-/// Holds a handle to the same `wallets` map owned by
+/// Holds a handle to the same `coordinator_slot` owned by
 /// [`PlatformWalletManager`](super::PlatformWalletManager) (via
-/// `Arc`), so wallets bound after `start` are picked up on the next
-/// tick without any re-registration.
+/// `Arc`), so wallets bound after `start` are picked up on the
+/// next tick without any re-registration (the network-scoped
+/// coordinator iterates its own registry).
 ///
 /// Each pass:
-/// 1. Snapshots the wallet map (short read lock, no await while
-///    held).
-/// 2. Calls [`PlatformWallet::shielded_sync`] on each wallet
-///    sequentially. Returns
-///    [`WalletShieldedOutcome::Skipped`] for unbound wallets.
+/// 1. Snapshots the coordinator `Arc` (short read lock, no
+///    `.await` while held).
+/// 2. Calls [`NetworkShieldedCoordinator::sync`] once — the
+///    coordinator handles the union of every registered
+///    subwallet's IVK in a single SDK fetch.
 /// 3. Stores the pass timestamp.
 /// 4. Dispatches
 ///    [`PlatformEventManager::on_shielded_sync_completed`].
 ///
 /// `sync_now` is re-entrant-safe: if a pass is already running,
-/// calling `sync_now` again returns an empty summary immediately.
+/// calling `sync_now` again returns an empty summary
+/// immediately.
 pub struct ShieldedSyncManager {
-    wallets: Arc<RwLock<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
     event_manager: Arc<PlatformEventManager>,
+    /// Network-scoped shielded coordinator slot, shared with the
+    /// owning `PlatformWalletManager`. Sync passes route through
+    /// `coordinator.sync(force)` whenever the slot is populated;
+    /// an empty slot returns an empty pass summary (no wallets
+    /// can be shielded-bound without `configure_shielded` having
+    /// run first, so an empty slot guarantees no shielded state
+    /// exists).
+    coordinator_slot: Arc<RwLock<Option<Arc<NetworkShieldedCoordinator>>>>,
     /// Cancel token for the background loop, if running.
     background_cancel: StdMutex<Option<CancellationToken>>,
     /// Monotonically increasing generation counter. Bumped on every
@@ -135,22 +149,30 @@ pub struct ShieldedSyncManager {
     background_generation: AtomicU64,
     interval_secs: AtomicU64,
     is_syncing: AtomicBool,
+    /// Set by [`quiesce`](Self::quiesce) to gate new passes while it
+    /// drains an in-flight one. `sync_now` / `sync_wallet` bail (after
+    /// taking the `is_syncing` slot) when this is set, so once `quiesce`
+    /// observes `is_syncing == false` no further pass can start — giving
+    /// Clear / stop a real "no more host-visible mutations" barrier that
+    /// cancel-only [`stop`](Self::stop) does not provide.
+    quiescing: AtomicBool,
     /// Unix seconds of the last completed pass. `0` = never.
     last_sync_unix: AtomicU64,
 }
 
 impl ShieldedSyncManager {
     pub fn new(
-        wallets: Arc<RwLock<BTreeMap<WalletId, Arc<PlatformWallet>>>>,
         event_manager: Arc<PlatformEventManager>,
+        coordinator_slot: Arc<RwLock<Option<Arc<NetworkShieldedCoordinator>>>>,
     ) -> Self {
         Self {
-            wallets,
             event_manager,
+            coordinator_slot,
             background_cancel: StdMutex::new(None),
             background_generation: AtomicU64::new(0),
             interval_secs: AtomicU64::new(DEFAULT_SYNC_INTERVAL_SECS),
             is_syncing: AtomicBool::new(false),
+            quiescing: AtomicBool::new(false),
             last_sync_unix: AtomicU64::new(0),
         }
     }
@@ -221,7 +243,14 @@ impl ShieldedSyncManager {
                             break;
                         }
 
-                        this.sync_now().await;
+                        // Background-loop cadence — honor the
+                        // per-wallet caught-up cooldown so a
+                        // sleepy network doesn't refetch +
+                        // re-trial-decrypt the partial buffer
+                        // chunk every interval. User-initiated
+                        // syncs pass `force=true` to the FFI
+                        // entry point below and bypass this.
+                        this.sync_now(false).await;
 
                         let interval = this.interval();
                         tokio::select! {
@@ -247,6 +276,13 @@ impl ShieldedSyncManager {
     }
 
     /// Stop the background sync loop. No-op if not running.
+    ///
+    /// **Cancel-only**: this requests cancellation and returns
+    /// immediately. A pass already inside `sync_now` /
+    /// `coordinator.sync()` keeps running to completion (including its
+    /// persister-callback fan-out). For a real "nothing is running and
+    /// nothing more will be persisted" barrier — required by Clear,
+    /// unregister, and rebind — use [`quiesce`](Self::quiesce).
     pub fn stop(&self) {
         if let Some(token) = self
             .background_cancel
@@ -258,11 +294,44 @@ impl ShieldedSyncManager {
         }
     }
 
+    /// Cancel the background loop **and wait for any in-flight sync pass
+    /// to fully drain** before returning — a real quiescence barrier,
+    /// unlike cancel-only [`stop`](Self::stop).
+    ///
+    /// After this returns, no sync pass is running and none can start
+    /// until the next [`start`](Self::start) / `sync_now`, so a caller
+    /// that immediately mutates state a pass touches (Clear's registry
+    /// wipe + the host's SwiftData delete; wallet unregister; rebind)
+    /// cannot be raced by a pass that re-persists notes after the caller
+    /// believed sync had stopped.
+    ///
+    /// Mechanism: set the `quiescing` gate so any pass that hasn't yet
+    /// taken the `is_syncing` slot bails, cancel the loop, then wait for
+    /// `is_syncing` to clear. `is_syncing` is held for the whole pass
+    /// including the persister fan-out, so its falling edge (with the
+    /// gate up) is a sound "fully drained" signal. The gate is reopened
+    /// before returning so a later start/sync works normally.
+    pub async fn quiesce(&self) {
+        self.quiescing.store(true, Ordering::Release);
+        self.stop();
+        while self.is_syncing.load(Ordering::Acquire) {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        self.quiescing.store(false, Ordering::Release);
+    }
+
     /// Run one sync pass across every registered wallet.
+    ///
+    /// `force` is propagated to each wallet's
+    /// [`shielded_sync(force)`](crate::wallet::PlatformWallet::shielded_sync):
+    /// the background loop passes `false` to honor the per-wallet
+    /// caught-up cooldown; user-initiated paths (the manual
+    /// "Sync Now" FFI) pass `true` so a tap always re-checks
+    /// Platform.
     ///
     /// If a pass is already in flight, returns an empty summary and
     /// skips — the caller can inspect [`is_syncing`] to distinguish.
-    pub async fn sync_now(&self) -> ShieldedSyncPassSummary {
+    pub async fn sync_now(&self, force: bool) -> ShieldedSyncPassSummary {
         if self
             .is_syncing
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
@@ -271,73 +340,93 @@ impl ShieldedSyncManager {
             return ShieldedSyncPassSummary::default();
         }
 
-        let snapshot: Vec<(WalletId, Arc<PlatformWallet>)> = {
-            let wallets = self.wallets.read().await;
-            wallets.iter().map(|(id, w)| (*id, Arc::clone(w))).collect()
+        // A `quiesce()` may have raised the gate between our CAS and
+        // here; if so, release the slot and bail without running a pass
+        // so the drain can complete and Clear/stop get a true barrier.
+        if self.quiescing.load(Ordering::Acquire) {
+            self.is_syncing.store(false, Ordering::Release);
+            return ShieldedSyncPassSummary::default();
+        }
+
+        // Snapshot the coordinator Arc and release the slot lock
+        // before awaiting so a concurrent `configure_shielded`
+        // can't deadlock against our pass.
+        //
+        // Empty-coordinator handling: if shielded support hasn't
+        // been configured yet, return an empty pass summary —
+        // `bind_shielded` requires `configure_shielded` to run
+        // first (the FFI enforces this), so no wallet on this
+        // manager can possibly have shielded state until the
+        // coordinator exists.
+        let coordinator_snapshot: Option<Arc<NetworkShieldedCoordinator>> = {
+            let slot = self.coordinator_slot.read().await;
+            slot.as_ref().map(Arc::clone)
         };
 
-        let mut summary = ShieldedSyncPassSummary::default();
-        for (wallet_id, wallet) in snapshot {
-            let outcome = match wallet.shielded_sync().await {
-                Ok(Some(result)) => WalletShieldedOutcome::Ok(result),
-                Ok(None) => WalletShieldedOutcome::Skipped,
-                Err(e) => {
-                    tracing::warn!(
-                        "Shielded sync failed for wallet {}: {}",
-                        hex::encode(wallet_id),
-                        e
-                    );
-                    WalletShieldedOutcome::Err(e.to_string())
-                }
-            };
-            summary.wallet_results.insert(wallet_id, outcome);
-        }
+        let mut summary = if let Some(coordinator) = coordinator_snapshot {
+            coordinator.sync(force).await
+        } else {
+            ShieldedSyncPassSummary::default()
+        };
 
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_secs())
             .unwrap_or(0);
-        summary.sync_unix_seconds = now;
-        self.last_sync_unix.store(now, Ordering::Release);
-        self.is_syncing.store(false, Ordering::Release);
+        // Honor the coordinator's own `sync_unix_seconds` stamp
+        // when it set one; supply our own otherwise (empty pass).
+        if summary.sync_unix_seconds == 0 {
+            summary.sync_unix_seconds = now;
+        }
+        self.last_sync_unix
+            .store(summary.sync_unix_seconds, Ordering::Release);
 
+        // Dispatch the completion event BEFORE clearing `is_syncing`.
+        // `quiesce()` drains on the falling edge of `is_syncing`, so if
+        // we cleared the flag first a stop/clear caller could unblock
+        // while this completion event (FFI callback → Swift
+        // `handleShieldedSyncCompleted`) is still pending — surfacing a
+        // stale post-stop/post-clear event. Holding the flag across the
+        // dispatch makes quiesce's barrier cover the event too.
         self.event_manager.on_shielded_sync_completed(&summary);
+
+        self.is_syncing.store(false, Ordering::Release);
 
         summary
     }
 
     /// Sync a single wallet on demand.
     ///
-    /// Acquires the manager's `is_syncing` exclusion before
-    /// touching the wallet's shielded sub-wallet, mirroring
-    /// [`sync_now`]. If a pass is already in flight this returns
-    /// `Ok(None)` immediately rather than serializing — the caller
-    /// got told "no" without their request also blocking the
-    /// running periodic pass. Inspect [`is_syncing`] beforehand if
-    /// you need to distinguish "wallet has no shielded sub-wallet"
-    /// from "another pass was running".
+    /// Post-Phase-2b shape: since the coordinator's sync pass is
+    /// already network-wide (one SDK fetch covers every
+    /// registered IVK), "sync this wallet" is implemented as a
+    /// full coordinator pass that returns this wallet's slice of
+    /// the result. The result map is keyed by `WalletId`; this
+    /// method extracts the requested wallet's
+    /// [`ShieldedSyncSummary`] before returning.
     ///
-    /// Returns `Ok(None)` if the wallet has no bound shielded
-    /// sub-wallet, or if another sync pass was already in flight.
+    /// Returns `Ok(None)` if `wallet_id` isn't registered on the
+    /// coordinator (e.g. shielded support hasn't been configured,
+    /// or the wallet has never called `bind_shielded`), or if
+    /// another sync pass was already in flight.
     pub async fn sync_wallet(
         &self,
         wallet_id: &WalletId,
+        force: bool,
     ) -> Result<Option<ShieldedSyncSummary>, crate::error::PlatformWalletError> {
-        let wallet = {
-            let wallets = self.wallets.read().await;
-            wallets.get(wallet_id).cloned()
+        let coordinator_snapshot: Option<Arc<NetworkShieldedCoordinator>> = {
+            let slot = self.coordinator_slot.read().await;
+            slot.as_ref().map(Arc::clone)
         };
-        let wallet = wallet.ok_or_else(|| {
-            crate::error::PlatformWalletError::WalletNotFound(hex::encode(wallet_id))
-        })?;
+        let Some(coordinator) = coordinator_snapshot else {
+            return Ok(None);
+        };
 
         // Reuse the manager-wide `is_syncing` flag so a per-wallet
-        // sync_wallet() can't race the periodic sync_now() against
-        // the same `ShieldedWallet` / store. PlatformWallet's
-        // `shielded_sync` only takes a read lock on the optional
-        // shielded slot, so without this gate two passes can step
-        // on each other's commitment-tree appends and
-        // last-synced-index updates.
+        // `sync_wallet()` can't race the periodic `sync_now()`
+        // against the same store — both go through
+        // `coordinator.sync()`, which serializes per-coordinator
+        // but the manager flag is what the host UI watches.
         if self
             .is_syncing
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
@@ -346,10 +435,31 @@ impl ShieldedSyncManager {
             return Ok(None);
         }
 
-        let result = wallet.shielded_sync().await;
+        // Bail if a `quiesce()` raised the gate after our CAS (see
+        // `sync_now`) so the drain barrier holds.
+        if self.quiescing.load(Ordering::Acquire) {
+            self.is_syncing.store(false, Ordering::Release);
+            return Ok(None);
+        }
 
+        let pass = coordinator.sync(force).await;
         self.is_syncing.store(false, Ordering::Release);
-        result
+
+        // Extract this wallet's slice from the network-wide pass
+        // summary. If the wallet is registered, we'll get back an
+        // outcome; otherwise `None`.
+        match pass
+            .wallet_results
+            .into_iter()
+            .find(|(id, _)| id == wallet_id)
+        {
+            Some((_, WalletShieldedOutcome::Ok(summary))) => Ok(Some(summary)),
+            Some((_, WalletShieldedOutcome::Skipped)) => Ok(None),
+            Some((_, WalletShieldedOutcome::Err(e))) => {
+                Err(crate::error::PlatformWalletError::ShieldedSyncFailed(e))
+            }
+            None => Ok(None),
+        }
     }
 }
 

@@ -60,6 +60,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Network::Testnet,
             seed_bytes,
             WalletAccountCreationOptions::Default,
+            None,
         )
         .await?;
 

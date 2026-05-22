@@ -136,16 +136,27 @@ impl Drive {
         {
             DocumentEstimatedAverageSize(query_target.len())
         } else if let Some(document_element) = &document_element {
-            if let Element::Item(data, element_flags) = document_element {
-                let document =
-                    Document::from_bytes(data.as_slice(), document_type, platform_version)?;
-                let storage_flags = StorageFlags::map_cow_some_element_flags_ref(element_flags)?;
-                DocumentOwnedInfo((document, storage_flags))
-            } else {
-                return Err(Error::Drive(DriveError::CorruptedDocumentNotItem(
-                    "document being deleted is not an item",
-                )));
-            }
+            // Accept BOTH plain `Item` (non-summable doctypes) AND
+            // `ItemWithSumItem` (summable doctypes — primary storage on
+            // doctypes with `documents_summable: Some(_)` is written as
+            // ItemWithSumItem by `add_document_to_primary_storage`).
+            // The sum_value is discarded here because the delete only
+            // needs the document body + flags; grovedb reads the
+            // existing element's `sum_value` straight off storage and
+            // propagates the subtraction up the ancestor merk path.
+            // Mirrors the same dual-arm match in the update path.
+            let (data, element_flags) = match document_element {
+                Element::Item(data, flags) => (data, flags),
+                Element::ItemWithSumItem(data, _sum_value, flags) => (data, flags),
+                _ => {
+                    return Err(Error::Drive(DriveError::CorruptedDocumentNotItem(
+                        "document being deleted is not an item or item-with-sum-item",
+                    )))
+                }
+            };
+            let document = Document::from_bytes(data.as_slice(), document_type, platform_version)?;
+            let storage_flags = StorageFlags::map_cow_some_element_flags_ref(element_flags)?;
+            DocumentOwnedInfo((document, storage_flags))
         } else {
             return Err(Error::Drive(DriveError::DeletingDocumentThatDoesNotExist(
                 "document being deleted does not exist",
