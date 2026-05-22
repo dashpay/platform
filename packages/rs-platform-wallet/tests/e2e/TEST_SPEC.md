@@ -1675,7 +1675,7 @@ This section covers primitive-level correctness of `AssetLockManager` — the in
 
 #### DPNS-001 — Register and resolve a `.dash` name
 - **Priority**: P0
-- **Status**: green — implemented in `cases/dpns_001_register_name.rs`; `#[ignore]`-gated, run with `cargo test -- --ignored`; PASS in v47.
+- **Status**: green — implemented in `cases/dpns_001_register_name.rs`; `#[ignore]`-gated, run with `cargo test -p platform-wallet --test e2e --features e2e`; PASS in v47.
 - **Wallet feature exercised**: `wallet/identity/network/dpns.rs:176` (`register_name_with_external_signer`); `dpns.rs:281` (`resolve_name`).
 - **DET parallel**: `dash-evo-tool/tests/backend-e2e/register_dpns.rs:14` (`test_register_dpns_name`).
 - **Preconditions**: ID-001 helper; identity has `≥ 100_000_000` credits (DPNS register fee + headroom).
