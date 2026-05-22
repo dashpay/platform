@@ -30,7 +30,11 @@ pub struct GroupQuery {
 }
 
 impl Query<GetGroupInfoRequest> for GroupQuery {
-    fn query(self, prove: bool) -> Result<GetGroupInfoRequest, Error> {
+    fn query(
+        &self,
+        settings: &crate::platform::QuerySettings<'_>,
+    ) -> Result<GetGroupInfoRequest, Error> {
+        let prove = settings.prove;
         let request = GetGroupInfoRequest {
             version: Some(get_group_info_request::Version::V0(GetGroupInfoRequestV0 {
                 contract_id: self.contract_id.to_vec(),
@@ -44,6 +48,7 @@ impl Query<GetGroupInfoRequest> for GroupQuery {
 }
 
 impl Fetch for Group {
+    type Query = GetGroupInfoRequest;
     type Request = GetGroupInfoRequest;
 }
 
@@ -61,7 +66,11 @@ pub struct GroupInfosQuery {
 }
 
 impl Query<GetGroupInfosRequest> for GroupInfosQuery {
-    fn query(self, prove: bool) -> Result<GetGroupInfosRequest, Error> {
+    fn query(
+        &self,
+        settings: &crate::platform::QuerySettings<'_>,
+    ) -> Result<GetGroupInfosRequest, Error> {
+        let prove = settings.prove;
         let request = GetGroupInfosRequest {
             version: Some(get_group_infos_request::Version::V0(
                 GetGroupInfosRequestV0 {
@@ -83,6 +92,7 @@ impl Query<GetGroupInfosRequest> for GroupInfosQuery {
 }
 
 impl FetchMany<GroupContractPosition, Groups> for Group {
+    type Query = GetGroupInfosRequest;
     type Request = GetGroupInfosRequest;
 }
 
@@ -104,7 +114,11 @@ pub struct GroupActionsQuery {
 }
 
 impl Query<GetGroupActionsRequest> for GroupActionsQuery {
-    fn query(self, prove: bool) -> Result<GetGroupActionsRequest, Error> {
+    fn query(
+        &self,
+        settings: &crate::platform::QuerySettings<'_>,
+    ) -> Result<GetGroupActionsRequest, Error> {
+        let prove = settings.prove;
         let request = GetGroupActionsRequest {
             version: Some(get_group_actions_request::Version::V0(
                 GetGroupActionsRequestV0 {
@@ -128,6 +142,7 @@ impl Query<GetGroupActionsRequest> for GroupActionsQuery {
 }
 
 impl FetchMany<Identifier, GroupActions> for GroupAction {
+    type Query = GetGroupActionsRequest;
     type Request = GetGroupActionsRequest;
 }
 
@@ -145,7 +160,11 @@ pub struct GroupActionSignersQuery {
 }
 
 impl Query<GetGroupActionSignersRequest> for GroupActionSignersQuery {
-    fn query(self, prove: bool) -> Result<GetGroupActionSignersRequest, Error> {
+    fn query(
+        &self,
+        settings: &crate::platform::QuerySettings<'_>,
+    ) -> Result<GetGroupActionSignersRequest, Error> {
+        let prove = settings.prove;
         let request = GetGroupActionSignersRequest {
             version: Some(get_group_action_signers_request::Version::V0(
                 GetGroupActionSignersRequestV0 {
@@ -163,5 +182,6 @@ impl Query<GetGroupActionSignersRequest> for GroupActionSignersQuery {
 }
 
 impl FetchMany<Identifier, GroupActionSigners> for GroupMemberPower {
+    type Query = GetGroupActionSignersRequest;
     type Request = GetGroupActionSignersRequest;
 }

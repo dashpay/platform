@@ -108,6 +108,12 @@ impl PlatformWalletInfo {
             wallet_metadata: _,
             account_registrations: _,
             account_address_pools: _,
+            // Shielded deltas are owned by `ShieldedWallet` (which
+            // mutates its store directly during sync / spend); the
+            // canonical in-memory state lives there and the
+            // changeset is persistence-side only. Drop here.
+            #[cfg(feature = "shielded")]
+                shielded: _,
         } = cs;
 
         // 1. Core wallet state. In the new event-bus model, a
