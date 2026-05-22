@@ -127,11 +127,12 @@ the secrets feature.
 ## Schema
 
 See [`migrations/V001__initial.rs`](./migrations/V001__initial.rs) for
-the canonical schema and
-[`migrations/V002__defensive_update_triggers.rs`](./migrations/V002__defensive_update_triggers.rs)
-for the `BEFORE UPDATE` FK-column guards. Foreign-key integrity is
-emulated with triggers because barrel's column builder does not emit
-composite-key `FK` clauses portably; INSERT, DELETE-cascade, and
-UPDATE of `wallet_id` / `identity_id` are all covered. The result
-matches native FKs for the persister's own write path, which never
-mutates those columns directly.
+the canonical schema. It is hand-written `CREATE TABLE … PRIMARY KEY …
+FOREIGN KEY …` SQL with native `ON DELETE CASCADE` constraints; INSERT,
+DELETE-cascade, and UPDATE re-parenting are all enforced by SQLite
+itself. Foreign-key enforcement is enabled and read-back-asserted on
+every connection open via the `open_conn` choke-point — if the linked
+SQLite cannot honor `PRAGMA foreign_keys`, open fails hard. The single
+remaining trigger clears `core_utxos.spent_in_txid` to NULL on
+transaction delete (a native composite `SET NULL` would null the
+NOT-NULL `wallet_id` column too).

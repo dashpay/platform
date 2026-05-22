@@ -9,6 +9,7 @@
 pub mod backup;
 pub mod buffer;
 pub mod config;
+pub(crate) mod conn;
 pub mod error;
 pub mod migrations;
 pub mod persister;

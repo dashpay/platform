@@ -1,6 +1,6 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! TC-045..TC-048 — foreign-key enforcement (emulated via triggers).
+//! TC-045..TC-048 — native foreign-key enforcement.
 
 mod common;
 

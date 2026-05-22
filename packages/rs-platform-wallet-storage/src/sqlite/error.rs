@@ -109,6 +109,16 @@ pub enum WalletStorageError {
     #[error("wallet not found: {}", hex::encode(wallet_id))]
     WalletNotFound { wallet_id: [u8; 32] },
 
+    /// A changeset entry named a `wallet_id` different from the wallet
+    /// the flush is scoped to — writing it would mis-file the row under
+    /// the wrong parent.
+    #[error(
+        "wallet id mismatch: entry names {} but flush is scoped to {}",
+        hex::encode(found),
+        hex::encode(expected)
+    )]
+    WalletIdMismatch { expected: [u8; 32], found: [u8; 32] },
+
     /// A previous holder of an internal mutex panicked. Maps to the
     /// trait-level [`PersistenceError::LockPoisoned`] so callers can
     /// still pattern-match the boundary variant cleanly.
@@ -178,6 +188,20 @@ pub enum WalletStorageError {
     /// destination file.
     #[error("backup destination already exists: {}", path.display())]
     BackupDestinationExists { path: PathBuf },
+
+    /// An `identity_keys` upsert entry's `(identity_id, key_id,
+    /// wallet_id)` fields disagreed with the map key / flush scope the
+    /// typed columns are bound from — persisting it would leave the
+    /// typed columns and the serialized blob describing different rows.
+    #[error("identity key entry fields disagree with its map key / wallet scope")]
+    IdentityKeyEntryMismatch,
+
+    /// `PRAGMA foreign_keys = ON` was issued on open but the read-back
+    /// reported the constraint enforcement is still off — the linked
+    /// SQLite build silently ignores the pragma (no FK support compiled
+    /// in). Hard-error at open rather than letting orphan rows accrue.
+    #[error("SQLite foreign-key enforcement could not be enabled on this connection")]
+    ForeignKeysNotEnforced,
 
     /// A value couldn't be cast to the database's native i64
     /// representation without losing magnitude.
@@ -287,6 +311,7 @@ impl WalletStorageError {
             | Self::AutoBackupDisabled { .. }
             | Self::AutoBackupDirUnwritable { .. }
             | Self::WalletNotFound { .. }
+            | Self::WalletIdMismatch { .. }
             // TODO(qa): TC-P2-008 — `LockPoisoned` is classified as
             // fatal here, but the end-to-end mutex-poison flow has no
             // automated test (the spec deferred it as race-prone — a
@@ -306,6 +331,8 @@ impl WalletStorageError {
             | Self::HashDecode { .. }
             | Self::ConsensusCodec { .. }
             | Self::BackupDestinationExists { .. }
+            | Self::ForeignKeysNotEnforced
+            | Self::IdentityKeyEntryMismatch
             | Self::IntegerOverflow { .. } => false,
         }
     }
@@ -334,6 +361,7 @@ impl WalletStorageError {
             Self::AutoBackupDisabled { .. } => "auto_backup_disabled",
             Self::AutoBackupDirUnwritable { .. } => "auto_backup_dir_unwritable",
             Self::WalletNotFound { .. } => "wallet_not_found",
+            Self::WalletIdMismatch { .. } => "wallet_id_mismatch",
             Self::LockPoisoned => "lock_poisoned",
             Self::RestoreDestinationLocked => "restore_destination_locked",
             Self::InvalidWalletIdHex { .. } => "invalid_wallet_id_hex",
@@ -345,6 +373,8 @@ impl WalletStorageError {
             Self::HashDecode { .. } => "hash_decode",
             Self::ConsensusCodec { .. } => "consensus_codec",
             Self::BackupDestinationExists { .. } => "backup_destination_exists",
+            Self::ForeignKeysNotEnforced => "foreign_keys_not_enforced",
+            Self::IdentityKeyEntryMismatch => "identity_key_entry_mismatch",
             Self::IntegerOverflow { .. } => "integer_overflow",
         }
     }

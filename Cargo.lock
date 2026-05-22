@@ -404,12 +404,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "barrel"
-version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ad9e605929a6964efbec5ac0884bd0fe93f12a3b1eb271f52c251316640c68d9"
-
-[[package]]
 name = "base16ct"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4951,7 +4945,6 @@ name = "platform-wallet-storage"
 version = "3.1.0-dev.5"
 dependencies = [
  "assert_cmd",
- "barrel",
  "bincode",
  "chrono",
  "clap",

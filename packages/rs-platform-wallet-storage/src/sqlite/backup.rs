@@ -12,6 +12,17 @@ use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::persister::{PruneReport, RetentionPolicy};
 use crate::sqlite::util::permissions::apply_secure_permissions;
 
+/// Normalize an `open_conn` failure on a candidate source/staged file
+/// to the typed [`WalletStorageError::SourceOpenFailed`]. A raw rusqlite
+/// open error keeps its `#[source]`; any other variant (e.g. a future
+/// FK assertion on a RW open) passes through unchanged.
+fn map_source_open_err(err: WalletStorageError) -> WalletStorageError {
+    match err {
+        WalletStorageError::Sqlite(source) => WalletStorageError::SourceOpenFailed { source },
+        other => other,
+    }
+}
+
 /// Distinguishes auto-backup filenames.
 #[derive(Debug, Clone, Copy)]
 pub enum BackupKind {
@@ -46,7 +57,25 @@ pub fn run_to(src: &Connection, dest: &Path) -> Result<(), WalletStorageError> {
             std::fs::create_dir_all(parent)?;
         }
     }
-    let mut backup_conn = Connection::open(dest)?;
+    // Atomically stake the destination so the exists-check in
+    // `backup_to` can't race a second writer to the same path
+    // (timestamped auto-backup names are unique, so this never trips
+    // them). SQLite then opens the freshly created empty file.
+    match std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(dest)
+    {
+        Ok(_) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+            return Err(WalletStorageError::BackupDestinationExists {
+                path: dest.to_path_buf(),
+            });
+        }
+        Err(e) => return Err(WalletStorageError::Io(e)),
+    }
+    let mut backup_conn =
+        crate::sqlite::conn::open_conn(dest, crate::sqlite::conn::Access::ReadWrite)?;
     // SEC-011: chmod 600 on Unix so the backup file isn't world/group
     // readable just because the process umask was lax.
     apply_secure_permissions(dest)?;
@@ -65,11 +94,8 @@ pub fn restore_from(dest_db_path: &Path, src_backup: &Path) -> Result<(), Wallet
     //    integrity check. The authoritative schema-history / version
     //    gate runs on the STAGED copy (step 5) so every check binds to
     //    the exact bytes being persisted (TOCTOU-safe).
-    let src = Connection::open_with_flags(
-        src_backup,
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_URI,
-    )
-    .map_err(|source| WalletStorageError::SourceOpenFailed { source })?;
+    let src = crate::sqlite::conn::open_conn(src_backup, crate::sqlite::conn::Access::ReadOnly)
+        .map_err(map_source_open_err)?;
     run_integrity_check(&src, |report| WalletStorageError::IntegrityCheckFailed {
         report,
     })?;
@@ -125,11 +151,9 @@ pub fn restore_from(dest_db_path: &Path, src_backup: &Path) -> Result<(), Wallet
     //    corrupted database. If the recheck fails, the temp file
     //    drops naturally and the live destination stays untouched.
     {
-        let staged = Connection::open_with_flags(
-            tmp.path(),
-            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_URI,
-        )
-        .map_err(|source| WalletStorageError::SourceOpenFailed { source })?;
+        let staged =
+            crate::sqlite::conn::open_conn(tmp.path(), crate::sqlite::conn::Access::ReadOnly)
+                .map_err(map_source_open_err)?;
         run_integrity_check(&staged, |report| WalletStorageError::IntegrityCheckFailed {
             report,
         })?;

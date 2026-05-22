@@ -47,7 +47,6 @@ rusqlite = { version = "0.38", features = [
 refinery = { version = "0.9", default-features = false, features = [
     "rusqlite",
 ], optional = true }
-barrel = { version = "0.7", features = ["sqlite3"], optional = true }
 # bincode 2 is required directly: we encode `dpp::IdentityPublicKey`
 # (which derives bincode 2 `Encode`/`Decode`) and decode
 # `dpp::AssetLockProof` from the asset-lock blob column.
@@ -88,7 +87,6 @@ sqlite = [
     "dep:dash-sdk",
     "dep:rusqlite",
     "dep:refinery",
-    "dep:barrel",
     "dep:bincode",
     "dep:fs2",
     "dep:tempfile",

@@ -112,8 +112,10 @@ impl SqlitePersister {
 
         // Open the connection AND apply pragmas before checking for
         // pending migrations so the integrity probe sees the configured
-        // journal mode and busy timeout.
-        let mut conn = Connection::open(&config.path)?;
+        // journal mode and busy timeout. `open_conn` enables foreign-key
+        // enforcement and asserts the read-back before any write lands.
+        let mut conn =
+            crate::sqlite::conn::open_conn(&config.path, crate::sqlite::conn::Access::ReadWrite)?;
         // SEC-011: chmod 600 on Unix so a freshly created DB doesn't
         // inherit a wider mode from the process umask. Idempotent on
         // re-open.
@@ -225,9 +227,9 @@ impl SqlitePersister {
             })?;
             // Open the destination read-only just long enough to
             // page-stream a snapshot to disk under auto_backup_dir.
-            let dest_conn = Connection::open_with_flags(
+            let dest_conn = crate::sqlite::conn::open_conn(
                 dest_db_path,
-                rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_URI,
+                crate::sqlite::conn::Access::ReadOnly,
             )?;
             run_auto_backup(
                 &dest_conn,
@@ -671,7 +673,11 @@ impl PlatformWalletPersistence for SqlitePersister {
         let mut addresses_loaded: usize = 0;
 
         for (wallet_id, (addrs, count)) in addrs_all {
-            if count > 0 || addrs.sync_height > 0 || addrs.sync_timestamp > 0 {
+            if count > 0
+                || addrs.sync_height > 0
+                || addrs.sync_timestamp > 0
+                || addrs.last_known_recent_block > 0
+            {
                 addresses_loaded += count;
                 state.platform_addresses.insert(wallet_id, addrs);
             }
@@ -744,7 +750,8 @@ fn apply_pragmas(
     conn: &mut Connection,
     config: &SqlitePersisterConfig,
 ) -> Result<(), WalletStorageError> {
-    conn.pragma_update(None, "foreign_keys", "ON")?;
+    // `foreign_keys` is enabled + read-back-asserted in
+    // `crate::sqlite::conn::open_conn`, the single open choke-point.
     conn.pragma_update(None, "journal_mode", config.journal_mode.pragma_value())?;
     conn.pragma_update(None, "synchronous", config.synchronous.pragma_value())?;
     let ms = safe_cast::u64_to_i64(
