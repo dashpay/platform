@@ -100,6 +100,10 @@ where
     /// for the rationale; the split lets [`Self::Request`] be the
     /// protocol-version-aware wire encoding while keeping the proof
     /// verifier surface PV-agnostic.
+    //
+    // Associated-type defaults are nightly-only (RFC 2532); each impl
+    // must spell out `type Query = Self::Request;` when the rich and
+    // wire forms coincide.
     type Query: Query<<Self as FetchMany<K, O>>::Request>
         + dapi_grpc::mock::Mockable
         + Clone
@@ -212,10 +216,11 @@ where
     async fn fetch_many_with_metadata_and_proof<Q: Query<<Self as FetchMany<K, O>>::Query>>(
         sdk: &Sdk,
         query: Q,
-        settings: Option<RequestSettings>,
+        request_settings: Option<RequestSettings>,
     ) -> Result<(O, ResponseMetadata, Proof), Error> {
-        let owned_rich: <Self as FetchMany<K, O>>::Query = query.query(sdk.prove(), sdk)?;
-        let owned_wire: <Self as FetchMany<K, O>>::Request = owned_rich.query(sdk.prove(), sdk)?;
+        let settings = sdk.query_settings();
+        let owned_rich: <Self as FetchMany<K, O>>::Query = query.query(&settings)?;
+        let owned_wire: <Self as FetchMany<K, O>>::Request = owned_rich.query(&settings)?;
         let rich = &owned_rich;
         let wire = &owned_wire;
 
@@ -258,11 +263,13 @@ where
             })
         };
 
-        let settings = sdk
+        let retry_settings = sdk
             .dapi_client_settings
-            .override_by(settings.unwrap_or_default());
+            .override_by(request_settings.unwrap_or_default());
 
-        retry(sdk.address_list(), settings, fut).await.into_inner()
+        retry(sdk.address_list(), retry_settings, fut)
+            .await
+            .into_inner()
     }
 
     /// Fetch multiple objects from Platform by their identifiers.

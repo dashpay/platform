@@ -154,8 +154,7 @@ impl
 {
     fn query(
         &self,
-        prove: bool,
-        _sdk: &dash_sdk::Sdk,
+        settings: &dash_sdk::platform::QuerySettings<'_>,
     ) -> Result<
         dash_sdk::dapi_grpc::platform::v0::GetEvonodesProposedEpochBlocksByIdsRequest,
         dash_sdk::Error,
@@ -175,7 +174,7 @@ impl
                         .iter()
                         .map(|hash| AsRef::<[u8]>::as_ref(hash).to_vec())
                         .collect(),
-                    prove,
+                    prove: settings.prove,
                 })),
             };
 

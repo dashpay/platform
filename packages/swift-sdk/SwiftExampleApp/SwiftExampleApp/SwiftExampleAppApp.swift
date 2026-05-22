@@ -107,6 +107,13 @@ struct SwiftExampleAppApp: App {
                 // PlatformWalletManager` consumers see the right
                 // network's manager without any view changes.
                 .environmentObject(walletManager)
+                // Inject the store itself so flows that need to
+                // operate on a non-active network's manager
+                // (orphan-mnemonic recovery — wallets restored
+                // from keychain may belong to networks the user
+                // isn't currently looking at) can route through
+                // `backgroundManager(for:)` without flipping the
+                // user's active view.
                 .environmentObject(walletManagerStore)
                 .environmentObject(shieldedService)
                 .environmentObject(platformBalanceSyncService)
@@ -239,6 +246,14 @@ struct SwiftExampleAppApp: App {
     private func bootstrap() async {
         do {
             LoggingPreferences.configure()
+
+            // Kick off Halo 2 proving-key build on a background
+            // thread so the first shielded send doesn't pay the
+            // ~30 s build cost inline. Idempotent — global
+            // OnceLock on the Rust side guards repeat calls.
+            Task.detached(priority: .background) {
+                await PlatformWalletManager.warmUpShieldedProver()
+            }
 
             platformState.initializeSDK(modelContext: modelContainer.mainContext)
 

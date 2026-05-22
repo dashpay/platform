@@ -23,9 +23,9 @@ pub struct IdentityTokenBalancesQuery {
 impl Query<GetIdentityTokenBalancesRequest> for IdentityTokenBalancesQuery {
     fn query(
         &self,
-        prove: bool,
-        _sdk: &crate::Sdk,
+        settings: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetIdentityTokenBalancesRequest, Error> {
+        let prove = settings.prove;
         let request = GetIdentityTokenBalancesRequest {
             version: Some(get_identity_token_balances_request::Version::V0(
                 GetIdentityTokenBalancesRequestV0 {
@@ -57,9 +57,9 @@ pub struct IdentitiesTokenBalancesQuery {
 impl Query<GetIdentitiesTokenBalancesRequest> for IdentitiesTokenBalancesQuery {
     fn query(
         &self,
-        prove: bool,
-        _sdk: &crate::Sdk,
+        settings: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetIdentitiesTokenBalancesRequest, Error> {
+        let prove = settings.prove;
         let request = GetIdentitiesTokenBalancesRequest {
             version: Some(get_identities_token_balances_request::Version::V0(
                 GetIdentitiesTokenBalancesRequestV0 {

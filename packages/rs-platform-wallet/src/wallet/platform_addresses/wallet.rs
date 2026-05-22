@@ -98,6 +98,9 @@ impl PlatformAddressWallet {
     /// [apply.rs](crate::wallet::apply): `None` for the key-source
     /// argument because the gap-limit pool is already restored from
     /// `account_state.addresses` inside `from_persisted`.
+    // TODO(CMT-004): no direct regression test for balance hydration via
+    // initialize_from_persisted; future refactor could silently regress
+    // restart visibility.
     pub async fn initialize_from_persisted(
         &self,
         persisted: crate::PlatformAddressSyncStartState,
@@ -108,6 +111,12 @@ impl PlatformAddressWallet {
         // no read→write upgrade — doing the write-lock dance first
         // keeps both paths simple and avoids exposing a new public
         // accessor on the provider.
+        //
+        // Required by spend paths that enumerate funded addresses
+        // (e.g. `shielded_shield_from_account`): without this, after
+        // a restart they read `available = 0` until the first BLAST
+        // sync repopulates the in-memory map, even though SwiftData
+        // reports a real balance to the UI.
         {
             let mut wm = self.wallet_manager.write().await;
             if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
@@ -295,26 +304,19 @@ impl PlatformAddressWallet {
             .unwrap_or_default()
     }
 
-    /// Read the current incremental-sync watermark from the unified
-    /// platform-address provider.
+    /// Current incremental-sync watermark (`last_known_recent_block`)
+    /// from the unified platform-address provider.
     ///
-    /// Returns `None` when the provider hasn't been initialised yet
-    /// (no [`Self::initialize`] call) or when the provider has no stored
-    /// watermark (whether restored via [`Self::apply_sync_state`] or
-    /// produced by a previous sync). The value is monotonic non-decreasing
-    /// across [`Self::sync_balances`](super::sync) calls against the
-    /// same chain — a later sync can only advance the watermark, never
-    /// roll it back. A zero-valued watermark is reported as `None` to
-    /// match the "no stored watermark" convention used elsewhere in
-    /// the wallet (see [`Self::apply_sync_state`]).
+    /// Returns `None` when the provider hasn't been initialised yet or
+    /// when no incremental sync has produced a watermark. A zero-valued
+    /// watermark is reported as `None` to match the "no stored watermark"
+    /// convention used by [`Self::apply_sync_state`]. The value is
+    /// monotonic non-decreasing across syncs against the same chain — a
+    /// later sync can only advance the watermark, never roll it back.
     pub async fn sync_watermark(&self) -> Option<u64> {
         let guard = self.provider.read().await;
         let raw = guard.as_ref().map(|p| p.last_known_recent_block())?;
-        if raw == 0 {
-            None
-        } else {
-            Some(raw)
-        }
+        (raw > 0).then_some(raw)
     }
 
     /// Get total platform credits across all addresses.

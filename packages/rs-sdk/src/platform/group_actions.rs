@@ -30,7 +30,11 @@ pub struct GroupQuery {
 }
 
 impl Query<GetGroupInfoRequest> for GroupQuery {
-    fn query(&self, prove: bool, _sdk: &crate::Sdk) -> Result<GetGroupInfoRequest, Error> {
+    fn query(
+        &self,
+        settings: &crate::platform::QuerySettings<'_>,
+    ) -> Result<GetGroupInfoRequest, Error> {
+        let prove = settings.prove;
         let request = GetGroupInfoRequest {
             version: Some(get_group_info_request::Version::V0(GetGroupInfoRequestV0 {
                 contract_id: self.contract_id.to_vec(),
@@ -62,7 +66,11 @@ pub struct GroupInfosQuery {
 }
 
 impl Query<GetGroupInfosRequest> for GroupInfosQuery {
-    fn query(&self, prove: bool, _sdk: &crate::Sdk) -> Result<GetGroupInfosRequest, Error> {
+    fn query(
+        &self,
+        settings: &crate::platform::QuerySettings<'_>,
+    ) -> Result<GetGroupInfosRequest, Error> {
+        let prove = settings.prove;
         let request = GetGroupInfosRequest {
             version: Some(get_group_infos_request::Version::V0(
                 GetGroupInfosRequestV0 {
@@ -106,7 +114,11 @@ pub struct GroupActionsQuery {
 }
 
 impl Query<GetGroupActionsRequest> for GroupActionsQuery {
-    fn query(&self, prove: bool, _sdk: &crate::Sdk) -> Result<GetGroupActionsRequest, Error> {
+    fn query(
+        &self,
+        settings: &crate::platform::QuerySettings<'_>,
+    ) -> Result<GetGroupActionsRequest, Error> {
+        let prove = settings.prove;
         let request = GetGroupActionsRequest {
             version: Some(get_group_actions_request::Version::V0(
                 GetGroupActionsRequestV0 {
@@ -148,7 +160,11 @@ pub struct GroupActionSignersQuery {
 }
 
 impl Query<GetGroupActionSignersRequest> for GroupActionSignersQuery {
-    fn query(&self, prove: bool, _sdk: &crate::Sdk) -> Result<GetGroupActionSignersRequest, Error> {
+    fn query(
+        &self,
+        settings: &crate::platform::QuerySettings<'_>,
+    ) -> Result<GetGroupActionSignersRequest, Error> {
+        let prove = settings.prove;
         let request = GetGroupActionSignersRequest {
             version: Some(get_group_action_signers_request::Version::V0(
                 GetGroupActionSignersRequestV0 {

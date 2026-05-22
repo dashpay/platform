@@ -174,8 +174,7 @@ impl
 {
     fn query(
         &self,
-        prove: bool,
-        _sdk: &dash_sdk::Sdk,
+        settings: &dash_sdk::platform::QuerySettings<'_>,
     ) -> Result<
         dash_sdk::dapi_grpc::platform::v0::GetEvonodesProposedEpochBlocksByRangeRequest,
         dash_sdk::Error,
@@ -204,7 +203,7 @@ impl
                         epoch: self.epoch,
                         limit: None, // Limit is handled by LimitQuery wrapper
                         start,
-                        prove,
+                        prove: settings.prove,
                     },
                 )),
             };

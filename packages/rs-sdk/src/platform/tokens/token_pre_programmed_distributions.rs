@@ -34,18 +34,18 @@ pub struct TokenPreProgrammedDistributionsStartAtInfo {
 impl Query<GetTokenPreProgrammedDistributionsRequest> for TokenPreProgrammedDistributionsQuery {
     fn query(
         &self,
-        prove: bool,
-        _sdk: &crate::Sdk,
+        settings: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetTokenPreProgrammedDistributionsRequest, Error> {
+        let prove = settings.prove;
         if !prove {
             unimplemented!("queries without proofs are not supported yet");
         }
 
-        let start_at_info = self.start_at_info.clone().map(|info| {
+        let start_at_info = self.start_at_info.as_ref().map(|info| {
             let has_recipient = info.start_recipient.is_some();
             StartAtInfo {
                 start_time_ms: info.start_time_ms,
-                start_recipient: info.start_recipient.map(|id| id.to_vec()),
+                start_recipient: info.start_recipient.as_ref().map(|id| id.to_vec()),
                 // Only set when a start_recipient is provided; meaningless otherwise.
                 start_recipient_included: if has_recipient {
                     Some(info.start_recipient_included)

@@ -1,0 +1,642 @@
+//! Network-scoped shielded coordinator.
+//!
+//! The Orchard commitment tree is chain-wide: every wallet and
+//! every account on the same network sees the same `cmx` stream
+//! in the same order, backs the same frontier, and shares the
+//! same anchor set. The current per-`PlatformWallet` shielded
+//! shape (each wallet owning its own [`ShieldedWallet`] and its
+//! own [`FileBackedShieldedStore`] handle) duplicates the
+//! fetch + trial-decrypt + tree-append work N times for N
+//! wallets, and opens N concurrent SQLite handles into a single
+//! `shielded_tree_<network>.sqlite` file.
+//!
+//! [`NetworkShieldedCoordinator`] is the single object that owns
+//! everything chain-wide about shielded sync — the SQLite-backed
+//! commitment tree, the per-`SubwalletId` notes/sync state, the
+//! flat registry of every bound account's **viewing keys** (no
+//! spend authority), the caught-up cooldown stamp, and the
+//! persister handle. One instance per [`PlatformWalletManager`];
+//! lazily constructed on the first `bind_shielded` call so
+//! networks where no wallet uses shielded never open a SQLite
+//! file.
+//!
+//! Privilege separation: the coordinator's account registry
+//! holds [`AccountViewingKeys`] only — FVK / IVK / OVK / default
+//! address. The `SpendAuthorizingKey` lives only on the
+//! per-wallet side (in [`OrchardKeySet`]) and is passed into the
+//! coordinator's spend methods at call time, never stored at
+//! coordinator scope.
+//!
+//! # Status (Phase 2b)
+//!
+//! - **Phase 0** (landed): type skeleton + viewing-key split.
+//! - **Phase 1** (landed): the coordinator owns the single
+//!   `Arc<RwLock<FileBackedShieldedStore>>` for the network;
+//!   every `PlatformWallet::bind_shielded` reuses it.
+//! - **Phase 2a** (landed): the coordinator owns the
+//!   network-wide caught-up cooldown and the
+//!   [`sync`](NetworkShieldedCoordinator::sync) entry point that
+//!   `ShieldedSyncManager::sync_now` routes through.
+//! - **Phase 2b** (this module): the coordinator drives sync
+//!   itself via [`sync_notes_across`] — a single network-wide
+//!   SDK fetch + multi-IVK trial-decrypt against the union of
+//!   every registered subwallet, collapsing N per-wallet SDK
+//!   calls per pass to 1. The consolidated changeset is split
+//!   per-`WalletId` and queued through each registered
+//!   [`WalletPersister`].
+//! - **Phase 4** (later): delete `ShieldedWallet`, flatten
+//!   `PlatformWallet`'s shielded surface, and have the
+//!   coordinator own the spend path too (accepting an
+//!   `OrchardKeySet` at call time for the ASK).
+//!
+//! [`sync_notes_across`]: super::sync::sync_notes_across
+
+use std::collections::BTreeMap;
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+
+use tokio::sync::RwLock;
+
+use super::file_store::FileBackedShieldedStore;
+use super::keys::AccountViewingKeys;
+use super::store::{ShieldedStore, SubwalletId};
+use super::CAUGHT_UP_COOLDOWN;
+use crate::manager::shielded_sync::{ShieldedSyncPassSummary, WalletShieldedOutcome};
+use crate::wallet::persister::WalletPersister;
+use crate::wallet::platform_wallet::WalletId;
+
+/// Network-scoped shielded coordinator.
+///
+/// See module docs for the architectural rationale.
+///
+/// As of Phase 2b, the coordinator owns the entire sync path
+/// for the network: a single SDK fetch + multi-IVK
+/// trial-decrypt against the union of every registered
+/// subwallet, with the consolidated changeset split per-`WalletId`
+/// and queued through each registered persister.
+pub struct NetworkShieldedCoordinator {
+    /// Dash Platform SDK handle. The coordinator runs sync /
+    /// nullifier-scan / broadcast against this SDK on behalf of
+    /// every bound wallet.
+    sdk: Arc<dash_sdk::Sdk>,
+
+    /// Network this coordinator operates on. Pinned at
+    /// construction and never mutated — networks each get their
+    /// own coordinator instance.
+    network: dashcore::Network,
+
+    /// On-disk path to `shielded_tree_<network>.sqlite`. Stored so
+    /// subsequent `configure_shielded` calls on the same manager
+    /// can fail loudly if a caller passes a mismatched path
+    /// (design-doc choice (c): explicit error rather than
+    /// silently honor first or silently honor second).
+    db_path: PathBuf,
+
+    /// The single SQLite handle into `shielded_tree_<network>.sqlite`.
+    /// Both the commitment tree (frontier, checkpoints, marked
+    /// auth paths) and the per-[`SubwalletId`] notes / sync
+    /// watermarks / nullifier checkpoints live here.
+    ///
+    /// Every wallet and every account on this network shares
+    /// this `Arc<RwLock<_>>` — the single-handle property is
+    /// what closes the SQLite-WAL contention and the
+    /// delete-while-open race the prior architecture had.
+    store: Arc<RwLock<FileBackedShieldedStore>>,
+
+    /// Flat registry of every bound `(walletId, accountIndex)`
+    /// pair's viewing keys, populated by
+    /// [`register_wallet`](Self::register_wallet). The sync loop
+    /// iterates this map once per pass to enumerate every IVK
+    /// across every wallet, then trial-decrypts each fetched
+    /// note against the union.
+    ///
+    /// Viewing-grade only: no [`SpendAuthorizingKey`] is ever
+    /// stored at coordinator scope. Spend operations re-attach
+    /// the ASK by accepting an [`OrchardKeySet`] parameter from
+    /// the per-wallet caller.
+    accounts: Arc<RwLock<BTreeMap<SubwalletId, AccountViewingKeys>>>,
+
+    /// Per-wallet persister handles, populated by
+    /// [`register_wallet`](Self::register_wallet) alongside the
+    /// account registry. The Phase-2b sync builds a single
+    /// consolidated [`ShieldedChangeSet`] spanning every
+    /// touched subwallet, then
+    /// [`ShieldedChangeSet::split_by_wallet_id`] fans it back
+    /// out so each per-wallet `WalletPersister.store(...)` only
+    /// sees its own `wallet_id`'s deltas. (The wire format
+    /// requires this — `WalletPersister` is wallet-scoped and
+    /// `inner.store(wallet_id, ...)` always passes its bound
+    /// wallet_id to the durable layer.)
+    persisters: Arc<RwLock<BTreeMap<WalletId, WalletPersister>>>,
+
+    /// Timestamp of the last sync pass that observed no new
+    /// commitments or newly-spent nullifiers — the caught-up
+    /// cooldown stamp moves from per-`ShieldedWallet` scope to
+    /// per-coordinator scope, so the cooldown applies once per
+    /// network instead of once per wallet. Cleared on any
+    /// activity; bypassed by `force` syncs.
+    last_caught_up_at: std::sync::Mutex<Option<Instant>>,
+}
+
+impl NetworkShieldedCoordinator {
+    /// Build a new coordinator. Called by
+    /// `PlatformWalletManager::configure_shielded` (Phase 1) on
+    /// the first shielded use on this network manager. The
+    /// `db_path` is opened immediately; subsequent
+    /// `configure_shielded` calls on the same manager verify the
+    /// path matches and error otherwise (open question (a) from
+    /// the design doc).
+    pub fn new(
+        sdk: Arc<dash_sdk::Sdk>,
+        network: dashcore::Network,
+        db_path: PathBuf,
+        store: FileBackedShieldedStore,
+    ) -> Self {
+        Self {
+            sdk,
+            network,
+            db_path,
+            store: Arc::new(RwLock::new(store)),
+            accounts: Arc::new(RwLock::new(BTreeMap::new())),
+            persisters: Arc::new(RwLock::new(BTreeMap::new())),
+            last_caught_up_at: std::sync::Mutex::new(None),
+        }
+    }
+
+    /// Network this coordinator is pinned to. Used by hosts that
+    /// need to assert their `PlatformWalletManager` and the
+    /// coordinator agree on the network.
+    pub fn network(&self) -> dashcore::Network {
+        self.network
+    }
+
+    /// The on-disk SQLite path the coordinator opened. Used by
+    /// `PlatformWalletManager::configure_shielded` to verify
+    /// subsequent calls pass the same path.
+    pub fn db_path(&self) -> &std::path::Path {
+        &self.db_path
+    }
+
+    /// Reference to the shared store. The full sync / spend
+    /// surfaces land on the coordinator itself; this accessor
+    /// exists for tests and for migration scaffolding in Phase 1.
+    pub fn store(&self) -> &Arc<RwLock<FileBackedShieldedStore>> {
+        &self.store
+    }
+
+    /// Register every account of a newly-bound shielded wallet so
+    /// future [`sync`](Self::sync) passes iterate it, and attach
+    /// the wallet's [`WalletPersister`] so the coordinator can
+    /// queue per-wallet slices of the consolidated changeset.
+    /// Called by [`PlatformWallet::bind_shielded`] after the
+    /// per-wallet [`ShieldedWallet`] has been constructed.
+    ///
+    /// Privilege boundary: only the viewing-key subset
+    /// ([`AccountViewingKeys`]) is handed to the coordinator. The
+    /// `SpendAuthorizingKey` stays on the per-wallet side
+    /// (`OrchardKeySet`) and is re-attached at spend-call time.
+    ///
+    /// Idempotent: a second call with the same `wallet_id`
+    /// replaces every previously-registered account and the
+    /// persister handle for that wallet (so a re-bind after a
+    /// clear is consistent).
+    ///
+    /// [`ShieldedWallet`]: super::ShieldedWallet
+    /// [`PlatformWallet::bind_shielded`]: crate::wallet::PlatformWallet::bind_shielded
+    pub async fn register_wallet(
+        &self,
+        wallet_id: WalletId,
+        account_views: BTreeMap<u32, AccountViewingKeys>,
+        persister: WalletPersister,
+    ) {
+        let mut accounts = self.accounts.write().await;
+        // Drop any prior subwallets for this wallet_id before
+        // installing the new set so a re-bind with a different
+        // account list doesn't leave orphan entries.
+        accounts.retain(|id, _| id.wallet_id != wallet_id);
+        for (account_index, views) in account_views {
+            accounts.insert(SubwalletId::new(wallet_id, account_index), views);
+        }
+        drop(accounts);
+        self.persisters.write().await.insert(wallet_id, persister);
+    }
+
+    /// Remove every account belonging to `wallet_id` from the
+    /// coordinator's registry, drop the persister handle, and
+    /// purge the wallet's per-subwallet store state (decrypted
+    /// notes, spent marks, `last_synced_note_index`, nullifier
+    /// checkpoints). The shared commitment tree is left intact —
+    /// it's a chain-wide structure, not per-wallet. No-op for
+    /// parts that weren't present. Called when a wallet is
+    /// removed from the manager.
+    ///
+    /// Purging the store watermark matters: without it, a later
+    /// re-bind of the same wallet would resume from the stale
+    /// `last_synced_note_index` and silently skip re-emitting its
+    /// notes to the host.
+    pub async fn unregister_wallet(&self, wallet_id: WalletId) {
+        self.accounts
+            .write()
+            .await
+            .retain(|id, _| id.wallet_id != wallet_id);
+        self.persisters.write().await.remove(&wallet_id);
+        if let Err(e) = self.store.write().await.purge_wallet(wallet_id) {
+            tracing::warn!(
+                wallet_id = %hex::encode(wallet_id),
+                error = %e,
+                "Failed to purge per-subwallet store state on unregister"
+            );
+        }
+    }
+
+    /// Currently-registered subwallet ids (snapshot, ascending
+    /// `(wallet_id, account_index)` order). Exposed for tests and
+    /// for the sync coordinator's pass enumeration.
+    pub async fn registered_subwallets(&self) -> Vec<SubwalletId> {
+        self.accounts.read().await.keys().copied().collect()
+    }
+
+    /// Rehydrate per-subwallet state from a host-persisted
+    /// snapshot for the wallet identified by `wallet_id`. Should
+    /// be called after [`register_wallet`](Self::register_wallet)
+    /// and before the first sync pass so the in-memory store
+    /// matches what the host already has on disk (notes, spent
+    /// marks, sync watermarks, nullifier checkpoints).
+    ///
+    /// Filters the supplied [`ShieldedSyncStartState`] in two
+    /// ways:
+    /// - **By `wallet_id`**: only entries whose `SubwalletId`
+    ///   belongs to `wallet_id` are restored. The startup
+    ///   snapshot is keyed globally by `SubwalletId` but a single
+    ///   `restore_for_wallet` call only owns one wallet's slice;
+    ///   the host typically loops over registered wallets and
+    ///   calls this once per wallet so each per-wallet `bind`
+    ///   flow drops in its own state.
+    /// - **By registered account**: subwallets whose
+    ///   `account_index` isn't currently registered on this
+    ///   coordinator are skipped — they'd accumulate state we
+    ///   can never spend (no `OrchardKeySet` for them on the
+    ///   per-wallet side).
+    ///
+    /// No-op on empty snapshots.
+    pub async fn restore_for_wallet(
+        &self,
+        wallet_id: WalletId,
+        snapshot: &crate::changeset::ShieldedSyncStartState,
+    ) -> Result<(), crate::error::PlatformWalletError> {
+        if snapshot.is_empty() {
+            return Ok(());
+        }
+        // Snapshot of registered subwallets for the membership
+        // check. Cheaper than holding the accounts read lock
+        // across the store write below.
+        let registered: std::collections::BTreeSet<SubwalletId> = {
+            let accounts = self.accounts.read().await;
+            accounts
+                .keys()
+                .copied()
+                .filter(|id| id.wallet_id == wallet_id)
+                .collect()
+        };
+        if registered.is_empty() {
+            return Ok(());
+        }
+
+        let mut store = self.store.write().await;
+        for (id, sub) in &snapshot.per_subwallet {
+            // Only restore subwallets that belong to `wallet_id`
+            // and are registered on this coordinator.
+            if id.wallet_id != wallet_id || !registered.contains(id) {
+                continue;
+            }
+            for note in &sub.notes {
+                store.save_note(*id, note).map_err(|e| {
+                    crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
+                })?;
+                if note.is_spent {
+                    store.mark_spent(*id, &note.nullifier).map_err(|e| {
+                        crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
+                    })?;
+                }
+            }
+            store
+                .set_last_synced_note_index(*id, sub.last_synced_index)
+                .map_err(|e| {
+                    crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
+                })?;
+            if let Some((h, t)) = sub.nullifier_checkpoint {
+                store.set_nullifier_checkpoint(*id, h, t).map_err(|e| {
+                    crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
+                })?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Drop every wallet registration, purge all per-subwallet
+    /// store state (notes, spent marks, sync watermarks,
+    /// nullifier checkpoints), and reset the cooldown stamp. The
+    /// single SQLite handle (commitment tree) stays open — Clear
+    /// semantics on the host side are "wipe my persistence and
+    /// start re-syncing from index 0 on the shared tree", not
+    /// "blow away the chain-wide cache".
+    ///
+    /// Purging the in-memory `subwallets` store is what actually
+    /// delivers the "re-sync from index 0" contract: the sync
+    /// pass derives `already_have` from each subwallet's
+    /// `last_synced_note_index`, so leaving stale watermarks
+    /// behind would make a same-session re-bind report
+    /// caught-up and never re-emit notes to the host (it would
+    /// only work after a process restart that drops the
+    /// in-memory state). Clearing it here closes that gap.
+    ///
+    /// Used by [`platform_wallet_manager_shielded_clear`] (the
+    /// host's Clear button). The host then wipes its own
+    /// per-wallet persistence (e.g. SwiftData rows) — Rust can't
+    /// reach that layer — and the next `bind_shielded` call
+    /// repopulates the registries and resyncs from scratch.
+    ///
+    /// Resets the cooldown to `None` so the first post-clear
+    /// background sync pass runs immediately rather than honoring
+    /// a stale "caught up" stamp from before the wipe.
+    ///
+    /// [`platform_wallet_manager_shielded_clear`]:
+    ///     rs-platform-wallet-ffi's FFI entry point
+    pub async fn clear(&self) {
+        self.accounts.write().await.clear();
+        self.persisters.write().await.clear();
+        if let Err(e) = self.store.write().await.purge_all_subwallets() {
+            tracing::warn!(error = %e, "Failed to purge subwallet store state on clear");
+        }
+        if let Ok(mut g) = self.last_caught_up_at.lock() {
+            *g = None;
+        }
+    }
+
+    /// Run one shielded sync pass for every registered wallet on
+    /// this coordinator's network. Returns a per-wallet outcome
+    /// summary suitable for emission to UI / persistence layers
+    /// via [`PlatformEventManager::on_shielded_sync_completed`].
+    ///
+    /// `force=false` honors the coordinator-scoped caught-up
+    /// cooldown — a sync pass that observed nothing new on any
+    /// registered subwallet suppresses subsequent background
+    /// passes for [`CAUGHT_UP_COOLDOWN`]. `force=true` (the
+    /// user-initiated "Sync Now" path) bypasses the cooldown and
+    /// always walks Platform.
+    ///
+    /// Phase-2b shape: the union of every registered subwallet's
+    /// [`AccountViewingKeys`] drives a **single** SDK fetch via
+    /// [`sync_notes_across`]; the SDK's `all_notes` is locally
+    /// trial-decrypted against every other subwallet's IVK in
+    /// the same pass. The consolidated changeset is then split
+    /// per-[`WalletId`] and queued through each registered
+    /// [`WalletPersister`].
+    ///
+    /// [`sync_notes_across`]: super::sync::sync_notes_across
+    /// [`PlatformEventManager::on_shielded_sync_completed`]:
+    ///     crate::events::PlatformEventManager::on_shielded_sync_completed
+    pub async fn sync(&self, force: bool) -> ShieldedSyncPassSummary {
+        // Network-wide cooldown gate. Snapshot the remaining
+        // window into a local before any await — `std::sync::Mutex`
+        // is `!Send` across await points (clippy's
+        // `await_holding_lock` lint flags this).
+        let cooldown_remaining: Option<Duration> = if force {
+            None
+        } else {
+            self.last_caught_up_at
+                .lock()
+                .ok()
+                .and_then(|guard| *guard)
+                .map(|when| CAUGHT_UP_COOLDOWN.saturating_sub(when.elapsed()))
+                .filter(|remaining| !remaining.is_zero())
+        };
+
+        if let Some(remaining) = cooldown_remaining {
+            tracing::debug!(
+                cooldown_remaining_secs = remaining.as_secs(),
+                cooldown_total_secs = CAUGHT_UP_COOLDOWN.as_secs(),
+                "Coordinator sync skipped — within caught-up cooldown"
+            );
+            return Self::cooldown_skip_summary(self).await;
+        }
+
+        // Snapshot the flat subwallet registry. This Vec is both
+        // the IVK fan-out for sync_notes_across and the
+        // identity-map for per-wallet summary demux below.
+        let subwallets: Vec<(SubwalletId, AccountViewingKeys)> = {
+            let accounts = self.accounts.read().await;
+            accounts.iter().map(|(id, v)| (*id, v.clone())).collect()
+        };
+
+        let mut summary = ShieldedSyncPassSummary::default();
+        if subwallets.is_empty() {
+            summary.sync_unix_seconds = Self::now_unix();
+            return summary;
+        }
+
+        // ONE SDK call covers every registered IVK on the network.
+        let notes = match super::sync::sync_notes_across(&self.sdk, &self.store, &subwallets).await
+        {
+            Ok(r) => r,
+            Err(e) => return self.fail_all_wallets(&subwallets, &e),
+        };
+        let (newly_spent_per_sub, nf_changeset) =
+            match super::sync::check_nullifiers_across(&self.sdk, &self.store, &subwallets).await {
+                Ok(r) => r,
+                Err(e) => return self.fail_all_wallets(&subwallets, &e),
+            };
+        let balances_per_sub = match super::sync::balances_across(&self.store, &subwallets).await {
+            Ok(r) => r,
+            Err(e) => return self.fail_all_wallets(&subwallets, &e),
+        };
+
+        // Merge the note-side changeset (saves + synced_index)
+        // with the nullifier-side changeset (spends +
+        // checkpoints) into one consolidated stream, then split
+        // per WalletId so each per-wallet `WalletPersister.store`
+        // only sees its own wallet's deltas.
+        let mut consolidated = notes.changeset.clone();
+        crate::changeset::merge::Merge::merge(&mut consolidated, nf_changeset);
+        if !crate::changeset::merge::Merge::is_empty(&consolidated) {
+            let per_wallet = consolidated.split_by_wallet_id();
+            let persisters = self.persisters.read().await;
+            for (wallet_id, cs) in per_wallet {
+                let Some(persister) = persisters.get(&wallet_id) else {
+                    tracing::warn!(
+                        wallet_id = %hex::encode(wallet_id),
+                        "Shielded sync changeset dropped: no persister registered (host inconsistency)"
+                    );
+                    continue;
+                };
+                let full = crate::changeset::PlatformWalletChangeSet {
+                    shielded: Some(cs),
+                    ..Default::default()
+                };
+                if let Err(e) = persister.store(full) {
+                    tracing::warn!(
+                        wallet_id = %hex::encode(wallet_id),
+                        error = %e,
+                        "Failed to queue shielded changeset from coordinator"
+                    );
+                }
+            }
+        }
+
+        // Cooldown decision based on aggregate activity across
+        // every subwallet — any new commitment scanned or
+        // newly-spent nullifier anywhere on the network clears
+        // the stamp so the next pass runs immediately.
+        let any_activity = notes.total_scanned > 0 || newly_spent_per_sub.values().any(|&n| n > 0);
+        if let Ok(mut guard) = self.last_caught_up_at.lock() {
+            if any_activity {
+                *guard = None;
+            } else {
+                *guard = Some(Instant::now());
+            }
+        }
+
+        // Demux multi-subwallet results into the per-wallet
+        // `ShieldedSyncSummary` shape that
+        // `PlatformEventManager::on_shielded_sync_completed`
+        // already speaks. Same emission shape as Phase 2a.
+        summary =
+            build_per_wallet_summary(&subwallets, &notes, &newly_spent_per_sub, &balances_per_sub);
+        summary.sync_unix_seconds = Self::now_unix();
+        summary
+    }
+
+    /// Build a `ShieldedSyncPassSummary` where every registered
+    /// wallet's outcome is the supplied error string. Used when
+    /// a network-wide SDK call (sync_notes_across /
+    /// check_nullifiers_across) errors before any per-wallet
+    /// result can be produced.
+    fn fail_all_wallets(
+        &self,
+        subwallets: &[(SubwalletId, AccountViewingKeys)],
+        e: &crate::error::PlatformWalletError,
+    ) -> ShieldedSyncPassSummary {
+        let mut wallet_ids: Vec<WalletId> = subwallets.iter().map(|(id, _)| id.wallet_id).collect();
+        wallet_ids.sort_unstable();
+        wallet_ids.dedup();
+        let mut summary = ShieldedSyncPassSummary::default();
+        for wallet_id in wallet_ids {
+            tracing::warn!(
+                wallet_id = %hex::encode(wallet_id),
+                error = %e,
+                "Network-wide shielded sync failed"
+            );
+            summary
+                .wallet_results
+                .insert(wallet_id, WalletShieldedOutcome::Err(e.to_string()));
+        }
+        summary.sync_unix_seconds = Self::now_unix();
+        summary
+    }
+
+    fn now_unix() -> u64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0)
+    }
+
+    /// Build a pass summary in which every registered wallet is
+    /// reported as a cooldown skip. Used by [`sync`](Self::sync)
+    /// when the network-wide cooldown is in effect.
+    async fn cooldown_skip_summary(&self) -> ShieldedSyncPassSummary {
+        use super::sync::{ShieldedSyncSummary, SyncNotesResult};
+
+        let registered_wallet_ids: Vec<WalletId> = {
+            let accounts = self.accounts.read().await;
+            let mut ids: Vec<WalletId> = accounts.keys().map(|id| id.wallet_id).collect();
+            ids.sort_unstable();
+            ids.dedup();
+            ids
+        };
+
+        let mut summary = ShieldedSyncPassSummary::default();
+        for wallet_id in registered_wallet_ids {
+            summary.wallet_results.insert(
+                wallet_id,
+                WalletShieldedOutcome::Ok(ShieldedSyncSummary {
+                    notes_result: SyncNotesResult::default(),
+                    newly_spent_per_account: BTreeMap::new(),
+                    balances: BTreeMap::new(),
+                    is_cooldown_skip: true,
+                }),
+            );
+        }
+        summary.sync_unix_seconds = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        summary
+    }
+}
+
+/// Demux the multi-subwallet sync result into the per-wallet
+/// [`ShieldedSyncSummary`] shape that
+/// [`PlatformEventManager::on_shielded_sync_completed`] already
+/// speaks. The coordinator drives sync at SubwalletId-flat
+/// granularity but the host event stream is still per-wallet,
+/// so this helper folds per-(wallet_id) slices back into the
+/// `BTreeMap<u32, _>` per-account shape consumers expect.
+///
+/// [`PlatformEventManager::on_shielded_sync_completed`]:
+///     crate::events::PlatformEventManager::on_shielded_sync_completed
+fn build_per_wallet_summary(
+    subwallets: &[(SubwalletId, AccountViewingKeys)],
+    notes: &super::sync::MultiSyncNotesResult,
+    newly_spent_per_sub: &BTreeMap<SubwalletId, usize>,
+    balances_per_sub: &BTreeMap<SubwalletId, u64>,
+) -> ShieldedSyncPassSummary {
+    use super::sync::{ShieldedSyncSummary, SyncNotesResult};
+
+    // Enumerate distinct wallet_ids in ascending order so the
+    // BTreeMap iteration in the consumer is deterministic.
+    let mut wallet_ids: Vec<WalletId> = subwallets.iter().map(|(id, _)| id.wallet_id).collect();
+    wallet_ids.sort_unstable();
+    wallet_ids.dedup();
+
+    let mut summary = ShieldedSyncPassSummary::default();
+    for wallet_id in wallet_ids {
+        let new_notes_per_account: BTreeMap<u32, usize> = notes
+            .per_subwallet_new_notes
+            .iter()
+            .filter(|(id, _)| id.wallet_id == wallet_id)
+            .map(|(id, &c)| (id.account_index, c))
+            .collect();
+        let newly_spent_per_account: BTreeMap<u32, usize> = newly_spent_per_sub
+            .iter()
+            .filter(|(id, _)| id.wallet_id == wallet_id)
+            .map(|(id, &c)| (id.account_index, c))
+            .collect();
+        let balances: BTreeMap<u32, u64> = balances_per_sub
+            .iter()
+            .filter(|(id, _)| id.wallet_id == wallet_id)
+            .map(|(id, &v)| (id.account_index, v))
+            .collect();
+
+        summary.wallet_results.insert(
+            wallet_id,
+            WalletShieldedOutcome::Ok(ShieldedSyncSummary {
+                notes_result: SyncNotesResult {
+                    new_notes_per_account,
+                    // `total_scanned` is a network property —
+                    // every wallet sees the same number of new
+                    // positions in the same pass. Surface it on
+                    // each per-wallet summary so the host UI can
+                    // display it without having to look up the
+                    // pass-level value.
+                    total_scanned: notes.total_scanned,
+                },
+                newly_spent_per_account,
+                balances,
+                is_cooldown_skip: false,
+            }),
+        );
+    }
+    summary
+}

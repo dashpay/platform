@@ -19,7 +19,11 @@ pub struct IdentityTokenInfosQuery {
 }
 
 impl Query<GetIdentityTokenInfosRequest> for IdentityTokenInfosQuery {
-    fn query(&self, prove: bool, _sdk: &crate::Sdk) -> Result<GetIdentityTokenInfosRequest, Error> {
+    fn query(
+        &self,
+        settings: &crate::platform::QuerySettings<'_>,
+    ) -> Result<GetIdentityTokenInfosRequest, Error> {
+        let prove = settings.prove;
         let request = GetIdentityTokenInfosRequest {
             version: Some(get_identity_token_infos_request::Version::V0(
                 GetIdentityTokenInfosRequestV0 {
@@ -51,9 +55,9 @@ pub struct IdentitiesTokenInfosQuery {
 impl Query<GetIdentitiesTokenInfosRequest> for IdentitiesTokenInfosQuery {
     fn query(
         &self,
-        prove: bool,
-        _sdk: &crate::Sdk,
+        settings: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetIdentitiesTokenInfosRequest, Error> {
+        let prove = settings.prove;
         let request = GetIdentitiesTokenInfosRequest {
             version: Some(get_identities_token_infos_request::Version::V0(
                 GetIdentitiesTokenInfosRequestV0 {

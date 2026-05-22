@@ -27,8 +27,7 @@ impl dash_sdk::platform::Query<dash_sdk::dapi_grpc::platform::v0::GetDataContrac
 {
     fn query(
         &self,
-        prove: bool,
-        _sdk: &dash_sdk::Sdk,
+        settings: &dash_sdk::platform::QuerySettings<'_>,
     ) -> Result<dash_sdk::dapi_grpc::platform::v0::GetDataContractHistoryRequest, dash_sdk::Error>
     {
         use dash_sdk::dapi_grpc::platform::v0::get_data_contract_history_request::{
@@ -42,7 +41,7 @@ impl dash_sdk::platform::Query<dash_sdk::dapi_grpc::platform::v0::GetDataContrac
                     limit: self.limit,
                     offset: self.offset,
                     start_at_ms: self.start_at_ms,
-                    prove: self.prove || prove,
+                    prove: self.prove || settings.prove,
                 })),
             },
         )

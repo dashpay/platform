@@ -6,7 +6,11 @@ use dpp::tokens::status::TokenStatus;
 use drive_proof_verifier::types::token_status::TokenStatuses;
 
 impl Query<GetTokenStatusesRequest> for Vec<Identifier> {
-    fn query(&self, prove: bool, _sdk: &crate::Sdk) -> Result<GetTokenStatusesRequest, Error> {
+    fn query(
+        &self,
+        settings: &crate::platform::QuerySettings<'_>,
+    ) -> Result<GetTokenStatusesRequest, Error> {
+        let prove = settings.prove;
         let request = GetTokenStatusesRequest {
             version: Some(get_token_statuses_request::Version::V0(
                 GetTokenStatusesRequestV0 {

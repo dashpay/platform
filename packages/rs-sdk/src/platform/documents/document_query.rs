@@ -564,10 +564,11 @@ fn encode_v0(
             // meaningless explicit-zero; we translate by clamping
             // to 0 only when the caller meant "unset".
             limit,
-            start: start.map(|s| match s {
-                Start::StartAfter(b) => Start::StartAfter(b),
-                Start::StartAt(b) => Start::StartAt(b),
-            }),
+            start,
+            // `prove: true` hardcoded — same rationale as `encode_v1`:
+            // document fetch always proves; `SdkBuilder::with_proofs(false)`
+            // is a no-op for this path because the `FromProof` decoder
+            // expects the `Proof(...)` response variant.
             prove: true,
         })),
     })
@@ -948,13 +949,12 @@ fn value_to_proto_at_depth(value: Value, depth: u8) -> Result<ProtoDocumentField
 /// document aggregate views) split `Fetch::Query = DocumentQuery` (rich,
 /// what `FromProof` binds to) from `Fetch::Request = GetDocumentsRequest`
 /// (wire); this impl is the rich→wire step the trampoline invokes via
-/// `Query::query(&rich, sdk)`.
+/// `Query::query(&rich, &sdk.query_settings())`.
 impl crate::platform::Query<platform_proto::GetDocumentsRequest> for DocumentQuery {
     fn query(
         &self,
-        _prove: bool,
-        sdk: &crate::Sdk,
+        settings: &crate::platform::QuerySettings<'_>,
     ) -> Result<platform_proto::GetDocumentsRequest, Error> {
-        GetDocumentsRequest::try_from_platform_versioned(self.clone(), sdk.version())
+        GetDocumentsRequest::try_from_platform_versioned(self.clone(), settings.protocol_version)
     }
 }

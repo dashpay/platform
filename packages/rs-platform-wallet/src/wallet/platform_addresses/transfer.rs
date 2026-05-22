@@ -6,6 +6,7 @@ use dpp::identity::signer::Signer;
 use dpp::state_transition::address_funds_transfer_transition::AddressFundsTransferTransition;
 use dpp::version::PlatformVersion;
 use dpp::version::LATEST_PLATFORM_VERSION;
+use indexmap::IndexMap;
 use key_wallet::PlatformP2PKHAddress;
 
 use crate::changeset::Merge;
@@ -13,8 +14,8 @@ use crate::wallet::PlatformAddressWallet;
 use crate::{PlatformAddressChangeSet, PlatformWalletError};
 use dash_sdk::platform::transition::transfer_address_funds::TransferAddressFunds;
 
-use super::saturating_sum_credits;
 pub use super::InputSelection;
+use super::{checked_sum_credits, saturating_sum_credits};
 
 impl PlatformAddressWallet {
     /// Transfer credits between platform addresses.
@@ -22,6 +23,14 @@ impl PlatformAddressWallet {
     /// Input addresses can be specified explicitly or selected automatically
     /// from the account via [`InputSelection::Auto`]. When `platform_version`
     /// is `None`, [`LATEST_PLATFORM_VERSION`] drives fee estimation.
+    ///
+    /// `outputs` preserves the caller's insertion order — useful for
+    /// debugging and UI — but **DPP transitions store outputs in a
+    /// `BTreeMap` keyed by lex-smallest address**. Under
+    /// `[ReduceOutput(0)]`, "output 0" is therefore the lex-smallest
+    /// entry, not the first-inserted. Callers that need the fee to come
+    /// out of a specific output must ensure that output is the
+    /// lex-smallest key, or switch to `[DeductFromInput(0)]`.
     ///
     /// `address_signer` produces ECDSA signatures for the input
     /// [`PlatformAddress`]es; the wallet itself holds no key material —
@@ -41,11 +50,13 @@ impl PlatformAddressWallet {
         &self,
         account_index: u32,
         input_selection: InputSelection,
-        outputs: BTreeMap<PlatformAddress, Credits>,
+        outputs: IndexMap<PlatformAddress, Credits>,
         fee_strategy: AddressFundsFeeStrategy,
         platform_version: Option<&PlatformVersion>,
         address_signer: &S,
     ) -> Result<PlatformAddressChangeSet, PlatformWalletError> {
+        // DPP transitions are BTreeMap-keyed; convert at the public boundary.
+        let outputs: BTreeMap<PlatformAddress, Credits> = outputs.into_iter().collect();
         if outputs.is_empty() {
             return Err(PlatformWalletError::AddressOperation(
                 "Transfer requires at least one output address".to_string(),
@@ -207,7 +218,7 @@ impl PlatformAddressWallet {
         &self,
         account_index: u32,
         input_selection: InputSelection,
-        user_outputs: BTreeMap<PlatformAddress, Credits>,
+        user_outputs: IndexMap<PlatformAddress, Credits>,
         output_change_address: Option<PlatformAddress>,
         fee_strategy: AddressFundsFeeStrategy,
         platform_version: Option<&PlatformVersion>,
@@ -225,19 +236,42 @@ impl PlatformAddressWallet {
                 )
                 .await;
         };
+        // DPP transitions are BTreeMap-keyed; convert at the public
+        // boundary. The lex-ordering caveat documented on
+        // [`Self::transfer`] applies here too — under `[ReduceOutput(0)]`
+        // a lex-smaller `change_addr` would silently absorb the fee. That
+        // is rejected below.
+        let user_outputs: BTreeMap<PlatformAddress, Credits> = user_outputs.into_iter().collect();
+        if matches!(
+            fee_strategy.as_slice(),
+            [AddressFundsFeeStrategyStep::ReduceOutput(0)]
+        ) {
+            if let Some((smallest_user, _)) = user_outputs.iter().next() {
+                if &change_addr < smallest_user {
+                    return Err(PlatformWalletError::AddressOperation(format!(
+                        "[ReduceOutput(0)] + Some(change_addr): change_addr \
+                         {change_addr:?} is lex-smaller than every user output \
+                         (smallest user output: {smallest_user:?}); under DPP's \
+                         BTreeMap ordering it would silently become \"output 0\" \
+                         and absorb the fee instead of the caller-declared target. \
+                         Pick a lex-larger change_addr or use [DeductFromInput(0)]."
+                    )));
+                }
+            }
+        }
 
         let (input_sum, augmented_selection) = match input_selection {
             InputSelection::Explicit(ref inputs) => {
                 validate_change_address(&change_addr, &user_outputs, inputs.keys())?;
                 (
-                    saturating_sum_credits(inputs.values().copied()),
+                    checked_sum_credits(inputs.values().copied())?,
                     InputSelection::Explicit(inputs.clone()),
                 )
             }
             InputSelection::ExplicitWithNonces(ref inputs) => {
                 validate_change_address(&change_addr, &user_outputs, inputs.keys())?;
                 (
-                    saturating_sum_credits(inputs.values().map(|(_n, c)| *c)),
+                    checked_sum_credits(inputs.values().map(|(_n, c)| *c))?,
                     InputSelection::ExplicitWithNonces(inputs.clone()),
                 )
             }
@@ -251,8 +285,11 @@ impl PlatformAddressWallet {
             }
         };
 
+        let version = platform_version.unwrap_or(LATEST_PLATFORM_VERSION);
         let outputs_with_change =
-            augment_outputs_with_change(user_outputs, change_addr, input_sum)?;
+            augment_outputs_with_change(user_outputs, change_addr, input_sum, version)?;
+        let outputs_with_change: IndexMap<PlatformAddress, Credits> =
+            outputs_with_change.into_iter().collect();
 
         self.transfer(
             account_index,
@@ -277,6 +314,10 @@ impl PlatformAddressWallet {
     ) -> Result<BTreeMap<PlatformAddress, Credits>, PlatformWalletError> {
         let total_output: Credits = saturating_sum_credits(outputs.values().copied());
 
+        // TODO(QA-007): pre-existing read-snapshot vs broadcast race; new
+        // headroom math leans harder on snapshot. Hold guard across
+        // snapshot+broadcast+update, or re-validate headroom right before
+        // broadcast.
         let wm = self.wallet_manager.read().await;
         let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
             PlatformWalletError::WalletNotFound(format!(
@@ -441,6 +482,8 @@ where
     if !funded_outputs.is_empty() {
         return Some(PlatformWalletError::OnlyOutputAddressesFunded {
             funded_outputs,
+            sub_min_count,
+            sub_min_aggregate,
             min_input_amount,
         });
     }
@@ -454,8 +497,10 @@ where
     None
 }
 
-/// `[DeductFromInput(0)]` selector. Order-agnostic: walks `candidates` as-is
-/// and picks the smallest covering prefix.
+/// `[DeductFromInput(0)]` selector. Defensively re-sorts `candidates`
+/// balance-descending before growing the covering prefix, so test and
+/// future direct callers can pass any order without silently picking a
+/// larger-than-needed prefix.
 ///
 /// Produces an inputs map satisfying:
 /// 1. `Σ selected.values() == total_output`.
@@ -477,12 +522,17 @@ where
 ///    target rather than producing a sub-minimum input.
 /// 5. Defensive invariant checks.
 fn select_inputs_deduct_from_input(
-    candidates: Vec<(PlatformAddress, Credits)>,
+    mut candidates: Vec<(PlatformAddress, Credits)>,
     outputs: &BTreeMap<PlatformAddress, Credits>,
     total_output: Credits,
     fee_strategy: &[AddressFundsFeeStrategyStep],
     platform_version: &PlatformVersion,
 ) -> Result<BTreeMap<PlatformAddress, Credits>, PlatformWalletError> {
+    // Defensive sort: the prefix-grow loop assumes balance-descending order so
+    // we pick the smallest covering prefix. Production callers pre-sort via
+    // `build_auto_select_candidates`; this keeps direct test / future callers
+    // from silently picking a worse prefix.
+    candidates.sort_by(|a, b| b.1.cmp(&a.1));
     if !matches!(
         fee_strategy,
         [AddressFundsFeeStrategyStep::DeductFromInput(0)]
@@ -576,14 +626,14 @@ fn select_inputs_deduct_from_input(
         )));
     };
 
-    // Sub-minimum tail consumptions fold back into the fee target;
-    // `validate_structure` would otherwise reject `InputBelowMinimumError`.
-    let mut fee_target_consumed = fee_target_min;
-    let fee_target_max = fee_target_balance.saturating_sub(estimated_fee);
+    // Sub-minimum tail consumptions fold back into the fee target; the
+    // post-Phase-4 recompute below resolves the final fee target consumption
+    // against the *actual* selected input count (QA-004). The Phase-1
+    // `estimated_fee` is intentionally shadowed below.
+    let _ = estimated_fee;
     let mut selected: BTreeMap<PlatformAddress, Credits> = BTreeMap::new();
 
-    let mut remaining = total_output.saturating_sub(fee_target_consumed);
-    let mut residue_to_fee_target: Credits = 0;
+    let mut remaining = total_output.saturating_sub(fee_target_min);
     for (addr, bal) in prefix.iter() {
         if *addr == fee_target_addr {
             continue;
@@ -596,7 +646,8 @@ fn select_inputs_deduct_from_input(
             continue;
         }
         if tentative < min_input_amount {
-            residue_to_fee_target = residue_to_fee_target.saturating_add(tentative);
+            // Sub-min residue folds into the fee target via the
+            // post-Phase-4 recompute below; do not insert here.
             remaining = remaining.saturating_sub(tentative);
             continue;
         }
@@ -604,24 +655,30 @@ fn select_inputs_deduct_from_input(
         remaining = remaining.saturating_sub(tentative);
     }
 
-    if residue_to_fee_target > 0 {
-        let new_consumed = fee_target_consumed.saturating_add(residue_to_fee_target);
-        // Unreachable given Phase 3's headroom check.
-        debug_assert!(
-            new_consumed <= fee_target_max,
-            "fee target consumption {} exceeds max {} after residue fold",
-            new_consumed,
-            fee_target_max,
-        );
-        if new_consumed > fee_target_max {
-            return Err(PlatformWalletError::AddressOperation(format!(
-                "Cannot satisfy fee headroom after redistributing sub-minimum tail \
-                 inputs: fee-target {fee_target_addr} would consume {new_consumed} \
-                 (balance {fee_target_balance}, max {fee_target_max}), leaving \
-                 less than estimated fee {estimated_fee} of remaining balance",
-            )));
-        }
-        fee_target_consumed = new_consumed;
+    // QA-004: Phase 1 estimates the fee against `prefix.len()`, but the
+    // residue-fold above can leave `selected.len() < prefix.len()`. The
+    // headroom recheck below uses the actual selected count's estimated
+    // fee — over-estimating would reject feasible selections. If the
+    // recomputed fee_target_min still fits within the recomputed
+    // fee_target_max, keep going; otherwise we genuinely lack headroom.
+    let selected_input_count = selected.len() + 1; // + fee target
+    let estimated_fee = PlatformAddressWallet::estimate_fee_for_inputs(
+        selected_input_count,
+        output_count,
+        fee_strategy,
+        outputs,
+        platform_version,
+    );
+    let other_total: Credits = selected.values().copied().sum();
+    let fee_target_consumed =
+        std::cmp::max(min_input_amount, total_output.saturating_sub(other_total));
+    let fee_target_max = fee_target_balance.saturating_sub(estimated_fee);
+    if fee_target_consumed > fee_target_max {
+        return Err(PlatformWalletError::AddressOperation(format!(
+            "Cannot satisfy fee headroom after Phase-4 fee recompute: fee-target \
+             {fee_target_addr} would consume {fee_target_consumed} (balance \
+             {fee_target_balance}, max {fee_target_max} after fee {estimated_fee})",
+        )));
     }
 
     selected.insert(fee_target_addr, fee_target_consumed);
@@ -668,6 +725,12 @@ fn select_inputs_deduct_from_input(
 /// guards against direct test/future-caller invocations that skip the
 /// pre-filter and would otherwise produce a sub-minimum prefix entry.
 ///
+/// **Order invariant**: the trim logic assumes balance-descending order
+/// so the smallest balance lands at the end of the prefix. The selector
+/// defensively re-sorts the input — test and future direct callers can
+/// pass candidates in any order without silently miscomputing the
+/// donor-lift in Phase 3.
+///
 /// Algorithm:
 /// 1. Grow the prefix until `Σ balances ≥ total_output`.
 /// 2. Trim the last prefix entry by `surplus = Σ − total_output` so
@@ -681,12 +744,17 @@ fn select_inputs_deduct_from_input(
 ///    leave the fee uncovered.
 /// 5. Defensive invariant checks.
 fn select_inputs_reduce_output(
-    candidates: Vec<(PlatformAddress, Credits)>,
+    mut candidates: Vec<(PlatformAddress, Credits)>,
     outputs: &BTreeMap<PlatformAddress, Credits>,
     total_output: Credits,
     fee_strategy: &[AddressFundsFeeStrategyStep],
     platform_version: &PlatformVersion,
 ) -> Result<BTreeMap<PlatformAddress, Credits>, PlatformWalletError> {
+    // Defensive sort: the Phase-2 trim and Phase-3 donor-lift both rely on
+    // balance-descending order so the smallest balance lands last. Production
+    // callers already pre-sort via `build_auto_select_candidates`, but direct
+    // test / future callers would otherwise silently misbehave.
+    candidates.sort_by(|a, b| b.1.cmp(&a.1));
     if !matches!(fee_strategy, [AddressFundsFeeStrategyStep::ReduceOutput(0)]) {
         return Err(PlatformWalletError::AddressOperation(
             "select_inputs_reduce_output only supports fee_strategy = \
@@ -867,12 +935,14 @@ where
 /// Augment `user_outputs` with an explicit change output absorbing the
 /// surplus `Σ inputs − Σ user_outputs`. Caller MUST invoke
 /// [`validate_change_address`] first to rule out collisions; this fn
-/// re-checks the user_outputs side defensively and rejects the
-/// no-surplus case.
+/// re-checks the user_outputs side defensively, rejects the no-surplus
+/// case, and rejects residuals below the protocol per-output minimum
+/// (`OutputBelowMinimumError`, code 10810).
 fn augment_outputs_with_change(
     mut user_outputs: BTreeMap<PlatformAddress, Credits>,
     change_addr: PlatformAddress,
     input_sum: Credits,
+    platform_version: &PlatformVersion,
 ) -> Result<BTreeMap<PlatformAddress, Credits>, PlatformWalletError> {
     if user_outputs.contains_key(&change_addr) {
         return Err(PlatformWalletError::AddressOperation(format!(
@@ -890,6 +960,17 @@ fn augment_outputs_with_change(
         )));
     }
     let change_amount = input_sum.saturating_sub(user_output_sum);
+    let min_output_amount = platform_version
+        .dpp
+        .state_transitions
+        .address_funds
+        .min_output_amount;
+    if change_amount < min_output_amount {
+        return Err(PlatformWalletError::ChangeBelowMinimumOutput {
+            change_amount,
+            min_output_amount,
+        });
+    }
     user_outputs.insert(change_addr, change_amount);
     Ok(user_outputs)
 }
@@ -1040,7 +1121,11 @@ mod auto_select_tests {
         assert!(addr_b_balance - 10_000_000 >= fee);
 
         // Cross-check: the fixed selector at the same fixture produces a
-        // map that DOES leave headroom on addr_a.
+        // map drive's fee deduction accepts. The defensive
+        // balance-descending sort (QA-003) puts addr_b first; addr_b alone
+        // covers `total_output + fee`, so the single-input prefix
+        // `{addr_b: 30_000_000}` is what the fixed selector ships, and
+        // addr_b retains 20M of headroom for the fee.
         let fixed = select_inputs_deduct_from_input(
             vec![(addr_a, addr_a_balance), (addr_b, addr_b_balance)],
             &outputs,
@@ -1049,31 +1134,36 @@ mod auto_select_tests {
             pv,
         )
         .expect("fixed selector");
-        let min_input = pv.dpp.state_transitions.address_funds.min_input_amount;
-        assert_eq!(fixed.get(&addr_a), Some(&min_input));
-        assert_eq!(fixed.keys().next(), Some(&addr_a));
+        assert_eq!(fixed.get(&addr_b), Some(&total_output));
+        assert!(!fixed.contains_key(&addr_a));
         assert_selection_validates(&fixed, &outputs, fee_strategy, pv);
     }
 
     /// Phase 1 covers `total_output + fee` but the lex-smallest entry has no
     /// headroom for the fee. Selection must error out rather than ship a
     /// transition the validator will reject.
+    ///
+    /// Fixture: the lex-smallest address has a balance below `min_input + fee`
+    /// (so its `fee_target_min` saturates to `min_input` while
+    /// `fee_target_max = balance − fee` is below that), and the larger peer
+    /// undershoots covering alone — together they cover, but the
+    /// lex-smallest entry cannot retain `estimated_fee` after consumption.
     #[test]
     fn fee_headroom_violation_errors() {
-        let addr_a = p2pkh(0x01);
-        let addr_b = p2pkh(0x02);
+        let addr_tiny = p2pkh(0x01); // lex-smallest → fee target after the prefix grows
+        let addr_b = p2pkh(0xA0);
         let target = p2pkh(0x99);
         let pv = LATEST_PLATFORM_VERSION;
-        let min_input = pv.dpp.state_transitions.address_funds.min_input_amount;
 
-        // addr_a holds exactly `min_input_amount` — no remaining balance for
-        // the fee. addr_b lets Phase 1 succeed, so the headroom violation
-        // must be caught in Phase 3.
-        let addr_a_balance = min_input;
-        let total_output = 10_000_000u64;
-        let addr_b_balance = 20_000_000u64;
+        let total_output = 30_000_000u64;
+        // addr_b alone undershoots `total_output + fee_1in ≈ 36.5M`, so the
+        // prefix must include addr_tiny.
+        let addr_b_balance = 35_000_000u64;
+        // addr_tiny < fee_1in + min_input ≈ 6.6M → no fee headroom after the
+        // sub-min-floor consumption.
+        let addr_tiny_balance = 6_000_000u64;
         let outputs = outputs_for(target, total_output);
-        let candidates = vec![(addr_a, addr_a_balance), (addr_b, addr_b_balance)];
+        let candidates = vec![(addr_tiny, addr_tiny_balance), (addr_b, addr_b_balance)];
         let fee_strategy = vec![AddressFundsFeeStrategyStep::DeductFromInput(0)];
 
         let err =
@@ -1130,6 +1220,51 @@ mod auto_select_tests {
         let input_sum: Credits = selected.values().sum();
         assert_eq!(input_sum, total_output);
 
+        assert_selection_validates(&selected, &outputs, fee_strategy, pv);
+    }
+
+    /// QA-004: Phase 1 sizes `estimated_fee` against `prefix.len()`, but the
+    /// residue-fold can leave `selected.len() < prefix.len()`. The post-Phase-4
+    /// recompute against the *actual* selected count must use the smaller fee
+    /// — otherwise feasible selections get falsely rejected as
+    /// "Cannot satisfy fee headroom".
+    ///
+    /// Fixture: 3-entry prefix; the middle sub-min entry folds into the fee
+    /// target, so `selected = {fee_target, addr_z}` has len 2. The Phase-1
+    /// fee_3in would over-bound the fee target's headroom; the post-Phase-4
+    /// recompute with fee_2in must succeed.
+    #[test]
+    fn fee_recompute_after_residue_fold_succeeds() {
+        let addr_x = p2pkh(0x01); // lex-smallest → fee target
+        let addr_y = p2pkh(0x02); // sub-min residue, folds away
+        let addr_z = p2pkh(0x03); // peer
+        let target = p2pkh(0x99);
+        let pv = LATEST_PLATFORM_VERSION;
+        let min_input = pv.dpp.state_transitions.address_funds.min_input_amount;
+
+        // Numbers: same shape as `non_fee_target_below_min_input_redistributes`
+        // — prefix [x,y,z] is needed by Phase-1 fee_3in, but final selected
+        // is {x,z} so fee_2in applies. Both paths converge here because the
+        // headroom is large; this asserts no false rejection.
+        let total_output = 4_000_000u64;
+        let candidates = vec![
+            (addr_x, 10_000_000u64),
+            (addr_y, 80_000u64), // < min_input → folds into fee target
+            (addr_z, 2_000_000u64),
+        ];
+        let outputs = outputs_for(target, total_output);
+        let fee_strategy = vec![AddressFundsFeeStrategyStep::DeductFromInput(0)];
+
+        let selected =
+            select_inputs_deduct_from_input(candidates, &outputs, total_output, &fee_strategy, pv)
+                .expect("post-Phase-4 fee recompute must accept the selection");
+
+        assert_eq!(selected.len(), 2, "y folded into fee target");
+        assert!(!selected.contains_key(&addr_y));
+        for (addr, amount) in &selected {
+            assert!(*amount >= min_input, "{addr} consumes {amount}");
+        }
+        assert_eq!(selected.values().copied().sum::<Credits>(), total_output);
         assert_selection_validates(&selected, &outputs, fee_strategy, pv);
     }
 
@@ -1242,9 +1377,13 @@ mod auto_select_tests {
         {
             PlatformWalletError::OnlyOutputAddressesFunded {
                 funded_outputs,
+                sub_min_count,
+                sub_min_aggregate,
                 min_input_amount,
             } => {
                 assert_eq!(funded_outputs, vec![addr_out]);
+                assert_eq!(sub_min_count, 0);
+                assert_eq!(sub_min_aggregate, 0);
                 assert_eq!(min_input_amount, min_input);
             }
             other => panic!("expected OnlyOutputAddressesFunded, got {other:?}"),
@@ -1268,13 +1407,20 @@ mod auto_select_tests {
             other => panic!("expected OnlyDustInputs, got {other:?}"),
         }
 
-        // Both: collision wins.
+        // Both: collision wins, dust info is preserved as auxiliary fields.
         let both = [(addr_out, min_input * 5), (addr_dust, min_input / 3)];
         match detect_no_selectable_inputs(both.iter().copied(), &outputs, min_input)
             .expect("combined case")
         {
-            PlatformWalletError::OnlyOutputAddressesFunded { funded_outputs, .. } => {
+            PlatformWalletError::OnlyOutputAddressesFunded {
+                funded_outputs,
+                sub_min_count,
+                sub_min_aggregate,
+                ..
+            } => {
                 assert_eq!(funded_outputs, vec![addr_out]);
+                assert_eq!(sub_min_count, 1);
+                assert_eq!(sub_min_aggregate, min_input / 3);
             }
             other => panic!("expected OnlyOutputAddressesFunded, got {other:?}"),
         }
@@ -1294,8 +1440,9 @@ mod auto_select_tests {
         let user_target = p2pkh(0x22);
         let change_addr = p2pkh(0x33);
         let user_outputs = outputs_for(user_target, 5_000_000);
-        let outputs =
-            augment_outputs_with_change(user_outputs, change_addr, 60_000_000).expect("augment");
+        let pv = LATEST_PLATFORM_VERSION;
+        let outputs = augment_outputs_with_change(user_outputs, change_addr, 60_000_000, pv)
+            .expect("augment");
         assert_eq!(outputs.len(), 2);
         assert_eq!(outputs.get(&user_target), Some(&5_000_000));
         assert_eq!(
@@ -1316,7 +1463,8 @@ mod auto_select_tests {
     fn augment_outputs_with_change_rejects_duplicate_address() {
         let target = p2pkh(0x44);
         let user_outputs = outputs_for(target, 5_000_000);
-        let err = augment_outputs_with_change(user_outputs, target, 60_000_000)
+        let pv = LATEST_PLATFORM_VERSION;
+        let err = augment_outputs_with_change(user_outputs, target, 60_000_000, pv)
             .expect_err("change_addr equal to user output must be rejected");
         match err {
             PlatformWalletError::AddressOperation(msg) => {
@@ -1337,13 +1485,44 @@ mod auto_select_tests {
         let target = p2pkh(0x55);
         let change_addr = p2pkh(0x66);
         let user_outputs = outputs_for(target, 60_000_000);
-        let err = augment_outputs_with_change(user_outputs, change_addr, 60_000_000)
+        let pv = LATEST_PLATFORM_VERSION;
+        let err = augment_outputs_with_change(user_outputs, change_addr, 60_000_000, pv)
             .expect_err("equal sums must be rejected: nothing to route as change");
         match err {
             PlatformWalletError::AddressOperation(msg) => {
                 assert!(msg.contains("no surplus"), "unexpected message: {msg}");
             }
             other => panic!("expected AddressOperation, got {other:?}"),
+        }
+    }
+
+    /// QA-001: residual in the `(0, min_output_amount)` band must be rejected
+    /// before the chain does (`OutputBelowMinimumError`, code 10810). The
+    /// existing tests cover residual=0 (no-surplus) and residual=55M (well
+    /// above min); this fills the gap in the middle.
+    #[test]
+    fn augment_outputs_with_change_rejects_sub_minimum_residual() {
+        let target = p2pkh(0x77);
+        let change_addr = p2pkh(0x88);
+        let pv = LATEST_PLATFORM_VERSION;
+        let min_output = pv.dpp.state_transitions.address_funds.min_output_amount;
+        // Pick a residual strictly between 0 and min_output_amount.
+        let residual = min_output - 1;
+        let user_output_amount = 5_000_000u64;
+        let user_outputs = outputs_for(target, user_output_amount);
+        let input_sum = user_output_amount + residual;
+
+        let err = augment_outputs_with_change(user_outputs, change_addr, input_sum, pv)
+            .expect_err("sub-min residual must be rejected pre-broadcast");
+        match err {
+            PlatformWalletError::ChangeBelowMinimumOutput {
+                change_amount,
+                min_output_amount,
+            } => {
+                assert_eq!(change_amount, residual);
+                assert_eq!(min_output_amount, min_output);
+            }
+            other => panic!("expected ChangeBelowMinimumOutput, got {other:?}"),
         }
     }
 
@@ -1509,7 +1688,8 @@ mod auto_select_tests {
         let wallet = PlatformAddressWallet::new(sdk, wallet_manager, [0u8; 32], persister);
 
         let signer = NullSigner;
-        let outputs = outputs_for(p2pkh(0x77), 10_000_000);
+        let outputs: IndexMap<PlatformAddress, Credits> =
+            outputs_for(p2pkh(0x77), 10_000_000).into_iter().collect();
         let change_addr = p2pkh(0x88);
         let fee_strategy = vec![AddressFundsFeeStrategyStep::ReduceOutput(0)];
 

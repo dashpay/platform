@@ -9,6 +9,13 @@ use dpp::prelude::AddressNonce;
 use drive_proof_verifier::types::{AddressInfo, AddressInfos};
 use std::collections::{BTreeMap, BTreeSet};
 
+/// Fetch each input address's current `(nonce, balance)` from Platform
+/// and return `(nonce, amount)` per address, enforcing a hard balance
+/// check — errors with `AddressNotEnoughFundsError` when any input is
+/// short rather than letting an underfunded transition proceed. The
+/// returned nonces are the *current* on-chain values; callers increment
+/// them (see [`nonce_inc`], or apply their own checked increment) before
+/// building a transition.
 pub async fn fetch_inputs_with_nonce(
     sdk: &Sdk,
     amounts: &BTreeMap<PlatformAddress, Credits>,
@@ -31,7 +38,7 @@ pub async fn fetch_inputs_with_nonce(
 }
 
 /// Increments the nonce for each address in the provided map.
-pub fn nonce_inc(
+pub(crate) fn nonce_inc(
     data: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
 ) -> BTreeMap<PlatformAddress, (AddressNonce, Credits)> {
     data.into_iter()

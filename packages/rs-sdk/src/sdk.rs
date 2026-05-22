@@ -502,6 +502,20 @@ impl Sdk {
         self.proofs
     }
 
+    /// Build a [`QuerySettings`] borrowing this SDK's protocol version,
+    /// request settings, and `prove` flag.
+    ///
+    /// Hand the resulting context to [`crate::platform::Query::query`] when
+    /// you need to encode a user-facing query into a wire `TransportRequest`
+    /// without taking a full `&Sdk` dependency through the encoder layer.
+    pub fn query_settings(&self) -> crate::platform::QuerySettings<'_> {
+        crate::platform::QuerySettings {
+            request_settings: &self.dapi_client_settings,
+            protocol_version: self.version(),
+            prove: self.prove(),
+        }
+    }
+
     // TODO: If we remove this setter we don't need to use ArcSwap.
     //   It's good enough to set Context once when you initialize the SDK.
     /// Set the [ContextProvider] to use.
@@ -675,12 +689,6 @@ pub struct SdkBuilder {
     /// When true, auto-detection of protocol version from network metadata is disabled.
     version_explicit: bool,
 
-    /// Initial protocol version seed for the per-instance atomic. Set via
-    /// [`SdkBuilder::with_initial_version`]. Does NOT imply
-    /// `version_explicit`: auto-detect remains active and can ratchet
-    /// upward via `fetch_max` once the network's version is observed.
-    initial_version: Option<&'static PlatformVersion>,
-
     /// Cache size for data contracts. Used by mock [GrpcContextProvider].
     #[cfg(feature = "mocks")]
     data_contract_cache_size: NonZeroUsize,
@@ -753,7 +761,6 @@ impl Default for SdkBuilder {
 
             version: PlatformVersion::latest(),
             version_explicit: false,
-            initial_version: None,
             #[cfg(not(target_arch = "wasm32"))]
             ca_certificate: None,
 
@@ -897,10 +904,18 @@ impl SdkBuilder {
     /// any version-dispatched encoders (e.g. the documents query) to
     /// ship a too-new wire shape that the network rejects.
     ///
-    /// This is additive: callers that don't set it preserve today's
-    /// behaviour exactly.
+    /// Seeds `self.version` and resets `version_explicit` to `false`, so
+    /// auto-detect is (re-)enabled. Builder chains use last-write-wins:
+    /// calling `with_initial_version` after `with_version` restores
+    /// auto-detect rather than silently keeping it disabled.
+    ///
+    /// **Caveat**: this protection only holds for encoders whose
+    /// `drive_abci.query.<name>.default_current_version` is correctly pinned per
+    /// historical PV. New versioned encoders must follow the same per-PV pinning
+    /// pattern as `document_query`.
     pub fn with_initial_version(mut self, version: &'static PlatformVersion) -> Self {
-        self.initial_version = Some(version);
+        self.version = version;
+        self.version_explicit = false;
         self
     }
 
@@ -1031,17 +1046,10 @@ impl SdkBuilder {
                     context_provider: ArcSwapOption::new( self.context_provider.map(Arc::new)),
                     cancel_token: self.cancel_token,
                     nonce_cache: Default::default(),
-                    // When auto-detecting, seed with 0 (uninitialized) so the first
-                    // network response sets the actual version — even if it's lower
-                    // than the binary's latest. When pinned, use the explicit version.
+                    // Seed atomic with self.version; whether auto-detect is on
+                    // is controlled separately by `version_explicit`.
                     protocol_version: Arc::new(atomic::AtomicU32::new(
-                        if self.version_explicit {
-                            self.version.protocol_version
-                        } else if let Some(iv) = self.initial_version {
-                            iv.protocol_version
-                        } else {
-                            0
-                        },
+                        self.version.protocol_version,
                     )),
                     auto_detect_protocol_version: !self.version_explicit,
                     // Note: in the future, we need to securely initialize initial height during Sdk bootstrap or first request.
@@ -1097,7 +1105,7 @@ impl SdkBuilder {
                     Box::new(cp)
                 }
                 );
-                let mock_sdk = MockDashPlatformSdk::new(self.version, Arc::clone(&dapi));
+                let mock_sdk = MockDashPlatformSdk::new(Arc::clone(&dapi));
                 let mock_sdk = Arc::new(Mutex::new(mock_sdk));
                 let sdk= Sdk {
                     network: self.network,
@@ -1111,13 +1119,7 @@ impl SdkBuilder {
                     proofs:self.proofs,
                     nonce_cache: Default::default(),
                     protocol_version: Arc::new(atomic::AtomicU32::new(
-                        if self.version_explicit {
-                            self.version.protocol_version
-                        } else if let Some(iv) = self.initial_version {
-                            iv.protocol_version
-                        } else {
-                            0
-                        },
+                        self.version.protocol_version,
                     )),
                     auto_detect_protocol_version: !self.version_explicit,
                     context_provider: ArcSwapOption::new(Some(Arc::new(context_provider))),
@@ -1551,38 +1553,114 @@ mod test {
     }
 
     #[test]
-    fn test_default_sdk_detects_older_network_version() {
+    fn test_with_initial_version_seeds_to_older_network_version() {
         use dpp::version::PlatformVersion;
 
-        // Default SDK: auto-detect enabled, seeded at 0 (uninitialized)
+        // Caller knows the network is on PV 1 and seeds the auto-detect
+        // atomic accordingly. `version_explicit` stays false, so fetch_max
+        // can still ratchet upward when the network later moves to a newer PV.
+        let initial = PlatformVersion::get(1).expect("PV 1 exists");
         let sdk = SdkBuilder::new_mock()
+            .with_initial_version(initial)
             .build()
             .expect("mock Sdk should be created");
 
-        // Before any network response, version() falls back to latest()
         assert_eq!(
-            sdk.version().protocol_version,
-            PlatformVersion::latest().protocol_version,
-            "before first response, should fall back to latest"
+            sdk.protocol_version_number(),
+            1,
+            "with_initial_version must seed the atomic without pinning"
         );
-        assert_eq!(sdk.protocol_version_number(), 0, "should be uninitialized");
+        assert_eq!(sdk.version().protocol_version, 1);
 
-        // Network reports version 1 (older than latest) — should be accepted
+        // Metadata at PV 1 is accepted (matches current seed, no ratchet needed).
         let metadata = ResponseMetadata {
             protocol_version: 1,
             height: 1,
             ..Default::default()
         };
-
         sdk.verify_response_metadata("test", &metadata)
             .expect("metadata should be valid");
+        assert_eq!(sdk.protocol_version_number(), 1);
+    }
+
+    #[test]
+    fn test_with_initial_version_after_with_version_restores_auto_detect() {
+        use dpp::version::PlatformVersion;
+
+        // Last-write-wins composability: a later `with_initial_version`
+        // must re-enable auto-detect that an earlier `with_version`
+        // disabled.
+        let v_latest = PlatformVersion::latest();
+        let v_old = PlatformVersion::get(1).expect("PV 1 exists");
+
+        let sdk = SdkBuilder::new_mock()
+            .with_version(v_latest)
+            .with_initial_version(v_old)
+            .build()
+            .expect("mock Sdk should be created");
 
         assert_eq!(
             sdk.protocol_version_number(),
-            1,
-            "default SDK must detect older network version"
+            v_old.protocol_version,
+            "with_initial_version must overwrite the prior with_version seed"
         );
-        assert_eq!(sdk.version().protocol_version, 1);
+        assert!(
+            sdk.auto_detect_protocol_version,
+            "with_initial_version must restore auto-detect after with_version disabled it"
+        );
+
+        // Ratchet upward via metadata observation works because auto-detect is on.
+        let metadata = ResponseMetadata {
+            protocol_version: v_latest.protocol_version,
+            height: 1,
+            ..Default::default()
+        };
+        sdk.verify_response_metadata("test", &metadata)
+            .expect("metadata should be valid");
+        assert_eq!(sdk.protocol_version_number(), v_latest.protocol_version);
+    }
+
+    #[test]
+    fn test_mock_version_follows_outer_sdk_atomic() {
+        use dpp::version::PlatformVersion;
+
+        // Build a mock SDK with auto-detect, seeded at PV 1. After a
+        // metadata-driven ratchet to a newer PV, both the outer SDK's
+        // `version()` and the inner `MockDashPlatformSdk::version()`
+        // must report the same value — single source of truth.
+        let v_old = PlatformVersion::get(1).expect("PV 1 exists");
+        let v_new = PlatformVersion::latest();
+
+        let mut sdk = SdkBuilder::new_mock()
+            .with_initial_version(v_old)
+            .build()
+            .expect("mock Sdk should be created");
+
+        assert_eq!(sdk.version().protocol_version, v_old.protocol_version);
+        {
+            let mock = sdk.mock();
+            assert_eq!(
+                mock.version().protocol_version,
+                v_old.protocol_version,
+                "mock version must mirror outer SDK before ratchet"
+            );
+        }
+
+        let metadata = ResponseMetadata {
+            protocol_version: v_new.protocol_version,
+            height: 1,
+            ..Default::default()
+        };
+        sdk.verify_response_metadata("test", &metadata)
+            .expect("metadata should be valid");
+
+        assert_eq!(sdk.version().protocol_version, v_new.protocol_version);
+        let mock = sdk.mock();
+        assert_eq!(
+            mock.version().protocol_version,
+            v_new.protocol_version,
+            "mock version must follow outer ratchet (CMT-001 regression)"
+        );
     }
 
     #[test_matrix([90,91,100,109,110], 100, 10, false; "valid time")]

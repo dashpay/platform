@@ -14,9 +14,9 @@
 //!   `count_star()` projection — each returns `Error::Config` rather
 //!   than silently emitting an invalid V0 request the server would
 //!   round-trip and reject.
-//! - Dispatch by SDK version: an [`Sdk`] seeded at a V0-dispatch
-//!   PlatformVersion encodes a [`DocumentQuery`] via [`Query::query`]
-//!   onto the V0 wire; an SDK at the latest PV encodes onto V1.
+//! - Dispatch by SDK version: a `DocumentQuery` whose
+//!   `protocol_version_override` field points at a V0 PlatformVersion
+//!   round-trips through `TryFrom` as V0; default falls back to V1.
 //! - `SdkBuilder::with_initial_version` semantics: builder seeds the
 //!   per-instance protocol_version atomic to the requested value
 //!   without flipping `version_explicit`, so auto-detect remains
@@ -181,34 +181,48 @@ fn v0_rejects_having() {
 }
 
 #[test]
-fn dispatch_by_sdk_pv() {
-    use dash_sdk::platform::Query;
+fn encoder_dispatches_v0_via_query_settings_without_sdk() {
+    use dash_sdk::platform::{Query, QuerySettings};
+    use rs_dapi_client::RequestSettings;
 
-    // V1 by default — `Query::query` on a latest-PV SDK encodes the V1 wire.
-    let sdk_latest = SdkBuilder::new_mock().build().expect("mock sdk");
-    let q = build_basic_document_query();
-    let req = Query::<GetDocumentsRequest>::query(&q, true, &sdk_latest)
-        .expect("encode default via latest-PV sdk");
-    assert!(matches!(req.version, Some(ReqVersion::V1(_))));
-
-    // V0 when the SDK's known PV's `document_query` feature pins to V0.
-    // We can't seed the `Box::leak`-installed synthetic PV into the
-    // global PlatformVersion table; exercise the equivalent code path
-    // (`encode_get_documents_request` with an explicit PV) via
-    // `try_into_request_for_version` instead.
+    // The whole point of QuerySettings: encoder is testable without
+    // `Sdk::new_mock()`. Construct the context directly from a
+    // PlatformVersion whose document_query is pinned to V0 dispatch
+    // and assert the wire shape comes out V0.
     let v0_pv = v0_dispatch_version();
-    let req = build_basic_document_query()
-        .try_into_request_for_version(v0_pv)
-        .expect("encode via helper");
-    assert!(matches!(req.version, Some(ReqVersion::V0(_))));
+    let request_settings = RequestSettings::default();
+    let settings = QuerySettings {
+        request_settings: &request_settings,
+        protocol_version: v0_pv,
+        prove: true,
+    };
+    let q = build_basic_document_query();
+    let req: GetDocumentsRequest = q.query(&settings).expect("encode via QuerySettings");
+    assert!(
+        matches!(req.version, Some(ReqVersion::V0(_))),
+        "expected V0 dispatch when settings.protocol_version pins document_query to v0"
+    );
+
+    // Same query, latest PlatformVersion (V1 dispatch) — should now
+    // emit V1 wire bytes through the same code path.
+    let latest_settings = QuerySettings {
+        request_settings: &request_settings,
+        protocol_version: PlatformVersion::latest(),
+        prove: true,
+    };
+    let q = build_basic_document_query();
+    let req: GetDocumentsRequest = q.query(&latest_settings).expect("encode via QuerySettings");
+    assert!(
+        matches!(req.version, Some(ReqVersion::V1(_))),
+        "expected V1 dispatch when settings.protocol_version is latest"
+    );
 }
 
 #[test]
 fn sdk_builder_with_initial_version_seeds_atomic_without_pinning() {
-    // Auto-detect default: the atomic seeds to 0, `version()` falls
-    // back to `latest()` until the first response arrives. The test
-    // SDK is a mock with no live network, so `version()` should
-    // simply return `latest()`.
+    // Auto-detect default: the atomic seeds to `self.version` (which
+    // defaults to `latest()`). `version()` therefore returns `latest()`
+    // until the first response ratchets the atomic upward.
     let sdk_default = SdkBuilder::new_mock().build().expect("mock sdk");
     assert_eq!(
         sdk_default.version().protocol_version,
@@ -269,16 +283,20 @@ fn protocol_version_for_v3_1_dev_keeps_document_query_v1() {
 /// without monkey-patching `PlatformVersion::latest()` clones.
 #[test]
 fn document_query_dispatches_v0_when_sdk_initial_version_is_v3_0_pv() {
-    use dash_sdk::platform::Query;
+    use dash_sdk::platform::{Query, QuerySettings};
+    use rs_dapi_client::RequestSettings;
 
     let pv_v3_0 = PlatformVersion::get(11).expect("PROTOCOL_VERSION_11 exists");
-    let sdk = SdkBuilder::new_mock()
-        .with_initial_version(pv_v3_0)
-        .build()
-        .expect("mock sdk seeded at PV_11");
+    let request_settings = RequestSettings::default();
+    let settings = QuerySettings {
+        request_settings: &request_settings,
+        protocol_version: pv_v3_0,
+        prove: true,
+    };
     let q = build_basic_document_query();
-    let req = Query::<GetDocumentsRequest>::query(&q, true, &sdk)
-        .expect("encode for v3.0 PV via Query::query");
+    let req: GetDocumentsRequest = q
+        .query(&settings)
+        .expect("encode for v3.0 PV via QuerySettings");
     assert!(
         matches!(req.version, Some(ReqVersion::V0(_))),
         "expected V0 dispatch for PROTOCOL_VERSION_11"

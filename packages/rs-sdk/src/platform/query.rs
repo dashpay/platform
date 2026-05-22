@@ -97,16 +97,17 @@ pub trait Query<T: Mockable>: Send + Debug + Clone {
     ///
     /// # Arguments
     ///
-    /// * `prove` - Whether to include proofs in the response. Only `true` is supported at the moment.
-    /// * `sdk` - The [`Sdk`](crate::Sdk) instance executing the query. Wire encoders that
-    ///   depend on the currently-known protocol version (today:
-    ///   [`DocumentQuery`]'s V0 vs V1 split) read it via
-    ///   [`Sdk::version`](crate::Sdk::version). Most impls ignore the argument.
+    /// * `settings` - A [`QuerySettings`](crate::platform::QuerySettings) borrowing the encoder
+    ///   inputs from the SDK: protocol version (used by encoders that pick wire shapes
+    ///   per version — today only [`DocumentQuery`]'s V0/V1 split), `prove` flag,
+    ///   and request settings. Construct from an SDK via
+    ///   [`Sdk::query_settings`](crate::Sdk::query_settings), or directly in unit tests
+    ///   that want to exercise the encoder without spinning up an `Sdk`.
     ///
     /// # Returns
     /// On success, this method yields an instance of the `TransportRequest` type (`T`).
     /// On failure, it yields an [`Error`].
-    fn query(&self, prove: bool, sdk: &crate::Sdk) -> Result<T, Error>;
+    fn query(&self, settings: &crate::platform::QuerySettings<'_>) -> Result<T, Error>;
 }
 
 impl<T> Query<T> for T
@@ -114,7 +115,8 @@ where
     T: TransportRequest + Sized + Send + Sync + Clone + Debug,
     T::Response: Send + Sync + Debug,
 {
-    fn query(&self, prove: bool, _sdk: &crate::Sdk) -> Result<T, Error> {
+    fn query(&self, settings: &crate::platform::QuerySettings<'_>) -> Result<T, Error> {
+        let prove = settings.prove;
         if !prove {
             tracing::warn!(request= ?self, "sending query without proof, ensure data is trusted");
         }
@@ -125,9 +127,9 @@ where
 impl Query<proto::GetDataContractRequest> for Identifier {
     fn query(
         &self,
-        prove: bool,
-        _sdk: &crate::Sdk,
+        settings: &crate::platform::QuerySettings<'_>,
     ) -> Result<proto::GetDataContractRequest, Error> {
+        let prove = settings.prove;
         if !prove {
             unimplemented!("queries without proofs are not supported yet");
         }
@@ -143,9 +145,9 @@ impl Query<proto::GetDataContractRequest> for Identifier {
 impl Query<proto::GetDataContractsRequest> for Vec<Identifier> {
     fn query(
         &self,
-        prove: bool,
-        _sdk: &crate::Sdk,
+        settings: &crate::platform::QuerySettings<'_>,
     ) -> Result<proto::GetDataContractsRequest, Error> {
+        let prove = settings.prove;
         if !prove {
             unimplemented!("queries without proofs are not supported yet");
         }
@@ -161,9 +163,9 @@ impl Query<proto::GetDataContractsRequest> for Vec<Identifier> {
 impl Query<proto::GetDataContractHistoryRequest> for LimitQuery<(Identifier, u64)> {
     fn query(
         &self,
-        prove: bool,
-        _sdk: &crate::Sdk,
+        settings: &crate::platform::QuerySettings<'_>,
     ) -> Result<proto::GetDataContractHistoryRequest, Error> {
+        let prove = settings.prove;
         if !prove {
             unimplemented!("queries without proofs are not supported yet");
         }
@@ -187,9 +189,9 @@ impl Query<proto::GetIdentityKeysRequest> for Identifier {
     /// Get all keys for an identity with provided identifier.
     fn query(
         &self,
-        prove: bool,
-        _sdk: &crate::Sdk,
+        settings: &crate::platform::QuerySettings<'_>,
     ) -> Result<proto::GetIdentityKeysRequest, Error> {
+        let prove = settings.prove;
         if !prove {
             unimplemented!("queries without proofs are not supported yet");
         }
@@ -266,9 +268,9 @@ impl Query<proto::GetIdentityKeysRequest> for IdentityKeysQuery {
     /// Get specific keys for an identity.
     fn query(
         &self,
-        prove: bool,
-        _sdk: &crate::Sdk,
+        settings: &crate::platform::QuerySettings<'_>,
     ) -> Result<proto::GetIdentityKeysRequest, Error> {
+        let prove = settings.prove;
         if !prove {
             unimplemented!("queries without proofs are not supported yet");
         }
@@ -294,7 +296,11 @@ impl Query<proto::GetIdentityKeysRequest> for IdentityKeysQuery {
 }
 
 impl Query<GetAddressInfoRequest> for PlatformAddress {
-    fn query(&self, prove: bool, _sdk: &crate::Sdk) -> Result<GetAddressInfoRequest, Error> {
+    fn query(
+        &self,
+        settings: &crate::platform::QuerySettings<'_>,
+    ) -> Result<GetAddressInfoRequest, Error> {
+        let prove = settings.prove;
         if !prove {
             unimplemented!("queries without proofs are not supported yet");
         }
@@ -311,7 +317,11 @@ impl Query<GetAddressInfoRequest> for PlatformAddress {
 }
 
 impl Query<GetAddressesInfosRequest> for BTreeSet<PlatformAddress> {
-    fn query(&self, prove: bool, _sdk: &crate::Sdk) -> Result<GetAddressesInfosRequest, Error> {
+    fn query(
+        &self,
+        settings: &crate::platform::QuerySettings<'_>,
+    ) -> Result<GetAddressesInfosRequest, Error> {
+        let prove = settings.prove;
         if !prove {
             unimplemented!("queries without proofs are not supported yet");
         }
@@ -329,9 +339,9 @@ impl Query<GetAddressesInfosRequest> for BTreeSet<PlatformAddress> {
 impl Query<GetAddressesTrunkStateRequest> for () {
     fn query(
         &self,
-        prove: bool,
-        _sdk: &crate::Sdk,
+        settings: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetAddressesTrunkStateRequest, Error> {
+        let prove = settings.prove;
         if !prove {
             unimplemented!("queries without proofs are not supported yet");
         }
@@ -345,7 +355,8 @@ impl Query<GetAddressesTrunkStateRequest> for () {
 }
 
 impl Query<DocumentQuery> for DriveDocumentQuery<'_> {
-    fn query(&self, prove: bool, _sdk: &crate::Sdk) -> Result<DocumentQuery, Error> {
+    fn query(&self, settings: &crate::platform::QuerySettings<'_>) -> Result<DocumentQuery, Error> {
+        let prove = settings.prove;
         if !prove {
             // dash-sdk only serves proof-verified responses. Raw,
             // unverified gRPC responses are out of scope for the
@@ -368,7 +379,8 @@ impl Query<DocumentQuery> for DriveDocumentQuery<'_> {
 // can use a [`DocumentQuery`] both as the user-supplied `Q` and as the
 // rich `Self::Query` produced by `Q::query(sdk)`.
 impl Query<DocumentQuery> for DocumentQuery {
-    fn query(&self, prove: bool, _sdk: &crate::Sdk) -> Result<DocumentQuery, Error> {
+    fn query(&self, settings: &crate::platform::QuerySettings<'_>) -> Result<DocumentQuery, Error> {
+        let prove = settings.prove;
         if !prove {
             tracing::warn!(request= ?self, "sending query without proof, ensure data is trusted");
         }
@@ -424,7 +436,11 @@ impl<Q> From<Q> for LimitQuery<Q> {
 }
 
 impl<E: Into<EpochQuery> + Clone + Debug + Send> Query<GetEpochsInfoRequest> for LimitQuery<E> {
-    fn query(&self, prove: bool, _sdk: &crate::Sdk) -> Result<GetEpochsInfoRequest, Error> {
+    fn query(
+        &self,
+        settings: &crate::platform::QuerySettings<'_>,
+    ) -> Result<GetEpochsInfoRequest, Error> {
+        let prove = settings.prove;
         if !prove {
             unimplemented!("queries without proofs are not supported yet");
         }
@@ -443,22 +459,25 @@ impl<E: Into<EpochQuery> + Clone + Debug + Send> Query<GetEpochsInfoRequest> for
 }
 
 impl Query<GetEpochsInfoRequest> for EpochIndex {
-    fn query(&self, prove: bool, sdk: &crate::Sdk) -> Result<GetEpochsInfoRequest, Error> {
+    fn query(
+        &self,
+        settings: &crate::platform::QuerySettings<'_>,
+    ) -> Result<GetEpochsInfoRequest, Error> {
         LimitQuery {
             query: *self,
             start_info: None,
             limit: Some(1),
         }
-        .query(prove, sdk)
+        .query(settings)
     }
 }
 
 impl Query<GetProtocolVersionUpgradeStateRequest> for () {
     fn query(
         &self,
-        prove: bool,
-        _sdk: &crate::Sdk,
+        settings: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetProtocolVersionUpgradeStateRequest, Error> {
+        let prove = settings.prove;
         if !prove {
             unimplemented!("queries without proofs are not supported yet");
         }
@@ -470,9 +489,9 @@ impl Query<GetProtocolVersionUpgradeStateRequest> for () {
 impl Query<GetProtocolVersionUpgradeVoteStatusRequest> for LimitQuery<Option<ProTxHash>> {
     fn query(
         &self,
-        prove: bool,
-        _sdk: &crate::Sdk,
+        settings: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetProtocolVersionUpgradeVoteStatusRequest, Error> {
+        let prove = settings.prove;
         if !prove {
             unimplemented!("queries without proofs are not supported yet");
         }
@@ -491,10 +510,9 @@ impl Query<GetProtocolVersionUpgradeVoteStatusRequest> for LimitQuery<Option<Pro
 impl Query<GetProtocolVersionUpgradeVoteStatusRequest> for Option<ProTxHash> {
     fn query(
         &self,
-        prove: bool,
-        sdk: &crate::Sdk,
+        settings: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetProtocolVersionUpgradeVoteStatusRequest, Error> {
-        LimitQuery::from(*self).query(prove, sdk)
+        LimitQuery::from(*self).query(settings)
     }
 }
 
@@ -502,10 +520,9 @@ impl Query<GetProtocolVersionUpgradeVoteStatusRequest> for Option<ProTxHash> {
 impl Query<GetProtocolVersionUpgradeVoteStatusRequest> for ProTxHash {
     fn query(
         &self,
-        prove: bool,
-        sdk: &crate::Sdk,
+        settings: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetProtocolVersionUpgradeVoteStatusRequest, Error> {
-        Some(*self).query(prove, sdk)
+        Some(*self).query(settings)
     }
 }
 
@@ -513,20 +530,23 @@ impl Query<GetProtocolVersionUpgradeVoteStatusRequest> for ProTxHash {
 impl Query<GetProtocolVersionUpgradeVoteStatusRequest> for LimitQuery<ProTxHash> {
     fn query(
         &self,
-        prove: bool,
-        sdk: &crate::Sdk,
+        settings: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetProtocolVersionUpgradeVoteStatusRequest, Error> {
         LimitQuery {
             query: Some(self.query),
             start_info: None,
             limit: self.limit,
         }
-        .query(prove, sdk)
+        .query(settings)
     }
 }
 
 impl Query<GetContestedResourcesRequest> for VotePollsByDocumentTypeQuery {
-    fn query(&self, prove: bool, _sdk: &crate::Sdk) -> Result<GetContestedResourcesRequest, Error> {
+    fn query(
+        &self,
+        settings: &crate::platform::QuerySettings<'_>,
+    ) -> Result<GetContestedResourcesRequest, Error> {
+        let prove = settings.prove;
         if !prove {
             unimplemented!("queries without proofs are not supported yet");
         }
@@ -536,11 +556,14 @@ impl Query<GetContestedResourcesRequest> for VotePollsByDocumentTypeQuery {
 }
 
 impl Query<GetContestedResourcesRequest> for LimitQuery<GetContestedResourcesRequest> {
-    fn query(&self, prove: bool, sdk: &crate::Sdk) -> Result<GetContestedResourcesRequest, Error> {
+    fn query(
+        &self,
+        settings: &crate::platform::QuerySettings<'_>,
+    ) -> Result<GetContestedResourcesRequest, Error> {
         use proto::get_contested_resources_request::{
             get_contested_resources_request_v0::StartAtValueInfo, Version,
         };
-        let query = match self.query.query(prove, sdk)?.version {
+        let query = match self.query.query(settings)?.version {
             Some(Version::V0(v0)) => GetContestedResourcesRequestV0 {
                 start_at_value_info: self.start_info.clone().map(|v| StartAtValueInfo {
                     start_value: v.start_key,
@@ -566,9 +589,9 @@ impl Query<GetContestedResourcesRequest> for LimitQuery<GetContestedResourcesReq
 impl Query<GetContestedResourceVoteStateRequest> for ContestedDocumentVotePollDriveQuery {
     fn query(
         &self,
-        prove: bool,
-        _sdk: &crate::Sdk,
+        settings: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetContestedResourceVoteStateRequest, Error> {
+        let prove = settings.prove;
         if !prove {
             unimplemented!("queries without proofs are not supported yet");
         }
@@ -585,14 +608,14 @@ impl Query<GetContestedResourceVoteStateRequest>
 {
     fn query(
         &self,
-        prove: bool,
-        sdk: &crate::Sdk,
+        settings: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetContestedResourceVoteStateRequest, Error> {
+        let prove = settings.prove;
         use proto::get_contested_resource_vote_state_request::get_contested_resource_vote_state_request_v0::StartAtIdentifierInfo;
         if !prove {
             unimplemented!("queries without proofs are not supported yet");
         }
-        let result = match  self.query.query(prove, sdk)?.version {
+        let result = match  self.query.query(settings)?.version {
             Some(proto::get_contested_resource_vote_state_request::Version::V0(v0)) =>
                     proto::get_contested_resource_vote_state_request::GetContestedResourceVoteStateRequestV0 {
                         start_at_identifier_info: self.start_info.clone().map(|v| StartAtIdentifierInfo {
@@ -616,9 +639,9 @@ impl Query<GetContestedResourceVotersForIdentityRequest>
 {
     fn query(
         &self,
-        prove: bool,
-        _sdk: &crate::Sdk,
+        settings: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetContestedResourceVotersForIdentityRequest, Error> {
+        let prove = settings.prove;
         if !prove {
             unimplemented!("queries without proofs are not supported yet");
         }
@@ -635,13 +658,12 @@ impl Query<GetContestedResourceVotersForIdentityRequest>
 {
     fn query(
         &self,
-        prove: bool,
-        sdk: &crate::Sdk,
+        settings: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetContestedResourceVotersForIdentityRequest, Error> {
         use proto::get_contested_resource_voters_for_identity_request::{
             get_contested_resource_voters_for_identity_request_v0::StartAtIdentifierInfo, Version,
         };
-        let query = match self.query.query(prove, sdk)?.version {
+        let query = match self.query.query(settings)?.version {
             Some(Version::V0(v0)) => GetContestedResourceVotersForIdentityRequestV0 {
                 start_at_identifier_info: self.start_info.clone().map(|v| StartAtIdentifierInfo {
                     start_identifier: v.start_key,
@@ -669,13 +691,12 @@ impl Query<GetEvonodesProposedEpochBlocksByRangeRequest>
 {
     fn query(
         &self,
-        prove: bool,
-        sdk: &crate::Sdk,
+        settings: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetEvonodesProposedEpochBlocksByRangeRequest, Error> {
         use proto::get_evonodes_proposed_epoch_blocks_by_range_request::{
             get_evonodes_proposed_epoch_blocks_by_range_request_v0::Start, Version,
         };
-        let query = match self.query.query(prove, sdk)?.version {
+        let query = match self.query.query(settings)?.version {
             Some(Version::V0(v0)) => GetEvonodesProposedEpochBlocksByRangeRequestV0 {
                 start: self.start_info.clone().map(|v| {
                     if v.start_included {
@@ -706,9 +727,9 @@ impl Query<GetContestedResourceIdentityVotesRequest>
 {
     fn query(
         &self,
-        prove: bool,
-        _sdk: &crate::Sdk,
+        settings: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetContestedResourceIdentityVotesRequest, Error> {
+        let prove = settings.prove;
         if !prove {
             unimplemented!("queries without proofs are not supported yet");
         }
@@ -723,9 +744,9 @@ impl Query<GetContestedResourceIdentityVotesRequest>
 impl Query<GetContestedResourceIdentityVotesRequest> for ProTxHash {
     fn query(
         &self,
-        prove: bool,
-        _sdk: &crate::Sdk,
+        settings: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetContestedResourceIdentityVotesRequest, Error> {
+        let prove = settings.prove;
         if !prove {
             unimplemented!("queries without proofs are not supported yet");
         }
@@ -742,7 +763,11 @@ impl Query<GetContestedResourceIdentityVotesRequest> for ProTxHash {
 }
 
 impl Query<GetVotePollsByEndDateRequest> for VotePollsByEndDateDriveQuery {
-    fn query(&self, prove: bool, _sdk: &crate::Sdk) -> Result<GetVotePollsByEndDateRequest, Error> {
+    fn query(
+        &self,
+        settings: &crate::platform::QuerySettings<'_>,
+    ) -> Result<GetVotePollsByEndDateRequest, Error> {
+        let prove = settings.prove;
         if !prove {
             unimplemented!("queries without proofs are not supported yet");
         }
@@ -754,9 +779,9 @@ impl Query<GetVotePollsByEndDateRequest> for VotePollsByEndDateDriveQuery {
 impl Query<GetPrefundedSpecializedBalanceRequest> for Identifier {
     fn query(
         &self,
-        prove: bool,
-        _sdk: &crate::Sdk,
+        settings: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetPrefundedSpecializedBalanceRequest, Error> {
+        let prove = settings.prove;
         if !prove {
             unimplemented!("queries without proofs are not supported yet");
         }
@@ -782,9 +807,9 @@ impl VoteQuery {
 impl Query<GetContestedResourceIdentityVotesRequest> for VoteQuery {
     fn query(
         &self,
-        prove: bool,
-        _sdk: &crate::Sdk,
+        settings: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetContestedResourceIdentityVotesRequest, Error> {
+        let prove = settings.prove;
         if !prove {
             unimplemented!("queries without proofs are not supported yet");
         }
@@ -808,9 +833,9 @@ impl Query<GetContestedResourceIdentityVotesRequest> for VoteQuery {
 impl Query<GetContestedResourceIdentityVotesRequest> for LimitQuery<VoteQuery> {
     fn query(
         &self,
-        prove: bool,
-        sdk: &crate::Sdk,
+        settings: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetContestedResourceIdentityVotesRequest, Error> {
+        let prove = settings.prove;
         if !prove {
             unimplemented!("queries without proofs are not supported yet");
         }
@@ -818,7 +843,7 @@ impl Query<GetContestedResourceIdentityVotesRequest> for LimitQuery<VoteQuery> {
             get_contested_resource_identity_votes_request_v0::StartAtVotePollIdInfo, Version,
         };
 
-        Ok(match self.query.query(prove, sdk)?.version {
+        Ok(match self.query.query(settings)?.version {
             None => return Err(Error::Protocol(dpp::ProtocolError::NoProtocolVersionError)),
             Some(Version::V0(v0)) => GetContestedResourceIdentityVotesRequestV0 {
                 limit: self.limit,
@@ -836,7 +861,11 @@ impl Query<GetContestedResourceIdentityVotesRequest> for LimitQuery<VoteQuery> {
 }
 
 impl Query<GetPathElementsRequest> for KeysInPath {
-    fn query(&self, prove: bool, _sdk: &crate::Sdk) -> Result<GetPathElementsRequest, Error> {
+    fn query(
+        &self,
+        settings: &crate::platform::QuerySettings<'_>,
+    ) -> Result<GetPathElementsRequest, Error> {
+        let prove = settings.prove;
         if !prove {
             unimplemented!("queries without proofs are not supported yet");
         }
@@ -858,9 +887,9 @@ impl Query<GetPathElementsRequest> for KeysInPath {
 impl Query<GetTotalCreditsInPlatformRequest> for NoParamQuery {
     fn query(
         &self,
-        prove: bool,
-        _sdk: &crate::Sdk,
+        settings: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetTotalCreditsInPlatformRequest, Error> {
+        let prove = settings.prove;
         if !prove {
             unimplemented!("queries without proofs are not supported yet");
         }
@@ -876,7 +905,11 @@ impl Query<GetTotalCreditsInPlatformRequest> for NoParamQuery {
 }
 
 impl Query<GetCurrentQuorumsInfoRequest> for NoParamQuery {
-    fn query(&self, prove: bool, _sdk: &crate::Sdk) -> Result<GetCurrentQuorumsInfoRequest, Error> {
+    fn query(
+        &self,
+        settings: &crate::platform::QuerySettings<'_>,
+    ) -> Result<GetCurrentQuorumsInfoRequest, Error> {
+        let prove = settings.prove;
         if prove {
             unimplemented!(
                 "query with proof are not supported yet for GetCurrentQuorumsInfoRequest"
@@ -896,9 +929,9 @@ impl Query<GetCurrentQuorumsInfoRequest> for NoParamQuery {
 impl Query<GetEvonodesProposedEpochBlocksByRangeRequest> for LimitQuery<Option<EpochIndex>> {
     fn query(
         &self,
-        prove: bool,
-        _sdk: &crate::Sdk,
+        settings: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetEvonodesProposedEpochBlocksByRangeRequest, Error> {
+        let prove = settings.prove;
         if !prove {
             unimplemented!("queries without proofs are not supported yet");
         }
@@ -924,7 +957,7 @@ impl Query<GetEvonodesProposedEpochBlocksByRangeRequest> for LimitQuery<Option<E
 }
 
 impl Query<GetStatusRequest> for EvoNode {
-    fn query(&self, _prove: bool, _sdk: &crate::Sdk) -> Result<GetStatusRequest, Error> {
+    fn query(&self, _ctx: &crate::platform::QuerySettings<'_>) -> Result<GetStatusRequest, Error> {
         // ignore proof
 
         let request: GetStatusRequest = GetStatusRequest {
@@ -938,9 +971,9 @@ impl Query<GetStatusRequest> for EvoNode {
 impl Query<GetTokenDirectPurchasePricesRequest> for &[Identifier] {
     fn query(
         &self,
-        prove: bool,
-        _sdk: &crate::Sdk,
+        settings: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetTokenDirectPurchasePricesRequest, Error> {
+        let prove = settings.prove;
         if !prove {
             unimplemented!("queries without proofs are not supported yet");
         }
@@ -970,9 +1003,9 @@ pub struct TokenLastClaimQuery {
 impl Query<GetTokenPerpetualDistributionLastClaimRequest> for TokenLastClaimQuery {
     fn query(
         &self,
-        prove: bool,
-        _sdk: &crate::Sdk,
+        settings: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetTokenPerpetualDistributionLastClaimRequest, Error> {
+        let prove = settings.prove;
         if !prove {
             unimplemented!("queries without proofs are not supported yet");
         }
@@ -1006,9 +1039,9 @@ pub struct ProposerBlockCountByIdsQuery {
 impl Query<GetEvonodesProposedEpochBlocksByIdsRequest> for ProposerBlockCountByIdsQuery {
     fn query(
         &self,
-        prove: bool,
-        _sdk: &crate::Sdk,
+        settings: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetEvonodesProposedEpochBlocksByIdsRequest, Error> {
+        let prove = settings.prove;
         if !prove {
             unimplemented!("queries without proofs are not supported yet");
         }
@@ -1038,15 +1071,14 @@ impl Query<GetEvonodesProposedEpochBlocksByIdsRequest> for ProposerBlockCountByI
 impl Query<GetEvonodesProposedEpochBlocksByIdsRequest> for (EpochIndex, Vec<ProTxHash>) {
     fn query(
         &self,
-        prove: bool,
-        sdk: &crate::Sdk,
+        settings: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetEvonodesProposedEpochBlocksByIdsRequest, Error> {
         let (epoch, pro_tx_hashes) = self;
         ProposerBlockCountByIdsQuery {
             epoch: Some(*epoch),
             pro_tx_hashes: pro_tx_hashes.clone(),
         }
-        .query(prove, sdk)
+        .query(settings)
     }
 }
 
@@ -1067,9 +1099,9 @@ impl RecentAddressBalanceChangesQuery {
 impl Query<proto::GetRecentAddressBalanceChangesRequest> for RecentAddressBalanceChangesQuery {
     fn query(
         &self,
-        prove: bool,
-        _sdk: &crate::Sdk,
+        settings: &crate::platform::QuerySettings<'_>,
     ) -> Result<proto::GetRecentAddressBalanceChangesRequest, Error> {
+        let prove = settings.prove;
         if !prove {
             unimplemented!("queries without proofs are not supported yet");
         }
@@ -1107,9 +1139,9 @@ impl Query<proto::GetRecentCompactedAddressBalanceChangesRequest>
 {
     fn query(
         &self,
-        prove: bool,
-        _sdk: &crate::Sdk,
+        settings: &crate::platform::QuerySettings<'_>,
     ) -> Result<proto::GetRecentCompactedAddressBalanceChangesRequest, Error> {
+        let prove = settings.prove;
         if !prove {
             unimplemented!("queries without proofs are not supported yet");
         }
@@ -1130,7 +1162,11 @@ impl Query<proto::GetRecentCompactedAddressBalanceChangesRequest>
 // --- Shielded Pool Queries ---
 
 impl Query<GetShieldedPoolStateRequest> for NoParamQuery {
-    fn query(&self, prove: bool, _sdk: &crate::Sdk) -> Result<GetShieldedPoolStateRequest, Error> {
+    fn query(
+        &self,
+        settings: &crate::platform::QuerySettings<'_>,
+    ) -> Result<GetShieldedPoolStateRequest, Error> {
+        let prove = settings.prove;
         if !prove {
             unimplemented!("queries without proofs are not supported yet");
         }
@@ -1144,7 +1180,11 @@ impl Query<GetShieldedPoolStateRequest> for NoParamQuery {
 }
 
 impl Query<GetShieldedAnchorsRequest> for NoParamQuery {
-    fn query(&self, prove: bool, _sdk: &crate::Sdk) -> Result<GetShieldedAnchorsRequest, Error> {
+    fn query(
+        &self,
+        settings: &crate::platform::QuerySettings<'_>,
+    ) -> Result<GetShieldedAnchorsRequest, Error> {
+        let prove = settings.prove;
         if !prove {
             unimplemented!("queries without proofs are not supported yet");
         }
@@ -1160,9 +1200,9 @@ impl Query<GetShieldedAnchorsRequest> for NoParamQuery {
 impl Query<GetMostRecentShieldedAnchorRequest> for NoParamQuery {
     fn query(
         &self,
-        prove: bool,
-        _sdk: &crate::Sdk,
+        settings: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetMostRecentShieldedAnchorRequest, Error> {
+        let prove = settings.prove;
         if !prove {
             unimplemented!("queries without proofs are not supported yet");
         }
@@ -1180,9 +1220,9 @@ impl Query<GetMostRecentShieldedAnchorRequest> for NoParamQuery {
 impl Query<GetShieldedEncryptedNotesRequest> for ShieldedEncryptedNotesQuery {
     fn query(
         &self,
-        prove: bool,
-        _sdk: &crate::Sdk,
+        settings: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetShieldedEncryptedNotesRequest, Error> {
+        let prove = settings.prove;
         if !prove {
             unimplemented!("queries without proofs are not supported yet");
         }
@@ -1200,7 +1240,11 @@ impl Query<GetShieldedEncryptedNotesRequest> for ShieldedEncryptedNotesQuery {
 }
 
 impl Query<GetShieldedNullifiersRequest> for ShieldedNullifiersQuery {
-    fn query(&self, prove: bool, _sdk: &crate::Sdk) -> Result<GetShieldedNullifiersRequest, Error> {
+    fn query(
+        &self,
+        settings: &crate::platform::QuerySettings<'_>,
+    ) -> Result<GetShieldedNullifiersRequest, Error> {
+        let prove = settings.prove;
         if !prove {
             unimplemented!("queries without proofs are not supported yet");
         }
@@ -1219,9 +1263,9 @@ impl Query<GetShieldedNullifiersRequest> for ShieldedNullifiersQuery {
 impl Query<GetNullifiersTrunkStateRequest> for NullifiersTrunkQuery {
     fn query(
         &self,
-        prove: bool,
-        _sdk: &crate::Sdk,
+        settings: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetNullifiersTrunkStateRequest, Error> {
+        let prove = settings.prove;
         if !prove {
             unimplemented!("queries without proofs are not supported yet");
         }

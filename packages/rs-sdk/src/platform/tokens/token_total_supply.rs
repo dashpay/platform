@@ -5,7 +5,11 @@ use dapi_grpc::platform::v0::{get_token_total_supply_request, GetTokenTotalSuppl
 pub use dpp::balances::total_single_token_balance::TotalSingleTokenBalance;
 
 impl Query<GetTokenTotalSupplyRequest> for Identifier {
-    fn query(&self, prove: bool, _sdk: &crate::Sdk) -> Result<GetTokenTotalSupplyRequest, Error> {
+    fn query(
+        &self,
+        settings: &crate::platform::QuerySettings<'_>,
+    ) -> Result<GetTokenTotalSupplyRequest, Error> {
+        let prove = settings.prove;
         let request = GetTokenTotalSupplyRequest {
             version: Some(get_token_total_supply_request::Version::V0(
                 GetTokenTotalSupplyRequestV0 {
