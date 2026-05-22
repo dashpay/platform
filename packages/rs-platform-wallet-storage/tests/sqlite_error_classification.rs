@@ -101,6 +101,12 @@ fn samples() -> Vec<WalletStorageError> {
         WalletStorageError::WalletNotFound {
             wallet_id: [0u8; 32],
         },
+        WalletStorageError::WalletIdMismatch {
+            expected: [1u8; 32],
+            found: [2u8; 32],
+        },
+        WalletStorageError::IdentityKeyEntryMismatch,
+        WalletStorageError::ForeignKeysNotEnforced,
         WalletStorageError::LockPoisoned,
         WalletStorageError::RestoreDestinationLocked,
         WalletStorageError::InvalidWalletIdHex {
@@ -176,6 +182,7 @@ fn tc_p2_005_is_transient_table() {
                 (false, "auto_backup_dir_unwritable")
             }
             WalletStorageError::WalletNotFound { .. } => (false, "wallet_not_found"),
+            WalletStorageError::WalletIdMismatch { .. } => (false, "wallet_id_mismatch"),
             WalletStorageError::LockPoisoned => (false, "lock_poisoned"),
             WalletStorageError::RestoreDestinationLocked => (false, "restore_destination_locked"),
             WalletStorageError::InvalidWalletIdHex { .. } => (false, "invalid_wallet_id_hex"),
@@ -189,6 +196,8 @@ fn tc_p2_005_is_transient_table() {
             WalletStorageError::BackupDestinationExists { .. } => {
                 (false, "backup_destination_exists")
             }
+            WalletStorageError::IdentityKeyEntryMismatch => (false, "identity_key_entry_mismatch"),
+            WalletStorageError::ForeignKeysNotEnforced => (false, "foreign_keys_not_enforced"),
             WalletStorageError::IntegerOverflow { .. } => (false, "integer_overflow"),
         }
     }

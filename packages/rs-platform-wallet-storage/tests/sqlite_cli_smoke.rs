@@ -107,9 +107,10 @@ fn tc070_inspect_invalid_wallet_id() {
     }
 }
 
-/// TC-072: delete-wallet without --yes exits 2.
+/// TC-072: the `delete-wallet` subcommand is removed from the CLI
+/// (CMT-007). Invoking it is an unknown-subcommand usage error.
 #[test]
-fn tc072_delete_wallet_without_yes_refuses() {
+fn tc072_delete_wallet_subcommand_removed() {
     let tmp = tempfile::tempdir().unwrap();
     let db = tmp.path().join("w.db");
     cli()
@@ -126,7 +127,15 @@ fn tc072_delete_wallet_without_yes_refuses() {
         ])
         .output()
         .unwrap();
-    assert_eq!(out.status.code(), Some(2));
+    assert!(
+        !out.status.success(),
+        "delete-wallet should no longer be a recognised subcommand"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("unrecognized") || stderr.contains("unexpected"),
+        "expected clap unknown-subcommand error, got stderr: `{stderr}`"
+    );
 }
 
 /// TC-068: inspect TSV format prints `table\tcount` lines.
