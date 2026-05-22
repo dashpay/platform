@@ -27,7 +27,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V8: DriveAbciValidationVersions =
                     fetch_asset_lock_transaction_output_sync: 0,
                     verify_asset_lock_is_not_spent_and_has_enough_balance: 0,
                 },
-                validate_identity_public_key_contract_bounds: 0,
+                validate_identity_public_key_contract_bounds: 1,
                 validate_identity_public_key_ids_dont_exist_in_state: 0,
                 validate_identity_public_key_ids_exist_in_state: 0,
                 validate_state_transition_identity_signed: 0,
