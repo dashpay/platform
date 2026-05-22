@@ -3,19 +3,39 @@
 //! Spec: `tests/e2e/TEST_SPEC.md` §3 → SH-033. Priority: P1.
 //! CRITICAL-if-it-fails (double-spend within one tx).
 //!
-//! Attack: one transition whose Orchard bundle spends the same note twice
-//! (two actions, identical nullifier) — an intra-transition double-spend.
+//! Attack: build one Type-17 unshield whose Orchard bundle spends the
+//! same note TWICE (two actions, identical nullifier) by passing
+//! `[note, note]` to the build-against-note seam, then broadcast. A
+//! duplicate nullifier within one bundle must fail validation before any
+//! state write.
 //!
-//! # PRODUCTION GAP (flagged, not fixed)
-//!
-//! Constructing a bundle with a duplicated `SpendableNote` needs the raw
-//! dpp bundle builder (`build_spend_bundle`, `pub(crate)`) or a build-only
-//! shielded capture seam. Neither is public. See
-//! `framework::shielded::ADVERSARIAL_SEAM_MISSING`.
+//! The build itself may reject the duplicate (a client-side guard), in
+//! which case the dup never reaches Drive — acceptable, since no state
+//! write occurs. The FINDING (RED) is a SUCCESSFUL broadcast: the backend
+//! accepted an intra-bundle double-spend.
 
 #![cfg(feature = "shielded")]
 
-use crate::framework::shielded::{adversarial_enabled, ADVERSARIAL_SEAM_MISSING};
+use std::time::Duration;
+
+use dpp::shielded::compute_minimum_shielded_fee;
+use dpp::version::PlatformVersion;
+
+use crate::framework::prelude::*;
+use crate::framework::shielded::{
+    adversarial_enabled, bind_shielded, broadcast_raw, build_unshield_st_against_notes,
+    shielded_prover, teardown_sweep_shielded, unspent_notes, wait_for_shielded_balance,
+};
+use crate::framework::wait::{
+    wait_for_address_balance_chain_confirmed_n, CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
+};
+
+const FUNDING_CREDITS: u64 = 90_000_000;
+const SHIELD_AMOUNT: u64 = 50_000_000;
+// Below 2× the note value so the two duplicated 50M spends "cover" it —
+// the point is the duplicate nullifier, not insufficient value.
+const UNSHIELD_AMOUNT: u64 = 60_000_000;
+const STEP_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
 async fn sh_033_duplicate_nullifier_in_bundle() {
@@ -35,8 +55,95 @@ async fn sh_033_duplicate_nullifier_in_bundle() {
         return;
     }
 
-    panic!(
-        "SH-033 RED-by-gap: building a bundle with a duplicated SpendableNote needs the raw \
-         dpp bundle builder (pub(crate)) or a capture seam. {ADVERSARIAL_SEAM_MISSING}"
-    );
+    let s = setup().await.expect("e2e setup failed");
+    let prover = shielded_prover();
+    let handle = bind_shielded(&s.test_wallet, &[0], &s.ctx.workdir)
+        .await
+        .expect("bind_shielded");
+
+    let addr_1 = s
+        .test_wallet
+        .next_unused_address()
+        .await
+        .expect("derive addr_1");
+    s.ctx
+        .bank()
+        .fund_address(&addr_1, FUNDING_CREDITS)
+        .await
+        .expect("bank.fund_address");
+    wait_for_address_balance_chain_confirmed_n(
+        s.ctx.sdk(),
+        &addr_1,
+        FUNDING_CREDITS,
+        CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
+        STEP_TIMEOUT,
+    )
+    .await
+    .expect("addr_1 funding never observed");
+    s.test_wallet
+        .sync_balances()
+        .await
+        .expect("pre-shield sync");
+    s.test_wallet
+        .platform_wallet()
+        .shielded_shield_from_account(0, 0, SHIELD_AMOUNT, s.test_wallet.address_signer(), prover)
+        .await
+        .expect("shield_from_account");
+    wait_for_shielded_balance(&s.test_wallet, &handle, 0, SHIELD_AMOUNT, STEP_TIMEOUT)
+        .await
+        .expect("shielded balance never reached SHIELD_AMOUNT");
+
+    let notes = unspent_notes(&s.test_wallet, &handle, 0)
+        .await
+        .expect("capture unspent notes");
+    assert!(!notes.is_empty(), "expected one synced note");
+    // The SAME note twice — duplicate nullifier within one bundle.
+    let dup = vec![notes[0].clone(), notes[0].clone()];
+
+    let exact_fee = compute_minimum_shielded_fee(2, PlatformVersion::latest());
+    let dst = s.test_wallet.next_unused_address().await.expect("dst");
+
+    let built = build_unshield_st_against_notes(
+        &s.test_wallet,
+        &handle,
+        0,
+        &dst,
+        UNSHIELD_AMOUNT,
+        exact_fee,
+        &dup,
+    )
+    .await;
+
+    match built {
+        Ok(st) => {
+            let result = broadcast_raw(s.ctx.sdk(), &st).await;
+            assert!(
+                result.is_err(),
+                "SH-033 FINDING (CRITICAL): backend ACCEPTED a bundle with a duplicate nullifier \
+                 — intra-transaction double-spend. result={result:?}"
+            );
+            tracing::info!(
+                target: "platform_wallet::e2e::cases::sh_033",
+                "intra-bundle duplicate nullifier correctly rejected by backend"
+            );
+        }
+        Err(e) => {
+            // The build rejected the duplicate before it could reach Drive;
+            // no state write occurs. Acceptable (the dup is stopped early),
+            // but log it so a reviewer knows the backend arm wasn't exercised.
+            tracing::info!(
+                target: "platform_wallet::e2e::cases::sh_033",
+                error = %e,
+                "duplicate-nullifier bundle rejected at build time (never reached the backend)"
+            );
+        }
+    }
+
+    let bank_addr = s
+        .ctx
+        .bank()
+        .primary_receive_address()
+        .to_bech32m_string(s.ctx.bank().network());
+    teardown_sweep_shielded(&s.test_wallet, &handle, &bank_addr).await;
+    s.teardown().await.expect("teardown");
 }

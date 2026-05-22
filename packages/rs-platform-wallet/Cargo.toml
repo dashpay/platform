@@ -116,7 +116,13 @@ shielded = ["dep:grovedb-commitment-tree", "dep:zip32", "dash-sdk/shielded", "dp
 # runs the network-dependent harness. Pulls in `shielded` so an e2e run
 # exercises the shielded-pool cases too. Run with:
 # `cargo test -p platform-wallet --test e2e --features e2e`.
-e2e = ["shielded"]
+e2e = ["shielded", "test-utils"]
+# Test-only seams that expose internal shielded spend-assembly
+# (extract-spends, note reservation, build-against-a-chosen-note, and an
+# asset-lock one-time-key derivation helper) for the adversarial e2e
+# cases. NOT in `default`; pulled in by `e2e`. Never enable in production
+# builds — these bypass the wallet's spend guards by design.
+test-utils = ["shielded"]
 # Forward to the upstream `key-wallet` / `key-wallet-manager`
 # `keep-finalized-transactions` feature. With it OFF (the default),
 # chainlocked transactions are evicted from the in-memory

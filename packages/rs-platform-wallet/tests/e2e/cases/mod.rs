@@ -101,10 +101,7 @@ pub mod sh_025_forged_proof;
 pub mod sh_026_anchor_mismatch;
 #[cfg(feature = "shielded")]
 pub mod sh_027_malformed_note_serde;
-#[cfg(feature = "shielded")]
-pub mod sh_028_sync_interrupt_mid_chunk;
-#[cfg(feature = "shielded")]
-pub mod sh_029_reorg_rescan;
+// SH-028 / SH-029 BLOCKED — no injectable sync-source seam (see TEST_SPEC.md).
 #[cfg(feature = "shielded")]
 pub mod sh_030_cross_network_recipient;
 #[cfg(feature = "shielded")]

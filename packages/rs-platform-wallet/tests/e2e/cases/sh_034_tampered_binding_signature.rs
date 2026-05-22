@@ -3,19 +3,31 @@
 //! Spec: `tests/e2e/TEST_SPEC.md` §3 → SH-034. Priority: P1.
 //! CRITICAL-if-it-fails (value-balance binding bypass).
 //!
-//! Attack: flip bytes in `SerializedBundle.binding_signature` (64 bytes)
-//! and broadcast. The binding signature commits to the value balance; a
-//! tampered signature must fail Orchard bundle verification.
+//! Attack: capture a VALID Type-17 unshield, flip bytes in
+//! `SerializedBundle.binding_signature` (64 bytes), broadcast raw. The
+//! binding signature commits to the value balance; a tampered signature
+//! must fail Orchard bundle verification at the backend.
 //!
-//! # PRODUCTION GAP (flagged, not fixed)
-//!
-//! Mutating `binding_signature` needs a captured valid-build's serialized
-//! bundle; shielded `operations::*` expose no build-only capture seam.
-//! See `framework::shielded::ADVERSARIAL_SEAM_MISSING`.
+//! RED if the backend accepts a tampered binding signature.
 
 #![cfg(feature = "shielded")]
 
-use crate::framework::shielded::{adversarial_enabled, ADVERSARIAL_SEAM_MISSING};
+use std::time::Duration;
+
+use crate::framework::prelude::*;
+use crate::framework::shielded::{
+    adversarial_enabled, bind_shielded, broadcast_raw, capture_unshield_st,
+    mutate_serialized_bundle, shielded_prover, teardown_sweep_shielded, wait_for_shielded_balance,
+    BundleField, BundleMutation,
+};
+use crate::framework::wait::{
+    wait_for_address_balance_chain_confirmed_n, CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
+};
+
+const FUNDING_CREDITS: u64 = 90_000_000;
+const SHIELD_AMOUNT: u64 = 50_000_000;
+const UNSHIELD_AMOUNT: u64 = 20_000_000;
+const STEP_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
 async fn sh_034_tampered_binding_signature() {
@@ -35,8 +47,70 @@ async fn sh_034_tampered_binding_signature() {
         return;
     }
 
-    panic!(
-        "SH-034 RED-by-gap: tampering binding_signature needs the captured serialized bundle to \
-         mutate post-build; no public shielded capture seam. {ADVERSARIAL_SEAM_MISSING}"
-    );
+    let s = setup().await.expect("e2e setup failed");
+    let prover = shielded_prover();
+    let handle = bind_shielded(&s.test_wallet, &[0], &s.ctx.workdir)
+        .await
+        .expect("bind_shielded");
+
+    let addr_1 = s
+        .test_wallet
+        .next_unused_address()
+        .await
+        .expect("derive addr_1");
+    s.ctx
+        .bank()
+        .fund_address(&addr_1, FUNDING_CREDITS)
+        .await
+        .expect("bank.fund_address");
+    wait_for_address_balance_chain_confirmed_n(
+        s.ctx.sdk(),
+        &addr_1,
+        FUNDING_CREDITS,
+        CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
+        STEP_TIMEOUT,
+    )
+    .await
+    .expect("addr_1 funding never observed");
+    s.test_wallet
+        .sync_balances()
+        .await
+        .expect("pre-shield sync");
+    s.test_wallet
+        .platform_wallet()
+        .shielded_shield_from_account(0, 0, SHIELD_AMOUNT, s.test_wallet.address_signer(), prover)
+        .await
+        .expect("shield_from_account");
+    wait_for_shielded_balance(&s.test_wallet, &handle, 0, SHIELD_AMOUNT, STEP_TIMEOUT)
+        .await
+        .expect("shielded balance never reached SHIELD_AMOUNT");
+
+    let dst = s.test_wallet.next_unused_address().await.expect("dst");
+
+    for mutation in [BundleMutation::FlipByte(0), BundleMutation::Zero] {
+        let mut st = capture_unshield_st(&s.test_wallet, &handle, 0, &dst, UNSHIELD_AMOUNT)
+            .await
+            .expect("capture valid unshield ST");
+        mutate_serialized_bundle(&mut st, BundleField::BindingSignature, &mutation)
+            .expect("tamper binding signature");
+        let result = broadcast_raw(s.ctx.sdk(), &st).await;
+        assert!(
+            result.is_err(),
+            "SH-034 FINDING (CRITICAL): backend ACCEPTED a tampered binding signature \
+             ({mutation:?}) — value-balance binding bypass. result={result:?}"
+        );
+        tracing::info!(
+            target: "platform_wallet::e2e::cases::sh_034",
+            ?mutation,
+            "tampered binding signature correctly rejected by backend"
+        );
+    }
+
+    let bank_addr = s
+        .ctx
+        .bank()
+        .primary_receive_address()
+        .to_bech32m_string(s.ctx.bank().network());
+    teardown_sweep_shielded(&s.test_wallet, &handle, &bank_addr).await;
+    s.teardown().await.expect("teardown");
 }

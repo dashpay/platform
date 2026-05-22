@@ -1,26 +1,36 @@
-//! SH-025 — ADVERSARIAL: forged/tampered/substituted Halo-2 proof —
-//! verifier MUST reject [INJECT].
+//! SH-025 — ADVERSARIAL: forged/tampered Halo-2 proof — verifier MUST
+//! reject [INJECT].
 //! Spec: `tests/e2e/TEST_SPEC.md` §3 → SH-025. Priority: P0
 //! (consensus-critical). CRITICAL-if-it-fails (total break of shielded
 //! soundness).
 //!
-//! Attack: build a valid transition, then flip bytes in
-//! `SerializedBundle.proof` — single-bit flip, truncation, all-zeros,
-//! and a proof copied from a DIFFERENT valid transition (substitution).
-//! Every variant must fail Orchard proof verification.
+//! Attack: build a VALID Type-17 unshield via the production capture seam
+//! (`operations::build_unshield_st`), then corrupt `SerializedBundle.proof`
+//! (bit-flip, zero) and broadcast directly via `broadcast_raw`, bypassing
+//! the guarded wallet method. The proof is bound to the public inputs
+//! (anchor, nullifiers, value_balance, cmx), so any mutation must fail
+//! Orchard proof verification at the backend.
 //!
-//! # PRODUCTION GAP (flagged, not fixed)
-//!
-//! Mutating `proof` bytes requires a captured valid-build's serialized
-//! `SerializedBundle`/ST, which shielded `operations::*` never expose
-//! (they build AND broadcast internally). The scaffolded `TamperingProver`
-//! returns a real proving key, so on its own it produces a VALID proof —
-//! genuine forgery still needs the byte-mutation-after-build seam. See
-//! `framework::shielded::ADVERSARIAL_SEAM_MISSING`.
+//! RED if the backend accepts a tampered proof.
 
 #![cfg(feature = "shielded")]
 
-use crate::framework::shielded::{adversarial_enabled, ADVERSARIAL_SEAM_MISSING};
+use std::time::Duration;
+
+use crate::framework::prelude::*;
+use crate::framework::shielded::{
+    adversarial_enabled, bind_shielded, broadcast_raw, capture_unshield_st,
+    mutate_serialized_bundle, shielded_prover, teardown_sweep_shielded, wait_for_shielded_balance,
+    BundleField, BundleMutation,
+};
+use crate::framework::wait::{
+    wait_for_address_balance_chain_confirmed_n, CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
+};
+
+const FUNDING_CREDITS: u64 = 90_000_000;
+const SHIELD_AMOUNT: u64 = 50_000_000;
+const UNSHIELD_AMOUNT: u64 = 20_000_000;
+const STEP_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
 async fn sh_025_forged_proof() {
@@ -40,8 +50,71 @@ async fn sh_025_forged_proof() {
         return;
     }
 
-    panic!(
-        "SH-025 RED-by-gap: forging/tampering the proof needs the captured serialized bundle to \
-         mutate proof bytes post-build; no public shielded capture seam. {ADVERSARIAL_SEAM_MISSING}"
-    );
+    let s = setup().await.expect("e2e setup failed");
+    let prover = shielded_prover();
+    let handle = bind_shielded(&s.test_wallet, &[0], &s.ctx.workdir)
+        .await
+        .expect("bind_shielded");
+
+    let addr_1 = s
+        .test_wallet
+        .next_unused_address()
+        .await
+        .expect("derive addr_1");
+    s.ctx
+        .bank()
+        .fund_address(&addr_1, FUNDING_CREDITS)
+        .await
+        .expect("bank.fund_address");
+    wait_for_address_balance_chain_confirmed_n(
+        s.ctx.sdk(),
+        &addr_1,
+        FUNDING_CREDITS,
+        CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
+        STEP_TIMEOUT,
+    )
+    .await
+    .expect("addr_1 funding never observed");
+    s.test_wallet
+        .sync_balances()
+        .await
+        .expect("pre-shield sync");
+    s.test_wallet
+        .platform_wallet()
+        .shielded_shield_from_account(0, 0, SHIELD_AMOUNT, s.test_wallet.address_signer(), prover)
+        .await
+        .expect("shield_from_account");
+    wait_for_shielded_balance(&s.test_wallet, &handle, 0, SHIELD_AMOUNT, STEP_TIMEOUT)
+        .await
+        .expect("shielded balance never reached SHIELD_AMOUNT");
+
+    let dst = s.test_wallet.next_unused_address().await.expect("dst");
+
+    // For each proof mutation: capture a fresh valid unshield, tamper the
+    // proof, broadcast raw. Each must be rejected by the backend.
+    for mutation in [BundleMutation::FlipByte(0), BundleMutation::Zero] {
+        let mut st = capture_unshield_st(&s.test_wallet, &handle, 0, &dst, UNSHIELD_AMOUNT)
+            .await
+            .expect("capture valid unshield ST");
+        mutate_serialized_bundle(&mut st, BundleField::Proof, &mutation).expect("tamper proof");
+        let result = broadcast_raw(s.ctx.sdk(), &st).await;
+        assert!(
+            result.is_err(),
+            "SH-025 FINDING (CRITICAL): backend ACCEPTED a tampered proof ({mutation:?}) — \
+             total break of shielded soundness. result={result:?}"
+        );
+        tracing::info!(
+            target: "platform_wallet::e2e::cases::sh_025",
+            ?mutation,
+            "tampered proof correctly rejected by backend"
+        );
+    }
+
+    let bank_addr = s
+        .ctx
+        .bank()
+        .primary_receive_address()
+        .to_bech32m_string(s.ctx.bank().network());
+    teardown_sweep_shielded(&s.test_wallet, &handle, &bank_addr).await;
+    s.teardown().await.expect("teardown");
 }

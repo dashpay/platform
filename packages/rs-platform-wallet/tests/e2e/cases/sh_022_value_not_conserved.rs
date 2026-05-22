@@ -4,25 +4,36 @@
 //! (consensus-critical). CRITICAL-if-it-fails (value forgery / unlimited
 //! shielded-pool inflation).
 //!
-//! Attack: a transfer/unshield whose declared outputs exceed the spent
-//! note value — minting value from nothing — by setting
-//! `SerializedBundle.value_balance` inconsistent with the actual spend,
-//! or passing `amount > note` to the dpp builder.
+//! Attack: capture a VALID Type-17 unshield (spending a 50M note,
+//! unshielding 20M), then overwrite `unshielding_amount` to exceed the
+//! spent note value — minting value from nothing — and broadcast raw.
+//! Orchard's value-balance check + Drive's credit accounting must refuse
+//! a bundle where shielded inputs < outputs + fee. The Halo-2 proof binds
+//! `value_balance`, so the mismatch must fail proof verification or the
+//! consensus value check (`ShieldedInvalidValueBalanceError`, code 10822).
 //!
-//! Correct backend behavior: rejected (`ShieldedInvalidValueBalanceError`,
-//! code 10822, or invalid-proof). RED if accepted.
-//!
-//! # PRODUCTION GAP (flagged, not fixed)
-//!
-//! The public dpp `build_*_transition` enforce `required > total_spent`
-//! and the fee floor INTERNALLY (`unshield.rs:78-86`), so they refuse to
-//! emit an out-of-input bundle. Mutating a captured valid bundle's
-//! `value_balance` needs a build-only shielded capture seam, which is not
-//! public. See `framework::shielded::ADVERSARIAL_SEAM_MISSING`.
+//! RED if accepted — value forgery.
 
 #![cfg(feature = "shielded")]
 
-use crate::framework::shielded::{adversarial_enabled, ADVERSARIAL_SEAM_MISSING};
+use std::time::Duration;
+
+use crate::framework::prelude::*;
+use crate::framework::shielded::{
+    adversarial_enabled, bind_shielded, broadcast_raw, capture_unshield_st,
+    mutate_serialized_bundle, shielded_prover, teardown_sweep_shielded, wait_for_shielded_balance,
+    BundleField, BundleMutation,
+};
+use crate::framework::wait::{
+    wait_for_address_balance_chain_confirmed_n, CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
+};
+
+const FUNDING_CREDITS: u64 = 90_000_000;
+const SHIELD_AMOUNT: u64 = 50_000_000;
+const UNSHIELD_AMOUNT: u64 = 20_000_000;
+/// Far above the 50M spent note — minting ~950M from nothing.
+const FORGED_AMOUNT: u64 = 1_000_000_000;
+const STEP_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
 async fn sh_022_value_not_conserved() {
@@ -42,9 +53,72 @@ async fn sh_022_value_not_conserved() {
         return;
     }
 
-    panic!(
-        "SH-022 RED-by-gap: cannot construct outputs>inputs and reach the backend — the public \
-         dpp builders enforce value conservation internally and there is no captured-bundle \
-         value_balance-tamper seam. {ADVERSARIAL_SEAM_MISSING}"
+    let s = setup().await.expect("e2e setup failed");
+    let prover = shielded_prover();
+    let handle = bind_shielded(&s.test_wallet, &[0], &s.ctx.workdir)
+        .await
+        .expect("bind_shielded");
+
+    let addr_1 = s
+        .test_wallet
+        .next_unused_address()
+        .await
+        .expect("derive addr_1");
+    s.ctx
+        .bank()
+        .fund_address(&addr_1, FUNDING_CREDITS)
+        .await
+        .expect("bank.fund_address");
+    wait_for_address_balance_chain_confirmed_n(
+        s.ctx.sdk(),
+        &addr_1,
+        FUNDING_CREDITS,
+        CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
+        STEP_TIMEOUT,
+    )
+    .await
+    .expect("addr_1 funding never observed");
+    s.test_wallet
+        .sync_balances()
+        .await
+        .expect("pre-shield sync");
+    s.test_wallet
+        .platform_wallet()
+        .shielded_shield_from_account(0, 0, SHIELD_AMOUNT, s.test_wallet.address_signer(), prover)
+        .await
+        .expect("shield_from_account");
+    wait_for_shielded_balance(&s.test_wallet, &handle, 0, SHIELD_AMOUNT, STEP_TIMEOUT)
+        .await
+        .expect("shielded balance never reached SHIELD_AMOUNT");
+
+    let dst = s.test_wallet.next_unused_address().await.expect("dst");
+
+    // Capture a valid 20M unshield, then forge the declared amount to 1B.
+    let mut st = capture_unshield_st(&s.test_wallet, &handle, 0, &dst, UNSHIELD_AMOUNT)
+        .await
+        .expect("capture valid unshield ST");
+    mutate_serialized_bundle(
+        &mut st,
+        BundleField::ValueBalance,
+        &BundleMutation::Overwrite(FORGED_AMOUNT.to_le_bytes().to_vec()),
+    )
+    .expect("forge unshielding_amount");
+    let result = broadcast_raw(s.ctx.sdk(), &st).await;
+    assert!(
+        result.is_err(),
+        "SH-022 FINDING (CRITICAL): backend ACCEPTED outputs > inputs (declared {FORGED_AMOUNT} \
+         against a {SHIELD_AMOUNT} note) — value forgery / shielded-pool inflation. result={result:?}"
     );
+    tracing::info!(
+        target: "platform_wallet::e2e::cases::sh_022",
+        "value-not-conserved transition correctly rejected by backend"
+    );
+
+    let bank_addr = s
+        .ctx
+        .bank()
+        .primary_receive_address()
+        .to_bech32m_string(s.ctx.bank().network());
+    teardown_sweep_shielded(&s.test_wallet, &handle, &bank_addr).await;
+    s.teardown().await.expect("teardown");
 }

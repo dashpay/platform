@@ -266,7 +266,7 @@ Status legend: **green** = test file present, body has real assertions, runnable
 | SH-012 | Sync watermark idempotency: `coordinator.sync(force)` twice yields stable balances | P2 | not implemented (Wave H) | M |
 | SH-013 | `bind_shielded` with empty accounts → typed `ShieldedKeyDerivation` error (no panic) | P2 | not implemented (Wave H) | S |
 | SH-014 | Spend before bind → `ShieldedNotBound`; spend on unbound account → `ShieldedKeyDerivation` | P2 | not implemented (Wave H) | S |
-| SH-018 | Shield from Core L1 asset lock (Type 18) | P1 | not implemented (Wave H + Core-L1 gate) — may run RED until plumbing complete | L |
+| SH-018 | Shield from Core L1 asset lock (Type 18) | P1 | implemented (Wave H + Core-L1 gate) — uses the public `shielded_shield_from_asset_lock` wrapper + the `test-utils` one-time-key helper; Core-L1-gated so may run RED until asset-lock funding plumbing is complete | L |
 | SH-019 | Shielded withdraw to Core L1 address (Type 19) | P1 | not implemented (Wave H + Core-L1 gate) — may run RED until plumbing complete | L |
 | SH-020 | ADVERSARIAL: double-spend same note across two transitions (16/17) — backend must reject 2nd | P0 | not implemented (Wave H + inject hook) — asserts backend rejection | M |
 | SH-021 | ADVERSARIAL: nullifier replay after restart/resync — backend must reject | P0 | not implemented (Wave H + inject hook) — asserts backend rejection | M |
@@ -276,8 +276,8 @@ Status legend: **green** = test file present, body has real assertions, runnable
 | SH-025 | ADVERSARIAL: forged/tampered/substituted Halo-2 proof — verifier must reject | P0 | not implemented (Wave H + inject hook) — asserts backend rejection | M |
 | SH-026 | ADVERSARIAL: stale/wrong anchor — backend must reject AnchorMismatch (Found-030 dynamic probe) | P1 | not implemented (Wave H + inject hook) — asserts backend rejection | M |
 | SH-027 | ADVERSARIAL: malformed note serde (≠115B, corrupt cmx/nullifier) — error safely, no panic | P1 | not implemented (Wave H + store-seed hook) — asserts safe error | M |
-| SH-028 | ADVERSARIAL: interrupt sync mid-chunk + resume — no double-count/loss | P1 | not implemented (Wave H + cancel hook) — asserts consistency | M |
-| SH-029 | ADVERSARIAL: reorg / out-of-order blocks / rescan-from-0 — balance converges, no phantom funds | P1 | not implemented (Wave H + mock sync) — asserts convergence | M |
+| SH-028 | ADVERSARIAL: interrupt sync mid-chunk + resume — no double-count/loss | P1 | **BLOCKED — not implemented** (no injectable sync-source seam: `sync_notes_across` is `pub(super)` and fetches from the SDK directly; needs a production `SyncSource` seam) | M |
+| SH-029 | ADVERSARIAL: reorg / out-of-order blocks / rescan-from-0 — balance converges, no phantom funds | P1 | **BLOCKED — not implemented** (same missing sync-source seam as SH-028) | M |
 | SH-030 | ADVERSARIAL: cross-network/wrong-HRP/malformed/own-address recipient; transfer-to-self | P2 | not implemented (Wave H + inject arm) — asserts rejection / safe self-transfer | M |
 | SH-031 | ADVERSARIAL: double-bind / rebind with DIFFERENT seed — no key-material mix, no leak | P1 | not implemented (Wave H) — asserts isolation | M |
 | SH-032 | ADVERSARIAL: boundary balance == amount+fee + off-by-one below — exact-change correctness | P1 | not implemented (Wave H) — asserts boundary correctness | S |
@@ -2237,8 +2237,8 @@ while those bugs persist; SH-007 is designed to PASS and stay green.
 
 #### SH-018 — Shield from Core L1 asset lock (Type 18)
 - **Priority**: P1
-- **Status**: not implemented (Wave H + Core-L1 gate). MAY run RED until the Core-L1 plumbing is complete — that is acceptable and expected; a RED here pins the missing harness/asset-lock seam rather than a passing happy path.
-- **Wallet feature exercised**: `wallet/shielded/operations.rs:269` (`shield_from_asset_lock`) → `build_shield_from_asset_lock_transition`. NOTE: there is currently NO public `PlatformWallet::shielded_shield_from_asset_lock` wrapper (only the inner free function; contrast the four other spend types which all have public wrappers, `platform_wallet.rs:560/604/652/721`). Wave H must either add a thin test-only wrapper or call the inner path — flag the missing public wrapper as a follow-up DX gap.
+- **Status**: implemented (Wave H + Core-L1 gate). MAY run RED until the Core-L1 asset-lock funding plumbing is complete — that is acceptable and expected; a RED here pins the missing harness/asset-lock seam rather than a passing happy path.
+- **Wallet feature exercised**: `PlatformWallet::shielded_shield_from_asset_lock` (the public Type-18 wrapper added in this wave, mirroring the four other spend wrappers) → `operations::shield_from_asset_lock` → `build_shield_from_asset_lock_transition`. The one-time asset-lock private key is materialized test-side via `operations::test_utils::derive_asset_lock_private_key(seed, network, path)` (the `test-utils` Gap-5 helper) from the `DerivationPath` that `AssetLockManager::create_funded_asset_lock_proof` returns.
 - **Preconditions**: Core-L1 gate (`PLATFORM_WALLET_E2E_BANK_CORE_GATE`): a Core-funded test wallet (Wave E `setup_with_core_funded_test_wallet`) + an asset-lock builder producing a single-use `AssetLockProof`; `bind_shielded(&[0])` on a FileBacked coordinator; warmed prover.
 - **Scenario**:
   1. Fund the test wallet's Core receive address (`setup_with_core_funded_test_wallet(duffs)`); wait for the SPV-observed Core balance.
@@ -2392,6 +2392,7 @@ itself a finding (the backend rejected for the wrong reason, or did not reject).
 
 ##### SH-028 — Sync robustness: interrupt mid-chunk, resume, no double-count [INJECT]
 - **Priority**: P1.
+- **Status**: **BLOCKED — not implemented.** No injectable sync-source seam exists: `sync_notes_across` is `pub(super)` and fetches from the SDK directly, with no cancellation point between fetch and store-write. Driving this attack requires a production `SyncSource` seam (a trait the coordinator fetches through, with a test impl). Intentionally NOT built in this wave — flagged as a production gap. Removed from `cases/`.
 - **Attack**: interrupt `sync_notes_across` (`sync.rs:169-340`) mid-chunk (cancel the future between fetch and append), then resume; assert the append-once gate (`sync.rs:276-289`, gated on `tree_size` not a watermark) prevents double-append. Combine with a forced `coordinator.sync(true)` storm.
 - **Transition type**: n/a (sync layer).
 - **Injection point**: cancellation hook between fetch and store-write; or a store wrapper that drops a write. **[INJECT]**.
@@ -2403,6 +2404,7 @@ itself a finding (the backend rejected for the wrong reason, or did not reject).
 
 ##### SH-029 — Simulated reorg / out-of-order blocks / rescan-from-0 [INJECT]
 - **Priority**: P1.
+- **Status**: **BLOCKED — not implemented.** Same missing sync-source seam as SH-028 (`sync_notes_across` fetches from the SDK directly; no scriptable mock sync source). Intentionally NOT built — flagged as a production gap. Removed from `cases/`.
 - **Attack**: (a) feed the sync notes whose positions arrive out of order; (b) simulate a reorg that rolls back recently-appended commitments then re-appends a different set; (c) force `next_start_index == 0` rescan-from-0 (the warned-about path at `sync.rs:235-241`) and assert it does not double-count already-stored notes.
 - **Transition type**: n/a (sync layer).
 - **Injection point**: a mock SDK-sync source that returns scripted (reordered / rolled-back / from-zero) note chunks. **[INJECT]**.

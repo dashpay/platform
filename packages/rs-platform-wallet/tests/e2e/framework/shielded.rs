@@ -326,26 +326,14 @@ pub async fn teardown_sweep_shielded(
 }
 
 // ---------------------------------------------------------------------------
-// Adversarial injection hooks (SH-020..SH-035 — follow-up wave)
+// Adversarial injection hooks (SH-020..SH-035)
 //
-// These build now so the abuse pass can wire against them. They expose
-// the protocol-boundary seam (raw build → byte-mutate → broadcast) that
-// bypasses the guarded `PlatformWallet::shielded_*` methods. Live
-// broadcasts are gated behind `adversarial_enabled()`.
+// These reach Drive with transitions the guarded `PlatformWallet::shielded_*`
+// methods would never assemble: built via the production build/broadcast
+// split (`operations::build_*_st`) + the `test-utils` spend-assembly seams,
+// then byte-tampered and broadcast directly. All live broadcasts are gated
+// behind `adversarial_enabled()`.
 // ---------------------------------------------------------------------------
-
-/// Which shielded transition the raw builder should produce. The
-/// follow-up wave maps each arm onto the matching
-/// `dpp::shielded::builder::build_*_transition`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RawShieldedKind {
-    /// Type 16 — shielded → shielded transfer.
-    Transfer,
-    /// Type 17 — unshield to a transparent address.
-    Unshield,
-    /// Type 19 — withdraw to a Core L1 address.
-    Withdraw,
-}
 
 /// A `SerializedBundle` field selector for [`mutate_serialized_bundle`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -394,97 +382,234 @@ impl OrchardProver for &TamperingProver {
     }
 }
 
-/// Production-gap marker for adversarial hooks that CANNOT reach Drive
-/// with a properly-formed-but-tampered shielded transition because the
-/// wallet exposes no seam to capture a built `SerializedBundle` / raw
-/// spend bytes (see the module-level gap notes and the SH-020/022/024/
-/// 025/026/033/034 case docs). A case hitting this is RED-by-gap: the
-/// finding is the MISSING seam, not a weakened assertion.
-pub const ADVERSARIAL_SEAM_MISSING: &str =
-    "no public seam to capture a built shielded SerializedBundle / raw spend ST bytes — \
-     shielded operations::* build AND broadcast internally (contrast transparent \
-     transfer_capturing_st_bytes), and extract_spends_and_anchor / reserve_unspent_notes / \
-     build_spend_bundle are private. Add a build-only shielded capture seam (returning the \
-     serialized StateTransition before broadcast) to wire this abuse case to the backend.";
-
-/// Build a raw shielded state transition from caller-supplied,
-/// possibly-out-of-range inputs that the guarded wallet wrapper would
-/// reject (output > input for SH-022, under-floor fee for SH-023,
-/// `u64`/`i64` boundary for SH-024, duplicate spend for SH-033, stale
-/// anchor for SH-026).
-///
-/// **Blocked by [`ADVERSARIAL_SEAM_MISSING`].** Constructing a valid-
-/// except-for-the-tamper transition requires real `SpendableNote`s + an
-/// `Anchor` from the wallet's private `extract_spends_and_anchor`, and
-/// the public dpp `build_*_transition` enforce the value/fee/overflow
-/// guards internally — so neither path can emit the out-of-range bundle
-/// these cases need. The signature pins the inputs the abuse cases want.
-#[allow(clippy::too_many_arguments)]
-pub fn build_raw_shielded_transition(
-    _kind: RawShieldedKind,
-    _anchor: [u8; 32],
-    _value_balance: i64,
-    _fee: Option<u64>,
-    _proof_override: Option<Vec<u8>>,
-) -> FrameworkResult<Vec<u8>> {
-    Err(FrameworkError::NotImplemented(
-        "build_raw_shielded_transition: see ADVERSARIAL_SEAM_MISSING",
-    ))
-}
-
-/// Broadcast arbitrary serialized [`StateTransition`] bytes directly,
-/// returning the typed backend error so an abuse case can assert the
-/// exact rejection variant. Bypasses the guarded `shielded_*` methods.
+/// Broadcast a built [`StateTransition`] directly, returning the typed
+/// backend error so an abuse case can assert the exact rejection variant.
+/// Bypasses the guarded `shielded_*` methods.
 ///
 /// Gated: refuses unless [`adversarial_enabled`], so a stray malformed
-/// broadcast can't pollute a normal functional run. The seam itself is
-/// real — `StateTransition::deserialize_from_bytes` + `broadcast`
-/// (the same path PA-006 replays through).
+/// broadcast can't pollute a normal functional run. Same broadcast path
+/// PA-006 replays through.
 pub async fn broadcast_raw(
     sdk: &Arc<dash_sdk::Sdk>,
-    state_transition_bytes: &[u8],
+    state_transition: &dpp::state_transition::StateTransition,
 ) -> FrameworkResult<()> {
     use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
-    use dpp::serialization::PlatformDeserializable;
-    use dpp::state_transition::StateTransition;
 
     if !adversarial_enabled() {
         return Err(FrameworkError::Config(format!(
             "broadcast_raw refused: set {ADVERSARIAL_GATE_ENV} to run the abuse pass"
         )));
     }
-    let st = StateTransition::deserialize_from_bytes(state_transition_bytes)
-        .map_err(|e| FrameworkError::Wallet(format!("broadcast_raw: deserialize ST: {e}")))?;
-    st.broadcast(sdk.as_ref(), None)
+    state_transition
+        .broadcast(sdk.as_ref(), None)
         .await
         .map_err(|e| FrameworkError::Sdk(format!("broadcast_raw: {e}")))
 }
 
-/// Flip / truncate / zero bytes in a built transition's serialized
-/// `SerializedBundle` field before broadcast (SH-022/024/025/026/034).
+/// Mutate one `SerializedBundle` field of a built shielded
+/// [`StateTransition`] in place, before broadcast (SH-022/024/025/026/034).
 ///
-/// **Blocked by [`ADVERSARIAL_SEAM_MISSING`].** Operates on a captured
-/// valid-build's bytes, which the wallet does not expose.
+/// The shielded transition V0 structs expose `actions` / `value_balance`
+/// (or `unshielding_amount`) / `anchor` / `proof` / `binding_signature`
+/// as public fields, so the tamper is a direct field write — no byte
+/// offsets. The Orchard proof + binding signature are bound to these
+/// public inputs, so any mutation yields a transition the BACKEND must
+/// reject. Returns an error if `field` doesn't apply to the transition's
+/// type (e.g. `ValueBalance` on an unshield, which carries
+/// `unshielding_amount` instead — use [`BundleField::ValueBalance`] for
+/// both; this maps it onto whichever field the variant has).
 pub fn mutate_serialized_bundle(
-    _bytes: &mut [u8],
-    _field: BundleField,
-    _mutation: BundleMutation,
+    st: &mut dpp::state_transition::StateTransition,
+    field: BundleField,
+    mutation: &BundleMutation,
 ) -> FrameworkResult<()> {
-    Err(FrameworkError::NotImplemented(
-        "mutate_serialized_bundle: see ADVERSARIAL_SEAM_MISSING",
-    ))
+    use dpp::state_transition::StateTransition;
+
+    /// Apply `mutation` to a `Vec<u8>` field (proof).
+    fn mutate_vec(buf: &mut Vec<u8>, m: &BundleMutation) {
+        match m {
+            BundleMutation::Overwrite(bytes) => *buf = bytes.clone(),
+            BundleMutation::Zero => buf.iter_mut().for_each(|b| *b = 0),
+            BundleMutation::FlipByte(i) => {
+                if let Some(b) = buf.get_mut(*i) {
+                    *b ^= 0xFF;
+                }
+            }
+        }
+    }
+    /// Apply `mutation` to a fixed-size byte array field (anchor / sig).
+    fn mutate_arr(buf: &mut [u8], m: &BundleMutation) {
+        match m {
+            BundleMutation::Overwrite(bytes) => {
+                for (dst, src) in buf.iter_mut().zip(bytes.iter()) {
+                    *dst = *src;
+                }
+            }
+            BundleMutation::Zero => buf.iter_mut().for_each(|b| *b = 0),
+            BundleMutation::FlipByte(i) => {
+                if let Some(b) = buf.get_mut(*i) {
+                    *b ^= 0xFF;
+                }
+            }
+        }
+    }
+
+    macro_rules! tamper_v0 {
+        ($v0:expr, $has_value_balance:tt) => {{
+            match field {
+                BundleField::Proof => mutate_vec(&mut $v0.proof, mutation),
+                BundleField::BindingSignature => mutate_arr(&mut $v0.binding_signature, mutation),
+                BundleField::Anchor => mutate_arr(&mut $v0.anchor, mutation),
+                BundleField::ValueBalance => tamper_v0!(@value $v0, $has_value_balance),
+            }
+        }};
+        (@value $v0:expr, value_balance) => {{
+            // value_balance is u64; the overwrite's first 8 LE bytes set it.
+            if let BundleMutation::Overwrite(bytes) = mutation {
+                let mut le = [0u8; 8];
+                for (d, s) in le.iter_mut().zip(bytes.iter()) {
+                    *d = *s;
+                }
+                $v0.value_balance = u64::from_le_bytes(le);
+            } else if matches!(mutation, BundleMutation::Zero) {
+                $v0.value_balance = 0;
+            } else {
+                $v0.value_balance = $v0.value_balance.wrapping_add(1);
+            }
+        }};
+        (@value $v0:expr, unshielding_amount) => {{
+            if let BundleMutation::Overwrite(bytes) = mutation {
+                let mut le = [0u8; 8];
+                for (d, s) in le.iter_mut().zip(bytes.iter()) {
+                    *d = *s;
+                }
+                $v0.unshielding_amount = u64::from_le_bytes(le);
+            } else if matches!(mutation, BundleMutation::Zero) {
+                $v0.unshielding_amount = 0;
+            } else {
+                $v0.unshielding_amount = $v0.unshielding_amount.wrapping_add(1);
+            }
+        }};
+    }
+
+    use dpp::state_transition::shielded_transfer_transition::ShieldedTransferTransition;
+    use dpp::state_transition::shielded_withdrawal_transition::ShieldedWithdrawalTransition;
+    use dpp::state_transition::unshield_transition::UnshieldTransition;
+
+    match st {
+        StateTransition::Unshield(UnshieldTransition::V0(v0)) => {
+            tamper_v0!(v0, unshielding_amount)
+        }
+        StateTransition::ShieldedTransfer(ShieldedTransferTransition::V0(v0)) => {
+            tamper_v0!(v0, value_balance)
+        }
+        StateTransition::ShieldedWithdrawal(ShieldedWithdrawalTransition::V0(v0)) => {
+            tamper_v0!(v0, unshielding_amount)
+        }
+        other => {
+            return Err(FrameworkError::Wallet(format!(
+                "mutate_serialized_bundle: unsupported transition variant for tampering: {:?}",
+                std::mem::discriminant(other)
+            )));
+        }
+    }
+    Ok(())
 }
 
-/// Build a spend directly against a chosen note WITHOUT going through
-/// `reserve_unspent_notes`, for the double-spend (SH-020) and replay
-/// (SH-021) arms.
+/// Build a real, valid Type-17 unshield [`StateTransition`] for `account`
+/// against the wallet's synced notes WITHOUT broadcasting it — the shared
+/// capture seam for the byte-tamper abuse cases (SH-022/024/025/026/034).
 ///
-/// **Blocked by [`ADVERSARIAL_SEAM_MISSING`].** Requires the private
-/// `extract_spends_and_anchor` + `build_spend_bundle`.
-pub fn build_against_note() -> FrameworkResult<Vec<u8>> {
-    Err(FrameworkError::NotImplemented(
-        "build_against_note: see ADVERSARIAL_SEAM_MISSING",
-    ))
+/// Reserves and selects notes via the production reservation path
+/// (`test-utils` seam), then calls `operations::build_unshield_st`. The
+/// reservation is intentionally NOT released: the abuse case discards the
+/// transition after tampering, and the per-test coordinator is torn down,
+/// so the in-memory pending mark is irrelevant.
+pub async fn capture_unshield_st(
+    wallet: &TestWallet,
+    handle: &ShieldedHandle,
+    account: u32,
+    to_platform_addr: &dpp::address_funds::PlatformAddress,
+    amount: u64,
+) -> FrameworkResult<dpp::state_transition::StateTransition> {
+    use platform_wallet::wallet::shielded::{operations, OrchardKeySet, SubwalletId};
+
+    let pw = wallet.platform_wallet();
+    let id = SubwalletId::new(pw.wallet_id(), account);
+    let keyset = OrchardKeySet::from_seed(&wallet.seed_bytes(), pw.sdk().network, account)
+        .map_err(|e| FrameworkError::Wallet(format!("capture_unshield_st: keyset: {e}")))?;
+
+    let (selected, _total, exact_fee) = operations::test_utils::reserve_unspent_notes_for_test(
+        &pw.sdk_arc(),
+        handle.coordinator.store(),
+        id,
+        amount,
+        1,
+    )
+    .await
+    .map_err(|e| FrameworkError::Wallet(format!("capture_unshield_st: reserve: {e}")))?;
+
+    operations::build_unshield_st(
+        &pw.sdk_arc(),
+        handle.coordinator.store(),
+        &keyset,
+        to_platform_addr,
+        amount,
+        exact_fee,
+        &selected,
+        &shielded_prover(),
+    )
+    .await
+    .map_err(|e| FrameworkError::Wallet(format!("capture_unshield_st: build: {e}")))
+}
+
+/// All unspent notes for `account`, so an abuse case can capture a note
+/// to build a second (double-spend / replay) or duplicated (intra-bundle)
+/// transition against. Reads via the `test-utils` seam.
+pub async fn unspent_notes(
+    wallet: &TestWallet,
+    handle: &ShieldedHandle,
+    account: u32,
+) -> FrameworkResult<Vec<platform_wallet::wallet::shielded::ShieldedNote>> {
+    use platform_wallet::wallet::shielded::{operations, SubwalletId};
+    let pw = wallet.platform_wallet();
+    let id = SubwalletId::new(pw.wallet_id(), account);
+    operations::test_utils::unspent_notes_for_test(handle.coordinator.store(), id)
+        .await
+        .map_err(|e| FrameworkError::Wallet(format!("unspent_notes: {e}")))
+}
+
+/// Build a Type-17 unshield [`StateTransition`] against a CHOSEN note set,
+/// SKIPPING the reservation guard — the build-against-note seam for the
+/// double-spend (SH-020), replay (SH-021), and intra-bundle-duplicate
+/// (SH-033) abuse cases. The caller computes the fee
+/// (`compute_minimum_shielded_fee`) since reservation (which derives it)
+/// is bypassed.
+pub async fn build_unshield_st_against_notes(
+    wallet: &TestWallet,
+    handle: &ShieldedHandle,
+    account: u32,
+    to_platform_addr: &dpp::address_funds::PlatformAddress,
+    amount: u64,
+    exact_fee: u64,
+    notes: &[platform_wallet::wallet::shielded::ShieldedNote],
+) -> FrameworkResult<dpp::state_transition::StateTransition> {
+    use platform_wallet::wallet::shielded::{operations, OrchardKeySet};
+    let pw = wallet.platform_wallet();
+    let keyset = OrchardKeySet::from_seed(&wallet.seed_bytes(), pw.sdk().network, account)
+        .map_err(|e| FrameworkError::Wallet(format!("build_unshield_st_against_notes: {e}")))?;
+    operations::build_unshield_st(
+        &pw.sdk_arc(),
+        handle.coordinator.store(),
+        &keyset,
+        to_platform_addr,
+        amount,
+        exact_fee,
+        notes,
+        &shielded_prover(),
+    )
+    .await
+    .map_err(|e| FrameworkError::Wallet(format!("build_unshield_st_against_notes: {e}")))
 }
 
 /// Inject a `ShieldedNote` with caller-controlled `note_data` / `cmx` /
@@ -525,38 +650,4 @@ where
         .append_commitment(&cmx, true)
         .map_err(|e| FrameworkError::Wallet(format!("seed_malformed_note: append: {e}")))?;
     Ok(())
-}
-
-/// Resubmit a captured single-use asset-lock proof, for SH-035
-/// (Core-L1 gated).
-///
-/// **Blocked by [`ADVERSARIAL_SEAM_MISSING`]** plus the SH-018 Core-L1
-/// asset-lock private-key gap (no test seam returns the one-time key).
-pub fn reuse_asset_lock_proof() -> FrameworkResult<()> {
-    Err(FrameworkError::NotImplemented(
-        "reuse_asset_lock_proof: see ADVERSARIAL_SEAM_MISSING + SH-018 Core-L1 key gap",
-    ))
-}
-
-/// A scriptable mock sync source for SH-028 (interrupt mid-chunk) and
-/// SH-029 (reorg / out-of-order / rescan-from-0). Holds scripted note
-/// chunks plus a cancellation flag the test flips to interrupt a pass.
-///
-/// Seam reserved for the follow-up wave; the type exists now so the
-/// abuse cases can be authored against a stable handle.
-#[derive(Default)]
-pub struct MockSyncSource {
-    /// Scripted chunks the source will yield, in order. Each inner Vec
-    /// is one chunk's worth of opaque note bytes.
-    pub chunks: Vec<Vec<Vec<u8>>>,
-    /// Set by the test to interrupt the next chunk (SH-028).
-    pub cancel_after_chunk: Option<usize>,
-}
-
-impl MockSyncSource {
-    /// Trip the cancellation flag so the next pass stops after
-    /// `chunk_index` (SH-028's mid-chunk interrupt).
-    pub fn cancel_after(&mut self, chunk_index: usize) {
-        self.cancel_after_chunk = Some(chunk_index);
-    }
 }
