@@ -1,4 +1,7 @@
 #[cfg(feature = "validation")]
+mod find_first_change;
+
+#[cfg(feature = "validation")]
 use crate::consensus::basic::data_contract::DataContractInvalidIndexDefinitionUpdateError;
 use crate::consensus::basic::data_contract::DuplicateIndexError;
 use crate::consensus::basic::BasicError;
@@ -30,7 +33,7 @@ pub enum IndexType {
     ContestedResourceIndex,
 }
 
-#[derive(Debug, PartialEq, Copy, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct IndexLevelTypeInfo {
     /// should we insert if all fields up to here are null
     pub should_insert_with_all_null: bool,
@@ -54,6 +57,28 @@ pub struct IndexLevelTypeInfo {
     /// Mutually compatible with the `countable` flag — additive, not a
     /// replacement.
     pub range_countable: bool,
+    /// When `Some(property_name)`, the terminal value-tree at this index
+    /// path is a `SumTree` (or `CountSumTree` if `countable.is_countable()`
+    /// and `range_summable` is false), and references stored under it
+    /// carry `ItemWithSumItem` contributions that propagate to the parent
+    /// tree's running sum. Mirrors `countable` for the sum surface.
+    ///
+    /// The named property must be `type: integer` and listed in the
+    /// document type's `required` array — enforced by the doctype
+    /// validator at contract creation.
+    pub summable: Option<String>,
+    /// Whether this index supports range-sum queries on its terminator
+    /// property. When `true`:
+    /// - The property-name level is laid out as a `ProvableSumTree`.
+    /// - Each value tree under it is laid out as a `SumTree`.
+    /// - Sibling continuations inside each value tree get wrapped with
+    ///   `Element::NonCountedItemWithSumItem` so their sums don't pollute
+    ///   the value tree's running sum.
+    ///
+    /// Composes orthogonally with `range_countable` — both flags
+    /// together promote the tree to a `ProvableCountSumTree`. Requires
+    /// `summable.is_some()`.
+    pub range_summable: bool,
 }
 
 impl IndexType {
@@ -87,8 +112,14 @@ impl IndexLevel {
         &self.sub_index_levels
     }
 
-    pub fn has_index_with_type(&self) -> Option<IndexLevelTypeInfo> {
-        self.has_index_with_type
+    pub fn has_index_with_type(&self) -> Option<&IndexLevelTypeInfo> {
+        // Was `Option<IndexLevelTypeInfo>` (Copy) before the v3 sum-tree
+        // expansion added `summable: Option<String>` to the struct, which
+        // forced dropping `Copy`. Existing callers that wrote
+        // `.map(|info| info.countable.is_countable())` keep working because
+        // the closure parameter just binds via auto-deref; callers that
+        // needed an owned copy clone explicitly.
+        self.has_index_with_type.as_ref()
     }
 
     /// Checks whether the given `rhs` IndexLevel is a subset of the current IndexLevel (`self`).
@@ -235,46 +266,14 @@ impl IndexLevel {
                         index_type,
                         countable: index.countable,
                         range_countable: index.range_countable,
+                        summable: index.summable.clone(),
+                        range_summable: index.range_summable,
                     });
                 }
             }
         }
 
         Ok(index_level)
-    }
-
-    /// Recursively finds the first index path where a count-affecting
-    /// property (`countable` or `range_countable`) differs between two
-    /// IndexLevel trees. Both flags drive GroveDB tree-variant choice
-    /// at contract creation (NormalTree / CountTree / ProvableCountTree
-    /// at the [0] terminal, and additionally NonCounted-wrapped
-    /// continuations + ProvableCountTree property-name level for
-    /// `range_countable`), so toggling either after creation would
-    /// require rebuilding the index tree and is rejected.
-    /// Returns `None` if both properties are the same everywhere.
-    #[cfg(feature = "validation")]
-    fn find_first_countability_change(&self, new: &IndexLevel) -> Option<String> {
-        if let (Some(old_info), Some(new_info)) =
-            (&self.has_index_with_type, &new.has_index_with_type)
-        {
-            if old_info.countable != new_info.countable {
-                return Some("(countable changed)".to_string());
-            }
-            if old_info.range_countable != new_info.range_countable {
-                return Some("(range_countable changed)".to_string());
-            }
-        }
-
-        // Recurse into sub-levels that exist in both old and new
-        for (key, old_sub) in &self.sub_index_levels {
-            if let Some(new_sub) = new.sub_index_levels.get(key) {
-                if let Some(inner_path) = old_sub.find_first_countability_change(new_sub) {
-                    return Some(format!("{} -> {}", key, inner_path));
-                }
-            }
-        }
-
-        None
     }
 
     #[cfg(feature = "validation")]
@@ -328,6 +327,26 @@ impl IndexLevel {
             );
         }
 
+        // Same check on the sum surface (`summable` property-name and
+        // `range_summable`). Identical reasoning to the countability
+        // immutability above — both flags drive GroveDB tree variant
+        // choice (NormalTree / SumTree / ProvableSumTree / CountSumTree /
+        // ProvableCountSumTree depending on the `(countable, summable)`
+        // combination), and toggling them post-creation invalidates the
+        // on-disk layout. Additionally, changing the *name* of the
+        // summed property changes which document field gets read into
+        // `ItemWithSumItem` references on insert — silently breaking
+        // every subsequent aggregation if allowed.
+        if let Some(summable_change_path) = self.find_first_summability_change(new_indices) {
+            return SimpleConsensusValidationResult::new_with_error(
+                DataContractInvalidIndexDefinitionUpdateError::new(
+                    document_type_name.to_string(),
+                    summable_change_path,
+                )
+                .into(),
+            );
+        }
+
         SimpleConsensusValidationResult::new()
     }
 }
@@ -354,6 +373,8 @@ mod tests {
             contested_index: None,
             countable: IndexCountability::NotCountable,
             range_countable: false,
+            summable: None,
+            range_summable: false,
         }];
 
         let old_index_structure =
@@ -383,6 +404,8 @@ mod tests {
             contested_index: None,
             countable: IndexCountability::NotCountable,
             range_countable: false,
+            summable: None,
+            range_summable: false,
         }];
 
         let new_indices = vec![
@@ -397,6 +420,8 @@ mod tests {
                 contested_index: None,
                 countable: IndexCountability::NotCountable,
                 range_countable: false,
+                summable: None,
+                range_summable: false,
             },
             Index {
                 name: "test2".to_string(),
@@ -409,6 +434,8 @@ mod tests {
                 contested_index: None,
                 countable: IndexCountability::NotCountable,
                 range_countable: false,
+                summable: None,
+                range_summable: false,
             },
         ];
 
@@ -447,6 +474,8 @@ mod tests {
                 contested_index: None,
                 countable: IndexCountability::NotCountable,
                 range_countable: false,
+                summable: None,
+                range_summable: false,
             },
             Index {
                 name: "test2".to_string(),
@@ -459,6 +488,8 @@ mod tests {
                 contested_index: None,
                 countable: IndexCountability::NotCountable,
                 range_countable: false,
+                summable: None,
+                range_summable: false,
             },
         ];
 
@@ -473,6 +504,8 @@ mod tests {
             contested_index: None,
             countable: IndexCountability::NotCountable,
             range_countable: false,
+            summable: None,
+            range_summable: false,
         }];
 
         let old_index_structure =
@@ -509,6 +542,8 @@ mod tests {
             contested_index: None,
             countable: IndexCountability::NotCountable,
             range_countable: false,
+            summable: None,
+            range_summable: false,
         }];
 
         let new_indices = vec![Index {
@@ -528,6 +563,8 @@ mod tests {
             contested_index: None,
             countable: IndexCountability::NotCountable,
             range_countable: false,
+            summable: None,
+            range_summable: false,
         }];
 
         let old_index_structure =
@@ -570,6 +607,8 @@ mod tests {
             contested_index: None,
             countable: IndexCountability::NotCountable,
             range_countable: false,
+            summable: None,
+            range_summable: false,
         }];
 
         let new_indices = vec![Index {
@@ -583,6 +622,8 @@ mod tests {
             contested_index: None,
             countable: IndexCountability::NotCountable,
             range_countable: false,
+            summable: None,
+            range_summable: false,
         }];
 
         let old_index_structure =
@@ -619,6 +660,8 @@ mod tests {
             contested_index: None,
             countable: IndexCountability::NotCountable,
             range_countable: false,
+            summable: None,
+            range_summable: false,
         }];
 
         let new_indices = vec![Index {
@@ -632,6 +675,8 @@ mod tests {
             contested_index: None,
             countable: IndexCountability::Countable,
             range_countable: false,
+            summable: None,
+            range_summable: false,
         }];
 
         let old_index_structure =
@@ -648,7 +693,7 @@ mod tests {
             result.errors.as_slice(),
             [ConsensusError::BasicError(
                 BasicError::DataContractInvalidIndexDefinitionUpdateError(e)
-            )] if e.index_path() == "test -> (countable changed)"
+            )] if e.index_path() == "test -> (countable: NotCountable -> Countable)"
         );
     }
 
@@ -668,6 +713,8 @@ mod tests {
             contested_index: None,
             countable: IndexCountability::Countable,
             range_countable: false,
+            summable: None,
+            range_summable: false,
         }];
 
         let new_indices = vec![Index {
@@ -681,6 +728,8 @@ mod tests {
             contested_index: None,
             countable: IndexCountability::NotCountable,
             range_countable: false,
+            summable: None,
+            range_summable: false,
         }];
 
         let old_index_structure =
@@ -697,7 +746,7 @@ mod tests {
             result.errors.as_slice(),
             [ConsensusError::BasicError(
                 BasicError::DataContractInvalidIndexDefinitionUpdateError(e)
-            )] if e.index_path() == "test -> (countable changed)"
+            )] if e.index_path() == "test -> (countable: Countable -> NotCountable)"
         );
     }
 
@@ -717,6 +766,8 @@ mod tests {
             contested_index: None,
             countable: IndexCountability::Countable,
             range_countable: false,
+            summable: None,
+            range_summable: false,
         }];
 
         let old_index_structure =
@@ -753,6 +804,8 @@ mod tests {
             contested_index: None,
             countable: IndexCountability::Countable,
             range_countable: false,
+            summable: None,
+            range_summable: false,
         }];
 
         let new_indices = vec![Index {
@@ -766,6 +819,8 @@ mod tests {
             contested_index: None,
             countable: IndexCountability::Countable,
             range_countable: true,
+            summable: None,
+            range_summable: false,
         }];
 
         let old_index_structure =
@@ -782,7 +837,7 @@ mod tests {
             result.errors.as_slice(),
             [ConsensusError::BasicError(
                 BasicError::DataContractInvalidIndexDefinitionUpdateError(e)
-            )] if e.index_path() == "test -> (range_countable changed)"
+            )] if e.index_path() == "test -> (range_countable: false -> true)"
         );
     }
 
@@ -802,6 +857,8 @@ mod tests {
             contested_index: None,
             countable: IndexCountability::Countable,
             range_countable: true,
+            summable: None,
+            range_summable: false,
         }];
 
         let new_indices = vec![Index {
@@ -815,6 +872,8 @@ mod tests {
             contested_index: None,
             countable: IndexCountability::Countable,
             range_countable: false,
+            summable: None,
+            range_summable: false,
         }];
 
         let old_index_structure =
@@ -831,7 +890,7 @@ mod tests {
             result.errors.as_slice(),
             [ConsensusError::BasicError(
                 BasicError::DataContractInvalidIndexDefinitionUpdateError(e)
-            )] if e.index_path() == "test -> (range_countable changed)"
+            )] if e.index_path() == "test -> (range_countable: true -> false)"
         );
     }
 
@@ -857,6 +916,8 @@ mod tests {
             contested_index: None,
             countable: IndexCountability::Countable,
             range_countable: false,
+            summable: None,
+            range_summable: false,
         }];
 
         let new_indices = vec![Index {
@@ -876,6 +937,8 @@ mod tests {
             contested_index: None,
             countable: IndexCountability::Countable,
             range_countable: true,
+            summable: None,
+            range_summable: false,
         }];
 
         let old_index_structure =
@@ -892,7 +955,7 @@ mod tests {
             result.errors.as_slice(),
             [ConsensusError::BasicError(
                 BasicError::DataContractInvalidIndexDefinitionUpdateError(e)
-            )] if e.index_path() == "first -> second -> (range_countable changed)"
+            )] if e.index_path() == "first -> second -> (range_countable: false -> true)"
         );
     }
 
@@ -918,6 +981,8 @@ mod tests {
             contested_index: None,
             countable: IndexCountability::NotCountable,
             range_countable: false,
+            summable: None,
+            range_summable: false,
         }];
 
         let new_indices = vec![Index {
@@ -937,6 +1002,8 @@ mod tests {
             contested_index: None,
             countable: IndexCountability::Countable,
             range_countable: false,
+            summable: None,
+            range_summable: false,
         }];
 
         let old_index_structure =
@@ -953,7 +1020,7 @@ mod tests {
             result.errors.as_slice(),
             [ConsensusError::BasicError(
                 BasicError::DataContractInvalidIndexDefinitionUpdateError(e)
-            )] if e.index_path() == "first -> second -> (countable changed)"
+            )] if e.index_path() == "first -> second -> (countable: NotCountable -> Countable)"
         );
     }
 }

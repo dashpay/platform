@@ -63,6 +63,9 @@
 - [Document Count Trees](drive/document-count-trees.md)
 - [Count Index Examples](drive/count-index-examples.md)
 - [Count Index Group By Examples](drive/count-index-group-by-examples.md)
+- [Document Sum Trees](drive/document-sum-trees.md)
+- [Sum Index Examples](drive/sum-index-examples.md)
+- [Average Index Examples](drive/average-index-examples.md)
 
 # Testing
 

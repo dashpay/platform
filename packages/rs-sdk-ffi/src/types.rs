@@ -56,6 +56,11 @@ pub use dash_network::Network;
 /// `Copy` is intentionally **not** derived: duplicating raw pointers via implicit
 /// copies risks use-after-free if the original string is freed while a copy is
 /// still in use.
+// TODO(CMT-007, #3711): FFI cannot express initial protocol-version seed for
+// older-network interop. Deferred — pending core SDK fix for the broader
+// "first-request-on-default-SDK uses latest() wire shape" issue (CMT-005).
+// Once SDK auto-detects PV before encoding the first request, FFI inherits
+// it without API surface changes.
 #[repr(C)]
 pub struct DashSDKConfig {
     /// Network to connect to

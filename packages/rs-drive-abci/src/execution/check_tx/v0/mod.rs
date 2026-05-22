@@ -2318,7 +2318,7 @@ mod tests {
         .into();
 
         let identity_create_transition: StateTransition =
-            IdentityCreateTransition::try_from_identity_with_signer(
+            IdentityCreateTransition::try_from_identity_with_signer_and_private_key(
                 &identity,
                 asset_lock_proof,
                 pk.as_slice(),
@@ -2516,7 +2516,7 @@ mod tests {
         .into();
 
         let identity_create_transition: StateTransition =
-            IdentityCreateTransition::try_from_identity_with_signer(
+            IdentityCreateTransition::try_from_identity_with_signer_and_private_key(
                 &identity,
                 asset_lock_proof,
                 pk.as_slice(),
@@ -2561,7 +2561,7 @@ mod tests {
         );
 
         let identity_top_up_transition: StateTransition =
-            IdentityTopUpTransition::try_from_identity(
+            IdentityTopUpTransition::try_from_identity_with_private_key(
                 &identity,
                 asset_lock_proof_top_up,
                 pk.as_slice(),
@@ -2666,7 +2666,7 @@ mod tests {
         .into();
 
         let identity_create_transition: StateTransition =
-            IdentityCreateTransition::try_from_identity_with_signer(
+            IdentityCreateTransition::try_from_identity_with_signer_and_private_key(
                 &identity,
                 asset_lock_proof,
                 pk.as_slice(),
@@ -2711,7 +2711,7 @@ mod tests {
         );
 
         let identity_top_up_transition: StateTransition =
-            IdentityTopUpTransition::try_from_identity(
+            IdentityTopUpTransition::try_from_identity_with_private_key(
                 &identity,
                 asset_lock_proof_top_up,
                 pk.as_slice(),
@@ -2856,7 +2856,7 @@ mod tests {
         );
 
         let identity_top_up_transition: StateTransition =
-            IdentityTopUpTransition::try_from_identity(
+            IdentityTopUpTransition::try_from_identity_with_private_key(
                 &identity,
                 asset_lock_proof_top_up,
                 pk.as_slice(),
@@ -2952,7 +2952,7 @@ mod tests {
         .into();
 
         let identity_create_transition: StateTransition =
-            IdentityCreateTransition::try_from_identity_with_signer(
+            IdentityCreateTransition::try_from_identity_with_signer_and_private_key(
                 &identity,
                 asset_lock_proof,
                 pk.as_slice(),
@@ -2997,7 +2997,7 @@ mod tests {
         );
 
         let identity_top_up_transition: StateTransition =
-            IdentityTopUpTransition::try_from_identity(
+            IdentityTopUpTransition::try_from_identity_with_private_key(
                 &identity,
                 asset_lock_proof_top_up.clone(),
                 pk.as_slice(),
@@ -3068,7 +3068,7 @@ mod tests {
         .into();
 
         let identity_create_transition: StateTransition =
-            IdentityCreateTransition::try_from_identity_with_signer(
+            IdentityCreateTransition::try_from_identity_with_signer_and_private_key(
                 &identity,
                 asset_lock_proof_top_up,
                 pk.as_slice(),
@@ -3182,7 +3182,7 @@ mod tests {
         .into();
 
         let mut identity_create_transition: StateTransition =
-            IdentityCreateTransition::try_from_identity_with_signer(
+            IdentityCreateTransition::try_from_identity_with_signer_and_private_key(
                 &identity,
                 asset_lock_proof.clone(),
                 pk.as_slice(),
@@ -3260,7 +3260,7 @@ mod tests {
         ));
 
         let valid_identity_create_transition: StateTransition =
-            IdentityCreateTransition::try_from_identity_with_signer(
+            IdentityCreateTransition::try_from_identity_with_signer_and_private_key(
                 &identity,
                 asset_lock_proof,
                 pk.as_slice(),
@@ -3302,7 +3302,7 @@ mod tests {
         );
 
         let identity_top_up_transition: StateTransition =
-            IdentityTopUpTransition::try_from_identity(
+            IdentityTopUpTransition::try_from_identity_with_private_key(
                 &identity,
                 asset_lock_proof_top_up.clone(),
                 pk.as_slice(),
@@ -3373,7 +3373,7 @@ mod tests {
         .into();
 
         let identity_create_transition: StateTransition =
-            IdentityCreateTransition::try_from_identity_with_signer(
+            IdentityCreateTransition::try_from_identity_with_signer_and_private_key(
                 &identity,
                 asset_lock_proof_top_up,
                 pk.as_slice(),

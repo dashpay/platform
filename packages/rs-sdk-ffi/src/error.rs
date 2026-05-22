@@ -106,6 +106,8 @@ pub enum DashSDKErrorCode {
     Timeout = 8,
     /// Feature not implemented
     NotImplemented = 9,
+    /// Drive returned an internal error (e.g., storage-level constraint violation)
+    DriveInternalError = 10,
     /// Internal error
     InternalError = 99,
 }
@@ -435,6 +437,9 @@ fn classify_sdk_error(sdk_err: &dash_sdk::Error) -> (DashSDKErrorCode, String) {
             DashSDKErrorCode::NetworkError,
             format!("DAPI error: {}", sdk_err),
         ),
+        dash_sdk::Error::DriveInternalError(inner) => {
+            (DashSDKErrorCode::DriveInternalError, inner.clone())
+        }
         dash_sdk::Error::ContextProviderError(_) => (
             DashSDKErrorCode::NetworkError,
             format!("Context provider error: {}", sdk_err),
@@ -1042,6 +1047,39 @@ mod tests {
         let message = error_message_ptr(ffi_error);
         assert!(message.starts_with("Context provider error:"));
         assert!(message.contains("quorum lookup failed"));
+        unsafe { dash_sdk_error_free(ffi_error) };
+    }
+
+    #[test]
+    fn drive_internal_error_with_not_found_substring_maps_to_drive_internal_error() {
+        // Typed-variant matching must take precedence over message substring
+        // heuristics such as "not found".
+        let sdk_error =
+            dash_sdk::Error::DriveInternalError("data contract not found 0x123".to_string());
+        let ffi_error = boxed(DashSDKError::from(FFIError::SDKError(sdk_error)));
+
+        assert_eq!(
+            unsafe { (*ffi_error).code },
+            DashSDKErrorCode::DriveInternalError
+        );
+        let message = error_message_ptr(ffi_error);
+        assert_eq!(message, "data contract not found 0x123");
+
+        unsafe { dash_sdk_error_free(ffi_error) };
+    }
+
+    #[test]
+    fn drive_internal_error_plain_maps_to_drive_internal_error() {
+        let sdk_error = dash_sdk::Error::DriveInternalError("storage layer constraint".to_string());
+        let ffi_error = boxed(DashSDKError::from(FFIError::SDKError(sdk_error)));
+
+        assert_eq!(
+            unsafe { (*ffi_error).code },
+            DashSDKErrorCode::DriveInternalError
+        );
+        let message = error_message_ptr(ffi_error);
+        assert_eq!(message, "storage layer constraint");
+
         unsafe { dash_sdk_error_free(ffi_error) };
     }
 

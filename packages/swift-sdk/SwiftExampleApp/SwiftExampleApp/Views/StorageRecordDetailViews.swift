@@ -57,6 +57,22 @@ struct IdentityStorageDetailView: View {
 
     var body: some View {
         Form {
+            Section {
+                // Surface the operational identity view from the
+                // storage explorer — the StorageExplorer page is
+                // metadata-only; the live view (balance, top-up,
+                // documents, etc.) lives in IdentityDetailView.
+                NavigationLink {
+                    IdentityDetailView(identityId: record.identityId)
+                } label: {
+                    HStack {
+                        Text("View Identity")
+                        Spacer()
+                        Image(systemName: "arrow.right")
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
             Section("Core") {
                 FieldRow(label: "ID (Base58)", value: record.identityIdBase58)
                 FieldRow(label: "ID (Hex)", value: record.identityIdString)
@@ -1459,7 +1475,7 @@ struct TransactionStorageDetailView: View {
         Form {
             Section("Core") {
                 FieldRow(label: "TXID", value: record.txidHex)
-                FieldRow(label: "Direction", value: record.directionName)
+                FieldRow(label: "Direction", value: record.displayDirection)
                 FieldRow(label: "Type", value: record.transactionType)
                 FieldRow(label: "Net Amount", value: record.formattedAmount)
                 if let fee = record.fee {
@@ -1772,5 +1788,215 @@ struct WalletManagerMetadataStorageDetailView: View {
         }
         .navigationTitle("Manager Metadata")
         .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+// MARK: - PersistentShieldedNote
+
+struct ShieldedNoteStorageDetailView: View {
+    let record: PersistentShieldedNote
+
+    var body: some View {
+        Form {
+            Section("Identity") {
+                FieldRow(label: "Wallet ID", value: hexString(record.walletId))
+                FieldRow(label: "Account Index", value: "\(record.accountIndex)")
+                FieldRow(label: "Position", value: "\(record.position)")
+            }
+            Section("Commitment") {
+                FieldRow(label: "cmx", value: hexString(record.cmx))
+                FieldRow(label: "Nullifier", value: hexString(record.nullifier))
+            }
+            Section("State") {
+                FieldRow(label: "Block Height", value: "\(record.blockHeight)")
+                FieldRow(label: "Spent", value: record.isSpent ? "Yes" : "No")
+                FieldRow(label: "Value", value: "\(record.value) credits")
+            }
+            Section("Note Bytes") {
+                Text(hexString(record.noteData))
+                    .font(.system(.caption2, design: .monospaced))
+                    .textSelection(.enabled)
+            }
+            Section("Timestamps") {
+                FieldRow(label: "Created", value: dateString(record.createdAt))
+                FieldRow(label: "Updated", value: dateString(record.lastUpdated))
+            }
+        }
+        .navigationTitle("Shielded Note")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+// MARK: - PersistentShieldedSyncState
+
+struct ShieldedSyncStateStorageDetailView: View {
+    let record: PersistentShieldedSyncState
+
+    var body: some View {
+        Form {
+            Section("Identity") {
+                FieldRow(label: "Wallet ID", value: hexString(record.walletId))
+                FieldRow(label: "Account Index", value: "\(record.accountIndex)")
+            }
+            Section("Sync") {
+                FieldRow(label: "Last Synced Index", value: "\(record.lastSyncedIndex)")
+            }
+            Section("Nullifier Checkpoint") {
+                FieldRow(label: "Present", value: record.hasNullifierCheckpoint ? "Yes" : "No")
+                if record.hasNullifierCheckpoint {
+                    FieldRow(label: "Height", value: "\(record.nullifierCheckpointHeight)")
+                    FieldRow(label: "Timestamp", value: "\(record.nullifierCheckpointTimestamp)")
+                }
+            }
+            Section("Timestamps") {
+                FieldRow(label: "Updated", value: dateString(record.lastUpdated))
+            }
+        }
+        .navigationTitle("Shielded Sync State")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+// MARK: - PersistentAssetLock
+
+struct AssetLockStorageDetailView: View {
+    let record: PersistentAssetLock
+
+    /// Candidate identity rows at this asset lock's
+    /// `identityIndex`. Filtered down to the strict
+    /// `(walletId, identityIndex)` match in `linkedIdentity` —
+    /// using the predicate alone would miss legacy rows that
+    /// don't yet have the `wallet` relationship populated.
+    @Query private var candidateIdentities: [PersistentIdentity]
+
+    init(record: PersistentAssetLock) {
+        self.record = record
+        // `PersistentAssetLock.identityIndexRaw` is `Int32` (the
+        // changeset FFI uses i32 to match the upstream tracked
+        // type), but `PersistentIdentity.identityIndex` is `UInt32`
+        // (the DIP-9 slot is unsigned). Bridge with a `UInt32`
+        // cast captured in Swift before predicate construction —
+        // SwiftData's `#Predicate` macro doesn't allow inline
+        // conversions inside the closure body.
+        let identityIndex = UInt32(bitPattern: record.identityIndexRaw)
+        _candidateIdentities = Query(
+            filter: #Predicate<PersistentIdentity> { identity in
+                identity.identityIndex == identityIndex
+            }
+        )
+    }
+
+    /// Resolve the identity row this asset lock points at. Strict
+    /// `(walletId, identityIndex)` match preferred; legacy rows
+    /// that lack the `wallet` relationship fall back to a plain
+    /// `identityIndex` match (single candidate only — multiple
+    /// orphaned candidates at the same index are ambiguous and we
+    /// don't guess).
+    private var linkedIdentity: PersistentIdentity? {
+        if let strict = candidateIdentities.first(where: {
+            $0.wallet?.walletId == record.walletId
+        }) {
+            return strict
+        }
+        let orphaned = candidateIdentities.filter { $0.wallet == nil }
+        return orphaned.count == 1 ? orphaned.first : nil
+    }
+
+    var body: some View {
+        Form {
+            Section("Asset Lock") {
+                FieldRow(label: "Outpoint", value: record.outPointHex)
+                FieldRow(label: "Status", value: record.statusLabel)
+                FieldRow(label: "Funding Type", value: fundingTypeLabel(record.fundingTypeRaw))
+                FieldRow(label: "Identity Index", value: "\(record.identityIndexRaw)")
+                FieldRow(label: "Amount (duffs)", value: "\(record.amountDuffs)")
+                FieldRow(label: "Wallet ID", value: hexString(record.walletId))
+            }
+            if isIdentityFunding {
+                // Identity section is always shown for identity-
+                // funding asset locks (Registration / TopUp). If the
+                // linked identity is in SwiftData, drill-down link;
+                // otherwise surface the current registration status
+                // so partial / in-flight asset locks aren't silently
+                // hidden.
+                Section("Identity") {
+                    if let identity = linkedIdentity {
+                        // Static row — punted on navigation. Pushing
+                        // `IdentityDetailView` from this nested
+                        // Settings → Storage path hung the main
+                        // thread on iOS 26 and burned a session
+                        // chasing the cause. Tap-to-copy `Text` is
+                        // good enough for an explorer surface; the
+                        // operational identity view is reachable
+                        // from the Identities tab.
+                        Text(identity.identityIdBase58)
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundColor(.primary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .textSelection(.enabled)
+                    } else {
+                        // No matching identity row yet. Either the
+                        // asset lock is still pre-finality
+                        // (statusRaw 0/1) and the registration
+                        // hasn't been submitted, or it's IS/CL-
+                        // locked (2/3) but the IdentityCreate
+                        // transition failed or wasn't submitted —
+                        // surface either case with the current
+                        // status so the entry is self-explanatory.
+                        FieldRow(
+                            label: pendingLabel(record.statusRaw),
+                            value: record.statusLabel
+                        )
+                    }
+                }
+            }
+            Section("Bytes") {
+                FieldRow(label: "Transaction Bytes", value: "\(record.transactionBytes.count) bytes")
+                FieldRow(
+                    label: "Proof Bytes",
+                    value: record.proofBytes.map { "\($0.count) bytes" } ?? "—"
+                )
+            }
+            Section("Timestamps") {
+                FieldRow(label: "Created", value: dateString(record.createdAt))
+                FieldRow(label: "Updated", value: dateString(record.updatedAt))
+            }
+        }
+        .navigationTitle("Asset Lock")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func fundingTypeLabel(_ raw: Int) -> String {
+        switch raw {
+        case 0: return "IdentityRegistration"
+        case 1: return "IdentityTopUp"
+        case 2: return "IdentityTopUpNotBound"
+        case 3: return "IdentityInvitation"
+        case 4: return "AssetLockAddressTopUp"
+        case 5: return "AssetLockShieldedAddressTopUp"
+        default: return "Unknown(\(raw))"
+        }
+    }
+
+    /// True when this asset lock funded an identity at a specific
+    /// `(walletId, identityIndex)` slot — i.e. registration or
+    /// top-up. The other funding types don't deterministically
+    /// resolve to a single identity on this wallet.
+    private var isIdentityFunding: Bool {
+        record.fundingTypeRaw == 0 || record.fundingTypeRaw == 1
+    }
+
+    /// Label for the pending row shown when no identity row has
+    /// been persisted for this slot yet. Communicates whether the
+    /// lock is mid-flight (still on its way to finality) versus
+    /// IS/CL-locked but the IdentityCreate transition never
+    /// completed.
+    private func pendingLabel(_ raw: Int) -> String {
+        switch raw {
+        case 0, 1: return "In progress"
+        case 2, 3: return "Pending (unused)"
+        default: return "Pending"
+        }
     }
 }

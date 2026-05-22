@@ -4,6 +4,8 @@ use crate::error::*;
 use crate::handle::*;
 use crate::runtime::runtime;
 use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
+use rs_sdk_ffi::MnemonicResolverCoreSigner;
+use rs_sdk_ffi::MnemonicResolverHandle;
 use std::os::raw::c_char;
 use std::str::FromStr;
 
@@ -32,7 +34,21 @@ pub unsafe extern "C" fn core_wallet_broadcast_transaction(
     PlatformWalletFFIResult::ok()
 }
 
-/// Build, sign, and broadcast a payment to the given addresses.
+/// Build, sign, and broadcast a payment to the given addresses via
+/// an external mnemonic-resolver-backed signer.
+///
+/// The Swift caller supplies a [`MnemonicResolverHandle`] — the same
+/// vtable shape used by
+/// [`crate::dash_sdk_sign_with_mnemonic_resolver_and_path`] — which
+/// the FFI wraps in a [`MnemonicResolverCoreSigner`] for the
+/// lifetime of this call. Private keys never cross the FFI as raw
+/// bytes; every signature is produced inside the signer's atomic
+/// derive-and-sign step.
+///
+/// # Safety
+/// - `core_signer_handle` must be a valid, non-destroyed
+///   `*mut MnemonicResolverHandle`. Ownership is retained by the
+///   caller — this function does NOT destroy it.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn core_wallet_send_to_addresses(
@@ -42,9 +58,11 @@ pub unsafe extern "C" fn core_wallet_send_to_addresses(
     addresses: *const *const c_char,
     amounts: *const u64,
     count: usize,
+    core_signer_handle: *mut MnemonicResolverHandle,
     out_tx_bytes: *mut *mut u8,
     out_tx_len: *mut usize,
 ) -> PlatformWalletFFIResult {
+    check_ptr!(core_signer_handle);
     if count > 0 {
         check_ptr!(addresses);
         check_ptr!(amounts);
@@ -76,8 +94,28 @@ pub unsafe extern "C" fn core_wallet_send_to_addresses(
         }
     };
 
+    let signer_addr = core_signer_handle as usize;
+
     let option = CORE_WALLET_STORAGE.with_item(handle, |wallet| {
-        runtime().block_on(wallet.send_to_addresses(std_account_type, account_index, outputs))
+        let wallet_id = wallet.wallet_id();
+        let network = wallet.network();
+        // SAFETY: the resolver handle is pinned alive for the duration
+        // of this FFI call (see fn-level safety doc). The
+        // `MnemonicResolverCoreSigner` lives on this stack frame and
+        // is dropped before the function returns.
+        let signer = unsafe {
+            MnemonicResolverCoreSigner::new(
+                signer_addr as *mut MnemonicResolverHandle,
+                wallet_id,
+                network,
+            )
+        };
+        runtime().block_on(wallet.send_to_addresses(
+            std_account_type,
+            account_index,
+            outputs,
+            &signer,
+        ))
     });
     let result = unwrap_option_or_return!(option);
     let tx = unwrap_result_or_return!(result);

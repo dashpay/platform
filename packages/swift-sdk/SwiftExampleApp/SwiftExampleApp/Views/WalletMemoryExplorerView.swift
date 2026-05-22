@@ -1429,6 +1429,7 @@ private func trackedAssetLockStatusLabel(_ tag: UInt8) -> String {
     case 1: return "Broadcast"
     case 2: return "InstantSendLocked"
     case 3: return "ChainLocked"
+    case 4: return "Consumed"
     default: return "Unknown(\(tag))"
     }
 }

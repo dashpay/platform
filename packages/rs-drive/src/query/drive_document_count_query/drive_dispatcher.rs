@@ -439,8 +439,12 @@ impl Drive {
         // flat `Total` paths don't read it.
         let order_by_ascending = order_clauses.first().map(|c| c.ascending).unwrap_or(true);
 
-        let mode =
-            DriveDocumentCountQuery::detect_mode(&where_clauses, request.mode, request.prove)?;
+        let mode = DriveDocumentCountQuery::detect_mode_versioned(
+            &where_clauses,
+            request.mode,
+            request.prove,
+            platform_version,
+        )?;
 
         let contract_id = request.contract.id_ref().to_buffer();
         let document_type_name = request.document_type.name().to_string();

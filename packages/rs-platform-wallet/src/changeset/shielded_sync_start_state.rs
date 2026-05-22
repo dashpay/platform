@@ -1,0 +1,52 @@
+//! Shielded sub-wallet state restored from storage.
+//!
+//! Returned as part of [`ClientStartState`] by
+//! [`PlatformWalletPersistence::load`] so a freshly-bound
+//! [`ShieldedWallet`] can rehydrate per-subwallet decrypted notes
+//! and sync watermarks without re-decrypting the chain.
+//!
+//! Keyed by [`SubwalletId`] so a single `BTreeMap` covers every
+//! `(wallet_id, account_index)` combination on the network.
+//!
+//! [`ClientStartState`]: crate::changeset::ClientStartState
+//! [`PlatformWalletPersistence::load`]: crate::changeset::PlatformWalletPersistence::load
+//! [`ShieldedWallet`]: crate::wallet::shielded::ShieldedWallet
+//! [`SubwalletId`]: crate::wallet::shielded::SubwalletId
+
+use crate::wallet::shielded::{ShieldedNote, SubwalletId};
+use std::collections::BTreeMap;
+
+/// Per-subwallet snapshot — every note (spent + unspent) the
+/// persister has on file plus the sync watermarks.
+#[derive(Debug, Default, Clone)]
+pub struct ShieldedSubwalletStartState {
+    /// All known notes for this subwallet, including spent ones.
+    /// `is_spent` is preserved from the persisted row so the
+    /// in-memory store reflects what nullifier sync has already
+    /// established.
+    pub notes: Vec<ShieldedNote>,
+    /// Sync watermark: count of note positions scanned = the next
+    /// global index to scan (exclusive). `0` = nothing scanned yet.
+    pub last_synced_index: u64,
+    /// Last `(height, timestamp)` nullifier sync checkpoint.
+    pub nullifier_checkpoint: Option<(u64, u64)>,
+}
+
+/// Whole-client shielded restore state, keyed by `SubwalletId`.
+///
+/// Lives on [`ClientStartState`] alongside platform-address state.
+/// On wallet bind, `PlatformWallet::bind_shielded` consumes the
+/// entries that match `(self.wallet_id, account)` for each
+/// requested account and hands them back to the in-memory store
+/// before kicking off the first sync pass.
+#[derive(Debug, Default)]
+pub struct ShieldedSyncStartState {
+    pub per_subwallet: BTreeMap<SubwalletId, ShieldedSubwalletStartState>,
+}
+
+impl ShieldedSyncStartState {
+    /// `true` iff no subwallet snapshot is restored.
+    pub fn is_empty(&self) -> bool {
+        self.per_subwallet.is_empty()
+    }
+}
