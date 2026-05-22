@@ -148,6 +148,7 @@ cli = [
 secrets = [
     "dep:argon2",
     "dep:chacha20poly1305",
+    "dep:serde_json",
     "dep:zeroize",
     "dep:subtle",
     "dep:getrandom",

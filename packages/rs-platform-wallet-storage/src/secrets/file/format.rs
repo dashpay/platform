@@ -1,32 +1,37 @@
 //! Versioned, self-describing vault format + canonical AAD
 //! (SEC-REQ-2.2.7 / 2.2.9).
 //!
-//! ```text
-//! MAGIC          9  b"PWSVAULT1"
-//! format_version u32 LE  (= 2)
-//! kdf_id         u8   (1 = Argon2id)
-//! m_kib          u32 LE
-//! t              u32 LE
-//! p              u32 LE
-//! salt_len       u8   (= 32)
-//! salt           32
-//! verify_nonce   24   XNonce for the passphrase-verification token
-//! verify_ct_len  u32 LE
-//! verify_ct      AEAD(VERIFY_CONSTANT) under the header key
-//! ── header ends ──
-//! entries, each: label_len u16 LE | label | nonce 24 | ct_len u32 LE | ct+tag
+//! The vault is one `serde_json` document for a single `wallet_id`:
+//!
+//! ```json
+//! {
+//!   "version": 2,
+//!   "kdf": { "id": 1, "m_kib": 65536, "t": 3, "p": 1 },
+//!   "salt": "<32-byte lowercase hex>",
+//!   "verify_nonce": "<24-byte lowercase hex>",
+//!   "verify_ct": "<lowercase hex of AEAD(VERIFY_CONSTANT)>",
+//!   "entries": [
+//!     { "label": "...", "nonce": "<24-byte hex>", "ciphertext": "<hex ct+tag>" }
+//!   ]
+//! }
 //! ```
 //!
-//! The whole file is one logical map for a single `wallet_id`; KDF
-//! params/salt are therefore per-wallet. `verify_ct` is an AEAD seal of
-//! a fixed constant under the header-derived key — a wrong passphrase
+//! Parsing is two-step: a lax [`VersionProbe`] reads `version` first
+//! (tolerating future-version sibling fields), then — only for the
+//! compiled-in [`FORMAT_VERSION`] — the strict [`VaultFile`] payload is
+//! parsed. All byte fields are lowercase hex; Argon2 params are JSON
+//! numbers.
+//!
+//! KDF params/salt are per-`wallet_id`. `verify_ct` is an AEAD seal of a
+//! fixed constant under the header-derived key — a wrong passphrase
 //! fails its tag, so a mismatched key is rejected before any entry is
 //! written or read (no mixed-key corruption).
+
+use serde::{Deserialize, Serialize};
 
 use super::crypto::{KdfParams, NONCE_LEN, SALT_LEN};
 use super::error::FileStoreError;
 
-pub(crate) const MAGIC: &[u8; 9] = b"PWSVAULT1";
 pub(crate) const FORMAT_VERSION: u32 = 2;
 pub(crate) const KDF_ID_ARGON2ID: u8 = 1;
 
@@ -39,6 +44,11 @@ pub(crate) const VERIFY_CONSTANT: &[u8] = b"PWSVAULT-VERIFY-v1";
 /// disjoint from every allowlisted entry label (SEC-REQ-4.3), so the
 /// token can never alias a real entry's AAD.
 pub(crate) const VERIFY_LABEL: &str = "\0verify";
+
+/// Minimum AEAD ciphertext length: the Poly1305 tag is always present
+/// even for an empty plaintext, so any `verify_ct`/`ciphertext` shorter
+/// than this is structurally impossible and rejected (SEC-002).
+const AEAD_TAG_LEN: usize = 16;
 
 /// Parsed header (KDF params + salt + passphrase-verification token).
 #[derive(Debug, Clone)]
@@ -60,6 +70,13 @@ pub(crate) struct Entry {
 /// Canonical length-prefixed AAD binding ciphertext to its slot
 /// (SEC-REQ-2.2.7): `format_version ‖ wallet_id ‖ label`. A blob moved
 /// to another slot, or a rolled-back `format_version`, fails the tag.
+///
+/// AAD-DETERMINISM INVARIANT (C1): AAD is built solely from the typed
+/// `(format_version, wallet_id, label)` triple via this length-prefixed
+/// layout — never from any serialized JSON bytes or JSON key order. The
+/// `format_version` argument is always the compiled-in [`FORMAT_VERSION`]
+/// constant at every call site; the JSON `version` field is used ONLY as
+/// the two-step dispatch gate and is NEVER routed into AAD.
 pub(crate) fn aad(format_version: u32, wallet_id: &[u8; 32], label: &str) -> Vec<u8> {
     let lb = label.as_bytes();
     let mut v = Vec::with_capacity(4 + 4 + 32 + 4 + lb.len());
@@ -79,116 +96,153 @@ pub(crate) fn verify_aad(format_version: u32, wallet_id: &[u8; 32]) -> Vec<u8> {
     aad(format_version, wallet_id, VERIFY_LABEL)
 }
 
-/// Serialize a full vault (header + entries) to bytes. Contains only
-/// salt/params (non-secret) + ciphertext — never plaintext.
+/// Serde helpers encoding `Vec<u8>` as lowercase hex strings. Hex is
+/// already a crate dependency (`WalletId::to_hex`), is deterministic and
+/// self-validating, and avoids adding `base64`. The encoding sits wholly
+/// outside the AEAD envelope and the AAD (C1), so it has no bearing on
+/// any cryptographic binding.
+mod hex_bytes {
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub(super) fn serialize<S: Serializer>(bytes: &[u8], s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&hex::encode(bytes))
+    }
+
+    pub(super) fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<u8>, D::Error> {
+        let s = String::deserialize(d)?;
+        hex::decode(&s).map_err(serde::de::Error::custom)
+    }
+}
+
+/// Step-1 probe: read ONLY `version`, tolerating unknown sibling fields
+/// so a future v-N file can be dispatched on before its payload shape is
+/// committed to. MUST NOT use `deny_unknown_fields` (C3).
+#[derive(Deserialize)]
+struct VersionProbe {
+    version: u32,
+}
+
+/// Step-2 strict payload for the compiled-in [`FORMAT_VERSION`]. Fails
+/// closed on any unknown field (C3).
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct VaultFile {
+    version: u32,
+    kdf: KdfDescriptor,
+    #[serde(with = "hex_bytes")]
+    salt: Vec<u8>,
+    #[serde(with = "hex_bytes")]
+    verify_nonce: Vec<u8>,
+    #[serde(with = "hex_bytes")]
+    verify_ct: Vec<u8>,
+    entries: Vec<EntryRecord>,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct KdfDescriptor {
+    id: u8,
+    m_kib: u32,
+    t: u32,
+    p: u32,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct EntryRecord {
+    label: String,
+    #[serde(with = "hex_bytes")]
+    nonce: Vec<u8>,
+    #[serde(with = "hex_bytes")]
+    ciphertext: Vec<u8>,
+}
+
+/// Serialize a full vault (header + entries) to JSON bytes. Contains
+/// only salt/params (non-secret) + ciphertext — never plaintext.
 pub(crate) fn serialize(header: &Header, entries: &[Entry]) -> Vec<u8> {
-    let mut out = Vec::new();
-    out.extend_from_slice(MAGIC);
-    out.extend_from_slice(&FORMAT_VERSION.to_le_bytes());
-    out.push(KDF_ID_ARGON2ID);
-    out.extend_from_slice(&header.params.m_kib.to_le_bytes());
-    out.extend_from_slice(&header.params.t.to_le_bytes());
-    out.extend_from_slice(&header.params.p.to_le_bytes());
-    out.push(SALT_LEN as u8);
-    out.extend_from_slice(&header.salt);
-    out.extend_from_slice(&header.verify_nonce);
-    out.extend_from_slice(&(header.verify_ct.len() as u32).to_le_bytes());
-    out.extend_from_slice(&header.verify_ct);
-    for e in entries {
-        let lb = e.label.as_bytes();
-        out.extend_from_slice(&(lb.len() as u16).to_le_bytes());
-        out.extend_from_slice(lb);
-        out.extend_from_slice(&e.nonce);
-        out.extend_from_slice(&(e.ciphertext.len() as u32).to_le_bytes());
-        out.extend_from_slice(&e.ciphertext);
-    }
-    out
+    let file = VaultFile {
+        version: FORMAT_VERSION,
+        kdf: KdfDescriptor {
+            id: KDF_ID_ARGON2ID,
+            m_kib: header.params.m_kib,
+            t: header.params.t,
+            p: header.params.p,
+        },
+        salt: header.salt.to_vec(),
+        verify_nonce: header.verify_nonce.to_vec(),
+        verify_ct: header.verify_ct.clone(),
+        entries: entries
+            .iter()
+            .map(|e| EntryRecord {
+                label: e.label.clone(),
+                nonce: e.nonce.to_vec(),
+                ciphertext: e.ciphertext.clone(),
+            })
+            .collect(),
+    };
+    // VaultFile carries only fixed-width arrays and owned Vecs that
+    // serialize infallibly; a serializer error would be a logic bug.
+    serde_json::to_vec(&file).expect("vault serialization is infallible")
 }
 
-struct Reader<'a> {
-    buf: &'a [u8],
-    pos: usize,
+/// Validate a hex-decoded byte field to a fixed-width array, rejecting a
+/// wrong length as [`FileStoreError::MalformedVault`] rather than
+/// panicking in `XNonce::from_slice` / `copy_from_slice` (SEC-002).
+fn fixed<const N: usize>(bytes: &[u8]) -> Result<[u8; N], FileStoreError> {
+    bytes.try_into().map_err(|_| FileStoreError::MalformedVault)
 }
 
-impl<'a> Reader<'a> {
-    fn take(&mut self, n: usize) -> Result<&'a [u8], FileStoreError> {
-        let end = self
-            .pos
-            .checked_add(n)
-            .ok_or(FileStoreError::MalformedVault)?;
-        let s = self
-            .buf
-            .get(self.pos..end)
-            .ok_or(FileStoreError::MalformedVault)?;
-        self.pos = end;
-        Ok(s)
-    }
-
-    fn u8(&mut self) -> Result<u8, FileStoreError> {
-        Ok(self.take(1)?[0])
-    }
-
-    fn u16(&mut self) -> Result<u16, FileStoreError> {
-        let b = self.take(2)?;
-        Ok(u16::from_le_bytes([b[0], b[1]]))
-    }
-
-    fn u32(&mut self) -> Result<u32, FileStoreError> {
-        let b = self.take(4)?;
-        Ok(u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
-    }
-}
-
-/// Parse a vault. Refuses unknown magic/version (fail closed,
-/// SEC-REQ-2.2.9); parameter floors are enforced later at derive time.
+/// Parse a vault. Two-step: probe `version` (lax), then parse the strict
+/// payload for the known version. Refuses unknown versions, unknown KDF
+/// ids, and any malformed/short byte field — fail closed (SEC-REQ-2.2.9,
+/// SEC-002). All `serde_json` errors are mapped to a static
+/// [`FileStoreError`] with the source DISCARDED so input bytes can never
+/// leak into an error string or log (SEC-003).
 pub(crate) fn deserialize(buf: &[u8]) -> Result<(Header, Vec<Entry>), FileStoreError> {
-    let mut r = Reader { buf, pos: 0 };
-    if r.take(MAGIC.len())? != MAGIC {
-        return Err(FileStoreError::MalformedVault);
-    }
-    let version = r.u32()?;
-    if version != FORMAT_VERSION {
-        return Err(FileStoreError::VersionUnsupported { found: version });
-    }
-    if r.u8()? != KDF_ID_ARGON2ID {
-        return Err(FileStoreError::MalformedVault);
-    }
-    let m_kib = r.u32()?;
-    let t = r.u32()?;
-    let p = r.u32()?;
-    let salt_len = r.u8()? as usize;
-    if salt_len != SALT_LEN {
-        return Err(FileStoreError::MalformedVault);
-    }
-    let mut salt = [0u8; SALT_LEN];
-    salt.copy_from_slice(r.take(SALT_LEN)?);
-    let mut verify_nonce = [0u8; NONCE_LEN];
-    verify_nonce.copy_from_slice(r.take(NONCE_LEN)?);
-    let verify_ct_len = r.u32()? as usize;
-    let verify_ct = r.take(verify_ct_len)?.to_vec();
-
-    let mut entries = Vec::new();
-    while r.pos < buf.len() {
-        let label_len = r.u16()? as usize;
-        let label = std::str::from_utf8(r.take(label_len)?)
-            .map_err(|_| FileStoreError::MalformedVault)?
-            .to_string();
-        let mut nonce = [0u8; NONCE_LEN];
-        nonce.copy_from_slice(r.take(NONCE_LEN)?);
-        let ct_len = r.u32()? as usize;
-        let ciphertext = r.take(ct_len)?.to_vec();
-        entries.push(Entry {
-            label,
-            nonce,
-            ciphertext,
+    let probe: VersionProbe =
+        serde_json::from_slice(buf).map_err(|_| FileStoreError::MalformedVault)?;
+    if probe.version != FORMAT_VERSION {
+        return Err(FileStoreError::VersionUnsupported {
+            found: probe.version,
         });
     }
+
+    let file: VaultFile =
+        serde_json::from_slice(buf).map_err(|_| FileStoreError::MalformedVault)?;
+
+    if file.kdf.id != KDF_ID_ARGON2ID {
+        return Err(FileStoreError::MalformedVault);
+    }
+
+    let salt = fixed::<SALT_LEN>(&file.salt)?;
+    let verify_nonce = fixed::<NONCE_LEN>(&file.verify_nonce)?;
+    if file.verify_ct.len() < AEAD_TAG_LEN {
+        return Err(FileStoreError::MalformedVault);
+    }
+
+    let mut entries = Vec::with_capacity(file.entries.len());
+    for rec in file.entries {
+        let nonce = fixed::<NONCE_LEN>(&rec.nonce)?;
+        if rec.ciphertext.len() < AEAD_TAG_LEN {
+            return Err(FileStoreError::MalformedVault);
+        }
+        entries.push(Entry {
+            label: rec.label,
+            nonce,
+            ciphertext: rec.ciphertext,
+        });
+    }
+
     Ok((
         Header {
-            params: KdfParams { m_kib, t, p },
+            params: KdfParams {
+                m_kib: file.kdf.m_kib,
+                t: file.kdf.t,
+                p: file.kdf.p,
+            },
             salt,
             verify_nonce,
-            verify_ct,
+            verify_ct: file.verify_ct,
         },
         entries,
     ))
@@ -228,12 +282,12 @@ mod tests {
             Entry {
                 label: "bip39_mnemonic".into(),
                 nonce: [3u8; NONCE_LEN],
-                ciphertext: vec![1, 2, 3, 4],
+                ciphertext: vec![1; AEAD_TAG_LEN + 4],
             },
             Entry {
                 label: "bip32-seed".into(),
                 nonce: [9u8; NONCE_LEN],
-                ciphertext: vec![5, 6],
+                ciphertext: vec![6; AEAD_TAG_LEN + 2],
             },
         ];
         let bytes = serialize(&header, &entries);
@@ -244,18 +298,29 @@ mod tests {
         assert_eq!(h2.verify_ct, header.verify_ct);
         assert_eq!(e2.len(), 2);
         assert_eq!(e2[0].label, "bip39_mnemonic");
-        assert_eq!(e2[1].ciphertext, vec![5, 6]);
+        assert_eq!(e2[1].ciphertext, vec![6; AEAD_TAG_LEN + 2]);
     }
 
     #[test]
-    fn rejects_bad_magic_and_unknown_version() {
+    fn serialized_form_is_json_with_version_and_lowercase_hex() {
+        let bytes = serialize(&test_header(), &[]);
+        let s = std::str::from_utf8(&bytes).unwrap();
+        assert!(s.starts_with('{'), "vault is a JSON object: {s}");
+        assert!(s.contains("\"version\":2"));
+        // Salt is 0x07 * 32 → lowercase hex, never uppercase.
+        assert!(s.contains(&"07".repeat(SALT_LEN)));
+        assert!(!s.contains("0C0C"), "hex must be lowercase");
+    }
+
+    #[test]
+    fn rejects_non_json_and_unknown_version() {
         assert!(matches!(
             deserialize(b"NOPENOPE...."),
             Err(FileStoreError::MalformedVault)
         ));
-        let mut bytes = serialize(&test_header(), &[]);
-        let v = MAGIC.len();
-        bytes[v..v + 4].copy_from_slice(&999u32.to_le_bytes());
+        let mut file: VaultFile = serde_json::from_slice(&serialize(&test_header(), &[])).unwrap();
+        file.version = 999;
+        let bytes = serde_json::to_vec(&file).unwrap();
         assert!(matches!(
             deserialize(&bytes),
             Err(FileStoreError::VersionUnsupported { found: 999 })
@@ -263,11 +328,90 @@ mod tests {
     }
 
     #[test]
-    fn rejects_truncated() {
-        let bytes = serialize(&test_header(), &[]);
+    fn rejects_unknown_kdf_id() {
+        let mut file: VaultFile = serde_json::from_slice(&serialize(&test_header(), &[])).unwrap();
+        file.kdf.id = 7;
+        let bytes = serde_json::to_vec(&file).unwrap();
         assert!(matches!(
-            deserialize(&bytes[..bytes.len() - 5]),
+            deserialize(&bytes),
             Err(FileStoreError::MalformedVault)
         ));
+    }
+
+    #[test]
+    fn rejects_unknown_payload_field() {
+        // A version-2 file with a stray sibling field must fail closed
+        // (deny_unknown_fields on VaultFile, C3).
+        let bytes = br#"{"version":2,"kdf":{"id":1,"m_kib":65536,"t":3,"p":1},"salt":"00","verify_nonce":"00","verify_ct":"00","entries":[],"rogue":true}"#;
+        assert!(matches!(
+            deserialize(bytes),
+            Err(FileStoreError::MalformedVault)
+        ));
+    }
+
+    #[test]
+    fn wrong_length_nonce_yields_malformed_not_panic() {
+        // SEC-002: a 1-byte nonce must not panic in copy_from_slice.
+        let mut file: VaultFile = serde_json::from_slice(&serialize(&test_header(), &[])).unwrap();
+        file.entries.push(EntryRecord {
+            label: "seed".into(),
+            nonce: vec![0u8; 1],
+            ciphertext: vec![0u8; AEAD_TAG_LEN],
+        });
+        let bytes = serde_json::to_vec(&file).unwrap();
+        assert!(matches!(
+            deserialize(&bytes),
+            Err(FileStoreError::MalformedVault)
+        ));
+    }
+
+    #[test]
+    fn wrong_length_salt_yields_malformed() {
+        let mut file: VaultFile = serde_json::from_slice(&serialize(&test_header(), &[])).unwrap();
+        file.salt = vec![0u8; SALT_LEN - 1];
+        let bytes = serde_json::to_vec(&file).unwrap();
+        assert!(matches!(
+            deserialize(&bytes),
+            Err(FileStoreError::MalformedVault)
+        ));
+    }
+
+    #[test]
+    fn short_ciphertext_below_tag_len_yields_malformed() {
+        let mut file: VaultFile = serde_json::from_slice(&serialize(&test_header(), &[])).unwrap();
+        file.entries.push(EntryRecord {
+            label: "seed".into(),
+            nonce: vec![0u8; NONCE_LEN],
+            ciphertext: vec![0u8; AEAD_TAG_LEN - 1],
+        });
+        let bytes = serde_json::to_vec(&file).unwrap();
+        assert!(matches!(
+            deserialize(&bytes),
+            Err(FileStoreError::MalformedVault)
+        ));
+    }
+
+    #[test]
+    fn short_verify_ct_below_tag_len_yields_malformed() {
+        let mut file: VaultFile = serde_json::from_slice(&serialize(&test_header(), &[])).unwrap();
+        file.verify_ct = vec![0u8; AEAD_TAG_LEN - 1];
+        let bytes = serde_json::to_vec(&file).unwrap();
+        assert!(matches!(
+            deserialize(&bytes),
+            Err(FileStoreError::MalformedVault)
+        ));
+    }
+
+    #[test]
+    fn malformed_error_renders_no_input_bytes() {
+        // SEC-003: a parse failure must never echo the offending input.
+        let needle = "SUPERSECRETNEEDLE";
+        let evil = format!("{{\"version\": \"{needle}\"}}");
+        let err = deserialize(evil.as_bytes()).unwrap_err();
+        let rendered = format!("{err} {err:?}");
+        assert!(
+            !rendered.contains(needle),
+            "error leaked input bytes: {rendered}"
+        );
     }
 }
