@@ -78,6 +78,14 @@ where
     let spv = manager.spv_arc();
     let client_config = build_client_config(config, workdir, address_list)?;
 
+    // Apply the devnet genesis override before spawn so the runtime's
+    // pre-seed (which sidesteps dash-spv's missing devnet genesis) uses
+    // it. Empty override = the `dashcore` built-in; the runtime ignores
+    // it entirely on non-devnet networks.
+    if config.network == Network::Devnet && !config.devnet_genesis.is_empty() {
+        spv.set_devnet_genesis_override(config.devnet_genesis.clone());
+    }
+
     spv.spawn_in_background(client_config);
     tracing::info!(
         target: "platform_wallet::e2e::spv",
