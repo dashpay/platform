@@ -15,8 +15,7 @@ use std::sync::Arc;
 use keyring_core::api::CredentialStoreApi;
 use keyring_core::{Error as KeyringError, Result as KeyringResult};
 use platform_wallet_storage::secrets::{
-    downcast_failure, EncryptedFileStore, FileStoreFailure, SecretBytes, SecretString, WalletId,
-    SERVICE_PREFIX,
+    EncryptedFileStore, FileStoreError, SecretBytes, SecretString, WalletId, SERVICE_PREFIX,
 };
 
 fn open(dir: &Path) -> EncryptedFileStore {
@@ -122,10 +121,13 @@ fn error_display_is_static_and_secret_free() {
     let rendered = format!("{err}");
     assert!(!rendered.contains("PLAINTEXTNEEDLE"));
     assert!(!rendered.contains("wrong-pass"));
-    assert_eq!(
-        downcast_failure(&err),
-        Some(FileStoreFailure::WrongPassphrase)
-    );
+    // WrongPassphrase rides in `NoStorageAccess` with the typed error
+    // boxed as the source.
+    let recovered = match &err {
+        KeyringError::NoStorageAccess(src) => src.downcast_ref::<FileStoreError>(),
+        _ => None,
+    };
+    assert!(matches!(recovered, Some(FileStoreError::WrongPassphrase)));
 
     let inv = store.build(&service(w), "../bad", None).unwrap_err();
     match inv {

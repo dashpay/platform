@@ -8,8 +8,8 @@
 #![cfg(feature = "secrets")]
 
 use platform_wallet_storage::secrets::{
-    default_credential_store, EncryptedFileStore, FileStoreError, FileStoreFailure, SecretBytes,
-    SecretString, WalletId, SERVICE_PREFIX,
+    default_credential_store, EncryptedFileStore, FileStoreError, SecretBytes, SecretString,
+    WalletId, SERVICE_PREFIX,
 };
 
 #[test]
@@ -25,6 +25,6 @@ fn default_build_exposes_secrets_surface() {
     let _ = SERVICE_PREFIX.len();
     let _ = std::mem::size_of::<WalletId>();
     let _ = std::mem::size_of::<SecretBytes>();
-    let _ = std::mem::size_of::<FileStoreFailure>();
+    let _ = std::mem::size_of::<FileStoreError>();
     let _: fn() -> Result<_, keyring_core::Error> = default_credential_store;
 }

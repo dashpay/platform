@@ -19,7 +19,6 @@
 
 mod crypto;
 pub(crate) mod error;
-pub(crate) mod error_bridge;
 mod format;
 
 use std::any::Any;
@@ -35,7 +34,6 @@ use keyring_core::{Entry, Error as KeyringError, Result as KeyringResult};
 
 use crypto::{KdfParams, SALT_LEN};
 use error::FileStoreError;
-use error_bridge::into_keyring;
 use format::{Entry as VaultEntry, Header};
 
 use super::secret::{SecretBytes, SecretString};
@@ -251,8 +249,14 @@ impl EncryptedFileStoreInner {
         let mut new_entries = Vec::with_capacity(old_entries.len());
         for e in &old_entries {
             let aad = format::aad(format::FORMAT_VERSION, wallet_id.as_bytes(), &e.label);
-            let pt = crypto::open(&old_key, &e.nonce, &aad, &e.ciphertext)
-                .map_err(|_| FileStoreError::WrongPassphrase)?;
+            // `derive_and_verify` already proved the old passphrase via
+            // the header token, so an entry tag failure is corruption,
+            // not a wrong passphrase.
+            let pt =
+                crypto::open(&old_key, &e.nonce, &aad, &e.ciphertext).map_err(|err| match err {
+                    FileStoreError::Decrypt => FileStoreError::Corruption,
+                    other => other,
+                })?;
             let (nonce, ct) = crypto::seal(&new_key, &aad, pt.expose_secret())?;
             new_entries.push(VaultEntry {
                 label: e.label.clone(),
@@ -306,7 +310,10 @@ impl EncryptedFileStoreInner {
         let aad = format::aad(format::FORMAT_VERSION, wallet_id.as_bytes(), label);
         match crypto::open(&key, &entry.nonce, &aad, &entry.ciphertext) {
             Ok(pt) => Ok(Some(pt.expose_secret().to_vec())),
-            Err(FileStoreError::Decrypt) => Err(FileStoreError::WrongPassphrase),
+            // The header verify-token already passed, so the passphrase is
+            // correct: an entry tag failure here is corruption/tampering,
+            // not a wrong passphrase.
+            Err(FileStoreError::Decrypt) => Err(FileStoreError::Corruption),
             Err(e) => Err(e),
         }
     }
@@ -383,33 +390,27 @@ impl std::fmt::Debug for EncryptedFileCredential {
 impl CredentialApi for EncryptedFileCredential {
     fn set_secret(&self, secret: &[u8]) -> KeyringResult<()> {
         // Re-validate at every op (defence in depth, M-2 / SEC-REQ-4.3).
-        let _ = validated_label(&self.label)
-            .map_err(FileStoreError::from)
-            .map_err(into_keyring)?;
+        let _ = validated_label(&self.label).map_err(FileStoreError::from)?;
         self.store
             .put(&self.wallet_id, &self.label, secret)
-            .map_err(into_keyring)
+            .map_err(KeyringError::from)
     }
 
     fn get_secret(&self) -> KeyringResult<Vec<u8>> {
-        let _ = validated_label(&self.label)
-            .map_err(FileStoreError::from)
-            .map_err(into_keyring)?;
+        let _ = validated_label(&self.label).map_err(FileStoreError::from)?;
         match self.store.get(&self.wallet_id, &self.label) {
             Ok(Some(v)) => Ok(v),
             Ok(None) => Err(KeyringError::NoEntry),
-            Err(e) => Err(into_keyring(e)),
+            Err(e) => Err(e.into()),
         }
     }
 
     fn delete_credential(&self) -> KeyringResult<()> {
-        let _ = validated_label(&self.label)
-            .map_err(FileStoreError::from)
-            .map_err(into_keyring)?;
+        let _ = validated_label(&self.label).map_err(FileStoreError::from)?;
         match self.store.delete(&self.wallet_id, &self.label) {
             Ok(true) => Ok(()),
             Ok(false) => Err(KeyringError::NoEntry),
-            Err(e) => Err(into_keyring(e)),
+            Err(e) => Err(e.into()),
         }
     }
 
@@ -447,8 +448,7 @@ impl CredentialStoreApi for EncryptedFileStore {
     ) -> KeyringResult<Entry> {
         let wallet_id = parse_service(service)?;
         let label = validated_label(user)
-            .map_err(FileStoreError::from)
-            .map_err(into_keyring)?
+            .map_err(FileStoreError::from)?
             .to_string();
         let cred = EncryptedFileCredential {
             store: self.inner.clone(),
@@ -528,6 +528,24 @@ mod tests {
         s.build(&service, label, None).expect("build")
     }
 
+    /// Recover whether a projected SPI error came from a wrong
+    /// passphrase. `WrongPassphrase` rides in `NoStorageAccess` with the
+    /// typed `FileStoreError` boxed as the source.
+    fn is_wrong_passphrase(e: &KeyringError) -> bool {
+        matches!(
+            e,
+            KeyringError::NoStorageAccess(src)
+                if matches!(src.downcast_ref::<FileStoreError>(), Some(FileStoreError::WrongPassphrase))
+        )
+    }
+
+    /// Recover whether a projected SPI error signals entry corruption.
+    /// `Corruption` collapses into `BadStoreFormat` with the variant's
+    /// static `Display` text.
+    fn is_corruption(e: &KeyringError) -> bool {
+        matches!(e, KeyringError::BadStoreFormat(s) if *s == FileStoreError::Corruption.to_string())
+    }
+
     #[test]
     fn roundtrip_persists_across_reopen() {
         let dir = tempfile::tempdir().unwrap();
@@ -552,12 +570,7 @@ mod tests {
             .unwrap();
         let bad = EncryptedFileStore::open(dir.path(), SecretString::new("pw-wrong")).unwrap();
         let err = entry(&bad, wid(1), "seed").get_secret().unwrap_err();
-        // The boxed `FileStoreFailure::WrongPassphrase` rides in
-        // `NoStorageAccess` per the bridge (D1).
-        assert_eq!(
-            error_bridge::downcast_failure(&err),
-            Some(error_bridge::FileStoreFailure::WrongPassphrase)
-        );
+        assert!(is_wrong_passphrase(&err), "unexpected error: {err:?}");
         // The error renders without any plaintext.
         assert!(!format!("{err}").contains("super secret"));
     }
@@ -607,17 +620,10 @@ mod tests {
         }
         s.write_vault(&path, &header, &entries).unwrap();
         let err = entry(&s, wid(1), "labelB").get_secret().unwrap_err();
-        // Either WrongPassphrase (via header verify) or Decrypt — both
-        // signal a tampered ciphertext.
-        let downcast = error_bridge::downcast_failure(&err);
-        assert!(
-            matches!(
-                downcast,
-                Some(error_bridge::FileStoreFailure::WrongPassphrase)
-                    | Some(error_bridge::FileStoreFailure::Decrypt)
-            ),
-            "unexpected error: {err:?}"
-        );
+        // The header verify-token passes (correct passphrase), so the
+        // cross-label ciphertext swap surfaces as entry corruption, not
+        // a wrong passphrase.
+        assert!(is_corruption(&err), "unexpected error: {err:?}");
     }
 
     #[cfg(unix)]
@@ -645,10 +651,13 @@ mod tests {
         let path = s.vault_path(&wid(1));
         fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
         let err = entry(&s, wid(1), "seed").get_secret().unwrap_err();
-        assert_eq!(
-            error_bridge::downcast_failure(&err),
-            Some(error_bridge::FileStoreFailure::InsecurePermissions)
-        );
+        match &err {
+            KeyringError::BadStoreFormat(s) => assert_eq!(
+                *s,
+                FileStoreError::InsecurePermissions { mode: 0o644 }.to_string()
+            ),
+            other => panic!("expected BadStoreFormat, got {other:?}"),
+        }
     }
 
     #[test]
@@ -674,10 +683,7 @@ mod tests {
         assert!(stale.is_empty(), "rekey left stale files: {stale:?}");
         let old = EncryptedFileStore::open(dir.path(), SecretString::new("pw-correct")).unwrap();
         let err = entry(&old, wid(1), "seed").get_secret().unwrap_err();
-        assert_eq!(
-            error_bridge::downcast_failure(&err),
-            Some(error_bridge::FileStoreFailure::WrongPassphrase)
-        );
+        assert!(is_wrong_passphrase(&err), "unexpected error: {err:?}");
     }
 
     #[test]
@@ -709,10 +715,7 @@ mod tests {
         let err = entry(&wrong, wid(1), "seed2")
             .set_secret(b"intruder")
             .unwrap_err();
-        assert_eq!(
-            error_bridge::downcast_failure(&err),
-            Some(error_bridge::FileStoreFailure::WrongPassphrase)
-        );
+        assert!(is_wrong_passphrase(&err), "unexpected error: {err:?}");
         // Original vault still fully readable with the correct pass.
         let ok = store(dir.path());
         assert_eq!(entry(&ok, wid(1), "seed").get_secret().unwrap(), b"orig");
@@ -731,20 +734,61 @@ mod tests {
             .unwrap();
         let wrong = EncryptedFileStore::open(dir.path(), SecretString::new("pw-wrong")).unwrap();
         let get_err = entry(&wrong, wid(1), "seed").get_secret().unwrap_err();
-        assert_eq!(
-            error_bridge::downcast_failure(&get_err),
-            Some(error_bridge::FileStoreFailure::WrongPassphrase)
+        assert!(
+            is_wrong_passphrase(&get_err),
+            "unexpected error: {get_err:?}"
         );
         let del_err = entry(&wrong, wid(1), "seed")
             .delete_credential()
             .unwrap_err();
-        assert_eq!(
-            error_bridge::downcast_failure(&del_err),
-            Some(error_bridge::FileStoreFailure::WrongPassphrase)
+        assert!(
+            is_wrong_passphrase(&del_err),
+            "unexpected error: {del_err:?}"
         );
         // delete must not have mutated the vault.
         let ok = store(dir.path());
         assert_eq!(entry(&ok, wid(1), "seed").get_secret().unwrap(), b"orig");
+    }
+
+    #[test]
+    fn get_corruption_after_verify_token_is_not_wrong_passphrase() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = store(dir.path());
+        entry(&s, wid(1), "seed").set_secret(b"value").unwrap();
+        // Unlock works with the correct passphrase.
+        assert_eq!(entry(&s, wid(1), "seed").get_secret().unwrap(), b"value");
+        // Bit-flip the entry ciphertext on disk; the header verify-token
+        // is untouched, so the passphrase is still correct.
+        let path = s.vault_path(&wid(1));
+        let (header, mut entries) = s.read_vault(&path).unwrap().unwrap();
+        entries[0].ciphertext[0] ^= 0x01;
+        s.write_vault(&path, &header, &entries).unwrap();
+        let err = entry(&s, wid(1), "seed").get_secret().unwrap_err();
+        assert!(is_corruption(&err), "unexpected error: {err:?}");
+        assert!(
+            !is_wrong_passphrase(&err),
+            "must not be WrongPassphrase: {err:?}"
+        );
+    }
+
+    #[test]
+    fn rekey_corruption_on_existing_entry_is_not_wrong_passphrase() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut s = store(dir.path());
+        entry(&s, wid(1), "seed").set_secret(b"value").unwrap();
+        // Corrupt the entry ciphertext but leave the verify-token intact.
+        let path = s.vault_path(&wid(1));
+        let (header, mut entries) = s.read_vault(&path).unwrap().unwrap();
+        entries[0].ciphertext[0] ^= 0x01;
+        s.write_vault(&path, &header, &entries).unwrap();
+        // Rekey with the *correct* old passphrase: header verify passes,
+        // the entry re-encrypt fails with Corruption, not WrongPassphrase
+        // nor Busy.
+        let err = s.rekey(wid(1), SecretString::new("pw-new")).unwrap_err();
+        assert!(
+            matches!(err, FileStoreError::Corruption),
+            "unexpected error: {err:?}"
+        );
     }
 
     #[test]

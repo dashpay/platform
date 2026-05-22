@@ -15,9 +15,8 @@
 //! - [`SecretBytes`] / [`SecretString`] — zeroize-on-drop wrappers
 //!   applied at the consumer seam (the upstream SPI returns bare
 //!   `Vec<u8>` from `get_secret`; we re-wrap immediately).
-//! - [`FileStoreError`] / [`FileStoreFailure`] — file-backend
-//!   construction errors + the unit-only marker bridged into
-//!   `keyring_core::Error` for the `CredentialApi` seam.
+//! - [`FileStoreError`] — file-backend error type, projected into
+//!   `keyring_core::Error` via `From` for the `CredentialApi` seam.
 //!
 //! [`CredentialApi`]: keyring_core::api::CredentialApi
 //! [`CredentialStoreApi`]: keyring_core::api::CredentialStoreApi
@@ -50,7 +49,6 @@ mod validate;
 mod memory;
 
 pub use file::error::FileStoreError;
-pub use file::error_bridge::{downcast_failure, FileStoreFailure};
 pub use file::{EncryptedFileCredential, EncryptedFileStore, SERVICE_PREFIX};
 pub use keyring::default_credential_store;
 pub use secret::{SecretBytes, SecretString};
