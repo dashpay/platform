@@ -103,11 +103,18 @@ CF_EXTERN_C_BEGIN
 @class GetDocumentsResponse_GetDocumentsResponseV0;
 @class GetDocumentsResponse_GetDocumentsResponseV0_Documents;
 @class GetDocumentsResponse_GetDocumentsResponseV1;
+@class GetDocumentsResponse_GetDocumentsResponseV1_AverageAggregate;
+@class GetDocumentsResponse_GetDocumentsResponseV1_AverageEntries;
+@class GetDocumentsResponse_GetDocumentsResponseV1_AverageEntry;
+@class GetDocumentsResponse_GetDocumentsResponseV1_AverageResults;
 @class GetDocumentsResponse_GetDocumentsResponseV1_CountEntries;
 @class GetDocumentsResponse_GetDocumentsResponseV1_CountEntry;
 @class GetDocumentsResponse_GetDocumentsResponseV1_CountResults;
 @class GetDocumentsResponse_GetDocumentsResponseV1_Documents;
 @class GetDocumentsResponse_GetDocumentsResponseV1_ResultData;
+@class GetDocumentsResponse_GetDocumentsResponseV1_SumEntries;
+@class GetDocumentsResponse_GetDocumentsResponseV1_SumEntry;
+@class GetDocumentsResponse_GetDocumentsResponseV1_SumResults;
 @class GetEpochsInfoRequest_GetEpochsInfoRequestV0;
 @class GetEpochsInfoResponse_GetEpochsInfoResponseV0;
 @class GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfo;
@@ -3314,10 +3321,24 @@ typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_Result_OneOfCase) {
  * canonical without flattening to a three-variant oneof.
  *
  * Wire shape by `request.select` × `group_by` × `prove`:
- *   - `select=DOCUMENTS` (no prove)         → `result.data.documents`.
- *   - `select=COUNT, group_by=[]` (no prove) → `result.data.counts.aggregate_count`.
- *   - `select=COUNT, group_by=[…]` (no prove) → `result.data.counts.entries`.
- *   - any select (prove)                     → `result.proof`.
+ *   - `select=DOCUMENTS` (no prove)            → `result.data.documents`.
+ *   - `select=COUNT, group_by=[]` (no prove)   → `result.data.counts.aggregate_count`.
+ *   - `select=COUNT, group_by=[…]` (no prove)  → `result.data.counts.entries`.
+ *   - `select=SUM, group_by=[]` (no prove)     → `result.data.sums.aggregate_sum` (scaffold-only: dispatcher returns NotYetImplemented).
+ *   - `select=SUM, group_by=[…]` (no prove)    → `result.data.sums.entries` (scaffold-only).
+ *   - `select=AVG, group_by=[]` (no prove)     → `result.data.averages.aggregate_average` (scaffold-only).
+ *   - `select=AVG, group_by=[…]` (no prove)    → `result.data.averages.entries` (scaffold-only).
+ *   - any select (prove)                        → `result.proof` (DOCUMENTS / COUNT only — SUM / AVG prove paths are scaffold-only).
+ *
+ * **SUM / AVG status**: the request/response wire surfaces are
+ * stable so callers can encode against them today, but the
+ * server-side executor returns `NotYetImplemented` until the
+ * rs-drive executor bodies + grovedb PR 670's
+ * `verify_aggregate_sum_query` / `verify_aggregate_count_and_sum_query`
+ * primitives land in a follow-up. The `data.sums` / `data.averages`
+ * variants documented above are the response shapes the dispatcher
+ * *will* emit once execution lands; today every SUM / AVG request
+ * surfaces a typed not-implemented error to the caller.
  *
  * `CountResults` / `CountEntry` / `CountEntries` are nested in
  * `GetDocumentsResponseV1` rather than re-exported from a
@@ -3451,23 +3472,227 @@ GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1_CountResults : 
  **/
 void GetDocumentsResponse_GetDocumentsResponseV1_CountResults_ClearVariantOneOfCase(GetDocumentsResponse_GetDocumentsResponseV1_CountResults *message);
 
+#pragma mark - GetDocumentsResponse_GetDocumentsResponseV1_SumEntry
+
+typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_SumEntry_FieldNumber) {
+  GetDocumentsResponse_GetDocumentsResponseV1_SumEntry_FieldNumber_InKey = 1,
+  GetDocumentsResponse_GetDocumentsResponseV1_SumEntry_FieldNumber_Key = 2,
+  GetDocumentsResponse_GetDocumentsResponseV1_SumEntry_FieldNumber_Sum = 3,
+};
+
+/**
+ * Sum-side analog of `CountEntry` — one per matched key for
+ * `select=SUM, group_by=[...]` queries. `in_key` carries the
+ * outer prefix value for compound `(In, range)` shapes; `key`
+ * carries the terminator value. `sum` is signed because grovedb's
+ * SumTree values are `i64` and sums can in principle be negative
+ * (deliberate i64-overflow signaling — see the sum-tree book
+ * chapter's "Signed `i64` overflow" note). For tip-jar-style
+ * non-negative sums this stays >= 0 in practice.
+ **/
+GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1_SumEntry : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *inKey;
+/** Test to see if @c inKey has been set. */
+@property(nonatomic, readwrite) BOOL hasInKey;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *key;
+
+/**
+ * `jstype = JS_STRING` so JS/Web clients receive a string
+ * and don't round large sums to the nearest Number.
+ **/
+@property(nonatomic, readwrite) int64_t sum;
+
+@end
+
+#pragma mark - GetDocumentsResponse_GetDocumentsResponseV1_SumEntries
+
+typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_SumEntries_FieldNumber) {
+  GetDocumentsResponse_GetDocumentsResponseV1_SumEntries_FieldNumber_EntriesArray = 1,
+};
+
+GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1_SumEntries : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetDocumentsResponse_GetDocumentsResponseV1_SumEntry*> *entriesArray;
+/** The number of items in @c entriesArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger entriesArray_Count;
+
+@end
+
+#pragma mark - GetDocumentsResponse_GetDocumentsResponseV1_SumResults
+
+typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_SumResults_FieldNumber) {
+  GetDocumentsResponse_GetDocumentsResponseV1_SumResults_FieldNumber_AggregateSum = 1,
+  GetDocumentsResponse_GetDocumentsResponseV1_SumResults_FieldNumber_Entries = 2,
+};
+
+typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_SumResults_Variant_OneOfCase) {
+  GetDocumentsResponse_GetDocumentsResponseV1_SumResults_Variant_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetDocumentsResponse_GetDocumentsResponseV1_SumResults_Variant_OneOfCase_AggregateSum = 1,
+  GetDocumentsResponse_GetDocumentsResponseV1_SumResults_Variant_OneOfCase_Entries = 2,
+};
+
+/**
+ * Non-proof sum result. Same shape as `CountResults` for the
+ * sum surface — the variants mirror count's:
+ *   * `aggregate_sum`: `select=SUM, group_by=[]` — single signed
+ *     sum with no per-key breakdown.
+ *   * `entries`: `select=SUM, group_by=[…]` — one SumEntry per
+ *     distinct group.
+ **/
+GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1_SumResults : GPBMessage
+
+@property(nonatomic, readonly) GetDocumentsResponse_GetDocumentsResponseV1_SumResults_Variant_OneOfCase variantOneOfCase;
+
+@property(nonatomic, readwrite) int64_t aggregateSum;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentsResponse_GetDocumentsResponseV1_SumEntries *entries;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'variant'.
+ **/
+void GetDocumentsResponse_GetDocumentsResponseV1_SumResults_ClearVariantOneOfCase(GetDocumentsResponse_GetDocumentsResponseV1_SumResults *message);
+
+#pragma mark - GetDocumentsResponse_GetDocumentsResponseV1_AverageEntry
+
+typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_AverageEntry_FieldNumber) {
+  GetDocumentsResponse_GetDocumentsResponseV1_AverageEntry_FieldNumber_InKey = 1,
+  GetDocumentsResponse_GetDocumentsResponseV1_AverageEntry_FieldNumber_Key = 2,
+  GetDocumentsResponse_GetDocumentsResponseV1_AverageEntry_FieldNumber_Count = 3,
+  GetDocumentsResponse_GetDocumentsResponseV1_AverageEntry_FieldNumber_Sum = 4,
+};
+
+/**
+ * Average-side analog of `SumEntry` — one per matched key for
+ * `select=AVG, group_by=[…]` queries. Each entry carries BOTH
+ * the count and the sum for its group; the client divides
+ * `sum / count` to compute the actual average.
+ *
+ * Why no `average` field on the wire? Returning the (count, sum)
+ * pair preserves full precision and lets the client pick the
+ * representation it wants (integer-truncated division, floating-
+ * point, decimal). Returning a single pre-computed `average`
+ * would force the server to choose, and any choice loses
+ * information for callers that wanted a different one.
+ *
+ * This shape is produced by grovedb's `AggregateCountAndSumOnRange`
+ * primitive (one root-hash-committed traversal returning both
+ * metrics) which lands as part of grovedb PR 670 alongside the
+ * PCPS (`ProvableCountProvableSumTree`) tree element.
+ **/
+GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1_AverageEntry : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *inKey;
+/** Test to see if @c inKey has been set. */
+@property(nonatomic, readwrite) BOOL hasInKey;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *key;
+
+/**
+ * `jstype = JS_STRING` on both fields so JS/Web clients receive
+ * strings and don't lose precision on counts/sums exceeding
+ * `Number.MAX_SAFE_INTEGER`.
+ **/
+@property(nonatomic, readwrite) uint64_t count;
+
+@property(nonatomic, readwrite) int64_t sum;
+
+@end
+
+#pragma mark - GetDocumentsResponse_GetDocumentsResponseV1_AverageEntries
+
+typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_AverageEntries_FieldNumber) {
+  GetDocumentsResponse_GetDocumentsResponseV1_AverageEntries_FieldNumber_EntriesArray = 1,
+};
+
+GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1_AverageEntries : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetDocumentsResponse_GetDocumentsResponseV1_AverageEntry*> *entriesArray;
+/** The number of items in @c entriesArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger entriesArray_Count;
+
+@end
+
+#pragma mark - GetDocumentsResponse_GetDocumentsResponseV1_AverageAggregate
+
+typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_AverageAggregate_FieldNumber) {
+  GetDocumentsResponse_GetDocumentsResponseV1_AverageAggregate_FieldNumber_Count = 1,
+  GetDocumentsResponse_GetDocumentsResponseV1_AverageAggregate_FieldNumber_Sum = 2,
+};
+
+/**
+ * Aggregate average across all matched documents (no group_by).
+ * Same `(count, sum)` shape as a single entry — the client
+ * computes `avg = sum / count` itself.
+ **/
+GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1_AverageAggregate : GPBMessage
+
+@property(nonatomic, readwrite) uint64_t count;
+
+@property(nonatomic, readwrite) int64_t sum;
+
+@end
+
+#pragma mark - GetDocumentsResponse_GetDocumentsResponseV1_AverageResults
+
+typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_AverageResults_FieldNumber) {
+  GetDocumentsResponse_GetDocumentsResponseV1_AverageResults_FieldNumber_AggregateAverage = 1,
+  GetDocumentsResponse_GetDocumentsResponseV1_AverageResults_FieldNumber_Entries = 2,
+};
+
+typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_AverageResults_Variant_OneOfCase) {
+  GetDocumentsResponse_GetDocumentsResponseV1_AverageResults_Variant_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetDocumentsResponse_GetDocumentsResponseV1_AverageResults_Variant_OneOfCase_AggregateAverage = 1,
+  GetDocumentsResponse_GetDocumentsResponseV1_AverageResults_Variant_OneOfCase_Entries = 2,
+};
+
+/**
+ * Non-proof average result. Same outer shape as
+ * `CountResults` / `SumResults`; the variants mirror them:
+ *   * `aggregate_average`: `select=AVG, group_by=[]` — single
+ *     `(count, sum)` pair with no per-key breakdown.
+ *   * `entries`: `select=AVG, group_by=[…]` — one AverageEntry
+ *     per distinct group, each carrying its own `(count, sum)`.
+ **/
+GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1_AverageResults : GPBMessage
+
+@property(nonatomic, readonly) GetDocumentsResponse_GetDocumentsResponseV1_AverageResults_Variant_OneOfCase variantOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentsResponse_GetDocumentsResponseV1_AverageAggregate *aggregateAverage;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentsResponse_GetDocumentsResponseV1_AverageEntries *entries;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'variant'.
+ **/
+void GetDocumentsResponse_GetDocumentsResponseV1_AverageResults_ClearVariantOneOfCase(GetDocumentsResponse_GetDocumentsResponseV1_AverageResults *message);
+
 #pragma mark - GetDocumentsResponse_GetDocumentsResponseV1_ResultData
 
 typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_ResultData_FieldNumber) {
   GetDocumentsResponse_GetDocumentsResponseV1_ResultData_FieldNumber_Documents = 1,
   GetDocumentsResponse_GetDocumentsResponseV1_ResultData_FieldNumber_Counts = 2,
+  GetDocumentsResponse_GetDocumentsResponseV1_ResultData_FieldNumber_Sums = 3,
+  GetDocumentsResponse_GetDocumentsResponseV1_ResultData_FieldNumber_Averages = 4,
 };
 
 typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_ResultData_Variant_OneOfCase) {
   GetDocumentsResponse_GetDocumentsResponseV1_ResultData_Variant_OneOfCase_GPBUnsetOneOfCase = 0,
   GetDocumentsResponse_GetDocumentsResponseV1_ResultData_Variant_OneOfCase_Documents = 1,
   GetDocumentsResponse_GetDocumentsResponseV1_ResultData_Variant_OneOfCase_Counts = 2,
+  GetDocumentsResponse_GetDocumentsResponseV1_ResultData_Variant_OneOfCase_Sums = 3,
+  GetDocumentsResponse_GetDocumentsResponseV1_ResultData_Variant_OneOfCase_Averages = 4,
 };
 
 /**
  * Non-proof result wrapper. The outer `oneof result` switches
  * between this and `proof`; this inner oneof switches between
- * the two non-proof shapes the v1 surface can return.
+ * the four non-proof shapes the v1 surface can return.
  **/
 GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1_ResultData : GPBMessage
 
@@ -3476,6 +3701,27 @@ GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1_ResultData : GP
 @property(nonatomic, readwrite, strong, null_resettable) GetDocumentsResponse_GetDocumentsResponseV1_Documents *documents;
 
 @property(nonatomic, readwrite, strong, null_resettable) GetDocumentsResponse_GetDocumentsResponseV1_CountResults *counts;
+
+/**
+ * Sum-aggregate result. Routed when the request's
+ * `select.function == SUM` and the dispatcher's
+ * [`DriveDocumentSumQuery`] (in rs-drive) returns a
+ * non-proof variant. The schema field name (`sums`) parallels
+ * `counts` above; field numbers stay 1/2/3/4 per the proto-
+ * wire-stability rule (additions only, never renumbers).
+ **/
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentsResponse_GetDocumentsResponseV1_SumResults *sums;
+
+/**
+ * Average-aggregate result. Routed when the request's
+ * `select.function == AVG`. The dispatcher returns the
+ * `(count, sum)` pair grovedb's `AggregateCountAndSumOnRange`
+ * primitive produces in one root-hash-committed traversal;
+ * the client divides to obtain the actual average. See
+ * `book/src/drive/average-index-examples.md` for the design
+ * and the grades-contract worked example.
+ **/
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentsResponse_GetDocumentsResponseV1_AverageResults *averages;
 
 @end
 

@@ -115,4 +115,45 @@ impl OrchardKeySet {
     pub fn prepared_ivk(&self) -> PreparedIncomingViewingKey {
         PreparedIncomingViewingKey::new(&self.incoming_viewing_key)
     }
+
+    /// Strip the spend-authorizing key and return only the
+    /// viewing-grade material. Used to populate the
+    /// network-scoped shielded coordinator's account registry —
+    /// the coordinator runs sync (trial-decrypt + tree append +
+    /// nullifier scan), none of which needs spend authority, so
+    /// keeping the ASK on the per-wallet side preserves the
+    /// privilege separation. Spend operations re-attach the ASK
+    /// by passing the full [`OrchardKeySet`] back into the
+    /// coordinator's spend methods at call time.
+    pub fn viewing_keys(&self) -> AccountViewingKeys {
+        AccountViewingKeys {
+            full_viewing_key: self.full_viewing_key.clone(),
+            incoming_viewing_key: self.incoming_viewing_key.clone(),
+            prepared_ivk: self.prepared_ivk(),
+            outgoing_viewing_key: self.outgoing_viewing_key.clone(),
+            default_address: self.default_address,
+        }
+    }
+}
+
+/// Viewing-grade subset of an [`OrchardKeySet`] — the material
+/// needed to detect, decrypt, and recover Orchard notes, with no
+/// ability to authorize a spend.
+///
+/// The network-scoped shielded coordinator holds these for every
+/// bound `(walletId, accountIndex)`; it never sees a
+/// `SpendAuthorizingKey`. Spend operations are driven from the
+/// per-wallet side, which holds the full [`OrchardKeySet`] (ASK
+/// included) and passes it into the coordinator's spend methods
+/// only for the duration of that call.
+#[derive(Clone)]
+pub struct AccountViewingKeys {
+    pub full_viewing_key: FullViewingKey,
+    pub incoming_viewing_key: IncomingViewingKey,
+    /// Pre-computed for fast trial-decrypt across many notes per
+    /// sync pass. Cached at registration time so the sync loop
+    /// doesn't pay [`PreparedIncomingViewingKey::new`] per pass.
+    pub prepared_ivk: PreparedIncomingViewingKey,
+    pub outgoing_viewing_key: OutgoingViewingKey,
+    pub default_address: PaymentAddress,
 }

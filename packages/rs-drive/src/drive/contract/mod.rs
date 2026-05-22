@@ -10,7 +10,7 @@ mod contract_fetch_info;
 #[cfg(feature = "server")]
 mod estimation_costs;
 #[cfg(feature = "server")]
-mod get_fetch;
+pub(crate) mod get_fetch;
 #[cfg(feature = "server")]
 mod insert;
 #[cfg(feature = "server")]
@@ -29,6 +29,8 @@ pub mod test_helpers;
 mod update;
 #[cfg(feature = "server")]
 pub use contract_fetch_info::*;
+#[cfg(feature = "server")]
+pub use get_fetch::ContractFetchOutcome;
 
 /// How many contracts to fetch at once. This is an arbitrary number and is needed to prevent
 /// the server from being overloaded with requests.
