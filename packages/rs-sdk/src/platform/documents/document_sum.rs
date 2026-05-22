@@ -87,7 +87,8 @@ impl FromProof<DocumentQuery> for DocumentSum {
 }
 
 impl Fetch for DocumentSum {
-    type Request = super::document_query::DocumentQuery;
+    type Query = super::document_query::DocumentQuery;
+    type Request = dapi_grpc::platform::v0::GetDocumentsRequest;
 }
 
 #[cfg(test)]

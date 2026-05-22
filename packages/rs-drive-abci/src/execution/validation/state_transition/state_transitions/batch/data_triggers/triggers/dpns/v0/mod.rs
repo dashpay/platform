@@ -44,10 +44,17 @@ pub const MAX_PRINTABLE_DOMAIN_NAME_LENGTH: usize = 253;
 /// # Returns
 ///
 /// A `DataTriggerExecutionResult` indicating the success or failure of the trigger execution.
+// PROTOCOL_VERSION_11 consensus-safety: the body of this function is
+// byte-identical to v3.1-dev. The only signature change is the
+// `context` parameter: pre-PR `&DataTriggerExecutionContext`, now
+// `&mut DataTriggerExecutionContext` (required by the new
+// `DataTrigger` fn type that `_v1` triggers need). The body never
+// mutates the context (no `add_operation` calls, only reads via
+// `in_dry_run()` and field accesses), so PV11 behavior is identical.
 #[inline(always)]
 pub(super) fn create_domain_data_trigger_v0(
     document_transition: &DocumentTransitionAction,
-    context: &DataTriggerExecutionContext<'_>,
+    context: &mut DataTriggerExecutionContext<'_>,
     platform_version: &PlatformVersion,
 ) -> Result<DataTriggerExecutionResult, Error> {
     let data_contract_fetch_info = document_transition.base().data_contract_fetch_info();
@@ -439,10 +446,12 @@ mod test {
 
         transition_execution_context.enable_dry_run();
 
-        let data_trigger_context = DataTriggerExecutionContext {
+        let trigger_block_info = BlockInfo::default();
+        let mut data_trigger_context = DataTriggerExecutionContext {
             platform: &platform_ref,
+            block_info: &trigger_block_info,
             owner_id: &owner_id,
-            state_transition_execution_context: &transition_execution_context,
+            state_transition_execution_context: &mut transition_execution_context,
             transaction: None,
         };
 
@@ -451,10 +460,22 @@ mod test {
                                                                                                                document_create_transition, &BlockInfo::default(), 0, |_identifier| {
                     Ok(Arc::new(DataContractFetchInfo::dpns_contract_fixture(platform_version.protocol_version)))
                 }, platform_version).expect("expected to create action").0.into_data().expect("expected to be a valid transition").as_document_action().expect("expected document action"),
-            &data_trigger_context,
+            &mut data_trigger_context,
             platform_version,
         )
         .expect("the execution result should be returned");
+
+        // PROTOCOL_VERSION_11 byte-identity assertion: _v0 must NOT add
+        // any operations to the execution_context. If a future refactor
+        // accidentally re-introduces billing in _v0, this assertion
+        // fails and PV11 chain replay would diverge.
+        assert!(
+            data_trigger_context
+                .state_transition_execution_context
+                .operations_slice()
+                .is_empty(),
+            "create_domain_data_trigger_v0 must not add operations (PV11 byte-identity)"
+        );
         assert!(result.is_valid());
     }
 }
