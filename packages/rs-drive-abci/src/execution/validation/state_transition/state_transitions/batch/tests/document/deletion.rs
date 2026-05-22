@@ -31,7 +31,7 @@ mod deletion_tests {
     /// Helper for the paired happy-path delete fee test. Same scenario is
     /// exercised at PROTOCOL_VERSION_11 (transformer reads dropped) and at
     /// PROTOCOL_VERSION_12+ (transformer reads billed via outer execution
-    /// context — see B7 in `docs/paid-error-fee-audit.md`).
+    /// context).
     async fn run_document_delete_on_document_type_that_is_mutable_and_can_be_deleted_at_protocol_version(
         protocol_version: dpp::version::ProtocolVersion,
         expected_processing_fee: dpp::fee::Credits,
@@ -735,9 +735,8 @@ mod deletion_tests {
     }
 
     /// Helper for the paired delete-that-does-not-yet-exist fee test.
-    /// PROTOCOL_VERSION_11 yields the pre-B7 bump-only fee (transformer
-    /// reads dropped); PROTOCOL_VERSION_12+ adds the reads — see B7 in
-    /// `docs/paid-error-fee-audit.md`.
+    /// PROTOCOL_VERSION_11 yields the pre-fix bump-only fee (transformer
+    /// reads dropped); PROTOCOL_VERSION_12+ adds the reads.
     async fn run_document_delete_that_does_not_yet_exist_at_protocol_version(
         protocol_version: dpp::version::ProtocolVersion,
         expected_processing_fee: dpp::fee::Credits,

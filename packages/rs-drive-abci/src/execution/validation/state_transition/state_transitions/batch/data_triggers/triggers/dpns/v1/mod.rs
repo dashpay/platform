@@ -258,10 +258,10 @@ pub(super) fn create_domain_data_trigger_v1(
         //        with the real cost. The user now pays for the trigger's
         //        grovedb read on the outer execution_context.
         //
-        // Why the change: closes T1 from `docs/paid-error-fee-audit.md`
-        // — DPNS subdomain registrations were a free DoS surface on
-        // PROTOCOL_VERSION_11 because the trigger's parent-domain
-        // lookup ran on the chain but the user paid nothing for it.
+        // Why the change: DPNS subdomain registrations were a free DoS
+        // surface on PROTOCOL_VERSION_11 because the trigger's
+        // parent-domain lookup ran on the chain but the user paid
+        // nothing for it.
         let parent_domain_outcome = context.platform.drive.query_documents(
             drive_query,
             Some(context.platform.state.last_committed_block_epoch_ref()),

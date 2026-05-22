@@ -83,11 +83,11 @@ pub(super) fn delete_withdrawal_data_trigger_v1(
     //   _v1: `.query_documents(drive_query, Some(epoch), ...)` and
     //        immediately bill via `add_operation`.
     //
-    // Why the change: closes T4 from `docs/paid-error-fee-audit.md`.
-    // Every withdrawal-document delete ran a grovedb lookup on PV11
-    // that the user didn't pay for. The fetched document is
-    // epoch-independent so changing `None` to `Some(epoch)` only
-    // affects the cost field — not the validation outcome.
+    // Why the change: every withdrawal-document delete ran a grovedb
+    // lookup on PV11 that the user didn't pay for. The fetched
+    // document is epoch-independent so changing `None` to
+    // `Some(epoch)` only affects the cost field — not the validation
+    // outcome.
     let withdrawals_outcome = context.platform.drive.query_documents(
         drive_query,
         Some(context.platform.state.last_committed_block_epoch_ref()),

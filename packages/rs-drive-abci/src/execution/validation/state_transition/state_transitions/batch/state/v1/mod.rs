@@ -58,11 +58,11 @@ impl DocumentsBatchStateTransitionStateValidationV1 for BatchTransition {
         //        `ValidationOperation::add_many_to_fee_result` plumbing
         //        in `execute_event/v0/mod.rs`.
         //
-        // Why the change: closes B7 from `docs/paid-error-fee-audit.md`
-        // — the dominant transformer-phase fee leak. Token group action
-        // confirmer fees, for example, were silently dropped on PV11
-        // because the local-ctx-drop swallowed the 3 grovedb reads
-        // (~30K credits) `try_from_borrowed_base_transition_with_contract_lookup`
+        // Why the change: closes the dominant transformer-phase fee
+        // leak. Token group action confirmer fees, for example, were
+        // silently dropped on PV11 because the local-ctx-drop
+        // swallowed the 3 grovedb reads (~30K credits)
+        // `try_from_borrowed_base_transition_with_contract_lookup`
         // performs.
         //
         // The transformer body itself (`try_into_action_v0` and its

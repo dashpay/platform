@@ -76,11 +76,10 @@ pub(super) fn create_contact_request_data_trigger_v1(
     //        `(Option<Credits>, FeeResult)`. Bill the FeeResult via
     //        `add_operation`.
     //
-    // Why the change: closes T3 from `docs/paid-error-fee-audit.md`.
-    // Contact-request creates would do a grovedb identity-balance
-    // lookup for free on PV11. `apply: true` matches `_v0`'s stateful
-    // query (not the stateless estimated-cost path) so the balance
-    // value returned is byte-identical to `_v0`.
+    // Why the change: contact-request creates would do a grovedb
+    // identity-balance lookup for free on PV11. `apply: true` matches
+    // `_v0`'s stateful query (not the stateless estimated-cost path)
+    // so the balance value returned is byte-identical to `_v0`.
     let (to_identity, balance_fee_result) =
         context.platform.drive.fetch_identity_balance_with_costs(
             to_user_id.to_buffer(),
