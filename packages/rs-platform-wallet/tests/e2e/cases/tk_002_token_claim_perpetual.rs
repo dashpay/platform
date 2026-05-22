@@ -18,10 +18,10 @@
 //! only needs *some* boundary to have elapsed. Platform blocks on
 //! testnet can stretch well past the nominal ~3 s/block under light
 //! load, so the wait below is sized for the worst-case observed
-//! cadence at the 5-block interval floor. The test is `#[ignore]`
+//! cadence at the 5-block interval floor. The test is gated behind the `e2e` cargo feature
 //! (nightly only) so the long wall clock doesn't impact CI.
 //!
-//! Gated behind `#[ignore]` — same operator-env reasoning as the
+//! Gated behind the `e2e` cargo feature — same operator-env reasoning as the
 //! transfer case (`PLATFORM_WALLET_E2E_BANK_MNEMONIC` + live testnet
 //! DAPI access).
 
@@ -66,7 +66,6 @@ const INTERVAL_BLOCKS: u64 = 5;
 const PERPETUAL_WAIT: Duration = Duration::from_secs(240);
 
 #[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
-#[ignore = "TK-002 long-runtime perpetual claim (≈4 min wall-clock to observe a 5-block testnet cycle); requires PLATFORM_WALLET_E2E_BANK_MNEMONIC and live testnet access. Intermittent `wait_for_balance` timeouts share the upstream `rs-sdk` address-sync race pinned by Found-025 — see TEST_SPEC.md. Test is correct; flips green when upstream lands the fix. Run with: `cargo test -- --ignored`"]
 async fn tk_002_token_claim_perpetual_distribution() {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(
@@ -108,7 +107,7 @@ async fn tk_002_token_claim_perpetual_distribution() {
 
     // Wait for at least one interval boundary to advance past the
     // contract-creation block height. No height-poll helper exists in
-    // the e2e harness today, so we sleep — the test is `#[ignore]`d
+    // the e2e harness today, so we sleep — the test is gated behind the `e2e` cargo feature
     // (nightly only), so the wall-clock cost stays out of CI.
     tracing::info!(
         target: "platform_wallet::e2e::cases::tk_002",

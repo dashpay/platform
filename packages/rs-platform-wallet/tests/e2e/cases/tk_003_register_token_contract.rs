@@ -18,7 +18,7 @@
 //! to pick up the signing-key-class upgrade and is asserted here as
 //! a hard `panic!` so it surfaces unambiguously in CI logs.
 //!
-//! Gated behind `#[ignore]` so a stock `cargo test -p platform-wallet`
+//! Gated behind the `e2e` cargo feature so a stock `cargo test -p platform-wallet`
 //! stays green for contributors and CI jobs that lack a funded
 //! testnet bank wallet, live DAPI access, and the operator `.env`.
 //! See `cases/transfer.rs` for the operator-setup template.
@@ -43,7 +43,6 @@ use crate::framework::tokens::{DEFAULT_DECIMALS, DEFAULT_MAX_SUPPLY, TK_OWNER_FU
 const FETCH_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
-#[ignore = "TK-003: requires PLATFORM_WALLET_E2E_BANK_MNEMONIC and live testnet access; run with `cargo test -- --ignored`"]
 async fn tk_003_register_token_contract() {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(

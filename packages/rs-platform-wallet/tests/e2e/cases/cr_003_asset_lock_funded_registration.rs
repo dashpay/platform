@@ -1,7 +1,7 @@
 //! CR-003 — Asset-lock-funded identity registration (full path).
 //!
 //! Spec: `tests/e2e/TEST_SPEC.md` (### Core (CR) → CR-003).
-//! Pinned status: STUB — full test body implemented, `#[ignore]`-tagged
+//! Pinned status: STUB — full test body implemented, gated behind the `e2e` cargo feature
 //! behind testnet env vars + bank Core funding. SPV runtime is live
 //! (Task #15) and `BankWallet::send_core_to` is wired (CR-003
 //! prerequisite that landed with `ID-007`). The remaining gating is a
@@ -68,15 +68,6 @@ const ASSET_LOCK_AMOUNT: u64 = 100_000_000;
 /// `wallet_factory::register_identity_from_addresses` (30 s).
 const IDENTITY_VISIBILITY_TIMEOUT: Duration = Duration::from_secs(60);
 
-#[ignore = "CR-003 — needs testnet + bank Core (Layer-1) pre-funding. \
-            Framework gates cleared: SPV runtime live (Task #15), \
-            BankWallet::send_core_to wired (ID-007 / CR-003), and \
-            setup_with_core_funded_test_wallet helper landed. End-to-end \
-            run requires at least TEST_WALLET_CORE_FUNDING + \
-            CORE_TX_FEE_RESERVE duffs on the bank's primary Core receive \
-            address (logged at framework init under target \
-            platform_wallet::e2e::bank). Mirrors DET's \
-            test_tc004_create_registration_asset_lock."]
 #[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
 async fn cr_003_asset_lock_funded_registration() {
     let _ = tracing_subscriber::fmt()

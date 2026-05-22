@@ -47,7 +47,6 @@ const MINT_AMOUNT_B: u64 = 50_000;
 const EXPECTED_TOTAL: u64 = MINT_AMOUNT_A + MINT_AMOUNT_B;
 
 #[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
-#[ignore = "requires PLATFORM_WALLET_E2E_BANK_MNEMONIC and live testnet access; run with `cargo test -- --ignored`"]
 async fn tk_005_token_mint() {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(

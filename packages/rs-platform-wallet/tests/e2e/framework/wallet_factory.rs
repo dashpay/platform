@@ -13,7 +13,7 @@ use dpp::fee::Credits;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::v0::IdentityV0;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, Purpose, SecurityLevel};
-use dpp::prelude::Identifier;
+use dpp::prelude::{AddressNonce, Identifier};
 use dpp::version::PlatformVersion;
 use key_wallet::account::account_collection::PlatformPaymentAccountKey;
 use key_wallet::wallet::initialization::{
@@ -239,7 +239,7 @@ impl TestWallet {
             .transfer(
                 DEFAULT_ACCOUNT_INDEX_PUB,
                 InputSelection::Auto,
-                outputs,
+                outputs.into_iter().collect(),
                 default_fee_strategy(),
                 Some(PlatformVersion::latest()),
                 &self.signer,
@@ -264,7 +264,7 @@ impl TestWallet {
             .transfer(
                 DEFAULT_ACCOUNT_INDEX_PUB,
                 InputSelection::Explicit(inputs),
-                outputs,
+                outputs.into_iter().collect(),
                 default_fee_strategy(),
                 Some(PlatformVersion::latest()),
                 &self.signer,
@@ -305,7 +305,7 @@ impl TestWallet {
         outputs: BTreeMap<PlatformAddress, Credits>,
         inputs: BTreeMap<PlatformAddress, Credits>,
     ) -> FrameworkResult<(PlatformAddressChangeSet, Vec<u8>)> {
-        use dash_sdk::platform::transition::address_inputs::{fetch_inputs_with_nonce, nonce_inc};
+        use dash_sdk::platform::transition::fetch_inputs_with_nonce;
         use dpp::serialization::PlatformSerializable;
         use dpp::state_transition::address_funds_transfer_transition::methods::AddressFundsTransferTransitionMethodsV0;
         use dpp::state_transition::address_funds_transfer_transition::AddressFundsTransferTransition;
@@ -314,13 +314,13 @@ impl TestWallet {
         let balanced_inputs = balance_explicit_inputs(&inputs, &outputs, platform_version)?;
 
         // Sibling build for byte capture. Fetches on-chain nonces and
-        // bumps them via the public SDK helpers, then signs + serializes.
-        // The transition is NEVER broadcast — `transfer_with_inputs`
-        // below does its own nonce fetch + sign + broadcast.
+        // bumps them, then signs + serializes. The transition is NEVER
+        // broadcast — `transfer_with_inputs` below does its own nonce
+        // fetch + sign + broadcast.
         let inputs_with_nonce = fetch_inputs_with_nonce(self.wallet.sdk(), &balanced_inputs)
             .await
             .map_err(|err| FrameworkError::Wallet(format!("nonce fetch: {err}")))?;
-        let inputs_with_nonce = nonce_inc(inputs_with_nonce);
+        let inputs_with_nonce = bump_input_nonces(inputs_with_nonce);
 
         let st = AddressFundsTransferTransition::try_from_inputs_with_signer(
             inputs_with_nonce,
@@ -356,7 +356,7 @@ impl TestWallet {
         outputs: BTreeMap<PlatformAddress, Credits>,
         inputs: BTreeMap<PlatformAddress, Credits>,
     ) -> FrameworkResult<Vec<u8>> {
-        use dash_sdk::platform::transition::address_inputs::{fetch_inputs_with_nonce, nonce_inc};
+        use dash_sdk::platform::transition::fetch_inputs_with_nonce;
         use dpp::serialization::PlatformSerializable;
         use dpp::state_transition::address_funds_transfer_transition::methods::AddressFundsTransferTransitionMethodsV0;
         use dpp::state_transition::address_funds_transfer_transition::AddressFundsTransferTransition;
@@ -367,7 +367,7 @@ impl TestWallet {
         let inputs_with_nonce = fetch_inputs_with_nonce(self.wallet.sdk(), &balanced_inputs)
             .await
             .map_err(|err| FrameworkError::Wallet(format!("nonce fetch: {err}")))?;
-        let inputs_with_nonce = nonce_inc(inputs_with_nonce);
+        let inputs_with_nonce = bump_input_nonces(inputs_with_nonce);
 
         let st = AddressFundsTransferTransition::try_from_inputs_with_signer(
             inputs_with_nonce,
@@ -542,6 +542,19 @@ impl TestWallet {
 /// Default fee strategy: reduce output #0 by the fee amount.
 pub(crate) fn default_fee_strategy() -> AddressFundsFeeStrategy {
     vec![AddressFundsFeeStrategyStep::ReduceOutput(0)]
+}
+
+/// Increment each fetched on-chain nonce by one before building a
+/// transition. `fetch_inputs_with_nonce` returns the *current* nonces;
+/// the SDK's own `nonce_inc` is crate-private, so the byte-capture
+/// helpers apply the same +1 here.
+fn bump_input_nonces(
+    inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+) -> BTreeMap<PlatformAddress, (AddressNonce, Credits)> {
+    inputs
+        .into_iter()
+        .map(|(address, (nonce, credits))| (address, (nonce + 1, credits)))
+        .collect()
 }
 
 /// Bank-funding fee strategy: deduct fee from input #0 so the

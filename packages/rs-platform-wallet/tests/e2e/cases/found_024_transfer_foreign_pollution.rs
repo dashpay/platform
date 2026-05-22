@@ -74,9 +74,6 @@ const FOREIGN_CREDITS: u64 = 9_680_000_000_000;
 /// ```
 ///
 /// Without it, `total_credits()` absorbs the recipient's balance.
-#[ignore = "Found-024 regression pin — V27-007 transfer foreign-pollution; \
-            pure unit test (no async, no harness, no chain); run with \
-            `cargo test -- --ignored`"]
 #[test]
 fn found_024_set_address_credit_balance_foreign_address_rejected() {
     // DIP-17 base path — matches the shape used in apply.rs unit tests.

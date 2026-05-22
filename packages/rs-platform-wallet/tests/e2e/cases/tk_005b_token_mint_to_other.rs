@@ -21,7 +21,6 @@ use crate::framework::tokens::{
 const MINT_AMOUNT: u64 = 100;
 
 #[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
-#[ignore = "requires PLATFORM_WALLET_E2E_BANK_MNEMONIC and live testnet access; run with `cargo test -- --ignored`"]
 async fn tk_005b_token_mint_to_other() {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(

@@ -1056,8 +1056,9 @@ Counts by priority: **P0: 10**, **P1: 29** (incl. CR-004 passing-as-regression +
   `WalletAccountCreationOptions::Default` and therefore NOT in
   `PlatformWalletInfo::monitored_addresses()`. Sending Core duffs to
   one of those addresses does NOT increase the wallet's Core balance,
-  and the UTXO set never observes such a send. `#[ignore]`-tagged so a
-  default `cargo test` stays green; `cargo test -- --ignored` runs it
+  and the UTXO set never observes such a send. Gated behind the `e2e`
+  cargo feature so a default `cargo test` stays green;
+  `cargo test -p platform-wallet --test e2e --features e2e` runs it
   end-to-end and is expected to PASS. Documents the intended
   architecture; closed PR `dashpay/rust-dashcore#554` was a speculative
   attempt to change this and was correctly rejected. End-to-end runs
@@ -1714,7 +1715,7 @@ This section covers primitive-level correctness of `AssetLockManager` — the in
 
 #### DPNS-001 — Register and resolve a `.dash` name
 - **Priority**: P0
-- **Status**: green — implemented in `cases/dpns_001_register_name.rs`; `#[ignore]`-gated, run with `cargo test -- --ignored`; PASS in v47.
+- **Status**: green — implemented in `cases/dpns_001_register_name.rs`; `#[ignore]`-gated, run with `cargo test -p platform-wallet --test e2e --features e2e`; PASS in v47.
 - **Wallet feature exercised**: `wallet/identity/network/dpns.rs:176` (`register_name_with_external_signer`); `dpns.rs:281` (`resolve_name`).
 - **DET parallel**: `dash-evo-tool/tests/backend-e2e/register_dpns.rs:14` (`test_register_dpns_name`).
 - **Preconditions**: ID-001 helper; identity has `≥ 100_000_000` credits (DPNS register fee + headroom).
@@ -3161,11 +3162,12 @@ Each question's answer changes the spec; numbered for reference.
 
 ## 7. Known Issues
 
-Tracked production bugs and harness gaps that affect test outcomes. Tests are
-`#[ignore]`d in these cases — but **`#[ignore]` does NOT mean "never runs"**:
+Tracked production bugs and harness gaps that affect test outcomes. The cases
+below live in the `e2e` feature-gated suite — but **feature-gated does NOT mean
+"never runs"**:
 
-- `cargo test` (default): ignored tests are **skipped**.
-- `cargo test -- --ignored`: runs **only** ignored tests. PA-004b and PA-009 execute under this flag and fail by design. Any failure mode other than the one documented per-entry below is a regression.
+- `cargo test` (default): the `e2e` binary is not built, so these cases are absent.
+- `cargo test -p platform-wallet --test e2e --features e2e`: builds and runs the full suite. PA-004b and PA-009 execute and fail by design. Any failure mode other than the one documented per-entry below is a regression.
 
 Do not modify production code in this section — these are documentation entries only.
 

@@ -11,7 +11,7 @@
 //! chain-time fee — assertions below derive both fees from observed
 //! balances rather than pinning exact numbers.
 //!
-//! Gated behind `#[ignore]` so a stock `cargo test -p platform-wallet`
+//! Gated behind the `e2e` cargo feature so a stock `cargo test -p platform-wallet`
 //! (or workspace-wide invocation) stays green for contributors and CI
 //! jobs that lack a funded testnet bank wallet, live DAPI access, and
 //! the operator `.env`. Operator setup lives in `tests/.env`

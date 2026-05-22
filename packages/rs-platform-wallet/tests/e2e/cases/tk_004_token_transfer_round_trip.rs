@@ -24,7 +24,7 @@
 //! See the editorial note in `tokens.rs` for the contract-create
 //! case where HIGH is the canonical signing level.
 //!
-//! Gated behind `#[ignore]` so a stock `cargo test -p platform-wallet`
+//! Gated behind the `e2e` cargo feature so a stock `cargo test -p platform-wallet`
 //! stays green for contributors and CI jobs that lack a funded
 //! testnet bank wallet, live DAPI access, and the operator `.env`.
 
@@ -70,7 +70,6 @@ const STEP_TIMEOUT: Duration = Duration::from_secs(60);
 const SETUP_STEP_TIMEOUT: Duration = Duration::from_secs(120);
 
 #[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
-#[ignore = "TK-004: requires PLATFORM_WALLET_E2E_BANK_MNEMONIC and live testnet access; run with `cargo test -- --ignored`"]
 async fn tk_004_token_transfer_round_trip() {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(

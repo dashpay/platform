@@ -87,9 +87,6 @@ const TARGET_RESIDUAL: u64 = 1_000;
 const STEP_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[tokio_shared_rt::test(shared)]
-#[ignore = "PA-004b sweep dust boundary — requires bank-funded network; \
-            exercises below-gate teardown post-V27-007 fix (16636f01c0); \
-            run with `cargo test -- --ignored`"]
 async fn pa_004b_sweep_below_dust_gate_no_broadcast() {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(

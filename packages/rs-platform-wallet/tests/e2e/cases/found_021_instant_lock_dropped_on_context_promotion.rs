@@ -124,12 +124,6 @@ fn context_has_instant_lock(ctx: &TransactionContext) -> bool {
 /// **GREEN after fix**: `update_context` retains the lock on IS→InBlock
 /// promotion; `context_has_instant_lock` (or an equivalent accessor) returns
 /// `true`. The assertion in this test must be updated alongside the fix.
-#[ignore = "Found-021 bug pin — pins upstream bug at \
-            key-wallet/src/managed_account/transaction_record.rs:182-184 \
-            (`update_context` naive replace drops InstantLock on InBlock promotion); \
-            tracked at dashpay/rust-dashcore#763; \
-            pure unit test (no harness, no network, no async); \
-            run with `cargo test -- --ignored`"]
 #[test]
 fn found_021_instant_lock_dropped_on_context_promotion() {
     // ── 1. Construct a synthetic InstantLock ────────────────────────────

@@ -57,17 +57,8 @@
 //! latter inverts this test from "silent failure" to "loud error
 //! reaches caller" and the assertion shape flips accordingly.
 
-/// Placeholder bug pin for Found-013. Marked `#[ignore]` until the
+/// Placeholder bug pin for Found-013. Gated behind the `e2e` cargo feature until the
 /// harness gains an orphan-wallet-id manager builder.
-#[ignore = "Found-013 — blocked on harness extension. \
-            `AssetLockManager::new` is pub(crate), so tests/ cannot \
-            construct a manager whose `wallet_id` is absent from \
-            the underlying `WalletManager` — the precise scenario \
-            TEST_SPEC.md Found-013 asks for. Drop this ignore once \
-            either (a) a test-only orphan-manager constructor lands \
-            in framework, or (b) the production signature changes \
-            to `Result<(), PlatformWalletError>` (in which case \
-            this test flips to assert the error reaches the caller)."]
 #[test]
 fn found_013_recover_asset_lock_silent_failure_scaffold() {
     // TODO(harness): once an orphan-wallet-id AssetLockManager

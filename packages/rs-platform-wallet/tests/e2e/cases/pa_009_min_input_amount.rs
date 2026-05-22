@@ -134,9 +134,6 @@ async fn pa_009_min_input_amount_subcase_b() {
 }
 
 #[tokio_shared_rt::test(shared)]
-#[ignore = "PA-009 sub-case C — requires bank-funded network; exercises \
-            below-gate teardown with a proof-verified on-chain read-back; \
-            run with `cargo test -- --ignored`"]
 async fn pa_009_min_input_amount_subcase_c() {
     // Sub-case C: below-gate teardown leaves on-chain balance intact.
     // Funds addr_1, trims to TARGET_RESIDUAL via auto-select transfer,

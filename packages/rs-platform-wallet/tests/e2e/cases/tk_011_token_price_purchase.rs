@@ -4,7 +4,7 @@
 //! price, buyer purchases — owner+buyer credit and token balances
 //! pin the cross-identity money flow.
 //!
-//! Wave 2 stub: `#[ignore]`d. Wave 4 runs against live testnet.
+//! Wave 2 stub: gated behind the `e2e` cargo feature. Wave 4 runs against live testnet.
 //!
 //! Spec drift note: TEST_SPEC.md asks for a positive `actual_fee` on
 //! `SetPriceResult` and `DirectPurchaseResult`, but the bare SDK enums
@@ -40,7 +40,6 @@ const TOTAL_AGREED_PRICE: u64 = 10_000;
 const STEP_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
-#[ignore = "TK-011 requires PLATFORM_WALLET_E2E_BANK_MNEMONIC and live testnet access. Intermittent `wait_for_balance` timeouts share the upstream `rs-sdk` address-sync race pinned by Found-025 — see TEST_SPEC.md. Test is correct; flips green when upstream lands the fix. Run with: `cargo test -- --ignored`"]
 async fn tk_011_set_price_and_direct_purchase_round_trip() {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(

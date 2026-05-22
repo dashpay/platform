@@ -65,14 +65,6 @@ const SEND_ALL_HEADROOM: u64 = 2_000_000; // 0.02 DASH testnet
 /// succeeds, proving the change was tracked back into BIP-32 (not lost).
 const CHANGE_RESPEND_AMOUNT: u64 = 500_000;
 
-#[ignore = "CR-004 — passing-as-regression pin for dash-evo-tool#845: \
-            BIP-32 change UTXO routed back into the BIP-32 account after \
-            a spend; runs only via `cargo test -- --ignored`. Requires \
-            testnet + bank Core (Layer-1) pre-funding (TOTAL_FUNDING \
-            duffs + per-tx fee reserve, twice — once per UTXO). The \
-            legacy BIP32 account derivation must NOT cross-contaminate \
-            the wallet's default BIP-44 Core account UTXO set; \
-            assertions read `standard_bip32_accounts[0]` directly."]
 #[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
 async fn cr_004_legacy_bip32_utxo_update_after_spend() {
     let _ = tracing_subscriber::fmt()

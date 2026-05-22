@@ -2,7 +2,7 @@
 //!
 //! Spec: `tests/e2e/TEST_SPEC.md` (### Asset Lock (AL) → AL-001).
 //! Pinned status: active regression guard — full test body implemented,
-//! `#[ignore]`-tagged ONLY behind the same `PLATFORM_WALLET_E2E_BANK_CORE_GATE`
+//! gated behind the `e2e` cargo feature, then ONLY runs behind the same `PLATFORM_WALLET_E2E_BANK_CORE_GATE`
 //! env gate CR-003 and ID-002b use (funded testnet run; exercised by the
 //! gated solo concurrency job, not the default suite). Found-008 is FIXED
 //! (waiter-side pre-arm in `sync/proof.rs`, both wait loops, #3634); this
@@ -130,15 +130,6 @@ const STEP_TIMEOUT: Duration = Duration::from_secs(180);
 /// identity.
 const TOP_UP_VISIBILITY_TIMEOUT: Duration = Duration::from_secs(240);
 
-#[ignore = "AL-001 — needs testnet + bank Core (Layer-1) pre-funding \
-            sized for N parallel asset-locks (~5 DASH testnet). Same \
-            PLATFORM_WALLET_E2E_BANK_CORE_GATE gate as CR-003 / ID-002b; \
-            run by the gated solo concurrency job, not the default \
-            suite. Step 1b pre-splits the balance into N+1 UTXOs \
-            (QA-011). Found-008 is FIXED (sync/proof.rs waiter pre-arm, \
-            #3634); this test now guards that fix under concurrent load \
-            — all N tasks must return Ok. See the file-level doc-comment \
-            and Found-008's spec entry."]
 #[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
 async fn al_001_concurrent_asset_lock_builds() {
     let _ = tracing_subscriber::fmt()
