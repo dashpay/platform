@@ -1,12 +1,14 @@
 # platform-wallet-storage
 
 Storage backends for the
-[`platform-wallet`](../rs-platform-wallet) crate. Today this crate
-ships a SQLite-backed implementation of `PlatformWalletPersistence`
-under [`sqlite`](src/sqlite/) plus a maintenance CLI; the crate is
-structured so a future `SecretStore` (currently sketched in
-[`SECRETS.md`](./SECRETS.md)) can land as a sibling submodule under
-[`secrets`](src/) without a crate split.
+[`platform-wallet`](../rs-platform-wallet) crate. This crate ships a
+SQLite-backed implementation of `PlatformWalletPersistence` under
+[`sqlite`](src/sqlite/), a maintenance CLI, and the
+[`secrets`](src/secrets/) submodule — a `keyring_core` SPI
+implementation pairing the in-house `EncryptedFileStore`
+(Argon2id + XChaCha20-Poly1305 on-disk vault) with the OS keyring
+backends. All three are on by default; see [`SECRETS.md`](./SECRETS.md)
+for the secret-storage threat model and design.
 
 ## At a glance
 

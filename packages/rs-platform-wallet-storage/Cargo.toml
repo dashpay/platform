@@ -5,7 +5,7 @@ rust-version.workspace = true
 edition = "2021"
 authors = ["Dash Core Team"]
 license = "MIT"
-description = "Storage backends for platform-wallet: SQLite persistence (today) and a future SecretStore submodule"
+description = "Storage backends for platform-wallet: SQLite persistence and keyring_core secret backends (encrypted-file + OS keyring)."
 
 [lib]
 path = "src/lib.rs"
@@ -158,7 +158,7 @@ secrets = [
     "dep:apple-native-keyring-store",
     "dep:windows-native-keyring-store",
 ]
-# Exposes `secrets::MemoryStore` (in-RAM test double). Double-underscore
+# Exposes `secrets::MemoryCredentialStore` (in-RAM test double). Double-underscore
 # prefix = Cargo's "MUST NOT enable from downstream" convention; keeps
 # the test store unreachable from production builds (SEC-REQ-2.3.1).
 __secrets-test-helpers = ["secrets"]

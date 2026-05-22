@@ -94,9 +94,14 @@ impl EncryptedFileStore {
         new_passphrase: SecretString,
     ) -> Result<(), FileStoreError> {
         // The store must hold a unique reference so the swap is
-        // observable to every outstanding credential consistently.
-        let inner =
-            Arc::get_mut(&mut self.inner).expect("rekey requires exclusive access to the store");
+        // observable to every outstanding credential consistently. A
+        // live credential clones the inner `Arc` in `build()`, a
+        // caller-reachable state, so this is a recoverable typed error,
+        // not a panic — but still fail-loud: never a silent stale-handle
+        // rekey.
+        let Some(inner) = Arc::get_mut(&mut self.inner) else {
+            return Err(FileStoreError::Busy);
+        };
         inner.rekey(wallet_id, new_passphrase)
     }
 
@@ -673,6 +678,24 @@ mod tests {
             error_bridge::downcast_failure(&err),
             Some(error_bridge::FileStoreFailure::WrongPassphrase)
         );
+    }
+
+    #[test]
+    fn rekey_with_outstanding_credential_returns_busy_not_panic() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut s = store(dir.path());
+        // `build()` clones the inner `Arc`; keeping the credential alive
+        // means the store no longer holds an exclusive reference.
+        let live = entry(&s, wid(1), "seed");
+        live.set_secret(b"value").unwrap();
+        let err = s.rekey(wid(1), SecretString::new("pw-new")).unwrap_err();
+        assert!(matches!(err, FileStoreError::Busy));
+        // The credential is still usable and the passphrase unchanged.
+        assert_eq!(live.get_secret().unwrap(), b"value");
+        // Once the outstanding credential is dropped, rekey succeeds.
+        drop(live);
+        s.rekey(wid(1), SecretString::new("pw-new")).unwrap();
+        assert_eq!(entry(&s, wid(1), "seed").get_secret().unwrap(), b"value");
     }
 
     #[test]

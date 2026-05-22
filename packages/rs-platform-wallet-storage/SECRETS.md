@@ -150,10 +150,12 @@ secret-free.
 
 The CI advisory check runs `rustsec/audit-check` over `Cargo.lock`;
 because `secrets` is in the default feature set, the pinned
-`argon2` / `chacha20poly1305` / `zeroize` / `subtle` / `region` /
-`keyring-core` / per-platform store crate versions are
-unconditionally in the lockfile and therefore unconditionally in
-audit scope (SEC-REQ-4.7).
+`argon2` / `chacha20poly1305` / `zeroize` / `subtle` / `getrandom`
+(the `OsRng` source for the salt + per-entry nonces, specified as the
+semver range `getrandom = "0.2"` and lock-pinned to 0.2.17 by
+lock-file convention) / `region` / `keyring-core` / per-platform store
+crate versions are unconditionally in the lockfile and therefore
+unconditionally in audit scope (SEC-REQ-4.7).
 
 ## Backup retention and secrets
 

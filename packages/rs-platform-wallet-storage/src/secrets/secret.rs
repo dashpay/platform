@@ -208,6 +208,9 @@ impl SecretBytes {
     /// Wrap a byte vector, zeroizing the source, best-effort `mlock`ing
     /// the wrapped buffer.
     pub fn new(mut bytes: Vec<u8>) -> Self {
+        // `region::lock` rejects a 0-length region (EINVAL), so an empty
+        // `SecretBytes` still locks one page — do not "harmonize" with
+        // `SecretString` and drop the `.max(1)`.
         let lock = region::lock(bytes.as_ptr(), bytes.capacity().max(1))
             .map_err(|e| {
                 tracing::debug!("mlock failed for SecretBytes: {e}");
