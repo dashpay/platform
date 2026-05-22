@@ -49,7 +49,7 @@ public class WalletManager {
 
     deinit {
         if ownsHandle {
-            dash_spv_ffi_wallet_manager_free(handle)
+            wallet_manager_free(handle)
         }
     }
 
@@ -62,37 +62,18 @@ public class WalletManager {
     ///   - accountOptions: Account creation options
     /// - Returns: The wallet ID
     @discardableResult
-    public func addWallet(mnemonic: String, passphrase: String? = nil,
+    public func addWallet(mnemonic: String,
                           accountOptions: AccountCreationOption = .default) throws -> Data {
         var error = FFIError()
 
         let success = mnemonic.withCString { mnemonicCStr in
             if case .specificAccounts = accountOptions {
                 var options = accountOptions.toFFIOptions()
-
-                if let passphrase = passphrase {
-                    return passphrase.withCString { passphraseCStr in
-                        wallet_manager_add_wallet_from_mnemonic_with_options(
-                            handle, mnemonicCStr, passphraseCStr,
-                            &options, &error)
-                    }
-                } else {
-                    return wallet_manager_add_wallet_from_mnemonic_with_options(
-                        handle, mnemonicCStr, nil,
-                        &options, &error)
-                }
+                return wallet_manager_add_wallet_from_mnemonic_with_options(
+                    handle, mnemonicCStr, &options, &error)
             } else {
-                if let passphrase = passphrase {
-                    return passphrase.withCString { passphraseCStr in
-                        wallet_manager_add_wallet_from_mnemonic(
-                            handle, mnemonicCStr, passphraseCStr,
-                            &error)
-                    }
-                } else {
-                    return wallet_manager_add_wallet_from_mnemonic(
-                        handle, mnemonicCStr, nil,
-                        &error)
-        }
+                return wallet_manager_add_wallet_from_mnemonic(
+                    handle, mnemonicCStr, &error)
             }
         }
 
@@ -618,6 +599,13 @@ public class WalletManager {
         downgradeToPublicKeyWallet: Bool = false,
         allowExternalSigning: Bool = false
     ) throws -> (walletId: Data, serializedWallet: Data) {
+        if let passphrase, !passphrase.isEmpty {
+            throw KeyWalletError.invalidInput(
+                "BIP-39 passphrase support was removed upstream " +
+                "(rust-dashcore #747); pass nil or an empty string"
+            )
+        }
+
         var error = FFIError()
         var walletBytesPtr: UnsafeMutablePointer<UInt8>?
         var walletBytesLen: size_t = 0
@@ -625,38 +613,18 @@ public class WalletManager {
 
         let success = mnemonic.withCString { mnemonicCStr in
             var options = accountOptions.toFFIOptions()
-
-            if let passphrase = passphrase {
-                return passphrase.withCString { passphraseCStr in
-                    wallet_manager_add_wallet_from_mnemonic_return_serialized_bytes(
-                        handle,
-                        mnemonicCStr,
-                        passphraseCStr,
-                        birthHeight,
-                        &options,
-                        downgradeToPublicKeyWallet,
-                        allowExternalSigning,
-                        &walletBytesPtr,
-                        &walletBytesLen,
-                        &walletId,
-                        &error
-                    )
-                }
-            } else {
-                return wallet_manager_add_wallet_from_mnemonic_return_serialized_bytes(
-                    handle,
-                    mnemonicCStr,
-                    nil,
-                    birthHeight,
-                    &options,
-                    downgradeToPublicKeyWallet,
-                    allowExternalSigning,
-                    &walletBytesPtr,
-                    &walletBytesLen,
-                    &walletId,
-                    &error
-                )
-            }
+            return wallet_manager_add_wallet_from_mnemonic_return_serialized_bytes(
+                handle,
+                mnemonicCStr,
+                birthHeight,
+                &options,
+                downgradeToPublicKeyWallet,
+                allowExternalSigning,
+                &walletBytesPtr,
+                &walletBytesLen,
+                &walletId,
+                &error
+            )
         }
 
         defer {

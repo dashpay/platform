@@ -84,13 +84,11 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     // Derive features for versioned messages
     //
     // "GetConsensusParamsRequest" is excluded as this message does not support proofs
-    const VERSIONED_REQUESTS: [&str; 58] = [
+    const VERSIONED_REQUESTS: [&str; 56] = [
         "GetDataContractHistoryRequest",
         "GetDataContractRequest",
         "GetDataContractsRequest",
         "GetDocumentsRequest",
-        "GetDocumentsCountRequest",
-        "GetDocumentsSplitCountRequest",
         "GetIdentitiesByPublicKeyHashesRequest",
         "GetIdentitiesRequest",
         "GetIdentitiesBalancesRequest",
@@ -163,13 +161,11 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     // - "GetIdentityByNonUniquePublicKeyHashResponse"
     //
     //  "GetEvonodesProposedEpochBlocksResponse" is used for 2 Requests
-    const VERSIONED_RESPONSES: [&str; 56] = [
+    const VERSIONED_RESPONSES: [&str; 54] = [
         "GetDataContractHistoryResponse",
         "GetDataContractResponse",
         "GetDataContractsResponse",
         "GetDocumentsResponse",
-        "GetDocumentsCountResponse",
-        "GetDocumentsSplitCountResponse",
         "GetIdentitiesByPublicKeyHashesResponse",
         "GetIdentitiesResponse",
         "GetIdentitiesBalancesResponse",
@@ -239,14 +235,38 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
     check_unique(&MERK_PROOF_VERSIONED_REQUESTS).expect("MERK_PROOF_VERSIONED_REQUESTS");
     check_unique(&MERK_PROOF_VERSIONED_RESPONSES).expect("MERK_PROOF_VERSIONED_RESPONSES");
 
+    // Messages whose latest version is v1 — the macro needs to know
+    // to generate match arms for both V0 and V1. Listed separately
+    // so the default `grpc_versions(0)` loop below skips them.
+    //
+    // Adding a message here is the proto-side companion of:
+    //   - Adding a `GetXxxRequestV1` / `GetXxxResponseV1` to the
+    //     oneof in `platform.proto`.
+    //   - Bumping the matching `FeatureVersionBounds.max_version`
+    //     to 1 in `rs-platform-version`.
+    //   - Implementing the v1 dispatch arm in `drive-abci`.
+    const VERSIONED_AT_V1_REQUESTS: [&str; 1] = ["GetDocumentsRequest"];
+    const VERSIONED_AT_V1_RESPONSES: [&str; 1] = ["GetDocumentsResponse"];
+
     // Derive VersionedGrpcMessage on requests
     for msg in VERSIONED_REQUESTS {
+        if VERSIONED_AT_V1_REQUESTS.contains(&msg) {
+            continue;
+        }
         platform = platform
             .message_attribute(
                 msg,
                 r#"#[derive(::dash_platform_macros::VersionedGrpcMessage)]"#,
             )
             .message_attribute(msg, r#"#[grpc_versions(0)]"#);
+    }
+    for msg in VERSIONED_AT_V1_REQUESTS {
+        platform = platform
+            .message_attribute(
+                msg,
+                r#"#[derive(::dash_platform_macros::VersionedGrpcMessage)]"#,
+            )
+            .message_attribute(msg, r#"#[grpc_versions(1)]"#);
     }
 
     // Derive ProofOnlyVersionedGrpcMessage on requests
@@ -261,12 +281,23 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
 
     // Derive VersionedGrpcMessage and VersionedGrpcResponse on responses
     for msg in VERSIONED_RESPONSES {
+        if VERSIONED_AT_V1_RESPONSES.contains(&msg) {
+            continue;
+        }
         platform = platform
             .message_attribute(
                 msg,
                 r#"#[derive(::dash_platform_macros::VersionedGrpcMessage,::dash_platform_macros::VersionedGrpcResponse)]"#,
             )
             .message_attribute(msg, r#"#[grpc_versions(0)]"#);
+    }
+    for msg in VERSIONED_AT_V1_RESPONSES {
+        platform = platform
+            .message_attribute(
+                msg,
+                r#"#[derive(::dash_platform_macros::VersionedGrpcMessage,::dash_platform_macros::VersionedGrpcResponse)]"#,
+            )
+            .message_attribute(msg, r#"#[grpc_versions(1)]"#);
     }
 
     // Derive VersionedGrpcMessage and ProofOnlyVersionedGrpcResponse on responses
@@ -323,8 +354,11 @@ fn configure_platform(mut platform: MappingConfig) -> MappingConfig {
         .field_attribute("nullifiers", SERDE_WITH_BASE64)
         // Get documents fields
         .field_attribute("data_contract_id", SERDE_WITH_BYTES)
-        .field_attribute("where", SERDE_WITH_BYTES)
-        .field_attribute("order_by", SERDE_WITH_BYTES)
+        // V0 still ships CBOR for `where` / `order_by`; V1 ships
+        // typed `repeated WhereClause` / `repeated OrderClause`
+        // and doesn't need the `bytes`-shaped serde shim.
+        .field_attribute("GetDocumentsRequestV0.where", SERDE_WITH_BYTES)
+        .field_attribute("GetDocumentsRequestV0.order_by", SERDE_WITH_BYTES)
         // Proof fields
         .field_attribute("Proof.grovedb_proof", SERDE_WITH_BYTES)
         .field_attribute("Proof.quorum_hash", SERDE_WITH_BYTES)

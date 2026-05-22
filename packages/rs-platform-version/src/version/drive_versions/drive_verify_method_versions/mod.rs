@@ -6,6 +6,8 @@ pub mod v1;
 pub struct DriveVerifyMethodVersions {
     pub contract: DriveVerifyContractMethodVersions,
     pub document: DriveVerifyDocumentMethodVersions,
+    pub document_count: DriveVerifyDocumentCountMethodVersions,
+    pub document_sum: DriveVerifyDocumentSumMethodVersions,
     pub identity: DriveVerifyIdentityMethodVersions,
     pub group: DriveVerifyGroupMethodVersions,
     pub token: DriveVerifyTokenMethodVersions,
@@ -42,6 +44,33 @@ pub struct DriveVerifyDocumentMethodVersions {
     pub verify_proof: FeatureVersion,
     pub verify_proof_keep_serialized: FeatureVersion,
     pub verify_start_at_document_in_proof: FeatureVersion,
+}
+
+/// Versions for the `GetDocumentsCount` prove-path verifiers
+/// (grovedb-level — the tenderdash composition layer lives in
+/// rs-drive-proof-verifier). All three methods are implemented on
+/// `DriveDocumentCountQuery` and return `(RootHash, T)`.
+#[derive(Clone, Debug, Default)]
+pub struct DriveVerifyDocumentCountMethodVersions {
+    pub verify_aggregate_count_proof: FeatureVersion,
+    pub verify_carrier_aggregate_count_proof: FeatureVersion,
+    pub verify_distinct_count_proof: FeatureVersion,
+    pub verify_point_lookup_count_proof: FeatureVersion,
+    pub verify_primary_key_count_tree_proof: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveVerifyDocumentSumMethodVersions {
+    pub verify_aggregate_sum_proof: FeatureVersion,
+    pub verify_carrier_aggregate_sum_proof: FeatureVersion,
+    pub verify_carrier_aggregate_count_and_sum_proof: FeatureVersion,
+    pub verify_aggregate_count_and_sum_proof: FeatureVersion,
+    pub verify_primary_key_sum_tree_proof: FeatureVersion,
+    pub verify_primary_key_count_sum_tree_proof: FeatureVersion,
+    pub verify_point_lookup_sum_proof: FeatureVersion,
+    pub verify_distinct_sum_proof: FeatureVersion,
+    pub verify_distinct_count_and_sum_proof: FeatureVersion,
+    pub verify_point_lookup_count_and_sum_proof: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

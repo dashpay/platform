@@ -56,11 +56,26 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// [`parse_mnemonic_any_language`]). For passphrase-only flows or
     /// out-of-band seed material, derive the seed externally and use
     /// [`Self::create_wallet_from_seed_bytes`].
+    ///
+    /// `birth_height_override` controls SPV's compact-filter scan
+    /// window for the new wallet. `None` (the default for fresh
+    /// wallets) resolves the birth height from SPV's current
+    /// confirmed header tip, so the scan window is `[H_now, ∞)` and
+    /// anything funded before init is invisible — **but** when SPV is
+    /// not running yet or header state is unavailable (e.g. wallet
+    /// created before the SPV client is started), it falls back to
+    /// `0`, i.e. a full historical scan from genesis. `Some(0)`
+    /// always requests a full historical scan from genesis (use
+    /// sparingly — expensive on long-lived chains, but required when
+    /// an address may have received funds before the wallet was first
+    /// registered). `Some(h)` pins the scan start to a specific block
+    /// height, useful when a known funding block is on record.
     pub async fn create_wallet_from_mnemonic(
         &self,
         mnemonic_phrase: &str,
         network: Network,
         accounts: WalletAccountCreationOptions,
+        birth_height_override: Option<u32>,
     ) -> Result<Arc<PlatformWallet>, PlatformWalletError> {
         let mnemonic = parse_mnemonic_any_language(mnemonic_phrase)
             .map_err(|e| PlatformWalletError::WalletCreation(format!("Invalid mnemonic: {}", e)))?;
@@ -70,16 +85,24 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 e
             ))
         })?;
-        self.register_wallet(wallet).await
+        self.register_wallet(wallet, birth_height_override).await
     }
 
     /// Create a PlatformWallet from raw seed bytes, initialize persisted
     /// state, register it with the manager and return an `Arc` handle.
+    ///
+    /// See [`Self::create_wallet_from_mnemonic`] for the
+    /// `birth_height_override` semantics. `None` scans from the
+    /// current SPV tip forward when SPV is running, otherwise from
+    /// genesis; `Some(h)` is for callers that need to see funding
+    /// deposited before the wallet was registered (e.g. a long-lived
+    /// bank address pre-funded with testnet duffs).
     pub async fn create_wallet_from_seed_bytes(
         &self,
         network: Network,
         seed_bytes: [u8; 64],
         accounts: WalletAccountCreationOptions,
+        birth_height_override: Option<u32>,
     ) -> Result<Arc<PlatformWallet>, PlatformWalletError> {
         let wallet = Wallet::from_seed_bytes(seed_bytes, network, accounts).map_err(|e| {
             PlatformWalletError::WalletCreation(format!(
@@ -87,18 +110,39 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 e
             ))
         })?;
-        self.register_wallet(wallet).await
+        self.register_wallet(wallet, birth_height_override).await
     }
 
     /// Register a pre-built `Wallet` with the manager: insert into the
     /// `WalletManager`, build a `PlatformWallet` handle, load persisted
     /// state, and return an `Arc` to the managed wallet.
+    ///
+    /// `birth_height_override` flows through to both the in-memory
+    /// `ManagedWalletInfo` sync checkpoint and the persisted
+    /// `WalletMetadataEntry` so the SPV scan window is consistent
+    /// across restarts. See [`Self::create_wallet_from_mnemonic`] for
+    /// the contract.
     #[allow(clippy::type_complexity)]
     async fn register_wallet(
         &self,
         wallet: Wallet,
+        birth_height_override: Option<u32>,
     ) -> Result<Arc<PlatformWallet>, PlatformWalletError> {
-        let wallet_info = ManagedWalletInfo::from_wallet(&wallet, 0);
+        // Birth height resolution: explicit override wins; otherwise
+        // fall back to SPV's confirmed header tip (default for fresh
+        // wallets — they only need to see funding from now on); 0 if
+        // SPV isn't running yet.
+        let birth_height: u32 = match birth_height_override {
+            Some(h) => h,
+            None => self
+                .spv_manager
+                .sync_progress()
+                .await
+                .and_then(|p| p.headers().ok().map(|h| h.tip_height()))
+                .unwrap_or(0),
+        };
+
+        let wallet_info = ManagedWalletInfo::from_wallet(&wallet, birth_height);
 
         let balance = Arc::new(WalletBalance::new());
 
@@ -192,17 +236,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // the persister is a best-effort channel, not a source of
         // truth in steady state.
 
-        // Birth height = SPV's confirmed header tip if SPV is running,
-        // otherwise 0 (caller can bump it later when SPV catches up).
-        // 0 means "scan from genesis", which is safe-correct for
-        // fresh wallets.
-        let birth_height: u32 = self
-            .spv_manager
-            .sync_progress()
-            .await
-            .and_then(|p| p.headers().ok().map(|h| h.tip_height()))
-            .unwrap_or(0);
-
+        // `birth_height` was resolved at the top of `register_wallet`
+        // and seeded into `ManagedWalletInfo`; reuse it here so the
+        // persisted `WalletMetadataEntry` agrees with the in-memory
+        // sync checkpoint.
         let mut registration_changeset = PlatformWalletChangeSet {
             wallet_metadata: Some(WalletMetadataEntry {
                 network: self.sdk.network,
@@ -277,6 +314,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         let crate::changeset::ClientStartState {
             mut platform_addresses,
             wallets: _,
+            #[cfg(feature = "shielded")]
+                shielded: _,
         } = match platform_wallet.load_persisted() {
             Ok(state) => state,
             Err(e) => {
@@ -340,16 +379,55 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         &self,
         wallet_id: &WalletId,
     ) -> Result<Arc<PlatformWallet>, PlatformWalletError> {
+        let owned_identity_ids: Vec<dpp::prelude::Identifier> = {
+            let mut wm = self.wallet_manager.write().await;
+            let ids = match wm.get_wallet_info(wallet_id) {
+                Some(info) => info
+                    .identity_manager
+                    .wallet_identities
+                    .get(wallet_id)
+                    .map(|inner| {
+                        use dpp::identity::accessors::IdentityGettersV0;
+                        inner
+                            .values()
+                            .map(|managed| managed.identity.id())
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+                None => Vec::new(),
+            };
+            let _ = wm.remove_wallet(wallet_id);
+            ids
+        };
+
         let removed = {
             let mut wallets = self.wallets.write().await;
             wallets
                 .remove(wallet_id)
                 .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(wallet_id)))?
         };
-        {
-            let mut wm = self.wallet_manager.write().await;
-            let _ = wm.remove_wallet(wallet_id);
+
+        // Detach the wallet's shielded state from the network
+        // coordinator. After the Phase-2b refactor the coordinator
+        // owns the per-`SubwalletId` viewing-key registry and the
+        // per-wallet `WalletPersister`; without this call a deleted
+        // wallet's shielded notes keep getting fetched,
+        // trial-decrypted, and re-persisted through the stale
+        // persister on the next `coordinator.sync()` pass —
+        // resurrecting private shielded history on disk after the
+        // host believed the wallet was gone. Drops the registry +
+        // persister entries and the per-subwallet store state.
+        #[cfg(feature = "shielded")]
+        if let Some(coordinator) = self.shielded_coordinator().await {
+            coordinator.unregister_wallet(*wallet_id).await;
         }
+
+        for identity_id in &owned_identity_ids {
+            self.identity_sync_manager
+                .unregister_identity(identity_id)
+                .await;
+        }
+
         Ok(removed)
     }
 }

@@ -87,10 +87,49 @@ impl PlatformAddressWallet {
     /// [`PlatformPaymentAddressProvider::from_persisted`] so xpubs,
     /// `found`, and `absent` are restored verbatim while `addresses`
     /// and `pending` are rebuilt from the live `AddressPool`.
+    ///
+    /// Also pushes each persisted balance back onto the matching
+    /// `ManagedPlatformAccount` via `set_address_credit_balance` so
+    /// the transfer/withdrawal `auto_select_inputs` paths see a
+    /// non-zero balance immediately after restore — without this,
+    /// they'd report "available 0 credits" until a fresh BLAST sync
+    /// round fired `on_address_found` for every known address.
+    /// Mirrors the `set_address_credit_balance(.., None)` shape in
+    /// [apply.rs](crate::wallet::apply): `None` for the key-source
+    /// argument because the gap-limit pool is already restored from
+    /// `account_state.addresses` inside `from_persisted`.
     pub async fn initialize_from_persisted(
         &self,
         persisted: crate::PlatformAddressSyncStartState,
     ) -> Result<(), PlatformWalletError> {
+        // Hydrate `account.address_credit_balance` BEFORE constructing
+        // the provider. `from_persisted` holds a read lock on
+        // `wallet_manager` for its duration, and Tokio's `RwLock` has
+        // no read→write upgrade — doing the write-lock dance first
+        // keeps both paths simple and avoids exposing a new public
+        // accessor on the provider.
+        //
+        // Required by spend paths that enumerate funded addresses
+        // (e.g. `shielded_shield_from_account`): without this, after
+        // a restart they read `available = 0` until the first BLAST
+        // sync repopulates the in-memory map, even though SwiftData
+        // reports a real balance to the UI.
+        {
+            let mut wm = self.wallet_manager.write().await;
+            if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
+                for (account_index, account_state) in &persisted.per_account {
+                    if let Some(account) = info
+                        .core_wallet
+                        .platform_payment_managed_account_at_index_mut(*account_index)
+                    {
+                        for (p2pkh, funds) in account_state.found() {
+                            account.set_address_credit_balance(*p2pkh, funds.balance, None);
+                        }
+                    }
+                }
+            }
+        }
+
         let mut per_wallet = std::collections::BTreeMap::new();
         per_wallet.insert(self.wallet_id, persisted.per_account);
         let provider = PlatformPaymentAddressProvider::from_persisted(
@@ -252,6 +291,21 @@ impl PlatformAddressWallet {
                     .collect()
             })
             .unwrap_or_default()
+    }
+
+    /// Current incremental-sync watermark (`last_known_recent_block`)
+    /// from the unified platform-address provider.
+    ///
+    /// Returns `None` when the provider hasn't been initialised yet or
+    /// when no incremental sync has produced a watermark. A zero-valued
+    /// watermark is reported as `None` to match the "no stored watermark"
+    /// convention used by [`Self::apply_sync_state`]. Intended for
+    /// progress checks where the precise "uninitialised vs. zero"
+    /// distinction is not material.
+    pub async fn sync_watermark(&self) -> Option<u64> {
+        let guard = self.provider.read().await;
+        let raw = guard.as_ref().map(|p| p.last_known_recent_block())?;
+        (raw > 0).then_some(raw)
     }
 
     /// Get total platform credits across all addresses.

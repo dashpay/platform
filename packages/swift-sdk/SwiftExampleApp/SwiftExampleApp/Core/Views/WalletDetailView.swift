@@ -22,6 +22,7 @@ struct WalletDetailView: View {
     @EnvironmentObject var walletManager: PlatformWalletManager
     @EnvironmentObject var platformState: AppState
     @EnvironmentObject var appUIState: AppUIState
+    @EnvironmentObject var shieldedService: ShieldedService
     @Environment(\.dismiss) private var dismiss
     let wallet: PersistentWallet
     @State private var showReceiveAddress = false
@@ -176,7 +177,18 @@ struct WalletDetailView: View {
                 dismiss()
             }
         }
-        .onAppear { appUIState.showWalletsSyncDetails = false }
+        .onAppear {
+            appUIState.showWalletsSyncDetails = false
+            // Repoint the singleton ShieldedService at THIS wallet —
+            // the app-level bind only attaches it to `firstWallet`,
+            // so without this every detail screen would show the
+            // first-bound wallet's shielded balance regardless of
+            // which wallet the user opened.
+            shieldedService.switchTo(walletId: wallet.walletId)
+        }
+        .onChange(of: wallet.walletId) { _, newId in
+            shieldedService.switchTo(walletId: newId)
+        }
     }
 }
 
@@ -185,6 +197,7 @@ struct WalletDetailView: View {
 struct WalletInfoView: View {
     @Environment(\.dismiss) var dismiss
     @Environment(\.modelContext) var modelContext
+    @EnvironmentObject var walletManager: PlatformWalletManager
     let wallet: PersistentWallet
     var onWalletDeleted: () -> Void = {}
 
@@ -627,19 +640,14 @@ struct WalletInfoView: View {
 
         await MainActor.run { isDeleting = true }
 
-        // Cascade-delete rules on `accounts` / `identities` null out
-        // or cascade the children automatically.
-        modelContext.delete(wallet)
+        // `PlatformWalletManager.deleteWallet` handles the full wipe:
+        // Rust manager-side drop, in-memory dict removal, SwiftData
+        // cascade + orphan sweep (transactions / pending inputs /
+        // identities the @Relationship rule doesn't reach), and the
+        // Keychain mnemonic + metadata blobs.
         do {
-            try modelContext.save()
-            let storage = WalletStorage()
-            try storage.deleteMnemonic(for: walletId)
-            // Keychain metadata is independent of the mnemonic
-            // row — clear it here so a deleted wallet doesn't
-            // leave stale name/description behind.
-            try storage.deleteMetadata(for: walletId)
+            try walletManager.deleteWallet(walletId: walletId)
         } catch {
-            modelContext.rollback()
             SDKLogger.error(
                 "Failed to fully delete wallet: \(error.localizedDescription)"
             )
@@ -656,8 +664,6 @@ struct WalletInfoView: View {
             dismiss()
             onWalletDeleted()
         }
-        // TODO(platform-wallet): expose wallet removal on PlatformWalletManager
-        // so the Rust side also drops the in-memory handle.
     }
 }
 

@@ -154,7 +154,7 @@ pub mod pooling_serde {
                 (Pooling::Standard, 2),
             ] {
                 let bytes =
-                    bincode::serde::encode_to_vec(&Wrap(variant), bincode::config::standard())
+                    bincode::serde::encode_to_vec(Wrap(variant), bincode::config::standard())
                         .expect("bincode encode");
                 assert_eq!(bytes.last(), Some(&expected_u8));
                 let (restored, _): (Wrap, usize) =

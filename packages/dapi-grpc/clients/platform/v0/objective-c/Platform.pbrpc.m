@@ -383,46 +383,6 @@
              responseClass:[GetDocumentsResponse class]];
 }
 
-#pragma mark getDocumentsCount(GetDocumentsCountRequest) returns (GetDocumentsCountResponse)
-
-- (void)getDocumentsCountWithRequest:(GetDocumentsCountRequest *)request handler:(void(^)(GetDocumentsCountResponse *_Nullable response, NSError *_Nullable error))handler{
-  [[self RPCTogetDocumentsCountWithRequest:request handler:handler] start];
-}
-// Returns a not-yet-started RPC object.
-- (GRPCProtoCall *)RPCTogetDocumentsCountWithRequest:(GetDocumentsCountRequest *)request handler:(void(^)(GetDocumentsCountResponse *_Nullable response, NSError *_Nullable error))handler{
-  return [self RPCToMethod:@"getDocumentsCount"
-            requestsWriter:[GRXWriter writerWithValue:request]
-             responseClass:[GetDocumentsCountResponse class]
-        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
-}
-- (GRPCUnaryProtoCall *)getDocumentsCountWithMessage:(GetDocumentsCountRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
-  return [self RPCToMethod:@"getDocumentsCount"
-                   message:message
-           responseHandler:handler
-               callOptions:callOptions
-             responseClass:[GetDocumentsCountResponse class]];
-}
-
-#pragma mark getDocumentsSplitCount(GetDocumentsSplitCountRequest) returns (GetDocumentsSplitCountResponse)
-
-- (void)getDocumentsSplitCountWithRequest:(GetDocumentsSplitCountRequest *)request handler:(void(^)(GetDocumentsSplitCountResponse *_Nullable response, NSError *_Nullable error))handler{
-  [[self RPCTogetDocumentsSplitCountWithRequest:request handler:handler] start];
-}
-// Returns a not-yet-started RPC object.
-- (GRPCProtoCall *)RPCTogetDocumentsSplitCountWithRequest:(GetDocumentsSplitCountRequest *)request handler:(void(^)(GetDocumentsSplitCountResponse *_Nullable response, NSError *_Nullable error))handler{
-  return [self RPCToMethod:@"getDocumentsSplitCount"
-            requestsWriter:[GRXWriter writerWithValue:request]
-             responseClass:[GetDocumentsSplitCountResponse class]
-        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
-}
-- (GRPCUnaryProtoCall *)getDocumentsSplitCountWithMessage:(GetDocumentsSplitCountRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
-  return [self RPCToMethod:@"getDocumentsSplitCount"
-                   message:message
-           responseHandler:handler
-               callOptions:callOptions
-             responseClass:[GetDocumentsSplitCountResponse class]];
-}
-
 #pragma mark getIdentityByPublicKeyHash(GetIdentityByPublicKeyHashRequest) returns (GetIdentityByPublicKeyHashResponse)
 
 - (void)getIdentityByPublicKeyHashWithRequest:(GetIdentityByPublicKeyHashRequest *)request handler:(void(^)(GetIdentityByPublicKeyHashResponse *_Nullable response, NSError *_Nullable error))handler{

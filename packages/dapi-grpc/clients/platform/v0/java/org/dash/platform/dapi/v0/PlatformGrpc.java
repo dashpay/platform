@@ -480,68 +480,6 @@ public final class PlatformGrpc {
     return getGetDocumentsMethod;
   }
 
-  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsCountRequest,
-      org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsCountResponse> getGetDocumentsCountMethod;
-
-  @io.grpc.stub.annotations.RpcMethod(
-      fullMethodName = SERVICE_NAME + '/' + "getDocumentsCount",
-      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsCountRequest.class,
-      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsCountResponse.class,
-      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
-  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsCountRequest,
-      org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsCountResponse> getGetDocumentsCountMethod() {
-    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsCountRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsCountResponse> getGetDocumentsCountMethod;
-    if ((getGetDocumentsCountMethod = PlatformGrpc.getGetDocumentsCountMethod) == null) {
-      synchronized (PlatformGrpc.class) {
-        if ((getGetDocumentsCountMethod = PlatformGrpc.getGetDocumentsCountMethod) == null) {
-          PlatformGrpc.getGetDocumentsCountMethod = getGetDocumentsCountMethod =
-              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsCountRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsCountResponse>newBuilder()
-              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
-              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getDocumentsCount"))
-              .setSampledToLocalTracing(true)
-              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsCountRequest.getDefaultInstance()))
-              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsCountResponse.getDefaultInstance()))
-              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getDocumentsCount"))
-              .build();
-        }
-      }
-    }
-    return getGetDocumentsCountMethod;
-  }
-
-  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsSplitCountRequest,
-      org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsSplitCountResponse> getGetDocumentsSplitCountMethod;
-
-  @io.grpc.stub.annotations.RpcMethod(
-      fullMethodName = SERVICE_NAME + '/' + "getDocumentsSplitCount",
-      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsSplitCountRequest.class,
-      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsSplitCountResponse.class,
-      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
-  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsSplitCountRequest,
-      org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsSplitCountResponse> getGetDocumentsSplitCountMethod() {
-    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsSplitCountRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsSplitCountResponse> getGetDocumentsSplitCountMethod;
-    if ((getGetDocumentsSplitCountMethod = PlatformGrpc.getGetDocumentsSplitCountMethod) == null) {
-      synchronized (PlatformGrpc.class) {
-        if ((getGetDocumentsSplitCountMethod = PlatformGrpc.getGetDocumentsSplitCountMethod) == null) {
-          PlatformGrpc.getGetDocumentsSplitCountMethod = getGetDocumentsSplitCountMethod =
-              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsSplitCountRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsSplitCountResponse>newBuilder()
-              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
-              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getDocumentsSplitCount"))
-              .setSampledToLocalTracing(true)
-              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsSplitCountRequest.getDefaultInstance()))
-              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsSplitCountResponse.getDefaultInstance()))
-              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getDocumentsSplitCount"))
-              .build();
-        }
-      }
-    }
-    return getGetDocumentsSplitCountMethod;
-  }
-
   private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityByPublicKeyHashRequest,
       org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityByPublicKeyHashResponse> getGetIdentityByPublicKeyHashMethod;
 
@@ -2157,20 +2095,6 @@ public final class PlatformGrpc {
 
     /**
      */
-    public void getDocumentsCount(org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsCountRequest request,
-        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsCountResponse> responseObserver) {
-      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetDocumentsCountMethod(), responseObserver);
-    }
-
-    /**
-     */
-    public void getDocumentsSplitCount(org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsSplitCountRequest request,
-        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsSplitCountResponse> responseObserver) {
-      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetDocumentsSplitCountMethod(), responseObserver);
-    }
-
-    /**
-     */
     public void getIdentityByPublicKeyHash(org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityByPublicKeyHashRequest request,
         io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityByPublicKeyHashResponse> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetIdentityByPublicKeyHashMethod(), responseObserver);
@@ -2623,20 +2547,6 @@ public final class PlatformGrpc {
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsRequest,
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsResponse>(
                   this, METHODID_GET_DOCUMENTS)))
-          .addMethod(
-            getGetDocumentsCountMethod(),
-            io.grpc.stub.ServerCalls.asyncUnaryCall(
-              new MethodHandlers<
-                org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsCountRequest,
-                org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsCountResponse>(
-                  this, METHODID_GET_DOCUMENTS_COUNT)))
-          .addMethod(
-            getGetDocumentsSplitCountMethod(),
-            io.grpc.stub.ServerCalls.asyncUnaryCall(
-              new MethodHandlers<
-                org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsSplitCountRequest,
-                org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsSplitCountResponse>(
-                  this, METHODID_GET_DOCUMENTS_SPLIT_COUNT)))
           .addMethod(
             getGetIdentityByPublicKeyHashMethod(),
             io.grpc.stub.ServerCalls.asyncUnaryCall(
@@ -3105,22 +3015,6 @@ public final class PlatformGrpc {
         io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsResponse> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getGetDocumentsMethod(), getCallOptions()), request, responseObserver);
-    }
-
-    /**
-     */
-    public void getDocumentsCount(org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsCountRequest request,
-        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsCountResponse> responseObserver) {
-      io.grpc.stub.ClientCalls.asyncUnaryCall(
-          getChannel().newCall(getGetDocumentsCountMethod(), getCallOptions()), request, responseObserver);
-    }
-
-    /**
-     */
-    public void getDocumentsSplitCount(org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsSplitCountRequest request,
-        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsSplitCountResponse> responseObserver) {
-      io.grpc.stub.ClientCalls.asyncUnaryCall(
-          getChannel().newCall(getGetDocumentsSplitCountMethod(), getCallOptions()), request, responseObserver);
     }
 
     /**
@@ -3642,20 +3536,6 @@ public final class PlatformGrpc {
 
     /**
      */
-    public org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsCountResponse getDocumentsCount(org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsCountRequest request) {
-      return io.grpc.stub.ClientCalls.blockingUnaryCall(
-          getChannel(), getGetDocumentsCountMethod(), getCallOptions(), request);
-    }
-
-    /**
-     */
-    public org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsSplitCountResponse getDocumentsSplitCount(org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsSplitCountRequest request) {
-      return io.grpc.stub.ClientCalls.blockingUnaryCall(
-          getChannel(), getGetDocumentsSplitCountMethod(), getCallOptions(), request);
-    }
-
-    /**
-     */
     public org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityByPublicKeyHashResponse getIdentityByPublicKeyHash(org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityByPublicKeyHashRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getGetIdentityByPublicKeyHashMethod(), getCallOptions(), request);
@@ -4141,22 +4021,6 @@ public final class PlatformGrpc {
 
     /**
      */
-    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsCountResponse> getDocumentsCount(
-        org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsCountRequest request) {
-      return io.grpc.stub.ClientCalls.futureUnaryCall(
-          getChannel().newCall(getGetDocumentsCountMethod(), getCallOptions()), request);
-    }
-
-    /**
-     */
-    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsSplitCountResponse> getDocumentsSplitCount(
-        org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsSplitCountRequest request) {
-      return io.grpc.stub.ClientCalls.futureUnaryCall(
-          getChannel().newCall(getGetDocumentsSplitCountMethod(), getCallOptions()), request);
-    }
-
-    /**
-     */
     public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityByPublicKeyHashResponse> getIdentityByPublicKeyHash(
         org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityByPublicKeyHashRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
@@ -4565,55 +4429,53 @@ public final class PlatformGrpc {
   private static final int METHODID_GET_DATA_CONTRACT_HISTORY = 12;
   private static final int METHODID_GET_DATA_CONTRACTS = 13;
   private static final int METHODID_GET_DOCUMENTS = 14;
-  private static final int METHODID_GET_DOCUMENTS_COUNT = 15;
-  private static final int METHODID_GET_DOCUMENTS_SPLIT_COUNT = 16;
-  private static final int METHODID_GET_IDENTITY_BY_PUBLIC_KEY_HASH = 17;
-  private static final int METHODID_GET_IDENTITY_BY_NON_UNIQUE_PUBLIC_KEY_HASH = 18;
-  private static final int METHODID_WAIT_FOR_STATE_TRANSITION_RESULT = 19;
-  private static final int METHODID_GET_CONSENSUS_PARAMS = 20;
-  private static final int METHODID_GET_PROTOCOL_VERSION_UPGRADE_STATE = 21;
-  private static final int METHODID_GET_PROTOCOL_VERSION_UPGRADE_VOTE_STATUS = 22;
-  private static final int METHODID_GET_EPOCHS_INFO = 23;
-  private static final int METHODID_GET_FINALIZED_EPOCH_INFOS = 24;
-  private static final int METHODID_GET_CONTESTED_RESOURCES = 25;
-  private static final int METHODID_GET_CONTESTED_RESOURCE_VOTE_STATE = 26;
-  private static final int METHODID_GET_CONTESTED_RESOURCE_VOTERS_FOR_IDENTITY = 27;
-  private static final int METHODID_GET_CONTESTED_RESOURCE_IDENTITY_VOTES = 28;
-  private static final int METHODID_GET_VOTE_POLLS_BY_END_DATE = 29;
-  private static final int METHODID_GET_PREFUNDED_SPECIALIZED_BALANCE = 30;
-  private static final int METHODID_GET_TOTAL_CREDITS_IN_PLATFORM = 31;
-  private static final int METHODID_GET_PATH_ELEMENTS = 32;
-  private static final int METHODID_GET_STATUS = 33;
-  private static final int METHODID_GET_CURRENT_QUORUMS_INFO = 34;
-  private static final int METHODID_GET_IDENTITY_TOKEN_BALANCES = 35;
-  private static final int METHODID_GET_IDENTITIES_TOKEN_BALANCES = 36;
-  private static final int METHODID_GET_IDENTITY_TOKEN_INFOS = 37;
-  private static final int METHODID_GET_IDENTITIES_TOKEN_INFOS = 38;
-  private static final int METHODID_GET_TOKEN_STATUSES = 39;
-  private static final int METHODID_GET_TOKEN_DIRECT_PURCHASE_PRICES = 40;
-  private static final int METHODID_GET_TOKEN_CONTRACT_INFO = 41;
-  private static final int METHODID_GET_TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS = 42;
-  private static final int METHODID_GET_TOKEN_PERPETUAL_DISTRIBUTION_LAST_CLAIM = 43;
-  private static final int METHODID_GET_TOKEN_TOTAL_SUPPLY = 44;
-  private static final int METHODID_GET_GROUP_INFO = 45;
-  private static final int METHODID_GET_GROUP_INFOS = 46;
-  private static final int METHODID_GET_GROUP_ACTIONS = 47;
-  private static final int METHODID_GET_GROUP_ACTION_SIGNERS = 48;
-  private static final int METHODID_GET_ADDRESS_INFO = 49;
-  private static final int METHODID_GET_ADDRESSES_INFOS = 50;
-  private static final int METHODID_GET_ADDRESSES_TRUNK_STATE = 51;
-  private static final int METHODID_GET_ADDRESSES_BRANCH_STATE = 52;
-  private static final int METHODID_GET_RECENT_ADDRESS_BALANCE_CHANGES = 53;
-  private static final int METHODID_GET_RECENT_COMPACTED_ADDRESS_BALANCE_CHANGES = 54;
-  private static final int METHODID_GET_SHIELDED_ENCRYPTED_NOTES = 55;
-  private static final int METHODID_GET_SHIELDED_ANCHORS = 56;
-  private static final int METHODID_GET_MOST_RECENT_SHIELDED_ANCHOR = 57;
-  private static final int METHODID_GET_SHIELDED_POOL_STATE = 58;
-  private static final int METHODID_GET_SHIELDED_NULLIFIERS = 59;
-  private static final int METHODID_GET_NULLIFIERS_TRUNK_STATE = 60;
-  private static final int METHODID_GET_NULLIFIERS_BRANCH_STATE = 61;
-  private static final int METHODID_GET_RECENT_NULLIFIER_CHANGES = 62;
-  private static final int METHODID_GET_RECENT_COMPACTED_NULLIFIER_CHANGES = 63;
+  private static final int METHODID_GET_IDENTITY_BY_PUBLIC_KEY_HASH = 15;
+  private static final int METHODID_GET_IDENTITY_BY_NON_UNIQUE_PUBLIC_KEY_HASH = 16;
+  private static final int METHODID_WAIT_FOR_STATE_TRANSITION_RESULT = 17;
+  private static final int METHODID_GET_CONSENSUS_PARAMS = 18;
+  private static final int METHODID_GET_PROTOCOL_VERSION_UPGRADE_STATE = 19;
+  private static final int METHODID_GET_PROTOCOL_VERSION_UPGRADE_VOTE_STATUS = 20;
+  private static final int METHODID_GET_EPOCHS_INFO = 21;
+  private static final int METHODID_GET_FINALIZED_EPOCH_INFOS = 22;
+  private static final int METHODID_GET_CONTESTED_RESOURCES = 23;
+  private static final int METHODID_GET_CONTESTED_RESOURCE_VOTE_STATE = 24;
+  private static final int METHODID_GET_CONTESTED_RESOURCE_VOTERS_FOR_IDENTITY = 25;
+  private static final int METHODID_GET_CONTESTED_RESOURCE_IDENTITY_VOTES = 26;
+  private static final int METHODID_GET_VOTE_POLLS_BY_END_DATE = 27;
+  private static final int METHODID_GET_PREFUNDED_SPECIALIZED_BALANCE = 28;
+  private static final int METHODID_GET_TOTAL_CREDITS_IN_PLATFORM = 29;
+  private static final int METHODID_GET_PATH_ELEMENTS = 30;
+  private static final int METHODID_GET_STATUS = 31;
+  private static final int METHODID_GET_CURRENT_QUORUMS_INFO = 32;
+  private static final int METHODID_GET_IDENTITY_TOKEN_BALANCES = 33;
+  private static final int METHODID_GET_IDENTITIES_TOKEN_BALANCES = 34;
+  private static final int METHODID_GET_IDENTITY_TOKEN_INFOS = 35;
+  private static final int METHODID_GET_IDENTITIES_TOKEN_INFOS = 36;
+  private static final int METHODID_GET_TOKEN_STATUSES = 37;
+  private static final int METHODID_GET_TOKEN_DIRECT_PURCHASE_PRICES = 38;
+  private static final int METHODID_GET_TOKEN_CONTRACT_INFO = 39;
+  private static final int METHODID_GET_TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS = 40;
+  private static final int METHODID_GET_TOKEN_PERPETUAL_DISTRIBUTION_LAST_CLAIM = 41;
+  private static final int METHODID_GET_TOKEN_TOTAL_SUPPLY = 42;
+  private static final int METHODID_GET_GROUP_INFO = 43;
+  private static final int METHODID_GET_GROUP_INFOS = 44;
+  private static final int METHODID_GET_GROUP_ACTIONS = 45;
+  private static final int METHODID_GET_GROUP_ACTION_SIGNERS = 46;
+  private static final int METHODID_GET_ADDRESS_INFO = 47;
+  private static final int METHODID_GET_ADDRESSES_INFOS = 48;
+  private static final int METHODID_GET_ADDRESSES_TRUNK_STATE = 49;
+  private static final int METHODID_GET_ADDRESSES_BRANCH_STATE = 50;
+  private static final int METHODID_GET_RECENT_ADDRESS_BALANCE_CHANGES = 51;
+  private static final int METHODID_GET_RECENT_COMPACTED_ADDRESS_BALANCE_CHANGES = 52;
+  private static final int METHODID_GET_SHIELDED_ENCRYPTED_NOTES = 53;
+  private static final int METHODID_GET_SHIELDED_ANCHORS = 54;
+  private static final int METHODID_GET_MOST_RECENT_SHIELDED_ANCHOR = 55;
+  private static final int METHODID_GET_SHIELDED_POOL_STATE = 56;
+  private static final int METHODID_GET_SHIELDED_NULLIFIERS = 57;
+  private static final int METHODID_GET_NULLIFIERS_TRUNK_STATE = 58;
+  private static final int METHODID_GET_NULLIFIERS_BRANCH_STATE = 59;
+  private static final int METHODID_GET_RECENT_NULLIFIER_CHANGES = 60;
+  private static final int METHODID_GET_RECENT_COMPACTED_NULLIFIER_CHANGES = 61;
 
   private static final class MethodHandlers<Req, Resp> implements
       io.grpc.stub.ServerCalls.UnaryMethod<Req, Resp>,
@@ -4691,14 +4553,6 @@ public final class PlatformGrpc {
         case METHODID_GET_DOCUMENTS:
           serviceImpl.getDocuments((org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsRequest) request,
               (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsResponse>) responseObserver);
-          break;
-        case METHODID_GET_DOCUMENTS_COUNT:
-          serviceImpl.getDocumentsCount((org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsCountRequest) request,
-              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsCountResponse>) responseObserver);
-          break;
-        case METHODID_GET_DOCUMENTS_SPLIT_COUNT:
-          serviceImpl.getDocumentsSplitCount((org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsSplitCountRequest) request,
-              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsSplitCountResponse>) responseObserver);
           break;
         case METHODID_GET_IDENTITY_BY_PUBLIC_KEY_HASH:
           serviceImpl.getIdentityByPublicKeyHash((org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityByPublicKeyHashRequest) request,
@@ -4964,8 +4818,6 @@ public final class PlatformGrpc {
               .addMethod(getGetDataContractHistoryMethod())
               .addMethod(getGetDataContractsMethod())
               .addMethod(getGetDocumentsMethod())
-              .addMethod(getGetDocumentsCountMethod())
-              .addMethod(getGetDocumentsSplitCountMethod())
               .addMethod(getGetIdentityByPublicKeyHashMethod())
               .addMethod(getGetIdentityByNonUniquePublicKeyHashMethod())
               .addMethod(getWaitForStateTransitionResultMethod())

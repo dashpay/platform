@@ -288,6 +288,66 @@ pub struct Index {
     /// Whether and how the index supports count fast paths. See
     /// [`IndexCountability`].
     pub countable: IndexCountability,
+    /// Whether the index supports O(log n) count queries over a *range* of
+    /// values for the index's last property (the terminator). The flag
+    /// only affects the storage layout at the last property level — all
+    /// preceding (prefix) properties keep their default tree shape:
+    /// - The property-name tree at the *last* property (whose keys are
+    ///   that property's distinct values) is stored as a
+    ///   `ProvableCountTree`, so range queries over distinct values can
+    ///   be answered by walking the boundary in O(log n).
+    /// - Each value tree under it is stored as a `CountTree`, so the
+    ///   property-name aggregate sums per-value counts cleanly.
+    /// - Sibling continuations inside each value tree (compound-index
+    ///   suffixes) are wrapped with `Element::NonCounted` so their counts
+    ///   do not pollute the value tree's count.
+    ///
+    /// `range_countable: true` requires `countable` to be `Countable` or
+    /// `CountableAllowingOffset` (it's additive, not a replacement).
+    pub range_countable: bool,
+    /// When set to `Some(property_name)`, this index's value-tree is laid out
+    /// as a `SumTree` (or `CountSumTree` if [`Index::countable`] is also set
+    /// and [`Index::range_summable`] is false) and every reference under the
+    /// index path carries an `ItemWithSumItem` contribution equal to the
+    /// document's named-property value at insert time. The named property
+    /// must be `type: integer` and listed in the document type's `required`
+    /// array (the validator enforces this at contract creation), and must
+    /// match the doctype-level
+    /// [`DocumentTypeV2::documents_summable`] when both are set.
+    ///
+    /// O(1) `sum(named_property) WHERE <index_properties_exactly_covered>`
+    /// queries land on this index. See
+    /// `book/src/drive/document-sum-trees.md` and
+    /// `book/src/drive/sum-index-examples.md` for the worked example.
+    ///
+    /// **Note on `unique` indexes.** Same caveat as
+    /// [`IndexCountability::Countable`] on a unique index: the storage
+    /// effect is a no-op for documents whose indexed fields are *all*
+    /// non-null (the terminal is a bare reference at key `[0]`), and it
+    /// does meaningful sum-aggregation work only for null-bearing entries
+    /// (which take the same sum-tree branch a non-unique index uses).
+    pub summable: Option<String>,
+    /// When `true`, this index supports O(log n) range-sum queries on its
+    /// last property. The storage-layout effect mirrors
+    /// [`Index::range_countable`] but on the sum surface:
+    /// - The property-name level (the level *above* the last property's
+    ///   value-tree level) is laid out as a `ProvableSumTree`, so range
+    ///   queries over the last property's distinct values can be answered
+    ///   by walking the boundary nodes' committed sub-sums in O(log n).
+    /// - Each value tree under it is laid out as a `SumTree` (so the
+    ///   property-name aggregate combines per-value sums cleanly).
+    /// - Sibling continuations inside each value tree (compound-index
+    ///   suffixes) are wrapped with `Element::NonCountedItemWithSumItem`
+    ///   so their sums don't pollute the value tree's running sum.
+    ///
+    /// `range_summable: true` requires `summable` to be `Some` (it's
+    /// additive on top of summable, not a replacement). Mutually
+    /// compatible with `countable` and `range_countable` — combining
+    /// the flags promotes the tree to a `ProvableCountSumTree` so a
+    /// single tree carries both metrics. The dispatcher in
+    /// `packages/rs-drive/src/drive/document/primary_key_tree_type.rs`
+    /// picks the appropriate variant.
+    pub range_summable: bool,
 }
 
 impl Index {
@@ -463,6 +523,36 @@ impl TryFrom<&[(Value, Value)]> for Index {
         let mut contested_index = None;
         let mut index_properties: Vec<IndexProperty> = Vec::new();
         let mut countable = IndexCountability::NotCountable;
+        // Tracks whether `countable` was explicitly present in the
+        // input map (regardless of value). After the loop, the default
+        // `NotCountable` is indistinguishable from an explicit
+        // `countable: "notCountable"` on the parsed enum — we need
+        // this bit to know whether `averageable` may silently promote
+        // (omitted countable: yes) or must reject (explicit
+        // `notCountable`: contradiction with averageable's implied
+        // countability).
+        let mut countable_was_explicit = false;
+        let mut range_countable = false;
+        // Same explicit-vs-default tracking for `rangeCountable` and
+        // `rangeSummable`. After the loop the default `false` is
+        // indistinguishable from an explicit `rangeCountable: false`
+        // on the parsed bool — but the two have different conflict
+        // semantics under `rangeAverageable: true`: omitted is
+        // silently promotable; explicit `false` is a contradiction
+        // we surface to the author.
+        let mut range_countable_was_explicit = false;
+        let mut summable: Option<String> = None;
+        let mut range_summable = false;
+        let mut range_summable_was_explicit = false;
+        // `averageable` / `rangeAverageable` are syntactic sugar for the
+        // count+sum combination — same on-disk layout and same query
+        // surface, just a friendlier name for authors who think in terms
+        // of averages rather than (count, sum) pairs. Parsed into the
+        // existing flags below after the value-key loop; intermediate
+        // bindings here let us detect conflicts (e.g. `averageable: "x"`
+        // alongside `summable: "y"`) before the merge.
+        let mut averageable: Option<String> = None;
+        let mut range_averageable = false;
 
         for (key_value, value_value) in index_type_value_map {
             let key = key_value.to_str()?;
@@ -588,6 +678,7 @@ impl TryFrom<&[(Value, Value)]> for Index {
                     //   - string: one of `"notCountable"`, `"countable"`,
                     //     `"countableAllowingOffset"` (camelCase, matching the
                     //     `IndexCountability` serde rename rule).
+                    countable_was_explicit = true;
                     countable = match value_value {
                         Value::Bool(true) => IndexCountability::Countable,
                         Value::Bool(false) => IndexCountability::NotCountable,
@@ -610,6 +701,82 @@ impl TryFrom<&[(Value, Value)]> for Index {
                             ))
                         }
                     };
+                }
+                "rangeCountable" => {
+                    range_countable_was_explicit = true;
+                    range_countable =
+                        value_value
+                            .as_bool()
+                            .ok_or(DataContractError::ValueWrongType(
+                                "rangeCountable value must be a boolean".to_string(),
+                            ))?;
+                }
+                "summable" => {
+                    // `summable` names the integer property whose value-per-
+                    // document contributes to the index's running sum. Two
+                    // accepted shapes:
+                    //   - `null` → not summable (same as omitting the key).
+                    //   - string → property name (must exist on the doctype,
+                    //     be `type: integer`, and appear in `required`;
+                    //     enforced by higher-level doctype validation).
+                    summable = match value_value {
+                        Value::Null => None,
+                        Value::Text(s) if !s.is_empty() => Some(s.clone()),
+                        Value::Text(_) => {
+                            return Err(DataContractError::ValueWrongType(
+                                "summable value must be a non-empty string naming an integer \
+                                 property, or null"
+                                    .to_string(),
+                            ))
+                        }
+                        _ => {
+                            return Err(DataContractError::ValueWrongType(
+                                "summable value must be a string naming an integer property, \
+                                 or null"
+                                    .to_string(),
+                            ))
+                        }
+                    };
+                }
+                "rangeSummable" => {
+                    range_summable_was_explicit = true;
+                    range_summable =
+                        value_value
+                            .as_bool()
+                            .ok_or(DataContractError::ValueWrongType(
+                                "rangeSummable value must be a boolean".to_string(),
+                            ))?;
+                }
+                "averageable" => {
+                    // `averageable: "<prop>"` is shorthand for
+                    // `countable: "countable"` + `summable: "<prop>"`.
+                    // Same parsing rules as `summable`: null = not
+                    // averageable, non-empty string = property name.
+                    averageable =
+                        match value_value {
+                            Value::Null => None,
+                            Value::Text(s) if !s.is_empty() => Some(s.clone()),
+                            Value::Text(_) => return Err(DataContractError::ValueWrongType(
+                                "averageable value must be a non-empty string naming an integer \
+                                 property, or null"
+                                    .to_string(),
+                            )),
+                            _ => return Err(DataContractError::ValueWrongType(
+                                "averageable value must be a string naming an integer property, \
+                                 or null"
+                                    .to_string(),
+                            )),
+                        };
+                }
+                "rangeAverageable" => {
+                    // `rangeAverageable: true` is shorthand for
+                    // `rangeCountable: true` + `rangeSummable: true`.
+                    range_averageable =
+                        value_value
+                            .as_bool()
+                            .ok_or(DataContractError::ValueWrongType(
+                                "rangeAverageable value must be a boolean".to_string(),
+                            ))?;
                 }
                 "properties" => {
                     let properties =
@@ -644,6 +811,122 @@ impl TryFrom<&[(Value, Value)]> for Index {
             ));
         }
 
+        // Desugar `averageable` / `rangeAverageable` into the
+        // count + sum flags they're shorthand for. Conflict rules:
+        // - `averageable` + `summable` must name the same property (or
+        //   `summable` must be absent). They're describing the same
+        //   on-disk layout from two different angles; differing names
+        //   are an authoring mistake.
+        // - `averageable` + `countable: notCountable` is a conflict —
+        //   `averageable` implies countable but the author explicitly
+        //   said no. Setting `countable` to `countable` or
+        //   `countableAllowingOffset` alongside `averageable` is fine
+        //   because they agree.
+        // - `rangeAverageable: true` requires `averageable` to be set
+        //   (mirrors `rangeSummable` requires `summable`). Caught via
+        //   the existing range_summable check after the merge below.
+        if let Some(avg_prop) = &averageable {
+            if let Some(sum_prop) = &summable {
+                if sum_prop != avg_prop {
+                    return Err(DataContractError::InvalidContractStructure(format!(
+                        "averageable=\"{}\" conflicts with summable=\"{}\": both flags name \
+                         the property whose values are aggregated into the index's sum tree, \
+                         so they must agree (or only one should be set — averageable is \
+                         shorthand for countable + summable on the same property)",
+                        avg_prop, sum_prop,
+                    )));
+                }
+            }
+            // `averageable` implies countable. Three cases:
+            //  1. `countable` not present in input → silently promote to
+            //     `Countable` (this is the canonical shorthand: write
+            //     just `averageable: "x"` to get countable + summable).
+            //  2. `countable` explicitly present and already countable
+            //     (`"countable"` / `"countableAllowingOffset"`) → no-op,
+            //     the author agreed.
+            //  3. `countable` explicitly present as `"notCountable"` (or
+            //     boolean `false`) → reject. The author actively said
+            //     "not countable" while also saying "averageable" — a
+            //     direct contradiction we surface rather than silently
+            //     override.
+            if !countable_was_explicit {
+                countable = IndexCountability::Countable;
+            } else if !countable.is_countable() {
+                return Err(DataContractError::InvalidContractStructure(format!(
+                    "averageable=\"{}\" implies the index must be countable, but `countable` \
+                     is explicitly set to a non-countable value. Remove the explicit \
+                     `countable: \"notCountable\"` (or set it to `\"countable\"` / \
+                     `\"countableAllowingOffset\"`); averageable is shorthand for \
+                     countable + summable on the named property.",
+                    avg_prop,
+                )));
+            }
+            // Promote `summable` to the same property.
+            summable = Some(avg_prop.clone());
+        } else if range_averageable {
+            return Err(DataContractError::InvalidContractStructure(
+                "rangeAverageable: true requires averageable: \"<prop>\" to name the integer \
+                 property to average; rangeAverageable on its own has no property to aggregate"
+                    .to_string(),
+            ));
+        }
+        if range_averageable {
+            // `rangeAverageable: true` ⇒ both range axes opt in.
+            // Reject explicit-`false` contradictions on either range
+            // axis — silently flipping the author's explicit value
+            // would emit on-disk layout the author didn't ask for.
+            // Omitted (default-false) flags are promoted silently;
+            // explicit `true` is a redundant no-op.
+            if range_countable_was_explicit && !range_countable {
+                return Err(DataContractError::InvalidContractStructure(
+                    "rangeAverageable: true conflicts with explicit rangeCountable: false: \
+                     rangeAverageable is shorthand for rangeCountable + rangeSummable on \
+                     the averageable property. Remove the explicit `rangeCountable: false` \
+                     (or drop rangeAverageable in favor of rangeSummable alone)."
+                        .to_string(),
+                ));
+            }
+            if range_summable_was_explicit && !range_summable {
+                return Err(DataContractError::InvalidContractStructure(
+                    "rangeAverageable: true conflicts with explicit rangeSummable: false: \
+                     rangeAverageable is shorthand for rangeCountable + rangeSummable on \
+                     the averageable property. Remove the explicit `rangeSummable: false` \
+                     (or drop rangeAverageable in favor of rangeCountable alone)."
+                        .to_string(),
+                ));
+            }
+            range_countable = true;
+            range_summable = true;
+        }
+
+        // `rangeCountable` is additive on top of `countable`: it changes how
+        // the index's tree is laid out (property-name → ProvableCountTree,
+        // value level → CountTree, sibling continuations → NonCounted) so
+        // that range-count queries can be answered in O(log n). It is
+        // meaningless without the underlying countability.
+        if range_countable && !countable.is_countable() {
+            return Err(DataContractError::InvalidContractStructure(
+                "rangeCountable requires countable to be \"countable\" or \
+                 \"countableAllowingOffset\"; range-count queries only make \
+                 sense on a count-bearing index"
+                    .to_string(),
+            ));
+        }
+
+        // `rangeSummable` is additive on top of `summable`: it changes how
+        // the index's tree is laid out (property-name → ProvableSumTree,
+        // value level → SumTree, sibling continuations →
+        // NonCountedItemWithSumItem) so that range-sum queries can be
+        // answered in O(log n). It's meaningless without the underlying
+        // summability.
+        if range_summable && summable.is_none() {
+            return Err(DataContractError::InvalidContractStructure(
+                "rangeSummable requires summable to be set to a property name; \
+                 range-sum queries only make sense on a sum-bearing index"
+                    .to_string(),
+            ));
+        }
+
         // if the index didn't have a name let's make one
         let name = name.unwrap_or_else(|| Alphanumeric.sample_string(&mut rand::thread_rng(), 24));
 
@@ -654,6 +937,9 @@ impl TryFrom<&[(Value, Value)]> for Index {
             null_searchable,
             contested_index,
             countable,
+            range_countable,
+            summable,
+            range_summable,
         })
     }
 }
@@ -708,6 +994,9 @@ mod tests {
             null_searchable: true,
             contested_index: None,
             countable: IndexCountability::NotCountable,
+            range_countable: false,
+            summable: None,
+            range_summable: false,
         }
     }
 
@@ -1199,6 +1488,292 @@ mod tests {
             vec![(Value::Text("unknownKey".to_string()), Value::Bool(true))];
         let result = Index::try_from(index_map.as_slice());
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_index_try_from_summable_string_sets_property() {
+        let index_map: Vec<(Value, Value)> = vec![
+            (
+                Value::Text("properties".to_string()),
+                Value::Array(vec![Value::Map(vec![(
+                    Value::Text("recipient".to_string()),
+                    Value::Text("asc".to_string()),
+                )])]),
+            ),
+            (
+                Value::Text("summable".to_string()),
+                Value::Text("amount".to_string()),
+            ),
+        ];
+        let index = Index::try_from(index_map.as_slice()).expect("valid index parses");
+        assert_eq!(index.summable.as_deref(), Some("amount"));
+        assert!(!index.range_summable);
+    }
+
+    #[test]
+    fn test_index_try_from_summable_null_treated_as_none() {
+        let index_map: Vec<(Value, Value)> = vec![
+            (
+                Value::Text("properties".to_string()),
+                Value::Array(vec![Value::Map(vec![(
+                    Value::Text("recipient".to_string()),
+                    Value::Text("asc".to_string()),
+                )])]),
+            ),
+            (Value::Text("summable".to_string()), Value::Null),
+        ];
+        let index = Index::try_from(index_map.as_slice()).expect("null summable parses");
+        assert_eq!(index.summable, None);
+    }
+
+    #[test]
+    fn test_index_try_from_summable_empty_string_rejected() {
+        // Empty `summable: ""` is a contract bug — must reject at parse
+        // time, not silently store `Some("")` and fail later in the
+        // index picker.
+        let index_map: Vec<(Value, Value)> = vec![
+            (
+                Value::Text("properties".to_string()),
+                Value::Array(vec![Value::Map(vec![(
+                    Value::Text("recipient".to_string()),
+                    Value::Text("asc".to_string()),
+                )])]),
+            ),
+            (
+                Value::Text("summable".to_string()),
+                Value::Text(String::new()),
+            ),
+        ];
+        let result = Index::try_from(index_map.as_slice());
+        assert!(result.is_err(), "empty summable string must error");
+        let msg = format!("{:?}", result.unwrap_err());
+        assert!(
+            msg.contains("non-empty"),
+            "error must reference the non-empty requirement; got: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_index_try_from_summable_non_string_rejected() {
+        let index_map: Vec<(Value, Value)> = vec![
+            (
+                Value::Text("properties".to_string()),
+                Value::Array(vec![Value::Map(vec![(
+                    Value::Text("recipient".to_string()),
+                    Value::Text("asc".to_string()),
+                )])]),
+            ),
+            (Value::Text("summable".to_string()), Value::Bool(true)),
+        ];
+        let result = Index::try_from(index_map.as_slice());
+        assert!(result.is_err(), "non-string/non-null summable must error");
+    }
+
+    /// Canonical shorthand `{averageable: "x", rangeAverageable: true}`
+    /// (no explicit `countable`) must succeed and desugar to all four
+    /// underlying flags. Regression test for an inversion in the
+    /// promotion logic where `range_averageable: true` blocked the
+    /// silent-promote path and forced the explicit-contradiction path,
+    /// rejecting the canonical shape.
+    #[test]
+    fn test_index_try_from_averageable_with_range_averageable_promotes_all_flags() {
+        let index_map: Vec<(Value, Value)> = vec![
+            (
+                Value::Text("properties".to_string()),
+                Value::Array(vec![Value::Map(vec![(
+                    Value::Text("score".to_string()),
+                    Value::Text("asc".to_string()),
+                )])]),
+            ),
+            (
+                Value::Text("averageable".to_string()),
+                Value::Text("score".to_string()),
+            ),
+            (
+                Value::Text("rangeAverageable".to_string()),
+                Value::Bool(true),
+            ),
+        ];
+        let index = Index::try_from(index_map.as_slice()).expect("canonical shorthand parses");
+        assert!(
+            index.countable.is_countable(),
+            "averageable promotes countable"
+        );
+        assert_eq!(index.summable.as_deref(), Some("score"));
+        assert!(
+            index.range_countable,
+            "rangeAverageable promotes range_countable"
+        );
+        assert!(
+            index.range_summable,
+            "rangeAverageable promotes range_summable"
+        );
+    }
+
+    /// `averageable` + explicit `countable: "notCountable"` is a direct
+    /// contradiction: the author wrote both "yes, averageable (which
+    /// implies countable)" and "no, not countable" in the same index.
+    /// Must reject. Regression test for the inversion that silently
+    /// promoted the explicit `notCountable` to `Countable`.
+    #[test]
+    fn test_index_try_from_averageable_with_explicit_not_countable_rejected() {
+        let index_map: Vec<(Value, Value)> = vec![
+            (
+                Value::Text("properties".to_string()),
+                Value::Array(vec![Value::Map(vec![(
+                    Value::Text("score".to_string()),
+                    Value::Text("asc".to_string()),
+                )])]),
+            ),
+            (
+                Value::Text("averageable".to_string()),
+                Value::Text("score".to_string()),
+            ),
+            (
+                Value::Text("countable".to_string()),
+                Value::Text("notCountable".to_string()),
+            ),
+        ];
+        let result = Index::try_from(index_map.as_slice());
+        assert!(
+            result.is_err(),
+            "averageable + explicit notCountable must be rejected"
+        );
+        let msg = format!("{:?}", result.unwrap_err());
+        assert!(
+            msg.contains("averageable") && msg.contains("countable"),
+            "error must reference both averageable and countable; got {msg}"
+        );
+    }
+
+    /// `averageable` alone (the simplest shorthand) must silently
+    /// promote `countable` (and set `summable`) without requiring the
+    /// author to also write `countable: "countable"`.
+    #[test]
+    fn test_index_try_from_averageable_alone_silently_promotes_countable() {
+        let index_map: Vec<(Value, Value)> = vec![
+            (
+                Value::Text("properties".to_string()),
+                Value::Array(vec![Value::Map(vec![(
+                    Value::Text("score".to_string()),
+                    Value::Text("asc".to_string()),
+                )])]),
+            ),
+            (
+                Value::Text("averageable".to_string()),
+                Value::Text("score".to_string()),
+            ),
+        ];
+        let index = Index::try_from(index_map.as_slice()).expect("averageable alone parses");
+        assert!(index.countable.is_countable());
+        assert_eq!(index.summable.as_deref(), Some("score"));
+        assert!(!index.range_countable);
+        assert!(!index.range_summable);
+    }
+
+    /// `rangeAverageable: true` + explicit `rangeCountable: false` is a
+    /// direct contradiction: rangeAverageable is shorthand for both
+    /// range axes opting in, but the author explicitly said "no range
+    /// count". Must reject rather than silently flip.
+    #[test]
+    fn test_index_try_from_range_averageable_with_explicit_range_countable_false_rejected() {
+        let index_map: Vec<(Value, Value)> = vec![
+            (
+                Value::Text("properties".to_string()),
+                Value::Array(vec![Value::Map(vec![(
+                    Value::Text("score".to_string()),
+                    Value::Text("asc".to_string()),
+                )])]),
+            ),
+            (
+                Value::Text("averageable".to_string()),
+                Value::Text("score".to_string()),
+            ),
+            (
+                Value::Text("rangeAverageable".to_string()),
+                Value::Bool(true),
+            ),
+            (
+                Value::Text("rangeCountable".to_string()),
+                Value::Bool(false),
+            ),
+        ];
+        let result = Index::try_from(index_map.as_slice());
+        assert!(
+            result.is_err(),
+            "rangeAverageable + explicit rangeCountable: false must reject"
+        );
+        let msg = format!("{:?}", result.unwrap_err());
+        assert!(
+            msg.contains("rangeAverageable") && msg.contains("rangeCountable: false"),
+            "error must reference both flags; got {msg}"
+        );
+    }
+
+    /// Symmetric case: `rangeAverageable: true` + explicit
+    /// `rangeSummable: false` must also reject.
+    #[test]
+    fn test_index_try_from_range_averageable_with_explicit_range_summable_false_rejected() {
+        let index_map: Vec<(Value, Value)> = vec![
+            (
+                Value::Text("properties".to_string()),
+                Value::Array(vec![Value::Map(vec![(
+                    Value::Text("score".to_string()),
+                    Value::Text("asc".to_string()),
+                )])]),
+            ),
+            (
+                Value::Text("averageable".to_string()),
+                Value::Text("score".to_string()),
+            ),
+            (
+                Value::Text("rangeAverageable".to_string()),
+                Value::Bool(true),
+            ),
+            (Value::Text("rangeSummable".to_string()), Value::Bool(false)),
+        ];
+        let result = Index::try_from(index_map.as_slice());
+        assert!(
+            result.is_err(),
+            "rangeAverageable + explicit rangeSummable: false must reject"
+        );
+        let msg = format!("{:?}", result.unwrap_err());
+        assert!(
+            msg.contains("rangeAverageable") && msg.contains("rangeSummable: false"),
+            "error must reference both flags; got {msg}"
+        );
+    }
+
+    /// `rangeAverageable: true` + redundant explicit `rangeCountable:
+    /// true` (and / or `rangeSummable: true`) is fine — the author
+    /// agreed with what averageable promotes, no contradiction.
+    #[test]
+    fn test_index_try_from_range_averageable_with_explicit_range_countable_true_ok() {
+        let index_map: Vec<(Value, Value)> = vec![
+            (
+                Value::Text("properties".to_string()),
+                Value::Array(vec![Value::Map(vec![(
+                    Value::Text("score".to_string()),
+                    Value::Text("asc".to_string()),
+                )])]),
+            ),
+            (
+                Value::Text("averageable".to_string()),
+                Value::Text("score".to_string()),
+            ),
+            (
+                Value::Text("rangeAverageable".to_string()),
+                Value::Bool(true),
+            ),
+            (Value::Text("rangeCountable".to_string()), Value::Bool(true)),
+            (Value::Text("rangeSummable".to_string()), Value::Bool(true)),
+        ];
+        let index = Index::try_from(index_map.as_slice())
+            .expect("rangeAverageable + redundant explicit true must parse");
+        assert!(index.range_countable);
+        assert!(index.range_summable);
+        assert!(index.countable.is_countable());
+        assert_eq!(index.summable.as_deref(), Some("score"));
     }
 
     #[test]

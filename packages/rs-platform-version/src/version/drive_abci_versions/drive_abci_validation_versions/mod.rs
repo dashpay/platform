@@ -127,6 +127,32 @@ pub struct DriveAbciDocumentsStateTransitionValidationVersions {
     pub revision: FeatureVersion,
     pub state: FeatureVersion,
     pub transform_into_action: FeatureVersion,
+    /// Versions the action emitted when a per-transition validation fails
+    /// inside [`transform_document_transition`].
+    ///
+    /// - `0` (PROTOCOL_VERSION_11 and below): errors-only, no action data.
+    ///   The empty action flowed through the legacy
+    ///   `flatten` / `merge_many` aggregators as `Some(empty_vec)` and was
+    ///   accounted as `PaidConsensusError`, but no `BumpIdentityDataContractNonce`
+    ///   drive op was created — so the user only paid the bare-bump fee
+    ///   and the contract nonce never advanced.
+    /// - `1` (PROTOCOL_VERSION_12+): emit a `BumpIdentityDataContractNonce`
+    ///   action so the user pays for the validation work that already ran
+    ///   (fetch + ownership/revision check) and the contract nonce advances.
+    ///
+    /// [`transform_document_transition`]: crate
+    pub failed_per_transition_action: FeatureVersion,
+    /// Versions the
+    /// `fetch_documents_for_transitions_knowing_contract_and_document_type`
+    /// helper. v0 (PROTOCOL_VERSION_11 and below) passes `epoch=None`
+    /// to `query_documents` and doesn't bill the cost. v1
+    /// (PROTOCOL_VERSION_12+) passes `Some(epoch)` and bills via
+    /// `execution_context.add_operation`.
+    pub fetch_documents_for_transitions_knowing_contract_and_document_type: FeatureVersion,
+    /// Versions the `fetch_document_with_id` helper. Same v0 vs v1
+    /// semantics as
+    /// `fetch_documents_for_transitions_knowing_contract_and_document_type`.
+    pub fetch_document_with_id: FeatureVersion,
     pub data_triggers: DriveAbciValidationDataTriggerAndBindingVersions,
     pub is_allowed: FeatureVersion,
     pub document_create_transition_structure_validation: FeatureVersion,

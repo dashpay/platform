@@ -19,7 +19,7 @@ mod contested_resource_voters;
 mod data_contract;
 mod document;
 mod document_count;
-mod document_split_count;
+mod document_query_v0_v1;
 mod epoch;
 mod evonode;
 mod generated_data;

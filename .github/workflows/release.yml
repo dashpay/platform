@@ -67,6 +67,9 @@ jobs:
 
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
 
+      # Composite action defaults to Node 24+ which ships npm 11.5.1+;
+      # required for trusted-publishers OIDC at the publish step below.
+      # See https://docs.npmjs.com/trusted-publishers.
       - name: Setup Node.JS
         uses: ./.github/actions/nodejs
 
@@ -124,12 +127,6 @@ jobs:
         run: |
           echo "NPM suffix: ${{ steps.suffix.outputs.result }}"
           echo "NPM release tag: ${{ steps.tag.outputs.result }}"
-
-      # We need NodeJS 24 for https://docs.npmjs.com/trusted-publishers
-      - name: Setup Node.JS
-        uses: ./.github/actions/nodejs
-        with:
-          node-version: 24
 
       - name: Publish NPM packages
         run: yarn workspaces foreach --all --no-private --parallel npm publish --tolerate-republish --access public --tag ${{ steps.tag.outputs.result }}

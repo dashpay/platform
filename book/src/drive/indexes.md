@@ -102,6 +102,22 @@ Controls whether the terminal tree under each indexed value carries a count, and
 | `Countable` | `CountTree` | O(1) totals at the root |
 | `CountableAllowingOffset` | `ProvableCountTree` | O(1) totals **plus** per-node counts that will enable future O(log n) range / offset queries |
 
+### `summable: Option<String>` and `range_summable: bool`
+
+The sum-side analog of `countable` / `range_countable`. When `summable = Some(<property_name>)`, the terminal tree under each indexed value carries a running sum of the named property across the documents at that value — `O(1)` reads for `SUM(<property>) WHERE <indexed_field> = X` queries. The named property must be `type: integer` and listed in the document type's `required` array (the DPP validator enforces this at contract creation).
+
+`range_summable: true` is the sum-side counterpart of `range_countable`: per-node aggregated sums committed to every internal merk node of the property-name tree, so `SUM(<property>) WHERE <indexed_field> BETWEEN A AND B` queries land on grovedb's `AggregateSumOnRange` primitive — `O(log n)`, no document enumeration. Like `range_countable`, it requires `summable` to be set; it's additive, not a replacement.
+
+| `summable` | `range_summable` | Property-name tree | Value tree | Capabilities |
+|---|---|---|---|---|
+| `None` (default) | – | `NormalTree` | `NormalTree` | No sum fast path |
+| `Some("amount")` | `false` | `NormalTree` | `SumTree` | O(1) `sum(amount) WHERE field = X` at the value-tree root |
+| `Some("amount")` | `true` | `ProvableSumTree` | `SumTree` | O(1) point sum **plus** O(log n) range sums via `AggregateSumOnRange` |
+
+Compose orthogonally with the count flags. Combining `countable` and `summable` on the same index yields one of grovedb's combined-aggregation tree variants (`CountSumTree`, `ProvableCountSumTree`, or `ProvableCountProvableSumTree`) — one tree carries both metrics, queries on either axis read from the same merk root. See **[Range-Summable Indexes](#range-summable-indexes)** below for the storage layout, the `ReferenceWithSumItem` element type that makes per-document contributions land on the parent SumTree, and how range-summable composes with range-countable to produce PCPS trees backing the new `AggregateCountAndSumOnRange` combined-proof primitive.
+
+For the conceptual treatment of sum trees and the full `GetDocumentsSum` query surface, see [Document Sum Trees](document-sum-trees.md) (paralleling [Document Count Trees](document-count-trees.md)).
+
 The schema accepts both the legacy boolean form (`true` → `Countable`, `false` → `NotCountable`) and the camelCase string form (`"notCountable"` / `"countable"` / `"countableAllowingOffset"`). For the full design rationale see [Document Count Trees](document-count-trees.md).
 
 ## How Drive Builds the IndexLevel Trie
@@ -402,9 +418,239 @@ With the layout above, a query like `WHERE color BETWEEN 'red' AND 'tomato'` res
 
 No leaf-level enumeration of distinct color values, no enumeration of individual documents — the count is computed entirely from the tree's pre-aggregated structure.
 
-#### Compound indexes (open question)
+#### Compound indexes
 
-What `range_countable` means on a compound index — e.g., `byColorShape = [color, shape]` with `range_countable: true` — is left for later design. The natural reading is "the parent of the *terminating* level of this index", i.e., the `'shape'` tree under each color value, which would itself become a `ProvableCountTree` (and `'circle'` / `'square'` would become `CountTree`s). When that compound's leading prefix is itself another index (`byColor`), the layering of `NonCounted` and counted variants needs to be worked out so neither index's counts pollute the other. We'll cross that bridge when we actually need range queries on a compound index.
+`range_countable: true` on a compound index applies at the index's *terminating* level (its last property). For `byColorShape = [color, shape]` with `range_countable: true`:
+
+- `'shape'` (the property-name tree under each color value) becomes a `ProvableCountTree`.
+- Each `'circle'` / `'square'` value tree becomes a `CountTree`.
+- Documents are referenced as `Element::Reference` leaves under those `CountTree`s, contributing 1 each to the count aggregate.
+
+When the compound's leading prefix is also indexed by another `range_countable` index (e.g. `byColor` is also `range_countable`), sibling continuations under each color `CountTree` are wrapped with `Element::NonCounted` so a doc routed via `byColorShape` doesn't double-count under `byColor`'s color aggregate. The walker (`add_indices_for_index_level_for_contract_operations`) threads a `parent_value_tree_is_range_countable` flag down the recursion to decide when to wrap, regardless of whether the inner tree is itself a `ProvableCountTree`, `CountTree`, or plain `NormalTree`.
+
+End-to-end coverage in `range_countable_index_e2e_tests` (in `packages/rs-drive/src/drive/contract/insert/insert_contract/v0/mod.rs`) pins the storage layout against a real grovedb — including the `count_tree_value_count_excludes_compound_continuation_via_non_counted` test that proves NonCounted-wrapping is load-bearing for compound-index correctness.
+
+### Range-Summable Indexes
+
+> **Status: live as of grovedb develop (PR #670 merged; head `e98bab5f` as of this PR)** (`feat: add Element::ProvableCountProvableSumTree + dual-axis crossover proofs`). Uses two grovedb element variants from that PR: `Element::ReferenceWithSumItem(ReferencePathType, MaxReferenceHop, SumValue, Option<ElementFlags>)` — a reference that *also* contributes an `i64` sum to its parent sum tree — and `Element::NotSummed<*>` / `Element::NotCountedOrSummed<*>` wrappers that opt out of sum (or both sum and count) propagation. The pure-sum side reuses the existing `SumTree` / `ProvableSumTree` variants; the combined-axis case uses `ProvableCountProvableSumTree`. Carrier-aggregate sum proofs work end-to-end via `GroveDb::verify_aggregate_sum_query_per_key` — see [Sum Index Examples Query 9](./sum-index-examples.md#query-9--carrier-aggregate-in-plus-range) for the byte-counts.
+
+`range_summable` is the sum-side counterpart of `range_countable`. Where `countable` / `summable` make point-lookup aggregates O(1), `range_summable` makes range-sum queries O(log n) — answering "what's the **sum** of `price` for widgets with color between `red` and `tomato`?" without enumerating every distinct color value or every individual document.
+
+The shape is structurally parallel to range-countable, but the per-element contribution rules are inverted, and that asymmetry shapes the storage layout in a subtle but load-bearing way.
+
+#### Constraints
+
+- `range_summable: true` requires `summable: Some(<property>)`. Same additive relationship as `range_countable` / `countable`.
+- The named property must be `type: integer` and listed in `required` on the document type. The DPP validator enforces this at contract-creation time — without it, a missing-or-null value at insert would leave the reference with no sum contribution and silently underflow the ancestor sums on delete.
+- The same property name must be used consistently across the doctype: `documents_summable` (if set) and every per-index `summable` must name the same property. Grovedb's sum trees aggregate `i64` per merk node without a per-tree property tag, so mixing properties would feed inconsistent contributions into the same merk hierarchy.
+- Combining `range_summable` with `range_countable` on the same index promotes the property-name tree to `ProvableCountProvableSumTree` (PCPS) rather than nesting two trees — both metrics live on the same merk root and can be queried atomically. See [Combined: range-countable + range-summable](#combined-range-countable--range-summable) below.
+
+#### Mechanism
+
+`range_summable` upgrades the same three levels `range_countable` does, with the sum analogues at each level:
+
+| Level | Without `range_summable` | With `range_summable` |
+|---|---|---|
+| Property-name tree (e.g. `'color'`) | `NormalTree` | `ProvableSumTree` |
+| Value tree (e.g. `'red'`, `'blue'`) | `NormalTree` | `SumTree` |
+| Terminal at `[0]` under each value | `NormalTree` / `SumTree` (per `summable`) | unchanged — still driven by `summable` |
+| Sibling continuations (compound-index suffixes inside the value tree) | `NormalTree` | `NormalTree` — usually unwrapped (see below) |
+
+The property-name tree is a `ProvableSumTree` rather than a plain `SumTree` for the same reason `range_countable` upgrades to `ProvableCountTree`: per-internal-node aggregated sums are what make range walks O(log n). Walk the boundary path between the lower and upper bound, sum sub-sums at each off-boundary internal node along the way. (See [Document Sum Trees](document-sum-trees.md) for the underlying mechanic.)
+
+The value trees become `SumTree`s because the property-name `ProvableSumTree`'s aggregate is computed by combining each value tree's `sum_value`. For that aggregate to mean "total `<property>` at this color" rather than "first-byte-of-some-i64-garbage", each value tree's `sum_value` must equal the documented sum — which requires the **leaf elements stored under each value tree to be sum-bearing**.
+
+That's where the layout diverges from count.
+
+##### The contribution asymmetry: count auto-propagates, sum requires sum-bearing elements
+
+Count trees automatically count *every* child element. A `NormalTree`, an `Item`, a `Reference` — each contributes `+1` to the parent's `count_value` by default. That's why `range_countable` needs `NonCounted<*>` wrappers everywhere: to **suppress** an aggregation that would otherwise happen.
+
+Sum trees behave the opposite way. Only sum-bearing element variants — `SumItem`, `ItemWithSumItem`, `ReferenceWithSumItem`, and the sum-bearing tree variants themselves — contribute to a parent `SumTree`'s running sum. `Item`, `Reference`, plain `NormalTree`, `CountTree` — all contribute **0** by default. That has two consequences:
+
+1. **Per-document contributions don't appear automatically.** A plain `Element::Reference` under a `SumTree` does not propagate any sum. We need a different reference element — `Element::ReferenceWithSumItem(path, max_hops, sum_value, flags)` — that carries an explicit `i64` sum contribution (the document's value at the `summable` property, frozen at insert time) alongside the usual reference-path bytes. Grovedb PR 670 adds this variant; Drive's index walker constructs it via [`make_document_reference_with_sum_item`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive/src/drive/document/mod.rs) under any index path with `summable.is_some()`.
+2. **Sibling continuations usually don't need a wrapper.** A `NormalTree` continuation under a sum-bearing value tree contributes 0 by default — exactly what we want. No `NotSummed` wrap required. The exception is when the continuation is *itself* sum-bearing (e.g. a deeper compound index that's also `range_summable`); in that case wrap the continuation in `Element::NotSummed<*>` to keep its sum from leaking into the outer index's aggregate. Compare with `range_countable`, where **every** continuation needs `NonCounted` because every non-count-aware element auto-contributes 1.
+
+#### Layout
+
+Extend the widget contract with a numeric `price` property and promote both indexes to the sum surface:
+
+```jsonc
+{
+  "widget": {
+    "type": "object",
+    "documentsCountable": true,                  // unchanged — total widget count fast path
+    "properties": {
+      "brand":  { "type": "string",  "position": 0, "maxLength": 32 },
+      "color":  { "type": "string",  "position": 1, "maxLength": 32 },
+      "shape":  { "type": "string",  "position": 2, "maxLength": 32 },
+      "price":  { "type": "integer", "position": 3, "minimum": 0 } // ← new, summable target
+    },
+    "required": ["brand", "color", "shape", "price"],
+    "indices": [
+      {
+        "name": "byColor",
+        "properties": [{ "color": "asc" }],
+        "summable": "price",                     // ← aggregate `price` per color
+        "rangeSummable": true                    // ← per-node sums, range-queryable
+      },
+      {
+        "name": "byColorShape",
+        "properties": [{ "color": "asc" }, { "shape": "asc" }],
+        "countable": "countable",                // ← per-(color, shape) doc count at O(1)
+        "summable": "price",                     // ← aggregate `price` per (color, shape)
+        "rangeSummable": true                    // ← per-node sums on the `shape` terminator
+      }
+    ],
+    "additionalProperties": false
+  }
+}
+```
+
+Both indexes name **the same** sum property — `summable: "price"` in both. The DPP validator requires this: grovedb's sum trees aggregate `i64` per merk node with no per-tree property tag, so a contract that mixed `summable: "price"` and `summable: "fee"` on the same doctype would feed inconsistent contributions into the same merk hierarchy. `price` is `type: integer` and listed in `required` — both also enforced at contract-creation time.
+
+`byColorShape` combines `countable` (root-only doc count per `(color, shape)` pair) with `summable` + `rangeSummable` (per-node sums of `price`). Drive's dispatch table promotes this combination to **`ProvableCountProvableSumTree`** (PCPS) at the value-tree and `[0]` terminal levels — the only grovedb variant carrying per-node sums also carries per-node counts as a side effect, so the count side gets per-node tracking "for free" even though only the sum side was opted into provability. See [`DocumentTypePrimaryKeyTreeType::primary_key_tree_type`'s v1 dispatch table](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive/src/drive/document/primary_key_tree_type.rs) for the full mapping.
+
+The two indexes share the `color` prefix exactly as the count examples did, so the same shared-prefix layout still applies. What changes is the element types at every level from `'color'` downward — and the diagram below makes the compound case visible, because the `'shape'` continuation under each color is now *itself* a sum-bearing tree (since `byColorShape` is `rangeSummable`) and needs `Element::NotSummed<*>`-wrapping to keep its aggregate from leaking into the outer `byColor` sum.
+
+Document fixtures, three widgets: A: `(brand_acme, red, circle, price=10)`, B: `(brand_acme, red, square, price=20)`, C: `(brand_acme, blue, square, price=30)`. The on-disk layout:
+
+```mermaid
+flowchart TD
+    DT["<b>'widget'</b><br/>(document type)<br/>NormalTree"]
+    ColorKey["<b>'color'</b><br/><b><i>ProvableSumTree</i></b><br/>sum = 60"]
+    Red["<b>'red'</b><br/><b><i>SumTree</i></b><br/>sum = 30"]
+    Blue["<b>'blue'</b><br/><b><i>SumTree</i></b><br/>sum = 30"]
+
+    %% byColor terminals — SumTree, refs carry per-doc sum contributions
+    RedColorT["<b>[0]: SumTree</b><br/>sum = 30<br/><i>byColor terminal</i>"]
+    BlueColorT["<b>[0]: SumTree</b><br/>sum = 30<br/><i>byColor terminal</i>"]
+
+    %% byColorShape continuation — now itself sum-bearing (rangeSummable),
+    %% so it must be NotSummed-wrapped to contribute 0 to the parent
+    %% byColor SumTree. The wrapped inner ProvableSumTree still works
+    %% normally for byColorShape queries that descend through it.
+    RedShape["<b>'shape'</b><br/><b><i>NotSummed&lt;ProvableSumTree&gt;</i></b><br/>contributes 0 to red's sum<br/>inner sum = 30 for byColorShape queries<br/>(no per-node count: rangeCountable not set)"]
+    BlueShape["<b>'shape'</b><br/><b><i>NotSummed&lt;ProvableSumTree&gt;</i></b><br/>contributes 0 to blue's sum<br/>inner sum = 30 for byColorShape queries<br/>(no per-node count: rangeCountable not set)"]
+    RedCircle["<b>'circle'</b><br/><b><i>PCPS</i></b><br/>count = 1, sum = 10"]
+    RedSquare["<b>'square'</b><br/><b><i>PCPS</i></b><br/>count = 1, sum = 20"]
+    BlueSquare["<b>'square'</b><br/><b><i>PCPS</i></b><br/>count = 1, sum = 30"]
+
+    %% byColorShape terminals — now PCPS (carry both per-node count
+    %% and per-node sum). References below contribute both axes.
+    RCT["<b>[0]: PCPS</b><br/>count = 1, sum = 10<br/><i>byColorShape</i>"]
+    RST["<b>[0]: PCPS</b><br/>count = 1, sum = 20<br/><i>byColorShape</i>"]
+    BST["<b>[0]: PCPS</b><br/>count = 1, sum = 30<br/><i>byColorShape</i>"]
+
+    %% References — every leaf is now ReferenceWithSumItem because both
+    %% indexes are summable. Each document is stored under both
+    %% byColor[color] and byColorShape[color, shape], so the same
+    %% per-doc price contribution lands twice in the diagram — once
+    %% per index that covers the document.
+    RA1(["<b>doc_id_A</b><br/>ReferenceWithSumItem<br/>sum=10"])
+    RB1(["<b>doc_id_B</b><br/>ReferenceWithSumItem<br/>sum=20"])
+    RC1(["<b>doc_id_C</b><br/>ReferenceWithSumItem<br/>sum=30"])
+    RA2(["<b>doc_id_A</b><br/>ReferenceWithSumItem<br/>sum=10"])
+    RB2(["<b>doc_id_B</b><br/>ReferenceWithSumItem<br/>sum=20"])
+    RC2(["<b>doc_id_C</b><br/>ReferenceWithSumItem<br/>sum=30"])
+
+    DT --> ColorKey
+    ColorKey --> Red
+    ColorKey --> Blue
+
+    Red --> RedColorT
+    Red --> RedShape
+    Blue --> BlueColorT
+    Blue --> BlueShape
+
+    RedColorT --> RA1
+    RedColorT --> RB1
+    BlueColorT --> RC1
+
+    RedShape --> RedCircle
+    RedShape --> RedSquare
+    BlueShape --> BlueSquare
+
+    RedCircle --> RCT --> RA2
+    RedSquare --> RST --> RB2
+    BlueSquare --> BST --> RC2
+
+    classDef provableSum fill:#e3f2fd,stroke:#0d47a1,color:#000
+    classDef sumTree fill:#e8eaf6,stroke:#1a237e,color:#000
+    classDef pcps fill:#ede7f6,stroke:#311b92,color:#000,stroke-width:2px
+    classDef notSummed fill:#fce4ec,stroke:#880e4f,color:#000,stroke-dasharray:5 5
+    classDef refSum fill:#c8e6c9,stroke:#1b5e20,color:#000,stroke-width:2px
+    class ColorKey provableSum
+    class Red,Blue,RedColorT,BlueColorT sumTree
+    class RedCircle,RedSquare,BlueSquare,RCT,RST,BST pcps
+    class RedShape,BlueShape notSummed
+    class RA1,RB1,RC1,RA2,RB2,RC2 refSum
+```
+
+**Legend additions for this diagram**: light blue = `ProvableSumTree`; indigo = `SumTree`; purple-outline = `ProvableCountProvableSumTree` (PCPS — per-node count *and* per-node sum); dashed pink = `NotSummed<*>` (contributes 0 to the parent's sum despite carrying its own internal aggregate); bold green = `ReferenceWithSumItem`.
+
+Walking through how the aggregates layer:
+
+**`byColor`'s view** (read at the `'color'` `ProvableSumTree` root, sum=60):
+
+- **`'red'` (SumTree, sum=30)** — children are `[0]` (`SumTree`, contributes its `sum_value` = 30) and `'shape'` (`NotSummed<ProvableSumTree>`, contributes **0** — that's the whole point of the wrapper, even though its own internal aggregate is also 30 for `byColorShape` queries). Aggregate = 30. ✓
+- **`'blue'` (SumTree, sum=30)** — same shape: `[0]` contributes 30, `'shape'` contributes 0. ✓
+- **`'color'` (ProvableSumTree, sum=60)** — children are `'red'` (SumTree, 30) and `'blue'` (SumTree, 30). Aggregate = 60. The provable variant additionally stores per-internal-node sums inside its merk structure, which is what enables the range walk.
+
+`byColor` is pure-sum (no `countable` flag) so the value trees here stay `SumTree` — there's no count aggregation at this layer.
+
+**`byColorShape`'s view** (descends *through* the `NotSummed` wrapper rather than reading it; the inner `ProvableSumTree` aggregates the PCPS value trees beneath):
+
+- **`'red' → 'shape'` (`ProvableSumTree`, inner sum=30)** — children are `'circle'` (PCPS, count=1 sum=10) and `'square'` (PCPS, count=1 sum=20). Inner aggregate = 30. Note that `'shape'` is `ProvableSumTree` rather than PCPS: only `rangeSummable` is set on `byColorShape`, not `rangeCountable`, so the *property-name* level (`'shape'`) aggregates sums per-node but doesn't track per-node counts.
+- **`'blue' → 'shape'` (`ProvableSumTree`, inner sum=30)** — single child `'square'` (PCPS, count=1 sum=30). Inner aggregate = 30.
+- Point lookup `SELECT COUNT(*), SUM(price) WHERE color = 'red' AND shape = 'circle'` reads the PCPS value tree directly — both metrics in one element read (count=1, sum=10), no traversal.
+- Range query `SELECT SUM(price) WHERE color = 'red' AND shape BETWEEN 'a' AND 'z'` walks the red `'shape'` `ProvableSumTree`'s boundary and recovers sum=30 via `AggregateSumOnRange` in O(log distinct shape values). Range-count over the same boundary isn't supported (would need `rangeCountable: true` to promote `'shape'` to PCPS at the property-name level); range-count proofs over `shape` would need to enumerate the value-tree count_values manually.
+
+##### Why PCPS at the value level
+
+PCPS is grovedb's only tree variant carrying per-node sums. When an index sets `countable: "<tier>" + summable + rangeSummable`, the dispatch table promotes the value tree to PCPS because there's no "ProvableSumCountTree" variant (per-node sum + root-only count) to land on. The count side gets per-node tracking "for free" — same storage cost as `ProvableCountSumTree`'s count-half since PCPS commits the same per-node count metadata. See [`primary_key_tree_type.rs`'s v1 dispatch table](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive/src/drive/document/primary_key_tree_type.rs) for the full mapping.
+
+`byColor`, by contrast, has only `summable + rangeSummable` (no `countable`), so its value trees stay `SumTree` — root-only sum, no count tracking, no upgrade. The two indexes living side by side on the same widget contract show both sides of the dispatch.
+
+##### Why the `NotSummed<*>` wrap is still needed
+
+The `NotSummed<*>` wrap is what keeps the two index views consistent. `byColorShape`'s `'shape'` subtree carries its own internal aggregate (30 at red, 30 at blue); `byColor` must not let those aggregates leak into its color sums. The wrapper makes `'shape'` contribute exactly 0 to its parent `'red'` / `'blue'` SumTrees, so `byColor` reads from the `[0]` ref-bucket alone. Without the wrap, `'red'` would read as 60 = 30 (refs) + 30 (the shape subtree's leaked aggregate), and any document covered by both indexes would be double-counted in `byColor`'s aggregate.
+
+Compare with the range-countable diagram above: there, the `'shape'` continuations needed `NonCounted<NormalTree>` wrapping because a plain `NormalTree` auto-contributes `+1` to a parent `CountTree`. Here the wrapper does conceptually the same job — suppress the would-be propagation — but for sum aggregation rather than count aggregation, and the wrapped variant is `NotSummed<ProvableSumTree>` because the continuation is itself sum-bearing (which is the only case where a sum wrapper is needed; plain `NormalTree` continuations naturally contribute 0 to a `SumTree` and don't need wrapping at all — see the asymmetry note above).
+
+#### Query — "sum between two values"
+
+A query like `SELECT SUM(price) WHERE color BETWEEN 'red' AND 'tomato'` resolves at the `'color'` `ProvableSumTree` level via grovedb's `AggregateSumOnRange` primitive:
+
+1. Walk the merk tree from `'color'`'s root, finding the boundary node between `'red'` (lower bound) and `'tomato'` (upper bound) — O(log distinct color values).
+2. At each step, decide what to do with the *off-boundary* subtree using its pre-computed sum: include its full `sum_value` (subtree fully inside the range), exclude (fully outside), or recurse (straddles the boundary).
+3. Sum the contributions; the result is the total `price` across all docs whose color falls in `[red, tomato]`.
+
+No leaf-level enumeration of distinct color values, no enumeration of individual documents — the sum is computed entirely from the tree's pre-aggregated structure, exactly mirroring `AggregateCountOnRange`. The verifier counterpart is `GroveDb::verify_aggregate_sum_query(proof, path_query, grove_version) -> Result<([u8; 32], i64), Error>` returning `(root_hash, aggregated_sum)`. (The sum is signed because grovedb's `SumTree` value type is `i64`. For tip-jar-style non-negative aggregations this stays ≥ 0 in practice; the verifier surfaces overflow into negative space as a distinct error rather than silently wrapping.)
+
+#### Compound indexes
+
+`range_summable: true` on a compound index applies at the index's *terminating* level (its last property). For an index `byCategoryPrice = [category, price]` with `summable: "price"` and `range_summable: true`:
+
+- `'price'` (the property-name tree under each category value) becomes a `ProvableSumTree`.
+- Each price-value tree becomes a `SumTree`.
+- Documents are stored as `Element::ReferenceWithSumItem` leaves under those `SumTree`s, contributing their `price` to the sum aggregate.
+
+When the compound's leading prefix is *also* an index that's `range_summable` (e.g. a separate `byCategory` index that's also summable on `price`), sibling continuations under each category `SumTree` need `Element::NotSummed<*>`-wrapping iff the continuation is itself sum-bearing — otherwise the inner sum-tree's aggregate would leak into the outer index's value-tree sum, double-counting documents that route through both indexes. The walker (`add_indices_for_index_level_for_contract_operations`) threads the parent value tree's aggregation flags down the recursion to decide when to wrap.
+
+#### Combined: range-countable + range-summable
+
+Setting both `range_countable: true` AND `range_summable: true` on the same index doesn't produce two separate trees — grovedb PR 670 adds a dedicated `ProvableCountProvableSumTree` (PCPS) variant that commits **both** per-node counts AND per-node sums to every internal merk node. A single tree carries both metrics, and three range primitives become available against it:
+
+- `AggregateCountOnRange` — recovers just the count
+- `AggregateSumOnRange` — recovers just the sum
+- `AggregateCountAndSumOnRange` (PCPS-only, new in PR 670) — recovers BOTH from a single merk traversal, verified via `GroveDb::verify_aggregate_count_and_sum_query(...) -> Result<([u8; 32], u64, i64), Error>` returning `(root_hash, count, sum)`
+
+The combined primitive is strictly cheaper than running two separate range queries: one proof envelope, one merk walk, and both metrics atomically bound to the same root hash (so they can't drift relative to each other across a concurrent write).
+
+The full dispatch table mapping `(countable, range_countable, summable, range_summable)` combinations to grovedb tree variants lives in [`DocumentTypePrimaryKeyTreeType::primary_key_tree_type`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive/src/drive/document/primary_key_tree_type.rs)'s v1 arm; the index-walker dispatch in [`add_indices_for_index_level_for_contract_operations`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive/src/drive/document/insert/add_indices_for_index_level_for_contract_operations) follows the same table at every recursion level.
+
+End-to-end coverage for the sum surface lives in [`packages/rs-drive/benches/document_sum_worst_case.rs`](https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-drive/benches/document_sum_worst_case.rs)'s tip-jar fixture (paralleling the count side's `document_count_worst_case.rs` widget bench), with the worked-example queries in [Sum Index Examples](sum-index-examples.md).
 
 ## Tree Type at the Terminal Level
 
@@ -518,7 +764,7 @@ Quick checklist for contract authors:
 - **Don't index what you won't query.** Each index costs storage on every insert/delete and counts against the per-document-type index limit (10 indexes per type currently).
 - **Order index properties from most-selective to least-selective.** A `[country, city]` index is more useful than `[city, country]` for queries like `where country = "FR"`.
 - **`unique: true`** when the platform should reject duplicates at the consensus layer. This is the right place for "this should be unique" invariants — don't enforce them application-side.
-- **`countable: "countable"`** when you'll regularly call `GetDocumentsCount` filtered by this index's leading columns. Adds a constant-factor overhead on insert/delete; reads become O(1).
+- **`countable: "countable"`** when you'll regularly call `GetDocumentsCount` with `==` (or `in`) clauses on **exactly** this index's properties. Adds a constant-factor overhead on insert/delete; reads become O(1). A `countable: true` index counts only queries whose where clauses match its properties exactly — partial-prefix queries are rejected with `WhereClauseOnNonIndexedProperty`, not falling through to a slow scan. Define a separate index per distinct count-query shape you want to support, or set `documentsCountable: true` on the document type for unfiltered totals.
 - **`countable: "countableAllowingOffset"`** when you'll *also* want offset / range queries on this index in a future release. Strictly more expensive than plain `"countable"`; only worth it if you need the capability.
 - **`null_searchable: true`** (the default) is right for almost all cases. Set to `false` only when documents with all-null indexed values shouldn't be findable through this index — typically a niche optimization to avoid a hot all-null prefix.
 
