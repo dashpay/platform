@@ -298,6 +298,7 @@ impl DocumentsBatchStateTransitionStateValidationV0 for BatchTransition {
                     let owner_id_value = self.owner_id();
                     let mut data_trigger_execution_context = DataTriggerExecutionContext {
                         platform,
+                        block_info,
                         transaction,
                         owner_id: &owner_id_value,
                         state_transition_execution_context: execution_context,

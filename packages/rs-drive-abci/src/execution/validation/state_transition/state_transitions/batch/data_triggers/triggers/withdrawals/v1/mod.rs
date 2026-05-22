@@ -13,7 +13,6 @@ use crate::execution::types::state_transition_execution_context::StateTransition
 use crate::execution::validation::state_transition::batch::data_triggers::{
     DataTriggerExecutionContext, DataTriggerExecutionResult,
 };
-use crate::platform_types::platform_state::PlatformStateV0Methods;
 use dpp::consensus::state::data_trigger::data_trigger_condition_error::DataTriggerConditionError;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::document::DocumentV0Getters;
@@ -90,7 +89,7 @@ pub(super) fn delete_withdrawal_data_trigger_v1(
     // outcome.
     let withdrawals_outcome = context.platform.drive.query_documents(
         drive_query,
-        Some(context.platform.state.last_committed_block_epoch_ref()),
+        Some(&context.block_info.epoch),
         false,
         context.transaction,
         Some(platform_version.protocol_version),

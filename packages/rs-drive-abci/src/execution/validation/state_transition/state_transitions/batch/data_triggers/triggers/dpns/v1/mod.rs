@@ -26,7 +26,6 @@ use dpp::version::PlatformVersion;
 use drive::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use drive::query::{DriveDocumentQuery, InternalClauses, WhereClause, WhereOperator};
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContextMethodsV0;
-use crate::platform_types::platform_state::PlatformStateV0Methods;
 
 pub const MAX_PRINTABLE_DOMAIN_NAME_LENGTH: usize = 253;
 
@@ -264,7 +263,7 @@ pub(super) fn create_domain_data_trigger_v1(
         // nothing for it.
         let parent_domain_outcome = context.platform.drive.query_documents(
             drive_query,
-            Some(context.platform.state.last_committed_block_epoch_ref()),
+            Some(&context.block_info.epoch),
             is_dry_run,
             context.transaction,
             Some(platform_version.protocol_version),
@@ -364,7 +363,7 @@ pub(super) fn create_domain_data_trigger_v1(
     // subdomain), so the unbilled cost compounded faster than T1.
     let preorder_outcome = context.platform.drive.query_documents(
         drive_query,
-        Some(context.platform.state.last_committed_block_epoch_ref()),
+        Some(&context.block_info.epoch),
         is_dry_run,
         context.transaction,
         Some(platform_version.protocol_version),

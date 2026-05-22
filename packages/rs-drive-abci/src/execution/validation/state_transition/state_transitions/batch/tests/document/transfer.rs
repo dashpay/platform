@@ -234,11 +234,15 @@ mod transfer_tests {
         protocol_version: dpp::version::ProtocolVersion,
         expected_processing_fee: dpp::fee::Credits,
     ) {
-        // Contract is hardcoded to format-version-0 (PV9 contract config).
-        // Runtime platform version (which drives the validation-version gate
-        // for batch state transitions) is controlled separately via
-        // `with_initial_protocol_version` below.
-        let platform_version = PlatformVersion::get(9).unwrap();
+        // Contract loader uses the PV9 platform version to materialize the
+        // format-version-0 contract bytes. Everything else — state
+        // transition decoding, validation, and the batch state transition
+        // version gate — runs against the runtime `platform_version`
+        // derived from the parameterized `protocol_version` (controlled by
+        // `with_initial_protocol_version` below).
+        let contract_platform_version = PlatformVersion::get(9).unwrap();
+        let platform_version = PlatformVersion::get(protocol_version)
+            .expect("expected platform version for the requested protocol_version");
 
         let mut platform = TestPlatformBuilder::new()
             .with_initial_protocol_version(protocol_version)
@@ -248,7 +252,7 @@ mod transfer_tests {
         let card_game_path = "tests/supporting_files/contract/crypto-card-game/crypto-card-game-all-transferable-format-version-0.json";
 
         // let's construct the grovedb structure for the card game data contract
-        let contract = json_document_to_contract(card_game_path, true, platform_version)
+        let contract = json_document_to_contract(card_game_path, true, contract_platform_version)
             .expect("expected to get data contract");
 
         assert!(contract.system_version_type() > 0);
@@ -800,11 +804,14 @@ mod transfer_tests {
         // And document serialization v0 is necessary when the data contract is v0 or the data
         // contract config is v0.
         //
-        // The platform_version used for the test data is the latest, but the
-        // runtime platform version (which drives the validation-version gate
-        // for batch state transitions) is controlled separately via
-        // `with_initial_protocol_version` below.
-        let platform_version = PlatformVersion::latest();
+        // The platform_version used for test data + transition encoding +
+        // dispatch all come from the parameterized `protocol_version` so
+        // that the runtime validation gate (which uses
+        // `platform.state.current_platform_version()`) and the data
+        // serialization stay aligned with the version the test claims to
+        // exercise.
+        let platform_version = PlatformVersion::get(protocol_version)
+            .expect("expected platform version for the requested protocol_version");
         let mut platform = TestPlatformBuilder::new()
             .with_initial_protocol_version(protocol_version)
             .build_with_mock_rpc()

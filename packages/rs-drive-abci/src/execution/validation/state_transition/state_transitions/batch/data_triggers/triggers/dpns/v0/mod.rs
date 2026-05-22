@@ -446,8 +446,10 @@ mod test {
 
         transition_execution_context.enable_dry_run();
 
+        let trigger_block_info = BlockInfo::default();
         let mut data_trigger_context = DataTriggerExecutionContext {
             platform: &platform_ref,
+            block_info: &trigger_block_info,
             owner_id: &owner_id,
             state_transition_execution_context: &mut transition_execution_context,
             transaction: None,

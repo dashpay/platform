@@ -188,8 +188,10 @@ mod tests {
         let document_transition = DocumentTransitionAction::DeleteAction(delete_transition);
         let mut state_transition_execution_context_outer =
             StateTransitionExecutionContext::V0(transition_execution_context);
+        let trigger_block_info = BlockInfo::default();
         let mut data_trigger_context = DataTriggerExecutionContext {
             platform: &platform_ref,
+            block_info: &trigger_block_info,
             owner_id: &owner_id,
             state_transition_execution_context: &mut state_transition_execution_context_outer,
             transaction: None,
@@ -325,8 +327,10 @@ mod tests {
             }),
         );
 
+        let trigger_block_info = BlockInfo::default();
         let mut data_trigger_context = DataTriggerExecutionContext {
             platform: &platform_ref,
+            block_info: &trigger_block_info,
             owner_id: &owner_id,
             state_transition_execution_context: &mut transition_execution_context,
             transaction: None,
@@ -364,8 +368,10 @@ mod tests {
         // regression where `_v1` drops the `add_operation` call.
         let mut transition_execution_context_v1 =
             StateTransitionExecutionContext::V0(StateTransitionExecutionContextV0::default());
+        let trigger_block_info_v1 = BlockInfo::default();
         let mut data_trigger_context_v1 = DataTriggerExecutionContext {
             platform: &platform_ref,
+            block_info: &trigger_block_info_v1,
             owner_id: &owner_id,
             state_transition_execution_context: &mut transition_execution_context_v1,
             transaction: None,

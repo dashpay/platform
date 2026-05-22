@@ -180,8 +180,10 @@ mod test {
 
         transition_execution_context.enable_dry_run();
 
+        let trigger_block_info = BlockInfo::default();
         let mut data_trigger_context = DataTriggerExecutionContext {
             platform: &platform_ref,
+            block_info: &trigger_block_info,
             owner_id,
             state_transition_execution_context: &mut transition_execution_context,
             transaction: None,
@@ -301,8 +303,10 @@ mod test {
             )
             .expect("expected to insert identity");
 
+        let trigger_block_info = BlockInfo::default();
         let mut data_trigger_context = DataTriggerExecutionContext {
             platform: &platform_ref,
+            block_info: &trigger_block_info,
             owner_id: &owner_id,
             state_transition_execution_context: &mut transition_execution_context,
             transaction: None,
@@ -419,8 +423,10 @@ mod test {
             StateTransitionExecutionContext::default_for_platform_version(platform_version)
                 .unwrap();
 
+        let trigger_block_info = BlockInfo::default();
         let mut data_trigger_context = DataTriggerExecutionContext {
             platform: &platform_ref,
+            block_info: &trigger_block_info,
             owner_id: &owner_id,
             state_transition_execution_context: &mut transition_execution_context,
             transaction: None,
