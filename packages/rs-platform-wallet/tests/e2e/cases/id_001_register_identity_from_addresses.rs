@@ -52,7 +52,6 @@ const IDENTITY_BALANCE_FLOOR: u64 = REGISTRATION_FUNDING / 2;
 /// Per-step wait deadline.
 const STEP_TIMEOUT: Duration = Duration::from_secs(60);
 
-#[ignore = "requires PLATFORM_WALLET_E2E_BANK_MNEMONIC and live testnet access; run with `cargo test -- --ignored`"]
 #[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
 async fn id_001_register_identity_from_addresses() {
     let _ = tracing_subscriber::fmt()

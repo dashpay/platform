@@ -13,7 +13,7 @@
 //! so we observe end-to-end resolver propagation, not just the
 //! state-transition broadcast acknowledgement.
 //!
-//! `#[ignore]`-gated like the rest of the live-testnet harness; pair
+//! gated behind the `e2e` cargo feature like the rest of the live-testnet harness; pair
 //! with `PLATFORM_WALLET_E2E_BANK_MNEMONIC` and run via
 //! `cargo test -- --ignored`.
 
@@ -68,8 +68,6 @@ const FUNDING_FLOOR: u64 = FUNDING_CREDITS;
 /// DPNS resolver visibility.
 const STEP_TIMEOUT: Duration = Duration::from_secs(120);
 
-#[ignore = "requires PLATFORM_WALLET_E2E_BANK_MNEMONIC and live testnet access; \
-            run with `cargo test -- --ignored`"]
 #[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
 async fn dpns_001_register_and_resolve_name() {
     let _ = tracing_subscriber::fmt()

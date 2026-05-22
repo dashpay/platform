@@ -8,7 +8,6 @@
 use crate::framework::prelude::*;
 
 #[tokio_shared_rt::test(shared)]
-#[ignore = "operational utility — prints bank primary address; run on demand"]
 async fn print_bank_primary_address() {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(

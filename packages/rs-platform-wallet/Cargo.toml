@@ -111,6 +111,12 @@ default = ["bls", "eddsa"]
 bls = ["key-wallet/bls", "key-wallet-manager/bls"]
 eddsa = ["key-wallet/eddsa", "key-wallet-manager/eddsa"]
 shielded = ["dep:grovedb-commitment-tree", "dep:zip32", "dash-sdk/shielded", "dpp/shielded-client"]
+# Opt-in gate for the live integration suite under `tests/e2e/`. Off by
+# default so a stock `cargo test` (and workspace CI) never compiles or
+# runs the network-dependent harness. Pulls in `shielded` so an e2e run
+# exercises the shielded-pool cases too. Run with:
+# `cargo test -p platform-wallet --test e2e --features e2e`.
+e2e = ["shielded"]
 # Forward to the upstream `key-wallet` / `key-wallet-manager`
 # `keep-finalized-transactions` feature. With it OFF (the default),
 # chainlocked transactions are evicted from the in-memory
@@ -123,3 +129,11 @@ keep-finalized-transactions = [
     "key-wallet/keep-finalized-transactions",
     "key-wallet-manager/keep-finalized-transactions",
 ]
+
+# Live integration suite. `required-features` keeps the harness out of a
+# stock `cargo test` build entirely — it compiles and runs only under
+# `--features e2e`. This replaces the former per-test `#[ignore]` gating.
+[[test]]
+name = "e2e"
+path = "tests/e2e.rs"
+required-features = ["e2e"]

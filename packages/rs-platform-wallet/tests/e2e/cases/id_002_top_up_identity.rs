@@ -54,7 +54,6 @@ const TOP_UP_FUNDING_FLOOR: u64 = TOP_UP_FUNDING_CREDITS;
 // 120 s is plenty without softening the framework-wide default.
 const STEP_TIMEOUT: Duration = Duration::from_secs(120);
 
-#[ignore = "requires PLATFORM_WALLET_E2E_BANK_MNEMONIC and live testnet access; run with `cargo test -- --ignored`"]
 #[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
 async fn id_002_top_up_identity_from_addresses() {
     let _ = tracing_subscriber::fmt()
@@ -129,7 +128,7 @@ async fn id_002_top_up_identity_from_addresses() {
     // chain-confirmed funding gate (this branch) clears first, so
     // this is the *downstream* production cursor race it unmasked —
     // NOT a regression. The panic is the proof; the assertion stays
-    // genuine. Do not weaken / `#[ignore]` — fix the production race
+    // genuine. Do not weaken / skip via the `e2e` gate — fix the production race
     // upstream, then this goes green. See TEST_SPEC ID-002.
     assert_ne!(
         top_up_addr, register_addr,

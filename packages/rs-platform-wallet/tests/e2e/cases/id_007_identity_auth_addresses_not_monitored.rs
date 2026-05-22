@@ -65,10 +65,6 @@ const CORE_SEND_DUFFS: u64 = 100_000;
 /// not-monitored contract. 30 seconds matches Marvin's spec.
 const CORE_BALANCE_NEGATIVE_WINDOW: Duration = Duration::from_secs(30);
 
-#[ignore = "ID-007 — pins the intentional architecture that identity-auth \
-            addresses are NOT monitored by SPV. Run with `cargo test -- \
-            --ignored` expecting it to PASS. If it starts FAILING, the \
-            architecture has shifted — investigate before flipping."]
 #[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
 async fn id_007_identity_auth_addresses_not_monitored() {
     let _ = tracing_subscriber::fmt()

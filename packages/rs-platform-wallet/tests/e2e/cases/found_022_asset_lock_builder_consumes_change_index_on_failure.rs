@@ -133,14 +133,6 @@ fn bip44_account_0_monitor_revision(info: &ManagedWalletInfo) -> u64 {
 /// **GREEN after fix**: `next_change_address` is deferred until after a
 /// successful build (or `set_funding` learns to peek without mutating);
 /// `monitor_revision` is unchanged on the failure path.
-#[ignore = "Found-022 bug pin — pins upstream bug in \
-            key-wallet/src/wallet/managed_wallet_info/transaction_builder.rs:79-83 \
-            at rev 5313086 (set_funding calls next_change_address(..., add_to_state=true) \
-            before build_signed; the eager call unconditionally bumps \
-            monitor_revision on the funds account even when no tx is produced); \
-            tracked at dashpay/rust-dashcore#764; \
-            pure unit test (no live network); \
-            run with `cargo test -- --ignored`"]
 #[tokio_shared_rt::test(shared)]
 async fn found_022_asset_lock_builder_consumes_change_index_on_failure() {
     // ── 1. Create a fresh wallet with default accounts but NO UTXOs ─────

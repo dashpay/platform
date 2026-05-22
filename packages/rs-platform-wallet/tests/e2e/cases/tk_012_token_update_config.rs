@@ -4,7 +4,7 @@
 //! `TokenConfigurationChangeItem::MaxSupply(...)` and we re-fetch the
 //! contract to confirm the change is observable on chain.
 //!
-//! Wave 2 stub: `#[ignore]`d. Wave 4 runs against live testnet.
+//! Wave 2 stub: gated behind the `e2e` cargo feature. Wave 4 runs against live testnet.
 //!
 //! Spec drift note: TEST_SPEC.md asks for a positive `actual_fee` on
 //! `ConfigUpdateResult`, but the bare SDK `ConfigUpdateResult` enum
@@ -37,7 +37,6 @@ use crate::framework::tokens::{
 const NEW_MAX_SUPPLY: u64 = 2_000_000_000_000_000;
 
 #[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
-#[ignore = "requires PLATFORM_WALLET_E2E_BANK_MNEMONIC and live testnet access; run with `cargo test -- --ignored`"]
 async fn tk_012_update_token_config_max_supply() {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(

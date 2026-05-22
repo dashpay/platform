@@ -9,7 +9,7 @@
 //! read returns `0` (no balance left to be frozen).
 //!
 //! Self-contained: stages its own freeze precondition rather than
-//! chaining onto TK-007's state. Gated behind `#[ignore]`.
+//! chaining onto TK-007's state. Gated behind the `e2e` cargo feature.
 
 use std::time::Duration;
 
@@ -29,7 +29,6 @@ const TRANSFER_TO_PEER: TokenAmount = 200;
 const STEP_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
-#[ignore = "requires PLATFORM_WALLET_E2E_BANK_MNEMONIC and live testnet access; run with `cargo test -- --ignored`"]
 async fn tk_009_token_destroy_frozen() {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(

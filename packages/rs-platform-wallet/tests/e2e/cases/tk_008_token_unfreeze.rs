@@ -9,7 +9,7 @@
 //!
 //! Self-contained: redoes TK-007's freeze setup inline rather than
 //! sharing state across test functions, matching the harness's
-//! "self-contained tests" convention. Gated behind `#[ignore]`.
+//! "self-contained tests" convention. Gated behind the `e2e` cargo feature.
 
 use std::time::Duration;
 
@@ -31,7 +31,6 @@ const PEER_RETURN: TokenAmount = 50;
 const STEP_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
-#[ignore = "requires PLATFORM_WALLET_E2E_BANK_MNEMONIC and live testnet access; run with `cargo test -- --ignored`"]
 async fn tk_008_token_unfreeze() {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(

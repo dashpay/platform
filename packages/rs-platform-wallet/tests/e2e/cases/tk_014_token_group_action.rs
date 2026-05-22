@@ -24,7 +24,7 @@
 //! `publish_token_contract_with_groups` helper that mirrors the
 //! framework helper's V1-envelope assembly with `groups` populated.
 //!
-//! Gated behind `#[ignore]` for the same reason as transfer / TK-013.
+//! Gated behind the `e2e` cargo feature for the same reason as transfer / TK-013.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -65,7 +65,6 @@ const GROUP_POSITION: GroupContractPosition = 0;
 const STEP_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
-#[ignore = "requires PLATFORM_WALLET_E2E_BANK_MNEMONIC and live testnet access; run with `cargo test -- --ignored`"]
 async fn tk_014_token_group_action_mint_co_sign() {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(

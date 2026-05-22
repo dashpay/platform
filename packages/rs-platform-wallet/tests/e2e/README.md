@@ -47,15 +47,15 @@ stable enough to drive from tests. See [Future Core support](#future-core-suppor
 - Network access to Dash testnet DAPI nodes (default) or a local/devnet cluster.
 - Rust toolchain (stable, matches workspace `rust-toolchain.toml`).
 
-Tests are gated behind `#[ignore]` so a stock `cargo test` (or workspace-wide
-invocation) stays green for contributors and CI jobs that lack a funded testnet
-bank wallet, live DAPI access, and the operator `.env`. To execute the live suite
-once setup is in place, opt in explicitly with `--include-ignored` — this runs the
-**full** suite (both ignored and non-ignored cases). `--ignored` alone runs *only*
-the `#[ignore]`-attributed subset and silently skips the rest:
+The suite is gated behind the `e2e` cargo feature so a stock `cargo test` (or
+workspace-wide invocation) never compiles the network-dependent harness — CI and
+contributors who lack a funded testnet bank wallet, live DAPI access, and the
+operator `.env` stay green with nothing to skip. To execute the live suite once
+setup is in place, opt in with `--features e2e`, which builds and runs the
+**full** suite (including the shielded-pool cases the feature pulls in):
 
 ```bash
-cargo test --test e2e -- --include-ignored --nocapture
+cargo test -p platform-wallet --test e2e --features e2e -- --nocapture
 ```
 
 If `PLATFORM_WALLET_E2E_BANK_MNEMONIC` is unset when an opt-in run starts, the
@@ -141,13 +141,13 @@ which the startup sweep helps prevent by recovering funds from completed test wa
 ```bash
 # After copying tests/.env.example -> tests/.env and filling in the bank mnemonic:
 cd packages/rs-platform-wallet
-cargo test --test e2e -- --nocapture
+cargo test --test e2e --features e2e -- --nocapture
 ```
 
 Or override the mnemonic inline if you keep multiple banks:
 
 ```bash
-PLATFORM_WALLET_E2E_BANK_MNEMONIC="..." cargo test --test e2e -- --nocapture
+PLATFORM_WALLET_E2E_BANK_MNEMONIC="..." cargo test --test e2e --features e2e -- --nocapture
 ```
 
 The first run takes **60–180 seconds**:
@@ -166,7 +166,7 @@ The first run takes **60–180 seconds**:
 Run a single test by appending its name:
 
 ```bash
-cargo test --test e2e -- --nocapture transfer_between_two_platform_addresses
+cargo test --test e2e --features e2e -- --nocapture transfer_between_two_platform_addresses
 ```
 
 Tracing output (SPV sync events, balance polls, sweep results) is written to stderr.
@@ -221,10 +221,10 @@ Typical CI setup:
 
 ```bash
 # Branch A job
-PLATFORM_WALLET_E2E_BANK_MNEMONIC="$BANK_MNEMONIC_BRANCH_A" cargo test ...
+PLATFORM_WALLET_E2E_BANK_MNEMONIC="$BANK_MNEMONIC_BRANCH_A" cargo test --test e2e --features e2e ...
 
 # Branch B job (different secret)
-PLATFORM_WALLET_E2E_BANK_MNEMONIC="$BANK_MNEMONIC_BRANCH_B" cargo test ...
+PLATFORM_WALLET_E2E_BANK_MNEMONIC="$BANK_MNEMONIC_BRANCH_B" cargo test --test e2e --features e2e ...
 ```
 
 ---
@@ -332,7 +332,7 @@ against devnet, a custom test cluster, or any non-default trust anchor.
 
 ```bash
 PLATFORM_WALLET_E2E_TRUSTED_CONTEXT_URL="https://my-trusted-quorum.example/" \
-  cargo test --test e2e -- --nocapture
+  cargo test --test e2e --features e2e -- --nocapture
 ```
 
 ---

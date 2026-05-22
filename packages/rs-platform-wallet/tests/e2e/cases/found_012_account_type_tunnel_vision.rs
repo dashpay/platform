@@ -39,18 +39,11 @@
 //!
 //! Harness gains a CoinJoin-funded test wallet helper. Once that
 //! lands, the scenario in TEST_SPEC.md Found-012 wires straight into
-//! this file's body — drop the `#[ignore]` and fill in the
+//! this file's body — wire the harness extension and fill in the
 //! `TODO(harness)` block below.
 
-/// Placeholder bug pin for Found-012. Marked `#[ignore]` until the
+/// Placeholder bug pin for Found-012. Gated behind the `e2e` cargo feature until the
 /// harness gains a CoinJoin-funded wallet builder.
-#[ignore = "Found-012 — blocked on harness extension. The e2e harness \
-            has no CoinJoin-funded wallet setup today \
-            (`setup_with_core_funded_test_wallet` lands funds on \
-            BIP-44 account 0, which is the bug-free path). Drop this \
-            ignore once a CoinJoin-funding helper lands in \
-            `framework/wallet_factory.rs`. See TEST_SPEC.md \
-            Found-012 for the full scenario."]
 #[test]
 fn found_012_account_type_tunnel_vision_scaffold() {
     // TODO(harness): once a CoinJoin-funded test wallet helper lands,

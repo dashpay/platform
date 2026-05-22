@@ -58,17 +58,8 @@
 //!   `AddressNotInPool` error).
 
 /// Placeholder test that documents the scaffold. Kept under
-/// `#[ignore]` with a clear unblocker description so the next pass
+/// a clear unblocker description so the next pass
 /// can drop the ignore and fill in the body.
-#[ignore = "Found-004 — blocked on harness extension. The bug class \
-            (unwrap_or(0) in three sibling sites) is documented in \
-            TEST_SPEC.md, but exercising it from tests/e2e/ today \
-            requires either (a) a foreign-PlatformAddress builder in \
-            the framework (no current test address is foreign to its \
-            account), or (b) crate-internal access to the find_map \
-            site bypassing the public-API contains-check gate. \
-            Neither lever exists today. Drop this ignore once the \
-            harness gains a foreign-address helper."]
 #[test]
 fn found_004_fund_from_asset_lock_silent_fallback_scaffold() {
     // TODO(harness): once a `foreign_platform_address` builder lands

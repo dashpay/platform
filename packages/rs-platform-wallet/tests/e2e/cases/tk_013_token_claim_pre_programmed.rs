@@ -17,7 +17,7 @@
 //! until the timestamp has elapsed so the claim transformer's
 //! `<= block_info.time_ms` filter admits it.
 //!
-//! Gated behind `#[ignore]` — same operator-env reasoning as the
+//! Gated behind the `e2e` cargo feature — same operator-env reasoning as the
 //! transfer case (`PLATFORM_WALLET_E2E_BANK_MNEMONIC` + live testnet
 //! DAPI access).
 
@@ -53,7 +53,6 @@ const PAYOUT: TokenAmount = 100;
 const STEP_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
-#[ignore = "requires PLATFORM_WALLET_E2E_BANK_MNEMONIC and live testnet access; run with `cargo test -- --ignored`"]
 async fn tk_013_token_claim_from_pre_programmed_distribution() {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(

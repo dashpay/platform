@@ -1,7 +1,7 @@
 //! ID-002b — Asset-lock-funded top-up of existing identity.
 //!
 //! Spec: `tests/e2e/TEST_SPEC.md` (### Identity (ID) → ID-002b).
-//! Pinned status: STUB — full test body implemented, `#[ignore]`-tagged
+//! Pinned status: STUB — full test body implemented, gated behind the `e2e` cargo feature
 //! behind the `PLATFORM_WALLET_E2E_BANK_CORE_GATE` env var (same gate
 //! CR-003 uses; default-on, 180 s deadline). Bank Core (Layer-1)
 //! pre-funding required.
@@ -75,13 +75,6 @@ const STEP_TIMEOUT: Duration = Duration::from_secs(120);
 /// Deadline for the on-chain identity balance to reflect the top-up.
 const TOP_UP_VISIBILITY_TIMEOUT: Duration = Duration::from_secs(180);
 
-#[ignore = "ID-002b — needs testnet + bank Core (Layer-1) pre-funding \
-            (same PLATFORM_WALLET_E2E_BANK_CORE_GATE gate as CR-003). \
-            Asset-lock-funded top-up of an existing identity. The \
-            asset-lock build path (AssetLockManager::create_funded_asset_lock_proof) \
-            is shared with CR-003; ID-002b exercises it through the \
-            top-up driver instead of the registration driver. Mirrors \
-            DET's identity_tasks.rs::step_top_up `FundWithWallet` path."]
 #[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
 async fn id_002b_asset_lock_funded_top_up() {
     let _ = tracing_subscriber::fmt()

@@ -39,7 +39,6 @@ const BURN_AMOUNT: u64 = 100;
 const EXPECTED_RESIDUAL: u64 = MINT_AMOUNT - BURN_AMOUNT;
 
 #[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
-#[ignore = "TK-006 requires PLATFORM_WALLET_E2E_BANK_MNEMONIC and live testnet access. Intermittent `wait_for_balance` timeouts share the upstream `rs-sdk` address-sync race pinned by Found-025 — see TEST_SPEC.md. Test is correct; flips green when upstream lands the fix. Run with: `cargo test -- --ignored`"]
 async fn tk_006_token_burn() {
     let _ = tracing_subscriber::fmt()
         .with_env_filter(

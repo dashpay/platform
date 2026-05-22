@@ -47,7 +47,6 @@ const TRANSFER_AMOUNT: Credits = 1_000_000;
 
 const STEP_TIMEOUT: Duration = Duration::from_secs(60);
 
-#[ignore = "requires PLATFORM_WALLET_E2E_BANK_MNEMONIC and live testnet access; run with `cargo test -- --ignored`"]
 #[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
 async fn id_005_identity_to_addresses_transfer() {
     let _ = tracing_subscriber::fmt()
@@ -139,7 +138,7 @@ async fn id_005_identity_to_addresses_transfer() {
     // chain-confirmed funding gate (this branch) clears first, so
     // this is the *downstream* production cursor race it unmasked —
     // NOT a regression. The panic is the proof; the assertion stays
-    // genuine. Do not weaken / `#[ignore]` — fix the production race
+    // genuine. Do not weaken / skip via the `e2e` gate — fix the production race
     // upstream, then this goes green. See TEST_SPEC ID-005.
     assert_ne!(
         dest_addr, funding_addr,

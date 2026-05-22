@@ -32,10 +32,6 @@ use crate::framework::spv::wait_for_mn_list_synced;
 /// constant.
 const MN_LIST_SYNC_TIMEOUT: Duration = Duration::from_secs(180);
 
-#[ignore = "CR-001 — needs testnet + SPV runtime. \
-            Set PLATFORM_WALLET_E2E_DISABLE_SPV=0 (or unset) and supply \
-            DAPI endpoints via PLATFORM_WALLET_E2E_DAPI_ADDRESSES. \
-            Mirrors DET's test_spv_sync_and_create_wallet."]
 #[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
 async fn cr_001_spv_mn_list_sync_readiness() {
     let _ = tracing_subscriber::fmt()
