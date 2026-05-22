@@ -159,10 +159,9 @@ impl From<super::super::validate::InvalidLabel> for FileStoreError {
 ///   [`MalformedVault`], [`InsecurePermissions`], the internal
 ///   [`Decrypt`], and [`OsKeyring`] collapse into
 ///   [`KeyringError::BadStoreFormat`], whose `String` payload has no box
-///   slot, so they carry only a static secret-free string (Smythe
-///   EDIT-2: never secret data in a format error). They remain
-///   losslessly typed on the [`SecretStore`](crate::secrets::SecretStore)
-///   path.
+///   slot, so they carry only a static secret-free string (never secret
+///   data in a format error). They remain losslessly typed on the
+///   [`SecretStore`](crate::secrets::SecretStore) path.
 /// - [`InvalidLabel`] becomes `KeyringError::Invalid("user", _)`.
 /// - [`Io`] becomes [`KeyringError::PlatformFailure`].
 ///

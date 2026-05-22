@@ -16,12 +16,12 @@ pub(crate) const ARGON2_MIN_M_KIB: u32 = 19_456;
 pub(crate) const ARGON2_MIN_T: u32 = 2;
 pub(crate) const ARGON2_P: u32 = 1;
 
-/// Argon2 parameter ceilings (SEC-001). Since vault `kdf` params are
-/// now attacker-controllable JSON, an oversized `m_kib`/`t` would let a
-/// crafted vault force a multi-GiB allocation or an unbounded-time
-/// derivation (a DoS) before any tag check. 1 GiB memory and 16 passes
-/// bound the cost well above the shipped default (64 MiB, t=3) yet far
-/// below an exhaustion threshold.
+/// Argon2 parameter ceilings. Vault `kdf` params are attacker-
+/// controllable JSON, so an oversized `m_kib`/`t` would let a crafted
+/// vault force a multi-GiB allocation or an unbounded-time derivation (a
+/// DoS) before any tag check. 1 GiB memory and 16 passes bound the cost
+/// well above the shipped default (64 MiB, t=3) yet far below an
+/// exhaustion threshold.
 pub(crate) const ARGON2_MAX_M_KIB: u32 = 1_048_576;
 pub(crate) const ARGON2_MAX_T: u32 = 16;
 
@@ -62,10 +62,9 @@ impl KdfParams {
 
     /// Reject params outside the accepted bounds before any derivation
     /// or allocation runs. The lower bound refuses a downgraded header
-    /// (SEC-REQ-2.2.2); the upper bound (SEC-001) refuses an inflated
-    /// header from an attacker-controllable JSON vault that would
-    /// otherwise force a huge allocation / unbounded derivation ahead of
-    /// any tag check.
+    /// (SEC-REQ-2.2.2); the upper bound refuses an inflated header from an
+    /// attacker-controllable JSON vault that would otherwise force a huge
+    /// allocation / unbounded derivation ahead of any tag check.
     pub(crate) fn enforce_bounds(&self) -> Result<(), FileStoreError> {
         if self.m_kib < ARGON2_MIN_M_KIB
             || self.t < ARGON2_MIN_T
@@ -87,7 +86,7 @@ pub(crate) fn derive_key(
     params: KdfParams,
 ) -> Result<SecretBytes, FileStoreError> {
     // Bounds MUST gate before Params::new / hash_password_into so an
-    // inflated m_kib never reaches the allocator (SEC-001).
+    // inflated m_kib never reaches the allocator.
     params.enforce_bounds()?;
     let argon_params = Params::new(params.m_kib, params.t, params.p, Some(KEY_LEN))
         .map_err(|_| FileStoreError::KdfFailure)?;
@@ -126,7 +125,7 @@ pub(crate) fn seal(
 /// Decrypt `ciphertext` under `key`/`nonce`/`aad`. On tag failure
 /// returns [`FileStoreError::Decrypt`] and **no** plaintext — the
 /// combined (non-detached) API never materializes unverified bytes at
-/// our boundary (SEC-REQ-2.2.8, CWE-347, the RUSTSEC-2023-0096 lesson).
+/// our boundary (SEC-REQ-2.2.8, CWE-347, RUSTSEC-2023-0096).
 pub(crate) fn open(
     key: &SecretBytes,
     nonce: &[u8; NONCE_LEN],
@@ -180,8 +179,8 @@ mod tests {
 
     #[test]
     fn ceilings_reject_inflated_params() {
-        // SEC-001: an attacker-controllable JSON header cannot force a
-        // huge allocation or unbounded derivation.
+        // An attacker-controllable JSON header cannot force a huge
+        // allocation or unbounded derivation.
         assert!(KdfParams {
             m_kib: u32::MAX,
             t: ARGON2_MIN_T,
@@ -215,8 +214,8 @@ mod tests {
 
     #[test]
     fn derive_key_rejects_inflated_m_kib_before_allocating() {
-        // SEC-001: u32::MAX m_kib must error fast (enforce_bounds) and
-        // never reach the multi-GiB allocator. A real allocation of
+        // u32::MAX m_kib must error fast (enforce_bounds) and never reach
+        // the multi-GiB allocator. A real allocation of
         // ~4 TiB would OOM the test, so reaching here at all proves the
         // ceiling fired first.
         let err = derive_key(

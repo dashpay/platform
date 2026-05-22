@@ -76,7 +76,7 @@ impl SecretStore {
     /// Retrieve the secret stored under `(service, label)`, or `Ok(None)`
     /// if absent. The plaintext is wrapped into [`SecretBytes`] at the
     /// seam with no named `Vec` intermediate, so the bare-buffer window is
-    /// zero statements (Smythe EDIT-1).
+    /// zero statements.
     pub fn get(
         &self,
         service: &WalletId,

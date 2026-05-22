@@ -190,8 +190,8 @@ impl EncryptedFileStoreInner {
     /// Derive the key from the supplied passphrase and verify it
     /// against the header's token *before* any entry is touched. A
     /// wrong passphrase fails the token's AEAD tag (constant-time) and
-    /// yields `WrongPassphrase` with no plaintext — defeating the
-    /// mixed-key-corruption defect (Marvin QA-001 / SEC-REQ-2.2.x).
+    /// yields `WrongPassphrase` with no plaintext, so a mismatched key is
+    /// rejected before any entry is touched (SEC-REQ-2.2.x).
     fn derive_and_verify(
         &self,
         wallet_id: &WalletId,
@@ -525,7 +525,7 @@ fn check_perms(meta: &fs::Metadata) -> Result<(), FileStoreError> {
     Ok(())
 }
 
-// TODO(CMT-009): Windows ACL read-check deferred — see CMT-009 in PR #3672.
+// TODO: Windows ACL read-check is not yet implemented; tracked in PR #3672.
 #[cfg(not(unix))]
 fn check_perms(_meta: &fs::Metadata) -> Result<(), FileStoreError> {
     Ok(())
@@ -743,7 +743,8 @@ mod tests {
             .set_secret(b"orig")
             .unwrap();
         let wrong = EncryptedFileStore::open(dir.path(), SecretString::new("pw-wrong")).unwrap();
-        // The defect: this used to write a mixed-key entry and return Ok.
+        // A wrong passphrase must be rejected before any mixed-key entry
+        // is written.
         let err = entry(&wrong, wid(1), "seed2")
             .set_secret(b"intruder")
             .unwrap_err();
@@ -912,9 +913,8 @@ mod tests {
 
     #[test]
     fn second_write_over_existing_vault_succeeds() {
-        // CMT-009 regression: the old `fs::rename`-over-existing path
-        // failed on Windows for the second write. `persist` replaces
-        // atomically on every target.
+        // `persist` replaces atomically on every target, so a second write
+        // over an existing vault succeeds cross-platform.
         let dir = tempfile::tempdir().unwrap();
         let s = store(dir.path());
         entry(&s, wid(1), "seed").set_secret(b"v1").unwrap();
@@ -937,10 +937,10 @@ mod tests {
 
     #[test]
     fn inflated_kdf_params_fail_before_verify_token_derivation() {
-        // SEC-001 end-to-end: a vault whose JSON declares m_kib = u32::MAX
-        // must be refused with a KDF failure (projected to BadStoreFormat)
-        // at `derive_and_verify` — before the verify-token is derived and
-        // without the ~4 TiB allocation the inflated param would demand.
+        // A vault whose JSON declares m_kib = u32::MAX must be refused with
+        // a KDF failure (projected to BadStoreFormat) at `derive_and_verify`
+        // — before the verify-token is derived and without the ~4 TiB
+        // allocation the inflated param would demand.
         let dir = tempfile::tempdir().unwrap();
         let s = store(dir.path());
         entry(&s, wid(1), "seed").set_secret(b"value").unwrap();

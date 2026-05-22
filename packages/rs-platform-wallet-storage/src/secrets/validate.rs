@@ -7,10 +7,9 @@
 
 /// A 32-byte wallet identifier — the per-vault namespace key.
 ///
-/// Public correlation material, **not** a secret (Smythe §1.1): it is
-/// derived from public wallet state, never from the seed's private
-/// bytes. Fixed width is a type invariant, so no runtime length check
-/// is needed.
+/// Public correlation material, **not** a secret: it is derived from
+/// public wallet state, never from the seed's private bytes. Fixed width
+/// is a type invariant, so no runtime length check is needed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct WalletId(pub [u8; 32]);
 

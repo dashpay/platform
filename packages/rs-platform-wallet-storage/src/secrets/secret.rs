@@ -1,34 +1,8 @@
-//! Zeroizing secret wrappers.
-//!
-//! [`SecretString`] is a trimmed fork of dash-evo-tool's `Secret`
-//! (`src/model/secret.rs`, MIT) with the `egui::TextBuffer` impl —
-//! including its SEC-003 `take()` plaintext-leak path — **removed by
-//! construction**: this crate has no egui, so the leak vector cannot
-//! exist (SEC-REQ-3.8.1 / 3.8.2, CWE-316).
-//!
-//! [`SecretBytes`] is net-new: the byte-oriented wrapper for seeds,
-//! xprivs, KDF output, AEAD keys and decrypted plaintext (SEC-REQ-3.8.1
-//! / 4.1).
-//!
-//! Both: redacting `Debug`, no `Display`/`Deref`/`Serialize`, full
-//! buffer wipe on drop, best-effort `region` mlock.
-//!
-//! ---
-//! Portions Copyright (c) Dash Core Group, originating from
-//! dash-evo-tool (`src/model/secret.rs`), MIT License:
-//!
-//! Permission is hereby granted, free of charge, to any person
-//! obtaining a copy of this software and associated documentation
-//! files (the "Software"), to deal in the Software without
-//! restriction, including without limitation the rights to use, copy,
-//! modify, merge, publish, distribute, sublicense, and/or sell copies
-//! of the Software, and to permit persons to whom the Software is
-//! furnished to do so, subject to the following conditions:
-//!
-//! The above copyright notice and this permission notice shall be
-//! included in all copies or substantial portions of the Software.
-//!
-//! THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
+//! Zeroizing secret wrappers: [`SecretString`] for UTF-8 secrets and
+//! [`SecretBytes`] for byte secrets (seeds, xprivs, KDF output, AEAD
+//! keys, decrypted plaintext). Both have a redacting `Debug`, no
+//! `Display`/`Deref`/`Serialize`, a full buffer wipe on drop, and a
+//! best-effort `region` mlock (SEC-REQ-3.8.1 / 3.8.2 / 4.1, CWE-316).
 
 use std::fmt;
 
@@ -49,9 +23,9 @@ const DEFAULT_CAPACITY: usize = 4096;
 /// `Display`, `Deref`, `DerefMut`, `Serialize`, `PartialEq`, `Eq` are
 /// intentionally **not** implemented; read access is the explicit
 /// [`expose_secret`] only, and equality goes through
-/// [`subtle::ConstantTimeEq`] (Smythe EDIT-4 — `==` on secret bytes is
-/// forbidden, no exception, so future bridge code cannot inherit a
-/// non-constant-time path). `Debug` is redacted. `Zeroizing<String>`
+/// [`subtle::ConstantTimeEq`] (`==` on secret bytes is forbidden, no
+/// exception, so future bridge code cannot inherit a non-constant-time
+/// path). `Debug` is redacted. `Zeroizing<String>`
 /// wipes the buffer over its full capacity on drop; the buffer is
 /// best-effort `mlock`ed against swap.
 ///
@@ -61,7 +35,7 @@ const DEFAULT_CAPACITY: usize = 4096;
 /// use platform_wallet_storage::secrets::SecretString;
 /// let a = SecretString::new("pw");
 /// let b = SecretString::new("pw");
-/// let _ = a == b; // EDIT-4: `==` on SecretString is forbidden; use ConstantTimeEq::ct_eq
+/// let _ = a == b; // `==` on SecretString is forbidden; use ConstantTimeEq::ct_eq
 /// ```
 pub struct SecretString {
     // Field order is load-bearing: `inner` drops (and `Zeroizing` wipes
@@ -144,9 +118,8 @@ impl fmt::Debug for SecretString {
 impl ConstantTimeEq for SecretString {
     /// Constant-time compare over the equal-length region. Unequal
     /// lengths return `0` without revealing where they differ; the
-    /// only observable is the (non-secret) length difference —
-    /// SEC-REQ-3.8.2, the documented `PartialEq` length-leak caveat
-    /// from the upstream `Secret` fork.
+    /// only observable is the (non-secret) length difference
+    /// (SEC-REQ-3.8.2).
     fn ct_eq(&self, other: &Self) -> subtle::Choice {
         self.expose_secret()
             .as_bytes()
@@ -174,16 +147,16 @@ impl From<&str> for SecretString {
 /// minimization (SEC-REQ-3.5) — move it, or `expose_secret()` and copy
 /// deliberately into another wrapper. `Display`, `Deref`, `Serialize`,
 /// `PartialEq`, `Eq` are intentionally **not** implemented; equality
-/// goes through [`subtle::ConstantTimeEq`] only (Smythe EDIT-4 — `==`
-/// on secret bytes is forbidden, no exception, so future bridge code
-/// cannot inherit a non-constant-time path). `Debug` is redacted; the
+/// goes through [`subtle::ConstantTimeEq`] only (`==` on secret bytes is
+/// forbidden, no exception, so future bridge code cannot inherit a
+/// non-constant-time path). `Debug` is redacted; the
 /// buffer is wiped on drop and best-effort `mlock`ed.
 ///
 /// ```compile_fail
 /// use platform_wallet_storage::secrets::SecretBytes;
 /// let a = SecretBytes::new(vec![0u8; 32]);
 /// let b = SecretBytes::new(vec![0u8; 32]);
-/// let _ = a == b; // EDIT-4: `==` on SecretBytes is forbidden; use ConstantTimeEq::ct_eq
+/// let _ = a == b; // `==` on SecretBytes is forbidden; use ConstantTimeEq::ct_eq
 /// ```
 pub struct SecretBytes {
     // Field order is load-bearing: `inner` drops (and `Zeroizing` wipes
@@ -288,7 +261,7 @@ mod tests {
 
     #[test]
     fn secret_string_ct_eq_is_value_based() {
-        // EDIT-4: equality goes through `ConstantTimeEq` only.
+        // Equality goes through `ConstantTimeEq` only.
         let same = SecretString::new("pw").ct_eq(&SecretString::new("pw"));
         let diff = SecretString::new("pw").ct_eq(&SecretString::new("px"));
         let len_diff = SecretString::new("pw").ct_eq(&SecretString::new("pww"));

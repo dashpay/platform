@@ -47,7 +47,7 @@ pub(crate) const VERIFY_LABEL: &str = "\0verify";
 
 /// Minimum AEAD ciphertext length: the Poly1305 tag is always present
 /// even for an empty plaintext, so any `verify_ct`/`ciphertext` shorter
-/// than this is structurally impossible and rejected (SEC-002).
+/// than this is structurally impossible and rejected.
 const AEAD_TAG_LEN: usize = 16;
 
 /// Parsed header (KDF params + salt + passphrase-verification token).
@@ -187,17 +187,17 @@ pub(crate) fn serialize(header: &Header, entries: &[Entry]) -> Vec<u8> {
 
 /// Validate a hex-decoded byte field to a fixed-width array, rejecting a
 /// wrong length as [`FileStoreError::MalformedVault`] rather than
-/// panicking in `XNonce::from_slice` / `copy_from_slice` (SEC-002).
+/// panicking in `XNonce::from_slice` / `copy_from_slice`.
 fn fixed<const N: usize>(bytes: &[u8]) -> Result<[u8; N], FileStoreError> {
     bytes.try_into().map_err(|_| FileStoreError::MalformedVault)
 }
 
 /// Parse a vault. Two-step: probe `version` (lax), then parse the strict
 /// payload for the known version. Refuses unknown versions, unknown KDF
-/// ids, and any malformed/short byte field — fail closed (SEC-REQ-2.2.9,
-/// SEC-002). All `serde_json` errors are mapped to a static
-/// [`FileStoreError`] with the source DISCARDED so input bytes can never
-/// leak into an error string or log (SEC-003).
+/// ids, and any malformed/short byte field — fail closed (SEC-REQ-2.2.9).
+/// All `serde_json` errors are mapped to a static [`FileStoreError`] with
+/// the source DISCARDED so input bytes can never leak into an error
+/// string or log.
 pub(crate) fn deserialize(buf: &[u8]) -> Result<(Header, Vec<Entry>), FileStoreError> {
     let probe: VersionProbe =
         serde_json::from_slice(buf).map_err(|_| FileStoreError::MalformedVault)?;
@@ -351,7 +351,7 @@ mod tests {
 
     #[test]
     fn wrong_length_nonce_yields_malformed_not_panic() {
-        // SEC-002: a 1-byte nonce must not panic in copy_from_slice.
+        // A 1-byte nonce must not panic in copy_from_slice.
         let mut file: VaultFile = serde_json::from_slice(&serialize(&test_header(), &[])).unwrap();
         file.entries.push(EntryRecord {
             label: "seed".into(),
@@ -404,7 +404,7 @@ mod tests {
 
     #[test]
     fn malformed_error_renders_no_input_bytes() {
-        // SEC-003: a parse failure must never echo the offending input.
+        // A parse failure must never echo the offending input.
         let needle = "SUPERSECRETNEEDLE";
         let evil = format!("{{\"version\": \"{needle}\"}}");
         let err = deserialize(evil.as_bytes()).unwrap_err();
