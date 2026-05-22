@@ -4377,17 +4377,16 @@ mod tests {
             )
             .expect("expected to load contract");
 
-            let mut contract_value = data_contract
-                .to_value(platform_version)
-                .expect("to_value failed");
+            let mut contract_value =
+                dpp::platform_value::to_value(&data_contract).expect("to_value failed");
 
             // Inject `keywords` onto the `preorder` document type schema — the
             // wrong place for it. This should be rejected by the v1 meta
-            // schema during `DataContract::from_value` full validation.
+            // schema during `DataContract::from_value_validated` full validation.
             contract_value["documentSchemas"]["preorder"]["keywords"] =
                 Value::Array(vec![Value::Text("invalid".to_string())]);
 
-            let err = DataContract::from_value(contract_value, true, platform_version)
+            let err = DataContract::from_value_validated(contract_value, platform_version)
                 .expect_err("meta schema validation must reject document-type keywords");
 
             // Assert the failure is specifically a JSON schema validation error
