@@ -7,8 +7,11 @@
 //! must enable it, and we must *prove* it took, because the pragma
 //! silently no-ops on a SQLite built without FK support.
 //!
-//! Every connection-open site in the crate routes through [`open_conn`]
-//! so there is exactly one place that owns flags + FK enforcement.
+//! Every library connection-open site routes through [`open_conn`] so
+//! there is exactly one place that owns flags + FK enforcement. The CLI
+//! binary's read-only `peek_schema_version` probe opens directly — it
+//! never mutates rows, so FK enforcement is moot, and `open_conn` is
+//! `pub(crate)` (not reachable from the separate bin target).
 
 use rusqlite::{Connection, OpenFlags};
 use std::path::Path;
