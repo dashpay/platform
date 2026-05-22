@@ -117,12 +117,6 @@ impl<C> Platform<C> {
                 platform_version,
             )?;
 
-            if documents.is_empty() {
-                return Ok(QueryValidationResult::new_with_error(QueryError::NotFound(
-                    format!("document {} history not found", document_id),
-                )));
-            }
-
             let document_entries = documents
                 .into_iter()
                 .map(|(date, document)| {
@@ -144,5 +138,116 @@ impl<C> Platform<C> {
         };
 
         Ok(QueryValidationResult::new_with_data(response))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::query::tests::setup_platform;
+    use dpp::block::block_info::BlockInfo;
+    use dpp::dashcore::Network;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::document::DocumentV0Getters;
+    use dpp::tests::json_document::{json_document_to_contract, json_document_to_document};
+    use dpp::tests::utils::generate_random_identifier_struct;
+    use drive::util::object_size_info::DocumentInfo::DocumentRefInfo;
+    use drive::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+    use drive::util::storage_flags::StorageFlags;
+
+    const DOCUMENT_TYPE_NAME: &str = "profile";
+
+    #[test]
+    fn should_return_empty_document_history_page_without_error() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+        let contract = json_document_to_contract(
+            concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../rs-drive/tests/supporting_files/contract/dashpay/dashpay-contract-with-profile-history.json"
+            ),
+            false,
+            version,
+        )
+        .expect("expected contract");
+
+        platform
+            .drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                version,
+            )
+            .expect("apply contract");
+
+        let document_type = contract
+            .document_type_for_name(DOCUMENT_TYPE_NAME)
+            .expect("profile document type");
+        let document = json_document_to_document(
+            concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../rs-drive/tests/supporting_files/contract/dashpay/profile0.json"
+            ),
+            Some(generate_random_identifier_struct()),
+            document_type,
+            version,
+        )
+        .expect("expected document");
+
+        platform
+            .drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((
+                            &document,
+                            StorageFlags::optional_default_as_cow(),
+                        )),
+                        owner_id: None,
+                    },
+                    contract: &contract,
+                    document_type,
+                },
+                true,
+                BlockInfo::default_with_time(1000),
+                true,
+                None,
+                version,
+                None,
+            )
+            .expect("put document");
+
+        let request = GetDocumentHistoryRequestV0 {
+            data_contract_id: contract.id().to_vec(),
+            document_type_name: DOCUMENT_TYPE_NAME.to_string(),
+            document_id: document.id().to_vec(),
+            limit: Some(10),
+            offset: None,
+            start_at_ms: 1000,
+            prove: false,
+        };
+
+        let result = platform
+            .query_document_history_v0(request, &state, version)
+            .expect("query document history");
+
+        assert!(
+            result.errors.is_empty(),
+            "expected empty history page to be successful"
+        );
+
+        let response = result.data.expect("expected data");
+        let GetDocumentHistoryResponseV0 {
+            result:
+                Some(get_document_history_response_v0::Result::DocumentHistory(document_history)),
+            metadata: Some(_),
+        } = response
+        else {
+            panic!("expected document history response");
+        };
+
+        assert!(document_history.document_entries.is_empty());
     }
 }

@@ -87,6 +87,21 @@ class PlatformPromiseClient {
 
   /**
    *
+   * @param {!GetDocumentHistoryRequest} getDocumentHistoryRequest
+   * @param {?Object<string, string>} metadata
+   * @returns {Promise<!GetDocumentHistoryResponse>}
+   */
+  getDocumentHistory(getDocumentHistoryRequest, metadata = {}) {
+    return promisify(
+      this.client.getDocumentHistory.bind(this.client),
+    )(
+      getDocumentHistoryRequest,
+      metadata,
+    );
+  }
+
+  /**
+   *
    * @param {!GetDocumentsRequest} getDocumentsRequest
    * @param {?Object<string, string>} metadata
    * @returns {Promise<!GetDocumentsResponse>}

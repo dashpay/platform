@@ -80,13 +80,6 @@ impl Drive {
             }
         }
 
-        Ok((
-            root_hash,
-            if documents.is_empty() {
-                None
-            } else {
-                Some(documents)
-            },
-        ))
+        Ok((root_hash, Some(documents)))
     }
 }

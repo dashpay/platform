@@ -181,6 +181,21 @@ mod tests {
             )
             .expect("fetch page");
         assert_eq!(page.keys().copied().collect::<Vec<_>>(), vec![2000]);
+
+        let empty_page = drive
+            .fetch_document_history(
+                contract_id,
+                DOCUMENT_TYPE_NAME,
+                document_type,
+                document_id,
+                None,
+                3000,
+                Some(10),
+                None,
+                platform_version,
+            )
+            .expect("fetch empty page");
+        assert!(empty_page.is_empty());
     }
 
     #[test]
@@ -227,5 +242,32 @@ mod tests {
             history.keys().copied().collect::<Vec<_>>(),
             vec![1000, 2000]
         );
+
+        let empty_page_proof = drive
+            .prove_document_history(
+                contract_id,
+                DOCUMENT_TYPE_NAME,
+                document_id,
+                None,
+                2000,
+                Some(10),
+                None,
+                platform_version,
+            )
+            .expect("prove empty page");
+        let (_root_hash, empty_history) = Drive::verify_document_history(
+            &empty_page_proof,
+            contract_id,
+            DOCUMENT_TYPE_NAME,
+            document_type,
+            document_id,
+            2000,
+            Some(10),
+            None,
+            platform_version,
+        )
+        .expect("verify empty history page");
+
+        assert!(empty_history.expect("empty history page exists").is_empty());
     }
 }
