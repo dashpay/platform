@@ -1928,7 +1928,7 @@ struct AssetLockStorageDetailView: View {
             if isAddressFunding {
                 // Address-funding section: show the recipient
                 // platform address when Swift stamped it after a
-                // successful `topUpFromCore`. `nil` on rows
+                // successful `fundFromAssetLock`. `nil` on rows
                 // that pre-date this column or whose funding hasn't
                 // completed yet — communicate either case
                 // explicitly so the explorer entry is self-

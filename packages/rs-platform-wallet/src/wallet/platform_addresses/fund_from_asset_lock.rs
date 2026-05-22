@@ -120,14 +120,14 @@ impl PlatformAddressWallet {
     ///   either `consume_asset_lock` completes or the next resume
     ///   advances it.
     ///
-    /// The Swift `AddressTopUpController.task` field deliberately
+    /// The Swift `AddressFundFromAssetLockController.task` field deliberately
     /// does not call `.cancel()` to avoid these partial-state
     /// outcomes — the FFI call always runs to completion. UI
     /// dismissal hides the progress view without aborting the
     /// work; resume picks the lock back up via
     /// `FromExistingAssetLock`.
     #[allow(clippy::too_many_arguments)]
-    pub async fn top_up<S, AS>(
+    pub async fn fund_from_asset_lock<S, AS>(
         &self,
         funding: AssetLockFunding,
         platform_account_index: u32,
@@ -420,7 +420,7 @@ async fn validate_recipient_addresses(
 ) -> Result<(), PlatformWalletError> {
     if addresses.is_empty() {
         return Err(PlatformWalletError::AddressOperation(
-            "top_up requires at least one recipient address".to_string(),
+            "fund_from_asset_lock requires at least one recipient address".to_string(),
         ));
     }
 

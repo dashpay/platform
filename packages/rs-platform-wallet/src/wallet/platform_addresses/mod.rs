@@ -8,7 +8,7 @@ pub use dpp::prelude::AddressNonce;
 
 pub(crate) mod provider;
 mod sync;
-mod top_up;
+mod fund_from_asset_lock;
 mod transfer;
 mod wallet;
 mod withdrawal;

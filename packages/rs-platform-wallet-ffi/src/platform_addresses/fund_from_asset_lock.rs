@@ -49,7 +49,7 @@ use crate::{unwrap_option_or_return, unwrap_result_or_return};
 ///   ownership.
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
-pub unsafe extern "C" fn platform_address_wallet_top_up_signer(
+pub unsafe extern "C" fn platform_address_wallet_fund_from_asset_lock_signer(
     handle: Handle,
     amount_duffs: u64,
     account_index: u32,
@@ -98,7 +98,7 @@ pub unsafe extern "C" fn platform_address_wallet_top_up_signer(
                 )
             };
             wallet_clone
-                .top_up(
+                .fund_from_asset_lock(
                     AssetLockFunding::FromWalletBalance {
                         amount_duffs,
                         account_index,
@@ -122,7 +122,7 @@ pub unsafe extern "C" fn platform_address_wallet_top_up_signer(
 /// Resume a platform-address funding flow from an already-tracked
 /// asset lock by outpoint.
 ///
-/// Sister to [`platform_address_wallet_top_up_signer`]:
+/// Sister to [`platform_address_wallet_fund_from_asset_lock_signer`]:
 /// instead of building a fresh asset-lock transaction, pick up an
 /// existing tracked lock and drive whatever stages remain
 /// (broadcast, IS/CL wait, Platform submission). Use case mirrors
@@ -136,10 +136,10 @@ pub unsafe extern "C" fn platform_address_wallet_top_up_signer(
 ///   `OutPointFFI` (32-byte raw txid + u32 vout). The caller retains
 ///   ownership; the FFI does not free it.
 /// - `signer_address_handle` / `core_signer_handle` — see
-///   [`platform_address_wallet_top_up_signer`].
+///   [`platform_address_wallet_fund_from_asset_lock_signer`].
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
-pub unsafe extern "C" fn platform_address_wallet_resume_top_up_with_existing_asset_lock_signer(
+pub unsafe extern "C" fn platform_address_wallet_resume_fund_from_asset_lock_signer(
     handle: Handle,
     out_point: *const OutPointFFI,
     platform_account_index: u32,
@@ -189,7 +189,7 @@ pub unsafe extern "C" fn platform_address_wallet_resume_top_up_with_existing_ass
                 )
             };
             wallet_clone
-                .top_up(
+                .fund_from_asset_lock(
                     AssetLockFunding::FromExistingAssetLock {
                         out_point: resume_outpoint,
                     },
@@ -211,7 +211,7 @@ pub unsafe extern "C" fn platform_address_wallet_resume_top_up_with_existing_ass
 
 /// Decode an FFI array of `FundingAddressEntryFFI` into the
 /// `BTreeMap<PlatformAddress, Option<Credits>>` shape that
-/// `top_up` consumes.
+/// `fund_from_asset_lock` consumes.
 ///
 /// # Safety
 /// - `addresses` must be a valid, non-null pointer to an array of
@@ -244,7 +244,7 @@ pub(super) unsafe fn decode_funding_addresses(
             None
         };
         // Reject duplicates rather than silently collapsing them.
-        // The Swift wrapper's `topUpFromCorePreflight` already
+        // The Swift wrapper's `fundFromAssetLockPreflight` already
         // dedupes client-side, but this is the FFI boundary —
         // callers other than our Swift code (or a future Swift
         // bug) could pass duplicates and we'd silently lose the

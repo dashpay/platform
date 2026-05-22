@@ -1,11 +1,11 @@
-// PendingPlatformTopUpsList.swift
+// PendingPlatformFundFromAssetLocksList.swift
 // SwiftExampleApp
 //
 // Wallet-scoped "Pending Platform Top Ups" surface that mirrors the
 // identity-side `PendingRegistrationsList` + `ResumableRegistrationsList`
 // pair. Two distinct row sources are merged here:
 //
-//   1. In-flight controllers from `AddressTopUpCoordinator` — the
+//   1. In-flight controllers from `AddressFundFromAssetLockCoordinator` — the
 //      live submit-still-running case.
 //   2. Orphaned `PersistentAssetLock` rows with
 //      `fundingTypeRaw == AssetLockAddressTopUp` (4) and
@@ -24,11 +24,11 @@ import SwiftDashSDK
 
 /// Section view backing the Wallet Detail screen's "Pending Platform
 /// Funding" surface for a single wallet. Observes
-/// `AddressTopUpCoordinator` directly (`@ObservedObject`) so its
+/// `AddressFundFromAssetLockCoordinator` directly (`@ObservedObject`) so its
 /// `@Published controllers` map mutations trigger SwiftUI re-renders
 /// of the in-flight rows.
-struct PendingPlatformTopUpsList: View {
-    @ObservedObject var coordinator: AddressTopUpCoordinator
+struct PendingPlatformFundFromAssetLocksList: View {
+    @ObservedObject var coordinator: AddressFundFromAssetLockCoordinator
     /// Wallet to scope the section to. The Identities-tab equivalent
     /// is cross-wallet because identities are a global concept; here
     /// the wallet detail screen is already wallet-scoped so we
@@ -39,7 +39,7 @@ struct PendingPlatformTopUpsList: View {
     /// another `@Query`.
     let assetLocks: [PersistentAssetLock]
     /// Bound to the parent's "resume sheet" state. Setting non-nil
-    /// presents `TopUpPlatformAddressView` in resume mode.
+    /// presents `FundFromAssetLockPlatformAddressView` in resume mode.
     @Binding var resumingAssetLock: PersistentAssetLock?
 
     var body: some View {
@@ -67,8 +67,8 @@ struct PendingPlatformTopUpsList: View {
                 .padding(.horizontal)
 
                 VStack(spacing: 0) {
-                    ForEach(Array(inFlight.enumerated()), id: \.element.platformTopUpRowID) { idx, controller in
-                        PendingPlatformTopUpRow(controller: controller)
+                    ForEach(Array(inFlight.enumerated()), id: \.element.platformFundFromAssetLockRowID) { idx, controller in
+                        PendingPlatformFundFromAssetLockRow(controller: controller)
                             .padding(.horizontal)
                             .padding(.vertical, 10)
                         if idx < inFlight.count - 1 || !orphans.isEmpty {
@@ -76,7 +76,7 @@ struct PendingPlatformTopUpsList: View {
                         }
                     }
                     ForEach(Array(orphans.enumerated()), id: \.element.id) { idx, lock in
-                        ResumablePlatformTopUpRow(
+                        ResumablePlatformFundFromAssetLockRow(
                             lock: lock,
                             onResume: { resumingAssetLock = lock }
                         )
@@ -95,7 +95,7 @@ struct PendingPlatformTopUpsList: View {
     }
 
     /// In-flight controllers scoped to this wallet, newest-first.
-    private var activeControllersForWallet: [AddressTopUpController] {
+    private var activeControllersForWallet: [AddressFundFromAssetLockController] {
         coordinator.activeControllers().filter { $0.walletId == walletId }
     }
 
@@ -113,27 +113,27 @@ struct PendingPlatformTopUpsList: View {
     }
 }
 
-private extension AddressTopUpController {
+private extension AddressFundFromAssetLockController {
     /// Composite ForEach id: `(walletId hex)-(platformAccountIndex)-(recipientHash hex)`.
     /// The recipient hash is the within-account discriminator: two
     /// concurrent fund calls to different addresses on the same
     /// account otherwise collide on `(walletId, accountIndex)`.
-    var platformTopUpRowID: String {
+    var platformFundFromAssetLockRowID: String {
         let walletHex = walletId.map { String(format: "%02x", $0) }.joined()
         let recipientHex = recipientHash.map { String(format: "%02x", $0) }.joined()
         return "\(walletHex)-\(platformAccountIndex)-\(recipientHex)"
     }
 }
 
-/// Single row representing an in-flight `AddressTopUpController`.
-/// Tappable navigation pushes to `AddressTopUpProgressView`.
-struct PendingPlatformTopUpRow: View {
-    @ObservedObject var controller: AddressTopUpController
+/// Single row representing an in-flight `AddressFundFromAssetLockController`.
+/// Tappable navigation pushes to `AddressFundFromAssetLockProgressView`.
+struct PendingPlatformFundFromAssetLockRow: View {
+    @ObservedObject var controller: AddressFundFromAssetLockController
     @EnvironmentObject var walletManager: PlatformWalletManager
 
     var body: some View {
         HStack(spacing: 8) {
-            NavigationLink(destination: AddressTopUpProgressView(controller: controller)) {
+            NavigationLink(destination: AddressFundFromAssetLockProgressView(controller: controller)) {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
                         Image(systemName: phaseIcon)
@@ -169,7 +169,7 @@ struct PendingPlatformTopUpRow: View {
             // restart.
             if case .failed = controller.phase {
                 Button {
-                    walletManager.addressTopUpCoordinator.dismiss(
+                    walletManager.addressFundFromAssetLockCoordinator.dismiss(
                         walletId: controller.walletId,
                         platformAccountIndex: controller.platformAccountIndex,
                         recipientHash: controller.recipientHash
@@ -221,9 +221,9 @@ struct PendingPlatformTopUpRow: View {
 
 /// Single row in the orphaned-asset-lock section. Renders the lock
 /// summary (txid prefix, amount, status) plus a compact Resume button
-/// that opens `TopUpPlatformAddressView` in resume mode pre-seeded with
+/// that opens `FundFromAssetLockPlatformAddressView` in resume mode pre-seeded with
 /// the outpoint.
-struct ResumablePlatformTopUpRow: View {
+struct ResumablePlatformFundFromAssetLockRow: View {
     let lock: PersistentAssetLock
     let onResume: () -> Void
 

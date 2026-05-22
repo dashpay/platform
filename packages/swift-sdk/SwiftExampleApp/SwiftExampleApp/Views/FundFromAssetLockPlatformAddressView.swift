@@ -1,9 +1,9 @@
-// TopUpPlatformAddressView.swift
+// FundFromAssetLockPlatformAddressView.swift
 // SwiftExampleApp
 //
 // Stepped UI for funding a Platform payment address from a Core
 // (SPV) wallet balance. Drives the new `ManagedPlatformAddressWallet
-// .topUpFromCore(...)` end-to-end:
+// .fundFromAssetLock(...)` end-to-end:
 //
 //   1. Build an asset-lock tx from the chosen Core BIP44 account.
 //   2. Wait for the IS-lock (or fall back to ChainLock on timeout).
@@ -20,7 +20,7 @@ import SwiftUI
 import SwiftDashSDK
 import SwiftData
 
-struct TopUpPlatformAddressView: View {
+struct FundFromAssetLockPlatformAddressView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject var walletManager: PlatformWalletManager
@@ -35,7 +35,7 @@ struct TopUpPlatformAddressView: View {
     /// hides the Core-funding-account + amount sections (the asset
     /// lock already exists, those choices were made at original
     /// build time) and routes Submit to
-    /// `ManagedPlatformAddressWallet.resumeTopUpFromAssetLock` instead
+    /// `ManagedPlatformAddressWallet.resumeFundFromAssetLock` instead
     /// of building a fresh lock. The user still picks the recipient
     /// platform address because the orphan lock doesn't carry that
     /// information — it's set at ST-submission time.
@@ -63,15 +63,15 @@ struct TopUpPlatformAddressView: View {
     /// Pre-submit error (e.g. KeychainSigner / handle lookup failed
     /// synchronously before the FFI call). In-flight failures land
     /// on the controller's `.failed` phase and are rendered by
-    /// `AddressTopUpProgressView`'s terminal section instead.
+    /// `AddressFundFromAssetLockProgressView`'s terminal section instead.
     @State private var submitError: SubmitError? = nil
 
     /// Controller for the in-flight funding attempt. Non-nil swaps
-    /// the form body for `AddressTopUpProgressSection` + a
+    /// the form body for `AddressFundFromAssetLockProgressSection` + a
     /// terminal section that follows the controller's phase.
-    /// Lifetime-owned by `walletManager.addressTopUpCoordinator`
+    /// Lifetime-owned by `walletManager.addressFundFromAssetLockCoordinator`
     /// so view dismissal mid-flight doesn't lose the work.
-    @State private var activeController: AddressTopUpController? = nil
+    @State private var activeController: AddressFundFromAssetLockController? = nil
 
     /// 1 DASH = 1e8 duffs (Core side). The asset-lock builder takes
     /// duffs; we convert here for display ergonomics only.
@@ -92,7 +92,7 @@ struct TopUpPlatformAddressView: View {
                     // not nested; the progress section + terminal
                     // section follow the same shape as
                     // `RegistrationProgressView`.
-                    AddressTopUpProgressSection(controller: controller)
+                    AddressFundFromAssetLockProgressSection(controller: controller)
                     progressTerminalSection(controller: controller)
                 } else if resumeFromLock != nil {
                     // Resume mode: the asset lock + amount + Core
@@ -318,12 +318,12 @@ struct TopUpPlatformAddressView: View {
 
     /// Inline terminal section that follows the controller's
     /// `.completed` / `.failed` phase. Mirrors the
-    /// `terminalSection` shape on `AddressTopUpProgressView`,
+    /// `terminalSection` shape on `AddressFundFromAssetLockProgressView`,
     /// but embedded directly in this view's `Form` so the user
     /// gets the full result without a separate navigation push.
     @ViewBuilder
     private func progressTerminalSection(
-        controller: AddressTopUpController
+        controller: AddressFundFromAssetLockController
     ) -> some View {
         switch controller.phase {
         case .completed(let newBalance):
@@ -340,7 +340,7 @@ struct TopUpPlatformAddressView: View {
                             .font(.system(.body, design: .monospaced))
                     }
                     Button {
-                        walletManager.addressTopUpCoordinator.dismiss(
+                        walletManager.addressFundFromAssetLockCoordinator.dismiss(
                             walletId: controller.walletId,
                             platformAccountIndex: controller.platformAccountIndex,
                             recipientHash: controller.recipientHash
@@ -365,7 +365,7 @@ struct TopUpPlatformAddressView: View {
                         .foregroundColor(.primary)
                         .textSelection(.enabled)
                     Button("Dismiss") {
-                        walletManager.addressTopUpCoordinator.dismiss(
+                        walletManager.addressFundFromAssetLockCoordinator.dismiss(
                             walletId: controller.walletId,
                             platformAccountIndex: controller.platformAccountIndex,
                             recipientHash: controller.recipientHash
@@ -548,12 +548,12 @@ struct TopUpPlatformAddressView: View {
                 return
             }
             body = {
-                let updates = try await addressWallet.resumeTopUpFromAssetLock(
+                let updates = try await addressWallet.resumeFundFromAssetLock(
                     outPointTxid: parsed.txid,
                     outPointVout: parsed.vout,
                     platformAccountIndex: platformAcct,
                     recipients: [
-                        ManagedPlatformAddressWallet.TopUpRecipient(
+                        ManagedPlatformAddressWallet.FundFromAssetLockRecipient(
                             addressType: recipientType,
                             hash: recipientHash,
                             credits: nil
@@ -572,12 +572,12 @@ struct TopUpPlatformAddressView: View {
                 let duffs = parsedDuffs
             else { return }
             body = {
-                let updates = try await addressWallet.topUpFromCore(
+                let updates = try await addressWallet.fundFromAssetLock(
                     amountDuffs: duffs,
                     fundingAccountIndex: fundingAccountIndex,
                     platformAccountIndex: platformAcct,
                     recipients: [
-                        ManagedPlatformAddressWallet.TopUpRecipient(
+                        ManagedPlatformAddressWallet.FundFromAssetLockRecipient(
                             addressType: recipientType,
                             hash: recipientHash,
                             credits: nil
@@ -602,7 +602,7 @@ struct TopUpPlatformAddressView: View {
         // Single-flight gate via the coordinator. The same slot
         // re-presents the existing controller on a duplicate tap
         // so two FFI calls never race for the same asset lock.
-        let coordinator = walletManager.addressTopUpCoordinator
+        let coordinator = walletManager.addressFundFromAssetLockCoordinator
         let controller = coordinator.startFunding(
             walletId: walletId,
             platformAccountIndex: platformAcct,

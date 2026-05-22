@@ -129,7 +129,7 @@ public final class PersistentAssetLock {
     /// 20-byte hash of the recipient platform address for asset
     /// locks consumed by an `AddressFundingFromAssetLockTransition`
     /// (`fundingTypeRaw == 4`). Populated by Swift after a
-    /// successful `topUpFromCore` call — the recipient is
+    /// successful `fundFromAssetLock` call — the recipient is
     /// known on the caller side, not on the Rust side (which only
     /// tracks the credit-output key, not the destination address).
     ///

@@ -29,7 +29,7 @@ struct WalletDetailView: View {
     @State private var showSendTransaction = false
     @State private var showWalletInfo = false
     @State private var showFundPlatformAddress = false
-    /// Set by `PendingPlatformTopUpsList`'s Resume tap.
+    /// Set by `PendingPlatformFundFromAssetLocksList`'s Resume tap.
     @State private var resumingAssetLock: PersistentAssetLock?
 
     @Query private var walletAssetLocks: [PersistentAssetLock]
@@ -108,8 +108,8 @@ struct WalletDetailView: View {
             }
             .padding(.horizontal)
 
-            PendingPlatformTopUpsList(
-                coordinator: walletManager.addressTopUpCoordinator,
+            PendingPlatformFundFromAssetLocksList(
+                coordinator: walletManager.addressFundFromAssetLockCoordinator,
                 walletId: wallet.walletId,
                 assetLocks: walletAssetLocks,
                 resumingAssetLock: $resumingAssetLock
@@ -197,10 +197,10 @@ struct WalletDetailView: View {
             }
         }
         .sheet(isPresented: $showFundPlatformAddress) {
-            TopUpPlatformAddressView(wallet: wallet)
+            FundFromAssetLockPlatformAddressView(wallet: wallet)
         }
         .sheet(item: $resumingAssetLock) { lock in
-            TopUpPlatformAddressView(wallet: wallet, resumeFromLock: lock)
+            FundFromAssetLockPlatformAddressView(wallet: wallet, resumeFromLock: lock)
         }
         .onAppear {
             appUIState.showWalletsSyncDetails = false

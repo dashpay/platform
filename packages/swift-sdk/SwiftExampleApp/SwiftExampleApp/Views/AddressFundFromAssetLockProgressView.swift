@@ -32,11 +32,11 @@ import SwiftDashSDK
 /// the lock.
 ///
 /// `.completed` is the *terminal* state and is not a separate step;
-/// the parent `AddressTopUpProgressView` renders the "Address
+/// the parent `AddressFundFromAssetLockProgressView` renders the "Address
 /// funded" banner + the new balance below this section. `.failed`
 /// marks the current step with the error icon + message.
-struct AddressTopUpProgressSection: View {
-    @ObservedObject var controller: AddressTopUpController
+struct AddressFundFromAssetLockProgressSection: View {
+    @ObservedObject var controller: AddressFundFromAssetLockController
 
     /// Asset-lock rows for this wallet, filtered to the
     /// AssetLockAddressTopUp variant (discriminant `4`). Queried
@@ -55,7 +55,7 @@ struct AddressTopUpProgressSection: View {
     /// `AssetLockManager`'s 300 s IS wait.
     private static let instantLockTimeout: TimeInterval = 300.0
 
-    init(controller: AddressTopUpController) {
+    init(controller: AddressFundFromAssetLockController) {
         self.controller = controller
         let walletId = controller.walletId
         // `fundingTypeRaw == 4` is `AssetLockFundingType::AssetLockAddressTopUp`
@@ -118,7 +118,7 @@ struct AddressTopUpProgressSection: View {
             return 1
         case .completed:
             // No visible "funded" step — terminalSection on
-            // `AddressTopUpProgressView` carries that state.
+            // `AddressFundFromAssetLockProgressView` carries that state.
             // Return 6 so every step row (1...5) is marked `.done`.
             return 6
         case .failed:
@@ -321,20 +321,20 @@ struct AddressTopUpProgressSection: View {
 }
 
 /// Standalone navigation destination for an address funding in
-/// flight, completed, or failed. Pushed from `TopUpPlatformAddressView`
+/// flight, completed, or failed. Pushed from `FundFromAssetLockPlatformAddressView`
 /// on submit and (later) from the "Resumable Top Up" surface.
-struct AddressTopUpProgressView: View {
-    @ObservedObject var controller: AddressTopUpController
+struct AddressFundFromAssetLockProgressView: View {
+    @ObservedObject var controller: AddressFundFromAssetLockController
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var walletManager: PlatformWalletManager
 
-    init(controller: AddressTopUpController) {
+    init(controller: AddressFundFromAssetLockController) {
         self.controller = controller
     }
 
     var body: some View {
         Form {
-            AddressTopUpProgressSection(controller: controller)
+            AddressFundFromAssetLockProgressSection(controller: controller)
             terminalSection
         }
         .navigationTitle("Top Up Platform Address")
@@ -358,7 +358,7 @@ struct AddressTopUpProgressView: View {
                             .font(.system(.body, design: .monospaced))
                     }
                     Button {
-                        walletManager.addressTopUpCoordinator.dismiss(
+                        walletManager.addressFundFromAssetLockCoordinator.dismiss(
                             walletId: controller.walletId,
                             platformAccountIndex: controller.platformAccountIndex,
                             recipientHash: controller.recipientHash
@@ -383,7 +383,7 @@ struct AddressTopUpProgressView: View {
                         .foregroundColor(.primary)
                         .textSelection(.enabled)
                     // Dismissal path mirroring the inline terminal
-                    // section in `TopUpPlatformAddressView`. Without
+                    // section in `FundFromAssetLockPlatformAddressView`. Without
                     // this the only way to clear a `.failed`
                     // controller from a pushed progress view was to
                     // relaunch the app — the `Pending Platform
@@ -391,7 +391,7 @@ struct AddressTopUpProgressView: View {
                     // outside a List, so neither surface had a
                     // working dismissal.
                     Button {
-                        walletManager.addressTopUpCoordinator.dismiss(
+                        walletManager.addressFundFromAssetLockCoordinator.dismiss(
                             walletId: controller.walletId,
                             platformAccountIndex: controller.platformAccountIndex,
                             recipientHash: controller.recipientHash

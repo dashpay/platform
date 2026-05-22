@@ -6,12 +6,12 @@ import SwiftDashSDK
 /// Mirrors [`IdentityRegistrationController`] for the
 /// `AddressFundingFromAssetLockTransition` flow. One controller is
 /// created per `(walletId, platformAccountIndex, recipientHash)`
-/// slot when the user submits `TopUpPlatformAddressView`. The
+/// slot when the user submits `FundFromAssetLockPlatformAddressView`. The
 /// controller owns the in-flight `Task`, exposes its current `phase`
 /// via `@Published`, and survives view dismissal via
-/// `AddressTopUpCoordinator` on `PlatformWalletManager`.
+/// `AddressFundFromAssetLockCoordinator` on `PlatformWalletManager`.
 ///
-/// The 4-step progress in `AddressTopUpProgressView` derives its
+/// The 4-step progress in `AddressFundFromAssetLockProgressView` derives its
 /// step from a combination of `phase` (Step 1, Step 4) and the live
 /// `PersistentAssetLock` row queried via `@Query` filtered by
 /// `walletId` + the asset-lock funding-type discriminant (Step 2/3,
@@ -25,7 +25,7 @@ import SwiftDashSDK
 /// credit-output keys from the `AssetLockAddressTopUp` BIP44 family;
 /// the index advances naturally per call.
 @MainActor
-final class AddressTopUpController: ObservableObject {
+final class AddressFundFromAssetLockController: ObservableObject {
     enum Phase: Equatable {
         /// Pre-submit. The controller exists but `submit` hasn't
         /// fired yet. Not surfaced by the progress view (the view
@@ -40,7 +40,7 @@ final class AddressTopUpController: ObservableObject {
         /// surface in the terminal banner.
         case completed(newBalance: UInt64)
         /// Failure terminal state. Message is shown inline in
-        /// `AddressTopUpProgressView`'s step 4; the row stays in
+        /// `AddressFundFromAssetLockProgressView`'s step 4; the row stays in
         /// the coordinator's map until the user dismisses it
         /// manually.
         case failed(String)
@@ -103,7 +103,7 @@ final class AddressTopUpController: ObservableObject {
 
     /// Outpoints of `Consumed` address-funding locks observed on
     /// this wallet **before** `submit()` fired. Captured by the
-    /// caller (`TopUpPlatformAddressView.submit`) immediately before
+    /// caller (`FundFromAssetLockPlatformAddressView.submit`) immediately before
     /// kicking off the FFI body and stored here so the post-success
     /// back-fill can compute the delta against the new set and
     /// deterministically match this funding's consumed lock — even
