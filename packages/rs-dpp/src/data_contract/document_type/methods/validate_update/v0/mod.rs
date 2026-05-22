@@ -210,6 +210,43 @@ impl DocumentTypeRef<'_> {
             );
         }
 
+        // Sum-tree immutability — parallels the count flags above.
+        // Two checks: (1) whether the doctype is summable at all (the
+        // presence/absence of `documents_summable`), and (2) the *name* of
+        // the summed property. Changing either invalidates every on-disk
+        // sum contribution because grovedb's sum trees aggregate `i64`
+        // per merk node — a renamed property would silently double-count
+        // or under-count depending on which document field gets read.
+        if new_document_type.documents_summable() != self.documents_summable() {
+            return SimpleConsensusValidationResult::new_with_error(
+                DocumentTypeUpdateError::new(
+                    self.data_contract_id(),
+                    self.name(),
+                    format!(
+                        "document type can not change whether or how its documents are summable: changing from {:?} to {:?}",
+                        self.documents_summable(),
+                        new_document_type.documents_summable()
+                    ),
+                )
+                    .into(),
+            );
+        }
+
+        if new_document_type.range_summable() != self.range_summable() {
+            return SimpleConsensusValidationResult::new_with_error(
+                DocumentTypeUpdateError::new(
+                    self.data_contract_id(),
+                    self.name(),
+                    format!(
+                        "document type can not change whether it is range summable: changing from {} to {}",
+                        self.range_summable(),
+                        new_document_type.range_summable()
+                    ),
+                )
+                    .into(),
+            );
+        }
+
         SimpleConsensusValidationResult::new()
     }
 

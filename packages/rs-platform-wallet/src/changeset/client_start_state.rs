@@ -11,6 +11,8 @@ use std::collections::BTreeMap;
 
 use crate::changeset::client_wallet_start_state::ClientWalletStartState;
 use crate::changeset::platform_address_sync_start_state::PlatformAddressSyncStartState;
+#[cfg(feature = "shielded")]
+use crate::changeset::shielded_sync_start_state::ShieldedSyncStartState;
 use crate::wallet::platform_wallet::WalletId;
 
 /// Snapshot of everything a persister hands back on
@@ -30,10 +32,24 @@ pub struct ClientStartState {
     /// Per-wallet startup slices (UTXOs and unused asset locks, each
     /// bucketed by account index).
     pub wallets: BTreeMap<WalletId, ClientWalletStartState>,
+    /// Restored shielded sub-wallet state — per-`SubwalletId`
+    /// notes + sync watermarks. Consumed at `bind_shielded` time
+    /// to rehydrate the in-memory `SubwalletState` so spending /
+    /// balance reads work without re-decrypting the chain.
+    #[cfg(feature = "shielded")]
+    pub shielded: ShieldedSyncStartState,
 }
 
 impl ClientStartState {
     pub fn is_empty(&self) -> bool {
-        self.platform_addresses.is_empty() && self.wallets.is_empty()
+        let core_empty = self.platform_addresses.is_empty() && self.wallets.is_empty();
+        #[cfg(feature = "shielded")]
+        {
+            core_empty && self.shielded.is_empty()
+        }
+        #[cfg(not(feature = "shielded"))]
+        {
+            core_empty
+        }
     }
 }

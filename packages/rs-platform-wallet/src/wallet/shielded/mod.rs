@@ -1,20 +1,37 @@
-//! Feature-gated shielded (Orchard/Halo2) wallet support.
+//! Feature-gated shielded (Orchard / Halo 2) wallet support.
 //!
-//! This module provides ZK-private transactions on Dash Platform using the
-//! Orchard circuit (Halo 2 proving system). It is gated behind the `shielded`
-//! Cargo feature because it pulls in heavy cryptographic dependencies.
+//! This module provides ZK-private transactions on Dash Platform
+//! using the Orchard circuit (Halo 2 proving system). It is
+//! gated behind the `shielded` Cargo feature because it pulls in
+//! heavy cryptographic dependencies.
 //!
 //! # Architecture
 //!
-//! - [`OrchardKeySet`] — ZIP-32 key derivation from wallet seed
-//! - [`ShieldedStore`] / [`InMemoryShieldedStore`] — storage abstraction
-//! - [`CachedOrchardProver`] — lazy-init proving key cache
-//! - [`ShieldedWallet`] — top-level coordinator tying keys, store, and SDK together
+//! - [`OrchardKeySet`] — ZIP-32 key derivation from a wallet
+//!   seed (FVK / IVK / OVK / `SpendAuthorizingKey` / default
+//!   payment address).
+//! - [`AccountViewingKeys`] — viewing-grade subset of
+//!   `OrchardKeySet` (no ASK); the only key material that
+//!   crosses to coordinator scope.
+//! - [`NetworkShieldedCoordinator`] — network-scoped owner of
+//!   the shared commitment-tree store, the per-`SubwalletId`
+//!   account registry, the caught-up cooldown stamp, and the
+//!   sync entry point. One coordinator per
+//!   `PlatformWalletManager`.
+//! - [`ShieldedStore`] / [`InMemoryShieldedStore`] /
+//!   [`FileBackedShieldedStore`] — storage abstraction; the
+//!   shared commitment tree lives here. Per-subwallet notes are
+//!   scoped by [`SubwalletId`] inside the store.
+//! - [`CachedOrchardProver`] — lazy-init proving key cache.
+//! - Sync / spend operations live as free functions in the
+//!   [`sync`] and [`operations`] submodules and take
+//!   `(sdk, store, persister, wallet_id, keys, …)` explicitly.
 //!
-//! The `ShieldedWallet` is generic over `S: ShieldedStore` so consumers can
-//! plug in their own persistence (SQLite, RocksDB, etc.) while tests use the
-//! in-memory implementation.
+//! Per-wallet shielded state on `PlatformWallet` is just the
+//! `BTreeMap<u32, OrchardKeySet>` (with the spend authority);
+//! `PlatformWallet` doesn't need a wrapper struct around it.
 
+pub mod coordinator;
 pub mod file_store;
 pub mod keys;
 pub mod note_selection;
@@ -23,90 +40,20 @@ pub mod prover;
 pub mod store;
 pub mod sync;
 
+pub use coordinator::NetworkShieldedCoordinator;
 pub use file_store::{FileBackedShieldedStore, FileShieldedStoreError};
-pub use keys::OrchardKeySet;
+pub use keys::{AccountViewingKeys, OrchardKeySet};
 pub use prover::CachedOrchardProver;
-pub use store::{InMemoryShieldedStore, ShieldedNote, ShieldedStore};
+pub use store::{InMemoryShieldedStore, ShieldedNote, ShieldedStore, SubwalletId};
 pub use sync::{ShieldedSyncSummary, SyncNotesResult};
 
-use std::sync::Arc;
-
-use tokio::sync::RwLock;
-
-use crate::error::PlatformWalletError;
-
-/// Feature-gated shielded wallet.
+/// How long after a no-op sync the background loop should skip
+/// further passes. Tuned against the wallet's typical 60s sync
+/// cadence — halves wire calls in steady-state while keeping
+/// "new notes" discovery latency bounded at one cooldown window
+/// plus the next loop tick. Manual `force=true` syncs bypass.
 ///
-/// Coordinates Orchard key material, a pluggable storage backend, and the
-/// Dash SDK for note sync, nullifier checks, and shielded state transitions.
-///
-/// Generic over `S: ShieldedStore` — consumers provide their persistence
-/// layer. For tests, use [`InMemoryShieldedStore`].
-///
-/// # Thread safety
-///
-/// The store is wrapped in `Arc<RwLock<S>>` so the wallet can be shared
-/// across async tasks. Read operations (balance, address queries) take a
-/// read lock; mutating operations (sync, spend) take a write lock.
-pub struct ShieldedWallet<S: ShieldedStore> {
-    /// Dash Platform SDK handle for network operations.
-    sdk: Arc<dash_sdk::Sdk>,
-    /// ZIP-32 derived Orchard keys.
-    keys: OrchardKeySet,
-    /// Pluggable storage backend behind a shared async lock.
-    store: Arc<RwLock<S>>,
-}
-
-impl<S: ShieldedStore> ShieldedWallet<S> {
-    /// Create a shielded wallet from pre-derived keys and a store.
-    pub fn new(sdk: Arc<dash_sdk::Sdk>, keys: OrchardKeySet, store: S) -> Self {
-        Self {
-            sdk,
-            keys,
-            store: Arc::new(RwLock::new(store)),
-        }
-    }
-
-    /// Derive Orchard keys from a wallet seed and create a shielded wallet.
-    ///
-    /// This is the primary constructor for production use. The `seed` should
-    /// be the BIP-39 seed bytes (typically 64 bytes). `network` selects the
-    /// ZIP-32 coin type used during key derivation; once derivation is done
-    /// the network is captured implicitly in the SDK handle.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if key derivation fails (invalid seed or account index).
-    pub fn from_seed(
-        sdk: Arc<dash_sdk::Sdk>,
-        seed: &[u8],
-        network: dashcore::Network,
-        account: u32,
-        store: S,
-    ) -> Result<Self, PlatformWalletError> {
-        let keys = OrchardKeySet::from_seed(seed, network, account)?;
-        Ok(Self::new(sdk, keys, store))
-    }
-
-    /// Total unspent shielded balance in credits.
-    ///
-    /// Reads from the store — does not trigger a sync.
-    pub async fn balance(&self) -> Result<u64, PlatformWalletError> {
-        let store = self.store.read().await;
-        let notes = store
-            .get_unspent_notes()
-            .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
-        Ok(notes.iter().map(|n| n.value).sum())
-    }
-
-    /// The default payment address (diversifier index 0) for receiving
-    /// shielded funds.
-    pub fn default_address(&self) -> &grovedb_commitment_tree::PaymentAddress {
-        &self.keys.default_address
-    }
-
-    /// Derive a payment address at the given diversifier index.
-    pub fn address_at(&self, index: u32) -> grovedb_commitment_tree::PaymentAddress {
-        self.keys.address_at(index)
-    }
-}
+/// Held in the coordinator (`NetworkShieldedCoordinator::sync`
+/// is the only caller); the per-`PlatformWallet` cooldown stamp
+/// was removed in Phase 4a.
+pub(super) const CAUGHT_UP_COOLDOWN: std::time::Duration = std::time::Duration::from_secs(30);

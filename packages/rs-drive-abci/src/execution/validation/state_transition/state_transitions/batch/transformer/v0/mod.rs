@@ -504,16 +504,25 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
             .collect::<Vec<_>>();
 
         // We fetch documents only for replace and transfer transitions
-        // since we need them to create transition actions
-        // Below we also perform state validation for replace and transfer transitions only
-        // other transitions are validated in their validate_state functions
+        // since we need them to create transition actions. Below we also
+        // perform state validation for replace and transfer transitions
+        // only; other transitions are validated in their validate_state
+        // functions.
         // TODO: Think more about this architecture
+        //
+        // PROTOCOL_VERSION_11 consensus-safety: the fetch fn now takes
+        // `&mut execution_context` and bills the query cost internally
+        // — but only when `transform_into_action: 1`. On v0 it forces
+        // `epoch=None` (zero cost) and skips `add_operation`, matching
+        // pre-PR exactly.
         let fetched_documents_validation_result =
             fetch_documents_for_transitions_knowing_contract_and_document_type(
                 platform.drive,
                 data_contract,
                 document_type,
                 replace_and_transfer_transitions.as_slice(),
+                &block_info.epoch,
+                execution_context,
                 transaction,
                 platform_version,
             )?;

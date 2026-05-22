@@ -29,6 +29,7 @@ use std::os::raw::{c_char, c_void};
 use crate::asset_lock_persistence::AssetLockEntryFFI;
 use crate::platform_address_types::AddressBalanceEntryFFI;
 use crate::types::FFINetwork;
+use crate::wallet_registration_persistence::AccountAddressPoolFFI;
 
 /// Discriminant for [`key_wallet::account::AccountType`].
 ///
@@ -435,6 +436,9 @@ pub struct WalletRestoreEntryFFI {
     /// unresolved asset locks.
     pub unresolved_asset_lock_tx_records: *const UnresolvedAssetLockTxRecordFFI,
     pub unresolved_asset_lock_tx_records_count: usize,
+    /// Persisted core address pools for this wallet
+    pub core_address_pools: *const AccountAddressPoolFFI,
+    pub core_address_pools_count: usize,
     /// Bincode-serialised
     /// `dashcore::ephemerealdata::chain_lock::ChainLock`
     /// (`bincode::config::standard()`) carrying the persisted
@@ -471,8 +475,9 @@ unsafe impl Sync for UtxoRestoreEntryFFI {}
 /// accounts arrays, the optional per-wallet platform-address balance
 /// arrays, every xpub byte buffer, the per-wallet identity arrays,
 /// every nested c-string + c-string pointer array carried by the
-/// identity entries, and every per-identity `IdentityKeyRestoreFFI`
+/// identity entries, every per-identity `IdentityKeyRestoreFFI`
 /// array together with the public-key byte buffers each row points
-/// at. Called exactly once after a successful load.
+/// at, and every per-wallet core-address-pool. Called exactly once
+/// after a successful load.
 pub type LoadWalletListFreeFn =
     unsafe extern "C" fn(context: *mut c_void, entries: *const WalletRestoreEntryFFI, count: usize);

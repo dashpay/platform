@@ -154,7 +154,7 @@ For SwiftExampleApp-specific guidance including token querying and data models, 
 Quick build commands:
 ```bash
 # Build unified iOS framework (includes Core + Platform)
-cd packages/rs-sdk-ffi
+cd packages/swift-sdk
 ./build_ios.sh
 
 # Build SwiftExampleApp

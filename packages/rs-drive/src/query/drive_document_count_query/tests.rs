@@ -2047,6 +2047,13 @@ mod range_countable_picker_tests {
             contested_index: None,
             countable,
             range_countable,
+            // Sum-axis: count-picker tests don't drive sum behaviour;
+            // keep the index sum-disabled so the matrix collapses to
+            // the count-only sub-cube. Setting `summable: None` is
+            // sufficient to take the count-only path through every
+            // tree-shape resolver (see `primary_key_tree_type.rs`).
+            summable: None,
+            range_summable: false,
         }
     }
 
