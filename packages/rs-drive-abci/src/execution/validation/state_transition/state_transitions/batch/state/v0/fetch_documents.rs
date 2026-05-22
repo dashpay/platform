@@ -72,9 +72,8 @@ pub(crate) fn fetch_documents_for_transitions_knowing_contract_and_document_type
         ),
         version => Err(Error::Execution(
             crate::error::execution::ExecutionError::UnknownVersionMismatch {
-                method:
-                    "fetch_documents_for_transitions_knowing_contract_and_document_type"
-                        .to_string(),
+                method: "fetch_documents_for_transitions_knowing_contract_and_document_type"
+                    .to_string(),
                 known_versions: vec![0, 1],
                 received: version,
             },

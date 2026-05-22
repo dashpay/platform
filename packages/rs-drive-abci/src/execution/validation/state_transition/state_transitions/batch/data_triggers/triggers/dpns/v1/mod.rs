@@ -397,4 +397,3 @@ pub(super) fn create_domain_data_trigger_v1(
 
     Ok(result)
 }
-

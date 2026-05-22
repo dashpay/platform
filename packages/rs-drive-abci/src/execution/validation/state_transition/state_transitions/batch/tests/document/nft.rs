@@ -406,7 +406,9 @@ mod nft_tests {
     async fn test_document_set_price_and_purchase() {
         run_document_set_price_and_purchase_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            126440160, 2485600, 4092360,
+            126440160,
+            2485600,
+            4092360,
         )
         .await;
     }
@@ -418,10 +420,8 @@ mod nft_tests {
     /// bit-for-bit reproducible.
     #[tokio::test]
     async fn test_document_set_price_and_purchase_protocol_version_11() {
-        run_document_set_price_and_purchase_at_protocol_version(
-            11, 126435860, 2473880, 4080480,
-        )
-        .await;
+        run_document_set_price_and_purchase_at_protocol_version(11, 126435860, 2473880, 4080480)
+            .await;
     }
 
     async fn run_document_set_price_and_purchase_at_protocol_version(
@@ -826,7 +826,10 @@ mod nft_tests {
     async fn test_document_set_price_and_purchase_different_epoch_documents_mutable() {
         run_document_set_price_and_purchase_different_epoch_documents_mutable_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            141238960, 2729120, 2733160, 4357440,
+            141238960,
+            2729120,
+            2733160,
+            4357440,
         )
         .await;
     }
@@ -1221,7 +1224,10 @@ mod nft_tests {
         // the seller should have received 0.1 and already had 0.1 minus the processing fee and storage fee
         assert_eq!(
             seller_balance,
-            dash_to_credits!(0.1) - original_creation_cost - expected_set_price_fee_1 - 378000
+            dash_to_credits!(0.1)
+                - original_creation_cost
+                - expected_set_price_fee_1
+                - 378000
                 - expected_set_price_fee_2
                 - 216000
         );
@@ -1399,7 +1405,9 @@ mod nft_tests {
     async fn test_document_set_price_and_purchase_different_epoch() {
         run_document_set_price_and_purchase_different_epoch_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            126440160, 2485600, 4092360,
+            126440160,
+            2485600,
+            4092360,
         )
         .await;
     }

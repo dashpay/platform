@@ -1063,8 +1063,8 @@ mod transfer_tests {
     /// PROTOCOL_VERSION_11: pre-B7 fee — transformer reads were unbilled.
     /// Pinned so v11 chain history stays bit-for-bit reproducible.
     #[tokio::test]
-    async fn test_document_transfer_on_document_type_that_is_not_transferable_protocol_version_11(
-    ) {
+    async fn test_document_transfer_on_document_type_that_is_not_transferable_protocol_version_11()
+    {
         run_document_transfer_on_document_type_that_is_not_transferable_at_protocol_version(
             11, 445700,
         )

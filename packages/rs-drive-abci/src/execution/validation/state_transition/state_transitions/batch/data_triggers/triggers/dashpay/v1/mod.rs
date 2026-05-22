@@ -88,11 +88,9 @@ pub(super) fn create_contact_request_data_trigger_v1(
             context.transaction,
             platform_version,
         )?;
-    context
-        .state_transition_execution_context
-        .add_operation(ValidationOperation::PrecalculatedOperation(
-            balance_fee_result,
-        ));
+    context.state_transition_execution_context.add_operation(
+        ValidationOperation::PrecalculatedOperation(balance_fee_result),
+    );
 
     if !is_dry_run && to_identity.is_none() {
         let err = DataTriggerConditionError::new(
