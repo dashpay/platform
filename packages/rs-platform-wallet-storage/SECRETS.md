@@ -15,23 +15,39 @@ SQLite file the persister writes.
 ## The `secrets` submodule
 
 `platform_wallet_storage::secrets` is part of the crate's default
-feature set. The SPI is upstream's
-`keyring_core::api::{CredentialApi, CredentialStoreApi}` shipped by
-`keyring-core 1.0.0`; this crate contributes backends and zeroizing
-wrappers, not the trait surface.
+feature set. The consumer entry point is `SecretStore`; the upstream
+`keyring_core::api::{CredentialApi, CredentialStoreApi}` (shipped by
+`keyring-core 1.0.0`) is the internal backend SPI. This crate
+contributes backends and zeroizing wrappers, not the trait surface.
+
+### Consumer API: `SecretStore`
+
+`SecretStore` is the public, never-leaking front door. `get` yields a
+zeroizing `SecretBytes` (a raw `Vec<u8>` never crosses the boundary);
+`set` takes `&SecretBytes` so a caller cannot pass an unwrapped buffer.
+Errors surface as the typed `FileStoreError` — losslessly for the file
+arm, so `WrongPassphrase` vs `Corruption` vs `Busy` stay distinct.
 
 ```rust
-use keyring_core::api::{CredentialApi, CredentialStoreApi};
-use platform_wallet_storage::secrets::{
-    EncryptedFileStore, SecretBytes, SecretString, WalletId, SERVICE_PREFIX,
-};
+use platform_wallet_storage::secrets::{SecretBytes, SecretStore, SecretString, WalletId};
 
-let store = EncryptedFileStore::open("/var/lib/wallet/vault", SecretString::new("pw"))?;
-let service = format!("{SERVICE_PREFIX}{}", WalletId::from(wallet_id).to_hex());
-let entry = store.build(&service, "mnemonic", None)?;
-entry.set_secret(b"abandon ability ...")?;
-let plaintext = SecretBytes::new(entry.get_secret()?); // re-wrap at the consumer seam
+let store = SecretStore::file("/var/lib/wallet/vault", SecretString::new("pw"))?;
+let wallet = WalletId::from(wallet_id);
+store.set(&wallet, "mnemonic", &SecretBytes::from_slice(b"abandon ability ..."))?;
+let plaintext: Option<SecretBytes> = store.get(&wallet, "mnemonic")?; // never a bare Vec
+store.delete(&wallet, "mnemonic")?; // idempotent
 ```
+
+Use `SecretStore::os()` for the platform OS keyring arm instead of
+`SecretStore::file(..)`.
+
+### Internal SPI
+
+Below `SecretStore`, `EncryptedFileStore` and `default_credential_store`
+expose the raw `keyring_core` SPI directly; their `keyring_core::Error`
+projection is **lossy and string-only** (the typed distinction lives on
+the `SecretStore` path). SPI consumers re-wrap the bare `Vec<u8>` from
+`CredentialApi::get_secret` via `SecretBytes::new(...)` at the seam.
 
 ### Key shape
 
@@ -46,66 +62,65 @@ operation (defence in depth — credentials are long-lived).
 
 ### Memory hygiene at the seam
 
-The upstream SPI returns plaintext as `Vec<u8>` from
-`CredentialApi::get_secret`. The contract: callers MUST wrap that
-result into [`SecretBytes::new(...)`] **immediately**, with no named
-intermediate `Vec` binding (Smythe EDIT-1). `SecretBytes::new` takes
-the `Vec<u8>` by value and `std::mem::take`s it into a
-`Zeroizing<Vec<u8>>` — no copy of the bare buffer ever survives past
-the constructor expression, so the bare-`Vec` exposure window is zero
-statements. The wrapper is also best-effort `mlock`ed and `Debug` is
-redacted.
+`SecretStore::get` returns `Option<SecretBytes>` — a raw `Vec<u8>`
+never crosses the public boundary. Internally, the upstream SPI returns
+plaintext as `Vec<u8>` from `CredentialApi::get_secret`; that result is
+wrapped into `SecretBytes::new(...)` **immediately**, with no named
+intermediate `Vec` binding (Smythe EDIT-1). `SecretBytes::new` takes the
+`Vec<u8>` by value and `std::mem::take`s it into a `Zeroizing<Vec<u8>>` —
+no copy of the bare buffer ever survives past the constructor
+expression, so the bare-`Vec` exposure window is zero statements. The
+wrapper is also best-effort `mlock`ed and `Debug` is redacted.
 
-`CredentialApi::set_secret` accepts `&[u8]` (a borrow); no long-lived
+`SecretStore::set` takes `&SecretBytes`, exposing the wrapped bytes to
+the SPI's `set_secret(&[u8])` only at the last moment; no long-lived
 unwrapped copy is allocated.
 
 ### Backends
 
-- **`EncryptedFileStore`** — Argon2id (memory ≥ 19 MiB, t ≥ 2, defaults
-  64 MiB / t=3) + XChaCha20-Poly1305 AEAD with random 24-byte XNonce
-  per entry. AAD binds ciphertext to
+- **File vault (`SecretStore::file` / `EncryptedFileStore`)** — Argon2id
+  (memory ≥ 19 MiB, t ≥ 2, defaults 64 MiB / t=3) + XChaCha20-Poly1305
+  AEAD with a random 24-byte XNonce per entry. AAD binds ciphertext to
   `format_version ‖ wallet_id ‖ label` so a blob moved between slots
   fails the tag. A header-stored passphrase-verification token is
   unsealed before any entry is touched (mixed-key-corruption guard).
-  Vault file created at mode 0600 via `O_EXCL`+`fchmod`; writes
-  temp→fsync→rename→dir-fsync; rekey replaces atomically with no
-  `.bak` (SEC-REQ-2.2.x). Construction errors surface as
-  [`FileStoreError`]; the `CredentialApi` seam bridges them through
-  the unit-only [`FileStoreFailure`] marker boxed inside
-  `keyring_core::Error::{NoStorageAccess, BadStoreFormat}` payloads.
-  Consumers recover the marker via `secrets::downcast_failure(&err)`.
-- **OS keyring** — `secrets::default_credential_store()` returns an
-  `Arc<dyn CredentialStoreApi + Send + Sync>` over the platform's
-  default credential store (`linux-keyutils-keyring-store` →
+  The vault is one `serde_json` document per `wallet_id`, written
+  atomically via `tempfile::NamedTempFile::persist` (cross-platform
+  replace-over-existing) at mode 0600 on Unix; rekey replaces atomically
+  with no `.bak` (SEC-REQ-2.2.x). Errors surface as the typed
+  `FileStoreError` through `SecretStore`.
+- **OS keyring (`SecretStore::os` / `default_credential_store`)** —
+  returns an `Arc<dyn CredentialStoreApi + Send + Sync>` over the
+  platform's default credential store (`linux-keyutils-keyring-store` →
   `dbus-secret-service-keyring-store` on Linux/FreeBSD;
   `apple-native-keyring-store` on macOS; `windows-native-keyring-store`
   on Windows). Fail-closed with `keyring_core::Error::NoDefaultStore`
   on headless / unknown OS (SEC-REQ-2.1.3 / AR-4) — never a silent
-  plaintext fallback. The returned `Arc` is suitable for
-  `keyring_core::set_default_store(...)`.
+  plaintext fallback. Through `SecretStore`, keyring failures project to
+  `FileStoreError::OsKeyring { kind }`, a non-secret discriminant.
 - **`MemoryCredentialStore`** — gated behind `__secrets-test-helpers`;
   unreachable from production builds.
 
 Backend selection is an explicit operator decision; there is no
 automatic fallback between backends.
 
-### The cross-SPI error bridge
+### Error surface
 
-`keyring_core::Error` does not name file-backend-unique failure modes
-(wrong passphrase, malformed vault, insecure permissions, KDF
-failure). The file backend boxes a unit-only [`FileStoreFailure`]
-inside `keyring_core::Error::NoStorageAccess` (for `WrongPassphrase`,
-matching the operator UX of `KeyringLocked`) or renders it into
-`BadStoreFormat`'s static `String` payload (for `Decrypt`,
-`KdfFailure`, `VersionUnsupported`, `MalformedVault`,
-`InsecurePermissions`). `secrets::downcast_failure(&err)` recovers the
-typed variant; the bridge is the single recovery path consumers use.
+`SecretStore` returns the typed `FileStoreError`. For the file arm this
+is **lossless**: `WrongPassphrase`, `Corruption`, `Busy`, `KdfFailure`,
+`VersionUnsupported`, `MalformedVault`, `InsecurePermissions`, and
+`InvalidLabel` are distinct typed variants. For the OS arm,
+`keyring_core::Error` projects best-effort into
+`FileStoreError::OsKeyring { kind: OsKeyringErrorKind }`, a payload-free
+discriminant — keyring variants carrying raw bytes (`BadEncoding`,
+`BadDataFormat`) are collapsed so their bytes never enter the error
+(CWE-209/CWE-532).
 
-[`FileStoreFailure`] is **unit-variants only** (Smythe EDIT-3): no
-field may carry a user-supplied path, secret byte, passphrase, label,
-or stringified payload. Numeric correlation fields are acceptable; the
-current taxonomy needs none. The constraint is enforced via a
-compile-time `Copy` assertion in the bridge module.
+The internal SPI projection `From<FileStoreError> for
+keyring_core::Error` is **lossy and string-only**: every variant
+collapses to a `keyring_core::Error` carrying only a static string, with
+no boxed `FileStoreError` to downcast back out. SPI-only consumers lose
+the structural distinction — which is exactly why `SecretStore` exists.
 
 Per Smythe EDIT-2, `keyring_core::Error` is safe to `Display`
 (`{ }`-format), but `{:?}`-format embeds `BadEncoding(Vec<u8>)` /
@@ -167,4 +182,3 @@ ships SQLCipher.
 
 [`SecretBytes::new(...)`]: ./src/secrets/secret.rs
 [`FileStoreError`]: ./src/secrets/file/error.rs
-[`FileStoreFailure`]: ./src/secrets/file/error_bridge.rs

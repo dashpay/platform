@@ -99,18 +99,54 @@ impl EncryptedFileStore {
         inner.rekey(wallet_id, new_passphrase)
     }
 
+    /// Store `bytes` under `(wallet_id, label)`, returning the typed
+    /// [`FileStoreError`] (lossless — no `keyring_core::Error` seam).
+    /// The public [`SecretStore`](crate::secrets::SecretStore) file arm
+    /// delegates here so the structural error distinction survives.
+    pub(crate) fn put_bytes(
+        &self,
+        wallet_id: &WalletId,
+        label: &str,
+        bytes: &[u8],
+    ) -> Result<(), FileStoreError> {
+        self.inner.put(wallet_id, label, bytes)
+    }
+
+    /// Retrieve the plaintext under `(wallet_id, label)`, or `None` if
+    /// absent, returning the typed [`FileStoreError`].
+    pub(crate) fn get_bytes(
+        &self,
+        wallet_id: &WalletId,
+        label: &str,
+    ) -> Result<Option<Vec<u8>>, FileStoreError> {
+        self.inner.get(wallet_id, label)
+    }
+
+    /// Delete the entry under `(wallet_id, label)`; `Ok(false)` if it was
+    /// already absent. Returns the typed [`FileStoreError`].
+    pub(crate) fn delete_bytes(
+        &self,
+        wallet_id: &WalletId,
+        label: &str,
+    ) -> Result<bool, FileStoreError> {
+        self.inner.delete(wallet_id, label)
+    }
+
     #[cfg(test)]
-    fn vault_path(&self, wallet_id: &WalletId) -> PathBuf {
+    pub(crate) fn test_vault_path(&self, wallet_id: &WalletId) -> PathBuf {
         self.inner.vault_path(wallet_id)
     }
 
     #[cfg(test)]
-    fn read_vault(&self, path: &Path) -> Result<Option<(Header, Vec<VaultEntry>)>, FileStoreError> {
+    pub(crate) fn test_read_vault(
+        &self,
+        path: &Path,
+    ) -> Result<Option<(Header, Vec<VaultEntry>)>, FileStoreError> {
         self.inner.read_vault(path)
     }
 
     #[cfg(test)]
-    fn write_vault(
+    pub(crate) fn test_write_vault(
         &self,
         path: &Path,
         header: &Header,
@@ -515,20 +551,18 @@ mod tests {
         s.build(&service, label, None).expect("build")
     }
 
-    /// Recover whether a projected SPI error came from a wrong
-    /// passphrase. `WrongPassphrase` rides in `NoStorageAccess` with the
-    /// typed `FileStoreError` boxed as the source.
+    /// Whether a projected SPI error is the lossy `WrongPassphrase`
+    /// projection. The seam is string-only: `WrongPassphrase` rides in
+    /// `NoStorageAccess` and is distinguished only by its `Display` text
+    /// (the lossless typed distinction lives on the `SecretStore` path).
     fn is_wrong_passphrase(e: &KeyringError) -> bool {
-        matches!(
-            e,
-            KeyringError::NoStorageAccess(src)
-                if matches!(src.downcast_ref::<FileStoreError>(), Some(FileStoreError::WrongPassphrase))
-        )
+        matches!(e, KeyringError::NoStorageAccess(src)
+            if src.to_string() == FileStoreError::WrongPassphrase.to_string())
     }
 
-    /// Recover whether a projected SPI error signals entry corruption.
-    /// `Corruption` collapses into `BadStoreFormat` with the variant's
-    /// static `Display` text.
+    /// Whether a projected SPI error is the lossy `Corruption`
+    /// projection. `Corruption` collapses into `BadStoreFormat` with the
+    /// variant's static `Display` text.
     fn is_corruption(e: &KeyringError) -> bool {
         matches!(e, KeyringError::BadStoreFormat(s) if *s == FileStoreError::Corruption.to_string())
     }
@@ -592,8 +626,8 @@ mod tests {
         let s = store(dir.path());
         entry(&s, wid(1), "labelA").set_secret(b"secretA").unwrap();
         entry(&s, wid(1), "labelB").set_secret(b"secretB").unwrap();
-        let path = s.vault_path(&wid(1));
-        let (header, mut entries) = s.read_vault(&path).unwrap().unwrap();
+        let path = s.test_vault_path(&wid(1));
+        let (header, mut entries) = s.test_read_vault(&path).unwrap().unwrap();
         let a = entries
             .iter()
             .find(|e| e.label == "labelA")
@@ -605,7 +639,7 @@ mod tests {
                 e.ciphertext = a.ciphertext.clone();
             }
         }
-        s.write_vault(&path, &header, &entries).unwrap();
+        s.test_write_vault(&path, &header, &entries).unwrap();
         let err = entry(&s, wid(1), "labelB").get_secret().unwrap_err();
         // The header verify-token passes (correct passphrase), so the
         // cross-label ciphertext swap surfaces as entry corruption, not
@@ -620,7 +654,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let s = store(dir.path());
         entry(&s, wid(1), "seed").set_secret(b"x").unwrap();
-        let mode = fs::metadata(s.vault_path(&wid(1)))
+        let mode = fs::metadata(s.test_vault_path(&wid(1)))
             .unwrap()
             .permissions()
             .mode()
@@ -635,7 +669,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let s = store(dir.path());
         entry(&s, wid(1), "seed").set_secret(b"x").unwrap();
-        let path = s.vault_path(&wid(1));
+        let path = s.test_vault_path(&wid(1));
         fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
         let err = entry(&s, wid(1), "seed").get_secret().unwrap_err();
         match &err {
@@ -652,11 +686,11 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut s = store(dir.path());
         entry(&s, wid(1), "seed").set_secret(b"value").unwrap();
-        let old_bytes = fs::read(s.vault_path(&wid(1))).unwrap();
+        let old_bytes = fs::read(s.test_vault_path(&wid(1))).unwrap();
         s.rekey(wid(1), SecretString::new("pw-new")).unwrap();
         // New passphrase reads; ciphertext changed; no .bak left.
         assert_eq!(entry(&s, wid(1), "seed").get_secret().unwrap(), b"value");
-        let new_bytes = fs::read(s.vault_path(&wid(1))).unwrap();
+        let new_bytes = fs::read(s.test_vault_path(&wid(1))).unwrap();
         assert_ne!(old_bytes, new_bytes);
         let stale: Vec<_> = fs::read_dir(dir.path())
             .unwrap()
@@ -746,10 +780,10 @@ mod tests {
         assert_eq!(entry(&s, wid(1), "seed").get_secret().unwrap(), b"value");
         // Bit-flip the entry ciphertext on disk; the header verify-token
         // is untouched, so the passphrase is still correct.
-        let path = s.vault_path(&wid(1));
-        let (header, mut entries) = s.read_vault(&path).unwrap().unwrap();
+        let path = s.test_vault_path(&wid(1));
+        let (header, mut entries) = s.test_read_vault(&path).unwrap().unwrap();
         entries[0].ciphertext[0] ^= 0x01;
-        s.write_vault(&path, &header, &entries).unwrap();
+        s.test_write_vault(&path, &header, &entries).unwrap();
         let err = entry(&s, wid(1), "seed").get_secret().unwrap_err();
         assert!(is_corruption(&err), "unexpected error: {err:?}");
         assert!(
@@ -764,10 +798,10 @@ mod tests {
         let mut s = store(dir.path());
         entry(&s, wid(1), "seed").set_secret(b"value").unwrap();
         // Corrupt the entry ciphertext but leave the verify-token intact.
-        let path = s.vault_path(&wid(1));
-        let (header, mut entries) = s.read_vault(&path).unwrap().unwrap();
+        let path = s.test_vault_path(&wid(1));
+        let (header, mut entries) = s.test_read_vault(&path).unwrap().unwrap();
         entries[0].ciphertext[0] ^= 0x01;
-        s.write_vault(&path, &header, &entries).unwrap();
+        s.test_write_vault(&path, &header, &entries).unwrap();
         // Rekey with the *correct* old passphrase: header verify passes,
         // the entry re-encrypt fails with Corruption, not WrongPassphrase
         // nor Busy.
@@ -795,7 +829,7 @@ mod tests {
         entry(&s, wid(1), "seed")
             .set_secret(b"PLAINTEXTNEEDLE")
             .unwrap();
-        let raw = fs::read(s.vault_path(&wid(1))).unwrap();
+        let raw = fs::read(s.test_vault_path(&wid(1))).unwrap();
         assert!(
             raw.windows(b"PLAINTEXTNEEDLE".len())
                 .all(|w| w != b"PLAINTEXTNEEDLE"),
@@ -883,10 +917,10 @@ mod tests {
         entry(&s, wid(1), "seed").set_secret(b"value").unwrap();
         // Rewrite the on-disk vault's KDF m_kib to u32::MAX via the
         // header round-trip the test surface exposes.
-        let path = s.vault_path(&wid(1));
-        let (mut header, entries) = s.read_vault(&path).unwrap().unwrap();
+        let path = s.test_vault_path(&wid(1));
+        let (mut header, entries) = s.test_read_vault(&path).unwrap().unwrap();
         header.params.m_kib = u32::MAX;
-        s.write_vault(&path, &header, &entries).unwrap();
+        s.test_write_vault(&path, &header, &entries).unwrap();
         let err = entry(&s, wid(1), "seed").get_secret().unwrap_err();
         assert!(
             matches!(&err, KeyringError::BadStoreFormat(msg) if *msg == FileStoreError::KdfFailure.to_string()),
