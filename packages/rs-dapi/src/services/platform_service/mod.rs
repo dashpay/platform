@@ -344,6 +344,12 @@ impl Platform for PlatformServiceImpl {
         dapi_grpc::platform::v0::GetDocumentsResponse
     );
 
+    drive_method!(
+        get_document_history,
+        dapi_grpc::platform::v0::GetDocumentHistoryRequest,
+        dapi_grpc::platform::v0::GetDocumentHistoryResponse
+    );
+
     // System methods
     drive_method!(
         get_consensus_params,
