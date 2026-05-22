@@ -428,14 +428,13 @@ mod tests {
         assert!(!r.message.is_null());
     }
 
-    /// The three "can't-select-inputs" wallet variants (`NoSpendableInputs`,
-    /// `OnlyOutputAddressesFunded`, `OnlyDustInputs`) all map to the dedicated
-    /// `ErrorNoSelectableInputs` FFI code rather than flattening to
-    /// `ErrorUnknown`, and the typed Display rendering survives across the
-    /// boundary so callers can distinguish the underlying cause from the
-    /// message string.
+    /// `NoSpendableInputs` has no dedicated FFI arm, so it flattens to
+    /// `ErrorUnknown` (only `OnlyOutputAddressesFunded` / `OnlyDustInputs`
+    /// carry dedicated codes). The typed Display rendering still survives
+    /// across the boundary, so callers can recover the underlying cause from
+    /// the message string even without a distinct code.
     #[test]
-    fn no_selectable_inputs_maps_to_dedicated_code() {
+    fn no_spendable_inputs_falls_through_to_unknown() {
         use key_wallet::account::StandardAccountType;
         let err = PlatformWalletError::NoSpendableInputs {
             account_type: StandardAccountType::BIP44Account,
@@ -444,10 +443,7 @@ mod tests {
         };
         let rendered = err.to_string();
         let result: PlatformWalletFFIResult = err.into();
-        assert_eq!(
-            result.code,
-            PlatformWalletFFIResultCode::ErrorNoSelectableInputs
-        );
+        assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorUnknown);
         assert!(!result.message.is_null());
         let msg = unsafe { std::ffi::CStr::from_ptr(result.message) }
             .to_string_lossy()

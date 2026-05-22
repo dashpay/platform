@@ -109,6 +109,14 @@ cp packages/rs-platform-wallet/tests/.env.example \
 | `PLATFORM_WALLET_E2E_BANK_CORE_GATE` | no | `900` (gate ON) | Bank Core (Layer-1) funding gate timeout, in seconds. The harness blocks at init until SPV's compact-filter scan walks far enough to observe the bank's pre-funded UTXOs (any non-zero confirmed Core balance). Default-on so fresh-workdir CR-* / ID-007 runs don't race a cold-cache scan and see `bank_core_balance=0` for an address that's been funded since last week. Set to `0` (or `disabled` / `false` / `off`) to opt out for Platform-only suites that don't need Core duffs; set to a positive integer to override the timeout. Invalid values fall back to the default with a warning. |
 | `PLATFORM_WALLET_E2E_CORE_REFILL_THRESHOLD_DUFF` | no | `100000` | Trip line (duffs) for the Platform→Core refill fallback. If the bank's confirmed Core balance is below this value at suite start, the harness chains `top_up_from_addresses` → `withdraw_credits_with_external_signer` to refill the Core wallet from the Platform address pool. Best-effort; harness init never fails on refill issues. |
 | `PLATFORM_WALLET_E2E_CORE_REFILL_TARGET_DUFF` | no | `1000000` | Target (duffs) the Platform→Core refill fallback aims to reach when triggered. Must be greater than the threshold. |
+| `PLATFORM_WALLET_E2E_P2P_PORT` | no | mainnet `9999`, testnet `19999`, devnet `20001` | Core-P2P port the SPV client connects over (distinct from the DAPI gRPC `:1443`). Built-in defaults cover mainnet/testnet/devnet — the porter devnet's `port=`/`addnode=...:20001` matches the devnet default, so it needs no override. Only regtest has no default. Set to override for a non-standard devnet port. |
+| `PLATFORM_WALLET_E2E_DEVNET_GENESIS_HASH` | no | built-in `000008ca…3ef23d2e` | See **Devnet genesis pre-seed** below. Expected block-0 hash (RPC display hex). The harness asserts the assembled header hashes to this; unset → self-checks against the `dashcore` built-in. |
+| `PLATFORM_WALLET_E2E_DEVNET_GENESIS_VERSION` | no | built-in `1` | Devnet genesis block version (decimal). Overrides the built-in field. |
+| `PLATFORM_WALLET_E2E_DEVNET_GENESIS_PREV` | no | built-in all-zeros | Devnet genesis previous-block hash (RPC display hex). |
+| `PLATFORM_WALLET_E2E_DEVNET_GENESIS_MERKLEROOT` | no | built-in `e0028eb9…56a662c7` | Devnet genesis merkle root (RPC display hex). |
+| `PLATFORM_WALLET_E2E_DEVNET_GENESIS_TIME` | no | built-in `1417713337` | Devnet genesis block time (unix seconds). |
+| `PLATFORM_WALLET_E2E_DEVNET_GENESIS_BITS` | no | built-in `207fffff` | Devnet genesis compact target `nBits` (hex). |
+| `PLATFORM_WALLET_E2E_DEVNET_GENESIS_NONCE` | no | built-in `1096447` | Devnet genesis block nonce (decimal). |
 | `RUST_LOG` | no | `info,rs_platform_wallet=debug` | Tracing filter passed to `tracing-subscriber`. Increase to `debug` or `trace` for detailed sync output. |
 
 Shell-exported variables take precedence — `dotenvy::from_path` does NOT overwrite
@@ -390,6 +398,51 @@ against devnet, a custom test cluster, or any non-default trust anchor.
 PLATFORM_WALLET_E2E_TRUSTED_CONTEXT_URL="https://my-trusted-quorum.example/" \
   cargo test --test e2e --features e2e -- --nocapture
 ```
+
+---
+
+## Devnet genesis pre-seed
+
+`dash-spv` ships built-in genesis parameters only for mainnet, testnet, and
+regtest. On a devnet its `initialize_genesis_block` reaches
+`known_genesis_block_hash()` and fails with
+`Configuration error: No known genesis hash for network`, which blocks SPV
+startup on porter and any other devnet.
+
+The harness sidesteps this without an upstream change: before the SPV client
+starts, `SpvRuntime::start` pre-seeds the devnet genesis header into SPV
+storage at height 0 (only when the network is devnet and the store is empty).
+`dash-spv`'s own genesis init then early-returns because storage already has a
+tip, so it never hits the failing lookup. The pre-seed is idempotent — a warm
+cache (existing tip) is left untouched.
+
+**Zero config for standard devnets.** Block 0 is constant across standard Dash
+devnets and `dashcore` already ships it, so the default uses
+`dashcore::blockdata::constants::genesis_block(Network::Devnet).header` — hash
+`000008ca1832a4baf228eb1553c03d3a2c8e02399550dd6ea8d65cec3ef23d2e`, which is
+exactly the porter genesis. No `DEVNET_GENESIS_*` var is needed for porter.
+
+**Overrides for a non-standard devnet.** The `PLATFORM_WALLET_E2E_DEVNET_GENESIS_*`
+vars override the header per field on top of the built-in. On start the harness
+asserts the assembled header hashes to `…_GENESIS_HASH` (or, when that is unset,
+to the built-in's own hash) and fails fast naming expected-vs-computed — this
+guards against a wrong field or endianness before SPV starts. Hash, prev, and
+merkleroot are Core RPC display hex (big-endian); construction goes through
+`dashcore`'s `FromStr`, which expects that form and reverses internally, so paste
+the values straight from `dash-cli` with no manual byte-swapping.
+
+Read the canonical values off a running devnet node:
+
+```bash
+dash-cli getblockhash 0
+# 000008ca1832a4baf228eb1553c03d3a2c8e02399550dd6ea8d65cec3ef23d2e
+dash-cli getblockheader 000008ca1832a4baf228eb1553c03d3a2c8e02399550dd6ea8d65cec3ef23d2e true
+# → version / previousblockhash / merkleroot / time / bits / nonce
+```
+
+Map `version → _VERSION`, `previousblockhash → _PREV`, `merkleroot → _MERKLEROOT`,
+`time → _TIME`, `bits → _BITS` (compact nBits hex), `nonce → _NONCE`, and the
+block hash itself → `_HASH`.
 
 ---
 

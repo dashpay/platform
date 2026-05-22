@@ -78,6 +78,14 @@ where
     let spv = manager.spv_arc();
     let client_config = build_client_config(config, workdir, address_list)?;
 
+    // Apply the devnet genesis override before spawn so the runtime's
+    // pre-seed (which sidesteps dash-spv's missing devnet genesis) uses
+    // it. Empty override = the `dashcore` built-in; the runtime ignores
+    // it entirely on non-devnet networks.
+    if config.network == Network::Devnet && !config.devnet_genesis.is_empty() {
+        spv.set_devnet_genesis_override(config.devnet_genesis.clone());
+    }
+
     spv.spawn_in_background(client_config);
     tracing::info!(
         target: "platform_wallet::e2e::spv",
@@ -425,6 +433,13 @@ fn build_client_config(
         .with_mempool_tracking(MempoolStrategy::BloomFilter);
 
     seed_p2p_peers(&mut client_config, config, address_list);
+
+    // TODO(porter-live-run): SPV P2P handshake to porter devnet is refused —
+    // dash-spv (rev cfb01fa) advertises PROTOCOL_VERSION 70237 but porter Dash
+    // Core 23.1.2 enforces min 70240, dropping us before verack. Genesis
+    // pre-seed works; this is the remaining blocker. Awaiting an upstream
+    // rust-dashcore protocol bump (then update the 8 rev lines in /Cargo.toml).
+    // See PR #3727 Failed Tests ledger.
 
     client_config.validate().map_err(|e| {
         tracing::error!(

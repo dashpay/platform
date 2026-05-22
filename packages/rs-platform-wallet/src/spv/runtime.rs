@@ -8,8 +8,10 @@ use dashcore::sml::llmq_type::LLMQType;
 use dashcore::{QuorumHash, Transaction};
 use tokio_util::sync::CancellationToken;
 
+use dashcore::Network;
+
 use dash_spv::network::PeerNetworkManager;
-use dash_spv::storage::DiskStorageManager;
+use dash_spv::storage::{BlockHeaderStorage, DiskStorageManager, StorageManager};
 use dash_spv::sync::SyncProgress;
 use dash_spv::{ClientConfig, DashSpvClient, EventHandler, Hash};
 
@@ -17,6 +19,7 @@ use key_wallet_manager::WalletManager;
 
 use crate::error::PlatformWalletError;
 use crate::events::PlatformEventManager;
+use crate::spv::genesis::{resolve_devnet_genesis_header, DevnetGenesisOverride};
 use crate::wallet::platform_wallet::PlatformWalletInfo;
 
 type SpvClient =
@@ -34,6 +37,11 @@ pub struct SpvRuntime {
     /// [`spawn_in_background`]. [`stop`] fires this token and joins
     /// on the client shutdown.
     background_cancel: StdMutex<Option<CancellationToken>>,
+    /// Per-field overrides for the devnet genesis header pre-seeded
+    /// into SPV storage on [`start`]. Empty = use the `dashcore`
+    /// built-in (the standard / porter devnet genesis). Only consulted
+    /// when the client config's network is [`Network::Devnet`].
+    devnet_genesis: StdMutex<DevnetGenesisOverride>,
 }
 // TODO: We want it better
 impl SpvRuntime {
@@ -47,7 +55,18 @@ impl SpvRuntime {
             wallet_manager,
             client: RwLock::new(None),
             background_cancel: StdMutex::new(None),
+            devnet_genesis: StdMutex::new(DevnetGenesisOverride::default()),
         }
+    }
+
+    /// Override the devnet genesis header pre-seeded on [`start`].
+    ///
+    /// Useful only for a non-standard devnet whose block 0 differs from
+    /// the `dashcore` built-in; the default (no override) already
+    /// covers every standard Dash devnet. Has no effect once the client
+    /// is running, and is ignored on non-devnet networks.
+    pub fn set_devnet_genesis_override(&self, overrides: DevnetGenesisOverride) {
+        *self.devnet_genesis.lock().expect("devnet_genesis poisoned") = overrides;
     }
 
     /// Start SPV sync.
@@ -65,6 +84,10 @@ impl SpvRuntime {
         let storage_manager = DiskStorageManager::new(&config)
             .await
             .map_err(|e| PlatformWalletError::SpvError(e.to_string()))?;
+
+        if config.network == Network::Devnet {
+            self.preseed_devnet_genesis(&storage_manager).await?;
+        }
 
         // PlatformEventManager implements `EventHandler`; pass it as the
         // sole entry in the SPV client's handler vec. Additional dyn
@@ -86,6 +109,46 @@ impl SpvRuntime {
         let mut client = self.client.write().await;
         *client = Some(spv_client);
 
+        Ok(())
+    }
+
+    /// Pre-seed the devnet genesis header into SPV storage when the
+    /// store is empty.
+    ///
+    /// `dash-spv` has no built-in genesis for devnet, so its own
+    /// `initialize_genesis_block` would fail with "No known genesis
+    /// hash for network". That routine early-returns when storage
+    /// already holds a tip, so seeding genesis at height 0 here lets
+    /// the client start cleanly. No-ops when the store is non-empty
+    /// (warm cache), so it stays idempotent across runs.
+    async fn preseed_devnet_genesis(
+        &self,
+        storage: &DiskStorageManager,
+    ) -> Result<(), PlatformWalletError> {
+        let block_headers = StorageManager::block_headers(storage);
+        let mut bh = block_headers.write().await;
+        if BlockHeaderStorage::get_tip_height(&*bh).await.is_some() {
+            tracing::debug!("SPV storage already has a tip; skipping devnet genesis pre-seed");
+            return Ok(());
+        }
+
+        let overrides = self
+            .devnet_genesis
+            .lock()
+            .expect("devnet_genesis poisoned")
+            .clone();
+        let header = resolve_devnet_genesis_header(&overrides)
+            .map_err(|e| PlatformWalletError::SpvError(format!("devnet genesis pre-seed: {e}")))?;
+
+        BlockHeaderStorage::store_headers(&mut *bh, &[header])
+            .await
+            .map_err(|e| {
+                PlatformWalletError::SpvError(format!("failed to pre-seed devnet genesis: {e}"))
+            })?;
+        tracing::info!(
+            genesis_hash = %header.block_hash(),
+            "pre-seeded devnet genesis header into SPV storage"
+        );
         Ok(())
     }
 
