@@ -61,7 +61,7 @@ where
     async fn fetch_unproved_with_settings<Q: Query<<Self as FetchUnproved>::Request>>(
         sdk: &Sdk,
         query: Q,
-        settings: RequestSettings,
+        request_settings: RequestSettings,
     ) -> Result<(Option<Self>, ResponseMetadata), Error>
     where
         Self: FromUnproved<
@@ -71,7 +71,8 @@ where
         >,
     {
         // Default implementation
-        let request: &<Self as FetchUnproved>::Request = &query.query(false)?;
+        let settings = sdk.query_settings().without_proofs();
+        let request: &<Self as FetchUnproved>::Request = &query.query(&settings)?;
         let closure = move |local_settings: RequestSettings| async move {
             // Execute the request using the Sdk instance
             let ExecutionResponse {
@@ -105,8 +106,8 @@ where
             })
         };
 
-        let settings = sdk.dapi_client_settings.override_by(settings);
-        retry(sdk.address_list(), settings, closure)
+        let retry_settings = sdk.dapi_client_settings.override_by(request_settings);
+        retry(sdk.address_list(), retry_settings, closure)
             .await
             .into_inner()
     }

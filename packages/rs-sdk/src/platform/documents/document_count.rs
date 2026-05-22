@@ -49,5 +49,6 @@ impl FromProof<DocumentQuery> for DocumentCount {
 }
 
 impl Fetch for DocumentCount {
-    type Request = DocumentQuery;
+    type Query = DocumentQuery;
+    type Request = dapi_grpc::platform::v0::GetDocumentsRequest;
 }

@@ -9,13 +9,13 @@ use key_wallet::bip32::ExtendedPrivKey;
 use platform_wallet::wallet::identity::network::derive_ecdsa_identity_auth_keypair_from_master;
 use zeroize::Zeroizing;
 
-use crate::derive_and_persist_callbacks::{
-    mnemonic_resolver_result, MnemonicResolverHandle, MNEMONIC_RESOLVER_BUFFER_CAPACITY,
-};
 use crate::error::*;
 use crate::identity_key_preview::IdentityKeyPreviewFFI;
 use crate::identity_keys_from_mnemonic::parse_mnemonic_any_language;
 use crate::{check_ptr, unwrap_result_or_return};
+use rs_sdk_ffi::{
+    mnemonic_resolver_result, MnemonicResolverHandle, MNEMONIC_RESOLVER_BUFFER_CAPACITY,
+};
 
 /// Derive a single ECDSA identity-authentication keypair at
 /// `(identity_index, key_index)` from a BIP-39 mnemonic.

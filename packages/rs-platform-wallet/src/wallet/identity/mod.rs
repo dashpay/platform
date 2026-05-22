@@ -34,6 +34,6 @@ pub use state::{BlockTime, IdentityLocation, IdentityManager, ManagedIdentity, R
 pub use types::dashpay::profile::{calculate_avatar_hash, calculate_dhash_fingerprint};
 pub use types::{
     ContactRequest, DashPayProfile, DashpayAddressMatch, DpnsNameInfo, EstablishedContact,
-    IdentityFunding, IdentityFundingMethod, IdentityStatus, KeyStorage, PaymentDirection,
-    PaymentEntry, PaymentStatus, PrivateKeyData, ProfileUpdate, TopUpFundingMethod,
+    IdentityFunding, IdentityStatus, KeyStorage, PaymentDirection, PaymentEntry, PaymentStatus,
+    PrivateKeyData, ProfileUpdate,
 };
