@@ -31,7 +31,12 @@ fn tc031_backup_directory_form() {
     let out_dir = tmp.path().join("backups");
     fs::create_dir(&out_dir).unwrap();
     let written = persister.backup_to(&out_dir).expect("backup_to");
-    assert!(written.starts_with(&out_dir));
+    // `backup_to` canonicalizes its return; canonicalize the expected
+    // dir too so the comparison is symmetric. On macOS the temp dir
+    // lives under `/var` (a symlink to `/private/var`), so an
+    // un-canonicalized `out_dir` would not prefix the canonical path.
+    let expected_dir = out_dir.canonicalize().unwrap_or_else(|_| out_dir.clone());
+    assert!(written.starts_with(&expected_dir));
     let name = written.file_name().unwrap().to_string_lossy().into_owned();
     assert!(name.starts_with("wallet-") && name.ends_with(".db"));
     // Open the produced file and confirm it has the schema.
