@@ -387,11 +387,20 @@ fn parse_service(service: &str) -> Result<WalletId, KeyringError> {
             "wallet id hex must be 64 chars".to_string(),
         ));
     }
+    // `hex::decode_to_slice` accepts uppercase, but the service string is
+    // always constructed lowercase (`WalletId::to_hex`). Reject uppercase
+    // up front so the lowercase form is a clean parse invariant.
+    if hex.bytes().any(|b| b.is_ascii_uppercase()) {
+        return Err(KeyringError::Invalid(
+            "service".to_string(),
+            "wallet id hex must be lowercase".to_string(),
+        ));
+    }
     let mut bytes = [0u8; 32];
     hex::decode_to_slice(hex, &mut bytes).map_err(|_| {
         KeyringError::Invalid(
             "service".to_string(),
-            "wallet id hex is not lowercase hex".to_string(),
+            "wallet id hex is not valid hex".to_string(),
         )
     })?;
     Ok(WalletId::from(bytes))
@@ -857,6 +866,24 @@ mod tests {
                 other => panic!("expected Invalid(\"service\"), got {other:?}"),
             }
         }
+    }
+
+    #[test]
+    fn build_rejects_uppercase_hex_service() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = store(dir.path());
+        // 64-char, valid-hex, but uppercase: must be rejected before decode
+        // so lowercase stays a clean parse invariant.
+        let upper = format!("{SERVICE_PREFIX}{}", "A".repeat(64));
+        let err = s.build(&upper, "seed", None).unwrap_err();
+        match err {
+            KeyringError::Invalid(attr, _) => assert_eq!(attr, "service"),
+            other => panic!("expected Invalid(\"service\"), got {other:?}"),
+        }
+        // The lowercase form of the same bytes is accepted.
+        let lower = format!("{SERVICE_PREFIX}{}", "aa".repeat(32));
+        s.build(&lower, "seed", None)
+            .expect("lowercase hex accepted");
     }
 
     #[test]
