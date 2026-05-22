@@ -50,8 +50,6 @@ enum Cmd {
     Prune(PruneArgs),
     /// Dump per-table row counts.
     Inspect(InspectArgs),
-    /// Drop a wallet (auto-backs-up by default).
-    DeleteWallet(DeleteWalletArgs),
 }
 
 #[derive(Debug, Args)]
@@ -103,16 +101,6 @@ enum InspectFormat {
     Text,
     Tsv,
     Json,
-}
-
-#[derive(Debug, Args)]
-struct DeleteWalletArgs {
-    #[arg(long)]
-    wallet_id: String,
-    #[arg(long)]
-    yes: bool,
-    #[arg(long)]
-    no_auto_backup: bool,
 }
 
 fn parse_duration(s: &str) -> Result<Duration, String> {
@@ -209,9 +197,7 @@ fn run(cli: Cli) -> Result<ExitCode, CliError> {
     // None` so the open-time pre-migration backup is skipped. For
     // every other subcommand we leave the user-configured dir (or the
     // default) in place — the library's safe-by-default semantics
-    // still apply. `delete-wallet --no-auto-backup` reaches a separate
-    // library entry point (`delete_wallet_skip_backup`) and so does
-    // not need the config to be mutated.
+    // still apply.
     let mut config = SqlitePersisterConfig::new(&db);
     if let Some(dir_opt) = auto_backup_dir.clone() {
         config = config.with_auto_backup_dir(dir_opt);
@@ -231,11 +217,14 @@ fn run(cli: Cli) -> Result<ExitCode, CliError> {
     }
 
     // Migrate (idempotent): open performs it. We capture the prior
-    // schema version so we can print "applied: N".
+    // schema version so we can print "applied: N". A transient read
+    // failure must surface — silently reading 0 would print a wrong
+    // `applied:` count.
     if let Cmd::Migrate(_) = &cli.cmd {
-        let pre_version = peek_schema_version(&db);
+        let pre_version = peek_schema_version(&db).map_err(|e| CliError::runtime(e.to_string()))?;
         let _persister = SqlitePersister::open(config.clone()).map_err(map_open_err_for_cli)?;
-        let post_version = peek_schema_version(&db);
+        let post_version =
+            peek_schema_version(&db).map_err(|e| CliError::runtime(e.to_string()))?;
         let applied = post_version
             .unwrap_or(0)
             .saturating_sub(pre_version.unwrap_or(0)) as usize;
@@ -252,10 +241,6 @@ fn run(cli: Cli) -> Result<ExitCode, CliError> {
         Cmd::Inspect(args) => {
             let persister = SqlitePersister::open(config).map_err(map_open_err_for_cli)?;
             run_inspect(&persister, args)
-        }
-        Cmd::DeleteWallet(args) => {
-            let persister = SqlitePersister::open(config).map_err(map_open_err_for_cli)?;
-            run_delete_wallet(&persister, args)
         }
     }
 }
@@ -274,27 +259,47 @@ fn map_open_err_for_cli(err: WalletStorageError) -> CliError {
     }
 }
 
-fn peek_schema_version(db: &Path) -> Option<i64> {
-    let conn = rusqlite::Connection::open(db).ok()?;
-    conn.query_row(
-        "SELECT MAX(version) FROM refinery_schema_history",
-        [],
-        |row| row.get::<_, Option<i64>>(0),
-    )
-    .ok()
-    .flatten()
+/// Read the highest applied migration version. `Ok(None)` means the
+/// DB has no `refinery_schema_history` row yet (fresh DB); a real open
+/// or query failure is propagated as `Err` so callers don't mistake a
+/// transient failure for "version 0".
+fn peek_schema_version(db: &Path) -> Result<Option<i64>, rusqlite::Error> {
+    use rusqlite::OptionalExtension;
+    let conn = rusqlite::Connection::open(db)?;
+    // Pre-migration the history table may not exist yet — that is a
+    // legitimate "no version" answer, not a failure.
+    let has_history = conn
+        .query_row(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'refinery_schema_history'",
+            [],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some();
+    if !has_history {
+        return Ok(None);
+    }
+    let v = conn
+        .query_row(
+            "SELECT MAX(version) FROM refinery_schema_history",
+            [],
+            |row| row.get::<_, Option<i64>>(0),
+        )
+        .optional()?
+        .flatten();
+    Ok(v)
 }
 
 fn run_backup(persister: &SqlitePersister, args: BackupArgs) -> Result<ExitCode, CliError> {
-    if args.out.is_file() {
-        return Err(CliError::runtime(format!(
+    // `backup_to` is the single authority on refuse-to-overwrite — it
+    // returns `BackupDestinationExists` for a pre-existing file path.
+    let path = persister.backup_to(&args.out).map_err(|e| match e {
+        WalletStorageError::BackupDestinationExists { path } => CliError::runtime(format!(
             "backup destination exists and refuses to overwrite: {}",
-            args.out.display()
-        )));
-    }
-    let path = persister
-        .backup_to(&args.out)
-        .map_err(|e| CliError::runtime(e.to_string()))?;
+            path.display()
+        )),
+        other => CliError::runtime(other.to_string()),
+    })?;
     println!("{}", path.display());
     Ok(ExitCode::SUCCESS)
 }
@@ -405,38 +410,4 @@ fn run_inspect(persister: &SqlitePersister, args: InspectArgs) -> Result<ExitCod
         }
     }
     Ok(ExitCode::SUCCESS)
-}
-
-fn run_delete_wallet(
-    persister: &SqlitePersister,
-    args: DeleteWalletArgs,
-) -> Result<ExitCode, CliError> {
-    if !args.yes {
-        return Err(CliError {
-            message: "refusing to delete a wallet without --yes".into(),
-            code: ExitCode::from(2),
-        });
-    }
-    let wallet_id = parse_wallet_id(&args.wallet_id).map_err(|m| CliError {
-        message: m,
-        code: ExitCode::from(2),
-    })?;
-    let result = if args.no_auto_backup {
-        eprintln!("warning: auto-backup skipped (--no-auto-backup)");
-        persister.delete_wallet_skip_backup(wallet_id)
-    } else {
-        persister.delete_wallet(wallet_id)
-    };
-    match result {
-        Ok(report) => {
-            if let Some(path) = &report.backup_path {
-                println!("{}", path.display());
-            }
-            Ok(ExitCode::SUCCESS)
-        }
-        Err(WalletStorageError::AutoBackupDisabled { .. }) => Err(CliError::runtime(
-            "auto-backup directory not configured; pass --no-auto-backup to proceed",
-        )),
-        Err(other) => Err(CliError::runtime(other.to_string())),
-    }
 }
