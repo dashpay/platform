@@ -22,7 +22,7 @@ impl DataTriggerBindingV0Getters for DataTriggerBinding {
     fn execute(
         &self,
         document_transition: &DocumentTransitionAction,
-        context: &DataTriggerExecutionContext<'_>,
+        context: &mut DataTriggerExecutionContext<'_>,
         platform_version: &PlatformVersion,
     ) -> Result<DataTriggerExecutionResult, Error> {
         match self {

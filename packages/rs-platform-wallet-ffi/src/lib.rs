@@ -54,6 +54,10 @@ pub mod platform_wallet_info;
 pub mod rehydration_seed_provider;
 mod runtime;
 #[cfg(feature = "shielded")]
+pub mod shielded_persistence;
+#[cfg(feature = "shielded")]
+pub mod shielded_send;
+#[cfg(feature = "shielded")]
 pub mod shielded_sync;
 pub mod shielded_types;
 pub mod sign_with_mnemonic_resolver;
@@ -110,6 +114,8 @@ pub use platform_address_sync::*;
 pub use platform_address_types::*;
 pub use platform_addresses::*;
 pub use platform_wallet_info::*;
+#[cfg(feature = "shielded")]
+pub use shielded_send::*;
 #[cfg(feature = "shielded")]
 pub use shielded_sync::*;
 pub use shielded_types::*;
