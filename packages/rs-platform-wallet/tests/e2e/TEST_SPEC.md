@@ -1016,8 +1016,9 @@ Counts by priority: **P0: 10**, **P1: 29** (incl. CR-004 passing-as-regression +
   `WalletAccountCreationOptions::Default` and therefore NOT in
   `PlatformWalletInfo::monitored_addresses()`. Sending Core duffs to
   one of those addresses does NOT increase the wallet's Core balance,
-  and the UTXO set never observes such a send. `#[ignore]`-tagged so a
-  default `cargo test` stays green; `cargo test -- --ignored` runs it
+  and the UTXO set never observes such a send. Gated behind the `e2e`
+  cargo feature so a default `cargo test` stays green;
+  `cargo test -p platform-wallet --test e2e --features e2e` runs it
   end-to-end and is expected to PASS. Documents the intended
   architecture; closed PR `dashpay/rust-dashcore#554` was a speculative
   attempt to change this and was correctly rejected. End-to-end runs
@@ -2589,11 +2590,12 @@ Each question's answer changes the spec; numbered for reference.
 
 ## 7. Known Issues
 
-Tracked production bugs and harness gaps that affect test outcomes. Tests are
-`#[ignore]`d in these cases — but **`#[ignore]` does NOT mean "never runs"**:
+Tracked production bugs and harness gaps that affect test outcomes. The cases
+below live in the `e2e` feature-gated suite — but **feature-gated does NOT mean
+"never runs"**:
 
-- `cargo test` (default): ignored tests are **skipped**.
-- `cargo test -- --ignored`: runs **only** ignored tests. PA-004b and PA-009 execute under this flag and fail by design. Any failure mode other than the one documented per-entry below is a regression.
+- `cargo test` (default): the `e2e` binary is not built, so these cases are absent.
+- `cargo test -p platform-wallet --test e2e --features e2e`: builds and runs the full suite. PA-004b and PA-009 execute and fail by design. Any failure mode other than the one documented per-entry below is a regression.
 
 Do not modify production code in this section — these are documentation entries only.
 
