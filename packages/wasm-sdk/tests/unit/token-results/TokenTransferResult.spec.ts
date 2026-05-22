@@ -21,6 +21,7 @@ describe('TokenTransferResult', () => {
   };
 
   const documentJSON = {
+    $formatVersion: "0",
     $id: '9tSsCqKHTZ8ro16MydChSxgHBukFW36eMLJKKRtebJEn',
     $ownerId: 'CXH2kZCATjvDTnQAPVg28EgPg9WySUvwvnR5ZkmNqY5i',
     $dataContractId: 'GnXgMaiqAwTxh44ccQe8AoCgFvcseHK5CncH3sUorW4X',

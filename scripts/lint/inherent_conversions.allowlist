@@ -1,7 +1,3 @@
 packages/rs-dpp/src/data_contract/created_data_contract/mod.rs:    pub fn from_object(
 packages/rs-dpp/src/data_contract/created_data_contract/v0/mod.rs:    pub fn from_object(
-packages/rs-dpp/src/document/extended_document/mod.rs:    pub fn to_json(&self, platform_version: &PlatformVersion) -> Result<JsonValue, ProtocolError> {
-packages/rs-dpp/src/identity/state_transition/asset_lock_proof/chain/chain_asset_lock_proof.rs:    pub fn to_object(&self) -> Result<Value, ProtocolError> {
-packages/rs-dpp/src/identity/state_transition/asset_lock_proof/instant/instant_asset_lock_proof.rs:    pub fn to_object(&self) -> Result<Value, ProtocolError> {
-packages/rs-dpp/src/state_transition/abstract_state_transition.rs:    pub fn to_json<'a, I: IntoIterator<Item = &'a str>>(
-packages/rs-dpp/src/state_transition/abstract_state_transition.rs:    pub fn to_object<'a, I: IntoIterator<Item = &'a str>>(
+packages/rs-dpp/src/document/extended_document/mod.rs:    pub fn to_json(&self, _platform_version: &PlatformVersion) -> Result<JsonValue, ProtocolError> {
