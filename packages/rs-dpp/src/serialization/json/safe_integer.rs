@@ -360,6 +360,7 @@ pub mod json_safe_option_encrypted_note {
         }
     }
 
+    #[allow(clippy::type_complexity)]
     pub fn deserialize<'de, D: Deserializer<'de>>(
         deserializer: D,
     ) -> Result<Option<(u32, u32, Vec<u8>)>, D::Error> {
