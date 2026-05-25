@@ -15,7 +15,7 @@ use crate::sqlite::backup::{self, BackupKind};
 use crate::sqlite::buffer::Buffer;
 use crate::sqlite::config::{FlushMode, SqlitePersisterConfig, Synchronous};
 use crate::sqlite::error::{AutoBackupOperation, WalletStorageError};
-use crate::sqlite::schema::{self, PER_WALLET_TABLES};
+use crate::sqlite::schema::{self, count_rows_for_wallet_sql, PER_WALLET_TABLES};
 use crate::sqlite::util::permissions::apply_secure_permissions;
 use crate::sqlite::util::safe_cast;
 
@@ -226,8 +226,11 @@ impl SqlitePersister {
             )?;
         }
 
-        // Apply migrations.
-        let _report = crate::sqlite::migrations::run(&mut conn)?;
+        // Apply migrations. `run_for_open` re-classifies the V002
+        // sentinel-row CHECK failure into a typed
+        // `MigrationRequiresManualCleanup` so operators see what
+        // refused instead of a bare rusqlite error.
+        let _report = crate::sqlite::migrations::run_for_open(&mut conn)?;
 
         Ok(Self {
             config,
@@ -429,19 +432,21 @@ impl SqlitePersister {
             };
             let tx = conn.transaction()?;
             let mut rows_removed_per_table = BTreeMap::new();
-            for &table in PER_WALLET_TABLES {
+            for (table, scope) in PER_WALLET_TABLES {
                 // SQL injection note: `table` comes from a `&'static
                 // &'static str` constant compiled into the binary. There
-                // is no user input on this path.
+                // is no user input on this path. The SQL flavour
+                // (direct column vs. JOIN via `identities`) is picked
+                // by `count_rows_for_wallet_sql` per V002 schema.
                 let n: i64 = tx
                     .query_row(
-                        &format!("SELECT COUNT(*) FROM {table} WHERE wallet_id = ?1"),
+                        &count_rows_for_wallet_sql(table, *scope),
                         rusqlite::params![wallet_id.as_slice()],
                         |row| row.get(0),
                     )
                     .optional()?
                     .unwrap_or(0);
-                rows_removed_per_table.insert(table, usize::try_from(n).unwrap_or(usize::MAX));
+                rows_removed_per_table.insert(*table, usize::try_from(n).unwrap_or(usize::MAX));
             }
             crate::sqlite::schema::wallet_meta::delete(&tx, &wallet_id)?;
             tx.commit()?;
@@ -522,13 +527,15 @@ impl SqlitePersister {
     ) -> Result<Vec<(&'static str, usize)>, WalletStorageError> {
         let conn = self.conn()?;
         let mut out = Vec::with_capacity(PER_WALLET_TABLES.len());
-        for &table in PER_WALLET_TABLES {
+        for (table, scope) in PER_WALLET_TABLES {
             // `table` is a compile-time constant — no SQL injection
-            // surface despite the `format!`.
+            // surface despite the `format!`. Per-wallet predicate uses
+            // `count_rows_for_wallet_sql` so V002 identity-scoped
+            // tables join through `identities`.
             let n: i64 = match wallet_id {
                 Some(id) => conn
                     .query_row(
-                        &format!("SELECT COUNT(*) FROM {table} WHERE wallet_id = ?1"),
+                        &count_rows_for_wallet_sql(table, *scope),
                         rusqlite::params![id.as_slice()],
                         |row| row.get(0),
                     )
@@ -541,7 +548,7 @@ impl SqlitePersister {
                     .optional()?
                     .unwrap_or(0),
             };
-            out.push((table, usize::try_from(n).unwrap_or(usize::MAX)));
+            out.push((*table, usize::try_from(n).unwrap_or(usize::MAX)));
         }
         Ok(out)
     }

@@ -298,6 +298,10 @@ fn tc023_one_flush_is_one_transaction() {
     let (persister, _tmp, _path) = fresh_persister_with_mode(FlushMode::Manual);
     let w = wid(0x90);
     ensure_wallet_meta(&persister, &w);
+    // V002: token_balances FK targets identities(identity_id); seed
+    // the identity so the cross-area flush passes that constraint.
+    let owner = Identifier::from([0xA1u8; 32]);
+    common::ensure_identity(&persister, owner.as_bytes(), Some(&w));
     let mut cs = PlatformWalletChangeSet::default();
     cs.core = Some(core_with_height(7, 7));
     cs.wallet_metadata = Some(WalletMetadataEntry {
@@ -305,7 +309,6 @@ fn tc023_one_flush_is_one_transaction() {
         birth_height: 1,
     });
     let mut balances = BTreeMap::new();
-    let owner = Identifier::from([0xA1u8; 32]);
     let token = Identifier::from([0xA2u8; 32]);
     balances.insert((owner, token), 9u64);
     cs.token_balances = Some(TokenBalanceChangeSet {

@@ -93,7 +93,7 @@ fn delete_wallet_restores_buffer_on_backup_failure() {
 /// per-wallet table holds zero rows for that wallet_id.
 #[test]
 fn concurrent_store_does_not_resurrect_deleted_wallet() {
-    use platform_wallet_storage::sqlite::schema::PER_WALLET_TABLES;
+    use platform_wallet_storage::sqlite::schema::{count_rows_for_wallet_sql, PER_WALLET_TABLES};
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::thread;
 
@@ -146,10 +146,10 @@ fn concurrent_store_does_not_resurrect_deleted_wallet() {
     let _ = persister.commit_writes();
 
     let conn = persister.lock_conn_for_test();
-    for &table in PER_WALLET_TABLES {
+    for (table, scope) in PER_WALLET_TABLES {
         let n: i64 = conn
             .query_row(
-                &format!("SELECT COUNT(*) FROM {table} WHERE wallet_id = ?1"),
+                &count_rows_for_wallet_sql(table, *scope),
                 rusqlite::params![w.as_slice()],
                 |row| row.get(0),
             )

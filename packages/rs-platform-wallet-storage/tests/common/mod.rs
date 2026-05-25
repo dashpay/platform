@@ -55,6 +55,29 @@ pub fn ensure_wallet_meta(persister: &SqlitePersister, wallet_id: &WalletId) {
     .expect("ensure wallet_metadata");
 }
 
+/// Insert a stub `identities` row so identity-owned table writes
+/// (`token_balances`, `dashpay_profiles`, `identity_keys`) pass the
+/// V002 FK to `identities(identity_id)`. `parent_wallet_id` is
+/// optional — when `Some`, the row is linked to that wallet so the
+/// cascade chain works; when `None`, the row is an orphan identity
+/// (NULL `wallet_id`), still satisfying the identity-owned FKs.
+pub fn ensure_identity(
+    persister: &SqlitePersister,
+    identity_id: &[u8; 32],
+    parent_wallet_id: Option<&WalletId>,
+) {
+    use rusqlite::params;
+    let conn = persister.lock_conn_for_test();
+    let wid_param: Option<&[u8]> = parent_wallet_id.map(|w| w.as_slice());
+    conn.execute(
+        "INSERT OR IGNORE INTO identities \
+            (identity_id, wallet_id, wallet_index, entry_blob, tombstoned) \
+         VALUES (?1, ?2, NULL, X'00', 0)",
+        params![&identity_id[..], wid_param],
+    )
+    .expect("ensure identity");
+}
+
 /// Echo a simple `store` + `flush` of an arbitrary changeset.
 pub fn store_and_flush(
     persister: &SqlitePersister,

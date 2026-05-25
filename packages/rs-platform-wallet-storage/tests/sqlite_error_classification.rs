@@ -177,6 +177,10 @@ fn samples() -> Vec<WalletStorageError> {
                 Some("busy".into()),
             ),
         },
+        WalletStorageError::MigrationRequiresManualCleanup {
+            table: "token_balances",
+            count: 3,
+        },
     ]
 }
 
@@ -244,6 +248,9 @@ fn tc_p2_005_is_transient_table() {
             WalletStorageError::BlobTooLarge { .. } => (false, "blob_too_large"),
             WalletStorageError::ForeignKeysNotEnforced => (false, "foreign_keys_not_enforced"),
             WalletStorageError::IntegerOverflow { .. } => (false, "integer_overflow"),
+            WalletStorageError::MigrationRequiresManualCleanup { .. } => {
+                (false, "migration_requires_manual_cleanup")
+            }
         }
     }
 

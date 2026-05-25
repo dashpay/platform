@@ -236,6 +236,18 @@ pub enum WalletStorageError {
         target: SafeCastTarget,
     },
 
+    /// A migration declined to run because the source database carries
+    /// legacy rows that an operator must clear manually first (e.g. V002
+    /// refuses to migrate `token_balances` rows written under the
+    /// `WalletId::default()` sentinel). `table` names the offending
+    /// table; `count` is the number of offending rows discovered by
+    /// the migration guard.
+    #[error(
+        "migration requires manual cleanup: {table} has {count} legacy row(s) that must be \
+         dropped before re-running migrations"
+    )]
+    MigrationRequiresManualCleanup { table: &'static str, count: i64 },
+
     /// Flush failed transiently (e.g. `SQLITE_BUSY` / `SQLITE_LOCKED`)
     /// for `wallet_id`. The buffered changeset has been restored — the
     /// next `flush(wallet_id)` will retry the same data merged with
@@ -353,6 +365,7 @@ impl WalletStorageError {
             | Self::IdentityKeyEntryMismatch
             | Self::AssetLockEntryMismatch { .. }
             | Self::BlobTooLarge { .. }
+            | Self::MigrationRequiresManualCleanup { .. }
             | Self::IntegerOverflow { .. } => false,
         }
     }
@@ -433,6 +446,7 @@ impl WalletStorageError {
             Self::AssetLockEntryMismatch { .. } => "asset_lock_entry_mismatch",
             Self::BlobTooLarge { .. } => "blob_too_large",
             Self::IntegerOverflow { .. } => "integer_overflow",
+            Self::MigrationRequiresManualCleanup { .. } => "migration_requires_manual_cleanup",
         }
     }
 }

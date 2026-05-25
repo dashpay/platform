@@ -14,33 +14,50 @@ pub fn apply(
     cs: &IdentityChangeSet,
 ) -> Result<(), WalletStorageError> {
     if !cs.identities.is_empty() {
+        // V002: PK is `identity_id` alone; `wallet_id` is nullable
+        // and links the identity to its parent wallet for cascade.
+        // The sentinel-zero wallet id (`[0u8; 32]`) is the legacy
+        // placeholder for "no parent wallet known" — stored as NULL
+        // so the FK to `wallet_metadata` doesn't activate.
         let mut stmt = tx.prepare_cached(
-            "INSERT INTO identities (wallet_id, wallet_index, identity_id, entry_blob, tombstoned) \
+            "INSERT INTO identities (identity_id, wallet_id, wallet_index, entry_blob, tombstoned) \
              VALUES (?1, ?2, ?3, ?4, 0) \
-             ON CONFLICT(wallet_id, identity_id) DO UPDATE SET \
+             ON CONFLICT(identity_id) DO UPDATE SET \
+                wallet_id = COALESCE(excluded.wallet_id, identities.wallet_id), \
                 wallet_index = excluded.wallet_index, \
                 entry_blob = excluded.entry_blob, \
                 tombstoned = 0",
         )?;
+        let wallet_id_param = wallet_id_to_param(wallet_id);
         for (id, entry) in &cs.identities {
             let payload = blob::encode(entry)?;
             stmt.execute(params![
-                wallet_id.as_slice(),
-                entry.identity_index.map(i64::from),
                 id.as_slice(),
+                wallet_id_param,
+                entry.identity_index.map(i64::from),
                 payload,
             ])?;
         }
     }
     if !cs.removed.is_empty() {
-        let mut stmt = tx.prepare_cached(
-            "UPDATE identities SET tombstoned = 1 WHERE wallet_id = ?1 AND identity_id = ?2",
-        )?;
+        let mut stmt =
+            tx.prepare_cached("UPDATE identities SET tombstoned = 1 WHERE identity_id = ?1")?;
         for id in &cs.removed {
-            stmt.execute(params![wallet_id.as_slice(), id.as_slice()])?;
+            stmt.execute(params![id.as_slice()])?;
         }
     }
     Ok(())
+}
+
+/// V002: callers still receive a `WalletId` (32 bytes) from the
+/// caller boundary. Treat the all-zero sentinel as "no parent wallet"
+/// (NULL) so the nullable `identities.wallet_id` FK matches reality.
+fn wallet_id_to_param(wallet_id: &WalletId) -> Option<&[u8]> {
+    if wallet_id.iter().all(|b| *b == 0) {
+        None
+    } else {
+        Some(wallet_id.as_slice())
+    }
 }
 
 /// Decode a single `identities` row back to its [`IdentityEntry`].
@@ -52,14 +69,17 @@ pub fn apply(
 /// tombstoned rows.
 pub fn fetch(
     conn: &Connection,
-    wallet_id: &WalletId,
+    _wallet_id: &WalletId,
     identity_id: &[u8; 32],
 ) -> Result<Option<IdentityEntry>, WalletStorageError> {
     use rusqlite::OptionalExtension;
+    // V002: `identity_id` is the PK; the caller-supplied `wallet_id`
+    // is preserved on the signature for source-compatibility but is
+    // no longer part of the lookup key.
     let row: Option<Vec<u8>> = conn
         .query_row(
-            "SELECT entry_blob FROM identities WHERE wallet_id = ?1 AND identity_id = ?2",
-            params![wallet_id.as_slice(), &identity_id[..]],
+            "SELECT entry_blob FROM identities WHERE identity_id = ?1",
+            params![&identity_id[..]],
             |row| row.get(0),
         )
         .optional()?;
@@ -84,6 +104,10 @@ pub fn load_state(
 ) -> Result<platform_wallet::changeset::IdentityManagerStartState, WalletStorageError> {
     use platform_wallet::changeset::IdentityManagerStartState;
 
+    // V002: wallet_id is nullable on identities; this load path still
+    // wants only the rows belonging to the wallet the caller asked
+    // for, so the WHERE clause matches by wallet_id (orphan identities
+    // — wallet_id NULL — are out of scope for this per-wallet loader).
     let mut stmt = conn.prepare(
         "SELECT identity_id, entry_blob, tombstoned FROM identities WHERE wallet_id = ?1",
     )?;
@@ -177,11 +201,12 @@ pub fn ensure_exists(
         dashpay_payments: Default::default(),
     };
     let payload = blob::encode(&stub)?;
+    let wallet_id_param = wallet_id_to_param(wallet_id);
     conn.execute(
         "INSERT OR IGNORE INTO identities \
-            (wallet_id, wallet_index, identity_id, entry_blob, tombstoned) \
-         VALUES (?1, NULL, ?2, ?3, 0)",
-        params![wallet_id.as_slice(), &identity_id[..], payload],
+            (identity_id, wallet_id, wallet_index, entry_blob, tombstoned) \
+         VALUES (?1, ?2, NULL, ?3, 0)",
+        params![&identity_id[..], wallet_id_param, payload],
     )?;
     Ok(())
 }

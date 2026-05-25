@@ -188,10 +188,12 @@ fn tc007_identity_key_entry_roundtrip() {
 
     let p2 = SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap();
     let conn = p2.lock_conn_for_test();
+    // V002: identity_keys is keyed by (identity_id, key_id); the
+    // wallet_id column was dropped.
     let blob_bytes: Vec<u8> = conn
         .query_row(
-            "SELECT public_key_blob FROM identity_keys WHERE wallet_id = ?1 AND identity_id = ?2 AND key_id = ?3",
-            rusqlite::params![w.as_slice(), identity_id.as_slice(), 7i64],
+            "SELECT public_key_blob FROM identity_keys WHERE identity_id = ?1 AND key_id = ?2",
+            rusqlite::params![identity_id.as_slice(), 7i64],
             |row| row.get(0),
         )
         .unwrap();
@@ -439,10 +441,11 @@ fn tc012_dashpay_overlay_roundtrip() {
 
     let p2 = SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap();
     let conn = p2.lock_conn_for_test();
+    // V002: dashpay_profiles is keyed by identity_id only.
     let profile_blob: Vec<u8> = conn
         .query_row(
-            "SELECT profile_blob FROM dashpay_profiles WHERE wallet_id = ?1 AND identity_id = ?2",
-            rusqlite::params![w.as_slice(), identity_id.as_slice()],
+            "SELECT profile_blob FROM dashpay_profiles WHERE identity_id = ?1",
+            rusqlite::params![identity_id.as_slice()],
             |row| row.get(0),
         )
         .unwrap();
@@ -452,8 +455,8 @@ fn tc012_dashpay_overlay_roundtrip() {
 
     let payment_blob: Vec<u8> = conn
         .query_row(
-            "SELECT overlay_blob FROM dashpay_payments_overlay WHERE wallet_id = ?1 AND identity_id = ?2 AND payment_id = ?3",
-            rusqlite::params![w.as_slice(), identity_id.as_slice(), "tx-aaaa"],
+            "SELECT overlay_blob FROM dashpay_payments_overlay WHERE identity_id = ?1 AND payment_id = ?2",
+            rusqlite::params![identity_id.as_slice(), "tx-aaaa"],
             |row| row.get(0),
         )
         .unwrap();

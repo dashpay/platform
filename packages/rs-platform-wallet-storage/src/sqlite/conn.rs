@@ -61,6 +61,17 @@ pub(crate) fn enforce_foreign_keys(conn: &Connection) -> Result<(), WalletStorag
     Ok(())
 }
 
+/// Flip `PRAGMA foreign_keys` on or off explicitly. Used by the
+/// migration runner to disable FK enforcement around the V002 schema
+/// rewrite (DROP TABLE on a parent fires ON DELETE CASCADE on its
+/// children otherwise, wiping the rows the migration is trying to
+/// preserve). The pragma cannot be flipped inside an open
+/// transaction, so the caller must invoke this before BEGIN.
+pub(crate) fn set_foreign_keys(conn: &Connection, on: bool) -> Result<(), WalletStorageError> {
+    conn.pragma_update(None, "foreign_keys", if on { "ON" } else { "OFF" })?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
