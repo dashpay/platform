@@ -19,8 +19,10 @@ fn tc_code_020_1_sqlite_items_are_feature_gated() {
         "lib.rs MUST gate sqlite re-exports behind the `sqlite` feature"
     );
     assert!(
-        lib_src.contains(r#"#[cfg(feature = "sqlite")]
-pub mod sqlite;"#),
+        lib_src.contains(
+            r#"#[cfg(feature = "sqlite")]
+pub mod sqlite;"#
+        ),
         "the `sqlite` module declaration MUST be cfg-gated"
     );
 }
