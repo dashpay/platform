@@ -196,3 +196,67 @@ fn tc059_backup_dir() {
     assert!(path.ends_with(".db"));
     assert!(std::path::Path::new(path).exists());
 }
+
+/// TC-CODE-030-1a: the supported `--no-auto-backup` flag disables the
+/// pre-migration auto-backup. `migrate --no-auto-backup` succeeds on a
+/// fresh DB without writing the `backups/auto/` sentinel snapshot.
+#[test]
+fn tc_code_030_1a_no_auto_backup_disables() {
+    let tmp = tempfile::tempdir().unwrap();
+    let db = tmp.path().join("w.db");
+    let out = cli()
+        .args(["--db", db.to_str().unwrap(), "migrate", "--no-auto-backup"])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "migrate --no-auto-backup failed: {out:?}"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("auto-backup skipped (--no-auto-backup)"),
+        "expected `--no-auto-backup` notice on stderr, got: {stderr}"
+    );
+    // No `backups/auto/pre-migration-*.db` written when the flag is set.
+    let auto_dir = tmp.path().join("backups").join("auto");
+    if auto_dir.exists() {
+        let pre_mig: Vec<_> = std::fs::read_dir(&auto_dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name().to_string_lossy().starts_with("pre-migration"))
+            .collect();
+        assert!(
+            pre_mig.is_empty(),
+            "pre-migration backup written despite --no-auto-backup: {pre_mig:?}"
+        );
+    }
+}
+
+/// TC-CODE-030-1b: the legacy `--auto-backup-dir ""` sentinel still
+/// works (one-release deprecation window) but emits a deprecation
+/// warning on stderr steering operators toward `--no-auto-backup`.
+#[test]
+fn tc_code_030_1b_empty_auto_backup_dir_deprecated() {
+    let tmp = tempfile::tempdir().unwrap();
+    let db = tmp.path().join("w.db");
+    let out = cli()
+        .args([
+            "--db",
+            db.to_str().unwrap(),
+            "--auto-backup-dir",
+            "",
+            "migrate",
+            "--no-auto-backup",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "migrate with deprecated empty --auto-backup-dir failed: {out:?}"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("deprecated") && stderr.contains("--no-auto-backup"),
+        "expected deprecation warning steering to --no-auto-backup, got: {stderr}"
+    );
+}

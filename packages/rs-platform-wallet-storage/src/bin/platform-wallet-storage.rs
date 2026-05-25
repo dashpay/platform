@@ -24,7 +24,11 @@ struct Cli {
     /// Path to the SQLite database file.
     #[arg(long, value_name = "PATH", global = true)]
     db: Option<PathBuf>,
-    /// Auto-backup directory. Pass empty string to disable.
+    /// Auto-backup directory. The empty-string ("") form is
+    /// **deprecated** as a way to disable auto-backup — use the
+    /// subcommand flag `--no-auto-backup` instead (supported by
+    /// `migrate` and `restore`). The empty-string form still parses for
+    /// one release; a deprecation warning is logged when used.
     #[arg(long, value_name = "PATH", global = true)]
     auto_backup_dir: Option<String>,
     /// Increase log verbosity (stderr). Repeat for more: `-v` enables
@@ -179,7 +183,18 @@ fn run(cli: Cli) -> Result<ExitCode, CliError> {
         .ok_or_else(|| CliError::runtime("--db is required"))?;
     let auto_backup_dir = match cli.auto_backup_dir {
         None => None,
-        Some(s) if s.is_empty() => Some(None),
+        Some(s) if s.is_empty() => {
+            // CODE-030: empty-string sentinel for "disable auto-backup"
+            // is deprecated in favour of the subcommand flag
+            // `--no-auto-backup`. Keep parsing it for one release so
+            // existing operators don't break overnight, but emit a
+            // loud deprecation warning on stderr.
+            eprintln!(
+                "warning: `--auto-backup-dir \"\"` to disable auto-backup is deprecated; \
+                 pass `--no-auto-backup` to the subcommand instead"
+            );
+            Some(None)
+        }
         Some(s) => Some(Some(PathBuf::from(s))),
     };
 

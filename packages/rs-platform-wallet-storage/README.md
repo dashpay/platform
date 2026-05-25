@@ -102,7 +102,10 @@ platform-wallet-storage --db <path> inspect [--wallet-id <hex>] [--format text|t
 
 Destructive subcommands (`restore`) REQUIRE `--yes` — invoking them
 without it exits 2 with a usage error. `--no-auto-backup` opts out of
-the pre-restore auto-backup.
+the pre-restore (or pre-migration) auto-backup; it is the supported way
+to disable auto-backup. The historical sentinel `--auto-backup-dir ""`
+also disables it but is **deprecated** and emits a warning — prefer the
+explicit `--no-auto-backup` flag.
 
 Wallet removal is a library-only API
 ([`SqlitePersister::delete_wallet`] / `delete_wallet_skip_backup`);
