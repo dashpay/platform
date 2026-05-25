@@ -106,6 +106,16 @@ fn samples() -> Vec<WalletStorageError> {
             found: [2u8; 32],
         },
         WalletStorageError::IdentityKeyEntryMismatch,
+        WalletStorageError::AssetLockEntryMismatch {
+            typed_outpoint: "txid:0".into(),
+            blob_outpoint: "txid:1".into(),
+            typed_account_index: 5,
+            blob_account_index: 9,
+        },
+        WalletStorageError::BlobTooLarge {
+            len_bytes: 32 * 1024 * 1024,
+            limit_bytes: 16 * 1024 * 1024,
+        },
         WalletStorageError::ForeignKeysNotEnforced,
         WalletStorageError::LockPoisoned,
         WalletStorageError::RestoreDestinationLocked,
@@ -197,6 +207,10 @@ fn tc_p2_005_is_transient_table() {
                 (false, "backup_destination_exists")
             }
             WalletStorageError::IdentityKeyEntryMismatch => (false, "identity_key_entry_mismatch"),
+            WalletStorageError::AssetLockEntryMismatch { .. } => {
+                (false, "asset_lock_entry_mismatch")
+            }
+            WalletStorageError::BlobTooLarge { .. } => (false, "blob_too_large"),
             WalletStorageError::ForeignKeysNotEnforced => (false, "foreign_keys_not_enforced"),
             WalletStorageError::IntegerOverflow { .. } => (false, "integer_overflow"),
         }

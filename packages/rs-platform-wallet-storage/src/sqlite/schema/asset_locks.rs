@@ -77,7 +77,7 @@ pub type AssetLocksByAccount = BTreeMap<u32, BTreeMap<OutPoint, TrackedAssetLock
 
 /// Decode one raw `(outpoint_bytes, account_index, lifecycle_blob)`
 /// tuple into the typed `(account_index, OutPoint, TrackedAssetLock)`
-/// triple that [`list_active`] and [`load_state`] consume.
+/// triple that [`load_state`] consumes.
 ///
 /// Hard-fail behaviour: a malformed outpoint, blob, or out-of-range
 /// account index returns a typed [`WalletStorageError`]. Every caller
@@ -123,38 +123,13 @@ fn decode_row(
 }
 
 /// Build the per-wallet asset-lock slice for `ClientStartState` from
-/// the `asset_locks` table. Any row that fails to read or decode is a
-/// hard error — corruption is never silently dropped.
+/// the `asset_locks` table, bucketed by account index. Every status
+/// variant the changeset writes is considered "active": consumed
+/// locks leave the table via [`AssetLockChangeSet::removed`], so a
+/// row present here is by definition still in play. Any row that
+/// fails to read or decode is a hard error — corruption is never
+/// silently dropped.
 pub fn load_state(
-    conn: &Connection,
-    wallet_id: &WalletId,
-) -> Result<AssetLocksByAccount, WalletStorageError> {
-    let mut stmt = conn.prepare(
-        "SELECT outpoint, account_index, lifecycle_blob \
-         FROM asset_locks WHERE wallet_id = ?1",
-    )?;
-    let rows = stmt.query_map(params![wallet_id.as_slice()], |row| {
-        let op_bytes: Vec<u8> = row.get(0)?;
-        let account_index: i64 = row.get(1)?;
-        let blob_bytes: Vec<u8> = row.get(2)?;
-        Ok((op_bytes, account_index, blob_bytes))
-    })?;
-    let mut out: AssetLocksByAccount = BTreeMap::new();
-    for r in rows {
-        let (op_bytes, account_index, blob_bytes) = r?;
-        let (acct, outpoint, tracked) = decode_row(&op_bytes, account_index, &blob_bytes)?;
-        out.entry(acct).or_default().insert(outpoint, tracked);
-    }
-    Ok(out)
-}
-
-/// Return non-`Used` asset locks per wallet, bucketed by account
-/// index. Every status variant the changeset writes is considered
-/// "active": consumed locks leave via [`AssetLockChangeSet::removed`].
-///
-/// Hard-fail on the first decode error — like [`load_state`], a
-/// corrupt row aborts the read with a typed [`WalletStorageError`].
-pub fn list_active(
     conn: &Connection,
     wallet_id: &WalletId,
 ) -> Result<AssetLocksByAccount, WalletStorageError> {
