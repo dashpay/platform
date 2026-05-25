@@ -80,6 +80,7 @@ dash_sdk_init();
 DashSDKConfig config = {
     .network = DASH_SDK_NETWORK_TESTNET,
     .dapi_addresses = "seed-1.testnet.networks.dash.org",
+    .skip_asset_lock_proof_verification = false,
     .request_retry_count = 3,
     .request_timeout_ms = 30000
 };
@@ -131,6 +132,7 @@ class DashSDKConfig(Structure):
     _fields_ = [
         ("network", c_int),
         ("dapi_addresses", c_char_p),
+        ("skip_asset_lock_proof_verification", c_bool),
         ("request_retry_count", c_uint32),
         ("request_timeout_ms", c_uint64)
     ]
@@ -138,6 +140,7 @@ class DashSDKConfig(Structure):
 config = DashSDKConfig(
     network=1,  # Testnet
     dapi_addresses=b"seed-1.testnet.networks.dash.org",
+    skip_asset_lock_proof_verification=False,
     request_retry_count=3,
     request_timeout_ms=30000
 )
