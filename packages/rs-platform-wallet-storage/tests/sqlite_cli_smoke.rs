@@ -127,9 +127,11 @@ fn tc072_delete_wallet_subcommand_removed() {
         ])
         .output()
         .unwrap();
-    assert!(
-        !out.status.success(),
-        "delete-wallet should no longer be a recognised subcommand"
+    assert_eq!(
+        out.status.code(),
+        Some(2),
+        "expected clap usage exit code 2 for removed subcommand; got {:?}",
+        out.status.code()
     );
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
