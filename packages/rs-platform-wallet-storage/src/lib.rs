@@ -32,9 +32,8 @@ pub mod sqlite;
 #[cfg(feature = "sqlite")]
 #[allow(deprecated)]
 pub use sqlite::{
-    AutoBackupOperation, CommitReport, DeleteWalletReport, FlushMode, JournalMode, PruneReport,
-    RetentionPolicy, SqlitePersister, SqlitePersisterConfig, SqlitePersisterError, Synchronous,
-    WalletStorageError,
+    AutoBackupOperation, CommitReport, FlushMode, JournalMode, PruneReport, RetentionPolicy,
+    SqlitePersister, SqlitePersisterConfig, SqlitePersisterError, Synchronous, WalletStorageError,
 };
 
 // Compile-time assertions — `Send + Sync`, `PlatformWalletPersistence`

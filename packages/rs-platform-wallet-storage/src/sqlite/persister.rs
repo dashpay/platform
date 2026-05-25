@@ -7,7 +7,8 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use rusqlite::{Connection, OptionalExtension};
 
 use platform_wallet::changeset::{
-    ClientStartState, Merge, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
+    ClientStartState, DeleteWalletReport, Merge, PersistenceError, PlatformWalletChangeSet,
+    PlatformWalletPersistence,
 };
 use platform_wallet::wallet::platform_wallet::WalletId;
 
@@ -65,18 +66,6 @@ impl CommitReport {
     pub fn is_ok(&self) -> bool {
         self.failed.is_empty() && self.still_pending.is_empty()
     }
-}
-
-/// Outcome of a `delete_wallet` / `delete_wallet_skip_backup` call.
-#[derive(Debug, Clone)]
-pub struct DeleteWalletReport {
-    pub wallet_id: WalletId,
-    /// Absolute path of the pre-delete auto-backup written before the
-    /// cascade. `None` ONLY when the caller went through
-    /// [`SqlitePersister::delete_wallet_skip_backup`] — every
-    /// `delete_wallet` success returns `Some(path)`.
-    pub backup_path: Option<PathBuf>,
-    pub rows_removed_per_table: BTreeMap<&'static str, usize>,
 }
 
 /// Retention policy for `prune_backups`.
@@ -936,6 +925,18 @@ impl PlatformWalletPersistence for SqlitePersister {
     > {
         let conn = self.conn().map_err(PersistenceError::from)?;
         schema::core_state::get_tx_record(&conn, &wallet_id, txid).map_err(PersistenceError::from)
+    }
+
+    /// Trait-dispatch entry into the safe-by-default cascade delete.
+    /// Always takes an auto-backup (`auto_backup_dir` must be set, else
+    /// returns `WalletStorageError::AutoBackupDisabled` mapped into a
+    /// fatal `PersistenceError`). The inherent
+    /// [`SqlitePersister::delete_wallet_skip_backup`] stays available
+    /// for the CLI's `--no-auto-backup` flag and isn't reachable
+    /// through the trait by design.
+    fn delete_wallet(&self, wallet_id: WalletId) -> Result<DeleteWalletReport, PersistenceError> {
+        self.delete_wallet_inner(wallet_id, false)
+            .map_err(PersistenceError::from)
     }
 }
 

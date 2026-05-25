@@ -459,6 +459,42 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 .await;
         }
 
+        // Persist the deletion. In-memory cleanup above is complete by
+        // this point — the wallet is gone from `wallet_manager`,
+        // `self.wallets`, the shielded coordinator, and the identity
+        // sync manager. The persister call cascade-deletes the on-disk
+        // rows so the next `load()` doesn't resurrect a half-gone
+        // wallet. Backends with no disk concept inherit the trait
+        // default (noop) — `SqlitePersister` overrides.
+        //
+        // Error policy mirrors `register_wallet` (CODE-018): a
+        // transient failure gets one retry with brief backoff; any
+        // remaining failure logs structured context and we return Ok —
+        // the user wanted this wallet gone and the in-memory side is
+        // already cleaned up. Orphan rows that survive a fatal failure
+        // are cleanable out-of-band via an admin tool.
+        let delete_outcome = self.persister.delete_wallet(*wallet_id);
+        let delete_err = match delete_outcome {
+            Ok(_) => None,
+            Err(e) if e.is_transient() => {
+                tracing::warn!(
+                    wallet_id = %hex::encode(wallet_id),
+                    error = %e,
+                    "transient persist failure on remove_wallet; retrying once"
+                );
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                self.persister.delete_wallet(*wallet_id).err()
+            }
+            Err(e) => Some(e),
+        };
+        if let Some(e) = delete_err {
+            tracing::error!(
+                wallet_id = %hex::encode(wallet_id),
+                error = %e,
+                "remove_wallet: persister.delete_wallet failed; in-memory cleanup complete, disk state may have orphan rows"
+            );
+        }
+
         Ok(removed)
     }
 }

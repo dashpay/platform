@@ -3,8 +3,10 @@
 //! Implementors choose their own storage engine (SQLite, file, memory, remote).
 //! The traits guarantee that deltas are persisted atomically.
 
+use std::collections::BTreeMap;
 use std::error::Error as StdError;
 use std::fmt;
+use std::path::PathBuf;
 
 use crate::changeset::changeset::PlatformWalletChangeSet;
 use crate::changeset::client_start_state::ClientStartState;
@@ -329,4 +331,47 @@ pub trait PlatformWalletPersistence: Send + Sync {
     ) -> Result<Option<TransactionRecord>, PersistenceError> {
         Ok(None)
     }
+
+    /// Cascade-delete every persisted row owned by `wallet_id`.
+    ///
+    /// The default impl is a no-op that returns an empty
+    /// [`DeleteWalletReport`]. Backends with no per-wallet state
+    /// on disk (e.g. [`NoPlatformPersistence`](crate::wallet::persister::NoPlatformPersistence))
+    /// inherit it.
+    ///
+    /// # Errors
+    ///
+    /// - [`PersistenceErrorKind::Transient`] (e.g. `SQLITE_BUSY`):
+    ///   callers MAY retry with backoff.
+    /// - [`PersistenceErrorKind::Constraint`] / [`PersistenceErrorKind::Fatal`]
+    ///   / [`PersistenceError::LockPoisoned`]: callers MUST NOT retry;
+    ///   the disk state may carry orphan rows that an admin tool has
+    ///   to clean up out-of-band.
+    fn delete_wallet(&self, wallet_id: WalletId) -> Result<DeleteWalletReport, PersistenceError> {
+        Ok(DeleteWalletReport {
+            wallet_id,
+            backup_path: None,
+            rows_removed_per_table: BTreeMap::new(),
+        })
+    }
+}
+
+/// Outcome of a [`PlatformWalletPersistence::delete_wallet`] call.
+///
+/// Lives on the trait so consumers can match on the report without
+/// pulling in a backend-specific crate. The SQLite backend builds an
+/// instance with `rows_removed_per_table` populated; backends that
+/// don't track per-table row counts emit an empty map.
+#[derive(Debug, Clone)]
+pub struct DeleteWalletReport {
+    /// The wallet that was deleted.
+    pub wallet_id: WalletId,
+    /// Absolute path of the pre-delete auto-backup taken before the
+    /// cascade. `None` when the backend skipped the backup
+    /// (intentionally — e.g. the SQLite CLI's `--no-auto-backup` — or
+    /// because the backend has no backup concept).
+    pub backup_path: Option<PathBuf>,
+    /// Per-table row counts the backend deleted. Empty for backends
+    /// that don't expose per-table accounting.
+    pub rows_removed_per_table: BTreeMap<&'static str, usize>,
 }
