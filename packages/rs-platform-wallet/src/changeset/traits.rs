@@ -354,6 +354,62 @@ pub trait PlatformWalletPersistence: Send + Sync {
             rows_removed_per_table: BTreeMap::new(),
         })
     }
+
+    /// Flush every dirty wallet's buffered changeset to durable storage.
+    ///
+    /// The default impl is a no-op that returns an empty
+    /// [`CommitReport`]. Backends that flush inline (e.g. SQLite in
+    /// [`FlushMode::Immediate`](https://docs.rs/platform-wallet-storage))
+    /// or that have nothing to flush ([`NoPlatformPersistence`](crate::wallet::persister::NoPlatformPersistence))
+    /// inherit it.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` ONLY when even enumerating the dirty set fails
+    /// (e.g. the buffer mutex is poisoned). Per-wallet flush failures
+    /// land on `report.failed` with the classified `PersistenceError`
+    /// per wallet so a single bad wallet does not hide its siblings'
+    /// success. `report.still_pending` lists wallets that were never
+    /// attempted because an earlier per-flush call short-circuited
+    /// the loop (today: `LockPoisoned`).
+    ///
+    /// Atomicity is per-wallet, not cross-wallet: there is no
+    /// transaction spanning multiple wallets.
+    fn commit_writes(&self) -> Result<CommitReport, PersistenceError> {
+        Ok(CommitReport {
+            succeeded: Vec::new(),
+            failed: Vec::new(),
+            still_pending: Vec::new(),
+        })
+    }
+}
+
+/// Outcome of a [`PlatformWalletPersistence::commit_writes`] call.
+///
+/// Each dirty wallet's per-flush result lands in exactly one of the
+/// three vectors so a single failed wallet doesn't hide its siblings'
+/// success (or vice-versa). Callers can retry `still_pending` directly;
+/// `failed` carries the classified `PersistenceError` per wallet so
+/// transient-vs-fatal decisions stay local.
+#[derive(Debug)]
+pub struct CommitReport {
+    /// Wallets that flushed successfully (durable on disk).
+    pub succeeded: Vec<WalletId>,
+    /// Wallets whose flush returned an error. The `PersistenceError`
+    /// carries the classification and source per
+    /// [`PersistenceErrorKind`].
+    pub failed: Vec<(WalletId, PersistenceError)>,
+    /// Wallets we never attempted because an earlier per-flush call
+    /// short-circuited the loop (today: a `LockPoisoned` — the
+    /// connection mutex is gone).
+    pub still_pending: Vec<WalletId>,
+}
+
+impl CommitReport {
+    /// `true` when every dirty wallet flushed cleanly.
+    pub fn is_ok(&self) -> bool {
+        self.failed.is_empty() && self.still_pending.is_empty()
+    }
 }
 
 /// Outcome of a [`PlatformWalletPersistence::delete_wallet`] call.

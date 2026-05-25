@@ -42,5 +42,6 @@ pub use shielded_changeset::ShieldedChangeSet;
 #[cfg(feature = "shielded")]
 pub use shielded_sync_start_state::{ShieldedSubwalletStartState, ShieldedSyncStartState};
 pub use traits::{
-    DeleteWalletReport, PersistenceError, PersistenceErrorKind, PlatformWalletPersistence,
+    CommitReport, DeleteWalletReport, PersistenceError, PersistenceErrorKind,
+    PlatformWalletPersistence,
 };

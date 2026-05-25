@@ -1,8 +1,8 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! TC-CODE-003 — `PlatformWalletPersistence::delete_wallet` is
-//! reachable through the trait (not just the inherent method on
-//! `SqlitePersister`). Dispatch happens through
+//! TC-CODE-003 / TC-CODE-026 — `PlatformWalletPersistence::delete_wallet`
+//! and `::commit_writes` are reachable through the trait (not just the
+//! inherent methods on `SqlitePersister`). Dispatch happens through
 //! `Arc<dyn PlatformWalletPersistence>` so consumers don't need a
 //! concrete backend type at the call site.
 //!
@@ -10,17 +10,22 @@
 //!   empty report (proven via a NoPlatformPersistence-style stub).
 //! - TC-CODE-003-sqlite — trait-dispatched `delete_wallet` on
 //!   `SqlitePersister` actually cascades the on-disk rows.
+//! - TC-CODE-026-1 — trait default `commit_writes` returns an empty
+//!   report (same stub backend).
+//! - TC-CODE-026-2 — trait-dispatched `commit_writes` on
+//!   `SqlitePersister` matches the inherent behavior (success).
 
 mod common;
 
 use std::sync::Arc;
 
-use common::{ensure_wallet_meta, fresh_persister, ro_conn, wid};
+use common::{ensure_wallet_meta, fresh_persister, fresh_persister_with_mode, ro_conn, wid};
 use platform_wallet::changeset::{
-    ClientStartState, CoreChangeSet, DeleteWalletReport, PersistenceError, PlatformWalletChangeSet,
-    PlatformWalletPersistence,
+    ClientStartState, CommitReport, CoreChangeSet, DeleteWalletReport, PersistenceError,
+    PlatformWalletChangeSet, PlatformWalletPersistence,
 };
 use platform_wallet::wallet::platform_wallet::WalletId;
+use platform_wallet_storage::FlushMode;
 
 fn core_with_height(synced_height: u32, last_processed_height: u32) -> CoreChangeSet {
     CoreChangeSet {
@@ -37,8 +42,9 @@ fn changeset(core: CoreChangeSet) -> PlatformWalletChangeSet {
     }
 }
 
-/// Stub persister that exercises the `delete_wallet` trait default —
-/// the empty impl below inherits it.
+/// Stub persister that exercises every trait default — `delete_wallet`
+/// and `commit_writes` are inherited from the trait, so an empty impl
+/// suffices.
 struct DefaultsOnlyPersister;
 
 impl PlatformWalletPersistence for DefaultsOnlyPersister {
@@ -111,4 +117,53 @@ fn tc_code_003_sqlite_trait_delete_wallet_cascades_rows() {
     );
 
     assert_eq!(count_for(&w), 0);
+}
+
+/// TC-CODE-026-1 — `commit_writes` default impl returns an empty
+/// `CommitReport`. Drives backwards-compat for stubs +
+/// `NoPlatformPersistence`-style implementors that don't track dirty
+/// state.
+#[test]
+fn tc_code_026_1_commit_writes_default_returns_empty_report() {
+    let persister: Arc<dyn PlatformWalletPersistence> = Arc::new(DefaultsOnlyPersister);
+    let report: CommitReport = persister
+        .commit_writes()
+        .expect("default commit_writes must be infallible");
+    assert!(report.is_ok());
+    assert!(report.succeeded.is_empty());
+    assert!(report.failed.is_empty());
+    assert!(report.still_pending.is_empty());
+}
+
+/// TC-CODE-026-2 — trait-dispatched `commit_writes` on
+/// `SqlitePersister` flushes every dirty wallet just like the
+/// inherent method (no behavioral drift across dispatch).
+#[test]
+fn tc_code_026_2_sqlite_trait_commit_writes_flushes_dirty() {
+    let (persister, _tmp, path) = fresh_persister_with_mode(FlushMode::Manual);
+    let a = wid(0x11);
+    let b = wid(0x22);
+    ensure_wallet_meta(&persister, &a);
+    ensure_wallet_meta(&persister, &b);
+    PlatformWalletPersistence::store(&persister, a, changeset(core_with_height(3, 3)))
+        .expect("store A");
+    PlatformWalletPersistence::store(&persister, b, changeset(core_with_height(4, 4)))
+        .expect("store B");
+
+    let report = PlatformWalletPersistence::commit_writes(&persister)
+        .expect("trait commit_writes must succeed");
+    assert!(report.is_ok(), "report={report:?}");
+    assert_eq!(report.succeeded.len(), 2);
+
+    let count_for = |id: &[u8; 32]| -> i64 {
+        ro_conn(&path)
+            .query_row(
+                "SELECT COUNT(*) FROM core_sync_state WHERE wallet_id = ?1",
+                rusqlite::params![id.as_slice()],
+                |row| row.get(0),
+            )
+            .unwrap()
+    };
+    assert_eq!(count_for(&a), 1);
+    assert_eq!(count_for(&b), 1);
 }
