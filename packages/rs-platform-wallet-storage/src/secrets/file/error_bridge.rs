@@ -41,9 +41,15 @@ pub enum FileStoreFailure {
     MalformedVault,
     /// Pre-existing vault file held looser-than-0600 permissions.
     InsecurePermissions,
+    /// `rekey` ran while an outstanding credential held the inner `Arc`.
+    Busy,
 }
 
 impl std::fmt::Display for FileStoreFailure {
+    /// **Load-bearing text.** [`marker_from_message`] recovers the
+    /// variant from a `BadStoreFormat` `String` by exact match against
+    /// these strings, so editing any arm here requires updating
+    /// `marker_from_message` in lockstep (and vice versa).
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // Static, parameter-free strings — no user / secret data may
         // ever enter this Display (Smythe EDIT-3).
@@ -54,6 +60,7 @@ impl std::fmt::Display for FileStoreFailure {
             Self::VersionUnsupported => "unsupported vault format version",
             Self::MalformedVault => "malformed vault file",
             Self::InsecurePermissions => "vault file has insecure permissions",
+            Self::Busy => "store is busy: outstanding credentials prevent rekey",
         })
     }
 }
@@ -79,6 +86,7 @@ pub fn into_keyring(e: FileStoreError) -> KeyringError {
         FileStoreError::WrongPassphrase => {
             KeyringError::NoStorageAccess(Box::new(FileStoreFailure::WrongPassphrase))
         }
+        FileStoreError::Busy => KeyringError::NoStorageAccess(Box::new(FileStoreFailure::Busy)),
         FileStoreError::Decrypt => bad_format(FileStoreFailure::Decrypt),
         FileStoreError::KdfFailure => bad_format(FileStoreFailure::KdfFailure),
         FileStoreError::VersionUnsupported { .. } => {
@@ -126,6 +134,7 @@ fn marker_from_message(s: &str) -> Option<FileStoreFailure> {
         FileStoreFailure::MalformedVault,
         FileStoreFailure::InsecurePermissions,
         FileStoreFailure::WrongPassphrase,
+        FileStoreFailure::Busy,
     ]
     .into_iter()
     .find(|f| s == f.to_string())
@@ -136,13 +145,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn wrong_passphrase_round_trips_via_no_storage_access() {
-        let k = into_keyring(FileStoreError::WrongPassphrase);
-        assert!(matches!(k, KeyringError::NoStorageAccess(_)));
-        assert_eq!(
-            downcast_failure(&k),
-            Some(FileStoreFailure::WrongPassphrase)
-        );
+    fn no_storage_access_markers_round_trip() {
+        for (err, expected) in [
+            (
+                FileStoreError::WrongPassphrase,
+                FileStoreFailure::WrongPassphrase,
+            ),
+            (FileStoreError::Busy, FileStoreFailure::Busy),
+        ] {
+            let k = into_keyring(err);
+            assert!(matches!(k, KeyringError::NoStorageAccess(_)));
+            assert_eq!(downcast_failure(&k), Some(expected));
+        }
     }
 
     #[test]
@@ -183,6 +197,23 @@ mod tests {
         let io = std::io::Error::other("boom");
         let k = into_keyring(FileStoreError::Io(io));
         assert!(matches!(k, KeyringError::PlatformFailure(_)));
+    }
+
+    #[test]
+    fn marker_from_message_round_trips_every_variant() {
+        // Display text is load-bearing: every variant must recover from
+        // its own rendered string, or the BadStoreFormat seam loses it.
+        for f in [
+            FileStoreFailure::WrongPassphrase,
+            FileStoreFailure::Decrypt,
+            FileStoreFailure::KdfFailure,
+            FileStoreFailure::VersionUnsupported,
+            FileStoreFailure::MalformedVault,
+            FileStoreFailure::InsecurePermissions,
+            FileStoreFailure::Busy,
+        ] {
+            assert_eq!(marker_from_message(&f.to_string()), Some(f));
+        }
     }
 
     #[test]

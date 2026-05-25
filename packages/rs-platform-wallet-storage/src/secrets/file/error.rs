@@ -57,6 +57,14 @@ pub enum FileStoreError {
         mode: u32,
     },
 
+    /// `rekey` was called while an `EncryptedFileCredential` (built via
+    /// `CredentialStoreApi::build`) still holds a clone of the inner
+    /// `Arc`, so the store lacks the exclusive reference the atomic
+    /// passphrase swap requires. A recoverable runtime state — drop the
+    /// outstanding credentials and retry — not a logic bug.
+    #[error("store is busy: outstanding credentials prevent rekey")]
+    Busy,
+
     /// Filesystem error (open / write / rename / fsync). The inner
     /// `io::Error` carries an OS code and a path *the caller supplied*,
     /// never a secret.
