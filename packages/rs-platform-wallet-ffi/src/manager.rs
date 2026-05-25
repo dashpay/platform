@@ -174,17 +174,22 @@ unsafe fn create_wallet_from_mnemonic_impl(
     PlatformWalletFFIResult::ok()
 }
 
-/// One wallet skipped during `load_from_persistor` because its seed
-/// was unavailable (recoverable — retry after the host provides /
-/// unlocks the mnemonic). Never a wrong-seed wallet.
+/// One wallet skipped during `load_from_persistor` because its
+/// persisted row was structurally corrupt (per-row decode failure).
+/// The load path is watch-only — wrong-seed never surfaces here.
+///
+/// **ABI note (rework of #3692):** the reason-code namespace was
+/// reshaped when the load path went seedless. The legacy
+/// seed-availability codes (`0`/`1`/`2`) are gone; the new codes are
+/// per-`CorruptKind` family — see `reason_code` for the table.
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct SkippedWalletFFI {
     /// The (public) 32-byte wallet id that was skipped.
     pub wallet_id: [u8; 32],
-    /// Structural skip reason: `0` = seed absent, `1` = store
-    /// locked/unavailable (retry after unlock), `2` = other store
-    /// error. No secret material is ever carried.
+    /// Structural skip reason. `100` = missing account manifest,
+    /// `101` = malformed account xpub, `102` = any other structural
+    /// decode error. No secret material is ever carried.
     pub reason_code: u32,
 }
 
@@ -208,10 +213,13 @@ pub struct LoadOutcomeFFI {
 }
 
 fn skip_reason_code(reason: &platform_wallet::SkipReason) -> u32 {
+    use platform_wallet::manager::load_outcome::CorruptKind;
     match reason {
-        platform_wallet::SkipReason::SeedAbsent => 0,
-        platform_wallet::SkipReason::StoreUnavailable(_) => 1,
-        platform_wallet::SkipReason::StoreError(_) => 2,
+        platform_wallet::SkipReason::CorruptPersistedRow { kind } => match kind {
+            CorruptKind::MissingManifest => 100,
+            CorruptKind::MalformedXpub => 101,
+            CorruptKind::DecodeError(_) => 102,
+        },
     }
 }
 
@@ -337,22 +345,21 @@ pub unsafe extern "C" fn platform_wallet_manager_create_wallet_from_mnemonic_wit
 ///
 /// Triggers `on_load_wallet_list_fn` on the persistence callbacks to
 /// fetch the persisted wallet list from the client side (SwiftData),
-/// builds a keyless reconstruction payload per wallet, then re-derives
-/// each signing wallet from the supplied mnemonic `resolver` and runs
-/// the fail-closed wrong-seed gate before registering it. Does not
-/// produce wallet handles — follow up with
-/// [`platform_wallet_manager_get_wallet`] per `wallet_id`.
+/// builds a keyless reconstruction payload per wallet, then registers
+/// each one as a **watch-only** wallet. No signing keys are derived
+/// here — signing happens later, on demand, via the configured
+/// `MnemonicResolverHandle` (`sign_with_mnemonic_resolver` and its
+/// siblings), which fail-closed gate the resolver-supplied seed
+/// against the loaded `wallet_id`. Does not produce wallet handles —
+/// follow up with [`platform_wallet_manager_get_wallet`] per
+/// `wallet_id`.
 ///
-/// A wallet whose mnemonic the `resolver` cannot supply is **skipped**
-/// (recoverable), not failed: the call still returns `Success`, every
+/// A wallet whose persisted row is structurally corrupt is
+/// **skipped**, not failed: the call still returns `Success`, every
 /// skipped `(wallet_id, reason)` is logged, and — when `out_outcome`
-/// is non-null — surfaced through it so the host can re-attempt the
-/// skipped set after unlocking. A *wrong* mnemonic is a hard error
-/// (returned via the result code), never a silent skip.
+/// is non-null — surfaced through it.
 ///
 /// # Safety
-/// - `resolver` must be a live handle from
-///   `dash_sdk_mnemonic_resolver_create`, outliving this call.
 /// - `out_outcome` may be null (caller doesn't want the summary);
 ///   otherwise it must point to writable `LoadOutcomeFFI` storage and
 ///   the caller must later release it via
@@ -360,22 +367,17 @@ pub unsafe extern "C" fn platform_wallet_manager_create_wallet_from_mnemonic_wit
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_load_from_persistor(
     manager_handle: Handle,
-    resolver: *const rs_sdk_ffi::MnemonicResolverHandle,
     out_outcome: *mut LoadOutcomeFFI,
 ) -> PlatformWalletFFIResult {
-    check_ptr!(resolver);
-    // SAFETY: the caller's contract guarantees `resolver` is a live
-    // handle that outlives this synchronous call.
-    let seeds = crate::rehydration_seed_provider::ResolverSeedProvider::new(resolver);
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(manager_handle, |manager| {
-        runtime().block_on(manager.load_from_persistor(&seeds))
+        runtime().block_on(manager.load_from_persistor())
     });
     let result = unwrap_option_or_return!(option);
     let outcome = unwrap_result_or_return!(result);
 
     // Never silently drop the outcome: log a structured summary plus
-    // one line per skipped wallet (recoverable; the host can retry the
-    // skipped set after unlocking the keychain).
+    // one line per skipped wallet (the host can inspect / clear the
+    // corrupt rows).
     tracing::info!(
         loaded = outcome.loaded.len(),
         skipped = outcome.skipped.len(),
@@ -385,7 +387,7 @@ pub unsafe extern "C" fn platform_wallet_manager_load_from_persistor(
         tracing::warn!(
             wallet_id = %hex::encode(wid),
             reason = %reason,
-            "load_from_persistor skipped wallet (seed unavailable — recoverable)"
+            "load_from_persistor skipped wallet (corrupt persisted row)"
         );
     }
 
