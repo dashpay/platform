@@ -194,14 +194,20 @@ pub struct AddressBalanceEntryFFI {
 pub unsafe fn parse_outputs(
     ptr: *const AddressBalanceEntryFFI,
     count: usize,
-) -> Result<indexmap::IndexMap<PlatformAddress, Credits>, &'static str> {
+) -> Result<indexmap::IndexMap<PlatformAddress, Credits>, String> {
     if ptr.is_null() && count > 0 {
-        return Err("Null output pointer with non-zero count");
+        return Err("Null output pointer with non-zero count".to_string());
     }
     let mut map = indexmap::IndexMap::new();
     if count > 0 {
         for entry in std::slice::from_raw_parts(ptr, count) {
-            let addr = PlatformAddress::try_from(entry.address)?;
+            let addr = PlatformAddress::try_from(entry.address).map_err(str::to_string)?;
+            if map.contains_key(&addr) {
+                return Err(format!(
+                    "Duplicate output address (hash {})",
+                    hex::encode(entry.address.hash)
+                ));
+            }
             map.insert(addr, entry.balance);
         }
     }
@@ -414,5 +420,83 @@ impl From<&platform_wallet::PlatformAddressChangeSet> for PlatformAddressChangeS
             updated: updated_ptr,
             updated_count,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// CMT-003: `parse_outputs` must reject duplicate destination addresses
+    /// instead of silently overwriting earlier entries. The diagnostic must
+    /// name the offending address.
+    #[test]
+    fn parse_outputs_rejects_duplicate_destination_address() {
+        let dup = PlatformAddressFFI {
+            address_type: 0,
+            hash: [0xAB; 20],
+        };
+        let entries = [
+            AddressBalanceEntryFFI {
+                address: dup,
+                balance: 1_000_000,
+                nonce: 0,
+                account_index: 0,
+                address_index: 0,
+            },
+            AddressBalanceEntryFFI {
+                address: dup,
+                balance: 2_000_000,
+                nonce: 0,
+                account_index: 0,
+                address_index: 0,
+            },
+        ];
+
+        let err = unsafe { parse_outputs(entries.as_ptr(), entries.len()) }
+            .expect_err("duplicate output address must be rejected");
+        assert!(
+            err.contains("Duplicate output address"),
+            "unexpected error: {err}"
+        );
+        // The diagnostic must include the address hash so the caller can
+        // identify which output collided.
+        assert!(
+            err.contains("abababababababababababababababababababab"),
+            "address missing from error: {err}"
+        );
+    }
+
+    /// Distinct addresses are accepted and the insertion order is preserved.
+    #[test]
+    fn parse_outputs_preserves_insertion_order_for_distinct_addresses() {
+        let entries = [
+            AddressBalanceEntryFFI {
+                address: PlatformAddressFFI {
+                    address_type: 0,
+                    hash: [0x11; 20],
+                },
+                balance: 1,
+                nonce: 0,
+                account_index: 0,
+                address_index: 0,
+            },
+            AddressBalanceEntryFFI {
+                address: PlatformAddressFFI {
+                    address_type: 0,
+                    hash: [0x22; 20],
+                },
+                balance: 2,
+                nonce: 0,
+                account_index: 0,
+                address_index: 0,
+            },
+        ];
+
+        let map = unsafe { parse_outputs(entries.as_ptr(), entries.len()) }.expect("parse");
+        assert_eq!(map.len(), 2);
+        let keys: Vec<_> = map.keys().copied().collect();
+        assert_eq!(keys[0], PlatformAddress::P2pkh([0x11; 20]));
+        assert_eq!(keys[1], PlatformAddress::P2pkh([0x22; 20]));
     }
 }

@@ -280,6 +280,12 @@ impl From<&str> for PlatformWalletFFIResult {
     }
 }
 
+impl From<String> for PlatformWalletFFIResult {
+    fn from(e: String) -> Self {
+        Self::err(PlatformWalletFFIResultCode::ErrorInvalidParameter, e)
+    }
+}
+
 impl From<key_wallet::bip32::Error> for PlatformWalletFFIResult {
     fn from(e: key_wallet::bip32::Error) -> Self {
         Self::err(
