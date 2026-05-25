@@ -145,19 +145,30 @@ impl OutpointReservationGuard {
         self.released = true;
     }
 
-    /// Keep the reservation held for the lifetime of the process by
-    /// leaking the guard. Use this when the broadcast succeeded but
-    /// wallet state could not be reconciled (e.g., own-built tx not
-    /// recognised by `check_core_transaction`, or the wallet handle
-    /// went stale post-broadcast). Releasing the outpoints in that
-    /// scenario would let a concurrent caller select the same UTXO and
-    /// produce a double-spend the network would reject — keeping the
-    /// reservation is the safer of two bad outcomes; a wallet restart
-    /// or full sync will reconcile.
+    /// Keep the reservation held until the process exits.
+    ///
+    /// Use this when the broadcast succeeded but wallet state could not be
+    /// reconciled (e.g., own-built tx not recognised by
+    /// `check_core_transaction`, or the wallet handle went stale
+    /// post-broadcast). Releasing the outpoints in that scenario would let a
+    /// concurrent caller select the same already-broadcast UTXO and produce
+    /// a double-spend the network would reject — keeping the reservation is
+    /// the safer of two bad outcomes.
+    ///
+    /// **No in-process reclaim path exists today.** The outpoints stay
+    /// pinned in [`OutpointReservations`] for the lifetime of the
+    /// `PlatformWalletManager`; only a wallet-process restart (which drops
+    /// the whole reservations set) releases them.
+    ///
+    /// TODO(@thepastaclaw, PR #3585): a periodic-sync-driven
+    /// `OutpointReservations::reclaim_confirmed(&[OutPoint])` API would let
+    /// the next confirmation pass reconcile leaked reservations without a
+    /// restart. Tracked on the PR review thread.
     pub(crate) fn leak_until_sync(self) {
-        // `Box::leak` is the standard way to drop the ownership without
-        // running `Drop`. We don't actually heap-allocate — `mem::forget`
-        // is equivalent and avoids the allocation.
+        // `mem::forget` skips `Drop`, leaving the reservation entries in
+        // the shared set. The guard's only owned heap allocation is the
+        // `Vec<OutPoint>`, which is small and never freed for the lifetime
+        // of the process — acceptable given this is a rare error branch.
         std::mem::forget(self);
     }
 
