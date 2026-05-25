@@ -136,7 +136,9 @@ fn concurrent_store_does_not_resurrect_deleted_wallet() {
 
     // Give the worker a moment to land some racing stores.
     std::thread::sleep(std::time::Duration::from_millis(20));
-    let _ = persister.delete_wallet(w);
+    persister
+        .delete_wallet(w)
+        .expect("delete_wallet should succeed in concurrent-store regression");
     stop.store(true, Ordering::Relaxed);
     worker.join().unwrap();
 
@@ -153,7 +155,7 @@ fn concurrent_store_does_not_resurrect_deleted_wallet() {
                 rusqlite::params![w.as_slice()],
                 |row| row.get(0),
             )
-            .unwrap_or(0);
+            .unwrap_or_else(|e| panic!("COUNT(*) query failed for table `{table}`: {e}"));
         assert_eq!(
             n, 0,
             "table `{table}` still has rows for deleted wallet — concurrent-store race regression"
