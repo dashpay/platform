@@ -350,3 +350,84 @@ impl std::fmt::Debug for PlatformAddressWallet {
             .finish()
     }
 }
+
+#[cfg(test)]
+mod found_026_tests {
+    use super::*;
+    use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
+    use key_wallet::account::account_collection::PlatformPaymentAccountKey;
+    use key_wallet::wallet::initialization::{
+        PlatformPaymentAccountSpec, WalletAccountCreationOptions,
+    };
+    use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
+    use key_wallet::{Network, Wallet};
+    use key_wallet_manager::WalletManager;
+    use std::collections::{BTreeMap, BTreeSet};
+
+    const ACCOUNT_KEY: PlatformPaymentAccountKey = PlatformPaymentAccountKey {
+        account: 0,
+        key_class: 0,
+    };
+
+    /// Build a network-free `PlatformAddressWallet` over one DIP-17
+    /// platform-payment account (account 0, key_class 0). Mirrors the
+    /// `register_wallet` path: `ManagedWalletInfo::from_wallet` +
+    /// `insert_wallet`, no SPV / no funding.
+    fn wallet_with_platform_account() -> PlatformAddressWallet {
+        let mut pp = BTreeSet::new();
+        pp.insert(PlatformPaymentAccountSpec {
+            account: 0,
+            key_class: 0,
+        });
+        let opts = WalletAccountCreationOptions::AllAccounts(
+            BTreeSet::new(),
+            BTreeSet::new(),
+            BTreeSet::new(),
+            BTreeSet::new(),
+            pp,
+        );
+        let wallet = Wallet::new_random(Network::Testnet, opts).expect("wallet");
+
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let info = PlatformWalletInfo {
+            core_wallet: ManagedWalletInfo::from_wallet(&wallet, 0),
+            balance: Arc::new(crate::wallet::core::WalletBalance::new()),
+            identity_manager: crate::wallet::identity::IdentityManager::new(),
+            tracked_asset_locks: BTreeMap::new(),
+        };
+        let wallet_manager = Arc::new(RwLock::new(WalletManager::new(Network::Testnet)));
+        let wallet_id = wallet_manager
+            .try_write()
+            .expect("uncontended")
+            .insert_wallet(wallet, info)
+            .expect("insert");
+        let persister = WalletPersister::new(wallet_id, Arc::new(NoPlatformPersistence));
+        PlatformAddressWallet::new(sdk, wallet_manager, wallet_id, persister)
+    }
+
+    /// Found-026 durable guard: two `next_unused_receive_address` calls
+    /// with NO intervening sync/balance update must return DISTINCT
+    /// addresses. Pre-fix, `next_unused` re-hands index 0 (its `used`
+    /// flag only flips on a positive synced balance) → identical
+    /// addresses → this assertion fails. Post-fix the first call
+    /// reserves index 0 via `mark_index_used`, so the second yields
+    /// index 1.
+    #[tokio::test]
+    async fn found_026_back_to_back_handout_returns_distinct_addresses() {
+        let wallet = wallet_with_platform_account();
+
+        let a = wallet
+            .next_unused_receive_address(ACCOUNT_KEY)
+            .await
+            .expect("first hand-out");
+        let b = wallet
+            .next_unused_receive_address(ACCOUNT_KEY)
+            .await
+            .expect("second hand-out");
+
+        assert_ne!(
+            a, b,
+            "back-to-back hand-out with no sync re-handed the same address (Found-026)"
+        );
+    }
+}
