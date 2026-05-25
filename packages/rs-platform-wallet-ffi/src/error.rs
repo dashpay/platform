@@ -76,8 +76,9 @@ pub enum PlatformWalletFFIResultCode {
     ErrorInvalidIdentifier = 10,
     ErrorMemoryAllocation = 11,
     ErrorUtf8Conversion = 12,
-    /// Reserved code — currently unused. Kept to preserve numeric ABI for
-    /// downstream consumers that compiled against this enum.
+    /// Reserved slot for the arithmetic-overflow mapping arriving via #3549 —
+    /// no in-tree producer today. Holding the slot here keeps language-mirror
+    /// enums (Swift, Kotlin) numerically aligned with the eventual producer.
     ErrorArithmeticOverflow = 13,
     /// Auto-select had no candidate inputs. Covers all three "can't-select-inputs"
     /// wallet variants: `NoSpendableInputs` (account has nothing spendable),
