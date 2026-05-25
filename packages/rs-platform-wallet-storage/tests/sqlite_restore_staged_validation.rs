@@ -142,6 +142,49 @@ fn rejected_restore_leaves_wal_shm_siblings_intact() {
     assert_eq!(fs::read(&shm).unwrap(), b"shm-sentinel");
 }
 
+/// CMT-010: a forward-version source must fail BEFORE the full file
+/// is streamed into the destination's parent dir. We assert no
+/// NamedTempFile from the staging copy survives in the parent dir
+/// after the rejection — the cheap source-side sniff fails fast.
+#[test]
+fn forward_version_rejected_before_staging() {
+    let (persister, tmp, _path) = fresh_persister();
+    seed_one_row(&persister, &wid(0xF3));
+    let backup_path = persister.backup_to(tmp.path()).unwrap();
+    drop(persister);
+
+    // Bump the source past the embedded max.
+    {
+        let conn = rusqlite::Connection::open(&backup_path).unwrap();
+        conn.execute(
+            "INSERT INTO refinery_schema_history (version, name, applied_on, checksum) \
+             VALUES (?1, 'future', '', '0')",
+            rusqlite::params![1_000_000i64],
+        )
+        .unwrap();
+    }
+
+    let dest_dir = tempfile::tempdir().unwrap();
+    let dest = dest_dir.path().join("dest.db");
+    fs::write(&dest, SENTINEL).unwrap();
+
+    let before: usize = fs::read_dir(dest_dir.path()).unwrap().count();
+    let err = SqlitePersister::restore_from_skip_backup(&dest, &backup_path);
+    let after: usize = fs::read_dir(dest_dir.path()).unwrap().count();
+
+    assert!(
+        matches!(
+            err,
+            Err(WalletStorageError::SchemaVersionUnsupported { .. })
+        ),
+        "expected SchemaVersionUnsupported, got {err:?}"
+    );
+    assert_eq!(
+        after, before,
+        "no staging temp file should be left behind on pre-staging rejection"
+    );
+}
+
 /// Happy path: a valid in-range backup still restores and the
 /// destination reflects the restored bytes.
 #[test]

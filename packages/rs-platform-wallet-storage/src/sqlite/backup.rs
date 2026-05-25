@@ -98,15 +98,30 @@ pub fn run_to(src: &Connection, dest: &Path) -> Result<(), WalletStorageError> {
 /// process. The caller (the persister's `restore_from_inner`) handles
 /// the pre-restore auto-backup gate.
 pub fn restore_from(dest_db_path: &Path, src_backup: &Path) -> Result<(), WalletStorageError> {
-    // 1. Confirm the source is openable, then run a cheap pre-staging
-    //    integrity check. The authoritative schema-history / version
-    //    gate runs on the STAGED copy (step 5) so every check binds to
-    //    the exact bytes being persisted (TOCTOU-safe).
+    // 1. Confirm the source is openable, then run cheap pre-staging
+    //    integrity + schema-history + max-version sniffs against the
+    //    source itself so an obviously-incompatible input fails before
+    //    we stream the whole file into the destination's partition.
+    //    The authoritative schema-history / version gate still re-runs
+    //    on the STAGED copy (step 4) — that's the TOCTOU-safe check
+    //    bound to the exact bytes about to be persisted.
     let src = crate::sqlite::conn::open_conn(src_backup, crate::sqlite::conn::Access::ReadOnly)
         .map_err(map_source_open_err)?;
     run_integrity_check(&src, |report| WalletStorageError::IntegrityCheckFailed {
         report,
     })?;
+    let src_has_schema = src
+        .query_row(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'refinery_schema_history'",
+            [],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some();
+    if !src_has_schema {
+        return Err(WalletStorageError::SchemaHistoryMissing);
+    }
+    crate::sqlite::migrations::assert_schema_version_supported(&src)?;
     drop(src);
 
     // 2. Try-lock the destination so we don't replace a DB another
@@ -164,27 +179,7 @@ pub fn restore_from(dest_db_path: &Path, src_backup: &Path) -> Result<(), Wallet
         if !has_schema {
             return Err(WalletStorageError::SchemaHistoryMissing);
         }
-        let max_supported = crate::sqlite::migrations::embedded_migrations()
-            .iter()
-            .map(|(v, _)| *v as i64)
-            .max()
-            .unwrap_or(0);
-        let source_version: Option<i64> = staged
-            .query_row(
-                "SELECT MAX(version) FROM refinery_schema_history",
-                [],
-                |row| row.get(0),
-            )
-            .optional()?
-            .flatten();
-        if let Some(v) = source_version {
-            if v > max_supported {
-                return Err(WalletStorageError::SchemaVersionUnsupported {
-                    found: v,
-                    max_supported,
-                });
-            }
-        }
+        crate::sqlite::migrations::assert_schema_version_supported(&staged)?;
     }
 
     // 5. Atomicity gate: every staged-file validation has now passed,

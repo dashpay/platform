@@ -50,7 +50,8 @@ fn wal_and_shm_sidecars_are_chmodded_0o600() {
     for path in [&db_path, &wal, &shm] {
         let mode = std::fs::metadata(path).unwrap().permissions().mode() & 0o777;
         assert_eq!(
-            mode, 0o600,
+            mode,
+            0o600,
             "expected 0o600 on {} after apply_secure_permissions, got {:o}",
             path.display(),
             mode
