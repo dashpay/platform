@@ -98,14 +98,15 @@ platform-wallet-storage --db <path> backup --out <dir-or-file>
 platform-wallet-storage --db <path> restore --from <backup.db> --yes
 platform-wallet-storage --db <path> prune --in <dir> [--keep-last N] [--max-age 30d]
 platform-wallet-storage --db <path> inspect [--wallet-id <hex>] [--format text|tsv|json]
-platform-wallet-storage --db <path> delete-wallet --wallet-id <hex> --yes [--no-auto-backup]
 ```
 
-Destructive subcommands (`restore`, `delete-wallet`) REQUIRE `--yes`
-— invoking them without it exits 2 with a usage error. `--no-auto-backup`
-opts out of the pre-migration / pre-delete auto-backup respectively;
-the library API has no equivalent opt-out (it routes to
-[`SqlitePersister::delete_wallet_skip_backup`] internally).
+Destructive subcommands (`restore`) REQUIRE `--yes` — invoking them
+without it exits 2 with a usage error. `--no-auto-backup` opts out of
+the pre-restore auto-backup.
+
+Wallet removal is a library-only API
+([`SqlitePersister::delete_wallet`] / `delete_wallet_skip_backup`);
+no CLI subcommand exposes it.
 
 Logging: `-v` / `-vv` / `-vvv` enable `info` / `debug` / `trace`
 respectively on stderr; `-q` suppresses non-error output.
