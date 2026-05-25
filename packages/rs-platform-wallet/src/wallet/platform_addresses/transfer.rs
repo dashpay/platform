@@ -118,40 +118,35 @@ impl PlatformAddressWallet {
                 .core_wallet
                 .platform_payment_managed_account_at_index_mut(account_index)
             {
-                for (addr, maybe_info) in address_infos.iter() {
-                    let PlatformAddress::P2pkh(hash) = addr else {
-                        continue;
-                    };
-                    let p2pkh = PlatformP2PKHAddress::new(*hash);
-                    let funds = match maybe_info {
-                        Some(ai) => dash_sdk::platform::address_sync::AddressFunds {
-                            balance: ai.balance,
-                            nonce: ai.nonce,
-                        },
-                        None => dash_sdk::platform::address_sync::AddressFunds {
-                            balance: 0,
-                            nonce: 0,
-                        },
-                    };
-                    account.set_address_credit_balance(p2pkh, funds.balance, key_source.as_ref());
-                    let address_index = account
-                        .addresses
-                        .addresses
-                        .iter()
-                        .find_map(|(&idx, info)| {
-                            PlatformP2PKHAddress::from_address(&info.address)
-                                .ok()
-                                .filter(|found| *found == p2pkh)
-                                .map(|_| idx)
-                        })
-                        .unwrap_or(0);
-                    cs.addresses.push(crate::PlatformAddressBalanceEntry {
-                        wallet_id: self.wallet_id,
-                        account_index,
-                        address_index,
-                        address: p2pkh,
-                        funds,
-                    });
+                // `transfer_address_funds` returns address info for the full
+                // `inputs ∪ outputs` set, including external recipients the
+                // wallet does not own. Build a lookup of derived addresses
+                // up-front so we can skip non-owned entries — persisting a
+                // recipient under a fake derivation index would poison the
+                // account's address map on restore.
+                let owned: std::collections::BTreeMap<PlatformP2PKHAddress, u32> = account
+                    .addresses
+                    .addresses
+                    .iter()
+                    .filter_map(|(&idx, info)| {
+                        PlatformP2PKHAddress::from_address(&info.address)
+                            .ok()
+                            .map(|p| (p, idx))
+                    })
+                    .collect();
+
+                for entry in build_transfer_persistence_entries(
+                    self.wallet_id,
+                    account_index,
+                    &owned,
+                    address_infos.iter().map(|(a, i)| (a, i.as_ref())),
+                ) {
+                    account.set_address_credit_balance(
+                        entry.address,
+                        entry.funds.balance,
+                        key_source.as_ref(),
+                    );
+                    cs.addresses.push(entry);
                 }
             }
         }
@@ -410,6 +405,56 @@ impl PlatformAddressWallet {
 
         remaining_fee
     }
+}
+
+/// Translate `transfer_address_funds`'s `inputs ∪ outputs` address infos into
+/// the persistence-changeset entries for this wallet. Non-P2PKH addresses and
+/// addresses outside `owned` (i.e. external recipients) are filtered out — the
+/// caller persists only entries that belong to the wallet's derived address
+/// pool. Missing per-address info defaults to zero balance / zero nonce, which
+/// matches the on-chain post-transition state for a fully consumed input.
+fn build_transfer_persistence_entries<'a, I>(
+    wallet_id: [u8; 32],
+    account_index: u32,
+    owned: &BTreeMap<PlatformP2PKHAddress, u32>,
+    address_infos: I,
+) -> Vec<crate::PlatformAddressBalanceEntry>
+where
+    I: IntoIterator<
+        Item = (
+            &'a PlatformAddress,
+            Option<&'a dash_sdk::query_types::AddressInfo>,
+        ),
+    >,
+{
+    let mut entries = Vec::new();
+    for (addr, maybe_info) in address_infos {
+        let PlatformAddress::P2pkh(hash) = addr else {
+            continue;
+        };
+        let p2pkh = PlatformP2PKHAddress::new(*hash);
+        let Some(&address_index) = owned.get(&p2pkh) else {
+            continue;
+        };
+        let funds = match maybe_info {
+            Some(ai) => dash_sdk::platform::address_sync::AddressFunds {
+                balance: ai.balance,
+                nonce: ai.nonce,
+            },
+            None => dash_sdk::platform::address_sync::AddressFunds {
+                balance: 0,
+                nonce: 0,
+            },
+        };
+        entries.push(crate::PlatformAddressBalanceEntry {
+            wallet_id,
+            account_index,
+            address_index,
+            address: p2pkh,
+            funds,
+        });
+    }
+    entries
 }
 
 /// Build the auto-selection candidate list: keep only addresses whose balance
@@ -1694,6 +1739,102 @@ mod auto_select_tests {
             }
             other => panic!("expected AddressOperation, got {other:?}"),
         }
+    }
+
+    /// CMT-002: `transfer_address_funds` returns address info for the full
+    /// `inputs ∪ outputs` set, including external recipients. The persistence
+    /// builder must keep entries for wallet-owned addresses only — persisting
+    /// a recipient under a fabricated derivation index would poison the
+    /// account's address map on restore.
+    #[test]
+    fn persistence_filter_drops_external_recipients() {
+        use dash_sdk::query_types::AddressInfo;
+
+        let wallet_id = [0xAAu8; 32];
+        let account_index = 0u32;
+
+        let owned_input = PlatformP2PKHAddress::new([0x01; 20]);
+        // External recipient — not in `owned`.
+        let external_recipient_hash = [0xEE; 20];
+        let external_recipient = PlatformAddress::P2pkh(external_recipient_hash);
+        let owned_input_addr = PlatformAddress::P2pkh([0x01; 20]);
+
+        // Wallet's derived pool: only the input address.
+        let mut owned: BTreeMap<PlatformP2PKHAddress, u32> = BTreeMap::new();
+        owned.insert(owned_input, 7);
+
+        // The proved address-info set drive returns spans inputs ∪ outputs.
+        // We model the input fully consumed (balance = 0, nonce bumped) and
+        // the external recipient receiving credits.
+        let input_info = AddressInfo {
+            address: owned_input_addr,
+            nonce: 1,
+            balance: 0,
+        };
+        let recipient_info = AddressInfo {
+            address: external_recipient,
+            nonce: 0,
+            balance: 5_000_000,
+        };
+        let address_infos: IndexMap<PlatformAddress, Option<AddressInfo>> = [
+            (owned_input_addr, Some(input_info)),
+            (external_recipient, Some(recipient_info)),
+        ]
+        .into_iter()
+        .collect();
+
+        let entries = build_transfer_persistence_entries(
+            wallet_id,
+            account_index,
+            &owned,
+            address_infos.iter().map(|(a, i)| (a, i.as_ref())),
+        );
+
+        assert_eq!(entries.len(), 1, "external recipient must be filtered out");
+        let entry = &entries[0];
+        assert_eq!(entry.wallet_id, wallet_id);
+        assert_eq!(entry.account_index, account_index);
+        assert_eq!(entry.address, owned_input);
+        assert_eq!(
+            entry.address_index, 7,
+            "owned address must keep its real derivation index"
+        );
+        assert_eq!(entry.funds.balance, 0);
+        assert_eq!(entry.funds.nonce, 1);
+        assert!(
+            !entries
+                .iter()
+                .any(|e| e.address == PlatformP2PKHAddress::new(external_recipient_hash)),
+            "external recipient must not appear in any entry",
+        );
+    }
+
+    /// Missing per-address info defaults to zero balance / zero nonce — this
+    /// is the on-chain post-transition state for a fully consumed input that
+    /// drive elided from the proved set.
+    #[test]
+    fn persistence_filter_treats_missing_info_as_zero() {
+        let wallet_id = [0xBBu8; 32];
+        let account_index = 3u32;
+        let owned_addr = PlatformP2PKHAddress::new([0x42; 20]);
+        let owned_platform = PlatformAddress::P2pkh([0x42; 20]);
+
+        let mut owned: BTreeMap<PlatformP2PKHAddress, u32> = BTreeMap::new();
+        owned.insert(owned_addr, 11);
+
+        let address_infos: IndexMap<PlatformAddress, Option<dash_sdk::query_types::AddressInfo>> =
+            [(owned_platform, None)].into_iter().collect();
+
+        let entries = build_transfer_persistence_entries(
+            wallet_id,
+            account_index,
+            &owned,
+            address_infos.iter().map(|(a, i)| (a, i.as_ref())),
+        );
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].funds.balance, 0);
+        assert_eq!(entries[0].funds.nonce, 0);
+        assert_eq!(entries[0].address_index, 11);
     }
 
     /// Signer used only by tests that exercise paths which short-circuit
