@@ -152,37 +152,6 @@ impl SpvRuntime {
         result
     }
 
-    /// Best-effort: fire the background `run()` task's cancel token if one
-    /// is registered. Teardown of the dash-spv client and its data-dir
-    /// lockfile still happens asynchronously inside the spawned task as it
-    /// unwinds to its `self.stop().await` epilogue — this method only wakes
-    /// the task. Idempotent: subsequent calls (and a follow-up [`stop`])
-    /// see `None` and return immediately.
-    ///
-    /// Designed for sync contexts where awaiting [`stop`] isn't possible —
-    /// for example a `std::panic::set_hook` callback that wants to nudge the
-    /// SPV task toward shutdown without blocking the panicking thread.
-    ///
-    /// This method does **not** guarantee the dash-spv data-dir lock has
-    /// been released by the time it returns. Callers that need that
-    /// guarantee (e.g. before reinitializing on the same data directory)
-    /// must `await stop()` from an async context instead.
-    ///
-    /// Tolerates a poisoned `background_cancel` mutex — the panic-hook use
-    /// case is precisely when the lock may already be poisoned, so the
-    /// guard is recovered via `PoisonError::into_inner` rather than
-    /// panicking again.
-    pub fn cancel_background(&self) {
-        if let Some(token) = self
-            .background_cancel
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .take()
-        {
-            token.cancel();
-        }
-    }
-
     /// Stop SPV sync gracefully.
     pub async fn stop(&self) -> Result<(), PlatformWalletError> {
         let mut client = self.client.write().await;
