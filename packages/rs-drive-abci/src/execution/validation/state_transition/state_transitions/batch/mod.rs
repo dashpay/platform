@@ -33,6 +33,7 @@ use crate::rpc::core::CoreRPCLike;
 use crate::execution::validation::state_transition::batch::advanced_structure::v0::DocumentsBatchStateTransitionStructureValidationV0;
 use crate::execution::validation::state_transition::batch::identity_contract_nonce::v0::DocumentsBatchStateTransitionIdentityContractNonceV0;
 use crate::execution::validation::state_transition::batch::state::v0::DocumentsBatchStateTransitionStateValidationV0;
+use crate::execution::validation::state_transition::batch::state::v1::DocumentsBatchStateTransitionStateValidationV1;
 use crate::execution::validation::state_transition::processor::advanced_structure_with_state::StateTransitionStructureKnownInStateValidationV0;
 use crate::execution::validation::state_transition::processor::basic_structure::StateTransitionBasicStructureValidationV0;
 use crate::execution::validation::state_transition::processor::identity_nonces::StateTransitionIdentityNonceValidationV0;
@@ -62,7 +63,7 @@ impl StateTransitionActionTransformer for BatchTransition {
             BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
         >,
         validation_mode: ValidationMode,
-        _execution_context: &mut StateTransitionExecutionContext,
+        execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let platform_version = platform.state.current_platform_version()?;
@@ -74,10 +75,24 @@ impl StateTransitionActionTransformer for BatchTransition {
             .batch_state_transition
             .transform_into_action
         {
+            // PROTOCOL_VERSION_11 and below: legacy `_v0` drops every
+            // transformer-phase fee_result via a local execution_context.
+            // Preserved verbatim for chain replay.
             0 => self.transform_into_action_v0(&platform.into(), block_info, validation_mode, tx),
+            // PROTOCOL_VERSION_12+: `_v1` threads the outer execution_context
+            // into the transformer so per-transition fees accumulated by
+            // `try_from_borrowed_*_with_contract_lookup` are billed to the
+            // user instead of being dropped via a local ctx.
+            1 => self.transform_into_action_v1(
+                &platform.into(),
+                block_info,
+                validation_mode,
+                execution_context,
+                tx,
+            ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "documents batch transition: transform_into_action".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

@@ -142,6 +142,17 @@ pub struct DriveAbciDocumentsStateTransitionValidationVersions {
     ///
     /// [`transform_document_transition`]: crate
     pub failed_per_transition_action: FeatureVersion,
+    /// Versions the
+    /// `fetch_documents_for_transitions_knowing_contract_and_document_type`
+    /// helper. v0 (PROTOCOL_VERSION_11 and below) passes `epoch=None`
+    /// to `query_documents` and doesn't bill the cost. v1
+    /// (PROTOCOL_VERSION_12+) passes `Some(epoch)` and bills via
+    /// `execution_context.add_operation`.
+    pub fetch_documents_for_transitions_knowing_contract_and_document_type: FeatureVersion,
+    /// Versions the `fetch_document_with_id` helper. Same v0 vs v1
+    /// semantics as
+    /// `fetch_documents_for_transitions_knowing_contract_and_document_type`.
+    pub fetch_document_with_id: FeatureVersion,
     pub data_triggers: DriveAbciValidationDataTriggerAndBindingVersions,
     pub is_allowed: FeatureVersion,
     pub document_create_transition_structure_validation: FeatureVersion,

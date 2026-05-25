@@ -1,6 +1,7 @@
 use crate::error::Error;
 use arc_swap::{ArcSwap, Guard};
 use dpp::data_contract::DataContract;
+use dpp::prelude::Identifier;
 use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 use platform_version::version::{PlatformVersion, ProtocolVersion};
 use std::sync::Arc;
@@ -171,5 +172,30 @@ impl SystemDataContracts {
     /// Returns the search contract
     pub fn load_keyword_search(&self) -> Guard<Arc<DataContract>> {
         self.keyword_search.load()
+    }
+
+    /// Returns the cached system contract whose deterministic identifier matches `id`,
+    /// if any. Returns `None` for user contracts and for any system contract whose
+    /// definition isn't held in this in-memory cache (e.g. `WalletUtils`, which lives
+    /// only in grovedb).
+    pub fn find_by_id(&self, id: Identifier) -> Option<Arc<DataContract>> {
+        // Compare against each cached system contract's static `id_bytes`. The match
+        // is `O(n)` over a small fixed set of variants — cheaper than building a map.
+        let active = if id == SystemDataContract::Withdrawals.id() {
+            &self.withdrawals
+        } else if id == SystemDataContract::MasternodeRewards.id() {
+            &self.masternode_reward_shares
+        } else if id == SystemDataContract::DPNS.id() {
+            &self.dpns
+        } else if id == SystemDataContract::Dashpay.id() {
+            &self.dashpay
+        } else if id == SystemDataContract::TokenHistory.id() {
+            &self.token_history
+        } else if id == SystemDataContract::KeywordSearch.id() {
+            &self.keyword_search
+        } else {
+            return None;
+        };
+        Some(Arc::clone(&active.load()))
     }
 }
