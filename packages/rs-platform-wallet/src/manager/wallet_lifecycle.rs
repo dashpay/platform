@@ -322,6 +322,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         let crate::changeset::ClientStartState {
             mut platform_addresses,
             wallets: _,
+            #[cfg(feature = "shielded")]
+                shielded: _,
         } = match platform_wallet.load_persisted() {
             Ok(state) => state,
             Err(e) => {
@@ -412,6 +414,21 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 .remove(wallet_id)
                 .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(wallet_id)))?
         };
+
+        // Detach the wallet's shielded state from the network
+        // coordinator. After the Phase-2b refactor the coordinator
+        // owns the per-`SubwalletId` viewing-key registry and the
+        // per-wallet `WalletPersister`; without this call a deleted
+        // wallet's shielded notes keep getting fetched,
+        // trial-decrypted, and re-persisted through the stale
+        // persister on the next `coordinator.sync()` pass —
+        // resurrecting private shielded history on disk after the
+        // host believed the wallet was gone. Drops the registry +
+        // persister entries and the per-subwallet store state.
+        #[cfg(feature = "shielded")]
+        if let Some(coordinator) = self.shielded_coordinator().await {
+            coordinator.unregister_wallet(*wallet_id).await;
+        }
 
         for identity_id in &owned_identity_ids {
             self.identity_sync_manager

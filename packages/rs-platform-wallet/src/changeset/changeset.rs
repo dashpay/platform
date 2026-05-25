@@ -920,6 +920,12 @@ pub struct PlatformWalletChangeSet {
     /// gap-limit population) and on any pool extension / "used" flip.
     /// See [`AccountAddressPoolEntry`] for the merge policy.
     pub account_address_pools: Vec<AccountAddressPoolEntry>,
+    /// Shielded sub-wallet deltas: per-subwallet decrypted notes,
+    /// spent marks, sync watermarks, nullifier checkpoints. The
+    /// commitment tree itself is **not** in here — it lives on
+    /// disk in `ClientPersistentCommitmentTree`'s SQLite file.
+    #[cfg(feature = "shielded")]
+    pub shielded: Option<crate::changeset::ShieldedChangeSet>,
 }
 
 impl From<PlatformAddressChangeSet> for PlatformWalletChangeSet {
@@ -1016,10 +1022,14 @@ impl Merge for PlatformWalletChangeSet {
             .extend(other.account_registrations);
         self.account_address_pools
             .extend(other.account_address_pools);
+        #[cfg(feature = "shielded")]
+        {
+            self.shielded.merge(other.shielded);
+        }
     }
 
     fn is_empty(&self) -> bool {
-        self.core.is_empty()
+        let core_empty = self.core.is_empty()
             && self.identities.is_empty()
             && self.identity_keys.is_empty()
             && self.contacts.is_empty()
@@ -1033,7 +1043,15 @@ impl Merge for PlatformWalletChangeSet {
                 .is_none_or(|m| m.is_empty())
             && self.wallet_metadata.is_none()
             && self.account_registrations.is_empty()
-            && self.account_address_pools.is_empty()
+            && self.account_address_pools.is_empty();
+        #[cfg(feature = "shielded")]
+        {
+            core_empty && self.shielded.as_ref().is_none_or(|s| s.is_empty())
+        }
+        #[cfg(not(feature = "shielded"))]
+        {
+            core_empty
+        }
     }
 }
 
