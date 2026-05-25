@@ -52,6 +52,36 @@ fn sqlite_corrupt() -> WalletStorageError {
     ))
 }
 
+fn sqlite_disk_full() -> WalletStorageError {
+    WalletStorageError::Sqlite(SqlErr::SqliteFailure(
+        rusqlite::ffi::Error {
+            code: ErrorCode::DiskFull,
+            extended_code: rusqlite::ffi::SQLITE_FULL,
+        },
+        Some("database or disk is full".into()),
+    ))
+}
+
+fn sqlite_io_failure() -> WalletStorageError {
+    WalletStorageError::Sqlite(SqlErr::SqliteFailure(
+        rusqlite::ffi::Error {
+            code: ErrorCode::SystemIoFailure,
+            extended_code: rusqlite::ffi::SQLITE_IOERR,
+        },
+        Some("disk I/O error".into()),
+    ))
+}
+
+fn sqlite_oom() -> WalletStorageError {
+    WalletStorageError::Sqlite(SqlErr::SqliteFailure(
+        rusqlite::ffi::Error {
+            code: ErrorCode::OutOfMemory,
+            extended_code: rusqlite::ffi::SQLITE_NOMEM,
+        },
+        Some("out of memory".into()),
+    ))
+}
+
 /// One representative sample per `WalletStorageError` variant.
 ///
 /// The samples are passed through a wildcard-free `match` below; the
@@ -64,6 +94,9 @@ fn samples() -> Vec<WalletStorageError> {
         sqlite_busy(),
         sqlite_locked(),
         sqlite_corrupt(),
+        sqlite_disk_full(),
+        sqlite_io_failure(),
+        sqlite_oom(),
         // Migration uses an internal refinery error — we cannot easily
         // synthesise one without a full runner. The `Migration(_)` arm
         // in the match below uses a lazily-generated value via
@@ -171,6 +204,9 @@ fn tc_p2_005_is_transient_table() {
             WalletStorageError::Sqlite(SqlErr::SqliteFailure(e, _)) => match e.code {
                 ErrorCode::DatabaseBusy => (true, "sqlite_busy"),
                 ErrorCode::DatabaseLocked => (true, "sqlite_locked"),
+                ErrorCode::DiskFull => (true, "sqlite_disk_full"),
+                ErrorCode::SystemIoFailure => (true, "sqlite_io_failure"),
+                ErrorCode::OutOfMemory => (true, "sqlite_out_of_memory"),
                 _ => (false, "sqlite_other"),
             },
             WalletStorageError::Sqlite(_) => (false, "sqlite_other"),

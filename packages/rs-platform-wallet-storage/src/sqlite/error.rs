@@ -309,21 +309,33 @@ impl WalletStorageError {
     }
 
     /// `true` when the underlying failure is safe to retry — the
-    /// caller should preserve in-flight state and call again. Today
-    /// only `SQLITE_BUSY` / `SQLITE_LOCKED` (raw or wrapped via
-    /// [`Self::FlushRetryable`]) qualify; every other variant is
-    /// fatal.
+    /// caller should preserve in-flight state and call again.
+    /// Transient codes (ATOM-008 / A-4):
+    /// - `DatabaseBusy` / `DatabaseLocked`: contention.
+    /// - `DiskFull`: operator clears disk space.
+    /// - `SystemIoFailure`: kernel-level I/O blip (NFS, raid rebuild).
+    /// - `OutOfMemory`: transient memory pressure.
     ///
-    /// The match is intentionally wildcard-free: `WalletStorageError`
-    /// MUST NOT gain `#[non_exhaustive]`, otherwise adding a future
-    /// variant would skip this gate (it'd silently fall into a
-    /// catch-all instead of forcing the author to classify it).
+    /// All four classes are recoverable environmental conditions —
+    /// dropping buffered state on them would be data loss for a
+    /// problem the operator (or kernel) clears on its own.
+    ///
+    /// The OUTER match on `WalletStorageError` is intentionally
+    /// wildcard-free: the enum MUST NOT gain `#[non_exhaustive]` so a
+    /// future variant forces the author to classify it here. The
+    /// INNER match on `rusqlite::ErrorCode` uses a wildcard because
+    /// `ErrorCode` is `#[non_exhaustive]` upstream.
     pub fn is_transient(&self) -> bool {
         use rusqlite::ErrorCode;
         match self {
-            Self::Sqlite(rusqlite::Error::SqliteFailure(e, _)) => {
-                matches!(e.code, ErrorCode::DatabaseBusy | ErrorCode::DatabaseLocked)
-            }
+            Self::Sqlite(rusqlite::Error::SqliteFailure(e, _)) => matches!(
+                e.code,
+                ErrorCode::DatabaseBusy
+                    | ErrorCode::DatabaseLocked
+                    | ErrorCode::DiskFull
+                    | ErrorCode::SystemIoFailure
+                    | ErrorCode::OutOfMemory
+            ),
             Self::FlushRetryable { .. } => true,
             // Every other rusqlite variant — non-`SqliteFailure` (e.g.
             // `ToSqlConversionFailure`, `InvalidColumnIndex`) — is a
@@ -377,6 +389,9 @@ impl WalletStorageError {
             Self::Sqlite(rusqlite::Error::SqliteFailure(e, _)) => match e.code {
                 ErrorCode::DatabaseBusy => "sqlite_busy",
                 ErrorCode::DatabaseLocked => "sqlite_locked",
+                ErrorCode::DiskFull => "sqlite_disk_full",
+                ErrorCode::SystemIoFailure => "sqlite_io_failure",
+                ErrorCode::OutOfMemory => "sqlite_out_of_memory",
                 _ => "sqlite_other",
             },
             Self::Sqlite(_) => "sqlite_other",
