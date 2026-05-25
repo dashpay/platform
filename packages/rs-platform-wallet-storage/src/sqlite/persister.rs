@@ -287,64 +287,91 @@ impl SqlitePersister {
         wallet_id: WalletId,
         skip_backup: bool,
     ) -> Result<DeleteWalletReport, WalletStorageError> {
-        // Drain-and-discard any buffered changeset FIRST so a later
-        // flush can't resurrect the wallet, and so the wallet counts as
-        // existing even when its only state is buffered. The buffered
-        // writes are intentionally void on delete — no `restore`.
-        let had_buffered = self.buffer.take_for_flush(&wallet_id)?.is_some();
+        // Drain the buffered changeset FIRST so a later flush can't
+        // resurrect the wallet, and so the wallet counts as existing
+        // even when its only state is buffered. Hold the drained value
+        // in `drained` and only consume (drop) it AFTER tx.commit().
+        // Any pre-commit failure restores it via the helper below so
+        // the operator's pending writes survive a failed delete.
+        let drained = self.buffer.take_for_flush(&wallet_id)?;
+        let had_buffered = drained.is_some();
+        let drained_slot: std::cell::Cell<Option<PlatformWalletChangeSet>> =
+            std::cell::Cell::new(drained);
 
-        // A wallet exists iff it was buffered OR persisted. Refusing on
-        // a truly-unknown wallet must not waste a backup file.
-        // `.optional()?` propagates real SQL errors (busy / corrupt).
-        {
-            let conn = self.conn()?;
-            let exists_in_db = conn
-                .query_row(
-                    "SELECT 1 FROM wallet_metadata WHERE wallet_id = ?1",
-                    rusqlite::params![wallet_id.as_slice()],
-                    |_| Ok(()),
-                )
-                .optional()?
-                .is_some();
-            if !had_buffered && !exists_in_db {
-                return Err(WalletStorageError::WalletNotFound { wallet_id });
+        // Helper: any pre-commit failure must restore the changeset so
+        // we don't lose pending writes on a delete that didn't happen.
+        let restore_buffer = |slot: &std::cell::Cell<Option<PlatformWalletChangeSet>>| {
+            if let Some(cs) = slot.take() {
+                if let Err(e) = self.buffer.restore(wallet_id, cs) {
+                    tracing::error!(
+                        wallet_id = %hex::encode(wallet_id),
+                        error_kind = e.error_kind_str(),
+                        "buffer restore failed during delete_wallet error path — changeset lost"
+                    );
+                }
             }
-        }
-        let backup_path = if skip_backup {
-            None
-        } else {
-            let conn = self.conn()?;
-            run_auto_backup(
-                &conn,
-                self.config.auto_backup_dir.as_deref(),
-                BackupKind::PreDelete { wallet_id },
-                AutoBackupOperation::DeleteWallet,
-            )?
         };
-        let mut conn = self.conn()?;
-        let tx = conn.transaction()?;
-        let mut rows_removed_per_table = BTreeMap::new();
-        for &table in PER_WALLET_TABLES {
-            // SQL injection note: `table` comes from a `&'static
-            // &'static str` constant compiled into the binary. There
-            // is no user input on this path.
-            let n: i64 = tx
-                .query_row(
-                    &format!("SELECT COUNT(*) FROM {table} WHERE wallet_id = ?1"),
-                    rusqlite::params![wallet_id.as_slice()],
-                    |row| row.get(0),
-                )
-                .optional()?
-                .unwrap_or(0);
-            rows_removed_per_table.insert(table, usize::try_from(n).unwrap_or(usize::MAX));
+
+        let result: Result<DeleteWalletReport, WalletStorageError> = (|| {
+            // A wallet exists iff it was buffered OR persisted. Refusing
+            // on a truly-unknown wallet must not waste a backup file.
+            {
+                let conn = self.conn()?;
+                let exists_in_db = conn
+                    .query_row(
+                        "SELECT 1 FROM wallet_metadata WHERE wallet_id = ?1",
+                        rusqlite::params![wallet_id.as_slice()],
+                        |_| Ok(()),
+                    )
+                    .optional()?
+                    .is_some();
+                if !had_buffered && !exists_in_db {
+                    return Err(WalletStorageError::WalletNotFound { wallet_id });
+                }
+            }
+            let backup_path = if skip_backup {
+                None
+            } else {
+                let conn = self.conn()?;
+                run_auto_backup(
+                    &conn,
+                    self.config.auto_backup_dir.as_deref(),
+                    BackupKind::PreDelete { wallet_id },
+                    AutoBackupOperation::DeleteWallet,
+                )?
+            };
+            let mut conn = self.conn()?;
+            let tx = conn.transaction()?;
+            let mut rows_removed_per_table = BTreeMap::new();
+            for &table in PER_WALLET_TABLES {
+                // SQL injection note: `table` comes from a `&'static
+                // &'static str` constant compiled into the binary. There
+                // is no user input on this path.
+                let n: i64 = tx
+                    .query_row(
+                        &format!("SELECT COUNT(*) FROM {table} WHERE wallet_id = ?1"),
+                        rusqlite::params![wallet_id.as_slice()],
+                        |row| row.get(0),
+                    )
+                    .optional()?
+                    .unwrap_or(0);
+                rows_removed_per_table.insert(table, usize::try_from(n).unwrap_or(usize::MAX));
+            }
+            crate::sqlite::schema::wallet_meta::delete(&tx, &wallet_id)?;
+            tx.commit()?;
+            // Commit succeeded — let `drained_slot` drop its contents.
+            drop(drained_slot.take());
+            Ok(DeleteWalletReport {
+                wallet_id,
+                backup_path,
+                rows_removed_per_table,
+            })
+        })();
+
+        if result.is_err() {
+            restore_buffer(&drained_slot);
         }
-        crate::sqlite::schema::wallet_meta::delete(&tx, &wallet_id)?;
-        tx.commit()?;
-        Ok(DeleteWalletReport {
-            wallet_id,
-            backup_path,
-            rows_removed_per_table,
-        })
+        result
     }
 
     /// In Manual mode: flush every dirty wallet. In Immediate mode: no-op.
