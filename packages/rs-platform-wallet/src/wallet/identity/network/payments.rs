@@ -286,12 +286,34 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             (payment_address, tx, reservation)
         };
 
-        // --- 3. Broadcast the transaction (lock released). ---
-        let txid = self
-            .broadcaster
-            .broadcast(&tx)
-            .await
-            .map_err(|e| PlatformWalletError::TransactionBroadcast(e.to_string()))?;
+        // Broadcast + reconcile via the shared post-broadcast helper.
+        // The hook records the outgoing `PaymentEntry` on the sender's
+        // `ManagedIdentity` inside the same write lock the reconcile uses
+        // — keeping the entry recording in the same critical section
+        // ensures it cannot race a concurrent state mutation between
+        // `check_core_transaction` and `record_dashpay_payment`.
+        let entry = crate::wallet::identity::types::dashpay::payment::PaymentEntry::new_sent(
+            *to_contact_id,
+            amount_duffs,
+            memo,
+        );
+        let entry_for_hook = entry.clone();
+        let persister = self.persister.clone();
+        let from_identity = *from_identity_id;
+
+        let txid = crate::wallet::core::broadcast::broadcast_and_reconcile(
+            &self.wallet_manager,
+            self.wallet_id,
+            &self.broadcaster,
+            &tx,
+            _reservation,
+            move |info, txid, _reconciled| {
+                if let Some(managed) = info.identity_manager.managed_identity_mut(&from_identity) {
+                    managed.record_dashpay_payment(txid.to_string(), entry_for_hook, &persister);
+                }
+            },
+        )
+        .await?;
 
         tracing::info!(
             from_identity = %from_identity_id,
@@ -301,67 +323,6 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             payment_address = %payment_address,
             "DashPay payment broadcast"
         );
-
-        // --- 4. Record the outgoing payment + reconcile UTXO state. ---
-        let entry = crate::wallet::identity::types::dashpay::payment::PaymentEntry::new_sent(
-            *to_contact_id,
-            amount_duffs,
-            memo,
-        );
-        let mut reconciled = false;
-        {
-            let mut wm = self.wallet_manager.write().await;
-            if let Some((wallet, info)) = wm.get_wallet_mut_and_info_mut(&self.wallet_id) {
-                // Transition inputs from "reserved" → "spent" via the same
-                // post-broadcast checker the core path uses, so the
-                // reservation can be safely released below.
-                use key_wallet::transaction_checking::{
-                    TransactionContext, WalletTransactionChecker,
-                };
-                let check_result = info
-                    .check_core_transaction(&tx, TransactionContext::Mempool, wallet, true, true)
-                    .await;
-                reconciled = check_result.is_relevant;
-                if !reconciled {
-                    tracing::error!(
-                        target: "platform_wallet::broadcast",
-                        event = "post_broadcast_unrelated_to_own_wallet",
-                        txid = %txid,
-                        wallet_id = %hex::encode(self.wallet_id),
-                        "Internal invariant violation: own-built DashPay payment not recognized by post-broadcast check"
-                    );
-                }
-                if let Some(managed) = info.identity_manager.managed_identity_mut(from_identity_id)
-                {
-                    managed.record_dashpay_payment(
-                        txid.to_string(),
-                        entry.clone(),
-                        &self.persister,
-                    );
-                }
-            } else {
-                tracing::warn!(
-                    target: "platform_wallet::broadcast",
-                    event = "post_broadcast_wallet_missing",
-                    wallet_id = %hex::encode(self.wallet_id),
-                    %txid,
-                    "wallet missing during post-broadcast DashPay payment registration"
-                );
-            }
-        }
-
-        if reconciled {
-            _reservation.release_after_commit();
-        } else {
-            tracing::warn!(
-                target: "platform_wallet::broadcast",
-                event = "post_broadcast_reservation_leaked_until_sync",
-                %txid,
-                wallet_id = %hex::encode(self.wallet_id),
-                "leaking outpoint reservation: DashPay post-broadcast reconciliation failed"
-            );
-            _reservation.leak_until_sync();
-        }
 
         Ok((txid, entry))
     }

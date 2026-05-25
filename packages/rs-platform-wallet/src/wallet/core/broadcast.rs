@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
+use std::sync::Arc;
 
-use dashcore::{Address as DashAddress, OutPoint, Transaction};
+use dashcore::{Address as DashAddress, OutPoint, Transaction, Txid};
 use key_wallet::account::account_type::StandardAccountType;
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::signer::Signer;
@@ -8,8 +9,12 @@ use key_wallet::transaction_checking::{TransactionContext, WalletTransactionChec
 use key_wallet::wallet::managed_wallet_info::coin_selection::SelectionError;
 use key_wallet::wallet::managed_wallet_info::transaction_builder::BuilderError;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+use key_wallet_manager::WalletManager;
+use tokio::sync::RwLock;
 
+use super::reservations::OutpointReservationGuard;
 use crate::broadcaster::TransactionBroadcaster;
+use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 use crate::{CoreWallet, PlatformWalletError};
 
 /// Map a key-wallet [`BuilderError`] from `TransactionBuilder::build_signed` into a
@@ -47,6 +52,101 @@ pub(crate) fn classify_build_error(
         }
         _ => PlatformWalletError::TransactionBuild(context),
     }
+}
+
+/// Shared send-flow tail used by [`CoreWallet::send_to_addresses`] and
+/// `IdentityWallet::send_payment`.
+///
+/// Broadcasts `tx`, then under a single write lock acquisition reconciles
+/// wallet state and either releases or leaks the reservation guard
+/// according to the post-broadcast invariant (CMT-003):
+///
+/// * On broadcast failure the reservation is implicitly dropped — the
+///   guard is moved into this function and unwinds via `Drop` when the
+///   early `?` returns, releasing the outpoints so the caller can retry.
+/// * On broadcast success, `check_core_transaction` is run inside the
+///   write lock. If `is_relevant == true` the reservation is released via
+///   [`OutpointReservationGuard::release_after_commit`]; otherwise it is
+///   leaked via [`OutpointReservationGuard::leak_until_sync`] to prevent a
+///   concurrent caller from re-selecting an already-broadcast outpoint.
+/// * `on_reconcile` is invoked inside the write lock *after*
+///   `check_core_transaction` so call-site-specific bookkeeping (e.g.
+///   `IdentityWallet::send_payment` recording a `PaymentEntry`) sees the
+///   same locked wallet state and runs in the same critical section.
+///
+/// Returns the broadcasted [`Txid`].
+pub(crate) async fn broadcast_and_reconcile<B, F>(
+    wallet_manager: &Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
+    wallet_id: WalletId,
+    broadcaster: &Arc<B>,
+    tx: &Transaction,
+    reservation: OutpointReservationGuard,
+    on_reconcile: F,
+) -> Result<Txid, PlatformWalletError>
+where
+    B: TransactionBroadcaster + ?Sized,
+    F: FnOnce(&mut PlatformWalletInfo, &Txid, bool),
+{
+    // Broadcast first — on error the `reservation` guard is dropped via
+    // `?` unwind, releasing the outpoints so the caller can retry. If the
+    // network accepted but the call errored (ambiguous outcome), a retry
+    // will be rejected as a duplicate spend rather than us marking UTXOs
+    // spent prematurely.
+    let txid = broadcaster.broadcast(tx).await?;
+
+    // Mark inputs spent under the write lock, transitioning them from
+    // "reserved" to "spent" before the reservation guard drops. The guard
+    // is consumed below by either `release_after_commit` (success) or
+    // `leak_until_sync` (post-broadcast reconcile failure).
+    let mut reconciled = false;
+    {
+        let mut wm = wallet_manager.write().await;
+        if let Some((wallet, info)) = wm.get_wallet_mut_and_info_mut(&wallet_id) {
+            let check_result = info
+                .check_core_transaction(tx, TransactionContext::Mempool, wallet, true, true)
+                .await;
+            reconciled = check_result.is_relevant;
+            if !reconciled {
+                tracing::error!(
+                    target: "platform_wallet::broadcast",
+                    event = "post_broadcast_unrelated_to_own_wallet",
+                    txid = %txid,
+                    wallet_id = %hex::encode(wallet_id),
+                    "Internal invariant violation: own-built broadcast not recognized by post-broadcast check"
+                );
+            }
+            on_reconcile(info, &txid, reconciled);
+        } else {
+            tracing::warn!(
+                target: "platform_wallet::broadcast",
+                event = "post_broadcast_wallet_missing",
+                wallet_id = %hex::encode(wallet_id),
+                %txid,
+                "wallet missing during post-broadcast transaction registration"
+            );
+        }
+    }
+
+    if reconciled {
+        // Inputs are now marked spent; safe to release reservation.
+        reservation.release_after_commit();
+    } else {
+        // Broadcast succeeded but state could not be reconciled. Releasing
+        // the reservation now risks a concurrent send re-selecting the
+        // same UTXO and producing a double-spend the network would
+        // reject. Keep it held until process restart — see
+        // `OutpointReservationGuard::leak_until_sync`.
+        tracing::warn!(
+            target: "platform_wallet::broadcast",
+            event = "post_broadcast_reservation_leaked_until_sync",
+            %txid,
+            wallet_id = %hex::encode(wallet_id),
+            "leaking outpoint reservation: post-broadcast reconciliation failed"
+        );
+        reservation.leak_until_sync();
+    }
+
+    Ok(txid)
 }
 
 impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
@@ -273,73 +373,18 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
             (tx, reservation)
         };
 
-        // Broadcast first — on error we leave wallet state untouched so the caller can retry.
-        // If the network accepted but the call errored (ambiguous outcome), a retry will be
-        // rejected as a duplicate spend rather than us marking UTXOs spent prematurely.
-        self.broadcast_transaction(&tx).await?;
-
-        // Mark inputs spent under the write lock, transitioning them from "reserved" to "spent"
-        // before the reservation guard drops — no observable gap for concurrent callers.
-        // Warning paths below do NOT return Err: the network already accepted the tx.
-        //
-        // CMT-003: the reservation is released *only* when both
-        //   (a) the wallet lookup succeeded, and
-        //   (b) `check_core_transaction` recognised the tx as relevant (i.e. it marked
-        //       the inputs as spent in `managed_account.utxos`).
-        // If either fails, releasing the reservation would let a concurrent caller
-        // select the same UTXO and produce a double-spend on the network. The change
-        // index was already committed inside the build write lock above, so a single
-        // gap is acceptable — leak the reservation until a full sync reconciles.
-        let mut reconciled = false;
-        {
-            let mut wm = self.wallet_manager.write().await;
-            if let Some((wallet, info)) = wm.get_wallet_mut_and_info_mut(&self.wallet_id) {
-                let check_result = info
-                    .check_core_transaction(&tx, TransactionContext::Mempool, wallet, true, true)
-                    .await;
-                if check_result.is_relevant {
-                    reconciled = true;
-                } else {
-                    // Own-built tx unrecognised by our checker is an internal invariant
-                    // violation, not a transient. Stable event field for operator alerting.
-                    tracing::error!(
-                        target: "platform_wallet::broadcast",
-                        event = "post_broadcast_unrelated_to_own_wallet",
-                        txid = %tx.txid(),
-                        wallet_id = %hex::encode(self.wallet_id),
-                        "Internal invariant violation: own-built broadcast not recognized by post-broadcast check"
-                    );
-                }
-            } else {
-                // Log-only: broadcast already succeeded; the wallet handle is stale and
-                // future sends will surface a clean `WalletNotFound` from the lookup above.
-                tracing::warn!(
-                    target: "platform_wallet::broadcast",
-                    event = "post_broadcast_wallet_missing",
-                    wallet_id = %hex::encode(self.wallet_id),
-                    txid = %tx.txid(),
-                    "wallet missing during post-broadcast transaction registration"
-                );
-            }
-        }
-
-        if reconciled {
-            // Inputs are now marked spent; safe to release reservation.
-            _reservation.release_after_commit();
-        } else {
-            // Broadcast succeeded but state could not be reconciled. Releasing the
-            // reservation now risks a concurrent send re-selecting the same UTXO and
-            // producing a double-spend the network would reject. Keep it held until
-            // a future sync reconciles — a wallet restart is the eventual relief.
-            tracing::warn!(
-                target: "platform_wallet::broadcast",
-                event = "post_broadcast_reservation_leaked_until_sync",
-                txid = %tx.txid(),
-                wallet_id = %hex::encode(self.wallet_id),
-                "leaking outpoint reservation: post-broadcast reconciliation failed"
-            );
-            _reservation.leak_until_sync();
-        }
+        broadcast_and_reconcile(
+            &self.wallet_manager,
+            self.wallet_id,
+            &self.broadcaster,
+            &tx,
+            _reservation,
+            |_info, _txid, _reconciled| {
+                // No path-specific post-reconcile bookkeeping for the
+                // raw send-to-addresses flow.
+            },
+        )
+        .await?;
 
         Ok(tx)
     }
@@ -1068,6 +1113,158 @@ mod tests {
             matches!(mapped, PlatformWalletError::TransactionBuild(_)),
             "CoinSelection(SelectionFailed) is not a depleted-UTXO outcome; \
              must fall through to TransactionBuild; got: {mapped:?}"
+        );
+    }
+
+    // ---- broadcast_and_reconcile: shared post-broadcast helper (CMT-003) ----
+    //
+    // The helper centralises the broadcast → reconcile → release-or-leak
+    // decision tree used by both `CoreWallet::send_to_addresses` and
+    // `IdentityWallet::send_payment`. These tests pin the helper's three
+    // invariants directly so the shared path stays honest:
+    //
+    // 1. Broadcast failure unwinds the reservation (caller can retry).
+    // 2. The `on_reconcile` hook is only invoked when the wallet lookup
+    //    succeeded, and is passed the same `is_relevant` flag the helper
+    //    used to decide release-vs-leak.
+    // 3. When the wallet is missing post-broadcast, the hook is NOT
+    //    invoked and the reservation is leaked (no double-spend risk).
+
+    use std::sync::atomic::AtomicBool;
+
+    use super::broadcast_and_reconcile;
+
+    /// On broadcast failure, the reservation guard moved into the helper
+    /// must be dropped via early-return, releasing the outpoints so the
+    /// caller can retry. The `on_reconcile` hook must NOT fire.
+    #[tokio::test]
+    async fn broadcast_and_reconcile_drops_reservation_on_broadcast_failure() {
+        use crate::wallet::core::reservations::OutpointReservations;
+        use dashcore::hashes::Hash;
+        use dashcore::{OutPoint, Txid};
+
+        let reservations = OutpointReservations::new();
+        let outpoint = OutPoint::new(Txid::from_byte_array([42u8; 32]), 0);
+        let guard = reservations.reserve(vec![outpoint], None);
+        assert!(reservations.contains(&outpoint));
+
+        let broadcaster: Arc<dyn TransactionBroadcaster> = Arc::new(FailingBroadcaster);
+        let wm = Arc::new(RwLock::new(WalletManager::<
+            crate::wallet::platform_wallet::PlatformWalletInfo,
+        >::new(Network::Testnet)));
+        let tx = dummy_transaction();
+
+        let hook_called = Arc::new(AtomicBool::new(false));
+        let hook_called_inner = Arc::clone(&hook_called);
+
+        let result = broadcast_and_reconcile(
+            &wm,
+            [0u8; 32],
+            &broadcaster,
+            &tx,
+            guard,
+            move |_info, _txid, _reconciled| {
+                hook_called_inner.store(true, Ordering::SeqCst);
+            },
+        )
+        .await;
+
+        assert!(
+            matches!(result, Err(PlatformWalletError::TransactionBroadcast(_))),
+            "broadcast failure must propagate to the caller; got: {result:?}"
+        );
+        assert!(
+            !hook_called.load(Ordering::SeqCst),
+            "on_reconcile must NOT be invoked when the broadcast itself fails"
+        );
+        assert!(
+            !reservations.contains(&outpoint),
+            "broadcast failure must release the reservation so a retry can succeed"
+        );
+    }
+
+    /// When the wallet is absent from the manager post-broadcast (stale
+    /// handle), the hook must NOT fire and the reservation must be leaked
+    /// (held until process restart) so a concurrent caller cannot
+    /// re-select the same already-broadcast outpoint.
+    #[tokio::test]
+    async fn broadcast_and_reconcile_leaks_when_wallet_missing() {
+        use crate::wallet::core::reservations::OutpointReservations;
+        use dashcore::hashes::Hash;
+        use dashcore::{OutPoint, Txid};
+
+        let reservations = OutpointReservations::new();
+        let outpoint = OutPoint::new(Txid::from_byte_array([99u8; 32]), 0);
+        let guard = reservations.reserve(vec![outpoint], None);
+
+        // OK-broadcasting mock so we reach the post-broadcast write lock.
+        let broadcaster: Arc<dyn TransactionBroadcaster> = Arc::new(MockBroadcaster::new(
+            BroadcastOutcome::Ok(dummy_transaction().txid()),
+        ));
+        // Empty wallet manager — `get_wallet_mut_and_info_mut` returns `None`.
+        let wm = Arc::new(RwLock::new(WalletManager::<
+            crate::wallet::platform_wallet::PlatformWalletInfo,
+        >::new(Network::Testnet)));
+        let tx = dummy_transaction();
+
+        let hook_called = Arc::new(AtomicBool::new(false));
+        let hook_called_inner = Arc::clone(&hook_called);
+
+        let result = broadcast_and_reconcile(
+            &wm,
+            [0u8; 32],
+            &broadcaster,
+            &tx,
+            guard,
+            move |_info, _txid, _reconciled| {
+                hook_called_inner.store(true, Ordering::SeqCst);
+            },
+        )
+        .await
+        .expect("broadcast succeeded; missing wallet is a log-only branch");
+        assert_eq!(
+            result,
+            tx.txid(),
+            "helper must surface the broadcaster's Txid"
+        );
+        assert!(
+            !hook_called.load(Ordering::SeqCst),
+            "hook must not fire when the wallet handle is stale"
+        );
+        assert!(
+            reservations.contains(&outpoint),
+            "missing-wallet post-broadcast must leak the reservation \
+             (concurrent re-selection of an already-broadcast outpoint \
+             would race the network)"
+        );
+    }
+
+    /// End-to-end through `send_to_addresses` with the full funded
+    /// fixture: `is_relevant = true` post-broadcast → hook receives
+    /// `true` and the reservation is released. Pins the success path of
+    /// the shared helper as exercised by the core call site.
+    #[tokio::test]
+    async fn send_to_addresses_success_invokes_hook_and_releases_reservation() {
+        let (wm, wallet_id, recipient, signer) = build_funded_wallet_manager(2_000_000);
+        let broadcaster: Arc<dyn TransactionBroadcaster> = Arc::new(MockBroadcaster::new(
+            BroadcastOutcome::Ok(dummy_transaction().txid()),
+        ));
+        let core = make_core_wallet_for_manager(wm, wallet_id, broadcaster);
+
+        let outpoint = OutPoint::new(Txid::from_byte_array([7u8; 32]), 0);
+        let outputs = vec![(recipient.clone(), 100_000)];
+
+        let result = core
+            .send_to_addresses(StandardAccountType::BIP44Account, 0, outputs, &signer)
+            .await;
+        assert!(
+            result.is_ok(),
+            "happy-path send must succeed; got: {result:?}"
+        );
+
+        assert!(
+            !core.reservations.contains(&outpoint),
+            "successful send + relevant tx must release the reservation"
         );
     }
 }
