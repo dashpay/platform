@@ -78,6 +78,20 @@ filetime = "0.2"
 tracing-test = { version = "0.2", features = ["no-env-filter"] }
 serial_test = "3"
 platform-wallet-storage = { path = ".", features = ["sqlite", "cli", "__test-helpers"] }
+# `round_trip_consumer.rs` constructs a real `PlatformWalletManager`
+# (consumer) against a real `SqlitePersister` (this crate's impl) so
+# every consumer↔persister contract drift becomes a CI failure (CODE-008
+# / T-024). The manager needs `dash-sdk::SdkBuilder::new_mock().build()`
+# (gated behind `mocks`) and `platform-wallet` requires `wallet` on the
+# SDK transitively. Tokio is needed directly so `#[tokio::test]`
+# resolves the macro by name.
+dash-sdk = { path = "../rs-sdk", default-features = false, features = [
+    "dashpay-contract",
+    "dpns-contract",
+    "wallet",
+    "mocks",
+] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
 [features]
 default = ["sqlite", "cli"]

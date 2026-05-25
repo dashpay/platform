@@ -4964,6 +4964,7 @@ dependencies = [
  "static_assertions",
  "tempfile",
  "thiserror 1.0.69",
+ "tokio",
  "tracing",
  "tracing-subscriber",
  "tracing-test",
