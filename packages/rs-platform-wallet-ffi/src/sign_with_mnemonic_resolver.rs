@@ -42,10 +42,11 @@ use std::str::FromStr;
 
 use crate::types::{FFINetwork, Network};
 use dashcore::secp256k1::Secp256k1;
-use key_wallet::bip32::{DerivationPath, ExtendedPrivKey};
+use key_wallet::bip32::{DerivationPath, ExtendedPrivKey, ExtendedPubKey};
 use zeroize::Zeroizing;
 
 use crate::identity_keys_from_mnemonic::parse_mnemonic_any_language;
+use crate::sign_gate::verify_seed_matches_wallet_id;
 use rs_sdk_ffi::{
     mnemonic_resolver_result, MnemonicResolverHandle, MNEMONIC_RESOLVER_BUFFER_CAPACITY,
 };
@@ -67,6 +68,10 @@ pub const SIGN_WITH_RESOLVER_ERR_UNSUPPORTED_KEY_TYPE: u8 = 8;
 pub const SIGN_WITH_RESOLVER_ERR_RESOLVER_NOT_FOUND: u8 = 9;
 /// Resolver callback returned `mnemonic_resolver_result::OTHER`.
 pub const SIGN_WITH_RESOLVER_ERR_RESOLVER_FAILED: u8 = 10;
+/// The seed yielded by the resolver does NOT derive the
+/// `wallet_id_bytes` passed by the caller. Fail-closed wrong-seed
+/// gate (constant-time compare). No key material crosses this surface.
+pub const SIGN_WITH_RESOLVER_ERR_WRONG_SEED: u8 = 11;
 
 /// Sign `data` with the ECDSA secp256k1 private key derived from
 /// `(mnemonic-via-resolver, derivation_path)`. Mnemonic, seed and
@@ -205,6 +210,19 @@ pub unsafe extern "C" fn dash_sdk_sign_with_mnemonic_resolver_and_path(
         Err(_) => return fail(SIGN_WITH_RESOLVER_ERR_DERIVATION),
     };
     let secp = Secp256k1::new();
+
+    // Fail-closed wrong-seed gate (constant-time compare). The seedless
+    // load path no longer runs this gate at load time; it lives here,
+    // on the first sign call that the resolver-supplied seed actually
+    // feeds into a derivation. Zeroize derived material before bailing.
+    let root_xpub = ExtendedPubKey::from_priv(&secp, &master);
+    let mut wallet_id_expected = [0u8; 32];
+    std::ptr::copy_nonoverlapping(wallet_id_bytes, wallet_id_expected.as_mut_ptr(), 32);
+    if !verify_seed_matches_wallet_id(&root_xpub, &wallet_id_expected) {
+        master.private_key.non_secure_erase();
+        return fail(SIGN_WITH_RESOLVER_ERR_WRONG_SEED);
+    }
+
     let mut derived = match master.derive_priv(&secp, &path) {
         Ok(d) => d,
         Err(_) => return fail(SIGN_WITH_RESOLVER_ERR_DERIVATION),
@@ -248,12 +266,29 @@ pub unsafe extern "C" fn dash_sdk_sign_with_mnemonic_resolver_and_path(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use key_wallet::wallet::root_extended_keys::RootExtendedPubKey;
+    use key_wallet::wallet::Wallet;
     use rs_sdk_ffi::{dash_sdk_mnemonic_resolver_create, dash_sdk_mnemonic_resolver_destroy};
     use std::ffi::CString;
 
     /// English BIP-39 test vector (all-zero entropy).
     const ENGLISH_PHRASE: &str =
         "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+
+    /// Recompute the loaded `wallet_id` the resolver-derived seed will be
+    /// gated against in the happy-path test.
+    fn wallet_id_for_english_phrase() -> [u8; 32] {
+        let mnemonic = parse_mnemonic_any_language(ENGLISH_PHRASE).unwrap();
+        let seed: Zeroizing<[u8; 64]> = Zeroizing::new(mnemonic.to_seed(""));
+        let mut master =
+            ExtendedPrivKey::new_master(key_wallet::Network::Testnet, seed.as_ref()).unwrap();
+        let secp = Secp256k1::new();
+        let xpub = ExtendedPubKey::from_priv(&secp, &master);
+        let root = RootExtendedPubKey::from_extended_pub_key(&xpub);
+        let id = Wallet::compute_wallet_id_from_root_extended_pub_key(&root);
+        master.private_key.non_secure_erase();
+        id
+    }
 
     unsafe extern "C" fn english_resolve(
         _ctx: *const c_void,
@@ -292,7 +327,7 @@ mod tests {
     fn happy_path_signs_and_returns_signature() {
         let resolver = make_resolver(english_resolve);
         let path = CString::new("m/9'/1'/5'/0'/0'/0'/0'").unwrap();
-        let wallet_id = [0u8; 32];
+        let wallet_id = wallet_id_for_english_phrase();
         let data = b"hello";
         let mut sig_buf = [0u8; 128];
         let mut sig_len: usize = 0;
@@ -349,11 +384,49 @@ mod tests {
         unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
     }
 
+    /// Resolver yields a valid mnemonic but the loaded `wallet_id`
+    /// doesn't match its derived id: the wrong-seed gate must fire,
+    /// `out_signature_len = 0`, no bytes in `out_signature`.
+    #[test]
+    fn wrong_wallet_id_fails_closed_with_wrong_seed_tag() {
+        let resolver = make_resolver(english_resolve);
+        let path = CString::new("m/9'/1'/5'/0'/0'/0'/0'").unwrap();
+        // A wallet_id derived from a different seed (here: just a
+        // sentinel that cannot equal the abandon-x12 wallet_id).
+        let wrong_wallet_id = [0xAAu8; 32];
+        let data = b"x";
+        let mut sig_buf = [0xFFu8; 128];
+        let mut sig_len: usize = 1;
+        let mut err: u8 = 0;
+        let rc = unsafe {
+            dash_sdk_sign_with_mnemonic_resolver_and_path(
+                resolver,
+                wrong_wallet_id.as_ptr(),
+                path.as_ptr(),
+                data.as_ptr(),
+                data.len(),
+                0,
+                FFINetwork::Testnet,
+                sig_buf.as_mut_ptr(),
+                sig_buf.len(),
+                &mut sig_len,
+                &mut err,
+            )
+        };
+        assert_eq!(rc, -1);
+        assert_eq!(err, SIGN_WITH_RESOLVER_ERR_WRONG_SEED);
+        assert_eq!(sig_len, 0, "no signature length must be reported");
+        for b in sig_buf {
+            assert_eq!(b, 0, "out_signature buffer must be fully zeroed");
+        }
+        unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
+    }
+
     #[test]
     fn rejects_unsupported_key_type() {
         let resolver = make_resolver(english_resolve);
         let path = CString::new("m/9'/1'/5'/0'/0'/0'/0'").unwrap();
-        let wallet_id = [0u8; 32];
+        let wallet_id = wallet_id_for_english_phrase();
         let data = b"x";
         let mut sig_buf = [0u8; 128];
         let mut sig_len: usize = 0;

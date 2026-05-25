@@ -89,6 +89,13 @@ pub enum PlatformWalletFFIResultCode {
     /// receive address, consolidate sub-min balances, or fall back to
     /// `InputSelection::Explicit`.
     ErrorNoSelectableInputs = 14,
+    /// Fail-closed wrong-seed gate hit: the seed yielded by the
+    /// `MnemonicResolverHandle` does not derive the `wallet_id` the
+    /// caller passed in. Surfaced by every resolver-fed sign / derive
+    /// entrypoint. Constant-time compared via
+    /// [`crate::sign_gate::verify_seed_matches_wallet_id`]; no key
+    /// material crosses this surface.
+    ErrorWrongSeedForWallet = 15,
 
     NotFound = 98, // Used exclusively for all the Option that are retuned as errors
     ErrorUnknown = 99,

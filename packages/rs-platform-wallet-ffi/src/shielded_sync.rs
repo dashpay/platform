@@ -22,7 +22,11 @@ use crate::handle::*;
 use crate::identity_keys_from_mnemonic::parse_mnemonic_any_language;
 use crate::runtime::runtime;
 use crate::shielded_types::ShieldedSyncWalletResultFFI;
+use crate::sign_gate::verify_seed_matches_wallet_id;
+use crate::types::Network;
 use crate::{check_ptr, unwrap_option_or_return};
+use dashcore::secp256k1::Secp256k1;
+use key_wallet::bip32::{ExtendedPrivKey, ExtendedPubKey};
 use rs_sdk_ffi::{
     mnemonic_resolver_result, MnemonicResolverHandle, MNEMONIC_RESOLVER_BUFFER_CAPACITY,
 };
@@ -302,6 +306,33 @@ pub unsafe extern "C" fn platform_wallet_manager_bind_shielded(
     let seed: Zeroizing<[u8; 64]> = Zeroizing::new(mnemonic.to_seed(""));
     drop(mnemonic);
 
+    // Fail-closed wrong-seed gate (constant-time compare). Runs before
+    // any signing material is materialized downstream. The wallet_id
+    // is independent of `kw_network` here (it hashes only pubkey +
+    // chain code), so any network is acceptable for the throwaway
+    // master used to project the root xpub.
+    {
+        let mut gate_master = match ExtendedPrivKey::new_master(Network::Testnet, seed.as_ref()) {
+            Ok(m) => m,
+            Err(e) => {
+                return PlatformWalletFFIResult::err(
+                    PlatformWalletFFIResultCode::ErrorWalletOperation,
+                    format!("derive gate-master failed: {e}"),
+                );
+            }
+        };
+        let secp = Secp256k1::new();
+        let root_xpub = ExtendedPubKey::from_priv(&secp, &gate_master);
+        let gate_ok = verify_seed_matches_wallet_id(&root_xpub, &wallet_id);
+        gate_master.private_key.non_secure_erase();
+        if !gate_ok {
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorWrongSeedForWallet,
+                "wrong seed for wallet (bind_shielded gate)",
+            );
+        }
+    }
+
     // Look up the wallet + the network-scoped shielded coordinator
     // on the manager. The coordinator owns the single SQLite handle
     // *and* the per-network sync-coordination registry; we hand it
@@ -546,5 +577,127 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_sync_wallet(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
             format!("shielded sync failed: {e}"),
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::handle::NULL_HANDLE;
+    use key_wallet::wallet::root_extended_keys::RootExtendedPubKey;
+    use key_wallet::wallet::Wallet;
+    use rs_sdk_ffi::{dash_sdk_mnemonic_resolver_create, dash_sdk_mnemonic_resolver_destroy};
+
+    /// English BIP-39 test vector (all-zero entropy). Matches the
+    /// sibling resolver-fed entrypoints' fixture.
+    const ENGLISH_PHRASE: &str =
+        "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+
+    /// `wallet_id` the gate will recompute from the resolver-supplied
+    /// seed. Anything but this id short-circuits with
+    /// `ErrorWrongSeedForWallet` before any manager / coordinator
+    /// state is touched.
+    #[allow(dead_code)] // referenced by future happy-path coverage; see module note below.
+    fn wallet_id_for_english_phrase() -> [u8; 32] {
+        use crate::identity_keys_from_mnemonic::parse_mnemonic_any_language;
+        let mnemonic = parse_mnemonic_any_language(ENGLISH_PHRASE).unwrap();
+        let seed: Zeroizing<[u8; 64]> = Zeroizing::new(mnemonic.to_seed(""));
+        let mut master =
+            ExtendedPrivKey::new_master(key_wallet::Network::Testnet, seed.as_ref()).unwrap();
+        let secp = Secp256k1::new();
+        let xpub = ExtendedPubKey::from_priv(&secp, &master);
+        let root = RootExtendedPubKey::from_extended_pub_key(&xpub);
+        let id = Wallet::compute_wallet_id_from_root_extended_pub_key(&root);
+        master.private_key.non_secure_erase();
+        id
+    }
+
+    unsafe extern "C" fn english_resolve(
+        _ctx: *const std::os::raw::c_void,
+        _wallet_id_bytes: *const u8,
+        out_buf: *mut c_char,
+        out_capacity: usize,
+        out_len: *mut usize,
+    ) -> i32 {
+        let phrase = ENGLISH_PHRASE.as_bytes();
+        if phrase.len() + 1 > out_capacity {
+            return mnemonic_resolver_result::BUFFER_TOO_SMALL;
+        }
+        std::ptr::copy_nonoverlapping(phrase.as_ptr() as *const c_char, out_buf, phrase.len());
+        *out_buf.add(phrase.len()) = 0;
+        *out_len = phrase.len();
+        mnemonic_resolver_result::SUCCESS
+    }
+
+    unsafe extern "C" fn noop_destroy(_ctx: *mut std::os::raw::c_void) {}
+
+    fn make_resolver() -> *mut MnemonicResolverHandle {
+        unsafe {
+            dash_sdk_mnemonic_resolver_create(std::ptr::null_mut(), english_resolve, noop_destroy)
+        }
+    }
+
+    /// Wrong-seed gate fires before the manager handle is dereferenced.
+    /// The resolver yields a valid mnemonic but the caller-supplied
+    /// `wallet_id` doesn't match its derived id, so:
+    ///
+    /// (a) the FFI returns `ErrorWrongSeedForWallet`,
+    /// (b) `NULL_HANDLE` is never consulted on `PLATFORM_WALLET_MANAGER_STORAGE`
+    ///     — proves no shielded state can be bound on a mismatch,
+    /// (c) the `gate_master` xpriv inside the gate scope is
+    ///     `non_secure_erase`d before the early return (verified by the
+    ///     gate code path itself; this test exercises that path).
+    ///
+    /// **Happy path note**: `bind_shielded`'s happy path requires a
+    /// fully-constructed `PlatformWalletManager` (Sdk, persistence
+    /// vtable, event handler), a prior `configure_shielded` (SQLite
+    /// commitment-tree file open), and a registered wallet whose id
+    /// matches the gate. All three pieces are heavy infra to stand
+    /// up from a single unit test and would duplicate coverage that
+    /// already lives in `platform-wallet`'s shielded integration
+    /// suite. Per Marvin's directive (test the gate's effect in
+    /// isolation), we exercise the mismatch path only here — the
+    /// resolver-derived seed never reaches the coordinator, the
+    /// caller sees the canonical structural tag, and the manager
+    /// storage is never touched.
+    #[test]
+    fn wrong_wallet_id_fails_closed() {
+        let resolver = make_resolver();
+        let wrong_wallet_id = [0xAAu8; 32];
+        let accounts: [u32; 1] = [0];
+        let rc = unsafe {
+            platform_wallet_manager_bind_shielded(
+                NULL_HANDLE,
+                wrong_wallet_id.as_ptr(),
+                resolver,
+                accounts.as_ptr(),
+                accounts.len(),
+            )
+        };
+        assert_eq!(
+            rc.code,
+            PlatformWalletFFIResultCode::ErrorWrongSeedForWallet,
+            "wrong-seed gate must short-circuit before the manager lookup"
+        );
+        unsafe { dash_sdk_mnemonic_resolver_destroy(resolver) };
+    }
+
+    /// Defensive: a NULL resolver handle must be rejected before the
+    /// resolver callback is ever fired and before the gate runs.
+    /// Locks in `check_ptr!` ordering for the bind_shielded entrypoint.
+    #[test]
+    fn null_resolver_handle_rejected() {
+        let wallet_id = [0xAAu8; 32];
+        let accounts: [u32; 1] = [0];
+        let rc = unsafe {
+            platform_wallet_manager_bind_shielded(
+                NULL_HANDLE,
+                wallet_id.as_ptr(),
+                std::ptr::null_mut(),
+                accounts.as_ptr(),
+                accounts.len(),
+            )
+        };
+        assert_eq!(rc.code, PlatformWalletFFIResultCode::ErrorNullPointer);
     }
 }

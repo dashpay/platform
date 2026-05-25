@@ -54,6 +54,10 @@ bs58 = "0.5"
 # Zeroize intermediate key material crossing the FFI boundary.
 zeroize = { version = "1", features = ["derive"] }
 
+# Constant-time `wallet_id` compare in `sign_gate`, mirroring the
+# upstream gate previously in `manager::rehydrate`.
+subtle = "2"
+
 [dev-dependencies]
 tempfile = "3.8"
 dpp = { path = "../rs-dpp", features = ["fixtures-and-mocks"] }

@@ -91,6 +91,7 @@ use crate::identity_keys_from_mnemonic::{
     identity_auth_derivation_path, parse_mnemonic_any_language,
 };
 use crate::identity_registration_with_signer::IdentityRegistrationKeyDerivationsFFI;
+use crate::sign_gate::verify_seed_matches_wallet_id;
 use crate::{check_ptr, unwrap_result_or_return};
 use rs_sdk_ffi::{
     mnemonic_resolver_result, MnemonicResolverHandle, MNEMONIC_RESOLVER_BUFFER_CAPACITY,
@@ -240,8 +241,22 @@ pub unsafe extern "C" fn dash_sdk_derive_and_persist_identity_keys(
     drop(mnemonic);
 
     let kw_network: Network = network.into();
-    let master = unwrap_result_or_return!(ExtendedPrivKey::new_master(kw_network, seed.as_ref()));
+    let mut master =
+        unwrap_result_or_return!(ExtendedPrivKey::new_master(kw_network, seed.as_ref()));
     let secp = Secp256k1::new();
+
+    // Fail-closed wrong-seed gate (constant-time compare). Zeroize the
+    // master xpriv's SecretKey before bailing on mismatch.
+    let root_xpub = ExtendedPubKey::from_priv(&secp, &master);
+    let mut wallet_id_expected = [0u8; 32];
+    std::ptr::copy_nonoverlapping(wallet_id_bytes, wallet_id_expected.as_mut_ptr(), 32);
+    if !verify_seed_matches_wallet_id(&root_xpub, &wallet_id_expected) {
+        master.private_key.non_secure_erase();
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorWrongSeedForWallet,
+            "wrong seed for wallet (derive_and_persist gate)",
+        );
+    }
 
     // ---- Walk derivation paths, persist, build pubkey-only rows --------------
     let persister = &*persister_handle;
@@ -416,6 +431,25 @@ mod tests {
     const ENGLISH_PHRASE: &str =
         "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
 
+    /// Compute the `wallet_id` the wrong-seed gate will recompute from
+    /// the resolver-supplied seed. Tests must pass this id (or another
+    /// that derives from the same phrase) — anything else short-circuits
+    /// before persistence with `ErrorWrongSeedForWallet`.
+    fn wallet_id_for_english_phrase() -> [u8; 32] {
+        use key_wallet::wallet::root_extended_keys::RootExtendedPubKey;
+        use key_wallet::wallet::Wallet;
+        let mnemonic = parse_mnemonic_any_language(ENGLISH_PHRASE).unwrap();
+        let seed: Zeroizing<[u8; 64]> = Zeroizing::new(mnemonic.to_seed(""));
+        let mut master =
+            ExtendedPrivKey::new_master(key_wallet::Network::Testnet, seed.as_ref()).unwrap();
+        let secp = Secp256k1::new();
+        let xpub = ExtendedPubKey::from_priv(&secp, &master);
+        let root = RootExtendedPubKey::from_extended_pub_key(&xpub);
+        let id = Wallet::compute_wallet_id_from_root_extended_pub_key(&root);
+        master.private_key.non_secure_erase();
+        id
+    }
+
     #[derive(Debug, Clone)]
     struct CapturedPersist {
         identity_index: u32,
@@ -547,7 +581,7 @@ mod tests {
     #[test]
     fn happy_path_persists_three_keys_and_returns_pubkeys() {
         let (resolver, persister, capture) = make_capturing_handles();
-        let wallet_id = [42u8; 32];
+        let wallet_id = wallet_id_for_english_phrase();
         let mut out = IdentityRegistrationKeyDerivationsFFI {
             items: std::ptr::null_mut(),
             count: 0,
@@ -611,7 +645,7 @@ mod tests {
     #[test]
     fn returning_false_from_persister_aborts_with_wallet_op_error() {
         let (resolver, persister) = make_failing_handles();
-        let wallet_id = [1u8; 32];
+        let wallet_id = wallet_id_for_english_phrase();
         let mut out = IdentityRegistrationKeyDerivationsFFI {
             items: std::ptr::null_mut(),
             count: 0,
@@ -671,6 +705,45 @@ mod tests {
             )
         };
         assert_eq!(rc.code, PlatformWalletFFIResultCode::ErrorNullPointer);
+        unsafe {
+            dash_sdk_mnemonic_resolver_destroy(resolver);
+            dash_sdk_identity_key_persister_destroy(persister);
+            let _ = Box::from_raw(capture);
+        }
+    }
+
+    #[test]
+    fn wrong_wallet_id_fails_closed_before_persisting_anything() {
+        let (resolver, persister, capture) = make_capturing_handles();
+        // A wallet_id that cannot match the abandon-x12 derived id.
+        let wrong_wallet_id = [0xAAu8; 32];
+        let mut out = IdentityRegistrationKeyDerivationsFFI {
+            items: std::ptr::null_mut(),
+            count: 0,
+        };
+        let rc = unsafe {
+            dash_sdk_derive_and_persist_identity_keys(
+                FFINetwork::Testnet,
+                wrong_wallet_id.as_ptr(),
+                0,
+                3,
+                resolver,
+                persister,
+                &mut out,
+            )
+        };
+        assert_eq!(
+            rc.code,
+            PlatformWalletFFIResultCode::ErrorWrongSeedForWallet
+        );
+        assert_eq!(out.count, 0);
+        assert!(out.items.is_null());
+        // The persister callback must NOT have been hit.
+        assert_eq!(
+            unsafe { (*capture).rows.lock().unwrap().len() },
+            0,
+            "wrong-seed gate must short-circuit before any key is persisted"
+        );
         unsafe {
             dash_sdk_mnemonic_resolver_destroy(resolver);
             dash_sdk_identity_key_persister_destroy(persister);

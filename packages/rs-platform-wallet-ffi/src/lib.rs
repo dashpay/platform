@@ -59,6 +59,7 @@ pub mod shielded_send;
 #[cfg(feature = "shielded")]
 pub mod shielded_sync;
 pub mod shielded_types;
+pub mod sign_gate;
 pub mod sign_with_mnemonic_resolver;
 pub mod spv;
 pub mod token_persistence;

@@ -4869,6 +4869,7 @@ dependencies = [
  "platform-wallet",
  "rs-sdk-ffi",
  "serde_json",
+ "subtle",
  "tempfile",
  "tokio",
  "tracing",
