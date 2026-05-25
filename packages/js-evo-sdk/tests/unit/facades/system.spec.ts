@@ -76,15 +76,25 @@ describe('SystemFacade', () => {
 
   describe('pathElements()', () => {
     it('should forward to getPathElements', async () => {
-      await client.system.pathElements(['p'], ['k']);
+      const path = ['p', new Uint8Array([0x80, 0xff])];
+      const keys = [new Uint8Array([0x01, 0x02])];
+
+      await client.system.pathElements(path, keys);
+
       expect(getPathElementsStub).to.be.calledOnce();
+      expect(getPathElementsStub).to.be.calledWithExactly(path, keys);
     });
   });
 
   describe('pathElementsWithProof()', () => {
     it('should forward to getPathElementsWithProofInfo', async () => {
-      await client.system.pathElementsWithProof(['p2'], ['k2']);
+      const path = ['p2', new Uint8Array([0x80, 0xff])];
+      const keys = [new Uint8Array([0x03, 0x04])];
+
+      await client.system.pathElementsWithProof(path, keys);
+
       expect(getPathElementsWithProofInfoStub).to.be.calledOnce();
+      expect(getPathElementsWithProofInfoStub).to.be.calledWithExactly(path, keys);
     });
   });
 });

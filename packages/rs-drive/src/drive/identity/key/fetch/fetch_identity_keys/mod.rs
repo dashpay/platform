@@ -6,6 +6,8 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 
+use dpp::block::epoch::Epoch;
+use dpp::fee::fee_result::FeeResult;
 use dpp::version::PlatformVersion;
 
 use grovedb::TransactionArg;
@@ -47,6 +49,38 @@ impl Drive {
             0 => self.fetch_identity_keys_v0(key_request, transaction, platform_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "fetch_identity_keys".to_string(),
+                known_versions: vec![0],
+                received: version,
+            })),
+        }
+    }
+
+    /// Fetch keys matching the request for a specific Identity, along with the fee charged
+    /// for the underlying grovedb operations. Selects the implementation via the same
+    /// `fetch_identity_keys` version field as [`Self::fetch_identity_keys`].
+    pub fn fetch_identity_keys_with_costs<T: IdentityPublicKeyResult>(
+        &self,
+        key_request: IdentityKeysRequest,
+        epoch: &Epoch,
+        transaction: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<(T, FeeResult), Error> {
+        match platform_version
+            .drive
+            .methods
+            .identity
+            .keys
+            .fetch
+            .fetch_identity_keys
+        {
+            0 => self.fetch_identity_keys_with_costs_v0(
+                key_request,
+                epoch,
+                transaction,
+                platform_version,
+            ),
+            version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
+                method: "fetch_identity_keys_with_costs".to_string(),
                 known_versions: vec![0],
                 received: version,
             })),
