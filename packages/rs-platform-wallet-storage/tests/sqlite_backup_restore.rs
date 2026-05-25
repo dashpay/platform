@@ -134,6 +134,45 @@ fn tc037_restore_corrupt_source() {
     );
 }
 
+/// ATOM-004 (A-1): a failure during `backup_to` must NOT leave a
+/// partial/empty `.db` file at the caller-supplied destination. The
+/// pre-A-1 code eagerly opened `dest`, so any later failure
+/// (`apply_secure_permissions`, `Backup::new`, `run_to_completion`)
+/// stranded an empty file at `dest`. We exercise the path that
+/// already-rejects (pre-existing destination) — the new code's exists
+/// check fires before any temp file gets created.
+#[test]
+fn atom_004_backup_to_failure_leaves_no_junk_at_dest() {
+    let (persister, tmp, _path) = fresh_persister();
+    seed_one_row(&persister, &wid(0xE7));
+    // First backup succeeds.
+    let target = tmp.path().join("first.db");
+    persister.backup_to(&target).expect("first backup");
+    // Second backup to same path fails fast — no auxiliary `.tmp*`
+    // file should remain alongside the existing target.
+    let err = persister.backup_to(&target);
+    assert!(matches!(
+        err,
+        Err(WalletStorageError::BackupDestinationExists { .. })
+    ));
+    // Sanity: only the legitimate file is present, plus -journal/-wal
+    // siblings SQLite may have created on the live persister DB —
+    // those live in a different parent so this scan is clean.
+    let entries: Vec<_> = std::fs::read_dir(tmp.path())
+        .unwrap()
+        .filter_map(|e| e.ok().map(|e| e.file_name().to_string_lossy().into_owned()))
+        .collect();
+    let leaked: Vec<_> = entries
+        .iter()
+        .filter(|n| n.starts_with(".tmp") || n.ends_with(".tmp"))
+        .collect();
+    assert!(
+        leaked.is_empty(),
+        "no .tmp* staging file should remain in {:?}; found {leaked:?}",
+        tmp.path()
+    );
+}
+
 /// TC-038: prune retention AND-semantics.
 #[test]
 fn tc038_prune_and_semantics() {

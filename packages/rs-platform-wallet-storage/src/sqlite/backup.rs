@@ -51,45 +51,67 @@ pub fn auto_backup_filename(kind: BackupKind) -> String {
 /// Take an online backup of `src` to `dest`. Uses the
 /// `rusqlite::backup::Backup::run_to_completion` page-stepping API
 /// so writers aren't blocked.
+///
+/// # Atomicity
+///
+/// The page-stepping copy runs against a `NamedTempFile` staged in
+/// `dest`'s parent directory. The temp is `persist`-ed over `dest`
+/// only on success — any failure (open, chmod, backup-stream) drops
+/// the temp without ever materialising a partial `.db` file at the
+/// caller's path.
 pub fn run_to(src: &Connection, dest: &Path) -> Result<(), WalletStorageError> {
     if let Some(parent) = dest.parent() {
         if !parent.as_os_str().is_empty() && !parent.exists() {
             std::fs::create_dir_all(parent)?;
         }
     }
-    // Atomically stake the destination so the exists-check in
-    // `backup_to` can't race a second writer to the same path
-    // (timestamped auto-backup names are unique, so this never trips
-    // them). SQLite then opens the freshly created empty file.
-    //
-    // SEC-011: on Unix, set mode 0o600 at creation time so the file is
-    // never world/group readable — even briefly — before
-    // `apply_secure_permissions` re-tightens below. Closes the
-    // umask-window race between `create_new` and the chmod.
-    let mut open_opts = std::fs::OpenOptions::new();
-    open_opts.write(true).create_new(true);
+    // Reject pre-existing destinations BEFORE staging so the temp file
+    // isn't created (and immediately dropped) on a duplicate path. The
+    // CLI's `backup_to(file_path)` relies on this typed error; auto-
+    // backup callers can't trip it because the filename carries a
+    // unique timestamp suffix.
+    if dest.exists() {
+        return Err(WalletStorageError::BackupDestinationExists {
+            path: dest.to_path_buf(),
+        });
+    }
+
+    // Stage the backup into an unguessable temp file in the same
+    // directory. Same-FS guarantee makes `persist` an atomic rename.
+    let parent = dest.parent().unwrap_or(Path::new("."));
+    let tmp = tempfile::NamedTempFile::new_in(parent)?;
+    // SEC-011: tighten the temp's mode to 0o600 BEFORE persist so the
+    // destination inherits owner-only permissions via the atomic
+    // rename. Running chmod after persist would leave a brief
+    // umask-default window where the destination is observable.
     #[cfg(unix)]
     {
-        use std::os::unix::fs::OpenOptionsExt;
-        open_opts.mode(0o600);
+        use std::os::unix::fs::PermissionsExt;
+        tmp.as_file()
+            .set_permissions(std::fs::Permissions::from_mode(0o600))?;
     }
-    match open_opts.open(dest) {
-        Ok(_) => {}
-        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-            return Err(WalletStorageError::BackupDestinationExists {
-                path: dest.to_path_buf(),
-            });
-        }
-        Err(e) => return Err(WalletStorageError::Io(e)),
-    }
+
+    // Page-stepping copy against the temp. The dest Connection has to
+    // own its own file handle; rusqlite opens it from a path.
     let mut backup_conn =
-        crate::sqlite::conn::open_conn(dest, crate::sqlite::conn::Access::ReadWrite)?;
-    // SEC-011: chmod 600 on Unix so the backup file isn't world/group
-    // readable just because the process umask was lax.
+        crate::sqlite::conn::open_conn(tmp.path(), crate::sqlite::conn::Access::ReadWrite)?;
+    {
+        let backup = Backup::new(src, &mut backup_conn)?;
+        // 100 pages × 4 KiB = 400 KiB per step on default SQLite page size.
+        backup.run_to_completion(100, Duration::from_millis(5), None)?;
+    }
+    // Close the backup Connection before persisting so SQLite flushes
+    // its own WAL/SHM siblings against the temp path — those go away
+    // with the rename since `persist` atomically renames the temp file.
+    drop(backup_conn);
+
+    tmp.persist(dest)
+        .map_err(|e| WalletStorageError::Io(e.error))?;
+    // SEC-011: re-tighten in case a non-Unix build (or a future
+    // platform-specific tweak) needs to refresh sibling perms after
+    // SQLite materialised them. No-op on Unix where the temp already
+    // landed at 0o600.
     apply_secure_permissions(dest)?;
-    let backup = Backup::new(src, &mut backup_conn)?;
-    // 100 pages × 4 KiB = 400 KiB per step on default SQLite page size.
-    backup.run_to_completion(100, Duration::from_millis(5), None)?;
     Ok(())
 }
 
