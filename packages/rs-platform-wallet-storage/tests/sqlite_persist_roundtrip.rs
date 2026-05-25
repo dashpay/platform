@@ -21,7 +21,7 @@ use platform_wallet::changeset::{
     CoreChangeSet, PlatformWalletChangeSet, PlatformWalletPersistence, WalletMetadataEntry,
 };
 use platform_wallet_storage::{
-    SqlitePersister, SqlitePersisterConfig, Synchronous, WalletStorageError,
+    JournalMode, SqlitePersister, SqlitePersisterConfig, Synchronous, WalletStorageError,
 };
 
 /// TC-005: sync heights round-trip with monotonic-max merge.
@@ -80,6 +80,65 @@ fn tc013_wallet_metadata_roundtrip() {
         .unwrap();
     assert_eq!(network, "testnet");
     assert_eq!(birth_height, 12345);
+}
+
+/// TC-CODE-029-1: journal_mode=Memory is rejected at open with a typed
+/// `ConfigInvalid` error and the DB is not created.
+#[test]
+fn tc_code_029_1_journal_mode_memory_rejected() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("w.db");
+    let mut cfg = SqlitePersisterConfig::new(&path);
+    cfg.journal_mode = JournalMode::Memory;
+    let err = SqlitePersister::open(cfg);
+    let matched = matches!(err.as_ref(), Err(WalletStorageError::ConfigInvalid { .. }));
+    assert!(
+        matched,
+        "expected ConfigInvalid for journal_mode=Memory, got error = {:?}",
+        err.as_ref().err()
+    );
+    assert!(
+        !path.exists(),
+        "DB should not be created when config is invalid"
+    );
+}
+
+/// TC-CODE-029-2: journal_mode=Off is rejected at open with a typed
+/// `ConfigInvalid` error and the DB is not created.
+#[test]
+fn tc_code_029_2_journal_mode_off_rejected() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("w.db");
+    let mut cfg = SqlitePersisterConfig::new(&path);
+    cfg.journal_mode = JournalMode::Off;
+    let err = SqlitePersister::open(cfg);
+    let matched = matches!(err.as_ref(), Err(WalletStorageError::ConfigInvalid { .. }));
+    assert!(
+        matched,
+        "expected ConfigInvalid for journal_mode=Off, got error = {:?}",
+        err.as_ref().err()
+    );
+    assert!(
+        !path.exists(),
+        "DB should not be created when config is invalid"
+    );
+}
+
+/// TC-CODE-029-3: busy_timeout=0 opens successfully but emits a
+/// tracing::warn so operators can spot the footgun in logs.
+#[test]
+#[tracing_test::traced_test]
+fn tc_code_029_3_busy_timeout_zero_warns() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("w.db");
+    let mut cfg = SqlitePersisterConfig::new(&path);
+    cfg.busy_timeout = std::time::Duration::ZERO;
+    let p = SqlitePersister::open(cfg).expect("open should succeed with busy_timeout=0");
+    drop(p);
+    assert!(
+        logs_contain("busy_timeout=0"),
+        "expected a busy_timeout=0 warning in captured logs"
+    );
 }
 
 /// TC-079: synchronous=Off is rejected at open with a typed error.

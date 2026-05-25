@@ -574,7 +574,7 @@ impl SqlitePersister {
             failed: Vec::new(),
             still_pending: Vec::new(),
         };
-        if matches!(self.config.flush_mode, FlushMode::Immediate) {
+        if self.config.flush_mode == FlushMode::Immediate {
             return Ok(report);
         }
         let dirty = self
@@ -864,7 +864,7 @@ impl SqlitePersister {
 /// persisters are durable on every `store` so they never trip this.
 impl Drop for SqlitePersister {
     fn drop(&mut self) {
-        if !matches!(self.config.flush_mode, FlushMode::Manual) {
+        if self.config.flush_mode != FlushMode::Manual {
             return;
         }
         // `dirty_wallets` only fails on a poisoned buffer mutex. A
@@ -1092,6 +1092,33 @@ fn validate_config(config: &SqlitePersisterConfig) -> Result<(), WalletStorageEr
         return Err(WalletStorageError::ConfigInvalid {
             reason: "synchronous=Off is rejected (data-loss footgun)",
         });
+    }
+    // `journal_mode=Memory` keeps the rollback journal in RAM and
+    // `journal_mode=Off` disables it outright. Either turns crash-
+    // safety into a coin flip for a wallet DB — reject loudly instead
+    // of silently corrupting on the next power loss.
+    match config.journal_mode {
+        crate::sqlite::config::JournalMode::Memory => {
+            return Err(WalletStorageError::ConfigInvalid {
+                reason: "journal_mode=Memory is rejected (crash-unsafe)",
+            });
+        }
+        crate::sqlite::config::JournalMode::Off => {
+            return Err(WalletStorageError::ConfigInvalid {
+                reason: "journal_mode=Off is rejected (crash-unsafe)",
+            });
+        }
+        _ => {}
+    }
+    // `busy_timeout=0` makes contended writers fail-fast with BUSY
+    // instead of waiting — non-fatal, but the operator almost certainly
+    // didn't mean it. Warn rather than reject because a few tests
+    // legitimately want the fail-fast behaviour.
+    if config.busy_timeout.is_zero() {
+        tracing::warn!(
+            "SqlitePersisterConfig.busy_timeout=0; contended writers will return BUSY \
+             instead of waiting — set a non-zero timeout (default 5s) unless this is intentional"
+        );
     }
     Ok(())
 }
