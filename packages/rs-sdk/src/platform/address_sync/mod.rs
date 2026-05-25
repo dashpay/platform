@@ -73,7 +73,11 @@ use rs_dapi_client::{
     DapiRequest, ExecutionError, ExecutionResponse, InnerInto, IntoInner, RequestSettings,
 };
 use std::collections::HashMap;
-use tracing::{debug, info, trace};
+use tracing::{debug, info, trace, warn};
+
+/// One-shot warning threshold for the end-of-pass replay buffer
+/// (`pending_unknown`). Cross-checked at the push site below.
+const PENDING_UNKNOWN_WARN_THRESHOLD: usize = 1000;
 
 /// Server limit for compacted address balance changes per request.
 const COMPACTED_BATCH_LIMIT: usize = 25;
@@ -824,6 +828,20 @@ async fn apply_block_changes<'a, P, I>(
                 change: change.into_owned(),
                 current_height,
             });
+            // NOTE: this buffer is intentionally unbounded — premature optimization here
+            // would couple the catch-up loop to ad-hoc memory heuristics. We log a
+            // one-shot warning above a generous threshold so a future operator can
+            // observe whether this path actually exceeds 1000 buffered foreign-wallet
+            // changes in real workloads; if it does, the right fix is to follow the
+            // reviewer's mitigation (a) — store only Vec<u8> keys and re-derive replay
+            // changes after the refresh resolves them. See PR #3650 @thepastaclaw review.
+            if pending_unknown.len() == PENDING_UNKNOWN_WARN_THRESHOLD {
+                warn!(
+                    "Address sync: pending_unknown buffer reached {} entries — \
+                     foreign-wallet balance changes are accumulating on a shared chain",
+                    PENDING_UNKNOWN_WARN_THRESHOLD
+                );
+            }
         }
     }
 
