@@ -94,7 +94,10 @@ public final class SDK: @unchecked Sendable {
   /// This uses a trusted context provider that fetches quorum keys and
   /// data contracts from trusted HTTP endpoints instead of requiring proof verification.
   /// This is suitable for mobile applications where proof verification would be resource-intensive.
-  public init(network: Network) throws {
+  ///
+  /// `protocolVersion == 0` keeps the default auto-detect behavior.
+  /// `protocolVersion == 11` pins Platform protocol version 11.
+  public init(network: Network, protocolVersion: UInt32 = 0) throws {
     var config = DashSDKConfig()
     config.network = network.ffiValue
     config.dapi_addresses = nil
@@ -121,10 +124,10 @@ public final class SDK: @unchecked Sendable {
       result = localAddresses.withCString { addressesCStr -> DashSDKResult in
         var mutableConfig = config
         mutableConfig.dapi_addresses = addressesCStr
-        return dash_sdk_create_trusted(&mutableConfig)
+        return dash_sdk_create_trusted_with_protocol_version(&mutableConfig, protocolVersion)
       }
     } else {
-      result = dash_sdk_create_trusted(&config)
+      result = dash_sdk_create_trusted_with_protocol_version(&config, protocolVersion)
     }
 
     // Check for errors

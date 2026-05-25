@@ -84,8 +84,9 @@ DashSDKConfig config = {
     .request_timeout_ms = 30000
 };
 
-// Create SDK instance
-DashSDKResult result = dash_sdk_create(&config);
+// Create SDK instance pinned to Platform protocol version 11.
+// Pass 0 to keep the default auto-detect behavior.
+DashSDKResult result = dash_sdk_create_with_protocol_version(&config, 11);
 if (result.error) {
     // Handle error
     dash_sdk_error_free(result.error);
@@ -106,28 +107,11 @@ dash_sdk_destroy(sdk);
 // Initialize the SDK
 dash_sdk_init()
 
-// Create SDK configuration
-var config = DashSDKConfig(
-    network: DashSDKNetwork.testnet,
-    dapi_addresses: "seed-1.testnet.networks.dash.org".cString(using: .utf8),
-    request_retry_count: 3,
-    request_timeout_ms: 30000
-)
+// Default behavior auto-detects the protocol version.
+let sdk = try SDK(network: .testnet)
 
-// Create SDK instance
-let result = dash_sdk_create(&config)
-if let error = result.error {
-    // Handle error
-    dash_sdk_error_free(error)
-    return
-}
-
-let sdk = result.data
-
-// Use the SDK...
-
-// Clean up
-dash_sdk_destroy(sdk)
+// Pass 11 to pin Platform protocol version 11 instead.
+let pinnedSDK = try SDK(network: .testnet, protocolVersion: 11)
 ```
 
 ### Python Usage Example
@@ -158,8 +142,9 @@ config = DashSDKConfig(
     request_timeout_ms=30000
 )
 
-# Create SDK instance
-result = lib.dash_sdk_create(byref(config))
+# Create SDK instance pinned to protocol version 11.
+# Pass 0 to keep the default auto-detect behavior.
+result = lib.dash_sdk_create_with_protocol_version(byref(config), 11)
 # ... handle result and use SDK
 ```
 
@@ -170,6 +155,7 @@ result = lib.dash_sdk_create(byref(config))
 #### Core Functions
 - `dash_sdk_init()` - Initialize the FFI library
 - `dash_sdk_create()` - Create an SDK instance
+- `dash_sdk_create_with_protocol_version()` - Create an SDK instance with optional protocol-version pinning
 - `dash_sdk_destroy()` - Destroy an SDK instance
 - `dash_sdk_version()` - Get the SDK version
 
