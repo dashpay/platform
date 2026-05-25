@@ -271,12 +271,27 @@ impl PlatformAddressWallet {
         // re-hand the same index before the sync pass. `mark_index_used`
         // is idempotent — a later real sync hit on this index is a
         // no-op, so gap-limit/`highest_used` accounting isn't doubled.
-        let info = managed_account
+        let address_info = managed_account
             .addresses
             .next_unused_with_info(&key_source, true)
             .map_err(|e| PlatformWalletError::AddressSync(e.to_string()))?;
-        let address = info.address.clone();
-        managed_account.addresses.mark_index_used(info.index);
+        // INTENTIONAL(CMT-001 / #3658 review): The reservation is in-memory only
+        // by design — no `persister.store` on the hand-out path. Two properties
+        // justify this:
+        //   1. Chain sync re-marks actually-used addresses via the positive-
+        //      balance flip, so a crash that loses the in-memory flag is
+        //      self-healing once any payment arrives at the index.
+        //   2. Addresses requested but never paid to are freed for reuse on the
+        //      next session, avoiding unbounded index-gap growth from
+        //      speculative or abandoned hand-outs.
+        // The narrow surviving window — crash before next sync AND no payment
+        // received by restart — manifests as address-reuse (privacy/accounting),
+        // not fund loss. See also follow-up: persist on hand-out becomes
+        // required if/when this function is wired to FFI.
+        managed_account
+            .addresses
+            .mark_index_used(address_info.index);
+        let address = address_info.address;
 
         PlatformAddress::try_from(address).map_err(|e| {
             PlatformWalletError::AddressSync(format!("Failed to convert to PlatformAddress: {e}"))
