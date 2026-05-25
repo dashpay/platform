@@ -28,16 +28,20 @@ structured so a future `SecretStore` (currently sketched in
 transient SQLite failure (`SQLITE_BUSY` / `SQLITE_LOCKED`) the
 buffered changeset is merged back into the per-wallet buffer (LWW
 with anything `store()`-d during the failed transaction) and the
-call returns a `PersistenceError::Backend(_)` whose payload contains
-the marker `flush failed transiently`. **Retry the call** — do not
-discard state. Fatal failures (integrity check, encode error, mutex
-poison, …) drop the buffer and surface verbatim.
+call returns a `PersistenceError::Backend { kind: Transient, source }`
+whose source carries the marker `flush failed transiently`.
+**Retry the call** — do not discard state. Fatal failures (integrity
+check, encode error, mutex poison, …) return `kind: Fatal` (or
+`kind: Constraint` for SQL constraint violations) and drop the buffer.
 
 The full classification lives on
-[`WalletStorageError::is_transient`](src/sqlite/error.rs); the
-boundary mapping into `PersistenceError::Backend(String)` flattens
-the `Display` chain so operators can grep for variant names + hex
-wallet ids in production logs.
+[`WalletStorageError::is_transient`](src/sqlite/error.rs) and the
+companion [`WalletStorageError::persistence_kind`](src/sqlite/error.rs)
+that selects the trait-side kind. The `source` field is a
+`Box<dyn Error + Send + Sync>` over the original `WalletStorageError`
+— operators can walk `Error::source()` for the full typed chain;
+the outer `Display` carries the variant marker + hex wallet id so
+production-log greps still work.
 
 ## load() reconstruction
 

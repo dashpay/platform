@@ -429,8 +429,8 @@ fn tc_p2_002_transient_failure_restores_buffer() {
     persister.force_next_flush_to_fail(make_busy_error());
     let err = persister.flush(w).expect_err("first flush must fail");
     let msg = match err {
-        PersistenceError::Backend(s) => s,
-        other => panic!("expected Backend(_), got {other:?}"),
+        PersistenceError::Backend { source, .. } => source.to_string(),
+        other => panic!("expected Backend {{ .. }}, got {other:?}"),
     };
     assert!(
         msg.contains("flush failed transiently"),
@@ -508,8 +508,8 @@ fn tc_p2_006_immediate_surfaces_flush_retryable() {
         .store(w, changeset(core_with_height(3, 3)))
         .expect_err("immediate store must surface the error");
     let msg = match err {
-        PersistenceError::Backend(s) => s,
-        other => panic!("expected Backend(_), got {other:?}"),
+        PersistenceError::Backend { source, .. } => source.to_string(),
+        other => panic!("expected Backend {{ .. }}, got {other:?}"),
     };
     assert!(
         msg.contains("flush failed transiently"),

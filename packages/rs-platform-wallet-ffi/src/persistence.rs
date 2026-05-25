@@ -3190,7 +3190,7 @@ fn account_type_from_spec(spec: &AccountSpecFFI) -> Result<AccountType, Persiste
     // been UB for out-of-range bytes from a corrupt SwiftData row /
     // forward-versioned tag / malformed host buffer).
     let type_tag = AccountTypeTagFFI::try_from_u8(spec.type_tag).ok_or_else(|| {
-        PersistenceError::Backend(format!(
+        PersistenceError::backend(format!(
             "AccountSpecFFI carries unknown type_tag byte {} (out of declared range)",
             spec.type_tag
         ))
@@ -3199,7 +3199,7 @@ fn account_type_from_spec(spec: &AccountSpecFFI) -> Result<AccountType, Persiste
         AccountTypeTagFFI::Standard => {
             let standard_tag = StandardAccountTypeTagFFI::try_from_u8(spec.standard_tag)
                 .ok_or_else(|| {
-                    PersistenceError::Backend(format!(
+                    PersistenceError::backend(format!(
                         "AccountSpecFFI(Standard) carries unknown standard_tag byte {}",
                         spec.standard_tag
                     ))
@@ -3254,7 +3254,7 @@ fn account_type_from_spec(spec: &AccountSpecFFI) -> Result<AccountType, Persiste
         // is gone.
         AccountTypeTagFFI::IdentityAuthenticationEcdsa
         | AccountTypeTagFFI::IdentityAuthenticationBls => {
-            return Err(PersistenceError::Backend(format!(
+            return Err(PersistenceError::backend(format!(
                 "AccountTypeTagFFI {:?} is no longer mappable to a key-wallet AccountType after the upstream event-bus refactor (TODO(events))",
                 type_tag
             )));

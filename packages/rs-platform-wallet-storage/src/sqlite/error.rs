@@ -8,12 +8,15 @@
 //!
 //! At the `PlatformWalletPersistence` trait boundary, this type
 //! converts into `PersistenceError`: `LockPoisoned` keeps its
-//! dedicated variant, everything else flows through
-//! `PersistenceError::Backend` with the full `Display` chain.
+//! dedicated variant; everything else flows through
+//! `PersistenceError::Backend { kind, source }` — `kind` is classified
+//! by [`WalletStorageError::persistence_kind`] (Transient / Constraint /
+//! Fatal) and `source` carries the boxed typed error so consumers can
+//! walk `Error::source()` to the underlying `rusqlite` payload.
 
 use std::path::PathBuf;
 
-use platform_wallet::changeset::PersistenceError;
+use platform_wallet::changeset::{PersistenceError, PersistenceErrorKind};
 
 use crate::sqlite::util::safe_cast::SafeCastTarget;
 
@@ -267,28 +270,11 @@ impl From<WalletStorageError> for PersistenceError {
     fn from(err: WalletStorageError) -> Self {
         match err {
             WalletStorageError::LockPoisoned => PersistenceError::LockPoisoned,
-            other => PersistenceError::Backend(format!("{}", DisplayChain(&other))),
+            other => {
+                let kind = other.persistence_kind();
+                PersistenceError::backend_with_kind(kind, other)
+            }
         }
-    }
-}
-
-/// Renders an error and its `#[source]` chain for the
-/// `PersistenceError::Backend` (`String`) boundary. The trait can't
-/// carry typed sources, so the chain is concatenated for diagnostic
-/// purposes — every typed variant is still preserved on the
-/// `WalletStorageError` value the trait `From` impl consumes.
-struct DisplayChain<'a>(&'a WalletStorageError);
-
-impl std::fmt::Display for DisplayChain<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use std::error::Error;
-        write!(f, "{}", self.0)?;
-        let mut cur: Option<&dyn Error> = self.0.source();
-        while let Some(err) = cur {
-            write!(f, ": {err}")?;
-            cur = err.source();
-        }
-        Ok(())
     }
 }
 
@@ -368,6 +354,39 @@ impl WalletStorageError {
             | Self::AssetLockEntryMismatch { .. }
             | Self::BlobTooLarge { .. }
             | Self::IntegerOverflow { .. } => false,
+        }
+    }
+
+    /// Trait-boundary classification for the
+    /// [`PersistenceError::Backend`] kind field (CODE-004). Three
+    /// classes:
+    ///
+    /// - [`PersistenceErrorKind::Transient`] — every variant where
+    ///   [`Self::is_transient`] is `true`. Caller MAY retry.
+    /// - [`PersistenceErrorKind::Constraint`] — SQL constraint /
+    ///   FK / NOT NULL / UNIQUE / PK / CHECK violations. Schema /
+    ///   integrity failure; caller bug, not infra.
+    /// - [`PersistenceErrorKind::Fatal`] — everything else.
+    ///
+    /// [`Self::LockPoisoned`] is handled by the `From` impl directly
+    /// (it maps to [`PersistenceError::LockPoisoned`] rather than
+    /// flowing through `Backend`).
+    pub fn persistence_kind(&self) -> PersistenceErrorKind {
+        use rusqlite::ErrorCode;
+        if self.is_transient() {
+            return PersistenceErrorKind::Transient;
+        }
+        match self {
+            Self::Sqlite(rusqlite::Error::SqliteFailure(e, _))
+                if matches!(e.code, ErrorCode::ConstraintViolation) =>
+            {
+                PersistenceErrorKind::Constraint
+            }
+            // Refinery surfaces FK / constraint problems through
+            // rusqlite; if that path leaks through here the typed
+            // variant lives in `Self::Migration`, which we leave as
+            // `Fatal` since a migration failure isn't a caller bug.
+            _ => PersistenceErrorKind::Fatal,
         }
     }
 
