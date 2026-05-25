@@ -162,17 +162,9 @@ impl SqlitePersister {
 
         // Determine whether `schema_history` exists *before* we run
         // migrations — that's the signal for "is this DB pre-existing
-        // or brand-new?" (FR-15 vs FR-16). `.optional()?` distinguishes
-        // a genuine "no row" answer from a real SQL error, which we
-        // propagate.
-        let had_schema_history = conn
-            .query_row(
-                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'refinery_schema_history'",
-                [],
-                |_| Ok(()),
-            )
-            .optional()?
-            .is_some();
+        // or brand-new?" (FR-15 vs FR-16). Errors from the underlying
+        // query are propagated, not silently treated as "no history".
+        let had_schema_history = crate::sqlite::migrations::has_schema_history(&conn)?;
         // ATOM-013 (A-8): run integrity_check on a pre-existing DB
         // BEFORE migrations alter it. Bit-rot or escaped-WAL corruption
         // detected here surfaces as the typed `IntegrityCheckFailed`
@@ -1219,15 +1211,7 @@ fn count_pending(
     conn: &mut Connection,
     embedded: &[(i32, String)],
 ) -> Result<usize, WalletStorageError> {
-    let table_exists = conn
-        .query_row(
-            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'refinery_schema_history'",
-            [],
-            |_| Ok(()),
-        )
-        .optional()?
-        .is_some();
-    if !table_exists {
+    if !crate::sqlite::migrations::has_schema_history(conn)? {
         return Ok(embedded.len());
     }
     let applied: std::collections::HashSet<i64> = {

@@ -111,6 +111,22 @@ pub fn max_supported_version() -> i64 {
         .unwrap_or(0)
 }
 
+/// Returns true if the `refinery_schema_history` table exists on this
+/// connection. Used by `open`, `restore_from`, and `count_pending` to
+/// distinguish "fresh DB" (no migrations applied yet) from
+/// "pre-existing DB" (carries refinery history).
+pub(crate) fn has_schema_history(conn: &rusqlite::Connection) -> Result<bool, WalletStorageError> {
+    let exists = conn
+        .query_row(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'refinery_schema_history'",
+            [],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some();
+    Ok(exists)
+}
+
 /// Refuse to operate on a database whose `refinery_schema_history`
 /// MAX(version) exceeds [`max_supported_version`]. Returns
 /// [`WalletStorageError::SchemaVersionUnsupported`] in that case.
@@ -121,15 +137,7 @@ pub fn max_supported_version() -> i64 {
 pub fn assert_schema_version_supported(
     conn: &rusqlite::Connection,
 ) -> Result<(), WalletStorageError> {
-    let has_table = conn
-        .query_row(
-            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'refinery_schema_history'",
-            [],
-            |_| Ok(()),
-        )
-        .optional()?
-        .is_some();
-    if !has_table {
+    if !has_schema_history(conn)? {
         return Ok(());
     }
     let source_version: Option<i64> = conn
@@ -177,4 +185,31 @@ pub fn embedded_migrations_fingerprint() -> [u8; 32] {
         hasher.update([0u8]);
     }
     hasher.finalize().into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rusqlite::Connection;
+
+    /// TC-CODE-027-1: helper returns false on a brand-new in-memory DB
+    /// (no `refinery_schema_history`), and true after the table is
+    /// created.
+    #[test]
+    fn has_schema_history_distinguishes_fresh_vs_migrated() {
+        let conn = Connection::open_in_memory().unwrap();
+        assert!(
+            !has_schema_history(&conn).unwrap(),
+            "fresh in-memory DB has no schema-history table"
+        );
+        conn.execute(
+            "CREATE TABLE refinery_schema_history (version INTEGER PRIMARY KEY)",
+            [],
+        )
+        .unwrap();
+        assert!(
+            has_schema_history(&conn).unwrap(),
+            "schema-history table is present after creation"
+        );
+    }
 }

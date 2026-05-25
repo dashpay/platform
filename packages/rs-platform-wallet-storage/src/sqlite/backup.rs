@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
 use rusqlite::backup::Backup;
-use rusqlite::{Connection, OptionalExtension};
+use rusqlite::Connection;
 
 use platform_wallet::wallet::platform_wallet::WalletId;
 
@@ -200,15 +200,7 @@ pub fn restore_from(dest_db_path: &Path, src_backup: &Path) -> Result<(), Wallet
     run_integrity_check(&src, |report| WalletStorageError::IntegrityCheckFailed {
         report,
     })?;
-    let src_has_schema = src
-        .query_row(
-            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'refinery_schema_history'",
-            [],
-            |_| Ok(()),
-        )
-        .optional()?
-        .is_some();
-    if !src_has_schema {
+    if !crate::sqlite::migrations::has_schema_history(&src)? {
         return Err(WalletStorageError::SchemaHistoryMissing);
     }
     crate::sqlite::migrations::assert_schema_version_supported(&src)?;
@@ -275,15 +267,7 @@ pub fn restore_from(dest_db_path: &Path, src_backup: &Path) -> Result<(), Wallet
         // Schema-history presence + max-version gate, bound to the
         // staged bytes (not the first source handle) so a swap during
         // the restore window can't slip a forward-version DB through.
-        let has_schema = staged
-            .query_row(
-                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'refinery_schema_history'",
-                [],
-                |_| Ok(()),
-            )
-            .optional()?
-            .is_some();
-        if !has_schema {
+        if !crate::sqlite::migrations::has_schema_history(&staged)? {
             return Err(WalletStorageError::SchemaHistoryMissing);
         }
         crate::sqlite::migrations::assert_schema_version_supported(&staged)?;
