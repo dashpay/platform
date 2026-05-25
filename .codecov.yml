@@ -138,7 +138,7 @@ ignore:
   - "packages/rs-dpp/src/data_contract/extra/drive_api_tests.rs"
   # Versioned dispatch methods — pure version routing with no logic
   - "packages/rs-dpp/src/data_contract/document_type/methods/versioned_methods.rs"
-  
+
 coverage:
   status:
     project:

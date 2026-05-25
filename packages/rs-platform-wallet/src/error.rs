@@ -155,6 +155,9 @@ pub enum PlatformWalletError {
 
     #[error("Shielded key derivation failed: {0}")]
     ShieldedKeyDerivation(String),
+
+    #[error("Shielded sub-wallet not bound: call bind_shielded first")]
+    ShieldedNotBound,
 }
 
 /// Check whether an SDK error indicates that an InstantSend lock proof was

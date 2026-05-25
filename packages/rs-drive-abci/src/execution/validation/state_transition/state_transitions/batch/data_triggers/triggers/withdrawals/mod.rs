@@ -6,12 +6,14 @@ use crate::execution::validation::state_transition::batch::data_triggers::{
 use drive::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
 use dpp::version::PlatformVersion;
 use crate::execution::validation::state_transition::batch::data_triggers::triggers::withdrawals::v0::delete_withdrawal_data_trigger_v0;
+use crate::execution::validation::state_transition::batch::data_triggers::triggers::withdrawals::v1::delete_withdrawal_data_trigger_v1;
 
 mod v0;
+mod v1;
 
 pub fn delete_withdrawal_data_trigger(
     document_transition: &DocumentTransitionAction,
-    context: &DataTriggerExecutionContext<'_>,
+    context: &mut DataTriggerExecutionContext<'_>,
     platform_version: &PlatformVersion,
 ) -> Result<DataTriggerExecutionResult, Error> {
     match platform_version
@@ -24,9 +26,10 @@ pub fn delete_withdrawal_data_trigger(
         .delete_withdrawal_data_trigger
     {
         0 => delete_withdrawal_data_trigger_v0(document_transition, context, platform_version),
+        1 => delete_withdrawal_data_trigger_v1(document_transition, context, platform_version),
         version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
             method: "delete_withdrawal_data_trigger".to_string(),
-            known_versions: vec![0],
+            known_versions: vec![0, 1],
             received: version,
         })),
     }
