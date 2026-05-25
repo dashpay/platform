@@ -135,6 +135,13 @@ impl SqlitePersister {
             )
             .optional()?
             .is_some();
+        // CMT-005: refuse to open a DB produced by a newer binary —
+        // refinery's run() would no-op on pending_count==0, after which
+        // blob decoders would see forward-schema bytes. Symmetric with
+        // restore_from's max-version gate (both call the same helper).
+        if had_schema_history {
+            crate::sqlite::migrations::assert_schema_version_supported(&conn)?;
+        }
         let pending = crate::sqlite::migrations::embedded_migrations();
         let pending_count = if had_schema_history {
             count_pending(&mut conn, &pending)?
