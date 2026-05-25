@@ -552,6 +552,50 @@ fn tc_p2_007_warn_on_restore_with_structured_fields() {
     );
 }
 
+/// ATOM-007 (N-2): dropping a Manual-mode persister with uncommitted
+/// dirty wallets logs a structured `tracing::error!`. We do NOT
+/// auto-flush from Drop — the spec is explicit about this.
+#[tracing_test::traced_test]
+#[test]
+fn atom_007_drop_logs_uncommitted_manual_buffer() {
+    let (persister, _tmp, _path) = fresh_persister_with_mode(FlushMode::Manual);
+    let w = wid(0xDD);
+    ensure_wallet_meta(&persister, &w);
+    persister
+        .store(w, changeset(core_with_height(11, 11)))
+        .unwrap();
+    // Buffer is now dirty. Dropping must emit the structured error.
+    drop(persister);
+
+    assert!(
+        logs_contain("SqlitePersister dropped with uncommitted Manual-mode writes"),
+        "drop must emit error line"
+    );
+    assert!(
+        logs_contain("dirty_wallets=1"),
+        "structured dirty_wallets field missing"
+    );
+}
+
+/// ATOM-007 (N-2): an Immediate-mode persister never trips the
+/// Drop-time log — every `store` is durable, so there is no
+/// uncommitted state by construction.
+#[tracing_test::traced_test]
+#[test]
+fn atom_007_drop_silent_in_immediate_mode() {
+    let (persister, _tmp, _path) = fresh_persister_with_mode(FlushMode::Immediate);
+    let w = wid(0xDE);
+    ensure_wallet_meta(&persister, &w);
+    persister
+        .store(w, changeset(core_with_height(11, 11)))
+        .unwrap();
+    drop(persister);
+    assert!(
+        !logs_contain("SqlitePersister dropped with uncommitted"),
+        "Immediate-mode drop must NOT log uncommitted state"
+    );
+}
+
 /// ATOM-006 (N-1): `commit_writes` continues past per-wallet failures,
 /// returning a CommitReport with each wallet's outcome. A failed
 /// wallet is recorded in `failed`; the remaining wallets still flush.

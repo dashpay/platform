@@ -694,6 +694,56 @@ impl SqlitePersister {
     }
 }
 
+/// ATOM-007 (N-2): when a `Manual`-mode persister is dropped while
+/// dirty wallets remain, log a structured `tracing::error!` so the
+/// silent-data-loss footgun (the buffer dies with the persister)
+/// surfaces in operator logs.
+///
+/// We intentionally do NOT auto-flush from `Drop` — `flush_inner`
+/// can fail and `Drop` cannot propagate errors, so a swallow there
+/// would be a worse failure mode than the loud log. `Immediate`-mode
+/// persisters are durable on every `store` so they never trip this.
+impl Drop for SqlitePersister {
+    fn drop(&mut self) {
+        if !matches!(self.config.flush_mode, FlushMode::Manual) {
+            return;
+        }
+        // `dirty_wallets` only fails on a poisoned buffer mutex. A
+        // poisoned mutex on Drop already means the process is wedged;
+        // we still try to surface the lost state where we can.
+        let dirty = match self.buffer.dirty_wallets() {
+            Ok(d) => d,
+            Err(e) => {
+                tracing::error!(
+                    target: "platform_wallet_storage",
+                    error_kind = e.error_kind_str(),
+                    "SqlitePersister dropped with buffer mutex poisoned — uncommitted state unrecoverable"
+                );
+                return;
+            }
+        };
+        if dirty.is_empty() {
+            return;
+        }
+        let total_fields: usize = dirty
+            .iter()
+            .filter_map(|id| {
+                self.buffer
+                    .take_for_flush(id)
+                    .ok()
+                    .flatten()
+                    .map(|cs| populated_field_count(&cs))
+            })
+            .sum();
+        tracing::error!(
+            target: "platform_wallet_storage",
+            dirty_wallets = dirty.len(),
+            total_fields,
+            "SqlitePersister dropped with uncommitted Manual-mode writes"
+        );
+    }
+}
+
 impl PlatformWalletPersistence for SqlitePersister {
     fn store(
         &self,
