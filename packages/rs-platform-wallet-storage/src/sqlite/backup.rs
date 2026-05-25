@@ -61,11 +61,19 @@ pub fn run_to(src: &Connection, dest: &Path) -> Result<(), WalletStorageError> {
     // `backup_to` can't race a second writer to the same path
     // (timestamped auto-backup names are unique, so this never trips
     // them). SQLite then opens the freshly created empty file.
-    match std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(dest)
+    //
+    // SEC-011: on Unix, set mode 0o600 at creation time so the file is
+    // never world/group readable — even briefly — before
+    // `apply_secure_permissions` re-tightens below. Closes the
+    // umask-window race between `create_new` and the chmod.
+    let mut open_opts = std::fs::OpenOptions::new();
+    open_opts.write(true).create_new(true);
+    #[cfg(unix)]
     {
+        use std::os::unix::fs::OpenOptionsExt;
+        open_opts.mode(0o600);
+    }
+    match open_opts.open(dest) {
         Ok(_) => {}
         Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
             return Err(WalletStorageError::BackupDestinationExists {
@@ -122,22 +130,7 @@ pub fn restore_from(dest_db_path: &Path, src_backup: &Path) -> Result<(), Wallet
         }
     }
 
-    // 3. Remove any WAL / SHM siblings so SQLite can't open stale
-    //    auxiliary state for the replaced DB.
-    for ext in ["-wal", "-shm"] {
-        let sibling = dest_db_path.with_file_name(format!(
-            "{}{ext}",
-            dest_db_path
-                .file_name()
-                .map(|s| s.to_string_lossy().to_string())
-                .unwrap_or_default()
-        ));
-        if sibling.exists() {
-            std::fs::remove_file(&sibling)?;
-        }
-    }
-
-    // 4. Stage the source into a NamedTempFile in the destination's
+    // 3. Stage the source into a NamedTempFile in the destination's
     //    parent dir (unguessable name, no symlink-plant TOCTOU).
     let parent = dest_db_path.parent().unwrap_or(Path::new("."));
     let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
@@ -145,7 +138,7 @@ pub fn restore_from(dest_db_path: &Path, src_backup: &Path) -> Result<(), Wallet
     std::io::copy(&mut src_file, tmp.as_file_mut())?;
     tmp.as_file().sync_all()?;
 
-    // 5. SEC-004: re-run integrity_check on the STAGED file before
+    // 4. SEC-004: re-run integrity_check on the STAGED file before
     //    persisting. A torn `std::io::copy` or transient FS error
     //    that escaped `sync_all`'s notice would otherwise persist a
     //    corrupted database. If the recheck fails, the temp file
@@ -191,6 +184,24 @@ pub fn restore_from(dest_db_path: &Path, src_backup: &Path) -> Result<(), Wallet
                     max_supported,
                 });
             }
+        }
+    }
+
+    // 5. Atomicity gate: every staged-file validation has now passed,
+    //    so it's safe to clear WAL/SHM siblings the replaced DB might
+    //    have left behind. Doing this BEFORE persist ensures that
+    //    either both the main DB and its siblings get replaced/cleared,
+    //    or — if any earlier check failed — none of them are touched.
+    for ext in ["-wal", "-shm"] {
+        let sibling = dest_db_path.with_file_name(format!(
+            "{}{ext}",
+            dest_db_path
+                .file_name()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_default()
+        ));
+        if sibling.exists() {
+            std::fs::remove_file(&sibling)?;
         }
     }
 
