@@ -132,6 +132,27 @@ pub trait PlatformWalletPersistence: Send + Sync {
 
     /// Write all buffered changesets atomically for the given wallet, then
     /// clear that wallet's buffer.
+    ///
+    /// # Errors
+    ///
+    /// Implementations classify failures along a two-axis contract:
+    ///
+    /// - **Transient** (`PersistenceError::backend(..)` whose source
+    ///   carries `is_transient() == true` — for the canonical SQLite
+    ///   backend that's `SQLITE_BUSY` / `SQLITE_LOCKED`, and as of
+    ///   ATOM-008 also the I/O-class codes `SQLITE_FULL` /
+    ///   `SQLITE_IOERR` / `SQLITE_NOMEM`): the buffered changeset is
+    ///   preserved (re-merged via the buffer's `restore` path so any
+    ///   `store` that landed during the failed flush wins on LWW
+    ///   fields), and the caller MAY retry with exponential backoff.
+    /// - **Fatal** (everything else — schema corruption, logic bugs,
+    ///   integrity violations): the buffer is dropped, the staged
+    ///   changeset is gone, and the backend logs a structured
+    ///   `tracing::error!`. The caller MUST NOT retry — the data is
+    ///   not recoverable through this trait.
+    ///
+    /// [`PersistenceError::LockPoisoned`] is fatal but distinguished
+    /// at the variant level so callers can pattern-match on it.
     fn flush(&self, wallet_id: WalletId) -> Result<(), PersistenceError>;
 
     /// Load the full client state from storage.

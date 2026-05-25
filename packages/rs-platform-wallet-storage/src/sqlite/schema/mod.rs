@@ -27,7 +27,8 @@ pub mod wallet_meta;
 /// Every per-wallet table — used by `delete_wallet` to count + cascade
 /// row removal and by `inspect` for the table summary. `wallet_metadata`
 /// is the parent and listed first; everything after it depends on the
-/// parent row (cascade triggers wired in `V001__initial.rs`).
+/// parent row via the native `ON DELETE CASCADE` foreign keys declared
+/// in `V001__initial.rs`.
 pub const PER_WALLET_TABLES: &[&str] = &[
     "wallet_metadata",
     "account_registrations",

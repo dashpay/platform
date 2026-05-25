@@ -9,6 +9,7 @@
 pub mod backup;
 pub mod buffer;
 pub mod config;
+pub(crate) mod conn;
 pub mod error;
 pub mod migrations;
 pub mod persister;
@@ -18,4 +19,6 @@ pub mod util;
 pub use config::{FlushMode, JournalMode, SqlitePersisterConfig, Synchronous};
 #[allow(deprecated)]
 pub use error::{AutoBackupOperation, SqlitePersisterError, WalletStorageError};
-pub use persister::{DeleteWalletReport, PruneReport, RetentionPolicy, SqlitePersister};
+pub use persister::{
+    CommitReport, DeleteWalletReport, PruneReport, RetentionPolicy, SqlitePersister,
+};

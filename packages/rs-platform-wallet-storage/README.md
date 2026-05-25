@@ -111,6 +111,29 @@ respectively on stderr; `-q` suppresses non-error output.
 Exit codes: `0` success, `1` runtime error, `2` usage error, `3`
 validation failure (e.g. corrupt backup source).
 
+## Operational notes
+
+**Restore advisory-lock warning.** `restore` takes an exclusive `flock(2)`
+on the destination DB and holds it across the entire restore body, so a
+concurrent writer can't race the atomic swap. On filesystems where
+advisory locking is unsupported (some NFS / FUSE / network mounts), the
+crate emits a `tracing::warn!` on the
+`platform_wallet_storage` target —
+
+> `advisory lock unsupported on this filesystem; concurrent-writer race possible`
+
+— and proceeds anyway (there's no alternative on such filesystems).
+If you see this warning, ensure no other process opens the destination
+DB during the restore window, or move the DB to a filesystem with flock
+support before restoring.
+
+**Manual-mode drop diagnostic.** `SqlitePersister` configured with
+[`FlushMode::Manual`] emits a `tracing::error!` on drop if the buffer
+still holds uncommitted writes (with `dirty_wallets` and `total_fields`
+fields). The crate does NOT auto-flush from `Drop` — call
+[`SqlitePersister::commit_writes`] (or per-wallet `flush`) before drop
+to make Manual-mode writes durable.
+
 ## Cargo features
 
 | Feature | Default | What it brings |
@@ -128,11 +151,12 @@ submodule. `--no-default-features --features sqlite,cli` is the
 ## Schema
 
 See [`migrations/V001__initial.rs`](./migrations/V001__initial.rs) for
-the canonical schema and
-[`migrations/V002__defensive_update_triggers.rs`](./migrations/V002__defensive_update_triggers.rs)
-for the `BEFORE UPDATE` FK-column guards. Foreign-key integrity is
-emulated with triggers because barrel's column builder does not emit
-composite-key `FK` clauses portably; INSERT, DELETE-cascade, and
-UPDATE of `wallet_id` / `identity_id` are all covered. The result
-matches native FKs for the persister's own write path, which never
-mutates those columns directly.
+the canonical schema. It is hand-written `CREATE TABLE … PRIMARY KEY …
+FOREIGN KEY …` SQL with native `ON DELETE CASCADE` constraints; INSERT,
+DELETE-cascade, and UPDATE re-parenting are all enforced by SQLite
+itself. Foreign-key enforcement is enabled and read-back-asserted on
+every connection open via the `open_conn` choke-point — if the linked
+SQLite cannot honor `PRAGMA foreign_keys`, open fails hard. The single
+remaining trigger clears `core_utxos.spent_in_txid` to NULL on
+transaction delete (a native composite `SET NULL` would null the
+NOT-NULL `wallet_id` column too).

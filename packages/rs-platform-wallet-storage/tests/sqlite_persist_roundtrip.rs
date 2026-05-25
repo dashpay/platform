@@ -374,7 +374,7 @@ fn tc010_asset_lock_roundtrip() {
     drop(persister);
 
     let p2 = SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap();
-    let bucketed = platform_wallet_storage::sqlite::schema::asset_locks::list_active(
+    let bucketed = platform_wallet_storage::sqlite::schema::asset_locks::load_state(
         &p2.lock_conn_for_test(),
         &w,
     )

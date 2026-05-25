@@ -41,8 +41,8 @@ pub fn ro_conn(path: &std::path::Path) -> Connection {
     .expect("open ro conn")
 }
 
-/// Insert a stub `wallet_metadata` row so child writes pass the FK
-/// trigger. Bypasses the buffer/flush layer — tests use this when they
+/// Insert a stub `wallet_metadata` row so child writes pass the native
+/// FK. Bypasses the buffer/flush layer — tests use this when they
 /// want to exercise a single sub-changeset writer in isolation.
 pub fn ensure_wallet_meta(persister: &SqlitePersister, wallet_id: &WalletId) {
     use rusqlite::params;
