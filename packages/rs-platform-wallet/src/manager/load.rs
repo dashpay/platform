@@ -3,7 +3,12 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use crate::changeset::{ClientStartState, ClientWalletStartState, PlatformWalletPersistence};
+#[cfg(feature = "shielded")]
+use crate::changeset::ShieldedSyncStartState;
+use crate::changeset::{
+    ClientStartState, ClientWalletStartState, PlatformAddressSyncStartState,
+    PlatformWalletPersistence,
+};
 use crate::error::PlatformWalletError;
 use crate::wallet::core::WalletBalance;
 use crate::wallet::identity::IdentityManager;
@@ -31,18 +36,32 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// [`WalletManager`]: key_wallet_manager::WalletManager
     pub async fn load_from_persistor(&self) -> Result<(), PlatformWalletError> {
         let ClientStartState {
-            mut platform_addresses,
+            platform_addresses,
             wallets,
-            // Shielded restore happens lazily on `bind_shielded`,
-            // not here — drop the snapshot at this entry point.
             #[cfg(feature = "shielded")]
-                shielded: _,
+            shielded,
         } = self.persister.load().map_err(|e| {
             PlatformWalletError::WalletCreation(format!(
                 "Failed to load persisted client state: {}",
                 e
             ))
         })?;
+
+        let orphan_count = platform_addresses.len();
+        let wallets_empty = wallets.is_empty();
+
+        // Stash the platform-address + shielded slices in the cache so
+        // any later `register_wallet` / `bind_shielded` calls drain
+        // from there instead of re-issuing `persister.load()` per
+        // wallet (CODE-017). Done BEFORE the CODE-001 gate so even the
+        // refusal path leaves the cache populated — the host's
+        // per-wallet `register_wallet` fallback then runs at the
+        // already-cached zero-load cost.
+        *self.persisted_addresses.write().await = Some(platform_addresses);
+        #[cfg(feature = "shielded")]
+        {
+            *self.persisted_shielded.write().await = Some(Arc::new(shielded));
+        }
 
         // Refuse to silently drop persisted platform-address slices
         // when the persister returned `wallets={}` despite having
@@ -51,14 +70,13 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         // unimplemented (`LOAD_UNIMPLEMENTED = &["ClientStartState::wallets"]`
         // on `SqlitePersister` as of #3625; the rehydration ships in
         // #3692). Without this gate the loop below executes zero
-        // iterations and the local `platform_addresses` map is dropped
-        // at function scope, silently discarding every persisted slice.
-        // Host falls back to per-wallet `register_wallet` (which loads
-        // and drains `platform_addresses` correctly on its own).
-        if wallets.is_empty() && !platform_addresses.is_empty() {
+        // iterations and the cached slices are never consumed.
+        // Host falls back to per-wallet `register_wallet` (which now
+        // drains the cache populated above).
+        if wallets_empty && orphan_count > 0 {
             return Err(PlatformWalletError::PersistorMissingWalletRehydration {
                 unimplemented: vec!["ClientStartState::wallets".to_string()],
-                orphan_addresses_count: platform_addresses.len(),
+                orphan_addresses_count: orphan_count,
             });
         }
 
@@ -160,11 +178,17 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 broadcaster,
             );
 
-            // Initialize the platform-address provider. If the snapshot
-            // carried a slice for this wallet, restore it directly;
-            // otherwise do a fresh scan from the live wallet manager.
-            // Failures break to the rollback path below.
-            if let Some(persisted) = platform_addresses.remove(&wallet_id) {
+            // Initialize the platform-address provider. If the cached
+            // snapshot carried a slice for this wallet, restore it
+            // directly; otherwise do a fresh scan from the live wallet
+            // manager. Failures break to the rollback path below.
+            let persisted_slice = self
+                .persisted_addresses
+                .write()
+                .await
+                .as_mut()
+                .and_then(|m| m.remove(&wallet_id));
+            if let Some(persisted) = persisted_slice {
                 if let Err(e) = platform_wallet
                     .platform()
                     .initialize_from_persisted(persisted)
@@ -207,6 +231,93 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             return Err(err);
         }
 
+        Ok(())
+    }
+
+    /// Drain this wallet's persisted platform-address slice from the
+    /// shared cache, populating the cache via a single
+    /// `persister.load()` if it hasn't been populated yet (CODE-017).
+    ///
+    /// Returns `Ok(None)` when the persister has no slice for this
+    /// wallet — caller should fall back to `platform().initialize()`.
+    /// The slice is **removed** on return so a subsequent call for
+    /// the same wallet drops through to the no-slice branch.
+    pub(super) async fn take_persisted_platform_addresses(
+        &self,
+        wallet_id: &WalletId,
+    ) -> Result<Option<PlatformAddressSyncStartState>, PlatformWalletError> {
+        self.ensure_persisted_state_loaded().await?;
+        Ok(self
+            .persisted_addresses
+            .write()
+            .await
+            .as_mut()
+            .and_then(|m| m.remove(wallet_id)))
+    }
+
+    /// Snapshot of the persisted shielded state, populating the cache
+    /// via a single `persister.load()` if needed. The snapshot is
+    /// shared (`Arc`) so multiple `bind_shielded` calls reuse the same
+    /// allocation; restore is filtered per-wallet at consume time.
+    /// Returns `Ok(None)` when no shielded state was persisted.
+    #[cfg(feature = "shielded")]
+    pub(super) async fn cached_persisted_shielded(
+        &self,
+    ) -> Result<Option<Arc<ShieldedSyncStartState>>, PlatformWalletError> {
+        self.ensure_persisted_state_loaded().await?;
+        Ok(self
+            .persisted_shielded
+            .read()
+            .await
+            .as_ref()
+            .map(Arc::clone))
+    }
+
+    /// Drop any persisted slice for `wallet_id` from the address
+    /// cache. Called from `remove_wallet` so a future re-registration
+    /// of the same id cannot re-apply stale persisted state. The
+    /// shielded cache is **not** invalidated per-wallet: it's a shared
+    /// snapshot and a re-bind for the new wallet under a fresh
+    /// `WalletId` filter is a no-op (restore_for_wallet filters by
+    /// wallet_id). CODE-017.
+    pub(super) async fn invalidate_persisted_for_wallet(&self, wallet_id: &WalletId) {
+        if let Some(map) = self.persisted_addresses.write().await.as_mut() {
+            map.remove(wallet_id);
+        }
+    }
+
+    /// Populate `persisted_addresses` (and `persisted_shielded`) from a
+    /// single `persister.load()` call if either cache slot is still
+    /// `None`. Idempotent — a second call after population is a cheap
+    /// read-lock check.
+    async fn ensure_persisted_state_loaded(&self) -> Result<(), PlatformWalletError> {
+        // Fast path: cache already populated.
+        if self.persisted_addresses.read().await.is_some() {
+            return Ok(());
+        }
+        // Slow path: take write locks and double-check before issuing
+        // the load — a concurrent caller may have populated between
+        // the read above and the writes here.
+        let mut addr_guard = self.persisted_addresses.write().await;
+        if addr_guard.is_some() {
+            return Ok(());
+        }
+        let ClientStartState {
+            platform_addresses,
+            wallets: _,
+            #[cfg(feature = "shielded")]
+            shielded,
+        } = self.persister.load().map_err(|e| {
+            PlatformWalletError::WalletCreation(format!(
+                "Failed to load persisted client state: {}",
+                e
+            ))
+        })?;
+        *addr_guard = Some(platform_addresses);
+        #[cfg(feature = "shielded")]
+        {
+            *self.persisted_shielded.write().await = Some(Arc::new(shielded));
+        }
         Ok(())
     }
 }

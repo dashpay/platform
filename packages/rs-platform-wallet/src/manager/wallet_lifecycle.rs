@@ -331,24 +331,20 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             broadcaster,
         );
 
-        // Load persisted state. The only area wired up today is the
-        // platform-address provider — `from_persisted` skips the live
-        // `AddressPool` scan `initialize` would otherwise do.
-        // Per-wallet UTXOs / unused asset locks ship in the snapshot
-        // but don't have an active restore path yet.
+        // Drain this wallet's persisted platform-address slice from
+        // the manager's shared cache (CODE-017) — populated lazily by
+        // the first call here, by `load_from_persistor`, or by
+        // `bind_shielded`. Eliminates the N+1 `persister.load()` /
+        // mutex-contention pattern that used to fire one full read
+        // per wallet at register time.
         //
         // The two `?` returns below would otherwise leave the wallet
         // half-registered (present in `wallet_manager` from the
         // earlier `insert_wallet`, absent from `self.wallets`),
         // poisoning every retry on `WalletAlreadyExists`. Roll back
         // before bailing — same shape as `manager::load`.
-        let crate::changeset::ClientStartState {
-            mut platform_addresses,
-            wallets: _,
-            #[cfg(feature = "shielded")]
-                shielded: _,
-        } = match platform_wallet.load_persisted() {
-            Ok(state) => state,
+        let persisted_slice = match self.take_persisted_platform_addresses(&wallet_id).await {
+            Ok(slice) => slice,
             Err(e) => {
                 let mut wm = self.wallet_manager.write().await;
                 let _ = wm.remove_wallet(&wallet_id);
@@ -359,7 +355,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             }
         };
 
-        if let Some(persisted) = platform_addresses.remove(&wallet_id) {
+        if let Some(persisted) = persisted_slice {
             if let Err(e) = platform_wallet
                 .platform()
                 .initialize_from_persisted(persisted)
@@ -437,6 +433,11 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 .remove(wallet_id)
                 .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(wallet_id)))?
         };
+
+        // Drop any cached persisted slice for this wallet so a future
+        // re-registration under the same id cannot apply stale state
+        // (CODE-017 cache-invalidation contract).
+        self.invalidate_persisted_for_wallet(wallet_id).await;
 
         // Detach the wallet's shielded state from the network
         // coordinator. After the Phase-2b refactor the coordinator
