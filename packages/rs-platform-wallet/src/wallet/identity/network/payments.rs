@@ -259,7 +259,13 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                     managed_account.address_derivation_path(&addr)
                 })
                 .await
-                .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
+                .map_err(|e| {
+                    crate::wallet::core::broadcast::classify_build_error(
+                        e,
+                        key_wallet::account::account_type::StandardAccountType::BIP44Account,
+                        account_index,
+                    )
+                })?;
 
             // Defense-in-depth: confirm the builder picked only outpoints
             // from our pre-filtered spendable snapshot.

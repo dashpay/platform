@@ -5,10 +5,49 @@ use key_wallet::account::account_type::StandardAccountType;
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::signer::Signer;
 use key_wallet::transaction_checking::{TransactionContext, WalletTransactionChecker};
+use key_wallet::wallet::managed_wallet_info::coin_selection::SelectionError;
+use key_wallet::wallet::managed_wallet_info::transaction_builder::BuilderError;
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
 
 use crate::broadcaster::TransactionBroadcaster;
 use crate::{CoreWallet, PlatformWalletError};
+
+/// Map a key-wallet [`BuilderError`] from `TransactionBuilder::build_signed` into a
+/// [`PlatformWalletError`], distinguishing depleted-UTXO conditions (retryable
+/// [`PlatformWalletError::NoSpendableInputs`]) from every other build failure
+/// (fatal [`PlatformWalletError::TransactionBuild`]).
+///
+/// The variants treated as "no spendable inputs" are:
+///
+/// * [`BuilderError::InsufficientFunds`] — the builder's own pre-selection
+///   shortfall check.
+/// * [`BuilderError::CoinSelection`] wrapping either
+///   [`SelectionError::NoUtxosAvailable`] or
+///   [`SelectionError::InsufficientFunds`] — the coin-selector's two
+///   depleted-UTXO outcomes.
+///
+/// `account_type` and `account_index` are threaded through unchanged so the
+/// resulting `NoSpendableInputs` carries the same operator-facing context the
+/// upstream call sites already populate.
+pub(crate) fn classify_build_error(
+    err: BuilderError,
+    account_type: StandardAccountType,
+    account_index: u32,
+) -> PlatformWalletError {
+    let context = err.to_string();
+    match err {
+        BuilderError::InsufficientFunds { .. }
+        | BuilderError::CoinSelection(SelectionError::NoUtxosAvailable)
+        | BuilderError::CoinSelection(SelectionError::InsufficientFunds { .. }) => {
+            PlatformWalletError::NoSpendableInputs {
+                account_type,
+                account_index,
+                context,
+            }
+        }
+        _ => PlatformWalletError::TransactionBuild(context),
+    }
+}
 
 impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     /// Broadcast a signed transaction to the network.
@@ -187,23 +226,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                     managed_account.address_derivation_path(&addr)
                 })
                 .await
-                .map_err(|e| {
-                    // TODO(CMT-005, #3585): Brittle substring match against upstream Display impl.
-                    // Pinned key-wallet exposes typed BuilderError::CoinSelection(SelectionError::…)
-                    // (InsufficientFunds, NoUtxosAvailable). Pattern-match the enum here once the
-                    // classification can be threaded through `build_signed`'s error type. Deferred
-                    // pending a focused refactor with test coverage for the typed variants.
-                    let msg = e.to_string();
-                    if msg.contains("Insufficient funds") || msg.contains("No UTXOs available") {
-                        PlatformWalletError::NoSpendableInputs {
-                            account_type,
-                            account_index,
-                            context: msg,
-                        }
-                    } else {
-                        PlatformWalletError::TransactionBuild(msg)
-                    }
-                })?;
+                .map_err(|e| classify_build_error(e, account_type, account_index))?;
 
             // Defense-in-depth: unreachable under normal builder contract but guards against
             // a future regression where coin selection picks an outpoint outside `spendable`.
@@ -942,6 +965,109 @@ mod tests {
         assert!(
             matches!(result, Err(PlatformWalletError::NoSpendableInputs { .. })),
             "send_to_addresses must map a fully-reserved wallet to NoSpendableInputs; got: {result:?}"
+        );
+    }
+
+    // ---- classify_build_error: typed BuilderError → PlatformWalletError ----
+    //
+    // The mapper replaces the previous brittle Display-substring match
+    // (CMT-001 / CMT-004). These tests pin the typed contract directly so
+    // a future rename or rewording of the upstream `Display` impl cannot
+    // silently downgrade `NoSpendableInputs` back to `TransactionBuild`.
+
+    use super::classify_build_error;
+    use key_wallet::account::account_type::StandardAccountType;
+    use key_wallet::wallet::managed_wallet_info::coin_selection::SelectionError;
+    use key_wallet::wallet::managed_wallet_info::transaction_builder::BuilderError;
+
+    #[test]
+    fn classify_builder_insufficient_funds_maps_to_no_spendable_inputs() {
+        let err = BuilderError::InsufficientFunds {
+            available: 1_000,
+            required: 10_000,
+        };
+        let mapped = classify_build_error(err, StandardAccountType::BIP44Account, 7);
+        match mapped {
+            PlatformWalletError::NoSpendableInputs {
+                account_type,
+                account_index,
+                context,
+            } => {
+                assert!(matches!(account_type, StandardAccountType::BIP44Account));
+                assert_eq!(account_index, 7);
+                assert!(
+                    context.contains("Insufficient funds"),
+                    "context should preserve the upstream Display; got: {context}"
+                );
+            }
+            other => panic!("expected NoSpendableInputs, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn classify_coin_selection_no_utxos_available_maps_to_no_spendable_inputs() {
+        let err = BuilderError::CoinSelection(SelectionError::NoUtxosAvailable);
+        let mapped = classify_build_error(err, StandardAccountType::BIP32Account, 3);
+        match mapped {
+            PlatformWalletError::NoSpendableInputs {
+                account_type,
+                account_index,
+                ..
+            } => {
+                assert!(matches!(account_type, StandardAccountType::BIP32Account));
+                assert_eq!(account_index, 3);
+            }
+            other => panic!("expected NoSpendableInputs, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn classify_coin_selection_insufficient_funds_maps_to_no_spendable_inputs() {
+        let err = BuilderError::CoinSelection(SelectionError::InsufficientFunds {
+            available: 5,
+            required: 100,
+        });
+        let mapped = classify_build_error(err, StandardAccountType::BIP44Account, 0);
+        assert!(
+            matches!(mapped, PlatformWalletError::NoSpendableInputs { .. }),
+            "CoinSelection(InsufficientFunds) must map to NoSpendableInputs; got: {mapped:?}"
+        );
+    }
+
+    #[test]
+    fn classify_no_inputs_falls_through_to_transaction_build() {
+        let err = BuilderError::NoInputs;
+        let mapped = classify_build_error(err, StandardAccountType::BIP44Account, 0);
+        assert!(
+            matches!(mapped, PlatformWalletError::TransactionBuild(_)),
+            "non-depleted BuilderError must fall through to TransactionBuild; got: {mapped:?}"
+        );
+    }
+
+    #[test]
+    fn classify_signing_failed_falls_through_to_transaction_build() {
+        let err = BuilderError::SigningFailed("bad signer".to_string());
+        let mapped = classify_build_error(err, StandardAccountType::BIP44Account, 0);
+        match mapped {
+            PlatformWalletError::TransactionBuild(msg) => {
+                assert!(
+                    msg.contains("bad signer"),
+                    "context should preserve message"
+                );
+            }
+            other => panic!("expected TransactionBuild, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn classify_coin_selection_failed_falls_through_to_transaction_build() {
+        let err =
+            BuilderError::CoinSelection(SelectionError::SelectionFailed("wraparound".to_string()));
+        let mapped = classify_build_error(err, StandardAccountType::BIP44Account, 0);
+        assert!(
+            matches!(mapped, PlatformWalletError::TransactionBuild(_)),
+            "CoinSelection(SelectionFailed) is not a depleted-UTXO outcome; \
+             must fall through to TransactionBuild; got: {mapped:?}"
         );
     }
 }
