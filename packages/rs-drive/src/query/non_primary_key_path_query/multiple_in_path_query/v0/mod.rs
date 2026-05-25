@@ -292,6 +292,16 @@ impl<'a> DriveDocumentQuery<'a> {
         let equality_len = equal_clauses.len();
         let mut best: Option<(&Index, Vec<&WhereClause>, u16)> = None;
         for index in self.document_type.indexes().values() {
+            // Same admissibility rule as the single-`In` selection in
+            // `find_best_index`: a bucketed index only for a query whose
+            // resolved equality names its transform source, never for a raw
+            // query. See `index_admissible_for_resolved_time_range`.
+            if !crate::query::index_admissible_for_resolved_time_range(
+                index,
+                &self.resolved_time_range_fields,
+            ) {
+                continue;
+            }
             let mut positioned: Vec<(usize, &WhereClause)> = Vec::with_capacity(in_clauses.len());
             for in_clause in in_clauses {
                 match index

@@ -35,7 +35,7 @@ use drive::query::drive_document_ranked_query::mode_detection::ranked_order_key;
 use drive::query::{
     DriveDocumentQuery, HavingAggregate, HavingAggregateFunction, HavingClause, HavingOperator,
     HavingRightOperand, InternalClauses, OrderClause, SelectFunction, SelectProjection,
-    WhereClause, WhereOperator,
+    TimeRangeSelector, WhereClause, WhereOperator,
 };
 use drive_proof_verifier::{types::Documents, FromProof};
 
@@ -74,6 +74,14 @@ pub struct DocumentQuery {
     pub document_type_name: String,
     /// `where` clauses for the query
     pub where_clauses: Vec<WhereClause>,
+    /// Time-range (`IN_TIME_RANGE`) selections — `(field, selector)` pairs on
+    /// a timestamp field covered by a `timeRange` index. These are emitted as
+    /// `IN_TIME_RANGE` clauses on the v1 wire and resolved server-side from
+    /// the current block time; the verifier re-derives the same bucket from
+    /// the quorum-signed response metadata time. v1-only (the v0 wire has no
+    /// `IN_TIME_RANGE` operator). See [`Self::with_time_range`].
+    #[cfg_attr(feature = "mocks", serde(default))]
+    pub time_range_clauses: Vec<(String, TimeRangeSelector)>,
     /// SQL `GROUP BY` field names, in left-to-right order. Empty =
     /// no explicit grouping (aggregate count for `select=Count`).
     /// Only meaningful when `select=Count`; non-empty with
@@ -175,6 +183,7 @@ impl DocumentQuery {
             data_contract: Arc::clone(&contract),
             document_type_name: document_type_name.to_string(),
             where_clauses: vec![],
+            time_range_clauses: vec![],
             group_by: Vec::new(),
             having: Vec::new(),
             order_by_clauses: vec![],
@@ -206,6 +215,24 @@ impl DocumentQuery {
     pub fn with_where(mut self, clause: WhereClause) -> Self {
         self.where_clauses.push(clause);
 
+        self
+    }
+
+    /// Restrict the query to a single time-range bucket of `field`
+    /// (a timestamp covered by a `timeRange` index), selecting either the
+    /// [`TimeRangeSelector::Newest`] or [`TimeRangeSelector::Oldest`] currently
+    /// active range. Emitted as an `IN_TIME_RANGE` clause on the v1 wire and
+    /// resolved server-side from the current block time; the proof verifier
+    /// re-derives the identical bucket from the quorum-signed response
+    /// metadata time. Requires Platform v3.1+ (v1 wire).
+    ///
+    /// Existing time-range selections are preserved.
+    pub fn with_time_range(
+        mut self,
+        field: impl Into<String>,
+        selector: TimeRangeSelector,
+    ) -> Self {
+        self.time_range_clauses.push((field.into(), selector));
         self
     }
 
@@ -444,13 +471,42 @@ impl FromProof<DocumentQuery> for drive_proof_verifier::types::Documents {
     where
         Self: Sized + 'a,
     {
-        let request: Self::Request = request.into();
-        let drive_query: DriveDocumentQuery =
+        let mut request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+
+        // A time-range (`IN_TIME_RANGE`) selection is resolved to a concrete
+        // bucket using the **quorum-signed** response metadata time — the same
+        // authoritative block time the server used to resolve it — so the
+        // reconstructed query matches the proof exactly. Resolve before the
+        // `DriveDocumentQuery` conversion so the engine sees ordinary equality
+        // clauses.
+        let mut resolved_time_range_fields = Vec::new();
+        if !request.time_range_clauses.is_empty() {
+            // The generated `VersionedGrpcResponse::metadata()` handles both
+            // response envelopes (and any future one), so no hand-written
+            // version match is needed here.
+            use dapi_grpc::platform::VersionedGrpcResponse;
+            let time_ms = response
+                .metadata()
+                .map(|metadata| metadata.time_ms)
+                .map_err(|_| drive_proof_verifier::Error::ResponseDecodeError {
+                    error: "time range query proof response is missing block-time metadata"
+                        .to_string(),
+                })?;
+            resolved_time_range_fields =
+                resolve_time_range_clauses_with_metadata_time(&mut request, time_ms)?;
+        }
+
+        let mut drive_query: DriveDocumentQuery =
             (&request)
                 .try_into()
                 .map_err(|e| drive_proof_verifier::Error::RequestError {
                     error: format!("Failed to convert DocumentQuery to DriveQuery: {}", e),
                 })?;
+        // The conversion cannot recover which equalities came from resolution,
+        // so the provenance is carried across here; index selection reads it
+        // to pin the query to the index that buckets the field.
+        drive_query.resolved_time_range_fields = resolved_time_range_fields;
 
         <drive_proof_verifier::types::Documents as FromProof<DriveDocumentQuery>>::maybe_from_proof_with_metadata(
             drive_query,
@@ -460,6 +516,57 @@ impl FromProof<DocumentQuery> for drive_proof_verifier::types::Documents {
             provider,
         )
     }
+}
+
+/// Resolve a request's pending time-range (`IN_TIME_RANGE`) selections into
+/// concrete bucket-equality clauses on `request.where_clauses`, using the
+/// **quorum-signed** response metadata block time — the same authoritative
+/// time the server used — so the reconstructed query matches the proof
+/// exactly.
+///
+/// Every proof-verification path that rebuilds a drive query from a
+/// [`DocumentQuery`] must call this (or perform the identical resolution)
+/// *before* reading `request.where_clauses` for mode detection, covering-index
+/// selection, or query reconstruction: the documents path does it inline in
+/// its `FromProof` impl, and the count / sum / average aggregate helpers call
+/// this before resolving their mode. Skipping it would rebuild the query from
+/// a different shape than the prover used.
+///
+/// Returns the resolved fields — the names whose pushed clause is a bucket
+/// equality rather than a raw-timestamp one. Callers must carry them into
+/// index selection (`DriveDocumentQuery::resolved_time_range_fields`, or the
+/// `resolved_time_range_fields` argument of the aggregate index pickers):
+/// the pushed clause is an ordinary equality and nothing downstream can
+/// otherwise tell that it must be matched against bucket starts.
+pub(super) fn resolve_time_range_clauses_with_metadata_time(
+    request: &mut DocumentQuery,
+    time_ms: u64,
+) -> Result<Vec<String>, drive_proof_verifier::Error> {
+    if request.time_range_clauses.is_empty() {
+        return Ok(Vec::new());
+    }
+    let data_contract = Arc::clone(&request.data_contract);
+    let document_type = data_contract
+        .document_type_for_name(&request.document_type_name)
+        .map_err(|e| drive_proof_verifier::Error::RequestError {
+            error: format!("document type not found for time range query: {}", e),
+        })?;
+    let time_range_clauses = std::mem::take(&mut request.time_range_clauses);
+    let mut resolved_fields = Vec::with_capacity(time_range_clauses.len());
+    for (field, selector) in time_range_clauses {
+        let resolved = drive::query::resolve_time_range_bucket_clause(
+            &field,
+            selector,
+            document_type,
+            time_ms,
+        )
+        .map_err(|e| drive_proof_verifier::Error::RequestError {
+            error: format!("failed to resolve time range clause: {}", e),
+        })?;
+        request.where_clauses.push(resolved);
+        resolved_fields.push(field);
+    }
+    Ok(resolved_fields)
 }
 
 /// Version-aware encoder. The dispatch is driven by the
@@ -483,6 +590,7 @@ impl TryFromPlatformVersioned<DocumentQuery> for GetDocumentsRequest {
             data_contract,
             document_type_name,
             where_clauses,
+            time_range_clauses,
             group_by,
             having,
             order_by_clauses,
@@ -505,22 +613,32 @@ impl TryFromPlatformVersioned<DocumentQuery> for GetDocumentsRequest {
         );
 
         match feature_version {
-            0 => encode_v0(
-                data_contract.id().to_vec(),
-                document_type_name,
-                where_clauses,
-                order_by_clauses,
-                limit,
-                offset,
-                start,
-                &select,
-                &group_by,
-                &having,
-            ),
+            0 => {
+                if !time_range_clauses.is_empty() {
+                    return Err(Error::Config(
+                        "time range (IN_TIME_RANGE) queries require Platform v3.1+ (the v1 \
+                         getDocuments wire); the v0 wire has no time-range operator"
+                            .to_string(),
+                    ));
+                }
+                encode_v0(
+                    data_contract.id().to_vec(),
+                    document_type_name,
+                    where_clauses,
+                    order_by_clauses,
+                    limit,
+                    offset,
+                    start,
+                    &select,
+                    &group_by,
+                    &having,
+                )
+            }
             1 => encode_v1(
                 data_contract.id().to_vec(),
                 document_type_name,
                 where_clauses,
+                time_range_clauses,
                 order_by_clauses,
                 limit,
                 offset,
@@ -543,6 +661,7 @@ fn encode_v1(
     data_contract_id: Vec<u8>,
     document_type: String,
     where_clauses: Vec<WhereClause>,
+    time_range_clauses: Vec<(String, TimeRangeSelector)>,
     order_by_clauses: Vec<OrderClause>,
     limit: u32,
     offset: Option<u32>,
@@ -551,10 +670,25 @@ fn encode_v1(
     group_by: Vec<String>,
     having: Vec<HavingClause>,
 ) -> Result<GetDocumentsRequest, Error> {
-    let where_clauses = where_clauses
+    let mut where_clauses = where_clauses
         .into_iter()
         .map(where_clause_to_proto)
         .collect::<Result<Vec<_>, _>>()?;
+    // Append time-range selections as `IN_TIME_RANGE` clauses: field +
+    // `"newest"`/`"oldest"` text operand. The server resolves them to a
+    // concrete bucket from current block time; the verifier re-derives the
+    // same bucket from the signed response metadata time.
+    for (field, selector) in time_range_clauses {
+        where_clauses.push(ProtoWhereClause {
+            field,
+            operator: ProtoWhereOperator::InTimeRange as i32,
+            value: Some(ProtoDocumentFieldValue {
+                variant: Some(document_field_value::Variant::Text(
+                    selector.as_str().to_string(),
+                )),
+            }),
+        });
+    }
     let order_by = order_by_clauses
         .into_iter()
         .map(order_clause_to_proto)
@@ -723,13 +857,14 @@ impl<'a> From<&'a DriveDocumentQuery<'a>> for DocumentQuery {
         };
 
         Self {
-            // `DriveDocumentQuery` has no SELECT/GROUP BY/HAVING
+            // `DriveDocumentQuery` has no SELECT/GROUP BY/HAVING/time-range
             // concept — it's a documents-only query. Default to the
             // v1 documents shape.
             select: SelectProjection::documents(),
             data_contract: Arc::new(data_contract),
             document_type_name: document_type_name.to_string(),
             where_clauses,
+            time_range_clauses: Vec::new(),
             group_by: Vec::new(),
             having: Vec::new(),
             order_by_clauses,
@@ -759,13 +894,14 @@ impl<'a> From<DriveDocumentQuery<'a>> for DocumentQuery {
         };
 
         Self {
-            // `DriveDocumentQuery` has no SELECT/GROUP BY/HAVING
+            // `DriveDocumentQuery` has no SELECT/GROUP BY/HAVING/time-range
             // concept — it's a documents-only query. Default to the
             // v1 documents shape.
             select: SelectProjection::documents(),
             data_contract: Arc::new(data_contract),
             document_type_name: document_type_name.to_string(),
             where_clauses,
+            time_range_clauses: Vec::new(),
             group_by: Vec::new(),
             having: Vec::new(),
             order_by_clauses,
@@ -780,6 +916,22 @@ impl<'a> TryFrom<&'a DocumentQuery> for DriveDocumentQuery<'a> {
     type Error = crate::error::Error;
 
     fn try_from(request: &'a DocumentQuery) -> Result<Self, Self::Error> {
+        // A pending (unresolved) time-range selection MUST be resolved into a
+        // concrete bucket-equality clause before a drive query can be built —
+        // see `resolve_time_range_clauses_with_metadata_time`. Silently
+        // dropping it here would rebuild (and verify against) a strictly
+        // broader query than the prover ran, so refuse instead: this makes
+        // "forgot to resolve" a loud error on every present and future call
+        // path rather than a silent verification hole.
+        if !request.time_range_clauses.is_empty() {
+            return Err(Error::Config(
+                "the query's time range (IN_TIME_RANGE) selections have not been resolved into \
+                 bucket equalities; resolve them against the response's quorum-signed metadata \
+                 time before building a drive query"
+                    .to_string(),
+            ));
+        }
+
         // let data_contract = request.data_contract.clone();
         let document_type = request
             .data_contract
@@ -872,6 +1024,12 @@ impl<'a> TryFrom<&'a DocumentQuery> for DriveDocumentQuery<'a> {
             start_at,
             start_at_included,
             block_time_ms: None,
+            // A `DocumentQuery` reaching here carries no unresolved
+            // time-range selection (rejected above) and cannot tell which of
+            // its equalities came from resolution. Callers that resolved
+            // selections assign the fields they resolved onto the returned
+            // query; everything else is a raw query.
+            resolved_time_range_fields: vec![],
         };
 
         Ok(query)

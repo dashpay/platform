@@ -54,6 +54,7 @@ impl Drive {
         document_type: DocumentTypeRef,
         document_type_name: String,
         where_clauses: Vec<WhereClause>,
+        resolved_time_range_fields: &[String],
         sum_property: String,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -89,6 +90,7 @@ impl Drive {
             document_type.indexes(),
             &where_clauses,
             &sum_property,
+            resolved_time_range_fields,
         )
         .filter(|idx| idx.countable.is_countable())
         .ok_or_else(|| {

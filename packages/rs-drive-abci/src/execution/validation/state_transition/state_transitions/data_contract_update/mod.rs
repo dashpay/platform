@@ -2600,6 +2600,7 @@ mod tests {
                 start_at: None,
                 start_at_included: false,
                 block_time_ms: None,
+                resolved_time_range_fields: vec![],
             };
             query.internal_clauses.equal_clauses.insert(
                 "contractId".to_string(),
@@ -2982,6 +2983,7 @@ mod tests {
                 start_at: None,
                 start_at_included: false,
                 block_time_ms: None,
+                resolved_time_range_fields: vec![],
             };
             query.internal_clauses.equal_clauses.insert(
                 "contractId".to_string(),

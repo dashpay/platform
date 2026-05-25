@@ -15,6 +15,7 @@ use crate::data_contract::errors::DataContractError;
 use crate::ProtocolError;
 use anyhow::anyhow;
 
+use crate::data_contract::document_type::property_names;
 use crate::data_contract::document_type::ContestedIndexResolution::MasternodeVote;
 #[cfg(feature = "validation")]
 use crate::data_contract::errors::DataContractError::RegexError;
@@ -25,6 +26,9 @@ use std::sync::OnceLock;
 use std::{collections::BTreeMap, convert::TryFrom};
 
 pub mod random_index;
+pub mod time_range;
+
+pub use time_range::TimeRangeTransform;
 
 /// Index-level keyword opting the index's terminal property-name tree into the
 /// **Count** ranking axis: an ordered secondary tree keyed by each group's
@@ -46,6 +50,12 @@ pub const RANKED_SUMMABLE: &str = "rankedSummable";
 /// costs its own secondary tree, so `rankedAverageable` adds the Avg axis and
 /// nothing else.
 pub const RANKED_AVERAGEABLE: &str = "rankedAverageable";
+/// Index-level keyword bucketing the index's first property (a millisecond
+/// timestamp) into fixed-length, regularly-spaced, possibly overlapping time
+/// ranges whose window is declared in seconds; a document is indexed under
+/// every range containing its timestamp. See [`TimeRangeTransform`].
+/// Meta-schema v3+ (protocol version 14).
+pub const TIME_RANGE: &str = "timeRange";
 
 #[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Ord, PartialOrd)]
@@ -476,6 +486,20 @@ pub struct Index {
     /// `book/src/drive/ranked-index-examples.md` for the worked example.
     #[cfg_attr(feature = "serde-conversion", serde(default))]
     pub ranked_averageable: bool,
+    /// When set, the index's first property is a timestamp that is bucketed
+    /// into fixed-length, regularly-spaced (possibly overlapping) time
+    /// ranges. The stored key for that property is the range *start* (a
+    /// `u64` millisecond timestamp), and a single document is indexed under
+    /// every range whose window contains its timestamp. See
+    /// [`TimeRangeTransform`]. The named source must be this index's first
+    /// property. Part of the meta-schema-v3 grammar (protocol version 14 and
+    /// later).
+    //
+    // `serde(default)`: same reasoning as the ranked axes above — the key was
+    // added after the struct's serde shape was in the wild, so pre-existing
+    // JSON must still deserialize.
+    #[cfg_attr(feature = "serde-conversion", serde(default))]
+    pub time_range: Option<TimeRangeTransform>,
 }
 
 impl Index {
@@ -644,7 +668,7 @@ impl TryFrom<&[(Value, Value)]> for Index {
     /// `document_type_schema` version must go through
     /// [`Index::try_from_value_map`] instead so PV14+ contracts can use them.
     fn try_from(index_type_value_map: &[(Value, Value)]) -> Result<Self, Self::Error> {
-        Index::try_from_value_map(index_type_value_map, false)
+        Index::try_from_value_map(index_type_value_map, false, false)
     }
 }
 
@@ -663,9 +687,16 @@ impl Index {
     /// The meta-schema is the other half of this gate — v2 rejects the keys via
     /// `additionalProperties: false` — but it only runs under
     /// `full_validation`, which is why the grammar itself is version-gated too.
+    ///
+    /// `time_range_allowed` gates the `timeRange` keyword exactly the same
+    /// way: it also joined the grammar at meta-schema v3 (protocol version
+    /// 14). The two flags are separate parameters because they are separate
+    /// grammar admissions — a future generation may admit one without the
+    /// other.
     pub fn try_from_value_map(
         index_type_value_map: &[(Value, Value)],
         ranked_aggregates_allowed: bool,
+        time_range_allowed: bool,
     ) -> Result<Self, DataContractError> {
         // Decouple the map
         // It contains properties and a unique key
@@ -719,6 +750,7 @@ impl Index {
         let mut ranked_countable = false;
         let mut ranked_summable = false;
         let mut ranked_averageable = false;
+        let mut time_range: Option<TimeRangeTransform> = None;
 
         for (key_value, value_value) in index_type_value_map {
             let key = key_value.to_str()?;
@@ -974,6 +1006,90 @@ impl Index {
                                 "rankedAverageable value must be a boolean".to_string(),
                             ))?;
                 }
+                // `timeRange` is guarded the same way as the ranking keywords
+                // above: it joined the grammar at meta-schema v3, so below
+                // that the key falls through to the unknown-property arm.
+                TIME_RANGE if time_range_allowed => {
+                    let time_range_map =
+                        value_value
+                            .as_map()
+                            .ok_or(DataContractError::ValueWrongType(
+                                "timeRange value should be a map".to_string(),
+                            ))?;
+
+                    let mut source: Option<String> = None;
+                    let mut range_seconds: Option<u64> = None;
+                    let mut step_seconds: Option<u64> = None;
+                    let mut origin_seconds: u64 = 0;
+
+                    for (tr_key_value, tr_value) in time_range_map {
+                        let tr_key = tr_key_value
+                            .to_str()
+                            .map_err(|e| DataContractError::ValueDecodingError(e.to_string()))?;
+                        match tr_key {
+                            "on" => {
+                                source = Some(
+                                    tr_value
+                                        .as_text()
+                                        .ok_or(DataContractError::ValueWrongType(
+                                            "timeRange.on should be a string".to_string(),
+                                        ))?
+                                        .to_owned(),
+                                );
+                            }
+                            "range" => {
+                                range_seconds = Some(tr_value.to_integer().map_err(|_| {
+                                    DataContractError::ValueWrongType(
+                                        "timeRange.range should be an integer".to_string(),
+                                    )
+                                })?);
+                            }
+                            "step" => {
+                                step_seconds = Some(tr_value.to_integer().map_err(|_| {
+                                    DataContractError::ValueWrongType(
+                                        "timeRange.step should be an integer".to_string(),
+                                    )
+                                })?);
+                            }
+                            "origin" => {
+                                origin_seconds = tr_value.to_integer().map_err(|_| {
+                                    DataContractError::ValueWrongType(
+                                        "timeRange.origin should be an integer".to_string(),
+                                    )
+                                })?;
+                            }
+                            other => {
+                                return Err(DataContractError::InvalidContractStructure(format!(
+                                    "unexpected timeRange field: {}",
+                                    other
+                                )));
+                            }
+                        }
+                    }
+
+                    let source = source.ok_or(DataContractError::InvalidContractStructure(
+                        "timeRange requires an `on` field naming the source timestamp property"
+                            .to_string(),
+                    ))?;
+                    let range_seconds =
+                        range_seconds.ok_or(DataContractError::InvalidContractStructure(
+                            "timeRange requires a `range` field (range length in seconds)"
+                                .to_string(),
+                        ))?;
+                    let step_seconds =
+                        step_seconds.ok_or(DataContractError::InvalidContractStructure(
+                            "timeRange requires a `step` field (interval between range starts in \
+                             seconds)"
+                                .to_string(),
+                        ))?;
+
+                    time_range = Some(TimeRangeTransform {
+                        source,
+                        range_seconds,
+                        step_seconds,
+                        origin_seconds,
+                    });
+                }
                 "properties" => {
                     let properties =
                         value_value
@@ -1221,6 +1337,156 @@ impl Index {
             ));
         }
 
+        // A time-range transform buckets the index's *first* property. Validate
+        // the structural constraints that don't need document-type context here
+        // (the source must be a timestamp/Date field — which does need the
+        // schema — is checked in `try_from_schema`). Uniqueness is admitted
+        // only for the narrow shape where it has a meaning: non-overlapping
+        // windows over an immutable timestamp.
+        if let Some(transform) = &time_range {
+            // Uniqueness and bucketing only compose when the windows
+            // *partition* time. With `range == step` (overlap factor 1) every
+            // document lands in exactly one bucket, so "at most one document
+            // per window per remaining key tuple" is a coherent constraint —
+            // one report per author per day. With `range > step` a single
+            // document is indexed under `range / step` bucket keys at once, so
+            // it would occupy the unique slot of several windows while two
+            // documents with different timestamps would collide in the windows
+            // they happen to share: there is no constraint left to enforce.
+            //
+            // Compared before the zero-step / multiple checks below because it
+            // only reads the declared numbers; a malformed transform still
+            // gets its own, more specific rejection there.
+            if unique && transform.range_seconds != transform.step_seconds {
+                return Err(DataContractError::InvalidContractStructure(
+                    "a timeRange index cannot be unique unless range equals step \
+                     (non-overlapping windows): with overlapping ranges one document is indexed \
+                     under several bucket keys at once, which uniqueness cannot express"
+                        .to_string(),
+                ));
+            }
+            // Non-overlapping windows are still only safe over an *immutable*
+            // source. Uniqueness validation probes the bucket the candidate
+            // document's timestamp falls into and leans on `allow_original`:
+            // a document may keep occupying its own slot unless one of the
+            // index's values changed, in which case the tuple moved and the
+            // new one must be free. `$createdAt` never changes across a
+            // revision, so the bucket component is fixed and the tuple can
+            // only move through the index's other properties — exactly the
+            // changes the uniqueness request reports. `$updatedAt` /
+            // `$transferredAt` change on *every* revision, silently migrating
+            // the document to a new bucket; validating that would need the old
+            // bucket alongside the new one to know which slot is being
+            // vacated, and the uniqueness request carries only the new
+            // timestamps. Rejected here rather than half-checked; liftable
+            // once the request plumbs the previous timestamp through.
+            if unique && transform.source != property_names::CREATED_AT {
+                return Err(DataContractError::InvalidContractStructure(format!(
+                    "a unique timeRange index requires \"{}\" as its source, not \"{}\": \
+                     \"{}\" is immutable across updates, so a document's bucket is fixed and \
+                     the uniqueness tuple only moves when the index's other properties change. \
+                     A mutable timestamp source would move the document to a new bucket on \
+                     every revision, which uniqueness validation cannot check without tracking \
+                     the old bucket",
+                    property_names::CREATED_AT,
+                    transform.source,
+                    property_names::CREATED_AT
+                )));
+            }
+            if contested_index.is_some() {
+                return Err(DataContractError::InvalidContractStructure(
+                    "a timeRange index cannot be a contested resource".to_string(),
+                ));
+            }
+            // The ranked query surface excludes bucketed indexes — a document
+            // is stored once per containing bucket, so ranking groups keyed by
+            // bucket starts would score each document `overlap_factor` times.
+            // Since no ranked query can ever select such an index, allowing
+            // the flags would only make the contract pay for ranked
+            // secondaries that are unreachable; reject the combination until
+            // bucket-aware ranked semantics are deliberately designed.
+            if ranked_countable || ranked_summable || ranked_averageable {
+                return Err(DataContractError::InvalidContractStructure(
+                    "a timeRange index cannot be ranked (rankedCountable / rankedSummable / \
+                     rankedAverageable): ranked queries have no time-bucket semantics, so the \
+                     ranked secondaries would be maintained but never servable"
+                        .to_string(),
+                ));
+            }
+            // Same reasoning as the ranked `nullSearchable` rejection above,
+            // plus a write-path invariant: the insert, delete and update
+            // walkers all agree that a null timestamp keeps a single ordinary
+            // null entry with its real reference. `nullSearchable: false`
+            // would suppress that reference on insert while the set-diff
+            // update path maintains it, so the combination is rejected.
+            if !null_searchable {
+                return Err(DataContractError::InvalidContractStructure(
+                    "a timeRange index is not supported with nullSearchable: false: documents \
+                     with a null timestamp keep a single ordinary null entry; leave \
+                     nullSearchable at its default (true)"
+                        .to_string(),
+                ));
+            }
+            // The window is declared in seconds but every quantity it is
+            // measured against — the source timestamps, the bucket starts, the
+            // stored index keys — is a millisecond timestamp, so a parameter is
+            // only usable if scaling it by 1_000 still fits in a `u64`.
+            // Rejecting the unscalable ones here is what lets the transform's
+            // `*_ms` accessors saturate instead of returning a `Result` no
+            // validated contract could ever trip.
+            for (field, seconds) in [
+                ("range", transform.range_seconds),
+                ("step", transform.step_seconds),
+                ("origin", transform.origin_seconds),
+            ] {
+                if seconds > u64::MAX / 1_000 {
+                    return Err(DataContractError::InvalidContractStructure(format!(
+                        "timeRange.{} ({} seconds) is too large to express in milliseconds",
+                        field, seconds
+                    )));
+                }
+            }
+            if transform.step_seconds == 0 {
+                return Err(DataContractError::InvalidContractStructure(
+                    "timeRange.step must be greater than zero".to_string(),
+                ));
+            }
+            if transform.range_seconds == 0 {
+                return Err(DataContractError::InvalidContractStructure(
+                    "timeRange.range must be greater than zero".to_string(),
+                ));
+            }
+            if transform.range_seconds % transform.step_seconds != 0 {
+                return Err(DataContractError::InvalidContractStructure(
+                    "timeRange.range must be an exact multiple of timeRange.step so the number \
+                     of overlapping ranges per document is deterministic"
+                        .to_string(),
+                ));
+            }
+            // The overlap-factor cap is NOT checked here: it is a versioned
+            // system limit (`SystemLimits::max_time_range_overlap_factor`),
+            // and this parser has no platform version. It is enforced at
+            // contract registration in `try_from_schema`, like the other
+            // versioned index limits; this function keeps only the structural
+            // rules that hold at every version.
+            match index_properties.first() {
+                Some(first) if first.name == transform.source => {}
+                Some(first) => {
+                    return Err(DataContractError::InvalidContractStructure(format!(
+                        "timeRange.on (\"{}\") must name the first index property (\"{}\"); a \
+                         time range partitions the index by time, so it has to be the leading \
+                         property",
+                        transform.source, first.name
+                    )));
+                }
+                None => {
+                    return Err(DataContractError::InvalidContractStructure(
+                        "an index with a timeRange must have at least one property".to_string(),
+                    ));
+                }
+            }
+        }
+
         // If the index didn't have a name, derive one deterministically from
         // its properties and their directions. Every document meta-schema
         // (v0/v1/v2) requires `name`, so an unnamed index can only reach this
@@ -1265,6 +1531,7 @@ impl Index {
             ranked_countable,
             ranked_summable,
             ranked_averageable,
+            time_range,
         })
     }
 }
@@ -1335,7 +1602,290 @@ mod tests {
             ranked_countable: false,
             ranked_summable: false,
             ranked_averageable: false,
+            time_range: None,
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // timeRange parsing + structural validation tests
+    // -----------------------------------------------------------------------
+
+    /// `time_range` is `(on, range, step)` with the window parameters in the
+    /// seconds the contract grammar declares them in.
+    fn index_value_map(
+        first_property: &str,
+        time_range: Option<(&str, u64, u64)>,
+    ) -> Vec<(Value, Value)> {
+        let property = Value::Map(vec![(
+            Value::Text(first_property.to_string()),
+            Value::Text("asc".to_string()),
+        )]);
+        let hashtag = Value::Map(vec![(
+            Value::Text("hashtag".to_string()),
+            Value::Text("asc".to_string()),
+        )]);
+
+        let mut map = vec![
+            (
+                Value::Text("name".to_string()),
+                Value::Text("trending".to_string()),
+            ),
+            (
+                Value::Text("properties".to_string()),
+                Value::Array(vec![property, hashtag]),
+            ),
+        ];
+
+        if let Some((on, range, step)) = time_range {
+            map.push((
+                Value::Text("timeRange".to_string()),
+                Value::Map(vec![
+                    (Value::Text("on".to_string()), Value::Text(on.to_string())),
+                    (Value::Text("range".to_string()), Value::U64(range)),
+                    (Value::Text("step".to_string()), Value::U64(step)),
+                ]),
+            ));
+        }
+
+        map
+    }
+
+    #[test]
+    fn time_range_index_parses() {
+        // A six-hour window refreshed every two hours.
+        let map = index_value_map("$createdAt", Some(("$createdAt", 21_600, 7_200)));
+        let index = Index::try_from_value_map(map.as_slice(), false, true).expect("should parse");
+        let transform = index.time_range.expect("time_range should be set");
+        assert_eq!(transform.source, "$createdAt");
+        assert_eq!(transform.range_seconds, 21_600);
+        assert_eq!(transform.step_seconds, 7_200);
+        assert_eq!(transform.origin_seconds, 0);
+        assert_eq!(transform.overlap_factor(), 3);
+        // The parsed seconds are what the bucket math scales into the
+        // millisecond domain the source timestamps live in.
+        assert_eq!(transform.range_ms(), 21_600_000);
+        assert_eq!(transform.step_ms(), 7_200_000);
+    }
+
+    #[test]
+    fn time_range_rejects_non_multiple_range() {
+        let map = index_value_map("$createdAt", Some(("$createdAt", 21_600, 7_000)));
+        let err = Index::try_from_value_map(map.as_slice(), false, true).unwrap_err();
+        assert!(matches!(
+            err,
+            DataContractError::InvalidContractStructure(_)
+        ));
+    }
+
+    #[test]
+    fn time_range_rejects_parameters_that_cannot_be_expressed_in_milliseconds() {
+        // `range == step` keeps the overlap factor at 1 and the multiple check
+        // satisfied, so the millisecond-expressibility guard is the only rule
+        // that can reject this transform.
+        let too_large = u64::MAX / 1_000 + 1;
+        let map = index_value_map("$createdAt", Some(("$createdAt", too_large, too_large)));
+        let err = Index::try_from_value_map(map.as_slice(), false, true).unwrap_err();
+        match err {
+            DataContractError::InvalidContractStructure(message) => {
+                assert!(
+                    message.contains("too large to express in milliseconds"),
+                    "expected the millisecond-expressibility rejection, got: {message}"
+                );
+            }
+            other => panic!("expected InvalidContractStructure, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn time_range_parse_accepts_any_overlap_factor() {
+        // The overlap-factor cap is a versioned system limit enforced at
+        // contract registration (`try_from_schema`), not a structural parse
+        // rule — this parser has no platform version to read it from. A
+        // huge factor must therefore parse; registration is what rejects it.
+        let map = index_value_map("$createdAt", Some(("$createdAt", 300, 1)));
+        let index = Index::try_from_value_map(map.as_slice(), false, true)
+            .expect("the parser applies structural rules only");
+        assert_eq!(
+            index
+                .time_range
+                .expect("time_range should be set")
+                .overlap_factor(),
+            300
+        );
+    }
+
+    #[test]
+    fn time_range_rejects_source_not_first_property() {
+        // `on` names a property that is not the first index property
+        let map = index_value_map("$createdAt", Some(("hashtag", 60, 20)));
+        let err = Index::try_from_value_map(map.as_slice(), false, true).unwrap_err();
+        assert!(matches!(
+            err,
+            DataContractError::InvalidContractStructure(_)
+        ));
+    }
+
+    #[test]
+    fn time_range_rejects_zero_step() {
+        let map = index_value_map("$createdAt", Some(("$createdAt", 60, 0)));
+        let err = Index::try_from_value_map(map.as_slice(), false, true).unwrap_err();
+        assert!(matches!(
+            err,
+            DataContractError::InvalidContractStructure(_)
+        ));
+    }
+
+    #[test]
+    fn time_range_rejects_null_searchable_false() {
+        let mut map = index_value_map("$createdAt", Some(("$createdAt", 21_600, 7_200)));
+        map.push((
+            Value::Text("nullSearchable".to_string()),
+            Value::Bool(false),
+        ));
+        let err = Index::try_from_value_map(map.as_slice(), false, true).unwrap_err();
+        assert!(matches!(
+            err,
+            DataContractError::InvalidContractStructure(_)
+        ));
+    }
+
+    #[test]
+    fn time_range_rejects_ranked_flags() {
+        // Ranked queries exclude bucketed indexes, so the combination would
+        // maintain ranked secondaries no query can ever select. The index is
+        // otherwise a fully valid ranked shape (single property, countable +
+        // rangeCountable), so the ranked-prerequisite checks pass and the
+        // rejection under test is the one that fires.
+        let property = Value::Map(vec![(
+            Value::Text("$createdAt".to_string()),
+            Value::Text("asc".to_string()),
+        )]);
+        let map = vec![
+            (
+                Value::Text("name".to_string()),
+                Value::Text("busiestBuckets".to_string()),
+            ),
+            (
+                Value::Text("properties".to_string()),
+                Value::Array(vec![property]),
+            ),
+            (Value::Text("countable".to_string()), Value::Bool(true)),
+            (Value::Text("rangeCountable".to_string()), Value::Bool(true)),
+            (
+                Value::Text("rankedCountable".to_string()),
+                Value::Bool(true),
+            ),
+            (
+                Value::Text("timeRange".to_string()),
+                Value::Map(vec![
+                    (
+                        Value::Text("on".to_string()),
+                        Value::Text("$createdAt".to_string()),
+                    ),
+                    (Value::Text("range".to_string()), Value::U64(21_600)),
+                    (Value::Text("step".to_string()), Value::U64(7_200)),
+                ]),
+            ),
+        ];
+        let err = Index::try_from_value_map(map.as_slice(), true, true).unwrap_err();
+        match err {
+            DataContractError::InvalidContractStructure(message) => {
+                assert!(
+                    message.contains("cannot be ranked"),
+                    "expected the timeRange-vs-ranked rejection, got: {message}"
+                );
+            }
+            other => panic!("expected InvalidContractStructure, got: {other:?}"),
+        }
+    }
+
+    /// One day as the contract grammar declares a window (seconds), aligned to
+    /// the epoch: `range == step`, so the windows tile time without
+    /// overlapping and every document lands in exactly one.
+    const ONE_DAY_SECONDS: u64 = 24 * 3_600;
+
+    #[test]
+    fn unique_time_range_index_parses_for_non_overlapping_windows_on_created_at() {
+        // "one post per author per day": the bucket is a genuine partition of
+        // time, so at most one document per (day, hashtag) is a constraint the
+        // storage layout can actually hold.
+        let mut map = index_value_map(
+            "$createdAt",
+            Some(("$createdAt", ONE_DAY_SECONDS, ONE_DAY_SECONDS)),
+        );
+        map.push((Value::Text("unique".to_string()), Value::Bool(true)));
+        let index = Index::try_from_value_map(map.as_slice(), false, true).expect("should parse");
+        assert!(index.unique, "the unique flag must survive parsing");
+        let transform = index.time_range.expect("time_range should be set");
+        assert_eq!(transform.source, "$createdAt");
+        assert_eq!(
+            transform.overlap_factor(),
+            1,
+            "range == step is what makes the index a partition"
+        );
+    }
+
+    #[test]
+    fn time_range_rejects_unique_when_windows_overlap() {
+        // range = 3 * step: each document is indexed under three bucket keys
+        // at once, so there is no single slot for uniqueness to guard.
+        let mut map = index_value_map(
+            "$createdAt",
+            Some(("$createdAt", 3 * ONE_DAY_SECONDS, ONE_DAY_SECONDS)),
+        );
+        map.push((Value::Text("unique".to_string()), Value::Bool(true)));
+        let err = Index::try_from_value_map(map.as_slice(), false, true).unwrap_err();
+        match err {
+            DataContractError::InvalidContractStructure(message) => {
+                assert!(
+                    message.contains("unique") && message.contains("non-overlapping"),
+                    "expected the overlapping-windows rejection, got: {message}"
+                );
+            }
+            other => panic!("expected InvalidContractStructure, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn time_range_rejects_unique_on_a_mutable_timestamp_source() {
+        // `$updatedAt` moves the document to a new bucket on every revision;
+        // uniqueness validation only sees the new timestamp, so it could never
+        // tell which bucket the document is vacating.
+        let mut map = index_value_map(
+            "$updatedAt",
+            Some(("$updatedAt", ONE_DAY_SECONDS, ONE_DAY_SECONDS)),
+        );
+        map.push((Value::Text("unique".to_string()), Value::Bool(true)));
+        let err = Index::try_from_value_map(map.as_slice(), false, true).unwrap_err();
+        match err {
+            DataContractError::InvalidContractStructure(message) => {
+                assert!(
+                    message.contains("$createdAt"),
+                    "expected the immutable-source requirement, got: {message}"
+                );
+            }
+            other => panic!("expected InvalidContractStructure, got: {other:?}"),
+        }
+        // The same shape without `unique` is fine — the restriction is about
+        // uniqueness, not about bucketing `$updatedAt`.
+        let map = index_value_map(
+            "$updatedAt",
+            Some(("$updatedAt", ONE_DAY_SECONDS, ONE_DAY_SECONDS)),
+        );
+        Index::try_from_value_map(map.as_slice(), false, true)
+            .expect("a non-unique $updatedAt bucketing stays legal");
+    }
+
+    #[test]
+    fn time_range_is_not_part_of_the_pre_v3_grammar() {
+        // Without the meta-schema-v3 grammar admission, `timeRange` falls
+        // through to the unknown-key arm — exactly how a pre-PV14 node
+        // rejected it.
+        let map = index_value_map("$createdAt", Some(("$createdAt", 21_600, 7_200)));
+        let err = Index::try_from(map.as_slice()).unwrap_err();
+        assert!(matches!(err, DataContractError::ValueWrongType(_)));
+        let err = Index::try_from_value_map(map.as_slice(), true, false).unwrap_err();
+        assert!(matches!(err, DataContractError::ValueWrongType(_)));
     }
 
     // -----------------------------------------------------------------------
@@ -2237,7 +2787,7 @@ mod tests {
             ("rankedSummable", Value::Bool(true)),
             ("rankedAverageable", Value::Bool(true)),
         ]);
-        let index = Index::try_from_value_map(index_map.as_slice(), true)
+        let index = Index::try_from_value_map(index_map.as_slice(), true, true)
             .expect("all three ranked keywords must parse when the grammar allows them");
         assert!(index.ranked_countable);
         assert!(index.ranked_summable);
@@ -2255,7 +2805,7 @@ mod tests {
             ("averageable", Value::Text("score".to_string())),
             ("rangeAverageable", Value::Bool(true)),
         ]);
-        let index = Index::try_from_value_map(index_map.as_slice(), true)
+        let index = Index::try_from_value_map(index_map.as_slice(), true, true)
             .expect("index without ranked keywords must parse");
         assert!(!index.ranked_countable);
         assert!(!index.ranked_summable);
@@ -2289,7 +2839,7 @@ mod tests {
                 Value::Text("asc".to_string()),
             )]),
         ]);
-        let index = Index::try_from_value_map(index_map.as_slice(), true)
+        let index = Index::try_from_value_map(index_map.as_slice(), true, true)
             .expect("ranked flags on a compound index must be accepted");
         assert!(index.ranked_averageable);
         assert_eq!(index.properties.len(), 2);
@@ -2311,7 +2861,7 @@ mod tests {
                 Value::Text("asc".to_string()),
             )]),
         ]);
-        let result = Index::try_from_value_map(index_map.as_slice(), true);
+        let result = Index::try_from_value_map(index_map.as_slice(), true, true);
         assert!(
             result.is_err(),
             "rankedCountable without rangeCountable must be rejected on a compound index too"
@@ -2334,7 +2884,7 @@ mod tests {
             ("rangeAverageable", Value::Bool(true)),
             ("rankedAverageable", Value::Bool(true)),
         ]);
-        let result = Index::try_from_value_map(index_map.as_slice(), true);
+        let result = Index::try_from_value_map(index_map.as_slice(), true, true);
         assert!(
             result.is_err(),
             "ranked flags on a unique index must be rejected"
@@ -2355,7 +2905,7 @@ mod tests {
             ("countable", Value::Text("countable".to_string())),
             ("rankedCountable", Value::Bool(true)),
         ]);
-        let result = Index::try_from_value_map(index_map.as_slice(), true);
+        let result = Index::try_from_value_map(index_map.as_slice(), true, true);
         assert!(
             result.is_err(),
             "rankedCountable without rangeCountable must be rejected"
@@ -2373,7 +2923,7 @@ mod tests {
             ("summable", Value::Text("score".to_string())),
             ("rankedSummable", Value::Bool(true)),
         ]);
-        let result = Index::try_from_value_map(index_map.as_slice(), true);
+        let result = Index::try_from_value_map(index_map.as_slice(), true, true);
         assert!(
             result.is_err(),
             "rankedSummable without rangeSummable must be rejected"
@@ -2393,7 +2943,7 @@ mod tests {
             ("rangeCountable", Value::Bool(true)),
             ("rankedAverageable", Value::Bool(true)),
         ]);
-        let result = Index::try_from_value_map(index_map.as_slice(), true);
+        let result = Index::try_from_value_map(index_map.as_slice(), true, true);
         assert!(
             result.is_err(),
             "rankedAverageable with only the count range axis must be rejected"
@@ -2413,7 +2963,7 @@ mod tests {
             ("rangeSummable", Value::Bool(true)),
             ("rankedAverageable", Value::Bool(true)),
         ]);
-        let result = Index::try_from_value_map(index_map.as_slice(), true);
+        let result = Index::try_from_value_map(index_map.as_slice(), true, true);
         assert!(
             result.is_err(),
             "rankedAverageable with only the sum range axis must be rejected"
@@ -2435,7 +2985,7 @@ mod tests {
             ("rangeAverageable", Value::Bool(true)),
             ("rankedAverageable", Value::Bool(true)),
         ]);
-        let index = Index::try_from_value_map(index_map.as_slice(), true)
+        let index = Index::try_from_value_map(index_map.as_slice(), true, true)
             .expect("rankedAverageable on the averageable sugar form must parse");
         assert!(index.ranked_averageable);
         assert!(index.countable.is_countable());
@@ -2463,7 +3013,7 @@ mod tests {
             ("rangeSummable", Value::Bool(true)),
             ("rankedAverageable", Value::Bool(true)),
         ]);
-        let index = Index::try_from_value_map(index_map.as_slice(), true)
+        let index = Index::try_from_value_map(index_map.as_slice(), true, true)
             .expect("rankedAverageable on the explicit longhand form must parse");
         assert!(index.ranked_averageable);
         assert!(index.range_countable);
@@ -2481,7 +3031,7 @@ mod tests {
                 ("rangeAverageable", Value::Bool(true)),
                 (key, Value::Text("yes".to_string())),
             ]);
-            let result = Index::try_from_value_map(index_map.as_slice(), true);
+            let result = Index::try_from_value_map(index_map.as_slice(), true, true);
             assert!(result.is_err(), "{key} must reject a non-boolean value");
             let msg = format!("{:?}", result.unwrap_err());
             assert!(
@@ -2505,7 +3055,7 @@ mod tests {
                     ("rangeAverageable", Value::Bool(true)),
                     (key, value.clone()),
                 ]);
-                let result = Index::try_from_value_map(index_map.as_slice(), false);
+                let result = Index::try_from_value_map(index_map.as_slice(), false, false);
                 assert!(
                     result.is_err(),
                     "{key}: {value:?} must be rejected when the ranked grammar is off"
@@ -2578,7 +3128,7 @@ mod tests {
         for (axis, mut extra) in ranked_axis_fixtures() {
             extra.push(("nullSearchable", Value::Bool(false)));
             let index_map = ranked_index_map(extra);
-            let result = Index::try_from_value_map(index_map.as_slice(), true);
+            let result = Index::try_from_value_map(index_map.as_slice(), true, true);
             assert!(
                 result.is_err(),
                 "{axis} with nullSearchable: false must be rejected"
@@ -2598,7 +3148,7 @@ mod tests {
     fn test_index_try_from_ranked_without_null_searchable_key_accepted() {
         for (axis, extra) in ranked_axis_fixtures() {
             let index_map = ranked_index_map(extra);
-            let index = Index::try_from_value_map(index_map.as_slice(), true)
+            let index = Index::try_from_value_map(index_map.as_slice(), true, true)
                 .unwrap_or_else(|e| panic!("{axis} with no nullSearchable key must parse: {e:?}"));
             assert!(
                 index.null_searchable,
@@ -2614,9 +3164,10 @@ mod tests {
         for (axis, mut extra) in ranked_axis_fixtures() {
             extra.push(("nullSearchable", Value::Bool(true)));
             let index_map = ranked_index_map(extra);
-            let index = Index::try_from_value_map(index_map.as_slice(), true).unwrap_or_else(|e| {
-                panic!("{axis} with an explicit nullSearchable: true must parse: {e:?}")
-            });
+            let index =
+                Index::try_from_value_map(index_map.as_slice(), true, true).unwrap_or_else(|e| {
+                    panic!("{axis} with an explicit nullSearchable: true must parse: {e:?}")
+                });
             assert!(index.null_searchable);
         }
     }
@@ -2627,7 +3178,7 @@ mod tests {
     #[test]
     fn test_index_try_from_non_ranked_with_null_searchable_false_still_accepted() {
         let plain = ranked_index_map(vec![("nullSearchable", Value::Bool(false))]);
-        let index = Index::try_from_value_map(plain.as_slice(), true)
+        let index = Index::try_from_value_map(plain.as_slice(), true, true)
             .expect("nullSearchable: false on a plain index must still parse");
         assert!(!index.null_searchable);
 
@@ -2636,7 +3187,7 @@ mod tests {
             ("rangeAverageable", Value::Bool(true)),
             ("nullSearchable", Value::Bool(false)),
         ]);
-        let index = Index::try_from_value_map(aggregating.as_slice(), true)
+        let index = Index::try_from_value_map(aggregating.as_slice(), true, true)
             .expect("nullSearchable: false on a range-averageable index must still parse");
         assert!(!index.null_searchable);
         assert!(!index.ranked_averageable);
@@ -3119,6 +3670,7 @@ mod json_convertible_tests {
             ranked_countable: true,
             ranked_summable: false,
             ranked_averageable: true,
+            time_range: None,
         }
     }
 
@@ -3148,6 +3700,7 @@ mod json_convertible_tests {
                 "ranked_countable": true,
                 "ranked_summable": false,
                 "ranked_averageable": true,
+                "time_range": serde_json::Value::Null,
             })
         );
         let recovered = Index::from_json(json).expect("from_json");

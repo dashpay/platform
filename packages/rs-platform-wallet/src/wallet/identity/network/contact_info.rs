@@ -114,6 +114,7 @@ impl<B: TransactionBroadcaster + ?Sized> DashPayView<'_, B> {
                     operator: WhereOperator::Equal,
                     value: platform_value!(identity_id),
                 }],
+                time_range_clauses: vec![],
                 group_by: vec![],
                 having: vec![],
                 // Load-bearing, not cosmetic: drive answers a bare

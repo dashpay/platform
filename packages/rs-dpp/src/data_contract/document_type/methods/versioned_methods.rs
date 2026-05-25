@@ -404,9 +404,31 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
         in_field_name: Option<&str>,
         order_by: &[&str],
     ) -> Option<(&Index, u16)> {
+        self.index_for_types_matching_v0(index_names, in_field_name, order_by, |_| true)
+    }
+
+    /// [`Self::index_for_types_v0`] restricted to the indexes `filter` admits.
+    ///
+    /// The filter is applied before `Index::matches`, so a rejected index can
+    /// never win the difference comparison. Callers that need selection pinned
+    /// to a class of index must use this rather than post-checking whatever the
+    /// unrestricted search returned: several indexes can cover the same fields,
+    /// the winner among equally-good candidates is decided by the index map's
+    /// name ordering, and a post-check can only reject the winner — never
+    /// promote the index that was actually required.
+    fn index_for_types_matching_v0(
+        &self,
+        index_names: &[&str],
+        in_field_name: Option<&str>,
+        order_by: &[&str],
+        filter: impl Fn(&Index) -> bool,
+    ) -> Option<(&Index, u16)> {
         let mut best_index: Option<(&Index, u16)> = None;
         let mut best_difference = u16::MAX;
         for (_, index) in self.indexes().iter() {
+            if !filter(index) {
+                continue;
+            }
             let difference_option = index.matches(index_names, in_field_name, order_by);
             if let Some(difference) = difference_option {
                 if difference == 0 {

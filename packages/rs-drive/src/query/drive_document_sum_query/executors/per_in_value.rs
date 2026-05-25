@@ -29,6 +29,7 @@ impl Drive {
         document_type: DocumentTypeRef,
         document_type_name: String,
         where_clauses: Vec<WhereClause>,
+        resolved_time_range_fields: &[String],
         sum_property: String,
         options: RangeSumOptions,
         transaction: TransactionArg,
@@ -82,6 +83,7 @@ impl Drive {
                 document_type.indexes(),
                 &clauses_for_value,
                 &sum_property,
+                resolved_time_range_fields,
             )
             .ok_or_else(|| {
                 Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(

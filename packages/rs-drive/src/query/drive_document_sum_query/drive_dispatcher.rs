@@ -62,6 +62,14 @@ impl Drive {
         let contract_id = request.contract.id().to_buffer();
         let document_type_name = request.document_type.name().to_string();
         let where_clauses = request.where_clauses;
+        let resolved_time_range_fields = request.resolved_time_range_fields;
+        // Same provenance-vs-shape contract as the count and joint
+        // dispatchers; sum has no canonicalize step, so the guard anchors
+        // here.
+        crate::query::validate_resolved_time_range_clause_shapes(
+            &where_clauses,
+            &resolved_time_range_fields,
+        )?;
         let sum_property = request.sum_property;
         // Default direction is ascending; the first order clause's
         // direction (if any) wins. Mirrors count's analog.
@@ -78,6 +86,7 @@ impl Drive {
                     request.document_type,
                     document_type_name,
                     where_clauses,
+                    &resolved_time_range_fields,
                     sum_property,
                     transaction,
                     platform_version,
@@ -97,6 +106,7 @@ impl Drive {
                         request.document_type,
                         document_type_name,
                         where_clauses,
+                        &resolved_time_range_fields,
                         sum_property,
                         options,
                         transaction,
@@ -127,6 +137,7 @@ impl Drive {
                     request.document_type,
                     document_type_name,
                     where_clauses,
+                    &resolved_time_range_fields,
                     sum_property,
                     options,
                     transaction,
@@ -145,6 +156,7 @@ impl Drive {
                     request.document_type,
                     document_type_name,
                     where_clauses,
+                    &resolved_time_range_fields,
                     sum_property,
                     transaction,
                     platform_version,
@@ -196,6 +208,7 @@ impl Drive {
                         request.document_type,
                         document_type_name,
                         where_clauses,
+                        &resolved_time_range_fields,
                         sum_property,
                         limit_u16,
                         order_by_ascending,
@@ -210,6 +223,7 @@ impl Drive {
                     request.document_type,
                     document_type_name,
                     where_clauses,
+                    &resolved_time_range_fields,
                     sum_property,
                     transaction,
                     platform_version,
@@ -254,6 +268,7 @@ impl Drive {
                         request.document_type,
                         document_type_name,
                         where_clauses,
+                        &resolved_time_range_fields,
                         sum_property,
                         limit_u16,
                         order_by_ascending,

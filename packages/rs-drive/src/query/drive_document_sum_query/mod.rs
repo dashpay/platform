@@ -180,6 +180,12 @@ pub struct DocumentSumRequest<'a> {
     /// [`drive_dispatcher::where_clauses_from_value`] from the
     /// wire-CBOR shape).
     pub where_clauses: Vec<WhereClause>,
+    /// The fields among `where_clauses` whose equality clause was produced by
+    /// `IN_TIME_RANGE` resolution rather than written by the caller. Same
+    /// contract and same purpose as
+    /// [`crate::query::DriveDocumentQuery::resolved_time_range_fields`]:
+    /// it is what gates which indexes the sum pickers may select.
+    pub resolved_time_range_fields: Vec<String>,
     /// Structured order-clauses (parsed via
     /// [`drive_dispatcher::order_clauses_from_value`]).
     pub order_clauses: Vec<OrderClause>,

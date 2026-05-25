@@ -75,7 +75,9 @@
 
 use crate::drive::document::ranked_index_tree_type::property_name_tree_type_and_ranked_axes;
 use crate::error::Error;
-use dpp::data_contract::document_type::IndexLevel;
+use crate::util::object_size_info::DriveKeyInfo;
+use dpp::data_contract::document_type::{IndexLevel, TimeRangeTransform};
+use grovedb::batch::key_info::KeyInfo;
 use grovedb::element::IndexAxis;
 use grovedb::TreeType;
 
@@ -126,6 +128,67 @@ pub(crate) fn index_level_tree_types_with_continuation_demotion(
         ranked_axes,
         value_tree_type,
     })
+}
+
+/// Expands a document's raw top-field key into the set of index-entry keys a
+/// time-range first-property node stores it under. For a node without a
+/// transform the single key passes through untouched.
+///
+/// Shared by the insert and delete v2 walkers (same must-not-drift contract
+/// as the tree-type derivation above); the entry-key rule itself — null keeps
+/// its single null entry, pre-origin timestamps produce no entries,
+/// undecodable values keep their raw key — lives in
+/// [`TimeRangeTransform::entry_keys_for_raw`], which the update walker also
+/// calls.
+///
+/// On the estimated-cost path (`KeySize`) the real timestamp isn't available,
+/// so this assumes the worst case of `overlap_factor` overlapping buckets —
+/// and makes each worst-case key **distinct** by suffixing an ordinal:
+/// identical `(path, key)` operations collapse inside grovedb's batch
+/// structure, so `overlap` copies of one key would silently estimate a single
+/// bucket's cost.
+///
+/// `max_overlap_factor` is the platform version's
+/// `SystemLimits::max_time_range_overlap_factor` — a validated contract can
+/// never exceed it, so the clamp only bounds estimation work for a transform
+/// built outside validation, and reading it from the version keeps the
+/// estimated fan-out in step with whatever a future protocol version allows.
+pub(crate) fn time_range_index_keys<'a>(
+    transform: Option<&TimeRangeTransform>,
+    document_top_field: DriveKeyInfo<'a>,
+    max_overlap_factor: u64,
+) -> Vec<DriveKeyInfo<'a>> {
+    let Some(transform) = transform else {
+        return vec![document_top_field];
+    };
+    match &document_top_field {
+        DriveKeyInfo::KeySize(key_info) => {
+            let overlap = transform.overlap_factor().clamp(1, max_overlap_factor) as usize;
+            (0..overlap)
+                .map(|ordinal| {
+                    let mut key_info = key_info.clone();
+                    let suffix = (ordinal as u16).to_be_bytes();
+                    match &mut key_info {
+                        KeyInfo::KnownKey(bytes) => bytes.extend_from_slice(&suffix),
+                        KeyInfo::MaxKeySize { unique_id, .. } => {
+                            unique_id.extend_from_slice(&suffix)
+                        }
+                    }
+                    DriveKeyInfo::KeySize(key_info)
+                })
+                .collect()
+        }
+        DriveKeyInfo::Key(raw) => transform
+            .entry_keys_for_raw(raw)
+            .into_iter()
+            .map(DriveKeyInfo::Key)
+            .collect(),
+        DriveKeyInfo::KeyRef(raw) => transform
+            .entry_keys_for_raw(raw)
+            .into_iter()
+            .map(DriveKeyInfo::Key)
+            .collect(),
+    }
 }
 
 /// Pure derivation of the value-tree type over the level's four
@@ -329,6 +392,7 @@ mod tests {
             ranked_countable: false,
             ranked_summable: false,
             ranked_averageable: true,
+            time_range: None,
         };
         let compound = Index {
             name: "byRestaurantChef".to_string(),
@@ -352,6 +416,7 @@ mod tests {
             ranked_countable: false,
             ranked_summable: false,
             ranked_averageable: false,
+            time_range: None,
         };
 
         let index_structure =

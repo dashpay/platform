@@ -116,11 +116,33 @@ pub(super) fn assert_ranked_shape(
 /// metadata before returning. There is no path through this helper
 /// that yields entries without that check having run.
 pub(super) fn verify_ranked_query(
-    request: DocumentQuery,
+    mut request: DocumentQuery,
     response: GetDocumentsResponse,
     platform_version: &PlatformVersion,
     provider: &dyn ContextProvider,
 ) -> Result<(Option<RankedPage>, ResponseMetadata, Proof), drive_proof_verifier::Error> {
+    let proof = response
+        .proof()
+        .or(Err(drive_proof_verifier::Error::NoProofInResult))?;
+    let mtd = response
+        .metadata()
+        .or(Err(drive_proof_verifier::Error::EmptyResponseMetadata))?;
+
+    // Resolve any pending time-range (`IN_TIME_RANGE`) selections into
+    // concrete bucket-equality clauses before the shape check reads
+    // `request.where_clauses` — the same invariant the count/sum/average
+    // helpers follow. The ranked surface rejects where clauses today, so a
+    // ranked + time-range query fails the shape check below with the same
+    // "no where clauses" error the server's router produces (rather than
+    // passing the local pre-flight and dying server-side); if ranked routing
+    // ever grows an equality prefix, resolution is already in place.
+    // The resolved-field list is discarded: the ranked picker excludes
+    // bucketed indexes outright, so there is nothing for it to pin.
+    super::document_query::resolve_time_range_clauses_with_metadata_time(
+        &mut request,
+        mtd.time_ms,
+    )?;
+
     let document_type = request
         .data_contract
         .document_type_for_name(&request.document_type_name)
@@ -130,12 +152,6 @@ pub(super) fn verify_ranked_query(
                 request.document_type_name, e
             ),
         })?;
-    let proof = response
-        .proof()
-        .or(Err(drive_proof_verifier::Error::NoProofInResult))?;
-    let mtd = response
-        .metadata()
-        .or(Err(drive_proof_verifier::Error::EmptyResponseMetadata))?;
 
     let mode = assert_ranked_shape(&request, platform_version)?;
 

@@ -3860,8 +3860,14 @@ mod having_trust_boundary {
     const TIME_MS: u64 = 1_755_000_000_000;
 
     /// Provider that knows exactly one quorum key — the test one.
-    struct TestQuorumProvider {
-        pubkey: [u8; 48],
+    ///
+    /// This and the two signing helpers below are `pub(super)` so the
+    /// sibling [`super::time_range_proof_verification`] suite signs its
+    /// commits through the same canonical construction; a second copy of
+    /// the tenderdash harness could drift from this one and quietly stop
+    /// testing the binding.
+    pub(super) struct TestQuorumProvider {
+        pub(super) pubkey: [u8; 48],
     }
 
     impl ContextProvider for TestQuorumProvider {
@@ -3899,7 +3905,7 @@ mod having_trust_boundary {
     }
 
     /// A deterministic, valid BLS scalar — no RNG dependency.
-    fn quorum_secret_key() -> SecretKey<Bls12381G2Impl> {
+    pub(super) fn quorum_secret_key() -> SecretKey<Bls12381G2Impl> {
         let mut bytes = [0u8; 32];
         bytes[31] = 42;
         SecretKey::<Bls12381G2Impl>::from_be_bytes(&bytes)
@@ -4070,7 +4076,7 @@ mod having_trust_boundary {
     /// Sign a tenderdash precommit whose state id carries `app_hash` —
     /// the same canonical construction `verify_tenderdash_proof`
     /// rebuilds on the verify side.
-    fn signed_proof(
+    pub(super) fn signed_proof(
         grovedb_proof: Vec<u8>,
         app_hash: &[u8; 32],
         mtd: &ResponseMetadata,
@@ -4242,6 +4248,573 @@ mod having_trust_boundary {
         assert!(
             matches!(error, ProofVerifierError::InvalidSignature { .. }),
             "the rejection must be the signature binding, got: {error:?}"
+        );
+    }
+}
+
+mod time_range_proof_verification {
+    //! The whole time-range reconstruction sequence, run end to end
+    //! against a populated Drive: the handler resolves `IN_TIME_RANGE`
+    //! from committed block time, proves the resulting bucket query,
+    //! and the client re-derives the *identical* bucket from the
+    //! quorum-signed response metadata `time_ms`, re-runs the
+    //! provenance guard, re-picks the bucketed index and verifies the
+    //! proof over the GroveDB path that selection produces. Every link
+    //! in that chain is load-bearing: a resolution reading anything
+    //! but the signed time, a picker admitting the plain index, or a
+    //! guard accepting a shape the resolver never built would each
+    //! turn a wrong answer into a *proven* wrong answer.
+    //!
+    //! The headline assertion is the overlapping-window one. With
+    //! `range = 6h, step = 2h` a document is written under three
+    //! bucket keys at once, so a count that walked buckets rather
+    //! than addressing exactly one would return three times the
+    //! truth — and would verify, because the proof would be an
+    //! honest proof of the wrong query.
+    //!
+    //! Split, same as [`super::having_trust_boundary`]: proof
+    //! end-to-end lives here because generating proofs needs drive's
+    //! `server` feature and a populated platform; the client-surface
+    //! half (resolution from metadata time, provenance bookkeeping,
+    //! ordering) is offline-tested in rs-sdk, which builds drive with
+    //! `verify` only.
+
+    use super::having_trust_boundary::{quorum_secret_key, signed_proof, TestQuorumProvider};
+    use super::*;
+    use crate::rpc::core::MockCoreRPCLike;
+    use crate::test::helpers::setup::TempPlatform;
+    use dapi_grpc::platform::v0::get_documents_response::Version as ResponseVersion;
+    use dapi_grpc::platform::v0::{GetDocumentsResponse, Proof, ResponseMetadata};
+    use dpp::block::block_info::BlockInfo;
+    use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0;
+    use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+    use dpp::data_contract::document_type::DocumentTypeRef;
+    use dpp::data_contract::DataContractFactory;
+    use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
+    use dpp::platform_value::platform_value;
+    use dpp::prelude::DataContract;
+    use drive::drive::Drive;
+    use drive::query::{
+        DriveDocumentCountQuery, DriveDocumentQuery, TimeRangeSelector, WhereClause,
+    };
+    use drive_proof_verifier::types::Documents;
+    use drive_proof_verifier::{
+        verify_point_lookup_count_proof, Error as ProofVerifierError, FromProof, SplitCountEntry,
+    };
+    use std::collections::BTreeMap;
+
+    const DOCUMENT_TYPE: &str = "post";
+    const CREATED_AT: &str = "$createdAt";
+    const BUCKETED_INDEX: &str = "trending";
+    const MINUTE_MS: u64 = 60_000;
+    const HOUR_MS: u64 = 3_600_000;
+
+    /// A bucket start on the contract's grid: `origin` is 0 and the step is
+    /// two hours, and this is an exact multiple of two hours. Every timestamp
+    /// below is expressed relative to it.
+    const NEWEST_BUCKET_START_MS: u64 = 1_755_000_000_000;
+    /// Committed block time, one hour into the newest bucket — so the newest
+    /// active range is `NEWEST_BUCKET_START_MS` and there is a full hour of
+    /// bucket in which documents can sit.
+    const BLOCK_TIME_MS: u64 = NEWEST_BUCKET_START_MS + HOUR_MS;
+    const BLOCK_HEIGHT: u64 = 100;
+    const BLOCK_CORE_HEIGHT: u32 = 42;
+    const QUORUM_HASH: [u8; 32] = [3u8; 32];
+
+    /// `($createdAt, hashtag)` for the four posts, chosen so the newest
+    /// bucket contains: two `#ibiza` posts that *also* live in the two older
+    /// overlapping buckets (the double-count regression), and one `#berlin`
+    /// post (so the second index property has to do work). The third
+    /// `#ibiza` post starts one hour before the newest bucket, so it belongs
+    /// to the three *older* buckets and to none of the newest — the negative
+    /// control that pins the query to a single bucket rather than to "recent
+    /// enough".
+    const POSTS: [(u64, &str); 4] = [
+        (NEWEST_BUCKET_START_MS + 10 * MINUTE_MS, "ibiza"),
+        (NEWEST_BUCKET_START_MS + 30 * MINUTE_MS, "ibiza"),
+        (NEWEST_BUCKET_START_MS - HOUR_MS, "ibiza"),
+        (NEWEST_BUCKET_START_MS + 15 * MINUTE_MS, "berlin"),
+    ];
+
+    /// A `countable` bucketed index over `(timeRange($createdAt), hashtag)`
+    /// with a six-hour window sliding every two hours — overlap factor 3 —
+    /// next to a plain index covering the same two fields the other way
+    /// round. The plain one exists so index selection has something wrong to
+    /// pick: it covers the identical clause field set, and only the
+    /// resolution provenance keeps the query off it.
+    fn register_trending_contract(
+        platform: &Platform<MockCoreRPCLike>,
+        platform_version: &PlatformVersion,
+    ) -> DataContract {
+        let factory = DataContractFactory::new(platform_version.protocol_version)
+            .expect("expected a factory");
+        let schemas = platform_value!({
+            DOCUMENT_TYPE: {
+                "type": "object",
+                "properties": {
+                    "hashtag": { "type": "string", "maxLength": 63, "position": 0 },
+                },
+                "indices": [
+                    {
+                        "name": BUCKETED_INDEX,
+                        "properties": [{ "$createdAt": "asc" }, { "hashtag": "asc" }],
+                        "countable": true,
+                        "timeRange": { "on": "$createdAt", "range": 21_600u64, "step": 7_200u64 },
+                    },
+                    {
+                        "name": "byHashtag",
+                        "properties": [{ "hashtag": "asc" }, { "$createdAt": "asc" }],
+                        "countable": true,
+                    },
+                ],
+                "required": ["$createdAt", "hashtag"],
+                "additionalProperties": false,
+            }
+        });
+        let contract = factory
+            .create_with_value_config(Identifier::new([7u8; 32]), 0, schemas, None, None)
+            .expect("the trending contract is well-formed")
+            .data_contract_owned();
+        store_data_contract(platform, &contract, platform_version);
+        contract
+    }
+
+    fn insert_posts(
+        platform: &Platform<MockCoreRPCLike>,
+        contract: &DataContract,
+        platform_version: &PlatformVersion,
+    ) -> Vec<Document> {
+        let document_type = contract
+            .document_type_for_name(DOCUMENT_TYPE)
+            .expect("post doctype exists");
+        POSTS
+            .iter()
+            .enumerate()
+            .map(|(i, (created_at_ms, hashtag))| {
+                let mut document: Document = document_type
+                    .random_document(Some(7_000 + i as u64), platform_version)
+                    .expect("random document");
+                document.set_properties(BTreeMap::from([(
+                    "hashtag".to_string(),
+                    Value::Text(hashtag.to_string()),
+                )]));
+                document.set_created_at(Some(*created_at_ms));
+                store_document(
+                    platform,
+                    contract,
+                    document_type,
+                    &document,
+                    platform_version,
+                );
+                document
+            })
+            .collect()
+    }
+
+    fn root_hash(drive: &Drive, platform_version: &PlatformVersion) -> [u8; 32] {
+        drive
+            .grove
+            .root_hash(None, &platform_version.drive.grove_version)
+            .unwrap()
+            .expect("root hash must be readable")
+    }
+
+    /// A state whose last committed block carries [`BLOCK_TIME_MS`] — the
+    /// handler resolves `IN_TIME_RANGE` from it and stamps it into the
+    /// response metadata, which is what makes the client's re-derivation
+    /// land on the same bucket.
+    fn state_with_committed_block_time(
+        base: &PlatformState,
+        drive: &Drive,
+        platform_version: &PlatformVersion,
+    ) -> PlatformState {
+        let mut state = base.clone();
+        state.set_last_committed_block_info(Some(
+            ExtendedBlockInfoV0 {
+                basic_info: BlockInfo {
+                    time_ms: BLOCK_TIME_MS,
+                    height: BLOCK_HEIGHT,
+                    core_height: BLOCK_CORE_HEIGHT,
+                    epoch: Default::default(),
+                },
+                app_hash: root_hash(drive, platform_version),
+                quorum_hash: [0u8; 32],
+                block_id_hash: [0u8; 32],
+                proposer_pro_tx_hash: [0u8; 32],
+                signature: [0u8; 96],
+                round: 0,
+            }
+            .into(),
+        ));
+        state
+    }
+
+    /// Contract registered, posts inserted, and a platform state whose
+    /// committed block time is [`BLOCK_TIME_MS`].
+    fn setup_trending(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        base_state: &PlatformState,
+        platform_version: &PlatformVersion,
+    ) -> (DataContract, Vec<Document>, PlatformState) {
+        assert!(
+            platform_version.protocol_version >= 14,
+            "time-range indexes require protocol version 14 or later"
+        );
+        let contract = register_trending_contract(platform, platform_version);
+        let documents = insert_posts(platform, &contract, platform_version);
+        let state = state_with_committed_block_time(base_state, &platform.drive, platform_version);
+        (contract, documents, state)
+    }
+
+    /// `IN_TIME_RANGE($createdAt, "newest") AND hashtag = <hashtag>` — the
+    /// selector rides the wire as an operator, never as a resolved value, so
+    /// the bucket in the proof can only have come from the node's committed
+    /// block time.
+    fn trending_where_clauses(hashtag: &str) -> Vec<ProtoWhereClause> {
+        vec![
+            wc(
+                "hashtag",
+                ProtoWhereOperator::Equal,
+                Value::Text(hashtag.to_string()),
+            ),
+            wc(
+                CREATED_AT,
+                ProtoWhereOperator::InTimeRange,
+                Value::Text(TimeRangeSelector::Newest.as_str().to_string()),
+            ),
+        ]
+    }
+
+    fn trending_request(
+        contract_id: Vec<u8>,
+        hashtag: &str,
+        selects: Vec<V1Select>,
+    ) -> GetDocumentsRequestV1 {
+        GetDocumentsRequestV1 {
+            data_contract_id: contract_id,
+            document_type: DOCUMENT_TYPE.to_string(),
+            where_clauses: trending_where_clauses(hashtag),
+            order_by: Vec::new(),
+            limit: None,
+            start: None,
+            prove: true,
+            selects,
+            group_by: Vec::new(),
+            having: Vec::new(),
+            offset: None,
+        }
+    }
+
+    /// Run the request through the real v1 handler and re-sign the proof it
+    /// produced: the test platform never signs a commit, so the tenderdash
+    /// binding is supplied here over the *live* root hash and the handler's
+    /// own response metadata. Tampering with either afterwards is what the
+    /// negative case does.
+    fn prove_and_sign(
+        platform: &TempPlatform<MockCoreRPCLike>,
+        state: &PlatformState,
+        request: GetDocumentsRequestV1,
+        platform_version: &PlatformVersion,
+    ) -> (Proof, ResponseMetadata, TestQuorumProvider) {
+        let result = platform
+            .query_documents_v1(request, state, platform_version)
+            .expect("query call should not error at the transport layer");
+        assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
+        let response = result.data.expect("data");
+        let proof = match response.result {
+            Some(get_documents_response_v1::Result::Proof(proof)) => proof,
+            other => panic!("expected a proof, got {:?}", other),
+        };
+        let mtd = response
+            .metadata
+            .expect("the handler stamps response metadata");
+        assert_eq!(
+            mtd.time_ms, BLOCK_TIME_MS,
+            "the metadata time the client resolves from must be the committed \
+             block time the server resolved from"
+        );
+
+        let secret_key = quorum_secret_key();
+        let signed = signed_proof(
+            proof.grovedb_proof,
+            &root_hash(&platform.drive, platform_version),
+            &mtd,
+            &secret_key,
+            QUORUM_HASH,
+        );
+        let provider = TestQuorumProvider {
+            pubkey: secret_key.public_key().0.to_compressed(),
+        };
+        (signed, mtd, provider)
+    }
+
+    /// The bucket start the transform puts `time_ms` in, computed straight
+    /// off the contract's declared window rather than off the constants
+    /// above — so a fixture edit that moves the grid cannot leave the
+    /// expectation behind.
+    fn expected_newest_bucket(contract: &DataContract, time_ms: u64) -> u64 {
+        contract
+            .document_type_for_name(DOCUMENT_TYPE)
+            .expect("post doctype exists")
+            .indexes()
+            .get(BUCKETED_INDEX)
+            .expect("the bucketed index survives contract registration")
+            .time_range
+            .as_ref()
+            .expect("the bucketed index carries its transform")
+            .newest_active_start(time_ms)
+            .expect("the block time is inside an active range")
+    }
+
+    /// The client's reconstruction sequence, step for step, exactly as the
+    /// SDK's count helper performs it: resolve the selector from the signed
+    /// metadata time, record the provenance, re-run the shape guard, pick
+    /// the index that provenance admits, rebuild the prover's count query.
+    ///
+    /// Returns the resolved bucket start alongside the query so callers can
+    /// assert on what the metadata time resolved to.
+    fn client_count_query<'a>(
+        contract: &'a DataContract,
+        document_type: &'a DocumentTypeRef<'a>,
+        hashtag: &str,
+        time_ms: u64,
+    ) -> (DriveDocumentCountQuery<'a>, u64) {
+        let mut where_clauses = vec![WhereClause {
+            field: "hashtag".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Text(hashtag.to_string()),
+        }];
+        let resolved = drive::query::resolve_time_range_bucket_clause(
+            CREATED_AT,
+            TimeRangeSelector::Newest,
+            *document_type,
+            time_ms,
+        )
+        .expect("the metadata time falls inside an active range");
+        let bucket_start = resolved
+            .value
+            .to_integer::<u64>()
+            .expect("a resolved bucket start is a millisecond timestamp");
+        where_clauses.push(resolved);
+        let resolved_fields = vec![CREATED_AT.to_string()];
+
+        drive::query::validate_resolved_time_range_clause_shapes(&where_clauses, &resolved_fields)
+            .expect("resolution produces exactly the one equality the guard admits");
+
+        let index = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
+            document_type.indexes(),
+            &where_clauses,
+            &resolved_fields,
+        )
+        .expect("the bucketed index covers the resolved clause set");
+        assert_eq!(
+            index.name, BUCKETED_INDEX,
+            "resolution provenance must pin selection to the bucketed index, not \
+             to the plain index covering the same fields"
+        );
+
+        let query = DriveDocumentCountQuery {
+            document_type: *document_type,
+            contract_id: contract.id().to_buffer(),
+            document_type_name: DOCUMENT_TYPE.to_string(),
+            index,
+            where_clauses,
+        };
+        (query, bucket_start)
+    }
+
+    fn total_of(entries: &[SplitCountEntry]) -> u64 {
+        entries.iter().map(|e| e.count.unwrap_or_default()).sum()
+    }
+
+    /// The headline case. Two `#ibiza` posts sit in the newest bucket and,
+    /// because the window overlaps three deep, each is *stored* under three
+    /// bucket keys. The verified count must be 2 — one per document — which
+    /// is only true if both sides addressed exactly the one bucket the
+    /// signed block time names.
+    #[test]
+    fn a_count_over_an_overlapping_bucket_verifies_and_counts_each_document_once() {
+        let (platform, base_state, version) = setup_platform(None, Network::Testnet, None);
+        let (contract, _documents, state) = setup_trending(&platform, &base_state, version);
+
+        let document_type = contract
+            .document_type_for_name(DOCUMENT_TYPE)
+            .expect("post doctype exists");
+        let transform = document_type
+            .indexes()
+            .get(BUCKETED_INDEX)
+            .expect("the bucketed index survives contract registration")
+            .time_range
+            .as_ref()
+            .expect("the bucketed index carries its transform");
+        assert_eq!(
+            transform.overlap_factor(),
+            3,
+            "the fixture's whole point is that windows overlap"
+        );
+        assert_eq!(
+            transform.containing_buckets(POSTS[0].0).len(),
+            3,
+            "a matching document must really be stored under three bucket keys"
+        );
+
+        let request = trending_request(contract.id().to_vec(), "ibiza", select_count_star());
+        let (proof, mtd, provider) = prove_and_sign(&platform, &state, request, version);
+
+        let client_document_type = contract
+            .document_type_for_name(DOCUMENT_TYPE)
+            .expect("post doctype exists");
+        let (query, bucket_start) =
+            client_count_query(&contract, &client_document_type, "ibiza", mtd.time_ms);
+        assert_eq!(
+            bucket_start,
+            expected_newest_bucket(&contract, mtd.time_ms),
+            "the resolved bucket must be the transform's newest active start \
+             for the signed time"
+        );
+        assert_eq!(bucket_start, NEWEST_BUCKET_START_MS);
+
+        let entries = verify_point_lookup_count_proof(&query, &proof, &mtd, version, &provider)
+            .expect("a correctly signed count over the resolved bucket must verify");
+
+        assert_eq!(
+            total_of(&entries),
+            2,
+            "the two #ibiza posts in the newest bucket count once each — a \
+             document living in three overlapping buckets must not count three \
+             times, and the #ibiza post one hour older belongs to the previous \
+             buckets only"
+        );
+    }
+
+    /// Move the signed time forward by one full step and the client resolves
+    /// a *different* bucket. Verification must fail hard: either the proof
+    /// cannot be replayed over the other bucket's path, or the tenderdash
+    /// binding rejects the altered metadata. What must never happen is a
+    /// second, differently-scoped count coming back verified.
+    #[test]
+    fn a_tampered_metadata_time_cannot_verify_a_different_bucket() {
+        let (platform, base_state, version) = setup_platform(None, Network::Testnet, None);
+        let (contract, _documents, state) = setup_trending(&platform, &base_state, version);
+
+        let request = trending_request(contract.id().to_vec(), "ibiza", select_count_star());
+        let (proof, mtd, provider) = prove_and_sign(&platform, &state, request, version);
+
+        let step_ms = contract
+            .document_type_for_name(DOCUMENT_TYPE)
+            .expect("post doctype exists")
+            .indexes()
+            .get(BUCKETED_INDEX)
+            .expect("the bucketed index survives contract registration")
+            .time_range
+            .as_ref()
+            .expect("the bucketed index carries its transform")
+            .step_ms();
+
+        let mut tampered = mtd.clone();
+        tampered.time_ms += step_ms;
+
+        let client_document_type = contract
+            .document_type_for_name(DOCUMENT_TYPE)
+            .expect("post doctype exists");
+        let (_honest_query, honest_bucket) =
+            client_count_query(&contract, &client_document_type, "ibiza", mtd.time_ms);
+        let (tampered_query, tampered_bucket) =
+            client_count_query(&contract, &client_document_type, "ibiza", tampered.time_ms);
+        assert_eq!(
+            tampered_bucket,
+            honest_bucket + step_ms,
+            "one step of tampering must move the resolution one bucket — \
+             otherwise this test proves nothing about where the bucket comes from"
+        );
+
+        let error =
+            verify_point_lookup_count_proof(&tampered_query, &proof, &tampered, version, &provider)
+                .expect_err("an altered signed time must not yield a verified count");
+        assert!(
+            matches!(
+                error,
+                ProofVerifierError::InvalidSignature { .. }
+                    | ProofVerifierError::GroveDBError { .. }
+                    | ProofVerifierError::DriveError { .. }
+            ),
+            "the rejection must be the proof or the signature binding, got: {error:?}"
+        );
+    }
+
+    /// The non-aggregate route through the same fixture: the documents path
+    /// resolves the selector, carries the provenance onto the drive query
+    /// and verifies the returned rows. Same bucket scoping, different
+    /// primitive — so a regression that only reached the documents index
+    /// picker still turns a test red.
+    #[test]
+    fn a_documents_proof_over_the_newest_bucket_verifies_to_the_bucket_members() {
+        let (platform, base_state, version) = setup_platform(None, Network::Testnet, None);
+        let (contract, documents, state) = setup_trending(&platform, &base_state, version);
+
+        let request = trending_request(contract.id().to_vec(), "ibiza", select_documents());
+        let (proof, mtd, provider) = prove_and_sign(&platform, &state, request, version);
+
+        let document_type = contract
+            .document_type_for_name(DOCUMENT_TYPE)
+            .expect("post doctype exists");
+        let mut where_clauses = vec![WhereClause {
+            field: "hashtag".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Text("ibiza".to_string()),
+        }];
+        where_clauses.push(
+            drive::query::resolve_time_range_bucket_clause(
+                CREATED_AT,
+                TimeRangeSelector::Newest,
+                document_type,
+                mtd.time_ms,
+            )
+            .expect("the metadata time falls inside an active range"),
+        );
+        let mut drive_query = DriveDocumentQuery::from_typed_clauses(
+            where_clauses,
+            Vec::new(),
+            None,
+            None,
+            true,
+            None,
+            &contract,
+            document_type,
+            &platform.config.drive,
+            version,
+        )
+        .expect("the resolved clause set builds a drive query");
+        drive_query.resolved_time_range_fields = vec![CREATED_AT.to_string()];
+
+        let response = GetDocumentsResponse {
+            version: Some(ResponseVersion::V1(GetDocumentsResponseV1 {
+                result: Some(get_documents_response_v1::Result::Proof(proof)),
+                metadata: Some(mtd),
+            })),
+        };
+        let (verified, _mtd, _proof) =
+            <Documents as FromProof<DriveDocumentQuery>>::maybe_from_proof_with_metadata(
+                drive_query,
+                response,
+                Network::Testnet,
+                version,
+                &provider,
+            )
+            .expect("a correctly signed documents proof must verify");
+
+        let mut verified_ids: Vec<_> = verified
+            .expect("the newest bucket is not empty")
+            .into_iter()
+            .filter_map(|(id, document)| document.map(|_| id))
+            .collect();
+        verified_ids.sort();
+        let mut expected_ids = vec![documents[0].id(), documents[1].id()];
+        expected_ids.sort();
+        assert_eq!(
+            verified_ids, expected_ids,
+            "only the two #ibiza posts inside the newest bucket are proven \
+             members — the older #ibiza post and the #berlin post are not"
         );
     }
 }

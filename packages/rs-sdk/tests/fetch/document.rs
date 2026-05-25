@@ -132,6 +132,7 @@ async fn document_list_drive_query() {
         start_at: None,
         start_at_included: true,
         block_time_ms: None,
+        resolved_time_range_fields: vec![],
     };
 
     let docs = Document::fetch_many(&sdk, query)

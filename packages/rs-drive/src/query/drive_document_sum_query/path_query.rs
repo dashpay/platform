@@ -1107,6 +1107,7 @@ impl<'a> DriveDocumentSumQuery<'a> {
         document_type: DocumentTypeRef,
         sum_property: &str,
         where_clauses: &[WhereClause],
+        resolved_time_range_fields: &[String],
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
         use crate::query::drive_document_sum_query::index_picker::find_summable_index_for_where_clauses;
@@ -1117,6 +1118,7 @@ impl<'a> DriveDocumentSumQuery<'a> {
             document_type.indexes(),
             where_clauses,
             sum_property,
+            resolved_time_range_fields,
         )
         .ok_or_else(|| {
             Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(
@@ -1145,6 +1147,7 @@ impl<'a> DriveDocumentSumQuery<'a> {
         document_type: DocumentTypeRef,
         sum_property: &str,
         where_clauses: &[WhereClause],
+        resolved_time_range_fields: &[String],
         platform_version: &PlatformVersion,
     ) -> Result<PathQuery, Error> {
         use crate::query::drive_document_sum_query::index_picker::find_range_summable_index_for_where_clauses;
@@ -1155,6 +1158,7 @@ impl<'a> DriveDocumentSumQuery<'a> {
             document_type.indexes(),
             where_clauses,
             sum_property,
+            resolved_time_range_fields,
         )
         .ok_or_else(|| {
             Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(
@@ -1183,11 +1187,13 @@ impl<'a> DriveDocumentSumQuery<'a> {
     /// Used by the SDK verifier-side rebuild via
     /// `GroveDb::verify_aggregate_sum_query_per_key` (grovedb PR #670
     /// head `e98bab5f`).
+    #[allow(clippy::too_many_arguments)]
     pub fn carrier_aggregate_sum_path_query_static(
         contract: &DataContract,
         document_type: DocumentTypeRef,
         sum_property: &str,
         where_clauses: &[WhereClause],
+        resolved_time_range_fields: &[String],
         limit: Option<u16>,
         left_to_right: bool,
         platform_version: &PlatformVersion,
@@ -1200,6 +1206,7 @@ impl<'a> DriveDocumentSumQuery<'a> {
             document_type.indexes(),
             where_clauses,
             sum_property,
+            resolved_time_range_fields,
         )
         .ok_or_else(|| {
             Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(

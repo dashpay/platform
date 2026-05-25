@@ -4,13 +4,14 @@ use crate::drive::document::index_uniqueness::internal::validate_uniqueness_of_d
     UniquenessOfDataRequestUpdateType, UniquenessOfDataRequestV1,
 };
 use crate::drive::document::query::QueryDocumentsOutcomeV0Methods;
+use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::query::{DriveDocumentQuery, InternalClauses, WhereClause, WhereOperator};
 use dpp::consensus::state::document::duplicate_unique_index_error::DuplicateUniqueIndexError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::document::{property_names, DocumentV0Getters};
-use dpp::platform_value::platform_value;
+use dpp::platform_value::{platform_value, Value};
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use grovedb::TransactionArg;
@@ -70,7 +71,7 @@ impl Drive {
                     // if an index is not unique there is no issue
                     None
                 } else {
-                    let (where_queries, allow_original) = match &update_type {
+                    let (mut where_queries, allow_original) = match &update_type {
                         UniquenessOfDataRequestUpdateType::NewDocument => {
                             let where_queries = index
                                 .properties
@@ -352,6 +353,71 @@ impl Drive {
                         // there are empty fields, which means that the index is no longer unique
                         None
                     } else {
+                        // A unique time-range index stores bucket *starts*
+                        // under its first property, never raw timestamps, so
+                        // probing it with the candidate document's own
+                        // timestamp would look in a key that no document ever
+                        // occupies and report every duplicate as unique.
+                        // Rewrite the source equality to the containing
+                        // bucket, and record the rewrite as provenance so
+                        // index selection admits the bucketed index (see
+                        // `index_admissible_for_resolved_time_range`): this is
+                        // a legitimate internal producer of a resolved bucket
+                        // equality — the value is derived deterministically
+                        // from the candidate document's own timestamp through
+                        // the contract's transform, so every node computes the
+                        // identical clause.
+                        //
+                        // On the `ChangedDocument` path this stays correct
+                        // without any old-vs-new bucket tracking (which the
+                        // request has no field for — note the arm carries no
+                        // `changed_created_at` flag): a unique time-range
+                        // index is validated to bucket `$createdAt`, which is
+                        // immutable across updates, so the bucket component of
+                        // the tuple never moves and `allow_original` keeps its
+                        // meaning — the tuple changed exactly when one of the
+                        // index's other properties changed.
+                        let mut resolved_time_range_fields = Vec::new();
+                        if let Some(transform) = &index.time_range {
+                            let Some(clause) = where_queries.get_mut(transform.source.as_str())
+                            else {
+                                // Unreachable: the transform's source is
+                                // validated to be the index's first property,
+                                // and the count check above established that
+                                // every property produced a clause.
+                                return Some(Err(Error::Drive(
+                                    DriveError::CorruptedCodeExecution(
+                                        "a time-range index's source must be one of its \
+                                         properties",
+                                    ),
+                                )));
+                            };
+                            // The clause value was built by `platform_value!`
+                            // from an `Option<TimestampMillis>`, so it is a
+                            // `U64`; `I64` is accepted defensively because a
+                            // non-system-timestamp source would arrive through
+                            // the document data map. Anything else cannot be a
+                            // millisecond timestamp, so there is no bucket to
+                            // probe and the index cannot be violated by it.
+                            let timestamp = match &clause.value {
+                                Value::U64(timestamp) => Some(*timestamp),
+                                Value::I64(timestamp) => u64::try_from(*timestamp).ok(),
+                                _ => None,
+                            };
+                            let timestamp = timestamp?;
+                            // A validated unique time-range index has overlap
+                            // factor 1 (range == step), so a timestamp at or
+                            // after the transform's origin yields exactly one
+                            // containing bucket. An empty result means the
+                            // timestamp predates the origin: such documents
+                            // produce no index entries at all, so they cannot
+                            // collide with anything under this index and the
+                            // whole check is skipped for it.
+                            let bucket_start = *transform.containing_buckets(timestamp).first()?;
+                            clause.value = platform_value!(bucket_start);
+                            resolved_time_range_fields.push(transform.source.clone());
+                        }
+
                         let query = DriveDocumentQuery {
                             contract,
                             document_type,
@@ -368,6 +434,7 @@ impl Drive {
                             start_at: None,
                             start_at_included: false,
                             block_time_ms: None,
+                            resolved_time_range_fields,
                         };
 
                         // todo: deal with cost of this operation

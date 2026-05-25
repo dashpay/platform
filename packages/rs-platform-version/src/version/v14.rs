@@ -30,7 +30,7 @@ use crate::version::ProtocolVersion;
 
 pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 
-/// v14 hosts four consensus changes:
+/// v14 hosts five consensus changes:
 ///
 /// 1. **Contract-level ranked aggregates** (this branch): an index can
 ///    declare that its groups are rankable by an aggregate, so a query like
@@ -93,6 +93,19 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///    checked only at block level, so any daily total is still minable across
 ///    blocks; after V24 it enforces 4000 Dash per 576-block window, which the
 ///    cap above never exceeds.
+/// 5. **Time-range indexes**: an index can declare a `timeRange` transform
+///    that buckets a required system timestamp (`$createdAt` /
+///    `$updatedAt` / `$transferredAt`) into fixed-length, regularly-spaced,
+///    optionally overlapping windows declared in seconds. A document is
+///    stored once per containing bucket (the v2 insert/delete and v1
+///    update walkers carry the fan-out; the per-document write
+///    amplification is capped by `SystemLimits::
+///    max_time_range_overlap_factor`), and the v1 `getDocuments` handler
+///    resolves the new `IN_TIME_RANGE` operator into a bucket-start
+///    equality from committed block time, making "newest window"
+///    trending/leaderboard document and count/sum/avg queries provable.
+///    `unique: true` is admitted only for non-overlapping windows
+///    (`range == step`) sourced from the immutable `$createdAt`.
 ///
 /// The first two are orthogonal by construction: the ranked upgrade decides the
 /// *property-name* tree type, the demotion decides the *value* tree type
@@ -101,16 +114,17 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 /// variant did — so ranked secondaries keep ranking correctly over
 /// shared-prefix shapes.
 ///
-/// Until a contract uses the ranked grammar, the only v14 behavior changes
-/// are the shared-prefix fix, the contested-index cross-check, the
-/// index-reorder schema-compatibility fix and the relative daily withdrawal
-/// limit; everything else matches v13:
+/// Until a contract uses the ranked or time-range grammar, the only v14
+/// behavior changes are the shared-prefix fix, the contested-index
+/// cross-check, the index-reorder schema-compatibility fix and the relative
+/// daily withdrawal limit; everything else matches v13:
 ///
 /// * `CONTRACT_VERSIONS_V6` points `document_type_schema` at the v3 document
 ///   meta-schema, which hosts the ranked index keywords
-///   (`rankedCountable` / `rankedSummable` / `rankedAverageable`). v13 keeps
-///   validating against meta-schema v2, where those keys are rejected as
-///   unknown properties, so a pre-v14 contract cannot smuggle them in.
+///   (`rankedCountable` / `rankedSummable` / `rankedAverageable`), the
+///   `refersTo` reference keyword and the `timeRange` index transform. v13
+///   keeps validating against meta-schema v2, where those keys are rejected
+///   as unknown properties, so a pre-v14 contract cannot smuggle them in.
 ///   It also bumps `validate_schema_compatibility` to 1, which strips the
 ///   top-level `indices` key before diffing the old and new document type
 ///   schemas: index immutability is enforced by `validate_update` v1's
@@ -122,7 +136,8 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///   creating the three indexed tree variants and the verify-method slot for
 ///   `verify_ranked_top_k_proof`. All are 0 today. The same table bumps the
 ///   four index walkers to v2 and the document update walker to v1 for the
-///   shared-prefix fix.
+///   shared-prefix fix; those same walker versions carry the time-range
+///   bucket fan-out, so both features gate on one table entry.
 /// * `DRIVE_ABCI_QUERY_VERSIONS_V3` bumps
 ///   `document_query_helpers.compute_aggregate_mode_and_check_limit` 0 → 2,
 ///   opening two routes on the v1 document-query handler: the ranked path
@@ -156,10 +171,13 @@ pub const PROTOCOL_VERSION_14: ProtocolVersion = 14;
 ///   formats 0–2 (all pre-v14 documents) deserialize exactly as before with
 ///   an unstamped (pre-annotation) layout.
 ///
-/// The wire surface is deliberately unchanged: `GetDocumentsRequestV1`
+/// The wire surface changes only additively: `GetDocumentsRequestV1`
 /// already carries `selects` / `group_by` / `order_by` / `limit` /
 /// `offset`; the ranked response is an additive `ResultData.ranked`
-/// variant, whose `skipped` field is likewise additive.
+/// variant, whose `skipped` field is likewise additive; and the v1
+/// where-clause operator enum gains `IN_TIME_RANGE = 11`, which pre-v14
+/// servers reject as an unknown operator rather than misread (the v0 wire
+/// has no time-range operator at all).
 pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_14,
     drive: DRIVE_VERSION_V9, // changed: drive document method versions v4 — v2 index walkers (shared-prefix aggregate indexes become insertable) + the detect_ranked_mode slot
@@ -168,7 +186,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
         methods: DRIVE_ABCI_METHOD_VERSIONS_V10, // changed: records the per-block total credits history for the daily withdrawal limit
         validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V10, // changed: contested-index cross-check + refersTo document reference validation
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V3, // changed: prune bound for the total credits history
-        query: DRIVE_ABCI_QUERY_VERSIONS_V3, // changed: ranked + boolean-HAVING routing gate
+        query: DRIVE_ABCI_QUERY_VERSIONS_V3, // changed: ranked + boolean-HAVING routing gate; the v1 handler also resolves IN_TIME_RANGE from committed block time
         checkpoints: DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1,
     },
     dpp: DPPVersion {
@@ -178,7 +196,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
         state_transition_conversion_versions: STATE_TRANSITION_CONVERSION_VERSIONS_V2,
         state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V1,
         state_transitions: STATE_TRANSITION_VERSIONS_V3,
-        contract_versions: CONTRACT_VERSIONS_V6, // changed: v3 document meta-schema hosts the ranked index keywords
+        contract_versions: CONTRACT_VERSIONS_V6, // changed: v3 document meta-schema hosts the ranked, refersTo, requiredSince and timeRange keywords
         document_versions: DOCUMENT_VERSIONS_V4, // changed: document serialization format 3 — the contract version stamp that enables `requiredSince` properties
         identity_versions: IDENTITY_VERSIONS_V1,
         voting_versions: VOTING_VERSION_V2,
@@ -189,7 +207,7 @@ pub const PLATFORM_V14: PlatformVersion = PlatformVersion {
     },
     system_data_contracts: SYSTEM_DATA_CONTRACT_VERSIONS_V3, // changed: DashPay v2 adds profile payment address fields (DIP-33)
     fee_version: FEE_VERSION2,
-    system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago
+    system_limits: SYSTEM_LIMITS_V4, // changed: daily withdrawal limit becomes 15% of the total credits a day ago + time-range overlap-factor cap (24)
     consensus: ConsensusVersions {
         tenderdash_consensus_version: 1,
     },

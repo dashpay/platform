@@ -48,6 +48,7 @@ impl Drive {
         document_type: DocumentTypeRef,
         document_type_name: String,
         where_clauses: Vec<WhereClause>,
+        resolved_time_range_fields: &[String],
         sum_property: String,
         left_to_right: bool,
         limit: u16,
@@ -122,6 +123,7 @@ impl Drive {
                 document_type.indexes(),
                 &clauses_for_value,
                 &sum_property,
+                resolved_time_range_fields,
             )
             .filter(|idx| idx.countable.is_countable())
             .ok_or_else(|| {

@@ -11,7 +11,7 @@ use dash_sdk::platform::documents::document_history_query::DocumentHistoryQuery;
 use dash_sdk::platform::documents::document_query::DocumentQuery;
 use dash_sdk::platform::Fetch;
 use dash_sdk::platform::FetchMany;
-use drive::query::{OrderClause, WhereClause, WhereOperator};
+use drive::query::{OrderClause, TimeRangeSelector, WhereClause, WhereOperator};
 use drive_proof_verifier::types::DocumentHistory;
 use drive_proof_verifier::{DocumentSplitAverages, DocumentSplitCounts, DocumentSplitSums};
 use js_sys::{BigInt, Map};
@@ -119,6 +119,20 @@ export interface DocumentsQuery {
    * @default []
    */
   groupBy?: string[];
+
+  /**
+   * Time-range bucket selections for "trending"-style queries. Each entry
+   * picks a single bucket of a timestamp field covered by a `timeRange`
+   * index. The server resolves the bucket from the current block time and
+   * the proof verifier re-derives it from the signed response metadata, so
+   * the result is provable. v1 / Platform v3.1+ only.
+   *
+   * - `selector: "oldest"` → the oldest still-active range (a near-full
+   *   trailing window of ~`range`; best for "trending over the last window").
+   * - `selector: "newest"` → the freshest started range (latest partial slice).
+   * @default []
+   */
+  timeRange?: { field: string; selector: "newest" | "oldest" }[];
 }
 
 /**
@@ -195,6 +209,10 @@ struct DocumentsQueryInput {
     // `orderBy` field — the first clause's direction controls
     // split-mode entry ordering and `(In + prove)` walk order. No
     // separate `orderByAscending` knob.
+    /// Time-range bucket selections (`IN_TIME_RANGE`), each `{ field,
+    /// selector }`. v1-only; resolved server-side from block time.
+    #[serde(rename = "timeRange", default)]
+    time_range: Option<Vec<JsonValue>>,
 }
 
 #[derive(Deserialize)]
@@ -243,6 +261,7 @@ async fn build_documents_query(
         start_after,
         start_at,
         group_by: _,
+        time_range,
     } = input;
 
     let contract_id: Identifier = data_contract_id.into();
@@ -274,6 +293,13 @@ async fn build_documents_query(
         for clause_json in where_values.iter() {
             let where_clause = parse_where_clause(clause_json)?;
             query = query.with_where(where_clause);
+        }
+    }
+
+    if let Some(time_range_values) = time_range {
+        for clause_json in time_range_values.iter() {
+            let (field, selector) = parse_time_range_clause(clause_json)?;
+            query = query.with_time_range(field, selector);
         }
     }
 
@@ -454,6 +480,33 @@ fn parse_where_clause(json_clause: &JsonValue) -> Result<WhereClause, WasmSdkErr
         operator,
         value,
     })
+}
+
+/// Parse a JSON time-range clause `{ field, selector }` into a
+/// `(field, TimeRangeSelector)` pair for [`DocumentQuery::with_time_range`].
+fn parse_time_range_clause(
+    json_clause: &JsonValue,
+) -> Result<(String, TimeRangeSelector), WasmSdkError> {
+    let object = json_clause.as_object().ok_or_else(|| {
+        WasmSdkError::invalid_argument("timeRange clause must be an object { field, selector }")
+    })?;
+    let field = object
+        .get("field")
+        .and_then(JsonValue::as_str)
+        .ok_or_else(|| {
+            WasmSdkError::invalid_argument("timeRange clause requires a string `field`")
+        })?
+        .to_string();
+    let selector = object
+        .get("selector")
+        .and_then(JsonValue::as_str)
+        .and_then(TimeRangeSelector::from_string)
+        .ok_or_else(|| {
+            WasmSdkError::invalid_argument(
+                "timeRange clause `selector` must be \"newest\" or \"oldest\"",
+            )
+        })?;
+    Ok((field, selector))
 }
 
 /// Parse JSON order by clause into OrderClause

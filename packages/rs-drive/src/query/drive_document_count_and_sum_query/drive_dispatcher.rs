@@ -111,6 +111,11 @@ impl Drive {
         // the catalog of rejections.
         let where_clauses =
             validate_and_canonicalize_where_clauses(request.where_clauses, platform_version)?;
+        let resolved_time_range_fields = request.resolved_time_range_fields;
+        crate::query::validate_resolved_time_range_clause_shapes(
+            &where_clauses,
+            &resolved_time_range_fields,
+        )?;
 
         // Convert AverageMode → SumMode (1:1 by construction); sum's
         // routing table is the single source of truth for the
@@ -145,6 +150,7 @@ impl Drive {
                 request.document_type,
                 document_type_name,
                 where_clauses,
+                &resolved_time_range_fields,
                 sum_property,
                 transaction,
                 platform_version,
@@ -170,6 +176,7 @@ impl Drive {
                     request.document_type,
                     document_type_name,
                     where_clauses,
+                    &resolved_time_range_fields,
                     sum_property,
                     order_by_ascending,
                     per_in_limit as u16,
@@ -214,6 +221,7 @@ impl Drive {
                     request.document_type,
                     document_type_name,
                     where_clauses,
+                    &resolved_time_range_fields,
                     sum_property,
                     return_distinct,
                     order_by_ascending,

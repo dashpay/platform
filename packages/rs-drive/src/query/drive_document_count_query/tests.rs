@@ -142,6 +142,7 @@ fn test_count_query_fully_covered_equal_succeeds_on_both_paths() {
     let index = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
         document_type.indexes(),
         std::slice::from_ref(&age_eq_30),
+        &[],
     )
     .expect("expected picker to accept fully-covered byAge index");
 
@@ -200,6 +201,7 @@ fn test_count_query_picker_rejects_partial_coverage() {
     let no_match = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
         document_type.indexes(),
         &[],
+        &[],
     );
     assert!(
         no_match.is_none(),
@@ -217,6 +219,7 @@ fn test_count_query_picker_rejects_partial_coverage() {
     let no_match_partial = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
         document_type.indexes(),
         &first_name_only,
+        &[],
     );
     assert!(
         no_match_partial.is_none(),
@@ -234,6 +237,7 @@ fn test_count_query_picker_rejects_partial_coverage() {
     let picked = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
         document_type.indexes(),
         &age_only,
+        &[],
     )
     .expect("byAge is exactly covered");
     assert_eq!(picked.properties.len(), 1);
@@ -267,6 +271,7 @@ fn test_find_countable_index_for_where_clauses_no_match() {
     let result = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
         document_type.indexes(),
         &[where_clause],
+        &[],
     );
 
     assert!(
@@ -342,6 +347,7 @@ fn test_find_countable_index_rejects_unsupported_operator() {
         DriveDocumentCountQuery::find_countable_index_for_where_clauses(
             document_type.indexes(),
             std::slice::from_ref(&gt_clause),
+            &[],
         )
         .is_none()
     );
@@ -374,6 +380,7 @@ fn test_count_query_total_count_with_in_operator() {
     let index = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
         document_type.indexes(),
         std::slice::from_ref(&in_clause),
+        &[],
     )
     .expect("expected to find countable index for In on age");
 
@@ -419,6 +426,7 @@ fn test_count_query_total_count_with_in_operator_no_matches() {
     let index = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
         document_type.indexes(),
         std::slice::from_ref(&in_clause),
+        &[],
     )
     .expect("expected to find countable index for In on age");
 
@@ -533,6 +541,7 @@ fn test_aggregate_count_in_fan_out_ignores_default_query_limit() {
         limit: None,
         prove: false,
         drive_config: &drive_config,
+        resolved_time_range_fields: vec![],
     };
 
     let response = drive
@@ -603,6 +612,7 @@ fn test_count_query_in_operator_rejects_duplicate_values() {
     let index = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
         document_type.indexes(),
         std::slice::from_ref(&in_clause),
+        &[],
     )
     .expect("expected to find countable index for In on age");
 
@@ -691,6 +701,7 @@ fn test_count_query_in_on_before_last_with_trailing_equal_succeeds_on_both_paths
     let index = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
         document_type.indexes(),
         &where_clauses,
+        &[],
     )
     .expect("expected picker to accept byFirstNameLastName for In + Equal coverage");
     // Sanity-check the picker really chose the 2-prop index, not the
@@ -814,6 +825,7 @@ fn test_count_query_in_on_first_of_three_with_two_trailing_equals_succeeds_on_bo
     let index = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
         document_type.indexes(),
         &where_clauses,
+        &[],
     )
     .expect("expected picker to accept the 3-prop covering index");
     // Sanity-pin the picker actually chose the 3-prop unique
@@ -943,6 +955,7 @@ fn test_point_lookup_proof_omits_absent_in_branches_from_entries() {
     let index = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
         document_type.indexes(),
         std::slice::from_ref(&in_clause),
+        &[],
     )
     .expect("expected picker to accept byAge for In on age");
     // Sanity-pin the picker chose the single-property `byAge` index —
@@ -1092,6 +1105,7 @@ fn test_count_query_in_operator_accepts_max_sized_array() {
     let index = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
         document_type.indexes(),
         std::slice::from_ref(&in_clause),
+        &[],
     )
     .expect("expected picker to accept byAge for In on age");
     assert_eq!(index.properties.len(), 1);
@@ -1331,6 +1345,7 @@ fn test_compound_range_in_summed_no_proof_uses_per_in_aggregate_fanout() {
         limit: None,
         prove: false,
         drive_config: &drive_config,
+        resolved_time_range_fields: vec![],
     };
 
     let response = drive
@@ -1405,6 +1420,7 @@ fn test_count_request_with_duplicate_equality_clauses_is_rejected() {
         limit: None,
         prove: false,
         drive_config: &drive_config,
+        resolved_time_range_fields: vec![],
     };
 
     let err = drive
@@ -1601,6 +1617,7 @@ fn test_range_distinct_proof_uses_compile_time_default_query_limit_not_operator_
         limit: None,
         prove: true,
         drive_config: &drive_config,
+        resolved_time_range_fields: vec![],
     };
 
     let response = drive
@@ -1629,6 +1646,7 @@ fn test_range_distinct_proof_uses_compile_time_default_query_limit_not_operator_
     let index = DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
         document_type.indexes(),
         std::slice::from_ref(&color_gt_blue),
+        &[],
     )
     .expect("byColor range_countable index covers `color > blue`");
     let count_query = DriveDocumentCountQuery {
@@ -1724,6 +1742,7 @@ fn test_range_distinct_no_proof_rejects_zero_effective_limit() {
         limit: None,
         prove: false,
         drive_config: &drive_config,
+        resolved_time_range_fields: vec![],
     };
 
     let result = drive.execute_document_count_request(request, None, platform_version);
@@ -1770,6 +1789,7 @@ fn test_count_query_in_operator_rejects_oversized_array() {
             document_type,
             "person".to_string(),
             vec![in_clause],
+            &[],
             super::RangeCountOptions {
                 distinct: false,
                 limit: Some(50),
@@ -2006,6 +2026,7 @@ fn test_countable_allowing_offset_variant_end_to_end() {
     let picked = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
         document_type.indexes(),
         std::slice::from_ref(&first_name_eq_alice),
+        &[],
     )
     .expect("expected picker to accept CountableAllowingOffset index");
     assert_eq!(picked.countable, IndexCountability::CountableAllowingOffset);
@@ -2079,6 +2100,7 @@ fn test_count_query_unique_countable_index_returns_correct_count() {
     let index = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
         document_type.indexes(),
         &where_clauses,
+        &[],
     )
     .expect("expected to find a countable index covering all 3 properties");
 
@@ -2146,6 +2168,7 @@ mod range_countable_picker_tests {
             ranked_countable: false,
             ranked_summable: false,
             ranked_averageable: false,
+            time_range: None,
         }
     }
 
@@ -2171,6 +2194,7 @@ mod range_countable_picker_tests {
         let picked = DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
             &indexes,
             &where_clauses,
+            &[],
         );
         assert!(picked.is_some());
         assert_eq!(picked.unwrap().name, "byColor");
@@ -2204,6 +2228,7 @@ mod range_countable_picker_tests {
         let picked = DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
             &indexes,
             &where_clauses,
+            &[],
         );
         assert!(picked.is_some());
         assert_eq!(picked.unwrap().name, "byBrandColor");
@@ -2230,6 +2255,7 @@ mod range_countable_picker_tests {
             DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
                 &indexes,
                 &where_clauses,
+                &[],
             )
             .is_none(),
             "a range on a non-terminator property must not match — the storage \
@@ -2257,6 +2283,7 @@ mod range_countable_picker_tests {
             DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
                 &indexes,
                 &where_clauses,
+                &[],
             )
             .is_none()
         );
@@ -2288,6 +2315,7 @@ mod range_countable_picker_tests {
             DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
                 &indexes,
                 &where_clauses,
+                &[],
             )
             .is_none(),
             "two separate range operators must be rejected (use Between to express a bounded range)"
@@ -2313,6 +2341,7 @@ mod range_countable_picker_tests {
             DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
                 &indexes,
                 &where_clauses,
+                &[],
             )
             .is_none(),
             "no range operator → not the range picker's job"
@@ -2900,6 +2929,7 @@ mod range_countable_point_lookup_tests {
         let index = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
             document_type.indexes(),
             std::slice::from_ref(&brand_eq),
+            &[],
         )
         .expect("byBrand covers brand==acme");
         assert!(
@@ -3016,6 +3046,7 @@ mod range_countable_point_lookup_tests {
         let index = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
             document_type.indexes(),
             std::slice::from_ref(&brand_in),
+            &[],
         )
         .expect("byBrand covers brand IN [...]");
         assert!(index.range_countable);
@@ -3183,6 +3214,7 @@ mod range_countable_point_lookup_tests {
         let index = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
             document_type.indexes(),
             &clauses,
+            &[],
         )
         .expect("byBrandColor covers brand IN + color =");
         assert!(index.range_countable);
@@ -3302,6 +3334,7 @@ mod range_countable_point_lookup_tests {
         let index = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
             document_type.indexes(),
             std::slice::from_ref(&category_eq),
+            &[],
         )
         .expect("byCategory covers category=tools");
         assert!(
@@ -3373,5 +3406,178 @@ mod range_countable_point_lookup_tests {
             .expect("verify");
         let summed: u64 = entries.iter().map(|e| e.count.unwrap_or(0)).sum();
         assert_eq!(summed, 2);
+    }
+}
+
+#[cfg(test)]
+mod time_range_picker_tests {
+    //! Coverage for the transform gate the count pickers apply before
+    //! scoring a candidate — see
+    //! [`crate::query::index_admissible_for_resolved_time_range`].
+    //!
+    //! A bucketed index stores one entry per bucket containing a document,
+    //! keyed by bucket start. Counting over it is only meaningful when the
+    //! query pins a single bucket, and the only thing that can pin one is an
+    //! equality produced by `IN_TIME_RANGE` resolution. Both directions of
+    //! the mismatch return a wrong count rather than an error, so the picker
+    //! is where they have to be stopped.
+
+    use super::*;
+    use dpp::data_contract::document_type::{
+        Index, IndexCountability, IndexProperty, TimeRangeTransform,
+    };
+
+    /// One hour as a transform declares a window (seconds) and as the clause
+    /// values below are expressed (milliseconds, the unit of a bucket start).
+    const HOUR_SECONDS: u64 = 3_600;
+    const HOUR_MS: u64 = 3_600_000;
+    const SOURCE: &str = "$createdAt";
+
+    fn make_index(
+        name: &str,
+        properties: &[&str],
+        time_range: Option<TimeRangeTransform>,
+    ) -> Index {
+        Index {
+            name: name.to_string(),
+            properties: properties
+                .iter()
+                .map(|p| IndexProperty {
+                    name: p.to_string(),
+                    ascending: true,
+                })
+                .collect(),
+            unique: false,
+            null_searchable: true,
+            contested_index: None,
+            countable: IndexCountability::Countable,
+            range_countable: false,
+            summable: None,
+            range_summable: false,
+            ranked_countable: false,
+            ranked_summable: false,
+            ranked_averageable: false,
+            time_range,
+        }
+    }
+
+    /// `trending` buckets `$createdAt` into 6h windows every 2h; `byHashtag`
+    /// covers the same two fields with raw timestamps and sorts first.
+    fn indexes() -> std::collections::BTreeMap<String, Index> {
+        [
+            make_index("byHashtag", &["hashtag", SOURCE], None),
+            make_index(
+                "trending",
+                &[SOURCE, "hashtag"],
+                Some(TimeRangeTransform {
+                    source: SOURCE.to_string(),
+                    range_seconds: 6 * HOUR_SECONDS,
+                    step_seconds: 2 * HOUR_SECONDS,
+                    origin_seconds: 0,
+                }),
+            ),
+        ]
+        .into_iter()
+        .map(|index| (index.name.clone(), index))
+        .collect()
+    }
+
+    fn equal(field: &str, value: Value) -> WhereClause {
+        WhereClause {
+            field: field.to_string(),
+            operator: WhereOperator::Equal,
+            value,
+        }
+    }
+
+    /// The resolved equality names the bucketed index's source, so that index
+    /// — and only that index — may serve the count.
+    #[test]
+    fn resolved_source_equality_selects_the_bucketed_index() {
+        let indexes = indexes();
+        let where_clauses = vec![
+            equal(SOURCE, Value::U64(6 * HOUR_MS)),
+            equal("hashtag", Value::Text("ibiza".to_string())),
+        ];
+        let picked = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
+            &indexes,
+            &where_clauses,
+            &[SOURCE.to_string()],
+        )
+        .expect("the bucketed index exactly covers the resolved clause set");
+        assert_eq!(picked.name, "trending");
+    }
+
+    /// The same clause set without the provenance must not reach the bucketed
+    /// index. `byHashtag` covers it and sorts first, so this also pins that
+    /// the gate does not merely reorder candidates.
+    #[test]
+    fn raw_equality_on_the_source_never_selects_the_bucketed_index() {
+        let indexes = indexes();
+        let where_clauses = vec![
+            equal(SOURCE, Value::U64(1_700_000_000_000)),
+            equal("hashtag", Value::Text("ibiza".to_string())),
+        ];
+        let picked = DriveDocumentCountQuery::find_countable_index_for_where_clauses(
+            &indexes,
+            &where_clauses,
+            &[],
+        )
+        .expect("the plain index covers a raw equality on both fields");
+        assert_eq!(picked.name, "byHashtag");
+    }
+
+    /// An `In` over the source enumerates bucket starts, and a document
+    /// appears under every bucket containing it, so any hit would be counted
+    /// once per overlapping bucket. Resolution never produces an `In`, so the
+    /// only way this shape reaches the picker is a client writing it by hand.
+    #[test]
+    fn raw_in_on_the_source_does_not_select_the_bucketed_index() {
+        let mut indexes = indexes();
+        // Drop the plain index so a `None` here can only mean the bucketed
+        // one was refused, not that a raw index happened to win.
+        indexes.remove("byHashtag");
+        let where_clauses = vec![
+            WhereClause {
+                field: SOURCE.to_string(),
+                operator: WhereOperator::In,
+                value: Value::Array(vec![
+                    Value::U64(2 * HOUR_MS),
+                    Value::U64(4 * HOUR_MS),
+                    Value::U64(6 * HOUR_MS),
+                ]),
+            },
+            equal("hashtag", Value::Text("ibiza".to_string())),
+        ];
+        assert!(
+            DriveDocumentCountQuery::find_countable_index_for_where_clauses(
+                &indexes,
+                &where_clauses,
+                &[],
+            )
+            .is_none()
+        );
+    }
+
+    /// The converse gate: with a resolved field named, an index that stores
+    /// raw timestamps is not a candidate even when it exactly covers the
+    /// clause fields — matching a bucket start against raw values would
+    /// return a proven-empty result.
+    #[test]
+    fn plain_index_is_not_selected_when_a_time_range_field_was_resolved() {
+        let mut indexes = indexes();
+        indexes.remove("trending");
+        let where_clauses = vec![
+            equal(SOURCE, Value::U64(6 * HOUR_MS)),
+            equal("hashtag", Value::Text("ibiza".to_string())),
+        ];
+        assert!(
+            DriveDocumentCountQuery::find_countable_index_for_where_clauses(
+                &indexes,
+                &where_clauses,
+                &[SOURCE.to_string()],
+            )
+            .is_none()
+        );
     }
 }

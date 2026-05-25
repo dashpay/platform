@@ -88,11 +88,30 @@ pub(super) fn assert_having_shape(
 /// quorum-signed app hash happens inside [`verify_having_range_proof`]
 /// and cannot be skipped through this helper.
 pub(super) fn verify_having_query(
-    request: DocumentQuery,
+    mut request: DocumentQuery,
     response: GetDocumentsResponse,
     platform_version: &PlatformVersion,
     provider: &dyn ContextProvider,
 ) -> Result<(Option<Vec<RankedEntry>>, ResponseMetadata, Proof), drive_proof_verifier::Error> {
+    let proof = response
+        .proof()
+        .or(Err(drive_proof_verifier::Error::NoProofInResult))?;
+    let mtd = response
+        .metadata()
+        .or(Err(drive_proof_verifier::Error::EmptyResponseMetadata))?;
+
+    // Resolve any pending time-range selection into a where clause before
+    // the shape check, exactly as the server does before routing: a
+    // having-range query must have no where clauses, so a resolved
+    // selection is rejected here the same way the server rejects it —
+    // without this, the verifier would accept a query shape the server
+    // refuses. The resolved-field list is discarded: nothing survives the
+    // non-empty-where rejection to consume it.
+    super::document_query::resolve_time_range_clauses_with_metadata_time(
+        &mut request,
+        mtd.time_ms,
+    )?;
+
     let document_type = request
         .data_contract
         .document_type_for_name(&request.document_type_name)
@@ -102,12 +121,6 @@ pub(super) fn verify_having_query(
                 request.document_type_name, e
             ),
         })?;
-    let proof = response
-        .proof()
-        .or(Err(drive_proof_verifier::Error::NoProofInResult))?;
-    let mtd = response
-        .metadata()
-        .or(Err(drive_proof_verifier::Error::EmptyResponseMetadata))?;
 
     let mode = assert_having_shape(&request, platform_version)?;
 

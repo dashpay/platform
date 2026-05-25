@@ -700,3 +700,467 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+#[cfg(feature = "server")]
+mod unique_time_range_index_tests {
+    //! A unique time-range index expresses "at most one document per
+    //! non-overlapping window per remaining key tuple" — one report per author
+    //! per day. Its uniqueness probe therefore has to look in the *bucket* the
+    //! candidate's `$createdAt` falls into: the index stores bucket starts, not
+    //! raw timestamps, so a probe on the raw value would look at a key no
+    //! document ever occupies and pronounce every duplicate unique.
+    //!
+    //! The rewritten equality is indistinguishable from a client-written one
+    //! once built, so the probe must also carry the resolution provenance —
+    //! without it index selection refuses to route a `$createdAt` equality to a
+    //! bucketed index and the probe would fail to find any index at all.
+    use std::borrow::Cow;
+    use std::collections::{BTreeMap, BTreeSet};
+
+    use dpp::block::block_info::BlockInfo;
+    use dpp::consensus::state::state_error::StateError;
+    use dpp::consensus::ConsensusError;
+    use dpp::data_contract::accessors::v0::DataContractV0Getters;
+    use dpp::data_contract::DataContractFactory;
+    use dpp::document::{Document, DocumentV0, DocumentV0Getters};
+    use dpp::identifier::Identifier;
+    use dpp::platform_value::{platform_value, Value};
+    use dpp::prelude::DataContract;
+    use dpp::tests::utils::generate_random_identifier_struct;
+    use dpp::validation::SimpleConsensusValidationResult;
+    use dpp::version::PlatformVersion;
+
+    use crate::drive::document::index_uniqueness::internal::validate_uniqueness_of_data::{
+        UniquenessOfDataRequest, UniquenessOfDataRequestUpdateType, UniquenessOfDataRequestV1,
+    };
+    use crate::drive::Drive;
+    use crate::util::object_size_info::DocumentInfo::DocumentRefInfo;
+    use crate::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+    use crate::util::storage_flags::StorageFlags;
+    use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+
+    /// One day in each of the two units these tests deal in: the contract
+    /// declares its window in seconds, while every `$createdAt` and every
+    /// bucket start is a millisecond timestamp.
+    const DAY_SECONDS: u64 = 24 * 3_600;
+    const DAY_MS: u64 = 24 * 3_600_000;
+    /// Start of the window every "same window" timestamp below lands in, in
+    /// both units. It is a whole number of days, so it is a bucket start both
+    /// under the default origin (0) and under an origin of that same window.
+    const WINDOW_SECONDS: u64 = 100 * DAY_SECONDS;
+    const WINDOW_MS: u64 = 100 * DAY_MS;
+
+    /// A `report` document type with a UNIQUE
+    /// `(timeRange($createdAt, range = step = 1 day), author)` index: one
+    /// report per author per calendar day. Both index properties are required,
+    /// so neither can be null and the terminator always takes the unique
+    /// layout.
+    ///
+    /// `origin_seconds` shifts the window grid; `None` leaves it at the
+    /// default (0), where no `u64` timestamp can predate the origin.
+    fn build_unique_daily_report_contract(origin_seconds: Option<u64>) -> DataContract {
+        let factory =
+            DataContractFactory::new(PlatformVersion::latest().protocol_version).expect("factory");
+        let mut time_range = vec![
+            (
+                Value::Text("on".to_string()),
+                Value::Text("$createdAt".to_string()),
+            ),
+            (Value::Text("range".to_string()), Value::U64(DAY_SECONDS)),
+            (Value::Text("step".to_string()), Value::U64(DAY_SECONDS)),
+        ];
+        if let Some(origin_seconds) = origin_seconds {
+            time_range.push((
+                Value::Text("origin".to_string()),
+                Value::U64(origin_seconds),
+            ));
+        }
+        let index_map = vec![
+            (
+                Value::Text("name".to_string()),
+                Value::Text("dailyReport".to_string()),
+            ),
+            (
+                Value::Text("properties".to_string()),
+                Value::Array(vec![
+                    platform_value!({"$createdAt": "asc"}),
+                    platform_value!({"author": "asc"}),
+                ]),
+            ),
+            (Value::Text("unique".to_string()), Value::Bool(true)),
+            (Value::Text("timeRange".to_string()), Value::Map(time_range)),
+        ];
+
+        let document_schema = platform_value!({
+            "type": "object",
+            "properties": {
+                "author": {"type": "string", "maxLength": 63, "position": 0},
+            },
+            "required": ["author", "$createdAt"],
+            "indices": Value::Array(vec![Value::Map(index_map)]),
+            "additionalProperties": false,
+        });
+        let schemas = platform_value!({ "report": document_schema });
+        factory
+            .create_with_value_config(generate_random_identifier_struct(), 0, schemas, None, None)
+            .expect("create contract")
+            .data_contract_owned()
+    }
+
+    fn setup(platform_version: &'static PlatformVersion) -> (Drive, DataContract) {
+        setup_with_origin(None, platform_version)
+    }
+
+    fn setup_with_origin(
+        origin_seconds: Option<u64>,
+        platform_version: &'static PlatformVersion,
+    ) -> (Drive, DataContract) {
+        let drive = setup_drive_with_initial_state_structure(Some(platform_version));
+        let contract = build_unique_daily_report_contract(origin_seconds);
+        drive
+            .apply_contract(
+                &contract,
+                BlockInfo::default(),
+                true,
+                StorageFlags::optional_default_as_cow(),
+                None,
+                platform_version,
+            )
+            .expect("apply contract");
+        (drive, contract)
+    }
+
+    /// Stores a `report` and returns its id.
+    fn insert_report(
+        drive: &Drive,
+        contract: &DataContract,
+        created_at: u64,
+        author: &str,
+        platform_version: &PlatformVersion,
+    ) -> Identifier {
+        let document_type = contract.document_type_for_name("report").expect("report");
+        let owner_bytes = rand::random::<[u8; 32]>();
+        let document = Document::V0(DocumentV0 {
+            id: Identifier::from(rand::random::<[u8; 32]>()),
+            owner_id: Identifier::from(owner_bytes),
+            properties: BTreeMap::from([("author".to_string(), Value::Text(author.to_string()))]),
+            created_at: Some(created_at),
+            revision: Some(1),
+            ..Default::default()
+        });
+        let document_id = document.id();
+        drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((
+                            &document,
+                            StorageFlags::optional_default_as_cow(),
+                        )),
+                        owner_id: Some(owner_bytes),
+                    },
+                    contract,
+                    document_type,
+                },
+                false,
+                BlockInfo::default(),
+                true,
+                None,
+                platform_version,
+                None,
+            )
+            .expect("add document");
+        document_id
+    }
+
+    /// Runs the uniqueness validation for a candidate `report`.
+    fn check_uniqueness(
+        drive: &Drive,
+        contract: &DataContract,
+        document_id: Identifier,
+        created_at: u64,
+        author: &str,
+        update_type: UniquenessOfDataRequestUpdateType,
+        platform_version: &PlatformVersion,
+    ) -> SimpleConsensusValidationResult {
+        let document_type = contract.document_type_for_name("report").expect("report");
+        let data = BTreeMap::from([("author".to_string(), Value::Text(author.to_string()))]);
+        let request = UniquenessOfDataRequestV1 {
+            contract,
+            document_type,
+            owner_id: Identifier::from([0x01; 32]),
+            creator_id: None,
+            document_id,
+            created_at: Some(created_at),
+            updated_at: None,
+            transferred_at: None,
+            created_at_block_height: None,
+            updated_at_block_height: None,
+            transferred_at_block_height: None,
+            created_at_core_block_height: None,
+            updated_at_core_block_height: None,
+            transferred_at_core_block_height: None,
+            data: &data,
+            update_type,
+        };
+        drive
+            .validate_uniqueness_of_data(
+                UniquenessOfDataRequest::V1(request),
+                None,
+                platform_version,
+            )
+            .expect("uniqueness validation should run")
+    }
+
+    fn assert_duplicate(result: &SimpleConsensusValidationResult, context: &str) {
+        assert!(
+            matches!(
+                result.errors.first(),
+                Some(ConsensusError::StateError(
+                    StateError::DuplicateUniqueIndexError(_)
+                ))
+            ),
+            "{context}: expected a DuplicateUniqueIndexError, got: {:?}",
+            result.errors
+        );
+    }
+
+    /// The core of the feature: two documents whose raw `$createdAt` values
+    /// differ by hours still occupy the same day bucket, so the second one
+    /// violates the unique index. A probe that compared raw timestamps would
+    /// see an empty index and let it through.
+    #[test]
+    fn candidate_in_the_same_window_as_a_stored_document_is_a_duplicate() {
+        let platform_version = PlatformVersion::latest();
+        let (drive, contract) = setup(platform_version);
+
+        insert_report(
+            &drive,
+            &contract,
+            WINDOW_MS + 3_600_000,
+            "alice",
+            platform_version,
+        );
+
+        let result = check_uniqueness(
+            &drive,
+            &contract,
+            Identifier::from([0xAA; 32]),
+            // 8 hours later — a different timestamp, the same day bucket.
+            WINDOW_MS + 9 * 3_600_000,
+            "alice",
+            UniquenessOfDataRequestUpdateType::NewDocument,
+            platform_version,
+        );
+        assert_duplicate(&result, "same window, same author");
+    }
+
+    /// The next window is a different bucket, so the same author may report
+    /// again — and the write actually goes through, proving the probe agrees
+    /// with the layout the insert walker builds.
+    #[test]
+    fn candidate_in_the_next_window_is_unique_and_insertable() {
+        let platform_version = PlatformVersion::latest();
+        let (drive, contract) = setup(platform_version);
+
+        insert_report(
+            &drive,
+            &contract,
+            WINDOW_MS + 3_600_000,
+            "alice",
+            platform_version,
+        );
+
+        let next_window_timestamp = WINDOW_MS + DAY_MS + 3_600_000;
+        let result = check_uniqueness(
+            &drive,
+            &contract,
+            Identifier::from([0xAA; 32]),
+            next_window_timestamp,
+            "alice",
+            UniquenessOfDataRequestUpdateType::NewDocument,
+            platform_version,
+        );
+        assert!(
+            result.is_valid(),
+            "the next window is a different bucket: {:?}",
+            result.errors
+        );
+
+        insert_report(
+            &drive,
+            &contract,
+            next_window_timestamp,
+            "alice",
+            platform_version,
+        );
+    }
+
+    /// The bucket is only the first component of the tuple: a different author
+    /// in the same window is a different slot.
+    #[test]
+    fn candidate_in_the_same_window_with_a_different_suffix_is_unique() {
+        let platform_version = PlatformVersion::latest();
+        let (drive, contract) = setup(platform_version);
+
+        insert_report(
+            &drive,
+            &contract,
+            WINDOW_MS + 3_600_000,
+            "alice",
+            platform_version,
+        );
+
+        let result = check_uniqueness(
+            &drive,
+            &contract,
+            Identifier::from([0xAA; 32]),
+            WINDOW_MS + 9 * 3_600_000,
+            "bob",
+            UniquenessOfDataRequestUpdateType::NewDocument,
+            platform_version,
+        );
+        assert!(
+            result.is_valid(),
+            "a different author in the same window is a different tuple: {:?}",
+            result.errors
+        );
+
+        insert_report(
+            &drive,
+            &contract,
+            WINDOW_MS + 9 * 3_600_000,
+            "bob",
+            platform_version,
+        );
+    }
+
+    /// Update semantics. `$createdAt` is immutable — that is exactly why a
+    /// unique time-range index is allowed to bucket it — so on the
+    /// `ChangedDocument` path the bucket component of the tuple never moves and
+    /// `allow_original` keeps its ordinary meaning: a document may keep the
+    /// slot it already holds, but may not move into one another document holds.
+    #[test]
+    fn changed_document_keeps_its_own_slot_but_cannot_take_another_documents_slot() {
+        let platform_version = PlatformVersion::latest();
+        let (drive, contract) = setup(platform_version);
+
+        let alice_created_at = WINDOW_MS + 3_600_000;
+        let alice_id = insert_report(
+            &drive,
+            &contract,
+            alice_created_at,
+            "alice",
+            platform_version,
+        );
+        // A second document in the SAME window under a different author.
+        insert_report(
+            &drive,
+            &contract,
+            WINDOW_MS + 9 * 3_600_000,
+            "bob",
+            platform_version,
+        );
+
+        // Alice's document changing its author to "bob" walks into the slot
+        // bob's document already holds, in the same (unchanged) bucket.
+        let changed_author: BTreeSet<String> = BTreeSet::from(["author".to_string()]);
+        let result = check_uniqueness(
+            &drive,
+            &contract,
+            alice_id,
+            alice_created_at,
+            "bob",
+            UniquenessOfDataRequestUpdateType::ChangedDocument {
+                changed_owner_id: false,
+                changed_updated_at: false,
+                changed_transferred_at: false,
+                changed_updated_at_block_height: false,
+                changed_transferred_at_block_height: false,
+                changed_updated_at_core_block_height: false,
+                changed_transferred_at_core_block_height: false,
+                changed_data_values: Cow::Borrowed(&changed_author),
+            },
+            platform_version,
+        );
+        assert_duplicate(&result, "moving onto another document's tuple");
+
+        // The same document re-submitted with its own tuple finds itself in
+        // the bucket and is allowed to stay (`allow_original`).
+        let unchanged: BTreeSet<String> = BTreeSet::new();
+        let result = check_uniqueness(
+            &drive,
+            &contract,
+            alice_id,
+            alice_created_at,
+            "alice",
+            UniquenessOfDataRequestUpdateType::ChangedDocument {
+                changed_owner_id: false,
+                changed_updated_at: false,
+                changed_transferred_at: false,
+                changed_updated_at_block_height: false,
+                changed_transferred_at_block_height: false,
+                changed_updated_at_core_block_height: false,
+                changed_transferred_at_core_block_height: false,
+                changed_data_values: Cow::Borrowed(&unchanged),
+            },
+            platform_version,
+        );
+        assert!(
+            result.is_valid(),
+            "a document must be allowed to keep the slot it already holds: {:?}",
+            result.errors
+        );
+    }
+
+    /// A `$createdAt` predating the transform's origin produces no index
+    /// entries at all (the insert walker writes none), so such a document
+    /// cannot collide with anything: the probe must skip this index entirely
+    /// rather than invent a bucket for a timestamp that belongs to none.
+    #[test]
+    fn pre_origin_candidate_skips_the_time_range_index_check() {
+        let platform_version = PlatformVersion::latest();
+        let (drive, contract) = setup_with_origin(Some(WINDOW_SECONDS), platform_version);
+
+        // A stored report in the transform's first window.
+        insert_report(
+            &drive,
+            &contract,
+            WINDOW_MS + 3_600_000,
+            "alice",
+            platform_version,
+        );
+
+        // Same author, timestamp one millisecond before the origin: it belongs
+        // to no window, so there is nothing for it to duplicate.
+        let result = check_uniqueness(
+            &drive,
+            &contract,
+            Identifier::from([0xAA; 32]),
+            WINDOW_MS - 1,
+            "alice",
+            UniquenessOfDataRequestUpdateType::NewDocument,
+            platform_version,
+        );
+        assert!(
+            result.is_valid(),
+            "a pre-origin document is not indexed, so it cannot collide: {:?}",
+            result.errors
+        );
+
+        // Contrast: inside the first window the same author does collide, so
+        // the skip above is the origin talking and not a probe that silently
+        // stopped working on this contract.
+        let result = check_uniqueness(
+            &drive,
+            &contract,
+            Identifier::from([0xAA; 32]),
+            WINDOW_MS + 9 * 3_600_000,
+            "alice",
+            UniquenessOfDataRequestUpdateType::NewDocument,
+            platform_version,
+        );
+        assert_duplicate(&result, "inside the first window");
+    }
+}

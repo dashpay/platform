@@ -62,6 +62,12 @@ pub struct DocumentCountRequest<'a> {
     /// the catalog of rejections this enables and the In/range +
     /// `between*` canonicalization rules) before mode detection.
     pub where_clauses: Vec<WhereClause>,
+    /// The fields among `where_clauses` whose equality clause was produced by
+    /// `IN_TIME_RANGE` resolution rather than written by the caller. Same
+    /// contract and same purpose as
+    /// [`crate::query::DriveDocumentQuery::resolved_time_range_fields`]:
+    /// it is what gates which indexes the count pickers may select.
+    pub resolved_time_range_fields: Vec<String>,
     /// Structured `order_by` clauses. The first clause's direction
     /// governs split-mode entry ordering (per-`In`-value /
     /// per-distinct-value-in-range) and, on the
@@ -445,6 +451,11 @@ impl Drive {
         // for the catalog of rejections / canonicalization rules.
         let where_clauses =
             validate_and_canonicalize_where_clauses(request.where_clauses, platform_version)?;
+        let resolved_time_range_fields = request.resolved_time_range_fields;
+        crate::query::validate_resolved_time_range_clause_shapes(
+            &where_clauses,
+            &resolved_time_range_fields,
+        )?;
         let order_clauses = request.order_clauses;
 
         // Split-mode entry direction is whatever the first orderBy
@@ -476,6 +487,7 @@ impl Drive {
                     request.document_type,
                     document_type_name,
                     where_clauses,
+                    &resolved_time_range_fields,
                     transaction,
                     platform_version,
                 )?;
@@ -497,6 +509,7 @@ impl Drive {
                         request.document_type,
                         document_type_name,
                         where_clauses,
+                        &resolved_time_range_fields,
                         options,
                         transaction,
                         platform_version,
@@ -537,6 +550,7 @@ impl Drive {
                     request.document_type,
                     document_type_name,
                     where_clauses,
+                    &resolved_time_range_fields,
                     options,
                     transaction,
                     platform_version,
@@ -558,6 +572,7 @@ impl Drive {
                     request.document_type,
                     document_type_name,
                     where_clauses,
+                    &resolved_time_range_fields,
                     transaction,
                     platform_version,
                 )?,
@@ -617,6 +632,7 @@ impl Drive {
                         request.document_type,
                         document_type_name,
                         where_clauses,
+                        &resolved_time_range_fields,
                         limit_u16,
                         left_to_right,
                         transaction,
@@ -630,6 +646,7 @@ impl Drive {
                     request.document_type,
                     document_type_name,
                     where_clauses,
+                    &resolved_time_range_fields,
                     transaction,
                     platform_version,
                 )?,
@@ -717,6 +734,7 @@ impl Drive {
                         request.document_type,
                         document_type_name,
                         where_clauses,
+                        &resolved_time_range_fields,
                         effective_limit,
                         left_to_right,
                         transaction,

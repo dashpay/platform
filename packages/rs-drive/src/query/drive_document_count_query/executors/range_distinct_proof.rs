@@ -36,6 +36,7 @@ impl Drive {
         document_type: DocumentTypeRef,
         document_type_name: String,
         where_clauses: Vec<WhereClause>,
+        resolved_time_range_fields: &[String],
         limit: u16,
         left_to_right: bool,
         transaction: TransactionArg,
@@ -44,6 +45,7 @@ impl Drive {
         let index = DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
             document_type.indexes(),
             &where_clauses,
+            resolved_time_range_fields,
         )
         .ok_or_else(|| {
             Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(

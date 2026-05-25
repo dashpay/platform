@@ -7,10 +7,12 @@ use crate::consensus::basic::data_contract::DuplicateIndexError;
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::data_contract::document_type::index::IndexCountability;
+use crate::data_contract::document_type::index::TimeRangeTransform;
 use crate::data_contract::document_type::index_level::IndexType::{
     ContestedResourceIndex, NonUniqueIndex, UniqueIndex,
 };
 use crate::data_contract::document_type::Index;
+use crate::data_contract::errors::DataContractError;
 #[cfg(feature = "validation")]
 use crate::validation::SimpleConsensusValidationResult;
 use crate::version::PlatformVersion;
@@ -121,6 +123,14 @@ pub struct IndexLevel {
     sub_index_levels: BTreeMap<String, IndexLevel>,
     /// did an index terminate at this level
     has_index_with_type: Option<IndexLevelTypeInfo>,
+    /// When set, the property reached at this level is a timestamp that is
+    /// bucketed into time ranges (see [`TimeRangeTransform`]). Only ever set
+    /// on a *first-property* node (a direct child of the root), because a
+    /// time-range transform must be its index's leading property. At
+    /// insert/delete/update time the document's timestamp for this property
+    /// is expanded into one key per overlapping range bucket instead of a
+    /// single key. Immutable after contract creation.
+    time_range: Option<TimeRangeTransform>,
     /// unique level identifier
     level_identifier: u64,
 }
@@ -132,6 +142,12 @@ impl IndexLevel {
 
     pub fn sub_levels(&self) -> &BTreeMap<String, IndexLevel> {
         &self.sub_index_levels
+    }
+
+    /// The time-range transform applied to the property reached at this
+    /// level, if any. Only set on first-property nodes.
+    pub fn time_range(&self) -> Option<&TimeRangeTransform> {
+        self.time_range.as_ref()
     }
 
     pub fn has_index_with_type(&self) -> Option<&IndexLevelTypeInfo> {
@@ -235,17 +251,30 @@ impl IndexLevel {
         let mut index_level = IndexLevel {
             sub_index_levels: Default::default(),
             has_index_with_type: None,
+            time_range: None,
             level_identifier: 0,
         };
 
         let mut counter: u64 = 0;
 
+        // First-property nodes that have already been visited, with the
+        // transform (or absence of one) their first visitor recorded. All
+        // indices sharing a first property must agree on its time-range
+        // transform — the walkers read the transform off the *merged* node,
+        // so a disagreement would bucket one index's entries and not
+        // another's. `try_from_schema` also rejects this under full
+        // validation; enforcing it here as well covers every construction
+        // path (check_tx, deserialized state, hand-built document types)
+        // instead of silently letting the last writer win.
+        let mut first_property_transforms: BTreeMap<String, Option<TimeRangeTransform>> =
+            BTreeMap::new();
+
         for index_to_borrow in indices {
             let index = index_to_borrow.borrow();
             let mut current_level = &mut index_level;
-            let mut properties_iter = index.properties.iter().peekable();
+            let mut properties_iter = index.properties.iter().enumerate().peekable();
 
-            while let Some(index_part) = properties_iter.next() {
+            while let Some((position, index_part)) = properties_iter.next() {
                 current_level = current_level
                     .sub_index_levels
                     .entry(index_part.name.clone())
@@ -255,8 +284,36 @@ impl IndexLevel {
                             level_identifier: counter,
                             sub_index_levels: Default::default(),
                             has_index_with_type: None,
+                            time_range: None,
                         }
                     });
+
+                // A time-range transform always targets the index's first
+                // property, so record it on that first-property node —
+                // rejecting any disagreement between indices that share it
+                // (see `first_property_transforms` above).
+                if position == 0 {
+                    match first_property_transforms.get(&index_part.name) {
+                        Some(existing) if *existing != index.time_range => {
+                            return Err(ProtocolError::DataContractError(
+                                DataContractError::InvalidContractStructure(format!(
+                                    "indices that share the first property \"{}\" must agree on \
+                                     its timeRange transform: either all bucket it identically \
+                                     or none do",
+                                    index_part.name
+                                )),
+                            ));
+                        }
+                        Some(_) => {}
+                        None => {
+                            first_property_transforms
+                                .insert(index_part.name.clone(), index.time_range.clone());
+                        }
+                    }
+                    if let Some(transform) = &index.time_range {
+                        current_level.time_range = Some(transform.clone());
+                    }
+                }
 
                 // The last property
                 if properties_iter.peek().is_none() {
@@ -399,6 +456,20 @@ impl IndexLevel {
             );
         }
 
+        // A time-range transform determines how many index entries each
+        // document produces and under which bucket keys. Changing it after
+        // creation would leave already-stored documents indexed under stale
+        // buckets, so it is immutable — reject any change.
+        if let Some(time_range_change_path) = self.find_first_time_range_change(new_indices) {
+            return SimpleConsensusValidationResult::new_with_error(
+                DataContractInvalidIndexDefinitionUpdateError::new(
+                    document_type_name.to_string(),
+                    time_range_change_path,
+                )
+                .into(),
+            );
+        }
+
         SimpleConsensusValidationResult::new()
     }
 }
@@ -430,6 +501,7 @@ mod tests {
             ranked_countable: false,
             ranked_summable: false,
             ranked_averageable: false,
+            time_range: None,
         }];
 
         let old_index_structure =
@@ -464,6 +536,7 @@ mod tests {
             ranked_countable: false,
             ranked_summable: false,
             ranked_averageable: false,
+            time_range: None,
         }];
 
         let new_indices = vec![
@@ -483,6 +556,7 @@ mod tests {
                 ranked_countable: false,
                 ranked_summable: false,
                 ranked_averageable: false,
+                time_range: None,
             },
             Index {
                 name: "test2".to_string(),
@@ -500,6 +574,7 @@ mod tests {
                 ranked_countable: false,
                 ranked_summable: false,
                 ranked_averageable: false,
+                time_range: None,
             },
         ];
 
@@ -543,6 +618,7 @@ mod tests {
                 ranked_countable: false,
                 ranked_summable: false,
                 ranked_averageable: false,
+                time_range: None,
             },
             Index {
                 name: "test2".to_string(),
@@ -560,6 +636,7 @@ mod tests {
                 ranked_countable: false,
                 ranked_summable: false,
                 ranked_averageable: false,
+                time_range: None,
             },
         ];
 
@@ -579,6 +656,7 @@ mod tests {
             ranked_countable: false,
             ranked_summable: false,
             ranked_averageable: false,
+            time_range: None,
         }];
 
         let old_index_structure =
@@ -620,6 +698,7 @@ mod tests {
             ranked_countable: false,
             ranked_summable: false,
             ranked_averageable: false,
+            time_range: None,
         }];
 
         let new_indices = vec![Index {
@@ -644,6 +723,7 @@ mod tests {
             ranked_countable: false,
             ranked_summable: false,
             ranked_averageable: false,
+            time_range: None,
         }];
 
         let old_index_structure =
@@ -691,6 +771,7 @@ mod tests {
             ranked_countable: false,
             ranked_summable: false,
             ranked_averageable: false,
+            time_range: None,
         }];
 
         let new_indices = vec![Index {
@@ -709,6 +790,7 @@ mod tests {
             ranked_countable: false,
             ranked_summable: false,
             ranked_averageable: false,
+            time_range: None,
         }];
 
         let old_index_structure =
@@ -750,6 +832,7 @@ mod tests {
             ranked_countable: false,
             ranked_summable: false,
             ranked_averageable: false,
+            time_range: None,
         }];
 
         let new_indices = vec![Index {
@@ -768,6 +851,7 @@ mod tests {
             ranked_countable: false,
             ranked_summable: false,
             ranked_averageable: false,
+            time_range: None,
         }];
 
         let old_index_structure =
@@ -809,6 +893,7 @@ mod tests {
             ranked_countable: false,
             ranked_summable: false,
             ranked_averageable: false,
+            time_range: None,
         }];
 
         let new_indices = vec![Index {
@@ -827,6 +912,7 @@ mod tests {
             ranked_countable: false,
             ranked_summable: false,
             ranked_averageable: false,
+            time_range: None,
         }];
 
         let old_index_structure =
@@ -868,6 +954,7 @@ mod tests {
             ranked_countable: false,
             ranked_summable: false,
             ranked_averageable: false,
+            time_range: None,
         }];
 
         let old_index_structure =
@@ -909,6 +996,7 @@ mod tests {
             ranked_countable: false,
             ranked_summable: false,
             ranked_averageable: false,
+            time_range: None,
         }];
 
         let new_indices = vec![Index {
@@ -927,6 +1015,7 @@ mod tests {
             ranked_countable: false,
             ranked_summable: false,
             ranked_averageable: false,
+            time_range: None,
         }];
 
         let old_index_structure =
@@ -968,6 +1057,7 @@ mod tests {
             ranked_countable: false,
             ranked_summable: false,
             ranked_averageable: false,
+            time_range: None,
         }];
 
         let new_indices = vec![Index {
@@ -986,6 +1076,7 @@ mod tests {
             ranked_countable: false,
             ranked_summable: false,
             ranked_averageable: false,
+            time_range: None,
         }];
 
         let old_index_structure =
@@ -1033,6 +1124,7 @@ mod tests {
             ranked_countable: false,
             ranked_summable: false,
             ranked_averageable: false,
+            time_range: None,
         }];
 
         let new_indices = vec![Index {
@@ -1057,6 +1149,7 @@ mod tests {
             ranked_countable: false,
             ranked_summable: false,
             ranked_averageable: false,
+            time_range: None,
         }];
 
         let old_index_structure =
@@ -1104,6 +1197,7 @@ mod tests {
             ranked_countable: false,
             ranked_summable: false,
             ranked_averageable: false,
+            time_range: None,
         }];
 
         let new_indices = vec![Index {
@@ -1128,6 +1222,7 @@ mod tests {
             ranked_countable: false,
             ranked_summable: false,
             ranked_averageable: false,
+            time_range: None,
         }];
 
         let old_index_structure =
@@ -1183,6 +1278,7 @@ mod tests {
             ranked_countable,
             ranked_summable,
             ranked_averageable,
+            time_range: None,
         }
     }
 
@@ -1339,6 +1435,7 @@ mod tests {
             ranked_countable: false,
             ranked_summable: false,
             ranked_averageable: false,
+            time_range: None,
         }];
 
         let mut new_indices = old_indices.clone();

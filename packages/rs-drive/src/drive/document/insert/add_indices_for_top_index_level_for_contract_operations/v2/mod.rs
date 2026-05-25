@@ -4,7 +4,9 @@ use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
 use crate::util::grove_operations::BatchInsertTreeApplyType;
 
 use crate::drive::Drive;
-use crate::util::object_size_info::{DocumentAndContractInfo, DocumentInfoV0Methods, PathInfo};
+use crate::util::object_size_info::{
+    DocumentAndContractInfo, DocumentInfoV0Methods, DriveKeyInfo, PathInfo,
+};
 
 use crate::error::fee::FeeError;
 use crate::error::Error;
@@ -16,7 +18,9 @@ use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::version::PlatformVersion;
 
 use crate::drive::document::estimation_costs::estimated_sum_trees_for_value_tree_type::estimated_sum_trees_for_value_tree_type;
-use crate::drive::document::index_level_tree_types::index_level_tree_types_with_continuation_demotion;
+use crate::drive::document::index_level_tree_types::{
+    index_level_tree_types_with_continuation_demotion, time_range_index_keys,
+};
 use crate::drive::document::paths::contract_document_type_path_vec;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{ApproximateElements, PotentiallyAtMaxElements};
@@ -129,12 +133,11 @@ impl Drive {
                 )?
                 .unwrap_or_default();
 
-            // The zero will not matter here, because the PathKeyInfo is variable
-            let path_key_info = document_top_field.clone().add_path::<0>(index_path.clone());
             // here we are inserting the value tree (per distinct property value)
             // under the top-level property-name tree. The top-level property-name
             // tree itself is created at contract setup, so the apply_type's
             // `in_tree_type` reflects whichever variant the contract setup used.
+            // Same for every bucket key when this is a time-range node.
             let value_apply_type = if estimated_costs_only_with_layer_info.is_none() {
                 BatchInsertTreeApplyType::StatefulBatchInsertTree
             } else {
@@ -146,16 +149,6 @@ impl Drive {
                         .unwrap_or_default(),
                 }
             };
-            self.batch_insert_empty_tree_if_not_exists(
-                path_key_info.clone(),
-                value_tree_type,
-                storage_flags,
-                value_apply_type,
-                transaction,
-                previous_batch_operations,
-                batch_operations,
-                drive_version,
-            )?;
 
             if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info
             {
@@ -192,40 +185,76 @@ impl Drive {
             let any_fields_null = document_top_field.is_empty();
             let all_fields_null = document_top_field.is_empty();
 
-            let mut index_path_info = if document_and_contract_info
-                .owned_document_info
-                .document_info
-                .is_document_size()
-            {
-                // This is a stateless operation
-                PathInfo::PathWithSizes(KeyInfoPath::from_known_owned_path(index_path))
-            } else {
-                PathInfo::PathAsVec::<0>(index_path)
-            };
+            // A time-range first-property node expands the document's single
+            // timestamp into one index entry per overlapping range bucket (the
+            // bucket *start*, encoded exactly like the timestamp). A normal
+            // property keeps its single key. The entry-key rule (null keeps
+            // its single null entry, pre-origin timestamps produce no entries,
+            // undecodable values keep their raw key) lives in ONE place —
+            // [`TimeRangeTransform::entry_keys_for_raw`] — shared with the
+            // delete and update walkers so the three can never disagree.
+            let index_keys: Vec<DriveKeyInfo> = time_range_index_keys(
+                sub_level.time_range(),
+                document_top_field,
+                // A validated contract cannot exceed this; the clamp only
+                // bounds estimation work for unvalidated transforms. The
+                // `unwrap_or(1)` arm is a protocol version without
+                // time-range indexes, where no transform can exist.
+                platform_version
+                    .system_limits
+                    .max_time_range_overlap_factor
+                    .unwrap_or(1),
+            );
 
-            // we push the actual value of the index path
-            index_path_info.push(document_top_field)?;
-            // the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId/<ownerId>
+            for index_key in index_keys {
+                // The zero will not matter here, because the PathKeyInfo is variable
+                let path_key_info = index_key.clone().add_path::<0>(index_path.clone());
+                self.batch_insert_empty_tree_if_not_exists(
+                    path_key_info.clone(),
+                    value_tree_type,
+                    storage_flags,
+                    value_apply_type,
+                    transaction,
+                    previous_batch_operations,
+                    batch_operations,
+                    drive_version,
+                )?;
 
-            // Propagate the exact (post-demotion) `value_tree_type` we
-            // just inserted forward as the recursive level's
-            // `parent_value_tree_type` so its continuation children pick
-            // the right zero-contribution op.
-            self.add_indices_for_index_level_for_contract_operations(
-                document_and_contract_info,
-                index_path_info,
-                sub_level,
-                any_fields_null,
-                all_fields_null,
-                value_tree_type,
-                previous_batch_operations,
-                &storage_flags,
-                estimated_costs_only_with_layer_info,
-                event_id,
-                transaction,
-                batch_operations,
-                platform_version,
-            )?;
+                let mut index_path_info = if document_and_contract_info
+                    .owned_document_info
+                    .document_info
+                    .is_document_size()
+                {
+                    // This is a stateless operation
+                    PathInfo::PathWithSizes(KeyInfoPath::from_known_owned_path(index_path.clone()))
+                } else {
+                    PathInfo::PathAsVec::<0>(index_path.clone())
+                };
+
+                // we push the actual value of the index path
+                index_path_info.push(index_key)?;
+                // the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId/<ownerId>
+
+                // Propagate the exact (post-demotion) `value_tree_type` we
+                // just inserted forward as the recursive level's
+                // `parent_value_tree_type` so its continuation children pick
+                // the right zero-contribution op.
+                self.add_indices_for_index_level_for_contract_operations(
+                    document_and_contract_info,
+                    index_path_info,
+                    sub_level,
+                    any_fields_null,
+                    all_fields_null,
+                    value_tree_type,
+                    previous_batch_operations,
+                    &storage_flags,
+                    estimated_costs_only_with_layer_info,
+                    event_id,
+                    transaction,
+                    batch_operations,
+                    platform_version,
+                )?;
+            }
         }
         Ok(())
     }

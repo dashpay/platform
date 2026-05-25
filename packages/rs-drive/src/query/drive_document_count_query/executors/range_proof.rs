@@ -18,18 +18,21 @@ impl Drive {
     /// Range-count proof via grovedb's `AggregateCountOnRange`.
     /// Returns proof bytes that the client verifies via
     /// `GroveDb::verify_aggregate_count_query`.
+    #[allow(clippy::too_many_arguments)]
     pub fn execute_document_count_range_proof(
         &self,
         contract_id: [u8; 32],
         document_type: DocumentTypeRef,
         document_type_name: String,
         where_clauses: Vec<WhereClause>,
+        resolved_time_range_fields: &[String],
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
         let index = DriveDocumentCountQuery::find_range_countable_index_for_where_clauses(
             document_type.indexes(),
             &where_clauses,
+            resolved_time_range_fields,
         )
         .ok_or_else(|| {
             Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(

@@ -795,6 +795,7 @@ fn compound_ranked_index_resolves_its_terminal_level_to_an_indexed_tree() {
         ranked_countable: false,
         ranked_summable: false,
         ranked_averageable: true,
+        time_range: None,
     };
     let index_structure =
         IndexLevel::try_from_indices([&compound_ranked_index], "dish", platform_version())
@@ -1010,6 +1011,7 @@ fn a_null_unsearchable_ranked_level_is_what_makes_a_phantom_group_possible() {
         ranked_countable: true,
         ranked_summable: false,
         ranked_averageable: false,
+        time_range: None,
     };
 
     for null_searchable in [false, true] {
@@ -1505,6 +1507,7 @@ fn ranked_avg_page(
                 offset: Some(offset),
                 has_start_at: false,
                 prove: false,
+                resolved_time_range_fields: &[],
             },
             None,
             platform_version(),
@@ -1551,6 +1554,7 @@ fn verified_ranked_avg_page(
                 offset: Some(offset),
                 has_start_at: false,
                 prove: true,
+                resolved_time_range_fields: &[],
             },
             None,
             platform_version(),

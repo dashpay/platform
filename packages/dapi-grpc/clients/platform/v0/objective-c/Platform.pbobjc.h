@@ -385,6 +385,19 @@ typedef GPB_ENUM(GetDocumentsRequest_WhereOperator) {
   GetDocumentsRequest_WhereOperator_BetweenExcludeRight = 8,
   GetDocumentsRequest_WhereOperator_In = 9,
   GetDocumentsRequest_WhereOperator_StartsWith = 10,
+
+  /**
+   * Time-range bucket selection (v1 / `GetDocumentsRequestV1` only — the
+   * v0 CBOR where surface is unaffected). The clause's `field` names a
+   * timestamp property covered by a `timeRange` index; the operand
+   * (`DocumentFieldValue.text`) is the selector `"newest"` or `"oldest"`.
+   * The server resolves it to a concrete equality on the bucket start
+   * using the current block time, and the verifier re-derives the same
+   * bucket from the quorum-signed response metadata time — so the proof
+   * is an ordinary index/count proof. See `timeRange` in the document
+   * meta-schema and `drive::query::resolve_time_range_bucket_clause`.
+   **/
+  GetDocumentsRequest_WhereOperator_InTimeRange = 11,
 };
 
 GPBEnumDescriptor *GetDocumentsRequest_WhereOperator_EnumDescriptor(void);

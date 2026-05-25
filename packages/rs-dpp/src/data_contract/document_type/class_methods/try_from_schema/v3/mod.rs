@@ -259,6 +259,8 @@ fn try_from_schema_generation_3(
             admit_ranked: true,
             ranked_index_key_length_check: RANKED_INDEX_KEY_LENGTH_CHECK,
             ranked_index_structure_check: validate_no_ranked_prefix_overlap,
+            // TIME RANGE: the other keyword generation 3 adds.
+            admit_time_range: true,
         },
         platform_version,
     )?;

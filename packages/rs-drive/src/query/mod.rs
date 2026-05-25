@@ -570,6 +570,192 @@ impl From<InternalClauses> for Vec<WhereClause> {
     }
 }
 
+/// Which active time range a `TOP(timeRange(...))` selection resolves to,
+/// when the index's ranges overlap (`range > step`). Time-range queries are a
+/// v1-only feature; the v0 query surface is unaffected.
+#[cfg(any(feature = "server", feature = "verify"))]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "lowercase"))]
+pub enum TimeRangeSelector {
+    /// The freshest started range (largest start ≤ now). Covers the latest
+    /// partial slice (0..step of history).
+    Newest,
+    /// The oldest range still active at now. Covers a near-full trailing
+    /// window of ~range of history. Best for "trending over the last window".
+    Oldest,
+}
+
+#[cfg(any(feature = "server", feature = "verify"))]
+impl TimeRangeSelector {
+    /// The selector's wire spelling — the `IN_TIME_RANGE` clause's operand on
+    /// the v1 `getDocuments` wire. The single source of truth for the string
+    /// form: the SDK encoder, the drive-abci decoder and the wasm-sdk JSON
+    /// parser all go through these two functions (and the serde derive above
+    /// is renamed to match), so the spellings cannot drift apart.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            TimeRangeSelector::Newest => "newest",
+            TimeRangeSelector::Oldest => "oldest",
+        }
+    }
+
+    /// Parses the wire spelling. Returns `None` for anything but the exact
+    /// strings [`Self::as_str`] produces.
+    pub fn from_string(value: &str) -> Option<Self> {
+        match value {
+            "newest" => Some(TimeRangeSelector::Newest),
+            "oldest" => Some(TimeRangeSelector::Oldest),
+            _ => None,
+        }
+    }
+}
+
+/// Resolves a time-range selection on `field` into a concrete equality
+/// [`WhereClause`] on the bucketed source field, using the index's
+/// `timeRange` transform and an authoritative `block_time_ms`.
+///
+/// The server supplies `block_time_ms` from current block time and the
+/// verifier re-derives it from the quorum-signed response metadata `time_ms`,
+/// so both produce the identical concrete equality query — the existing
+/// index/count proofs apply unchanged and the engine never needs a dedicated
+/// time-range operator.
+///
+/// What comes back is an ordinary equality clause, byte-identical to one a
+/// client could have written by hand against a raw timestamp. The fact that it
+/// was *produced here* is what makes it safe to run against an index whose keys
+/// are bucket starts, and that provenance is not recoverable from the clause:
+/// callers must record `field` in the query's `resolved_time_range_fields`
+/// (see [`DriveDocumentQuery::resolved_time_range_fields`]), which
+/// [`DriveDocumentQuery::find_best_index`] and the aggregate index pickers
+/// consume through [`index_admissible_for_resolved_time_range`] to pin
+/// selection to the bucketed index — and to keep raw queries off it.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub fn resolve_time_range_bucket_clause(
+    field: &str,
+    selector: TimeRangeSelector,
+    document_type: DocumentTypeRef,
+    block_time_ms: u64,
+) -> Result<WhereClause, Error> {
+    // Every index bucketing `field` uses the same transform for it — the
+    // transform's source must be the index's first property, and two indexes
+    // bucketing the same field with different windows would be two different
+    // sources of truth for one clause — so the first match is the transform.
+    let transform = document_type
+        .indexes()
+        .values()
+        .find_map(|index| {
+            index
+                .time_range
+                .as_ref()
+                .filter(|transform| transform.source == field)
+        })
+        .ok_or(Error::Query(
+            QuerySyntaxError::WhereClauseOnNonIndexedProperty(format!(
+                "no time-range index is defined on field \"{}\"",
+                field
+            )),
+        ))?;
+
+    let bucket_start = match selector {
+        TimeRangeSelector::Newest => transform.newest_active_start(block_time_ms),
+        TimeRangeSelector::Oldest => transform.oldest_active_start(block_time_ms),
+    }
+    .ok_or(Error::Query(QuerySyntaxError::Unsupported(format!(
+        "no time range on \"{}\" is active yet: the current block time predates the index's \
+         origin",
+        field
+    ))))?;
+
+    Ok(WhereClause {
+        field: field.to_string(),
+        operator: WhereOperator::Equal,
+        value: Value::U64(bucket_start),
+    })
+}
+
+/// Whether `index` may serve a query whose equality clauses on
+/// `resolved_time_range_fields` were produced by
+/// [`resolve_time_range_bucket_clause`].
+///
+/// A time-range index does not store the source field's raw values: under its
+/// first property it stores bucket *starts*, and one document is stored once
+/// per bucket that contains its timestamp. So the two kinds of index are not
+/// interchangeable in either direction, and both mismatches are silent —
+/// they return a validly-proven wrong answer rather than an error:
+///
+/// - A raw query (`resolved_time_range_fields` empty) that landed on a
+///   bucketed index would compare a real timestamp against bucket starts and
+///   see nothing (or, for range/IN shapes, walk overlapping buckets and count
+///   the same document up to `overlap_factor` times).
+/// - A resolved query that landed on a raw index would compare a bucket start
+///   against real timestamps and see nothing.
+///
+/// Hence the rule: with no resolved field only non-bucketed indexes are
+/// admissible, and with one resolved field only the index bucketing exactly
+/// that field is. Two resolved fields can never be served by a single index —
+/// a transform's source must be its index's first property, so one index
+/// buckets exactly one field — and are rejected by the caller.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub fn index_admissible_for_resolved_time_range(
+    index: &Index,
+    resolved_time_range_fields: &[String],
+) -> bool {
+    match resolved_time_range_fields {
+        [] => index.time_range.is_none(),
+        [field] => index
+            .time_range
+            .as_ref()
+            .is_some_and(|transform| transform.source == *field),
+        _ => false,
+    }
+}
+
+/// Rejects a query whose resolution provenance and clause shapes disagree:
+/// every field in `resolved_time_range_fields` must appear in the where
+/// clauses as exactly one `Equal` clause — the only shape
+/// [`resolve_time_range_bucket_clause`] produces.
+///
+/// A range or `In` clause on a resolved field means the caller attached
+/// provenance to a clause the resolver never built. Executors that fan a
+/// clause out per value (the per-`In`-value count/sum paths rewrite each `In`
+/// value into an equality) would then present raw client values to the index
+/// pickers as if they were resolved bucket starts, and the pickers would
+/// admit the bucketed index for them. The wire path can never produce the
+/// mismatch — provenance is not parseable from the wire, and the abci handler
+/// pushes the resolved equality itself — so this guards direct API callers,
+/// and it runs identically under `server` and `verify`.
+#[cfg(any(feature = "server", feature = "verify"))]
+pub fn validate_resolved_time_range_clause_shapes(
+    where_clauses: &[WhereClause],
+    resolved_time_range_fields: &[String],
+) -> Result<(), Error> {
+    for field in resolved_time_range_fields {
+        let mut equalities = 0usize;
+        for clause in where_clauses.iter().filter(|c| &c.field == field) {
+            if clause.operator == WhereOperator::Equal {
+                equalities += 1;
+            } else {
+                return Err(Error::Query(
+                    QuerySyntaxError::InvalidWhereClauseComponents(
+                        "a time-range-resolved field may only carry the single equality its \
+                         resolution produced, not a range or In clause",
+                    ),
+                ));
+            }
+        }
+        if equalities != 1 {
+            return Err(Error::Query(
+                QuerySyntaxError::InvalidWhereClauseComponents(
+                    "a time-range-resolved field must carry exactly one equality clause — the \
+                     one its resolution produced",
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
 #[cfg(any(feature = "server", feature = "verify"))]
 /// Drive query struct
 #[derive(Debug, PartialEq, Clone)]
@@ -592,6 +778,22 @@ pub struct DriveDocumentQuery<'a> {
     pub start_at_included: bool,
     /// Block time
     pub block_time_ms: Option<u64>,
+    /// The fields whose equality clause in `internal_clauses` was produced by
+    /// `IN_TIME_RANGE` resolution — i.e. by
+    /// [`resolve_time_range_bucket_clause`], on the server from committed
+    /// block time and in the verifier from the quorum-signed response metadata
+    /// time.
+    ///
+    /// Never parsed from the wire: every `from_cbor` / `from_value` /
+    /// `from_typed_clauses` entry point leaves this empty, so a client cannot
+    /// claim resolution it did not go through. It is what
+    /// [`Self::find_best_index`] uses to pin index selection to the index that
+    /// buckets the field (see [`index_admissible_for_resolved_time_range`]),
+    /// which is required because the resolved clause is an ordinary equality
+    /// and cannot be told apart from a raw-timestamp lookup once built.
+    ///
+    /// Empty for every raw query.
+    pub resolved_time_range_fields: Vec<String>,
 }
 
 impl<'a> DriveDocumentQuery<'a> {
@@ -622,6 +824,7 @@ impl<'a> DriveDocumentQuery<'a> {
             start_at: None,
             start_at_included: false,
             block_time_ms: None,
+            resolved_time_range_fields: vec![],
         }
     }
 
@@ -638,6 +841,7 @@ impl<'a> DriveDocumentQuery<'a> {
             start_at: None,
             start_at_included: true,
             block_time_ms: None,
+            resolved_time_range_fields: vec![],
         }
     }
 
@@ -658,6 +862,7 @@ impl<'a> DriveDocumentQuery<'a> {
             start_at: None,
             start_at_included: true,
             block_time_ms: None,
+            resolved_time_range_fields: vec![],
         }
     }
 
@@ -884,6 +1089,7 @@ impl<'a> DriveDocumentQuery<'a> {
             start_at,
             start_at_included,
             block_time_ms,
+            resolved_time_range_fields: vec![],
         })
     }
 
@@ -1030,6 +1236,7 @@ impl<'a> DriveDocumentQuery<'a> {
             start_at,
             start_at_included,
             block_time_ms,
+            resolved_time_range_fields: vec![],
         })
     }
 
@@ -1194,6 +1401,7 @@ impl<'a> DriveDocumentQuery<'a> {
             start_at,
             start_at_included,
             block_time_ms: None,
+            resolved_time_range_fields: vec![],
         })
     }
 
@@ -1611,10 +1819,64 @@ impl<'a> DriveDocumentQuery<'a> {
     /// ([`Self::find_best_index_for_multiple_in_clauses`]); they only
     /// reach it through the v1 (protocol version 14+) path-query
     /// lowering, since the v0 lowering rejects them first.
+    ///
+    /// Selection is restricted to the indexes admissible for this query's
+    /// [`Self::resolved_time_range_fields`]: a query carrying an
+    /// `IN_TIME_RANGE`-resolved equality may only be served by the index that
+    /// buckets that field, and a raw query may never be served by a bucketed
+    /// index. See [`index_admissible_for_resolved_time_range`] for why either
+    /// mismatch would produce a validly-proven wrong answer. The rule applies
+    /// on both routes, including the multiple-`In` selection.
     pub fn find_best_index(&self, platform_version: &PlatformVersion) -> Result<&Index, Error> {
+        // A transform's source must be its index's first property, so one
+        // index buckets exactly one field and no index can carry two resolved
+        // equalities. Serving such a query would need a join across two
+        // bucketed indexes, which the engine has no shape for. This runs
+        // before any routing so the multiple-`In` path cannot bypass it.
+        if self.resolved_time_range_fields.len() > 1 {
+            return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
+                "at most one time-range selection (IN_TIME_RANGE) is supported per query; this \
+                 one resolves {:?}, and no single index can bucket more than one field",
+                self.resolved_time_range_fields
+            ))));
+        }
+
         if self.internal_clauses.in_clauses.len() > 1 {
+            // The multiple-`In` selection filters its candidates through the
+            // same admissibility rule, but it returns early and so bypasses
+            // the residual source-shape guard at the bottom of this function.
+            // Enforce the resolved-field contract here instead: the resolved
+            // equality must be present, and the bucketed source must not also
+            // carry an `In`, a range, or an ordering.
+            if let Some(source) = self.resolved_time_range_fields.first() {
+                let has_equality_on_source =
+                    self.internal_clauses.equal_clauses.contains_key(source);
+                let in_or_range_on_source = self
+                    .internal_clauses
+                    .in_clauses
+                    .iter()
+                    .any(|clause| &clause.field == source)
+                    || self
+                        .internal_clauses
+                        .range_clause
+                        .as_ref()
+                        .is_some_and(|clause| &clause.field == source);
+                if !has_equality_on_source
+                    || in_or_range_on_source
+                    || self.order_by.contains_key(source)
+                {
+                    return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
+                        "the index on \"{}\" buckets it into time ranges: it can only be \
+                         queried through a time-range selection (IN_TIME_RANGE, which resolves \
+                         to an exact bucket equality), not with ranges, IN, or ordering on \
+                         that property",
+                        source
+                    ))));
+                }
+            }
             return Ok(self.find_best_index_for_multiple_in_clauses()?.0);
         }
+
         let equal_fields = self
             .internal_clauses
             .equal_clauses
@@ -1654,23 +1916,81 @@ impl<'a> DriveDocumentQuery<'a> {
 
         let (index, difference) = self
             .document_type
-            .index_for_types(
+            .index_for_types_matching(
                 fields.as_slice(),
                 in_field,
                 order_by_keys.as_slice(),
+                |index| {
+                    index_admissible_for_resolved_time_range(
+                        index,
+                        &self.resolved_time_range_fields,
+                    )
+                },
                 platform_version,
             )?
-            .ok_or(Error::Query(
-                QuerySyntaxError::WhereClauseOnNonIndexedProperty(format!(
+            .ok_or_else(|| match self.resolved_time_range_fields.first() {
+                // A time-range query is only servable by the index that
+                // buckets the field, so "no index" here is a narrower fact
+                // than the generic case: some index buckets the field (the
+                // clause could not have been resolved otherwise), but none
+                // that does also covers the rest of the query.
+                Some(field) => {
+                    Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(format!(
+                        "a time-range query on \"{}\" requires an index that buckets it AND \
+                         covers the query's other where and order-by fields; valid indexes \
+                         are: {:?}",
+                        field,
+                        self.document_type.indexes()
+                    )))
+                }
+                None => Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(format!(
                     "query must be for valid indexes, valid indexes are: {:?}",
                     self.document_type.indexes()
-                )),
-            ))?;
+                ))),
+            })?;
         if difference > defaults::MAX_INDEX_DIFFERENCE {
             return Err(Error::Query(QuerySyntaxError::QueryTooFarFromIndex(
                 "query must better match an existing index",
             )));
         }
+
+        // Candidate filtering already guarantees a transform-carrying index is
+        // only reachable when the equality on its source came from
+        // IN_TIME_RANGE resolution. What it cannot rule out is a query that
+        // carries that resolved equality AND some other shape on the same
+        // source — a range, an IN, or an ordering — riding along: those walk
+        // overlapping bucket keys and return each document up to
+        // `overlap_factor` times with a perfectly valid proof. Reject them
+        // here rather than serve a provably wrong answer. The
+        // `!has_equality_on_source` arm is defensive: resolution always
+        // pushes the equality, so reaching it means the provenance and the
+        // clauses disagree. This runs identically on the server and in proof
+        // verification.
+        if let Some(transform) = &index.time_range {
+            let source = transform.source.as_str();
+            let has_equality_on_source = self.internal_clauses.equal_clauses.contains_key(source);
+            let range_or_in_on_source = self
+                .internal_clauses
+                .range_clause
+                .as_ref()
+                .map(|c| c.field == source)
+                .unwrap_or(false)
+                || self
+                    .internal_clauses
+                    .in_clauses
+                    .iter()
+                    .any(|c| c.field == source);
+            let orders_on_source = self.order_by.contains_key(source);
+            if !has_equality_on_source || range_or_in_on_source || orders_on_source {
+                return Err(Error::Query(QuerySyntaxError::Unsupported(format!(
+                    "the index on \"{}\" buckets it into time ranges: it can only be queried \
+                     through a time-range selection (IN_TIME_RANGE, which resolves to an exact \
+                     bucket equality), not with ranges, IN, or ordering on that property",
+                    source
+                ))));
+            }
+        }
+
         Ok(index)
     }
 
@@ -2399,6 +2719,7 @@ mod tests {
             start_at: None,
             start_at_included: false,
             block_time_ms: None,
+            resolved_time_range_fields: vec![],
         };
 
         let path_query = query_asc
@@ -2780,6 +3101,47 @@ mod tests {
     }
 
     #[test]
+    fn resolved_time_range_shape_guard_accepts_only_the_single_resolution_equality() {
+        use crate::query::validate_resolved_time_range_clause_shapes;
+
+        let resolved = vec!["$createdAt".to_string()];
+        let equality = WhereClause {
+            field: "$createdAt".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::U64(21_600_000),
+        };
+        let other = WhereClause {
+            field: "hashtag".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Text("ibiza".to_string()),
+        };
+
+        validate_resolved_time_range_clause_shapes(&[equality.clone(), other.clone()], &resolved)
+            .expect("one equality on the resolved field is the resolution shape");
+
+        // An `In` on the resolved field would be fanned out per raw value by
+        // the aggregate executors and admitted against bucket keys.
+        let in_clause = WhereClause {
+            field: "$createdAt".to_string(),
+            operator: WhereOperator::In,
+            value: Value::Array(vec![Value::U64(0), Value::U64(7_200_000)]),
+        };
+        validate_resolved_time_range_clause_shapes(&[in_clause, other.clone()], &resolved)
+            .expect_err("an In clause on a resolved field must be rejected");
+
+        let range_clause = WhereClause {
+            field: "$createdAt".to_string(),
+            operator: WhereOperator::GreaterThan,
+            value: Value::U64(0),
+        };
+        validate_resolved_time_range_clause_shapes(&[equality.clone(), range_clause], &resolved)
+            .expect_err("a range clause riding along on a resolved field must be rejected");
+
+        validate_resolved_time_range_clause_shapes(&[other], &resolved)
+            .expect_err("a resolved field with no equality at all must be rejected");
+    }
+
+    #[test]
     fn test_withdrawal_query_with_missing_transaction_index() {
         // Setup the withdrawal contract
         let (_, contract) = setup_withdrawal_contract();
@@ -2832,6 +3194,7 @@ mod tests {
             start_at: Some([3u8; 32]),
             start_at_included: false,
             block_time_ms: None,
+            resolved_time_range_fields: vec![],
         };
 
         // Create a document that we are starting at, which may be missing 'transactionIndex'
@@ -2948,6 +3311,7 @@ mod tests {
                 start_at: None,
                 start_at_included: false,
                 block_time_ms: None,
+                resolved_time_range_fields: vec![],
             }
         }
 

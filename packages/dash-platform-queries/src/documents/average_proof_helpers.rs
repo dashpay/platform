@@ -96,11 +96,43 @@ pub(super) fn assert_select_is_avg(
 ///   that should be unreachable here (`prove = true`); reject as
 ///   `RequestError` if they bubble through.
 pub(super) fn verify_average_query(
-    request: DocumentQuery,
+    mut request: DocumentQuery,
     response: GetDocumentsResponse,
     platform_version: &PlatformVersion,
     provider: &dyn ContextProvider,
 ) -> Result<(Option<Vec<AverageEntry>>, ResponseMetadata, Proof), drive_proof_verifier::Error> {
+    let proof = response
+        .proof()
+        .or(Err(drive_proof_verifier::Error::NoProofInResult))?;
+    let mtd = response
+        .metadata()
+        .or(Err(drive_proof_verifier::Error::EmptyResponseMetadata))?;
+    let contract_id = request.data_contract.id().to_buffer();
+    let sum_property = request.select.field.clone();
+
+    // Resolve any pending time-range (`IN_TIME_RANGE`) selections into
+    // concrete bucket-equality clauses using the quorum-signed metadata
+    // block time — BEFORE mode detection and covering-index selection
+    // below, which read `request.where_clauses`; the prover routed on
+    // the resolved shape.
+    let resolved_time_range_fields =
+        super::document_query::resolve_time_range_clauses_with_metadata_time(
+            &mut request,
+            mtd.time_ms,
+        )?;
+
+    // Same provenance-vs-shape contract the server dispatchers enforce: a
+    // resolved field may only carry the single equality its resolution
+    // produced. A response accepting any other shape did not come from an
+    // honest prover, so reject before mode detection can route on it.
+    drive::query::validate_resolved_time_range_clause_shapes(
+        &request.where_clauses,
+        &resolved_time_range_fields,
+    )
+    .map_err(|e| drive_proof_verifier::Error::RequestError {
+        error: format!("invalid time range query shape: {}", e),
+    })?;
+
     let document_type = request
         .data_contract
         .document_type_for_name(&request.document_type_name)
@@ -110,14 +142,6 @@ pub(super) fn verify_average_query(
                 request.document_type_name, e
             ),
         })?;
-    let proof = response
-        .proof()
-        .or(Err(drive_proof_verifier::Error::NoProofInResult))?;
-    let mtd = response
-        .metadata()
-        .or(Err(drive_proof_verifier::Error::EmptyResponseMetadata))?;
-    let contract_id = request.data_contract.id().to_buffer();
-    let sum_property = request.select.field.clone();
 
     // Resolve the SQL-shape `SumMode` the request implies — AVG
     // shares the routing table with SUM (see module docstring), so
@@ -174,6 +198,7 @@ pub(super) fn verify_average_query(
             document_type.indexes(),
             &request.where_clauses,
             &sum_property,
+            &resolved_time_range_fields,
         )
         .filter(|idx| idx.range_countable)
         .ok_or_else(|| drive_proof_verifier::Error::RequestError {
@@ -189,6 +214,7 @@ pub(super) fn verify_average_query(
             document_type.indexes(),
             &request.where_clauses,
             &sum_property,
+            &resolved_time_range_fields,
         )
         .filter(|idx| idx.countable.is_countable())
         .ok_or_else(|| drive_proof_verifier::Error::RequestError {

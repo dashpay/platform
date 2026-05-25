@@ -38,7 +38,7 @@ use dapi_grpc::platform::v0::get_documents_request::{
 use dpp::platform_value::Value;
 use drive::query::{
     HavingAggregate, HavingAggregateFunction, HavingClause, HavingOperator, HavingRightOperand,
-    OrderClause, SelectFunction, SelectProjection, WhereClause, WhereOperator,
+    OrderClause, SelectFunction, SelectProjection, TimeRangeSelector, WhereClause, WhereOperator,
 };
 
 /// Map a wire-level [`ProtoWhereOperator`] discriminant onto
@@ -49,7 +49,7 @@ use drive::query::{
 pub(super) fn where_operator_from_proto(op: i32) -> Result<WhereOperator, QueryError> {
     let proto_op = ProtoWhereOperator::try_from(op).map_err(|_| {
         QueryError::InvalidArgument(format!(
-            "unknown WhereOperator discriminant: {} (valid values: 0..=10, see \
+            "unknown WhereOperator discriminant: {} (valid values: 0..=11, see \
              `get_documents_request::WhereOperator`)",
             op
         ))
@@ -66,7 +66,52 @@ pub(super) fn where_operator_from_proto(op: i32) -> Result<WhereOperator, QueryE
         ProtoWhereOperator::BetweenExcludeRight => WhereOperator::BetweenExcludeRight,
         ProtoWhereOperator::In => WhereOperator::In,
         ProtoWhereOperator::StartsWith => WhereOperator::StartsWith,
+        // IN_TIME_RANGE is not an engine operator: it's resolved to a concrete
+        // equality from authoritative block time before clause conversion (see
+        // `is_time_range_clause` / `time_range_clause_from_proto`), so it must
+        // never reach this mapping.
+        ProtoWhereOperator::InTimeRange => {
+            return Err(QueryError::InvalidArgument(
+                "IN_TIME_RANGE where clauses are resolved from block time before \
+                 operator conversion and must not be mixed into normal clause decoding"
+                    .to_string(),
+            ))
+        }
     })
+}
+
+/// Whether a wire where clause is a time-range selection
+/// (`operator == IN_TIME_RANGE`). The v1 handler partitions these out and
+/// resolves them from authoritative block time via
+/// [`time_range_clause_from_proto`].
+pub(super) fn is_time_range_clause(clause: &ProtoWhereClause) -> bool {
+    clause.operator == ProtoWhereOperator::InTimeRange as i32
+}
+
+/// Decode an `IN_TIME_RANGE` wire where clause into its `(field, selector)`.
+/// The operand carries the selector as `DocumentFieldValue.text`
+/// (`"newest"` or `"oldest"`).
+pub(super) fn time_range_clause_from_proto(
+    clause: ProtoWhereClause,
+) -> Result<(String, TimeRangeSelector), QueryError> {
+    let field = clause.field;
+    let selector_text = match clause.value.and_then(|v| v.variant) {
+        Some(document_field_value::Variant::Text(s)) => s,
+        _ => {
+            return Err(QueryError::InvalidArgument(format!(
+                "IN_TIME_RANGE clause on field '{}' must carry a text operand of \
+                 \"newest\" or \"oldest\"",
+                field
+            )))
+        }
+    };
+    let selector = TimeRangeSelector::from_string(&selector_text).ok_or_else(|| {
+        QueryError::InvalidArgument(format!(
+            "IN_TIME_RANGE selector must be \"newest\" or \"oldest\", got \"{}\"",
+            selector_text
+        ))
+    })?;
+    Ok((field, selector))
 }
 
 /// Map a wire [`ProtoDocumentFieldValue`] onto a

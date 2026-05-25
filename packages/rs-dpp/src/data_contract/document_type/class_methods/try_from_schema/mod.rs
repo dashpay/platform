@@ -442,6 +442,33 @@ mod tests {
         try_document_type_from_schema_on_version(schema, PlatformVersion::latest())
     }
 
+    /// Same as [`try_document_type_from_schema`] but with `full_validation`
+    /// on — the index validations (the timeRange source rules among them)
+    /// only run on the validating parse.
+    fn try_document_type_from_schema_full_validation(
+        schema: serde_json::Value,
+    ) -> Result<DocumentType, ProtocolError> {
+        let platform_version = PlatformVersion::latest();
+        let config =
+            DataContractConfig::default_for_version(platform_version).expect("config should build");
+
+        let value = platform_value::to_value(schema).expect("schema should convert");
+
+        DocumentType::try_from_schema(
+            Identifier::random(),
+            0,
+            config.version(),
+            "msg",
+            value,
+            None,
+            &BTreeMap::new(),
+            &config,
+            true,
+            &mut vec![],
+            platform_version,
+        )
+    }
+
     fn try_document_type_from_schema_on_version(
         schema: serde_json::Value,
         platform_version: &PlatformVersion,
@@ -825,6 +852,7 @@ mod tests {
         .expect("a parse predating refersTo should ignore the keyword entirely");
     }
 
+
     // ================================================================
     //  requiredSince
     // ================================================================
@@ -1016,5 +1044,147 @@ mod tests {
         let properties = document_type.as_ref().flattened_properties().clone();
         assert_eq!(properties.get("a").unwrap().required_since, None);
         assert!(properties.get("a").unwrap().required);
+    }
+    #[test]
+    fn should_reject_time_range_on_user_defined_property() {
+        // No user property type parses to a millisecond timestamp — `type:
+        // "string"` with `format: "date-time"` stays `String` — so a
+        // user-defined time-range source must be rejected rather than
+        // accepted as an index that could never bucket anything meaningful.
+        let err = try_document_type_from_schema_full_validation(json!({
+            "type": "object",
+            "properties": {
+                "eventAt": {
+                    "type": "string",
+                    "maxLength": 63,
+                    "position": 0
+                }
+            },
+            "indices": [
+                {
+                    "name": "byEventTime",
+                    "properties": [{ "eventAt": "asc" }],
+                    "timeRange": { "on": "eventAt", "range": 21_600u64, "step": 7_200u64 }
+                }
+            ],
+            "required": ["eventAt"],
+            "additionalProperties": false
+        }))
+        .expect_err("a user-defined time-range source must be rejected");
+
+        assert!(
+            err.to_string().contains("system timestamps"),
+            "expected the system-timestamp restriction, got: {err}"
+        );
+    }
+
+    #[test]
+    fn should_parse_time_range_on_required_system_timestamp() {
+        try_document_type_from_schema_full_validation(json!({
+            "type": "object",
+            "properties": {
+                "hashtag": {
+                    "type": "string",
+                    "maxLength": 63,
+                    "position": 0
+                }
+            },
+            "indices": [
+                {
+                    "name": "trending",
+                    "properties": [{ "$createdAt": "asc" }, { "hashtag": "asc" }],
+                    "timeRange": { "on": "$createdAt", "range": 21_600u64, "step": 7_200u64 }
+                }
+            ],
+            "required": ["$createdAt", "hashtag"],
+            "additionalProperties": false
+        }))
+        .expect("a required system timestamp is the supported time-range source");
+    }
+
+    /// The overlap-factor cap is a versioned system limit
+    /// (`SystemLimits::max_time_range_overlap_factor`), enforced at
+    /// registration rather than at parse; both sides of the boundary are
+    /// pinned here through the versioned dispatch. 24 is a day-long window
+    /// sliding hourly — the natural worst case the cap is sized for.
+    #[test]
+    fn should_enforce_the_versioned_time_range_overlap_factor_cap() {
+        let time_range_schema = |range_seconds: u64| {
+            json!({
+                "type": "object",
+                "properties": {
+                    "hashtag": {
+                        "type": "string",
+                        "maxLength": 63,
+                        "position": 0
+                    }
+                },
+                "indices": [
+                    {
+                        "name": "trending",
+                        "properties": [{ "$createdAt": "asc" }, { "hashtag": "asc" }],
+                        "timeRange": { "on": "$createdAt", "range": range_seconds, "step": 3_600u64 }
+                    }
+                ],
+                "required": ["$createdAt", "hashtag"],
+                "additionalProperties": false
+            })
+        };
+
+        try_document_type_from_schema_full_validation(time_range_schema(24 * 3_600))
+            .expect("an overlap factor at the cap must register");
+
+        let err = try_document_type_from_schema_full_validation(time_range_schema(25 * 3_600))
+            .expect_err("an overlap factor over the cap must be rejected at registration");
+        assert!(
+            err.to_string().contains("overlap factor"),
+            "expected the overlap-factor rejection, got: {err}"
+        );
+    }
+
+    #[test]
+    fn should_parse_unique_time_range_index_with_non_overlapping_windows_on_created_at() {
+        // "one report per author per day": `range == step` makes the buckets a
+        // partition, and `$createdAt` is immutable, which is exactly the pair
+        // of conditions a unique bucketed index needs. Asserted through the
+        // full-validation parse so the doctype-level checks (unique-index
+        // limit, required system timestamp) run too.
+        const ONE_DAY_SECONDS: u64 = 24 * 3_600;
+        let document_type = try_document_type_from_schema_full_validation(json!({
+            "type": "object",
+            "properties": {
+                "author": {
+                    "type": "string",
+                    "maxLength": 63,
+                    "position": 0
+                }
+            },
+            "indices": [
+                {
+                    "name": "dailyReport",
+                    "properties": [{ "$createdAt": "asc" }, { "author": "asc" }],
+                    "unique": true,
+                    "timeRange": { "on": "$createdAt", "range": ONE_DAY_SECONDS, "step": ONE_DAY_SECONDS }
+                }
+            ],
+            "required": ["$createdAt", "author"],
+            "additionalProperties": false
+        }))
+        .expect("a non-overlapping $createdAt bucketing may be unique");
+
+        let index = document_type
+            .as_ref()
+            .indexes()
+            .get("dailyReport")
+            .expect("the index should be registered")
+            .clone();
+        assert!(index.unique);
+        assert_eq!(
+            index
+                .time_range
+                .expect("the transform should survive the schema parse")
+                .overlap_factor(),
+            1
+        );
     }
 }
