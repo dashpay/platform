@@ -87,6 +87,18 @@ pub struct SqlitePersister {
     /// (no public setter outside `#[cfg(any(test, feature = "__test-helpers"))]`).
     #[cfg(any(test, feature = "__test-helpers"))]
     primed_flush_error: Mutex<Option<WalletStorageError>>,
+    /// Test-only one-shot callback fired by `delete_wallet_inner`
+    /// between the pre-delete backup snapshot and the cascade
+    /// EXCLUSIVE acquisition. Lets cross-process delete-race tests
+    /// inject a peer mutation in the otherwise-tiny window left open
+    /// by rusqlite's Backup-API constraint (no source-side write tx).
+    #[cfg(any(test, feature = "__test-helpers"))]
+    post_backup_hook: Mutex<Option<Box<dyn FnOnce() + Send + 'static>>>,
+    /// Test-only one-shot injection consumed by `delete_wallet`'s
+    /// pre-flush phase. Lets TC-CODE-006-2 assert the buffer-restore
+    /// and skip-backup semantics without provoking a real SQL error.
+    #[cfg(any(test, feature = "__test-helpers"))]
+    primed_pre_flush_error: Mutex<Option<WalletStorageError>>,
 }
 
 impl SqlitePersister {
@@ -202,6 +214,10 @@ impl SqlitePersister {
             buffer: Buffer::new(),
             #[cfg(any(test, feature = "__test-helpers"))]
             primed_flush_error: Mutex::new(None),
+            #[cfg(any(test, feature = "__test-helpers"))]
+            post_backup_hook: Mutex::new(None),
+            #[cfg(any(test, feature = "__test-helpers"))]
+            primed_pre_flush_error: Mutex::new(None),
         })
     }
 
@@ -371,7 +387,7 @@ impl SqlitePersister {
         let result: Result<DeleteWalletReport, WalletStorageError> = (|| {
             // Pre-flight existence check on the bare conn (no tx) so
             // we don't waste a backup file on an unknown wallet.
-            let exists_in_db = conn
+            let exists_pre_flush = conn
                 .query_row(
                     "SELECT 1 FROM wallet_metadata WHERE wallet_id = ?1",
                     rusqlite::params![wallet_id.as_slice()],
@@ -379,28 +395,69 @@ impl SqlitePersister {
                 )
                 .optional()?
                 .is_some();
-            if !had_buffered && !exists_in_db {
+            if !had_buffered && !exists_pre_flush {
                 return Err(WalletStorageError::WalletNotFound { wallet_id });
             }
 
-            // TODO(T-007 / CODE-006): flush `drained_slot`'s buffered
-            // changeset to disk BEFORE `run_auto_backup`, so the pre-
-            // delete backup contains the pending writes. Today the
-            // backup captures only the already-persisted state (the
-            // buffered changeset is dropped post-commit by design —
-            // but the operator's last recoverable snapshot misses it).
+            // Test-only injector for TC-CODE-006-2 — force the pre-
+            // flush below to fail with the primed error without
+            // depending on a real SQL failure. Keeps the test free of
+            // FK-poisoning scaffolding.
+            #[cfg(any(test, feature = "__test-helpers"))]
+            let primed_pre_flush_error = self.consume_primed_pre_flush_error();
+
+            // CODE-006: flush the drained buffer to disk BEFORE
+            // `run_auto_backup` so the pre-delete snapshot includes
+            // every pending write. Without this the backup captures
+            // only already-persisted state and rollback-from-backup
+            // cannot recover the buffered (lost) data.
             //
-            // The backup runs BEFORE acquiring `BEGIN EXCLUSIVE`
-            // because rusqlite's `Backup::new` can't establish a
-            // backup whose source connection holds an active write tx
-            // on its own DB — `sqlite3_backup_step` would deadlock
-            // against the in-flight EXCLUSIVE. The downside: a peer
-            // committing rows for `wallet_id` between the backup and
-            // the cascade window lands those rows in the live DB but
-            // NOT in the backup; the cascade then removes them. We
-            // log a structured `info!` if the wallet's row footprint
-            // changed across the EXCLUSIVE acquisition so operators
-            // can correlate.
+            // The flush opens its own EXCLUSIVE tx and commits;
+            // `run_auto_backup` then runs against the freshly-flushed
+            // DB. On flush failure we restore the buffer via the outer
+            // `restore_buffer` helper and abort the delete — mirrors
+            // CMT-002.
+            //
+            // The cascade-side backup runs BEFORE the cascade's
+            // `BEGIN EXCLUSIVE` because rusqlite's `Backup::new` can't
+            // establish a backup whose source connection holds an
+            // active write tx on its own DB — `sqlite3_backup_step`
+            // would deadlock against the in-flight EXCLUSIVE. The
+            // post-EXCLUSIVE re-check below handles cross-process
+            // peers that mutate the wallet between snapshot and lock.
+            if let Some(cs) = drained_slot.take() {
+                #[cfg(any(test, feature = "__test-helpers"))]
+                if let Some(primed) = primed_pre_flush_error {
+                    drained_slot.set(Some(cs));
+                    return Err(primed);
+                }
+                let pre_flush_tx =
+                    conn.transaction_with_behavior(rusqlite::TransactionBehavior::Exclusive)?;
+                if let Err(e) = apply_changeset_to_tx(&pre_flush_tx, &wallet_id, &cs) {
+                    let _ = pre_flush_tx.rollback();
+                    drained_slot.set(Some(cs));
+                    return Err(e);
+                }
+                if let Err(e) = pre_flush_tx.commit() {
+                    drained_slot.set(Some(cs));
+                    return Err(WalletStorageError::Sqlite(e));
+                }
+            }
+
+            // Re-evaluate existence after the pre-flush: a buffered-
+            // only wallet now has rows on disk.
+            let exists_in_db = if exists_pre_flush {
+                true
+            } else {
+                conn.query_row(
+                    "SELECT 1 FROM wallet_metadata WHERE wallet_id = ?1",
+                    rusqlite::params![wallet_id.as_slice()],
+                    |_| Ok(()),
+                )
+                .optional()?
+                .is_some()
+            };
+
             let backup_path = if skip_backup {
                 None
             } else {
@@ -411,6 +468,13 @@ impl SqlitePersister {
                     AutoBackupOperation::DeleteWallet,
                 )?
             };
+
+            // Test-only hook: fires between the backup snapshot and
+            // the cascade EXCLUSIVE so TC-CODE-006-3 can simulate a
+            // cross-process peer that mutates `wallet_metadata` in
+            // the gap rusqlite's Backup API forces us to leave open.
+            #[cfg(any(test, feature = "__test-helpers"))]
+            self.consume_post_backup_hook();
 
             // SQLite-native EXCLUSIVE for the cascade window. Excludes
             // cross-process peers (other rusqlite Connections, sibling
@@ -633,44 +697,7 @@ impl SqlitePersister {
     ) -> Result<(), WalletStorageError> {
         let mut conn = self.conn()?;
         let tx = conn.transaction()?;
-        if let Some(meta) = cs.wallet_metadata.as_ref() {
-            schema::wallet_meta::upsert(&tx, wallet_id, meta)?;
-        }
-        if !cs.account_registrations.is_empty() {
-            schema::accounts::apply_registrations(&tx, wallet_id, &cs.account_registrations)?;
-        }
-        if !cs.account_address_pools.is_empty() {
-            schema::accounts::apply_pools(&tx, wallet_id, &cs.account_address_pools)?;
-        }
-        if let Some(core) = cs.core.as_ref() {
-            schema::core_state::apply(&tx, wallet_id, core)?;
-        }
-        if let Some(identities) = cs.identities.as_ref() {
-            schema::identities::apply(&tx, wallet_id, identities)?;
-        }
-        if let Some(keys) = cs.identity_keys.as_ref() {
-            schema::identity_keys::apply(&tx, wallet_id, keys)?;
-        }
-        if let Some(contacts) = cs.contacts.as_ref() {
-            schema::contacts::apply(&tx, wallet_id, contacts)?;
-        }
-        if let Some(addrs) = cs.platform_addresses.as_ref() {
-            schema::platform_addrs::apply(&tx, wallet_id, addrs)?;
-        }
-        if let Some(locks) = cs.asset_locks.as_ref() {
-            schema::asset_locks::apply(&tx, wallet_id, locks)?;
-        }
-        if let Some(balances) = cs.token_balances.as_ref() {
-            schema::token_balances::apply(&tx, wallet_id, balances)?;
-        }
-        if cs.dashpay_profiles.is_some() || cs.dashpay_payments_overlay.is_some() {
-            schema::dashpay::apply(
-                &tx,
-                wallet_id,
-                cs.dashpay_profiles.as_ref(),
-                cs.dashpay_payments_overlay.as_ref(),
-            )?;
-        }
+        apply_changeset_to_tx(&tx, wallet_id, cs)?;
         tx.commit()?;
         Ok(())
     }
@@ -765,6 +792,64 @@ impl SqlitePersister {
             .lock()
             .expect("primed_flush_error")
             .take()
+    }
+
+    /// Test-only: arm a one-shot callback fired by `delete_wallet`
+    /// after the pre-delete backup snapshot completes and before the
+    /// cascade EXCLUSIVE tx begins. The callback is consumed (taken)
+    /// on first fire — subsequent deletes see the slot empty.
+    #[doc(hidden)]
+    #[cfg(any(test, feature = "__test-helpers"))]
+    pub fn arm_post_backup_hook<F>(&self, hook: F)
+    where
+        F: FnOnce() + Send + 'static,
+    {
+        *self.post_backup_hook.lock().expect("post_backup_hook") = Some(Box::new(hook));
+    }
+
+    #[cfg(any(test, feature = "__test-helpers"))]
+    fn consume_post_backup_hook(&self) {
+        let hook = self
+            .post_backup_hook
+            .lock()
+            .expect("post_backup_hook")
+            .take();
+        if let Some(hook) = hook {
+            hook();
+        }
+    }
+
+    /// Test-only: arm a one-shot pre-flush failure for the next
+    /// `delete_wallet` call. The injection fires only when there is
+    /// a drained buffered changeset to flush — i.e. when `delete_wallet`
+    /// actually exercises the pre-flush branch.
+    #[doc(hidden)]
+    #[cfg(any(test, feature = "__test-helpers"))]
+    pub fn force_next_pre_flush_to_fail(&self, err: WalletStorageError) {
+        *self
+            .primed_pre_flush_error
+            .lock()
+            .expect("primed_pre_flush_error") = Some(err);
+    }
+
+    #[cfg(any(test, feature = "__test-helpers"))]
+    fn consume_primed_pre_flush_error(&self) -> Option<WalletStorageError> {
+        self.primed_pre_flush_error
+            .lock()
+            .expect("primed_pre_flush_error")
+            .take()
+    }
+
+    /// Test-only: probe whether the wallet has a buffered changeset.
+    /// Used by TC-CODE-006-2 to assert the buffer survives a failed
+    /// pre-flush without consuming it.
+    #[doc(hidden)]
+    #[cfg(any(test, feature = "__test-helpers"))]
+    pub fn buffer_has_changeset_for_test(&self, wallet_id: &WalletId) -> bool {
+        self.buffer
+            .dirty_wallets()
+            .map(|v| v.iter().any(|w| w == wallet_id))
+            .unwrap_or(false)
     }
 }
 
@@ -1024,6 +1109,57 @@ fn apply_pragmas(
         u64::try_from(config.busy_timeout.as_millis()).unwrap_or(i64::MAX as u64),
     )?;
     conn.pragma_update(None, "busy_timeout", ms)?;
+    Ok(())
+}
+
+/// Apply every populated sub-changeset of `cs` against the supplied
+/// SQLite transaction. Does not commit; the caller owns the tx
+/// lifecycle. Splitting this out from `write_changeset_in_one_tx`
+/// lets `delete_wallet_inner` flush a drained buffer into a bespoke
+/// pre-delete tx (CODE-006) without re-opening the connection.
+fn apply_changeset_to_tx(
+    tx: &rusqlite::Transaction<'_>,
+    wallet_id: &WalletId,
+    cs: &PlatformWalletChangeSet,
+) -> Result<(), WalletStorageError> {
+    if let Some(meta) = cs.wallet_metadata.as_ref() {
+        schema::wallet_meta::upsert(tx, wallet_id, meta)?;
+    }
+    if !cs.account_registrations.is_empty() {
+        schema::accounts::apply_registrations(tx, wallet_id, &cs.account_registrations)?;
+    }
+    if !cs.account_address_pools.is_empty() {
+        schema::accounts::apply_pools(tx, wallet_id, &cs.account_address_pools)?;
+    }
+    if let Some(core) = cs.core.as_ref() {
+        schema::core_state::apply(tx, wallet_id, core)?;
+    }
+    if let Some(identities) = cs.identities.as_ref() {
+        schema::identities::apply(tx, wallet_id, identities)?;
+    }
+    if let Some(keys) = cs.identity_keys.as_ref() {
+        schema::identity_keys::apply(tx, wallet_id, keys)?;
+    }
+    if let Some(contacts) = cs.contacts.as_ref() {
+        schema::contacts::apply(tx, wallet_id, contacts)?;
+    }
+    if let Some(addrs) = cs.platform_addresses.as_ref() {
+        schema::platform_addrs::apply(tx, wallet_id, addrs)?;
+    }
+    if let Some(locks) = cs.asset_locks.as_ref() {
+        schema::asset_locks::apply(tx, wallet_id, locks)?;
+    }
+    if let Some(balances) = cs.token_balances.as_ref() {
+        schema::token_balances::apply(tx, wallet_id, balances)?;
+    }
+    if cs.dashpay_profiles.is_some() || cs.dashpay_payments_overlay.is_some() {
+        schema::dashpay::apply(
+            tx,
+            wallet_id,
+            cs.dashpay_profiles.as_ref(),
+            cs.dashpay_payments_overlay.as_ref(),
+        )?;
+    }
     Ok(())
 }
 
