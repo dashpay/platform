@@ -1281,6 +1281,11 @@ impl PlatformWalletPersistence for FFIPersister {
     fn load(&self) -> Result<ClientStartState, PersistenceError> {
         // If Swift hasn't wired up `on_load_wallet_list_fn` there's
         // nothing to restore — treat as a fresh client.
+        // TODO(CODE-012): enforce paired (on_load_wallet_list_fn,
+        // on_load_wallet_list_free_fn) at registration time per
+        // thepastaclaw review on PR #3625. Deferred to a separate
+        // FFI-hardening PR — this gap pre-existed on v3.1-dev and is
+        // not introduced by #3625.
         let Some(load_cb) = self.callbacks.on_load_wallet_list_fn else {
             return Ok(ClientStartState::default());
         };
@@ -1538,6 +1543,9 @@ impl PlatformWalletPersistence for FFIPersister {
         };
         use key_wallet::transaction_checking::{BlockInfo, TransactionContext, TransactionType};
 
+        // TODO(CODE-013): same as CODE-012 — enforce paired
+        // (on_get_core_tx_record_fn, on_get_core_tx_record_free_fn) at
+        // registration time. Deferred to FFI-hardening PR.
         let Some(get_cb) = self.callbacks.on_get_core_tx_record_fn else {
             return Ok(None);
         };
