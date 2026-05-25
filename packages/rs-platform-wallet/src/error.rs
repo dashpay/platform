@@ -144,6 +144,25 @@ pub enum PlatformWalletError {
 
     #[error("Shielded sub-wallet not bound: call bind_shielded first")]
     ShieldedNotBound,
+
+    /// `load_from_persistor` refused to silently drop platform-address
+    /// state because the persister returned a non-empty
+    /// `platform_addresses` map but an empty `wallets` map — i.e. it
+    /// reports `LOAD_UNIMPLEMENTED` for `ClientStartState::wallets`
+    /// (e.g. PR #3692 territory). The host MUST either wait for
+    /// wallet rehydration to land or re-register each wallet
+    /// individually via `register_wallet`, which drains
+    /// `platform_addresses` correctly on a per-wallet basis.
+    #[error(
+        "persister reports unimplemented load areas {unimplemented:?}; \
+         refusing to silently drop {orphan_addresses_count} orphan \
+         platform-address slice(s) — re-register wallets individually \
+         or wait for wallet rehydration"
+    )]
+    PersistorMissingWalletRehydration {
+        unimplemented: Vec<String>,
+        orphan_addresses_count: usize,
+    },
 }
 
 /// Check whether an SDK error indicates that an InstantSend lock proof was

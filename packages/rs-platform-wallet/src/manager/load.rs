@@ -44,6 +44,24 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             ))
         })?;
 
+        // Refuse to silently drop persisted platform-address slices
+        // when the persister returned `wallets={}` despite having
+        // populated `platform_addresses`. That shape is the contract
+        // signature of a persister whose `wallets` rehydration is
+        // unimplemented (`LOAD_UNIMPLEMENTED = &["ClientStartState::wallets"]`
+        // on `SqlitePersister` as of #3625; the rehydration ships in
+        // #3692). Without this gate the loop below executes zero
+        // iterations and the local `platform_addresses` map is dropped
+        // at function scope, silently discarding every persisted slice.
+        // Host falls back to per-wallet `register_wallet` (which loads
+        // and drains `platform_addresses` correctly on its own).
+        if wallets.is_empty() && !platform_addresses.is_empty() {
+            return Err(PlatformWalletError::PersistorMissingWalletRehydration {
+                unimplemented: vec!["ClientStartState::wallets".to_string()],
+                orphan_addresses_count: platform_addresses.len(),
+            });
+        }
+
         let persister_dyn: Arc<dyn PlatformWalletPersistence> = Arc::clone(&self.persister) as _;
 
         // Track every wallet successfully inserted into
