@@ -196,6 +196,35 @@ pub enum WalletStorageError {
     #[error("identity key entry fields disagree with its map key / wallet scope")]
     IdentityKeyEntryMismatch,
 
+    /// An `asset_locks` row's typed-column `(outpoint, account_index)`
+    /// disagreed with the lifecycle blob's `(out_point, account_index)`.
+    /// Mirrors `IdentityKeyEntryMismatch` — a torn write, partial
+    /// migration, or restored corruption that survives the per-row
+    /// `integrity_check` is still rejected at decode time rather than
+    /// mis-bucketing the lock under the wrong account.
+    #[error(
+        "asset_lock entry fields disagree with typed columns \
+         (typed outpoint={typed_outpoint}, blob outpoint={blob_outpoint}, \
+          typed account_index={typed_account_index}, blob account_index={blob_account_index})"
+    )]
+    AssetLockEntryMismatch {
+        typed_outpoint: String,
+        blob_outpoint: String,
+        typed_account_index: u32,
+        blob_account_index: u32,
+    },
+
+    /// A blob payload exceeded the configured allocation cap during
+    /// decode. Surfaced separately from generic [`Self::BlobDecode`] so
+    /// operators can distinguish a hostile or corrupted oversize blob
+    /// from a structural decode failure. Defaults to 16 MiB — well
+    /// above any legitimate per-row payload.
+    #[error("blob exceeded decode size limit ({len_bytes} bytes > {limit_bytes} byte cap)")]
+    BlobTooLarge {
+        len_bytes: usize,
+        limit_bytes: usize,
+    },
+
     /// `PRAGMA foreign_keys = ON` was issued on open but the read-back
     /// reported the constraint enforcement is still off — the linked
     /// SQLite build silently ignores the pragma (no FK support compiled
@@ -333,6 +362,8 @@ impl WalletStorageError {
             | Self::BackupDestinationExists { .. }
             | Self::ForeignKeysNotEnforced
             | Self::IdentityKeyEntryMismatch
+            | Self::AssetLockEntryMismatch { .. }
+            | Self::BlobTooLarge { .. }
             | Self::IntegerOverflow { .. } => false,
         }
     }
@@ -375,6 +406,8 @@ impl WalletStorageError {
             Self::BackupDestinationExists { .. } => "backup_destination_exists",
             Self::ForeignKeysNotEnforced => "foreign_keys_not_enforced",
             Self::IdentityKeyEntryMismatch => "identity_key_entry_mismatch",
+            Self::AssetLockEntryMismatch { .. } => "asset_lock_entry_mismatch",
+            Self::BlobTooLarge { .. } => "blob_too_large",
             Self::IntegerOverflow { .. } => "integer_overflow",
         }
     }

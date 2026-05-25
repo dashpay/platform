@@ -282,6 +282,61 @@ fn identity_key_entry_mismatch_rejected() {
     );
 }
 
+/// CMT-007: an asset_locks row whose lifecycle blob disagrees with the
+/// typed `account_index` column is rejected at decode time with the
+/// typed `AssetLockEntryMismatch` rather than silently mis-bucketing.
+#[test]
+fn asset_lock_typed_vs_blob_mismatch_rejected() {
+    use dashcore::Transaction as DashTx;
+    use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
+    use platform_wallet::changeset::AssetLockEntry;
+    use platform_wallet::wallet::asset_lock::tracked::AssetLockStatus;
+    use platform_wallet_storage::sqlite::schema::{asset_locks, blob};
+
+    let (persister, _tmp, _path) = fresh_persister();
+    let w = wid(0xF7);
+    ensure_wallet_meta(&persister, &w);
+
+    // Forge a blob whose internal account_index disagrees with the
+    // typed column we'll insert it under.
+    let outpoint = OutPoint::new(Txid::from_raw_hash(dashcore::hashes::Hash::all_zeros()), 7);
+    let entry = AssetLockEntry {
+        out_point: outpoint,
+        transaction: DashTx {
+            version: 2,
+            lock_time: 0,
+            input: vec![],
+            output: vec![],
+            special_transaction_payload: None,
+        },
+        account_index: 99, // blob says 99
+        funding_type: AssetLockFundingType::IdentityTopUp,
+        identity_index: 0,
+        amount_duffs: 1,
+        status: AssetLockStatus::Built,
+        proof: None,
+    };
+    let lifecycle_blob = blob::encode(&entry).unwrap();
+    let op_bytes = blob::encode_outpoint(&outpoint);
+
+    {
+        let conn = persister.lock_conn_for_test();
+        conn.execute(
+            "INSERT INTO asset_locks (wallet_id, outpoint, status, account_index, identity_index, amount_duffs, lifecycle_blob) \
+             VALUES (?1, ?2, 'built', ?3, 0, 1, ?4)",
+            params![w.as_slice(), &op_bytes[..], 5i64 /* typed says 5, blob says 99 */, lifecycle_blob],
+        )
+        .unwrap();
+    }
+
+    let conn = persister.lock_conn_for_test();
+    let err = asset_locks::load_state(&conn, &w).expect_err("mismatch must fail");
+    assert!(
+        matches!(err, WalletStorageError::AssetLockEntryMismatch { .. }),
+        "expected AssetLockEntryMismatch, got {err:?}"
+    );
+}
+
 /// CMT-002: a wallet whose only platform-address state is the
 /// compaction marker (`last_known_recent_block > 0`) is kept by `load`,
 /// not silently dropped.

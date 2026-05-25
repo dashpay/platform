@@ -89,6 +89,26 @@ fn decode_row(
 ) -> Result<(u32, OutPoint, TrackedAssetLock), WalletStorageError> {
     let outpoint = blob::decode_outpoint(op_bytes)?;
     let entry: AssetLockEntry = blob::decode(blob_bytes)?;
+    let account_index =
+        u32::try_from(account_index).map_err(|_| WalletStorageError::IntegerOverflow {
+            field: "asset_locks.account_index",
+            value: account_index as u64,
+            target: crate::sqlite::util::safe_cast::SafeCastTarget::U64,
+        })?;
+    // CMT-007: typed-column vs blob cross-check, symmetric with
+    // IdentityKeyEntryMismatch. A torn write / partial migration /
+    // restored corruption that passes PRAGMA integrity_check would
+    // otherwise silently mis-bucket the lock into the wrong account or
+    // report a different outpoint than the indexed column it was
+    // selected by.
+    if entry.out_point != outpoint || entry.account_index != account_index {
+        return Err(WalletStorageError::AssetLockEntryMismatch {
+            typed_outpoint: outpoint.to_string(),
+            blob_outpoint: entry.out_point.to_string(),
+            typed_account_index: account_index,
+            blob_account_index: entry.account_index,
+        });
+    }
     let tracked = TrackedAssetLock {
         out_point: entry.out_point,
         transaction: entry.transaction,
@@ -99,12 +119,6 @@ fn decode_row(
         status: entry.status,
         proof: entry.proof,
     };
-    let account_index =
-        u32::try_from(account_index).map_err(|_| WalletStorageError::IntegerOverflow {
-            field: "asset_locks.account_index",
-            value: account_index as u64,
-            target: crate::sqlite::util::safe_cast::SafeCastTarget::U64,
-        })?;
     Ok((account_index, outpoint, tracked))
 }
 

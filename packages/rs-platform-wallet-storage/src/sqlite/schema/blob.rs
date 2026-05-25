@@ -14,20 +14,49 @@ use serde::Serialize;
 
 use crate::sqlite::error::WalletStorageError;
 
+/// Hard cap on bincode-serde decode allocations. 16 MiB is two orders
+/// of magnitude above any legitimate per-row payload we ship — a
+/// hostile or corrupted backup with an inflated length prefix is
+/// rejected before the allocator wakes up. Applied symmetrically to
+/// encode + decode so we can't write a payload we'd then refuse.
+pub const BLOB_SIZE_LIMIT_BYTES: usize = 16 * 1024 * 1024;
+
+fn bounded_config() -> bincode::config::Configuration<
+    bincode::config::LittleEndian,
+    bincode::config::Varint,
+    bincode::config::Limit<BLOB_SIZE_LIMIT_BYTES>,
+> {
+    bincode::config::standard().with_limit::<BLOB_SIZE_LIMIT_BYTES>()
+}
+
 /// Encode a serde-derived value into a `BLOB` payload.
 pub fn encode<T: Serialize>(value: &T) -> Result<Vec<u8>, WalletStorageError> {
-    Ok(bincode::serde::encode_to_vec(
-        value,
-        bincode::config::standard(),
-    )?)
+    Ok(bincode::serde::encode_to_vec(value, bounded_config())?)
 }
 
 /// Decode a `BLOB` payload back into a serde-derived value. Rejects
 /// trailing bytes so a corrupt or forward-incompatible payload fails
 /// loudly instead of decoding a stale prefix — mirroring the strict
-/// length check in [`decode_outpoint`].
+/// length check in [`decode_outpoint`]. Also caps in-decode
+/// allocations at [`BLOB_SIZE_LIMIT_BYTES`] so a crafted length
+/// prefix can't OOM the host (CMT-006).
 pub fn decode<T: DeserializeOwned>(blob: &[u8]) -> Result<T, WalletStorageError> {
-    let (value, consumed) = bincode::serde::decode_from_slice(blob, bincode::config::standard())?;
+    if blob.len() > BLOB_SIZE_LIMIT_BYTES {
+        return Err(WalletStorageError::BlobTooLarge {
+            len_bytes: blob.len(),
+            limit_bytes: BLOB_SIZE_LIMIT_BYTES,
+        });
+    }
+    let (value, consumed) = match bincode::serde::decode_from_slice(blob, bounded_config()) {
+        Ok(v) => v,
+        Err(bincode::error::DecodeError::LimitExceeded) => {
+            return Err(WalletStorageError::BlobTooLarge {
+                len_bytes: blob.len(),
+                limit_bytes: BLOB_SIZE_LIMIT_BYTES,
+            });
+        }
+        Err(other) => return Err(WalletStorageError::from(other)),
+    };
     if consumed != blob.len() {
         return Err(WalletStorageError::blob_decode(
             "unexpected trailing bytes in blob payload",
@@ -95,6 +124,26 @@ mod tests {
             matches!(res, Err(WalletStorageError::BlobDecode { .. })),
             "expected BlobDecode on trailing bytes, got {res:?}"
         );
+    }
+
+    /// CMT-006: a blob larger than the per-row cap is rejected with a
+    /// typed `BlobTooLarge`, not generic `BlobDecode` and not an OOM.
+    /// We synthesize the oversize payload directly (the in-band limit
+    /// would prevent encoding it through the helper).
+    #[test]
+    fn decode_rejects_oversize_blob_with_blob_too_large() {
+        let oversize = vec![0u8; BLOB_SIZE_LIMIT_BYTES + 1];
+        let res: Result<Vec<u8>, _> = decode(&oversize);
+        match res {
+            Err(WalletStorageError::BlobTooLarge {
+                len_bytes,
+                limit_bytes,
+            }) => {
+                assert_eq!(len_bytes, BLOB_SIZE_LIMIT_BYTES + 1);
+                assert_eq!(limit_bytes, BLOB_SIZE_LIMIT_BYTES);
+            }
+            other => panic!("expected BlobTooLarge, got {other:?}"),
+        }
     }
 
     #[test]
