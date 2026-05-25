@@ -3,9 +3,10 @@
 //!
 //! Scope after the seedless rework: load reconstructs every persisted
 //! wallet **watch-only** from its keyless account manifest. Wrong-seed
-//! detection has moved to the first-sign path (covered in
-//! `rs-platform-wallet-ffi/tests/sign_wrong_seed_gate.rs`). Per-row
-//! decode failures surface as
+//! detection has moved off the load path onto the sign path; the
+//! resolver-fed FFI sign entrypoints carry a `wallet_id` gate whose
+//! coverage ships in the security patch PR #3735 (sign-gate) against
+//! `v3.1-dev`. Per-row decode failures surface as
 //! [`SkipReason::CorruptPersistedRow`] without aborting the batch.
 //!
 //! RT cases here:
