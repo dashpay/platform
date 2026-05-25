@@ -1,12 +1,11 @@
 //! SPV client runtime — manages the DashSpvClient lifecycle.
 
-use std::sync::{Arc, Mutex as StdMutex};
+use std::sync::Arc;
 
 use tokio::sync::RwLock;
 
 use dashcore::sml::llmq_type::LLMQType;
 use dashcore::{QuorumHash, Transaction};
-use tokio_util::sync::CancellationToken;
 
 use dash_spv::network::PeerNetworkManager;
 use dash_spv::storage::DiskStorageManager;
@@ -30,10 +29,6 @@ pub struct SpvRuntime {
     event_manager: Arc<PlatformEventManager>,
     wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
     client: RwLock<Option<SpvClient>>,
-    /// Cancel token for the `run()` task when it was spawned via
-    /// [`spawn_in_background`]. [`stop`] fires this token and joins
-    /// on the client shutdown.
-    background_cancel: StdMutex<Option<CancellationToken>>,
 }
 // TODO: We want it better
 impl SpvRuntime {
@@ -46,7 +41,6 @@ impl SpvRuntime {
             event_manager,
             wallet_manager,
             client: RwLock::new(None),
-            background_cancel: StdMutex::new(None),
         }
     }
 
@@ -135,47 +129,26 @@ impl SpvRuntime {
         Ok(*quorum.quorum_entry.quorum_public_key.as_ref())
     }
 
-    /// Run the SPV sync loop until the cancellation token fires.
-    pub async fn run(
-        &self,
-        config: ClientConfig,
-        cancel_token: CancellationToken,
-    ) -> Result<(), PlatformWalletError> {
+    /// Run the SPV sync loop until calling [`stop`]. This blocks the current thread.
+    pub async fn run(&self, config: ClientConfig) -> Result<(), PlatformWalletError> {
         tracing::info!("SpvRuntime::run() starting client...");
         self.start(config).await?;
         tracing::info!("SpvRuntime::run() client started, entering sync loop");
 
-        let result = {
-            let client_guard = self.client.read().await;
-            let client = client_guard
-                .as_ref()
-                .ok_or(PlatformWalletError::SpvNotRunning)?;
+        let client_guard = self.client.read().await;
+        let client = client_guard
+            .as_ref()
+            .ok_or(PlatformWalletError::SpvNotRunning)?;
 
-            let run_cancel = CancellationToken::new();
-            let run_future = client.run(run_cancel.clone());
-            tokio::pin!(run_future);
+        let result = client
+            .run()
+            .await
+            .map_err(|e| PlatformWalletError::SpvError(e.to_string()));
 
-            tokio::select! {
-                res = &mut run_future => {
-                    tracing::info!("SpvRuntime::run() client.run() completed: {:?}", res.is_ok());
-                    res.map_err(|e| PlatformWalletError::SpvError(e.to_string()))
-                }
-                _ = cancel_token.cancelled() => {
-                    tracing::info!("SpvRuntime::run() cancel_token fired, cancelling client");
-                    run_cancel.cancel();
-                    Ok(())
-                }
-            }
-        };
+        drop(client_guard);
+        let mut client = self.client.write().await;
+        let _ = client.take();
 
-        tracing::info!(
-            "SpvRuntime::run() exiting sync loop, result ok={}",
-            result.is_ok()
-        );
-        if let Err(e) = self.stop().await {
-            tracing::warn!("SPV stop error during cleanup: {}", e);
-        }
-        tracing::info!("SpvRuntime::run() done");
         result
     }
 
@@ -211,18 +184,7 @@ impl SpvRuntime {
     }
 
     /// Stop SPV sync gracefully.
-    ///
-    /// If a `run()` task was spawned via [`spawn_in_background`], its
-    /// cancel token is fired here too so the background task exits.
     pub async fn stop(&self) -> Result<(), PlatformWalletError> {
-        if let Some(token) = self
-            .background_cancel
-            .lock()
-            .expect("background_cancel poisoned")
-            .take()
-        {
-            token.cancel();
-        }
         let mut client = self.client.write().await;
         if let Some(c) = client.take() {
             c.stop()
@@ -234,22 +196,11 @@ impl SpvRuntime {
 
     /// Spawn `run()` on the current tokio runtime and return immediately.
     ///
-    /// The returned cancel token is stashed internally; calling [`stop`]
-    /// fires it and awaits client shutdown. Replacing an already-running
-    /// background task cancels the previous one first.
+    /// Call [`stop`] to stop it
     pub fn spawn_in_background(self: &Arc<Self>, config: ClientConfig) {
-        // Cancel any previous run.
-        let mut guard = self.background_cancel.lock().expect("bg_cancel poisoned");
-        if let Some(prev) = guard.take() {
-            prev.cancel();
-        }
-        let cancel = CancellationToken::new();
-        *guard = Some(cancel.clone());
-        drop(guard);
-
         let this = Arc::clone(self);
         tokio::spawn(async move {
-            if let Err(e) = this.run(config, cancel).await {
+            if let Err(e) = this.run(config).await {
                 tracing::warn!("SpvRuntime background run exited with error: {}", e);
             }
         });
