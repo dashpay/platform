@@ -81,7 +81,11 @@ pub(super) fn build_watch_only_wallet(
             .insert(account)
             .map_err(|e| RehydrateRowError::DecodeError(e.to_string()))?;
     }
-    Ok(Wallet::new_watch_only(network, expected_wallet_id, accounts))
+    Ok(Wallet::new_watch_only(
+        network,
+        expected_wallet_id,
+        accounts,
+    ))
 }
 
 /// Apply the keyless persisted core-state projection onto a
