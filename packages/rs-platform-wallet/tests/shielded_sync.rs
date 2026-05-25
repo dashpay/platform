@@ -14,7 +14,7 @@
 //!
 //! The seed config is hardcoded on the chain side (see
 //! `ShieldedSeedConfig::sdk_test_data` in rs-drive-abci):
-//! `total_notes = 500_000, owned_count = 8 (split 4/4), owned_value = 100_000,
+//! `total_notes = 5_000, owned_count = 8 (split 4/4), owned_value = 100_000,
 //! rng_seed = 0xDEAD_BEEF`. Each wallet's expected balance after sync is
 //! `4 × 100_000 = 400_000`.
 //!

@@ -88,5 +88,7 @@ pub mod utils;
 pub mod replay;
 /// Drive server
 pub mod server;
+/// Shielded-pool genesis snapshot — bake/apply
+pub mod shielded_snapshot;
 /// Verification helpers
 pub mod verify;

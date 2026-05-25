@@ -82,14 +82,18 @@ impl Default for ShieldedSeedConfig {
 impl ShieldedSeedConfig {
     /// The hardcoded SDK_TEST_DATA seed config used at every devnet genesis.
     ///
-    /// `total_notes = 500_000` (filler + owned), `owned_count = 8` split 4/4
+    /// `total_notes = 5_000` (filler + owned), `owned_count = 8` split 4/4
     /// across wallets A and B, `owned_value = 100_000` ⇒ each wallet's
     /// expected balance after sync = `4 × 100_000 = 400_000`. Seed
     /// `0xDEAD_BEEF` is fixed so the GroveDB root hash is byte-identical
     /// across hosts.
+    ///
+    /// TODO(scale): bumped down from 500_000 while we iterate on the
+    /// snapshot-bake path. Once `apply_shielded_snapshot` lands and we have
+    /// an in-image precomputed snapshot, raise back to a sync-stress N.
     pub const fn sdk_test_data() -> Self {
         Self {
-            total_notes: 500_000,
+            total_notes: 5_000,
             owned_count: 8,
             owned_value: 100_000,
             rng_seed: 0xDEAD_BEEF,
@@ -317,6 +321,61 @@ impl<C> Platform<C> {
             );
             return Ok(());
         }
+
+        // Fast-path: if `DRIVE_SHIELDED_SNAPSHOT` is set, load the
+        // precomputed snapshot via SST ingest instead of running the (very
+        // slow) runtime seeder. The snapshot file is produced offline by the
+        // snapshot-bake binary against a chain whose `ShieldedSeedConfig`
+        // matches what this build expects.
+        //
+        // Any failure (file missing, magic mismatch, version skew, checksum
+        // failure, cross-validation drift) is FATAL — we surface the error
+        // and InitChain fails loudly. No silent fallback to the seeder; the
+        // operator is expected to fix the snapshot, not silently get a chain
+        // with different state than they asked for.
+        if let Ok(snapshot_path) = std::env::var("DRIVE_SHIELDED_SNAPSHOT") {
+            let path = std::path::PathBuf::from(&snapshot_path);
+            tracing::info!(
+                snapshot_path = %path.display(),
+                "create_data_for_shielded_pool: applying precomputed shielded snapshot"
+            );
+            let stats = crate::shielded_snapshot::apply_shielded_snapshot(
+                &self.drive.grove,
+                transaction,
+                &path,
+                platform_version,
+            )
+            .map_err(|e| {
+                Error::Execution(ExecutionError::Conversion(format!(
+                    "DRIVE_SHIELDED_SNAPSHOT apply failed: {e}"
+                )))
+            })?;
+            tracing::info!(
+                total_count = stats.total_count,
+                combined_root = format!("{}", hex::encode(stats.combined_root)),
+                "create_data_for_shielded_pool: snapshot applied"
+            );
+            // Record the anchor at height 1 so wallets see the same anchor
+            // they would after a runtime seed. block_info is unused here
+            // (record_shielded_pool_anchor_if_changed takes block_height
+            // directly, and the bake step happens at genesis).
+            let _ = block_info;
+            let tx = transaction.ok_or(Error::Execution(
+                ExecutionError::CorruptedCodeExecution(
+                    "create_data_for_shielded_pool snapshot path requires a transaction",
+                ),
+            ))?;
+            self.drive
+                .record_shielded_pool_anchor_if_changed(
+                    GENESIS_ANCHOR_HEIGHT,
+                    tx,
+                    platform_version,
+                )
+                .map_err(Into::into)
+                .and_then(|_| Ok::<_, Error>(()))?;
+            return Ok(());
+        }
+
         let cfg = ShieldedSeedConfig::sdk_test_data();
         tracing::info!(
             total_notes = cfg.total_notes,
@@ -915,4 +974,349 @@ mod platform_tests {
         let anchor = build_and_seed(&cfg, platform_version);
         assert_eq!(anchor, EMPTY_SINSEMILLA_ROOT);
     }
+
+    /// Native bake-feasibility benchmark — runs the FULL seeder (default N=500k,
+    /// overridable via `BENCH_N`) outside any Docker file-share layer and prints
+    /// wall-clock to stderr. The grovedb tempdir lands in `$TMPDIR`, which on
+    /// macOS is APFS (fast native fsync) and on linux CI is typically tmpfs.
+    ///
+    /// Compare-against:
+    /// - macOS Docker Desktop file-share, N=500k, release: ~3h 41m (measured).
+    /// - Same host natively (this test), N=500k, release: <expected: 2–10 min>.
+    /// - Linux buildkit VM (where the bake stage would run), N=500k, release:
+    ///   should be at most this number, usually faster.
+    ///
+    /// Hard-fail if the seed doesn't complete in 30 min — that's the threshold
+    /// past which the bake approach itself is in trouble.
+    ///
+    /// Run with:
+    /// ```bash
+    /// cargo test -p drive-abci --release --features create_sdk_test_data \
+    ///   bench_native_seed_full -- --ignored --nocapture
+    /// ```
+    #[test]
+    #[ignore = "long-running bake-feasibility benchmark, see fn docs"]
+    fn bench_native_seed_full() {
+        let n: u32 = std::env::var("BENCH_N")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(500_000);
+
+        let platform_version = PlatformVersion::latest();
+        let platform = build_regtest_platform();
+
+        let cfg = ShieldedSeedConfig {
+            total_notes: n,
+            owned_count: 8,
+            owned_value: 100_000,
+            rng_seed: 0xDEAD_BEEF,
+        };
+
+        let tempdir_path = platform.tempdir.path().display().to_string();
+        eprintln!(
+            "bench_native_seed_full: N={} cfg={:?} tempdir={}",
+            n, cfg, tempdir_path,
+        );
+
+        let tx = platform.drive.grove.start_transaction();
+        let start = std::time::Instant::now();
+        platform
+            .seed_shielded_pool_with_config(
+                &cfg,
+                &BlockInfo::default(),
+                Some(&tx),
+                platform_version,
+            )
+            .expect("seed_shielded_pool_with_config must succeed");
+        let seed_elapsed = start.elapsed();
+
+        let commit_start = std::time::Instant::now();
+        tx.commit().expect("commit");
+        let commit_elapsed = commit_start.elapsed();
+
+        let total = seed_elapsed + commit_elapsed;
+        eprintln!(
+            "bench_native_seed_full: N={} seed={:.2?} commit={:.2?} total={:.2?} \
+             ({:.1} notes/sec)",
+            n,
+            seed_elapsed,
+            commit_elapsed,
+            total,
+            n as f64 / total.as_secs_f64(),
+        );
+
+        // Anchor sanity check so we know the work was real, not a noop.
+        let anchor = read_current_anchor(&platform, None, platform_version);
+        assert_ne!(
+            anchor, EMPTY_SINSEMILLA_ROOT,
+            "post-seed anchor must differ from empty (proves seeding actually ran)",
+        );
+
+        assert!(
+            total.as_secs() < 30 * 60,
+            "seed took {:?} for N={}; bake approach assumes native seeding is well \
+             under 30 min — investigate if this fails",
+            total,
+            n,
+        );
+    }
+
+    /// Empirically verify the snapshot design's data-location claim — that the
+    /// shielded commitment-tree subtree's RocksDB state lives entirely in the
+    /// `default` + `aux` CFs under a deterministic subtree prefix. If
+    /// `roots` or `meta` CFs ALSO have entries for our subtree prefix, the
+    /// snapshot file format needs to include them and `apply_shielded_snapshot`
+    /// must ingest into 4 CFs not 2.
+    ///
+    /// What this proves:
+    /// 1. The subtree prefix is path-deterministic (built via
+    ///    `RocksDbStorage::build_prefix` from `[shielded_credit_pool_path()..,
+    ///    SHIELDED_NOTES_KEY]`).
+    /// 2. After seeding N notes, the CFs with non-zero key counts under that
+    ///    prefix tell us which CFs the dump must include.
+    /// 3. Counts scale with N as expected (default CF has chunks + buffer + MMR
+    ///    + META; aux CF has exactly 1 entry, the Sinsemilla frontier).
+    #[test]
+    #[ignore = "raw-rocksdb introspection; long-ish setup"]
+    fn dump_only_default_and_aux_cfs_under_shielded_subtree_prefix() {
+        use grovedb_path::SubtreePath;
+        use grovedb_storage::rocksdb_storage::RocksDbStorage;
+        use rocksdb::{ColumnFamilyDescriptor, OptimisticTransactionDB, Options};
+
+        let platform_version = PlatformVersion::latest();
+        let temp = build_regtest_platform();
+
+        // Seed a small N so the test is fast but still exercises every key
+        // family the BulkAppendTree writes (META, ≥1 buffer entry, ≥1 chunk if
+        // N ≥ 2^chunk_power).
+        let cfg = ShieldedSeedConfig {
+            total_notes: 4096, // > one chunk at chunk_power=11 → exercises e/m keys
+            owned_count: 4,
+            owned_value: 100_000,
+            rng_seed: 0xDEAD_BEEF,
+        };
+        let tx = temp.drive.grove.start_transaction();
+        temp
+            .seed_shielded_pool_with_config(&cfg, &BlockInfo::default(), Some(&tx), platform_version)
+            .expect("seed");
+        tx.commit().expect("commit");
+        let anchor = read_current_anchor(&temp, None, platform_version);
+        assert_ne!(anchor, EMPTY_SINSEMILLA_ROOT);
+
+        // Compute the shielded subtree's deterministic prefix using grovedb's
+        // own helper — same algorithm production uses, no reimplementation.
+        let pool = drive::drive::shielded::paths::shielded_credit_pool_path_vec();
+        let mut path_segments: Vec<Vec<u8>> = pool;
+        path_segments.push(vec![drive::drive::shielded::paths::SHIELDED_NOTES_KEY]);
+        let path = SubtreePath::from(path_segments.as_slice());
+        let prefix = RocksDbStorage::build_prefix(path).unwrap();
+        let prefix_bytes: [u8; 32] = prefix.into();
+        eprintln!("subtree_prefix = {}", hex::encode(prefix_bytes));
+
+        // Close the Platform so we can take an exclusive lock on RocksDB.
+        // Destructure to keep the TempDir alive while the Platform's GroveDb
+        // handle is dropped — otherwise dropping the whole TempPlatform also
+        // drops the TempDir and deletes the directory underneath us.
+        let crate::test::helpers::setup::TempPlatform { platform: pf, tempdir } = temp;
+        let tempdir_path = tempdir.path().to_path_buf();
+        drop(pf);
+
+        // Open the same DB directly via rocksdb. CF names match grovedb's
+        // pub(crate) consts in `grovedb-storage/src/rocksdb_storage/storage.rs`:
+        // "default" is the implicit primary CF, the other three are named.
+        // If those names ever change in grovedb, this test must be updated;
+        // the production snapshot code will need the same update.
+        let cf_names = ["default", "aux", "roots", "meta"];
+        let opts = {
+            let mut o = Options::default();
+            o.create_if_missing(false);
+            o.create_missing_column_families(false);
+            o
+        };
+        let cf_descs: Vec<ColumnFamilyDescriptor> = cf_names
+            .iter()
+            .map(|n| ColumnFamilyDescriptor::new(*n, Options::default()))
+            .collect();
+        let db: OptimisticTransactionDB =
+            OptimisticTransactionDB::open_cf_descriptors(&opts, &tempdir_path, cf_descs)
+                .expect("open A rocksdb");
+
+        // For each CF, count keys whose first 32 bytes equal the subtree prefix.
+        // Capture the first few key bytes too so a regression has actionable
+        // info, not just a count mismatch.
+        let mut per_cf_counts: Vec<(&str, usize, Vec<Vec<u8>>)> = vec![];
+        for cf_name in cf_names {
+            let cf = db.cf_handle(cf_name).unwrap_or_else(|| {
+                panic!("missing CF {cf_name} — grovedb's CF layout may have changed")
+            });
+            let mut iter = db.raw_iterator_cf(&cf);
+            iter.seek(&prefix_bytes[..]);
+            let mut count = 0usize;
+            let mut samples: Vec<Vec<u8>> = vec![];
+            while iter.valid() {
+                let k = match iter.key() {
+                    Some(k) => k,
+                    None => break,
+                };
+                if !k.starts_with(&prefix_bytes) {
+                    break;
+                }
+                count += 1;
+                if samples.len() < 5 {
+                    samples.push(k.to_vec());
+                }
+                iter.next();
+            }
+            eprintln!(
+                "CF {:>7}: {} keys under subtree prefix (first {} sampled)",
+                cf_name,
+                count,
+                samples.len(),
+            );
+            for s in &samples {
+                eprintln!("  sample key (len={}): {}", s.len(), hex::encode(s));
+            }
+            per_cf_counts.push((cf_name, count, samples));
+        }
+        drop(db);
+
+        let counts: std::collections::HashMap<&str, usize> = per_cf_counts
+            .iter()
+            .map(|(n, c, _)| (*n, *c))
+            .collect();
+
+        let default_count = *counts.get("default").unwrap();
+        let aux_count = *counts.get("aux").unwrap();
+        let roots_count = *counts.get("roots").unwrap();
+        let meta_count = *counts.get("meta").unwrap();
+
+        // Empirical claim: the shielded commitment-tree subtree's ENTIRE state
+        // — DenseFixedSizedMerkleTree buffer nodes (2-byte BE position keys),
+        // chunk MMR nodes, META, and the Sinsemilla frontier
+        // (`COMMITMENT_TREE_DATA_KEY`) — lives in the **default CF only**. The
+        // frontier is written via `put(...)` not `put_aux(...)` despite the
+        // misleading internal naming.
+        //
+        // This is a simplification of the original snapshot design which
+        // assumed default + aux. With only default CF in scope, the snapshot
+        // format reduces to "one SST per subtree" not "two SSTs per subtree".
+        assert!(
+            default_count > 0,
+            "default CF must have entries under subtree prefix; \
+             snapshot design is broken if this fails"
+        );
+        assert_eq!(
+            aux_count, 0,
+            "aux CF unexpectedly has {aux_count} entries — the Sinsemilla frontier \
+             was relocated to aux somewhere. Re-verify storage layout in \
+             grovedb-commitment-tree::commitment_tree::mod.rs (search for `put_aux`)"
+        );
+        assert_eq!(
+            roots_count, 0,
+            "roots CF unexpectedly has {roots_count} entries under shielded subtree prefix; \
+             snapshot dump must include the roots CF (currently doesn't)"
+        );
+        assert_eq!(
+            meta_count, 0,
+            "meta CF unexpectedly has {meta_count} entries under shielded subtree prefix; \
+             snapshot dump must include the meta CF (currently doesn't)"
+        );
+    }
+
+    /// End-to-end roundtrip: dump the shielded subtree from platform A into a
+    /// snapshot file, apply it to a fresh platform B, assert anchor_B ==
+    /// anchor_A. Proves that `dump_shielded_subtree` + `apply_shielded_snapshot`
+    /// preserve the Sinsemilla anchor (which is what wallet sync reads to
+    /// verify membership proofs).
+    ///
+    /// Uses N=5000 to keep wall-clock under ~10s in release. The production
+    /// `ShieldedSeedConfig::sdk_test_data()` constant is now `total_notes =
+    /// 5_000` so this also exercises the values the bake step would produce
+    /// at devnet bring-up time.
+    #[test]
+    #[ignore = "snapshot dump+apply roundtrip; needs the new grovedb branch"]
+    fn snapshot_dump_apply_preserves_anchor() {
+        let platform_version = PlatformVersion::latest();
+
+        // --- A: build, seed, capture anchor ---
+        let platform_a = build_regtest_platform();
+        let cfg = ShieldedSeedConfig::sdk_test_data();
+        let tx_a = platform_a.drive.grove.start_transaction();
+        platform_a
+            .seed_shielded_pool_with_config(&cfg, &BlockInfo::default(), Some(&tx_a), platform_version)
+            .expect("seed A");
+        tx_a.commit().expect("commit A");
+        let anchor_a = read_current_anchor(&platform_a, None, platform_version);
+        assert_ne!(anchor_a, EMPTY_SINSEMILLA_ROOT, "A must have non-empty anchor");
+        eprintln!("anchor_a = {}", hex::encode(anchor_a));
+
+        // --- Dump A to a temporary snapshot file ---
+        let dump_dir = tempfile::tempdir().expect("tempdir");
+        let snapshot_path = dump_dir.path().join("shielded-pool.snap");
+        let dump_stats = crate::shielded_snapshot::dump_shielded_subtree(
+            &platform_a.drive.grove,
+            None,
+            &snapshot_path,
+            platform_version,
+        )
+        .expect("dump");
+        eprintln!(
+            "dump: total_count={} key_count={} sst_bytes={}",
+            dump_stats.total_count, dump_stats.key_count, dump_stats.sst_bytes,
+        );
+        assert_eq!(dump_stats.total_count, u64::from(cfg.total_notes));
+        // The DenseFixedSizedMerkleTree + chunk MMR + frontier produces O(N)
+        // keys; for N=5000 we expect roughly 2000+ keys (sanity: must be > 0).
+        assert!(dump_stats.key_count > 0);
+
+        // --- B: build (parent skeleton present, shielded pool EMPTY) ---
+        let platform_b = build_regtest_platform();
+        let pre_anchor_b = read_current_anchor(&platform_b, None, platform_version);
+        assert_eq!(
+            pre_anchor_b, EMPTY_SINSEMILLA_ROOT,
+            "B should start with empty shielded pool"
+        );
+
+        // --- Apply the snapshot to B ---
+        let apply_stats = crate::shielded_snapshot::apply_shielded_snapshot(
+            &platform_b.drive.grove,
+            None,
+            &snapshot_path,
+            platform_version,
+        )
+        .expect("apply");
+        eprintln!(
+            "apply: total_count={} combined_root={}",
+            apply_stats.total_count,
+            hex::encode(apply_stats.combined_root),
+        );
+
+        // --- Verify: anchor_B equals anchor_A ---
+        let anchor_b = read_current_anchor(&platform_b, None, platform_version);
+        eprintln!("anchor_b = {}", hex::encode(anchor_b));
+        assert_eq!(
+            anchor_b, anchor_a,
+            "anchor must match after dump + apply roundtrip"
+        );
+
+        // --- Also verify: total_count via shielded_pool_notes_count ---
+        let mut drive_ops = vec![];
+        let count_b = platform_b
+            .drive
+            .shielded_pool_notes_count(None, &mut drive_ops, platform_version)
+            .expect("count B");
+        assert_eq!(
+            count_b,
+            u64::from(cfg.total_notes),
+            "B's note count must match A's seed config"
+        );
+    }
+
+    // Real InitChain hook coverage happens via the dashmate devnet flow
+    // (see docs/genesis-snapshot-design.md §13 e2e). An in-process equivalent
+    // would need `std::env::set_var`, which this crate's
+    // `#![forbid(unsafe_code)]` rejects. The roundtrip test
+    // `snapshot_dump_apply_preserves_anchor` proves dump+apply preserves the
+    // anchor; the hook in `create_data_for_shielded_pool` is then a trivial
+    // env-var read + delegation.
 }

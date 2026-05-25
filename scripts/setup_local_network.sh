@@ -21,20 +21,16 @@ yarn dashmate config set core.insight.enabled true --config local_seed
 # so the genesis shielded-pool seeder + identity/contract fixtures run on every
 # local devnet bring-up. Production / release builds explicitly do NOT set this.
 #
-# TODO(temporary): the CARGO_BUILD_PROFILE=release pair below is a workaround
-# for the shielded-pool seeder being unusable in debug profile at the default
-# N=500_000 (Sinsemilla appends 20–50× slower → InitChain blows past
-# tenderdash's timeout). Remove this line once any of these lands:
-#   - the seeder is fast enough in debug for the default N (e.g. via
-#     parallelised note generation or batched Sinsemilla), OR
-#   - we adopt Option B from the perf doc (precomputed GroveDB snapshot
-#     baked into the image — seeding cost goes to zero), OR
-#   - the default N is dropped low enough that debug-profile seeding fits in
-#     the tenderdash init window.
-# See docs/shielded-seeder-performance.md.
+# CARGO_BUILD_PROFILE: temporarily on `dev` (debug) for snapshot e2e iteration.
+# Previously set to `release` to make N=500_000 runtime seed survive
+# tenderdash's InitChain timeout. With N=5000 + the snapshot-bake path
+# landing soon, debug-profile seed in ~30-60s is acceptable, and dev
+# profile cuts the docker image build from ~30 min to ~5-10 min.
+# Flip back to `release` once we stop iterating on the shielded snapshot
+# code path.
 for i in $(seq 1 ${MASTERNODES_COUNT}); do
     yarn dashmate config set --config=local_${i} \
         platform.drive.abci.docker.build.buildArgs.SDK_TEST_DATA "true"
     yarn dashmate config set --config=local_${i} \
-        platform.drive.abci.docker.build.buildArgs.CARGO_BUILD_PROFILE "release"
+        platform.drive.abci.docker.build.buildArgs.CARGO_BUILD_PROFILE "dev"
 done

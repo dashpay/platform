@@ -82,7 +82,7 @@ derive_more = { version = "1.0", features = ["from", "deref", "deref_mut"] }
 async-trait = "0.1.77"
 console-subscriber = { version = "0.4", optional = true }
 bls-signatures = { git = "https://github.com/dashpay/bls-signatures", rev = "0842b17583888e8f46c252a4ee84cdfd58e0546f", optional = true }
-grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "60f29685172653f6007e63d0916bce4633bc23b9" }
+grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "04f2d4243872b65fbec33650e15d85571df385e1" }
 # Low-level Orchard primitives (Note::from_parts, OrchardNoteEncryption) used by
 # the SDK genesis-test-data seeder; grovedb-commitment-tree re-exports most of
 # orchard but not `OrchardNoteEncryption`, so we depend on the same upstream rev.
@@ -93,6 +93,10 @@ orchard = { git = "https://github.com/dashpay/orchard.git", rev = "898258d76aab2
 # seed on both the chain side (here) and the wallet side (rs-platform-wallet).
 zip32 = "0.2"
 nonempty = "0.11"
+# Shielded-pool snapshot needs raw RocksDB SstFileWriter + ingest_external_file_cf
+# bindings, and blake3 for the snapshot-file checksum.
+rocksdb = { git = "https://github.com/QuantumExplorer/rust-rocksdb.git", rev = "52772eea7bcd214d1d07d80aa538b1d24e5015b7" }
+blake3 = "1.5"
 
 [dev-dependencies]
 platform-version = { path = "../rs-platform-version", features = [
@@ -112,7 +116,7 @@ dpp = { path = "../rs-dpp", default-features = false, features = [
 drive = { path = "../rs-drive", features = ["fixtures-and-mocks"] }
 drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
 strategy-tests = { path = "../strategy-tests" }
-grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "60f29685172653f6007e63d0916bce4633bc23b9", features = ["client"] }
+grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "04f2d4243872b65fbec33650e15d85571df385e1", features = ["client"] }
 assert_matches = "1.5.0"
 drive-abci = { path = ".", features = ["testing-config", "mocks"] }
 bls-signatures = { git = "https://github.com/dashpay/bls-signatures", rev = "0842b17583888e8f46c252a4ee84cdfd58e0546f" }
@@ -123,6 +127,11 @@ libc = "0.2"
 # For tests of grovedb verify
 rocksdb = { git = "https://github.com/QuantumExplorer/rust-rocksdb.git", rev = "52772eea7bcd214d1d07d80aa538b1d24e5015b7" }
 integer-encoding = { version = "4.0.0" }
+
+# For dump_only_default_and_aux_cfs_under_shielded_subtree_prefix — same
+# subtree-prefix algorithm grovedb uses internally.
+grovedb-path = { git = "https://github.com/dashpay/grovedb", rev = "04f2d4243872b65fbec33650e15d85571df385e1" }
+grovedb-storage = { git = "https://github.com/dashpay/grovedb", rev = "04f2d4243872b65fbec33650e15d85571df385e1" }
 
 [features]
 default = ["bls-signatures"]

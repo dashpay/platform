@@ -561,6 +561,37 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
 
 
 #
+# STAGE: BAKE SHIELDED-POOL SNAPSHOT
+#
+# Self-contained bake step: runs `drive-abci snapshot-bake` against a fresh
+# in-container tempdir to produce /artifacts/shielded-pool.snap. The runtime
+# image COPYs that file in and sets `DRIVE_SHIELDED_SNAPSHOT` so the
+# InitChain hook applies it instead of running the runtime seeder.
+#
+# Skipped (file replaced with a sentinel) when SDK_TEST_DATA != "true", so
+# production / non-SDK builds don't carry test data.
+#
+FROM build-drive-abci AS bake-shielded-snapshot
+
+ARG SDK_TEST_DATA
+
+# libgcc + libstdc++ for the dynamically-linked drive-abci binary (build
+# stage's alpine image normally has them; explicit `apk add` is a no-op if
+# already present).
+RUN apk add --no-cache libgcc libstdc++
+
+RUN set -ex; \
+    mkdir -p /artifacts; \
+    if [ "${SDK_TEST_DATA}" = "true" ]; then \
+        /artifacts/drive-abci snapshot-bake --out /artifacts/shielded-pool.snap ; \
+        ls -la /artifacts/shielded-pool.snap ; \
+    else \
+        echo "SDK_TEST_DATA != true; skipping shielded-pool snapshot bake" ; \
+        : > /artifacts/.no-shielded-snapshot ; \
+    fi
+
+
+#
 # STAGE: BUILD JAVASCRIPT INTERMEDIATE IMAGE
 #
 FROM deps AS build-js
@@ -673,7 +704,15 @@ RUN mkdir -p /var/log/dash \
     ${REJECTIONS_PATH}
 
 COPY --from=build-drive-abci /artifacts/drive-abci /usr/bin/drive-abci
+COPY --from=bake-shielded-snapshot /artifacts/ /opt/dashmate/snapshots/
 COPY packages/rs-drive-abci/.env.mainnet /var/lib/dash/rs-drive-abci/.env
+
+# When the bake stage produced a real snapshot (SDK_TEST_DATA=true at
+# build time), point InitChain's apply-side at it. The InitChain hook in
+# create_data_for_shielded_pool reads this env var; if unset OR the file
+# is the sentinel left by the SDK_TEST_DATA=false branch, the runtime
+# seeder runs instead.
+ENV DRIVE_SHIELDED_SNAPSHOT=/opt/dashmate/snapshots/shielded-pool.snap
 
 # Create a volume
 VOLUME /var/lib/dash/rs-drive-abci/db
