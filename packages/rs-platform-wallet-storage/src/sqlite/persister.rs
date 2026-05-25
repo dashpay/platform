@@ -958,8 +958,13 @@ fn ensure_dir(dir: &Path) -> Result<(), WalletStorageError> {
             }
         })?;
     }
-    // Probe writability via `tempfile::NamedTempFile` — unguessable
-    // name, no race against concurrent persister opens (CODE-008).
+    // ATOM-014 (A-7): best-effort writability probe via `NamedTempFile`
+    // (unguessable name, no race against concurrent persister opens —
+    // CODE-008). This is TOCTOU by construction — the dir CAN flip to
+    // unwritable between the probe and `backup::run_to` below — but
+    // the real write below has its own error path, so the worst case
+    // is the operator gets the typed error from the actual backup
+    // attempt instead of this fast-fail probe.
     match tempfile::NamedTempFile::new_in(dir) {
         Ok(_probe) => Ok(()),
         Err(source) => Err(WalletStorageError::AutoBackupDirUnwritable {
