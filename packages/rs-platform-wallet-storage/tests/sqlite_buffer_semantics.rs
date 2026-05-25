@@ -97,7 +97,12 @@ fn tc019_commit_writes_flushes_dirty() {
     persister
         .store(b, changeset(core_with_height(7, 7)))
         .unwrap();
-    persister.commit_writes().unwrap();
+    let report = persister.commit_writes().unwrap();
+    assert!(
+        report.is_ok(),
+        "commit_writes must succeed; report={report:?}"
+    );
+    assert_eq!(report.succeeded.len(), 2, "two wallets must flush");
     let conn = ro_conn(&path);
     let count_for = |id: &[u8; 32]| -> i64 {
         conn.query_row(
@@ -115,7 +120,8 @@ fn tc019_commit_writes_flushes_dirty() {
 #[test]
 fn tc020_commit_writes_noop_in_immediate() {
     let (persister, _tmp, _path) = fresh_persister_with_mode(FlushMode::Immediate);
-    persister.commit_writes().unwrap();
+    let report = persister.commit_writes().unwrap();
+    assert!(report.succeeded.is_empty() && report.failed.is_empty());
 }
 
 /// TC-022: flush(A) doesn't write or clear B's buffer.
@@ -544,4 +550,58 @@ fn tc_p2_007_warn_on_restore_with_structured_fields() {
         logs_contain(&hex::encode(w)),
         "structured wallet_id missing"
     );
+}
+
+/// ATOM-006 (N-1): `commit_writes` continues past per-wallet failures,
+/// returning a CommitReport with each wallet's outcome. A failed
+/// wallet is recorded in `failed`; the remaining wallets still flush.
+///
+/// We use `force_next_flush_to_fail` to make the FIRST wallet in
+/// sorted-id order surface a fatal error. The remaining two wallets
+/// must still flush (sorted-id ordering — A < B < C), and the report
+/// must list 1 failure + 2 successes.
+#[test]
+fn atom_006_commit_writes_continues_past_per_wallet_failures() {
+    let (persister, _tmp, path) = fresh_persister_with_mode(FlushMode::Manual);
+    let a = wid(0xA0);
+    let b = wid(0xB0);
+    let c = wid(0xC0);
+    ensure_wallet_meta(&persister, &a);
+    ensure_wallet_meta(&persister, &b);
+    ensure_wallet_meta(&persister, &c);
+    persister
+        .store(a, changeset(core_with_height(1, 1)))
+        .unwrap();
+    persister
+        .store(b, changeset(core_with_height(2, 2)))
+        .unwrap();
+    persister
+        .store(c, changeset(core_with_height(3, 3)))
+        .unwrap();
+
+    // The injector fires on the FIRST flush_inner. Wallets are flushed
+    // in sorted-id order, so it hits wallet A.
+    persister.force_next_flush_to_fail(make_fatal_error());
+    let report = persister
+        .commit_writes()
+        .expect("commit_writes itself must return Ok(report)");
+
+    assert_eq!(report.failed.len(), 1, "wallet A must be in failed");
+    assert_eq!(report.failed[0].0, a, "failed wallet must be A");
+    assert_eq!(
+        report.succeeded.len(),
+        2,
+        "B and C must still flush despite A's failure; report={report:?}"
+    );
+    assert!(report.succeeded.contains(&b) && report.succeeded.contains(&c));
+    assert!(
+        report.still_pending.is_empty(),
+        "no LockPoisoned short-circuit on a fatal error path"
+    );
+    assert!(!report.is_ok());
+
+    // Verify B and C are durable; A is not.
+    assert_eq!(read_synced_height(&path, &a), None);
+    assert_eq!(read_synced_height(&path, &b), Some(2));
+    assert_eq!(read_synced_height(&path, &c), Some(3));
 }

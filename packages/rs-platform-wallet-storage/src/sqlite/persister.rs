@@ -36,6 +36,31 @@ pub struct PruneReport {
     pub kept: usize,
 }
 
+/// Outcome of a [`SqlitePersister::commit_writes`] call. Carries every
+/// dirty wallet's per-flush outcome so a single failed wallet doesn't
+/// hide the success of its siblings (or vice-versa). The caller can
+/// retry `still_pending` directly; `failed` carries the classified
+/// error per wallet so transient-vs-fatal decisions stay local.
+#[derive(Debug)]
+pub struct CommitReport {
+    /// Wallets that flushed successfully (durable on disk).
+    pub succeeded: Vec<WalletId>,
+    /// Wallets whose flush returned an error. The
+    /// `PersistenceError` carries the classification + source per D-9.
+    pub failed: Vec<(WalletId, PersistenceError)>,
+    /// Wallets we never attempted because an earlier per-flush call
+    /// poisoned a shared resource (today: a `LockPoisoned` short-circuit
+    /// — the connection mutex is gone). Empty on the happy path.
+    pub still_pending: Vec<WalletId>,
+}
+
+impl CommitReport {
+    /// `true` when every dirty wallet flushed cleanly.
+    pub fn is_ok(&self) -> bool {
+        self.failed.is_empty() && self.still_pending.is_empty()
+    }
+}
+
 /// Outcome of a `delete_wallet` / `delete_wallet_skip_backup` call.
 #[derive(Debug, Clone)]
 pub struct DeleteWalletReport {
@@ -392,21 +417,51 @@ impl SqlitePersister {
         result
     }
 
-    /// In Manual mode: flush every dirty wallet. In Immediate mode: no-op.
-    pub fn commit_writes(&self) -> Result<(), PersistenceError> {
-        match self.config.flush_mode {
-            FlushMode::Immediate => Ok(()),
-            FlushMode::Manual => {
-                let dirty = self
-                    .buffer
-                    .dirty_wallets()
-                    .map_err(PersistenceError::from)?;
-                for id in dirty {
-                    self.flush_inner(&id)?;
+    /// In Manual mode: attempt to flush every dirty wallet. In
+    /// Immediate mode: no-op (returns an empty report).
+    ///
+    /// Continues past per-wallet failures instead of fails-fast (N-1).
+    /// Each wallet's flush outcome lands on the returned
+    /// [`CommitReport`]: `succeeded` for durable writes, `failed` for
+    /// the classified `PersistenceError`. `still_pending` only fills
+    /// when a `LockPoisoned` short-circuit prevents the loop from
+    /// attempting the remaining wallets.
+    ///
+    /// Returns `Err` ONLY when even enumerating the dirty set fails
+    /// (e.g. the buffer mutex is poisoned). Once the loop starts,
+    /// every dirty wallet has a slot in the report.
+    pub fn commit_writes(&self) -> Result<CommitReport, PersistenceError> {
+        let mut report = CommitReport {
+            succeeded: Vec::new(),
+            failed: Vec::new(),
+            still_pending: Vec::new(),
+        };
+        if matches!(self.config.flush_mode, FlushMode::Immediate) {
+            return Ok(report);
+        }
+        let dirty = self
+            .buffer
+            .dirty_wallets()
+            .map_err(PersistenceError::from)?;
+        let mut iter = dirty.into_iter();
+        while let Some(id) = iter.next() {
+            match self.flush_inner(&id) {
+                Ok(()) => report.succeeded.push(id),
+                Err(PersistenceError::LockPoisoned) => {
+                    // Mutex is gone — no point hammering the remaining
+                    // wallets. Record this one as failed and shovel the
+                    // rest into still_pending so the caller knows what
+                    // was never attempted.
+                    report
+                        .failed
+                        .push((id, PersistenceError::LockPoisoned));
+                    report.still_pending.extend(iter);
+                    return Ok(report);
                 }
-                Ok(())
+                Err(e) => report.failed.push((id, e)),
             }
         }
+        Ok(report)
     }
 
     /// `inspect` row-count summary. With `wallet_id = Some(id)`, scoped
