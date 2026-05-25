@@ -329,6 +329,76 @@ impl PlatformAddressWallet {
             .map(|account| account.total_credit_balance())
             .unwrap_or(0)
     }
+
+    /// Highest derived index in the platform-payment receive pool for
+    /// the given account, combining the synced-balance map and the
+    /// eager `highest_generated` watermark. `None` when neither side
+    /// has produced an index (no syncs yet **and** the pool was built
+    /// with `gap_limit == 0`, which doesn't occur in production).
+    ///
+    /// Used by test infrastructure (e2e sweep / funding paths) to size
+    /// the `SimpleSigner` key window — the signer must cover every
+    /// index the pool may hand to a `transfer` input selector. Production
+    /// transfer/withdraw paths use the modern provider and don't call
+    /// this accessor.
+    ///
+    /// TODO: this currently reads from the deprecated
+    /// `platform_payment_managed_account.addresses` pool. Migrate to
+    /// `PlatformPaymentAddressProvider` once it exposes a stateful
+    /// pool (per @QuantumExplorer's review on #3648). Callers don't
+    /// change — the accessor's implementation flips.
+    pub async fn platform_payment_account_max_derived_index(
+        &self,
+        account_index: u32,
+    ) -> Result<Option<u32>, PlatformWalletError> {
+        let wm = self.wallet_manager.read().await;
+        let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
+            PlatformWalletError::WalletNotFound(format!(
+                "Wallet {:?} not found",
+                hex::encode(self.wallet_id)
+            ))
+        })?;
+        let account = info
+            .core_wallet
+            .platform_payment_managed_account_at_index(account_index)
+            .ok_or_else(|| {
+                PlatformWalletError::AddressSync(format!(
+                    "No platform payment account at index {account_index}"
+                ))
+            })?;
+        let synced_max = account.addresses.addresses.keys().copied().max();
+        let generated_max = account.addresses.highest_generated;
+        Ok(synced_max.into_iter().chain(generated_max).max())
+    }
+
+    /// Returns the configured `gap_limit` on the platform-payment receive
+    /// pool for the given account.
+    ///
+    /// TODO: this currently reads from the deprecated
+    /// `platform_payment_managed_account.addresses` pool. Migrate to
+    /// `PlatformPaymentAddressProvider` once it exposes a stateful
+    /// pool (per @QuantumExplorer's review on #3648).
+    pub async fn platform_payment_account_gap_limit(
+        &self,
+        account_index: u32,
+    ) -> Result<u32, PlatformWalletError> {
+        let wm = self.wallet_manager.read().await;
+        let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
+            PlatformWalletError::WalletNotFound(format!(
+                "Wallet {:?} not found",
+                hex::encode(self.wallet_id)
+            ))
+        })?;
+        let account = info
+            .core_wallet
+            .platform_payment_managed_account_at_index(account_index)
+            .ok_or_else(|| {
+                PlatformWalletError::AddressSync(format!(
+                    "No platform payment account at index {account_index}"
+                ))
+            })?;
+        Ok(account.addresses.gap_limit)
+    }
 }
 
 impl std::fmt::Debug for PlatformAddressWallet {

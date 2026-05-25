@@ -241,21 +241,13 @@ async fn derive_sweep_pool_signer(
     seed_bytes: &[u8; 64],
     network: Network,
 ) -> FrameworkResult<SimpleSigner> {
-    let wallet_id = wallet.wallet_id();
-    let highest_index = {
-        let wm = wallet.wallet_manager().read().await;
-        let info = wm.get_wallet_info(&wallet_id).ok_or_else(|| {
-            FrameworkError::Cleanup("wallet missing from manager during sweep signer build".into())
+    let highest_index = wallet
+        .platform()
+        .platform_payment_account_max_derived_index(DEFAULT_ACCOUNT_INDEX_PUB)
+        .await
+        .map_err(|err| {
+            FrameworkError::Cleanup(format!("sweep pool signer: max derived index: {err}"))
         })?;
-        info.core_wallet
-            .platform_payment_managed_account_at_index(DEFAULT_ACCOUNT_INDEX_PUB)
-            .map(|account| {
-                let synced_max = account.addresses.addresses.keys().copied().max();
-                let generated_max = account.addresses.highest_generated;
-                synced_max.into_iter().chain(generated_max).max()
-            })
-            .unwrap_or(None)
-    };
 
     let ceiling = match highest_index {
         Some(hi) => hi.saturating_add(DIP17_GAP_LIMIT),

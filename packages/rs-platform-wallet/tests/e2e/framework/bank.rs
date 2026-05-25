@@ -317,21 +317,13 @@ impl BankWallet {
         seed_bytes: &[u8; 64],
         network: Network,
     ) -> FrameworkResult<SimpleSigner> {
-        let wallet_id = wallet.wallet_id();
-        let highest_index = {
-            let wm = wallet.wallet_manager().read().await;
-            let info = wm.get_wallet_info(&wallet_id).ok_or_else(|| {
-                FrameworkError::Bank("bank wallet missing from manager after sync".into())
+        let highest_index = wallet
+            .platform()
+            .platform_payment_account_max_derived_index(DEFAULT_ACCOUNT_INDEX_PUB)
+            .await
+            .map_err(|err| {
+                FrameworkError::Bank(format!("bank pool signer: max derived index: {err}"))
             })?;
-            info.core_wallet
-                .platform_payment_managed_account_at_index(DEFAULT_ACCOUNT_INDEX_PUB)
-                .map(|account| {
-                    let synced_max = account.addresses.addresses.keys().copied().max();
-                    let generated_max = account.addresses.highest_generated;
-                    synced_max.into_iter().chain(generated_max).max()
-                })
-                .unwrap_or(None)
-        };
 
         // `+ DIP17_GAP_LIMIT` forward margin; `0..=ceiling` also re-covers
         // the eager `0..=gap_limit-1` fill. No funded pool → fall back to

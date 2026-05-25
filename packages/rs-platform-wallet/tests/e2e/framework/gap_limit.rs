@@ -122,6 +122,11 @@ pub async fn next_unused_receive_addresses(
         ))
     })?;
 
+    // TODO: reaches into the deprecated platform_payment_managed_account
+    // pool for state the modern PlatformPaymentAddressProvider doesn't yet
+    // expose (batch-derive helper). Migrate or retire once the pool moves
+    // to the provider (per @QuantumExplorer's review on #3648).
+    #[allow(deprecated)]
     let managed_account = info
         .core_wallet
         .platform_payment_managed_account_at_index_mut(account_key.account)
