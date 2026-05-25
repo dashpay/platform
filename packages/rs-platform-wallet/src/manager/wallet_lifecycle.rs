@@ -276,12 +276,43 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             }
         }
 
-        if let Err(e) = self.persister.store(wallet_id, registration_changeset) {
+        // Drive the typed `PersistenceError` kind off the wire so a
+        // transient (e.g. `SQLITE_BUSY`) gets one backoff retry while a
+        // fatal / constraint failure undoes the in-memory insert and
+        // surfaces `WalletRegistrationFailed`. Without this, a failed
+        // store leaves the wallet visible in `wallet_manager` without
+        // a `wallet_metadata` row, so every subsequent per-wallet write
+        // FK-violates against an absent parent.
+        let store_outcome = self
+            .persister
+            .store(wallet_id, registration_changeset.clone());
+        let store_err = match store_outcome {
+            Ok(()) => None,
+            Err(e) if e.is_transient() => {
+                tracing::warn!(
+                    wallet_id = %hex::encode(wallet_id),
+                    error = %e,
+                    "transient persist failure on wallet registration; retrying once"
+                );
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                self.persister
+                    .store(wallet_id, registration_changeset)
+                    .err()
+            }
+            Err(e) => Some(e),
+        };
+        if let Some(e) = store_err {
             tracing::error!(
                 wallet_id = %hex::encode(wallet_id),
                 error = %e,
-                "failed to persist wallet registration changeset"
+                "failed to persist wallet registration changeset; undoing in-memory insert"
             );
+            let mut wm = self.wallet_manager.write().await;
+            let _ = wm.remove_wallet(&wallet_id);
+            return Err(PlatformWalletError::WalletRegistrationFailed {
+                wallet_id: hex::encode(wallet_id),
+                reason: e.to_string(),
+            });
         }
 
         // Build the PlatformWallet handle.

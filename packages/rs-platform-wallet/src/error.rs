@@ -163,6 +163,13 @@ pub enum PlatformWalletError {
         unimplemented: Vec<String>,
         orphan_addresses_count: usize,
     },
+
+    /// `register_wallet` could not commit the wallet's registration
+    /// changeset to the persister (after one transient-class retry, if
+    /// applicable). In-memory state has been rolled back so the wallet
+    /// is NOT visible through the manager.
+    #[error("wallet registration failed for {wallet_id}: {reason}")]
+    WalletRegistrationFailed { wallet_id: String, reason: String },
 }
 
 /// Check whether an SDK error indicates that an InstantSend lock proof was
