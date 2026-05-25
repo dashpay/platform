@@ -27,13 +27,19 @@ use crate::sqlite::util::safe_cast;
 pub(crate) const LOAD_UNIMPLEMENTED: &[&str] = &["ClientStartState::wallets"];
 
 /// Outcome of a `prune_backups` call.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct PruneReport {
     /// Paths that were unlinked, sorted oldest-first by filename
     /// timestamp.
     pub removed: Vec<PathBuf>,
     /// Number of files that remain in the directory after pruning.
     pub kept: usize,
+    /// Files we tried to remove but couldn't, paired with the
+    /// underlying `io::Error`. Returned as part of `Ok(report)` so a
+    /// partial failure surfaces every removed AND every failed entry
+    /// — the caller can re-invoke `prune_backups` to retry just the
+    /// stragglers. ATOM-011 / A-6.
+    pub failed_removals: Vec<(PathBuf, std::io::Error)>,
 }
 
 /// Outcome of a [`SqlitePersister::commit_writes`] call. Carries every

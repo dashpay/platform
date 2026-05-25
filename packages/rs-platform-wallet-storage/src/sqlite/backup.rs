@@ -301,10 +301,14 @@ where
 /// Apply retention to a directory. Files that match the recognised
 /// backup-name prefixes are eligible; others are ignored.
 ///
-// INTENTIONAL(CODE-007): prune fails-fast on the first I/O error
-// rather than collecting per-file failures into PruneReport.
-// Acceptable because the operator gets a typed error with the
-// offending path; retrying prune is idempotent.
+/// # Partial failures
+///
+/// ATOM-011 / A-6: per-file `remove_file` failures are collected into
+/// `PruneReport::failed_removals` rather than aborting the loop. The
+/// happy path still removes every eligible file. Only catastrophic
+/// errors (`read_dir` itself fails, an `entry?` returns Err) surface
+/// as `Err(_)` — those affect every subsequent iteration too, so
+/// continuing would just compound the failure.
 pub fn prune(dir: &Path, policy: RetentionPolicy) -> Result<PruneReport, WalletStorageError> {
     let entries = std::fs::read_dir(dir)?;
     let mut files: Vec<(SystemTime, PathBuf)> = Vec::new();
@@ -326,6 +330,7 @@ pub fn prune(dir: &Path, policy: RetentionPolicy) -> Result<PruneReport, WalletS
     files.sort_by(|a, b| b.0.cmp(&a.0));
     let now = SystemTime::now();
     let mut removed = Vec::new();
+    let mut failed_removals: Vec<(PathBuf, std::io::Error)> = Vec::new();
     let mut kept = 0;
     for (idx, (ts, path)) in files.into_iter().enumerate() {
         let pass_count = match policy.keep_last_n {
@@ -339,13 +344,20 @@ pub fn prune(dir: &Path, policy: RetentionPolicy) -> Result<PruneReport, WalletS
         if pass_count && pass_age {
             kept += 1;
         } else {
-            std::fs::remove_file(&path)?;
-            removed.push(path);
+            match std::fs::remove_file(&path) {
+                Ok(()) => removed.push(path),
+                Err(e) => failed_removals.push((path, e)),
+            }
         }
     }
     // Sort `removed` oldest-first for deterministic output.
     removed.sort();
-    Ok(PruneReport { removed, kept })
+    failed_removals.sort_by(|a, b| a.0.cmp(&b.0));
+    Ok(PruneReport {
+        removed,
+        kept,
+        failed_removals,
+    })
 }
 
 fn is_backup_file(path: &Path) -> bool {

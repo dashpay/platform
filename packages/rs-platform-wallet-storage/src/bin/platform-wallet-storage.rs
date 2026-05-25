@@ -371,7 +371,16 @@ fn run_prune(args: &PruneArgs) -> Result<ExitCode, CliError> {
     for p in &report.removed {
         println!("{}", p.display());
     }
-    Ok(ExitCode::SUCCESS)
+    for (p, e) in &report.failed_removals {
+        eprintln!("warning: failed to remove {}: {e}", p.display());
+    }
+    // ATOM-011: non-zero exit when any per-file removal failed so
+    // scripts can detect the partial-success case.
+    if report.failed_removals.is_empty() {
+        Ok(ExitCode::SUCCESS)
+    } else {
+        Ok(ExitCode::from(1))
+    }
 }
 
 fn run_inspect(persister: &SqlitePersister, args: InspectArgs) -> Result<ExitCode, CliError> {
