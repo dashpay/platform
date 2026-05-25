@@ -166,6 +166,18 @@ impl SqlitePersister {
             )
             .optional()?
             .is_some();
+        // ATOM-013 (A-8): run integrity_check on a pre-existing DB
+        // BEFORE migrations alter it. Bit-rot or escaped-WAL corruption
+        // detected here surfaces as the typed `IntegrityCheckFailed`
+        // before any schema mutation lands. The pre-migration auto-
+        // backup snapshots the live state, so without this gate a
+        // corrupt DB gets backed up and migrated in the same pass —
+        // making the auto-backup useless for rollback.
+        if had_schema_history {
+            crate::sqlite::backup::run_integrity_check(&conn, |report| {
+                WalletStorageError::IntegrityCheckFailed { report }
+            })?;
+        }
         // CMT-005: refuse to open a DB produced by a newer binary —
         // refinery's run() would no-op on pending_count==0, after which
         // blob decoders would see forward-schema bytes. Symmetric with

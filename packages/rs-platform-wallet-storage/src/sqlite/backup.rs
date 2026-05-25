@@ -284,7 +284,13 @@ pub fn restore_from(dest_db_path: &Path, src_backup: &Path) -> Result<(), Wallet
 /// "ok". Any other returned text becomes a typed `IntegrityCheckFailed`
 /// via the caller-supplied builder; an underlying rusqlite error
 /// surfaces as `IntegrityCheckRunFailed`.
-fn run_integrity_check<F>(conn: &Connection, on_failure: F) -> Result<(), WalletStorageError>
+///
+/// `pub(crate)` so the persister's open-time A-8 probe shares the
+/// same helper rather than reimplementing the report-rendering rule.
+pub(crate) fn run_integrity_check<F>(
+    conn: &Connection,
+    on_failure: F,
+) -> Result<(), WalletStorageError>
 where
     F: FnOnce(String) -> WalletStorageError,
 {
