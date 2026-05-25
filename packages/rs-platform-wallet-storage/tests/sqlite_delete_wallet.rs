@@ -27,8 +27,6 @@ fn persister_with_bad_backup_dir() -> (SqlitePersister, tempfile::TempDir, PathB
     // Point auto_backup_dir at a path whose grand-parent doesn't exist
     // — write attempts fail without create-mode magic.
     std::fs::create_dir(tmp.path().join("does-not-exist")).unwrap();
-    let perms = std::fs::Permissions::from(std::fs::metadata(tmp.path()).unwrap().permissions());
-    let _ = perms; // keep clippy quiet
     let cfg = SqlitePersisterConfig::new(&db)
         .with_flush_mode(FlushMode::Manual)
         .with_auto_backup_dir(Some(bad_dir));

@@ -4,6 +4,7 @@
 //! process umask leaks wallet state on multi-user hosts.
 
 #![cfg(unix)]
+#![allow(clippy::field_reassign_with_default)]
 
 mod common;
 
