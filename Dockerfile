@@ -18,8 +18,12 @@
 # - ALPINE_VERSION - use different version of Alpine base image; requires also rust:apline...
 #   image to be available
 # - USERNAME, USER_UID, USER_GID - specification of user used to run the binary
-# - SDK_TEST_DATA - set to `true` to create SDK test data on chain genesis. It should be used only for testing
-#   purpose in local development environment
+# - SDK_TEST_DATA - set to `true` to create SDK test data on chain genesis.
+#   For local devnet workflows use `yarn dashmate config set
+#   platform.drive.abci.docker.build.buildArgs.SDK_TEST_DATA true` (the
+#   `yarn setup` script does this automatically for the `local` config) —
+#   do NOT pass it as a shell env. The value flows through dashmate ->
+#   docker-compose `build.args:` -> this ARG.
 #
 # # sccache cache backends
 #
@@ -422,9 +426,11 @@ RUN --mount=type=secret,id=AWS \
 # This will prebuild majority of dependencies
 FROM deps AS build-drive-abci
 
-# Pass SDK_TEST_DATA=true to create SDK test data on chain genesis
-# This is only for testing purpose and should be used only for
-# local development environment
+# SDK_TEST_DATA is forwarded by dashmate from each `local_N` config's
+# `platform.drive.abci.docker.build.buildArgs.SDK_TEST_DATA` field (set by
+# `scripts/setup_local_network.sh` after `dashmate setup local`, as part of
+# `yarn setup`). Do NOT set this via shell env — single source of truth is the
+# dashmate config.
 ARG SDK_TEST_DATA
 ARG ADDITIONAL_FEATURES=""
 

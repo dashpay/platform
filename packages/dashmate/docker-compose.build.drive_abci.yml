@@ -16,6 +16,12 @@ services:
         SCCACHE_REGION: ${SCCACHE_REGION}
         SCCACHE_S3_KEY_PREFIX: ${SCCACHE_S3_KEY_PREFIX}
         SDK_TEST_DATA: ${SDK_TEST_DATA}
+        # Forwarded by dashmate from
+        # `platform.drive.abci.docker.build.buildArgs.CARGO_BUILD_PROFILE`
+        # (overridable per-invocation via shell env). "release" is required
+        # for SDK_TEST_DATA shielded seeding at N > a few thousand — see
+        # docs/shielded-seeder-performance.md.
+        CARGO_BUILD_PROFILE: ${CARGO_BUILD_PROFILE:-dev}
       secrets:
         - GITHUB_TOKEN
       cache_from:
