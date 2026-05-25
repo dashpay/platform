@@ -16,7 +16,9 @@ pub mod persister;
 pub mod schema;
 pub mod util;
 
-pub use config::{FlushMode, JournalMode, SqlitePersisterConfig, Synchronous};
+pub use config::{
+    default_auto_backup_dir, FlushMode, JournalMode, SqlitePersisterConfig, Synchronous,
+};
 #[allow(deprecated)]
 pub use error::{AutoBackupOperation, SqlitePersisterError, WalletStorageError};
 pub use persister::{PruneReport, RetentionPolicy, SqlitePersister};
