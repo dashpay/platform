@@ -127,7 +127,30 @@ pub struct SqlitePersister {
 
 impl SqlitePersister {
     /// Open or create the SQLite DB at `config.path`. Applies pragmas,
-    /// runs migrations, optionally takes a pre-migration auto-backup.
+    /// asserts integrity on a pre-existing DB, runs migrations,
+    /// optionally takes a pre-migration auto-backup.
+    ///
+    /// # Errors
+    ///
+    /// - [`WalletStorageError::ConfigInvalid`] — rejected
+    ///   [`SqlitePersisterConfig`] field (e.g. `synchronous = Off`).
+    /// - [`WalletStorageError::Io`] (kind `NotFound`) — the parent of
+    ///   `config.path` does not exist. The persister refuses to create
+    ///   parent directories silently (NFR-6).
+    /// - [`WalletStorageError::ForeignKeysNotEnforced`] — the linked
+    ///   SQLite build silently ignores `PRAGMA foreign_keys = ON`
+    ///   (no FK support compiled in).
+    /// - [`WalletStorageError::SchemaVersionUnsupported`] — the DB
+    ///   carries a `refinery_schema_history` row beyond what this
+    ///   binary can apply. Symmetric with `restore_from`'s gate.
+    /// - [`WalletStorageError::IntegrityCheckFailed`] (ATOM-013) —
+    ///   `PRAGMA integrity_check` on the pre-existing DB returned a
+    ///   non-`ok` report. Raised BEFORE migrations alter the file so
+    ///   corruption is never silently migrated.
+    /// - [`WalletStorageError::Migration`] — refinery failed mid-run.
+    /// - [`WalletStorageError::AutoBackupDirUnwritable`] /
+    ///   [`WalletStorageError::AutoBackupDisabled`] — the
+    ///   pre-migration auto-backup couldn't materialise.
     pub fn open(config: SqlitePersisterConfig) -> Result<Self, WalletStorageError> {
         validate_config(&config)?;
         if let Some(parent) = config.path.parent() {
@@ -310,6 +333,17 @@ impl SqlitePersister {
     /// To skip the auto-backup explicitly — wired up by the CLI's
     /// `--no-auto-backup` — call
     /// [`delete_wallet_skip_backup`](Self::delete_wallet_skip_backup).
+    ///
+    /// # Racing stores
+    ///
+    /// N-4: calls to `store(wallet_id, ...)` for the same wallet while
+    /// `delete_wallet` is in progress will be **discarded** after the
+    /// delete commits. The store call may return `Ok(())` (in
+    /// `FlushMode::Manual` it lands in the buffer), but its data does
+    /// not survive the delete — the post-commit re-drain inside
+    /// `delete_wallet` removes any buffered changeset that arrived
+    /// during the delete window. Synchronize at the caller layer if
+    /// you need different semantics.
     pub fn delete_wallet(
         &self,
         wallet_id: WalletId,
@@ -470,9 +504,7 @@ impl SqlitePersister {
                     // wallets. Record this one as failed and shovel the
                     // rest into still_pending so the caller knows what
                     // was never attempted.
-                    report
-                        .failed
-                        .push((id, PersistenceError::LockPoisoned));
+                    report.failed.push((id, PersistenceError::LockPoisoned));
                     report.still_pending.extend(iter);
                     return Ok(report);
                 }
@@ -763,6 +795,19 @@ impl Drop for SqlitePersister {
 }
 
 impl PlatformWalletPersistence for SqlitePersister {
+    /// Merge `changeset` into the per-wallet buffer.
+    ///
+    /// N-7 / D-3 durability matrix:
+    /// - In [`FlushMode::Immediate`] the call is **durable on `Ok`** —
+    ///   one SQLite transaction wraps every populated per-table apply,
+    ///   so either all sub-changesets land or none do. A transient
+    ///   failure restores the buffer and surfaces
+    ///   [`WalletStorageError::FlushRetryable`] wrapped in
+    ///   `PersistenceError::Backend`.
+    /// - In [`FlushMode::Manual`] the call only merges into the
+    ///   in-memory buffer. Durability requires
+    ///   [`flush`](Self::flush) (per-wallet) or
+    ///   [`commit_writes`](Self::commit_writes) (every dirty wallet).
     fn store(
         &self,
         wallet_id: WalletId,
@@ -796,6 +841,13 @@ impl PlatformWalletPersistence for SqlitePersister {
     /// **Query budget (FR-P4-6).** Constant-query w.r.t. wallet count:
     /// one `SELECT` over `wallet_metadata` for the wallet-id list, then
     /// per-wallet sync-header + count reads bounded by that list.
+    ///
+    /// # Concurrency (N-10)
+    ///
+    /// Holds the connection mutex for the duration of the read.
+    /// Concurrent `store` / `flush` / `delete_wallet` calls block
+    /// until `load` returns. Intended for one-shot use at process
+    /// startup, not interleaved with the hot write path.
     ///
     /// # Examples
     ///
