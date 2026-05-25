@@ -18,16 +18,12 @@ pub mod changeset;
 pub mod error;
 pub mod events;
 pub mod manager;
-pub mod seed_provider;
 pub mod spv;
 pub mod wallet;
 
 pub use error::PlatformWalletError;
 pub use events::{PlatformEvent, PlatformEventHandler, PlatformEventManager};
 pub use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
-pub use seed_provider::{
-    SecretPhrase, SecretSeed, SecretStoreErrorKind, SeedProvider, SeedUnavailable, WalletSecret,
-};
 // Surface the upstream `DerivedAddress` event payload through this
 // crate so downstream FFI consumers (rs-platform-wallet-ffi) can
 // project `CoreChangeSet.addresses_derived` without taking an extra

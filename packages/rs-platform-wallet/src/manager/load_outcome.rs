@@ -2,37 +2,58 @@
 //!
 //! [`load_from_persistor`]: super::PlatformWalletManager::load_from_persistor
 
-use crate::seed_provider::{SecretStoreErrorKind, SeedUnavailable};
 use crate::wallet::platform_wallet::WalletId;
 
-/// Why a wallet was skipped during a load pass.
+/// Why a persisted wallet row was skipped during a load pass.
 ///
-/// A skip means the wallet's seed/mnemonic was **unavailable** — a
-/// recoverable state (retry after the operator provides or unlocks the
-/// material). It is distinct from a **wrong** seed, which is a
-/// fail-closed `WrongSeedForDatabase` error and never appears here.
+/// Load is **watch-only** (no seed material involved): signing keys are
+/// derived later, on demand, via the [`MnemonicResolverHandle`] sign
+/// path. A skip therefore means the persisted row itself was unusable —
+/// a per-row decode/structural failure that fails one wallet without
+/// aborting the batch. A wrong seed cannot surface here: it surfaces
+/// only at first-sign time, as a fail-closed gate inside the sign
+/// entrypoints. Variants carry no key material (SECRETS.md
+/// SEC-REQ-2.0.1).
 ///
-/// Carries no secret material — variants are structural, mirroring the
-/// non-secret secret-store error surface (SECRETS.md SEC-REQ-2.0.1).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+/// [`MnemonicResolverHandle`]: rs_sdk_ffi::MnemonicResolverHandle
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum SkipReason {
-    /// The store returned a clean "no entry" for this wallet id.
-    #[error("no seed material stored for wallet")]
-    SeedAbsent,
-    /// The secret backend is locked / unavailable; retry after unlock.
-    #[error("secret store locked or unavailable: {0}")]
-    StoreUnavailable(SecretStoreErrorKind),
-    /// Any other typed secret-store error (structural kind only).
-    #[error("secret store error: {0}")]
-    StoreError(SecretStoreErrorKind),
+    /// The persisted row could not be reconstructed: a structural decode
+    /// failure on the keyless account manifest or core-state projection.
+    /// `kind` distinguishes the failure mode without leaking row bytes.
+    #[error("persisted wallet row corrupt: {kind}")]
+    CorruptPersistedRow {
+        /// Structural family of the decode/projection failure.
+        kind: CorruptKind,
+    },
 }
 
-impl From<SeedUnavailable> for SkipReason {
-    fn from(e: SeedUnavailable) -> Self {
-        match e {
-            SeedUnavailable::Absent => SkipReason::SeedAbsent,
-            SeedUnavailable::StoreUnavailable(k) => SkipReason::StoreUnavailable(k),
-            SeedUnavailable::StoreError(k) => SkipReason::StoreError(k),
+/// Structural family of [`SkipReason::CorruptPersistedRow`].
+///
+/// The variants are deliberately coarse — a finer split would require
+/// the persister to round-trip backend error context that may carry
+/// row-derived bytes. Apps drive their UI from the *family*, not from
+/// the inner message.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CorruptKind {
+    /// The wallet row exists but has no usable `AccountRegistrationEntry`
+    /// manifest to rebuild the account collection from.
+    MissingManifest,
+    /// One or more manifest `account_xpub` bytes failed to parse as a
+    /// well-formed extended public key.
+    MalformedXpub,
+    /// Any other structural decode / projection failure surfaced by the
+    /// persister. The string is a structural projection — never a raw
+    /// row byte slice or a hex-encoded key.
+    DecodeError(String),
+}
+
+impl std::fmt::Display for CorruptKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::MissingManifest => f.write_str("missing account manifest"),
+            Self::MalformedXpub => f.write_str("malformed account xpub"),
+            Self::DecodeError(s) => write!(f, "decode error: {s}"),
         }
     }
 }
@@ -42,14 +63,15 @@ impl From<SeedUnavailable> for SkipReason {
 /// pass.
 ///
 /// `Ok(LoadOutcome)` with a non-empty `skipped` is **success** — a
-/// skipped wallet is an expected, recoverable state. The `Err` arm is
-/// reserved for genuine load failures (persister I/O, decode
-/// corruption, the fail-closed `WrongSeedForDatabase` escalation).
+/// per-row decode failure on one wallet is recorded and the batch
+/// continues. The `Err` arm is reserved for whole-load failures
+/// (persister I/O, programmer error). Wrong-seed never appears here —
+/// the load path is watch-only.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct LoadOutcome {
     /// Wallets fully reconstructed and registered, in load order.
     pub loaded: Vec<WalletId>,
-    /// Wallets skipped because their seed was unavailable, in load
-    /// order. Never contains a wrong-seed wallet.
+    /// Wallets skipped because their persisted row was corrupt, in load
+    /// order.
     pub skipped: Vec<(WalletId, SkipReason)>,
 }

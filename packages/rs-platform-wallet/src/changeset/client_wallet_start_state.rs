@@ -1,12 +1,17 @@
 //! Per-wallet portion of [`ClientStartState`](crate::changeset::ClientStartState).
 //!
 //! **Keyless by type.** This carries everything needed to *reconstruct*
-//! a wallet — network, birth height, the account manifest, the rebuilt
-//! core-state projection, identities, filtered asset locks — but **no**
-//! [`Wallet`](key_wallet::Wallet) and no seed. The persister can never
-//! mint a `Wallet`; the manager re-derives it from the runtime
-//! `SeedProvider`, runs the wrong-seed gate, then applies this state
-//! (SECRETS.md, enforced structurally).
+//! a watch-only wallet — network, birth height, the account manifest,
+//! the rebuilt core-state projection, identities, filtered asset locks —
+//! but **no** [`Wallet`](key_wallet::Wallet) and no seed. The persister
+//! can never mint a `Wallet`; the manager rebuilds a watch-only one via
+//! [`Wallet::new_watch_only`](key_wallet::wallet::Wallet::new_watch_only)
+//! from the manifest, applies this state, and defers signing-key
+//! derivation to the on-demand sign path
+//! ([`sign_with_mnemonic_resolver`] and its siblings), which fail-closed
+//! gate the resolver-supplied seed against the loaded `wallet_id`.
+//!
+//! [`sign_with_mnemonic_resolver`]: https://docs.rs/rs-platform-wallet-ffi/
 
 use std::collections::BTreeMap;
 

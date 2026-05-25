@@ -618,10 +618,12 @@ impl PlatformWalletPersistence for SqlitePersister {
     /// `wallets` rehydration payload (network, birth height, account
     /// manifest, reconstructed core state, identities, and the
     /// `Consumed`-filtered asset-lock feed). The return type carries
-    /// **no** `Wallet` and no key material — the manager re-derives the
-    /// signing wallet from the runtime `SeedProvider` and runs the
-    /// wrong-seed gate before applying any of this. The structured
-    /// `tracing::info!` summary reports `wallets_rehydrated`.
+    /// **no** `Wallet` and no key material — the manager rebuilds each
+    /// wallet watch-only via `Wallet::new_watch_only` from the manifest
+    /// and applies this state. Signing happens later on demand via the
+    /// `sign_with_mnemonic_resolver` path, which fail-closed gates the
+    /// resolver-supplied seed against the loaded `wallet_id`. The
+    /// structured `tracing::info!` summary reports `wallets_rehydrated`.
     ///
     /// Fail-hard: any row that fails to decode (or carries a malformed
     /// `wallet_id`) aborts the whole load with a typed
@@ -683,8 +685,9 @@ impl PlatformWalletPersistence for SqlitePersister {
         // mints a `Wallet` or touches key material — it hands back the
         // network/birth-height + account manifest + reconstructed core
         // state + identities + the Consumed-filtered asset-lock feed.
-        // The manager re-derives the wallet from the runtime
-        // SeedProvider, runs the wrong-seed gate, then applies this.
+        // The manager rebuilds each wallet watch-only and applies this;
+        // signing-key derivation happens later on demand via the
+        // on-demand sign path, which fail-closed gates the seed.
         let wallet_ids = schema::wallet_meta::list_ids(&conn).map_err(PersistenceError::from)?;
         let wallets_seen = wallet_ids.len();
         for wallet_id in wallet_ids {

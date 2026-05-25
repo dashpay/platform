@@ -44,7 +44,6 @@
 mod file;
 mod keyring;
 mod secret;
-mod seed_provider_adapter;
 mod validate;
 
 #[cfg(any(test, feature = "__secrets-test-helpers"))]
@@ -55,7 +54,6 @@ pub use file::error_bridge::{downcast_failure, FileStoreFailure};
 pub use file::{EncryptedFileCredential, EncryptedFileStore, SERVICE_PREFIX};
 pub use keyring::default_credential_store;
 pub use secret::{SecretBytes, SecretString};
-pub use seed_provider_adapter::CredentialStoreSeedProvider;
 pub use validate::WalletId;
 
 #[cfg(any(test, feature = "__secrets-test-helpers"))]

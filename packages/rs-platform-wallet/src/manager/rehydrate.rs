@@ -1,179 +1,87 @@
-//! Seed → signing [`Wallet`] reconstruction with the fail-closed
-//! wrong-seed gate (A07/A08).
+//! Watch-only wallet reconstruction + persisted core-state application.
 //!
-//! Pure, side-effect-free: no manager state, no I/O, no logging. Given
-//! a keyless account manifest + the persisted wallet id + the runtime
-//! [`WalletSecret`], it re-derives exactly the persisted account set
-//! and proves the secret matches the database *before* any persisted
-//! state is applied. A mismatch is a hard, typed
-//! [`PlatformWalletError::WrongSeedForDatabase`] — never a skip, never
-//! a partial merge.
+//! Load is **seedless** (see [`load_from_persistor`]). For each
+//! persisted wallet we build a watch-only [`Wallet`] from its keyless
+//! `AccountRegistrationEntry` manifest, then apply the keyless
+//! core-state projection on top. No seed, no signing-key derivation.
+//!
+//! The wrong-seed gate has moved to the **first sign** path
+//! (`rs-platform-wallet-ffi::sign_with_mnemonic_resolver` and its
+//! resolver-fed siblings): each sign entrypoint constant-time-compares
+//! the recomputed `wallet_id` against the loaded `wallet_id` and fails
+//! closed on mismatch.
+//!
+//! [`load_from_persistor`]: super::PlatformWalletManager::load_from_persistor
 
-use std::collections::BTreeSet;
-
-use key_wallet::wallet::initialization::{
-    PlatformPaymentAccountSpec, WalletAccountCreationOptions,
-};
+use key_wallet::account::account_collection::AccountCollection;
+use key_wallet::account::Account;
 use key_wallet::wallet::managed_wallet_info::ManagedWalletInfo;
 use key_wallet::wallet::Wallet;
 use key_wallet::Network;
-use subtle::ConstantTimeEq;
 
 use crate::changeset::AccountRegistrationEntry;
 use crate::error::PlatformWalletError;
-use crate::seed_provider::WalletSecret;
+use crate::manager::load_outcome::CorruptKind;
 
-/// Build the [`WalletAccountCreationOptions::SpecificAccounts`] request
-/// that re-derives exactly the account set the manifest describes.
-fn options_from_manifest(manifest: &[AccountRegistrationEntry]) -> WalletAccountCreationOptions {
-    use key_wallet::account::AccountType;
-
-    let mut bip44 = BTreeSet::new();
-    let mut bip32 = BTreeSet::new();
-    let mut coinjoin = BTreeSet::new();
-    let mut topup = BTreeSet::new();
-    let mut platform_payment: BTreeSet<PlatformPaymentAccountSpec> = BTreeSet::new();
-    let mut extra: Vec<AccountType> = Vec::new();
-
-    for e in manifest {
-        match e.account_type {
-            AccountType::Standard {
-                index,
-                standard_account_type,
-            } => {
-                use key_wallet::account::StandardAccountType;
-                match standard_account_type {
-                    StandardAccountType::BIP44Account => {
-                        bip44.insert(index);
-                    }
-                    StandardAccountType::BIP32Account => {
-                        bip32.insert(index);
-                    }
-                }
-            }
-            AccountType::CoinJoin { index } => {
-                coinjoin.insert(index);
-            }
-            AccountType::IdentityTopUp { registration_index } => {
-                topup.insert(registration_index);
-            }
-            AccountType::PlatformPayment { account, key_class } => {
-                platform_payment.insert(PlatformPaymentAccountSpec { account, key_class });
-            }
-            other => extra.push(other),
-        }
-    }
-
-    WalletAccountCreationOptions::SpecificAccounts(
-        bip44,
-        bip32,
-        coinjoin,
-        topup,
-        platform_payment,
-        if extra.is_empty() { None } else { Some(extra) },
-    )
+/// Per-row failure surfacing during watch-only rehydration of a single
+/// persisted wallet. Maps 1:1 to [`CorruptKind`] for the
+/// [`SkipReason`](super::load_outcome::SkipReason) the load loop
+/// records.
+#[derive(Debug)]
+pub(super) enum RehydrateRowError {
+    /// Manifest was empty — no account to rebuild the wallet around.
+    MissingManifest,
+    /// Building a watch-only [`Account`] from a manifest entry failed
+    /// (xpub structurally malformed for its [`AccountType`]).
+    ///
+    /// [`AccountType`]: key_wallet::account::AccountType
+    MalformedXpub,
+    /// `AccountCollection::insert` rejected an account (typically a
+    /// duplicate `account_type` within the manifest).
+    DecodeError(String),
 }
 
-/// Re-derive the signing wallet from `secret` and prove it matches the
-/// persisted database.
+impl From<RehydrateRowError> for CorruptKind {
+    fn from(e: RehydrateRowError) -> Self {
+        match e {
+            RehydrateRowError::MissingManifest => CorruptKind::MissingManifest,
+            RehydrateRowError::MalformedXpub => CorruptKind::MalformedXpub,
+            RehydrateRowError::DecodeError(s) => CorruptKind::DecodeError(s),
+        }
+    }
+}
+
+/// Build a watch-only [`Wallet`] from the keyless account manifest.
 ///
-/// Reconstructs exactly the account set in `manifest`, then runs the
-/// **fail-closed wrong-seed gate**:
+/// Each `AccountRegistrationEntry` becomes an [`Account::from_xpub`]
+/// (watch-only) keyed to `expected_wallet_id`; the assembled
+/// [`AccountCollection`] is handed to [`Wallet::new_watch_only`] under
+/// the same id. No key material crosses this function.
 ///
-/// 1. constant-time compare of the recomputed `wallet_id` against
-///    `expected_wallet_id` (root-key recompute — a genuine
-///    cryptographic guard, not a tautology, for signing wallet types);
-/// 2. constant-time cross-check of every manifest `account_xpub`
-///    against the freshly-derived account's xpub.
-///
-/// Any mismatch yields [`PlatformWalletError::WrongSeedForDatabase`]
-/// before the caller applies any persisted core/identity/asset-lock
-/// state. The transient secret lives only for the duration of this
-/// call; the caller drops the owning [`WalletSecret`] at the end of the
-/// per-wallet iteration.
-///
-/// # Errors
-///
-/// - [`PlatformWalletError::WalletCreation`] if the mnemonic does not
-///   parse or `Wallet::from_*` fails.
-/// - [`PlatformWalletError::WrongSeedForDatabase`] if the recomputed
-///   id or any account xpub does not match the persisted database.
-pub fn rehydrate_wallet(
-    secret: &WalletSecret,
+/// Returns [`RehydrateRowError`] when the row is structurally unusable
+/// (caller maps it onto a per-row [`SkipReason`]).
+pub(super) fn build_watch_only_wallet(
     network: Network,
     expected_wallet_id: [u8; 32],
     manifest: &[AccountRegistrationEntry],
-) -> Result<Wallet, PlatformWalletError> {
-    let options = options_from_manifest(manifest);
-
-    // KNOWN RISK (AR-7): upstream `key_wallet::Wallet` derives `Debug`
-    // and its `WalletType::{Mnemonic,Seed}` variants render the
-    // mnemonic / seed / root xpriv. We never `Debug`/log this `wallet`
-    // value (the wrong-seed error below carries only the two 32-byte
-    // ids). Per the accepted residual-risk decision this is noted, not
-    // mitigated, and not blocking.
-    let wallet = match secret {
-        WalletSecret::Mnemonic(phrase) => {
-            let mnemonic = parse_mnemonic_any_language(phrase.expose()).map_err(|e| {
-                PlatformWalletError::WalletCreation(format!("Invalid mnemonic on rehydrate: {e}"))
-            })?;
-            Wallet::from_mnemonic(mnemonic, network, options).map_err(|e| {
-                PlatformWalletError::WalletCreation(format!(
-                    "Failed to reconstruct wallet from mnemonic: {e}"
-                ))
-            })?
-        }
-        WalletSecret::Seed(bytes) => {
-            let seed_bytes: [u8; 64] = bytes.expose().try_into().map_err(|_| {
-                PlatformWalletError::WalletCreation(
-                    "stored seed material is not 64 bytes".to_string(),
-                )
-            })?;
-            Wallet::from_seed_bytes(seed_bytes, network, options).map_err(|e| {
-                PlatformWalletError::WalletCreation(format!(
-                    "Failed to reconstruct wallet from seed: {e}"
-                ))
-            })?
-        }
-    };
-
-    // Gate 1: recomputed wallet id (root-key recompute) vs persisted.
-    let derived_wallet_id = wallet.compute_wallet_id();
-    let id_ok: bool = derived_wallet_id.ct_eq(&expected_wallet_id).into();
-
-    // Gate 2: every persisted account xpub must reproduce bit-exact.
-    // Constant-time per-pair; accumulate without early-return so the
-    // observable timing does not depend on which pair first differs.
-    let mut xpubs_ok = subtle::Choice::from(1u8);
+) -> Result<Wallet, RehydrateRowError> {
+    if manifest.is_empty() {
+        return Err(RehydrateRowError::MissingManifest);
+    }
+    let mut accounts = AccountCollection::new();
     for entry in manifest {
-        let derived = wallet
-            .accounts
-            .all_accounts()
-            .into_iter()
-            .find(|a| a.account_type == entry.account_type)
-            .map(|a| a.account_xpub);
-        match derived {
-            Some(d) => {
-                let a = d.encode();
-                let b = entry.account_xpub.encode();
-                xpubs_ok &= a.ct_eq(&b);
-            }
-            None => {
-                xpubs_ok = subtle::Choice::from(0u8);
-            }
-        }
+        let account = Account::from_xpub(
+            Some(expected_wallet_id),
+            entry.account_type,
+            entry.account_xpub,
+            network,
+        )
+        .map_err(|_| RehydrateRowError::MalformedXpub)?;
+        accounts
+            .insert(account)
+            .map_err(|e| RehydrateRowError::DecodeError(e.to_string()))?;
     }
-
-    if id_ok && bool::from(xpubs_ok) {
-        Ok(wallet)
-    } else {
-        // `wallet` dropped here — its key material never reaches the
-        // error, which carries only the two public 32-byte ids.
-        Err(PlatformWalletError::WrongSeedForDatabase {
-            expected_wallet_id,
-            derived_wallet_id,
-        })
-    }
+    Ok(Wallet::new_watch_only(network, expected_wallet_id, accounts))
 }
 
 /// Apply the keyless persisted core-state projection onto a
@@ -274,36 +182,10 @@ pub fn apply_persisted_core_state(
     Ok(())
 }
 
-/// Parse a BIP-39 phrase against every supported wordlist in turn.
-/// Mirrors the live creation path's language auto-detection.
-fn parse_mnemonic_any_language(
-    phrase: &str,
-) -> Result<key_wallet::mnemonic::Mnemonic, &'static str> {
-    use key_wallet::mnemonic::{Language, Mnemonic};
-    const LANGUAGES: [Language; 10] = [
-        Language::English,
-        Language::Spanish,
-        Language::French,
-        Language::Italian,
-        Language::Japanese,
-        Language::Korean,
-        Language::ChineseSimplified,
-        Language::ChineseTraditional,
-        Language::Czech,
-        Language::Portuguese,
-    ];
-    for lang in LANGUAGES {
-        if let Ok(m) = Mnemonic::from_phrase(phrase, lang) {
-            return Ok(m);
-        }
-    }
-    Err("phrase does not match any supported BIP-39 wordlist")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::seed_provider::{SecretSeed, WalletSecret};
+    use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 
     fn manifest_for(w: &Wallet) -> Vec<AccountRegistrationEntry> {
         w.accounts
@@ -317,7 +199,7 @@ mod tests {
     }
 
     #[test]
-    fn correct_seed_rehydrates_and_passes_gate() {
+    fn watch_only_rebuild_round_trips_manifest_and_id() {
         let seed = [3u8; 64];
         let w = Wallet::from_seed_bytes(
             seed,
@@ -325,57 +207,30 @@ mod tests {
             WalletAccountCreationOptions::Default,
         )
         .unwrap();
-        let manifest = manifest_for(&w);
         let id = w.compute_wallet_id();
-
-        let secret = WalletSecret::Seed(SecretSeed::new(seed.to_vec()));
-        let out = rehydrate_wallet(&secret, Network::Testnet, id, &manifest).unwrap();
-        assert_eq!(out.compute_wallet_id(), id);
-    }
-
-    #[test]
-    fn wrong_seed_is_hard_fail_not_skip() {
-        let real_seed = [3u8; 64];
-        let w = Wallet::from_seed_bytes(
-            real_seed,
-            Network::Testnet,
-            WalletAccountCreationOptions::Default,
-        )
-        .unwrap();
         let manifest = manifest_for(&w);
-        let expected_id = w.compute_wallet_id();
 
-        // A different seed — wrong for this database.
-        let wrong = WalletSecret::Seed(SecretSeed::new(vec![9u8; 64]));
-        let err = rehydrate_wallet(&wrong, Network::Testnet, expected_id, &manifest)
-            .expect_err("wrong seed must hard-fail");
-        match err {
-            PlatformWalletError::WrongSeedForDatabase {
-                expected_wallet_id,
-                derived_wallet_id,
-            } => {
-                assert_eq!(expected_wallet_id, expected_id);
-                assert_ne!(derived_wallet_id, expected_id);
-                // The error must not leak any key material.
-                let rendered = err_string(&PlatformWalletError::WrongSeedForDatabase {
-                    expected_wallet_id,
-                    derived_wallet_id,
-                });
-                assert!(!rendered.contains("9999"));
-            }
-            other => panic!("expected WrongSeedForDatabase, got {other:?}"),
+        let restored = build_watch_only_wallet(Network::Testnet, id, &manifest).unwrap();
+        assert_eq!(restored.wallet_id, id);
+        assert_eq!(restored.compute_wallet_id(), id);
+        // Every manifest account survives the round trip (count, types).
+        let restored_types: Vec<_> = restored
+            .accounts
+            .all_accounts()
+            .into_iter()
+            .map(|a| a.account_type)
+            .collect();
+        let manifest_types: Vec<_> = manifest.iter().map(|e| e.account_type).collect();
+        assert_eq!(restored_types.len(), manifest_types.len());
+        for t in &manifest_types {
+            assert!(restored_types.contains(t));
         }
     }
 
-    fn err_string(e: &PlatformWalletError) -> String {
-        format!("{e} {e:?}")
-    }
-
     #[test]
-    fn non_64_byte_seed_is_creation_error() {
-        let secret = WalletSecret::Seed(SecretSeed::new(vec![1u8; 32]));
-        let err = rehydrate_wallet(&secret, Network::Testnet, [0u8; 32], &[])
-            .expect_err("short seed must fail");
-        assert!(matches!(err, PlatformWalletError::WalletCreation(_)));
+    fn empty_manifest_is_missing_manifest() {
+        let err = build_watch_only_wallet(Network::Testnet, [0u8; 32], &[])
+            .expect_err("empty manifest must be MissingManifest");
+        assert!(matches!(err, RehydrateRowError::MissingManifest));
     }
 }

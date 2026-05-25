@@ -1,8 +1,20 @@
-//! Item E — `load_from_persistor` end-to-end through a real
-//! `PlatformWalletManager`: seed round-trip + sign-capable after
-//! reload, RT-W wrong-seed hard-fail (≠ skip), RT-S skip path
-//! (absent + LoadOutcome + WalletSkippedOnLoad event + recoverable
-//! re-load), RT-Z secret hygiene.
+//! Item E — `load_from_persistor` (seedless / watch-only) end-to-end
+//! through a real `PlatformWalletManager`.
+//!
+//! Scope after the seedless rework: load reconstructs every persisted
+//! wallet **watch-only** from its keyless account manifest. Wrong-seed
+//! detection has moved to the first-sign path (covered in
+//! `rs-platform-wallet-ffi/tests/sign_wrong_seed_gate.rs`). Per-row
+//! decode failures surface as
+//! [`SkipReason::CorruptPersistedRow`] without aborting the batch.
+//!
+//! RT cases here:
+//! - RT-WO: round-trip — watch-only wallet is registered after reload.
+//! - RT-Corrupt: a row with an empty manifest is skipped with
+//!   `MissingManifest`, the other row loads, a `WalletSkippedOnLoad`
+//!   event fires, `load` returns `Ok`.
+//! - RT-Z: no key/seed material in any `LoadOutcome` / `SkipReason`
+//!   surface (the structural-only contract).
 
 use std::sync::{Arc, Mutex};
 
@@ -13,9 +25,9 @@ use platform_wallet::changeset::{
     PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
 };
 use platform_wallet::events::{EventHandler, PlatformEvent, PlatformEventHandler};
-use platform_wallet::seed_provider::{SecretSeed, SeedProvider, SeedUnavailable, WalletSecret};
+use platform_wallet::manager::load_outcome::CorruptKind;
 use platform_wallet::wallet::platform_wallet::WalletId;
-use platform_wallet::{PlatformWalletError, PlatformWalletManager, SkipReason};
+use platform_wallet::{PlatformWalletManager, SkipReason};
 
 // ---- test doubles ----
 
@@ -81,49 +93,6 @@ impl PlatformEventHandler for RecordingHandler {
     }
 }
 
-/// Seed provider with a per-wallet seed map, plus optional
-/// unavailable / wrong-seed overrides for one specific wallet id.
-struct TestSeeds {
-    seeds: std::collections::HashMap<WalletId, [u8; 64]>,
-    unavailable: Mutex<Option<(WalletId, SeedUnavailable)>>,
-    wrong_for: Mutex<Option<(WalletId, [u8; 64])>>,
-}
-
-impl TestSeeds {
-    fn single(id: WalletId, seed: [u8; 64]) -> Self {
-        let mut m = std::collections::HashMap::new();
-        m.insert(id, seed);
-        Self {
-            seeds: m,
-            unavailable: Mutex::new(None),
-            wrong_for: Mutex::new(None),
-        }
-    }
-    fn with(mut self, id: WalletId, seed: [u8; 64]) -> Self {
-        self.seeds.insert(id, seed);
-        self
-    }
-}
-
-impl SeedProvider for TestSeeds {
-    fn seed_for(&self, wallet_id: [u8; 32]) -> Result<WalletSecret, SeedUnavailable> {
-        if let Some((wid, reason)) = self.unavailable.lock().unwrap().as_ref() {
-            if *wid == wallet_id {
-                return Err(*reason);
-            }
-        }
-        if let Some((wid, wrong)) = self.wrong_for.lock().unwrap().as_ref() {
-            if *wid == wallet_id {
-                return Ok(WalletSecret::Seed(SecretSeed::new(wrong.to_vec())));
-            }
-        }
-        match self.seeds.get(&wallet_id) {
-            Some(s) => Ok(WalletSecret::Seed(SecretSeed::new(s.to_vec()))),
-            None => Err(SeedUnavailable::Absent),
-        }
-    }
-}
-
 // ---- harness ----
 
 fn manifest_and_id(seed: [u8; 64]) -> (Vec<AccountRegistrationEntry>, [u8; 32]) {
@@ -170,10 +139,10 @@ async fn manager(
 
 // ---- tests ----
 
-/// Seed round-trip: a wallet reconstructs and is signing-capable
-/// (WalletType::Seed carries the root key) after reload.
+/// RT-WO: seedless watch-only round-trip — a persisted wallet loads and
+/// is registered after reload (no signing material needed).
 #[tokio::test]
-async fn rt_seed_roundtrip_signing_capable() {
+async fn rt_wo_watch_only_roundtrip() {
     let seed = [0x11; 64];
     let p = Arc::new(FixedLoadPersister::new());
     let h = Arc::new(RecordingHandler::default());
@@ -183,101 +152,68 @@ async fn rt_seed_roundtrip_signing_capable() {
     p.set(st);
 
     let mgr = manager(Arc::clone(&p), Arc::clone(&h)).await;
-    let seeds = TestSeeds::single(id, seed);
-    let outcome = mgr.load_from_persistor(&seeds).await.expect("Ok");
+    let outcome = mgr.load_from_persistor().await.expect("Ok");
 
     assert_eq!(outcome.loaded, vec![id]);
     assert!(outcome.skipped.is_empty());
-    // The wallet is registered. It is signing-capable by construction:
-    // `rehydrate_wallet` only ever yields `WalletType::Seed`/`Mnemonic`
-    // (proven by the gate unit tests) — there is no watch-only path.
     assert!(
         mgr.get_wallet(&id).await.is_some(),
-        "rehydrated signing wallet must be registered"
+        "watch-only restored wallet must be registered"
     );
     assert_eq!(mgr.wallet_ids().await, vec![id]);
 }
 
-/// RT-W: a present-but-wrong seed is a fail-closed
-/// `WrongSeedForDatabase` — NOT a skip, NOT in LoadOutcome.skipped,
-/// NO WalletSkippedOnLoad event. Other wallets still load.
+/// RT-Corrupt: a corrupt row (empty manifest) is skipped with
+/// `MissingManifest`; the other row loads cleanly; the load returns
+/// `Ok`; exactly one `WalletSkippedOnLoad` event fires for the skipped
+/// row.
 #[tokio::test]
-async fn rt_w_wrong_seed_hard_fail_not_skip() {
-    let good_seed = [0x22; 64];
-    let p = Arc::new(FixedLoadPersister::new());
-    let h = Arc::new(RecordingHandler::default());
-    let (id, s) = slice(good_seed);
-    let mut st = ClientStartState::default();
-    st.wallets.insert(id, s);
-    p.set(st);
-
-    let mgr = manager(Arc::clone(&p), Arc::clone(&h)).await;
-    let seeds = TestSeeds::single(id, good_seed);
-    // Force a wrong seed for this exact wallet.
-    *seeds.wrong_for.lock().unwrap() = Some((id, [0x99; 64]));
-
-    let err = mgr
-        .load_from_persistor(&seeds)
-        .await
-        .expect_err("wrong seed must hard-fail the load");
-    match err {
-        PlatformWalletError::WrongSeedForDatabase {
-            expected_wallet_id,
-            derived_wallet_id,
-        } => {
-            assert_eq!(expected_wallet_id, id);
-            assert_ne!(derived_wallet_id, id);
-        }
-        other => panic!("expected WrongSeedForDatabase, got {other:?}"),
-    }
-    // No skip event, nothing registered.
-    assert!(
-        h.events.lock().unwrap().is_empty(),
-        "a wrong seed must NOT emit WalletSkippedOnLoad"
-    );
-    assert!(mgr.get_wallet(&id).await.is_none());
-}
-
-/// RT-S: seed unavailable ⇒ skip. The other wallet loads fully; the
-/// skipped wallet is absent from the manager; LoadOutcome.skipped
-/// carries it; one WalletSkippedOnLoad event is delivered; load
-/// returns Ok. Then making the seed available and re-loading
-/// rehydrates it (recoverable).
-#[tokio::test]
-async fn rt_s_skip_absent_then_recoverable() {
+async fn rt_corrupt_row_skipped_and_other_loads() {
     let seed_a = [0x31; 64];
     let seed_b = [0x32; 64];
     let p = Arc::new(FixedLoadPersister::new());
     let h = Arc::new(RecordingHandler::default());
     let (id_a, sa) = slice(seed_a);
-    let (id_b, sb) = slice(seed_b);
+    let (id_b, _sb) = slice(seed_b);
+
+    // B's row is structurally corrupt — empty manifest.
+    let sb_corrupt = ClientWalletStartState {
+        network: key_wallet::Network::Testnet,
+        birth_height: 1,
+        account_manifest: Vec::new(),
+        core_state: CoreChangeSet::default(),
+        identity_manager: Default::default(),
+        unused_asset_locks: Default::default(),
+    };
+
     let mut st = ClientStartState::default();
     st.wallets.insert(id_a, sa);
-    st.wallets.insert(id_b, sb);
+    st.wallets.insert(id_b, sb_corrupt);
     p.set(st);
 
     let mgr = manager(Arc::clone(&p), Arc::clone(&h)).await;
-
-    // A has its correct seed; B's is explicitly unavailable.
-    let seeds = TestSeeds::single(id_a, seed_a).with(id_b, seed_b);
-    *seeds.unavailable.lock().unwrap() = Some((id_b, SeedUnavailable::Absent));
-
     let outcome = mgr
-        .load_from_persistor(&seeds)
+        .load_from_persistor()
         .await
-        .expect("Ok despite skip");
-    assert_eq!(outcome.loaded, vec![id_a], "A loads fully");
-    assert_eq!(
-        outcome.skipped,
-        vec![(id_b, SkipReason::SeedAbsent)],
-        "B is in skipped with SeedAbsent"
-    );
-    // B absent from the manager (not degraded, not a placeholder).
+        .expect("Ok despite per-row skip");
+
+    assert!(outcome.loaded.contains(&id_a), "A loads fully");
+    assert!(!outcome.loaded.contains(&id_b), "B is skipped, not loaded");
+    assert_eq!(outcome.skipped.len(), 1);
+    let (skipped_id, skipped_reason) = &outcome.skipped[0];
+    assert_eq!(*skipped_id, id_b);
+    assert!(matches!(
+        skipped_reason,
+        SkipReason::CorruptPersistedRow {
+            kind: CorruptKind::MissingManifest
+        }
+    ));
     assert!(mgr.get_wallet(&id_a).await.is_some());
     assert!(
         mgr.get_wallet(&id_b).await.is_none(),
-        "skipped wallet must be ABSENT, not a degraded placeholder"
+        "corrupt row must be ABSENT, not a degraded placeholder"
     );
+
     // Exactly one WalletSkippedOnLoad event for B.
     {
         let events = h.events.lock().unwrap();
@@ -285,87 +221,49 @@ async fn rt_s_skip_absent_then_recoverable() {
         match &events[0] {
             PlatformEvent::WalletSkippedOnLoad { wallet_id, reason } => {
                 assert_eq!(*wallet_id, id_b);
-                assert_eq!(*reason, SkipReason::SeedAbsent);
+                assert!(matches!(
+                    reason,
+                    SkipReason::CorruptPersistedRow {
+                        kind: CorruptKind::MissingManifest
+                    }
+                ));
             }
         }
     }
-
-    // Recoverable: a fresh manager + a persister carrying only B, with
-    // B's seed now available → B loads cleanly (the previously-skipped
-    // wallet recovers on a later targeted re-load).
-    let p2 = Arc::new(FixedLoadPersister::new());
-    let h2 = Arc::new(RecordingHandler::default());
-    let (_id_b2, sb2) = slice(seed_b);
-    let mut st2 = ClientStartState::default();
-    st2.wallets.insert(id_b, sb2);
-    p2.set(st2);
-    let mgr2 = manager(Arc::clone(&p2), Arc::clone(&h2)).await;
-    let seeds2 = TestSeeds::single(id_b, seed_b);
-    let outcome2 = mgr2.load_from_persistor(&seeds2).await.expect("Ok");
-    assert_eq!(
-        outcome2.loaded,
-        vec![id_b],
-        "the previously-skipped wallet now loads"
-    );
-    assert!(outcome2.skipped.is_empty());
-    assert!(mgr2.get_wallet(&id_b).await.is_some());
 }
 
-/// RT-S (ii): a locked store maps to StoreUnavailable, still a skip.
+/// RT-Z: no key/seed material leaks into `LoadOutcome` /
+/// `SkipReason::CorruptPersistedRow` surfaces. The seedless load path
+/// never sees seed bytes so this is mostly a sentinel guard against
+/// future regression where someone embeds row contents in `DecodeError`.
 #[tokio::test]
-async fn rt_s_store_locked_is_skip() {
-    use platform_wallet::seed_provider::SecretStoreErrorKind;
-    let seed = [0x41; 64];
-    let p = Arc::new(FixedLoadPersister::new());
-    let h = Arc::new(RecordingHandler::default());
-    let (id, s) = slice(seed);
-    let mut st = ClientStartState::default();
-    st.wallets.insert(id, s);
-    p.set(st);
-    let mgr = manager(Arc::clone(&p), Arc::clone(&h)).await;
-    let seeds = TestSeeds::single(id, seed);
-    *seeds.unavailable.lock().unwrap() = Some((
-        id,
-        SeedUnavailable::StoreUnavailable(SecretStoreErrorKind::KeyringLocked),
-    ));
-
-    let outcome = mgr.load_from_persistor(&seeds).await.expect("Ok");
-    assert!(outcome.loaded.is_empty());
-    assert_eq!(
-        outcome.skipped,
-        vec![(
-            id,
-            SkipReason::StoreUnavailable(SecretStoreErrorKind::KeyringLocked)
-        )]
-    );
-    assert!(mgr.get_wallet(&id).await.is_none());
-}
-
-/// RT-Z: no seed byte / structural source leaks into LoadOutcome,
-/// SkipReason, or the WrongSeedForDatabase error rendering.
-#[tokio::test]
-async fn rt_z_secret_hygiene() {
+async fn rt_z_secret_hygiene_surfaces() {
     let seed = [0xAB; 64];
     let p = Arc::new(FixedLoadPersister::new());
     let h = Arc::new(RecordingHandler::default());
-    let (id, s) = slice(seed);
+    let (id, _s) = slice(seed);
+
+    // Corrupt row to force a skip and inspect every public surface.
+    let corrupt = ClientWalletStartState {
+        network: key_wallet::Network::Testnet,
+        birth_height: 1,
+        account_manifest: Vec::new(),
+        core_state: CoreChangeSet::default(),
+        identity_manager: Default::default(),
+        unused_asset_locks: Default::default(),
+    };
     let mut st = ClientStartState::default();
-    st.wallets.insert(id, s);
+    st.wallets.insert(id, corrupt);
     p.set(st);
+
     let mgr = manager(Arc::clone(&p), Arc::clone(&h)).await;
-
-    let seeds = TestSeeds::single(id, seed);
-    *seeds.wrong_for.lock().unwrap() = Some((id, [0xCD; 64]));
-    let err = mgr.load_from_persistor(&seeds).await.unwrap_err();
-    let rendered = format!("{err} {err:?}");
-    // 0xAB / 0xCD seed bytes must not appear hex-rendered.
-    assert!(!rendered.to_lowercase().contains(&"ab".repeat(10)));
-    assert!(!rendered.to_lowercase().contains(&"cd".repeat(10)));
-
-    // Skip path rendering carries no secret either.
-    let seeds2 = TestSeeds::single(id, seed);
-    *seeds2.unavailable.lock().unwrap() = Some((id, SeedUnavailable::Absent));
-    let outcome = mgr.load_from_persistor(&seeds2).await.unwrap();
+    let outcome = mgr.load_from_persistor().await.expect("Ok");
     let dbg = format!("{outcome:?}");
+    // 0xAB seed bytes must not appear hex-rendered anywhere.
     assert!(!dbg.to_lowercase().contains(&"ab".repeat(10)));
+    // The structural skip reason renders without any row bytes.
+    for (_, reason) in &outcome.skipped {
+        let rendered = format!("{reason} {reason:?}");
+        assert!(!rendered.to_lowercase().contains(&"ab".repeat(10)));
+    }
 }
