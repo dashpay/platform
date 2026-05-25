@@ -73,9 +73,11 @@ mod tests {
     #[test]
     fn test_sdk_creation_with_context_provider() {
         unsafe {
-            // Create a mock Core SDK handle using an opaque pointer
-            // In real usage, this would come from the Core SDK
-            let core_handle_ptr = std::ptr::dangling_mut::<CoreSDKHandle>();
+            // Create a mock Core SDK handle using a real wrapper struct.
+            // The FFI path now validates and reads `core_sdk_handle.client`.
+            let mut core_handle = CoreSDKHandle {
+                client: std::ptr::dangling_mut::<core::ffi::c_void>(),
+            };
 
             // Create base config
             let dapi_addresses = CString::new("https://testnet.dash.org:3000").unwrap();
@@ -91,7 +93,7 @@ mod tests {
             let extended_config = DashSDKConfigExtended {
                 base_config,
                 context_provider: ptr::null_mut(),
-                core_sdk_handle: core_handle_ptr,
+                core_sdk_handle: &mut core_handle,
             };
 
             // Create SDK with extended config

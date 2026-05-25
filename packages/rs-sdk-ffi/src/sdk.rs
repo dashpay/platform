@@ -7,9 +7,10 @@ use tracing::{debug, error, info, warn};
 use dash_sdk::dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
 use dash_sdk::dpp::version::PlatformVersion;
 use dash_sdk::sdk::AddressList;
-use dash_sdk::{Sdk, SdkBuilder};
+use dash_sdk::{RequestSettings, Sdk, SdkBuilder};
 use std::ffi::CStr;
 use std::str::FromStr;
+use std::time::Duration;
 
 use crate::context_provider::{ContextProviderHandle, ContextProviderWrapper, CoreSDKHandle};
 use crate::types::{DashSDKConfig, FFINetwork, Network, SDKHandle};
@@ -141,7 +142,20 @@ fn build_sdk_builder(config: &DashSDKConfig) -> Result<SdkBuilder, DashSDKResult
         None => SdkBuilder::new_mock(),
     };
 
-    Ok(builder.with_network(network))
+    Ok(apply_common_builder_config(
+        builder.with_network(network),
+        config,
+    ))
+}
+
+fn apply_common_builder_config(builder: SdkBuilder, config: &DashSDKConfig) -> SdkBuilder {
+    builder
+        .with_proofs(!config.skip_asset_lock_proof_verification)
+        .with_settings(RequestSettings {
+            timeout: Some(Duration::from_millis(config.request_timeout_ms)),
+            retries: Some(config.request_retry_count as usize),
+            ..RequestSettings::default()
+        })
 }
 
 fn apply_platform_version(
@@ -164,16 +178,30 @@ fn apply_context_provider(
             unsafe { &*(config.context_provider as *const ContextProviderWrapper) };
         builder = builder.with_context_provider(provider_wrapper.provider());
     } else if !config.core_sdk_handle.is_null() {
-        if let Some(callback_provider) =
-            crate::context_callbacks::CallbackContextProvider::from_global()
-        {
-            builder = builder.with_context_provider(callback_provider);
-        } else {
-            return Err(DashSDKResult::error(DashSDKError::new(
-                DashSDKErrorCode::InternalError,
-                "Failed to create context provider. Make sure to call dash_sdk_register_context_callbacks first.".to_string(),
-            )));
-        }
+        let callback_provider =
+            match crate::context_callbacks::CallbackContextProvider::from_core_sdk_handle(
+                config.core_sdk_handle,
+            ) {
+                Ok(callback_provider) => callback_provider,
+                Err(
+                    crate::context_callbacks::CallbackContextProviderCreateError::NullCoreSdkHandle
+                    | crate::context_callbacks::CallbackContextProviderCreateError::NullCoreClientHandle,
+                ) => {
+                    return Err(DashSDKResult::error(DashSDKError::new(
+                        DashSDKErrorCode::InvalidParameter,
+                        "Invalid core SDK handle: client pointer is null".to_string(),
+                    )));
+                }
+                Err(
+                    crate::context_callbacks::CallbackContextProviderCreateError::MissingGlobalCallbacks,
+                ) => {
+                    return Err(DashSDKResult::error(DashSDKError::new(
+                        DashSDKErrorCode::InternalError,
+                        "Failed to create context provider. Make sure to call dash_sdk_register_context_callbacks first.".to_string(),
+                    )));
+                }
+            };
+        builder = builder.with_context_provider(callback_provider);
     } else if let Some(callback_provider) =
         crate::context_callbacks::CallbackContextProvider::from_global()
     {
@@ -300,59 +328,36 @@ fn build_trusted_sdk_builder(
         }
     };
 
-    let builder = if config.dapi_addresses.is_null() {
-        info!("dash_sdk_create_trusted: no DAPI addresses provided, using defaults for network");
-        match network {
-            Network::Testnet => SdkBuilder::new_testnet(),
-            Network::Mainnet => SdkBuilder::new_mainnet(),
-            _ => {
-                error!(
-                    ?network,
-                    "dash_sdk_create_trusted: no DAPI addresses for network"
-                );
-                return Err(DashSDKResult::error(DashSDKError::new(
-                    DashSDKErrorCode::InvalidParameter,
-                    format!("DAPI addresses not available for network: {:?}", network),
-                )));
+    let builder = match parse_dapi_addresses(config)? {
+        None => {
+            info!(
+                "dash_sdk_create_trusted: no DAPI addresses provided, using defaults for network"
+            );
+            match network {
+                Network::Testnet => SdkBuilder::new_testnet(),
+                Network::Mainnet => SdkBuilder::new_mainnet(),
+                _ => {
+                    error!(
+                        ?network,
+                        "dash_sdk_create_trusted: no DAPI addresses for network"
+                    );
+                    return Err(DashSDKResult::error(DashSDKError::new(
+                        DashSDKErrorCode::InvalidParameter,
+                        format!("DAPI addresses not available for network: {:?}", network),
+                    )));
+                }
             }
         }
-    } else {
-        let addresses_str = unsafe { CStr::from_ptr(config.dapi_addresses) }
-            .to_str()
-            .map_err(|e| {
-                DashSDKResult::error(DashSDKError::new(
-                    DashSDKErrorCode::InvalidParameter,
-                    format!("Invalid DAPI addresses string: {}", e),
-                ))
-            })?;
-
-        if addresses_str.is_empty() {
-            error!("dash_sdk_create_trusted: empty DAPI addresses provided");
-            return Err(DashSDKResult::error(DashSDKError::new(
-                DashSDKErrorCode::InvalidParameter,
-                "DAPI addresses cannot be empty for trusted setup".to_string(),
-            )));
+        Some(address_list) => {
+            info!("dash_sdk_create_trusted: using provided DAPI addresses");
+            SdkBuilder::new(address_list).with_network(network)
         }
-
-        info!(
-            addresses = addresses_str,
-            "dash_sdk_create_trusted: using provided DAPI addresses"
-        );
-        let address_list = AddressList::from_str(addresses_str).map_err(|e| {
-            error!(error = %e, "dash_sdk_create_trusted: failed to parse addresses");
-            DashSDKResult::error(DashSDKError::new(
-                DashSDKErrorCode::InvalidParameter,
-                format!("Failed to parse DAPI addresses: {}", e),
-            ))
-        })?;
-        info!("dash_sdk_create_trusted: successfully parsed addresses");
-
-        SdkBuilder::new(address_list).with_network(network)
     };
 
     info!("dash_sdk_create_trusted: adding trusted context provider to builder");
     Ok((
-        builder.with_context_provider(Arc::clone(&trusted_provider)),
+        apply_common_builder_config(builder, config)
+            .with_context_provider(Arc::clone(&trusted_provider)),
         trusted_provider,
     ))
 }
@@ -741,9 +746,12 @@ pub unsafe extern "C" fn dash_sdk_create_with_callbacks_and_protocol_version(
 mod tests {
     use super::*;
     use crate::{
-        dash_sdk_destroy, dash_sdk_error_free, dash_sdk_get_inner_sdk_ptr, DashSDKErrorCode,
-        FFINetwork,
+        context_callbacks::{set_global_callbacks, CallbackResult, ContextProviderCallbacks},
+        dash_sdk_create_extended, dash_sdk_destroy, dash_sdk_error_free,
+        dash_sdk_get_inner_sdk_ptr, DashSDKErrorCode, FFINetwork,
     };
+    use std::ffi::CString;
+    use std::os::raw::c_void;
 
     unsafe fn read_error_message(error: *mut crate::DashSDKError) -> String {
         std::ffi::CStr::from_ptr((*error).message)
@@ -831,6 +839,127 @@ mod tests {
 
         let error = unsafe { &*result.error };
         assert_eq!(error.code, DashSDKErrorCode::InvalidParameter);
+
+        unsafe {
+            dash_sdk_error_free(result.error);
+        }
+    }
+
+    #[test]
+    fn build_sdk_builder_applies_proofs_and_request_settings() {
+        let config = DashSDKConfig {
+            network: FFINetwork::Testnet,
+            dapi_addresses: std::ptr::null(),
+            skip_asset_lock_proof_verification: true,
+            request_retry_count: 7,
+            request_timeout_ms: 1_234,
+        };
+
+        let builder = match build_sdk_builder(&config) {
+            Ok(builder) => builder,
+            Err(_) => panic!("builder should be created"),
+        };
+        let sdk = builder.build().expect("mock SDK should build");
+
+        assert!(!sdk.prove());
+        assert_eq!(sdk.query_settings().request_settings.retries, Some(7));
+        assert_eq!(
+            sdk.query_settings().request_settings.timeout,
+            Some(Duration::from_millis(1_234))
+        );
+    }
+
+    #[test]
+    fn build_trusted_sdk_builder_empty_addresses_use_network_defaults() {
+        let dapi_addresses = CString::new("").expect("cstring");
+        let config = DashSDKConfig {
+            network: FFINetwork::Testnet,
+            dapi_addresses: dapi_addresses.as_ptr(),
+            skip_asset_lock_proof_verification: true,
+            request_retry_count: 4,
+            request_timeout_ms: 5_678,
+        };
+
+        let (builder, _trusted_provider) = match build_trusted_sdk_builder(&config) {
+            Ok(parts) => parts,
+            Err(_) => panic!("trusted builder should accept empty addresses"),
+        };
+        let sdk = builder.build().expect("trusted SDK builder should build");
+
+        assert_eq!(sdk.network, Network::Testnet);
+        assert!(!sdk.prove());
+        assert_eq!(sdk.query_settings().request_settings.retries, Some(4));
+        assert_eq!(
+            sdk.query_settings().request_settings.timeout,
+            Some(Duration::from_millis(5_678))
+        );
+    }
+
+    #[test]
+    fn dash_sdk_create_extended_rejects_null_core_client_handle() {
+        extern "C" fn get_height_cb(_h: *mut c_void, out: *mut u32) -> CallbackResult {
+            unsafe {
+                if !out.is_null() {
+                    *out = 0;
+                }
+            }
+            CallbackResult {
+                success: true,
+                error_code: 0,
+                error_message: std::ptr::null(),
+            }
+        }
+
+        extern "C" fn get_quorum_pk_cb(
+            _h: *mut c_void,
+            _qt: u32,
+            _qh: *const u8,
+            _hgt: u32,
+            out: *mut u8,
+        ) -> CallbackResult {
+            unsafe {
+                if !out.is_null() {
+                    std::ptr::write_bytes(out, 0, 48);
+                }
+            }
+            CallbackResult {
+                success: true,
+                error_code: 0,
+                error_message: std::ptr::null(),
+            }
+        }
+
+        unsafe {
+            set_global_callbacks(ContextProviderCallbacks {
+                core_handle: std::ptr::dangling_mut::<c_void>(),
+                get_platform_activation_height: get_height_cb,
+                get_quorum_public_key: get_quorum_pk_cb,
+            })
+            .expect("global callbacks should be set");
+        }
+
+        let mut core_sdk_handle = CoreSDKHandle {
+            client: std::ptr::null_mut(),
+        };
+        let extended_config = DashSDKConfigExtended {
+            base_config: DashSDKConfig {
+                network: FFINetwork::Testnet,
+                dapi_addresses: std::ptr::null(),
+                skip_asset_lock_proof_verification: false,
+                request_retry_count: 3,
+                request_timeout_ms: 30_000,
+            },
+            context_provider: std::ptr::null_mut(),
+            core_sdk_handle: &mut core_sdk_handle,
+        };
+
+        let result = unsafe { dash_sdk_create_extended(&extended_config) };
+
+        assert!(!result.error.is_null(), "expected invalid handle error");
+        let error = unsafe { &*result.error };
+        assert_eq!(error.code, DashSDKErrorCode::InvalidParameter);
+        let message = unsafe { read_error_message(result.error) };
+        assert!(message.contains("Invalid core SDK handle"));
 
         unsafe {
             dash_sdk_error_free(result.error);

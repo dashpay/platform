@@ -15,6 +15,8 @@ use dash_sdk::dpp::version::PlatformVersion;
 use dash_sdk::error::ContextProviderError;
 use drive_proof_verifier::ContextProvider;
 
+use crate::context_provider::CoreSDKHandle;
+
 /// Result type for FFI callbacks
 #[repr(C)]
 pub struct CallbackResult {
@@ -93,6 +95,13 @@ pub struct CallbackContextProvider {
     callbacks: ContextProviderCallbacks,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CallbackContextProviderCreateError {
+    NullCoreSdkHandle,
+    NullCoreClientHandle,
+    MissingGlobalCallbacks,
+}
+
 impl CallbackContextProvider {
     /// Create a new callback-based context provider
     pub fn new(callbacks: ContextProviderCallbacks) -> Self {
@@ -102,6 +111,27 @@ impl CallbackContextProvider {
     /// Create from global callbacks if available
     pub fn from_global() -> Option<Self> {
         get_global_callbacks().map(Self::new)
+    }
+
+    /// Create a callback-based provider using the globally registered callbacks
+    /// but replacing the callback handle with the provided Core SDK client handle.
+    pub fn from_core_sdk_handle(
+        core_sdk_handle: *mut CoreSDKHandle,
+    ) -> Result<Self, CallbackContextProviderCreateError> {
+        if core_sdk_handle.is_null() {
+            return Err(CallbackContextProviderCreateError::NullCoreSdkHandle);
+        }
+
+        let core_sdk_handle = unsafe { &*core_sdk_handle };
+        if core_sdk_handle.client.is_null() {
+            return Err(CallbackContextProviderCreateError::NullCoreClientHandle);
+        }
+
+        let mut callbacks = get_global_callbacks()
+            .ok_or(CallbackContextProviderCreateError::MissingGlobalCallbacks)?;
+        callbacks.core_handle = core_sdk_handle.client;
+
+        Ok(Self::new(callbacks))
     }
 }
 
@@ -185,5 +215,108 @@ impl ContextProvider for CallbackContextProvider {
     ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
         // TODO: Implement when Core SDK supports token configuration retrieval
         Ok(None)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static LAST_CORE_HANDLE: AtomicUsize = AtomicUsize::new(0);
+
+    extern "C" fn get_height_cb(handle: *mut c_void, out: *mut u32) -> CallbackResult {
+        LAST_CORE_HANDLE.store(handle as usize, Ordering::SeqCst);
+        unsafe {
+            if !out.is_null() {
+                *out = 42;
+            }
+        }
+        CallbackResult {
+            success: true,
+            error_code: 0,
+            error_message: std::ptr::null(),
+        }
+    }
+
+    extern "C" fn get_quorum_pk_cb(
+        _handle: *mut c_void,
+        _quorum_type: u32,
+        _quorum_hash: *const u8,
+        _core_chain_locked_height: u32,
+        out: *mut u8,
+    ) -> CallbackResult {
+        unsafe {
+            if !out.is_null() {
+                std::ptr::write_bytes(out, 0, 48);
+            }
+        }
+        CallbackResult {
+            success: true,
+            error_code: 0,
+            error_message: std::ptr::null(),
+        }
+    }
+
+    #[test]
+    fn from_core_sdk_handle_uses_client_handle_instead_of_global_handle() {
+        let global_handle = std::ptr::dangling_mut::<c_void>();
+        let core_client_handle = std::ptr::without_provenance_mut::<c_void>(0x1234usize);
+
+        unsafe {
+            set_global_callbacks(ContextProviderCallbacks {
+                core_handle: global_handle,
+                get_platform_activation_height: get_height_cb,
+                get_quorum_public_key: get_quorum_pk_cb,
+            })
+            .expect("global callbacks should be set");
+        }
+
+        let mut core_sdk_handle = CoreSDKHandle {
+            client: core_client_handle,
+        };
+
+        let provider = CallbackContextProvider::from_core_sdk_handle(&mut core_sdk_handle)
+            .expect("provider should be created from core SDK handle");
+
+        let height = provider
+            .get_platform_activation_height()
+            .expect("callback should succeed");
+
+        assert_eq!(height, 42);
+        assert_eq!(
+            LAST_CORE_HANDLE.load(Ordering::SeqCst),
+            core_client_handle as usize
+        );
+        assert_ne!(
+            LAST_CORE_HANDLE.load(Ordering::SeqCst),
+            global_handle as usize
+        );
+    }
+
+    #[test]
+    fn from_core_sdk_handle_rejects_null_client_handle() {
+        unsafe {
+            set_global_callbacks(ContextProviderCallbacks {
+                core_handle: std::ptr::dangling_mut::<c_void>(),
+                get_platform_activation_height: get_height_cb,
+                get_quorum_public_key: get_quorum_pk_cb,
+            })
+            .expect("global callbacks should be set");
+        }
+
+        let mut core_sdk_handle = CoreSDKHandle {
+            client: std::ptr::null_mut(),
+        };
+
+        let err = match CallbackContextProvider::from_core_sdk_handle(&mut core_sdk_handle) {
+            Ok(_) => panic!("null client handles must be rejected"),
+            Err(err) => err,
+        };
+
+        assert_eq!(
+            err,
+            CallbackContextProviderCreateError::NullCoreClientHandle
+        );
     }
 }
