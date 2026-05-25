@@ -1549,8 +1549,8 @@ dependencies = [
 
 [[package]]
 name = "dash-network"
-version = "0.42.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=cfb01fa751951b628a7272558e93278348b2cd1f#cfb01fa751951b628a7272558e93278348b2cd1f"
+version = "0.43.0"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=f569e7b7b99dfe589c41f9ba7d36fbbe6805acdc#f569e7b7b99dfe589c41f9ba7d36fbbe6805acdc"
 dependencies = [
  "bincode",
  "bincode_derive",
@@ -1560,8 +1560,8 @@ dependencies = [
 
 [[package]]
 name = "dash-network-seeds"
-version = "0.42.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=cfb01fa751951b628a7272558e93278348b2cd1f#cfb01fa751951b628a7272558e93278348b2cd1f"
+version = "0.43.0"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=f569e7b7b99dfe589c41f9ba7d36fbbe6805acdc#f569e7b7b99dfe589c41f9ba7d36fbbe6805acdc"
 dependencies = [
  "dash-network",
 ]
@@ -1637,8 +1637,8 @@ dependencies = [
 
 [[package]]
 name = "dash-spv"
-version = "0.42.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=cfb01fa751951b628a7272558e93278348b2cd1f#cfb01fa751951b628a7272558e93278348b2cd1f"
+version = "0.43.0"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=f569e7b7b99dfe589c41f9ba7d36fbbe6805acdc#f569e7b7b99dfe589c41f9ba7d36fbbe6805acdc"
 dependencies = [
  "async-trait",
  "chrono",
@@ -1647,6 +1647,7 @@ dependencies = [
  "dashcore",
  "dashcore_hashes",
  "futures",
+ "git-state",
  "hex",
  "key-wallet",
  "key-wallet-manager",
@@ -1665,8 +1666,8 @@ dependencies = [
 
 [[package]]
 name = "dashcore"
-version = "0.42.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=cfb01fa751951b628a7272558e93278348b2cd1f#cfb01fa751951b628a7272558e93278348b2cd1f"
+version = "0.43.0"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=f569e7b7b99dfe589c41f9ba7d36fbbe6805acdc#f569e7b7b99dfe589c41f9ba7d36fbbe6805acdc"
 dependencies = [
  "anyhow",
  "base64-compat",
@@ -1691,13 +1692,13 @@ dependencies = [
 
 [[package]]
 name = "dashcore-private"
-version = "0.42.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=cfb01fa751951b628a7272558e93278348b2cd1f#cfb01fa751951b628a7272558e93278348b2cd1f"
+version = "0.43.0"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=f569e7b7b99dfe589c41f9ba7d36fbbe6805acdc#f569e7b7b99dfe589c41f9ba7d36fbbe6805acdc"
 
 [[package]]
 name = "dashcore-rpc"
-version = "0.42.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=cfb01fa751951b628a7272558e93278348b2cd1f#cfb01fa751951b628a7272558e93278348b2cd1f"
+version = "0.43.0"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=f569e7b7b99dfe589c41f9ba7d36fbbe6805acdc#f569e7b7b99dfe589c41f9ba7d36fbbe6805acdc"
 dependencies = [
  "dashcore-rpc-json",
  "hex",
@@ -1709,8 +1710,8 @@ dependencies = [
 
 [[package]]
 name = "dashcore-rpc-json"
-version = "0.42.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=cfb01fa751951b628a7272558e93278348b2cd1f#cfb01fa751951b628a7272558e93278348b2cd1f"
+version = "0.43.0"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=f569e7b7b99dfe589c41f9ba7d36fbbe6805acdc#f569e7b7b99dfe589c41f9ba7d36fbbe6805acdc"
 dependencies = [
  "bincode",
  "dashcore",
@@ -1724,8 +1725,8 @@ dependencies = [
 
 [[package]]
 name = "dashcore_hashes"
-version = "0.42.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=cfb01fa751951b628a7272558e93278348b2cd1f#cfb01fa751951b628a7272558e93278348b2cd1f"
+version = "0.43.0"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=f569e7b7b99dfe589c41f9ba7d36fbbe6805acdc#f569e7b7b99dfe589c41f9ba7d36fbbe6805acdc"
 dependencies = [
  "bincode",
  "dashcore-private",
@@ -2631,6 +2632,11 @@ dependencies = [
  "color_quant",
  "weezl",
 ]
+
+[[package]]
+name = "git-state"
+version = "0.43.0"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=f569e7b7b99dfe589c41f9ba7d36fbbe6805acdc#f569e7b7b99dfe589c41f9ba7d36fbbe6805acdc"
 
 [[package]]
 name = "glob"
@@ -3773,8 +3779,8 @@ dependencies = [
 
 [[package]]
 name = "key-wallet"
-version = "0.42.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=cfb01fa751951b628a7272558e93278348b2cd1f#cfb01fa751951b628a7272558e93278348b2cd1f"
+version = "0.43.0"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=f569e7b7b99dfe589c41f9ba7d36fbbe6805acdc#f569e7b7b99dfe589c41f9ba7d36fbbe6805acdc"
 dependencies = [
  "aes",
  "async-trait",
@@ -3801,8 +3807,8 @@ dependencies = [
 
 [[package]]
 name = "key-wallet-ffi"
-version = "0.42.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=cfb01fa751951b628a7272558e93278348b2cd1f#cfb01fa751951b628a7272558e93278348b2cd1f"
+version = "0.43.0"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=f569e7b7b99dfe589c41f9ba7d36fbbe6805acdc#f569e7b7b99dfe589c41f9ba7d36fbbe6805acdc"
 dependencies = [
  "cbindgen 0.29.2",
  "dash-network",
@@ -3817,8 +3823,8 @@ dependencies = [
 
 [[package]]
 name = "key-wallet-manager"
-version = "0.42.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=cfb01fa751951b628a7272558e93278348b2cd1f#cfb01fa751951b628a7272558e93278348b2cd1f"
+version = "0.43.0"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=f569e7b7b99dfe589c41f9ba7d36fbbe6805acdc#f569e7b7b99dfe589c41f9ba7d36fbbe6805acdc"
 dependencies = [
  "async-trait",
  "bincode",
@@ -5095,8 +5101,8 @@ version = "0.14.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "343d3bd7056eda839b03204e68deff7d1b13aba7af2b2fd16890697274262ee7"
 dependencies = [
- "heck 0.4.1",
- "itertools 0.13.0",
+ "heck 0.5.0",
+ "itertools 0.14.0",
  "log",
  "multimap",
  "petgraph",
@@ -5117,7 +5123,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a56d757972c98b346a9b766e3f02746cde6dd1cd1d1d563472929fdd74bec4d"
 dependencies = [
  "anyhow",
- "itertools 0.13.0",
+ "itertools 0.14.0",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
@@ -5130,7 +5136,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "27c6023962132f4b30eb4c172c91ce92d933da334c59c23cddee82358ddafb0b"
 dependencies = [
  "anyhow",
- "itertools 0.13.0",
+ "itertools 0.14.0",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
@@ -7481,9 +7487,9 @@ dependencies = [
 
 [[package]]
 name = "tonic-web-wasm-client"
-version = "0.8.0"
+version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "898cd44be5e23e59d2956056538f1d6b3c5336629d384ffd2d92e76f87fb98ff"
+checksum = "3c0469c353de5f665c95f898074b5b004b500c6722214c3249f1dc79c0a2a3f6"
 dependencies = [
  "base64 0.22.1",
  "byteorder",
@@ -8235,9 +8241,9 @@ dependencies = [
 
 [[package]]
 name = "wasm-streams"
-version = "0.4.2"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "15053d8d85c7eccdbefef60f06769760a563c7f0a9d6902a13d35c7800b0ad65"
+checksum = "9d1ec4f6517c9e11ae630e200b2b65d193279042e28edd4a2cda233e46670bbb"
 dependencies = [
  "futures-util",
  "js-sys",
