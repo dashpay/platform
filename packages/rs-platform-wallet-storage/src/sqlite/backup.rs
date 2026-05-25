@@ -119,6 +119,25 @@ pub fn run_to(src: &Connection, dest: &Path) -> Result<(), WalletStorageError> {
 /// caller must guarantee the destination is not held open by this
 /// process. The caller (the persister's `restore_from_inner`) handles
 /// the pre-restore auto-backup gate.
+///
+/// # Atomicity
+///
+/// The restore is staged in two phases bounded by an exclusive
+/// advisory file lock on `dest_db_path` (kept across the entire body):
+///
+/// 1. Open the source read-only; run `PRAGMA integrity_check` +
+///    schema-history + max-version sniffs. Any failure here aborts
+///    before the live destination is touched.
+/// 2. Stream the source into a `NamedTempFile` in `dest_db_path`'s
+///    parent directory; re-run integrity + schema gates against the
+///    STAGED bytes (catches a torn `io::copy`); unlink the existing
+///    `-wal` / `-shm` siblings; chmod the temp to 0o600; then
+///    `persist` over `dest_db_path` as an atomic rename.
+///
+/// Either both the main DB and its WAL/SHM siblings are replaced, or
+/// — on any pre-persist failure — none of them are touched. The
+/// exclusive lock prevents a racing opener from materialising new
+/// WAL/SHM siblings against the about-to-be-replaced inode.
 pub fn restore_from(dest_db_path: &Path, src_backup: &Path) -> Result<(), WalletStorageError> {
     // 1. Confirm the source is openable, then run cheap pre-staging
     //    integrity + schema-history + max-version sniffs against the
@@ -146,26 +165,42 @@ pub fn restore_from(dest_db_path: &Path, src_backup: &Path) -> Result<(), Wallet
     crate::sqlite::migrations::assert_schema_version_supported(&src)?;
     drop(src);
 
-    // 2. Try-lock the destination so we don't replace a DB another
-    //    process holds open.
-    if dest_db_path.exists() {
+    // 2. ATOM-005 (A-2): take an exclusive advisory lock on the
+    //    destination and HOLD it across the entire restore body. The
+    //    pre-A-2 code probed the lock, dropped the handle, then ran
+    //    steps 3-7 unlocked — a concurrent process opening
+    //    `dest_db_path` between the probe and `tmp.persist` would race
+    //    the rename and end up holding a fd against the unlinked old
+    //    inode while the new DB takes its place. Keeping the guard
+    //    `_lock` alive in scope closes that window.
+    //
+    //    On filesystems without flock support (the previous silent-skip
+    //    arm) we emit a structured warn so operators know the safety
+    //    net is bypassed — still proceed because there's no alternative
+    //    on such filesystems, but never silently.
+    let _lock: Option<std::fs::File> = if dest_db_path.exists() {
         use fs2::FileExt;
         let f = std::fs::OpenOptions::new()
             .read(true)
             .write(true)
             .open(dest_db_path)?;
         match f.try_lock_exclusive() {
-            Ok(()) => {
-                let _ = FileExt::unlock(&f);
-            }
+            Ok(()) => Some(f),
             Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                 return Err(WalletStorageError::RestoreDestinationLocked);
             }
             Err(_) => {
-                // Advisory locks unsupported on this FS — proceed.
+                tracing::warn!(
+                    target: "platform_wallet_storage",
+                    dest = %dest_db_path.display(),
+                    "advisory lock unsupported on this filesystem; concurrent-writer race possible"
+                );
+                None
             }
         }
-    }
+    } else {
+        None
+    };
 
     // 3. Stage the source into a NamedTempFile in the destination's
     //    parent dir (unguessable name, no symlink-plant TOCTOU).
@@ -222,14 +257,26 @@ pub fn restore_from(dest_db_path: &Path, src_backup: &Path) -> Result<(), Wallet
         }
     }
 
-    // 6. Persist atomically over the destination.
+    // 6. ATOM-010 (A-5): chmod 600 on the temp BEFORE persist so the
+    //    destination inherits owner-only mode via the atomic rename.
+    //    Pre-A-5 the chmod ran post-persist — a rare chmod failure
+    //    returned Err while leaving the new DB live at the destination
+    //    (caller thought restore rolled back, reality was mixed).
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        tmp.as_file()
+            .set_permissions(std::fs::Permissions::from_mode(0o600))?;
+    }
+
+    // 7. Persist atomically over the destination.
     tmp.persist(dest_db_path)
         .map_err(|e| WalletStorageError::Io(e.error))?;
 
-    // 7. SEC-004: chmod 600 on Unix so the restored DB doesn't inherit
-    //    a wider mode from a previous file at the same path. Windows
-    //    has no equivalent permission model here — skipped.
+    // 8. Re-tighten siblings (SQLite may materialise -wal/-shm on next
+    //    open; this is idempotent at restore-completion time).
     apply_secure_permissions(dest_db_path)?;
+    // Lock guard is released by `_lock` going out of scope here.
     Ok(())
 }
 
