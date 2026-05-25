@@ -8,6 +8,8 @@
 
 mod common;
 
+use std::ffi::OsString;
+use std::os::unix::ffi::OsStringExt;
 use std::os::unix::fs::PermissionsExt;
 
 use common::{ensure_wallet_meta, wid};
@@ -58,4 +60,88 @@ fn wal_and_shm_sidecars_are_chmodded_0o600() {
             mode
         );
     }
+}
+
+/// TC-CODE-011-a: `apply_secure_permissions` survives a non-UTF-8 DB
+/// filename. The pre-fix `to_string_lossy().to_string()` corrupted the
+/// non-UTF-8 bytes into U+FFFD, so the sidecar lookup missed the real
+/// `<name>-wal` / `<name>-shm` files and silently skipped the chmod.
+/// With `OsString::push` the bytes round-trip intact.
+#[test]
+fn tc_code_011_a_non_utf8_db_path_sidecars_chmodded() {
+    let tmp = tempfile::tempdir().unwrap();
+    // Build a filename `\xFF\xFE.db` — two invalid-UTF-8 bytes plus an
+    // ASCII suffix. Path with bytes like this is legal on Unix but
+    // becomes `?\xEF\xBF\xBD?.db` under `to_string_lossy`.
+    let db_name = OsString::from_vec(vec![0xFF, 0xFE, b'.', b'd', b'b']);
+    let wal_name = OsString::from_vec(vec![0xFF, 0xFE, b'.', b'd', b'b', b'-', b'w', b'a', b'l']);
+    let shm_name = OsString::from_vec(vec![0xFF, 0xFE, b'.', b'd', b'b', b'-', b's', b'h', b'm']);
+    let db_path = tmp.path().join(&db_name);
+    let wal = tmp.path().join(&wal_name);
+    let shm = tmp.path().join(&shm_name);
+    // Plant the trio with permissive perms so the chmod is observable.
+    for p in [&db_path, &wal, &shm] {
+        std::fs::write(p, b"x").unwrap();
+        std::fs::set_permissions(p, std::fs::Permissions::from_mode(0o666)).unwrap();
+    }
+
+    platform_wallet_storage::sqlite::util::permissions::apply_secure_permissions(&db_path)
+        .expect("apply_secure_permissions");
+
+    for p in [&db_path, &wal, &shm] {
+        let mode = std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+        assert_eq!(
+            mode,
+            0o600,
+            "expected 0o600 on non-UTF-8 path {} after apply_secure_permissions, got {:o}",
+            p.display(),
+            mode
+        );
+    }
+}
+
+/// TC-CODE-011-b: `apply_secure_permissions` is a no-op (Ok) when the
+/// sidecars don't exist. The `set_permissions` call sees
+/// `ErrorKind::NotFound` and swallows it — no `exists()` gate, no
+/// race window.
+#[test]
+fn tc_code_011_b_no_sidecars_is_ok() {
+    let tmp = tempfile::tempdir().unwrap();
+    let db_path = tmp.path().join("solo.db");
+    std::fs::write(&db_path, b"x").unwrap();
+    // No -wal / -shm planted on purpose.
+    platform_wallet_storage::sqlite::util::permissions::apply_secure_permissions(&db_path)
+        .expect("apply_secure_permissions on solo DB must be Ok");
+    let mode = std::fs::metadata(&db_path).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode, 0o600);
+    // Source-level regression: the helper must NOT contain `exists(`
+    // anywhere in its sibling-chmod path.
+    let src = include_str!("../src/sqlite/util/permissions.rs");
+    assert!(
+        !src.contains("sibling.exists("),
+        "permissions.rs must not pre-gate set_permissions on sibling.exists() (TOCTOU)"
+    );
+    assert!(
+        !src.contains(".to_string_lossy().to_string()"),
+        "permissions.rs must not build sibling paths via .to_string_lossy().to_string() (loses non-UTF-8 bytes)"
+    );
+}
+
+/// TC-CODE-011-c: the same OsString + NotFound-swallow pattern in
+/// `backup.rs`'s WAL/SHM-unlink loop (DRY motif).
+#[test]
+fn tc_code_011_c_backup_wal_shm_unlink_no_lossy_no_exists_gate() {
+    let src = include_str!("../src/sqlite/backup.rs");
+    // The unlink loop now uses OsString::push, not to_string_lossy.
+    // We can't structurally diff the loop, but the file must not
+    // contain the lossy pattern on the sidecar build path.
+    assert!(
+        !src.contains("s.to_string_lossy().to_string()"),
+        "backup.rs must not build sibling paths via to_string_lossy().to_string()"
+    );
+    // And remove_file must not be gated on sibling.exists().
+    assert!(
+        !src.contains("sibling.exists()"),
+        "backup.rs WAL/SHM-unlink must not pre-gate remove_file on sibling.exists() (TOCTOU)"
+    );
 }

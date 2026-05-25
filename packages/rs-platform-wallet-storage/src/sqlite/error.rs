@@ -55,6 +55,8 @@ pub enum WalletStorageError {
     /// `PRAGMA integrity_check` ran successfully but reported a
     /// non-`ok` result. `report` carries SQLite's own diagnostic
     /// text — not a user-facing message, not a stringified source.
+    /// May be multi-line (`\n`-joined): SQLite returns one row per
+    /// detected problem and the helper preserves every line.
     #[error("integrity check failed: {report}")]
     IntegrityCheckFailed { report: String },
 

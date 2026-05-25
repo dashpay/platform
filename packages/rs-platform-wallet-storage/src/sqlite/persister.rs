@@ -28,12 +28,20 @@ use crate::sqlite::util::safe_cast;
 pub(crate) const LOAD_UNIMPLEMENTED: &[&str] = &["ClientStartState::wallets"];
 
 /// Outcome of a `prune_backups` call.
+///
+/// Invariant: `kept == total_eligible - removed.len()`. A file is
+/// counted as `kept` if it survived the policy (retained-by-rule) OR
+/// if `remove_file` failed (`failed_removals` is a subset of `kept`).
+/// Either way, the file is still on disk after this call.
 #[derive(Debug)]
 pub struct PruneReport {
     /// Paths that were unlinked, sorted oldest-first by filename
     /// timestamp.
     pub removed: Vec<PathBuf>,
-    /// Number of files that remain in the directory after pruning.
+    /// Files still on disk after this call. Equals
+    /// `total_eligible - removed.len()` and includes every
+    /// `failed_removals` entry — a file that couldn't be unlinked is
+    /// still on disk and therefore "kept".
     pub kept: usize,
     /// Files we tried to remove but couldn't, paired with the
     /// underlying `io::Error`. Returned as part of `Ok(report)` so a

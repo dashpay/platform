@@ -12,6 +12,27 @@ use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::persister::{PruneReport, RetentionPolicy};
 use crate::sqlite::util::permissions::apply_secure_permissions;
 
+/// CODE-014: fsync the parent directory of `path` on Unix so the
+/// rename entry that materialised `path` is durable across power loss.
+/// `persist` only fsyncs the file inode; on most Unix filesystems the
+/// dentry update is journalled separately and can be lost on crash
+/// without this step. No-op on non-Unix platforms.
+#[cfg(unix)]
+fn fsync_parent_dir(path: &Path) -> Result<(), WalletStorageError> {
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            let dir = std::fs::File::open(parent)?;
+            dir.sync_all()?;
+        }
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn fsync_parent_dir(_path: &Path) -> Result<(), WalletStorageError> {
+    Ok(())
+}
+
 /// Normalize an `open_conn` failure on a candidate source/staged file
 /// to the typed [`WalletStorageError::SourceOpenFailed`]. A raw rusqlite
 /// open error keeps its `#[source]`; any other variant (e.g. a future
@@ -55,26 +76,25 @@ pub fn auto_backup_filename(kind: BackupKind) -> String {
 /// # Atomicity
 ///
 /// The page-stepping copy runs against a `NamedTempFile` staged in
-/// `dest`'s parent directory. The temp is `persist`-ed over `dest`
-/// only on success — any failure (open, chmod, backup-stream) drops
-/// the temp without ever materialising a partial `.db` file at the
-/// caller's path.
+/// `dest`'s parent directory. The temp is `persist_noclobber`-ed over
+/// `dest` only on success — any failure (open, chmod, backup-stream)
+/// drops the temp without ever materialising a partial `.db` file at
+/// the caller's path. A pre-existing `dest` is rejected atomically by
+/// `persist_noclobber` (no TOCTOU window). On Unix, the parent
+/// directory is `fsync`-ed after the rename so the dentry update
+/// survives power loss; on non-Unix this fsync step is a no-op.
 pub fn run_to(src: &Connection, dest: &Path) -> Result<(), WalletStorageError> {
     if let Some(parent) = dest.parent() {
         if !parent.as_os_str().is_empty() && !parent.exists() {
             std::fs::create_dir_all(parent)?;
         }
     }
-    // Reject pre-existing destinations BEFORE staging so the temp file
-    // isn't created (and immediately dropped) on a duplicate path. The
-    // CLI's `backup_to(file_path)` relies on this typed error; auto-
-    // backup callers can't trip it because the filename carries a
-    // unique timestamp suffix.
-    if dest.exists() {
-        return Err(WalletStorageError::BackupDestinationExists {
-            path: dest.to_path_buf(),
-        });
-    }
+    // CODE-009: pre-existing-destination rejection happens at the
+    // `persist_noclobber` site below — that's atomic against the rename
+    // (no TOCTOU window between `dest.exists()` and persist). The
+    // CLI's `backup_to(file_path)` still gets the typed
+    // `BackupDestinationExists` error; auto-backup callers can't trip
+    // it because the filename carries a unique timestamp suffix.
 
     // Stage the backup into an unguessable temp file in the same
     // directory. Same-FS guarantee makes `persist` an atomic rename.
@@ -105,8 +125,23 @@ pub fn run_to(src: &Connection, dest: &Path) -> Result<(), WalletStorageError> {
     // with the rename since `persist` atomically renames the temp file.
     drop(backup_conn);
 
-    tmp.persist(dest)
-        .map_err(|e| WalletStorageError::Io(e.error))?;
+    // CODE-009: `persist_noclobber` is the atomic check-and-rename —
+    // SQLite-free, no TOCTOU window between an `exists()` probe and the
+    // rename. `AlreadyExists` maps to the typed
+    // `BackupDestinationExists` for the CLI's overwrite-refusal contract.
+    tmp.persist_noclobber(dest).map_err(|e| {
+        if e.error.kind() == std::io::ErrorKind::AlreadyExists {
+            WalletStorageError::BackupDestinationExists {
+                path: dest.to_path_buf(),
+            }
+        } else {
+            WalletStorageError::Io(e.error)
+        }
+    })?;
+    // CODE-014: fsync the parent directory so the atomic rename's
+    // dentry update is durable across power loss. On non-Unix this is
+    // a no-op.
+    fsync_parent_dir(dest)?;
     // SEC-011: re-tighten in case a non-Unix build (or a future
     // platform-specific tweak) needs to refresh sibling perms after
     // SQLite materialised them. No-op on Unix where the temp already
@@ -148,6 +183,10 @@ pub fn run_to(src: &Connection, dest: &Path) -> Result<(), WalletStorageError> {
 /// SQLite-native lock prevents a racing peer from committing rows
 /// between the staged validation and the rename, which the prior
 /// flock-based approach could not do (flock doesn't see SQLite peers).
+///
+/// On Unix, the parent directory is `fsync`-ed after the rename so the
+/// dentry update is durable across power loss; on non-Unix this is a
+/// no-op.
 pub fn restore_from(dest_db_path: &Path, src_backup: &Path) -> Result<(), WalletStorageError> {
     // 1. Confirm the source is openable, then run cheap pre-staging
     //    integrity + schema-history + max-version sniffs against the
@@ -255,16 +294,21 @@ pub fn restore_from(dest_db_path: &Path, src_backup: &Path) -> Result<(), Wallet
     //    have left behind. Doing this BEFORE persist ensures that
     //    either both the main DB and its siblings get replaced/cleared,
     //    or — if any earlier check failed — none of them are touched.
-    for ext in ["-wal", "-shm"] {
-        let sibling = dest_db_path.with_file_name(format!(
-            "{}{ext}",
-            dest_db_path
-                .file_name()
-                .map(|s| s.to_string_lossy().to_string())
-                .unwrap_or_default()
-        ));
-        if sibling.exists() {
-            std::fs::remove_file(&sibling)?;
+    //
+    // CODE-011: build sibling paths via `OsString::push` so non-UTF-8
+    // bytes round-trip intact; `remove_file` runs unconditionally and
+    // `ErrorKind::NotFound` is a silent no-op (closes the `exists()`
+    // TOCTOU gate).
+    if let Some(file_name) = dest_db_path.file_name() {
+        for ext in ["-wal", "-shm"] {
+            let mut sibling_name = file_name.to_os_string();
+            sibling_name.push(ext);
+            let sibling = dest_db_path.with_file_name(sibling_name);
+            match std::fs::remove_file(&sibling) {
+                Ok(()) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => return Err(WalletStorageError::Io(e)),
+            }
         }
     }
 
@@ -298,16 +342,26 @@ pub fn restore_from(dest_db_path: &Path, src_backup: &Path) -> Result<(), Wallet
     tmp.persist(dest_db_path)
         .map_err(|e| WalletStorageError::Io(e.error))?;
 
-    // 9. Re-tighten siblings (SQLite may materialise -wal/-shm on next
-    //    open; this is idempotent at restore-completion time).
+    // 9. CODE-014: fsync the destination's parent directory so the
+    //    atomic rename's dentry update is durable across power loss
+    //    (no-op on non-Unix).
+    fsync_parent_dir(dest_db_path)?;
+
+    // 10. Re-tighten siblings (SQLite may materialise -wal/-shm on next
+    //     open; this is idempotent at restore-completion time).
     apply_secure_permissions(dest_db_path)?;
     Ok(())
 }
 
-/// Run `PRAGMA integrity_check` and return `Ok(())` if SQLite returns
-/// "ok". Any other returned text becomes a typed `IntegrityCheckFailed`
-/// via the caller-supplied builder; an underlying rusqlite error
-/// surfaces as `IntegrityCheckRunFailed`.
+/// Run `PRAGMA integrity_check` and return `Ok(())` when SQLite reports
+/// the single row `"ok"`. Any other result becomes a typed
+/// `IntegrityCheckFailed` via the caller-supplied builder; an
+/// underlying rusqlite error surfaces as `IntegrityCheckRunFailed`.
+///
+/// CODE-016: SQLite returns one row per detected problem (capped at
+/// `PRAGMA integrity_check(N)`; default 100). All rows are collected
+/// and joined with `\n` so the typed report carries every diagnostic
+/// instead of just the first line.
 ///
 /// `pub(crate)` so the persister's open-time A-8 probe shares the
 /// same helper rather than reimplementing the report-rendering rule.
@@ -318,12 +372,45 @@ pub(crate) fn run_integrity_check<F>(
 where
     F: FnOnce(String) -> WalletStorageError,
 {
-    let report: String = conn
-        .query_row("PRAGMA integrity_check", [], |row| row.get(0))
+    let mut stmt = conn
+        .prepare("PRAGMA integrity_check")
         .map_err(|source| WalletStorageError::IntegrityCheckRunFailed { source })?;
-    if report == "ok" {
+    let mut rows: Vec<String> = Vec::new();
+    let mut trailing_err: Option<rusqlite::Error> = None;
+    let iter = stmt
+        .query_map([], |row| row.get::<_, String>(0))
+        .map_err(|source| WalletStorageError::IntegrityCheckRunFailed { source })?;
+    for item in iter {
+        match item {
+            Ok(s) => rows.push(s),
+            Err(e) => {
+                // Severe corruption can cause SQLite to surface a
+                // `DatabaseCorrupt` SqliteFailure partway through the
+                // integrity_check stream. Treat it as end-of-stream
+                // when we already have diagnostics (the rows we have
+                // are still valid); if we have NOTHING, surface the
+                // typed `IntegrityCheckRunFailed`.
+                trailing_err = Some(e);
+                break;
+            }
+        }
+    }
+    if rows.is_empty() {
+        if let Some(source) = trailing_err {
+            return Err(WalletStorageError::IntegrityCheckRunFailed { source });
+        }
+        // Empty result with no error is unexpected but not "ok".
+        return Err(on_failure(String::new()));
+    }
+    if rows.len() == 1 && rows[0] == "ok" && trailing_err.is_none() {
         Ok(())
     } else {
+        let mut report = rows.join("\n");
+        if let Some(e) = trailing_err {
+            // Preserve the cut-off marker so operators see the stream
+            // was truncated, not just under-reported.
+            report.push_str(&format!("\n[integrity_check stream aborted: {e}]"));
+        }
         Err(on_failure(report))
     }
 }
@@ -376,7 +463,15 @@ pub fn prune(dir: &Path, policy: RetentionPolicy) -> Result<PruneReport, WalletS
         } else {
             match std::fs::remove_file(&path) {
                 Ok(()) => removed.push(path),
-                Err(e) => failed_removals.push((path, e)),
+                Err(e) => {
+                    // CODE-019: a failed `remove_file` leaves the file
+                    // on disk, so it MUST be counted in `kept`. The
+                    // invariant `kept + removed.len() == total` then
+                    // holds and `failed_removals` is a subset of
+                    // `kept`.
+                    failed_removals.push((path, e));
+                    kept += 1;
+                }
             }
         }
     }

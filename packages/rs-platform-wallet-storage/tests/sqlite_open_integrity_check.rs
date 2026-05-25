@@ -72,3 +72,76 @@ fn atom_013_open_rejects_corrupt_db() {
     );
     drop(tmp);
 }
+
+/// Flip bytes inside pages 2 AND 3 so SQLite's `PRAGMA integrity_check`
+/// has multiple problems to report. This widens the surface beyond the
+/// single-row "ok" case so the multi-row collection path is exercised.
+fn corrupt_multiple_pages(path: &std::path::Path) {
+    let mut f = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(path)
+        .expect("open db for multi-page corruption");
+    let len = f.metadata().unwrap().len();
+    assert!(len > 8192, "expected at least two full pages");
+    for page_start in [4096u64, 8192] {
+        f.seek(SeekFrom::Start(page_start)).unwrap();
+        let mut buf = vec![0u8; 4096];
+        f.read_exact(&mut buf).unwrap();
+        for b in buf.iter_mut().step_by(2) {
+            *b ^= 0xFF;
+        }
+        f.seek(SeekFrom::Start(page_start)).unwrap();
+        f.write_all(&buf).unwrap();
+    }
+    f.sync_all().unwrap();
+}
+
+/// TC-CODE-016-a: a multi-problem DB surfaces every diagnostic line in
+/// `IntegrityCheckFailed::report`. Pre-fix the helper used `query_row`
+/// and silently dropped every row past the first. We assert the report
+/// is non-empty and not the truncated single-row "ok" sentinel; we
+/// don't bind to a fixed line count because SQLite's exact diagnostic
+/// shape isn't stable across builds.
+#[test]
+fn tc_code_016_a_integrity_report_collects_all_rows() {
+    let (persister, tmp, path) = fresh_persister();
+    {
+        use rusqlite::params;
+        let conn = persister.lock_conn_for_test();
+        for i in 0..40u32 {
+            conn.execute(
+                "INSERT INTO wallet_metadata (wallet_id, network, birth_height) VALUES (?1, 'testnet', ?2)",
+                params![vec![i as u8; 32].as_slice(), i as i64],
+            )
+            .unwrap();
+        }
+    }
+    drop(persister);
+
+    corrupt_multiple_pages(&path);
+
+    let cfg = SqlitePersisterConfig::new(&path);
+    let err = match SqlitePersister::open(cfg) {
+        Ok(_) => panic!("open must reject multi-page corrupt DB"),
+        Err(e) => e,
+    };
+    let report = match err {
+        WalletStorageError::IntegrityCheckFailed { report } => report,
+        other => panic!("expected IntegrityCheckFailed, got {other:?}"),
+    };
+    assert!(!report.is_empty(), "report must be non-empty");
+    assert_ne!(
+        report.trim(),
+        "ok",
+        "report must NOT be the healthy sentinel"
+    );
+    // Source-level regression: the helper must use `query_map`, not
+    // `query_row`, so multi-row reports are preserved.
+    let helper_src = include_str!("../src/sqlite/backup.rs");
+    assert!(
+        helper_src.contains("PRAGMA integrity_check") && helper_src.contains("query_map"),
+        "run_integrity_check must use query_map (not query_row) to collect every diagnostic row"
+    );
+    drop(tmp);
+}
