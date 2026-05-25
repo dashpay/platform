@@ -50,7 +50,6 @@ refinery = { version = "0.9", default-features = false, features = [
 # (which derives bincode 2 `Encode`/`Decode`) and decode
 # `dpp::AssetLockProof` from the asset-lock blob column.
 bincode = { version = "2", optional = true }
-fs2 = { version = "0.4", optional = true }
 tempfile = { version = "3", optional = true }
 chrono = { version = "0.4", default-features = false, features = [
     "clock",
@@ -86,7 +85,6 @@ sqlite = [
     "dep:rusqlite",
     "dep:refinery",
     "dep:bincode",
-    "dep:fs2",
     "dep:tempfile",
     "dep:chrono",
     "dep:sha2",

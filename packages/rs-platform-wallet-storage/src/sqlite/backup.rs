@@ -122,13 +122,22 @@ pub fn run_to(src: &Connection, dest: &Path) -> Result<(), WalletStorageError> {
 ///
 /// # Atomicity
 ///
-/// The restore is staged in two phases bounded by an exclusive
-/// advisory file lock on `dest_db_path` (kept across the entire body):
+/// The restore is staged in two phases bounded by a SQLite-native
+/// `BEGIN EXCLUSIVE` transaction on `dest_db_path` (kept across the
+/// entire restore body):
 ///
 /// 1. Open the source read-only; run `PRAGMA integrity_check` +
 ///    schema-history + max-version sniffs. Any failure here aborts
 ///    before the live destination is touched.
-/// 2. Stream the source into a `NamedTempFile` in `dest_db_path`'s
+/// 2. Open a short-lived writer connection on the destination and
+///    `BEGIN EXCLUSIVE`. This blocks every other SQLite peer
+///    (other `SqlitePersister` handles in this or sibling processes,
+///    bare `rusqlite::Connection`s, the CLI) from writing the file
+///    until restore completes. Peers waiting for the lock back off
+///    via SQLite's own busy_timeout. The lock conn is DROPPED right
+///    before `persist` so SQLite releases its file handle on the old
+///    inode before the atomic rename takes its place.
+/// 3. Stream the source into a `NamedTempFile` in `dest_db_path`'s
 ///    parent directory; re-run integrity + schema gates against the
 ///    STAGED bytes (catches a torn `io::copy`); unlink the existing
 ///    `-wal` / `-shm` siblings; chmod the temp to 0o600; then
@@ -136,8 +145,9 @@ pub fn run_to(src: &Connection, dest: &Path) -> Result<(), WalletStorageError> {
 ///
 /// Either both the main DB and its WAL/SHM siblings are replaced, or
 /// — on any pre-persist failure — none of them are touched. The
-/// exclusive lock prevents a racing opener from materialising new
-/// WAL/SHM siblings against the about-to-be-replaced inode.
+/// SQLite-native lock prevents a racing peer from committing rows
+/// between the staged validation and the rename, which the prior
+/// flock-based approach could not do (flock doesn't see SQLite peers).
 pub fn restore_from(dest_db_path: &Path, src_backup: &Path) -> Result<(), WalletStorageError> {
     // 1. Confirm the source is openable, then run cheap pre-staging
     //    integrity + schema-history + max-version sniffs against the
@@ -165,38 +175,39 @@ pub fn restore_from(dest_db_path: &Path, src_backup: &Path) -> Result<(), Wallet
     crate::sqlite::migrations::assert_schema_version_supported(&src)?;
     drop(src);
 
-    // 2. ATOM-005 (A-2): take an exclusive advisory lock on the
-    //    destination and HOLD it across the entire restore body. The
-    //    pre-A-2 code probed the lock, dropped the handle, then ran
-    //    steps 3-7 unlocked — a concurrent process opening
-    //    `dest_db_path` between the probe and `tmp.persist` would race
-    //    the rename and end up holding a fd against the unlinked old
-    //    inode while the new DB takes its place. Keeping the guard
-    //    `_lock` alive in scope closes that window.
-    //
-    //    On filesystems without flock support (the previous silent-skip
-    //    arm) we emit a structured warn so operators know the safety
-    //    net is bypassed — still proceed because there's no alternative
-    //    on such filesystems, but never silently.
-    let _lock: Option<std::fs::File> = if dest_db_path.exists() {
-        use fs2::FileExt;
-        let f = std::fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open(dest_db_path)?;
-        match f.try_lock_exclusive() {
-            Ok(()) => Some(f),
-            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+    // 2. SQLite-native exclusion. `BEGIN EXCLUSIVE` against a short-
+    //    lived writer connection on the destination blocks every other
+    //    SQLite peer (rusqlite Connection, sibling `SqlitePersister`)
+    //    until the tx is committed/rolled-back or the conn drops. The
+    //    prior flock approach was a false promise: advisory locks
+    //    don't interlock with SQLite's own locking, so a peer mid-write
+    //    could race the swap. The lock conn is dropped (`take()` + end
+    //    of scope) BEFORE `tmp.persist` so SQLite releases its file
+    //    handle on the old inode before the atomic rename — otherwise
+    //    we'd leave a dangling handle on the unlinked inode.
+    let mut dest_lock_conn: Option<rusqlite::Connection> = if dest_db_path.exists() {
+        let conn =
+            crate::sqlite::conn::open_conn(dest_db_path, crate::sqlite::conn::Access::ReadWrite)?;
+        // Reuse a sensible busy_timeout so peers don't immediately
+        // surface BUSY without a backoff window. The destination DB
+        // may not have a persister attached yet (the persister is the
+        // CALLER), so this conn applies its own.
+        conn.busy_timeout(std::time::Duration::from_secs(5))?;
+        // Take EXCLUSIVE up-front by promoting an immediate tx. If a
+        // peer holds the DB, SQLite waits for busy_timeout then
+        // returns BUSY — we surface that as `RestoreDestinationLocked`
+        // so callers keep their existing branch.
+        match conn.execute_batch("BEGIN EXCLUSIVE") {
+            Ok(()) => Some(conn),
+            Err(rusqlite::Error::SqliteFailure(err, _))
+                if matches!(
+                    err.code,
+                    rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked
+                ) =>
+            {
                 return Err(WalletStorageError::RestoreDestinationLocked);
             }
-            Err(_) => {
-                tracing::warn!(
-                    target: "platform_wallet_storage",
-                    dest = %dest_db_path.display(),
-                    "advisory lock unsupported on this filesystem; concurrent-writer race possible"
-                );
-                None
-            }
+            Err(other) => return Err(WalletStorageError::Sqlite(other)),
         }
     } else {
         None
@@ -269,14 +280,27 @@ pub fn restore_from(dest_db_path: &Path, src_backup: &Path) -> Result<(), Wallet
             .set_permissions(std::fs::Permissions::from_mode(0o600))?;
     }
 
-    // 7. Persist atomically over the destination.
+    // 7. Release the SQLite-native EXCLUSIVE lock BEFORE the rename.
+    //    Dropping `dest_lock_conn` causes SQLite to close its file
+    //    handle on the old inode; if we kept it alive across `persist`
+    //    the handle would point at the unlinked old inode while the
+    //    new DB took its place — peers reopening would race the rename
+    //    and (on some filesystems) the rename itself could fail.
+    if let Some(conn) = dest_lock_conn.take() {
+        // Best-effort rollback of the empty EXCLUSIVE tx; an error here
+        // means SQLite is already in trouble and `drop(conn)` covers
+        // the rest. Silent because the conn is about to drop anyway.
+        let _ = conn.execute_batch("ROLLBACK");
+        drop(conn);
+    }
+
+    // 8. Persist atomically over the destination.
     tmp.persist(dest_db_path)
         .map_err(|e| WalletStorageError::Io(e.error))?;
 
-    // 8. Re-tighten siblings (SQLite may materialise -wal/-shm on next
+    // 9. Re-tighten siblings (SQLite may materialise -wal/-shm on next
     //    open; this is idempotent at restore-completion time).
     apply_secure_permissions(dest_db_path)?;
-    // Lock guard is released by `_lock` going out of scope here.
     Ok(())
 }
 

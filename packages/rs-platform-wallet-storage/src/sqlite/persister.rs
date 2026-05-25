@@ -338,13 +338,11 @@ impl SqlitePersister {
         wallet_id: WalletId,
         skip_backup: bool,
     ) -> Result<DeleteWalletReport, WalletStorageError> {
-        // CMT-008: acquire the connection mutex FIRST and hold it
-        // across drain → existence-check → backup → delete-transaction
-        // → post-commit buffer wipe. Concurrent `store()` calls in
-        // Immediate mode block on this guard (their flush takes conn);
-        // Manual-mode stores can still buffer, so we re-drain after
-        // commit to discard any racing writes (the wallet is going
-        // away — those writes are intentionally void).
+        // CMT-008: acquire the connection mutex FIRST so concurrent
+        // in-process `store()` calls block on it. Cross-process peers
+        // (other rusqlite Connections / sibling `SqlitePersister`s) are
+        // excluded by `BEGIN EXCLUSIVE` below — the in-process mutex
+        // alone never gave that guarantee.
         let mut conn = self.conn()?;
 
         // Drain the buffered changeset so a later flush can't
@@ -371,8 +369,8 @@ impl SqlitePersister {
         };
 
         let result: Result<DeleteWalletReport, WalletStorageError> = (|| {
-            // A wallet exists iff it was buffered OR persisted. Refusing
-            // on a truly-unknown wallet must not waste a backup file.
+            // Pre-flight existence check on the bare conn (no tx) so
+            // we don't waste a backup file on an unknown wallet.
             let exists_in_db = conn
                 .query_row(
                     "SELECT 1 FROM wallet_metadata WHERE wallet_id = ?1",
@@ -384,6 +382,25 @@ impl SqlitePersister {
             if !had_buffered && !exists_in_db {
                 return Err(WalletStorageError::WalletNotFound { wallet_id });
             }
+
+            // TODO(T-007 / CODE-006): flush `drained_slot`'s buffered
+            // changeset to disk BEFORE `run_auto_backup`, so the pre-
+            // delete backup contains the pending writes. Today the
+            // backup captures only the already-persisted state (the
+            // buffered changeset is dropped post-commit by design —
+            // but the operator's last recoverable snapshot misses it).
+            //
+            // The backup runs BEFORE acquiring `BEGIN EXCLUSIVE`
+            // because rusqlite's `Backup::new` can't establish a
+            // backup whose source connection holds an active write tx
+            // on its own DB — `sqlite3_backup_step` would deadlock
+            // against the in-flight EXCLUSIVE. The downside: a peer
+            // committing rows for `wallet_id` between the backup and
+            // the cascade window lands those rows in the live DB but
+            // NOT in the backup; the cascade then removes them. We
+            // log a structured `info!` if the wallet's row footprint
+            // changed across the EXCLUSIVE acquisition so operators
+            // can correlate.
             let backup_path = if skip_backup {
                 None
             } else {
@@ -394,7 +411,39 @@ impl SqlitePersister {
                     AutoBackupOperation::DeleteWallet,
                 )?
             };
-            let tx = conn.transaction()?;
+
+            // SQLite-native EXCLUSIVE for the cascade window. Excludes
+            // cross-process peers (other rusqlite Connections, sibling
+            // `SqlitePersister`s) that would otherwise commit rows for
+            // `wallet_id` between the backup snapshot and the cascade.
+            // The in-process mutex on `conn` alone never gave that
+            // guarantee. Peers waiting on the lock back off via
+            // SQLite's `busy_timeout`.
+            let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Exclusive)?;
+
+            // Re-confirm existence post-EXCLUSIVE: a peer could have
+            // either inserted (raising the wallet from non-existent to
+            // existent) or deleted (vanishing it) between the backup
+            // and the lock acquisition. If a peer just deleted the
+            // wallet, the cascade is a no-op — we still commit because
+            // the operator's intent is satisfied.
+            let post_lock_exists = tx
+                .query_row(
+                    "SELECT 1 FROM wallet_metadata WHERE wallet_id = ?1",
+                    rusqlite::params![wallet_id.as_slice()],
+                    |_| Ok(()),
+                )
+                .optional()?
+                .is_some();
+            if post_lock_exists != exists_in_db {
+                tracing::info!(
+                    wallet_id = %hex::encode(wallet_id),
+                    pre_lock_exists = exists_in_db,
+                    post_lock_exists,
+                    "wallet_metadata footprint changed across delete_wallet EXCLUSIVE acquisition"
+                );
+            }
+
             let mut rows_removed_per_table = BTreeMap::new();
             for (table, scope) in PER_WALLET_TABLES {
                 // SQL injection note: `table` comes from a `&'static

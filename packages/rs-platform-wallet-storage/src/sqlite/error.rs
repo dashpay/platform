@@ -120,8 +120,10 @@ pub enum WalletStorageError {
     #[error("persister lock poisoned")]
     LockPoisoned,
 
-    /// `restore_from` tried to acquire an exclusive file-lock on the
-    /// destination and couldn't — another process is holding it open.
+    /// `restore_from` tried to take a SQLite-native `BEGIN EXCLUSIVE`
+    /// on the destination and a peer (another `SqlitePersister`, a
+    /// bare `rusqlite::Connection`, the CLI) is holding it busy
+    /// beyond `busy_timeout`.
     #[error("restore destination is locked or in use")]
     RestoreDestinationLocked,
 

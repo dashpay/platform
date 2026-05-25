@@ -115,19 +115,16 @@ validation failure (e.g. corrupt backup source).
 
 ## Operational notes
 
-**Restore advisory-lock warning.** `restore` takes an exclusive `flock(2)`
-on the destination DB and holds it across the entire restore body, so a
-concurrent writer can't race the atomic swap. On filesystems where
-advisory locking is unsupported (some NFS / FUSE / network mounts), the
-crate emits a `tracing::warn!` on the
-`platform_wallet_storage` target —
-
-> `advisory lock unsupported on this filesystem; concurrent-writer race possible`
-
-— and proceeds anyway (there's no alternative on such filesystems).
-If you see this warning, ensure no other process opens the destination
-DB during the restore window, or move the DB to a filesystem with flock
-support before restoring.
+**Restore exclusion.** `restore` opens a short-lived writer connection
+on the destination DB and holds a SQLite-native `BEGIN EXCLUSIVE`
+transaction across the entire restore body. This interlocks with every
+other SQLite peer — sibling `SqlitePersister` handles, bare
+`rusqlite::Connection` instances, the CLI — so concurrent writes back
+off via SQLite's `busy_timeout` instead of racing the atomic swap. If a
+peer holds the destination busy for longer than the timeout, `restore`
+returns `WalletStorageError::RestoreDestinationLocked`. The lock conn is
+released BEFORE the rename so SQLite's file handle on the old inode goes
+away before the new DB takes its place.
 
 **Manual-mode drop diagnostic.** `SqlitePersister` configured with
 [`FlushMode::Manual`] emits a `tracing::error!` on drop if the buffer
