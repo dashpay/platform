@@ -49,14 +49,6 @@ pub enum WalletStorageError {
     #[error("migration error")]
     Migration(#[from] refinery::Error),
 
-    /// The migration runner left the schema in an inconsistent state
-    /// (some migrations applied, some still pending).
-    #[error(
-        "migration left the database in a dirty state \
-         (applied={applied} pending={pending})"
-    )]
-    MigrationDirty { applied: usize, pending: usize },
-
     /// `PRAGMA integrity_check` ran successfully but reported a
     /// non-`ok` result. `report` carries SQLite's own diagnostic
     /// text — not a user-facing message, not a stringified source.
@@ -343,7 +335,6 @@ impl WalletStorageError {
             Self::Sqlite(_) => false,
             Self::Io(_)
             | Self::Migration(_)
-            | Self::MigrationDirty { .. }
             | Self::IntegrityCheckFailed { .. }
             | Self::IntegrityCheckRunFailed { .. }
             | Self::SourceOpenFailed { .. }
@@ -398,7 +389,6 @@ impl WalletStorageError {
             Self::FlushRetryable { .. } => "flush_retryable",
             Self::Io(_) => "io",
             Self::Migration(_) => "migration",
-            Self::MigrationDirty { .. } => "migration_dirty",
             Self::IntegrityCheckFailed { .. } => "integrity_check_failed",
             Self::IntegrityCheckRunFailed { .. } => "integrity_check_run_failed",
             Self::SourceOpenFailed { .. } => "source_open_failed",

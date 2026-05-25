@@ -106,10 +106,6 @@ fn samples() -> Vec<WalletStorageError> {
         // Skipped from samples because refinery::Error has no public
         // `From` we can lean on; the arm is still exhaustively
         // covered by the match itself.
-        WalletStorageError::MigrationDirty {
-            applied: 1,
-            pending: 1,
-        },
         WalletStorageError::IntegrityCheckFailed {
             report: "rows missing".into(),
         },
@@ -213,7 +209,6 @@ fn tc_p2_005_is_transient_table() {
             WalletStorageError::FlushRetryable { .. } => (true, "flush_retryable"),
             WalletStorageError::Io(_) => (false, "io"),
             WalletStorageError::Migration(_) => (false, "migration"),
-            WalletStorageError::MigrationDirty { .. } => (false, "migration_dirty"),
             WalletStorageError::IntegrityCheckFailed { .. } => (false, "integrity_check_failed"),
             WalletStorageError::IntegrityCheckRunFailed { .. } => {
                 (false, "integrity_check_run_failed")
