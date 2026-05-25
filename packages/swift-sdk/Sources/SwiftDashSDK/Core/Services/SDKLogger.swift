@@ -29,7 +29,7 @@ public enum LoggingPreferences {
         let preset = loadPreset()
         let enableSwiftVerbose: Bool
 
-        SDK.initializeSPVLogging(level: SDK.LogLevel.info, enableConsole: true, maxFiles: 5)
+        SDK.enableLogging(level: .info)
 
         switch preset {
         case .high:
@@ -69,6 +69,13 @@ public enum SDKLogger {
     }
 
     public static func error(_ message: String) {
+        // Route through both `NSLog` (unified log — Console.app, device
+        // console, Xcode debug area without depending on stdout
+        // capture) and `Swift.print` (stdout — preserves the existing
+        // dev-loop behaviour where `print` output is what's visible).
+        // Errors are rare; double-emit is fine and makes them harder
+        // to miss when something does go wrong.
+        NSLog("%@", message)
         Swift.print(message)
     }
 }

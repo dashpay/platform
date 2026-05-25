@@ -25,7 +25,7 @@ use std::collections::HashMap;
 
 impl Drive {
     /// Adds indices for the top index level and calls for lower levels.
-    pub(crate) fn add_indices_for_top_index_level_for_contract_operations(
+    pub(super) fn add_indices_for_top_index_level_for_contract_operations_v0(
         &self,
         document_and_contract_info: &DocumentAndContractInfo,
         previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
@@ -89,25 +89,68 @@ impl Drive {
 
         // next we need to store a reference to the document for each index
         for (name, sub_level) in index_level.sub_levels() {
-            // If `sub_level` terminates a `range_countable` index, the
-            // top-level property-name tree (created at contract setup) is a
-            // `ProvableCountTree` and each value tree under it must be a
-            // `CountTree` so the parent's aggregate sums per-value counts
-            // cleanly. Otherwise both stay `NormalTree`.
-            let sub_level_range_countable = sub_level
-                .has_index_with_type()
+            // Two flags split on the same `sub_level.has_index_with_type()`
+            // result:
+            //
+            // - `sub_level_is_countable_terminator` — sub_level has any
+            //   countable index. Drives the value-tree type: each value
+            //   tree becomes a `CountTree` whose `count_value_or_default()`
+            //   IS the per-value doc count. This is what shrinks the
+            //   point-lookup count proof by one merk layer (no `[0]`
+            //   descent needed; see
+            //   `point_lookup_count_path_query`'s rangeCountable-shape
+            //   docstring).
+            // - `sub_level_range_countable` — sub_level opts into
+            //   `AggregateCountOnRange`. Drives the property-name tree's
+            //   upgrade from `NormalTree` to `ProvableCountTree`. Implies
+            //   `is_countable` per the invariant on `Index::range_countable`.
+            //
+            // Pure prefix sub-levels (no index here, only further nesting)
+            // leave both flags `false` — both property-name and value tree
+            // stay `NormalTree`, since there's no count surface to
+            // materialize at a prefix level.
+            let sub_level_index_info = sub_level.has_index_with_type();
+            let sub_level_is_countable_terminator = sub_level_index_info
+                .map(|info| info.countable.is_countable())
+                .unwrap_or(false);
+            let sub_level_range_countable = sub_level_index_info
                 .map(|info| info.range_countable)
                 .unwrap_or(false);
-            let property_name_tree_type = if sub_level_range_countable {
-                TreeType::ProvableCountTree
-            } else {
-                TreeType::NormalTree
+            // v3 sum-tree flags. Same composition logic as the
+            // recursive-level helper — see
+            // `add_indices_for_index_level_for_contract_operations_v0`
+            // for the dispatch table.
+            let sub_level_is_summable_terminator = sub_level_index_info
+                .map(|info| info.summable.is_some())
+                .unwrap_or(false);
+            let sub_level_range_summable = sub_level_index_info
+                .map(|info| info.range_summable)
+                .unwrap_or(false);
+            let property_name_tree_type =
+                match (sub_level_range_countable, sub_level_range_summable) {
+                    (true, true) => TreeType::ProvableCountProvableSumTree,
+                    (true, false) => TreeType::ProvableCountTree,
+                    (false, true) => TreeType::ProvableSumTree,
+                    (false, false) => TreeType::NormalTree,
+                };
+            let value_tree_type = match (
+                sub_level_is_countable_terminator,
+                sub_level_range_countable,
+                sub_level_is_summable_terminator,
+                sub_level_range_summable,
+            ) {
+                (true, true, true, true) => TreeType::ProvableCountProvableSumTree,
+                (true, false, true, false) => TreeType::CountSumTree,
+                (true, true, true, false) => TreeType::ProvableCountSumTree,
+                (true, false, true, true) => TreeType::ProvableCountProvableSumTree,
+                (true, _, false, false) => TreeType::CountTree,
+                (false, false, true, _) => TreeType::SumTree,
+                (false, _, false, _) => TreeType::NormalTree,
+                _ => TreeType::NormalTree,
             };
-            let value_tree_type = if sub_level_range_countable {
-                TreeType::CountTree
-            } else {
-                TreeType::NormalTree
-            };
+            // (formerly: `sub_level_aggregates_anything` bool — now
+            // subsumed by `value_tree_type` itself, which is non-Normal
+            // exactly when the sub-level aggregates anything.)
 
             // at this point the contract path is to the contract documents
             // for each index the top index component will already have been added
@@ -203,13 +246,20 @@ impl Drive {
             index_path_info.push(document_top_field)?;
             // the index path is now something likeDataContracts/ContractID/Documents(1)/$ownerId/<ownerId>
 
+            // Propagate the exact `value_tree_type` we just inserted
+            // forward as the recursive level's `parent_value_tree_type`.
+            // This carries the full per-axis kind (count / sum / both,
+            // each in its plain or provable variant) so the next
+            // level's wrapper-choice for continuation children picks
+            // the right wrapper variant
+            // (NonCounted / NotSummed / NotCountedOrSummed).
             self.add_indices_for_index_level_for_contract_operations(
                 document_and_contract_info,
                 index_path_info,
                 sub_level,
                 any_fields_null,
                 all_fields_null,
-                sub_level_range_countable,
+                value_tree_type,
                 previous_batch_operations,
                 &storage_flags,
                 estimated_costs_only_with_layer_info,

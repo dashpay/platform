@@ -8,7 +8,31 @@ mod transfer_tests {
     #[tokio::test]
     async fn test_document_transfer_on_document_type_that_is_transferable_that_has_no_owner_indices(
     ) {
+        run_document_transfer_on_document_type_that_is_transferable_that_has_no_owner_indices_at_protocol_version(
+            PlatformVersion::latest().protocol_version,
+            1997120,
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_11: pre-B7 happy-path fee. Pinned so v11 chain
+    /// history stays bit-for-bit reproducible.
+    #[tokio::test]
+    async fn test_document_transfer_on_document_type_that_is_transferable_that_has_no_owner_indices_protocol_version_11(
+    ) {
+        run_document_transfer_on_document_type_that_is_transferable_that_has_no_owner_indices_at_protocol_version(
+            11,
+            1985420,
+        )
+        .await;
+    }
+
+    async fn run_document_transfer_on_document_type_that_is_transferable_that_has_no_owner_indices_at_protocol_version(
+        protocol_version: dpp::version::ProtocolVersion,
+        expected_processing_fee: dpp::fee::Credits,
+    ) {
         let mut platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(protocol_version)
             .build_with_mock_rpc()
             .set_initial_state_structure();
 
@@ -160,7 +184,12 @@ mod transfer_tests {
 
         assert_eq!(processing_result.aggregated_fees().storage_fee, 0); // There is no storage fee, as there are no indexes that will change
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 1985420);
+        assert_eq!(
+            processing_result.aggregated_fees().processing_fee,
+            expected_processing_fee,
+            "PROTOCOL_VERSION_{}: happy-path transfer (no owner indices) processing fee must match the version-specific baseline",
+            protocol_version,
+        );
 
         let issues = platform
             .drive
@@ -182,16 +211,48 @@ mod transfer_tests {
 
     #[tokio::test]
     async fn test_document_transfer_on_document_type_that_is_transferable_before_creator_id() {
-        let platform_version = PlatformVersion::get(9).unwrap();
+        run_document_transfer_on_document_type_that_is_transferable_before_creator_id_at_protocol_version(
+            PlatformVersion::latest().protocol_version,
+            3380960,
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_11: pre-B4 fee — query_documents cost was discarded.
+    /// Pinned so v11 chain history stays bit-for-bit reproducible.
+    #[tokio::test]
+    async fn test_document_transfer_on_document_type_that_is_transferable_before_creator_id_protocol_version_11(
+    ) {
+        run_document_transfer_on_document_type_that_is_transferable_before_creator_id_at_protocol_version(
+            11,
+            3369260,
+        )
+        .await;
+    }
+
+    async fn run_document_transfer_on_document_type_that_is_transferable_before_creator_id_at_protocol_version(
+        protocol_version: dpp::version::ProtocolVersion,
+        expected_processing_fee: dpp::fee::Credits,
+    ) {
+        // Contract loader uses the PV9 platform version to materialize the
+        // format-version-0 contract bytes. Everything else — state
+        // transition decoding, validation, and the batch state transition
+        // version gate — runs against the runtime `platform_version`
+        // derived from the parameterized `protocol_version` (controlled by
+        // `with_initial_protocol_version` below).
+        let contract_platform_version = PlatformVersion::get(9).unwrap();
+        let platform_version = PlatformVersion::get(protocol_version)
+            .expect("expected platform version for the requested protocol_version");
 
         let mut platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(protocol_version)
             .build_with_mock_rpc()
             .set_initial_state_structure();
 
         let card_game_path = "tests/supporting_files/contract/crypto-card-game/crypto-card-game-all-transferable-format-version-0.json";
 
         // let's construct the grovedb structure for the card game data contract
-        let contract = json_document_to_contract(card_game_path, true, platform_version)
+        let contract = json_document_to_contract(card_game_path, true, contract_platform_version)
             .expect("expected to get data contract");
 
         assert!(contract.system_version_type() > 0);
@@ -391,7 +452,12 @@ mod transfer_tests {
             Some(14992395)
         );
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 3369260);
+        assert_eq!(
+            processing_result.aggregated_fees().processing_fee,
+            expected_processing_fee,
+            "PROTOCOL_VERSION_{}: transfer-before-creator-id processing fee must match the version-specific baseline",
+            protocol_version,
+        );
 
         let query_sender_results = platform
             .drive
@@ -428,8 +494,31 @@ mod transfer_tests {
 
     #[tokio::test]
     async fn test_document_transfer_on_document_type_that_is_transferable() {
-        let platform_version = PlatformVersion::latest();
+        run_document_transfer_on_document_type_that_is_transferable_at_protocol_version(
+            PlatformVersion::latest().protocol_version,
+            3643400,
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_11: pre-B4 fee — query_documents cost was discarded.
+    /// Pinned so v11 chain history stays bit-for-bit reproducible.
+    #[tokio::test]
+    async fn test_document_transfer_on_document_type_that_is_transferable_protocol_version_11() {
+        run_document_transfer_on_document_type_that_is_transferable_at_protocol_version(
+            11, 3631040,
+        )
+        .await;
+    }
+
+    async fn run_document_transfer_on_document_type_that_is_transferable_at_protocol_version(
+        protocol_version: dpp::version::ProtocolVersion,
+        expected_processing_fee: dpp::fee::Credits,
+    ) {
+        let platform_version = PlatformVersion::get(protocol_version)
+            .expect("expected platform version for the requested protocol_version");
         let (mut platform, contract) = TestPlatformBuilder::new()
+            .with_initial_protocol_version(protocol_version)
             .build_with_mock_rpc()
             .set_initial_state_structure()
             .with_crypto_card_game_transfer_only(Transferable::Always);
@@ -639,7 +728,12 @@ mod transfer_tests {
             Some(14992395)
         );
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 3631040);
+        assert_eq!(
+            processing_result.aggregated_fees().processing_fee,
+            expected_processing_fee,
+            "PROTOCOL_VERSION_{}: happy-path transfer (transferable) processing fee must match the version-specific baseline",
+            protocol_version,
+        );
 
         let query_sender_results = platform
             .drive
@@ -683,12 +777,43 @@ mod transfer_tests {
 
     #[tokio::test]
     async fn test_document_transfer_on_document_type_that_is_transferable_contract_v0() {
+        run_document_transfer_on_document_type_that_is_transferable_contract_v0_at_protocol_version(
+            PlatformVersion::latest().protocol_version,
+            3380960,
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_11: pre-B4 fee — query_documents cost was discarded.
+    /// Pinned so v11 chain history stays bit-for-bit reproducible.
+    #[tokio::test]
+    async fn test_document_transfer_on_document_type_that_is_transferable_contract_v0_protocol_version_11(
+    ) {
+        run_document_transfer_on_document_type_that_is_transferable_contract_v0_at_protocol_version(
+            11, 3369260,
+        )
+        .await;
+    }
+
+    async fn run_document_transfer_on_document_type_that_is_transferable_contract_v0_at_protocol_version(
+        protocol_version: dpp::version::ProtocolVersion,
+        expected_processing_fee: dpp::fee::Credits,
+    ) {
         // With a contract v0 we should not be adding the creator id
         // We do this because the creator id can not be serialized in document serialization v0
         // And document serialization v0 is necessary when the data contract is v0 or the data
         // contract config is v0.
-        let platform_version = PlatformVersion::latest();
+        //
+        // The platform_version used for test data + transition encoding +
+        // dispatch all come from the parameterized `protocol_version` so
+        // that the runtime validation gate (which uses
+        // `platform.state.current_platform_version()`) and the data
+        // serialization stay aligned with the version the test claims to
+        // exercise.
+        let platform_version = PlatformVersion::get(protocol_version)
+            .expect("expected platform version for the requested protocol_version");
         let mut platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(protocol_version)
             .build_with_mock_rpc()
             .set_initial_state_structure();
 
@@ -893,7 +1018,12 @@ mod transfer_tests {
             Some(14992395)
         );
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 3369260);
+        assert_eq!(
+            processing_result.aggregated_fees().processing_fee,
+            expected_processing_fee,
+            "PROTOCOL_VERSION_{}: transferable contract-v0 processing fee must match the version-specific baseline",
+            protocol_version,
+        );
 
         let query_sender_results = platform
             .drive
@@ -930,8 +1060,32 @@ mod transfer_tests {
 
     #[tokio::test]
     async fn test_document_transfer_on_document_type_that_is_not_transferable() {
-        let platform_version = PlatformVersion::latest();
+        run_document_transfer_on_document_type_that_is_not_transferable_at_protocol_version(
+            PlatformVersion::latest().protocol_version,
+            457000,
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_11: pre-B7 fee — transformer reads were unbilled.
+    /// Pinned so v11 chain history stays bit-for-bit reproducible.
+    #[tokio::test]
+    async fn test_document_transfer_on_document_type_that_is_not_transferable_protocol_version_11()
+    {
+        run_document_transfer_on_document_type_that_is_not_transferable_at_protocol_version(
+            11, 445700,
+        )
+        .await;
+    }
+
+    async fn run_document_transfer_on_document_type_that_is_not_transferable_at_protocol_version(
+        protocol_version: dpp::version::ProtocolVersion,
+        expected_processing_fee: dpp::fee::Credits,
+    ) {
+        let platform_version = PlatformVersion::get(protocol_version)
+            .expect("expected platform version for the requested protocol_version");
         let (mut platform, contract) = TestPlatformBuilder::new()
+            .with_initial_protocol_version(protocol_version)
             .build_with_mock_rpc()
             .set_initial_state_structure()
             .with_crypto_card_game_transfer_only(Transferable::Never);
@@ -1105,7 +1259,12 @@ mod transfer_tests {
 
         assert_eq!(processing_result.valid_count(), 0);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 445700);
+        assert_eq!(
+            processing_result.aggregated_fees().processing_fee,
+            expected_processing_fee,
+            "PROTOCOL_VERSION_{}: not-transferable rejection processing fee must match the version-specific baseline",
+            protocol_version,
+        );
 
         let query_sender_results = platform
             .drive
@@ -1123,10 +1282,17 @@ mod transfer_tests {
         assert_eq!(query_receiver_results.documents().len(), 0);
     }
 
-    #[tokio::test]
-    async fn test_document_transfer_that_does_not_yet_exist() {
-        let platform_version = PlatformVersion::latest();
+    /// Helper for the paired transfer-of-missing-document test. Same scenario
+    /// at PROTOCOL_VERSION_11 (legacy bump-only fee) and PROTOCOL_VERSION_12
+    /// (fee covers fetch + validation work).
+    async fn run_document_transfer_that_does_not_yet_exist_at_protocol_version(
+        protocol_version: dpp::version::ProtocolVersion,
+        expected_processing_fee: dpp::fee::Credits,
+    ) {
+        let platform_version = PlatformVersion::get(protocol_version)
+            .expect("expected platform version for the requested protocol_version");
         let (mut platform, contract) = TestPlatformBuilder::new()
+            .with_initial_protocol_version(protocol_version)
             .build_with_mock_rpc()
             .set_initial_state_structure()
             .with_crypto_card_game_transfer_only(Transferable::Never);
@@ -1256,7 +1422,12 @@ mod transfer_tests {
 
         assert_eq!(processing_result.valid_count(), 0);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 36200);
+        assert_eq!(
+            processing_result.aggregated_fees().processing_fee,
+            expected_processing_fee,
+            "PROTOCOL_VERSION_{}: processing fee must match the version-specific baseline",
+            protocol_version,
+        );
 
         let query_sender_results = platform
             .drive
@@ -1274,10 +1445,48 @@ mod transfer_tests {
         assert_eq!(query_receiver_results.documents().len(), 0);
     }
 
+    /// PROTOCOL_VERSION_12+: bump emission charges the user for the fetch
+    /// that ran before the failure.
+    #[tokio::test]
+    async fn test_document_transfer_that_does_not_yet_exist() {
+        run_document_transfer_that_does_not_yet_exist_at_protocol_version(
+            PlatformVersion::latest().protocol_version,
+            521700,
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_11: pre-fix bump-only fee. Pinned so v11 chain
+    /// history stays bit-for-bit reproducible.
+    #[tokio::test]
+    async fn test_document_transfer_that_does_not_yet_exist_protocol_version_11() {
+        run_document_transfer_that_does_not_yet_exist_at_protocol_version(11, 36200).await;
+    }
+
     #[tokio::test]
     async fn test_document_delete_after_transfer() {
-        let platform_version = PlatformVersion::latest();
+        run_document_delete_after_transfer_at_protocol_version(
+            PlatformVersion::latest().protocol_version,
+            4004260,
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_11: pre-B4 fee — query_documents cost was discarded.
+    /// Pinned so v11 chain history stays bit-for-bit reproducible.
+    #[tokio::test]
+    async fn test_document_delete_after_transfer_protocol_version_11() {
+        run_document_delete_after_transfer_at_protocol_version(11, 3991900).await;
+    }
+
+    async fn run_document_delete_after_transfer_at_protocol_version(
+        protocol_version: dpp::version::ProtocolVersion,
+        expected_processing_fee: dpp::fee::Credits,
+    ) {
+        let platform_version = PlatformVersion::get(protocol_version)
+            .expect("expected platform version for the requested protocol_version");
         let (mut platform, contract) = TestPlatformBuilder::new()
+            .with_initial_protocol_version(protocol_version)
             .build_with_mock_rpc()
             .set_initial_state_structure()
             .with_crypto_card_game_transfer_only(Transferable::Always);
@@ -1454,7 +1663,12 @@ mod transfer_tests {
 
         assert_eq!(processing_result.valid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 3991900);
+        assert_eq!(
+            processing_result.aggregated_fees().processing_fee,
+            expected_processing_fee,
+            "PROTOCOL_VERSION_{}: transfer-then-delete (transfer step) processing fee must match the version-specific baseline",
+            protocol_version,
+        );
 
         let query_sender_results = platform
             .drive

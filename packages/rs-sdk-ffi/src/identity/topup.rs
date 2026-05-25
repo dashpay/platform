@@ -65,11 +65,10 @@ pub unsafe extern "C" fn dash_sdk_identity_topup_with_instant_lock(
         use dash_sdk::platform::transition::top_up_identity::TopUpIdentity;
 
         let new_balance = identity
-            .top_up_identity(
+            .top_up_identity_with_private_key(
                 &wrapper.sdk,
                 asset_lock_proof,
                 &private_key,
-                settings.and_then(|s| s.user_fee_increase),
                 settings,
             )
             .await
@@ -139,11 +138,10 @@ pub unsafe extern "C" fn dash_sdk_identity_topup_with_instant_lock_and_wait(
         use dash_sdk::platform::transition::top_up_identity::TopUpIdentity;
 
         let _new_balance = identity
-            .top_up_identity(
+            .top_up_identity_with_private_key(
                 &wrapper.sdk,
                 asset_lock_proof,
                 &private_key,
-                settings.and_then(|s| s.user_fee_increase),
                 settings,
             )
             .await

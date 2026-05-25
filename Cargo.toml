@@ -49,20 +49,14 @@ members = [
 ]
 
 [workspace.dependencies]
-# Temporary: branch-pinned to dashpay/rust-dashcore#761 (`feat/key-wallet-serde-derives`)
-# for serde derives on AssetLockFundingType + DerivedAddress. The branch has been
-# rebased onto 53130869 so it carries ONLY the serde additions (no v0.42-dev drift).
-# Drop the branch= override and restore rev= once #761 merges to v0.42-dev and a
-# subsequent dashcore rev bump flows the new rev in.
-dashcore = { git = "https://github.com/dashpay/rust-dashcore", branch = "feat/key-wallet-serde-derives" }
-dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", branch = "feat/key-wallet-serde-derives" }
-dash-spv = { git = "https://github.com/dashpay/rust-dashcore", branch = "feat/key-wallet-serde-derives" }
-dash-spv-ffi = { git = "https://github.com/dashpay/rust-dashcore", branch = "feat/key-wallet-serde-derives" }
-key-wallet = { git = "https://github.com/dashpay/rust-dashcore", branch = "feat/key-wallet-serde-derives" }
-key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", branch = "feat/key-wallet-serde-derives" }
-key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", branch = "feat/key-wallet-serde-derives" }
-dash-network = { git = "https://github.com/dashpay/rust-dashcore", branch = "feat/key-wallet-serde-derives" }
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", branch = "feat/key-wallet-serde-derives" }
+dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "f569e7b7b99dfe589c41f9ba7d36fbbe6805acdc" }
+dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", rev = "f569e7b7b99dfe589c41f9ba7d36fbbe6805acdc" }
+dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "f569e7b7b99dfe589c41f9ba7d36fbbe6805acdc" }
+key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "f569e7b7b99dfe589c41f9ba7d36fbbe6805acdc" }
+key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "f569e7b7b99dfe589c41f9ba7d36fbbe6805acdc" }
+key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "f569e7b7b99dfe589c41f9ba7d36fbbe6805acdc" }
+dash-network = { git = "https://github.com/dashpay/rust-dashcore", rev = "f569e7b7b99dfe589c41f9ba7d36fbbe6805acdc" }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "f569e7b7b99dfe589c41f9ba7d36fbbe6805acdc" }
 
 # Optimize heavy crypto crates even in dev/test builds so that
 # Halo 2 proof generation and verification run at near-release speed.
@@ -95,5 +89,5 @@ opt-level = 3
 
 [workspace.package]
 
-version = "3.1.0-dev.1"
+version = "3.1.0-dev.5"
 rust-version = "1.92"

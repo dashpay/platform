@@ -9,6 +9,16 @@ use crate::version::drive_abci_versions::drive_abci_validation_versions::{
 // Bump basic_structure to v1 for contract create and update state transitions.
 // v1 adds config min_version enforcement: since protocol version 12, V0 config is no longer
 // accepted because it lacks sized_integer_types support.
+//
+// Issue #2867 ("validating state transition for free") is fixed at the
+// aggregator layer instead — see
+// `dpp_versions::dpp_validation_versions::v3::DPP_VALIDATION_VERSIONS_V3`,
+// which bumps `validation_result.flatten` and `merge_many` from v0 to v1
+// for PROTOCOL_VERSION_12. This keeps the batch transformer single-version
+// while changing the underlying aggregator semantics so empty-action
+// failure paths become UnpaidConsensusError (tx removed from block by
+// prepare_proposal) instead of being synthesised into a paid empty
+// BatchTransitionAction.
 pub const DRIVE_ABCI_VALIDATION_VERSIONS_V8: DriveAbciValidationVersions =
     DriveAbciValidationVersions {
         state_transitions: DriveAbciStateTransitionValidationVersions {
@@ -17,7 +27,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V8: DriveAbciValidationVersions =
                     fetch_asset_lock_transaction_output_sync: 0,
                     verify_asset_lock_is_not_spent_and_has_enough_balance: 0,
                 },
-                validate_identity_public_key_contract_bounds: 0,
+                validate_identity_public_key_contract_bounds: 1,
                 validate_identity_public_key_ids_dont_exist_in_state: 0,
                 validate_identity_public_key_ids_exist_in_state: 0,
                 validate_state_transition_identity_signed: 0,
@@ -110,16 +120,59 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V8: DriveAbciValidationVersions =
                 advanced_structure: 0,
                 state: 0,
                 revision: 0,
-                transform_into_action: 0,
+                // PROTOCOL_VERSION_12 (v3.1 hard fork): batch state transition
+                // fee accounting fixes. This single field gates multiple
+                // related billing changes so they all activate together at
+                // the same hard fork. On v0 every behavior below is the
+                // legacy under-billing, preserved verbatim for
+                // PROTOCOL_VERSION_11 chain replay.
+                //
+                // Gated by `transform_into_action: 1`:
+                //   * B7 — outer `execution_context` is threaded through the
+                //     batch transformer (was a dropped local) so per-
+                //     transition fee_results in `try_into_action_v0` are
+                //     billed.
+                //   * B4 — `query_documents` cost in
+                //     `fetch_documents_for_transitions_knowing_contract_and_document_type`
+                //     is added to `execution_context`.
+                //   * B5 — `query_documents` cost in `fetch_document_with_id`
+                //     is added to `execution_context`.
+                //   * T1 — DPNS data trigger parent-domain
+                //     `query_documents` cost.
+                //   * T2 — DPNS data trigger preorder `query_documents` cost.
+                //   * T3 — DashPay data trigger recipient identity-balance
+                //     fetch cost (switched to `fetch_identity_balance_with_costs`).
+                //   * T4 — withdrawals data trigger `query_documents` cost.
+                transform_into_action: 1,
+                // PROTOCOL_VERSION_12 (v3.1 hard fork): per-transition
+                // failure paths in `transform_document_transition` now emit
+                // a `BumpIdentityDataContractNonce` action so the user pays
+                // for the validation work that already ran (fetch +
+                // ownership/revision check). v0 stays for chain
+                // reproducibility on PROTOCOL_VERSION_11 and below.
+                failed_per_transition_action: 1,
+                // PROTOCOL_VERSION_12 (v3.1 hard fork): fetch_documents
+                // helpers bumped to v1 which bill the grovedb cost of
+                // their query_documents calls. v0 stays for PV11 chain
+                // replay (the v0 helpers pass epoch=None and never call
+                // add_operation — byte-identical to pre-PR behavior).
+                fetch_documents_for_transitions_knowing_contract_and_document_type: 1,
+                fetch_document_with_id: 1,
                 data_triggers: DriveAbciValidationDataTriggerAndBindingVersions {
                     bindings: 0,
                     triggers: DriveAbciValidationDataTriggerVersions {
-                        create_contact_request_data_trigger: 0,
-                        create_domain_data_trigger: 0,
+                        // PROTOCOL_VERSION_12 (v3.1 hard fork): triggers
+                        // that perform drive reads now have `_v1` versions
+                        // that bill the cost via add_operation on the
+                        // outer execution_context. v0 versions remain
+                        // byte-identical to PV11 (don't bill).
+                        create_contact_request_data_trigger: 1,
+                        create_domain_data_trigger: 1,
                         create_identity_data_trigger: 0,
                         create_feature_flag_data_trigger: 0,
                         create_masternode_reward_shares_data_trigger: 0,
-                        delete_withdrawal_data_trigger: 0,
+                        delete_withdrawal_data_trigger: 1,
+                        // Reject does no drive reads — stays at v0.
                         reject_data_trigger: 0,
                     },
                 },

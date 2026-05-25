@@ -23,6 +23,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use dashcore::blockdata::transaction::{OutPoint, Transaction};
+use dashcore::ephemerealdata::chain_lock::ChainLock;
 use dashcore::ephemerealdata::instant_lock::InstantLock;
 use dashcore::Txid;
 
@@ -136,6 +137,19 @@ pub struct CoreChangeSet {
     /// the same flush both pushing the same gap-limit boundary
     /// collapse to one entry.
     pub addresses_derived: Vec<key_wallet_manager::DerivedAddress>,
+
+    /// Highest chainlock the wallet has applied (mirrors
+    /// `WalletMetadata::last_applied_chain_lock`). Populated by the
+    /// `ChainLockProcessed` bridge arm so the persister can
+    /// roundtrip this field across app restarts — without persisting
+    /// it, `metadata.last_applied_chain_lock` starts as `None` on
+    /// every load and the asset-lock-resume metadata fallback
+    /// (`proof.rs`) can't fire until SPV re-applies a fresh CL.
+    ///
+    /// Monotonic-max on merge by `block_height` (a chainlock at a
+    /// lower height never overwrites a higher one — chain locks are
+    /// strictly forward-advancing per upstream's contract).
+    pub last_applied_chain_lock: Option<ChainLock>,
 }
 
 impl Merge for CoreChangeSet {
@@ -178,6 +192,20 @@ impl Merge for CoreChangeSet {
         // append only entries we haven't seen yet — preserves arrival
         // order so the persister's writes line up with the same
         // derivation order the wallet's pool sees.
+        // Chain-lock watermark: monotonic-max by `block_height`. A
+        // later changeset's chain lock at a higher (or equal) height
+        // wins; anything lower is ignored. `None` means "no update
+        // in this batch", same convention as `synced_height`.
+        if let Some(other_cl) = other.last_applied_chain_lock {
+            let take = self
+                .last_applied_chain_lock
+                .as_ref()
+                .is_none_or(|existing| other_cl.block_height >= existing.block_height);
+            if take {
+                self.last_applied_chain_lock = Some(other_cl);
+            }
+        }
+
         if !other.addresses_derived.is_empty() {
             let mut seen: std::collections::HashSet<(
                 key_wallet::account::AccountType,
@@ -205,6 +233,7 @@ impl Merge for CoreChangeSet {
             && self.last_processed_height.is_none()
             && self.synced_height.is_none()
             && self.addresses_derived.is_empty()
+            && self.last_applied_chain_lock.is_none()
     }
 }
 
@@ -910,6 +939,12 @@ pub struct PlatformWalletChangeSet {
     /// gap-limit population) and on any pool extension / "used" flip.
     /// See [`AccountAddressPoolEntry`] for the merge policy.
     pub account_address_pools: Vec<AccountAddressPoolEntry>,
+    /// Shielded sub-wallet deltas: per-subwallet decrypted notes,
+    /// spent marks, sync watermarks, nullifier checkpoints. The
+    /// commitment tree itself is **not** in here — it lives on
+    /// disk in `ClientPersistentCommitmentTree`'s SQLite file.
+    #[cfg(feature = "shielded")]
+    pub shielded: Option<crate::changeset::ShieldedChangeSet>,
 }
 
 impl From<PlatformAddressChangeSet> for PlatformWalletChangeSet {
@@ -1006,10 +1041,14 @@ impl Merge for PlatformWalletChangeSet {
             .extend(other.account_registrations);
         self.account_address_pools
             .extend(other.account_address_pools);
+        #[cfg(feature = "shielded")]
+        {
+            self.shielded.merge(other.shielded);
+        }
     }
 
     fn is_empty(&self) -> bool {
-        self.core.is_empty()
+        let core_empty = self.core.is_empty()
             && self.identities.is_empty()
             && self.identity_keys.is_empty()
             && self.contacts.is_empty()
@@ -1023,7 +1062,15 @@ impl Merge for PlatformWalletChangeSet {
                 .is_none_or(|m| m.is_empty())
             && self.wallet_metadata.is_none()
             && self.account_registrations.is_empty()
-            && self.account_address_pools.is_empty()
+            && self.account_address_pools.is_empty();
+        #[cfg(feature = "shielded")]
+        {
+            core_empty && self.shielded.as_ref().is_none_or(|s| s.is_empty())
+        }
+        #[cfg(not(feature = "shielded"))]
+        {
+            core_empty
+        }
     }
 }
 
