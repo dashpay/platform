@@ -25,7 +25,10 @@ fn corrupt_btree_pages(path: &std::path::Path) {
         .open(path)
         .expect("open db for corruption");
     let len = f.metadata().unwrap().len();
-    assert!(len > 4096, "expected at least one full page");
+    assert!(
+        len >= 8192,
+        "need at least two full pages to corrupt page 2; got {len} bytes"
+    );
     // Read page 2 (bytes 4096..8192), flip every other byte, write back.
     f.seek(SeekFrom::Start(4096)).unwrap();
     let mut buf = vec![0u8; 4096];
