@@ -775,6 +775,11 @@ impl Drop for SqlitePersister {
         if dirty.is_empty() {
             return;
         }
+        // `take_for_flush` mutates the buffer (drains the changeset).
+        // That is intentional here: the persister is being dropped, no
+        // future caller can observe the buffer, and `populated_field_count`
+        // needs to inspect the changeset to produce the diagnostic. Do
+        // NOT treat `impl Drop` as side-effect-free.
         let total_fields: usize = dirty
             .iter()
             .filter_map(|id| {

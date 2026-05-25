@@ -109,6 +109,29 @@ respectively on stderr; `-q` suppresses non-error output.
 Exit codes: `0` success, `1` runtime error, `2` usage error, `3`
 validation failure (e.g. corrupt backup source).
 
+## Operational notes
+
+**Restore advisory-lock warning.** `restore` takes an exclusive `flock(2)`
+on the destination DB and holds it across the entire restore body, so a
+concurrent writer can't race the atomic swap. On filesystems where
+advisory locking is unsupported (some NFS / FUSE / network mounts), the
+crate emits a `tracing::warn!` on the
+`platform_wallet_storage` target —
+
+> `advisory lock unsupported on this filesystem; concurrent-writer race possible`
+
+— and proceeds anyway (there's no alternative on such filesystems).
+If you see this warning, ensure no other process opens the destination
+DB during the restore window, or move the DB to a filesystem with flock
+support before restoring.
+
+**Manual-mode drop diagnostic.** `SqlitePersister` configured with
+[`FlushMode::Manual`] emits a `tracing::error!` on drop if the buffer
+still holds uncommitted writes (with `dirty_wallets` and `total_fields`
+fields). The crate does NOT auto-flush from `Drop` — call
+[`SqlitePersister::commit_writes`] (or per-wallet `flush`) before drop
+to make Manual-mode writes durable.
+
 ## Cargo features
 
 | Feature | Default | What it brings |
