@@ -49,6 +49,7 @@ pub type LeafBoundaryKey = Vec<u8>;
 
 /// Funds stored for a platform address.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct AddressFunds {
     /// Address nonce used for anti-replay.
     pub nonce: AddressNonce,
