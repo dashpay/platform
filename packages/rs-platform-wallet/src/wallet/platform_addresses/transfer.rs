@@ -43,8 +43,13 @@ impl PlatformAddressWallet {
         platform_version: Option<&PlatformVersion>,
         address_signer: &S,
     ) -> Result<PlatformAddressChangeSet, PlatformWalletError> {
-        // DPP transitions are BTreeMap-keyed; canonicalize at the public boundary.
-        let outputs: BTreeMap<PlatformAddress, Credits> = outputs.into_iter().collect();
+        // DPP transitions are BTreeMap-keyed; canonicalize at the public
+        // boundary. Reject duplicates with a typed error before the collect —
+        // BTreeMap's last-write-wins would silently drop an intended
+        // recipient's amount (and could shift the `[ReduceOutput(index)]`
+        // target after canonicalization). Mirrors CMT-003 at the FFI
+        // boundary's `parse_outputs`.
+        let outputs = collect_outputs_unique(outputs)?;
         if outputs.is_empty() {
             return Err(PlatformWalletError::AddressOperation(
                 "Transfer requires at least one output address".to_string(),
@@ -202,8 +207,10 @@ impl PlatformAddressWallet {
         // boundary. The lex-ordering caveat documented on
         // [`Self::transfer`] applies here too — under `[ReduceOutput(0)]`
         // a lex-smaller `change_addr` would silently absorb the fee. That
-        // is rejected below.
-        let user_outputs: BTreeMap<PlatformAddress, Credits> = user_outputs.into_iter().collect();
+        // is rejected below. Duplicates in `user_outputs` are also
+        // rejected with a typed error (last-write-wins would silently
+        // drop a recipient amount).
+        let user_outputs = collect_outputs_unique(user_outputs)?;
         let Some(change_addr) = output_change_address else {
             return self
                 .transfer(
@@ -922,6 +929,28 @@ fn select_inputs_reduce_output(
     );
 
     Ok(selected)
+}
+
+/// Collect output entries into the DPP-canonical `BTreeMap` while rejecting
+/// duplicates with a typed [`PlatformWalletError::DuplicateOutputAddress`].
+/// A plain `BTreeMap::from_iter` is last-write-wins on collisions, which
+/// would silently drop an intended recipient's amount and could shift the
+/// `[ReduceOutput(index)]` target after canonicalization. Mirrors the
+/// CMT-003 pattern enforced at the FFI boundary (`parse_outputs`).
+fn collect_outputs_unique<I>(
+    outputs: I,
+) -> Result<BTreeMap<PlatformAddress, Credits>, PlatformWalletError>
+where
+    I: IntoIterator<Item = (PlatformAddress, Credits)>,
+{
+    let mut map = BTreeMap::new();
+    for (address, amount) in outputs {
+        if map.contains_key(&address) {
+            return Err(PlatformWalletError::DuplicateOutputAddress { address });
+        }
+        map.insert(address, amount);
+    }
+    Ok(map)
 }
 
 /// Reject `change_addr` collisions before the chain does: the protocol
@@ -1872,6 +1901,93 @@ mod auto_select_tests {
         assert_eq!(entries[0].funds.balance, 0);
         assert_eq!(entries[0].funds.nonce, 0);
         assert_eq!(entries[0].address_index, 11);
+    }
+
+    /// A duplicate destination address in the `outputs` iterator must be
+    /// rejected with a typed [`PlatformWalletError::DuplicateOutputAddress`]
+    /// before the BTreeMap canonicalization runs. Otherwise the second
+    /// `(addr, amount)` would silently overwrite the first under
+    /// `BTreeMap::from_iter`'s last-write-wins semantics, dropping an
+    /// intended recipient amount.
+    #[tokio::test]
+    async fn transfer_rejects_duplicate_output_address() {
+        use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
+        use crate::wallet::platform_addresses::PlatformAddressWallet;
+        use std::sync::Arc;
+        use tokio::sync::RwLock;
+
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let wallet_manager = Arc::new(RwLock::new(key_wallet_manager::WalletManager::new(
+            sdk.network,
+        )));
+        let persister = WalletPersister::new([0u8; 32], Arc::new(NoPlatformPersistence));
+        let wallet = PlatformAddressWallet::new(sdk, wallet_manager, [0u8; 32], persister);
+
+        let signer = NullSigner;
+        let dup_addr = p2pkh(0x77);
+        let outputs = vec![(dup_addr, 10_000_000u64), (dup_addr, 20_000_000u64)];
+        let fee_strategy = vec![AddressFundsFeeStrategyStep::DeductFromInput(0)];
+
+        let err = wallet
+            .transfer(
+                0,
+                InputSelection::Auto,
+                outputs,
+                fee_strategy,
+                None,
+                &signer,
+            )
+            .await
+            .expect_err("duplicate output address must be rejected");
+        match err {
+            PlatformWalletError::DuplicateOutputAddress { address } => {
+                assert_eq!(address, dup_addr);
+            }
+            other => panic!("expected DuplicateOutputAddress, got {other:?}"),
+        }
+    }
+
+    /// Same as `transfer_rejects_duplicate_output_address`, but exercised
+    /// through `transfer_with_change_address`'s `user_outputs` parameter so
+    /// the typed rejection is symmetric across both public entry points.
+    #[tokio::test]
+    async fn transfer_with_change_address_rejects_duplicate_user_output_address() {
+        use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
+        use crate::wallet::platform_addresses::PlatformAddressWallet;
+        use std::sync::Arc;
+        use tokio::sync::RwLock;
+
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let wallet_manager = Arc::new(RwLock::new(key_wallet_manager::WalletManager::new(
+            sdk.network,
+        )));
+        let persister = WalletPersister::new([0u8; 32], Arc::new(NoPlatformPersistence));
+        let wallet = PlatformAddressWallet::new(sdk, wallet_manager, [0u8; 32], persister);
+
+        let signer = NullSigner;
+        let dup_addr = p2pkh(0x77);
+        let user_outputs = vec![(dup_addr, 10_000_000u64), (dup_addr, 20_000_000u64)];
+        let change_addr = p2pkh(0x88);
+        let fee_strategy = vec![AddressFundsFeeStrategyStep::ReduceOutput(0)];
+
+        let err = wallet
+            .transfer_with_change_address(
+                0,
+                InputSelection::Auto,
+                user_outputs,
+                Some(change_addr),
+                fee_strategy,
+                None,
+                &signer,
+            )
+            .await
+            .expect_err("duplicate user_output address must be rejected");
+        match err {
+            PlatformWalletError::DuplicateOutputAddress { address } => {
+                assert_eq!(address, dup_addr);
+            }
+            other => panic!("expected DuplicateOutputAddress, got {other:?}"),
+        }
     }
 
     /// Signer used only by tests that exercise paths which short-circuit

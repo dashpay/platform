@@ -180,6 +180,13 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
             | PlatformWalletError::OnlyDustInputs { .. } => {
                 PlatformWalletFFIResultCode::ErrorNoSelectableInputs
             }
+            // Caller-supplied duplicate destination — surface as a parameter
+            // error so SDKs see a stable, generic "fix your inputs" code.
+            // Mirrors how `parse_outputs` already routes its duplicate-address
+            // String error via `From<String>` → `ErrorInvalidParameter`.
+            PlatformWalletError::DuplicateOutputAddress { .. } => {
+                PlatformWalletFFIResultCode::ErrorInvalidParameter
+            }
             _ => PlatformWalletFFIResultCode::ErrorUnknown,
         };
         PlatformWalletFFIResult::err(code, error.to_string())
@@ -467,5 +474,29 @@ mod tests {
         let err = PlatformWalletError::AddressOperation("explicit fallthrough".to_string());
         let result: PlatformWalletFFIResult = err.into();
         assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorUnknown);
+    }
+
+    /// `DuplicateOutputAddress` is a caller-supplied parameter bug; map it
+    /// to `ErrorInvalidParameter` so SDKs see a stable, generic code that
+    /// matches how `parse_outputs`'s String-based duplicate rejection
+    /// already routes via `From<String>` for `PlatformWalletFFIResult`.
+    #[test]
+    fn duplicate_output_address_maps_to_invalid_parameter() {
+        use dpp::address_funds::PlatformAddress;
+
+        let err = PlatformWalletError::DuplicateOutputAddress {
+            address: PlatformAddress::P2pkh([0x77; 20]),
+        };
+        let rendered = err.to_string();
+        let result: PlatformWalletFFIResult = err.into();
+        assert_eq!(
+            result.code,
+            PlatformWalletFFIResultCode::ErrorInvalidParameter
+        );
+        assert!(!result.message.is_null());
+        let msg = unsafe { std::ffi::CStr::from_ptr(result.message) }
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(msg, rendered);
     }
 }
