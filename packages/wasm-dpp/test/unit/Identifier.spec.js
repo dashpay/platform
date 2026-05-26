@@ -16,16 +16,18 @@ describe('Identifier', () => {
     it('should accept Buffer', () => {
       const identifier = new Identifier(buffer);
 
-      expect(identifier.toBuffer()).to.be.deep.equal(buffer);
+      expect(identifier.toBytes()).to.be.deep.equal(new Uint8Array(buffer));
       expect(identifier).to.be.an.instanceOf(Identifier);
+      expect(identifier).to.be.an.instanceOf(Uint8Array);
     });
 
     it('should accept Uint8Array', () => {
       const uint8 = new Uint8Array(buffer);
       const identifier = new Identifier(uint8);
 
-      expect(identifier.toBuffer()).to.be.deep.equal(buffer);
+      expect(identifier.toBytes()).to.be.deep.equal(uint8);
       expect(identifier).to.be.an.instanceOf(Identifier);
+      expect(identifier).to.be.an.instanceOf(Uint8Array);
     });
 
     it('should throw error if first argument is not Uint8Array', () => {
@@ -53,11 +55,38 @@ describe('Identifier', () => {
     });
   });
 
-  describe('#toBuffer', () => {
-    it('should return a new normal Buffer', () => {
+  describe('#toBytes', () => {
+    it('should return a new Uint8Array copy', () => {
       const identifier = new Identifier(buffer);
 
-      expect(identifier.toBuffer()).to.deep.equal(buffer);
+      const bytes = identifier.toBytes();
+      expect(bytes).to.be.an.instanceOf(Uint8Array);
+      expect(bytes).to.deep.equal(new Uint8Array(buffer));
+      // mutating the returned copy must not affect the identifier
+      bytes[0] = (bytes[0] + 1) & 0xff;
+      expect(identifier.toBytes()[0]).to.equal(buffer[0]);
+    });
+
+    it('should be isolated from later mutations to the source bytes', () => {
+      const source = new Uint8Array(buffer);
+      const identifier = new Identifier(source);
+
+      const originalByte = source[0];
+      source[0] = (source[0] + 1) & 0xff;
+
+      // The constructor must have copied the bytes; mutating the source
+      // after construction does not leak into the identifier.
+      expect(identifier.toBytes()[0]).to.equal(originalByte);
+    });
+  });
+
+  describe('#toBuffer', () => {
+    it('should return a new normal Buffer (deprecated)', () => {
+      const identifier = new Identifier(buffer);
+
+      const buf = identifier.toBuffer();
+      expect(Buffer.isBuffer(buf)).to.equal(true);
+      expect(buf).to.deep.equal(buffer);
     });
   });
 
@@ -96,7 +125,16 @@ describe('Identifier', () => {
       const identifier = Identifier.from(buffer);
 
       expect(identifier).to.be.an.instanceOf(Identifier);
-      expect(identifier.toBuffer()).to.deep.equal(buffer);
+      expect(identifier.toBytes()).to.deep.equal(new Uint8Array(buffer));
+    });
+
+    it('should create an instance from Uint8Array', async () => {
+      const uint8 = new Uint8Array(buffer);
+
+      const identifier = Identifier.from(uint8);
+
+      expect(identifier).to.be.an.instanceOf(Identifier);
+      expect(identifier.toBytes()).to.deep.equal(uint8);
     });
 
     it('should throw error if buffer is passed among with encoding', () => {
@@ -116,7 +154,7 @@ describe('Identifier', () => {
       const identifier = Identifier.from(string);
 
       expect(identifier).to.be.an.instanceOf(Identifier);
-      expect(identifier.toBuffer()).to.deep.equal(buffer);
+      expect(identifier.toBytes()).to.deep.equal(new Uint8Array(buffer));
     });
 
     it('should create an instance with a base64 string', () => {
@@ -125,7 +163,7 @@ describe('Identifier', () => {
       const identifier = Identifier.from(string, 'base64');
 
       expect(identifier).to.be.an.instanceOf(Identifier);
-      expect(identifier.toBuffer()).to.deep.equal(buffer);
+      expect(identifier.toBytes()).to.deep.equal(new Uint8Array(buffer));
     });
   });
 });

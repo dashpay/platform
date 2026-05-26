@@ -26,13 +26,26 @@ export default async function loadDpp(): Promise<DPPModule> {
   return dpp_module;
 };
 
+// Decode base64 to Uint8Array using only platform-standard APIs. atob is
+// available globally in browsers and in Node ≥18.
+const base64ToBytes = (b64: string): Uint8Array => {
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i += 1) {
+    out[i] = bin.charCodeAt(i);
+  }
+  return out;
+};
+
 const loadDppModule = async () => {
   // @ts-ignore
-  let bytes = Buffer.from(wasmBase, 'base64');
+  const bytes = base64ToBytes(wasmBase);
 
   if (typeof window !== 'undefined') {
-    let blob = new Blob([bytes], { type: "application/wasm" });
-    let wasmUrl = URL.createObjectURL(blob);
+    // Blob's BlobPart typing in lib.dom.d.ts insists on an ArrayBuffer-backed
+    // view; our Uint8Array is structurally compatible at runtime.
+    const blob = new Blob([bytes as BlobPart], { type: "application/wasm" });
+    const wasmUrl = URL.createObjectURL(blob);
     await init(wasmUrl);
   } else {
     dpp_module.initSync({ module: bytes });

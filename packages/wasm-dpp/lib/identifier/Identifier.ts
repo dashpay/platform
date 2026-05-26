@@ -1,55 +1,102 @@
 import bs58 from 'bs58';
 import IdentifierError from './errors/IdentifierError';
 
-// Buffer extending is not a trivial thing:
+// Buffer extending is not a trivial thing — Identifier used to be a Buffer
+// subclass. As of this revision, Identifier extends Uint8Array directly so it
+// can be constructed and used in environments without a Buffer polyfill.
+// The Buffer-returning toBuffer() method is retained as a deprecated shim
+// for backward compatibility; it requires Buffer to exist at call time but
+// no longer at module load.
 // * https://github.com/nodejs/node/commit/651a5b51eb838e8e23a5b94ba34e8e06630a004a
 // * https://github.com/nodejs/node/issues/4701
 // * https://github.com/nodejs/help/issues/1300
 // * https://github.com/nodejs/node/issues/2882
 
 type CborEncoder = {
-    pushAny: (buffer: Buffer) => void;
+    pushAny: (bytes: Uint8Array) => void;
 }
 
-type IdentifierEncoding = BufferEncoding | 'base58';
+// Encodings accepted by toString(). 'hex' decoding is not supported by from()
+// because there is no precedent for it on the public surface and bs58/base64
+// already cover the user-facing identifier formats.
+type IdentifierStringEncoding = 'base58' | 'base64' | 'hex';
+type IdentifierFromEncoding = 'base58' | 'base64';
+
+function bytesToHex(bytes: Uint8Array): string {
+  let out = '';
+  for (let i = 0; i < bytes.length; i += 1) {
+    out += bytes[i].toString(16).padStart(2, '0');
+  }
+  return out;
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let bin = '';
+  for (let i = 0; i < bytes.length; i += 1) {
+    bin += String.fromCharCode(bytes[i]);
+  }
+  return btoa(bin);
+}
+
+function base64ToBytes(b64: string): Uint8Array {
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i += 1) {
+    out[i] = bin.charCodeAt(i);
+  }
+  return out;
+}
 
 /**
- * @param {Uint8Array} buffer
+ * @param {Uint8Array} bytes
  * @returns {Identifier}
  * @constructor
  */
 export class Identifier {
   static MEDIA_TYPE = 'application/x.dash.dpp.identifier';
 
-  constructor(buffer: Uint8Array | Identifier) {
+  constructor(bytes: Uint8Array | Identifier) {
     // Accept both Node Buffer and plain Uint8Array. Buffer extends Uint8Array,
     // so an instanceof Uint8Array check matches both — existing Buffer callers
     // continue to work unchanged.
-    if (!(buffer instanceof Uint8Array)) {
+    if (!(bytes instanceof Uint8Array)) {
       throw new IdentifierError('Identifier expects Uint8Array');
     }
 
-    if (buffer.length !== 32) {
+    if (bytes.length !== 32) {
       throw new IdentifierError('Identifier must be 32 long');
     }
 
-    const patchedBuffer = Buffer.from(buffer);
+    // Copy into a fresh Uint8Array so callers cannot mutate the underlying
+    // bytes after construction, then patch the prototype so the result is
+    // an Identifier instance.
+    const patched = new Uint8Array(bytes);
 
-    Object.setPrototypeOf(patchedBuffer, Identifier.prototype);
+    Object.setPrototypeOf(patched, Identifier.prototype);
 
     // noinspection JSValidateTypes
     // @ts-ignore
-    return patchedBuffer;
+    return patched;
+  }
+
+  /**
+   * Convert to a plain Uint8Array (copy)
+   *
+   * @return {Uint8Array}
+   */
+  toBytes(): Uint8Array {
+    return new Uint8Array(this as unknown as Uint8Array);
   }
 
   /**
    * Convert to Buffer
    *
+   * @deprecated Prefer toBytes(). This method requires the `Buffer` global
+   *   to exist at call time and is retained only for backward compatibility.
    * @return {Buffer}
    */
   toBuffer(): Buffer {
-    // @ts-ignore
-    return Buffer.from(this);
+    return Buffer.from(this as unknown as Uint8Array);
   }
 
   /**
@@ -59,7 +106,7 @@ export class Identifier {
    * @return {boolean}
    */
   encodeCBOR(encoder: CborEncoder): boolean {
-    encoder.pushAny(this.toBuffer());
+    encoder.pushAny(this.toBytes());
 
     return true;
   }
@@ -79,56 +126,82 @@ export class Identifier {
    * @param {string} [encoding=base58]
    * @return {string}
    */
-  toString(encoding: IdentifierEncoding = 'base58'): string {
+  toString(encoding: IdentifierStringEncoding = 'base58'): string {
+    const bytes = this.toBytes();
     if (encoding === 'base58') {
-      return bs58.encode(this.toBuffer());
+      return bs58.encode(bytes);
     }
-
-    return this.toBuffer().toString(encoding);
+    if (encoding === 'base64') {
+      return bytesToBase64(bytes);
+    }
+    if (encoding === 'hex') {
+      return bytesToHex(bytes);
+    }
+    throw new IdentifierError(`Unsupported encoding: ${encoding}`);
   }
 
   /**
-   * Compare to another Identifier
-   * @param other
+   * Compare to another Identifier or Uint8Array
+   *
+   * @param {Identifier | Uint8Array} other
    */
   equals(other: Identifier | Uint8Array): boolean {
-    // @ts-ignore
-    return this.toBuffer().equals(Buffer.from(other));
+    if (!(other instanceof Uint8Array)) {
+      return false;
+    }
+    if (other.length !== this.length) {
+      return false;
+    }
+    for (let i = 0; i < this.length; i += 1) {
+      // @ts-ignore — Identifier is a Uint8Array at runtime
+      if (this[i] !== other[i]) {
+        return false;
+      }
+    }
+    return true;
   }
 
   /**
-   * Create Identifier from buffer or encoded string
+   * Create Identifier from bytes or encoded string
    *
-   * @param {string|Uint8Array|Identifier} value
-   * @param {string} encoding
+   * @param {string | Uint8Array | Identifier} value
+   * @param {string} [encoding] — when value is a string, one of 'base58' (default) or 'base64'
    * @return {Identifier}
    */
-  static from(value: string | Uint8Array | Identifier, encoding: string = undefined): Identifier {
-    let buffer;
+  static from(value: string | Uint8Array | Identifier, encoding?: IdentifierFromEncoding): Identifier {
+    let bytes;
 
     if (typeof value === 'string') {
-      if (encoding === undefined) {
-        // eslint-disable-next-line no-param-reassign
-        encoding = 'base58';
-      }
+      const effectiveEncoding = encoding === undefined ? 'base58' : encoding;
 
-      if (encoding === 'base58') {
-        buffer = bs58.decode(value);
+      if (effectiveEncoding === 'base58') {
+        // bs58.decode returns a Uint8Array (currently backed by Buffer via
+        // safe-buffer, which transitively requires a Buffer polyfill in
+        // browsers; once bs58 is replaced with a Uint8Array-native base58
+        // library, that transitive dependency goes away).
+        bytes = bs58.decode(value);
+      } else if (effectiveEncoding === 'base64') {
+        bytes = base64ToBytes(value);
       } else {
-        buffer = Buffer.from(value, 'base64');
+        throw new IdentifierError(`Unsupported encoding for string input: ${effectiveEncoding}`);
       }
     } else {
       if (encoding !== undefined) {
         throw new IdentifierError('encoding accepted only with type string');
       }
 
-      buffer = value;
+      bytes = value;
     }
 
-    return new Identifier(buffer);
+    return new Identifier(bytes);
   }
+
+  // Required to satisfy TypeScript's structural typing when this class is
+  // declared as `extends _Identifier` elsewhere; instances are real Uint8Arrays
+  // at runtime via the prototype patch above.
+  declare length: number;
 }
 
-Object.setPrototypeOf(Identifier.prototype, Buffer.prototype);
+Object.setPrototypeOf(Identifier.prototype, Uint8Array.prototype);
 
 export default Identifier;

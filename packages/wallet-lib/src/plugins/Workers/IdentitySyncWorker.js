@@ -92,11 +92,11 @@ class IdentitySyncWorker extends Worker {
         }
       }
 
-      // If it's not an undefined and not a buffer or Identifier (which inherits Buffer),
-      // this method will loop forever.
-      // This check prevents this from happening
-      if (!Buffer.isBuffer(identityBuffer)) {
-        throw new Error(`Expected identity id to be a Buffer or undefined, got ${identityBuffer}`);
+      // If it's not undefined and not bytes (Uint8Array, which Buffer and
+      // Identifier both extend), this method will loop forever.
+      // This check prevents this from happening.
+      if (!(identityBuffer instanceof Uint8Array)) {
+        throw new Error(`Expected identity id to be bytes or undefined, got ${identityBuffer}`);
       }
 
       // reset gap counter if we got an identity
