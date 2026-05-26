@@ -341,6 +341,26 @@ impl PlatformWallet {
         accounts: &[u32],
         coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
     ) -> Result<(), PlatformWalletError> {
+        self.bind_shielded_with_snapshot(seed, accounts, coordinator, None)
+            .await
+    }
+
+    /// Same as [`bind_shielded`](Self::bind_shielded) but the caller
+    /// supplies a pre-loaded shielded start-state snapshot, so the
+    /// restore step skips its own `persister.load()` call. The
+    /// [`PlatformWalletManager`](crate::manager::PlatformWalletManager)
+    /// uses this with its shared `cached_persisted_shielded` snapshot
+    /// to drop the N+1 load that fires when several wallets bind at
+    /// startup (CODE-017). Pass `None` to fall back to a per-call
+    /// `persister.load()`.
+    #[cfg(feature = "shielded")]
+    pub async fn bind_shielded_with_snapshot(
+        &self,
+        seed: &[u8],
+        accounts: &[u32],
+        coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
+        cached_snapshot: Option<Arc<crate::changeset::ShieldedSyncStartState>>,
+    ) -> Result<(), PlatformWalletError> {
         // Phase 4d.3: derive the per-account `OrchardKeySet` map
         // directly — no more `ShieldedWallet` wrapper. The shared
         // commitment-tree store lives on the coordinator (one
@@ -398,30 +418,33 @@ impl PlatformWallet {
 
         // Rehydrate per-subwallet notes / sync watermarks from
         // the persister's start state if any are present for
-        // this wallet. The lookup is cheap: load() is the
-        // boot-time snapshot, indexed by SubwalletId. Errors are
-        // logged but not fatal — first-launch wallets simply
-        // see no persisted state.
-        match self.persister.load() {
-            Ok(start) => {
-                if let Err(e) = coordinator
+        // this wallet. When the caller supplies `cached_snapshot`
+        // we reuse it — `PlatformWalletManager` shares one snapshot
+        // across every wallet's bind to avoid the N+1 `persister.load()`
+        // at startup (CODE-017). Otherwise fall back to a one-shot
+        // load: the snapshot is indexed by `SubwalletId`, so the lookup
+        // is cheap, and errors are logged but not fatal — first-launch
+        // wallets simply see no persisted state.
+        let restore_result = if let Some(snapshot) = cached_snapshot {
+            coordinator
+                .restore_for_wallet(self.wallet_id, snapshot.as_ref())
+                .await
+                .map_err(|e| format!("{e}"))
+        } else {
+            match self.persister.load() {
+                Ok(start) => coordinator
                     .restore_for_wallet(self.wallet_id, &start.shielded)
                     .await
-                {
-                    tracing::warn!(
-                        wallet_id = %hex::encode(self.wallet_id),
-                        error = %e,
-                        "Failed to restore shielded snapshot at bind time"
-                    );
-                }
+                    .map_err(|e| format!("{e}")),
+                Err(e) => Err(format!("persister.load() failed: {e}")),
             }
-            Err(e) => {
-                tracing::warn!(
-                    wallet_id = %hex::encode(self.wallet_id),
-                    error = %e,
-                    "persister.load() failed at shielded bind time"
-                );
-            }
+        };
+        if let Err(reason) = restore_result {
+            tracing::warn!(
+                wallet_id = %hex::encode(self.wallet_id),
+                error = %reason,
+                "Failed to restore shielded snapshot at bind time"
+            );
         }
         Ok(())
     }

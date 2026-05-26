@@ -257,11 +257,20 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
 
     /// Snapshot of the persisted shielded state, populating the cache
     /// via a single `persister.load()` if needed. The snapshot is
-    /// shared (`Arc`) so multiple `bind_shielded` calls reuse the same
-    /// allocation; restore is filtered per-wallet at consume time.
+    /// shared (`Arc`) so multiple
+    /// [`PlatformWallet::bind_shielded_with_snapshot`] calls reuse the
+    /// same allocation; restore is filtered per-wallet at consume time.
     /// Returns `Ok(None)` when no shielded state was persisted.
+    ///
+    /// Hosts that drive `bind_shielded` themselves (the FFI layer)
+    /// should fetch the snapshot here once and pass it through to
+    /// every wallet bind so the shielded restore step skips its own
+    /// `persister.load()` (CODE-017).
+    ///
+    /// [`PlatformWallet::bind_shielded_with_snapshot`]:
+    ///     crate::wallet::PlatformWallet::bind_shielded_with_snapshot
     #[cfg(feature = "shielded")]
-    pub(super) async fn cached_persisted_shielded(
+    pub async fn cached_persisted_shielded(
         &self,
     ) -> Result<Option<Arc<ShieldedSyncStartState>>, PlatformWalletError> {
         self.ensure_persisted_state_loaded().await?;
