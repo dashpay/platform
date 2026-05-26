@@ -27,11 +27,6 @@ arc-swap = "1"
 
 # Collections
 bimap = "0.6"
-# `IndexMap` powers the insertion-ordered public outputs map on
-# `PlatformAddressWallet::transfer` / `transfer_with_change_address`.
-# Same crate that dpp and rs-sdk already vendor; pin a workspace-aligned
-# minor that satisfies all in-tree requirements.
-indexmap = "2.7"
 
 # Async runtime
 tokio = { version = "1", features = ["sync", "rt", "time", "macros"] }

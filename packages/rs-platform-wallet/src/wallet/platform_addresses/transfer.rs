@@ -23,33 +23,29 @@ impl PlatformAddressWallet {
     /// from the account via [`InputSelection::Auto`]. When `platform_version`
     /// is `None`, [`LATEST_PLATFORM_VERSION`] drives fee estimation.
     ///
-    /// `outputs` preserves the caller's insertion order — useful for
-    /// debugging and UI — but **DPP transitions store outputs in a
-    /// `BTreeMap` keyed by lex-smallest address**. Under
-    /// `[ReduceOutput(0)]`, "output 0" is therefore the lex-smallest
-    /// entry, not the first-inserted. Callers that need the fee to come
-    /// out of a specific output must ensure that output is the
-    /// lex-smallest key, or switch to `[DeductFromInput(0)]`.
-    ///
     /// `address_signer` produces ECDSA signatures for the input
     /// [`PlatformAddress`]es; the wallet itself holds no key material —
     /// callers supply a seed-backed, hardware, or FFI-trampoline signer.
+    ///
+    /// # Output order semantics
+    ///
+    /// Outputs are stored on-chain in `AddressFundsTransferTransitionV0` as a
+    /// `BTreeMap<PlatformAddress, Credits>` — keyed by address, iterated in
+    /// lexicographic order. This is also the index space resolved by the
+    /// fee-strategy `ReduceOutput(i)`: index 0 is the lex-smallest output
+    /// address, not the first one supplied by the caller. The parameter type
+    /// `BTreeMap` is chosen to make this canonical ordering explicit at the
+    /// type signature; duplicate destination addresses are structurally
+    /// impossible.
     pub async fn transfer<S: Signer<PlatformAddress> + Send + Sync>(
         &self,
         account_index: u32,
         input_selection: InputSelection,
-        outputs: impl IntoIterator<Item = (PlatformAddress, Credits)>,
+        outputs: BTreeMap<PlatformAddress, Credits>,
         fee_strategy: AddressFundsFeeStrategy,
         platform_version: Option<&PlatformVersion>,
         address_signer: &S,
     ) -> Result<PlatformAddressChangeSet, PlatformWalletError> {
-        // DPP transitions are BTreeMap-keyed; canonicalize at the public
-        // boundary. Reject duplicates with a typed error before the collect —
-        // BTreeMap's last-write-wins would silently drop an intended
-        // recipient's amount (and could shift the `[ReduceOutput(index)]`
-        // target after canonicalization). Mirrors CMT-003 at the FFI
-        // boundary's `parse_outputs`.
-        let outputs = collect_outputs_unique(outputs)?;
         if outputs.is_empty() {
             return Err(PlatformWalletError::AddressOperation(
                 "Transfer requires at least one output address".to_string(),
@@ -192,25 +188,29 @@ impl PlatformAddressWallet {
     /// [`PlatformWalletError::AddressOperation`] when the change branch is
     /// requested with [`InputSelection::Auto`], when `change_addr` collides
     /// with `user_outputs` or `inputs`, or when `Σ inputs ≤ Σ user_outputs`.
+    ///
+    /// # Output order semantics
+    ///
+    /// `user_outputs` (and the change output, when added) end up stored
+    /// on-chain in `AddressFundsTransferTransitionV0` as a
+    /// `BTreeMap<PlatformAddress, Credits>` — keyed by address, iterated in
+    /// lexicographic order. This is the index space resolved by the
+    /// fee-strategy `ReduceOutput(i)`: under `[ReduceOutput(0)]` the
+    /// lex-smallest entry absorbs the fee. The wrapper rejects the case
+    /// where `change_addr` is lex-smaller than every user output (it would
+    /// silently become "output 0"); pick a lex-larger change address or
+    /// use `[DeductFromInput(0)]`.
     #[allow(clippy::too_many_arguments)] // mirrors `transfer` plus the change-address override.
     pub async fn transfer_with_change_address<S: Signer<PlatformAddress> + Send + Sync>(
         &self,
         account_index: u32,
         input_selection: InputSelection,
-        user_outputs: impl IntoIterator<Item = (PlatformAddress, Credits)>,
+        user_outputs: BTreeMap<PlatformAddress, Credits>,
         output_change_address: Option<PlatformAddress>,
         fee_strategy: AddressFundsFeeStrategy,
         platform_version: Option<&PlatformVersion>,
         address_signer: &S,
     ) -> Result<PlatformAddressChangeSet, PlatformWalletError> {
-        // DPP transitions are BTreeMap-keyed; canonicalize at the public
-        // boundary. The lex-ordering caveat documented on
-        // [`Self::transfer`] applies here too — under `[ReduceOutput(0)]`
-        // a lex-smaller `change_addr` would silently absorb the fee. That
-        // is rejected below. Duplicates in `user_outputs` are also
-        // rejected with a typed error (last-write-wins would silently
-        // drop a recipient amount).
-        let user_outputs = collect_outputs_unique(user_outputs)?;
         let Some(change_addr) = output_change_address else {
             return self
                 .transfer(
@@ -931,28 +931,6 @@ fn select_inputs_reduce_output(
     Ok(selected)
 }
 
-/// Collect output entries into the DPP-canonical `BTreeMap` while rejecting
-/// duplicates with a typed [`PlatformWalletError::DuplicateOutputAddress`].
-/// A plain `BTreeMap::from_iter` is last-write-wins on collisions, which
-/// would silently drop an intended recipient's amount and could shift the
-/// `[ReduceOutput(index)]` target after canonicalization. Mirrors the
-/// CMT-003 pattern enforced at the FFI boundary (`parse_outputs`).
-fn collect_outputs_unique<I>(
-    outputs: I,
-) -> Result<BTreeMap<PlatformAddress, Credits>, PlatformWalletError>
-where
-    I: IntoIterator<Item = (PlatformAddress, Credits)>,
-{
-    let mut map = BTreeMap::new();
-    for (address, amount) in outputs {
-        if map.contains_key(&address) {
-            return Err(PlatformWalletError::DuplicateOutputAddress { address });
-        }
-        map.insert(address, amount);
-    }
-    Ok(map)
-}
-
 /// Reject `change_addr` collisions before the chain does: the protocol
 /// errors deterministically when a transition has the same address as
 /// both input and output, and silently merging into a caller-declared
@@ -1032,8 +1010,6 @@ mod auto_select_tests {
     use dpp::address_funds::AddressWitness;
     use dpp::state_transition::address_funds_transfer_transition::v0::AddressFundsTransferTransitionV0;
     use dpp::state_transition::StateTransitionStructureValidation;
-    use indexmap::IndexMap;
-
     fn p2pkh(byte: u8) -> PlatformAddress {
         PlatformAddress::P2pkh([byte; 20])
     }
@@ -1740,8 +1716,7 @@ mod auto_select_tests {
         let wallet = PlatformAddressWallet::new(sdk, wallet_manager, [0u8; 32], persister);
 
         let signer = NullSigner;
-        let outputs: IndexMap<PlatformAddress, Credits> =
-            outputs_for(p2pkh(0x77), 10_000_000).into_iter().collect();
+        let outputs: BTreeMap<PlatformAddress, Credits> = outputs_for(p2pkh(0x77), 10_000_000);
         let change_addr = p2pkh(0x88);
         let fee_strategy = vec![AddressFundsFeeStrategyStep::ReduceOutput(0)];
 
@@ -1768,11 +1743,9 @@ mod auto_select_tests {
         }
     }
 
-    /// Pins the public-API contract that `transfer` and
-    /// `transfer_with_change_address` accept any
-    /// `IntoIterator<Item = (PlatformAddress, Credits)>` — including the
-    /// `BTreeMap` shape FFI/SDK callers naturally construct. Reaches the
-    /// "Auto + Some(change_addr)" rejection arm without doing any I/O.
+    /// Smoke test for the standard `transfer_with_change_address` entry: a
+    /// `BTreeMap` of user outputs reaches the "Auto + Some(change_addr)"
+    /// rejection arm without any I/O. Pins the public-API parameter type.
     #[tokio::test]
     async fn transfer_with_change_address_accepts_btreemap_outputs() {
         use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
@@ -1842,7 +1815,7 @@ mod auto_select_tests {
             nonce: 0,
             balance: 5_000_000,
         };
-        let address_infos: IndexMap<PlatformAddress, Option<AddressInfo>> = [
+        let address_infos: BTreeMap<PlatformAddress, Option<AddressInfo>> = [
             (owned_input_addr, Some(input_info)),
             (external_recipient, Some(recipient_info)),
         ]
@@ -1888,7 +1861,7 @@ mod auto_select_tests {
         let mut owned: BTreeMap<PlatformP2PKHAddress, u32> = BTreeMap::new();
         owned.insert(owned_addr, 11);
 
-        let address_infos: IndexMap<PlatformAddress, Option<dash_sdk::query_types::AddressInfo>> =
+        let address_infos: BTreeMap<PlatformAddress, Option<dash_sdk::query_types::AddressInfo>> =
             [(owned_platform, None)].into_iter().collect();
 
         let entries = build_transfer_persistence_entries(
@@ -1901,93 +1874,6 @@ mod auto_select_tests {
         assert_eq!(entries[0].funds.balance, 0);
         assert_eq!(entries[0].funds.nonce, 0);
         assert_eq!(entries[0].address_index, 11);
-    }
-
-    /// A duplicate destination address in the `outputs` iterator must be
-    /// rejected with a typed [`PlatformWalletError::DuplicateOutputAddress`]
-    /// before the BTreeMap canonicalization runs. Otherwise the second
-    /// `(addr, amount)` would silently overwrite the first under
-    /// `BTreeMap::from_iter`'s last-write-wins semantics, dropping an
-    /// intended recipient amount.
-    #[tokio::test]
-    async fn transfer_rejects_duplicate_output_address() {
-        use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
-        use crate::wallet::platform_addresses::PlatformAddressWallet;
-        use std::sync::Arc;
-        use tokio::sync::RwLock;
-
-        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
-        let wallet_manager = Arc::new(RwLock::new(key_wallet_manager::WalletManager::new(
-            sdk.network,
-        )));
-        let persister = WalletPersister::new([0u8; 32], Arc::new(NoPlatformPersistence));
-        let wallet = PlatformAddressWallet::new(sdk, wallet_manager, [0u8; 32], persister);
-
-        let signer = NullSigner;
-        let dup_addr = p2pkh(0x77);
-        let outputs = vec![(dup_addr, 10_000_000u64), (dup_addr, 20_000_000u64)];
-        let fee_strategy = vec![AddressFundsFeeStrategyStep::DeductFromInput(0)];
-
-        let err = wallet
-            .transfer(
-                0,
-                InputSelection::Auto,
-                outputs,
-                fee_strategy,
-                None,
-                &signer,
-            )
-            .await
-            .expect_err("duplicate output address must be rejected");
-        match err {
-            PlatformWalletError::DuplicateOutputAddress { address } => {
-                assert_eq!(address, dup_addr);
-            }
-            other => panic!("expected DuplicateOutputAddress, got {other:?}"),
-        }
-    }
-
-    /// Same as `transfer_rejects_duplicate_output_address`, but exercised
-    /// through `transfer_with_change_address`'s `user_outputs` parameter so
-    /// the typed rejection is symmetric across both public entry points.
-    #[tokio::test]
-    async fn transfer_with_change_address_rejects_duplicate_user_output_address() {
-        use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
-        use crate::wallet::platform_addresses::PlatformAddressWallet;
-        use std::sync::Arc;
-        use tokio::sync::RwLock;
-
-        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
-        let wallet_manager = Arc::new(RwLock::new(key_wallet_manager::WalletManager::new(
-            sdk.network,
-        )));
-        let persister = WalletPersister::new([0u8; 32], Arc::new(NoPlatformPersistence));
-        let wallet = PlatformAddressWallet::new(sdk, wallet_manager, [0u8; 32], persister);
-
-        let signer = NullSigner;
-        let dup_addr = p2pkh(0x77);
-        let user_outputs = vec![(dup_addr, 10_000_000u64), (dup_addr, 20_000_000u64)];
-        let change_addr = p2pkh(0x88);
-        let fee_strategy = vec![AddressFundsFeeStrategyStep::ReduceOutput(0)];
-
-        let err = wallet
-            .transfer_with_change_address(
-                0,
-                InputSelection::Auto,
-                user_outputs,
-                Some(change_addr),
-                fee_strategy,
-                None,
-                &signer,
-            )
-            .await
-            .expect_err("duplicate user_output address must be rejected");
-        match err {
-            PlatformWalletError::DuplicateOutputAddress { address } => {
-                assert_eq!(address, dup_addr);
-            }
-            other => panic!("expected DuplicateOutputAddress, got {other:?}"),
-        }
     }
 
     /// Signer used only by tests that exercise paths which short-circuit

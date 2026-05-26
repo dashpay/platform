@@ -194,23 +194,26 @@ pub struct AddressBalanceEntryFFI {
     pub address_index: u32,
 }
 
-/// Parse output entries into an insertion-ordered `IndexMap`.
+/// Parse output entries into the DPP-canonical `BTreeMap`.
 ///
-/// Mirrors `platform-wallet`'s public-API output ordering (QA-002): the
-/// wallet preserves the caller's order for UI/debug while DPP still
-/// keys the transition by lex-smallest address. Use `IndexMap` here so
-/// the caller's array order survives the FFI boundary.
+/// Outputs land on-chain in `AddressFundsTransferTransitionV0` as a
+/// `BTreeMap<PlatformAddress, Credits>` keyed in lexicographic order;
+/// matching that here keeps the FFI boundary aligned with the public
+/// transfer API. Duplicate destination addresses are rejected with an
+/// explicit error rather than relying on `BTreeMap`'s last-write-wins
+/// behaviour, so Swift/Kotlin callers that send the same address twice
+/// get a deterministic `Err`.
 ///
 /// # Safety
 /// `ptr` must point to `count` valid elements.
 pub unsafe fn parse_outputs(
     ptr: *const AddressBalanceEntryFFI,
     count: usize,
-) -> Result<indexmap::IndexMap<PlatformAddress, Credits>, String> {
+) -> Result<BTreeMap<PlatformAddress, Credits>, String> {
     if ptr.is_null() && count > 0 {
         return Err("Null output pointer with non-zero count".to_string());
     }
-    let mut map = indexmap::IndexMap::new();
+    let mut map = BTreeMap::new();
     if count > 0 {
         for entry in std::slice::from_raw_parts(ptr, count) {
             let addr = PlatformAddress::try_from(entry.address).map_err(str::to_string)?;
@@ -539,16 +542,19 @@ mod tests {
         );
     }
 
-    /// Distinct addresses are accepted and the insertion order is preserved.
+    /// Distinct addresses are accepted and the keys end up in DPP-canonical
+    /// (lexicographic) order regardless of the caller's array order.
     #[test]
-    fn parse_outputs_preserves_insertion_order_for_distinct_addresses() {
+    fn parse_outputs_yields_lex_order_for_distinct_addresses() {
+        // Caller-supplied order is intentionally non-lex (0x22 then 0x11);
+        // the BTreeMap return type must canonicalize on the way out.
         let entries = [
             AddressBalanceEntryFFI {
                 address: PlatformAddressFFI {
                     address_type: 0,
-                    hash: [0x11; 20],
+                    hash: [0x22; 20],
                 },
-                balance: 1,
+                balance: 2,
                 nonce: 0,
                 account_index: 0,
                 address_index: 0,
@@ -556,9 +562,9 @@ mod tests {
             AddressBalanceEntryFFI {
                 address: PlatformAddressFFI {
                     address_type: 0,
-                    hash: [0x22; 20],
+                    hash: [0x11; 20],
                 },
-                balance: 2,
+                balance: 1,
                 nonce: 0,
                 account_index: 0,
                 address_index: 0,

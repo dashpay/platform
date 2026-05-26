@@ -134,16 +134,6 @@ pub enum PlatformWalletError {
     #[error("input sum overflow: caller-supplied input balances exceed u64::MAX")]
     InputSumOverflow,
 
-    #[error(
-        "duplicate output address {address}: transfer outputs must be unique — \
-         collapsing duplicates would silently drop an intended recipient amount \
-         (last-write-wins). Sum the credits for {address} into a single entry."
-    )]
-    DuplicateOutputAddress {
-        /// The repeated destination address.
-        address: PlatformAddress,
-    },
-
     #[error("Platform address not found in wallet: {0}")]
     AddressNotFound(String),
 
