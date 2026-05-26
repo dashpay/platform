@@ -274,6 +274,13 @@ pub struct IdentityWallet<B: TransactionBroadcaster + ?Sized = SpvBroadcaster> {
     /// `SpvBroadcaster`-pinned, while this one picks the broadcaster
     /// used by `send_payment` (static dispatch per call).
     pub(crate) broadcaster: Arc<B>,
+    /// Shared outpoint reservation set (cloned from the sibling
+    /// [`crate::CoreWallet`]). DashPay `send_payment` and core
+    /// `send_to_addresses` both fund from the same BIP-44 account 0
+    /// UTXOs, so they must consult the same reservation set to avoid
+    /// the same-UTXO concurrent-selection race (CMT-001). See
+    /// [`crate::wallet::core::reservations`].
+    pub(crate) reservations: crate::wallet::core::reservations::OutpointReservations,
 }
 
 // Manual `Debug`: the derive would require `B: Debug`, which is not part
@@ -296,6 +303,7 @@ impl<B: TransactionBroadcaster + ?Sized> Clone for IdentityWallet<B> {
             asset_locks: Arc::clone(&self.asset_locks),
             persister: self.persister.clone(),
             broadcaster: Arc::clone(&self.broadcaster),
+            reservations: self.reservations.clone(),
         }
     }
 }

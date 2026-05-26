@@ -77,6 +77,21 @@ pub enum PlatformWalletFFIResultCode {
     ErrorMemoryAllocation = 11,
     ErrorUtf8Conversion = 12,
 
+    /// No spendable inputs available on the account — wait for sync /
+    /// new UTXOs and retry, or surface a depleted-wallet message.
+    /// Carries the typed [`PlatformWalletError::NoSpendableInputs`]
+    /// (account_type / account_index / context) stringified in the
+    /// `message` field.
+    ErrorNoSpendableInputs = 30,
+    /// Transaction builder selected an outpoint that another in-flight
+    /// build had already reserved — retryable. The originating
+    /// [`PlatformWalletError::ConcurrentSpendConflict`] carries a
+    /// `Vec<OutPoint>` of the colliding inputs; that payload is
+    /// stringified into the `message` field for now (TODO: propagate
+    /// the structured outpoint list across the FFI when a generic
+    /// payload sidecar exists).
+    ErrorConcurrentSpendConflict = 31,
+
     NotFound = 98, // Used exclusively for all the Option that are retuned as errors
     ErrorUnknown = 99,
 }
@@ -156,7 +171,16 @@ impl<T> From<Option<T>> for PlatformWalletFFIResult {
 
 impl From<PlatformWalletError> for PlatformWalletFFIResult {
     fn from(error: PlatformWalletError) -> Self {
-        PlatformWalletFFIResult::err(PlatformWalletFFIResultCode::ErrorUnknown, error.to_string())
+        let code = match &error {
+            PlatformWalletError::NoSpendableInputs { .. } => {
+                PlatformWalletFFIResultCode::ErrorNoSpendableInputs
+            }
+            PlatformWalletError::ConcurrentSpendConflict { .. } => {
+                PlatformWalletFFIResultCode::ErrorConcurrentSpendConflict
+            }
+            _ => PlatformWalletFFIResultCode::ErrorUnknown,
+        };
+        PlatformWalletFFIResult::err(code, error.to_string())
     }
 }
 

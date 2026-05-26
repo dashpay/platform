@@ -103,6 +103,9 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
         ),
         PlatformWalletError,
     > {
+        use std::collections::BTreeSet;
+
+        use dashcore::OutPoint;
         use key_wallet::account::account_collection::DashpayAccountKey;
         use key_wallet::wallet::managed_wallet_info::coin_selection::SelectionStrategy;
         use key_wallet::wallet::managed_wallet_info::transaction_builder::TransactionBuilder;
@@ -110,16 +113,14 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
 
         let account_index: u32 = 0;
 
-        let (payment_address, tx) = {
+        // Build, sign, reserve — all under one write-lock acquisition. Mirrors
+        // `CoreWallet::send_to_addresses` so concurrent calls between this and
+        // core `send_to_addresses` cannot select the same UTXO (CMT-001 / #3585).
+        let (payment_address, tx, _reservation) = {
             let mut wm = self.wallet_manager.write().await;
 
             // Resolve the external account's xpub so we can derive addresses.
             let contact_xpub = {
-                // Look up the external account in the *immutable* AccountCollection on
-                // `Wallet`. The ManagedAccountCollection only stores the managed state;
-                // the xpub lives on the immutable Account in `wallet.accounts`.
-                // For a watch-only external account we stored the contact's xpub directly
-                // as `account_xpub` on the Account struct — look it up via DashpayAccountKey.
                 let wallet = wm.get_wallet(&self.wallet_id).ok_or_else(|| {
                     PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id))
                 })?;
@@ -145,7 +146,74 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 .get_wallet_and_info_mut(&self.wallet_id)
                 .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(self.wallet_id)))?;
 
-            // Derive the next unused address from the external account's address pool.
+            // Resolve the funding-account xpub up front so we can advance the
+            // change-address derivation under the same lock.
+            let funding_xpub = wallet
+                .accounts
+                .standard_bip44_accounts
+                .get(&0)
+                .map(|a| a.account_xpub)
+                .ok_or_else(|| {
+                    PlatformWalletError::TransactionBuild(
+                        "BIP-44 account 0 not found in wallet".to_string(),
+                    )
+                })?;
+
+            let current_height = info.core_wallet.synced_height();
+
+            let managed_account = info
+                .core_wallet
+                .accounts
+                .standard_bip44_accounts
+                .get_mut(&0)
+                .ok_or_else(|| {
+                    PlatformWalletError::TransactionBuild(
+                        "BIP-44 managed account 0 not found".to_string(),
+                    )
+                })?;
+
+            // Snapshot spendable UTXOs minus any in-flight reservations from
+            // a concurrent `send_to_addresses`/`send_payment` on this wallet.
+            let reserved = self.reservations.snapshot();
+            let spendable: Vec<_> = managed_account
+                .spendable_utxos(current_height)
+                .into_iter()
+                .filter(|utxo| !reserved.contains(&utxo.outpoint))
+                .cloned()
+                .collect();
+            if spendable.is_empty() {
+                return Err(PlatformWalletError::NoSpendableInputs {
+                    account_index,
+                    account_type:
+                        key_wallet::account::account_type::StandardAccountType::BIP44Account,
+                    context: "all UTXOs used or reserved by in-flight transactions".to_string(),
+                });
+            }
+
+            // Pick a change address that no concurrent send has already
+            // peeked. Commit the advance inside this write lock so the
+            // privacy property holds even if broadcast fails later (one
+            // burned index per failure is acceptable; reuse is not).
+            let pending_change = self.reservations.pending_change_snapshot();
+            let change_addr = loop {
+                let peeked = managed_account
+                    .next_change_address(Some(&funding_xpub), false)
+                    .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
+                if !pending_change.contains(&peeked) {
+                    let _ = managed_account
+                        .next_change_address(Some(&funding_xpub), true)
+                        .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
+                    break peeked;
+                }
+                let _ = managed_account
+                    .next_change_address(Some(&funding_xpub), true)
+                    .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
+            };
+
+            // Derive the recipient's payment address from the external pool.
+            // Done *after* the change-address pick so a derivation failure
+            // doesn't leave a committed funding-side change advance dangling
+            // without a matching outpoint reservation.
             let key = DashpayAccountKey {
                 index: account_index,
                 user_identity_id: from_identity_id.to_buffer(),
@@ -162,13 +230,12 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                         to_contact_id
                     ))
                 })?;
-
             let payment_address = external_account
                 .next_address(Some(&contact_xpub), true)
                 .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
 
-            let current_height = info.core_wallet.synced_height();
-
+            // Re-borrow the managed funding account for the builder (the
+            // external_account borrow above ended at `payment_address`).
             let managed_account = info
                 .core_wallet
                 .accounts
@@ -179,20 +246,12 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                         "BIP-44 managed account 0 not found".to_string(),
                     )
                 })?;
-            let account = wallet
-                .accounts
-                .standard_bip44_accounts
-                .get(&0)
-                .ok_or_else(|| {
-                    PlatformWalletError::TransactionBuild(
-                        "BIP-44 account 0 not found in wallet".to_string(),
-                    )
-                })?;
 
             let builder = TransactionBuilder::new()
                 .set_current_height(current_height)
                 .set_selection_strategy(SelectionStrategy::LargestFirst)
-                .set_funding(managed_account, account)
+                .set_change_address(change_addr.clone())
+                .add_inputs(spendable.iter().cloned())
                 .add_output(&payment_address, amount_duffs);
 
             let (tx, _fee) = builder
@@ -200,17 +259,61 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                     managed_account.address_derivation_path(&addr)
                 })
                 .await
-                .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
+                .map_err(|e| {
+                    crate::wallet::core::broadcast::classify_build_error(
+                        e,
+                        key_wallet::account::account_type::StandardAccountType::BIP44Account,
+                        account_index,
+                    )
+                })?;
 
-            (payment_address, tx)
+            // Defense-in-depth: confirm the builder picked only outpoints
+            // from our pre-filtered spendable snapshot.
+            let selected: BTreeSet<OutPoint> =
+                tx.input.iter().map(|txin| txin.previous_output).collect();
+            let spendable_outpoints: BTreeSet<OutPoint> =
+                spendable.iter().map(|utxo| utxo.outpoint).collect();
+            if !selected.is_subset(&spendable_outpoints) {
+                return Err(PlatformWalletError::ConcurrentSpendConflict {
+                    selected: selected.into_iter().collect(),
+                });
+            }
+
+            let reservation = self
+                .reservations
+                .reserve(selected.into_iter().collect(), Some(change_addr));
+
+            (payment_address, tx, reservation)
         };
 
-        // --- 3. Broadcast the transaction. ---
-        let txid = self
-            .broadcaster
-            .broadcast(&tx)
-            .await
-            .map_err(|e| PlatformWalletError::TransactionBroadcast(e.to_string()))?;
+        // Broadcast + reconcile via the shared post-broadcast helper.
+        // The hook records the outgoing `PaymentEntry` on the sender's
+        // `ManagedIdentity` inside the same write lock the reconcile uses
+        // — keeping the entry recording in the same critical section
+        // ensures it cannot race a concurrent state mutation between
+        // `check_core_transaction` and `record_dashpay_payment`.
+        let entry = crate::wallet::identity::types::dashpay::payment::PaymentEntry::new_sent(
+            *to_contact_id,
+            amount_duffs,
+            memo,
+        );
+        let entry_for_hook = entry.clone();
+        let persister = self.persister.clone();
+        let from_identity = *from_identity_id;
+
+        let txid = crate::wallet::core::broadcast::broadcast_and_reconcile(
+            &self.wallet_manager,
+            self.wallet_id,
+            &self.broadcaster,
+            &tx,
+            _reservation,
+            move |info, txid, _reconciled| {
+                if let Some(managed) = info.identity_manager.managed_identity_mut(&from_identity) {
+                    managed.record_dashpay_payment(txid.to_string(), entry_for_hook, &persister);
+                }
+            },
+        )
+        .await?;
 
         tracing::info!(
             from_identity = %from_identity_id,
@@ -220,26 +323,6 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
             payment_address = %payment_address,
             "DashPay payment broadcast"
         );
-
-        // --- 4. Record the outgoing payment on the sender's ManagedIdentity. ---
-        let entry = crate::wallet::identity::types::dashpay::payment::PaymentEntry::new_sent(
-            *to_contact_id,
-            amount_duffs,
-            memo,
-        );
-        {
-            let mut wm = self.wallet_manager.write().await;
-            if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
-                if let Some(managed) = info.identity_manager.managed_identity_mut(from_identity_id)
-                {
-                    managed.record_dashpay_payment(
-                        txid.to_string(),
-                        entry.clone(),
-                        &self.persister,
-                    );
-                }
-            }
-        }
 
         Ok((txid, entry))
     }
