@@ -166,7 +166,7 @@ mod tests {
         // Use a non-null but fake signer pointer; the closure that
         // would dereference it is never entered because `NULL_HANDLE`
         // makes `with_item` return `None`.
-        let fake_signer = 0x1 as *mut MnemonicResolverHandle;
+        let fake_signer = std::ptr::dangling_mut::<MnemonicResolverHandle>();
         let mut out_tx: *mut u8 = std::ptr::null_mut();
         let mut out_len: usize = 0;
 
@@ -193,7 +193,7 @@ mod tests {
         let dummy_amount: u64 = 0;
         let addrs: [*const c_char; 1] = [dummy_addr];
         let amts: [u64; 1] = [dummy_amount];
-        let fake_signer = 0x1 as *mut MnemonicResolverHandle;
+        let fake_signer = std::ptr::dangling_mut::<MnemonicResolverHandle>();
         let mut out_tx: *mut u8 = std::ptr::null_mut();
         let mut out_len: usize = 0;
 
@@ -219,7 +219,7 @@ mod tests {
     fn send_to_addresses_null_element_is_rejected() {
         let addrs: [*const c_char; 2] = [std::ptr::null(), std::ptr::null()];
         let amts: [u64; 2] = [1, 2];
-        let fake_signer = 0x1 as *mut MnemonicResolverHandle;
+        let fake_signer = std::ptr::dangling_mut::<MnemonicResolverHandle>();
         let mut out_tx: *mut u8 = std::ptr::null_mut();
         let mut out_len: usize = 0;
 
