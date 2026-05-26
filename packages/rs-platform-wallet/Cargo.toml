@@ -76,15 +76,15 @@ shielded = ["dep:grovedb-commitment-tree", "dep:zip32", "dash-sdk/shielded", "dp
 # `dashcore/serde` and `dash-network/serde`) so every leaf type in a
 # changeset payload — `TransactionRecord`, `Utxo`, `InstantLock`,
 # `AccountType`, `AddressInfo`, `ExtendedPubKey`, `Network` — has a
-# working `serde::Serialize`/`Deserialize` impl. `dpp` already derives
-# serde unconditionally; `key-wallet-manager` has no `serde` feature
-# of its own, so the lone non-serde changeset field
-# (`CoreChangeSet::addresses_derived`, carrying a
-# `key_wallet_manager::DerivedAddress`) is `#[serde(skip)]` —
-# documented inline at the field.
+# working `serde::Serialize`/`Deserialize` impl. `dpp` derives serde
+# unconditionally; `key-wallet-manager/serde` covers `DerivedAddress`
+# and friends; `dash-sdk/serde` surfaces serde on SDK-owned types
+# reachable from changeset payloads.
 serde = [
     "dep:serde",
     "key-wallet/serde",
+    "key-wallet-manager/serde",
+    "dash-sdk/serde",
 ]
 # Forward to the upstream `key-wallet` / `key-wallet-manager`
 # `keep-finalized-transactions` feature. With it OFF (the default),
