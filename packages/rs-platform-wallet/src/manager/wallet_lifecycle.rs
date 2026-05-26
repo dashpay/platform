@@ -278,43 +278,18 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             }
         }
 
-        // Drive the typed `PersistenceError` kind off the wire so a
-        // transient (e.g. `SQLITE_BUSY`) gets one backoff retry while a
-        // fatal / constraint failure undoes the in-memory insert and
-        // surfaces `WalletRegistrationFailed`. Without this, a failed
-        // store leaves the wallet visible in `wallet_manager` without
-        // a `wallet_metadata` row, so every subsequent per-wallet write
-        // FK-violates against an absent parent.
-        let store_outcome = self
-            .persister
-            .store(wallet_id, registration_changeset.clone());
-        let store_err = match store_outcome {
-            Ok(()) => None,
-            Err(e) if e.is_transient() => {
-                tracing::warn!(
-                    wallet_id = %hex::encode(wallet_id),
-                    error = %e,
-                    "transient persist failure on wallet registration; retrying once"
-                );
-                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-                self.persister
-                    .store(wallet_id, registration_changeset)
-                    .err()
-            }
-            Err(e) => Some(e),
-        };
-        if let Some(e) = store_err {
+        if let Err(e) = self.persister.store(wallet_id, registration_changeset) {
             tracing::error!(
                 wallet_id = %hex::encode(wallet_id),
                 error = %e,
-                "failed to persist wallet registration changeset; undoing in-memory insert"
+                "failed to persist wallet registration changeset"
             );
             let mut wm = self.wallet_manager.write().await;
             let _ = wm.remove_wallet(&wallet_id);
-            return Err(PlatformWalletError::WalletRegistrationFailed {
-                wallet_id: hex::encode(wallet_id),
-                reason: e.to_string(),
-            });
+            return Err(PlatformWalletError::WalletCreation(format!(
+                "Failed to persist wallet registration changeset: {}",
+                e
+            )));
         }
 
         // Build the PlatformWallet handle.
@@ -333,20 +308,24 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             broadcaster,
         );
 
-        // Drain this wallet's persisted platform-address slice from
-        // the manager's shared cache (CODE-017) — populated lazily by
-        // the first call here, by `load_from_persistor`, or by
-        // `bind_shielded`. Eliminates the N+1 `persister.load()` /
-        // mutex-contention pattern that used to fire one full read
-        // per wallet at register time.
+        // Load persisted state. The only area wired up today is the
+        // platform-address provider — `from_persisted` skips the live
+        // `AddressPool` scan `initialize` would otherwise do.
+        // Per-wallet UTXOs / unused asset locks ship in the snapshot
+        // but don't have an active restore path yet.
         //
         // The two `?` returns below would otherwise leave the wallet
         // half-registered (present in `wallet_manager` from the
         // earlier `insert_wallet`, absent from `self.wallets`),
         // poisoning every retry on `WalletAlreadyExists`. Roll back
         // before bailing — same shape as `manager::load`.
-        let persisted_slice = match self.take_persisted_platform_addresses(&wallet_id).await {
-            Ok(slice) => slice,
+        let crate::changeset::ClientStartState {
+            mut platform_addresses,
+            wallets: _,
+            #[cfg(feature = "shielded")]
+                shielded: _,
+        } = match platform_wallet.load_persisted() {
+            Ok(state) => state,
             Err(e) => {
                 let mut wm = self.wallet_manager.write().await;
                 let _ = wm.remove_wallet(&wallet_id);
@@ -357,7 +336,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             }
         };
 
-        if let Some(persisted) = persisted_slice {
+        if let Some(persisted) = platform_addresses.remove(&wallet_id) {
             if let Err(e) = platform_wallet
                 .platform()
                 .initialize_from_persisted(persisted)
@@ -436,11 +415,6 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 .ok_or_else(|| PlatformWalletError::WalletNotFound(hex::encode(wallet_id)))?
         };
 
-        // Drop any cached persisted slice for this wallet so a future
-        // re-registration under the same id cannot apply stale state
-        // (CODE-017 cache-invalidation contract).
-        self.invalidate_persisted_for_wallet(wallet_id).await;
-
         // Detach the wallet's shielded state from the network
         // coordinator. After the Phase-2b refactor the coordinator
         // owns the per-`SubwalletId` viewing-key registry and the
@@ -460,42 +434,6 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             self.identity_sync_manager
                 .unregister_identity(identity_id)
                 .await;
-        }
-
-        // Persist the deletion. In-memory cleanup above is complete by
-        // this point — the wallet is gone from `wallet_manager`,
-        // `self.wallets`, the shielded coordinator, and the identity
-        // sync manager. The persister call cascade-deletes the on-disk
-        // rows so the next `load()` doesn't resurrect a half-gone
-        // wallet. Backends with no disk concept inherit the trait
-        // default (noop) — `SqlitePersister` overrides.
-        //
-        // Error policy mirrors `register_wallet` (CODE-018): a
-        // transient failure gets one retry with brief backoff; any
-        // remaining failure logs structured context and we return Ok —
-        // the user wanted this wallet gone and the in-memory side is
-        // already cleaned up. Orphan rows that survive a fatal failure
-        // are cleanable out-of-band via an admin tool.
-        let delete_outcome = self.persister.delete_wallet(*wallet_id);
-        let delete_err = match delete_outcome {
-            Ok(_) => None,
-            Err(e) if e.is_transient() => {
-                tracing::warn!(
-                    wallet_id = %hex::encode(wallet_id),
-                    error = %e,
-                    "transient persist failure on remove_wallet; retrying once"
-                );
-                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-                self.persister.delete_wallet(*wallet_id).err()
-            }
-            Err(e) => Some(e),
-        };
-        if let Some(e) = delete_err {
-            tracing::error!(
-                wallet_id = %hex::encode(wallet_id),
-                error = %e,
-                "remove_wallet: persister.delete_wallet failed; in-memory cleanup complete, disk state may have orphan rows"
-            );
         }
 
         Ok(removed)

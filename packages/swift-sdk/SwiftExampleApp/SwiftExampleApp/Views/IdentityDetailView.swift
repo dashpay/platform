@@ -1008,22 +1008,14 @@ struct IdentityDetailView: View {
             let tokenIdData: [Identifier] = idToToken.keys.compactMap { tokenIdBase58 in
                 Data.identifier(fromBase58: tokenIdBase58)
             }
-            // Parent wallet id is required on the FFI side so balance
-            // writes cascade through `wallet_metadata → identities →
-            // token_balances`. Out-of-wallet identities (no parent
-            // wallet) can't use this pipeline — skip the registration
-            // and fall through to the display-only fetch below.
-            if let walletId = identity.wallet?.walletId {
-                do {
-                    try walletManager.registerIdentityForTokenSync(
-                        identityId: identityBytes,
-                        walletId: walletId,
-                        tokenIds: tokenIdData
-                    )
-                    try await walletManager.syncIdentityTokensNow()
-                } catch {
-                    print("⚠️ identity token sync failed: \(error)")
-                }
+            do {
+                try walletManager.registerIdentityForTokenSync(
+                    identityId: identityBytes,
+                    tokenIds: tokenIdData
+                )
+                try await walletManager.syncIdentityTokensNow()
+            } catch {
+                print("⚠️ identity token sync failed: \(error)")
             }
 
             do {

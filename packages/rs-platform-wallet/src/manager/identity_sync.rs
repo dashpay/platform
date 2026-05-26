@@ -36,16 +36,12 @@
 //! follow-up — see the TODO inside [`IdentitySyncManager::sync_now`]
 //! and the matching note on [`IdentityTokenSyncInfo::contract_id`].
 //!
-//! Persister wiring: the manager is identity-scoped, but
-//! [`PlatformWalletPersistence::store`] takes a `WalletId`. Each
-//! identity registration carries the parent wallet id explicitly
-//! (`Option<WalletId>`) so the changeset emitted by
-//! `apply_fresh_balances` is dispatched under the real parent wallet
-//! when one is known. Identities registered with `None` (e.g. observed
-//! out-of-wallet identities) are persisted under the all-zero sentinel
-//! — V002's nullable `identities.wallet_id` accepts the orphan case
-//! and the cascade chain still flows `wallet_metadata → identities →
-//! identity-owned tables` for every identity with a real parent.
+//! Persister wiring caveat: the manager is identity-scoped, but
+//! [`PlatformWalletPersistence::store`] takes a `WalletId`. The
+//! changesets written here use [`WalletId::default()`] (`[0u8; 32]`)
+//! as a sentinel — token-balance persistence on the FFI / SQLite side
+//! is keyed by `(identity_id, token_id)`, so the wallet id is unused
+//! on that callback path.
 //!
 //! Not auto-started. Call [`IdentitySyncManager::start`] once
 //! identities are registered and the SDK is connected.
@@ -156,21 +152,12 @@ where
     /// SDK handle used to issue `IdentityTokenBalancesQuery` /
     /// `TokenAmount::fetch_many` from the sync loop.
     sdk: Arc<dash_sdk::Sdk>,
-    /// Persister for [`TokenBalanceChangeSet`] writes. Each store call
-    /// uses the per-identity parent `WalletId` recorded at
-    /// registration time (see `identity_parent_wallet`). Generic over
-    /// `P` so every `persister.store(...)` call on the hot sync loop
-    /// dispatches statically.
+    /// Persister for [`TokenBalanceChangeSet`] writes. Identity-scoped
+    /// changesets travel under [`WalletId::default()`] since this
+    /// manager is not wallet-scoped — see crate-level docs. Generic
+    /// over `P` so every `persister.store(...)` call on the hot sync
+    /// loop dispatches statically.
     persister: Arc<P>,
-    /// Per-identity parent wallet, populated at registration. Looked
-    /// up by `apply_fresh_balances` so the persister sees the real
-    /// owning wallet for cascade purposes. `None` means the identity
-    /// is observed without a known parent (orphan) — the changeset is
-    /// still dispatched under the all-zero sentinel, which V002's
-    /// nullable `identities.wallet_id` accepts. Kept in its own
-    /// `RwLock` so the read on the hot path doesn't fight the
-    /// per-identity state writer.
-    identity_parent_wallet: RwLock<BTreeMap<Identifier, Option<WalletId>>>,
     /// Cancel token for the background loop, if running.
     background_cancel: StdMutex<Option<CancellationToken>>,
     /// Monotonically increasing generation counter. Incremented each
@@ -209,7 +196,6 @@ where
         Self {
             sdk,
             persister,
-            identity_parent_wallet: RwLock::new(BTreeMap::new()),
             background_cancel: StdMutex::new(None),
             background_generation: AtomicU64::new(0),
             interval_secs: AtomicU64::new(DEFAULT_SYNC_INTERVAL_SECS),
@@ -226,28 +212,9 @@ where
     /// in `token_ids` becomes a watched row with `balance = 0`,
     /// `contract_id = Identifier::default()`,
     /// `identity_contract_nonce = 0`. The next sync pass populates
-    /// real values. The parent wallet is recorded as `None` (orphan);
-    /// callers that know the parent wallet should use
-    /// [`register_identity_with_wallet`](Self::register_identity_with_wallet)
-    /// instead so balance writes cascade through the correct wallet.
+    /// real values.
     pub async fn register_identity<I>(&self, identity_id: Identifier, token_ids: I)
     where
-        I: IntoIterator<Item = Identifier>,
-    {
-        self.register_identity_with_wallet(identity_id, None, token_ids)
-            .await;
-    }
-
-    /// Like [`register_identity`](Self::register_identity) but binds
-    /// the identity to a parent `WalletId`. The recorded id flows
-    /// through every `persister.store(wallet_id, …)` call this
-    /// manager makes for `identity_id`.
-    pub async fn register_identity_with_wallet<I>(
-        &self,
-        identity_id: Identifier,
-        parent_wallet_id: Option<WalletId>,
-        token_ids: I,
-    ) where
         I: IntoIterator<Item = Identifier>,
     {
         let tokens: Vec<IdentityTokenSyncInfo> = token_ids
@@ -268,9 +235,6 @@ where
                 tokens,
             },
         );
-        drop(state);
-        let mut parents = self.identity_parent_wallet.write().await;
-        parents.insert(identity_id, parent_wallet_id);
     }
 
     /// Remove the registry row for `identity_id`.
@@ -279,9 +243,6 @@ where
     pub async fn unregister_identity(&self, identity_id: &Identifier) {
         let mut state = self.state.write().await;
         state.remove(identity_id);
-        drop(state);
-        let mut parents = self.identity_parent_wallet.write().await;
-        parents.remove(identity_id);
     }
 
     /// Replace the watched-token list for an already-registered
@@ -611,26 +572,15 @@ where
             return;
         };
 
-        // Dispatch the changeset under the identity's real parent
-        // wallet id when one is known. V002 stores `token_balances`
-        // keyed by `(identity_id, token_id)` and the FK chain runs
-        // `wallet_metadata → identities → token_balances`, so the
-        // wallet id only matters here to keep the persister's
-        // per-wallet buffer / FK accounting honest. Orphan identities
-        // (`None`) fall back to the all-zero sentinel — V002's
-        // nullable `identities.wallet_id` accepts it.
-        let wallet_id = {
-            let parents = self.identity_parent_wallet.read().await;
-            parents
-                .get(&identity_id)
-                .copied()
-                .flatten()
-                .unwrap_or_default()
-        };
-        if let Err(e) = self.persister.store(wallet_id, cs.into()) {
+        // The persister API is wallet-scoped (`store(wallet_id, ..)`)
+        // but this manager is identity-scoped. Use the zero-byte
+        // sentinel — the FFI / SQLite token-balance write paths key
+        // their rows by `(identity_id, token_id)` and ignore the
+        // wallet id on this changeset.
+        let sentinel: WalletId = WalletId::default();
+        if let Err(e) = self.persister.store(sentinel, cs.into()) {
             tracing::error!(
                 identity_id = %identity_id,
-                wallet_id = %hex::encode(wallet_id),
                 error = %e,
                 "identity-sync: failed to persist token balance changeset"
             );

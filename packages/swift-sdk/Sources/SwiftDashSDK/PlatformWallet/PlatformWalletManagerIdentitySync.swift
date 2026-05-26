@@ -117,20 +117,13 @@ extension PlatformWalletManager {
         }.value
     }
 
-    /// Add or replace the sync registry row for `identityId`, bound to
-    /// its parent wallet. Each entry in `tokenIds` becomes a
-    /// watched-token row with placeholder balance/contract/nonce until
-    /// the next sync pass populates real values. Idempotent — calling
-    /// with the same identity replaces the row, including the recorded
-    /// parent wallet binding.
-    ///
-    /// `walletId` is required (32 bytes) — the Rust side rejects null
-    /// or the all-zero sentinel. Pass the parent wallet so balance
-    /// writes cascade through the correct `wallet_metadata → identities
-    /// → token_balances` chain.
+    /// Add or replace the sync registry row for `identityId`. Each
+    /// entry in `tokenIds` becomes a watched-token row with
+    /// placeholder balance/contract/nonce until the next sync pass
+    /// populates real values. Idempotent — calling with the same
+    /// identity replaces the row.
     public func registerIdentityForTokenSync(
         identityId: Identifier,
-        walletId: Data,
         tokenIds: [Identifier]
     ) throws {
         guard isConfigured, handle != NULL_HANDLE else {
@@ -139,11 +132,6 @@ extension PlatformWalletManager {
         guard identityId.count == 32 else {
             throw PlatformWalletError.invalidIdentifier(
                 "identityId must be 32 bytes, got \(identityId.count)"
-            )
-        }
-        guard walletId.count == 32 else {
-            throw PlatformWalletError.invalidIdentifier(
-                "walletId must be 32 bytes, got \(walletId.count)"
             )
         }
         // Flatten token ids into one contiguous 32*N buffer so the
@@ -158,16 +146,13 @@ extension PlatformWalletManager {
             flat.append(tid)
         }
         try identityId.withUnsafeBytes { idPtr in
-            try walletId.withUnsafeBytes { walletPtr in
-                try flat.withUnsafeBytes { tokensPtr in
-                    try platform_wallet_manager_identity_sync_register_identity(
-                        handle,
-                        idPtr.bindMemory(to: UInt8.self).baseAddress,
-                        walletPtr.bindMemory(to: UInt8.self).baseAddress,
-                        tokensPtr.bindMemory(to: UInt8.self).baseAddress,
-                        UInt(tokenIds.count)
-                    ).check()
-                }
+            try flat.withUnsafeBytes { tokensPtr in
+                try platform_wallet_manager_identity_sync_register_identity(
+                    handle,
+                    idPtr.bindMemory(to: UInt8.self).baseAddress,
+                    tokensPtr.bindMemory(to: UInt8.self).baseAddress,
+                    UInt(tokenIds.count)
+                ).check()
             }
         }
     }
