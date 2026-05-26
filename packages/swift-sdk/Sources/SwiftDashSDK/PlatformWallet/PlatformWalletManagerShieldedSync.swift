@@ -144,6 +144,83 @@ extension PlatformWalletManager {
         }
     }
 
+    // TODO(shielded-snapshot-devnet-test): remove this method once
+    // SwiftExampleApp adopts a proper test-wallet import flow. Wraps
+    // the temporary FFI entry `platform_wallet_manager_bind_shielded_with_raw_seed`
+    // so the iOS app can bind the chain-side test wallets seeded by
+    // `dashpay/drive:3.1-shielded.*` (raw ZIP-32 seed `[0x73; 32]` for
+    // wallet A, `[0x74; 32]` for wallet B). No BIP-39 mnemonic can
+    // derive those seeds, so the standard `bindShielded` path can't
+    // reach them. Tracked: dashpay/platform#3714.
+    /// **TEMPORARY (test-only)** — bind shielded keys from a raw
+    /// ZIP-32 seed instead of via mnemonic resolution. Used to bind
+    /// chain-side test wallets whose seeds aren't BIP-39 derived.
+    /// See `bindShielded` for the parameter semantics shared with
+    /// the production path.
+    public func bindShieldedRawSeed(
+        walletId: Data,
+        rawSeed: Data,
+        accounts: [UInt32] = [0]
+    ) throws {
+        guard isConfigured, handle != NULL_HANDLE else {
+            throw PlatformWalletError.invalidHandle(
+                "PlatformWalletManager not configured"
+            )
+        }
+        guard walletId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "walletId must be exactly 32 bytes"
+            )
+        }
+        guard !rawSeed.isEmpty, rawSeed.count <= 64 else {
+            throw PlatformWalletError.invalidParameter(
+                "rawSeed must be 1..=64 bytes"
+            )
+        }
+        guard !accounts.isEmpty else {
+            throw PlatformWalletError.invalidParameter(
+                "accounts must be non-empty"
+            )
+        }
+        guard accounts.count <= 64 else {
+            throw PlatformWalletError.invalidParameter(
+                "accounts must contain at most 64 entries"
+            )
+        }
+
+        try walletId.withUnsafeBytes { walletIdRaw in
+            guard let walletIdPtr = walletIdRaw.baseAddress?
+                .assumingMemoryBound(to: UInt8.self)
+            else {
+                throw PlatformWalletError.invalidParameter("walletId baseAddress is nil")
+            }
+            try rawSeed.withUnsafeBytes { seedRaw in
+                guard let seedPtr = seedRaw.baseAddress?
+                    .assumingMemoryBound(to: UInt8.self)
+                else {
+                    throw PlatformWalletError.invalidParameter(
+                        "rawSeed baseAddress is nil"
+                    )
+                }
+                try accounts.withUnsafeBufferPointer { accountsBuf in
+                    guard let accountsPtr = accountsBuf.baseAddress else {
+                        throw PlatformWalletError.invalidParameter(
+                            "accounts baseAddress is nil"
+                        )
+                    }
+                    try platform_wallet_manager_bind_shielded_with_raw_seed(
+                        handle,
+                        walletIdPtr,
+                        seedPtr,
+                        UInt(rawSeed.count),
+                        accountsPtr,
+                        UInt(accountsBuf.count)
+                    ).check()
+                }
+            }
+        }
+    }
+
     /// Configure the network-scoped shielded coordinator. Opens
     /// the per-network commitment-tree SQLite file at `dbPath`
     /// and installs a single shared handle every subsequent

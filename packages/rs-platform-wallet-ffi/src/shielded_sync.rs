@@ -350,6 +350,117 @@ pub unsafe extern "C" fn platform_wallet_manager_bind_shielded(
 }
 
 // ---------------------------------------------------------------------------
+// Bind shielded with raw ZIP-32 seed bytes — TEMPORARY DEVNET-TEST ENTRY
+// ---------------------------------------------------------------------------
+
+// TODO(shielded-snapshot-devnet-test): remove this entire entry once
+// SwiftExampleApp adopts a proper test-wallet import flow. Exists only
+// so iOS can bind the chain-side test wallet A from
+// dashpay/drive:3.1-shielded.* (raw ZIP-32 seed = [0x73; 32]) which
+// no BIP-39 mnemonic can derive. Tracked: dashpay/platform#3714.
+//
+// Differs from `platform_wallet_manager_bind_shielded` in exactly one
+// way: replaces the mnemonic-resolver callback path with a raw seed
+// byte buffer that the caller supplies directly. Everything downstream
+// (configure-shielded prerequisite, coordinator lookup, idempotency,
+// per-account derivation, error mapping) is identical.
+
+/// **TEMPORARY** — bind shielded keys from a raw ZIP-32 seed byte
+/// slice, bypassing the mnemonic resolver. Used to bind the
+/// devnet-only test wallets seeded by the chain's
+/// `create_data_for_shielded_pool` (whose owned wallets use raw
+/// `[0x73; 32]` and `[0x74; 32]` ZIP-32 seeds, not BIP-39 derived).
+///
+/// See `platform_wallet_manager_bind_shielded` for the parameter
+/// semantics that are identical here (`wallet_id_bytes`,
+/// `accounts_ptr`, `accounts_len`); only the seed source differs.
+///
+/// `seed_bytes` must point at `seed_len` readable bytes. `seed_len`
+/// in `[1, 64]` — ZIP-32 derive accepts arbitrary-length input.
+///
+/// # Safety
+/// - `wallet_id_bytes` must point at 32 readable bytes.
+/// - `accounts_ptr` must point at `accounts_len` readable `u32`s.
+/// - `seed_bytes` must point at `seed_len` readable bytes.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_bind_shielded_with_raw_seed(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    seed_bytes: *const u8,
+    seed_len: usize,
+    accounts_ptr: *const u32,
+    accounts_len: usize,
+) -> PlatformWalletFFIResult {
+    check_ptr!(wallet_id_bytes);
+    check_ptr!(seed_bytes);
+    check_ptr!(accounts_ptr);
+    if accounts_len == 0 || accounts_len > 64 {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            format!("accounts_len must be in 1..=64, got {accounts_len}"),
+        );
+    }
+    if seed_len == 0 || seed_len > 64 {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            format!("seed_len must be in 1..=64, got {seed_len}"),
+        );
+    }
+    let accounts: Vec<u32> =
+        std::slice::from_raw_parts(accounts_ptr, accounts_len).to_vec();
+
+    let mut wallet_id = [0u8; 32];
+    std::ptr::copy_nonoverlapping(wallet_id_bytes, wallet_id.as_mut_ptr(), 32);
+
+    // Copy the seed into a Zeroizing buffer so it's scrubbed on
+    // function exit, matching the mnemonic-resolver path's
+    // `Zeroizing<[u8; 64]>` discipline.
+    let mut seed_buf: Zeroizing<[u8; 64]> = Zeroizing::new([0u8; 64]);
+    std::ptr::copy_nonoverlapping(seed_bytes, seed_buf.as_mut_ptr(), seed_len);
+    let seed_slice: &[u8] = &seed_buf[..seed_len];
+
+    let lookup = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
+        runtime().block_on(async {
+            let wallet = manager.get_wallet(&wallet_id).await;
+            let coordinator = manager.shielded_coordinator().await;
+            (wallet, coordinator)
+        })
+    });
+    let (wallet_arc, coordinator) = unwrap_option_or_return!(lookup);
+    let wallet_arc = match wallet_arc {
+        Some(w) => w,
+        None => {
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorWalletOperation,
+                format!("wallet not found: {}", hex::encode(wallet_id)),
+            );
+        }
+    };
+    let coordinator = match coordinator {
+        Some(c) => c,
+        None => {
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorWalletOperation,
+                "shielded support not configured — call platform_wallet_manager_configure_shielded first",
+            );
+        }
+    };
+
+    if let Err(e) = runtime().block_on(wallet_arc.bind_shielded(
+        seed_slice,
+        accounts.as_slice(),
+        &coordinator,
+    )) {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorWalletOperation,
+            format!("bind_shielded (raw seed) failed: {e}"),
+        );
+    }
+
+    PlatformWalletFFIResult::ok()
+}
+
+// ---------------------------------------------------------------------------
 // Configure shielded (network-scoped)
 // ---------------------------------------------------------------------------
 

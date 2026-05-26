@@ -101,6 +101,30 @@ class ShieldedService: ObservableObject {
     /// Subscription to `walletManager.$lastShieldedSyncEvent`.
     private var syncEventCancellable: AnyCancellable?
 
+    // MARK: - Timing instrumentation
+    //
+    // Surfaces wall-clock of each sync pass so devnet stress tests
+    // (1M shielded notes via `dashpay/drive:3.1-shielded.*`) can be
+    // measured from the iOS client. See
+    // `docs/shielded-sync-timing-spec.md` for the design.
+
+    /// Wall-clock of the most recent NON-cooldown completed sync
+    /// pass. Nil until the first such pass after `bind()`.
+    @Published var lastSyncDuration: TimeInterval?
+
+    /// Running wall-clock of the in-flight sync pass. Updated by a
+    /// 1Hz timer while `isSyncing == true`; nil otherwise.
+    @Published var currentSyncElapsed: TimeInterval?
+
+    /// `Date()` at the moment `isSyncing` flipped false → true.
+    /// Drives both `lastSyncDuration` (at completion) and
+    /// `currentSyncElapsed` (live).
+    private var currentSyncStartedAt: Date?
+
+    /// 1Hz timer that ticks `currentSyncElapsed` while syncing.
+    /// Started on false→true edge, invalidated on true→false edge.
+    private var syncTickTimer: Timer?
+
     // MARK: - Lifecycle
 
     /// Bind the service to a wallet. Drives `bindShielded` on the
@@ -154,6 +178,11 @@ class ShieldedService: ObservableObject {
         totalScanned = 0
         totalNewNotes = 0
         totalNewlySpent = 0
+        lastSyncDuration = nil
+        currentSyncElapsed = nil
+        currentSyncStartedAt = nil
+        syncTickTimer?.invalidate()
+        syncTickTimer = nil
 
         let dbPath = Self.dbPath(for: network)
         let sortedAccounts = Array(Set(accounts)).sorted()
@@ -207,8 +236,50 @@ class ShieldedService: ObservableObject {
         }
 
         syncStateCancellable = walletManager.$shieldedSyncIsSyncing
-            .sink { [weak self] isSyncing in
-                self?.isSyncing = isSyncing
+            .sink { [weak self] newValue in
+                guard let self else { return }
+                let wasSyncing = self.isSyncing
+                self.isSyncing = newValue
+                // Detect false → true edge. `.sink` fires on every
+                // republished value, including duplicates, so we
+                // gate on the previous mirror to avoid resetting
+                // `currentSyncStartedAt` mid-pass.
+                if newValue && !wasSyncing {
+                    self.currentSyncStartedAt = Date()
+                    self.currentSyncElapsed = 0
+                    SDKLogger.log(
+                        "Shielded sync started",
+                        minimumLevel: .medium
+                    )
+                    self.syncTickTimer?.invalidate()
+                    self.syncTickTimer = Timer.scheduledTimer(
+                        withTimeInterval: 1.0,
+                        repeats: true
+                    ) { [weak self] _ in
+                        Task { @MainActor [weak self] in
+                            guard let self,
+                                  let started = self.currentSyncStartedAt
+                            else { return }
+                            self.currentSyncElapsed = max(
+                                0,
+                                Date().timeIntervalSince(started)
+                            )
+                        }
+                    }
+                }
+                // Detect true → false edge. Tear down the ticker
+                // unconditionally — `handleShieldedSyncEvent` is the
+                // one that decides whether to record a
+                // `lastSyncDuration` based on cooldown-skip / failure.
+                if !newValue && wasSyncing {
+                    self.syncTickTimer?.invalidate()
+                    self.syncTickTimer = nil
+                    self.currentSyncElapsed = nil
+                    // `currentSyncStartedAt` is NOT cleared here —
+                    // `handleShieldedSyncEvent` still needs it to
+                    // compute `lastSyncDuration`. The event handler
+                    // clears it after consuming the value.
+                }
             }
 
         syncEventCancellable = walletManager.$lastShieldedSyncEvent
@@ -216,6 +287,145 @@ class ShieldedService: ObservableObject {
                 guard let self, let event else { return }
                 self.handleShieldedSyncEvent(event)
             }
+    }
+
+    // TODO(shielded-snapshot-devnet-test): remove `bindWithRawSeed`
+    // once SwiftExampleApp adopts a proper test-wallet import flow.
+    // Exists so the iOS app can bind the chain-side test wallet A
+    // (raw ZIP-32 seed `[0x73; 32]`) seeded by
+    // `dashpay/drive:3.1-shielded.*` — no BIP-39 mnemonic can derive
+    // that seed. Tracked: dashpay/platform#3714.
+    /// **TEMPORARY (test-only)** — bind shielded keys from a raw
+    /// 32-byte ZIP-32 seed. Mirrors `bind(...)` but bypasses the
+    /// mnemonic resolver via
+    /// [`PlatformWalletManager.bindShieldedRawSeed`].
+    func bindWithRawSeed(
+        walletManager: PlatformWalletManager,
+        walletId: Data,
+        network: Network,
+        rawSeed: Data,
+        accounts: [UInt32] = [0]
+    ) {
+        self.walletManager = walletManager
+        self.boundWalletId = walletId
+        self.network = network
+        self.syncStateCancellable?.cancel()
+        self.syncEventCancellable?.cancel()
+
+        // Same reset-on-rebind block as the standard bind() path
+        // so a Sync Now after a rebind doesn't see stale counters
+        // / addresses / timing from the prior wallet.
+        isBound = false
+        isSyncing = false
+        shieldedBalance = 0
+        lastNewNotes = 0
+        lastNewlySpent = 0
+        lastSyncTime = nil
+        lastError = nil
+        orchardDisplayAddress = nil
+        boundAccounts = []
+        addressesByAccount = [:]
+        syncCountSinceLaunch = 0
+        totalScanned = 0
+        totalNewNotes = 0
+        totalNewlySpent = 0
+        lastSyncDuration = nil
+        currentSyncElapsed = nil
+        currentSyncStartedAt = nil
+        syncTickTimer?.invalidate()
+        syncTickTimer = nil
+
+        let dbPath = Self.dbPath(for: network)
+        let sortedAccounts = Array(Set(accounts)).sorted()
+        do {
+            try walletManager.configureShielded(dbPath: dbPath)
+            try walletManager.bindShieldedRawSeed(
+                walletId: walletId,
+                rawSeed: rawSeed,
+                accounts: sortedAccounts
+            )
+            isBound = true
+            lastError = nil
+            boundAccounts = sortedAccounts
+
+            for account in sortedAccounts {
+                if let raw = try? walletManager.shieldedDefaultAddress(
+                    walletId: walletId,
+                    account: account
+                ) {
+                    addressesByAccount[account] = DashAddress.encodeOrchard(
+                        rawBytes: raw,
+                        network: network
+                    )
+                }
+            }
+            let primary = sortedAccounts.contains(0) ? 0 : (sortedAccounts.first ?? 0)
+            orchardDisplayAddress = addressesByAccount[primary]
+
+            SDKLogger.log(
+                "Shielded bound (RAW SEED, test only): walletId=\(walletId.prefix(4).map { String(format: "%02x", $0) }.joined())… network=\(network.networkName) accounts=\(sortedAccounts) tree=\(dbPath)",
+                minimumLevel: .medium
+            )
+        } catch {
+            lastError = "Shielded raw-seed bind failed: \(error.localizedDescription)"
+            SDKLogger.log(lastError ?? "", minimumLevel: .medium)
+        }
+
+        // Wire up the same subscriptions the standard bind() path
+        // installs, so sync events flow into the timing/UI fields.
+        syncStateCancellable = walletManager.$shieldedSyncIsSyncing
+            .sink { [weak self] newValue in
+                guard let self else { return }
+                let wasSyncing = self.isSyncing
+                self.isSyncing = newValue
+                if newValue && !wasSyncing {
+                    self.currentSyncStartedAt = Date()
+                    self.currentSyncElapsed = 0
+                    SDKLogger.log(
+                        "Shielded sync started",
+                        minimumLevel: .medium
+                    )
+                    self.syncTickTimer?.invalidate()
+                    self.syncTickTimer = Timer.scheduledTimer(
+                        withTimeInterval: 1.0,
+                        repeats: true
+                    ) { [weak self] _ in
+                        Task { @MainActor [weak self] in
+                            guard let self,
+                                  let started = self.currentSyncStartedAt
+                            else { return }
+                            self.currentSyncElapsed = max(
+                                0,
+                                Date().timeIntervalSince(started)
+                            )
+                        }
+                    }
+                }
+                if !newValue && wasSyncing {
+                    self.syncTickTimer?.invalidate()
+                    self.syncTickTimer = nil
+                    self.currentSyncElapsed = nil
+                }
+            }
+        syncEventCancellable = walletManager.$lastShieldedSyncEvent
+            .sink { [weak self] event in
+                guard let self, let event else { return }
+                self.handleShieldedSyncEvent(event)
+            }
+
+        // Start the manager loop if not already running. Mirrors
+        // the post-bind step normally done by
+        // SwiftExampleAppApp.rebindWalletScopedServices().
+        do {
+            if try !walletManager.isShieldedSyncRunning() {
+                try walletManager.startShieldedSync()
+            }
+        } catch {
+            SDKLogger.log(
+                "startShieldedSync after raw-seed bind failed: \(error.localizedDescription)",
+                minimumLevel: .medium
+            )
+        }
     }
 
     /// Re-bind the singleton service to a different wallet using the
@@ -362,6 +572,11 @@ class ShieldedService: ObservableObject {
         totalScanned = 0
         totalNewNotes = 0
         totalNewlySpent = 0
+        lastSyncDuration = nil
+        currentSyncElapsed = nil
+        currentSyncStartedAt = nil
+        syncTickTimer?.invalidate()
+        syncTickTimer = nil
     }
 
     /// Wipe every wallet's persisted shielded state and stop. The
@@ -492,6 +707,11 @@ class ShieldedService: ObservableObject {
         totalScanned = 0
         totalNewNotes = 0
         totalNewlySpent = 0
+        lastSyncDuration = nil
+        currentSyncElapsed = nil
+        currentSyncStartedAt = nil
+        syncTickTimer?.invalidate()
+        syncTickTimer = nil
     }
 
     // MARK: - Sync event handling
@@ -542,6 +762,48 @@ class ShieldedService: ObservableObject {
                 totalScanned += result.totalScanned
                 totalNewNotes += UInt64(result.newNotes)
                 totalNewlySpent += UInt64(result.newlySpent)
+
+                // Record per-pass wall-clock and log it. `Date()`
+                // here is the Swift-side timestamp of when the
+                // event handler runs (≈ when isSyncing flipped
+                // true → false), pairing with `currentSyncStartedAt`
+                // captured on the false → true edge. Clamp to >= 0
+                // defensively — should never be negative with
+                // Swift-edge endpoints, but if the start timestamp
+                // is missing (e.g. event arrived without a paired
+                // start, post-Clear race) we surface nil rather
+                // than a misleading number.
+                if let started = currentSyncStartedAt {
+                    let elapsed = max(0, Date().timeIntervalSince(started))
+                    lastSyncDuration = elapsed
+                    let rateString: String
+                    if elapsed > 0.05 && result.totalScanned > 0 {
+                        let rate = Double(result.totalScanned) / elapsed
+                        rateString = String(format: " rate=%.0f/s", rate)
+                    } else {
+                        rateString = ""
+                    }
+                    SDKLogger.log(
+                        String(
+                            format: "Shielded sync done  pass=%d  elapsed=%.2fs%@  scanned=%llu  new=%u  spent=%u  balance=%llu",
+                            syncCountSinceLaunch,
+                            elapsed,
+                            rateString,
+                            result.totalScanned,
+                            result.newNotes,
+                            result.newlySpent,
+                            result.balance
+                        ),
+                        minimumLevel: .medium
+                    )
+                } else {
+                    lastSyncDuration = nil
+                    SDKLogger.log(
+                        "Shielded sync done (no paired start) pass=\(syncCountSinceLaunch) scanned=\(result.totalScanned) balance=\(result.balance)",
+                        minimumLevel: .medium
+                    )
+                }
+                currentSyncStartedAt = nil
             }
         } else if result.skipped {
             // Skipped means the wallet hasn't been bound yet on the

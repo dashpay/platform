@@ -432,6 +432,39 @@ var body: some View {
                     // bound wallet.
                     ShieldedNetworkSummaryRows(walletIds: walletIdsOnNetwork)
 
+                    // Per-pass wall-clock timing. While a sync is
+                    // in-flight, shows the live ticker (driven by a
+                    // 1Hz timer on ShieldedService). After
+                    // completion, shows the most recent non-cooldown
+                    // pass duration. Mono digits keep the number
+                    // readable as it ticks during long initial
+                    // syncs (e.g. 10 min at N=1M). See
+                    // `docs/shielded-sync-timing-spec.md`.
+                    if shieldedService.isSyncing,
+                       let elapsed = shieldedService.currentSyncElapsed {
+                        HStack {
+                            Text("Syncing… elapsed")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            Text(String(format: "%.1f s", elapsed))
+                                .font(.caption)
+                                .fontWeight(.medium)
+                                .monospacedDigit()
+                        }
+                    } else if let duration = shieldedService.lastSyncDuration {
+                        HStack {
+                            Text("Last sync duration")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            Text(String(format: "%.2f s", max(0, duration)))
+                                .font(.caption)
+                                .fontWeight(.medium)
+                                .monospacedDigit()
+                        }
+                    }
+
                     // Sync counters since launch — `total_scanned`
                     // is the wire-level encrypted-note count (every
                     // pass), while new + spent are the wallet-side
@@ -540,6 +573,45 @@ var body: some View {
                         // between our delete and the loop
                         // actually quiescing.
                         .disabled(shieldedService.isSyncing)
+                    }
+
+                    // TODO(shielded-snapshot-devnet-test): remove once
+                    // SwiftExampleApp has a real test-wallet import
+                    // flow. Binds the chain-side wallet A
+                    // (`[0x73; 32]`) seeded by the devnet snapshot
+                    // images (`dashpay/drive:3.1-shielded.*`) so the
+                    // user can measure shielded sync time against the
+                    // pre-populated 1M-note pool. Tracked: dashpay/platform#3714.
+                    HStack {
+                        Spacer()
+                        Button {
+                            guard let firstWallet = allWallets.first(where: {
+                                $0.networkRaw == platformState.currentNetwork.rawValue
+                            }) else { return }
+                            shieldedService.bindWithRawSeed(
+                                walletManager: walletManager,
+                                walletId: firstWallet.walletId,
+                                network: platformState.currentNetwork,
+                                rawSeed: Data(repeating: 0x73, count: 32),
+                                accounts: [0]
+                            )
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "testtube.2")
+                                Text("Bind Test Wallet A (Shielded)")
+                            }
+                            .font(.caption)
+                            .fontWeight(.medium)
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(.orange)
+                        .controlSize(.mini)
+                        .disabled(
+                            shieldedService.isSyncing ||
+                            !allWallets.contains(where: {
+                                $0.networkRaw == platformState.currentNetwork.rawValue
+                            })
+                        )
                     }
                 }
                 .padding(.vertical, 4)
