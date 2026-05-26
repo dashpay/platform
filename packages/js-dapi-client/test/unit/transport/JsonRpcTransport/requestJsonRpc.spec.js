@@ -73,6 +73,31 @@ describe('requestJsonRpc', () => {
     expect(result).to.equal('passed');
   });
 
+  it('should make https rpc request with self-signed certificate and return result', async () => {
+    protocol = 'https';
+    selfSigned = true;
+
+    // eslint-disable-next-line
+    fetch.resolves(new Response(
+      JSON.stringify({ result: 'passed', error: null }),
+      {
+        status: 200,
+      },
+    ));
+
+    const result = await requestJsonRpc(
+      protocol,
+      host,
+      port,
+      selfSigned,
+      'httpsRequest',
+      params,
+      { timeout },
+    );
+
+    expect(result).to.equal('passed');
+  });
+
   it('should throw WrongHttpCodeError if response status is not 200', async () => {
     const method = 'wrongData';
     const options = { timeout };
