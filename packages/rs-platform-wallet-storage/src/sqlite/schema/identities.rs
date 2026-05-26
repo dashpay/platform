@@ -19,6 +19,9 @@ pub fn apply(
         // The sentinel-zero wallet id (`[0u8; 32]`) is the legacy
         // placeholder for "no parent wallet known" — stored as NULL
         // so the FK to `wallet_metadata` doesn't activate.
+        // INTENTIONAL(SEC-001): NULL wallet_id allowed per CODE-002 design;
+        // COALESCE upsert is the intended merge semantic for orphan-identity-to-wallet promotion.
+        // Existing wallet_id is preserved on re-upsert; new wallet_id fills NULL.
         let mut stmt = tx.prepare_cached(
             "INSERT INTO identities (identity_id, wallet_id, wallet_index, entry_blob, tombstoned) \
              VALUES (?1, ?2, ?3, ?4, 0) \
