@@ -104,6 +104,20 @@ impl IdentityManager {
                 .sum::<usize>()
     }
 
+    /// Snapshot of every managed identity's `Identifier` across both
+    /// buckets. Order is unspecified — callers that need a stable
+    /// order should sort the returned `Vec`.
+    pub fn identity_ids(&self) -> Vec<Identifier> {
+        let mut out: Vec<Identifier> = Vec::with_capacity(self.identity_count());
+        out.extend(self.out_of_wallet_identities.keys().copied());
+        for inner in self.wallet_identities.values() {
+            for managed in inner.values() {
+                out.push(managed.identity.id());
+            }
+        }
+        out
+    }
+
     /// `true` iff both buckets are empty.
     pub fn is_empty(&self) -> bool {
         self.out_of_wallet_identities.is_empty() && self.wallet_identities.is_empty()
