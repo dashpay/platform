@@ -1,29 +1,40 @@
-//! File-backend-unique error taxonomy.
+//! File-backend error taxonomy and its `keyring_core::Error` projection.
 //!
-//! Concrete `thiserror` enum (SEC-REQ-4.4 / TC-082), no
-//! `#[non_exhaustive]`, **no** secret byte, passphrase, plaintext, or
-//! stringified source that could carry one in any variant. `#[error]`
-//! strings are static + structural; only non-secret diagnostics (POSIX
-//! mode bits, header version int) are carried as typed fields
-//! (SEC-REQ-2.0.1 / 2.2.8, CWE-209/CWE-532).
+//! One concrete `thiserror` enum, no `#[non_exhaustive]`, **no** secret
+//! byte, passphrase, plaintext, or stringified source that could carry
+//! one in any variant. `#[error]` strings are static + structural; only
+//! non-secret diagnostics (POSIX mode bits, header version int) are
+//! carried as typed fields (SEC-REQ-2.0.1 / 2.2.8, CWE-209/CWE-532).
 //!
 //! The `EncryptedFileStore` surfaces this enum at its construction /
 //! `rekey` API; its `keyring_core::api::CredentialApi` /
-//! `CredentialStoreApi` impls bridge it through
-//! [`into_keyring`](super::error_bridge::into_keyring) so SPI callers
-//! see a uniform `keyring_core::Error`.
+//! `CredentialStoreApi` impls project it into `keyring_core::Error` via
+//! [`From`] so SPI callers see a uniform error. The `WrongPassphrase` /
+//! `Busy` variants box the typed `FileStoreError` as the
+//! `NoStorageAccess` source, so an SPI consumer can recover them
+//! losslessly via `source().downcast_ref::<FileStoreError>()`; the
+//! `BadStoreFormat` group has no box slot and carries only a secret-free
+//! string. Either way, the fully typed path is the public
+//! [`SecretStore`](crate::secrets::SecretStore) API, which returns
+//! `FileStoreError` directly.
+
+use keyring_core::Error as KeyringError;
 
 /// Errors produced by the `EncryptedFileStore` vault backend.
 #[derive(Debug, thiserror::Error)]
 pub enum FileStoreError {
-    /// AEAD tag verification failed. Carries **no** decrypted-but-
-    /// unverified bytes and no source (SEC-REQ-2.2.8, CWE-347).
-    #[error("decryption/integrity check failed")]
-    Decrypt,
-
-    /// The supplied passphrase did not unlock the vault.
+    /// AEAD tag failure on the header verify-token: the supplied
+    /// passphrase did not unlock the vault. Carries **no** plaintext and
+    /// no source (SEC-REQ-2.2.8, CWE-347).
     #[error("wrong passphrase")]
     WrongPassphrase,
+
+    /// AEAD tag failure on a stored entry (or a rekey re-encrypt) *after*
+    /// the header verify-token already passed: the entry ciphertext is
+    /// corrupt or tampered, **not** a wrong passphrase. Carries no
+    /// plaintext (CWE-347).
+    #[error("vault entry failed integrity check (corruption or tampering)")]
+    Corruption,
 
     /// Argon2 key derivation failed. The upstream error carries no
     /// useful non-secret diagnostic, so it is intentionally not
@@ -65,15 +76,211 @@ pub enum FileStoreError {
     #[error("store is busy: outstanding credentials prevent rekey")]
     Busy,
 
+    /// Internal AEAD tag failure with no vault context yet attached. The
+    /// crypto seam (`crypto::open`) cannot tell *why* a tag failed, so it
+    /// returns this; callers translate it to [`WrongPassphrase`] (in the
+    /// verify-token context) or [`Corruption`] (in an entry context).
+    /// Never escapes to the SPI / public surface.
+    ///
+    /// [`WrongPassphrase`]: FileStoreError::WrongPassphrase
+    /// [`Corruption`]: FileStoreError::Corruption
+    #[error("decryption/integrity check failed")]
+    Decrypt,
+
     /// Filesystem error (open / write / rename / fsync). The inner
     /// `io::Error` carries an OS code and a path *the caller supplied*,
     /// never a secret.
     #[error("io error")]
     Io(#[from] std::io::Error),
+
+    /// An OS-keyring backend (the [`SecretStore::Os`] arm) failure,
+    /// projected to a non-secret discriminant. Keyring variants that
+    /// carry raw bytes (`BadEncoding`, `BadDataFormat`) are collapsed to
+    /// [`OsKeyringErrorKind::BadStoreFormat`] — their bytes never enter
+    /// this type (CWE-209/CWE-532).
+    ///
+    /// [`SecretStore::Os`]: crate::secrets::SecretStore::Os
+    #[error("os keyring error: {kind}")]
+    OsKeyring {
+        /// The non-secret keyring failure discriminant.
+        kind: OsKeyringErrorKind,
+    },
+}
+
+/// Non-secret discriminant for an OS-keyring backend failure, projected
+/// from `keyring_core::Error` for the [`SecretStore::Os`] arm. Carries no
+/// payload, so no secret byte, path, or attribute value can ride along.
+///
+/// [`SecretStore::Os`]: crate::secrets::SecretStore::Os
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OsKeyringErrorKind {
+    /// `keyring_core::Error::NoEntry`.
+    NoEntry,
+    /// `keyring_core::Error::NoStorageAccess` (store locked / inaccessible).
+    NoStorageAccess,
+    /// `keyring_core::Error::NoDefaultStore` (no reachable backend).
+    NoDefaultStore,
+    /// A store-format failure (`BadStoreFormat` / `BadEncoding` /
+    /// `BadDataFormat`); any raw bytes are dropped at the seam.
+    BadStoreFormat,
+    /// Any other backend failure (`PlatformFailure`, `TooLong`,
+    /// `Ambiguous`, `NotSupportedByStore`).
+    Backend,
+}
+
+impl std::fmt::Display for OsKeyringErrorKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            Self::NoEntry => "no entry",
+            Self::NoStorageAccess => "storage inaccessible",
+            Self::NoDefaultStore => "no default store",
+            Self::BadStoreFormat => "bad store format",
+            Self::Backend => "backend failure",
+        };
+        f.write_str(s)
+    }
 }
 
 impl From<super::super::validate::InvalidLabel> for FileStoreError {
     fn from(_: super::super::validate::InvalidLabel) -> Self {
         Self::InvalidLabel
+    }
+}
+
+/// Project a [`FileStoreError`] into `keyring_core::Error` for the
+/// `CredentialApi` / `CredentialStoreApi` SPI seam.
+///
+/// - [`WrongPassphrase`] and [`Busy`] ride in
+///   [`KeyringError::NoStorageAccess`] (operator UX: "ask the operator to
+///   unlock / retry") with the typed `FileStoreError` boxed as the
+///   source, so an SPI consumer can losslessly recover the variant via
+///   `err.source().and_then(|s| s.downcast_ref::<FileStoreError>())`.
+/// - [`Corruption`], [`KdfFailure`], [`VersionUnsupported`],
+///   [`MalformedVault`], [`InsecurePermissions`], the internal
+///   [`Decrypt`], and [`OsKeyring`] collapse into
+///   [`KeyringError::BadStoreFormat`], whose `String` payload has no box
+///   slot, so they carry only a static secret-free string (never secret
+///   data in a format error). They remain losslessly typed on the
+///   [`SecretStore`](crate::secrets::SecretStore) path.
+/// - [`InvalidLabel`] becomes `KeyringError::Invalid("user", _)`.
+/// - [`Io`] becomes [`KeyringError::PlatformFailure`].
+///
+/// [`WrongPassphrase`]: FileStoreError::WrongPassphrase
+/// [`Busy`]: FileStoreError::Busy
+/// [`Corruption`]: FileStoreError::Corruption
+/// [`KdfFailure`]: FileStoreError::KdfFailure
+/// [`VersionUnsupported`]: FileStoreError::VersionUnsupported
+/// [`MalformedVault`]: FileStoreError::MalformedVault
+/// [`InsecurePermissions`]: FileStoreError::InsecurePermissions
+/// [`Decrypt`]: FileStoreError::Decrypt
+/// [`OsKeyring`]: FileStoreError::OsKeyring
+/// [`InvalidLabel`]: FileStoreError::InvalidLabel
+/// [`Io`]: FileStoreError::Io
+impl From<FileStoreError> for KeyringError {
+    fn from(e: FileStoreError) -> Self {
+        use FileStoreError as E;
+        match e {
+            E::WrongPassphrase | E::Busy => KeyringError::NoStorageAccess(Box::new(e)),
+            E::Corruption
+            | E::KdfFailure
+            | E::VersionUnsupported { .. }
+            | E::MalformedVault
+            | E::InsecurePermissions { .. }
+            | E::Decrypt
+            | E::OsKeyring { .. } => KeyringError::BadStoreFormat(e.to_string()),
+            E::InvalidLabel => {
+                KeyringError::Invalid("user".to_string(), "label allowlist violation".to_string())
+            }
+            E::Io(io) => KeyringError::PlatformFailure(Box::new(io)),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn wrong_passphrase_and_busy_ride_no_storage_access() {
+        for e in [FileStoreError::WrongPassphrase, FileStoreError::Busy] {
+            let k: KeyringError = e.into();
+            assert!(matches!(k, KeyringError::NoStorageAccess(_)));
+        }
+    }
+
+    #[test]
+    fn corruption_and_format_errors_ride_bad_store_format() {
+        for e in [
+            FileStoreError::Corruption,
+            FileStoreError::Decrypt,
+            FileStoreError::KdfFailure,
+            FileStoreError::VersionUnsupported { found: 999 },
+            FileStoreError::MalformedVault,
+            FileStoreError::InsecurePermissions { mode: 0o644 },
+        ] {
+            let k: KeyringError = e.into();
+            assert!(matches!(k, KeyringError::BadStoreFormat(_)));
+        }
+    }
+
+    #[test]
+    fn invalid_label_maps_to_invalid_user() {
+        let k: KeyringError = FileStoreError::InvalidLabel.into();
+        match k {
+            KeyringError::Invalid(attr, _) => assert_eq!(attr, "user"),
+            other => panic!("expected Invalid, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn io_maps_to_platform_failure() {
+        let k: KeyringError = FileStoreError::Io(std::io::Error::other("boom")).into();
+        assert!(matches!(k, KeyringError::PlatformFailure(_)));
+    }
+
+    #[test]
+    fn projection_carries_no_secret_in_display() {
+        // Corruption / wrong-passphrase render static text only.
+        let k: KeyringError = FileStoreError::Corruption.into();
+        assert!(!format!("{k}").contains("plaintext"));
+        let k: KeyringError = FileStoreError::WrongPassphrase.into();
+        assert!(format!("{k:?}").contains("NoStorageAccess"));
+    }
+
+    #[test]
+    fn wrong_passphrase_is_recoverable_from_no_storage_access_source() {
+        // WrongPassphrase / Busy box the typed FileStoreError as the
+        // NoStorageAccess source, so an SPI consumer recovers the variant
+        // losslessly via `source().downcast_ref::<FileStoreError>()`.
+        use std::error::Error as _;
+        for original in [FileStoreError::WrongPassphrase, FileStoreError::Busy] {
+            let want = original.to_string();
+            let k: KeyringError = original.into();
+            let recovered = k.source().and_then(|s| s.downcast_ref::<FileStoreError>());
+            assert!(
+                matches!(recovered, Some(e) if e.to_string() == want),
+                "expected recoverable {want}, got {recovered:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn bad_store_format_group_renders_secret_free_string() {
+        use std::error::Error as _;
+        let k: KeyringError = FileStoreError::Corruption.into();
+        // No box slot on BadStoreFormat: a static, secret-free message,
+        // nothing to downcast.
+        assert!(matches!(&k, KeyringError::BadStoreFormat(s) if !s.is_empty()));
+        assert!(k.source().is_none());
+        assert!(!format!("{k}").contains("plaintext"));
+    }
+
+    #[test]
+    fn os_keyring_projects_to_bad_store_format() {
+        let k: KeyringError = FileStoreError::OsKeyring {
+            kind: OsKeyringErrorKind::NoDefaultStore,
+        }
+        .into();
+        assert!(matches!(k, KeyringError::BadStoreFormat(_)));
     }
 }

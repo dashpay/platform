@@ -12,6 +12,17 @@ use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::persister::{PruneReport, RetentionPolicy};
 use crate::sqlite::util::permissions::apply_secure_permissions;
 
+/// Normalize an `open_conn` failure on a candidate source/staged file
+/// to the typed [`WalletStorageError::SourceOpenFailed`]. A raw rusqlite
+/// open error keeps its `#[source]`; any other variant (e.g. a future
+/// FK assertion on a RW open) passes through unchanged.
+fn map_source_open_err(err: WalletStorageError) -> WalletStorageError {
+    match err {
+        WalletStorageError::Sqlite(source) => WalletStorageError::SourceOpenFailed { source },
+        other => other,
+    }
+}
+
 /// Distinguishes auto-backup filenames.
 #[derive(Debug, Clone, Copy)]
 pub enum BackupKind {
@@ -40,19 +51,67 @@ pub fn auto_backup_filename(kind: BackupKind) -> String {
 /// Take an online backup of `src` to `dest`. Uses the
 /// `rusqlite::backup::Backup::run_to_completion` page-stepping API
 /// so writers aren't blocked.
+///
+/// # Atomicity
+///
+/// The page-stepping copy runs against a `NamedTempFile` staged in
+/// `dest`'s parent directory. The temp is `persist`-ed over `dest`
+/// only on success — any failure (open, chmod, backup-stream) drops
+/// the temp without ever materialising a partial `.db` file at the
+/// caller's path.
 pub fn run_to(src: &Connection, dest: &Path) -> Result<(), WalletStorageError> {
     if let Some(parent) = dest.parent() {
         if !parent.as_os_str().is_empty() && !parent.exists() {
             std::fs::create_dir_all(parent)?;
         }
     }
-    let mut backup_conn = Connection::open(dest)?;
-    // SEC-011: chmod 600 on Unix so the backup file isn't world/group
-    // readable just because the process umask was lax.
+    // Reject pre-existing destinations BEFORE staging so the temp file
+    // isn't created (and immediately dropped) on a duplicate path. The
+    // CLI's `backup_to(file_path)` relies on this typed error; auto-
+    // backup callers can't trip it because the filename carries a
+    // unique timestamp suffix.
+    if dest.exists() {
+        return Err(WalletStorageError::BackupDestinationExists {
+            path: dest.to_path_buf(),
+        });
+    }
+
+    // Stage the backup into an unguessable temp file in the same
+    // directory. Same-FS guarantee makes `persist` an atomic rename.
+    let parent = dest.parent().unwrap_or(Path::new("."));
+    let tmp = tempfile::NamedTempFile::new_in(parent)?;
+    // SEC-011: tighten the temp's mode to 0o600 BEFORE persist so the
+    // destination inherits owner-only permissions via the atomic
+    // rename. Running chmod after persist would leave a brief
+    // umask-default window where the destination is observable.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        tmp.as_file()
+            .set_permissions(std::fs::Permissions::from_mode(0o600))?;
+    }
+
+    // Page-stepping copy against the temp. The dest Connection has to
+    // own its own file handle; rusqlite opens it from a path.
+    let mut backup_conn =
+        crate::sqlite::conn::open_conn(tmp.path(), crate::sqlite::conn::Access::ReadWrite)?;
+    {
+        let backup = Backup::new(src, &mut backup_conn)?;
+        // 100 pages × 4 KiB = 400 KiB per step on default SQLite page size.
+        backup.run_to_completion(100, Duration::from_millis(5), None)?;
+    }
+    // Close the backup Connection before persisting so SQLite flushes
+    // its own WAL/SHM siblings against the temp path — those go away
+    // with the rename since `persist` atomically renames the temp file.
+    drop(backup_conn);
+
+    tmp.persist(dest)
+        .map_err(|e| WalletStorageError::Io(e.error))?;
+    // SEC-011: re-tighten in case a non-Unix build (or a future
+    // platform-specific tweak) needs to refresh sibling perms after
+    // SQLite materialised them. No-op on Unix where the temp already
+    // landed at 0o600.
     apply_secure_permissions(dest)?;
-    let backup = Backup::new(src, &mut backup_conn)?;
-    // 100 pages × 4 KiB = 400 KiB per step on default SQLite page size.
-    backup.run_to_completion(100, Duration::from_millis(5), None)?;
     Ok(())
 }
 
@@ -60,58 +119,90 @@ pub fn run_to(src: &Connection, dest: &Path) -> Result<(), WalletStorageError> {
 /// caller must guarantee the destination is not held open by this
 /// process. The caller (the persister's `restore_from_inner`) handles
 /// the pre-restore auto-backup gate.
+///
+/// # Atomicity
+///
+/// The restore is staged in two phases bounded by an exclusive
+/// advisory file lock on `dest_db_path` (kept across the entire body):
+///
+/// 1. Open the source read-only; run `PRAGMA integrity_check` +
+///    schema-history + max-version sniffs. Any failure here aborts
+///    before the live destination is touched.
+/// 2. Stream the source into a `NamedTempFile` in `dest_db_path`'s
+///    parent directory; re-run integrity + schema gates against the
+///    STAGED bytes (catches a torn `io::copy`); unlink the existing
+///    `-wal` / `-shm` siblings; chmod the temp to 0o600; then
+///    `persist` over `dest_db_path` as an atomic rename.
+///
+/// Either both the main DB and its WAL/SHM siblings are replaced, or
+/// — on any pre-persist failure — none of them are touched. The
+/// exclusive lock prevents a racing opener from materialising new
+/// WAL/SHM siblings against the about-to-be-replaced inode.
 pub fn restore_from(dest_db_path: &Path, src_backup: &Path) -> Result<(), WalletStorageError> {
-    // 1. Confirm the source is openable, then run a cheap pre-staging
-    //    integrity check. The authoritative schema-history / version
-    //    gate runs on the STAGED copy (step 5) so every check binds to
-    //    the exact bytes being persisted (TOCTOU-safe).
-    let src = Connection::open_with_flags(
-        src_backup,
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_URI,
-    )
-    .map_err(|source| WalletStorageError::SourceOpenFailed { source })?;
+    // 1. Confirm the source is openable, then run cheap pre-staging
+    //    integrity + schema-history + max-version sniffs against the
+    //    source itself so an obviously-incompatible input fails before
+    //    we stream the whole file into the destination's partition.
+    //    The authoritative schema-history / version gate still re-runs
+    //    on the STAGED copy (step 4) — that's the TOCTOU-safe check
+    //    bound to the exact bytes about to be persisted.
+    let src = crate::sqlite::conn::open_conn(src_backup, crate::sqlite::conn::Access::ReadOnly)
+        .map_err(map_source_open_err)?;
     run_integrity_check(&src, |report| WalletStorageError::IntegrityCheckFailed {
         report,
     })?;
+    let src_has_schema = src
+        .query_row(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'refinery_schema_history'",
+            [],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some();
+    if !src_has_schema {
+        return Err(WalletStorageError::SchemaHistoryMissing);
+    }
+    crate::sqlite::migrations::assert_schema_version_supported(&src)?;
     drop(src);
 
-    // 2. Try-lock the destination so we don't replace a DB another
-    //    process holds open.
-    if dest_db_path.exists() {
+    // 2. ATOM-005 (A-2): take an exclusive advisory lock on the
+    //    destination and HOLD it across the entire restore body. The
+    //    pre-A-2 code probed the lock, dropped the handle, then ran
+    //    steps 3-7 unlocked — a concurrent process opening
+    //    `dest_db_path` between the probe and `tmp.persist` would race
+    //    the rename and end up holding a fd against the unlinked old
+    //    inode while the new DB takes its place. Keeping the guard
+    //    `_lock` alive in scope closes that window.
+    //
+    //    On filesystems without flock support (the previous silent-skip
+    //    arm) we emit a structured warn so operators know the safety
+    //    net is bypassed — still proceed because there's no alternative
+    //    on such filesystems, but never silently.
+    let _lock: Option<std::fs::File> = if dest_db_path.exists() {
         use fs2::FileExt;
         let f = std::fs::OpenOptions::new()
             .read(true)
             .write(true)
             .open(dest_db_path)?;
         match f.try_lock_exclusive() {
-            Ok(()) => {
-                let _ = FileExt::unlock(&f);
-            }
+            Ok(()) => Some(f),
             Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                 return Err(WalletStorageError::RestoreDestinationLocked);
             }
             Err(_) => {
-                // Advisory locks unsupported on this FS — proceed.
+                tracing::warn!(
+                    target: "platform_wallet_storage",
+                    dest = %dest_db_path.display(),
+                    "advisory lock unsupported on this filesystem; concurrent-writer race possible"
+                );
+                None
             }
         }
-    }
+    } else {
+        None
+    };
 
-    // 3. Remove any WAL / SHM siblings so SQLite can't open stale
-    //    auxiliary state for the replaced DB.
-    for ext in ["-wal", "-shm"] {
-        let sibling = dest_db_path.with_file_name(format!(
-            "{}{ext}",
-            dest_db_path
-                .file_name()
-                .map(|s| s.to_string_lossy().to_string())
-                .unwrap_or_default()
-        ));
-        if sibling.exists() {
-            std::fs::remove_file(&sibling)?;
-        }
-    }
-
-    // 4. Stage the source into a NamedTempFile in the destination's
+    // 3. Stage the source into a NamedTempFile in the destination's
     //    parent dir (unguessable name, no symlink-plant TOCTOU).
     let parent = dest_db_path.parent().unwrap_or(Path::new("."));
     let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
@@ -119,17 +210,15 @@ pub fn restore_from(dest_db_path: &Path, src_backup: &Path) -> Result<(), Wallet
     std::io::copy(&mut src_file, tmp.as_file_mut())?;
     tmp.as_file().sync_all()?;
 
-    // 5. SEC-004: re-run integrity_check on the STAGED file before
+    // 4. SEC-004: re-run integrity_check on the STAGED file before
     //    persisting. A torn `std::io::copy` or transient FS error
     //    that escaped `sync_all`'s notice would otherwise persist a
     //    corrupted database. If the recheck fails, the temp file
     //    drops naturally and the live destination stays untouched.
     {
-        let staged = Connection::open_with_flags(
-            tmp.path(),
-            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_URI,
-        )
-        .map_err(|source| WalletStorageError::SourceOpenFailed { source })?;
+        let staged =
+            crate::sqlite::conn::open_conn(tmp.path(), crate::sqlite::conn::Access::ReadOnly)
+                .map_err(map_source_open_err)?;
         run_integrity_check(&staged, |report| WalletStorageError::IntegrityCheckFailed {
             report,
         })?;
@@ -147,37 +236,47 @@ pub fn restore_from(dest_db_path: &Path, src_backup: &Path) -> Result<(), Wallet
         if !has_schema {
             return Err(WalletStorageError::SchemaHistoryMissing);
         }
-        let max_supported = crate::sqlite::migrations::embedded_migrations()
-            .iter()
-            .map(|(v, _)| *v as i64)
-            .max()
-            .unwrap_or(0);
-        let source_version: Option<i64> = staged
-            .query_row(
-                "SELECT MAX(version) FROM refinery_schema_history",
-                [],
-                |row| row.get(0),
-            )
-            .optional()?
-            .flatten();
-        if let Some(v) = source_version {
-            if v > max_supported {
-                return Err(WalletStorageError::SchemaVersionUnsupported {
-                    found: v,
-                    max_supported,
-                });
-            }
+        crate::sqlite::migrations::assert_schema_version_supported(&staged)?;
+    }
+
+    // 5. Atomicity gate: every staged-file validation has now passed,
+    //    so it's safe to clear WAL/SHM siblings the replaced DB might
+    //    have left behind. Doing this BEFORE persist ensures that
+    //    either both the main DB and its siblings get replaced/cleared,
+    //    or — if any earlier check failed — none of them are touched.
+    for ext in ["-wal", "-shm"] {
+        let sibling = dest_db_path.with_file_name(format!(
+            "{}{ext}",
+            dest_db_path
+                .file_name()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_default()
+        ));
+        if sibling.exists() {
+            std::fs::remove_file(&sibling)?;
         }
     }
 
-    // 6. Persist atomically over the destination.
+    // 6. ATOM-010 (A-5): chmod 600 on the temp BEFORE persist so the
+    //    destination inherits owner-only mode via the atomic rename.
+    //    Pre-A-5 the chmod ran post-persist — a rare chmod failure
+    //    returned Err while leaving the new DB live at the destination
+    //    (caller thought restore rolled back, reality was mixed).
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        tmp.as_file()
+            .set_permissions(std::fs::Permissions::from_mode(0o600))?;
+    }
+
+    // 7. Persist atomically over the destination.
     tmp.persist(dest_db_path)
         .map_err(|e| WalletStorageError::Io(e.error))?;
 
-    // 7. SEC-004: chmod 600 on Unix so the restored DB doesn't inherit
-    //    a wider mode from a previous file at the same path. Windows
-    //    has no equivalent permission model here — skipped.
+    // 8. Re-tighten siblings (SQLite may materialise -wal/-shm on next
+    //    open; this is idempotent at restore-completion time).
     apply_secure_permissions(dest_db_path)?;
+    // Lock guard is released by `_lock` going out of scope here.
     Ok(())
 }
 
@@ -185,7 +284,13 @@ pub fn restore_from(dest_db_path: &Path, src_backup: &Path) -> Result<(), Wallet
 /// "ok". Any other returned text becomes a typed `IntegrityCheckFailed`
 /// via the caller-supplied builder; an underlying rusqlite error
 /// surfaces as `IntegrityCheckRunFailed`.
-fn run_integrity_check<F>(conn: &Connection, on_failure: F) -> Result<(), WalletStorageError>
+///
+/// `pub(crate)` so the persister's open-time A-8 probe shares the
+/// same helper rather than reimplementing the report-rendering rule.
+pub(crate) fn run_integrity_check<F>(
+    conn: &Connection,
+    on_failure: F,
+) -> Result<(), WalletStorageError>
 where
     F: FnOnce(String) -> WalletStorageError,
 {
@@ -202,10 +307,14 @@ where
 /// Apply retention to a directory. Files that match the recognised
 /// backup-name prefixes are eligible; others are ignored.
 ///
-// INTENTIONAL(CODE-007): prune fails-fast on the first I/O error
-// rather than collecting per-file failures into PruneReport.
-// Acceptable because the operator gets a typed error with the
-// offending path; retrying prune is idempotent.
+/// # Partial failures
+///
+/// ATOM-011 / A-6: per-file `remove_file` failures are collected into
+/// `PruneReport::failed_removals` rather than aborting the loop. The
+/// happy path still removes every eligible file. Only catastrophic
+/// errors (`read_dir` itself fails, an `entry?` returns Err) surface
+/// as `Err(_)` — those affect every subsequent iteration too, so
+/// continuing would just compound the failure.
 pub fn prune(dir: &Path, policy: RetentionPolicy) -> Result<PruneReport, WalletStorageError> {
     let entries = std::fs::read_dir(dir)?;
     let mut files: Vec<(SystemTime, PathBuf)> = Vec::new();
@@ -227,6 +336,7 @@ pub fn prune(dir: &Path, policy: RetentionPolicy) -> Result<PruneReport, WalletS
     files.sort_by(|a, b| b.0.cmp(&a.0));
     let now = SystemTime::now();
     let mut removed = Vec::new();
+    let mut failed_removals: Vec<(PathBuf, std::io::Error)> = Vec::new();
     let mut kept = 0;
     for (idx, (ts, path)) in files.into_iter().enumerate() {
         let pass_count = match policy.keep_last_n {
@@ -240,13 +350,20 @@ pub fn prune(dir: &Path, policy: RetentionPolicy) -> Result<PruneReport, WalletS
         if pass_count && pass_age {
             kept += 1;
         } else {
-            std::fs::remove_file(&path)?;
-            removed.push(path);
+            match std::fs::remove_file(&path) {
+                Ok(()) => removed.push(path),
+                Err(e) => failed_removals.push((path, e)),
+            }
         }
     }
     // Sort `removed` oldest-first for deterministic output.
     removed.sort();
-    Ok(PruneReport { removed, kept })
+    failed_removals.sort_by(|a, b| a.0.cmp(&b.0));
+    Ok(PruneReport {
+        removed,
+        kept,
+        failed_removals,
+    })
 }
 
 fn is_backup_file(path: &Path) -> bool {

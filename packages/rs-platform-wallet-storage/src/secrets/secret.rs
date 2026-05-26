@@ -1,34 +1,8 @@
-//! Zeroizing secret wrappers.
-//!
-//! [`SecretString`] is a trimmed fork of dash-evo-tool's `Secret`
-//! (`src/model/secret.rs`, MIT) with the `egui::TextBuffer` impl —
-//! including its SEC-003 `take()` plaintext-leak path — **removed by
-//! construction**: this crate has no egui, so the leak vector cannot
-//! exist (SEC-REQ-3.8.1 / 3.8.2, CWE-316).
-//!
-//! [`SecretBytes`] is net-new: the byte-oriented wrapper for seeds,
-//! xprivs, KDF output, AEAD keys and decrypted plaintext (SEC-REQ-3.8.1
-//! / 4.1).
-//!
-//! Both: redacting `Debug`, no `Display`/`Deref`/`Serialize`, full
-//! buffer wipe on drop, best-effort `region` mlock.
-//!
-//! ---
-//! Portions Copyright (c) Dash Core Group, originating from
-//! dash-evo-tool (`src/model/secret.rs`), MIT License:
-//!
-//! Permission is hereby granted, free of charge, to any person
-//! obtaining a copy of this software and associated documentation
-//! files (the "Software"), to deal in the Software without
-//! restriction, including without limitation the rights to use, copy,
-//! modify, merge, publish, distribute, sublicense, and/or sell copies
-//! of the Software, and to permit persons to whom the Software is
-//! furnished to do so, subject to the following conditions:
-//!
-//! The above copyright notice and this permission notice shall be
-//! included in all copies or substantial portions of the Software.
-//!
-//! THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
+//! Zeroizing secret wrappers: [`SecretString`] for UTF-8 secrets and
+//! [`SecretBytes`] for byte secrets (seeds, xprivs, KDF output, AEAD
+//! keys, decrypted plaintext). Both have a redacting `Debug`, no
+//! `Display`/`Deref`/`Serialize`, a full buffer wipe on drop, and a
+//! best-effort `region` mlock (SEC-REQ-3.8.1 / 3.8.2 / 4.1, CWE-316).
 
 use std::fmt;
 
@@ -49,11 +23,11 @@ const DEFAULT_CAPACITY: usize = 4096;
 /// `Display`, `Deref`, `DerefMut`, `Serialize`, `PartialEq`, `Eq` are
 /// intentionally **not** implemented; read access is the explicit
 /// [`expose_secret`] only, and equality goes through
-/// [`subtle::ConstantTimeEq`] (Smythe EDIT-4 — `==` on secret bytes is
-/// forbidden, no exception, so future bridge code cannot inherit a
-/// non-constant-time path). `Debug` is redacted. The backing buffer is
-/// wiped over its full capacity on drop and best-effort `mlock`ed
-/// against swap.
+/// [`subtle::ConstantTimeEq`] (`==` on secret bytes is forbidden, no
+/// exception, so future bridge code cannot inherit a non-constant-time
+/// path). `Debug` is redacted. `Zeroizing<String>`
+/// wipes the buffer over its full capacity on drop; the buffer is
+/// best-effort `mlock`ed against swap.
 ///
 /// [`expose_secret`]: SecretString::expose_secret
 ///
@@ -61,9 +35,12 @@ const DEFAULT_CAPACITY: usize = 4096;
 /// use platform_wallet_storage::secrets::SecretString;
 /// let a = SecretString::new("pw");
 /// let b = SecretString::new("pw");
-/// let _ = a == b; // EDIT-4: `==` on SecretString is forbidden; use ConstantTimeEq::ct_eq
+/// let _ = a == b; // `==` on SecretString is forbidden; use ConstantTimeEq::ct_eq
 /// ```
 pub struct SecretString {
+    // Field order is load-bearing: `inner` drops (and `Zeroizing` wipes
+    // it) before `_lock` releases the page, so the buffer is wiped while
+    // still mlock'ed.
     inner: Zeroizing<String>,
     _lock: Option<region::LockGuard>,
 }
@@ -79,7 +56,9 @@ impl SecretString {
         source.zeroize();
         let lock = region::lock(buf.as_ptr(), buf.capacity())
             .map_err(|e| {
-                tracing::debug!("mlock failed for SecretString: {e}");
+                tracing::warn!(
+                    "mlock failed for SecretString; secret may be swappable to disk: {e}"
+                );
                 e
             })
             .ok();
@@ -116,29 +95,14 @@ impl SecretString {
     }
 }
 
-impl Drop for SecretString {
-    fn drop(&mut self) {
-        let ptr = self.inner.as_mut_ptr();
-        let cap = self.inner.capacity();
-        if cap > 0 {
-            // SAFETY: `ptr` is the `String`'s allocation, valid and
-            // uniquely borrowed for `cap` bytes during drop. We only
-            // write zeros within `[0, cap)`. This wipes the bytes in
-            // `[len, cap)` that `Zeroizing<String>` (which clears only
-            // `0..len`) would miss.
-            #[allow(unsafe_code)]
-            let slice = unsafe { std::slice::from_raw_parts_mut(ptr, cap) };
-            slice.zeroize();
-        }
-    }
-}
-
 impl Default for SecretString {
     fn default() -> Self {
         let s = String::with_capacity(DEFAULT_CAPACITY);
         let lock = region::lock(s.as_ptr(), s.capacity())
             .map_err(|e| {
-                tracing::debug!("mlock failed for SecretString: {e}");
+                tracing::warn!(
+                    "mlock failed for SecretString; secret may be swappable to disk: {e}"
+                );
                 e
             })
             .ok();
@@ -158,9 +122,8 @@ impl fmt::Debug for SecretString {
 impl ConstantTimeEq for SecretString {
     /// Constant-time compare over the equal-length region. Unequal
     /// lengths return `0` without revealing where they differ; the
-    /// only observable is the (non-secret) length difference —
-    /// SEC-REQ-3.8.2, the documented `PartialEq` length-leak caveat
-    /// from the upstream `Secret` fork.
+    /// only observable is the (non-secret) length difference
+    /// (SEC-REQ-3.8.2).
     fn ct_eq(&self, other: &Self) -> subtle::Choice {
         self.expose_secret()
             .as_bytes()
@@ -188,38 +151,50 @@ impl From<&str> for SecretString {
 /// minimization (SEC-REQ-3.5) — move it, or `expose_secret()` and copy
 /// deliberately into another wrapper. `Display`, `Deref`, `Serialize`,
 /// `PartialEq`, `Eq` are intentionally **not** implemented; equality
-/// goes through [`subtle::ConstantTimeEq`] only (Smythe EDIT-4 — `==`
-/// on secret bytes is forbidden, no exception, so future bridge code
-/// cannot inherit a non-constant-time path). `Debug` is redacted; the
+/// goes through [`subtle::ConstantTimeEq`] only (`==` on secret bytes is
+/// forbidden, no exception, so future bridge code cannot inherit a
+/// non-constant-time path). `Debug` is redacted; the
 /// buffer is wiped on drop and best-effort `mlock`ed.
 ///
 /// ```compile_fail
 /// use platform_wallet_storage::secrets::SecretBytes;
 /// let a = SecretBytes::new(vec![0u8; 32]);
 /// let b = SecretBytes::new(vec![0u8; 32]);
-/// let _ = a == b; // EDIT-4: `==` on SecretBytes is forbidden; use ConstantTimeEq::ct_eq
+/// let _ = a == b; // `==` on SecretBytes is forbidden; use ConstantTimeEq::ct_eq
 /// ```
 pub struct SecretBytes {
+    // Field order is load-bearing: `inner` drops (and `Zeroizing` wipes
+    // it) before `_lock` releases the page, so the buffer is wiped while
+    // still mlock'ed.
     inner: Zeroizing<Vec<u8>>,
     _lock: Option<region::LockGuard>,
 }
 
 impl SecretBytes {
-    /// Wrap a byte vector, zeroizing the source, best-effort `mlock`ing
-    /// the wrapped buffer.
-    pub fn new(mut bytes: Vec<u8>) -> Self {
-        // `region::lock` rejects a 0-length region (EINVAL), so an empty
-        // `SecretBytes` still locks one page — do not "harmonize" with
-        // `SecretString` and drop the `.max(1)`.
-        let lock = region::lock(bytes.as_ptr(), bytes.capacity().max(1))
-            .map_err(|e| {
-                tracing::debug!("mlock failed for SecretBytes: {e}");
-                e
-            })
-            .ok();
-        let inner = Zeroizing::new(std::mem::take(&mut bytes));
-        bytes.zeroize();
-        Self { inner, _lock: lock }
+    /// Wrap a byte vector, moving it into the wrapper and best-effort
+    /// `mlock`ing the buffer.
+    pub fn new(bytes: Vec<u8>) -> Self {
+        // Lock only a non-empty allocation: an empty `Vec`'s `as_ptr()`
+        // is dangling, and `region::lock` rejects a 0-length region.
+        let lock = if bytes.capacity() > 0 {
+            region::lock(bytes.as_ptr(), bytes.capacity())
+                .map_err(|e| {
+                    tracing::warn!(
+                        "mlock failed for SecretBytes; secret may be swappable to disk: {e}"
+                    );
+                    e
+                })
+                .ok()
+        } else {
+            None
+        };
+        // The move transfers ownership of the allocation into
+        // `Zeroizing`; the source buffer is not copied, so there is
+        // nothing left behind to wipe.
+        Self {
+            inner: Zeroizing::new(bytes),
+            _lock: lock,
+        }
     }
 
     /// A zeroed buffer of `len` bytes, best-effort `mlock`ed — for
@@ -292,7 +267,7 @@ mod tests {
 
     #[test]
     fn secret_string_ct_eq_is_value_based() {
-        // EDIT-4: equality goes through `ConstantTimeEq` only.
+        // Equality goes through `ConstantTimeEq` only.
         let same = SecretString::new("pw").ct_eq(&SecretString::new("pw"));
         let diff = SecretString::new("pw").ct_eq(&SecretString::new("px"));
         let len_diff = SecretString::new("pw").ct_eq(&SecretString::new("pww"));
@@ -322,6 +297,19 @@ mod tests {
         assert_eq!(b.len(), 3);
         let z = SecretBytes::zeroed(4);
         assert_eq!(z.expose_secret(), &[0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn empty_secret_bytes_constructs_without_mlocking_dangling_ptr() {
+        // A capacity-0 `Vec` has a dangling `as_ptr()`; `new` must not
+        // pass it to `region::lock`. Constructing must not panic and the
+        // wrapper must round-trip as empty.
+        let b = SecretBytes::new(Vec::new());
+        assert!(b.is_empty());
+        assert_eq!(b.len(), 0);
+        assert_eq!(b.expose_secret(), &[] as &[u8]);
+        let z = SecretBytes::zeroed(0);
+        assert!(z.is_empty());
     }
 
     #[test]

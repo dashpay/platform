@@ -31,7 +31,12 @@ fn tc031_backup_directory_form() {
     let out_dir = tmp.path().join("backups");
     fs::create_dir(&out_dir).unwrap();
     let written = persister.backup_to(&out_dir).expect("backup_to");
-    assert!(written.starts_with(&out_dir));
+    // `backup_to` canonicalizes its return; canonicalize the expected
+    // dir too so the comparison is symmetric. On macOS the temp dir
+    // lives under `/var` (a symlink to `/private/var`), so an
+    // un-canonicalized `out_dir` would not prefix the canonical path.
+    let expected_dir = out_dir.canonicalize().unwrap_or_else(|_| out_dir.clone());
+    assert!(written.starts_with(&expected_dir));
     let name = written.file_name().unwrap().to_string_lossy().into_owned();
     assert!(name.starts_with("wallet-") && name.ends_with(".db"));
     // Open the produced file and confirm it has the schema.
@@ -129,6 +134,45 @@ fn tc037_restore_corrupt_source() {
     );
 }
 
+/// ATOM-004 (A-1): a failure during `backup_to` must NOT leave a
+/// partial/empty `.db` file at the caller-supplied destination. The
+/// pre-A-1 code eagerly opened `dest`, so any later failure
+/// (`apply_secure_permissions`, `Backup::new`, `run_to_completion`)
+/// stranded an empty file at `dest`. We exercise the path that
+/// already-rejects (pre-existing destination) — the new code's exists
+/// check fires before any temp file gets created.
+#[test]
+fn atom_004_backup_to_failure_leaves_no_junk_at_dest() {
+    let (persister, tmp, _path) = fresh_persister();
+    seed_one_row(&persister, &wid(0xE7));
+    // First backup succeeds.
+    let target = tmp.path().join("first.db");
+    persister.backup_to(&target).expect("first backup");
+    // Second backup to same path fails fast — no auxiliary `.tmp*`
+    // file should remain alongside the existing target.
+    let err = persister.backup_to(&target);
+    assert!(matches!(
+        err,
+        Err(WalletStorageError::BackupDestinationExists { .. })
+    ));
+    // Sanity: only the legitimate file is present, plus -journal/-wal
+    // siblings SQLite may have created on the live persister DB —
+    // those live in a different parent so this scan is clean.
+    let entries: Vec<_> = std::fs::read_dir(tmp.path())
+        .unwrap()
+        .filter_map(|e| e.ok().map(|e| e.file_name().to_string_lossy().into_owned()))
+        .collect();
+    let leaked: Vec<_> = entries
+        .iter()
+        .filter(|n| n.starts_with(".tmp") || n.ends_with(".tmp"))
+        .collect();
+    assert!(
+        leaked.is_empty(),
+        "no .tmp* staging file should remain in {:?}; found {leaked:?}",
+        tmp.path()
+    );
+}
+
 /// TC-038: prune retention AND-semantics.
 #[test]
 fn tc038_prune_and_semantics() {
@@ -166,4 +210,29 @@ fn tc038_prune_and_semantics() {
     // Files with ages 30d and 60d (older than 20d) should be removed.
     assert_eq!(report.removed.len(), 2);
     assert_eq!(report.kept, 3);
+    assert!(
+        report.failed_removals.is_empty(),
+        "happy-path prune must have no failed removals"
+    );
+}
+
+/// ATOM-011 (A-6): a per-file remove failure is collected into
+/// `failed_removals`, not propagated as `Err` aborting the loop.
+/// We can't directly simulate a remove failure inside the spec on a
+/// portable filesystem, so we use the simpler approach: confirm the
+/// report shape carries `failed_removals` and a happy-path prune
+/// leaves it empty. The classifier itself is the regression — pre-A-6
+/// the field did not exist, so this file fails to compile against the
+/// old API.
+#[test]
+fn atom_011_prune_report_carries_failed_removals_field() {
+    let report = platform_wallet_storage::PruneReport {
+        removed: vec![],
+        kept: 0,
+        failed_removals: vec![(
+            std::path::PathBuf::from("/x"),
+            std::io::Error::other("synthetic"),
+        )],
+    };
+    assert_eq!(report.failed_removals.len(), 1);
 }

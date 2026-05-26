@@ -30,7 +30,6 @@ hex = "0.4"
 # in `schema/platform_addrs.rs`. Feature set mirrors sibling
 # `rs-platform-wallet` so the resolver picks identical hashes.
 key-wallet = { workspace = true, optional = true }
-key-wallet-manager = { workspace = true, optional = true }
 dashcore = { workspace = true, optional = true }
 dpp = { path = "../rs-dpp", optional = true }
 dash-sdk = { path = "../rs-sdk", default-features = false, features = [
@@ -47,7 +46,6 @@ rusqlite = { version = "0.38", features = [
 refinery = { version = "0.9", default-features = false, features = [
     "rusqlite",
 ], optional = true }
-barrel = { version = "0.7", features = ["sqlite3"], optional = true }
 # bincode 2 is required directly: we encode `dpp::IdentityPublicKey`
 # (which derives bincode 2 `Encode`/`Decode`) and decode
 # `dpp::AssetLockProof` from the asset-lock blob column.
@@ -117,13 +115,11 @@ default = ["sqlite", "cli", "secrets"]
 # SQLite-backed persister (`platform_wallet_storage::sqlite`).
 sqlite = [
     "dep:key-wallet",
-    "dep:key-wallet-manager",
     "dep:dashcore",
     "dep:dpp",
     "dep:dash-sdk",
     "dep:rusqlite",
     "dep:refinery",
-    "dep:barrel",
     "dep:bincode",
     "dep:fs2",
     "dep:tempfile",
@@ -148,6 +144,8 @@ cli = [
 secrets = [
     "dep:argon2",
     "dep:chacha20poly1305",
+    "dep:serde_json",
+    "dep:tempfile",
     "dep:zeroize",
     "dep:subtle",
     "dep:getrandom",
@@ -158,10 +156,6 @@ secrets = [
     "dep:apple-native-keyring-store",
     "dep:windows-native-keyring-store",
 ]
-# Exposes `secrets::MemoryCredentialStore` (in-RAM test double). Double-underscore
-# prefix = Cargo's "MUST NOT enable from downstream" convention; keeps
-# the test store unreachable from production builds (SEC-REQ-2.3.1).
-__secrets-test-helpers = ["secrets"]
 # Exposes `lock_conn_for_test` / `config_for_test` accessors on
 # `SqlitePersister` so this crate's own integration tests can probe
 # the write connection. The double-underscore prefix follows Cargo's

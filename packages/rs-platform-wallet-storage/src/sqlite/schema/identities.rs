@@ -45,9 +45,11 @@ pub fn apply(
 
 /// Decode a single `identities` row back to its [`IdentityEntry`].
 ///
-/// Returns `Ok(None)` if no row matches. Tombstoned rows decode to
-/// `Some(entry)`; the caller inspects the dedicated `tombstoned`
-/// column to discriminate when needed.
+/// Returns `Ok(None)` if no row matches. This reads only `entry_blob`
+/// and does NOT expose the `tombstoned` column — a tombstoned row still
+/// decodes to `Some(entry)` here. Callers that must skip logically
+/// deleted identities should use [`load_state`], which filters
+/// tombstoned rows.
 pub fn fetch(
     conn: &Connection,
     wallet_id: &WalletId,
@@ -147,7 +149,7 @@ fn managed_identity_from_entry(
 }
 
 /// Insert a stub identity row so identity_keys / dashpay_profiles can
-/// reference it via the FK trigger. Used by tests that exercise
+/// reference it via their native composite FK. Used by tests that exercise
 /// identity_keys persistence without going through the full identity
 /// flow. The stub row carries a `null`-encoded `IdentityEntry` so the
 /// `entry_blob` column always decodes — callers wanting real data

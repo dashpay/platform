@@ -1,39 +1,37 @@
 //! `contacts_sent` / `contacts_recv` / `contacts_established` writers
 //! and per-wallet reader.
 
-use std::collections::BTreeMap;
+use rusqlite::{params, Transaction};
 
-use rusqlite::{params, Connection, Transaction};
-
-use dpp::prelude::Identifier;
-use platform_wallet::changeset::{
-    ContactChangeSet, ContactRequestEntry, ReceivedContactRequestKey, SentContactRequestKey,
-};
-use platform_wallet::wallet::identity::EstablishedContact;
+use platform_wallet::changeset::ContactChangeSet;
 use platform_wallet::wallet::platform_wallet::WalletId;
 
 use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::schema::blob;
+
+#[cfg(feature = "__test-helpers")]
+use dpp::prelude::Identifier;
+#[cfg(feature = "__test-helpers")]
+use platform_wallet::changeset::{
+    ContactRequestEntry, ReceivedContactRequestKey, SentContactRequestKey,
+};
+#[cfg(feature = "__test-helpers")]
+use platform_wallet::wallet::identity::EstablishedContact;
+#[cfg(feature = "__test-helpers")]
+use rusqlite::Connection;
+#[cfg(feature = "__test-helpers")]
+use std::collections::BTreeMap;
 
 /// Storage-internal snapshot of one wallet's `contacts_*` rows.
 ///
 /// Mirrors the populated-only subset of
 /// [`ContactChangeSet`](platform_wallet::changeset::ContactChangeSet);
 /// `removed_*` are absent because deletes never reach storage as rows
-/// (the writer applies them as `DELETE`s). Crate-internal on purpose —
-/// rs-platform-wallet's `ClientStartState` does not carry a contacts
-/// slot, so this type is never re-exported across the crate boundary.
-/// Promoted to `pub` only under `__test-helpers` so this crate's own
-/// integration tests can assert on the hardened reader directly.
-#[derive(Debug, Default, PartialEq)]
-#[cfg(not(feature = "__test-helpers"))]
-pub(crate) struct ContactsRecords {
-    pub sent_requests: BTreeMap<SentContactRequestKey, ContactRequestEntry>,
-    pub incoming_requests: BTreeMap<ReceivedContactRequestKey, ContactRequestEntry>,
-    pub established: BTreeMap<SentContactRequestKey, EstablishedContact>,
-}
-
-/// See the `not(__test-helpers)` definition for the canonical docs.
+/// (the writer applies them as `DELETE`s). Only built by the
+/// `__test-helpers` reader path so this crate's own integration tests
+/// can assert on the hardened (fail-hard) contacts reader; the
+/// production `load()` reconstruction that consumes it lands with the
+/// rehydration feature.
 #[derive(Debug, Default, PartialEq)]
 #[cfg(feature = "__test-helpers")]
 pub struct ContactsRecords {
@@ -125,6 +123,7 @@ pub fn apply(
 /// Build a [`ContactsRecords`] for one wallet from the three
 /// `contacts_*` tables. Any row that fails to decode is a hard error —
 /// corruption is never silently dropped.
+#[cfg(feature = "__test-helpers")]
 pub(crate) fn load_state(
     conn: &Connection,
     wallet_id: &WalletId,
@@ -191,6 +190,7 @@ pub(crate) fn load_state(
     Ok(state)
 }
 
+#[cfg(feature = "__test-helpers")]
 fn decode_pair_key(a: &[u8], b: &[u8]) -> Result<(Identifier, Identifier), WalletStorageError> {
     let a32 = <[u8; 32]>::try_from(a)
         .map_err(|_| WalletStorageError::blob_decode("contacts.id column is not 32 bytes"))?;
