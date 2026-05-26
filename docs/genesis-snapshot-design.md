@@ -277,7 +277,14 @@ mount-bind a different file and set the env.
 - Slow-seeder fallback option. Hard requirement on the snapshot file when
   `create_sdk_test_data` is built in.
 
-## 8. Correctness reasoning
+## 8. Correctness reasoning (Phase 1 only — see §15 for Phase 2 deltas)
+
+> **Scope:** this section's "byte-identical to what the runtime would
+> have written" claim holds for the Phase 1 design (full-Sinsemilla
+> seed in the bake). Phase 2 (§15) deliberately drops that property for
+> the speedup. After Phase 2 lands, the bake produces a snapshot whose
+> `combined_root` is self-consistent but **not equal** to what a
+> runtime-seeded chain would produce — see §15.5.
 
 **Why bulk-loaded data + cross-validation + Merk propagation produces the
 same root as runtime seeding:**
@@ -374,9 +381,15 @@ Tests live in `packages/rs-drive-abci/tests/shielded_snapshot/`:
 5. **Corruption** — flip bits in default-CF SST, in aux-CF SST, in header
    roots; assert `Corrupted` (checksum) or root-mismatch (cross-validation)
    for each.
-6. **Equivalence with runtime seeder** — bake snapshot, apply to chain A;
-   run runtime seeder on chain B; assert
-   `grove_a.root_hash() == grove_b.root_hash()`. `#[ignore]`-gated (slow).
+6. **Equivalence with runtime seeder** (RETIRED under Phase 2) — bake
+   snapshot, apply to chain A; run runtime seeder on chain B; assert
+   `grove_a.root_hash() == grove_b.root_hash()`. This test was valid
+   under Phase 1 (full-Sinsemilla bake) but **fails under Phase 2**
+   because the bake uses `append_many_without_frontier` for filler,
+   producing a different `combined_root` than a runtime-seeded chain.
+   Remove or `#[cfg]`-split when Phase 2 lands; replace with a
+   "bake-side determinism" test (same config → same snapshot bytes
+   across two bakes).
 7. **Cross-validation catches header tampering** — bake snapshot, flip the
    `bulk_state_root` field in the header, fix the outer checksum; assert
    `BulkStateRootMismatch`. Same with `sinsemilla_root` →
@@ -457,5 +470,241 @@ When `format_version` bumps, the apply side rejects older snapshots with
   frozen byte-for-byte snapshot of its output.
 - Not introducing a new GroveDB storage format.
 - Not abstracting over storage backends. Bake + ingest is RocksDB-only.
+
+## 15. Phase 2 — frontier-less seeding for fast bake at large N
+
+### 15.1 Motivation
+
+Empirically measured bake times after the Phase-1 design landed:
+
+| N | Bake wall-clock (Docker macOS, release) | Notes |
+|---|---|---|
+| 5_000 | ~30 s | proven via in-process roundtrip + devnet e2e |
+| 500_000 | ~3 h 41 m | original Option-A measurement; matches "65 min native macOS × 3.4× Docker tax" |
+| **1_000_000** | **>8 h, did not complete** | killed; estimated 4-5 h was wrong, Docker virt overhead worse than modelled |
+
+The Sinsemilla frontier-append step is **75-85% of per-cmx cost** at all
+N. For 1M notes, 999_992 of which are filler that no wallet owns, that's
+~6-9 hours of Pallas math producing an anchor that nothing depends on.
+
+### 15.2 Insight (grovedb PR #751, "claude/eloquent-margulis-8369cd")
+
+Wallet sync verifies note membership via **BulkAppendTree chunk proofs**
+authenticated by `bulk_state_root` (blake3-rooted), NOT via spend proofs
+authenticated by the Sinsemilla anchor. So a chain whose anchor is
+"junk" (e.g. reflects only the 8 owned cmx appends) still serves syncs
+correctly — filler notes are recoverable, balances are recoverable, the
+only thing missing is spend-proof authorization (which we never test).
+
+The PR adds a test-only opt-out from the Sinsemilla path:
+
+```rust
+// On CommitmentTree (gated by `test-seeding-ct` feature in
+// grovedb-commitment-tree; forwarded as `commitment_tree_test_seeding`
+// from the grovedb crate).
+pub fn append_raw_without_frontier(cmx, rho, payload) -> AppendResult;
+pub fn append_many_without_frontier<I>(iter: I) -> BulkSeedSummary;
+```
+
+Both skip the Sinsemilla append entirely. The blake3-rooted BulkAppendTree
++ MMR + dense buffer + chunk blobs still get written. The frontier
+storage at `__ct_data__` is left untouched (or reflects only the
+non-skipped owned appends).
+
+Additional perf win in the same PR: **MMR root cache** (commit
+`7541294e`) — append becomes O(1) instead of O(N) for the MMR
+incremental-update step. Stacks with the frontier skip.
+
+### 15.2a Hard constraint discovered in crypto review (F1)
+
+**`append_*_without_frontier` rejects a non-empty frontier.** PR #751
+commit `c530e59a` (`grovedb-commitment-tree/src/commitment_tree/mod.rs:520-531`)
+returns `InvalidData("frontier-less seeding requires an empty frontier")`
+if `self.frontier.tree_size() != 0`.
+
+This means we **cannot interleave** filler skip-path calls with owned
+full-path calls. The bake order MUST be:
+
+1. Bulk-seed ALL filler positions first via `append_many_without_frontier`
+   while frontier is empty.
+2. THEN loop the 8 owned through the normal full-Sinsemilla path
+   (`commitment_tree_insert_op` / `append_raw`). At this point bulk
+   positions [N-8, N) get appended; frontier picks up its first 8 cmx
+   at frontier-positions 0..7 (independent counter from bulk).
+
+**Consequence:** owned cmx live at bulk positions **[N-8, N)** —
+contiguous tail — not striped across the tree the way the Phase 1
+seeder placed them via `OwnedLayout::compute`. This shifts the
+canonical placement; `OwnedLayout` must be updated accordingly (see
+§15.3).
+
+### 15.3 How we integrate
+
+**Cherry-pick all 6 commits** of PR #751 onto our
+`feat/snapshot-apply-public-api` branch (files don't overlap — they
+touch `grovedb-commitment-tree` + `grovedb-bulk-append-tree`; we touch
+`grovedb-storage` + `grovedb` + `grovedb/operations/commitment_tree.rs`'s
+TAIL only).
+
+**Feature name (corrected from earlier draft):** `test-seeding-ct` on
+`grovedb-commitment-tree`, forwarded as `test-seeding-ct` on `grovedb`
+itself (per commit `df492578` rename). Earlier sections referenced
+`commitment_tree_test_seeding` — that name was dropped.
+
+**Compile-time binding (per A2 review finding):** the runtime
+`cfg(create_sdk_test_data)` gate and the Cargo `test-seeding-ct`
+feature MUST always be set together. Add a `compile_error!` guard in
+rs-drive-abci that fires if one is set without the other. This
+prevents a build matrix bug where the cfg is on but the feature is
+off (or vice versa), silently falling back to the slow path or
+breaking the build trail.
+
+**Refactor `OwnedLayout`** in
+`packages/rs-drive-abci/.../create_genesis_state/test/shielded.rs`:
+
+- Change `OwnedLayout::compute(total, owned_count)` to place owned at
+  the **tail**: `wallet_a` at positions `[N - owned_count, N -
+  owned_count + count_a)`, `wallet_b` at positions `[N - count_b, N)`.
+- Update all in-process platform_tests (`seeded_pool_count_matches_*`,
+  the address recovery tests at lines 595/701/722/789 per arch review)
+  to expect the new positions.
+- `wallet_at(pos)` mapping inverted accordingly.
+
+**Update `seed_shielded_pool_with_config`** in the same file:
+
+1. Generate the `Vec<SeededNote>` via the existing
+   `generate_notes_for_test_wallets` (unchanged — only positions move).
+2. Partition into `(filler, owned)` slices by ownership.
+3. Open a single `CommitmentTree` via grovedb's storage context.
+4. Call `commitment_tree.append_many_without_frontier(filler_iter)` —
+   ALL filler in one bulk call. Frontier untouched.
+5. Loop the 8 owned cmx through the existing
+   `commitment_tree_insert_op` per-note path so they hit the full
+   Sinsemilla append + parent-Merk leaf update.
+6. **Post-bake assertion:** read back `commitment_tree_count()` and
+   assert it equals `cfg.total_notes` (catches silent truncation from
+   a mid-loop panic — F9 finding).
+
+**Filler cmx — DEFER skipping rejection sampling (F6 caveat).** PR
+#751 accepts non-Pallas cmx, but our review flagged that wallet
+shardtree may compute `MerkleHashOrchard::from_bytes(cmx)` over filler
+positions during sync (`packages/rs-platform-wallet/.../sync.rs:317-320`)
+and reject if cmx is not a canonical Pallas base. **Empirically verify
+before skipping the rejection sampler** — write a one-off test that
+constructs a non-Pallas 32-byte sequence, feeds it as a filler cmx,
+and asserts wallet sync still completes. If it fails, keep the
+rejection sampler.
+
+### 15.4 Expected bake wall-clock after integration
+
+Per-note costs in release on this hardware (extrapolated from PR #751's
+own benchmark + our measurements):
+
+| Path | Cost per note |
+|---|---|
+| Old full append (Sinsemilla + BulkAppendTree) | ~7-8 ms |
+| New `append_raw_without_frontier` (blake3 only) | ~1-2 μs |
+
+For N=1_000_000 with 8 owned + 999_992 filler:
+
+| Phase | Old | New |
+|---|---|---|
+| Filler appends | ~2.2 h | ~1-2 s |
+| Owned appends | ~50 ms | ~50 ms |
+| BulkAppendTree compactions (488 of them) | ~3 s | ~3 s |
+| Frontier serialize/save | ~1 ms | ~1 ms |
+| Dump (SST write) | ~5 s | ~5 s |
+| **Total** | **~2.2 h** | **~10-30 s of CPU** |
+
+Add docker/disk overhead: **end-to-end bake stage ~5-10 min total** for
+N=1M (mostly fixed cargo/init/SST-finalize overhead, not Sinsemilla
+work).
+
+### 15.5 Consequences (must document in code + design)
+
+- **Anchor is not a valid Orchard anchor.** After the seeded chain
+  finalises InitChain, the recorded anchor at height 1 reflects only
+  the 8 owned cmx, sitting at **frontier positions 0..7** (regardless
+  of their bulk positions [N-8, N)). Production wallets attempting to
+  construct spend proofs against this anchor will fail because their
+  shardtree witness has cmx at bulk position N-8+k, but the on-chain
+  anchor only knows it at frontier-position k — `merkle_path.root(cmx) != anchor`.
+  This is acceptable because:
+  - Devnet wallets in this test only sync, not spend.
+  - The chain is gated by `cfg(create_sdk_test_data)` + `SDK_TEST_DATA=true`
+    at image build — never reaches production.
+  - **The Sinsemilla frontier and the BulkAppendTree maintain
+    independent position counters** (grovedb-commitment-tree's
+    `CommitmentFrontier::append` uses `incrementalmerkletree::Frontier`'s
+    internal `position()`, NOT bulk's `total_count`). Confirmed by
+    crypto review F2.
+- **Add `tracing::warn!` at `record_shielded_pool_anchor_if_changed`
+  call-site** noting the recorded anchor is NOT a valid Orchard spend
+  anchor when the skip-path was used. (A6a finding.)
+- **Wallet sync still works** because sync uses chunk proofs
+  authenticated by the grovedb root hash, which transitively
+  authenticates `bulk_state_root` (via the parent-Merk leaf's child
+  hash = `compute_commitment_tree_state_root(sinsemilla, bulk_state)`).
+  The wallet never compares `cmx` to the on-chain anchor — it appends
+  to its own shardtree and uses `merkle_path.root(cmx)` from that
+  local witness. Sync is anchor-agnostic. Confirmed by crypto review
+  F4 (cited evidence: `packages/rs-drive-proof-verifier/src/proof.rs:2555-2565`,
+  `packages/rs-platform-wallet/src/wallet/shielded/sync.rs:312-325`,
+  `operations.rs:612-680`).
+- **Cross-host determinism: same-host only.** Same RNG seed, same
+  skip-path invocations, same blake3 output on the same host. Bake
+  re-runs across hosts may legitimately produce different
+  `__ct_data__` byte layouts (depends on MMR compaction timing,
+  intermediate Merk operations). Phase 2 inherits the Phase 1
+  same-host-only determinism property — does not weaken it.
+- **Bake-time vs apply-time symmetry holds.** The snapshot stores
+  whatever state the bake produced (including the "junk" anchor); apply
+  ingests it verbatim; the combined-root cross-validation passes
+  because both sides compute combined_root from the same loaded data.
+  Confirmed by crypto review F5.
+- **`combined_root` of a Phase-2 bake ≠ `combined_root` of a
+  runtime-seeded chain** with the same config. This breaks the §10
+  test #6 equivalence claim and the §8 "byte-identical to runtime"
+  reasoning. Both have been scoped to Phase 1 above.
+
+### 15.6 Test coverage to add
+
+- **Modify** existing in-process roundtrip
+  (`snapshot_dump_apply_preserves_anchor`) to assert anchor is
+  non-empty (still true with owned-only frontier) AND wallet sync logic
+  still finds the 8 owned notes through chunk proofs. **Drop the
+  `#[ignore]` tag** — Phase 2 bake at N=1M is fast enough for default
+  CI (A6e finding).
+- **Retire** §10 test #6 (equivalence with runtime seeder). Replace
+  with a "bake-side determinism" test: same config → same SST bytes
+  across two bakes on the same host.
+- **Add** F6-precondition test: feed a deliberately non-Pallas-canonical
+  32-byte cmx as a filler, run wallet sync, assert it completes.
+  Gates the "skip rejection sampling for filler" optimization. If this
+  test fails, keep the rejection sampler.
+- **Add** a test that **explicitly fails on attempted spend** against
+  the Phase-2-seeded chain. Makes the "not spendable" caveat
+  self-documenting and catches a regression where someone later tries
+  to enable spends on test chains.
+- **Add** a post-bake assertion that `commitment_tree_count() ==
+  cfg.total_notes` to catch silent truncation from a panic mid-bake
+  (F9 finding).
+- **Benchmark test:** assert N=1_000_000 bake completes in <10 min
+  wall-clock in CI (or `#[ignore]` if CI hardware is slow). Tracks the
+  actual perf claim of Phase 2 against regressions.
+
+### 15.7 Devnet visibility — progress logging
+
+Independent of the perf fix: add periodic progress logs to
+`seed_shielded_pool_with_config`. Currently the seeder is silent
+between the "seeding ..." start and "dumping ..." end log lines, which
+made the 8-hour blind wait extra painful. Emit every 30 s:
+
+```
+seed progress: appended 412480/1000000 (41.2%), elapsed 124s, rate 3326/s, ETA 176s
+```
+
+Keeps the bake observable even if some future change re-introduces a
+slow loop somewhere.
 - Not building a universal subtree-snapshot library. Shielded-specific by
   design.

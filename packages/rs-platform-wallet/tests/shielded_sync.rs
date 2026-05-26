@@ -177,9 +177,12 @@ async fn run_wallet_balance_test(wallet: WalletIndex) {
     let core_password = std::env::var("DASH_SDK_CORE_PASSWORD").unwrap_or_default();
 
     let network = Network::Regtest;
-    let mut builder = SdkBuilder::new(addresses)
-        .with_network(network)
-        .with_core(&core_host, core_port, &core_user, &core_password);
+    let mut builder = SdkBuilder::new(addresses).with_network(network).with_core(
+        &core_host,
+        core_port,
+        &core_user,
+        &core_password,
+    );
 
     // If the operator explicitly opted into SSL, load dashmate's CA cert
     // (overridable via `DASHMATE_CA_CERT`).
@@ -261,7 +264,7 @@ async fn run_wallet_balance_test(wallet: WalletIndex) {
         .await
         .expect("shielded_coordinator must exist after configure_shielded");
     platform_wallet
-        .bind_shielded(&shielded_seed, &[0u32], &coordinator)
+        .bind_shielded(shielded_seed, &[0u32], &coordinator)
         .await
         .expect("bind_shielded");
 

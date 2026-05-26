@@ -21,16 +21,17 @@ yarn dashmate config set core.insight.enabled true --config local_seed
 # so the genesis shielded-pool seeder + identity/contract fixtures run on every
 # local devnet bring-up. Production / release builds explicitly do NOT set this.
 #
-# CARGO_BUILD_PROFILE: temporarily on `dev` (debug) for snapshot e2e iteration.
-# Previously set to `release` to make N=500_000 runtime seed survive
-# tenderdash's InitChain timeout. With N=5000 + the snapshot-bake path
-# landing soon, debug-profile seed in ~30-60s is acceptable, and dev
-# profile cuts the docker image build from ~30 min to ~5-10 min.
-# Flip back to `release` once we stop iterating on the shielded snapshot
-# code path.
+# CARGO_BUILD_PROFILE=release is mandatory at the current default N=1_000_000.
+# Release-mode Sinsemilla is ~10× faster than debug; without it the bake
+# stage during `docker build` would take hours. Apply at runtime InitChain
+# is ~134 ms regardless of profile (single SST ingest, no Sinsemilla work).
+#
+# Drop back to `dev` only if you also lower
+# `ShieldedSeedConfig::sdk_test_data().total_notes` to ~5k or below
+# (debug bake fits in tenderdash's InitChain window only at small N).
 for i in $(seq 1 ${MASTERNODES_COUNT}); do
     yarn dashmate config set --config=local_${i} \
         platform.drive.abci.docker.build.buildArgs.SDK_TEST_DATA "true"
     yarn dashmate config set --config=local_${i} \
-        platform.drive.abci.docker.build.buildArgs.CARGO_BUILD_PROFILE "dev"
+        platform.drive.abci.docker.build.buildArgs.CARGO_BUILD_PROFILE "release"
 done
