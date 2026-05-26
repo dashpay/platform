@@ -51,8 +51,17 @@ impl IdentityKeyWire {
     }
 
     fn into_entry(self) -> Result<IdentityKeyEntry, WalletStorageError> {
-        let (public_key, _): (IdentityPublicKey, usize) =
+        let (public_key, consumed): (IdentityPublicKey, usize) =
             bincode::decode_from_slice(&self.public_key_bincode, bincode::config::standard())?;
+        // CMT-009: consistent with the outer blob::decode trailing-byte
+        // guard. A valid-prefix + trailing-garbage payload that
+        // bincode's decoder happily accepts (it stops after the typed
+        // length) is corruption / forward-schema drift — refuse it.
+        if consumed != self.public_key_bincode.len() {
+            return Err(WalletStorageError::blob_decode(
+                "unexpected trailing bytes in identity_keys.public_key_bincode",
+            ));
+        }
         Ok(IdentityKeyEntry {
             identity_id: self.identity_id,
             key_id: self.key_id,
@@ -80,6 +89,18 @@ pub fn apply(
                 derivation_blob = NULL",
         )?;
         for ((identity_id, key_id), entry) in &cs.upserts {
+            // Reject any disagreement between the map key / outer
+            // wallet_id (what the typed columns are bound from) and the
+            // entry fields (what the serialized blob carries) so the two
+            // representations of a row can never diverge on disk.
+            if entry.identity_id != *identity_id || entry.key_id != *key_id {
+                return Err(WalletStorageError::IdentityKeyEntryMismatch);
+            }
+            if let Some(entry_wallet_id) = entry.wallet_id {
+                if entry_wallet_id != *wallet_id {
+                    return Err(WalletStorageError::IdentityKeyEntryMismatch);
+                }
+            }
             let wire = IdentityKeyWire::from_entry(entry)?;
             let entry_blob = blob::encode(&wire)?;
             stmt.execute(params![
@@ -147,4 +168,45 @@ pub fn load_state(
         cs.upserts.insert((identity_id, key_id), entry);
     }
     Ok(cs)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use dpp::identity::{KeyType, Purpose, SecurityLevel};
+    use dpp::platform_value::BinaryData;
+
+    /// CMT-009: a `public_key_bincode` payload whose IdentityPublicKey
+    /// prefix is valid but carries trailing garbage is refused at
+    /// decode time rather than silently dropping the trailing bytes.
+    #[test]
+    fn into_entry_rejects_trailing_bytes_in_public_key_bincode() {
+        let pk = IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id: 0,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: None,
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: BinaryData::new(vec![2u8; 33]),
+            disabled_at: None,
+        });
+        let mut pk_bincode = bincode::encode_to_vec(&pk, bincode::config::standard()).unwrap();
+        pk_bincode.push(0xFF); // trailing garbage past the typed length
+
+        let wire = IdentityKeyWire {
+            identity_id: dpp::prelude::Identifier::from([0xAA; 32]),
+            key_id: 0,
+            public_key_bincode: pk_bincode,
+            public_key_hash: [0u8; 20],
+            wallet_id: None,
+            derivation_indices: None,
+        };
+        let err = wire.into_entry().expect_err("trailing bytes must error");
+        assert!(
+            matches!(err, WalletStorageError::BlobDecode { .. }),
+            "expected BlobDecode for trailing-byte garbage, got {err:?}"
+        );
+    }
 }

@@ -2830,13 +2830,15 @@ fn build_wallet_start_state(
     let unused_asset_locks = build_unused_asset_locks(entry)?;
 
     // Project the reconstructed `wallet` + `wallet_info` into the
-    // keyless `ClientWalletStartState` the new persister contract
-    // requires (SECRETS.md: no `Wallet`/seed crosses `load()`). The
-    // manager re-derives the signing wallet from the runtime
-    // `SeedProvider` (here the Swift mnemonic resolver), runs the
-    // wrong-seed gate, then re-applies this `core_state` projection.
-    // The locally-built `wallet` is dropped — it was only needed to
-    // shape the account collection / UTXO routing above.
+    // keyless `ClientWalletStartState` the persister contract requires
+    // (SECRETS.md: no `Wallet`/seed crosses `load()`). The manager
+    // rebuilds a watch-only wallet from this manifest via
+    // `Wallet::new_watch_only` and applies this `core_state` projection.
+    // Signing happens later via the on-demand
+    // `sign_with_mnemonic_resolver` path, which fail-closed gates the
+    // resolver-supplied seed against the loaded `wallet_id`. The
+    // locally-built `wallet` is dropped — it was only needed to shape
+    // the account collection / UTXO routing above.
     let account_manifest: Vec<AccountRegistrationEntry> = wallet
         .accounts
         .all_accounts()

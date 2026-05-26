@@ -1,11 +1,8 @@
 //! Type-shape + boundary guards for the `secrets` API
-//! (SEC-REQ-4.1 / 4.4 / 4.5, TC-082 parity).
+//! (SEC-REQ-4.1 / 4.4 / 4.5).
 //!
-//! Compiled only with `--features secrets`. Uses `EncryptedFileStore`
-//! (always available under `secrets`); `MemoryCredentialStore` is
-//! intentionally unreachable here (SEC-REQ-2.3.1) — it is exercised
-//! only by the crate's own in-module unit tests behind
-//! `__secrets-test-helpers`.
+//! Compiled only with `--features secrets`. Uses a tempdir-backed
+//! `EncryptedFileStore` (always available under `secrets`).
 
 #![cfg(feature = "secrets")]
 
@@ -15,7 +12,7 @@ use std::sync::Arc;
 use keyring_core::api::CredentialStoreApi;
 use keyring_core::{Error as KeyringError, Result as KeyringResult};
 use platform_wallet_storage::secrets::{
-    downcast_failure, EncryptedFileStore, FileStoreFailure, SecretBytes, SecretString, WalletId,
+    EncryptedFileStore, FileStoreError, SecretBytes, SecretStore, SecretString, WalletId,
     SERVICE_PREFIX,
 };
 
@@ -122,10 +119,23 @@ fn error_display_is_static_and_secret_free() {
     let rendered = format!("{err}");
     assert!(!rendered.contains("PLAINTEXTNEEDLE"));
     assert!(!rendered.contains("wrong-pass"));
-    assert_eq!(
-        downcast_failure(&err),
-        Some(FileStoreFailure::WrongPassphrase)
-    );
+    // WrongPassphrase rides in `NoStorageAccess` with the typed
+    // FileStoreError boxed as the source, recoverable losslessly.
+    match &err {
+        KeyringError::NoStorageAccess(src) => {
+            assert!(matches!(
+                src.downcast_ref::<FileStoreError>(),
+                Some(FileStoreError::WrongPassphrase)
+            ));
+        }
+        other => panic!("expected NoStorageAccess, got {other:?}"),
+    }
+
+    // Same wrong passphrase through the public `SecretStore`: the typed
+    // distinction survives losslessly there too.
+    let bad_store = SecretStore::file(dir.path(), SecretString::new("wrong-pass")).unwrap();
+    let typed = bad_store.get(&w, "seed").unwrap_err();
+    assert!(matches!(typed, FileStoreError::WrongPassphrase));
 
     let inv = store.build(&service(w), "../bad", None).unwrap_err();
     match inv {

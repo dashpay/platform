@@ -4,11 +4,14 @@
 //! [`PlatformWalletPersistence`](platform_wallet::changeset::PlatformWalletPersistence)
 //! for the persister DTO (public wallet state — no secrets).
 //!
-//! The [`secrets`] submodule implements
-//! `keyring_core::api::CredentialStoreApi` for an Argon2id +
-//! XChaCha20-Poly1305 vault ([`secrets::EncryptedFileStore`]) and
-//! exposes [`secrets::default_credential_store`] for the platform OS
-//! keyring. See [`SECRETS.md`](../SECRETS.md) for the full key shape,
+//! The [`secrets`] submodule's consumer entry point is
+//! [`secrets::SecretStore`]: `get` yields a zeroizing
+//! [`secrets::SecretBytes`] (never a raw `Vec<u8>`) and `set` takes
+//! `&SecretBytes`, over an Argon2id + XChaCha20-Poly1305 vault file or
+//! the platform OS keyring. The internal SPI is
+//! `keyring_core::api::CredentialStoreApi`
+//! ([`secrets::EncryptedFileStore`], [`secrets::default_credential_store`]).
+//! See [`SECRETS.md`](../SECRETS.md) for the full key shape,
 //! memory-hygiene contract, and audit hooks.
 //!
 //! ## Canonical type paths
@@ -37,8 +40,9 @@ pub mod secrets;
 #[cfg(feature = "sqlite")]
 #[allow(deprecated)]
 pub use sqlite::{
-    AutoBackupOperation, DeleteWalletReport, FlushMode, JournalMode, PruneReport, RetentionPolicy,
-    SqlitePersister, SqlitePersisterConfig, SqlitePersisterError, Synchronous, WalletStorageError,
+    AutoBackupOperation, CommitReport, DeleteWalletReport, FlushMode, JournalMode, PruneReport,
+    RetentionPolicy, SqlitePersister, SqlitePersisterConfig, SqlitePersisterError, Synchronous,
+    WalletStorageError,
 };
 
 // Compile-time assertions — `Send + Sync`, `PlatformWalletPersistence`

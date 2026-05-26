@@ -67,13 +67,18 @@ pub fn fetch(
     if let Some(row) = rows.next()? {
         let network: String = row.get(0)?;
         let height: i64 = row.get(1)?;
-        Ok(Some((network, height as u32)))
+        let height = u32::try_from(height).map_err(|_| WalletStorageError::IntegerOverflow {
+            field: "wallet_metadata.birth_height",
+            value: height as u64,
+            target: crate::sqlite::util::safe_cast::SafeCastTarget::U64,
+        })?;
+        Ok(Some((network, height)))
     } else {
         Ok(None)
     }
 }
 
-/// Delete a wallet_metadata row (cascade triggers fire).
+/// Delete a wallet_metadata row (native `ON DELETE CASCADE` fires).
 pub fn delete(tx: &Transaction<'_>, wallet_id: &WalletId) -> Result<usize, WalletStorageError> {
     let n = tx.execute(
         "DELETE FROM wallet_metadata WHERE wallet_id = ?1",

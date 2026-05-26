@@ -48,10 +48,40 @@ pub fn apply(
             ])?;
         }
     }
+    // Derived addresses are written BEFORE UTXOs (within the same
+    // transaction) so the UTXO writer's address→account_index lookup
+    // sees the freshly recorded rows.
+    if !cs.addresses_derived.is_empty() {
+        let mut stmt = tx.prepare_cached(
+            "INSERT INTO core_derived_addresses \
+                (wallet_id, account_type, account_index, address, derivation_path, used) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6) \
+             ON CONFLICT(wallet_id, account_type, address) DO UPDATE SET \
+                account_index = excluded.account_index, \
+                derivation_path = excluded.derivation_path",
+        )?;
+        for da in &cs.addresses_derived {
+            let account_type =
+                crate::sqlite::schema::accounts::account_type_db_label(&da.account_type);
+            let account_index = crate::sqlite::schema::accounts::account_index(&da.account_type);
+            let pool_type = crate::sqlite::schema::accounts::pool_type_db_label(&da.pool_type);
+            let address = da.address.to_string();
+            let path = format!("{}/{}", pool_type, da.derivation_index);
+            stmt.execute(params![
+                wallet_id.as_slice(),
+                account_type,
+                i64::from(account_index),
+                address,
+                path,
+                false
+            ])?;
+        }
+    }
     if !cs.new_utxos.is_empty() {
         let mut stmt = tx.prepare_cached(UPSERT_UTXO_SQL)?;
+        let mut lookup_stmt = tx.prepare_cached(ACCOUNT_INDEX_BY_ADDRESS_SQL)?;
         for utxo in &cs.new_utxos {
-            execute_upsert_utxo(&mut stmt, wallet_id, utxo, false)?;
+            execute_upsert_utxo(&mut stmt, &mut lookup_stmt, wallet_id, utxo, false)?;
         }
     }
     if !cs.spent_utxos.is_empty() {
@@ -61,6 +91,7 @@ pub fn apply(
             "UPDATE core_utxos SET spent = 1 WHERE wallet_id = ?1 AND outpoint = ?2",
         )?;
         let mut upsert_stmt = tx.prepare_cached(UPSERT_UTXO_SQL)?;
+        let mut lookup_stmt = tx.prepare_cached(ACCOUNT_INDEX_BY_ADDRESS_SQL)?;
         for utxo in &cs.spent_utxos {
             let op = blob::encode_outpoint(&utxo.outpoint);
             let exists: bool = exists_stmt
@@ -70,7 +101,12 @@ pub fn apply(
             if exists {
                 mark_spent_stmt.execute(params![wallet_id.as_slice(), &op[..]])?;
             } else {
-                execute_upsert_utxo(&mut upsert_stmt, wallet_id, utxo, true)?;
+                // Spent-only synthetic row: best-effort account_index
+                // from the derived-address map. A spend of an
+                // externally-funded address we never derived defaults
+                // to 0 (logged) — harmless, since spent rows are
+                // excluded from `list_unspent_utxos`.
+                execute_upsert_utxo(&mut upsert_stmt, &mut lookup_stmt, wallet_id, utxo, true)?;
             }
         }
     }
@@ -92,30 +128,14 @@ pub fn apply(
     if cs.last_processed_height.is_some() || cs.synced_height.is_some() {
         upsert_sync_state(tx, wallet_id, cs.last_processed_height, cs.synced_height)?;
     }
-    if !cs.addresses_derived.is_empty() {
-        let mut stmt = tx.prepare_cached(
-            "INSERT INTO core_derived_addresses (wallet_id, account_type, address, derivation_path, used) \
-             VALUES (?1, ?2, ?3, ?4, ?5) \
-             ON CONFLICT(wallet_id, account_type, address) DO UPDATE SET \
-                derivation_path = excluded.derivation_path",
-        )?;
-        for da in &cs.addresses_derived {
-            let account_type =
-                crate::sqlite::schema::accounts::account_type_db_label(&da.account_type);
-            let pool_type = crate::sqlite::schema::accounts::pool_type_db_label(&da.pool_type);
-            let address = da.address.to_string();
-            let path = format!("{}/{}", pool_type, da.derivation_index);
-            stmt.execute(params![
-                wallet_id.as_slice(),
-                account_type,
-                address,
-                path,
-                false
-            ])?;
-        }
-    }
     Ok(())
 }
+
+/// Resolve the owning account index for a UTXO by its rendered address,
+/// joining against the `core_derived_addresses` map written earlier in
+/// the same transaction.
+const ACCOUNT_INDEX_BY_ADDRESS_SQL: &str =
+    "SELECT account_index FROM core_derived_addresses WHERE wallet_id = ?1 AND address = ?2";
 
 const UPSERT_UTXO_SQL: &str = "INSERT INTO core_utxos \
         (wallet_id, outpoint, value, script, height, account_index, spent, spent_in_txid) \
@@ -129,18 +149,33 @@ const UPSERT_UTXO_SQL: &str = "INSERT INTO core_utxos \
 
 fn execute_upsert_utxo(
     stmt: &mut rusqlite::CachedStatement<'_>,
+    lookup_stmt: &mut rusqlite::CachedStatement<'_>,
     wallet_id: &WalletId,
     utxo: &Utxo,
     spent: bool,
 ) -> Result<(), WalletStorageError> {
     let op = blob::encode_outpoint(&utxo.outpoint);
+    let address = utxo.address.to_string();
+    // `Utxo` carries no account index; recover it from the
+    // derived-address map written earlier in this transaction.
+    let account_index: i64 = lookup_stmt
+        .query_row(params![wallet_id.as_slice(), &address], |row| row.get(0))
+        .optional()?
+        .unwrap_or_else(|| {
+            tracing::warn!(
+                wallet_id = %hex::encode(wallet_id),
+                address = %address,
+                "UTXO address not found in core_derived_addresses; defaulting account_index to 0"
+            );
+            0
+        });
     stmt.execute(params![
         wallet_id.as_slice(),
         &op[..],
         crate::sqlite::util::safe_cast::u64_to_i64("core_utxos.value", utxo.value())?,
         utxo.txout.script_pubkey.as_bytes(),
         i64::from(utxo.height),
-        0i64, // Utxo does not carry account_index; populated by derived-address lookup later.
+        account_index,
         spent,
     ])?;
     Ok(())
@@ -153,18 +188,18 @@ fn upsert_sync_state(
     synced: Option<u32>,
 ) -> Result<(), WalletStorageError> {
     // Monotonic-max semantics — keep the larger of (current, new).
-    let current = tx
+    let current_raw: (Option<i64>, Option<i64>) = tx
         .query_row(
             "SELECT last_processed_height, synced_height FROM core_sync_state WHERE wallet_id = ?1",
             params![wallet_id.as_slice()],
-            |row| {
-                let lp: Option<i64> = row.get(0)?;
-                let sy: Option<i64> = row.get(1)?;
-                Ok((lp.map(|x| x as u32), sy.map(|x| x as u32)))
-            },
+            |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .optional()?
         .unwrap_or((None, None));
+    let current = (
+        sync_height_u32("core_sync_state.last_processed_height", current_raw.0)?,
+        sync_height_u32("core_sync_state.synced_height", current_raw.1)?,
+    );
     let lp = match (current.0, last_processed) {
         (Some(a), Some(b)) => Some(a.max(b)),
         (a, b) => a.or(b),
@@ -330,6 +365,24 @@ pub fn load_state(
     }
 
     Ok(cs)
+}
+
+/// Convert a stored sync-height column to `u32`, erroring on overflow
+/// rather than silently truncating a corrupt/out-of-range value.
+fn sync_height_u32(
+    field: &'static str,
+    value: Option<i64>,
+) -> Result<Option<u32>, WalletStorageError> {
+    match value {
+        None => Ok(None),
+        Some(v) => Ok(Some(u32::try_from(v).map_err(|_| {
+            WalletStorageError::IntegerOverflow {
+                field,
+                value: v as u64,
+                target: crate::sqlite::util::safe_cast::SafeCastTarget::U64,
+            }
+        })?)),
+    }
 }
 
 /// Fetch a single transaction record by txid. Returns `Ok(None)` if

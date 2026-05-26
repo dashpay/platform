@@ -1,6 +1,6 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! TC-045..TC-048 — foreign-key enforcement (emulated via triggers).
+//! TC-045..TC-048 — native foreign-key enforcement.
 
 mod common;
 
@@ -99,13 +99,30 @@ fn tc048_setnull_on_tx_delete() {
         rusqlite::params![w.as_slice(), &txid[..]],
     )
     .unwrap();
-    let spent_in: Option<Vec<u8>> = conn
+
+    // The UTXO row must SURVIVE the tx delete — the single-column trigger
+    // clears `spent_in_txid` only. A future change that turns it into a
+    // cascading DELETE must fail here, not pass silently.
+    let count: i64 = conn
         .query_row(
-            "SELECT spent_in_txid FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2",
+            "SELECT COUNT(*) FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2",
             rusqlite::params![w.as_slice(), &outpoint],
             |row| row.get(0),
         )
         .unwrap();
+    assert_eq!(count, 1, "UTXO row must survive the transaction delete");
+
+    let (wallet_id, value, account_index, spent_in): (Vec<u8>, i64, i64, Option<Vec<u8>>) = conn
+        .query_row(
+            "SELECT wallet_id, value, account_index, spent_in_txid \
+             FROM core_utxos WHERE wallet_id = ?1 AND outpoint = ?2",
+            rusqlite::params![w.as_slice(), &outpoint],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .unwrap();
+    assert_eq!(wallet_id, w.as_slice(), "wallet_id must be preserved");
+    assert_eq!(value, 100, "value must be preserved");
+    assert_eq!(account_index, 0, "account_index must be preserved");
     assert!(
         spent_in.is_none(),
         "spent_in_txid should have been set to NULL"

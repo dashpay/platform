@@ -275,15 +275,17 @@ public class PlatformWalletManager: ObservableObject {
     ///
     /// Calls `platform_wallet_manager_load_from_persistor` which fires
     /// the Swift-side `on_load_wallet_list_fn` callback. For each
-    /// persisted wallet, Rust reconstructs a **watch-only** `Wallet`
-    /// plus the wallet's persisted platform-address sync snapshot.
-    /// After the FFI returns, we call `platform_wallet_manager_get_wallet`
-    /// for each restored id so Swift gets a `ManagedPlatformWallet`
-    /// handle.
+    /// persisted wallet, Rust rebuilds a **watch-only** `Wallet` from
+    /// its keyless account manifest (`Wallet::new_watch_only`) and
+    /// applies the persisted platform-address sync snapshot. After the
+    /// FFI returns we call `platform_wallet_manager_get_wallet` for
+    /// each restored id so Swift gets a `ManagedPlatformWallet` handle.
     ///
-    /// Signing operations will fail until a future unlock flow
-    /// upgrades a watch-only wallet to a signing wallet via the
-    /// mnemonic stored in Keychain.
+    /// Signing happens on demand via the configured
+    /// `MnemonicResolverHandle`: each resolver-fed sign entrypoint
+    /// fail-closed gates the resolved seed against the loaded
+    /// `wallet_id` and surfaces a structural wrong-seed error on
+    /// mismatch (no keys cross that surface).
     ///
     /// Idempotent: if there's no persisted state, does nothing and
     /// leaves `self.wallets` untouched. Safe to call before any
@@ -292,7 +294,12 @@ public class PlatformWalletManager: ObservableObject {
     public func loadFromPersistor() throws -> [ManagedPlatformWallet] {
         try ensureConfigured()
 
-        try platform_wallet_manager_load_from_persistor(handle).check()
+        // Pass nil for `out_outcome` — Swift doesn't currently consume
+        // the per-wallet skip summary (corrupt persisted rows are
+        // logged by Rust at warn level). When Swift starts surfacing
+        // skipped wallets to the UI, pass a `LoadOutcomeFFI` here and
+        // free it with `platform_wallet_load_outcome_free`.
+        try platform_wallet_manager_load_from_persistor(handle, nil).check()
 
         // Ask SwiftData for the list of wallet ids we just told Rust
         // to load. We reuse the same container rather than shipping a

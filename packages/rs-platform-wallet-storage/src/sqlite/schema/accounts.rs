@@ -150,7 +150,12 @@ pub(crate) fn pool_type_db_label(
     }
 }
 
-fn account_index(at: &key_wallet::account::AccountType) -> u32 {
+/// Numeric account index embedded in an `AccountType`.
+///
+/// Persisted in the `account_index` column of `account_registrations`,
+/// `account_address_pools`, and `core_derived_addresses` (the last of
+/// which is the script→account lookup the UTXO writer joins against).
+pub(crate) fn account_index(at: &key_wallet::account::AccountType) -> u32 {
     use key_wallet::account::AccountType;
     match at {
         AccountType::Standard { index, .. } => *index,

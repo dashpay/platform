@@ -52,6 +52,36 @@ fn sqlite_corrupt() -> WalletStorageError {
     ))
 }
 
+fn sqlite_disk_full() -> WalletStorageError {
+    WalletStorageError::Sqlite(SqlErr::SqliteFailure(
+        rusqlite::ffi::Error {
+            code: ErrorCode::DiskFull,
+            extended_code: rusqlite::ffi::SQLITE_FULL,
+        },
+        Some("database or disk is full".into()),
+    ))
+}
+
+fn sqlite_io_failure() -> WalletStorageError {
+    WalletStorageError::Sqlite(SqlErr::SqliteFailure(
+        rusqlite::ffi::Error {
+            code: ErrorCode::SystemIoFailure,
+            extended_code: rusqlite::ffi::SQLITE_IOERR,
+        },
+        Some("disk I/O error".into()),
+    ))
+}
+
+fn sqlite_oom() -> WalletStorageError {
+    WalletStorageError::Sqlite(SqlErr::SqliteFailure(
+        rusqlite::ffi::Error {
+            code: ErrorCode::OutOfMemory,
+            extended_code: rusqlite::ffi::SQLITE_NOMEM,
+        },
+        Some("out of memory".into()),
+    ))
+}
+
 /// One representative sample per `WalletStorageError` variant.
 ///
 /// The samples are passed through a wildcard-free `match` below; the
@@ -64,6 +94,9 @@ fn samples() -> Vec<WalletStorageError> {
         sqlite_busy(),
         sqlite_locked(),
         sqlite_corrupt(),
+        sqlite_disk_full(),
+        sqlite_io_failure(),
+        sqlite_oom(),
         // Migration uses an internal refinery error — we cannot easily
         // synthesise one without a full runner. The `Migration(_)` arm
         // in the match below uses a lazily-generated value via
@@ -73,10 +106,6 @@ fn samples() -> Vec<WalletStorageError> {
         // Skipped from samples because refinery::Error has no public
         // `From` we can lean on; the arm is still exhaustively
         // covered by the match itself.
-        WalletStorageError::MigrationDirty {
-            applied: 1,
-            pending: 1,
-        },
         WalletStorageError::IntegrityCheckFailed {
             report: "rows missing".into(),
         },
@@ -101,6 +130,22 @@ fn samples() -> Vec<WalletStorageError> {
         WalletStorageError::WalletNotFound {
             wallet_id: [0u8; 32],
         },
+        WalletStorageError::WalletIdMismatch {
+            expected: [1u8; 32],
+            found: [2u8; 32],
+        },
+        WalletStorageError::IdentityKeyEntryMismatch,
+        WalletStorageError::AssetLockEntryMismatch {
+            typed_outpoint: "txid:0".into(),
+            blob_outpoint: "txid:1".into(),
+            typed_account_index: 5,
+            blob_account_index: 9,
+        },
+        WalletStorageError::BlobTooLarge {
+            len_bytes: 32 * 1024 * 1024,
+            limit_bytes: 16 * 1024 * 1024,
+        },
+        WalletStorageError::ForeignKeysNotEnforced,
         WalletStorageError::LockPoisoned,
         WalletStorageError::RestoreDestinationLocked,
         WalletStorageError::InvalidWalletIdHex {
@@ -155,13 +200,15 @@ fn tc_p2_005_is_transient_table() {
             WalletStorageError::Sqlite(SqlErr::SqliteFailure(e, _)) => match e.code {
                 ErrorCode::DatabaseBusy => (true, "sqlite_busy"),
                 ErrorCode::DatabaseLocked => (true, "sqlite_locked"),
+                ErrorCode::DiskFull => (true, "sqlite_disk_full"),
+                ErrorCode::SystemIoFailure => (true, "sqlite_io_failure"),
+                ErrorCode::OutOfMemory => (true, "sqlite_out_of_memory"),
                 _ => (false, "sqlite_other"),
             },
             WalletStorageError::Sqlite(_) => (false, "sqlite_other"),
             WalletStorageError::FlushRetryable { .. } => (true, "flush_retryable"),
             WalletStorageError::Io(_) => (false, "io"),
             WalletStorageError::Migration(_) => (false, "migration"),
-            WalletStorageError::MigrationDirty { .. } => (false, "migration_dirty"),
             WalletStorageError::IntegrityCheckFailed { .. } => (false, "integrity_check_failed"),
             WalletStorageError::IntegrityCheckRunFailed { .. } => {
                 (false, "integrity_check_run_failed")
@@ -176,6 +223,7 @@ fn tc_p2_005_is_transient_table() {
                 (false, "auto_backup_dir_unwritable")
             }
             WalletStorageError::WalletNotFound { .. } => (false, "wallet_not_found"),
+            WalletStorageError::WalletIdMismatch { .. } => (false, "wallet_id_mismatch"),
             WalletStorageError::LockPoisoned => (false, "lock_poisoned"),
             WalletStorageError::RestoreDestinationLocked => (false, "restore_destination_locked"),
             WalletStorageError::InvalidWalletIdHex { .. } => (false, "invalid_wallet_id_hex"),
@@ -189,6 +237,12 @@ fn tc_p2_005_is_transient_table() {
             WalletStorageError::BackupDestinationExists { .. } => {
                 (false, "backup_destination_exists")
             }
+            WalletStorageError::IdentityKeyEntryMismatch => (false, "identity_key_entry_mismatch"),
+            WalletStorageError::AssetLockEntryMismatch { .. } => {
+                (false, "asset_lock_entry_mismatch")
+            }
+            WalletStorageError::BlobTooLarge { .. } => (false, "blob_too_large"),
+            WalletStorageError::ForeignKeysNotEnforced => (false, "foreign_keys_not_enforced"),
             WalletStorageError::IntegerOverflow { .. } => (false, "integer_overflow"),
         }
     }

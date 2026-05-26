@@ -9,7 +9,6 @@ use crate::changeset::{ClientStartState, ClientWalletStartState, PlatformWalletP
 use crate::error::PlatformWalletError;
 use crate::events::PlatformEvent;
 use crate::manager::load_outcome::{LoadOutcome, SkipReason};
-use crate::seed_provider::SeedProvider;
 use crate::wallet::core::WalletBalance;
 use crate::wallet::identity::IdentityManager;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
@@ -18,42 +17,45 @@ use crate::wallet::PlatformWallet;
 use super::PlatformWalletManager;
 
 impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
-    /// Load every persisted wallet, re-deriving each signing
-    /// [`Wallet`](key_wallet::Wallet) from the runtime
-    /// [`SeedProvider`](crate::seed_provider::SeedProvider) and
-    /// rehydrating the manager's `wallet_manager` and `wallets` maps.
+    /// Restore every persisted wallet as a **watch-only** entry — no
+    /// signing key material is derived here. The persister hands back a
+    /// keyless reconstruction snapshot; each wallet is rebuilt via
+    /// [`Wallet::new_watch_only`](key_wallet::wallet::Wallet::new_watch_only)
+    /// from its [`AccountRegistrationEntry`](crate::changeset::AccountRegistrationEntry)
+    /// manifest, the keyless core-state projection is applied, and the
+    /// result is registered into the manager.
     ///
-    /// The persister never holds key material — its `load()` returns a
-    /// keyless reconstruction snapshot. For each persisted wallet this
-    /// fetches the seed/mnemonic from `seeds`, runs the fail-closed
-    /// wrong-seed gate, mints `ManagedWalletInfo`, applies the rebuilt
-    /// core state + identities + `Consumed`-filtered asset locks, and
-    /// registers it.
+    /// Signing happens later, on demand, via the configured
+    /// [`MnemonicResolverHandle`]. Each sign entrypoint constant-time
+    /// re-derives the root extended public key from the resolver-supplied
+    /// mnemonic, recomputes the `wallet_id`, and fails closed with a
+    /// `WRONG_SEED` tag (`PlatformWalletError::WrongSeedForDatabase` on
+    /// the Rust side) when it does not match the loaded `wallet_id`.
     ///
     /// # Skip vs hard-fail
     ///
-    /// - **Seed unavailable** (the provider returns
-    ///   [`SeedUnavailable`](crate::seed_provider::SeedUnavailable)): the
-    ///   wallet is **skipped** — never inserted into `wallet_manager` /
-    ///   `self.wallets`, recorded in [`LoadOutcome::skipped`], and a
-    ///   [`PlatformEvent::WalletSkippedOnLoad`] is emitted. One
-    ///   unavailable seed never aborts the others; the call still
-    ///   returns `Ok`.
-    /// - **Seed present but wrong** (fails the
-    ///   [`rehydrate_wallet`](super::rehydrate::rehydrate_wallet) gate):
-    ///   a fail-closed [`PlatformWalletError::WrongSeedForDatabase`] —
-    ///   **not** a skip, not in `skipped`, no skip event. Aborts the
-    ///   batch (rollback).
+    /// - **Per-row decode/projection failure** (empty manifest, malformed
+    ///   xpub, duplicate `account_type`, …): the wallet is **skipped** —
+    ///   never inserted into `wallet_manager` / `self.wallets`, recorded
+    ///   in [`LoadOutcome::skipped`] with a structural
+    ///   [`SkipReason::CorruptPersistedRow`], and a
+    ///   [`PlatformEvent::WalletSkippedOnLoad`] is emitted. One bad row
+    ///   never aborts the others; the call still returns `Ok`.
+    /// - **Whole-load failure** (persister I/O, programmer error, the
+    ///   no-silent-zero topology check in
+    ///   [`apply_persisted_core_state`](super::rehydrate::apply_persisted_core_state)):
+    ///   `Err(_)` — every wallet inserted earlier in this pass is
+    ///   rolled back. Skipped wallets never entered the maps so the
+    ///   rollback path never sees them.
     ///
     /// Platform-address provider state is restored per wallet via
     /// [`initialize_from_persisted`](crate::wallet::platform_addresses::PlatformAddressWallet::initialize_from_persisted),
     /// or a fresh
     /// [`initialize`](crate::wallet::platform_addresses::PlatformAddressWallet::initialize)
     /// when the snapshot carries no slice for it.
-    pub async fn load_from_persistor(
-        &self,
-        seeds: &dyn SeedProvider,
-    ) -> Result<LoadOutcome, PlatformWalletError> {
+    ///
+    /// [`MnemonicResolverHandle`]: rs_sdk_ffi::MnemonicResolverHandle
+    pub async fn load_from_persistor(&self) -> Result<LoadOutcome, PlatformWalletError> {
         let ClientStartState {
             mut platform_addresses,
             wallets,
@@ -91,16 +93,21 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 identity_keys,
             } = wallet_state;
 
-            // Resolve the runtime secret. Seed unavailable ⇒ skip
-            // BEFORE any `insert_wallet`: the wallet never enters
-            // `wallet_manager` / `self.wallets` (absent, not degraded).
-            // A wrong (present-but-mismatched) seed is a hard error
-            // from the gate below, NOT a skip.
-            let secret = match seeds.seed_for(expected_wallet_id) {
-                Ok(s) => s,
-                Err(unavailable) => {
-                    let reason = SkipReason::from(unavailable);
-                    outcome.skipped.push((expected_wallet_id, reason));
+            // Build the watch-only wallet from the keyless manifest. A
+            // structural decode failure skips this row (per-row
+            // resilience) — it never aborts the batch and never inserts
+            // a degraded placeholder.
+            let wallet = match super::rehydrate::build_watch_only_wallet(
+                network,
+                expected_wallet_id,
+                &account_manifest,
+            ) {
+                Ok(w) => w,
+                Err(row_err) => {
+                    let reason = SkipReason::CorruptPersistedRow {
+                        kind: row_err.into(),
+                    };
+                    outcome.skipped.push((expected_wallet_id, reason.clone()));
                     self.event_manager
                         .on_platform_event(&PlatformEvent::WalletSkippedOnLoad {
                             wallet_id: expected_wallet_id,
@@ -110,28 +117,11 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 }
             };
 
-            // Seed present — re-derive + fail-closed wrong-seed gate.
-            let wallet = match super::rehydrate::rehydrate_wallet(
-                &secret,
-                network,
-                expected_wallet_id,
-                &account_manifest,
-            ) {
-                Ok(w) => w,
-                Err(e) => {
-                    load_error = Some(e);
-                    break 'load;
-                }
-            };
-            // `secret` is dropped at the end of this iteration —
-            // transient mnemonic/seed bytes zeroized; never logged,
-            // never in an error.
-
-            // Mint the managed-info skeleton from the re-derived
-            // wallet, then apply the keyless persisted core state
-            // (UTXOs, sync watermarks, per-account balances). A wallet
-            // with persisted UTXOs but no funds account hard-fails here
-            // rather than reconstructing a silent zero balance.
+            // Mint the managed-info skeleton from the watch-only wallet,
+            // then apply the keyless persisted core state (UTXOs, sync
+            // watermarks, per-account balances). A wallet with persisted
+            // UTXOs but no funds account hard-fails here rather than
+            // reconstructing a silent zero balance.
             let mut wallet_info = ManagedWalletInfo::from_wallet(&wallet, birth_height);
             if let Err(e) =
                 super::rehydrate::apply_persisted_core_state(&mut wallet_info, &core_state)
@@ -181,12 +171,6 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 }
             };
             inserted_in_manager.push(wallet_id);
-
-            // No post-insert id re-check: the constant-time
-            // `rehydrate_wallet` wrong-seed gate already proved
-            // `compute_wallet_id() == expected_wallet_id` before this
-            // wallet was built (a mismatch is the typed, fail-closed
-            // `WrongSeedForDatabase` raised above).
 
             let broadcaster = Arc::new(crate::broadcaster::SpvBroadcaster::new(Arc::clone(
                 &self.spv_manager,

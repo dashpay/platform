@@ -49,14 +49,6 @@ pub enum WalletStorageError {
     #[error("migration error")]
     Migration(#[from] refinery::Error),
 
-    /// The migration runner left the schema in an inconsistent state
-    /// (some migrations applied, some still pending).
-    #[error(
-        "migration left the database in a dirty state \
-         (applied={applied} pending={pending})"
-    )]
-    MigrationDirty { applied: usize, pending: usize },
-
     /// `PRAGMA integrity_check` ran successfully but reported a
     /// non-`ok` result. `report` carries SQLite's own diagnostic
     /// text — not a user-facing message, not a stringified source.
@@ -108,6 +100,16 @@ pub enum WalletStorageError {
     /// called with an id that has no matching `wallet_metadata` row.
     #[error("wallet not found: {}", hex::encode(wallet_id))]
     WalletNotFound { wallet_id: [u8; 32] },
+
+    /// A changeset entry named a `wallet_id` different from the wallet
+    /// the flush is scoped to — writing it would mis-file the row under
+    /// the wrong parent.
+    #[error(
+        "wallet id mismatch: entry names {} but flush is scoped to {}",
+        hex::encode(found),
+        hex::encode(expected)
+    )]
+    WalletIdMismatch { expected: [u8; 32], found: [u8; 32] },
 
     /// A previous holder of an internal mutex panicked. Maps to the
     /// trait-level [`PersistenceError::LockPoisoned`] so callers can
@@ -178,6 +180,49 @@ pub enum WalletStorageError {
     /// destination file.
     #[error("backup destination already exists: {}", path.display())]
     BackupDestinationExists { path: PathBuf },
+
+    /// An `identity_keys` upsert entry's `(identity_id, key_id,
+    /// wallet_id)` fields disagreed with the map key / flush scope the
+    /// typed columns are bound from — persisting it would leave the
+    /// typed columns and the serialized blob describing different rows.
+    #[error("identity key entry fields disagree with its map key / wallet scope")]
+    IdentityKeyEntryMismatch,
+
+    /// An `asset_locks` row's typed-column `(outpoint, account_index)`
+    /// disagreed with the lifecycle blob's `(out_point, account_index)`.
+    /// Mirrors `IdentityKeyEntryMismatch` — a torn write, partial
+    /// migration, or restored corruption that survives the per-row
+    /// `integrity_check` is still rejected at decode time rather than
+    /// mis-bucketing the lock under the wrong account.
+    #[error(
+        "asset_lock entry fields disagree with typed columns \
+         (typed outpoint={typed_outpoint}, blob outpoint={blob_outpoint}, \
+          typed account_index={typed_account_index}, blob account_index={blob_account_index})"
+    )]
+    AssetLockEntryMismatch {
+        typed_outpoint: String,
+        blob_outpoint: String,
+        typed_account_index: u32,
+        blob_account_index: u32,
+    },
+
+    /// A blob payload exceeded the configured allocation cap during
+    /// decode. Surfaced separately from generic [`Self::BlobDecode`] so
+    /// operators can distinguish a hostile or corrupted oversize blob
+    /// from a structural decode failure. Defaults to 16 MiB — well
+    /// above any legitimate per-row payload.
+    #[error("blob exceeded decode size limit ({len_bytes} bytes > {limit_bytes} byte cap)")]
+    BlobTooLarge {
+        len_bytes: usize,
+        limit_bytes: usize,
+    },
+
+    /// `PRAGMA foreign_keys = ON` was issued on open but the read-back
+    /// reported the constraint enforcement is still off — the linked
+    /// SQLite build silently ignores the pragma (no FK support compiled
+    /// in). Hard-error at open rather than letting orphan rows accrue.
+    #[error("SQLite foreign-key enforcement could not be enabled on this connection")]
+    ForeignKeysNotEnforced,
 
     /// A value couldn't be cast to the database's native i64
     /// representation without losing magnitude.
@@ -256,21 +301,33 @@ impl WalletStorageError {
     }
 
     /// `true` when the underlying failure is safe to retry — the
-    /// caller should preserve in-flight state and call again. Today
-    /// only `SQLITE_BUSY` / `SQLITE_LOCKED` (raw or wrapped via
-    /// [`Self::FlushRetryable`]) qualify; every other variant is
-    /// fatal.
+    /// caller should preserve in-flight state and call again.
+    /// Transient codes (ATOM-008 / A-4):
+    /// - `DatabaseBusy` / `DatabaseLocked`: contention.
+    /// - `DiskFull`: operator clears disk space.
+    /// - `SystemIoFailure`: kernel-level I/O blip (NFS, raid rebuild).
+    /// - `OutOfMemory`: transient memory pressure.
     ///
-    /// The match is intentionally wildcard-free: `WalletStorageError`
-    /// MUST NOT gain `#[non_exhaustive]`, otherwise adding a future
-    /// variant would skip this gate (it'd silently fall into a
-    /// catch-all instead of forcing the author to classify it).
+    /// All four classes are recoverable environmental conditions —
+    /// dropping buffered state on them would be data loss for a
+    /// problem the operator (or kernel) clears on its own.
+    ///
+    /// The OUTER match on `WalletStorageError` is intentionally
+    /// wildcard-free: the enum MUST NOT gain `#[non_exhaustive]` so a
+    /// future variant forces the author to classify it here. The
+    /// INNER match on `rusqlite::ErrorCode` uses a wildcard because
+    /// `ErrorCode` is `#[non_exhaustive]` upstream.
     pub fn is_transient(&self) -> bool {
         use rusqlite::ErrorCode;
         match self {
-            Self::Sqlite(rusqlite::Error::SqliteFailure(e, _)) => {
-                matches!(e.code, ErrorCode::DatabaseBusy | ErrorCode::DatabaseLocked)
-            }
+            Self::Sqlite(rusqlite::Error::SqliteFailure(e, _)) => matches!(
+                e.code,
+                ErrorCode::DatabaseBusy
+                    | ErrorCode::DatabaseLocked
+                    | ErrorCode::DiskFull
+                    | ErrorCode::SystemIoFailure
+                    | ErrorCode::OutOfMemory
+            ),
             Self::FlushRetryable { .. } => true,
             // Every other rusqlite variant — non-`SqliteFailure` (e.g.
             // `ToSqlConversionFailure`, `InvalidColumnIndex`) — is a
@@ -278,7 +335,6 @@ impl WalletStorageError {
             Self::Sqlite(_) => false,
             Self::Io(_)
             | Self::Migration(_)
-            | Self::MigrationDirty { .. }
             | Self::IntegrityCheckFailed { .. }
             | Self::IntegrityCheckRunFailed { .. }
             | Self::SourceOpenFailed { .. }
@@ -287,6 +343,7 @@ impl WalletStorageError {
             | Self::AutoBackupDisabled { .. }
             | Self::AutoBackupDirUnwritable { .. }
             | Self::WalletNotFound { .. }
+            | Self::WalletIdMismatch { .. }
             // TODO(qa): TC-P2-008 — `LockPoisoned` is classified as
             // fatal here, but the end-to-end mutex-poison flow has no
             // automated test (the spec deferred it as race-prone — a
@@ -306,6 +363,10 @@ impl WalletStorageError {
             | Self::HashDecode { .. }
             | Self::ConsensusCodec { .. }
             | Self::BackupDestinationExists { .. }
+            | Self::ForeignKeysNotEnforced
+            | Self::IdentityKeyEntryMismatch
+            | Self::AssetLockEntryMismatch { .. }
+            | Self::BlobTooLarge { .. }
             | Self::IntegerOverflow { .. } => false,
         }
     }
@@ -319,13 +380,15 @@ impl WalletStorageError {
             Self::Sqlite(rusqlite::Error::SqliteFailure(e, _)) => match e.code {
                 ErrorCode::DatabaseBusy => "sqlite_busy",
                 ErrorCode::DatabaseLocked => "sqlite_locked",
+                ErrorCode::DiskFull => "sqlite_disk_full",
+                ErrorCode::SystemIoFailure => "sqlite_io_failure",
+                ErrorCode::OutOfMemory => "sqlite_out_of_memory",
                 _ => "sqlite_other",
             },
             Self::Sqlite(_) => "sqlite_other",
             Self::FlushRetryable { .. } => "flush_retryable",
             Self::Io(_) => "io",
             Self::Migration(_) => "migration",
-            Self::MigrationDirty { .. } => "migration_dirty",
             Self::IntegrityCheckFailed { .. } => "integrity_check_failed",
             Self::IntegrityCheckRunFailed { .. } => "integrity_check_run_failed",
             Self::SourceOpenFailed { .. } => "source_open_failed",
@@ -334,6 +397,7 @@ impl WalletStorageError {
             Self::AutoBackupDisabled { .. } => "auto_backup_disabled",
             Self::AutoBackupDirUnwritable { .. } => "auto_backup_dir_unwritable",
             Self::WalletNotFound { .. } => "wallet_not_found",
+            Self::WalletIdMismatch { .. } => "wallet_id_mismatch",
             Self::LockPoisoned => "lock_poisoned",
             Self::RestoreDestinationLocked => "restore_destination_locked",
             Self::InvalidWalletIdHex { .. } => "invalid_wallet_id_hex",
@@ -345,6 +409,10 @@ impl WalletStorageError {
             Self::HashDecode { .. } => "hash_decode",
             Self::ConsensusCodec { .. } => "consensus_codec",
             Self::BackupDestinationExists { .. } => "backup_destination_exists",
+            Self::ForeignKeysNotEnforced => "foreign_keys_not_enforced",
+            Self::IdentityKeyEntryMismatch => "identity_key_entry_mismatch",
+            Self::AssetLockEntryMismatch { .. } => "asset_lock_entry_mismatch",
+            Self::BlobTooLarge { .. } => "blob_too_large",
             Self::IntegerOverflow { .. } => "integer_overflow",
         }
     }
