@@ -224,6 +224,20 @@ impl StdError for StringSource {}
 /// sequence as potentially performing I/O at either point. If a caller needs
 /// to guarantee a batch flush, it should call `flush` explicitly after all
 /// `store` calls and treat `store` as a best-effort buffer hint.
+///
+/// # Wallet ID convention
+///
+/// Methods that take a `wallet_id: WalletId` parameter accept
+/// `WalletId::default()` (all-zero bytes) as a sentinel meaning **"this
+/// object does not belong to any wallet"** — i.e. an orphan / observed-only
+/// entity. This is the trait-level contract; the V002 SQLite schema permits
+/// null `wallet_id` on identity-owned tables, and storage backends MUST
+/// round-trip a default [`WalletId`] losslessly.
+///
+/// Higher layers MAY enforce stricter rules — e.g. the FFI entry point
+/// `platform_wallet_manager_identity_sync_register_identity` rejects a
+/// default [`WalletId`] to prevent UX accidents — but the persistence
+/// trait itself does NOT reject orphans.
 pub trait PlatformWalletPersistence: Send + Sync {
     /// Buffer a changeset for later persistence.
     ///
@@ -233,6 +247,10 @@ pub trait PlatformWalletPersistence: Send + Sync {
     /// Returns an error if the internal accumulator cannot be accessed
     /// (e.g. mutex poisoning). Callers that use fire-and-forget
     /// semantics should log the error rather than propagating.
+    ///
+    /// Pass `WalletId::default()` to mark the changeset as orphan-owned
+    /// (no parent wallet) — see the **Wallet ID convention** section on
+    /// the trait.
     fn store(
         &self,
         wallet_id: WalletId,
@@ -324,6 +342,10 @@ pub trait PlatformWalletPersistence: Send + Sync {
     /// advantage of this contract by emitting a synthetic record with a
     /// placeholder transaction body, since reconstructing the full
     /// `Transaction` over the C ABI is not free and isn't needed.
+    ///
+    /// Pass `WalletId::default()` for `wallet_id` to look up an
+    /// orphan-owned record — see the **Wallet ID convention** section
+    /// on the trait.
     fn get_core_tx_record(
         &self,
         _wallet_id: WalletId,
@@ -347,6 +369,10 @@ pub trait PlatformWalletPersistence: Send + Sync {
     ///   / [`PersistenceError::LockPoisoned`]: callers MUST NOT retry;
     ///   the disk state may carry orphan rows that an admin tool has
     ///   to clean up out-of-band.
+    ///
+    /// Pass `WalletId::default()` for `wallet_id` to cascade-delete
+    /// the orphan-owned bucket (rows with null `wallet_id` in the V002
+    /// schema) — see the **Wallet ID convention** section on the trait.
     fn delete_wallet(&self, wallet_id: WalletId) -> Result<DeleteWalletReport, PersistenceError> {
         Ok(DeleteWalletReport {
             wallet_id,
