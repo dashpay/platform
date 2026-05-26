@@ -7,6 +7,7 @@ use dpp::fee::Credits;
 use tokio::sync::RwLock;
 
 use crate::error::PlatformWalletError;
+use crate::wallet::core::reservations::AddressReservations;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 use key_wallet_manager::WalletManager;
 
@@ -29,6 +30,14 @@ pub struct PlatformAddressWallet {
     pub(crate) provider: Arc<RwLock<Option<PlatformPaymentAddressProvider>>>,
     /// Per-wallet persistence handle for queuing changesets.
     pub(crate) persister: WalletPersister,
+    /// `(account_index, address_index)` slots handed out by
+    /// [`next_unused_receive_address`](Self::next_unused_receive_address)
+    /// but not yet flipped to `used` by a positive-balance sync hit.
+    /// Closes the Found-026 back-to-back hand-out race without
+    /// eagerly advancing the upstream `AddressPool`'s `highest_used` —
+    /// the upstream flip happens when a real payment lands on the
+    /// address.
+    pub(crate) reservations: AddressReservations,
 }
 
 impl PlatformAddressWallet {
@@ -47,6 +56,7 @@ impl PlatformAddressWallet {
             wallet_id,
             provider: Arc::new(RwLock::new(None)),
             persister,
+            reservations: AddressReservations::new(),
         }
     }
 
@@ -265,32 +275,79 @@ impl PlatformAddressWallet {
             key_wallet::KeySource::Public(xpub)
         };
 
-        // Reserve the address on hand-out (Found-026): platform-payment
-        // `used` only flips on a positive synced balance, so without
-        // marking it here a concurrent caller's `next_unused` would
-        // re-hand the same index before the sync pass. `mark_index_used`
-        // is idempotent — a later real sync hit on this index is a
-        // no-op, so gap-limit/`highest_used` accounting isn't doubled.
-        let address_info = managed_account
-            .addresses
-            .next_unused_with_info(&key_source, true)
-            .map_err(|e| PlatformWalletError::AddressSync(e.to_string()))?;
-        // INTENTIONAL(CMT-001 / #3658 review): The reservation is in-memory only
-        // by design — no `persister.store` on the hand-out path. Two properties
-        // justify this:
-        //   1. Chain sync re-marks actually-used addresses via the positive-
-        //      balance flip, so a crash that loses the in-memory flag is
-        //      self-healing once any payment arrives at the index.
-        //   2. Addresses requested but never paid to are freed for reuse on the
-        //      next session, avoiding unbounded index-gap growth from
-        //      speculative or abandoned hand-outs.
-        // The narrow surviving window — crash before next sync AND no payment
-        // received by restart — manifests as address-reuse (privacy/accounting),
-        // not fund loss. See also follow-up: persist on hand-out becomes
-        // required if/when this function is wired to FFI.
-        managed_account
-            .addresses
-            .mark_index_used(address_info.index);
+        // Found-026 / #3658-review: reserve the slot in an in-memory
+        // `AddressReservations` set rather than flipping the upstream
+        // pool's `used` flag. Hand-out must not advance `highest_used`
+        // (gap-limit accounting) until the address actually receives a
+        // payment — chain sync flips `used` on the positive-balance
+        // hit, at which point the reservation becomes redundant.
+        //
+        // The reservation must filter the pool's `next_unused_with_info`
+        // result: that function only knows about the pool's own `used`
+        // flag, so we scan forward from index 0 picking the first slot
+        // that is neither `used` nor reserved. If every generated index
+        // is taken, mint a new one via `address_range`.
+        let reserved = self.reservations.snapshot();
+        let account_index = account_key.account;
+        let pool = &mut managed_account.addresses;
+
+        let pick = (0..=pool.highest_generated.unwrap_or(0)).find_map(|i| {
+            pool.addresses.get(&i).and_then(|info| {
+                if info.used || reserved.contains(&(account_index, i)) {
+                    None
+                } else {
+                    Some(info.clone())
+                }
+            })
+        });
+
+        let address_info = match pick {
+            Some(info) => info,
+            None => {
+                // No unused-and-unreserved index exists in the
+                // already-generated range: mint a fresh one strictly
+                // beyond `highest_generated`. Two cases:
+                //
+                // 1. `highest_generated` is `Some(h)` — `address_range(h+1, h+2)`
+                //    generates exactly one new address at index `h+1`.
+                // 2. `highest_generated` is `None` (pool empty) —
+                //    `address_range`'s `unwrap_or(0)` for the "current
+                //    highest" collides with the "no indices exist"
+                //    state, so a `(0, 1)` range yields an empty vec.
+                //    Fall back to the upstream `next_unused_with_info`,
+                //    which is correct in the empty case (no `!used &&
+                //    !reserved` index can exist if no indices exist).
+                match pool.highest_generated {
+                    Some(h) => {
+                        let next_index = h + 1;
+                        pool.address_range(next_index, next_index + 1, &key_source)
+                            .map_err(|e| PlatformWalletError::AddressSync(e.to_string()))?;
+                        pool.info_at_index(next_index).cloned().ok_or_else(|| {
+                            PlatformWalletError::AddressSync(format!(
+                                "Failed to retrieve generated address info at index {next_index}"
+                            ))
+                        })?
+                    }
+                    None => pool
+                        .next_unused_with_info(&key_source, true)
+                        .map_err(|e| PlatformWalletError::AddressSync(e.to_string()))?,
+                }
+            }
+        };
+
+        // INTENTIONAL(CMT-001 / #3658 review): the reservation is
+        // in-memory only by design. A crash before the next sync AND
+        // no payment received by restart manifests as address-reuse
+        // (a privacy/accounting nuisance, not fund loss). Addresses
+        // requested but never paid to are freed for reuse on the next
+        // session, avoiding unbounded index-gap growth from
+        // speculative or abandoned hand-outs. The eager
+        // `mark_index_used` flip was removed at QuantumExplorer's
+        // request because it advanced `highest_used` permanently —
+        // see #3658 review thread.
+        self.reservations
+            .reserve(vec![(account_index, address_info.index)])
+            .leak_until_sync();
         let address = address_info.address;
 
         PlatformAddress::try_from(address).map_err(|e| {
@@ -410,8 +467,10 @@ mod found_026_tests {
     /// addresses. Pre-fix, `next_unused` re-hands index 0 (its `used`
     /// flag only flips on a positive synced balance) → identical
     /// addresses → this assertion fails. Post-fix the first call
-    /// reserves index 0 via `mark_index_used`, so the second yields
-    /// index 1.
+    /// reserves index 0 in the in-memory `AddressReservations` set,
+    /// so the second call skips it and yields index 1. The upstream
+    /// pool's `highest_used` is left untouched until a real payment
+    /// lands — see #3658 review thread.
     #[tokio::test]
     async fn found_026_back_to_back_handout_returns_distinct_addresses() {
         let wallet = wallet_with_platform_account();
@@ -429,5 +488,63 @@ mod found_026_tests {
             a, b,
             "back-to-back hand-out with no sync re-handed the same address (Found-026)"
         );
+    }
+
+    /// `next_unused_receive_address` must not advance `highest_used`
+    /// in the upstream `AddressPool` — that was @QuantumExplorer's
+    /// review concern on #3658. The reservation should be in-memory
+    /// only (gap-limit accounting stays anchored to actually-paid
+    /// addresses).
+    #[tokio::test]
+    async fn next_unused_receive_address_does_not_advance_highest_used() {
+        let wallet = wallet_with_platform_account();
+
+        let _a = wallet
+            .next_unused_receive_address(ACCOUNT_KEY)
+            .await
+            .expect("first hand-out");
+        let _b = wallet
+            .next_unused_receive_address(ACCOUNT_KEY)
+            .await
+            .expect("second hand-out");
+
+        let wm = wallet.wallet_manager.read().await;
+        let info = wm.get_wallet_info(&wallet.wallet_id).expect("wallet info");
+        let account = info
+            .core_wallet
+            .platform_payment_managed_account_at_index(ACCOUNT_KEY.account)
+            .expect("account");
+        assert_eq!(
+            account.addresses.highest_used, None,
+            "hand-out must not advance `highest_used` — reservations are in-memory only"
+        );
+    }
+
+    /// Three consecutive hand-outs (no sync, no payment) must yield
+    /// three distinct indices. Pre-fix with `mark_index_used` removed,
+    /// a naive "scan for first `!used`" would re-hand index 0 because
+    /// `used` never flips. The `AddressReservations` filter must skip
+    /// reserved-but-not-used slots to maintain the distinct-handout
+    /// invariant across more than two calls.
+    #[tokio::test]
+    async fn handout_skips_reserved_but_not_used_indices() {
+        let wallet = wallet_with_platform_account();
+
+        let a = wallet
+            .next_unused_receive_address(ACCOUNT_KEY)
+            .await
+            .expect("first hand-out");
+        let b = wallet
+            .next_unused_receive_address(ACCOUNT_KEY)
+            .await
+            .expect("second hand-out");
+        let c = wallet
+            .next_unused_receive_address(ACCOUNT_KEY)
+            .await
+            .expect("third hand-out");
+
+        assert_ne!(a, b, "1st vs 2nd hand-out collided");
+        assert_ne!(a, c, "1st vs 3rd hand-out collided");
+        assert_ne!(b, c, "2nd vs 3rd hand-out collided");
     }
 }
