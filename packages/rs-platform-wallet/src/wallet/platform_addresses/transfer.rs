@@ -6,7 +6,6 @@ use dpp::identity::signer::Signer;
 use dpp::state_transition::address_funds_transfer_transition::AddressFundsTransferTransition;
 use dpp::version::PlatformVersion;
 use dpp::version::LATEST_PLATFORM_VERSION;
-use indexmap::IndexMap;
 use key_wallet::PlatformP2PKHAddress;
 
 use crate::changeset::Merge;
@@ -39,12 +38,12 @@ impl PlatformAddressWallet {
         &self,
         account_index: u32,
         input_selection: InputSelection,
-        outputs: IndexMap<PlatformAddress, Credits>,
+        outputs: impl IntoIterator<Item = (PlatformAddress, Credits)>,
         fee_strategy: AddressFundsFeeStrategy,
         platform_version: Option<&PlatformVersion>,
         address_signer: &S,
     ) -> Result<PlatformAddressChangeSet, PlatformWalletError> {
-        // DPP transitions are BTreeMap-keyed; convert at the public boundary.
+        // DPP transitions are BTreeMap-keyed; canonicalize at the public boundary.
         let outputs: BTreeMap<PlatformAddress, Credits> = outputs.into_iter().collect();
         if outputs.is_empty() {
             return Err(PlatformWalletError::AddressOperation(
@@ -193,12 +192,18 @@ impl PlatformAddressWallet {
         &self,
         account_index: u32,
         input_selection: InputSelection,
-        user_outputs: IndexMap<PlatformAddress, Credits>,
+        user_outputs: impl IntoIterator<Item = (PlatformAddress, Credits)>,
         output_change_address: Option<PlatformAddress>,
         fee_strategy: AddressFundsFeeStrategy,
         platform_version: Option<&PlatformVersion>,
         address_signer: &S,
     ) -> Result<PlatformAddressChangeSet, PlatformWalletError> {
+        // DPP transitions are BTreeMap-keyed; canonicalize at the public
+        // boundary. The lex-ordering caveat documented on
+        // [`Self::transfer`] applies here too — under `[ReduceOutput(0)]`
+        // a lex-smaller `change_addr` would silently absorb the fee. That
+        // is rejected below.
+        let user_outputs: BTreeMap<PlatformAddress, Credits> = user_outputs.into_iter().collect();
         let Some(change_addr) = output_change_address else {
             return self
                 .transfer(
@@ -211,12 +216,6 @@ impl PlatformAddressWallet {
                 )
                 .await;
         };
-        // DPP transitions are BTreeMap-keyed; convert at the public
-        // boundary. The lex-ordering caveat documented on
-        // [`Self::transfer`] applies here too — under `[ReduceOutput(0)]`
-        // a lex-smaller `change_addr` would silently absorb the fee. That
-        // is rejected below.
-        let user_outputs: BTreeMap<PlatformAddress, Credits> = user_outputs.into_iter().collect();
         if matches!(
             fee_strategy.as_slice(),
             [AddressFundsFeeStrategyStep::ReduceOutput(0)]
@@ -263,8 +262,6 @@ impl PlatformAddressWallet {
         let version = platform_version.unwrap_or(LATEST_PLATFORM_VERSION);
         let outputs_with_change =
             augment_outputs_with_change(user_outputs, change_addr, input_sum, version)?;
-        let outputs_with_change: IndexMap<PlatformAddress, Credits> =
-            outputs_with_change.into_iter().collect();
 
         self.transfer(
             account_index,
@@ -1006,6 +1003,7 @@ mod auto_select_tests {
     use dpp::address_funds::AddressWitness;
     use dpp::state_transition::address_funds_transfer_transition::v0::AddressFundsTransferTransitionV0;
     use dpp::state_transition::StateTransitionStructureValidation;
+    use indexmap::IndexMap;
 
     fn p2pkh(byte: u8) -> PlatformAddress {
         PlatformAddress::P2pkh([byte; 20])
@@ -1739,6 +1737,45 @@ mod auto_select_tests {
             }
             other => panic!("expected AddressOperation, got {other:?}"),
         }
+    }
+
+    /// Pins the public-API contract that `transfer` and
+    /// `transfer_with_change_address` accept any
+    /// `IntoIterator<Item = (PlatformAddress, Credits)>` — including the
+    /// `BTreeMap` shape FFI/SDK callers naturally construct. Reaches the
+    /// "Auto + Some(change_addr)" rejection arm without doing any I/O.
+    #[tokio::test]
+    async fn transfer_with_change_address_accepts_btreemap_outputs() {
+        use crate::wallet::persister::{NoPlatformPersistence, WalletPersister};
+        use crate::wallet::platform_addresses::PlatformAddressWallet;
+        use std::sync::Arc;
+        use tokio::sync::RwLock;
+
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let wallet_manager = Arc::new(RwLock::new(key_wallet_manager::WalletManager::new(
+            sdk.network,
+        )));
+        let persister = WalletPersister::new([0u8; 32], Arc::new(NoPlatformPersistence));
+        let wallet = PlatformAddressWallet::new(sdk, wallet_manager, [0u8; 32], persister);
+
+        let signer = NullSigner;
+        let outputs: BTreeMap<PlatformAddress, Credits> = outputs_for(p2pkh(0x77), 10_000_000);
+        let change_addr = p2pkh(0x88);
+        let fee_strategy = vec![AddressFundsFeeStrategyStep::ReduceOutput(0)];
+
+        let err = wallet
+            .transfer_with_change_address(
+                0,
+                InputSelection::Auto,
+                outputs,
+                Some(change_addr),
+                fee_strategy,
+                None,
+                &signer,
+            )
+            .await
+            .expect_err("Auto + Some(change_addr) must error");
+        assert!(matches!(err, PlatformWalletError::AddressOperation(_)));
     }
 
     /// CMT-002: `transfer_address_funds` returns address info for the full
