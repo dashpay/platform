@@ -129,19 +129,16 @@ pub struct ExplicitInputWithNonceFFI {
 pub unsafe fn parse_explicit_inputs(
     ptr: *const ExplicitInputFFI,
     count: usize,
-) -> Result<BTreeMap<PlatformAddress, Credits>, String> {
+) -> Result<BTreeMap<PlatformAddress, Credits>, &'static str> {
     if ptr.is_null() && count > 0 {
-        return Err("Null input pointer with non-zero count".to_string());
+        return Err("Null input pointer with non-zero count");
     }
     let mut map = BTreeMap::new();
     if count > 0 {
         for entry in std::slice::from_raw_parts(ptr, count) {
-            let addr = PlatformAddress::try_from(entry.address).map_err(str::to_string)?;
+            let addr = PlatformAddress::try_from(entry.address)?;
             if map.contains_key(&addr) {
-                return Err(format!(
-                    "Duplicate input address (hash {})",
-                    hex::encode(entry.address.hash)
-                ));
+                return Err("Duplicate input address");
             }
             map.insert(addr, entry.balance);
         }
@@ -156,19 +153,16 @@ pub unsafe fn parse_explicit_inputs(
 pub unsafe fn parse_explicit_inputs_with_nonces(
     ptr: *const ExplicitInputWithNonceFFI,
     count: usize,
-) -> Result<BTreeMap<PlatformAddress, (AddressNonce, Credits)>, String> {
+) -> Result<BTreeMap<PlatformAddress, (AddressNonce, Credits)>, &'static str> {
     if ptr.is_null() && count > 0 {
-        return Err("Null input pointer with non-zero count".to_string());
+        return Err("Null input pointer with non-zero count");
     }
     let mut map = BTreeMap::new();
     if count > 0 {
         for entry in std::slice::from_raw_parts(ptr, count) {
-            let addr = PlatformAddress::try_from(entry.address).map_err(str::to_string)?;
+            let addr = PlatformAddress::try_from(entry.address)?;
             if map.contains_key(&addr) {
-                return Err(format!(
-                    "Duplicate input address (hash {})",
-                    hex::encode(entry.address.hash)
-                ));
+                return Err("Duplicate input address");
             }
             map.insert(addr, (entry.nonce, entry.balance));
         }
@@ -209,19 +203,16 @@ pub struct AddressBalanceEntryFFI {
 pub unsafe fn parse_outputs(
     ptr: *const AddressBalanceEntryFFI,
     count: usize,
-) -> Result<BTreeMap<PlatformAddress, Credits>, String> {
+) -> Result<BTreeMap<PlatformAddress, Credits>, &'static str> {
     if ptr.is_null() && count > 0 {
-        return Err("Null output pointer with non-zero count".to_string());
+        return Err("Null output pointer with non-zero count");
     }
     let mut map = BTreeMap::new();
     if count > 0 {
         for entry in std::slice::from_raw_parts(ptr, count) {
-            let addr = PlatformAddress::try_from(entry.address).map_err(str::to_string)?;
+            let addr = PlatformAddress::try_from(entry.address)?;
             if map.contains_key(&addr) {
-                return Err(format!(
-                    "Duplicate output address (hash {})",
-                    hex::encode(entry.address.hash)
-                ));
+                return Err("Duplicate output address");
             }
             map.insert(addr, entry.balance);
         }
@@ -470,16 +461,7 @@ mod tests {
 
         let err = unsafe { parse_outputs(entries.as_ptr(), entries.len()) }
             .expect_err("duplicate output address must be rejected");
-        assert!(
-            err.contains("Duplicate output address"),
-            "unexpected error: {err}"
-        );
-        // The diagnostic must include the address hash so the caller can
-        // identify which output collided.
-        assert!(
-            err.contains("abababababababababababababababababababab"),
-            "address missing from error: {err}"
-        );
+        assert_eq!(err, "Duplicate output address");
     }
 
     /// CMT-003: `parse_explicit_inputs` must reject duplicate input addresses
@@ -504,11 +486,7 @@ mod tests {
 
         let err = unsafe { parse_explicit_inputs(entries.as_ptr(), entries.len()) }
             .expect_err("duplicate input address must be rejected");
-        assert!(err.contains("Duplicate input"), "unexpected error: {err}");
-        assert!(
-            err.contains("cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"),
-            "address missing from error: {err}"
-        );
+        assert_eq!(err, "Duplicate input address");
     }
 
     /// CMT-003: `parse_explicit_inputs_with_nonces` must reject duplicate
@@ -535,11 +513,7 @@ mod tests {
 
         let err = unsafe { parse_explicit_inputs_with_nonces(entries.as_ptr(), entries.len()) }
             .expect_err("duplicate input address must be rejected");
-        assert!(err.contains("Duplicate input"), "unexpected error: {err}");
-        assert!(
-            err.contains("efefefefefefefefefefefefefefefefefefefef"),
-            "address missing from error: {err}"
-        );
+        assert_eq!(err, "Duplicate input address");
     }
 
     /// Distinct addresses are accepted and the keys end up in DPP-canonical

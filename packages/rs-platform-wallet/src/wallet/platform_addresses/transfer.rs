@@ -129,9 +129,18 @@ impl PlatformAddressWallet {
                     .addresses
                     .iter()
                     .filter_map(|(&idx, info)| {
-                        PlatformP2PKHAddress::from_address(&info.address)
-                            .ok()
-                            .map(|p| (p, idx))
+                        match PlatformP2PKHAddress::from_address(&info.address) {
+                            Ok(p) => Some((p, idx)),
+                            Err(e) => {
+                                tracing::warn!(
+                                    address = %info.address,
+                                    index = idx,
+                                    error = %e,
+                                    "skipping account address that failed P2PKH conversion",
+                                );
+                                None
+                            }
+                        }
                     })
                     .collect();
 
@@ -713,17 +722,15 @@ fn select_inputs_deduct_from_input(
     selected.insert(fee_target_addr, fee_target_consumed);
 
     // Defensive post-checks: a malformed Σ or misaligned fee target ships
-    // a guaranteed-rejected transition.
-    debug_assert_eq!(
-        selected.values().copied().sum::<Credits>(),
-        total_output,
-        "Σ inputs must equal Σ outputs"
-    );
-    debug_assert_eq!(
-        selected.keys().next().copied(),
-        Some(fee_target_addr),
-        "fee target must be the BTreeMap index-0 (lex-smallest) entry",
-    );
+    // a guaranteed-rejected transition. These invariants must hold in
+    // release builds too, so they're real runtime checks rather than
+    // debug_assert! (which compiles out in release).
+    let inputs_sum: Credits = selected.values().copied().sum();
+    if inputs_sum != total_output {
+        return Err(PlatformWalletError::AddressOperation(format!(
+            "Internal selection error: Σ inputs ({inputs_sum}) != Σ outputs ({total_output})"
+        )));
+    }
     if selected.keys().next().copied() != Some(fee_target_addr) {
         return Err(PlatformWalletError::AddressOperation(format!(
             "Internal selection error: fee target {fee_target_addr} is not the BTreeMap \
@@ -731,10 +738,6 @@ fn select_inputs_deduct_from_input(
             selected.keys().next().map(|a| a.to_string()),
         )));
     }
-    debug_assert!(
-        fee_target_balance.saturating_sub(fee_target_consumed) >= estimated_fee,
-        "fee target must retain ≥ estimated_fee for DeductFromInput(0)",
-    );
     if fee_target_balance.saturating_sub(fee_target_consumed) < estimated_fee {
         return Err(PlatformWalletError::AddressOperation(format!(
             "Internal selection error: fee target {fee_target_addr} retains {} after \
@@ -922,11 +925,12 @@ fn select_inputs_reduce_output(
         );
     }
 
-    debug_assert_eq!(
-        selected.values().copied().sum::<Credits>(),
-        total_output,
-        "Σ inputs must equal Σ outputs"
-    );
+    let inputs_sum: Credits = selected.values().copied().sum();
+    if inputs_sum != total_output {
+        return Err(PlatformWalletError::AddressOperation(format!(
+            "Internal selection error: Σ inputs ({inputs_sum}) != Σ outputs ({total_output})"
+        )));
+    }
 
     Ok(selected)
 }
