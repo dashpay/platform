@@ -20,7 +20,15 @@ describe('Identifier', () => {
       expect(identifier).to.be.an.instanceOf(Identifier);
     });
 
-    it('should throw error if first argument is not Buffer', () => {
+    it('should accept Uint8Array', () => {
+      const uint8 = new Uint8Array(buffer);
+      const identifier = new Identifier(uint8);
+
+      expect(identifier.toBuffer()).to.be.deep.equal(buffer);
+      expect(identifier).to.be.an.instanceOf(Identifier);
+    });
+
+    it('should throw error if first argument is not Uint8Array', () => {
       try {
         // eslint-disable-next-line no-unused-vars
         const id = new Identifier(1);
@@ -28,7 +36,7 @@ describe('Identifier', () => {
         expect.fail('Expected to throw an error');
       } catch (e) {
         expect(e).to.be.instanceOf(IdentifierError);
-        expect(e.toString()).to.be.equal('IdentifierError: Identifier expects Buffer');
+        expect(e.toString()).to.be.equal('IdentifierError: Identifier expects Uint8Array');
       }
     });
 

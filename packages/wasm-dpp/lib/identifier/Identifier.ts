@@ -14,16 +14,19 @@ type CborEncoder = {
 type IdentifierEncoding = BufferEncoding | 'base58';
 
 /**
- * @param {Buffer} buffer
+ * @param {Uint8Array} buffer
  * @returns {Identifier}
  * @constructor
  */
 export class Identifier {
   static MEDIA_TYPE = 'application/x.dash.dpp.identifier';
 
-  constructor(buffer: Buffer | Identifier) {
-    if (!Buffer.isBuffer(buffer)) {
-      throw new IdentifierError('Identifier expects Buffer');
+  constructor(buffer: Uint8Array | Identifier) {
+    // Accept both Node Buffer and plain Uint8Array. Buffer extends Uint8Array,
+    // so an instanceof Uint8Array check matches both — existing Buffer callers
+    // continue to work unchanged.
+    if (!(buffer instanceof Uint8Array)) {
+      throw new IdentifierError('Identifier expects Uint8Array');
     }
 
     if (buffer.length !== 32) {
@@ -88,7 +91,7 @@ export class Identifier {
    * Compare to another Identifier
    * @param other
    */
-  equals(other: Identifier | Buffer): boolean {
+  equals(other: Identifier | Uint8Array): boolean {
     // @ts-ignore
     return this.toBuffer().equals(Buffer.from(other));
   }
@@ -96,11 +99,11 @@ export class Identifier {
   /**
    * Create Identifier from buffer or encoded string
    *
-   * @param {string|Buffer|Identifier} value
+   * @param {string|Uint8Array|Identifier} value
    * @param {string} encoding
    * @return {Identifier}
    */
-  static from(value: string | Buffer | Identifier, encoding: string = undefined): Identifier {
+  static from(value: string | Uint8Array | Identifier, encoding: string = undefined): Identifier {
     let buffer;
 
     if (typeof value === 'string') {
