@@ -1,3 +1,37 @@
+## [3.1.0-dev.6](///compare/v3.1.0-dev.5...v3.1.0-dev.6) (2026-05-26)
+
+
+### Features
+
+* **platform-wallet:** expose sync_watermark() on PlatformAddressWallet ([#3723](undefined/undefined/undefined/issues/3723))
+* **platform-wallet:** IdentityManager::identity_ids + FFI no-selectable-inputs error mapping ([#3651](undefined/undefined/undefined/issues/3651))
+* **platform-wallet:** serde support ([#3637](undefined/undefined/undefined/issues/3637))
+* **swift-sdk,platform-wallet:** wire shielded send end-to-end (all 4 transitions) ([#3603](undefined/undefined/undefined/issues/3603))
+
+
+### Bug Fixes
+
+* **drive-abci:** bill batch transformer drive reads ([#3670](undefined/undefined/undefined/issues/3670))
+* **drive-abci:** correct DECRYPTION bounds branch + bill grovedb reads in bounds validation ([#3697](undefined/undefined/undefined/issues/3697))
+* **platform-wallet:** fail-closed on registration persist error (Found-017) [backport] ([#3659](undefined/undefined/undefined/issues/3659))
+* **platform-wallet:** spv client deadlocking when sending a tx ([#3730](undefined/undefined/undefined/issues/3730))
+* **sdk:** forward wasm grpc-web trailers to tonic ([#3726](undefined/undefined/undefined/issues/3726))
+* **sdk:** sdk emits incompatible getDocuments wire against pre-v3.1 networks (QueryContext approach) ([#3711](undefined/undefined/undefined/issues/3711))
+* **wasm-sdk:** support binary grove path elements ([#3657](undefined/undefined/undefined/issues/3657))
+
+
+### Miscellaneous Chores
+
+* bump rust-dashcore to rev f569e7b7b99dfe589c41f9ba7d36fbbe6805acdc ([#3729](undefined/undefined/undefined/issues/3729))
+* **dapi-client,dapi-grpc:** cleanup — drop unused deps, inline winston/fetch/promisify shims
+
+
+### Tests
+
+* **dapi-client:** drop white-box dispatcher inspection from requestJsonRpc spec
+* **dapi-client:** restore behavioral self-signed HTTPS test
+* **dapi-client:** skip undici dispatcher checks in browsers
+
 ## [3.1.0-dev.5](https://github.com/dashpay/platform/compare/v3.1.0-dev.4...v3.1.0-dev.5) (2026-05-21)
 
 
