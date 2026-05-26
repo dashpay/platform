@@ -23,14 +23,7 @@
 ### Miscellaneous Chores
 
 * bump rust-dashcore to rev f569e7b7b99dfe589c41f9ba7d36fbbe6805acdc ([#3729](https://github.com/dashpay/platform/issues/3729))
-* **dapi-client,dapi-grpc:** cleanup — drop unused deps, inline winston/fetch/promisify shims
-
-
-### Tests
-
-* **dapi-client:** drop white-box dispatcher inspection from requestJsonRpc spec
-* **dapi-client:** restore behavioral self-signed HTTPS test
-* **dapi-client:** skip undici dispatcher checks in browsers
+* **dapi-client,dapi-grpc:** cleanup — drop unused deps, inline winston/fetch/promisify shims ([#3679](https://github.com/dashpay/platform/issues/3679))
 
 ## [3.1.0-dev.5](https://github.com/dashpay/platform/compare/v3.1.0-dev.4...v3.1.0-dev.5) (2026-05-21)
 
