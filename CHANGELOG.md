@@ -1,28 +1,28 @@
-## [3.1.0-dev.6](///compare/v3.1.0-dev.5...v3.1.0-dev.6) (2026-05-26)
+## [3.1.0-dev.6](https://github.com/dashpay/platform/compare/v3.1.0-dev.5...v3.1.0-dev.6) (2026-05-26)
 
 
 ### Features
 
-* **platform-wallet:** expose sync_watermark() on PlatformAddressWallet ([#3723](undefined/undefined/undefined/issues/3723))
-* **platform-wallet:** IdentityManager::identity_ids + FFI no-selectable-inputs error mapping ([#3651](undefined/undefined/undefined/issues/3651))
-* **platform-wallet:** serde support ([#3637](undefined/undefined/undefined/issues/3637))
-* **swift-sdk,platform-wallet:** wire shielded send end-to-end (all 4 transitions) ([#3603](undefined/undefined/undefined/issues/3603))
+* **platform-wallet:** expose sync_watermark() on PlatformAddressWallet ([#3723](https://github.com/dashpay/platform/issues/3723))
+* **platform-wallet:** IdentityManager::identity_ids + FFI no-selectable-inputs error mapping ([#3651](https://github.com/dashpay/platform/issues/3651))
+* **platform-wallet:** serde support ([#3637](https://github.com/dashpay/platform/issues/3637))
+* **swift-sdk,platform-wallet:** wire shielded send end-to-end (all 4 transitions) ([#3603](https://github.com/dashpay/platform/issues/3603))
 
 
 ### Bug Fixes
 
-* **drive-abci:** bill batch transformer drive reads ([#3670](undefined/undefined/undefined/issues/3670))
-* **drive-abci:** correct DECRYPTION bounds branch + bill grovedb reads in bounds validation ([#3697](undefined/undefined/undefined/issues/3697))
-* **platform-wallet:** fail-closed on registration persist error (Found-017) [backport] ([#3659](undefined/undefined/undefined/issues/3659))
-* **platform-wallet:** spv client deadlocking when sending a tx ([#3730](undefined/undefined/undefined/issues/3730))
-* **sdk:** forward wasm grpc-web trailers to tonic ([#3726](undefined/undefined/undefined/issues/3726))
-* **sdk:** sdk emits incompatible getDocuments wire against pre-v3.1 networks (QueryContext approach) ([#3711](undefined/undefined/undefined/issues/3711))
-* **wasm-sdk:** support binary grove path elements ([#3657](undefined/undefined/undefined/issues/3657))
+* **drive-abci:** bill batch transformer drive reads ([#3670](https://github.com/dashpay/platform/issues/3670))
+* **drive-abci:** correct DECRYPTION bounds branch + bill grovedb reads in bounds validation ([#3697](https://github.com/dashpay/platform/issues/3697))
+* **platform-wallet:** fail-closed on registration persist error (Found-017) [backport] ([#3659](https://github.com/dashpay/platform/issues/3659))
+* **platform-wallet:** spv client deadlocking when sending a tx ([#3730](https://github.com/dashpay/platform/issues/3730))
+* **sdk:** forward wasm grpc-web trailers to tonic ([#3726](https://github.com/dashpay/platform/issues/3726))
+* **sdk:** sdk emits incompatible getDocuments wire against pre-v3.1 networks (QueryContext approach) ([#3711](https://github.com/dashpay/platform/issues/3711))
+* **wasm-sdk:** support binary grove path elements ([#3657](https://github.com/dashpay/platform/issues/3657))
 
 
 ### Miscellaneous Chores
 
-* bump rust-dashcore to rev f569e7b7b99dfe589c41f9ba7d36fbbe6805acdc ([#3729](undefined/undefined/undefined/issues/3729))
+* bump rust-dashcore to rev f569e7b7b99dfe589c41f9ba7d36fbbe6805acdc ([#3729](https://github.com/dashpay/platform/issues/3729))
 * **dapi-client,dapi-grpc:** cleanup — drop unused deps, inline winston/fetch/promisify shims
 
 
@@ -981,9 +981,9 @@
 * upgrade bincode to 2.0.1 ([#2991](https://github.com/dashpay/platform/issues/2991))
 * use subdir of out_dir
 
-### [3.0.1](///compare/v3.0.1-hotfix.4...v3.0.1) (2026-02-06)
+### [3.0.1](https://github.com/dashpay/platform/compare/v3.0.1-hotfix.4...v3.0.1) (2026-02-06)
 
-### [3.0.1-hotfix.4](///compare/v3.0.1-hotfix.3...v3.0.1-hotfix.4) (2026-02-05)
+### [3.0.1-hotfix.4](https://github.com/dashpay/platform/compare/v3.0.1-hotfix.3...v3.0.1-hotfix.4) (2026-02-05)
 
 
 ### ⚠ BREAKING CHANGES
@@ -993,30 +993,30 @@
 
 ### Features
 
-* **platform:** update PlatformAddress encoding and HRP constants ([#3059](undefined/undefined/undefined/issues/3059))
+* **platform:** update PlatformAddress encoding and HRP constants ([#3059](https://github.com/dashpay/platform/issues/3059))
 
 
 ### Bug Fixes
 
-* **platform:** 3.0 audit report fixes ([#3053](undefined/undefined/undefined/issues/3053))
+* **platform:** 3.0 audit report fixes ([#3053](https://github.com/dashpay/platform/issues/3053))
 
 
 ### Miscellaneous Chores
 
-* update all package versions to 3.0.1-hotfix.4 ([#3060](undefined/undefined/undefined/issues/3060))
+* update all package versions to 3.0.1-hotfix.4 ([#3060](https://github.com/dashpay/platform/issues/3060))
 
-### [3.0.1-hotfix.3](///compare/v3.0.0...v3.0.1-hotfix.3) (2026-02-05)
+### [3.0.1-hotfix.3](https://github.com/dashpay/platform/compare/v3.0.0...v3.0.1-hotfix.3) (2026-02-05)
 
 
 ### Bug Fixes
 
-* **dashmate:** letsencrypt renewal and dashmate doctor fixes ([#3018](undefined/undefined/undefined/issues/3018))
+* **dashmate:** letsencrypt renewal and dashmate doctor fixes ([#3018](https://github.com/dashpay/platform/issues/3018))
 
 
 ### Miscellaneous Chores
 
-* **dashmate:** upgrade to Core 23 ([#3054](undefined/undefined/undefined/issues/3054))
-* **release:** update changelog and bump version to 3.0.1-hotfix.3 ([#3055](undefined/undefined/undefined/issues/3055))
+* **dashmate:** upgrade to Core 23 ([#3054](https://github.com/dashpay/platform/issues/3054))
+* **release:** update changelog and bump version to 3.0.1-hotfix.3 ([#3055](https://github.com/dashpay/platform/issues/3055))
 
 ### [3.0.1-hotfix.3](https://github.com/dashpay/platform/compare/v3.0.0...v3.0.1-hotfix.3) (2026-02-05)
 
@@ -1044,30 +1044,30 @@
 
 * use single quotes and preserve ctx values in merge
 
-## [3.0.0-rc.3](///compare/v3.0.0-rc.2...v3.0.0-rc.3) (2026-01-20)
+## [3.0.0-rc.3](https://github.com/dashpay/platform/compare/v3.0.0-rc.2...v3.0.0-rc.3) (2026-01-20)
 
 
 ### Features
 
-* **dashmate:** add Let's Encrypt SSL provider support ([#3000](undefined/undefined/undefined/issues/3000))
-* **drive:** improve error handling in merk proof extraction ([#3003](undefined/undefined/undefined/issues/3003))
+* **dashmate:** add Let's Encrypt SSL provider support ([#3000](https://github.com/dashpay/platform/issues/3000))
+* **drive:** improve error handling in merk proof extraction ([#3003](https://github.com/dashpay/platform/issues/3003))
 
 
 ### Bug Fixes
 
-* **platform:** update grovedb dependency to allow for larger proof sizes ([#3005](undefined/undefined/undefined/issues/3005))
+* **platform:** update grovedb dependency to allow for larger proof sizes ([#3005](https://github.com/dashpay/platform/issues/3005))
 
-## [3.0.0-rc.2](///compare/v3.0.0-rc.1...v3.0.0-rc.2) (2026-01-16)
+## [3.0.0-rc.2](https://github.com/dashpay/platform/compare/v3.0.0-rc.1...v3.0.0-rc.2) (2026-01-16)
 
 
 ### Bug Fixes
 
-* **sdk:** toJSON returns empty object ([#2995](undefined/undefined/undefined/issues/2995))
+* **sdk:** toJSON returns empty object ([#2995](https://github.com/dashpay/platform/issues/2995))
 
 
 ### Code Refactoring
 
-* **sdk:** introduce `ProRegTxLike` and `NetworkLike` types  ([#2990](undefined/undefined/undefined/issues/2990))
+* **sdk:** introduce `ProRegTxLike` and `NetworkLike` types  ([#2990](https://github.com/dashpay/platform/issues/2990))
 
 ## [3.0.0-rc.1](https://github.com/dashpay/platform/compare/v3.0.0-dev.11...v3.0.0-rc.1) (2026-01-13)
 
@@ -1142,7 +1142,7 @@
 * **sdk:** failed address sync on invalid proof  ([#2967](https://github.com/dashpay/platform/issues/2967))
 * **sdk:** match `ItemWithSumItem` in `extract_balance_from_element` ([#2956](https://github.com/dashpay/platform/issues/2956))
 
-## [3.0.0-dev.10](///compare/v3.0.0-dev.9...v3.0.0-dev.10) (2026-01-06)
+## [3.0.0-dev.10](https://github.com/dashpay/platform/compare/v3.0.0-dev.9...v3.0.0-dev.10) (2026-01-06)
 
 
 ### ⚠ BREAKING CHANGES
@@ -1151,13 +1151,13 @@
 
 ### Features
 
-* **platform:** clean up expired compacted address balances ([#2948](undefined/undefined/undefined/issues/2948))
+* **platform:** clean up expired compacted address balances ([#2948](https://github.com/dashpay/platform/issues/2948))
 
 
 ### Bug Fixes
 
-* **dpp:** broken chain lock proof deserialization ([#2950](undefined/undefined/undefined/issues/2950))
-* **wasm-sdk:** enable identity_update to add ECDSA_SECP256K1 and BLS12_381 keys ([#2947](undefined/undefined/undefined/issues/2947))
+* **dpp:** broken chain lock proof deserialization ([#2950](https://github.com/dashpay/platform/issues/2950))
+* **wasm-sdk:** enable identity_update to add ECDSA_SECP256K1 and BLS12_381 keys ([#2947](https://github.com/dashpay/platform/issues/2947))
 
 ## [3.0.0-dev.7](https://github.com/dashpay/platform/compare/v3.0.0-dev.6...v3.0.0-dev.7) (2025-12-30)
 
@@ -1178,24 +1178,24 @@
 * **drive:** failing to prove absent platform addressess ([#2934](https://github.com/dashpay/platform/issues/2934))
 * **sdk:** non proved JS SDK methods ([#2871](https://github.com/dashpay/platform/issues/2871))
 
-## [3.0.0-dev.5](///compare/v3.0.0-dev.4...v3.0.0-dev.5) (2025-12-23)
+## [3.0.0-dev.5](https://github.com/dashpay/platform/compare/v3.0.0-dev.4...v3.0.0-dev.5) (2025-12-23)
 
 
 ### Bug Fixes
 
-* **drive-abci:** verify apphash in finalize_block ([#2878](undefined/undefined/undefined/issues/2878))
+* **drive-abci:** verify apphash in finalize_block ([#2878](https://github.com/dashpay/platform/issues/2878))
 
 
 ### Build System
 
-* upgrade yarn to latest version ([#2926](undefined/undefined/undefined/issues/2926))
+* upgrade yarn to latest version ([#2926](https://github.com/dashpay/platform/issues/2926))
 
-## [3.0.0-dev.4](///compare/v3.0.0-dev.3...v3.0.0-dev.4) (2025-12-23)
+## [3.0.0-dev.4](https://github.com/dashpay/platform/compare/v3.0.0-dev.3...v3.0.0-dev.4) (2025-12-23)
 
 
 ### Continuous Integration
 
-* fix NPM publish in release ([#2923](undefined/undefined/undefined/issues/2923))
+* fix NPM publish in release ([#2923](https://github.com/dashpay/platform/issues/2923))
 
 ## [2.2.0-dev.2](https://github.com/dashpay/platform/compare/v2.1.2...v2.2.0-dev.2) (2025-11-28)
 
