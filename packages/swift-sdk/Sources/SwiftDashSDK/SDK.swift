@@ -89,6 +89,19 @@ public final class SDK: @unchecked Sendable {
     return "http://127.0.0.1:2443"
   }
 
+  /// Optional caller-provided base URL for the trusted-context-provider's
+  /// quorum lookups. Read from UserDefaults key `platformQuorumURL`.
+  /// Required to connect to devnets (no built-in default exists on the
+  /// Rust side); also usable to override mainnet/testnet for staging
+  /// shards. Returns nil when unset/empty.
+  private static var platformQuorumURL: String? {
+    guard
+      let value = UserDefaults.standard.string(forKey: "platformQuorumURL"),
+      !value.isEmpty
+    else { return nil }
+    return value
+  }
+
   /// Create a new SDK instance with trusted setup
   ///
   /// This uses a trusted context provider that fetches quorum keys and
@@ -98,33 +111,49 @@ public final class SDK: @unchecked Sendable {
     var config = DashSDKConfig()
     config.network = network.ffiValue
     config.dapi_addresses = nil
+    config.quorum_url = nil
     config.skip_asset_lock_proof_verification = false
     config.request_retry_count = 1
     config.request_timeout_ms = 8000 // 8 seconds
 
-    // Create SDK with trusted setup — Rust side auto-detects local/regtest
-    // and uses the quorum sidecar at localhost:22444 instead of remote endpoints.
+    // Create SDK with trusted setup. DAPI / quorum-URL overrides come from
+    // UserDefaults and apply on:
     //
-    // Regtest has no remote DAPI defaults on the Rust side, so it
-    // *must* be constructed with a local DAPI address regardless of
-    // the user-facing `useDockerSetup` toggle. Without this, building
-    // a regtest SDK from a context where the toggle has been
-    // auto-disabled (e.g. orphan-mnemonic recovery routing wallets to
-    // their original network from a non-regtest active state) fails
-    // with `DAPI addresses not available for network: Regtest` and
-    // the recovery loop stalls.
+    //   * Regtest unconditionally — the Rust side has no built-in DAPI
+    //     defaults for it, so we must supply addresses every time
+    //     (otherwise SDK creation panics with `DAPI addresses not
+    //     available for network: Regtest`, which would stall orphan-
+    //     mnemonic recovery if it ran from a non-regtest active state).
+    //   * Devnet unconditionally — same reason; additionally needs an
+    //     explicit `quorum_url` because the default quorum endpoint
+    //     `https://quorums.devnet.<name>.networks.dash.org` is template-
+    //     interpolated from a devnet name we don't carry across FFI.
+    //   * Mainnet/testnet only when the user opted in via
+    //     `useDockerSetup` (existing dashmate-on-localhost flow). When
+    //     that toggle is off, the Rust side picks the canonical seed
+    //     addresses for the network.
+    //
+    // `quorum_url` is forwarded whenever the UserDefaults override is
+    // set, regardless of network — supports custom mainnet/testnet
+    // shards and any future deployment that needs a non-default
+    // endpoint.
     let result: DashSDKResult
-    let forceLocal = network == .regtest
+    let useOverrideAddresses = network == .regtest
+        || network == .devnet
         || UserDefaults.standard.bool(forKey: "useDockerSetup")
-    if forceLocal {
-      let localAddresses = Self.platformDAPIAddresses
-      result = localAddresses.withCString { addressesCStr -> DashSDKResult in
-        var mutableConfig = config
-        mutableConfig.dapi_addresses = addressesCStr
-        return dash_sdk_create_trusted(&mutableConfig)
-      }
-    } else {
-      result = dash_sdk_create_trusted(&config)
+    let overrideAddresses: String? = useOverrideAddresses
+        ? Self.platformDAPIAddresses
+        : nil
+    let overrideQuorumURL: String? = Self.platformQuorumURL
+
+    result = SDK.withOptionalCStrings(
+      overrideAddresses,
+      overrideQuorumURL
+    ) { addressesCStr, quorumCStr in
+      var mutableConfig = config
+      if let addressesCStr { mutableConfig.dapi_addresses = addressesCStr }
+      if let quorumCStr { mutableConfig.quorum_url = quorumCStr }
+      return dash_sdk_create_trusted(&mutableConfig)
     }
 
     // Check for errors
@@ -145,6 +174,34 @@ public final class SDK: @unchecked Sendable {
     // Store the handle and network
     handle = result.data?.assumingMemoryBound(to: SDKHandle.self)
     self.network = network
+  }
+
+  /// Run `body` with two optional C-string pointers. Each input string,
+  /// when non-nil, is materialized into a NUL-terminated C buffer that is
+  /// valid for the duration of the call; nil inputs pass through as nil
+  /// pointers. Mirrors `String.withCString` for the two-optional-string
+  /// case so the SDK init can hand both `dapi_addresses` and
+  /// `quorum_url` into a single FFI call without nested withCString
+  /// closures.
+  private static func withOptionalCStrings<R>(
+    _ a: String?,
+    _ b: String?,
+    _ body: (UnsafePointer<CChar>?, UnsafePointer<CChar>?) -> R
+  ) -> R {
+    switch (a, b) {
+    case (nil, nil):
+      return body(nil, nil)
+    case (.some(let sa), nil):
+      return sa.withCString { body($0, nil) }
+    case (nil, .some(let sb)):
+      return sb.withCString { body(nil, $0) }
+    case (.some(let sa), .some(let sb)):
+      return sa.withCString { aPtr in
+        sb.withCString { bPtr in
+          body(aPtr, bPtr)
+        }
+      }
+    }
   }
 
   /// Load known contracts into the trusted context provider

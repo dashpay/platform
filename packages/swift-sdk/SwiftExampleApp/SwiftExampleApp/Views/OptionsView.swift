@@ -74,6 +74,15 @@ struct OptionsView: View {
     @AppStorage("useLocalhostCore") private var customSpvPeersEnabled: Bool = false
     @AppStorage("localCorePeers") private var customSpvPeers: String = ""
 
+    // Devnet endpoint overrides. Read on every SDK creation by
+    // `SDKConfigBuilder`/`SDK.init` (UserDefaults keys
+    // `platformDAPIAddresses` / `platformQuorumURL`). Editing either
+    // here is enough to redirect the next SDK construction; existing
+    // SDKs already in flight are unaffected until a network switch /
+    // app relaunch.
+    @AppStorage("platformDAPIAddresses") private var devnetDAPIAddresses: String = ""
+    @AppStorage("platformQuorumURL") private var devnetQuorumURL: String = ""
+
     /// Default localhost peer string for a given network. Used to
     /// pre-populate the peers text field when the user enables the
     /// custom-SPV toggle. The FFI drops bare-IP entries (no port),
@@ -107,6 +116,23 @@ struct OptionsView: View {
                                     // Auto-disable Docker when leaving Local
                                     if newNetwork != .regtest && appState.useDockerSetup {
                                         appState.useDockerSetup = false
+                                    }
+
+                                    // Devnet always needs custom SPV peers
+                                    // (no public seed list on the Rust
+                                    // side), so force the toggle on and
+                                    // seed the peers field with the
+                                    // canonical localhost default when
+                                    // empty. The Sync tab's startSpv()
+                                    // path reads `useLocalhostCore` and
+                                    // `localCorePeers` directly, so this
+                                    // is the minimum state required for
+                                    // SPV to attempt a connection.
+                                    if newNetwork == .devnet {
+                                        customSpvPeersEnabled = true
+                                        if customSpvPeers.isEmpty || !customSpvPeers.contains(":") {
+                                            customSpvPeers = defaultSpvPeers(for: .devnet)
+                                        }
                                     }
 
                                     // Update platform state (which will trigger SDK switch)
@@ -198,6 +224,54 @@ struct OptionsView: View {
                                 }
                             }
                         }
+                    } else if appState.currentNetwork == .devnet {
+                        // Devnet has no public seeds (SPV) or default
+                        // DAPI / quorum addresses on the Rust side, so
+                        // all three are always custom. No toggle —
+                        // just show the inputs directly. `useLocalhostCore`
+                        // is force-enabled in the picker's `onChange`
+                        // when devnet is selected.
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("SPV Peers")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            TextField(
+                                defaultSpvPeers(for: .devnet),
+                                text: $customSpvPeers
+                            )
+                            .font(.system(.body, design: .monospaced))
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+
+                            Text("DAPI URL")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            TextField(
+                                "https://<host>:1443",
+                                text: $devnetDAPIAddresses
+                            )
+                            .font(.system(.body, design: .monospaced))
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .keyboardType(.URL)
+
+                            Text("Quorum URL")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            TextField(
+                                "https://quorums.devnet.<name>.networks.dash.org",
+                                text: $devnetQuorumURL
+                            )
+                            .font(.system(.body, design: .monospaced))
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .keyboardType(.URL)
+
+                            Text("All three required for devnet. Changes apply on the next SDK build (switch network or relaunch).")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(.top, 4)
                     } else {
                         Toggle("Use Custom SPV Peers", isOn: $customSpvPeersEnabled)
                             .onChange(of: customSpvPeersEnabled) { _, isOn in
