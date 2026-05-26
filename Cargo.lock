@@ -3969,6 +3969,7 @@ dependencies = [
  "dashcore",
  "key-wallet",
  "rayon",
+ "serde",
  "tokio",
  "tracing",
  "zeroize",
