@@ -50,9 +50,11 @@ import { Buffer } from 'buffer';
 globalThis.Buffer = Buffer;
 ```
 
-This requirement will go away once `dashcore-lib`'s `BufferReader` accepts
-`Uint8Array` directly. Until then, browser consumers must ensure a `Buffer`
-global is reachable at runtime.
+This requirement will go away once
+[dashpay/dashcore-lib#315](https://github.com/dashpay/dashcore-lib/pull/315)
+(widening `BufferReader` to accept `Uint8Array`) lands and is picked up here.
+Until then, browser consumers must ensure a `Buffer` global is reachable at
+runtime.
 
 ## Usage
 
