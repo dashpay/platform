@@ -1,6 +1,9 @@
 use dashcore::OutPoint;
+use dpp::address_funds::PlatformAddress;
+use dpp::fee::Credits;
 use dpp::identifier::Identifier;
-use key_wallet::{account::StandardAccountType, Network};
+use key_wallet::account::StandardAccountType;
+use key_wallet::Network;
 
 /// Errors that can occur in platform wallet operations
 #[derive(Debug, thiserror::Error)]
@@ -72,6 +75,34 @@ pub enum PlatformWalletError {
         account_type: StandardAccountType,
         account_index: u32,
         context: String,
+    },
+
+    #[error(
+        "no selectable inputs: only funded addresses appear as destinations \
+         (funded_outputs={funded_outputs:?}, min_input_amount={min_input_amount}); \
+         rotate to a fresh receive address, consolidate funds, or use \
+         InputSelection::Explicit"
+    )]
+    OnlyOutputAddressesFunded {
+        /// Funded addresses dropped by the input-equals-output filter.
+        funded_outputs: Vec<PlatformAddress>,
+        /// Per-input minimum from the active platform version.
+        min_input_amount: Credits,
+    },
+
+    #[error(
+        "no selectable inputs: every funded address is below the per-input \
+         minimum (sub_min_count={sub_min_count}, sub_min_aggregate={sub_min_aggregate} \
+         credits, min_input_amount={min_input_amount}); consolidate funds or use \
+         InputSelection::Explicit"
+    )]
+    OnlyDustInputs {
+        /// Number of addresses with a positive balance below `min_input_amount`.
+        sub_min_count: usize,
+        /// Aggregate of those sub-minimum balances.
+        sub_min_aggregate: Credits,
+        /// Per-input minimum from the active platform version.
+        min_input_amount: Credits,
     },
 
     #[error("Asset lock proof waiting failed: {0}")]

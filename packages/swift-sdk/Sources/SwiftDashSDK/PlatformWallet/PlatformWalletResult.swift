@@ -18,6 +18,8 @@ public enum PlatformWalletResultCode: Int32, Sendable {
     case errorInvalidIdentifier = 10
     case errorMemoryAllocation = 11
     case errorUtf8Conversion = 12
+    case errorArithmeticOverflow = 13
+    case errorNoSelectableInputs = 14
     case errorNoSpendableInputs = 30
     case errorConcurrentSpendConflict = 31
     case notFound = 98
@@ -51,6 +53,10 @@ public enum PlatformWalletResultCode: Int32, Sendable {
             self = .errorMemoryAllocation
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_UTF8_CONVERSION:
             self = .errorUtf8Conversion
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_ARITHMETIC_OVERFLOW:
+            self = .errorArithmeticOverflow
+        case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_NO_SELECTABLE_INPUTS:
+            self = .errorNoSelectableInputs
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_NO_SPENDABLE_INPUTS:
             self = .errorNoSpendableInputs
         case PLATFORM_WALLET_FFI_RESULT_CODE_ERROR_CONCURRENT_SPEND_CONFLICT:
@@ -130,6 +136,11 @@ public enum PlatformWalletError: LocalizedError {
     case serialization(String)
     case deserialization(String)
     case memoryAllocation(String)
+    case arithmeticOverflow(String)
+    /// Umbrella for the two address-shape "can't-select-inputs" variants
+    /// (`OnlyOutputAddressesFunded`, `OnlyDustInputs`). Mirrors the Rust
+    /// `ErrorNoSelectableInputs` FFI code.
+    case noSelectableInputs(String)
     /// No spendable inputs on the requested account — retryable after
     /// sync, or surface a depleted-wallet message. Mirrors the Rust
     /// `PlatformWalletError::NoSpendableInputs` variant.
@@ -151,6 +162,7 @@ public enum PlatformWalletError: LocalizedError {
              .invalidIdentifier(let m), .invalidNetwork(let m), .walletOperation(let m),
              .identityNotFound(let m), .contactNotFound(let m), .utf8Conversion(let m),
              .serialization(let m), .deserialization(let m), .memoryAllocation(let m),
+             .arithmeticOverflow(let m), .noSelectableInputs(let m),
              .noSpendableInputs(let m), .concurrentSpendConflict(let m),
              .notFound(let m), .unknown(let m):
             return m
@@ -176,6 +188,8 @@ public enum PlatformWalletError: LocalizedError {
         case .errorInvalidIdentifier: self = .invalidIdentifier(detail)
         case .errorMemoryAllocation:  self = .memoryAllocation(detail)
         case .errorUtf8Conversion:    self = .utf8Conversion(detail)
+        case .errorArithmeticOverflow: self = .arithmeticOverflow(detail)
+        case .errorNoSelectableInputs: self = .noSelectableInputs(detail)
         case .errorNoSpendableInputs: self = .noSpendableInputs(detail)
         case .errorConcurrentSpendConflict:
             self = .concurrentSpendConflict(detail)

@@ -575,6 +575,15 @@ impl DapiRequestExecutor for DapiClient {
                     });
                 };
 
+                // Rec 3 — explicit trace event so the resolved DAPI endpoint
+                // appears in flat plain-text log output (not just the span context).
+                tracing::trace!(
+                    target: "dapi_client::dispatch",
+                    ?address,
+                    method = request.method_name(),
+                    request_type = request.request_name(),
+                    "dispatching request to DAPI endpoint"
+                );
                 tracing::trace!(
                     ?request,
                     "calling {} with {} request",

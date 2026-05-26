@@ -76,6 +76,19 @@ pub enum PlatformWalletFFIResultCode {
     ErrorInvalidIdentifier = 10,
     ErrorMemoryAllocation = 11,
     ErrorUtf8Conversion = 12,
+    /// Reserved slot for the arithmetic-overflow mapping arriving via #3549 —
+    /// no in-tree producer today. Holding the slot here keeps language-mirror
+    /// enums (Swift, Kotlin) numerically aligned with the eventual producer.
+    ErrorArithmeticOverflow = 13,
+    /// Auto-select had no candidate inputs. Covers all three "can't-select-inputs"
+    /// wallet variants: `NoSpendableInputs` (account has nothing spendable),
+    /// `OnlyOutputAddressesFunded` (every funded address is also a destination),
+    /// and `OnlyDustInputs` (every funded address is below `min_input_amount`).
+    /// The typed Display rendering survives via the result message so callers
+    /// can distinguish the underlying cause. Caller must rotate to a fresh
+    /// receive address, consolidate sub-min balances, or fall back to
+    /// `InputSelection::Explicit`.
+    ErrorNoSelectableInputs = 14,
 
     /// No spendable inputs available on the account — wait for sync /
     /// new UTXOs and retry, or surface a depleted-wallet message.
@@ -171,12 +184,26 @@ impl<T> From<Option<T>> for PlatformWalletFFIResult {
 
 impl From<PlatformWalletError> for PlatformWalletFFIResult {
     fn from(error: PlatformWalletError) -> Self {
+        // Map the typed wallet error variants explicitly so they don't
+        // flatten to ErrorUnknown at the FFI boundary. The catch-all
+        // ErrorUnknown remains for variants the FFI hasn't assigned a
+        // dedicated code yet — those still carry the typed Display
+        // rendering as the message.
+        //
+        // `NoSpendableInputs` has its own dedicated code (30) since the
+        // race-loser path needs to be distinguishable from the broader
+        // "no selectable inputs" umbrella (14) used for the two
+        // address-shape variants below.
         let code = match &error {
             PlatformWalletError::NoSpendableInputs { .. } => {
                 PlatformWalletFFIResultCode::ErrorNoSpendableInputs
             }
             PlatformWalletError::ConcurrentSpendConflict { .. } => {
                 PlatformWalletFFIResultCode::ErrorConcurrentSpendConflict
+            }
+            PlatformWalletError::OnlyOutputAddressesFunded { .. }
+            | PlatformWalletError::OnlyDustInputs { .. } => {
+                PlatformWalletFFIResultCode::ErrorNoSelectableInputs
             }
             _ => PlatformWalletFFIResultCode::ErrorUnknown,
         };
@@ -399,5 +426,74 @@ mod tests {
             "before\0after",
         );
         assert!(!r.message.is_null());
+    }
+
+    /// The "can't-select-inputs" wallet variants all map to dedicated FFI
+    /// codes (never `ErrorUnknown`) and the typed Display rendering survives
+    /// across the boundary so callers can distinguish the underlying cause
+    /// from the message string.
+    ///
+    /// `NoSpendableInputs` owns the dedicated `ErrorNoSpendableInputs` (30)
+    /// — the race-loser path is the canonical retry signal — while the two
+    /// address-shape variants (`OnlyOutputAddressesFunded`, `OnlyDustInputs`)
+    /// share the umbrella `ErrorNoSelectableInputs` (14).
+    #[test]
+    fn no_selectable_inputs_maps_to_dedicated_code() {
+        use dpp::address_funds::PlatformAddress;
+        use key_wallet::account::StandardAccountType;
+
+        let cases: Vec<(PlatformWalletError, PlatformWalletFFIResultCode)> = vec![
+            (
+                PlatformWalletError::NoSpendableInputs {
+                    account_type: StandardAccountType::BIP44Account,
+                    account_index: 0,
+                    context: "wallet empty in test".to_string(),
+                },
+                PlatformWalletFFIResultCode::ErrorNoSpendableInputs,
+            ),
+            (
+                PlatformWalletError::OnlyOutputAddressesFunded {
+                    funded_outputs: Vec::<PlatformAddress>::new(),
+                    min_input_amount: 1_000,
+                },
+                PlatformWalletFFIResultCode::ErrorNoSelectableInputs,
+            ),
+            (
+                PlatformWalletError::OnlyDustInputs {
+                    sub_min_count: 3,
+                    sub_min_aggregate: 500,
+                    min_input_amount: 1_000,
+                },
+                PlatformWalletFFIResultCode::ErrorNoSelectableInputs,
+            ),
+        ];
+
+        for (err, expected_code) in cases {
+            let rendered = err.to_string();
+            let result: PlatformWalletFFIResult = err.into();
+            assert_eq!(
+                result.code, expected_code,
+                "variant must map to its dedicated code (rendered: {rendered})"
+            );
+            assert!(!result.message.is_null());
+            let msg = unsafe { std::ffi::CStr::from_ptr(result.message) }
+                .to_string_lossy()
+                .into_owned();
+            assert_eq!(
+                msg, rendered,
+                "Display payload must survive the FFI boundary verbatim"
+            );
+        }
+    }
+
+    /// Other wallet-error variants without a dedicated FFI arm still
+    /// fall through to `ErrorUnknown` while carrying the typed
+    /// Display rendering as the message. Pin this so the catch-all
+    /// stays the only `ErrorUnknown` source.
+    #[test]
+    fn unmapped_variants_fall_through_to_unknown() {
+        let err = PlatformWalletError::AddressOperation("explicit fallthrough".to_string());
+        let result: PlatformWalletFFIResult = err.into();
+        assert_eq!(result.code, PlatformWalletFFIResultCode::ErrorUnknown);
     }
 }
