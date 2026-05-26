@@ -62,20 +62,31 @@ fn wal_and_shm_sidecars_are_chmodded_0o600() {
     }
 }
 
-/// TC-CODE-011-a: `apply_secure_permissions` survives a non-UTF-8 DB
-/// filename. The pre-fix `to_string_lossy().to_string()` corrupted the
-/// non-UTF-8 bytes into U+FFFD, so the sidecar lookup missed the real
-/// `<name>-wal` / `<name>-shm` files and silently skipped the chmod.
-/// With `OsString::push` the bytes round-trip intact.
+/// TC-CODE-011-a: `apply_secure_permissions` survives a non-ASCII DB
+/// filename whose bytes round-trip through `OsString` (the codepath
+/// builds sidecar names via `OsString::push`, not `format!` over a
+/// lossy `String`). The chosen prefix `ÿþ` (`U+00FF U+00FE`, UTF-8
+/// bytes `c3 bf c3 be`) is multi-byte non-ASCII that both Linux and
+/// macOS APFS accept — APFS rejects raw non-UTF-8 with `EILSEQ`, so
+/// the bytes here are deliberately valid UTF-8 while still exercising
+/// the `OsString`-end-to-end path the pre-fix `to_string_lossy()` would
+/// have mangled into the wrong sibling names.
 #[test]
-fn tc_code_011_a_non_utf8_db_path_sidecars_chmodded() {
+fn tc_code_011_a_non_ascii_db_path_sidecars_chmodded() {
     let tmp = tempfile::tempdir().unwrap();
-    // Build a filename `\xFF\xFE.db` — two invalid-UTF-8 bytes plus an
-    // ASCII suffix. Path with bytes like this is legal on Unix but
-    // becomes `?\xEF\xBF\xBD?.db` under `to_string_lossy`.
-    let db_name = OsString::from_vec(vec![0xFF, 0xFE, b'.', b'd', b'b']);
-    let wal_name = OsString::from_vec(vec![0xFF, 0xFE, b'.', b'd', b'b', b'-', b'w', b'a', b'l']);
-    let shm_name = OsString::from_vec(vec![0xFF, 0xFE, b'.', b'd', b'b', b'-', b's', b'h', b'm']);
+    // Valid-UTF-8 multi-byte prefix `ÿþ` + `.db` / `.db-wal` / `.db-shm`.
+    // We still go through `OsString::from_vec` to mirror the production
+    // codepath's `OsStr`/`OsString` API surface end-to-end.
+    let prefix: &[u8] = &[0xC3, 0xBF, 0xC3, 0xBE]; // "ÿþ" in UTF-8
+    debug_assert_eq!(std::str::from_utf8(prefix).unwrap(), "ÿþ");
+    let mk = |suffix: &[u8]| -> OsString {
+        let mut v = prefix.to_vec();
+        v.extend_from_slice(suffix);
+        OsString::from_vec(v)
+    };
+    let db_name = mk(b".db");
+    let wal_name = mk(b".db-wal");
+    let shm_name = mk(b".db-shm");
     let db_path = tmp.path().join(&db_name);
     let wal = tmp.path().join(&wal_name);
     let shm = tmp.path().join(&shm_name);
@@ -93,7 +104,7 @@ fn tc_code_011_a_non_utf8_db_path_sidecars_chmodded() {
         assert_eq!(
             mode,
             0o600,
-            "expected 0o600 on non-UTF-8 path {} after apply_secure_permissions, got {:o}",
+            "expected 0o600 on non-ASCII path {} after apply_secure_permissions, got {:o}",
             p.display(),
             mode
         );
