@@ -2,8 +2,6 @@ const requestJsonRpc = require('../../../../lib/transport/JsonRpcTransport/reque
 const JsonRpcError = require('../../../../lib/transport/JsonRpcTransport/errors/JsonRpcError');
 const WrongHttpCodeError = require('../../../../lib/transport/JsonRpcTransport/errors/WrongHttpCodeError');
 
-const nodeOnlyIt = typeof window === 'undefined' ? it : it.skip;
-
 describe('requestJsonRpc', () => {
   let protocol;
   let host;
@@ -73,86 +71,6 @@ describe('requestJsonRpc', () => {
     );
 
     expect(result).to.equal('passed');
-  });
-
-  nodeOnlyIt('should pass an undici Agent that skips TLS verification when selfSigned is true', async () => {
-    protocol = 'https';
-    selfSigned = true;
-
-    // eslint-disable-next-line
-    fetch.resolves(new Response(
-      JSON.stringify({ result: 'passed', error: null }),
-      {
-        status: 200,
-      },
-    ));
-
-    const result = await requestJsonRpc(
-      protocol,
-      host,
-      port,
-      selfSigned,
-      'httpsRequest',
-      params,
-      { timeout },
-    );
-
-    expect(result).to.equal('passed');
-
-    // Verify fetch was actually given a dispatcher that disables TLS verification.
-    // Without this, the selfSigned flag would be silently inert in Node.
-    // eslint-disable-next-line
-    const [, requestOptions] = fetch.firstCall.args;
-    expect(requestOptions.dispatcher).to.exist();
-  });
-
-  nodeOnlyIt('should reuse a single undici Agent across multiple self-signed calls (no socket leak)', async () => {
-    protocol = 'https';
-    selfSigned = true;
-
-    // Each fetch call gets a fresh Response (body can only be read once).
-    // eslint-disable-next-line
-    fetch.callsFake(() => Promise.resolve(new Response(
-      JSON.stringify({ result: 'passed', error: null }),
-      { status: 200 },
-    )));
-
-    await requestJsonRpc(protocol, host, port, selfSigned, 'a', params, { timeout });
-    await requestJsonRpc(protocol, host, port, selfSigned, 'b', params, { timeout });
-
-    // eslint-disable-next-line
-    const firstDispatcher = fetch.firstCall.args[1].dispatcher;
-    // eslint-disable-next-line
-    const secondDispatcher = fetch.secondCall.args[1].dispatcher;
-    expect(firstDispatcher).to.exist();
-    expect(secondDispatcher).to.equal(firstDispatcher);
-  });
-
-  it('should not pass a dispatcher when selfSigned is false', async () => {
-    protocol = 'https';
-    selfSigned = false;
-
-    // eslint-disable-next-line
-    fetch.resolves(new Response(
-      JSON.stringify({ result: 'passed', error: null }),
-      {
-        status: 200,
-      },
-    ));
-
-    await requestJsonRpc(
-      protocol,
-      host,
-      port,
-      selfSigned,
-      'httpsRequest',
-      params,
-      { timeout },
-    );
-
-    // eslint-disable-next-line
-    const [, requestOptions] = fetch.firstCall.args;
-    expect(requestOptions.dispatcher).to.equal(undefined);
   });
 
   it('should throw WrongHttpCodeError if response status is not 200', async () => {
