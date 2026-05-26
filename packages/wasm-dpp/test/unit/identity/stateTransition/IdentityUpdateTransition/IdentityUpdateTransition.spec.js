@@ -25,14 +25,14 @@ describe('IdentityUpdateTransition', () => {
 
       stateTransition.setIdentityId(id);
 
-      expect(stateTransition.identityId.toBuffer())
-        .to.deep.equal(id.toBuffer());
+      expect(stateTransition.identityId.toBytes())
+        .to.deep.equal(id.toBytes());
     });
   });
 
   describe('#getIdentityId', () => {
     it('should return identityId', () => {
-      expect(stateTransition.getIdentityId().toBuffer())
+      expect(stateTransition.getIdentityId().toBytes())
         .to.deep.equal(rawStateTransition.identityId);
     });
   });
@@ -53,7 +53,7 @@ describe('IdentityUpdateTransition', () => {
 
   describe('#getOwnerId', () => {
     it('should return owner id', () => {
-      expect(stateTransition.getOwnerId().toBuffer()).to.deep.equal(
+      expect(stateTransition.getOwnerId().toBytes()).to.deep.equal(
         rawStateTransition.identityId,
       );
     });
@@ -170,7 +170,7 @@ describe('IdentityUpdateTransition', () => {
       const identityId = result[0];
 
       expect(identityId).to.be.an.instanceOf(Identifier);
-      expect(identityId.toBuffer()).to.be.deep.equal(rawStateTransition.identityId);
+      expect(identityId.toBytes()).to.be.deep.equal(rawStateTransition.identityId);
     });
   });
 

@@ -71,7 +71,7 @@ describe.skip('validateDataContractCreateTransitionStateFactory', () => {
     const [error] = result.getErrors();
 
     expect(error.getCode()).to.equal(4000);
-    expect(error.getDataContractId()).to.deep.equal(dataContract.getId().toBuffer());
+    expect(error.getDataContractId()).to.deep.equal(dataContract.getId().toBytes());
   });
 
   it('should return valid result', async () => {

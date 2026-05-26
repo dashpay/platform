@@ -127,14 +127,14 @@ describe.skip('DocumentsBatchTransition', () => {
   //   it('should return owner id', async () => {
   //     const result = stateTransition.getOwnerId();
   //
-  //     expect(result.toBuffer()).to.deep.equal(getDocumentsFixture.ownerId.toBuffer());
+  //     expect(result.toBuffer()).to.deep.equal(getDocumentsFixture.ownerId.toBytes());
   //   });
   // });
   //
   // describe('#getModifiedDataIds', () => {
   //   it('should return ids of affected documents', () => {
-  //     const expectedIds = documentsJs.map((doc) => doc.getId().toBuffer());
-  //     const result = stateTransition.getModifiedDataIds().map((id) => id.toBuffer());
+  //     const expectedIds = documentsJs.map((doc) => doc.getId().toBytes());
+  //     const result = stateTransition.getModifiedDataIds().map((id) => id.toBytes());
   //
   //     expect(result.length).to.be.equal(10);
   //     expect(result).to.be.deep.equal(expectedIds);

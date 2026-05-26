@@ -95,10 +95,10 @@ describe('Document', () => {
 
     rawDocumentWithBuffers = {
       $protocolVersion: getLatestProtocolVersion(),
-      $id: id.toBuffer(),
+      $id: id.toBytes(),
       $type: 'test',
-      $dataContractId: dataContract.getId().toBuffer(),
-      $ownerId: ownerId.toBuffer(),
+      $dataContractId: dataContract.getId().toBytes(),
+      $ownerId: ownerId.toBytes(),
       $revision: Number(DocumentCreateTransition.INITIAL_REVISION.toString()),
       $createdAt: now,
       $createdAtBlockHeight: 1,
@@ -129,7 +129,7 @@ describe('Document', () => {
       };
 
       document = new ExtendedDocument(rawDocument, dataContract);
-      expect(document.getId().toBuffer()).to.deep.equal(rawDocument.$id.toBuffer());
+      expect(document.getId().toBytes()).to.deep.equal(rawDocument.$id.toBytes());
     });
 
     it.skip('should create DocumentCreateTransition with $type and data if present', () => {
@@ -317,7 +317,7 @@ describe('Document', () => {
 
       const actualId = document.getId();
 
-      expect(id.toBuffer()).to.deep.equal(actualId.toBuffer());
+      expect(id.toBytes()).to.deep.equal(actualId.toBytes());
     });
   });
 
@@ -329,13 +329,13 @@ describe('Document', () => {
 
   describe('#getOwnerId', () => {
     it('should return $ownerId', () => {
-      expect(document.getOwnerId().toBuffer()).to.deep.equal(rawDocument.$ownerId.toBuffer());
+      expect(document.getOwnerId().toBytes()).to.deep.equal(rawDocument.$ownerId.toBytes());
     });
   });
 
   describe('#getDataContractId', () => {
     it('should return $dataContractId', () => {
-      expect(document.getOwnerId().toBuffer()).to.deep.equal(rawDocument.$ownerId.toBuffer());
+      expect(document.getOwnerId().toBytes()).to.deep.equal(rawDocument.$ownerId.toBytes());
     });
   });
 
@@ -374,12 +374,12 @@ describe('Document', () => {
 
     it('should set identifier', () => {
       const path = 'dataObject.binaryObject.identifier';
-      const buffer = Buffer.alloc(32);
-      const identifier = new Identifier(buffer);
+      const bytes = new Uint8Array(32);
+      const identifier = new Identifier(bytes);
 
       document.set(path, identifier);
 
-      expect(document.get(path).toBuffer()).to.deep.equal(buffer);
+      expect(document.get(path).toBytes()).to.deep.equal(bytes);
     });
 
     // It should return Identifier instead of string
@@ -393,7 +393,7 @@ describe('Document', () => {
       document.set(path, value);
       const returnedIdentifier = document.get(identifierPath);
 
-      expect(returnedIdentifier.toBuffer()).to.deep.equal(buffer);
+      expect(returnedIdentifier.toBytes()).to.deep.equal(buffer);
     });
   });
 

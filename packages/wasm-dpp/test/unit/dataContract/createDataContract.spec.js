@@ -14,8 +14,8 @@ describe.skip('createDataContract', () => {
 
   beforeEach(async () => {
     rawDataContract = {
-      $id: (await generateRandomIdentifier()).toBuffer(),
-      ownerId: (await generateRandomIdentifier()).toBuffer(),
+      $id: (await generateRandomIdentifier()).toBytes(),
+      ownerId: (await generateRandomIdentifier()).toBytes(),
       protocolVersion: 4,
       version: 20,
       $schema: 'http://test.com/schema',
@@ -32,7 +32,7 @@ describe.skip('createDataContract', () => {
 
     expect(dataContract).to.be.an.instanceOf(DataContract);
 
-    expect(dataContract.getOwnerId().toBuffer()).to.deep.equal(rawDataContract.ownerId);
+    expect(dataContract.getOwnerId().toBytes()).to.deep.equal(rawDataContract.ownerId);
     expect(dataContract.getDocuments()).to.deep.equal(rawDataContract.documents);
   });
 
@@ -45,7 +45,7 @@ describe.skip('createDataContract', () => {
 
     expect(dataContract.getJsonMetaSchema()).to.equal(rawDataContract.$schema);
 
-    expect(dataContract.getOwnerId().toBuffer()).to.deep.equal(rawDataContract.ownerId);
+    expect(dataContract.getOwnerId().toBytes()).to.deep.equal(rawDataContract.ownerId);
     expect(dataContract.getDocuments()).to.deep.equal(rawDataContract.documents);
   });
 
@@ -60,7 +60,7 @@ describe.skip('createDataContract', () => {
 
     expect(dataContract.getDefinitions()).to.deep.equal(rawDataContract.$defs);
 
-    expect(dataContract.getOwnerId().toBuffer()).to.deep.equal(rawDataContract.ownerId);
+    expect(dataContract.getOwnerId().toBytes()).to.deep.equal(rawDataContract.ownerId);
     expect(dataContract.getDocuments()).to.deep.equal(rawDataContract.documents);
   });
 });

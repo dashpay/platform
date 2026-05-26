@@ -151,7 +151,7 @@ describe('PlatformMethodsFacade', () => {
           .setIdentitiesKeys(new IdentitiesKeys()
             .setEntriesList([
               new IdentityKeys()
-                .setIdentityId(new Uint8Array(identityFixture.getId().toBuffer()))
+                .setIdentityId(identityFixture.getId().toBytes())
                 .setKeysList([
                   new PurposeKeys()
                     .setPurpose(KeyPurpose.ENCRYPTION)

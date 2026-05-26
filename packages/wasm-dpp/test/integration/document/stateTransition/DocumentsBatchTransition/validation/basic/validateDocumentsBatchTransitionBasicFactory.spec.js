@@ -450,7 +450,7 @@ describe.skip('validateDocumentsBatchTransitionBasicFactory', () => {
 
           expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnce();
           const [fetchDataContractId] = stateRepositoryMock.fetchDataContract.getCall(0).args;
-          expect(fetchDataContractId.toBuffer()).is.deep.equal(dataContract.getId().toBuffer());
+          expect(fetchDataContractId.toBuffer()).is.deep.equal(dataContract.getId().toBytes());
         });
       });
 
@@ -474,7 +474,7 @@ describe.skip('validateDocumentsBatchTransitionBasicFactory', () => {
 
           expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnce();
           const [fetchDataContractId] = stateRepositoryMock.fetchDataContract.getCall(0).args;
-          expect(fetchDataContractId.toBuffer()).is.deep.equal(dataContract.getId().toBuffer());
+          expect(fetchDataContractId.toBuffer()).is.deep.equal(dataContract.getId().toBytes());
         });
 
         it('should be a byte array - Rust', async () => {
@@ -515,11 +515,11 @@ describe.skip('validateDocumentsBatchTransitionBasicFactory', () => {
           const [error] = result.getErrors();
 
           expect(error.getCode()).to.equal(1018);
-          expect(error.getDataContractId()).to.deep.equal(dataContract.getId().toBuffer());
+          expect(error.getDataContractId()).to.deep.equal(dataContract.getId().toBytes());
 
           expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnce();
           const [fetchDataContractId] = stateRepositoryMock.fetchDataContract.getCall(0).args;
-          expect(fetchDataContractId.toBuffer()).is.deep.equal(dataContract.getId().toBuffer());
+          expect(fetchDataContractId.toBuffer()).is.deep.equal(dataContract.getId().toBytes());
         });
       });
 
@@ -543,7 +543,7 @@ describe.skip('validateDocumentsBatchTransitionBasicFactory', () => {
 
           expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnce();
           const [fetchDataContractId] = stateRepositoryMock.fetchDataContract.getCall(0).args;
-          expect(fetchDataContractId.toBuffer()).is.deep.equal(dataContract.getId().toBuffer());
+          expect(fetchDataContractId.toBuffer()).is.deep.equal(dataContract.getId().toBytes());
         });
 
         it('should be defined in Data Contract - Rust', async () => {
@@ -565,11 +565,11 @@ describe.skip('validateDocumentsBatchTransitionBasicFactory', () => {
           expect(error.getCode()).to.equal(1024);
           expect(error.getType()).to.equal(firstDocumentTransition.$type);
 
-          expect(error.getDataContractId()).to.deep.equal(dataContract.getId().toBuffer());
+          expect(error.getDataContractId()).to.deep.equal(dataContract.getId().toBytes());
 
           expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnce();
           const [fetchDataContractId] = stateRepositoryMock.fetchDataContract.getCall(0).args;
-          expect(fetchDataContractId.toBuffer()).is.deep.equal(dataContract.getId().toBuffer());
+          expect(fetchDataContractId.toBuffer()).is.deep.equal(dataContract.getId().toBytes());
         });
       });
 
@@ -594,7 +594,7 @@ describe.skip('validateDocumentsBatchTransitionBasicFactory', () => {
 
           expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnce();
           const [fetchDataContractId] = stateRepositoryMock.fetchDataContract.getCall(0).args;
-          expect(fetchDataContractId.toBuffer()).is.deep.equal(dataContract.getId().toBuffer());
+          expect(fetchDataContractId.toBuffer()).is.deep.equal(dataContract.getId().toBytes());
         });
 
         it('should throw InvalidDocumentTransitionActionError if action is not valid - Rust', async () => {
@@ -616,7 +616,7 @@ describe.skip('validateDocumentsBatchTransitionBasicFactory', () => {
 
             expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnce();
             const [fetchDataContractId] = stateRepositoryMock.fetchDataContract.getCall(0).args;
-            expect(fetchDataContractId.toBuffer()).is.deep.equal(dataContract.getId().toBuffer());
+            expect(fetchDataContractId.toBuffer()).is.deep.equal(dataContract.getId().toBytes());
           }
         });
       });
@@ -647,7 +647,7 @@ describe.skip('validateDocumentsBatchTransitionBasicFactory', () => {
 
             expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnce();
             const [fetchDataContractId] = stateRepositoryMock.fetchDataContract.getCall(0).args;
-            expect(fetchDataContractId.toBuffer()).is.deep.equal(dataContract.getId().toBuffer());
+            expect(fetchDataContractId.toBuffer()).is.deep.equal(dataContract.getId().toBytes());
           });
         });
 
@@ -920,7 +920,7 @@ describe.skip('validateDocumentsBatchTransitionBasicFactory', () => {
 
         expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnce();
         const [fetchDataContractId] = stateRepositoryMock.fetchDataContract.getCall(0).args;
-        expect(fetchDataContractId.toBuffer()).is.deep.equal(dataContract.getId().toBuffer());
+        expect(fetchDataContractId.toBuffer()).is.deep.equal(dataContract.getId().toBytes());
       });
     });
   });
@@ -1053,7 +1053,7 @@ describe.skip('validateDocumentsBatchTransitionBasicFactory', () => {
 
     expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnce();
     const [fetchDataContractId] = stateRepositoryMock.fetchDataContract.getCall(0).args;
-    expect(fetchDataContractId.toBuffer()).is.deep.equal(dataContract.getId().toBuffer());
+    expect(fetchDataContractId.toBuffer()).is.deep.equal(dataContract.getId().toBytes());
   });
 
   it('should not validate Document transitions on dry run - Rust', async () => {
@@ -1073,6 +1073,6 @@ describe.skip('validateDocumentsBatchTransitionBasicFactory', () => {
 
     expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnce();
     const [fetchDataContractId] = stateRepositoryMock.fetchDataContract.getCall(0).args;
-    expect(fetchDataContractId.toBuffer()).is.deep.equal(dataContract.getId().toBuffer());
+    expect(fetchDataContractId.toBuffer()).is.deep.equal(dataContract.getId().toBytes());
   });
 });

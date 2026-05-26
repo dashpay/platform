@@ -64,13 +64,13 @@ describe('ExtendedDocument', () => {
         $transferredAt: null,
         $transferredAtBlockHeight: null,
         $transferredAtCoreBlockHeight: null,
-        $dataContractId: dataContract.getId().toBuffer(),
-        $id: document.getId().toBuffer(),
-        $ownerId: document.getOwnerId().toBuffer(),
+        $dataContractId: dataContract.getId().toBytes(),
+        $id: document.getId().toBytes(),
+        $ownerId: document.getOwnerId().toBytes(),
         $revision: 1,
         $type: 'withByteArrays',
         byteArrayField: document.get('byteArrayField'),
-        identifierField: document.get('identifierField').toBuffer(),
+        identifierField: document.get('identifierField').toBytes(),
       });
     });
 
@@ -82,10 +82,10 @@ describe('ExtendedDocument', () => {
       expect(result.$ownerId).to.be.an.instanceOf(Identifier);
       expect(result.identifierField).to.be.an.instanceOf(Identifier);
 
-      expect(result.$dataContractId.toBuffer()).to.deep.equal(dataContract.getId().toBuffer());
-      expect(result.$id.toBuffer()).to.deep.equal(document.getId().toBuffer());
-      expect(result.$ownerId.toBuffer()).to.deep.equal(document.getOwnerId().toBuffer());
-      expect(result.identifierField.toBuffer()).to.deep.equal(document.get('identifierField').toBuffer());
+      expect(result.$dataContractId.toBytes()).to.deep.equal(dataContract.getId().toBytes());
+      expect(result.$id.toBytes()).to.deep.equal(document.getId().toBytes());
+      expect(result.$ownerId.toBytes()).to.deep.equal(document.getOwnerId().toBytes());
+      expect(result.identifierField.toBytes()).to.deep.equal(document.get('identifierField').toBytes());
       expect(BigInt(result.$revision)).to.deep.equal(document.getRevision());
       expect(result.$type).to.deep.equal(document.getType());
       expect(result.byteArrayField).to.deep.equal(document.get('byteArrayField'));

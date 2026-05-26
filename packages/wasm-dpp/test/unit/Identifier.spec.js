@@ -84,6 +84,7 @@ describe('Identifier', () => {
     it('should return a new normal Buffer (deprecated)', () => {
       const identifier = new Identifier(buffer);
 
+      // Intentionally exercises the deprecated toBuffer() compatibility shim.
       const buf = identifier.toBuffer();
       expect(Buffer.isBuffer(buf)).to.equal(true);
       expect(buf).to.deep.equal(buffer);

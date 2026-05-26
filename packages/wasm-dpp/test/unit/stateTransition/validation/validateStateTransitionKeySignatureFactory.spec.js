@@ -101,8 +101,8 @@ describe.skip('validateStateTransitionKeySignatureFactory', () => {
 
     const { match } = this.sinon;
     expect(stateRepositoryMock.fetchIdentityBalance).to.be.calledOnceWithExactly(
-      match((identityId) => Buffer.from(identityId.toBuffer())
-        .equals(stateTransition.getIdentityId().toBuffer())),
+      match((identityId) => Buffer.from(identityId.toBytes())
+        .equals(stateTransition.getIdentityId().toBytes())),
       match.instanceOf(StateTransitionExecutionContext),
     );
   });

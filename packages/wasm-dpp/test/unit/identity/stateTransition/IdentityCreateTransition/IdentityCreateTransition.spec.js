@@ -55,8 +55,8 @@ describe('IdentityCreateTransition', () => {
         new InstantAssetLockProof(rawStateTransition.assetLockProof),
       );
 
-      expect(stateTransition.identityId.toBuffer()).to.deep.equal(
-        stateTransition.getAssetLockProof().createIdentifier().toBuffer(),
+      expect(stateTransition.identityId.toBytes()).to.deep.equal(
+        stateTransition.getAssetLockProof().createIdentifier().toBytes(),
       );
     });
   });
@@ -107,16 +107,16 @@ describe('IdentityCreateTransition', () => {
 
   describe('#getIdentityId', () => {
     it('should return identity id', () => {
-      expect(stateTransition.getIdentityId().toBuffer()).to.deep.equal(
-        stateTransition.getAssetLockProof().createIdentifier().toBuffer(),
+      expect(stateTransition.getIdentityId().toBytes()).to.deep.equal(
+        stateTransition.getAssetLockProof().createIdentifier().toBytes(),
       );
     });
   });
 
   describe('#getOwnerId', () => {
     it('should return owner id', () => {
-      expect(stateTransition.getOwnerId().toBuffer()).to.deep.equal(
-        stateTransition.getIdentityId().toBuffer(),
+      expect(stateTransition.getOwnerId().toBytes()).to.deep.equal(
+        stateTransition.getIdentityId().toBytes(),
       );
     });
   });
@@ -168,7 +168,7 @@ describe('IdentityCreateTransition', () => {
       const identityId = result[0];
 
       expect(identityId).to.be.an.instanceOf(Identifier);
-      expect(identityId.toBuffer()).to.be.deep.equal(
+      expect(identityId.toBytes()).to.be.deep.equal(
         stateTransition.getAssetLockProof().createIdentifier(),
       );
     });

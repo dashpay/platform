@@ -99,7 +99,7 @@ describe.skip('validateStateTransitionIdentitySignatureFactory', () => {
     expect(
       stateRepositoryMock.fetchIdentity.getCall(0).args[0].toBuffer(),
     ).to.be.deep.equal(
-      ownerId.toBuffer(),
+      ownerId.toBytes(),
     );
   });
 
@@ -116,13 +116,13 @@ describe.skip('validateStateTransitionIdentitySignatureFactory', () => {
 
     expect(error).to.be.an.instanceOf(IdentityNotFoundError);
     expect(error.getCode()).to.equal(2000);
-    expect(error.getIdentityId()).to.deep.equal(identity.getId().toBuffer());
+    expect(error.getIdentityId()).to.deep.equal(identity.getId().toBytes());
 
     expect(stateRepositoryMock.fetchIdentity).to.be.calledOnce();
     expect(
       stateRepositoryMock.fetchIdentity.getCall(0).args[0].toBuffer(),
     ).to.be.deep.equal(
-      ownerId.toBuffer(),
+      ownerId.toBytes(),
     );
   });
 
@@ -141,7 +141,7 @@ describe.skip('validateStateTransitionIdentitySignatureFactory', () => {
     expect(
       stateRepositoryMock.fetchIdentity.getCall(0).args[0].toBuffer(),
     ).to.be.deep.equal(
-      ownerId.toBuffer(),
+      ownerId.toBytes(),
     );
 
     expect(result.getErrors()).to.be.an('array');
@@ -172,7 +172,7 @@ describe.skip('validateStateTransitionIdentitySignatureFactory', () => {
     expect(
       stateRepositoryMock.fetchIdentity.getCall(0).args[0].toBuffer(),
     ).to.be.deep.equal(
-      ownerId.toBuffer(),
+      ownerId.toBytes(),
     );
 
     expect(result.getErrors()).to.be.an('array');
@@ -207,7 +207,7 @@ describe.skip('validateStateTransitionIdentitySignatureFactory', () => {
     expect(
       stateRepositoryMock.fetchIdentity.getCall(0).args[0].toBuffer(),
     ).to.be.deep.equal(
-      ownerId.toBuffer(),
+      ownerId.toBytes(),
     );
   });
 

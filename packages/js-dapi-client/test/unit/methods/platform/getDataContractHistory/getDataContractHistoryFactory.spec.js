@@ -102,7 +102,7 @@ describe('getDataContractHistoryFactory', () => {
   });
 
   it('should return data contract history', async () => {
-    const contractId = dataContractFixture.getId().toBuffer();
+    const contractId = dataContractFixture.getId().toBytes();
     const result = await getDataContractHistory(contractId, BigInt(0), 10, 0, options);
 
     const { GetDataContractHistoryRequestV0 } = GetDataContractHistoryRequest;
@@ -141,7 +141,7 @@ describe('getDataContractHistoryFactory', () => {
     response.getV0().setProof(proof);
     response.getV0().setDataContractHistory(undefined);
 
-    const contractId = dataContractFixture.getId().toBuffer();
+    const contractId = dataContractFixture.getId().toBytes();
     const result = await getDataContractHistory(contractId, BigInt(0), 10, 0, options);
 
     const { GetDataContractHistoryRequestV0 } = GetDataContractHistoryRequest;
@@ -190,7 +190,7 @@ describe('getDataContractHistoryFactory', () => {
     const request = new GetDataContractHistoryRequest();
     request.setV0(
       new GetDataContractHistoryRequestV0()
-        .setId(new Uint8Array(contractId.toBuffer()))
+        .setId(contractId.toBytes())
         .setLimit(new UInt32Value([10]))
         .setOffset(new UInt32Value([0]))
         .setStartAtMs('0')

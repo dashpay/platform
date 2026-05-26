@@ -79,7 +79,7 @@ describe.skip('validateDataContractUpdateTransitionStateFactory', () => {
 
     expect(error).to.be.an.instanceOf(DataContractNotPresentError);
     expect(error.getCode()).to.equal(1018);
-    expect(error.getDataContractId()).to.deep.equal(dataContract.getId().toBuffer());
+    expect(error.getDataContractId()).to.deep.equal(dataContract.getId().toBytes());
   });
 
   it('should return invalid result if Data Contract version is not larger by 1', async () => {

@@ -91,7 +91,7 @@ describe.skip('validateDocumentsUniquenessByIndices', () => {
 
     stateRepositoryMock.fetchDocuments
       .withArgs(
-        dataContract.getId().toBuffer(),
+        dataContract.getId().toBytes(),
         william.getType(),
         {
           where: [
@@ -104,7 +104,7 @@ describe.skip('validateDocumentsUniquenessByIndices', () => {
 
     stateRepositoryMock.fetchDocuments
       .withArgs(
-        dataContractJs.getId().toBuffer(),
+        dataContractJs.getId().toBytes(),
         william.getType(),
         {
           where: [
@@ -204,10 +204,10 @@ describe.skip('validateDocumentsUniquenessByIndices', () => {
     expect(error.getCode()).to.equal(40105);
 
     expect(errors.map((e) => e.getDocumentId())).to.have.deep.members([
-      documentTransitionsJs[3].getId().toBuffer(),
-      documentTransitionsJs[3].getId().toBuffer(),
-      documentTransitionsJs[4].getId().toBuffer(),
-      documentTransitionsJs[4].getId().toBuffer(),
+      documentTransitionsJs[3].getId().toBytes(),
+      documentTransitionsJs[3].getId().toBytes(),
+      documentTransitionsJs[4].getId().toBytes(),
+      documentTransitionsJs[4].getId().toBytes(),
     ]);
 
     expect(errors.map((e) => e.getDuplicatingProperties())).to.have.deep.members([

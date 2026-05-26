@@ -31,6 +31,6 @@ describe.skip('generateDataContractId', () => {
     const factory = new DataContractFactory(1337, new DataContractValidator(), entropyGenerator);
     const dataContract = factory.create(ownerId, {});
 
-    expect(Buffer.compare(id, dataContract.getId().toBuffer())).to.equal(0);
+    expect(Buffer.compare(id, dataContract.getId().toBytes())).to.equal(0);
   });
 });

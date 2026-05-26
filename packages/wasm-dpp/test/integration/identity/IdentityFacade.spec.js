@@ -152,8 +152,8 @@ describe('IdentityFacade', () => {
         );
 
       expect(stateTransition).to.be.instanceOf(IdentityTopUpTransition);
-      expect(stateTransition.getIdentityId().toBuffer())
-        .to.be.deep.equal(identity.getId().toBuffer());
+      expect(stateTransition.getIdentityId().toBytes())
+        .to.be.deep.equal(identity.getId().toBytes());
       expect(stateTransition.getAssetLockProof().toObject()).to.deep.equal(
         instantAssetLockProof.toObject(),
       );
@@ -178,8 +178,8 @@ describe('IdentityFacade', () => {
         );
 
       expect(stateTransition).to.be.instanceOf(IdentityUpdateTransition);
-      expect(stateTransition.getIdentityId().toBuffer())
-        .to.be.deep.equal(identity.getId().toBuffer());
+      expect(stateTransition.getIdentityId().toBytes())
+        .to.be.deep.equal(identity.getId().toBytes());
       expect(stateTransition.getRevision()).to.equal(
         identity.getRevision() + BigInt(1),
       );

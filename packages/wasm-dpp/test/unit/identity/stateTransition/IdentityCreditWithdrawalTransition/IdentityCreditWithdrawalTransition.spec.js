@@ -24,7 +24,7 @@ describe('IdentityCreditWithdrawalTransition', () => {
 
   describe('#getIdentityId', () => {
     it('should return identity id', () => {
-      expect(stateTransition.getIdentityId().toBuffer()).to.deep.equal(
+      expect(stateTransition.getIdentityId().toBytes()).to.deep.equal(
         rawStateTransition.identityId,
       );
     });
@@ -77,7 +77,7 @@ describe('IdentityCreditWithdrawalTransition', () => {
       expect(rawStateTransition).to.deep.equal({
         $version: '1',
         type: StateTransitionTypes.IdentityCreditWithdrawal,
-        identityId: stateTransition.getIdentityId().toBuffer(),
+        identityId: stateTransition.getIdentityId().toBytes(),
         amount: stateTransition.getAmount(),
         coreFeePerByte: stateTransition.getCoreFeePerByte(),
         pooling: stateTransition.getPooling(),
@@ -94,7 +94,7 @@ describe('IdentityCreditWithdrawalTransition', () => {
       expect(rawStateTransition).to.deep.equal({
         $version: '1',
         type: StateTransitionTypes.IdentityCreditWithdrawal,
-        identityId: stateTransition.getIdentityId().toBuffer(),
+        identityId: stateTransition.getIdentityId().toBytes(),
         amount: stateTransition.getAmount(),
         coreFeePerByte: stateTransition.getCoreFeePerByte(),
         pooling: stateTransition.getPooling(),
@@ -131,7 +131,7 @@ describe('IdentityCreditWithdrawalTransition', () => {
       const [identityId] = result;
 
       expect(identityId).to.be.an.instanceOf(Identifier);
-      expect(identityId.toBuffer()).to.be.deep.equal(rawStateTransition.identityId);
+      expect(identityId.toBytes()).to.be.deep.equal(rawStateTransition.identityId);
     });
   });
 

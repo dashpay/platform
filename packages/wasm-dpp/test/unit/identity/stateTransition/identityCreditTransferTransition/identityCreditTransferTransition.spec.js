@@ -15,11 +15,11 @@ describe('IdentityCreditTransferTransition', () => {
 
   describe('#constructor', () => {
     it('should create an instance with specified data from specified raw transition', () => {
-      expect(stateTransition.getIdentityId().toBuffer()).to.be.deep.equal(
+      expect(stateTransition.getIdentityId().toBytes()).to.be.deep.equal(
         rawStateTransition.identityId,
       );
 
-      expect(stateTransition.getRecipientId().toBuffer()).to.be.deep.equal(
+      expect(stateTransition.getRecipientId().toBytes()).to.be.deep.equal(
         rawStateTransition.recipientId,
       );
 
@@ -37,7 +37,7 @@ describe('IdentityCreditTransferTransition', () => {
 
   describe('#getIdentityId', () => {
     it('should return identity id', () => {
-      expect(stateTransition.getIdentityId().toBuffer()).to.deep.equal(
+      expect(stateTransition.getIdentityId().toBytes()).to.deep.equal(
         rawStateTransition.identityId,
       );
     });
@@ -45,7 +45,7 @@ describe('IdentityCreditTransferTransition', () => {
 
   describe('#getRecipientId', () => {
     it('should return recipient id', () => {
-      expect(stateTransition.getRecipientId().toBuffer()).to.deep.equal(
+      expect(stateTransition.getRecipientId().toBytes()).to.deep.equal(
         rawStateTransition.recipientId,
       );
     });
@@ -103,10 +103,10 @@ describe('IdentityCreditTransferTransition', () => {
       const [identityId, recipientId] = result;
 
       expect(identityId).to.be.an.instanceOf(Identifier);
-      expect(identityId.toBuffer()).to.be.deep.equal(rawStateTransition.identityId);
+      expect(identityId.toBytes()).to.be.deep.equal(rawStateTransition.identityId);
 
       expect(recipientId).to.be.an.instanceOf(Identifier);
-      expect(recipientId.toBuffer()).to.be.deep.equal(rawStateTransition.recipientId);
+      expect(recipientId.toBytes()).to.be.deep.equal(rawStateTransition.recipientId);
     });
   });
 

@@ -17,7 +17,7 @@ describe('IdentityTopUpTransition', () => {
       expect(stateTransition.getAssetLockProof().toObject()).to.be.deep.equal(
         rawStateTransition.assetLockProof,
       );
-      expect(stateTransition.getIdentityId().toBuffer()).to.be.deep.equal(
+      expect(stateTransition.getIdentityId().toBytes()).to.be.deep.equal(
         rawStateTransition.identityId,
       );
     });
@@ -50,7 +50,7 @@ describe('IdentityTopUpTransition', () => {
 
   describe('#getIdentityId', () => {
     it('should return identity id', () => {
-      expect(stateTransition.getIdentityId().toBuffer()).to.deep.equal(
+      expect(stateTransition.getIdentityId().toBytes()).to.deep.equal(
         rawStateTransition.identityId,
       );
     });
@@ -58,7 +58,7 @@ describe('IdentityTopUpTransition', () => {
 
   describe('#getOwnerId', () => {
     it('should return owner id', () => {
-      expect(stateTransition.getOwnerId().toBuffer()).to.deep.equal(
+      expect(stateTransition.getOwnerId().toBytes()).to.deep.equal(
         rawStateTransition.identityId,
       );
     });
@@ -111,7 +111,7 @@ describe('IdentityTopUpTransition', () => {
       const identityId = result[0];
 
       expect(identityId).to.be.an.instanceOf(Identifier);
-      expect(identityId.toBuffer()).to.be.deep.equal(rawStateTransition.identityId);
+      expect(identityId.toBytes()).to.be.deep.equal(rawStateTransition.identityId);
     });
   });
 

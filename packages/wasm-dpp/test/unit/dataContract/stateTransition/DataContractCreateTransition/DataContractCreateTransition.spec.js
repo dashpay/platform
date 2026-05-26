@@ -103,7 +103,7 @@ describe('DataContractCreateTransition', () => {
       const contractId = result[0];
 
       expect(contractId).to.be.an.instanceOf(Identifier);
-      expect(contractId.toBuffer()).to.be.deep.equal(dataContract.getId().toBuffer());
+      expect(contractId.toBytes()).to.be.deep.equal(dataContract.getId().toBytes());
     });
   });
 

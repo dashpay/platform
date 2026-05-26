@@ -84,9 +84,9 @@ describe('DocumentFactory', () => {
 
       expect(newDocument.get('name')).to.equal(name);
 
-      expect(newDocument.getDataContractId().toBuffer()).to.deep.equal(contractId);
+      expect(newDocument.getDataContractId().toBytes()).to.deep.equal(contractId);
 
-      expect(newDocument.getOwnerId().toBuffer()).to.deep.equal(ownerIdJs);
+      expect(newDocument.getOwnerId().toBytes()).to.deep.equal(ownerIdJs);
 
       expect(newDocument.getRevision()).to.equal(DocumentCreateTransition.INITIAL_REVISION);
 
@@ -109,7 +109,7 @@ describe('DocumentFactory', () => {
       } catch (e) {
         expect(e).to.be.an.instanceOf(InvalidDocumentTypeInDataContractError);
         expect(e.getType()).to.equal(type);
-        expect(e.getDataContractId().toBuffer()).to.deep.equal(dataContractId);
+        expect(e.getDataContractId().toBytes()).to.deep.equal(dataContractId);
       }
     });
 
@@ -182,7 +182,7 @@ describe('DocumentFactory', () => {
         expect(stateRepositoryMock.fetchDataContract.callCount).to.be.equal(1);
         const callArguments = stateRepositoryMock.fetchDataContract.getCall(0).args[0];
 
-        expect(callArguments.toBuffer()).to.be.deep.equal(dataContract.getId().toBuffer());
+        expect(callArguments.toBytes()).to.be.deep.equal(dataContract.getId().toBytes());
       }
     });
   });

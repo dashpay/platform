@@ -23,7 +23,7 @@ describe('DocumentFacade', () => {
 
   beforeEach(async function beforeEach() {
     ownerId = await generateRandomIdentifier();
-    const dataContractFixture = await getDataContractFixture(ownerId.toBuffer());
+    const dataContractFixture = await getDataContractFixture(ownerId.toBytes());
     const dataContractObject = dataContractFixture.toObject();
 
     dataContract = new DataContract({

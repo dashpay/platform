@@ -46,10 +46,10 @@ describe('DataContract', () => {
       [documentType]: documentSchema,
     };
 
-    ownerId = (await generateRandomIdentifier()).toBuffer();
+    ownerId = (await generateRandomIdentifier()).toBytes();
     // eslint-disable-next-line
     identityNonce = BigInt(1);
-    contractId = (await generateRandomIdentifier()).toBuffer();
+    contractId = (await generateRandomIdentifier()).toBytes();
 
     schemaDefs = { something: { type: 'string' } };
 
@@ -73,8 +73,8 @@ describe('DataContract', () => {
         schemaDefs,
       });
 
-      expect(dataContract.getId().toBuffer()).to.deep.equal(contractId);
-      expect(dataContract.getOwnerId().toBuffer()).to.deep.equal(ownerId);
+      expect(dataContract.getId().toBytes()).to.deep.equal(contractId);
+      expect(dataContract.getOwnerId().toBytes()).to.deep.equal(ownerId);
       expect(dataContract.getDocumentSchemas()).to.deep.equal(documentSchemas);
       expect(dataContract.getSchemaDefs()).to.deep.equal(schemaDefs);
     });
@@ -84,7 +84,7 @@ describe('DataContract', () => {
     it('should return DataContract Identifier', () => {
       const result = dataContract.getId();
 
-      expect(result.toBuffer()).to.deep.equal(contractId);
+      expect(result.toBytes()).to.deep.equal(contractId);
       expect(result).to.be.instanceof(Identifier);
     });
   });

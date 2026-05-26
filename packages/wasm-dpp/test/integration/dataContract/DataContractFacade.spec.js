@@ -48,7 +48,7 @@ describe('DataContractFacade', () => {
 
       expect(result).to.be.an.instanceOf(DataContract);
 
-      expect(result.getOwnerId().toBuffer()).to.deep.equal(dataContract.getOwnerId().toBuffer());
+      expect(result.getOwnerId().toBytes()).to.deep.equal(dataContract.getOwnerId().toBytes());
       expect(result.getDocumentSchemas()).to.deep.equal(dataContract.getDocumentSchemas());
     });
   });

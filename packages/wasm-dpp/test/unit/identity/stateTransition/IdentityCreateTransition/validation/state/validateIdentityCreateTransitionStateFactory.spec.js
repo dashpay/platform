@@ -56,7 +56,7 @@ describe.skip('validateIdentityCreateTransitionStateFactory', () => {
 
     expect(error.getCode()).to.equal(4011);
     expect(error.getIdentityId()).to.exist();
-    expect(error.getIdentityId()).to.deep.equal(stateTransition.getIdentityId().toBuffer());
+    expect(error.getIdentityId()).to.deep.equal(stateTransition.getIdentityId().toBytes());
   });
 
   it('should return valid result if state transition is valid', async () => {

@@ -108,11 +108,11 @@ describe.skip('validateDocumentsBatchTransitionStateFactory', () => {
   //   } catch (e) {
   //     expect(e).to.be.instanceOf(DataContractNotPresentNotConsensusError);
   //
-  //     expect(e.getDataContractId()).to.deep.equal(dataContract.getId().toBuffer());
+  //     expect(e.getDataContractId()).to.deep.equal(dataContract.getId().toBytes());
   //
   //     expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnce();
   //     const [fetchDataContractId] = stateRepositoryMock.fetchDataContract.getCall(0).args;
-  //     expect(fetchDataContractId.toBuffer()).to.deep.equal(dataContract.getId().toBuffer());
+  //     expect(fetchDataContractId.toBuffer()).to.deep.equal(dataContract.getId().toBytes());
   //   }
   // });
   //
@@ -128,11 +128,11 @@ describe.skip('validateDocumentsBatchTransitionStateFactory', () => {
   //   const [error] = result.getErrors();
   //
   //   expect(error.getCode()).to.equal(4004);
-  //   expect(error.getDocumentId()).to.deep.equal(documentTransitionsJs[0].getId().toBuffer());
+  //   expect(error.getDocumentId()).to.deep.equal(documentTransitionsJs[0].getId().toBytes());
   //
   //   expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnce();
   //   const [fetchDataContractId] = stateRepositoryMock.fetchDataContract.getCall(0).args;
-  //   expect(fetchDataContractId.toBuffer()).to.deep.equal(dataContract.getId().toBuffer());
+  //   expect(fetchDataContractId.toBuffer()).to.deep.equal(dataContract.getId().toBytes());
   // });
   //
   // it('should return invalid result if document transition with action "replace" is not present - Rust', async () => {
@@ -155,11 +155,11 @@ describe.skip('validateDocumentsBatchTransitionStateFactory', () => {
   //   const [error] = result.getErrors();
   //   expect(error).is.instanceOf(DocumentNotFoundError);
   //   expect(error.getCode()).to.equal(4005);
-  //   expect(error.getDocumentId()).to.deep.equal(documentTransitionsJs[0].getId().toBuffer());
+  //   expect(error.getDocumentId()).to.deep.equal(documentTransitionsJs[0].getId().toBytes());
   //
   //   expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnce();
   //   const [fetchDataContractId] = stateRepositoryMock.fetchDataContract.getCall(0).args;
-  //   expect(fetchDataContractId.toBuffer()).to.deep.equal(dataContract.getId().toBuffer());
+  //   expect(fetchDataContractId.toBuffer()).to.deep.equal(dataContract.getId().toBytes());
   //
   //   expect(stateRepositoryMock.fetchDocuments)
   //     .to.have.been.callCount(documentTransitionsJs.length);
@@ -186,11 +186,11 @@ describe.skip('validateDocumentsBatchTransitionStateFactory', () => {
   //   const [error] = result.getErrors();
   //   expect(error).is.instanceOf(DocumentNotFoundError);
   //   expect(error.getCode()).to.equal(4005);
-  //   expect(error.getDocumentId()).to.deep.equal(documentTransitionsJs[0].getId().toBuffer());
+  //   expect(error.getDocumentId()).to.deep.equal(documentTransitionsJs[0].getId().toBytes());
   //
   //   expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnce();
   //   const [fetchDataContractId] = stateRepositoryMock.fetchDataContract.getCall(0).args;
-  //   expect(fetchDataContractId.toBuffer()).to.deep.equal(dataContract.getId().toBuffer());
+  //   expect(fetchDataContractId.toBuffer()).to.deep.equal(dataContract.getId().toBytes());
   //
   //   expect(stateRepositoryMock.fetchDocuments).to.have.been
   //     .callCount(documentTransitionsJs.length);
@@ -224,12 +224,12 @@ describe.skip('validateDocumentsBatchTransitionStateFactory', () => {
   //   expect(error).is.instanceOf(InvalidDocumentRevisionError);
   //   expect(error.getCode()).to.equal(4010);
   //
-  //   expect(error.getDocumentId()).to.deep.equal(documentTransitionsJs[0].getId().toBuffer());
+  //   expect(error.getDocumentId()).to.deep.equal(documentTransitionsJs[0].getId().toBytes());
   //   expect(Number(error.getCurrentRevision())).to.deep.equal(documents[0].getRevision());
   //
   //   expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnce();
   //   const [fetchDataContractId] = stateRepositoryMock.fetchDataContract.getCall(0).args;
-  //   expect(fetchDataContractId.toBuffer()).to.deep.equal(dataContract.getId().toBuffer());
+  //   expect(fetchDataContractId.toBuffer()).to.deep.equal(dataContract.getId().toBytes());
   //
   //   expect(stateRepositoryMock.fetchDocuments).to.have.been
   //     .callCount(documentTransitionsJs.length);
@@ -240,7 +240,7 @@ describe.skip('validateDocumentsBatchTransitionStateFactory', () => {
   //   replaceDocument.setRevision(1);
   //
   //   const fetchedDocument = new ExtendedDocument(documentsJs[0].toObject(), dataContract);
-  //   fetchedDocument.setOwnerId(Identifier.from((await generateRandomIdentifier()).toBuffer()));
+  //   fetchedDocument.setOwnerId(Identifier.from((await generateRandomIdentifier()).toBytes()));
   //
   //   documentTransitionsJs = getDocumentTransitionsFixture({
   //     create: [],
@@ -266,14 +266,14 @@ describe.skip('validateDocumentsBatchTransitionStateFactory', () => {
   //   const [error] = result.getErrors();
   //   expect(error).is.instanceOf(DocumentOwnerIdMismatchError);
   //   expect(error.getCode()).to.equal(4006);
-  //   expect(error.getDocumentId()).to.deep.equal(documentTransitionsJs[0].getId().toBuffer());
+  //   expect(error.getDocumentId()).to.deep.equal(documentTransitionsJs[0].getId().toBytes());
   //   expect(error.getExistingDocumentOwnerId()).to.deep.equal(
-  //     fetchedDocument.getOwnerId().toBuffer(),
+  //     fetchedDocument.getOwnerId().toBytes(),
   //   );
   //
   //   expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnce();
   //   const [fetchDataContractId] = stateRepositoryMock.fetchDataContract.getCall(0).args;
-  //   expect(fetchDataContractId.toBuffer()).to.deep.equal(dataContract.getId().toBuffer());
+  //   expect(fetchDataContractId.toBuffer()).to.deep.equal(dataContract.getId().toBytes());
   //
   //   expect(stateRepositoryMock.fetchDocuments).to.have.been
   //     .callCount(documentTransitionsJs.length);
@@ -419,7 +419,7 @@ describe.skip('validateDocumentsBatchTransitionStateFactory', () => {
   //       );
   //       documentTransitionsJs[0].createdAt = undefined;
   //
-  //       expect(error.getDocumentId()).to.deep.equal(documentTransitionsJs[0].getId().toBuffer());
+  //       expect(error.getDocumentId()).to.deep.equal(documentTransitionsJs[0].getId().toBytes());
   //       expect(error.getTimestampName()).to.equal('updatedAt');
   //       expect(error.getTimestamp().getMilliseconds()).to.deep.equal(
   //         documentTransitionsJs[0].updatedAt.getMilliseconds(),
@@ -533,7 +533,7 @@ describe.skip('validateDocumentsBatchTransitionStateFactory', () => {
   //         documentTransitionsJs[0].updatedAt.getMinutes() - 6,
   //       );
   //
-  //       expect(error.getDocumentId()).to.deep.equal(documentTransitionsJs[0].getId().toBuffer());
+  //       expect(error.getDocumentId()).to.deep.equal(documentTransitionsJs[0].getId().toBytes());
   //       expect(error.getTimestampName()).to.equal('updatedAt');
   //       expect(error.getTimestamp()).to.deep.equal(documentTransitionsJs[0].updatedAt);
   //       expect(error.getTimeWindowStart()).to.deep.equal(timeWindowStart);
@@ -608,7 +608,7 @@ describe.skip('validateDocumentsBatchTransitionStateFactory', () => {
   //
   //   expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnce();
   //   const [fetchDataContractId] = stateRepositoryMock.fetchDataContract.getCall(0).args;
-  //   expect(fetchDataContractId.toBuffer()).to.deep.equal(dataContract.getId().toBuffer());
+  //   expect(fetchDataContractId.toBuffer()).to.deep.equal(dataContract.getId().toBytes());
   //
   //   expect(stateRepositoryMock.fetchDocuments).to.have.been.calledOnce();
   // });
@@ -645,7 +645,7 @@ describe.skip('validateDocumentsBatchTransitionStateFactory', () => {
   //
   //   expect(stateRepositoryMock.fetchDataContract).to.have.been.calledOnce();
   //   const [fetchDataContractId] = stateRepositoryMock.fetchDataContract.getCall(0).args;
-  //   expect(fetchDataContractId.toBuffer()).to.deep.equal(dataContract.getId().toBuffer());
+  //   expect(fetchDataContractId.toBuffer()).to.deep.equal(dataContract.getId().toBytes());
   //
   //   expect(stateRepositoryMock.fetchDocuments).to.have.been.calledOnce();
   // });

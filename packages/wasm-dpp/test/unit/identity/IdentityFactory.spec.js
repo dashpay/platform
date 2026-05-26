@@ -218,7 +218,7 @@ describe('IdentityFactory', () => {
         );
 
       expect(stateTransition).to.be.instanceOf(IdentityTopUpTransition);
-      expect(stateTransition.getIdentityId().toBuffer()).to.deep.equal(identity.getId().toBuffer());
+      expect(stateTransition.getIdentityId().toBytes()).to.deep.equal(identity.getId().toBytes());
       expect(stateTransition.getAssetLockProof().toObject())
         .to.deep.equal(instantAssetLockProof.toObject());
     });
@@ -245,7 +245,7 @@ describe('IdentityFactory', () => {
         );
 
       expect(stateTransition).to.be.instanceOf(IdentityUpdateTransition);
-      expect(stateTransition.getIdentityId().toBuffer()).to.deep.equal(identity.getId().toBuffer());
+      expect(stateTransition.getIdentityId().toBytes()).to.deep.equal(identity.getId().toBytes());
       expect(stateTransition.getRevision()).to.deep.equal(revision);
       expect(stateTransition.getPublicKeysToAdd().map((k) => k.toObject()))
         .to.deep.equal(addPublicKeys.map((k) => k.toObject()));

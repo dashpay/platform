@@ -37,7 +37,7 @@ describe('ChainAssetLockProof', () => {
     it('should return correct identifier', () => {
       const identifier = chainAssetLockProof.createIdentifier();
 
-      expect(identifier.toBuffer())
+      expect(identifier.toBytes())
         .to.have.length(32);
     });
   });

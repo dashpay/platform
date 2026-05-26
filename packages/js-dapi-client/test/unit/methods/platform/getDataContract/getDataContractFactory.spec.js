@@ -146,7 +146,7 @@ describe('getDataContractFactory', () => {
     const request = new GetDataContractRequest();
     request.setV0(
       new GetDataContractRequestV0()
-        .setId(new Uint8Array(contractId.toBuffer()))
+        .setId(contractId.toBytes())
         .setProve(false),
     );
 

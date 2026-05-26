@@ -61,7 +61,7 @@ describe('getIdentitiesContractKeysFactory', () => {
         .setIdentitiesKeys(new IdentitiesKeys()
           .setEntriesList([
             new IdentityKeys()
-              .setIdentityId(new Uint8Array(identityFixtureA.getId().toBuffer()))
+              .setIdentityId(identityFixtureA.getId().toBytes())
               .setKeysList([
                 new PurposeKeys()
                   .setPurpose(KeyPurpose.ENCRYPTION)
@@ -69,7 +69,7 @@ describe('getIdentitiesContractKeysFactory', () => {
                     .map((key) => new Uint8Array(key.toBuffer()))),
               ]),
             new IdentityKeys()
-              .setIdentityId(new Uint8Array(identityFixtureB.getId().toBuffer()))
+              .setIdentityId(identityFixtureB.getId().toBytes())
               .setKeysList([
                 new PurposeKeys()
                   .setPurpose(KeyPurpose.DECRYPTION)

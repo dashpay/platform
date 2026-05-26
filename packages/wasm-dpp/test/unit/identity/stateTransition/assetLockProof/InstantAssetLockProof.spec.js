@@ -39,7 +39,7 @@ describe('InstantAssetLockProof', () => {
     it('should return correct identifier', () => {
       const identifier = instantAssetLockProof.createIdentifier();
 
-      expect(identifier.toBuffer())
+      expect(identifier.toBytes())
         .to.have.length(32);
     });
   });

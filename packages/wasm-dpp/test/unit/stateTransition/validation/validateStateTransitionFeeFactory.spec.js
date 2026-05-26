@@ -53,7 +53,7 @@ describe.skip('validateStateTransitionFeeFactory', () => {
     let dataContractCreateTransition;
 
     beforeEach(() => {
-      dataContractOwnerId = dataContract.getOwnerId().toBuffer();
+      dataContractOwnerId = dataContract.getOwnerId().toBytes();
       dataContractCreateTransition = dpp.dataContract
         .createDataContractCreateTransition(dataContract);
     });
@@ -102,7 +102,7 @@ describe.skip('validateStateTransitionFeeFactory', () => {
         create: await getDocumentsFixture(),
       });
 
-      ownerId = documentsBatchTransition.getOwnerId().toBuffer();
+      ownerId = documentsBatchTransition.getOwnerId().toBytes();
     });
 
     it('should return invalid result if balance is not enough', async () => {
@@ -218,7 +218,7 @@ describe.skip('validateStateTransitionFeeFactory', () => {
 
     beforeEach(async () => {
       identityTopUpTransition = await getIdentityTopUpTransitionFixture();
-      identityId = identityTopUpTransition.getIdentityId().toBuffer();
+      identityId = identityTopUpTransition.getIdentityId().toBytes();
 
       const { satoshis } = identityTopUpTransition
         .getAssetLockProof()

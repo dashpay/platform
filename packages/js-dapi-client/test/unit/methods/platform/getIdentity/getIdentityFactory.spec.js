@@ -72,7 +72,7 @@ describe('getIdentityFactory', () => {
     const request = new GetIdentityRequest();
     request.setV0(
       new GetIdentityRequestV0()
-        .setId(new Uint8Array(identityId.toBuffer()))
+        .setId(identityId.toBytes())
         .setProve(false),
     );
 
@@ -107,7 +107,7 @@ describe('getIdentityFactory', () => {
     const request = new GetIdentityRequest();
     request.setV0(
       new GetIdentityRequestV0()
-        .setId(new Uint8Array(identityId.toBuffer()))
+        .setId(identityId.toBytes())
         .setProve(true),
     );
 
@@ -145,7 +145,7 @@ describe('getIdentityFactory', () => {
     const request = new GetIdentityRequest();
     request.setV0(
       new GetIdentityRequestV0()
-        .setId(new Uint8Array(identityId.toBuffer()))
+        .setId(identityId.toBytes())
         .setProve(false),
     );
 
