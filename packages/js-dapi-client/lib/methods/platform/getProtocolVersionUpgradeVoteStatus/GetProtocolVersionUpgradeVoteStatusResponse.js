@@ -41,7 +41,11 @@ class GetProtocolVersionUpgradeVoteStatusResponse extends AbstractResponse {
     const versionSignalsList = versions && versions.getVersionSignalsList();
     if (versionSignalsList) {
       versionSignals = versionSignalsList.map((versionSignal) => new VersionSignal(
-        bytesToHex(new Uint8Array(versionSignal.getProTxHash())),
+        // Use _asU8 so we get bytes regardless of the underlying protobuf
+        // representation (grpc-js: Uint8Array; grpc-web: base64 string).
+        // The default getter would yield the base64 string under grpc-web,
+        // and new Uint8Array(string) does NOT base64-decode it.
+        bytesToHex(versionSignal.getProTxHash_asU8()),
         versionSignal.getVersion(),
       ));
     }

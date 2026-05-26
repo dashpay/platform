@@ -112,6 +112,12 @@ class SimplifiedMasternodeListProvider {
             this.options.network,
           );
         } catch (e) {
+          // Guard against bytesToHex throwing (and masking the real error)
+          // if simplifiedMNListDiffBytes is undefined because the failure
+          // happened before line 106 assigned it.
+          const diffBytesHex = simplifiedMNListDiffBytes instanceof Uint8Array
+            ? bytesToHex(simplifiedMNListDiffBytes)
+            : null;
           this.logger.warn(
             `Can't parse masternode list diff: ${e.message}`,
             {
@@ -119,7 +125,7 @@ class SimplifiedMasternodeListProvider {
               network: this.options.network,
               error: e,
               simplifiedMNListDiffObject,
-              simplifiedMNListDiffBytes: bytesToHex(simplifiedMNListDiffBytes),
+              simplifiedMNListDiffBytes: diffBytesHex,
             },
           );
 

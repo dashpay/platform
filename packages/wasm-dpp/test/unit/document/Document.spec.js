@@ -335,7 +335,8 @@ describe('Document', () => {
 
   describe('#getDataContractId', () => {
     it('should return $dataContractId', () => {
-      expect(document.getOwnerId().toBytes()).to.deep.equal(rawDocument.$ownerId.toBytes());
+      expect(document.getDataContractId().toBytes())
+        .to.deep.equal(rawDocument.$dataContractId.toBytes());
     });
   });
 

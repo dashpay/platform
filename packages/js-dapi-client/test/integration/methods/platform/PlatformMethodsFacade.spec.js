@@ -296,7 +296,7 @@ describe('PlatformMethodsFacade', () => {
 
       grpcTransportMock.request.resolves(response);
 
-      await platformMethods.getIdentityNonce(new Uint8Array(32), new Uint8Array(32));
+      await platformMethods.getIdentityNonce(new Uint8Array(32), {});
 
       expect(grpcTransportMock.request).to.be.calledOnce();
     });

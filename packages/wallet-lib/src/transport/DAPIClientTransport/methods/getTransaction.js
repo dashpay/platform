@@ -22,7 +22,9 @@ module.exports = async function getTransaction(txid) {
 
     return {
       transaction: new Transaction(response.getTransaction()),
-      blockHash: response.getBlockHash().toString('hex'),
+      // dapi-client returns blockHash as a plain Uint8Array, whose toString()
+      // ignores the encoding argument. Wrap to Buffer to get hex semantics.
+      blockHash: Buffer.from(response.getBlockHash()).toString('hex'),
       height,
       instantLocked,
       chainLocked,

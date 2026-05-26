@@ -2,8 +2,7 @@ const AbstractResponse = require('../response/AbstractResponse');
 
 class GetIdentityByPublicKeyHashResponse extends AbstractResponse {
   /**
-   * @param {Uint8Array} identities
-   * @param identity
+   * @param {Uint8Array} identity
    * @param {Metadata} metadata
    * @param {Proof} [proof]
    */
@@ -14,7 +13,7 @@ class GetIdentityByPublicKeyHashResponse extends AbstractResponse {
   }
 
   /**
-   * @returns {Uint8Array[]}
+   * @returns {Uint8Array}
    */
   getIdentity() {
     return this.identity;

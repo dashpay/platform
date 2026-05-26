@@ -58,7 +58,7 @@ describe('GetIdentityKeysResponse', () => {
 
   it('should return proof', () => {
     getIdentityKeysResponse = new GetIdentityKeysResponseClass(
-      new Uint8Array(0),
+      [],
       new Metadata(metadataFixture),
       new Proof(proofFixture),
     );
@@ -66,7 +66,7 @@ describe('GetIdentityKeysResponse', () => {
     const identityKeys = getIdentityKeysResponse.getIdentityKeys();
     const proof = getIdentityKeysResponse.getProof();
 
-    expect(identityKeys).to.deep.equal(new Uint8Array(0));
+    expect(identityKeys).to.deep.equal([]);
     expect(proof).to.be.an.instanceOf(Proof);
     expect(proof.getGrovedbProof()).to.deep.equal(proofFixture.merkleProof);
     expect(proof.getQuorumHash()).to.deep.equal(proofFixture.quorumHash);
