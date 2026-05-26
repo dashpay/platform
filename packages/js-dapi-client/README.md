@@ -27,6 +27,33 @@ hosted on Dash masternodes.
 npm install @dashevo/dapi-client
 ```
 
+### Browser usage
+
+Response objects expose byte-valued fields as `Uint8Array` (not Node `Buffer`).
+You can convert via `DAPIClient.bytes`:
+
+```javascript
+const DAPIClient = require('@dashevo/dapi-client');
+const { bytesToHex, hexToBytes } = DAPIClient.bytes;
+
+const hex = bytesToHex(proof.getQuorumHash());
+```
+
+A small number of internal code paths still construct `Buffer` instances —
+notably `BlockHeadersProvider` (uses `dashcore-lib.BlockHeader` for SPV
+parsing) and the `Identifier` constructor inside wasm-dpp. Node has `Buffer` built in;
+browser bundlers (Vite, esbuild, webpack 5) typically auto-shim it when the
+`buffer` package is installed, or you can polyfill explicitly:
+
+```javascript
+import { Buffer } from 'buffer';
+globalThis.Buffer = Buffer;
+```
+
+This requirement will go away once `dashcore-lib`'s `BufferReader` accepts
+`Uint8Array` directly. Until then, browser consumers must ensure a `Buffer`
+global is reachable at runtime.
+
 ## Usage
 
 ### Basic
