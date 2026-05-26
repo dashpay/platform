@@ -13,6 +13,10 @@ use crate::sqlite::util::safe_cast;
 /// compatibility — it is unused on this writer because cascade flows
 /// `wallet_metadata → identities → token_balances` through the
 /// nullable `identities.wallet_id` FK.
+// INTENTIONAL(SEC-002): orphan token_balances cleanup is host responsibility.
+// No automatic prune API is provided — V002 cascades through identities only,
+// not through wallet_id (which was dropped from this table). Hosts that delete
+// identities out-of-band must prune token_balances themselves.
 pub fn apply(
     tx: &Transaction<'_>,
     _wallet_id: &WalletId,
