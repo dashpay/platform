@@ -264,7 +264,7 @@ async fn run_wallet_balance_test(wallet: WalletIndex) {
         .await
         .expect("shielded_coordinator must exist after configure_shielded");
     platform_wallet
-        .bind_shielded(shielded_seed, &[0u32], &coordinator)
+        .bind_shielded(&shielded_seed, &[0u32], &coordinator)
         .await
         .expect("bind_shielded");
 
