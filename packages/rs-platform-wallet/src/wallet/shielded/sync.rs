@@ -170,6 +170,7 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
     sdk: &Arc<dash_sdk::Sdk>,
     store: &Arc<RwLock<S>>,
     subwallets: &[(SubwalletId, AccountViewingKeys)],
+    on_progress: Option<&super::coordinator::ShieldedProgressCallback>,
 ) -> Result<MultiSyncNotesResult, PlatformWalletError> {
     if subwallets.is_empty() {
         return Ok(MultiSyncNotesResult::default());
@@ -221,7 +222,15 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
     // `result.all_notes` below.
     let (driver_id, driver_views) = &subwallets[0];
     let driver_ivk = driver_views.prepared_ivk.clone();
-    let result = sync_shielded_notes(sdk, &driver_ivk, aligned_start, None)
+    // Build a config carrying the caller's progress callback; the
+    // SDK fires it once per completed chunk inside its sliding-window
+    // chunk loop. Default config (None callback) preserves the prior
+    // behavior for any caller that didn't install a handler.
+    let mut sync_config = dash_sdk::platform::shielded::notes_sync::types::ShieldedSyncConfig::default();
+    if let Some(cb) = on_progress {
+        sync_config.on_chunk_completed = Some(cb.clone());
+    }
+    let result = sync_shielded_notes(sdk, &driver_ivk, aligned_start, Some(sync_config))
         .await
         .map_err(|e| PlatformWalletError::ShieldedSyncFailed(e.to_string()))?;
 

@@ -116,9 +116,12 @@ final class WalletManagerStore: ObservableObject {
                     + "rebuilding cached manager",
                 minimumLevel: .medium
             )
-            if activeManager === existing {
-                activeManager = nil
-            }
+            // No `activeManager = nil` — the field isn't optional. The
+            // rebuild below will overwrite it via `if makeActive {
+            // activeManager = manager }`. Until that line runs, the
+            // old `activeManager` reference still points at the
+            // now-stale cached manager, but it'll be replaced before
+            // any caller observes it (this method is synchronous).
             managers[network] = nil
             managerSdkHandles[network] = nil
         }

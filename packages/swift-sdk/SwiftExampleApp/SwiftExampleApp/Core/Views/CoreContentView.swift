@@ -442,15 +442,41 @@ var body: some View {
                     // `docs/shielded-sync-timing-spec.md`.
                     if shieldedService.isSyncing,
                        let elapsed = shieldedService.currentSyncElapsed {
-                        HStack {
-                            Text("Syncing… elapsed")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                            Spacer()
-                            Text(String(format: "%.1f s", elapsed))
-                                .font(.caption)
-                                .fontWeight(.medium)
-                                .monospacedDigit()
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Text("Syncing… elapsed")
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                                Spacer()
+                                Text(String(format: "%.1f s", elapsed))
+                                    .font(.caption)
+                                    .fontWeight(.medium)
+                                    .monospacedDigit()
+                            }
+                            // Per-chunk progress (P1.2). Cumulative
+                            // encrypted-note count emitted ~every
+                            // 2048 notes by the Rust progress
+                            // callback. We don't know the total
+                            // ahead of time (chain tip's commitment
+                            // count isn't separately queried), so
+                            // render an indeterminate-style ticker
+                            // with the absolute number — way more
+                            // useful than a fake bar.
+                            if let scanned = shieldedService.currentSyncScanned {
+                                HStack {
+                                    Text("Scanned this pass")
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                    Spacer()
+                                    Text("\(scanned) notes")
+                                        .font(.caption2)
+                                        .monospacedDigit()
+                                        .foregroundColor(.secondary)
+                                }
+                                ProgressView()
+                                    .progressViewStyle(.linear)
+                                    .tint(.purple)
+                            }
                         }
                     } else if let duration = shieldedService.lastSyncDuration {
                         HStack {

@@ -80,12 +80,23 @@ pub async fn sync_shielded_notes(
     // Collect results keyed by chunk start_index for ordered reassembly
     let mut chunk_results: BTreeMap<u64, Vec<ShieldedEncryptedNote>> = BTreeMap::new();
     let mut max_block_height: u64 = 0;
+    // Running total of notes seen across all completed chunks — fed
+    // into the optional progress callback so callers can render a
+    // live counter / ProgressView during long cold syncs (1M notes
+    // can take 20+ min in one call).
+    let mut cumulative_scanned: u64 = 0;
+    let on_progress = config.on_chunk_completed.clone();
 
     while let Some(result) = futures.next().await {
         let (chunk_idx, notes, block_height) = result?;
         let is_partial = (notes.len() as u64) < chunk_size;
+        cumulative_scanned += notes.len() as u64;
         chunk_results.insert(chunk_idx, notes);
         max_block_height = max_block_height.max(block_height);
+
+        if let Some(cb) = on_progress.as_ref() {
+            cb(cumulative_scanned, max_block_height);
+        }
 
         if is_partial {
             reached_end = true;

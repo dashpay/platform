@@ -47,6 +47,20 @@ pub struct EventHandlerCallbacks {
             sync_unix_seconds: u64,
         ),
     >,
+    /// Called once per chunk during a shielded sync pass (~every
+    /// 2048 notes processed). Carries the cumulative count of
+    /// encrypted notes scanned so far in the current pass plus the
+    /// latest block height observed. Lets the host render a live
+    /// progress counter / ProgressView during long cold syncs.
+    /// Slot is plumbed unconditionally for C-ABI stability; only
+    /// fires when the `shielded` feature is enabled in the FFI.
+    pub on_shielded_sync_progress_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            cumulative_scanned: u64,
+            block_height: u64,
+        ),
+    >,
 }
 
 // SAFETY: The context pointer is managed by the FFI caller who must ensure
@@ -205,6 +219,20 @@ impl PlatformEventHandler for FFIEventHandler {
                 results.len(),
                 summary.sync_unix_seconds,
             );
+        }
+    }
+
+    #[cfg(feature = "shielded")]
+    fn on_shielded_sync_progress(
+        &self,
+        cumulative_scanned: u64,
+        block_height: u64,
+    ) {
+        let Some(cb) = self.callbacks.on_shielded_sync_progress_fn else {
+            return;
+        };
+        unsafe {
+            cb(self.callbacks.context, cumulative_scanned, block_height);
         }
     }
 }

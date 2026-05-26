@@ -124,6 +124,22 @@ class ShieldedService: ObservableObject {
     /// 1Hz timer while `isSyncing == true`; nil otherwise.
     @Published var currentSyncElapsed: TimeInterval?
 
+    /// Cumulative encrypted notes scanned in the in-flight pass.
+    /// Republished from `PlatformWalletManager.currentShieldedSyncScanned`
+    /// — fired once per chunk (~2048 notes) by the Rust progress
+    /// callback. Nil between passes. Lets the UI render a live
+    /// counter / ProgressView during a cold sync.
+    @Published var currentSyncScanned: UInt64?
+
+    /// Latest Platform block height observed during the in-flight
+    /// pass. Pairs with `currentSyncScanned` (same callback).
+    @Published var currentSyncBlockHeight: UInt64?
+
+    /// Subscription to `walletManager.$currentShieldedSyncScanned`
+    /// and `…BlockHeight` for live progress. Created in `bind` /
+    /// `bindWithRawSeed`, dropped in `reset` / `clearLocalState`.
+    private var progressCancellable: AnyCancellable?
+
     /// `Date()` at the moment `isSyncing` flipped false → true.
     /// Drives both `lastSyncDuration` (at completion) and
     /// `currentSyncElapsed` (live).
@@ -163,6 +179,7 @@ class ShieldedService: ObservableObject {
         self.resolver = resolver
         self.syncStateCancellable?.cancel()
         self.syncEventCancellable?.cancel()
+        self.progressCancellable?.cancel()
 
         // Clear the previous wallet's snapshot up front. Without
         // this, switching wallets (or a failed rebind) leaves the
@@ -190,6 +207,8 @@ class ShieldedService: ObservableObject {
         longestSyncDuration = nil
         currentSyncElapsed = nil
         currentSyncStartedAt = nil
+        currentSyncScanned = nil
+        currentSyncBlockHeight = nil
         syncTickTimer?.invalidate()
         syncTickTimer = nil
 
@@ -296,6 +315,18 @@ class ShieldedService: ObservableObject {
                 guard let self, let event else { return }
                 self.handleShieldedSyncEvent(event)
             }
+
+        // Bridge per-chunk progress from the manager. Pair
+        // `currentShieldedSyncScanned` and `…BlockHeight`; they're
+        // emitted by the same Rust callback so a `combineLatest`
+        // round-trips them coherently into our two @Published mirrors.
+        progressCancellable = walletManager.$currentShieldedSyncScanned
+            .combineLatest(walletManager.$currentShieldedSyncBlockHeight)
+            .sink { [weak self] scanned, height in
+                guard let self else { return }
+                self.currentSyncScanned = scanned
+                self.currentSyncBlockHeight = height
+            }
     }
 
     // TODO(shielded-snapshot-devnet-test): remove `bindWithRawSeed`
@@ -320,6 +351,7 @@ class ShieldedService: ObservableObject {
         self.network = network
         self.syncStateCancellable?.cancel()
         self.syncEventCancellable?.cancel()
+        self.progressCancellable?.cancel()
 
         // Same reset-on-rebind block as the standard bind() path
         // so a Sync Now after a rebind doesn't see stale counters
@@ -342,6 +374,8 @@ class ShieldedService: ObservableObject {
         longestSyncDuration = nil
         currentSyncElapsed = nil
         currentSyncStartedAt = nil
+        currentSyncScanned = nil
+        currentSyncBlockHeight = nil
         syncTickTimer?.invalidate()
         syncTickTimer = nil
 
@@ -421,6 +455,18 @@ class ShieldedService: ObservableObject {
             .sink { [weak self] event in
                 guard let self, let event else { return }
                 self.handleShieldedSyncEvent(event)
+            }
+
+        // Bridge per-chunk progress from the manager. Pair
+        // `currentShieldedSyncScanned` and `…BlockHeight`; they're
+        // emitted by the same Rust callback so a `combineLatest`
+        // round-trips them coherently into our two @Published mirrors.
+        progressCancellable = walletManager.$currentShieldedSyncScanned
+            .combineLatest(walletManager.$currentShieldedSyncBlockHeight)
+            .sink { [weak self] scanned, height in
+                guard let self else { return }
+                self.currentSyncScanned = scanned
+                self.currentSyncBlockHeight = height
             }
 
         // Start the manager loop if not already running. Mirrors
@@ -566,6 +612,7 @@ class ShieldedService: ObservableObject {
     func reset() {
         syncStateCancellable?.cancel()
         syncEventCancellable?.cancel()
+        progressCancellable?.cancel()
         walletManager = nil
         boundWalletId = nil
         isSyncing = false
@@ -586,6 +633,8 @@ class ShieldedService: ObservableObject {
         longestSyncDuration = nil
         currentSyncElapsed = nil
         currentSyncStartedAt = nil
+        currentSyncScanned = nil
+        currentSyncBlockHeight = nil
         syncTickTimer?.invalidate()
         syncTickTimer = nil
     }
@@ -705,6 +754,7 @@ class ShieldedService: ObservableObject {
         //    them and leave the user stranded on this screen.
         syncStateCancellable?.cancel()
         syncEventCancellable?.cancel()
+        progressCancellable?.cancel()
         isBound = false
         isSyncing = false
         shieldedBalance = 0
@@ -722,6 +772,8 @@ class ShieldedService: ObservableObject {
         longestSyncDuration = nil
         currentSyncElapsed = nil
         currentSyncStartedAt = nil
+        currentSyncScanned = nil
+        currentSyncBlockHeight = nil
         syncTickTimer?.invalidate()
         syncTickTimer = nil
     }

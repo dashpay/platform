@@ -46,6 +46,20 @@ public class PlatformWalletManager: ObservableObject {
     /// Last completed shielded sync event emitted by Rust.
     @Published public internal(set) var lastShieldedSyncEvent: ShieldedSyncEvent?
 
+    /// Cumulative number of encrypted notes scanned in the **current**
+    /// in-flight shielded sync pass, published once per chunk (~every
+    /// 2048 notes) via the Rust-side progress callback. Nil between
+    /// passes. Lets UI render a live counter / `ProgressView` during
+    /// the cold sync of a large pool (1M notes can take 20+ min in a
+    /// single SDK call; without this there's no signal between start
+    /// and end).
+    ///
+    /// Paired with `currentShieldedSyncBlockHeight` — emitted in the
+    /// same callback. They update together; the chain-tip number lets
+    /// the UI estimate "still N blocks behind".
+    @Published public internal(set) var currentShieldedSyncScanned: UInt64?
+    @Published public internal(set) var currentShieldedSyncBlockHeight: UInt64?
+
     /// When true, `handleShieldedSyncCompleted` drops incoming events
     /// instead of publishing them. Set by `stopShieldedSync` /
     /// `clearShielded` (after the Rust drain returns) and cleared by any

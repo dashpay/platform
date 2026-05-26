@@ -54,6 +54,11 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+
+/// Callback fired once per chunk during a coordinator sync pass.
+/// Arguments: `(cumulative_scanned, latest_block_height)`. Forwarded
+/// straight from `sync_shielded_notes`'s chunk loop.
+pub type ShieldedProgressCallback = Arc<dyn Fn(u64, u64) + Send + Sync>;
 use std::time::{Duration, Instant};
 
 use tokio::sync::RwLock;
@@ -137,6 +142,20 @@ pub struct NetworkShieldedCoordinator {
     /// network instead of once per wallet. Cleared on any
     /// activity; bypassed by `force` syncs.
     last_caught_up_at: std::sync::Mutex<Option<Instant>>,
+
+    /// Optional progress callback fired once per chunk inside
+    /// `sync_shielded_notes`. Lets the manager translate chunk-level
+    /// progress into `PlatformEventHandler::on_shielded_sync_progress`
+    /// events without sync_notes_across knowing about the event
+    /// manager. Installed by the manager via
+    /// [`install_progress_handler`](Self::install_progress_handler);
+    /// `None` (default) disables progress reporting (the test path).
+    ///
+    /// `std::sync::Mutex` rather than `ArcSwap` because `arc_swap`
+    /// requires `T: Sized` and we need to hold a `dyn Fn`. The lock
+    /// is taken once per sync pass to read the snapshot — no hot-path
+    /// contention.
+    progress_handler: std::sync::Mutex<Option<ShieldedProgressCallback>>,
 }
 
 impl NetworkShieldedCoordinator {
@@ -161,6 +180,7 @@ impl NetworkShieldedCoordinator {
             accounts: Arc::new(RwLock::new(BTreeMap::new())),
             persisters: Arc::new(RwLock::new(BTreeMap::new())),
             last_caught_up_at: std::sync::Mutex::new(None),
+            progress_handler: std::sync::Mutex::new(None),
         }
     }
 
@@ -169,6 +189,23 @@ impl NetworkShieldedCoordinator {
     /// coordinator agree on the network.
     pub fn network(&self) -> dashcore::Network {
         self.network
+    }
+
+    /// Install (or replace) the per-chunk progress handler. The
+    /// callback runs from inside `sync_shielded_notes`'s chunk loop
+    /// — once per ~2048 notes processed — so keep it cheap. Used by
+    /// `PlatformWalletManager` to bridge sync-internal progress into
+    /// `PlatformEventHandler::on_shielded_sync_progress` events.
+    /// Passing `None` removes any installed handler.
+    pub fn install_progress_handler(&self, handler: Option<ShieldedProgressCallback>) {
+        if let Ok(mut slot) = self.progress_handler.lock() {
+            *slot = handler;
+        }
+    }
+
+    /// Snapshot of the currently installed progress handler.
+    pub(super) fn progress_handler(&self) -> Option<ShieldedProgressCallback> {
+        self.progress_handler.lock().ok().and_then(|g| g.clone())
     }
 
     /// The on-disk SQLite path the coordinator opened. Used by
@@ -437,7 +474,19 @@ impl NetworkShieldedCoordinator {
         }
 
         // ONE SDK call covers every registered IVK on the network.
-        let notes = match super::sync::sync_notes_across(&self.sdk, &self.store, &subwallets).await
+        // Snapshot the optional progress handler installed by the
+        // manager; sync_notes_across feeds it into the SDK's chunk
+        // loop so callers see live (cumulative_scanned, block_height)
+        // updates during long cold syncs instead of one delayed
+        // burst at the end.
+        let on_progress = self.progress_handler();
+        let notes = match super::sync::sync_notes_across(
+            &self.sdk,
+            &self.store,
+            &subwallets,
+            on_progress.as_ref(),
+        )
+        .await
         {
             Ok(r) => r,
             Err(e) => return self.fail_all_wallets(&subwallets, &e),

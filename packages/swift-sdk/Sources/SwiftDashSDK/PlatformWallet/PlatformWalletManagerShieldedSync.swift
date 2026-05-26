@@ -65,6 +65,21 @@ extension PlatformWalletManager {
         // the flag, so legitimate events are never suppressed.
         guard !suppressShieldedCompletionEvents else { return }
         lastShieldedSyncEvent = event
+        // A completed pass means the per-chunk progress counter for
+        // this pass is no longer meaningful — clear so the next pass
+        // starts from nil. Also matches the false→true edge UI gating
+        // in ShieldedService's currentSyncElapsed timer.
+        currentShieldedSyncScanned = nil
+        currentShieldedSyncBlockHeight = nil
+    }
+
+    /// Per-chunk progress callback. Fires once per ~2048 notes
+    /// processed during a cold sync; bridged here from the C
+    /// trampoline `shieldedSyncProgressCallback`. Cheap publish; UI
+    /// gets it through ShieldedService.
+    func handleShieldedSyncProgress(cumulativeScanned: UInt64, blockHeight: UInt64) {
+        currentShieldedSyncScanned = cumulativeScanned
+        currentShieldedSyncBlockHeight = blockHeight
     }
 
     /// Derive Orchard keys for `walletId` from the host-side mnemonic
@@ -665,5 +680,27 @@ func shieldedSyncCompletedCallback(
 
     Task { @MainActor [weak manager = handler.manager] in
         manager?.handleShieldedSyncCompleted(event)
+    }
+}
+
+/// C trampoline matching `EventHandlerCallbacks.on_shielded_sync_progress_fn`.
+/// Fires once per ~2048 notes processed during a cold sync. Cheap —
+/// just hops to the main actor and publishes the snapshot.
+func shieldedSyncProgressCallback(
+    context: UnsafeMutableRawPointer?,
+    cumulativeScanned: UInt64,
+    blockHeight: UInt64
+) {
+    guard let context else { return }
+
+    let handler = Unmanaged<PlatformWalletEventHandler>
+        .fromOpaque(context)
+        .takeUnretainedValue()
+
+    Task { @MainActor [weak manager = handler.manager] in
+        manager?.handleShieldedSyncProgress(
+            cumulativeScanned: cumulativeScanned,
+            blockHeight: blockHeight
+        )
     }
 }

@@ -71,6 +71,13 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     #[cfg(feature = "shielded")]
     pub(super) shielded_coordinator:
         Arc<RwLock<Option<Arc<crate::wallet::shielded::NetworkShieldedCoordinator>>>>,
+    /// Shared `PlatformEventManager` — held on the manager so
+    /// `configure_shielded` can install a per-chunk progress handler
+    /// onto the freshly-created `NetworkShieldedCoordinator` that
+    /// forwards into `on_shielded_sync_progress`. Sub-managers
+    /// (`SpvRuntime`, `PlatformAddressSyncManager`, etc.) hold their
+    /// own clones already.
+    pub(super) event_manager: Arc<PlatformEventManager>,
     pub(super) persister: Arc<P>,
     /// Cancellation token + join handle for the wallet-event adapter
     /// task. Held so [`shutdown`] can stop it cleanly when the manager
@@ -151,6 +158,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             shielded_sync_manager: shielded_sync,
             #[cfg(feature = "shielded")]
             shielded_coordinator,
+            event_manager,
             persister,
             event_adapter_cancel,
             event_adapter_join: tokio::sync::Mutex::new(Some(event_adapter_join)),
@@ -208,6 +216,18 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             db_path,
             store,
         ));
+        // Bridge sync-internal chunk progress (~every 2048 notes)
+        // into the public `PlatformEventHandler::on_shielded_sync_progress`
+        // event so UI clients can render a live counter / progress
+        // bar during long cold syncs. Cheap closure — just forwards
+        // two u64s to the event manager.
+        let event_manager_for_progress = Arc::clone(&self.event_manager);
+        coordinator.install_progress_handler(Some(Arc::new(
+            move |cumulative_scanned: u64, block_height: u64| {
+                event_manager_for_progress
+                    .on_shielded_sync_progress(cumulative_scanned, block_height);
+            },
+        )));
         *slot = Some(coordinator);
         Ok(())
     }

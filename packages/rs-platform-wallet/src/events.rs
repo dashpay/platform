@@ -43,6 +43,31 @@ pub trait PlatformEventHandler: EventHandler {
     /// [`ShieldedSyncManager`]: crate::manager::shielded_sync::ShieldedSyncManager
     #[cfg(feature = "shielded")]
     fn on_shielded_sync_completed(&self, _summary: &ShieldedSyncPassSummary) {}
+
+    /// Fired periodically during a shielded sync pass — once per
+    /// completed chunk inside `sync_shielded_notes`. Carries the
+    /// cumulative count of encrypted notes scanned so far in the
+    /// current pass and the latest block height observed.
+    ///
+    /// Network-scoped, not per-wallet: a single sync pass covers
+    /// every IVK on the coordinator, so the "wallet that's
+    /// progressing" isn't a meaningful concept at this granularity.
+    /// Clients that bind a single wallet at a time can scope
+    /// per-wallet from context.
+    ///
+    /// Lets clients render a live progress counter / `ProgressView`
+    /// during long initial syncs (a cold sync of a 1M-note pool can
+    /// take 20+ min in a single `sync_shielded_notes` call; without
+    /// this event there's no signal between start and end).
+    ///
+    /// Default impl is a no-op.
+    #[cfg(feature = "shielded")]
+    fn on_shielded_sync_progress(
+        &self,
+        _cumulative_scanned: u64,
+        _block_height: u64,
+    ) {
+    }
 }
 
 /// Dispatches events to all registered [`PlatformEventHandler`]s.
@@ -92,6 +117,23 @@ impl PlatformEventManager {
         let handlers = self.handlers.load();
         for h in handlers.iter() {
             h.on_shielded_sync_completed(summary);
+        }
+    }
+
+    /// Dispatch a shielded sync progress event to every handler.
+    ///
+    /// Called from inside `sync_shielded_notes`'s chunk loop, once
+    /// per chunk (~every 2048 notes processed). Cheap-but-frequent
+    /// path during a cold sync.
+    #[cfg(feature = "shielded")]
+    pub fn on_shielded_sync_progress(
+        &self,
+        cumulative_scanned: u64,
+        block_height: u64,
+    ) {
+        let handlers = self.handlers.load();
+        for h in handlers.iter() {
+            h.on_shielded_sync_progress(cumulative_scanned, block_height);
         }
     }
 }
