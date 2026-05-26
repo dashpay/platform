@@ -62,6 +62,10 @@ tokio = { version = "1", features = ["sync", "rt", "time", "macros", "test-util"
 # Re-enable the SDK with mocks feature for test-only mock builders;
 # the non-test build keeps the leaner default-feature SDK above.
 dash-sdk = { path = "../rs-sdk", default-features = false, features = ["dashpay-contract", "dpns-contract", "wallet", "mocks"] }
+# Used by `tests/shielded_sync_paloma.rs` to build the SDK against
+# a remote devnet that doesn't have Core RPC reachable — supplies
+# proof verification via a separate HTTP quorum-list service.
+rs-sdk-trusted-context-provider = { path = "../rs-sdk-trusted-context-provider" }
 
 
 [features]
