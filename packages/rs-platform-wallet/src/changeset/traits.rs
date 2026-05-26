@@ -287,6 +287,10 @@ pub trait PlatformWalletPersistence: Send + Sync {
     ///
     /// [`PersistenceError::LockPoisoned`] is fatal but distinguished
     /// at the variant level so callers can pattern-match on it.
+    ///
+    /// Pass `WalletId::default()` for `wallet_id` to flush the orphan
+    /// changeset buffer — see the **Wallet ID convention** section on
+    /// the trait.
     fn flush(&self, wallet_id: WalletId) -> Result<(), PersistenceError>;
 
     /// Load the full client state from storage.
@@ -401,6 +405,11 @@ pub trait PlatformWalletPersistence: Send + Sync {
     ///
     /// Atomicity is per-wallet, not cross-wallet: there is no
     /// transaction spanning multiple wallets.
+    ///
+    /// The returned [`CommitReport`] may carry `WalletId::default()`
+    /// entries in `succeeded` / `failed` / `still_pending` to denote
+    /// the orphan changeset bucket — see the **Wallet ID convention**
+    /// section on the trait.
     fn commit_writes(&self) -> Result<CommitReport, PersistenceError> {
         Ok(CommitReport {
             succeeded: Vec::new(),
@@ -417,6 +426,10 @@ pub trait PlatformWalletPersistence: Send + Sync {
 /// success (or vice-versa). Callers can retry `still_pending` directly;
 /// `failed` carries the classified `PersistenceError` per wallet so
 /// transient-vs-fatal decisions stay local.
+///
+/// A `WalletId::default()` entry in any of the three vectors denotes
+/// the orphan changeset bucket — see the **Wallet ID convention**
+/// section on [`PlatformWalletPersistence`].
 #[derive(Debug)]
 pub struct CommitReport {
     /// Wallets that flushed successfully (durable on disk).
@@ -446,7 +459,9 @@ impl CommitReport {
 /// don't track per-table row counts emit an empty map.
 #[derive(Debug, Clone)]
 pub struct DeleteWalletReport {
-    /// The wallet that was deleted.
+    /// The wallet that was deleted. `WalletId::default()` here means
+    /// the orphan bucket was the delete target — see the **Wallet ID
+    /// convention** section on [`PlatformWalletPersistence`].
     pub wallet_id: WalletId,
     /// Absolute path of the pre-delete auto-backup taken before the
     /// cascade. `None` when the backend skipped the backup
