@@ -112,6 +112,14 @@ class ShieldedService: ObservableObject {
     /// pass. Nil until the first such pass after `bind()`.
     @Published var lastSyncDuration: TimeInterval?
 
+    /// Maximum wall-clock observed across every completed sync pass
+    /// since the last `bind()` / `reset()` / `clearLocalState`. Used
+    /// to preserve the cold-sync headline number when subsequent
+    /// steady-state passes (3 s deltas) would otherwise clobber
+    /// `lastSyncDuration` in the UI. Nil until the first completed
+    /// pass.
+    @Published var longestSyncDuration: TimeInterval?
+
     /// Running wall-clock of the in-flight sync pass. Updated by a
     /// 1Hz timer while `isSyncing == true`; nil otherwise.
     @Published var currentSyncElapsed: TimeInterval?
@@ -179,6 +187,7 @@ class ShieldedService: ObservableObject {
         totalNewNotes = 0
         totalNewlySpent = 0
         lastSyncDuration = nil
+        longestSyncDuration = nil
         currentSyncElapsed = nil
         currentSyncStartedAt = nil
         syncTickTimer?.invalidate()
@@ -330,6 +339,7 @@ class ShieldedService: ObservableObject {
         totalNewNotes = 0
         totalNewlySpent = 0
         lastSyncDuration = nil
+        longestSyncDuration = nil
         currentSyncElapsed = nil
         currentSyncStartedAt = nil
         syncTickTimer?.invalidate()
@@ -573,6 +583,7 @@ class ShieldedService: ObservableObject {
         totalNewNotes = 0
         totalNewlySpent = 0
         lastSyncDuration = nil
+        longestSyncDuration = nil
         currentSyncElapsed = nil
         currentSyncStartedAt = nil
         syncTickTimer?.invalidate()
@@ -708,6 +719,7 @@ class ShieldedService: ObservableObject {
         totalNewNotes = 0
         totalNewlySpent = 0
         lastSyncDuration = nil
+        longestSyncDuration = nil
         currentSyncElapsed = nil
         currentSyncStartedAt = nil
         syncTickTimer?.invalidate()
@@ -776,6 +788,16 @@ class ShieldedService: ObservableObject {
                 if let started = currentSyncStartedAt {
                     let elapsed = max(0, Date().timeIntervalSince(started))
                     lastSyncDuration = elapsed
+                    // Preserve the longest pass observed since the
+                    // last reset. Cold sync (~20 min for 1M notes on
+                    // paloma) would otherwise get clobbered by the
+                    // next steady-state pass (~3 s). The cold number
+                    // is the headline measurement; keep it visible.
+                    if let prev = longestSyncDuration {
+                        if elapsed > prev { longestSyncDuration = elapsed }
+                    } else {
+                        longestSyncDuration = elapsed
+                    }
                     let rateString: String
                     if elapsed > 0.05 && result.totalScanned > 0 {
                         let rate = Double(result.totalScanned) / elapsed

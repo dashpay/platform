@@ -243,13 +243,35 @@ struct OptionsView: View {
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
 
-                            Text("DAPI URL")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
+                            HStack(spacing: 8) {
+                                Text("DAPI URL")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Spacer()
+                                // Count of nodes the SDK will fan out
+                                // across (commas in the field). 0
+                                // means "auto-discover from
+                                // {QuorumURL}/masternodes on next SDK
+                                // build" — the SDK writes the
+                                // resolved list back into this
+                                // field. See `SDK.discoverDAPIAddresses`.
+                                let nodeCount = devnetDAPIAddresses
+                                    .split(separator: ",")
+                                    .map { $0.trimmingCharacters(in: .whitespaces) }
+                                    .filter { !$0.isEmpty }
+                                    .count
+                                Text(nodeCount == 0
+                                    ? "auto (from /masternodes)"
+                                    : "\(nodeCount) node\(nodeCount == 1 ? "" : "s")")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                            }
                             TextField(
-                                "https://<host>:1443",
-                                text: $devnetDAPIAddresses
+                                "leave empty to auto-discover from quorum URL",
+                                text: $devnetDAPIAddresses,
+                                axis: .vertical
                             )
+                            .lineLimit(1...4)
                             .font(.system(.body, design: .monospaced))
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()

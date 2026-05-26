@@ -102,6 +102,84 @@ public final class SDK: @unchecked Sendable {
     return value
   }
 
+  /// Synchronously fetch `{quorumBase}/masternodes` and build a
+  /// comma-separated DAPI URL list (`https://<ip>:<platformHTTPPort>,…`).
+  /// Returns nil on any error (network failure, JSON shape mismatch,
+  /// timeout). Used by `init(network:)` to auto-populate the DAPI
+  /// fan-out list on devnet when the user hasn't supplied one
+  /// manually — saves the "you must paste 13 URLs" UX.
+  ///
+  /// Timeout: 5s. Long enough to be reliable on a healthy quorum-list
+  /// service; short enough not to stall an `AppState.switchNetwork`
+  /// task indefinitely if the service is unreachable. The SDK init
+  /// then falls back to whatever the user typed (or fails cleanly if
+  /// the field is empty too).
+  ///
+  /// Filters to `status == "ENABLED"` so down / banned nodes don't
+  /// pollute the AddressList (the DAPI client would ban them on
+  /// first request anyway, but skipping them up front speeds the
+  /// first sync).
+  private static func discoverDAPIAddresses(quorumBase: String) -> String? {
+    guard
+      var components = URLComponents(string: quorumBase),
+      let scheme = components.scheme,
+      !scheme.isEmpty
+    else { return nil }
+    // Strip any trailing slash so `/masternodes` lands cleanly.
+    if components.path.hasSuffix("/") {
+      components.path = String(components.path.dropLast())
+    }
+    components.path += "/masternodes"
+    guard let url = components.url else { return nil }
+
+    var request = URLRequest(url: url)
+    request.timeoutInterval = 5.0
+    request.httpMethod = "GET"
+
+    let semaphore = DispatchSemaphore(value: 0)
+    var responseData: Data?
+    let task = URLSession.shared.dataTask(with: request) { data, _, _ in
+      responseData = data
+      semaphore.signal()
+    }
+    task.resume()
+    // 6s wait is timeout + small slack; semaphore unblocks earlier
+    // on success / faster failures.
+    _ = semaphore.wait(timeout: .now() + .seconds(6))
+    guard let data = responseData else {
+      task.cancel()
+      return nil
+    }
+
+    // Minimal Codable types — match the response shape from
+    // `quorum-list-server` (see
+    // `/Users/ivanshumkov/Projects/dashpay/quorum-list-server/README.md`).
+    struct MasternodesEnvelope: Decodable {
+      let success: Bool
+      let data: [Masternode]
+    }
+    struct Masternode: Decodable {
+      let address: String          // "ip:p2pPort"
+      let status: String
+      let platformHTTPPort: UInt16
+    }
+
+    guard
+      let envelope = try? JSONDecoder().decode(MasternodesEnvelope.self, from: data),
+      envelope.success
+    else { return nil }
+
+    let urls: [String] = envelope.data.compactMap { mn in
+      guard mn.status == "ENABLED" else { return nil }
+      // address is `ip:port` (Core P2P port); strip the port,
+      // re-attach `:platformHTTPPort` for the Platform gateway.
+      let host = mn.address.split(separator: ":").first.map(String.init) ?? mn.address
+      return "https://\(host):\(mn.platformHTTPPort)"
+    }
+    guard !urls.isEmpty else { return nil }
+    return urls.joined(separator: ",")
+  }
+
   /// Create a new SDK instance with trusted setup
   ///
   /// This uses a trusted context provider that fetches quorum keys and
@@ -141,10 +219,33 @@ public final class SDK: @unchecked Sendable {
     let useOverrideAddresses = network == .regtest
         || network == .devnet
         || UserDefaults.standard.bool(forKey: "useDockerSetup")
+    let overrideQuorumURL: String? = Self.platformQuorumURL
+
+    // Auto-discover DAPI nodes from `{quorumURL}/masternodes` when the
+    // user has set a quorum URL but not a DAPI URL. Lets the user just
+    // paste the quorum endpoint and get all masternodes for free —
+    // no need to hand-maintain a 13-address list. The discovery
+    // result is written back to the same UserDefaults key so the
+    // OptionsView displays the resolved list, and subsequent SDK
+    // builds (no UserDefaults change) skip re-discovery.
+    //
+    // Conditions:
+    //   * useOverrideAddresses == true (devnet, regtest, or
+    //     `useDockerSetup` on mainnet/testnet)
+    //   * quorum URL is set
+    //   * existing platformDAPIAddresses is empty (manual entry wins)
+    let manualAddresses = UserDefaults.standard.string(forKey: "platformDAPIAddresses") ?? ""
+    if useOverrideAddresses
+        && overrideQuorumURL != nil
+        && manualAddresses.isEmpty,
+       let quorum = overrideQuorumURL,
+       let discovered = Self.discoverDAPIAddresses(quorumBase: quorum) {
+      UserDefaults.standard.set(discovered, forKey: "platformDAPIAddresses")
+    }
+
     let overrideAddresses: String? = useOverrideAddresses
         ? Self.platformDAPIAddresses
         : nil
-    let overrideQuorumURL: String? = Self.platformQuorumURL
 
     result = SDK.withOptionalCStrings(
       overrideAddresses,

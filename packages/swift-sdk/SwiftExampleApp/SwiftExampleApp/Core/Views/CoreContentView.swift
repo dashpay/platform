@@ -465,6 +465,29 @@ var body: some View {
                         }
                     }
 
+                    // "Longest pass" row — survives short steady-state
+                    // re-passes so the cold-sync wall clock (the
+                    // headline number for 1M-note devnet stress) stays
+                    // visible after subsequent fast deltas overwrite
+                    // `lastSyncDuration`. Only rendered when it
+                    // actually exceeds the most recent pass to avoid
+                    // redundant display.
+                    if let longest = shieldedService.longestSyncDuration,
+                       let last = shieldedService.lastSyncDuration,
+                       longest > last + 0.05 {
+                        HStack {
+                            Text("Longest pass")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            Text(String(format: "%.2f s", longest))
+                                .font(.caption)
+                                .fontWeight(.medium)
+                                .monospacedDigit()
+                                .foregroundColor(.secondary)
+                        }
+                    }
+
                     // Sync counters since launch — `total_scanned`
                     // is the wire-level encrypted-note count (every
                     // pass), while new + spent are the wallet-side
