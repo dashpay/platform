@@ -494,7 +494,7 @@ where
 /// Classify why no candidate survived the filter. Returns `None` when no
 /// funded address exists at all (caller falls through to generic
 /// insufficient-balance); otherwise returns the dominant failure shape.
-/// When both apply, `OnlyOutputAddressesFunded` wins — rotating the receive
+/// When both apply, `NotEnoughFunds` wins — rotating the receive
 /// address is the typically more actionable fix.
 fn detect_no_selectable_inputs<I>(
     address_balances: I,
@@ -518,7 +518,7 @@ where
         }
     }
     if !funded_outputs.is_empty() {
-        return Some(PlatformWalletError::OnlyOutputAddressesFunded {
+        return Some(PlatformWalletError::NotEnoughFunds {
             funded_outputs,
             sub_min_count,
             sub_min_aggregate,
@@ -1389,7 +1389,7 @@ mod auto_select_tests {
         assert_selection_validates(&selected, &outputs, fee_strategy, pv);
     }
 
-    /// Detector returns `OnlyOutputAddressesFunded` when every funded address
+    /// Detector returns `NotEnoughFunds` when every funded address
     /// is also a destination, and `OnlyDustInputs` when every funded balance
     /// is below `min_input_amount`. When both shapes apply simultaneously,
     /// the address-collision signal wins (more actionable fix).
@@ -1407,7 +1407,7 @@ mod auto_select_tests {
         match detect_no_selectable_inputs(collision_only.iter().copied(), &outputs, min_input)
             .expect("collision case")
         {
-            PlatformWalletError::OnlyOutputAddressesFunded {
+            PlatformWalletError::NotEnoughFunds {
                 funded_outputs,
                 sub_min_count,
                 sub_min_aggregate,
@@ -1418,7 +1418,7 @@ mod auto_select_tests {
                 assert_eq!(sub_min_aggregate, 0);
                 assert_eq!(min_input_amount, min_input);
             }
-            other => panic!("expected OnlyOutputAddressesFunded, got {other:?}"),
+            other => panic!("expected NotEnoughFunds, got {other:?}"),
         }
 
         // Dust only.
@@ -1444,7 +1444,7 @@ mod auto_select_tests {
         match detect_no_selectable_inputs(both.iter().copied(), &outputs, min_input)
             .expect("combined case")
         {
-            PlatformWalletError::OnlyOutputAddressesFunded {
+            PlatformWalletError::NotEnoughFunds {
                 funded_outputs,
                 sub_min_count,
                 sub_min_aggregate,
@@ -1454,7 +1454,7 @@ mod auto_select_tests {
                 assert_eq!(sub_min_count, 1);
                 assert_eq!(sub_min_aggregate, min_input / 3);
             }
-            other => panic!("expected OnlyOutputAddressesFunded, got {other:?}"),
+            other => panic!("expected NotEnoughFunds, got {other:?}"),
         }
 
         // No funded address → None (caller falls through to insufficient-balance).

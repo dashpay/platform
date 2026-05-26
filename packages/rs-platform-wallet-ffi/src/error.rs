@@ -82,7 +82,7 @@ pub enum PlatformWalletFFIResultCode {
     ErrorArithmeticOverflow = 13,
     /// Auto-select had no candidate inputs. Covers all three "can't-select-inputs"
     /// wallet variants: `NoSpendableInputs` (account has nothing spendable),
-    /// `OnlyOutputAddressesFunded` (every funded address is also a destination),
+    /// `NotEnoughFunds` (every funded address is also a destination),
     /// and `OnlyDustInputs` (every funded address is below `min_input_amount`).
     /// The typed Display rendering survives via the result message so callers
     /// can distinguish the underlying cause. Caller must rotate to a fresh
@@ -176,7 +176,7 @@ impl From<PlatformWalletError> for PlatformWalletFFIResult {
         // typed Display rendering as the message.
         let code = match &error {
             PlatformWalletError::NoSpendableInputs { .. }
-            | PlatformWalletError::OnlyOutputAddressesFunded { .. }
+            | PlatformWalletError::NotEnoughFunds { .. }
             | PlatformWalletError::OnlyDustInputs { .. } => {
                 PlatformWalletFFIResultCode::ErrorNoSelectableInputs
             }
@@ -410,7 +410,7 @@ mod tests {
     }
 
     /// The three "can't-select-inputs" wallet variants (`NoSpendableInputs`,
-    /// `OnlyOutputAddressesFunded`, `OnlyDustInputs`) all map to the dedicated
+    /// `NotEnoughFunds`, `OnlyDustInputs`) all map to the dedicated
     /// `ErrorNoSelectableInputs` FFI code rather than flattening to
     /// `ErrorUnknown`, and the typed Display rendering survives across the
     /// boundary so callers can distinguish the underlying cause from the
@@ -426,7 +426,7 @@ mod tests {
                 account_index: 0,
                 context: "wallet empty in test".to_string(),
             },
-            PlatformWalletError::OnlyOutputAddressesFunded {
+            PlatformWalletError::NotEnoughFunds {
                 funded_outputs: Vec::<PlatformAddress>::new(),
                 sub_min_count: 0,
                 sub_min_aggregate: 0,

@@ -66,7 +66,7 @@ pub enum InputSelection {
     /// # Errors
     ///
     /// Typed variants surface diagnosable failure shapes:
-    /// [`PlatformWalletError::OnlyOutputAddressesFunded`] when every
+    /// [`PlatformWalletError::NotEnoughFunds`] when every
     /// funded address is also a destination,
     /// [`PlatformWalletError::OnlyDustInputs`] when every funded balance
     /// is below `min_input_amount`, and the generic

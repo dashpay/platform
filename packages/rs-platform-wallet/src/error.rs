@@ -83,13 +83,14 @@ pub enum PlatformWalletError {
     AddressOperation(String),
 
     #[error(
-        "no selectable inputs: only funded addresses appear as destinations \
+        "not enough funds available to cover outputs and fee: every funded address \
+         appears as a destination, so it cannot also be spent \
          (funded_outputs={funded_outputs:?}, sub_min_count={sub_min_count}, \
          sub_min_aggregate={sub_min_aggregate}, min_input_amount={min_input_amount}); \
          rotate to a fresh receive address, consolidate funds, or use \
          InputSelection::Explicit"
     )]
-    OnlyOutputAddressesFunded {
+    NotEnoughFunds {
         /// Funded addresses dropped by the input-equals-output filter.
         funded_outputs: Vec<PlatformAddress>,
         /// Number of additional addresses with a positive balance below
