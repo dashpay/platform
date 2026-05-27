@@ -757,6 +757,7 @@ extension GroupActionMode {
 // `PlatformWalletManager` directly:
 //
 //   try walletManager.registerIdentityForTokenSync(identityId: ...,
+//                                                   walletId: ...,
 //                                                   tokenIds: [...])
 //   try await walletManager.syncIdentityTokensNow()
 //

@@ -14,6 +14,7 @@
 
 use std::time::Duration;
 
+use platform_wallet::wallet::platform_wallet::WalletId;
 use platform_wallet::{IdentityTokenSyncInfo, IdentityTokenSyncState};
 
 use crate::error::*;
@@ -314,24 +315,46 @@ unsafe fn read_token_ids(ptr: *const u8, count: usize) -> Option<Vec<dpp::prelud
     Some(out)
 }
 
-/// Register an identity with the token-sync registry.
+/// Register an identity with the token-sync registry, bound to its
+/// parent wallet.
 ///
 /// `identity_id_ptr` must point to a 32-byte identifier.
+/// `wallet_id_ptr` must point to the parent wallet's 32-byte id —
+/// **required**, not optional. The recorded `WalletId` flows through
+/// every `persister.store(wallet_id, …)` call this manager makes for
+/// `identity_id`, so the changeset cascades through the correct wallet
+/// rather than the legacy all-zero orphan sentinel.
 /// `token_ids_ptr` must point to `token_ids_count * 32` bytes (each
 /// 32-byte chunk is one token id) — null is permitted only when
 /// `token_ids_count == 0` (registers the identity with no watched
-/// tokens). Idempotent: a second call replaces the row.
+/// tokens). Idempotent: a second call replaces the row, including the
+/// recorded parent wallet binding.
 #[no_mangle]
 pub unsafe extern "C" fn platform_wallet_manager_identity_sync_register_identity(
     handle: Handle,
     identity_id_ptr: *const u8,
+    wallet_id_ptr: *const u8,
     token_ids_ptr: *const u8,
     token_ids_count: usize,
 ) -> PlatformWalletFFIResult {
     check_ptr!(identity_id_ptr);
+    check_ptr!(wallet_id_ptr);
     let mut id_bytes = [0u8; 32];
     std::ptr::copy_nonoverlapping(identity_id_ptr, id_bytes.as_mut_ptr(), 32);
     let identity_id = dpp::prelude::Identifier::from(id_bytes);
+
+    let mut wallet_bytes: WalletId = [0u8; 32];
+    std::ptr::copy_nonoverlapping(wallet_id_ptr, wallet_bytes.as_mut_ptr(), 32);
+    // Reject the all-zero sentinel explicitly: this entry point exists
+    // to propagate a real parent wallet, and callers that genuinely
+    // want the orphan registration must not reach the wallet-aware
+    // path.
+    if wallet_bytes.iter().all(|b| *b == 0) {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            "wallet_id is the all-zero sentinel; pass a real parent wallet id",
+        );
+    }
 
     let Some(token_ids) = read_token_ids(token_ids_ptr, token_ids_count) else {
         return PlatformWalletFFIResult::err(
@@ -342,7 +365,10 @@ pub unsafe extern "C" fn platform_wallet_manager_identity_sync_register_identity
 
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
         let mgr = manager.identity_sync_arc();
-        runtime().block_on(async move { mgr.register_identity(identity_id, token_ids).await });
+        runtime().block_on(async move {
+            mgr.register_identity_with_wallet(identity_id, Some(wallet_bytes), token_ids)
+                .await
+        });
     });
     unwrap_option_or_return!(option);
     PlatformWalletFFIResult::ok()

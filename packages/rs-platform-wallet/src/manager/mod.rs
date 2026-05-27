@@ -16,7 +16,11 @@ use tokio_util::sync::CancellationToken;
 
 use key_wallet_manager::WalletManager;
 
-use crate::changeset::{spawn_wallet_event_adapter, PlatformWalletPersistence};
+#[cfg(feature = "shielded")]
+use crate::changeset::ShieldedSyncStartState;
+use crate::changeset::{
+    spawn_wallet_event_adapter, PlatformAddressSyncStartState, PlatformWalletPersistence,
+};
 use crate::events::{PlatformEventHandler, PlatformEventManager};
 use crate::manager::identity_sync::IdentitySyncManager;
 use crate::manager::platform_address_sync::PlatformAddressSyncManager;
@@ -72,6 +76,30 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     pub(super) shielded_coordinator:
         Arc<RwLock<Option<Arc<crate::wallet::shielded::NetworkShieldedCoordinator>>>>,
     pub(super) persister: Arc<P>,
+    /// Per-wallet `PlatformAddressSyncStartState` slices, lazily
+    /// populated by the first call into `ensure_persisted_state_loaded`
+    /// (made by `load_from_persistor`, `register_wallet`, or
+    /// `bind_shielded`). `None` means "not yet loaded"; `Some(map)`
+    /// means `persister.load()` has been called exactly once and the
+    /// per-wallet slices are available for consumption. Entries are
+    /// `remove`d as wallets register so the map drains naturally; new
+    /// wallets registered after exhaustion fall through to a
+    /// `platform().initialize()` rescan. Invalidated on `remove_wallet`
+    /// to keep a stale persisted slice from re-applying if the same
+    /// `WalletId` re-registers later. See CODE-017.
+    pub(super) persisted_addresses: tokio::sync::RwLock<
+        Option<std::collections::BTreeMap<WalletId, PlatformAddressSyncStartState>>,
+    >,
+    /// Cached shielded snapshot from the same `persister.load()` call
+    /// that populates [`persisted_addresses`]. `bind_shielded` reads it
+    /// to restore per-subwallet notes + watermarks without re-loading.
+    /// The snapshot is read-only (filtered per-wallet at consume time
+    /// via `restore_for_wallet`); restore is idempotent so multiple
+    /// binds reuse the same snapshot. CODE-017.
+    ///
+    /// [`persisted_addresses`]: Self::persisted_addresses
+    #[cfg(feature = "shielded")]
+    pub(super) persisted_shielded: tokio::sync::RwLock<Option<Arc<ShieldedSyncStartState>>>,
     /// Cancellation token + join handle for the wallet-event adapter
     /// task. Held so [`shutdown`] can stop it cleanly when the manager
     /// is torn down.
@@ -152,6 +180,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             #[cfg(feature = "shielded")]
             shielded_coordinator,
             persister,
+            persisted_addresses: tokio::sync::RwLock::new(None),
+            #[cfg(feature = "shielded")]
+            persisted_shielded: tokio::sync::RwLock::new(None),
             event_adapter_cancel,
             event_adapter_join: tokio::sync::Mutex::new(Some(event_adapter_join)),
         }

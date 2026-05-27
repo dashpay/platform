@@ -307,15 +307,28 @@ pub unsafe extern "C" fn platform_wallet_manager_bind_shielded(
     // *and* the per-network sync-coordination registry; we hand it
     // to `bind_shielded` so the wallet reuses the shared store and
     // self-registers its viewing keys for the coordinator-driven
-    // sync loop.
+    // sync loop. We also pull the manager's shared shielded
+    // start-state snapshot here (CODE-017) so the wallet's restore
+    // step skips its own `persister.load()` — when several wallets
+    // bind at startup, every call reuses the same cached `Arc`.
     let lookup = PLATFORM_WALLET_MANAGER_STORAGE.with_item(handle, |manager| {
         runtime().block_on(async {
             let wallet = manager.get_wallet(&wallet_id).await;
             let coordinator = manager.shielded_coordinator().await;
-            (wallet, coordinator)
+            let cached_snapshot = manager.cached_persisted_shielded().await;
+            (wallet, coordinator, cached_snapshot)
         })
     });
-    let (wallet_arc, coordinator) = unwrap_option_or_return!(lookup);
+    let (wallet_arc, coordinator, cached_snapshot) = unwrap_option_or_return!(lookup);
+    let cached_snapshot = match cached_snapshot {
+        Ok(snap) => snap,
+        Err(e) => {
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorWalletOperation,
+                format!("failed to load cached shielded snapshot: {e}"),
+            );
+        }
+    };
     let wallet_arc = match wallet_arc {
         Some(w) => w,
         None => {
@@ -335,10 +348,11 @@ pub unsafe extern "C" fn platform_wallet_manager_bind_shielded(
         }
     };
 
-    if let Err(e) = runtime().block_on(wallet_arc.bind_shielded(
+    if let Err(e) = runtime().block_on(wallet_arc.bind_shielded_with_snapshot(
         seed.as_ref(),
         accounts.as_slice(),
         &coordinator,
+        cached_snapshot,
     )) {
         return PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
