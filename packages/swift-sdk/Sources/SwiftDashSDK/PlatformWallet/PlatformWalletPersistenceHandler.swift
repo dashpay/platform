@@ -2197,26 +2197,6 @@ public class PlatformWalletPersistenceHandler {
     /// Re-saves with the same nullifier overwrite the existing
     /// row in place — Orchard nullifiers are globally unique.
     func persistShieldedNotes(walletId: Data, snapshots: [ShieldedNoteSnapshot]) {
-        // TODO(shielded-snapshot-devnet-test): drop this NSLog when
-        // the iOS balance-of-zero-after-1M-sync diagnosis is closed.
-        // Surfaces whether the persister callback fires + the per-note
-        // (walletId, accountIndex, value) for cross-check against the
-        // Rust integration test (rs-platform-wallet/tests/shielded_sync_paloma.rs).
-        //
-        // NSLog format note: use `NSLog("%@", string)` rather than
-        // multi-arg format specifiers. Swift values don't safely bridge
-        // through C variadics for `%d` / `%@` mixes — that pattern
-        // SIGBUSes (verified, May 2026).
-        let filedUnder = walletId.prefix(4).map { String(format: "%02x", $0) }.joined()
-        let summary = snapshots.prefix(4).map { snap in
-            let sw = snap.walletId.prefix(4).map { String(format: "%02x", $0) }.joined()
-            return "(\(sw)…, acct=\(snap.accountIndex), value=\(snap.value))"
-        }.joined(separator: " ")
-        let firstField = summary.isEmpty ? "—" : summary
-        NSLog(
-            "%@",
-            "[shielded-persist] persistShieldedNotes: filed_under_wallet=\(filedUnder) count=\(snapshots.count) first=\(firstField)"
-        )
         onQueue {
             for snap in snapshots {
                 let nf = snap.nullifier
@@ -2279,20 +2259,6 @@ public class PlatformWalletPersistenceHandler {
         walletId: Data,
         entries: [(walletId: Data, accountIndex: UInt32, lastSyncedIndex: UInt64)]
     ) {
-        // TODO(shielded-snapshot-devnet-test): drop when iOS-balance
-        // diagnosis is closed. Confirms whether the watermark advance
-        // is reaching the persister (drives the "Notes Synced" UI counter).
-        // See the `NSLog("%@", ...)` rationale in `persistShieldedNotes`.
-        let filedUnder = walletId.prefix(4).map { String(format: "%02x", $0) }.joined()
-        let summary = entries.prefix(2).map { e in
-            let sw = e.walletId.prefix(4).map { String(format: "%02x", $0) }.joined()
-            return "(\(sw)…, acct=\(e.accountIndex), idx=\(e.lastSyncedIndex))"
-        }.joined(separator: " ")
-        let entriesField = summary.isEmpty ? "—" : summary
-        NSLog(
-            "%@",
-            "[shielded-persist] persistShieldedSyncedIndices: filed_under_wallet=\(filedUnder) count=\(entries.count) entries=\(entriesField)"
-        )
         onQueue {
             for entry in entries {
                 let row = ensureShieldedSyncStateRow(

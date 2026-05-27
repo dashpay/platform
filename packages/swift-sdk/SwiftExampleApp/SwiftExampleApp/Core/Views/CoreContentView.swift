@@ -623,56 +623,6 @@ var body: some View {
                         // actually quiescing.
                         .disabled(shieldedService.isSyncing)
                     }
-
-                    // ============================================================
-                    // ⚠️  TEST-ONLY UI — DELETE BEFORE MERGE ⚠️
-                    // ------------------------------------------------------------
-                    // "Bind Test Wallet A (Shielded)" button — orange,
-                    // temporary. Binds the chain-side wallet A
-                    // (raw ZIP-32 seed `[0x73; 32]`) baked by
-                    // `dashpay/drive:3.1-shielded.*` so the user can
-                    // measure shielded sync time against the pre-
-                    // populated 1M-note pool. The seed is hardcoded
-                    // here and cannot come from a real wallet import.
-                    //
-                    // Delete this entire HStack block when SwiftExampleApp
-                    // adopts a real test-wallet import flow (see banner
-                    // on `platform_wallet_manager_bind_shielded_with_raw_seed`
-                    // for the full cleanup checklist across all 5 sites).
-                    // Tag: TODO(shielded-snapshot-devnet-test).
-                    // Tracked: dashpay/platform#3714.
-                    // ============================================================
-                    HStack {
-                        Spacer()
-                        Button {
-                            guard let firstWallet = allWallets.first(where: {
-                                $0.networkRaw == platformState.currentNetwork.rawValue
-                            }) else { return }
-                            shieldedService.bindWithRawSeed(
-                                walletManager: walletManager,
-                                walletId: firstWallet.walletId,
-                                network: platformState.currentNetwork,
-                                rawSeed: Data(repeating: 0x73, count: 32),
-                                accounts: [0]
-                            )
-                        } label: {
-                            HStack(spacing: 4) {
-                                Image(systemName: "testtube.2")
-                                Text("Bind Test Wallet A (Shielded)")
-                            }
-                            .font(.caption)
-                            .fontWeight(.medium)
-                        }
-                        .buttonStyle(.bordered)
-                        .tint(.orange)
-                        .controlSize(.mini)
-                        .disabled(
-                            shieldedService.isSyncing ||
-                            !allWallets.contains(where: {
-                                $0.networkRaw == platformState.currentNetwork.rawValue
-                            })
-                        )
-                    }
                 }
                 .padding(.vertical, 4)
             } header: {

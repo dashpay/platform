@@ -287,49 +287,6 @@ impl NetworkShieldedCoordinator {
         }
     }
 
-    // ==================================================================
-    // TEST-ONLY HELPER — REMOVE WITH THE REST OF
-    // `bind_shielded_with_raw_seed`.
-    //
-    // Forces a rescan from index 0 for `(wallet_id, account)` pairs by
-    // writing 0 to the per-subwallet watermark. Used by the raw-seed
-    // bind path (dashpay/platform#3714) where a previous mnemonic-bind
-    // left a watermark at the chain tip, and re-binding with different
-    // viewing keys would otherwise skip every position the old IVK
-    // already saw (and thus miss this wallet's owned notes that the
-    // old IVK didn't decrypt).
-    //
-    // The normal `bind_shielded` flow (mnemonic-resolver) doesn't need
-    // this — same keys across restarts means the persisted watermark
-    // is correct to restore. This helper exists ONLY so the test path
-    // can force a fresh scan after switching keys.
-    //
-    // Delete this method when the raw-seed bind FFI is removed.
-    // Tracked: dashpay/platform#3714.
-    // ==================================================================
-    #[cfg(feature = "shielded")]
-    pub async fn force_rescan_subwallets(
-        &self,
-        wallet_id: WalletId,
-        accounts: &[u32],
-    ) {
-        let mut store = self.store.write().await;
-        for &account in accounts {
-            let id = SubwalletId {
-                wallet_id,
-                account_index: account,
-            };
-            if let Err(e) = store.set_last_synced_note_index(id, 0) {
-                tracing::warn!(
-                    wallet_id = %hex::encode(wallet_id),
-                    account,
-                    error = %e,
-                    "force_rescan_subwallets: failed to zero watermark"
-                );
-            }
-        }
-    }
-
     /// Currently-registered subwallet ids (snapshot, ascending
     /// `(wallet_id, account_index)` order). Exposed for tests and
     /// for the sync coordinator's pass enumeration.
