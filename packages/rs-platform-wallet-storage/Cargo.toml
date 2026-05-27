@@ -104,7 +104,12 @@ dbus-secret-service-keyring-store = { version = "=1.0.0", features = [
 ], optional = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-apple-native-keyring-store = { version = "=1.0.0", optional = true }
+# macOS crate requires one of `keychain` / `protected` features or it
+# emits a compile_error! (latent — only fires on macOS targets; Linux CI
+# never tripped it). `keychain` = standard Keychain; `protected` is the
+# user-presence-gated variant. We want the standard one for the v1
+# SecretStore SPI; the protected variant can be opt-in later.
+apple-native-keyring-store = { version = "=1.0.0", features = ["keychain"], optional = true }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows-native-keyring-store = { version = "=1.0.0", optional = true }
