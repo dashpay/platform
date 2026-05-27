@@ -302,7 +302,7 @@ pub const DRIVE_ABCI_QUERY_VERSIONS_V0: DriveAbciQueryVersions = DriveAbciQueryV
             max_version: 0,
             default_current_version: 0,
         },
-        max_encrypted_notes_per_query: 2048,
+        max_query_chunks: 1,
     },
     address_funds_queries: DriveAbciQueryAddressFundsVersions {
         addresses_infos: FeatureVersionBounds {
