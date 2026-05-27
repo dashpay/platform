@@ -83,20 +83,6 @@ impl Buffer {
         Ok(())
     }
 
-    /// Deprecated alias for [`Self::take_for_flush`]. New call sites
-    /// MUST use the renamed pair so the take/restore lifecycle is
-    /// explicit.
-    #[deprecated(
-        since = "3.1.0-dev.1",
-        note = "use take_for_flush + restore for retry-safe semantics; remove in 3.2.0"
-    )]
-    pub fn drain(
-        &self,
-        wallet_id: &WalletId,
-    ) -> Result<Option<PlatformWalletChangeSet>, WalletStorageError> {
-        self.take_for_flush(wallet_id)
-    }
-
     /// Every wallet currently holding buffered data, sorted by id for
     /// deterministic flush ordering.
     pub fn dirty_wallets(&self) -> Result<Vec<WalletId>, WalletStorageError> {

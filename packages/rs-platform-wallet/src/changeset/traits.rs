@@ -3,19 +3,52 @@
 //! Implementors choose their own storage engine (SQLite, file, memory, remote).
 //! The traits guarantee that deltas are persisted atomically.
 
+use std::collections::BTreeMap;
+use std::error::Error as StdError;
+use std::path::PathBuf;
+
 use crate::changeset::changeset::PlatformWalletChangeSet;
 use crate::changeset::client_start_state::ClientStartState;
 use crate::wallet::platform_wallet::WalletId;
 use dashcore::Txid;
 use key_wallet::managed_account::transaction_record::TransactionRecord;
 
+/// Retry classification for [`PersistenceError::Backend`].
+///
+/// The kind carries the persistor's `is_transient()` contract across
+/// the trait boundary so consumers can decide whether to retry, undo
+/// in-memory state, or surface the failure to the user without
+/// guessing from a string message.
+///
+/// The enum is intentionally NOT `#[non_exhaustive]`: adding a new
+/// kind MUST force every consumer match to update explicitly.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PersistenceErrorKind {
+    /// The persistor reports the write was not committed and the
+    /// buffered state is preserved (e.g. `SQLITE_BUSY`, `SQLITE_FULL`,
+    /// `SQLITE_IOERR`, `SQLITE_NOMEM`). Callers MAY retry with
+    /// exponential backoff.
+    Transient,
+    /// The persistor reports an unrecoverable failure (schema
+    /// corruption, logic bug, I/O error not covered by the transient
+    /// class). Callers MUST NOT retry — the buffered changeset is
+    /// gone and the same call will keep failing.
+    Fatal,
+    /// SQL constraint / foreign-key / integrity violation. Distinct
+    /// from `Fatal` so callers can distinguish "your data is wrong"
+    /// (caller bug) from "the storage engine is unhappy" (operator /
+    /// infrastructure problem). Treated as fatal for retry purposes.
+    Constraint,
+}
+
 /// Errors returned by a [`PlatformWalletPersistence`] backend.
 ///
 /// Concrete (non-`Box<dyn Error>`) so callers and downstream
 /// traits can compose the result types without erasing the
 /// error's shape. Backends that don't fit cleanly into
-/// [`Self::LockPoisoned`] render their native error via
-/// [`Self::backend`] into [`Self::Backend`].
+/// [`Self::LockPoisoned`] route their native error through
+/// [`Self::backend_with_kind`] (or [`Self::backend`] when the kind
+/// isn't known) into [`Self::Backend`].
 #[derive(Debug, thiserror::Error)]
 pub enum PersistenceError {
     /// An internal synchronization primitive is poisoned (a
@@ -26,35 +59,76 @@ pub enum PersistenceError {
     LockPoisoned,
 
     /// Error bubbled up from the underlying storage engine
-    /// (SQLite, file I/O, FFI callback, etc.). Carries the
-    /// backend's error message; the original error type is
-    /// intentionally erased so the trait stays object-safe
-    /// without generic error parameters.
-    #[error("persistence backend error: {0}")]
-    Backend(String),
+    /// (SQLite, file I/O, FFI callback, etc.).
+    ///
+    /// `kind` carries the retry classification — see
+    /// [`PersistenceErrorKind`]. `source` is a boxed typed error so
+    /// callers that need finer detail can downcast (the canonical
+    /// SQLite backend boxes `WalletStorageError`, which preserves the
+    /// full typed source chain).
+    #[error("persistence backend error ({kind:?}): {source}")]
+    Backend {
+        kind: PersistenceErrorKind,
+        source: Box<dyn StdError + Send + Sync>,
+    },
 }
 
 impl PersistenceError {
-    /// Convenience constructor that stringifies any
-    /// `Display` error into [`PersistenceError::Backend`].
-    pub fn backend(err: impl std::fmt::Display) -> Self {
-        Self::Backend(err.to_string())
+    /// Construct a [`Self::Backend`] from any boxable error,
+    /// classified as [`PersistenceErrorKind::Fatal`].
+    ///
+    /// Use this when the caller does not (or cannot) classify the
+    /// kind. Defaulting to `Fatal` is the conservative choice: a
+    /// misclassification reads as "do not retry" rather than
+    /// spuriously retrying a permanent failure.
+    pub fn backend<E>(source: E) -> Self
+    where
+        E: Into<Box<dyn StdError + Send + Sync>>,
+    {
+        Self::Backend {
+            kind: PersistenceErrorKind::Fatal,
+            source: source.into(),
+        }
     }
-}
 
-// Ergonomic conversions so backends can `.into()` a message without
-// spelling out the enum variant. The common pattern in FFI-style
-// backends is `Err(format!("...").into())`; the `From<String>` impl
-// keeps that terse while routing into the typed error.
-impl From<String> for PersistenceError {
-    fn from(msg: String) -> Self {
-        Self::Backend(msg)
+    /// Construct a [`Self::Backend`] with an explicit kind. Use this
+    /// at the persistor boundary where the kind is known (e.g.
+    /// `From<WalletStorageError>` checks `is_transient()` and the
+    /// constraint codes before calling this).
+    pub fn backend_with_kind<E>(kind: PersistenceErrorKind, source: E) -> Self
+    where
+        E: Into<Box<dyn StdError + Send + Sync>>,
+    {
+        Self::Backend {
+            kind,
+            source: source.into(),
+        }
     }
-}
 
-impl From<&str> for PersistenceError {
-    fn from(msg: &str) -> Self {
-        Self::Backend(msg.to_string())
+    /// `true` if the error is a `Backend` whose kind is
+    /// [`PersistenceErrorKind::Transient`]. `LockPoisoned`, `Fatal`,
+    /// and `Constraint` all read as non-transient.
+    pub fn is_transient(&self) -> bool {
+        matches!(
+            self,
+            Self::Backend {
+                kind: PersistenceErrorKind::Transient,
+                ..
+            }
+        )
+    }
+
+    /// Retry-policy classification for the error.
+    ///
+    /// Returns `None` for [`Self::LockPoisoned`] (which is its own
+    /// trait-level variant) and `Some(kind)` for [`Self::Backend`].
+    /// Callers that always need a kind should treat `None` as
+    /// [`PersistenceErrorKind::Fatal`].
+    pub fn kind(&self) -> Option<PersistenceErrorKind> {
+        match self {
+            Self::LockPoisoned => None,
+            Self::Backend { kind, .. } => Some(*kind),
+        }
     }
 }
 
@@ -135,21 +209,28 @@ pub trait PlatformWalletPersistence: Send + Sync {
     ///
     /// # Errors
     ///
-    /// Implementations classify failures along a two-axis contract:
+    /// Implementations classify failures via
+    /// [`PersistenceErrorKind`] on the returned
+    /// [`PersistenceError::Backend`] so callers can drive retry policy
+    /// off [`PersistenceError::is_transient`]:
     ///
-    /// - **Transient** (`PersistenceError::backend(..)` whose source
-    ///   carries `is_transient() == true` — for the canonical SQLite
-    ///   backend that's `SQLITE_BUSY` / `SQLITE_LOCKED`, and as of
-    ///   ATOM-008 also the I/O-class codes `SQLITE_FULL` /
-    ///   `SQLITE_IOERR` / `SQLITE_NOMEM`): the buffered changeset is
+    /// - **[`PersistenceErrorKind::Transient`]** — for the canonical
+    ///   SQLite backend that's `SQLITE_BUSY` / `SQLITE_LOCKED`, and as
+    ///   of ATOM-008 also the I/O-class codes `SQLITE_FULL` /
+    ///   `SQLITE_IOERR` / `SQLITE_NOMEM`: the buffered changeset is
     ///   preserved (re-merged via the buffer's `restore` path so any
     ///   `store` that landed during the failed flush wins on LWW
     ///   fields), and the caller MAY retry with exponential backoff.
-    /// - **Fatal** (everything else — schema corruption, logic bugs,
-    ///   integrity violations): the buffer is dropped, the staged
-    ///   changeset is gone, and the backend logs a structured
-    ///   `tracing::error!`. The caller MUST NOT retry — the data is
-    ///   not recoverable through this trait.
+    /// - **[`PersistenceErrorKind::Constraint`]** — SQL
+    ///   constraint / FK / integrity violation. Caller bug; the data
+    ///   is rejected by the schema. MUST NOT retry without changing
+    ///   the data.
+    /// - **[`PersistenceErrorKind::Fatal`]** — everything else
+    ///   (schema corruption, logic bugs, I/O outside the transient
+    ///   class): the buffer is dropped, the staged changeset is gone,
+    ///   and the backend logs a structured `tracing::error!`. The
+    ///   caller MUST NOT retry — the data is not recoverable through
+    ///   this trait.
     ///
     /// [`PersistenceError::LockPoisoned`] is fatal but distinguished
     /// at the variant level so callers can pattern-match on it.
@@ -215,4 +296,103 @@ pub trait PlatformWalletPersistence: Send + Sync {
     ) -> Result<Option<TransactionRecord>, PersistenceError> {
         Ok(None)
     }
+
+    /// Cascade-delete every persisted row owned by `wallet_id`.
+    ///
+    /// The default impl is a no-op that returns an empty
+    /// [`DeleteWalletReport`]. Backends with no per-wallet state
+    /// on disk (e.g. [`NoPlatformPersistence`](crate::wallet::persister::NoPlatformPersistence))
+    /// inherit it.
+    ///
+    /// # Errors
+    ///
+    /// - [`PersistenceErrorKind::Transient`] (e.g. `SQLITE_BUSY`):
+    ///   callers MAY retry with backoff.
+    /// - [`PersistenceErrorKind::Constraint`] / [`PersistenceErrorKind::Fatal`]
+    ///   / [`PersistenceError::LockPoisoned`]: callers MUST NOT retry;
+    ///   the disk state may carry orphan rows that an admin tool has
+    ///   to clean up out-of-band.
+    fn delete_wallet(&self, wallet_id: WalletId) -> Result<DeleteWalletReport, PersistenceError> {
+        Ok(DeleteWalletReport {
+            wallet_id,
+            backup_path: None,
+            rows_removed_per_table: BTreeMap::new(),
+        })
+    }
+
+    /// Flush every dirty wallet's buffered changeset to durable storage.
+    ///
+    /// The default impl is a no-op that returns an empty
+    /// [`CommitReport`]. Backends that flush inline (e.g. SQLite in
+    /// [`FlushMode::Immediate`](https://docs.rs/platform-wallet-storage))
+    /// or that have nothing to flush ([`NoPlatformPersistence`](crate::wallet::persister::NoPlatformPersistence))
+    /// inherit it.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` ONLY when even enumerating the dirty set fails
+    /// (e.g. the buffer mutex is poisoned). Per-wallet flush failures
+    /// land on `report.failed` with the classified `PersistenceError`
+    /// per wallet so a single bad wallet does not hide its siblings'
+    /// success. `report.still_pending` lists wallets that were never
+    /// attempted because an earlier per-flush call short-circuited
+    /// the loop (today: `LockPoisoned`).
+    ///
+    /// Atomicity is per-wallet, not cross-wallet: there is no
+    /// transaction spanning multiple wallets.
+    fn commit_writes(&self) -> Result<CommitReport, PersistenceError> {
+        Ok(CommitReport {
+            succeeded: Vec::new(),
+            failed: Vec::new(),
+            still_pending: Vec::new(),
+        })
+    }
+}
+
+/// Outcome of a [`PlatformWalletPersistence::commit_writes`] call.
+///
+/// Each dirty wallet's per-flush result lands in exactly one of the
+/// three vectors so a single failed wallet doesn't hide its siblings'
+/// success (or vice-versa). Callers can retry `still_pending` directly;
+/// `failed` carries the classified `PersistenceError` per wallet so
+/// transient-vs-fatal decisions stay local.
+#[derive(Debug)]
+pub struct CommitReport {
+    /// Wallets that flushed successfully (durable on disk).
+    pub succeeded: Vec<WalletId>,
+    /// Wallets whose flush returned an error. The `PersistenceError`
+    /// carries the classification and source per
+    /// [`PersistenceErrorKind`].
+    pub failed: Vec<(WalletId, PersistenceError)>,
+    /// Wallets we never attempted because an earlier per-flush call
+    /// short-circuited the loop (today: a `LockPoisoned` — the
+    /// connection mutex is gone).
+    pub still_pending: Vec<WalletId>,
+}
+
+impl CommitReport {
+    /// `true` when every dirty wallet flushed cleanly.
+    pub fn is_ok(&self) -> bool {
+        self.failed.is_empty() && self.still_pending.is_empty()
+    }
+}
+
+/// Outcome of a [`PlatformWalletPersistence::delete_wallet`] call.
+///
+/// Lives on the trait so consumers can match on the report without
+/// pulling in a backend-specific crate. The SQLite backend builds an
+/// instance with `rows_removed_per_table` populated; backends that
+/// don't track per-table row counts emit an empty map.
+#[derive(Debug, Clone)]
+pub struct DeleteWalletReport {
+    /// The wallet that was deleted.
+    pub wallet_id: WalletId,
+    /// Absolute path of the pre-delete auto-backup taken before the
+    /// cascade. `None` when the backend skipped the backup
+    /// (intentionally — e.g. the SQLite CLI's `--no-auto-backup` — or
+    /// because the backend has no backup concept).
+    pub backup_path: Option<PathBuf>,
+    /// Per-table row counts the backend deleted. Empty for backends
+    /// that don't expose per-table accounting.
+    pub rows_removed_per_table: BTreeMap<&'static str, usize>,
 }

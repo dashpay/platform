@@ -24,15 +24,23 @@ pub fn apply_secure_permissions(path: &Path) -> Result<(), WalletStorageError> {
         // committed pages live in <path>-wal / <path>-shm. Without this
         // sweep, the sidecars stay at the process umask default — a
         // local-user info leak on multi-user hosts.
+        //
+        // CODE-011: build the sibling path via `OsString::push` so
+        // non-UTF-8 path bytes survive intact (no `to_string_lossy`
+        // corruption). `set_permissions` runs unconditionally — a
+        // missing sibling returns `ErrorKind::NotFound`, which we treat
+        // as a silent no-op (closes the `exists()` TOCTOU gate).
+        let Some(file_name) = path.file_name() else {
+            return Ok(());
+        };
         for ext in ["-wal", "-shm"] {
-            let sibling = path.with_file_name(format!(
-                "{}{ext}",
-                path.file_name()
-                    .map(|s| s.to_string_lossy().to_string())
-                    .unwrap_or_default()
-            ));
-            if sibling.exists() {
-                std::fs::set_permissions(&sibling, perms.clone())?;
+            let mut sibling_name = file_name.to_os_string();
+            sibling_name.push(ext);
+            let sibling = path.with_file_name(sibling_name);
+            match std::fs::set_permissions(&sibling, perms.clone()) {
+                Ok(()) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => return Err(WalletStorageError::Io(e)),
             }
         }
     }

@@ -97,11 +97,10 @@ fn tc043_non_wired_up_persisted_but_not_returned() {
     let recipient = Identifier::from([0x22; 32]);
     let token = Identifier::from([0x33; 32]);
     ensure_wallet_meta(&persister, &w);
-    // Identity row required for the contacts/dashpay FK triggers if
-    // any are wired into contacts_*; the contacts_* tables themselves
-    // only check the wallet_metadata parent today, so we don't need
-    // an identity row for this test — but we'd add one here if the
-    // trigger set grew.
+    // token_balances FK targets identities(identity_id), so the owner
+    // identity must exist before any token-balance row is written.
+    // contacts_* is wallet-scoped, so it doesn't need an identity row.
+    common::ensure_identity(&persister, owner.as_bytes(), Some(&w));
     let mut sent_requests = std::collections::BTreeMap::new();
     sent_requests.insert(
         SentContactRequestKey {
@@ -163,8 +162,8 @@ fn tc043_non_wired_up_persisted_but_not_returned() {
     assert_eq!(sent, 1, "contacts_sent row missing after reopen");
     let tokens: i64 = conn
         .query_row(
-            "SELECT COUNT(*) FROM token_balances WHERE wallet_id = ?1 AND identity_id = ?2 AND token_id = ?3",
-            rusqlite::params![w.as_slice(), owner.as_slice(), token.as_slice()],
+            "SELECT COUNT(*) FROM token_balances WHERE identity_id = ?1 AND token_id = ?2",
+            rusqlite::params![owner.as_slice(), token.as_slice()],
             |row| row.get(0),
         )
         .unwrap();

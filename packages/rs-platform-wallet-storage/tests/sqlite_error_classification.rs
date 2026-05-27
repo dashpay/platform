@@ -177,6 +177,9 @@ fn samples() -> Vec<WalletStorageError> {
                 Some("busy".into()),
             ),
         },
+        WalletStorageError::ConcurrentMutationDuringDelete {
+            wallet_id: [0xCD; 32],
+        },
     ]
 }
 
@@ -244,6 +247,9 @@ fn tc_p2_005_is_transient_table() {
             WalletStorageError::BlobTooLarge { .. } => (false, "blob_too_large"),
             WalletStorageError::ForeignKeysNotEnforced => (false, "foreign_keys_not_enforced"),
             WalletStorageError::IntegerOverflow { .. } => (false, "integer_overflow"),
+            WalletStorageError::ConcurrentMutationDuringDelete { .. } => {
+                (false, "concurrent_mutation_during_delete")
+            }
         }
     }
 
@@ -265,9 +271,10 @@ fn tc_p2_005_is_transient_table() {
 }
 
 /// TC-P2-010: `FlushRetryable` flowing through the `From` impl into
-/// `PersistenceError::Backend(String)` carries the markers ops grep
-/// for: variant name, hex-encoded wallet id prefix, and the inner
-/// rusqlite source text.
+/// `PersistenceError::Backend { kind, source }` (CODE-004): the outer
+/// `Display` carries the variant markers ops grep for, and the typed
+/// source chain still reaches the inner rusqlite payload (consumers
+/// downcast or `Error::source`-walk to get there).
 #[test]
 fn tc_p2_010_boundary_error_mapping() {
     let err = WalletStorageError::FlushRetryable {
@@ -281,21 +288,36 @@ fn tc_p2_010_boundary_error_mapping() {
         ),
     };
     let pe: PersistenceError = err.into();
-    let s = match pe {
-        PersistenceError::Backend(s) => s,
-        other => panic!("expected Backend(_), got {other:?}"),
+    let source = match pe {
+        PersistenceError::Backend { source, .. } => source,
+        other => panic!("expected Backend {{ .. }}, got {other:?}"),
     };
+    let outer = source.to_string();
     assert!(
-        s.contains("FlushRetryable"),
-        "missing FlushRetryable variant marker: {s}"
+        outer.contains("FlushRetryable"),
+        "missing FlushRetryable variant marker: {outer}"
     );
     assert!(
-        s.contains("flush failed transiently"),
-        "missing FlushRetryable display body: {s}"
+        outer.contains("flush failed transiently"),
+        "missing FlushRetryable display body: {outer}"
     );
-    assert!(s.contains("abab"), "missing wallet_id hex prefix: {s}");
     assert!(
-        s.contains("database is locked"),
-        "missing inner source text: {s}"
+        outer.contains("abab"),
+        "missing wallet_id hex prefix: {outer}"
+    );
+
+    // Walk the typed source chain to the inner rusqlite payload —
+    // post-CODE-004 the source is `Box<dyn Error + Send + Sync>` so
+    // the chain is preserved structurally, not just stringified.
+    let mut chain = String::new();
+    let mut cur: Option<&(dyn std::error::Error + 'static)> = source.source();
+    while let Some(e) = cur {
+        chain.push_str(&e.to_string());
+        chain.push('\n');
+        cur = e.source();
+    }
+    assert!(
+        chain.contains("database is locked"),
+        "inner source text missing from chain walk: {chain}"
     );
 }

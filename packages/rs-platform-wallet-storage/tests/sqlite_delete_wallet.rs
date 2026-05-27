@@ -93,7 +93,7 @@ fn delete_wallet_restores_buffer_on_backup_failure() {
 /// per-wallet table holds zero rows for that wallet_id.
 #[test]
 fn concurrent_store_does_not_resurrect_deleted_wallet() {
-    use platform_wallet_storage::sqlite::schema::PER_WALLET_TABLES;
+    use platform_wallet_storage::sqlite::schema::{count_rows_for_wallet_sql, PER_WALLET_TABLES};
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::thread;
 
@@ -136,7 +136,9 @@ fn concurrent_store_does_not_resurrect_deleted_wallet() {
 
     // Give the worker a moment to land some racing stores.
     std::thread::sleep(std::time::Duration::from_millis(20));
-    let _ = persister.delete_wallet(w);
+    persister
+        .delete_wallet(w)
+        .expect("delete_wallet should succeed in concurrent-store regression");
     stop.store(true, Ordering::Relaxed);
     worker.join().unwrap();
 
@@ -146,14 +148,14 @@ fn concurrent_store_does_not_resurrect_deleted_wallet() {
     let _ = persister.commit_writes();
 
     let conn = persister.lock_conn_for_test();
-    for &table in PER_WALLET_TABLES {
+    for (table, scope) in PER_WALLET_TABLES {
         let n: i64 = conn
             .query_row(
-                &format!("SELECT COUNT(*) FROM {table} WHERE wallet_id = ?1"),
+                &count_rows_for_wallet_sql(table, *scope),
                 rusqlite::params![w.as_slice()],
                 |row| row.get(0),
             )
-            .unwrap_or(0);
+            .unwrap_or_else(|e| panic!("COUNT(*) query failed for table `{table}`: {e}"));
         assert_eq!(
             n, 0,
             "table `{table}` still has rows for deleted wallet — concurrent-store race regression"

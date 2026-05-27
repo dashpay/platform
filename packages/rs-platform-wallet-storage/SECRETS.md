@@ -55,7 +55,7 @@ secret-free.
   exempt by design.
 - NFR-4 / TC-082 (`tests/sqlite_persist_roundtrip.rs::tc082_no_box_dyn_error_in_src`):
   all public method signatures use concrete error types
-  (`SqlitePersisterError`, `PersistenceError`) — never
+  (`WalletStorageError`, `PersistenceError`) — never
   `Box<dyn Error>` — so a future leak is caught by `grep`.
 
 ## Backup retention and secrets
