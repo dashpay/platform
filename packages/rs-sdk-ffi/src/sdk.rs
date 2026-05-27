@@ -25,14 +25,6 @@ pub struct DashSDKConfigExtended {
     pub context_provider: *mut ContextProviderHandle,
     /// Optional Core SDK handle for automatic context provider creation
     pub core_sdk_handle: *mut CoreSDKHandle,
-    /// Optional Platform protocol version to pin the SDK to.
-    ///
-    /// `0` preserves the default auto-detect behavior; any non-zero value
-    /// must correspond to a known `PlatformVersion` or SDK creation fails
-    /// with `InvalidParameter`. Callers that zero-initialize the struct
-    /// (e.g., Swift's `DashSDKConfigExtended()` or C `{0}` initializer)
-    /// automatically inherit the auto-detect default.
-    pub protocol_version: u32,
 }
 
 type TrustedProvider = Arc<rs_sdk_trusted_context_provider::TrustedHttpContextProvider>;
@@ -438,11 +430,39 @@ pub unsafe extern "C" fn dash_sdk_create(config: *const DashSDKConfig) -> DashSD
     create_sdk_from_config(&*config, None)
 }
 
+/// Create a new SDK instance with an explicit protocol version override.
+///
+/// `protocol_version == 0` preserves the default auto-detect behavior; any
+/// non-zero value must correspond to a known `PlatformVersion` or SDK
+/// creation fails with `InvalidParameter`.
+///
+/// # Safety
+/// - `config` must be a valid pointer to a DashSDKConfig structure for the duration of the call.
+/// - The returned handle inside `DashSDKResult` must be destroyed using the SDK destroy function to avoid leaks.
+#[no_mangle]
+pub unsafe extern "C" fn dash_sdk_create_with_protocol_version(
+    config: *const DashSDKConfig,
+    protocol_version: u32,
+) -> DashSDKResult {
+    if config.is_null() {
+        return DashSDKResult::error(DashSDKError::new(
+            DashSDKErrorCode::InvalidParameter,
+            "Config is null".to_string(),
+        ));
+    }
+
+    let platform_version = match resolve_platform_version(protocol_version) {
+        Ok(platform_version) => platform_version,
+        Err(result) => return result,
+    };
+
+    create_sdk_from_config(&*config, platform_version)
+}
+
 /// Create a new SDK instance with extended configuration including context provider.
 ///
-/// Honors `config.protocol_version` (where `0` keeps the default auto-detect
-/// behavior; any non-zero value pins Platform protocol version, returning
-/// `InvalidParameter` if unknown).
+/// Uses the default auto-detect Platform protocol version. To pin a specific
+/// version, use [`dash_sdk_create_extended_with_protocol_version`] instead.
 ///
 /// # Safety
 /// - `config` must be a valid pointer to a DashSDKConfigExtended structure for the duration of the call.
@@ -459,13 +479,37 @@ pub unsafe extern "C" fn dash_sdk_create_extended(
         ));
     }
 
-    let config_ref = &*config;
-    let platform_version = match resolve_platform_version(config_ref.protocol_version) {
+    create_extended_sdk_from_config(&*config, None)
+}
+
+/// Create a new SDK instance with extended configuration and an explicit protocol version override.
+///
+/// `protocol_version == 0` preserves the default auto-detect behavior; any
+/// non-zero value must correspond to a known `PlatformVersion` or SDK
+/// creation fails with `InvalidParameter`.
+///
+/// # Safety
+/// - `config` must be a valid pointer to a DashSDKConfigExtended structure for the duration of the call.
+/// - Any embedded pointers (context_provider/core_sdk_handle) must be valid when non-null.
+/// - The returned handle inside `DashSDKResult` must be destroyed using the SDK destroy function to avoid leaks.
+#[no_mangle]
+pub unsafe extern "C" fn dash_sdk_create_extended_with_protocol_version(
+    config: *const DashSDKConfigExtended,
+    protocol_version: u32,
+) -> DashSDKResult {
+    if config.is_null() {
+        return DashSDKResult::error(DashSDKError::new(
+            DashSDKErrorCode::InvalidParameter,
+            "Config is null".to_string(),
+        ));
+    }
+
+    let platform_version = match resolve_platform_version(protocol_version) {
         Ok(platform_version) => platform_version,
         Err(result) => return result,
     };
 
-    create_extended_sdk_from_config(config_ref, platform_version)
+    create_extended_sdk_from_config(&*config, platform_version)
 }
 
 /// Create a new SDK instance with trusted setup
@@ -486,6 +530,38 @@ pub unsafe extern "C" fn dash_sdk_create_trusted(config: *const DashSDKConfig) -
     }
 
     create_trusted_sdk_from_config(&*config, None)
+}
+
+/// Create a new SDK instance with trusted setup and an explicit protocol version override
+///
+/// This creates an SDK with a trusted context provider that fetches quorum keys and
+/// data contracts from trusted endpoints instead of requiring proof verification.
+///
+/// `protocol_version == 0` preserves the default auto-detect behavior; any
+/// non-zero value must correspond to a known `PlatformVersion` or SDK
+/// creation fails with `InvalidParameter`.
+///
+/// # Safety
+/// - `config` must be a valid pointer to a DashSDKConfig structure for the duration of the call.
+/// - The returned handle inside `DashSDKResult` must be destroyed using the SDK destroy function to avoid leaks.
+#[no_mangle]
+pub unsafe extern "C" fn dash_sdk_create_trusted_with_protocol_version(
+    config: *const DashSDKConfig,
+    protocol_version: u32,
+) -> DashSDKResult {
+    if config.is_null() {
+        return DashSDKResult::error(DashSDKError::new(
+            DashSDKErrorCode::InvalidParameter,
+            "Config is null".to_string(),
+        ));
+    }
+
+    let platform_version = match resolve_platform_version(protocol_version) {
+        Ok(platform_version) => platform_version,
+        Err(result) => return result,
+    };
+
+    create_trusted_sdk_from_config(&*config, platform_version)
 }
 
 /// Destroy an SDK instance
@@ -545,17 +621,21 @@ pub unsafe extern "C" fn dash_sdk_register_context_callbacks(
     }
 }
 
-/// Create a new SDK instance with explicit context callbacks
+/// Internal helper used by `dash_sdk_create_with_callbacks*` entry points.
 ///
-/// This is an alternative to registering global callbacks. The callbacks are used only for this SDK instance.
+/// Wraps the caller-provided callbacks in a `ContextProviderWrapper`, builds
+/// a `DashSDKConfigExtended` borrowing the same `dapi_addresses` pointer
+/// (which is only read by the downstream creation function before
+/// returning), and dispatches to the appropriate creation function based on
+/// `protocol_version` (0 = auto-detect).
 ///
 /// # Safety
-/// - `config` must be a valid pointer to a DashSDKConfig structure
-/// - `callbacks` must contain valid function pointers that remain valid for the lifetime of the SDK
-#[no_mangle]
-pub unsafe extern "C" fn dash_sdk_create_with_callbacks(
+/// See `dash_sdk_create_with_callbacks` and
+/// `dash_sdk_create_with_callbacks_and_protocol_version`.
+unsafe fn dash_sdk_create_with_callbacks_inner(
     config: *const DashSDKConfig,
     callbacks: *const crate::context_callbacks::ContextProviderCallbacks,
+    protocol_version: u32,
 ) -> DashSDKResult {
     if config.is_null() {
         return DashSDKResult::error(DashSDKError::new(
@@ -586,7 +666,7 @@ pub unsafe extern "C" fn dash_sdk_create_with_callbacks(
     // Read fields from the caller's config individually rather than copying
     // the struct (which would duplicate the raw `dapi_addresses` pointer).
     // The pointer is only borrowed for the duration of this call; the
-    // downstream `dash_sdk_create_extended` reads and copies the string data
+    // downstream creation function reads and copies the string data
     // immediately before returning.
     let config_ref = &*config;
     let extended_config = DashSDKConfigExtended {
@@ -599,16 +679,54 @@ pub unsafe extern "C" fn dash_sdk_create_with_callbacks(
         },
         context_provider: context_provider_handle,
         core_sdk_handle: std::ptr::null_mut(),
-        protocol_version: 0,
     };
 
-    let result = dash_sdk_create_extended(&extended_config);
+    let result = if protocol_version == 0 {
+        dash_sdk_create_extended(&extended_config)
+    } else {
+        dash_sdk_create_extended_with_protocol_version(&extended_config, protocol_version)
+    };
 
     // Reclaim the context provider wrapper - the SDK has already cloned what it needs
-    // via `provider_wrapper.provider()` inside `dash_sdk_create_extended`.
+    // via `provider_wrapper.provider()` inside the extended creation function.
     let _ = Box::from_raw(context_provider_handle as *mut ContextProviderWrapper);
 
     result
+}
+
+/// Create a new SDK instance with explicit context callbacks
+///
+/// This is an alternative to registering global callbacks. The callbacks are used only for this SDK instance.
+///
+/// # Safety
+/// - `config` must be a valid pointer to a DashSDKConfig structure
+/// - `callbacks` must contain valid function pointers that remain valid for the lifetime of the SDK
+#[no_mangle]
+pub unsafe extern "C" fn dash_sdk_create_with_callbacks(
+    config: *const DashSDKConfig,
+    callbacks: *const crate::context_callbacks::ContextProviderCallbacks,
+) -> DashSDKResult {
+    dash_sdk_create_with_callbacks_inner(config, callbacks, 0)
+}
+
+/// Create a new SDK instance with explicit context callbacks and an explicit protocol version override
+///
+/// This is an alternative to registering global callbacks. The callbacks are used only for this SDK instance.
+///
+/// `protocol_version == 0` preserves the default auto-detect behavior; any
+/// non-zero value must correspond to a known `PlatformVersion` or SDK
+/// creation fails with `InvalidParameter`.
+///
+/// # Safety
+/// - `config` must be a valid pointer to a DashSDKConfig structure
+/// - `callbacks` must contain valid function pointers that remain valid for the lifetime of the SDK
+#[no_mangle]
+pub unsafe extern "C" fn dash_sdk_create_with_callbacks_and_protocol_version(
+    config: *const DashSDKConfig,
+    callbacks: *const crate::context_callbacks::ContextProviderCallbacks,
+    protocol_version: u32,
+) -> DashSDKResult {
+    dash_sdk_create_with_callbacks_inner(config, callbacks, protocol_version)
 }
 
 #[cfg(test)]
@@ -737,7 +855,6 @@ mod tests {
             },
             context_provider: std::ptr::null_mut(),
             core_sdk_handle: &mut core_sdk_handle,
-            protocol_version: 0,
         };
 
         let result = unsafe { dash_sdk_create_extended(&extended_config) };
@@ -754,21 +871,16 @@ mod tests {
     }
 
     #[test]
-    fn dash_sdk_create_extended_pins_protocol_version_from_config_field() {
-        let extended_config = DashSDKConfigExtended {
-            base_config: DashSDKConfig {
-                network: FFINetwork::Testnet,
-                dapi_addresses: std::ptr::null(),
-                skip_asset_lock_proof_verification: false,
-                request_retry_count: 3,
-                request_timeout_ms: 30_000,
-            },
-            context_provider: std::ptr::null_mut(),
-            core_sdk_handle: std::ptr::null_mut(),
-            protocol_version: 11,
+    fn dash_sdk_create_with_protocol_version_pins_v11() {
+        let config = DashSDKConfig {
+            network: FFINetwork::Testnet,
+            dapi_addresses: std::ptr::null(),
+            skip_asset_lock_proof_verification: false,
+            request_retry_count: 3,
+            request_timeout_ms: 30_000,
         };
 
-        let result = unsafe { dash_sdk_create_extended(&extended_config) };
+        let result = unsafe { dash_sdk_create_with_protocol_version(&config, 11) };
         assert!(result.error.is_null(), "expected success");
 
         let handle = result.data as *mut SDKHandle;
@@ -777,6 +889,7 @@ mod tests {
 
         let sdk = unsafe { &*(inner_sdk_ptr as *const dash_sdk::Sdk) };
         assert_eq!(sdk.protocol_version_number(), 11);
+        assert_eq!(sdk.version().protocol_version, 11);
 
         unsafe {
             dash_sdk_destroy(handle);
@@ -784,7 +897,30 @@ mod tests {
     }
 
     #[test]
-    fn dash_sdk_create_extended_rejects_invalid_protocol_version_from_config_field() {
+    fn dash_sdk_create_with_protocol_version_rejects_invalid_protocol_version() {
+        let config = DashSDKConfig {
+            network: FFINetwork::Testnet,
+            dapi_addresses: std::ptr::null(),
+            skip_asset_lock_proof_verification: false,
+            request_retry_count: 3,
+            request_timeout_ms: 30_000,
+        };
+
+        let result = unsafe { dash_sdk_create_with_protocol_version(&config, u32::MAX) };
+        assert!(!result.error.is_null(), "expected invalid parameter error");
+
+        let error = unsafe { &*result.error };
+        assert_eq!(error.code, DashSDKErrorCode::InvalidParameter);
+        let message = unsafe { read_error_message(result.error) };
+        assert!(message.contains("Unknown protocol version"));
+
+        unsafe {
+            dash_sdk_error_free(result.error);
+        }
+    }
+
+    #[test]
+    fn dash_sdk_create_extended_with_protocol_version_pins_v11() {
         let extended_config = DashSDKConfigExtended {
             base_config: DashSDKConfig {
                 network: FFINetwork::Testnet,
@@ -795,16 +931,84 @@ mod tests {
             },
             context_provider: std::ptr::null_mut(),
             core_sdk_handle: std::ptr::null_mut(),
-            protocol_version: u32::MAX,
         };
 
-        let result = unsafe { dash_sdk_create_extended(&extended_config) };
+        let result =
+            unsafe { dash_sdk_create_extended_with_protocol_version(&extended_config, 11) };
+        assert!(result.error.is_null(), "expected success");
+
+        let handle = result.data as *mut SDKHandle;
+        let inner_sdk_ptr = unsafe { dash_sdk_get_inner_sdk_ptr(handle) };
+        assert!(!inner_sdk_ptr.is_null(), "expected inner sdk pointer");
+
+        let sdk = unsafe { &*(inner_sdk_ptr as *const dash_sdk::Sdk) };
+        assert_eq!(sdk.protocol_version_number(), 11);
+        assert_eq!(sdk.version().protocol_version, 11);
+
+        unsafe {
+            dash_sdk_destroy(handle);
+        }
+    }
+
+    #[test]
+    fn dash_sdk_create_extended_with_protocol_version_rejects_invalid_protocol_version() {
+        let extended_config = DashSDKConfigExtended {
+            base_config: DashSDKConfig {
+                network: FFINetwork::Testnet,
+                dapi_addresses: std::ptr::null(),
+                skip_asset_lock_proof_verification: false,
+                request_retry_count: 3,
+                request_timeout_ms: 30_000,
+            },
+            context_provider: std::ptr::null_mut(),
+            core_sdk_handle: std::ptr::null_mut(),
+        };
+
+        let result =
+            unsafe { dash_sdk_create_extended_with_protocol_version(&extended_config, u32::MAX) };
         assert!(!result.error.is_null(), "expected invalid parameter error");
 
         let error = unsafe { &*result.error };
         assert_eq!(error.code, DashSDKErrorCode::InvalidParameter);
         let message = unsafe { read_error_message(result.error) };
         assert!(message.contains("Unknown protocol version"));
+
+        unsafe {
+            dash_sdk_error_free(result.error);
+        }
+    }
+
+    #[test]
+    fn resolve_platform_version_can_pin_v11_for_trusted_builder_flow() {
+        let platform_version = match resolve_platform_version(11) {
+            Ok(Some(platform_version)) => platform_version,
+            Ok(None) => panic!("expected a pinned platform version"),
+            Err(_) => panic!("expected protocol version 11"),
+        };
+        let sdk = SdkBuilder::new_mock()
+            .with_version(platform_version)
+            .build()
+            .expect("expected mock SDK build");
+
+        assert_eq!(sdk.protocol_version_number(), 11);
+        assert_eq!(sdk.version().protocol_version, 11);
+    }
+
+    #[test]
+    fn dash_sdk_create_trusted_with_protocol_version_rejects_invalid_protocol_version() {
+        let config = DashSDKConfig {
+            network: FFINetwork::Testnet,
+            dapi_addresses: std::ptr::null(),
+            skip_asset_lock_proof_verification: false,
+            request_retry_count: 3,
+            request_timeout_ms: 30_000,
+        };
+
+        let result = unsafe { dash_sdk_create_trusted_with_protocol_version(&config, u32::MAX) };
+        assert!(!result.error.is_null(), "expected invalid parameter error");
+
+        let error = unsafe { &*result.error };
+        assert_eq!(error.code, DashSDKErrorCode::InvalidParameter);
 
         unsafe {
             dash_sdk_error_free(result.error);
