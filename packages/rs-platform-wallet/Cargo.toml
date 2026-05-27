@@ -53,7 +53,13 @@ grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "6
 zip32 = { version = "0.2.0", default-features = false, optional = true }
 
 [dev-dependencies]
+# Used by `tests/shielded_chunk_timing_bench.rs` and
+# `tests/shielded_decrypt_bench.rs` to assemble per-chunk wire
+# fixtures and decode the `ShieldedEncryptedNote` wire type.
+drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
 rand = "0.8"
+# Drives the parallel decrypt benchmark in `shielded_decrypt_bench.rs`.
+rayon = "1.10"
 static_assertions = "1.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # `test-util` brings `tokio::time::pause` / `tokio::test(start_paused = true)`
