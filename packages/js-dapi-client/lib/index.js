@@ -1,5 +1,3 @@
-require('../polyfills/fetch-polyfill');
-
 const DAPIClient = require('./DAPIClient');
 
 const NotFoundError = require('./transport/GrpcTransport/errors/NotFoundError');
