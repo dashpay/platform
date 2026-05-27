@@ -371,35 +371,40 @@ impl EncryptedFileStoreInner {
     /// self-cleans — no manual remove racing it. The temp holds only
     /// ciphertext+header, never plaintext.
     fn write_vault(&self, path: &Path, vault: &Vault) -> Result<(), FileStoreError> {
-        let serialized = format::serialize(vault);
-        // `persist` is atomic-replace only within one filesystem, so the
-        // temp MUST share the destination's parent dir (mirrors
-        // sqlite/backup.rs).
-        let parent = path.parent().unwrap_or_else(|| Path::new("."));
-        let write = || -> Result<(), FileStoreError> {
-            let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
-            // tempfile creates the file private-to-owner on every OS; on
-            // Unix we additionally pin 0600 (belt-and-suspenders). On
-            // Windows the private-by-default ACL is sufficient for v1.
-            set_restrictive_perms(tmp.as_file())?;
-            tmp.as_file_mut().write_all(&serialized)?;
-            tmp.as_file().sync_all()?;
-            tmp.persist(path).map_err(|e| e.error)?;
-            // Windows: directory durability relies on NTFS metadata
-            // journaling; no dir-fsync primitive exists there.
-            #[cfg(unix)]
-            {
-                let d = fs::File::open(parent)?;
-                d.sync_all()?;
-            }
-            Ok(())
-        };
-        write().inspect_err(|e| {
+        self.do_write_vault(path, vault).inspect_err(|e| {
             // Operators must see a failed durable write — paths are
             // caller-supplied non-secret (FileStoreError::Io doc); Display
             // only, never the secret.
             tracing::warn!(error = %e, "failed to write vault file");
         })
+    }
+
+    /// Inner write — separated from [`write_vault`] (CMT-012) so the
+    /// warn-on-error rendering hangs off a single `inspect_err` on a
+    /// real method call instead of an immediately-invoked closure.
+    /// Same atomicity contract as [`write_vault`].
+    fn do_write_vault(&self, path: &Path, vault: &Vault) -> Result<(), FileStoreError> {
+        let serialized = format::serialize(vault);
+        // `persist` is atomic-replace only within one filesystem, so the
+        // temp MUST share the destination's parent dir (mirrors
+        // sqlite/backup.rs).
+        let parent = path.parent().unwrap_or_else(|| Path::new("."));
+        let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
+        // tempfile creates the file private-to-owner on every OS; on
+        // Unix we additionally pin 0600 (belt-and-suspenders). On
+        // Windows the private-by-default ACL is sufficient for v1.
+        set_restrictive_perms(tmp.as_file())?;
+        tmp.as_file_mut().write_all(&serialized)?;
+        tmp.as_file().sync_all()?;
+        tmp.persist(path).map_err(|e| e.error)?;
+        // Windows: directory durability relies on NTFS metadata
+        // journaling; no dir-fsync primitive exists there.
+        #[cfg(unix)]
+        {
+            let d = fs::File::open(parent)?;
+            d.sync_all()?;
+        }
+        Ok(())
     }
 
     fn rekey(
@@ -426,24 +431,10 @@ impl EncryptedFileStoreInner {
 
             for (label, body) in &old_vault.entries {
                 let aad = format::aad(format::FORMAT_VERSION, wallet_id.as_bytes(), label);
-                // `derive_and_verify` already proved the old passphrase via
-                // the vault's verify token, so an entry tag failure is
-                // corruption, not a wrong passphrase. Operators must see
-                // this — log the non-secret wallet-id/label, never the
-                // secret. The first such failure aborts the rekey, so this
-                // is not a hot path.
-                let pt = crypto::open(&old_key, &body.nonce, &aad, &body.ciphertext).map_err(
-                    |err| match err {
-                        FileStoreError::Decrypt => {
-                            tracing::error!(
-                                wallet_id = %wallet_id.to_hex(),
-                                label = %label,
-                                "vault entry failed integrity check during rekey (corruption or tampering)"
-                            );
-                            FileStoreError::Corruption
-                        }
-                        other => other,
-                    },
+                let pt = entry_decrypt_or_corruption(
+                    &wallet_id,
+                    label,
+                    crypto::open(&old_key, &body.nonce, &aad, &body.ciphertext),
                 )?;
                 let (nonce, ct) = crypto::seal(&new_key, &aad, pt.expose_secret())?;
                 new_vault.entries.insert(
@@ -511,22 +502,12 @@ impl EncryptedFileStoreInner {
             return Ok(None);
         };
         let aad = format::aad(format::FORMAT_VERSION, wallet_id.as_bytes(), label);
-        match crypto::open(&key, &body.nonce, &aad, &body.ciphertext) {
-            Ok(pt) => Ok(Some(pt)),
-            // The verify-token already passed, so the passphrase is
-            // correct: an entry tag failure here is corruption/tampering,
-            // not a wrong passphrase. Operators must see this — log the
-            // non-secret wallet-id/label, never the secret.
-            Err(FileStoreError::Decrypt) => {
-                tracing::error!(
-                    wallet_id = %wallet_id.to_hex(),
-                    label = %label,
-                    "vault entry failed integrity check (corruption or tampering)"
-                );
-                Err(FileStoreError::Corruption)
-            }
-            Err(e) => Err(e),
-        }
+        entry_decrypt_or_corruption(
+            wallet_id,
+            label,
+            crypto::open(&key, &body.nonce, &aad, &body.ciphertext),
+        )
+        .map(Some)
     }
 
     /// `delete` — upstream-compliant: returns whether an entry was
@@ -711,6 +692,32 @@ impl std::fmt::Debug for EncryptedFileStore {
     }
 }
 
+/// Project an entry-level `crypto::open` result into the typed
+/// distinction the secret backend exposes (CMT-020). The verify-token
+/// has already passed at every caller (`get` / `rekey`), so a
+/// `FileStoreError::Decrypt` here is corruption or tampering of the
+/// individual entry — **not** a wrong passphrase. Logs the non-secret
+/// `(wallet_id, label)` pair at error level (never the secret) and
+/// maps to `FileStoreError::Corruption`. Every other variant rides
+/// through unchanged.
+fn entry_decrypt_or_corruption(
+    wallet_id: &WalletId,
+    label: &str,
+    result: Result<SecretBytes, FileStoreError>,
+) -> Result<SecretBytes, FileStoreError> {
+    result.map_err(|err| match err {
+        FileStoreError::Decrypt => {
+            tracing::error!(
+                wallet_id = %wallet_id.to_hex(),
+                label = %label,
+                "vault entry failed integrity check (corruption or tampering)"
+            );
+            FileStoreError::Corruption
+        }
+        other => other,
+    })
+}
+
 #[cfg(unix)]
 fn check_perms(meta: &fs::Metadata) -> Result<(), FileStoreError> {
     use std::os::unix::fs::MetadataExt;
@@ -721,7 +728,12 @@ fn check_perms(meta: &fs::Metadata) -> Result<(), FileStoreError> {
     Ok(())
 }
 
-// TODO: Windows ACL read-check is not yet implemented; tracked in PR #3672.
+// INTENTIONAL(CMT-007): Windows ACL read-check deferred to a follow-up
+// PR — tracked at https://github.com/dashpay/platform/issues/3754. Vault
+// dir/file mode hardening on Windows requires GetSecurityInfo via
+// `windows-acl` or `winapi`; out of scope for the secrets-feature
+// landing. Operators on Windows MUST set ACLs manually until the
+// follow-up lands.
 #[cfg(not(unix))]
 fn check_perms(_meta: &fs::Metadata) -> Result<(), FileStoreError> {
     Ok(())
@@ -796,10 +808,11 @@ fn set_restrictive_dir_perms(dir: &Path, preexisted: bool) -> Result<(), FileSto
 }
 
 // INTENTIONAL(CMT-002): Windows ACL dir-tightening is deferred to the
-// same follow-up that covers the file check (CMT-007). Vault dir
-// hardening on Windows requires GetSecurityInfo via windows-acl or
-// winapi; out of scope for the secrets-feature landing. Operators on
-// Windows MUST set ACLs manually until the follow-up lands.
+// same follow-up that covers the file check (CMT-007), tracked at
+// https://github.com/dashpay/platform/issues/3754. Vault dir hardening
+// on Windows requires GetSecurityInfo via `windows-acl` or `winapi`;
+// out of scope for the secrets-feature landing. Operators on Windows
+// MUST set ACLs manually until the follow-up lands.
 #[cfg(not(unix))]
 fn set_restrictive_dir_perms(_dir: &Path, _preexisted: bool) -> Result<(), FileStoreError> {
     Ok(())
