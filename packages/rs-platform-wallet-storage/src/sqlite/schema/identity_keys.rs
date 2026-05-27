@@ -100,14 +100,19 @@ pub fn apply(
             if entry.identity_id != *identity_id || entry.key_id != *key_id {
                 return Err(WalletStorageError::IdentityKeyEntryMismatch);
             }
-            if let Some(entry_wallet_id) = entry.wallet_id {
-                // Treat the all-zero sentinel scope as "any wallet" so
-                // identity-only callers (no parent wallet) don't trip
-                // the cross-check.
-                let scope_is_sentinel = wallet_id.iter().all(|b| *b == 0);
-                if !scope_is_sentinel && entry_wallet_id != *wallet_id {
+            // Sentinel scope ("no parent wallet known") requires the
+            // entry's wallet_id to also be `None`; a real entry
+            // wallet_id under sentinel scope would silently file the
+            // key under the wrong parenting. Non-sentinel scope
+            // requires the entry's wallet_id (when set) to match
+            // exactly.
+            let scope_is_sentinel = wallet_id.iter().all(|b| *b == 0);
+            match (scope_is_sentinel, entry.wallet_id) {
+                (true, Some(_)) => return Err(WalletStorageError::IdentityKeyEntryMismatch),
+                (false, Some(entry_wallet_id)) if entry_wallet_id != *wallet_id => {
                     return Err(WalletStorageError::IdentityKeyEntryMismatch);
                 }
+                _ => {}
             }
             let wire = IdentityKeyWire::from_entry(entry)?;
             let entry_blob = blob::encode(&wire)?;

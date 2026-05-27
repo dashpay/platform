@@ -1,4 +1,16 @@
 //! `dashpay_profiles` + `dashpay_payments_overlay` writers.
+//!
+//! # Precondition
+//!
+//! Every `identity_id` in the supplied profile / payment maps MUST
+//! already exist in the `identities` table and belong to the flush's
+//! `wallet_id`. The writer relies on the
+//! `identities(identity_id, wallet_id)` row produced by
+//! [`super::identities::apply`] (in the same transaction or earlier)
+//! for parenting; the FK to `identities(identity_id)` enforces the
+//! existence half, but not the wallet match. A `debug_assert!` below
+//! catches mis-attributed callers in development builds at no
+//! production cost.
 
 use std::collections::BTreeMap;
 
@@ -17,13 +29,26 @@ use crate::sqlite::schema::blob;
 ///
 /// The `_wallet_id` parameter is kept on the signature for symmetry
 /// with the persister's `write_changeset_in_one_tx` dispatch table,
-/// but it does not feed any column.
+/// and feeds the precondition debug-assert; it does not feed any
+/// column.
 pub fn apply(
     tx: &Transaction<'_>,
-    _wallet_id: &WalletId,
+    wallet_id: &WalletId,
     profiles: Option<&BTreeMap<Identifier, Option<DashPayProfile>>>,
     payments: Option<&BTreeMap<Identifier, BTreeMap<String, PaymentEntry>>>,
 ) -> Result<(), WalletStorageError> {
+    // Precondition check (debug builds only): every identity_id we
+    // touch must already belong to the flush-scope wallet (or to no
+    // wallet if scope is the sentinel). Cheap SELECT inside the same
+    // tx; compiled out in release builds.
+    if cfg!(debug_assertions) {
+        let touched: std::collections::BTreeSet<Identifier> = profiles
+            .iter()
+            .flat_map(|m| m.keys().copied())
+            .chain(payments.iter().flat_map(|m| m.keys().copied()))
+            .collect();
+        super::assert_identities_belong_to_wallet(tx, wallet_id, &touched)?;
+    }
     if let Some(profiles) = profiles {
         if !profiles.is_empty() {
             let mut delete_stmt =

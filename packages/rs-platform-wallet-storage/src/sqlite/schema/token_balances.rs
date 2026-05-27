@@ -1,4 +1,15 @@
 //! `token_balances` table writer.
+//!
+//! # Precondition
+//!
+//! Every `identity_id` in the supplied changeset MUST already exist in
+//! the `identities` table and belong to the flush's `wallet_id` (or
+//! have a NULL `identities.wallet_id` when the scope is the all-zero
+//! sentinel). The writer relies on
+//! [`super::identities::apply`] for parenting; the FK to
+//! `identities(identity_id)` enforces existence but not the wallet
+//! match. A `debug_assert!` below catches mis-attributed callers in
+//! development builds at no production cost.
 
 use rusqlite::{params, Transaction};
 
@@ -9,8 +20,9 @@ use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::util::safe_cast;
 
 /// `token_balances` is keyed by `(identity_id, token_id)`. The caller
-/// supplies a [`WalletId`] for symmetry with sibling writers — it is
-/// unused on this writer because cascade flows
+/// supplies a [`WalletId`] for symmetry with sibling writers and to
+/// feed the precondition debug-assert; it does not feed any column,
+/// because cascade flows
 /// `wallet_metadata → identities → token_balances` through the
 /// nullable `identities.wallet_id` FK.
 //
@@ -19,9 +31,22 @@ use crate::sqlite::util::safe_cast;
 // prune `token_balances` themselves.
 pub fn apply(
     tx: &Transaction<'_>,
-    _wallet_id: &WalletId,
+    wallet_id: &WalletId,
     cs: &TokenBalanceChangeSet,
 ) -> Result<(), WalletStorageError> {
+    if cfg!(debug_assertions) {
+        let touched: std::collections::BTreeSet<dpp::prelude::Identifier> = cs
+            .balances
+            .keys()
+            .map(|(identity_id, _)| *identity_id)
+            .chain(
+                cs.removed_balances
+                    .iter()
+                    .map(|(identity_id, _)| *identity_id),
+            )
+            .collect();
+        super::assert_identities_belong_to_wallet(tx, wallet_id, &touched)?;
+    }
     if !cs.balances.is_empty() {
         let now = chrono::Utc::now().timestamp();
         let mut stmt = tx.prepare_cached(

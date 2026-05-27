@@ -84,3 +84,65 @@ pub fn count_rows_for_wallet_sql(table: &str, scope: WalletScope) -> String {
         ),
     }
 }
+
+/// Defensive check that every `identity_id` in `touched` exists in
+/// `identities` and belongs to `wallet_id` (or has NULL wallet_id when
+/// scope is the all-zero sentinel). Used by identity-owned writers
+/// (`dashpay`, `token_balances`) to catch mis-attributed callers in
+/// debug builds; release builds skip the call entirely.
+///
+/// Returns [`WalletStorageError::WalletIdMismatch`] for the first
+/// offending row found. Rows that don't exist in `identities` aren't
+/// flagged here — the FK on the child table will reject the write.
+pub(crate) fn assert_identities_belong_to_wallet(
+    tx: &rusqlite::Transaction<'_>,
+    wallet_id: &platform_wallet::wallet::platform_wallet::WalletId,
+    touched: &std::collections::BTreeSet<dpp::prelude::Identifier>,
+) -> Result<(), crate::sqlite::error::WalletStorageError> {
+    use crate::sqlite::error::WalletStorageError;
+    use rusqlite::OptionalExtension;
+    let scope_is_sentinel = wallet_id.iter().all(|b| *b == 0);
+    let mut stmt = tx.prepare_cached("SELECT wallet_id FROM identities WHERE identity_id = ?1")?;
+    for identity_id in touched {
+        let row: Option<Option<Vec<u8>>> = stmt
+            .query_row(rusqlite::params![identity_id.as_slice()], |row| row.get(0))
+            .optional()?;
+        let Some(found_wallet_id) = row else {
+            // Row absent — FK on the child table will reject the
+            // upcoming write with a clearer error than guessing.
+            continue;
+        };
+        match (scope_is_sentinel, found_wallet_id) {
+            (true, None) => {} // sentinel scope matches NULL parenting
+            (true, Some(found)) => {
+                let mut found_arr = [0u8; 32];
+                if found.len() == 32 {
+                    found_arr.copy_from_slice(&found);
+                }
+                return Err(WalletStorageError::WalletIdMismatch {
+                    expected: [0u8; 32],
+                    found: found_arr,
+                });
+            }
+            (false, None) => {
+                return Err(WalletStorageError::WalletIdMismatch {
+                    expected: *wallet_id,
+                    found: [0u8; 32],
+                });
+            }
+            (false, Some(found)) => {
+                if found.as_slice() != wallet_id.as_slice() {
+                    let mut found_arr = [0u8; 32];
+                    if found.len() == 32 {
+                        found_arr.copy_from_slice(&found);
+                    }
+                    return Err(WalletStorageError::WalletIdMismatch {
+                        expected: *wallet_id,
+                        found: found_arr,
+                    });
+                }
+            }
+        }
+    }
+    Ok(())
+}
