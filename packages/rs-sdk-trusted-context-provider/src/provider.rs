@@ -859,7 +859,6 @@ mod tests {
         }
     }
 
-
     #[test]
     fn test_known_contracts() {
         use dpp::version::PlatformVersion;
