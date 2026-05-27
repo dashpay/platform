@@ -85,7 +85,7 @@ dash_sdk_init();
 // verification is not desired.
 DashSDKConfig config = {
     .network = DASH_SDK_NETWORK_TESTNET,
-    .dapi_addresses = "seed-1.testnet.networks.dash.org",
+    .dapi_addresses = "https://seed-1.testnet.networks.dash.org:1443",
     .skip_asset_lock_proof_verification = false,
     .request_retry_count = 3,
     .request_timeout_ms = 30000
@@ -145,7 +145,7 @@ class DashSDKConfig(Structure):
 
 config = DashSDKConfig(
     network=1,  # Testnet
-    dapi_addresses=b"seed-1.testnet.networks.dash.org",
+    dapi_addresses=b"https://seed-1.testnet.networks.dash.org:1443",
     skip_asset_lock_proof_verification=False,
     request_retry_count=3,
     request_timeout_ms=30000
