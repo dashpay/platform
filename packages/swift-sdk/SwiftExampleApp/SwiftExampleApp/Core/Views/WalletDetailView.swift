@@ -29,6 +29,7 @@ struct WalletDetailView: View {
     @State private var showSendTransaction = false
     @State private var showWalletInfo = false
     @State private var showFundPlatformAddress = false
+    @State private var showShieldFromAssetLock = false
     /// Set by `PendingPlatformFundFromAssetLocksList`'s Resume tap.
     @State private var resumingAssetLock: PersistentAssetLock?
 
@@ -83,9 +84,11 @@ struct WalletDetailView: View {
             .padding(.top, 8)
 
             // Balance Card
-            BalanceCardView(wallet: wallet) {
-                showFundPlatformAddress = true
-            }
+            BalanceCardView(
+                wallet: wallet,
+                onFundPlatform: { showFundPlatformAddress = true },
+                onFundShielded: { showShieldFromAssetLock = true }
+            )
                 .padding()
 
             // Action Buttons
@@ -201,6 +204,9 @@ struct WalletDetailView: View {
         }
         .sheet(item: $resumingAssetLock) { lock in
             FundFromAssetLockPlatformAddressView(wallet: wallet, resumeFromLock: lock)
+        }
+        .sheet(isPresented: $showShieldFromAssetLock) {
+            ShieldedFundFromAssetLockView(wallet: wallet)
         }
         .onAppear {
             appUIState.showWalletsSyncDetails = false
@@ -700,6 +706,10 @@ struct BalanceCardView: View {
     /// `nil` hides the affordance entirely (e.g. for read-only
     /// surfaces).
     var onFundPlatform: (() -> Void)?
+    /// Same shape as `onFundPlatform`, for the Shielded Balance row.
+    /// Opens the Core L1 → shielded-pool funding sheet
+    /// (`ShieldedFundFromAssetLockView`, Type 18).
+    var onFundShielded: (() -> Void)?
     @EnvironmentObject var walletManager: PlatformWalletManager
     @EnvironmentObject var platformState: AppState
     @EnvironmentObject var shieldedService: ShieldedService
@@ -708,9 +718,14 @@ struct BalanceCardView: View {
     @Query private var addressBalances: [PersistentPlatformAddress]
     @Query private var syncStates: [PersistentPlatformAddressesSyncState]
 
-    init(wallet: PersistentWallet, onFundPlatform: (() -> Void)? = nil) {
+    init(
+        wallet: PersistentWallet,
+        onFundPlatform: (() -> Void)? = nil,
+        onFundShielded: (() -> Void)? = nil
+    ) {
         self.wallet = wallet
         self.onFundPlatform = onFundPlatform
+        self.onFundShielded = onFundShielded
         let walletId = wallet.walletId
         let walletNetworkRaw = (wallet.network ?? .testnet).rawValue
         _addressBalances = Query(
@@ -791,13 +806,24 @@ struct BalanceCardView: View {
                     }
                 )
 
-                // Shielded Balance row
+                // Shielded Balance row — mirrors the Platform
+                // Balance row's trailing `+` affordance. When
+                // `onFundShielded` is wired the user can open the
+                // Core L1 → shielded-pool funding sheet (Type 18,
+                // `ShieldFromAssetLockTransition`).
                 WalletBalanceRow(
                     label: "Shielded Balance",
                     amount: shieldedService.shieldedBalance,
                     color: .purple,
                     unit: .credits,
-                    showSyncIndicator: shieldedService.isSyncing
+                    showSyncIndicator: shieldedService.isSyncing,
+                    trailingAction: onFundShielded.map { fund in
+                        WalletBalanceRow.TrailingAction(
+                            systemImage: "plus.circle.fill",
+                            accessibilityLabel: "Shield from Core Asset Lock",
+                            action: fund
+                        )
+                    }
                 )
             }
         }
