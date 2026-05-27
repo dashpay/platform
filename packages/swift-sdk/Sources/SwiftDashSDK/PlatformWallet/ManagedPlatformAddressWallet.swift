@@ -262,40 +262,15 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
             )
         }
 
-        // Marshal recipient outputs.
-        var ffiOutputs: [AddressBalanceEntryFFI] = []
-        ffiOutputs.reserveCapacity(outputs.count + 1)
-        for out in outputs {
-            let outTuple = Self.hashTuple(from: out.hash)
-            ffiOutputs.append(
-                AddressBalanceEntryFFI(
-                    address: PlatformAddressFFI(address_type: out.addressType, hash: outTuple),
-                    balance: out.credits,
-                    nonce: 0,
-                    account_index: 0,
-                    address_index: 0
-                )
-            )
-        }
-
-        // Append the change output to the resolved change address —
-        // guaranteed to be distinct from every input and recipient
-        // (the protocol rejects outputs that also appear as inputs).
+        // Build the FFI output list in the same lexicographic order Rust's
+        // BTreeMap<PlatformAddress, _> canonicalizes to, so the fee-reduction
+        // index we hand it lines up with the row Rust will actually decrement.
         let changeAmount = totalInputs - totalRecipientCredits
-        let changeTuple = Self.hashTuple(from: resolvedChange.hash)
-        ffiOutputs.append(
-            AddressBalanceEntryFFI(
-                address: PlatformAddressFFI(address_type: resolvedChange.addressType, hash: changeTuple),
-                balance: changeAmount,
-                nonce: 0,
-                account_index: 0,
-                address_index: 0
-            )
+        let (ffiOutputs, changeIndex) = Self.buildSortedFFIOutputs(
+            recipients: outputs,
+            change: (resolvedChange.addressType, resolvedChange.hash, changeAmount)
         )
 
-        // Fee strategy: take the fee out of the change output (last index)
-        // so recipients get their requested amounts unchanged.
-        let changeIndex = UInt16(ffiOutputs.count - 1)
         let feeStrategy: [FeeStrategyStepFFI] = [
             FeeStrategyStepFFI(step_type: 1, index: changeIndex)  // 1 = ReduceOutput
         ]
@@ -351,6 +326,46 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
                 )
             }
         }.value
+    }
+
+    /// Build the FFI output array (recipients + change) in the same
+    /// lexicographic order Rust's `BTreeMap<PlatformAddress, _>` uses, and
+    /// return the change row's index in that sorted list.
+    ///
+    /// Mirrors `derive(Ord)` on
+    /// `enum PlatformAddress { P2pkh([u8;20]), P2sh([u8;20]) }`: variant
+    /// discriminant first (`P2pkh = 0 < P2sh = 1`), then 20-byte hash
+    /// compared lexicographically. Load-bearing because
+    /// `FeeStrategyStep::ReduceOutput(N)` on the Rust side indexes the
+    /// post-canonicalization output list — not Swift's insertion order.
+    /// See https://github.com/dashpay/platform/issues/3738.
+    internal static func buildSortedFFIOutputs(
+        recipients: [TransferOutput],
+        change: (addressType: UInt8, hash: Data, balance: UInt64)
+    ) -> (rows: [AddressBalanceEntryFFI], changeIndex: UInt16) {
+        var rows: [(addressType: UInt8, hash: Data, balance: UInt64)] =
+            recipients.map { (addressType: $0.addressType, hash: $0.hash, balance: $0.credits) }
+        rows.append(change)
+        rows.sort { a, b in
+            if a.addressType != b.addressType { return a.addressType < b.addressType }
+            return a.hash.lexicographicallyPrecedes(b.hash)
+        }
+        let changeIdx = UInt16(rows.firstIndex {
+            $0.addressType == change.addressType && $0.hash == change.hash
+        }!)
+        let ffiRows = rows.map { row in
+            AddressBalanceEntryFFI(
+                address: PlatformAddressFFI(
+                    address_type: row.addressType,
+                    hash: hashTuple(from: row.hash)
+                ),
+                balance: row.balance,
+                nonce: 0,
+                account_index: 0,
+                address_index: 0
+            )
+        }
+        return (ffiRows, changeIdx)
     }
 
     /// Copy a 20-byte `Data` into the fixed-size tuple shape the FFI expects.
