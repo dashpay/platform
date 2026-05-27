@@ -67,7 +67,12 @@ fn platform_default_store() -> Result<Arc<dyn CredentialStoreApi + Send + Sync>,
 
 #[cfg(target_os = "macos")]
 fn platform_default_store() -> Result<Arc<dyn CredentialStoreApi + Send + Sync>, KeyringError> {
-    match apple_native_keyring_store::Store::new() {
+    // `apple-native-keyring-store` >= 1.0 with the `keychain` feature
+    // exposes `Store` under the `keychain` module, not at the crate
+    // root (sibling backends — `dbus-secret-service-keyring-store`,
+    // `linux-keyutils-keyring-store`, `windows-native-keyring-store` —
+    // do put `Store` at the root, hence the asymmetric path).
+    match apple_native_keyring_store::keychain::Store::new() {
         Ok(s) => Ok(s),
         Err(_) => Err(KeyringError::NoDefaultStore),
     }
