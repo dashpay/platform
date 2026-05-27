@@ -57,12 +57,9 @@ impl TestWallet {
         // If this ever drifts, the functional test in `rs-platform-wallet/tests/
         // shielded_sync.rs` will fail loudly with "decrypted 0 notes" because
         // the wallet-side IVK won't match the chain-side recipient address.
-        let spending_key = SpendingKey::from_zip32_seed(
-            &seed,
-            COIN_TYPE_TESTNET_REGTEST,
-            AccountId::ZERO,
-        )
-        .expect("ZIP-32 derivation must succeed for the hardcoded test seeds");
+        let spending_key =
+            SpendingKey::from_zip32_seed(&seed, COIN_TYPE_TESTNET_REGTEST, AccountId::ZERO)
+                .expect("ZIP-32 derivation must succeed for the hardcoded test seeds");
         let full_viewing_key = FullViewingKey::from(&spending_key);
         let incoming_viewing_key = full_viewing_key.to_ivk(Scope::External);
         let prepared_ivk = PreparedIncomingViewingKey::new(&incoming_viewing_key);

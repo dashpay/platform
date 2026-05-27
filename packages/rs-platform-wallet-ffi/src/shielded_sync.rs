@@ -349,7 +349,6 @@ pub unsafe extern "C" fn platform_wallet_manager_bind_shielded(
     PlatformWalletFFIResult::ok()
 }
 
-
 // ---------------------------------------------------------------------------
 // Configure shielded (network-scoped)
 // ---------------------------------------------------------------------------

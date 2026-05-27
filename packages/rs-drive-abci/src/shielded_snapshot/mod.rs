@@ -62,14 +62,28 @@ const SUBTREE_CF: &str = rocksdb::DEFAULT_COLUMN_FAMILY_NAME;
 #[derive(Debug)]
 pub enum ShieldedSnapshotError {
     Io(std::io::Error),
-    InvalidMagic { got: [u8; 8] },
-    FormatVersionMismatch { expected: u32, found: u32 },
-    ChunkPowerTooLarge { got: u8, max: u8 },
-    ChecksumMismatch { expected: [u8; 32], computed: [u8; 32] },
+    InvalidMagic {
+        got: [u8; 8],
+    },
+    FormatVersionMismatch {
+        expected: u32,
+        found: u32,
+    },
+    ChunkPowerTooLarge {
+        got: u8,
+        max: u8,
+    },
+    ChecksumMismatch {
+        expected: [u8; 32],
+        computed: [u8; 32],
+    },
     /// Header's `combined_root` doesn't match what reconstructing the
     /// CommitmentTree from the ingested data produces. Indicates tampering,
     /// truncation, or version skew.
-    CombinedRootMismatch { expected: [u8; 32], computed: [u8; 32] },
+    CombinedRootMismatch {
+        expected: [u8; 32],
+        computed: [u8; 32],
+    },
     /// The element at the expected parent-leaf path/key is not
     /// `Element::CommitmentTree`. InitChain must build the parent skeleton
     /// before applying the snapshot.
@@ -88,7 +102,10 @@ impl std::fmt::Display for ShieldedSnapshotError {
             Self::Io(e) => write!(f, "i/o: {e}"),
             Self::InvalidMagic { got } => write!(f, "invalid magic: {got:?}"),
             Self::FormatVersionMismatch { expected, found } => {
-                write!(f, "format_version mismatch (expected {expected}, got {found})")
+                write!(
+                    f,
+                    "format_version mismatch (expected {expected}, got {found})"
+                )
             }
             Self::ChunkPowerTooLarge { got, max } => {
                 write!(f, "chunk_power {got} exceeds max {max}")
@@ -481,13 +498,12 @@ pub fn apply_shielded_snapshot(
         .get_transactional_storage_context(subtree_path, None, tx_ref)
         .unwrap();
 
-    let ct = CommitmentTree::<_, DashMemo>::open(
-        header.total_count,
-        header.chunk_power,
-        storage_ctx,
-    )
-    .value
-    .map_err(|e| ShieldedSnapshotError::GroveDb(format!("CommitmentTree::open after ingest: {e}")))?;
+    let ct =
+        CommitmentTree::<_, DashMemo>::open(header.total_count, header.chunk_power, storage_ctx)
+            .value
+            .map_err(|e| {
+                ShieldedSnapshotError::GroveDb(format!("CommitmentTree::open after ingest: {e}"))
+            })?;
     let recomputed = ct
         .compute_current_state_root()
         .map_err(|e| ShieldedSnapshotError::GroveDb(format!("compute_current_state_root: {e}")))?;
@@ -523,9 +539,7 @@ pub fn apply_shielded_snapshot(
         )
         .value
         .map_err(|e| {
-            ShieldedSnapshotError::GroveDb(format!(
-                "replace_commitment_tree_subtree_root: {e}"
-            ))
+            ShieldedSnapshotError::GroveDb(format!("replace_commitment_tree_subtree_root: {e}"))
         })?;
 
     Ok(ApplyStats {

@@ -20,23 +20,23 @@ use std::collections::HashSet;
 
 use dpp::block::block_info::BlockInfo;
 use dpp::version::PlatformVersion;
-use drive::grovedb::TransactionArg;
-use drive::util::batch::drive_op_batch::{DriveOperation, ShieldedPoolOperationType};
 use drive::grovedb::Element;
+use drive::grovedb::TransactionArg;
 use drive::grovedb_path::SubtreePath;
 use drive::grovedb_storage::{Storage, StorageBatch};
+use drive::util::batch::drive_op_batch::{DriveOperation, ShieldedPoolOperationType};
 use grovedb_commitment_tree::{
-    CommitmentTree, DashMemo, Domain, ExtractedNoteCommitment, Note, NoteValue, OrchardDomain,
-    RandomSeed, Rho, merkle_hash_from_bytes,
+    merkle_hash_from_bytes, CommitmentTree, DashMemo, Domain, ExtractedNoteCommitment, Note,
+    NoteValue, OrchardDomain, RandomSeed, Rho,
 };
 use orchard::note_encryption::OrchardNoteEncryption;
 use rand::rngs::StdRng;
 use rand::{RngCore, SeedableRng};
 
-use crate::error::Error;
+use super::shielded_test_wallets::{test_wallet_a, test_wallet_b, TestWallet};
 use crate::error::execution::ExecutionError;
+use crate::error::Error;
 use crate::platform_types::platform::Platform;
-use super::shielded_test_wallets::{TestWallet, test_wallet_a, test_wallet_b};
 
 /// Block height at which we record the genesis post-seed anchor. Matches
 /// production's first end-of-block anchor (`run_block_proposal` at the end of
@@ -242,9 +242,14 @@ fn generate_owned_note(
     };
 
     // 3. Build the Note.
-    let note = Note::from_parts(wallet.default_address, NoteValue::from_raw(value), rho, rseed)
-        .into_option()
-        .expect("Note::from_parts must succeed for valid (addr, value, rho, rseed)");
+    let note = Note::from_parts(
+        wallet.default_address,
+        NoteValue::from_raw(value),
+        rho,
+        rseed,
+    )
+    .into_option()
+    .expect("Note::from_parts must succeed for valid (addr, value, rho, rseed)");
 
     let cmx_bytes = ExtractedNoteCommitment::from(note.commitment()).to_bytes();
 
@@ -278,7 +283,9 @@ pub fn generate_notes(cfg: &ShieldedSeedConfig, wallets: [&TestWallet; 2]) -> Ve
 
     for position in 0..cfg.total_notes {
         let note = match layout.wallet_at(position) {
-            Some(idx) => generate_owned_note(&mut rng, wallets[idx], cfg.owned_value, &mut used_rhos),
+            Some(idx) => {
+                generate_owned_note(&mut rng, wallets[idx], cfg.owned_value, &mut used_rhos)
+            }
             None => generate_filler_note(&mut rng),
         };
         notes.push(note);
@@ -360,17 +367,12 @@ impl<C> Platform<C> {
             // (record_shielded_pool_anchor_if_changed takes block_height
             // directly, and the bake step happens at genesis).
             let _ = block_info;
-            let tx = transaction.ok_or(Error::Execution(
-                ExecutionError::CorruptedCodeExecution(
+            let tx =
+                transaction.ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
                     "create_data_for_shielded_pool snapshot path requires a transaction",
-                ),
-            ))?;
+                )))?;
             self.drive
-                .record_shielded_pool_anchor_if_changed(
-                    GENESIS_ANCHOR_HEIGHT,
-                    tx,
-                    platform_version,
-                )
+                .record_shielded_pool_anchor_if_changed(GENESIS_ANCHOR_HEIGHT, tx, platform_version)
                 .map_err(Into::into)
                 .and_then(|_| Ok::<_, Error>(()))?;
             return Ok(());
@@ -415,11 +417,10 @@ impl<C> Platform<C> {
                 rng_seed = format!("0x{:x}", cfg.rng_seed),
                 "seeding shielded pool with SDK test data (Phase 2: frontier-less filler)"
             );
-            let tx = transaction.ok_or(Error::Execution(
-                ExecutionError::CorruptedCodeExecution(
+            let tx =
+                transaction.ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
                     "seed_shielded_pool_with_config requires a transaction",
-                ),
-            ))?;
+                )))?;
 
             // Generate every note up-front; single seeded RNG keeps the output
             // byte-identical across hosts. ρ uniqueness is enforced internally.
@@ -429,11 +430,9 @@ impl<C> Platform<C> {
             // matches bulk position order: filler first (positions
             // [0, N-owned_count)), then owned (positions [N-owned_count, N)).
             let layout = OwnedLayout::compute(cfg);
-            let mut filler: Vec<SeededNote> = Vec::with_capacity(
-                cfg.total_notes.saturating_sub(cfg.owned_count) as usize,
-            );
-            let mut owned_in_order: Vec<SeededNote> =
-                Vec::with_capacity(cfg.owned_count as usize);
+            let mut filler: Vec<SeededNote> =
+                Vec::with_capacity(cfg.total_notes.saturating_sub(cfg.owned_count) as usize);
+            let mut owned_in_order: Vec<SeededNote> = Vec::with_capacity(cfg.owned_count as usize);
             for (idx, note) in seeded.into_iter().enumerate() {
                 if layout.wallet_at(idx as u32).is_some() {
                     owned_in_order.push(note);
@@ -465,9 +464,9 @@ impl<C> Platform<C> {
                 )
                 .value
                 .map_err(|e| {
-                    Error::Execution(ExecutionError::CorruptedCodeExecution(
-                        Box::leak(format!("seed: get_raw parent leaf: {e}").into_boxed_str()),
-                    ))
+                    Error::Execution(ExecutionError::CorruptedCodeExecution(Box::leak(
+                        format!("seed: get_raw parent leaf: {e}").into_boxed_str(),
+                    )))
                 })?;
             let (initial_total_count, chunk_power, flags) = match element {
                 Element::CommitmentTree(tc, cp, f) => (tc, cp, f),
@@ -509,9 +508,9 @@ impl<C> Platform<C> {
             let mut ct = CommitmentTree::<_, DashMemo>::open(0, chunk_power, storage_ctx)
                 .value
                 .map_err(|e| {
-                    Error::Execution(ExecutionError::CorruptedCodeExecution(
-                        Box::leak(format!("seed: CommitmentTree::open: {e}").into_boxed_str()),
-                    ))
+                    Error::Execution(ExecutionError::CorruptedCodeExecution(Box::leak(
+                        format!("seed: CommitmentTree::open: {e}").into_boxed_str(),
+                    )))
                 })?;
 
             // --- Phase A: bulk-seed filler via append_many_without_frontier
@@ -555,15 +554,11 @@ impl<C> Platform<C> {
                 }
                 (n.cmx, n.rho, n.encrypted_note)
             });
-            ct.append_many_without_frontier(iter)
-                .value
-                .map_err(|e| {
-                    Error::Execution(ExecutionError::CorruptedCodeExecution(
-                        Box::leak(
-                            format!("seed: append_many_without_frontier: {e}").into_boxed_str(),
-                        ),
-                    ))
-                })?;
+            ct.append_many_without_frontier(iter).value.map_err(|e| {
+                Error::Execution(ExecutionError::CorruptedCodeExecution(Box::leak(
+                    format!("seed: append_many_without_frontier: {e}").into_boxed_str(),
+                )))
+            })?;
             tracing::info!(
                 filler_count = filler_total,
                 elapsed_s = phase_a_start.elapsed().as_secs(),
@@ -588,25 +583,21 @@ impl<C> Platform<C> {
                     .append_raw(owned.cmx, owned.rho, &owned.encrypted_note)
                     .value
                     .map_err(|e| {
-                        Error::Execution(ExecutionError::CorruptedCodeExecution(
-                            Box::leak(
-                                format!("seed: append_raw owned: {e}").into_boxed_str(),
-                            ),
-                        ))
+                        Error::Execution(ExecutionError::CorruptedCodeExecution(Box::leak(
+                            format!("seed: append_raw owned: {e}").into_boxed_str(),
+                        )))
                     })?;
                 last_sinsemilla_root = Some(append_result.sinsemilla_root);
                 last_bulk_state_root = Some(append_result.bulk_state_root);
                 ct.save().value.map_err(|e| {
-                    Error::Execution(ExecutionError::CorruptedCodeExecution(
-                        Box::leak(format!("seed: ct.save (owned): {e}").into_boxed_str()),
-                    ))
+                    Error::Execution(ExecutionError::CorruptedCodeExecution(Box::leak(
+                        format!("seed: ct.save (owned): {e}").into_boxed_str(),
+                    )))
                 })?;
                 ct.commit_mmr().map_err(|e| {
-                    Error::Execution(ExecutionError::CorruptedCodeExecution(
-                        Box::leak(
-                            format!("seed: ct.commit_mmr (owned): {e}").into_boxed_str(),
-                        ),
-                    ))
+                    Error::Execution(ExecutionError::CorruptedCodeExecution(Box::leak(
+                        format!("seed: ct.commit_mmr (owned): {e}").into_boxed_str(),
+                    )))
                 })?;
             }
             // combined_root is computed from the final append_raw's result,
@@ -640,11 +631,9 @@ impl<C> Platform<C> {
                 .commit_multi_context_batch(data_batch, Some(tx))
                 .value
                 .map_err(|e| {
-                    Error::Execution(ExecutionError::CorruptedCodeExecution(
-                        Box::leak(
-                            format!("seed: commit_multi_context_batch: {e}").into_boxed_str(),
-                        ),
-                    ))
+                    Error::Execution(ExecutionError::CorruptedCodeExecution(Box::leak(
+                        format!("seed: commit_multi_context_batch: {e}").into_boxed_str(),
+                    )))
                 })?;
 
             // --- Update parent Merk leaf with the new state ---
@@ -662,22 +651,17 @@ impl<C> Platform<C> {
                 )
                 .value
                 .map_err(|e| {
-                    Error::Execution(ExecutionError::CorruptedCodeExecution(
-                        Box::leak(
-                            format!("seed: replace_commitment_tree_subtree_root: {e}")
-                                .into_boxed_str(),
-                        ),
-                    ))
+                    Error::Execution(ExecutionError::CorruptedCodeExecution(Box::leak(
+                        format!("seed: replace_commitment_tree_subtree_root: {e}").into_boxed_str(),
+                    )))
                 })?;
 
             // Post-bake assertion — catches silent truncation from a panic
             // mid-bake (per design doc §15.6 F9).
             let mut drive_ops = vec![];
-            let count_after = self.drive.shielded_pool_notes_count(
-                Some(tx),
-                &mut drive_ops,
-                platform_version,
-            )?;
+            let count_after =
+                self.drive
+                    .shielded_pool_notes_count(Some(tx), &mut drive_ops, platform_version)?;
             assert_eq!(
                 count_after,
                 u64::from(cfg.total_notes),
@@ -702,11 +686,7 @@ impl<C> Platform<C> {
             "create_data_for_shielded_pool requires a transaction",
         )))?;
         self.drive
-            .record_shielded_pool_anchor_if_changed(
-                GENESIS_ANCHOR_HEIGHT,
-                tx,
-                platform_version,
-            )
+            .record_shielded_pool_anchor_if_changed(GENESIS_ANCHOR_HEIGHT, tx, platform_version)
             .map_err(Error::Drive)?;
 
         Ok(())
@@ -717,7 +697,7 @@ impl<C> Platform<C> {
 mod tests {
     use super::*;
     use grovedb_commitment_tree::{
-        CompactAction, EphemeralKeyBytes, Nullifier, PaymentAddress, try_compact_note_decryption,
+        try_compact_note_decryption, CompactAction, EphemeralKeyBytes, Nullifier, PaymentAddress,
     };
 
     fn small_cfg() -> ShieldedSeedConfig {
@@ -1069,7 +1049,7 @@ mod platform_tests {
     use super::*;
     use crate::config::PlatformConfig;
     use crate::test::helpers::setup::TestPlatformBuilder;
-    use drive::drive::shielded::paths::{SHIELDED_NOTES_KEY, shielded_credit_pool_path};
+    use drive::drive::shielded::paths::{shielded_credit_pool_path, SHIELDED_NOTES_KEY};
     use grovedb_commitment_tree::EMPTY_SINSEMILLA_ROOT;
 
     /// Reduced default for integration tests — smaller is faster and still
@@ -1087,8 +1067,8 @@ mod platform_tests {
     /// errors unless the platform is on the `Regtest` network. The default
     /// `TestPlatformBuilder::new()` config is mainnet, so every test in this
     /// module has to switch to regtest before calling `set_genesis_state`.
-    fn build_regtest_platform()
-    -> crate::test::helpers::setup::TempPlatform<crate::rpc::core::MockCoreRPCLike> {
+    fn build_regtest_platform(
+    ) -> crate::test::helpers::setup::TempPlatform<crate::rpc::core::MockCoreRPCLike> {
         TestPlatformBuilder::new()
             .with_config(PlatformConfig::default_local())
             .build_with_mock_rpc()
@@ -1122,12 +1102,7 @@ mod platform_tests {
         let platform = build_regtest_platform();
         let tx = platform.drive.grove.start_transaction();
         platform
-            .seed_shielded_pool_with_config(
-                cfg,
-                &BlockInfo::default(),
-                Some(&tx),
-                platform_version,
-            )
+            .seed_shielded_pool_with_config(cfg, &BlockInfo::default(), Some(&tx), platform_version)
             .expect("seed must succeed");
         read_current_anchor(&platform.platform, Some(&tx), platform_version)
     }
@@ -1151,7 +1126,12 @@ mod platform_tests {
         let tx = platform.drive.grove.start_transaction();
         let cfg = integration_cfg();
         platform
-            .seed_shielded_pool_with_config(&cfg, &BlockInfo::default(), Some(&tx), platform_version)
+            .seed_shielded_pool_with_config(
+                &cfg,
+                &BlockInfo::default(),
+                Some(&tx),
+                platform_version,
+            )
             .expect("seed");
 
         let mut drive_ops = vec![];
@@ -1342,9 +1322,13 @@ mod platform_tests {
             rng_seed: 0xDEAD_BEEF,
         };
         let tx = temp.drive.grove.start_transaction();
-        temp
-            .seed_shielded_pool_with_config(&cfg, &BlockInfo::default(), Some(&tx), platform_version)
-            .expect("seed");
+        temp.seed_shielded_pool_with_config(
+            &cfg,
+            &BlockInfo::default(),
+            Some(&tx),
+            platform_version,
+        )
+        .expect("seed");
         tx.commit().expect("commit");
         let anchor = read_current_anchor(&temp, None, platform_version);
         assert_ne!(anchor, EMPTY_SINSEMILLA_ROOT);
@@ -1363,7 +1347,10 @@ mod platform_tests {
         // Destructure to keep the TempDir alive while the Platform's GroveDb
         // handle is dropped — otherwise dropping the whole TempPlatform also
         // drops the TempDir and deletes the directory underneath us.
-        let crate::test::helpers::setup::TempPlatform { platform: pf, tempdir } = temp;
+        let crate::test::helpers::setup::TempPlatform {
+            platform: pf,
+            tempdir,
+        } = temp;
         let tempdir_path = tempdir.path().to_path_buf();
         drop(pf);
 
@@ -1426,10 +1413,8 @@ mod platform_tests {
         }
         drop(db);
 
-        let counts: std::collections::HashMap<&str, usize> = per_cf_counts
-            .iter()
-            .map(|(n, c, _)| (*n, *c))
-            .collect();
+        let counts: std::collections::HashMap<&str, usize> =
+            per_cf_counts.iter().map(|(n, c, _)| (*n, *c)).collect();
 
         let default_count = *counts.get("default").unwrap();
         let aux_count = *counts.get("aux").unwrap();
@@ -1489,11 +1474,19 @@ mod platform_tests {
         let cfg = ShieldedSeedConfig::sdk_test_data();
         let tx_a = platform_a.drive.grove.start_transaction();
         platform_a
-            .seed_shielded_pool_with_config(&cfg, &BlockInfo::default(), Some(&tx_a), platform_version)
+            .seed_shielded_pool_with_config(
+                &cfg,
+                &BlockInfo::default(),
+                Some(&tx_a),
+                platform_version,
+            )
             .expect("seed A");
         tx_a.commit().expect("commit A");
         let anchor_a = read_current_anchor(&platform_a, None, platform_version);
-        assert_ne!(anchor_a, EMPTY_SINSEMILLA_ROOT, "A must have non-empty anchor");
+        assert_ne!(
+            anchor_a, EMPTY_SINSEMILLA_ROOT,
+            "A must have non-empty anchor"
+        );
         eprintln!("anchor_a = {}", hex::encode(anchor_a));
 
         // --- Dump A to a temporary snapshot file ---

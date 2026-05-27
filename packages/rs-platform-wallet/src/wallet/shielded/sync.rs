@@ -226,7 +226,8 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
     // SDK fires it once per completed chunk inside its sliding-window
     // chunk loop. Default config (None callback) preserves the prior
     // behavior for any caller that didn't install a handler.
-    let mut sync_config = dash_sdk::platform::shielded::notes_sync::types::ShieldedSyncConfig::default();
+    let mut sync_config =
+        dash_sdk::platform::shielded::notes_sync::types::ShieldedSyncConfig::default();
     if let Some(cb) = on_progress {
         sync_config.on_chunk_completed = Some(cb.clone());
     }

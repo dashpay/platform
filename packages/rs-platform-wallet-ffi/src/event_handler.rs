@@ -55,11 +55,7 @@ pub struct EventHandlerCallbacks {
     /// Slot is plumbed unconditionally for C-ABI stability; only
     /// fires when the `shielded` feature is enabled in the FFI.
     pub on_shielded_sync_progress_fn: Option<
-        unsafe extern "C" fn(
-            context: *mut c_void,
-            cumulative_scanned: u64,
-            block_height: u64,
-        ),
+        unsafe extern "C" fn(context: *mut c_void, cumulative_scanned: u64, block_height: u64),
     >,
 }
 
@@ -223,11 +219,7 @@ impl PlatformEventHandler for FFIEventHandler {
     }
 
     #[cfg(feature = "shielded")]
-    fn on_shielded_sync_progress(
-        &self,
-        cumulative_scanned: u64,
-        block_height: u64,
-    ) {
+    fn on_shielded_sync_progress(&self, cumulative_scanned: u64, block_height: u64) {
         let Some(cb) = self.callbacks.on_shielded_sync_progress_fn else {
             return;
         };

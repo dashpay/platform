@@ -362,25 +362,82 @@ mod noop_core_rpc_impl {
     use serde_json::Value;
 
     impl CoreRPCLike for NoopCoreRPC {
-        fn get_block_hash(&self, _: u32) -> Result<BlockHash, Error> { unreachable!() }
-        fn get_block_header(&self, _: &BlockHash) -> Result<Header, Error> { unreachable!() }
-        fn get_block_time_from_height(&self, _: u32) -> Result<TimestampMillis, Error> { unreachable!() }
-        fn get_best_chain_lock(&self) -> Result<ChainLock, Error> { unreachable!() }
-        fn submit_chain_lock(&self, _: &ChainLock) -> Result<u32, Error> { unreachable!() }
-        fn get_transaction(&self, _: &Txid) -> Result<Transaction, Error> { unreachable!() }
-        fn get_asset_unlock_statuses(&self, _: &[u64], _: u32) -> Result<Vec<AssetUnlockStatusResult>, Error> { unreachable!() }
-        fn get_transaction_extended_info(&self, _: &Txid) -> Result<GetRawTransactionResult, Error> { unreachable!() }
-        fn get_fork_info(&self, _: &str) -> Result<Option<SoftforkInfo>, Error> { unreachable!() }
-        fn get_block(&self, _: &BlockHash) -> Result<Block, Error> { unreachable!() }
-        fn get_block_json(&self, _: &BlockHash) -> Result<Value, Error> { unreachable!() }
-        fn get_chain_tips(&self) -> Result<GetChainTipsResult, Error> { unreachable!() }
-        fn get_quorum_listextended(&self, _: Option<u32>) -> Result<ExtendedQuorumListResult, Error> { unreachable!() }
-        fn get_quorum_info(&self, _: QuorumType, _: &QuorumHash, _: Option<bool>) -> Result<QuorumInfoResult, Error> { unreachable!() }
-        fn get_protx_diff_with_masternodes(&self, _: Option<u32>, _: u32) -> Result<MasternodeListDiff, Error> { unreachable!() }
-        fn verify_instant_lock(&self, _: &InstantLock, _: Option<u32>) -> Result<bool, Error> { unreachable!() }
-        fn verify_chain_lock(&self, _: &ChainLock) -> Result<bool, Error> { unreachable!() }
-        fn masternode_sync_status(&self) -> Result<MnSyncStatus, Error> { unreachable!() }
-        fn send_raw_transaction(&self, _: &[u8]) -> Result<Txid, Error> { unreachable!() }
+        fn get_block_hash(&self, _: u32) -> Result<BlockHash, Error> {
+            unreachable!()
+        }
+        fn get_block_header(&self, _: &BlockHash) -> Result<Header, Error> {
+            unreachable!()
+        }
+        fn get_block_time_from_height(&self, _: u32) -> Result<TimestampMillis, Error> {
+            unreachable!()
+        }
+        fn get_best_chain_lock(&self) -> Result<ChainLock, Error> {
+            unreachable!()
+        }
+        fn submit_chain_lock(&self, _: &ChainLock) -> Result<u32, Error> {
+            unreachable!()
+        }
+        fn get_transaction(&self, _: &Txid) -> Result<Transaction, Error> {
+            unreachable!()
+        }
+        fn get_asset_unlock_statuses(
+            &self,
+            _: &[u64],
+            _: u32,
+        ) -> Result<Vec<AssetUnlockStatusResult>, Error> {
+            unreachable!()
+        }
+        fn get_transaction_extended_info(
+            &self,
+            _: &Txid,
+        ) -> Result<GetRawTransactionResult, Error> {
+            unreachable!()
+        }
+        fn get_fork_info(&self, _: &str) -> Result<Option<SoftforkInfo>, Error> {
+            unreachable!()
+        }
+        fn get_block(&self, _: &BlockHash) -> Result<Block, Error> {
+            unreachable!()
+        }
+        fn get_block_json(&self, _: &BlockHash) -> Result<Value, Error> {
+            unreachable!()
+        }
+        fn get_chain_tips(&self) -> Result<GetChainTipsResult, Error> {
+            unreachable!()
+        }
+        fn get_quorum_listextended(
+            &self,
+            _: Option<u32>,
+        ) -> Result<ExtendedQuorumListResult, Error> {
+            unreachable!()
+        }
+        fn get_quorum_info(
+            &self,
+            _: QuorumType,
+            _: &QuorumHash,
+            _: Option<bool>,
+        ) -> Result<QuorumInfoResult, Error> {
+            unreachable!()
+        }
+        fn get_protx_diff_with_masternodes(
+            &self,
+            _: Option<u32>,
+            _: u32,
+        ) -> Result<MasternodeListDiff, Error> {
+            unreachable!()
+        }
+        fn verify_instant_lock(&self, _: &InstantLock, _: Option<u32>) -> Result<bool, Error> {
+            unreachable!()
+        }
+        fn verify_chain_lock(&self, _: &ChainLock) -> Result<bool, Error> {
+            unreachable!()
+        }
+        fn masternode_sync_status(&self) -> Result<MnSyncStatus, Error> {
+            unreachable!()
+        }
+        fn send_raw_transaction(&self, _: &[u8]) -> Result<Txid, Error> {
+            unreachable!()
+        }
     }
 }
 
@@ -425,8 +482,8 @@ fn snapshot_bake(_config: &PlatformConfig, out_path: &PathBuf) -> Result<(), Str
     tracing::info!("snapshot-bake: running create_genesis_state (seeds shielded pool under cfg(create_sdk_test_data))");
     platform
         .create_genesis_state(
-            1,    // genesis_core_height (placeholder for bake)
-            0,    // genesis_time (placeholder for bake)
+            1, // genesis_core_height (placeholder for bake)
+            0, // genesis_time (placeholder for bake)
             Some(&tx),
             platform_version,
         )

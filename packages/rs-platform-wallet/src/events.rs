@@ -62,12 +62,7 @@ pub trait PlatformEventHandler: EventHandler {
     ///
     /// Default impl is a no-op.
     #[cfg(feature = "shielded")]
-    fn on_shielded_sync_progress(
-        &self,
-        _cumulative_scanned: u64,
-        _block_height: u64,
-    ) {
-    }
+    fn on_shielded_sync_progress(&self, _cumulative_scanned: u64, _block_height: u64) {}
 }
 
 /// Dispatches events to all registered [`PlatformEventHandler`]s.
@@ -126,11 +121,7 @@ impl PlatformEventManager {
     /// per chunk (~every 2048 notes processed). Cheap-but-frequent
     /// path during a cold sync.
     #[cfg(feature = "shielded")]
-    pub fn on_shielded_sync_progress(
-        &self,
-        cumulative_scanned: u64,
-        block_height: u64,
-    ) {
+    pub fn on_shielded_sync_progress(&self, cumulative_scanned: u64, block_height: u64) {
         let handlers = self.handlers.load();
         for h in handlers.iter() {
             h.on_shielded_sync_progress(cumulative_scanned, block_height);
