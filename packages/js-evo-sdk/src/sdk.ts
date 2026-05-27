@@ -43,9 +43,12 @@ export interface EvoSDKOptions extends ConnectionOptions {
   // explicit `addresses` are mandatory and `devnetName` alone is not sufficient
   // — no masternode addresses can be discovered without a trusted context.
   devnetName?: string;
-  // Optional override for the trusted devnet quorum base URL. When omitted,
-  // the URL is derived as `https://quorums.<devnetName>.networks.dash.org`.
-  // Only consulted when trusted === true && network === 'devnet'.
+  // Optional override for the trusted-context quorum base URL. When omitted,
+  // the URL is the network's default (e.g.
+  // `https://quorums.<devnetName>.networks.dash.org` for devnet,
+  // `https://quorums.testnet.networks.dash.org` for testnet, etc.).
+  // Only consulted when trusted === true. Useful for pointing at a staging,
+  // self-hosted, or not-yet-deployed quorums endpoint.
   quorumUrl?: string;
 }
 
@@ -72,20 +75,16 @@ export class EvoSDK {
 
     if (network === 'devnet') {
       const hasAddresses = !!(addresses && addresses.length > 0);
-      if (!devnetName && !hasAddresses) {
-        throw new Error("EvoSDK: network 'devnet' requires either devnetName or explicit addresses");
-      }
-      if (trusted && !devnetName) {
-        throw new Error("EvoSDK: trusted devnet requires devnetName (used to derive the quorum URL)");
-      }
-      if (!trusted && !hasAddresses) {
+      if (trusted) {
+        if (!devnetName && !quorumUrl) {
+          throw new Error("EvoSDK: trusted devnet requires devnetName (to derive the quorum URL) or an explicit quorumUrl");
+        }
+      } else if (!hasAddresses) {
         throw new Error("EvoSDK: non-trusted devnet requires explicit addresses (no addresses can be discovered without a trusted context)");
       }
-      if (quorumUrl && !trusted) {
-        throw new Error("EvoSDK: quorumUrl is only meaningful when trusted === true");
-      }
-    } else if (quorumUrl) {
-      throw new Error("EvoSDK: quorumUrl is only valid when network === 'devnet'");
+    }
+    if (quorumUrl && !trusted) {
+      throw new Error("EvoSDK: quorumUrl is only meaningful when trusted === true");
     }
 
     this.options = { network, trusted, addresses, devnetName, quorumUrl, ...connection };
@@ -133,18 +132,25 @@ export class EvoSDK {
     let context: wasm.WasmTrustedContext | undefined;
     if (trusted) {
       if (network === 'mainnet') {
-        context = await wasm.WasmTrustedContext.prefetchMainnet();
-      } else if (network === 'testnet') {
-        context = await wasm.WasmTrustedContext.prefetchTestnet();
-      } else if (network === 'local') {
-        context = await wasm.WasmTrustedContext.prefetchLocal();
-      } else if (network === 'devnet') {
-        if (!devnetName) {
-          throw new Error("EvoSDK: trusted devnet requires devnetName");
-        }
         context = quorumUrl
-          ? await wasm.WasmTrustedContext.prefetchDevnetWithUrl(quorumUrl)
-          : await wasm.WasmTrustedContext.prefetchDevnet(devnetName);
+          ? await wasm.WasmTrustedContext.prefetchMainnetWithUrl(quorumUrl)
+          : await wasm.WasmTrustedContext.prefetchMainnet();
+      } else if (network === 'testnet') {
+        context = quorumUrl
+          ? await wasm.WasmTrustedContext.prefetchTestnetWithUrl(quorumUrl)
+          : await wasm.WasmTrustedContext.prefetchTestnet();
+      } else if (network === 'local') {
+        context = quorumUrl
+          ? await wasm.WasmTrustedContext.prefetchLocalWithUrl(quorumUrl)
+          : await wasm.WasmTrustedContext.prefetchLocal();
+      } else if (network === 'devnet') {
+        if (quorumUrl) {
+          context = await wasm.WasmTrustedContext.prefetchDevnetWithUrl(quorumUrl);
+        } else if (devnetName) {
+          context = await wasm.WasmTrustedContext.prefetchDevnet(devnetName);
+        } else {
+          throw new Error("EvoSDK: trusted devnet requires devnetName or quorumUrl");
+        }
       } else {
         throw new Error(`Unknown network: ${network}`);
       }

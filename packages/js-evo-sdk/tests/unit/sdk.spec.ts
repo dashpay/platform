@@ -278,9 +278,22 @@ describe('EvoSDK', () => {
       })).to.throw(/quorumUrl/);
     });
 
-    it('should reject quorumUrl on non-devnet networks', () => {
-      expect(() => new EvoSDK({ network: 'testnet', trusted: true, quorumUrl: 'https://x' } as any))
-        .to.throw(/quorumUrl/);
+    it('should accept quorumUrl on trusted testnet (override)', () => {
+      const sdk = new EvoSDK({ network: 'testnet', trusted: true, quorumUrl: 'https://x' });
+      expect(sdk.options.quorumUrl).to.equal('https://x');
+      expect(sdk.options.trusted).to.be.true();
+    });
+
+    it('should accept quorumUrl on trusted mainnet (override)', () => {
+      const sdk = new EvoSDK({ network: 'mainnet', trusted: true, quorumUrl: 'https://x' });
+      expect(sdk.options.quorumUrl).to.equal('https://x');
+      expect(sdk.options.network).to.equal('mainnet');
+    });
+
+    it('should accept trusted devnet with only quorumUrl (no devnetName)', () => {
+      const sdk = new EvoSDK({ network: 'devnet', trusted: true, quorumUrl: 'https://x' });
+      expect(sdk.options.quorumUrl).to.equal('https://x');
+      expect(sdk.options.devnetName).to.be.undefined();
     });
   });
 });
