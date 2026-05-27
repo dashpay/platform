@@ -86,44 +86,6 @@ struct MasternodeDiscoveryResponse {
 }
 
 impl TrustedHttpContextProvider {
-    /// Reject plaintext HTTP unless the host is a loopback address.
-    ///
-    /// The base URL is the SDK's root of trust for proof verification — quorum
-    /// public keys and discovered masternode addresses are fetched from it.
-    /// Allowing plaintext on a non-loopback link would let an on-path attacker
-    /// replace both, so HTTPS is required for any host outside `127.0.0.1` /
-    /// `localhost` / `[::1]`.
-    fn verify_secure_or_loopback(url: &str) -> Result<(), TrustedContextProviderError> {
-        let parsed_url = Url::parse(url).map_err(|e| {
-            TrustedContextProviderError::NetworkError(format!("Invalid URL: {}", e))
-        })?;
-        let scheme = parsed_url.scheme();
-        if scheme == "https" {
-            return Ok(());
-        }
-        if scheme != "http" {
-            return Err(TrustedContextProviderError::NetworkError(format!(
-                "Unsupported URL scheme '{}' (expected https, or http for loopback)",
-                scheme
-            )));
-        }
-        let host = parsed_url.host_str().ok_or_else(|| {
-            TrustedContextProviderError::NetworkError("URL has no host".to_string())
-        })?;
-        let host_lc = host.to_ascii_lowercase();
-        let is_loopback = host_lc == "localhost"
-            || host_lc == "127.0.0.1"
-            || host_lc == "[::1]"
-            || host_lc == "::1";
-        if !is_loopback {
-            return Err(TrustedContextProviderError::NetworkError(format!(
-                "Plaintext HTTP base URL is only permitted for loopback hosts; got '{}'",
-                host
-            )));
-        }
-        Ok(())
-    }
-
     /// Verify that a URL's domain resolves
     #[cfg(all(not(target_arch = "wasm32"), not(target_os = "ios")))]
     fn verify_domain_resolves(url: &str) -> Result<(), TrustedContextProviderError> {
@@ -177,12 +139,6 @@ impl TrustedHttpContextProvider {
         base_url: String,
         cache_size: NonZeroUsize,
     ) -> Result<Self, TrustedContextProviderError> {
-        // The base URL is the SDK's root of trust for proof verification
-        // (quorum public keys) and network connectivity (discovered masternode
-        // addresses). Require HTTPS unless the host is loopback — plaintext
-        // over a non-loopback link lets an on-path attacker replace both.
-        Self::verify_secure_or_loopback(&base_url)?;
-
         // Verify the domain resolves before proceeding (skip on WASM and iOS)
         #[cfg(all(not(target_arch = "wasm32"), not(target_os = "ios")))]
         Self::verify_domain_resolves(&base_url)?;
@@ -903,50 +859,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_new_with_url_rejects_plaintext_non_loopback() {
-        // Plaintext HTTP to a non-loopback host is rejected on every network.
-        let result = TrustedHttpContextProvider::new_with_url(
-            Network::Devnet,
-            "http://devnet.example.com".to_string(),
-            NonZeroUsize::new(10).unwrap(),
-        );
-        assert!(matches!(
-            result,
-            Err(TrustedContextProviderError::NetworkError(_))
-        ));
-    }
-
-    #[test]
-    fn test_new_with_url_accepts_plaintext_loopback() {
-        // Plaintext HTTP to loopback is acceptable (used by local dashmate).
-        for host in ["127.0.0.1", "localhost", "[::1]"] {
-            let result = TrustedHttpContextProvider::new_with_url(
-                Network::Regtest,
-                format!("http://{}:22444", host),
-                NonZeroUsize::new(10).unwrap(),
-            );
-            assert!(
-                result.is_ok(),
-                "expected http://{} loopback to be accepted, got {:?}",
-                host,
-                result.err()
-            );
-        }
-    }
-
-    #[test]
-    fn test_new_with_url_rejects_unknown_scheme() {
-        let result = TrustedHttpContextProvider::new_with_url(
-            Network::Devnet,
-            "ftp://example.com".to_string(),
-            NonZeroUsize::new(10).unwrap(),
-        );
-        assert!(matches!(
-            result,
-            Err(TrustedContextProviderError::NetworkError(_))
-        ));
-    }
 
     #[test]
     fn test_known_contracts() {
