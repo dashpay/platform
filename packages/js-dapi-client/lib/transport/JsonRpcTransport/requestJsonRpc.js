@@ -1,6 +1,10 @@
-const https = require('https');
 const JsonRpcError = require('./errors/JsonRpcError');
 const WrongHttpCodeError = require('./errors/WrongHttpCodeError');
+
+// Lazily-created undici Agent that disables TLS verification, shared across
+// all self-signed requests. A per-request Agent would leak its socket pool
+// since nothing destroys it after the fetch completes.
+let sharedSelfSignedAgent;
 /**
  * @typedef {requestJsonRpc}
  * @param {string} protocol
@@ -47,17 +51,24 @@ async function requestJsonRpc(protocol, host, port, selfSigned, method, params, 
     Object.assign(requestOptions, { signal: controller.signal });
   }
 
-  // For NodeJS Client
+  // Self-signed HTTPS: Node 18+ built-in fetch is backed by undici, which
+  // accepts a `dispatcher` for per-request TLS settings. Browsers can't
+  // bypass TLS verification, so the flag is a no-op there. eval('require')
+  // hides undici from bundler static analysis so it isn't pulled into
+  // browser bundles.
   if (typeof process !== 'undefined'
     && process.versions != null
     && process.versions.node != null
     && protocol === 'https'
     && selfSigned) {
-    requestOptions.agent = new https.Agent({
-      rejectUnauthorized: false,
-    });
+    if (!sharedSelfSignedAgent) {
+      // eslint-disable-next-line no-eval, global-require
+      const { Agent } = eval('require')('undici');
+      sharedSelfSignedAgent = new Agent({ connect: { rejectUnauthorized: false } });
+    }
+    requestOptions.dispatcher = sharedSelfSignedAgent;
   }
-  // eslint-disable-next-line
+
   const response = await fetch(url, requestOptions);
 
   if (typeof requestTimeoutId !== 'undefined') {

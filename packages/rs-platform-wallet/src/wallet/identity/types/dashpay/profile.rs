@@ -21,6 +21,7 @@ use sha2::{Digest, Sha256};
 /// User-facing DashPay profile data published via the DashPay data
 /// contract. This is the **output/stored** model — no raw image bytes.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct DashPayProfile {
     /// Display name (publicly visible, max 25 chars per DIP-15).
     pub display_name: Option<String>,

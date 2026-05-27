@@ -6,7 +6,9 @@ use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
 use tokio::sync::RwLock;
 
+use crate::broadcaster::SpvBroadcaster;
 use crate::error::PlatformWalletError;
+use crate::wallet::asset_lock::manager::AssetLockManager;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 use key_wallet_manager::WalletManager;
 
@@ -27,6 +29,11 @@ pub struct PlatformAddressWallet {
     /// wallets don't allocate empty state. Sync takes a `write` lock;
     /// transfer/withdraw paths take `read` for key_source lookups.
     pub(crate) provider: Arc<RwLock<Option<PlatformPaymentAddressProvider>>>,
+    /// Shared asset-lock manager. Threaded in so the orchestrated
+    /// `fund_from_asset_lock` path can drive
+    /// build → IS-or-CL wait → consume on the same tracked locks
+    /// every other sub-wallet sees. Cloned `Arc`, not owned.
+    pub(crate) asset_locks: Arc<AssetLockManager<SpvBroadcaster>>,
     /// Per-wallet persistence handle for queuing changesets.
     pub(crate) persister: WalletPersister,
 }
@@ -39,6 +46,7 @@ impl PlatformAddressWallet {
         sdk: Arc<dash_sdk::Sdk>,
         wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
         wallet_id: WalletId,
+        asset_locks: Arc<AssetLockManager<SpvBroadcaster>>,
         persister: WalletPersister,
     ) -> Self {
         Self {
@@ -46,6 +54,7 @@ impl PlatformAddressWallet {
             wallet_manager,
             wallet_id,
             provider: Arc::new(RwLock::new(None)),
+            asset_locks,
             persister,
         }
     }
@@ -151,6 +160,14 @@ impl PlatformAddressWallet {
     /// Get the network from the SDK.
     pub fn network(&self) -> key_wallet::Network {
         self.sdk.network
+    }
+
+    /// Wallet id this `PlatformAddressWallet` operates on. Exposed so
+    /// FFI callers that build a `MnemonicResolverCoreSigner` on demand
+    /// can thread the wallet id through to the resolver callback.
+    /// Mirrors [`AssetLockManager::wallet_id`].
+    pub fn wallet_id(&self) -> WalletId {
+        self.wallet_id
     }
 
     /// Rebuild the provider so it covers a newly added account.
