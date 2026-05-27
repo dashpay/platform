@@ -247,8 +247,8 @@ fn tc007_identity_key_entry_roundtrip() {
 
     let p2 = SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap();
     let conn = p2.lock_conn_for_test();
-    // V002: identity_keys is keyed by (identity_id, key_id); the
-    // wallet_id column was dropped.
+    // identity_keys is keyed by (identity_id, key_id); the wallet_id
+    // column is not part of the schema.
     let blob_bytes: Vec<u8> = conn
         .query_row(
             "SELECT public_key_blob FROM identity_keys WHERE identity_id = ?1 AND key_id = ?2",
@@ -500,7 +500,7 @@ fn tc012_dashpay_overlay_roundtrip() {
 
     let p2 = SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap();
     let conn = p2.lock_conn_for_test();
-    // V002: dashpay_profiles is keyed by identity_id only.
+    // dashpay_profiles is keyed by identity_id only.
     let profile_blob: Vec<u8> = conn
         .query_row(
             "SELECT profile_blob FROM dashpay_profiles WHERE identity_id = ?1",

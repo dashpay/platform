@@ -57,7 +57,7 @@ pub fn ensure_wallet_meta(persister: &SqlitePersister, wallet_id: &WalletId) {
 
 /// Insert a stub `identities` row so identity-owned table writes
 /// (`token_balances`, `dashpay_profiles`, `identity_keys`) pass the
-/// V002 FK to `identities(identity_id)`. `parent_wallet_id` is
+/// FK to `identities(identity_id)`. `parent_wallet_id` is
 /// optional — when `Some`, the row is linked to that wallet so the
 /// cascade chain works; when `None`, the row is an orphan identity
 /// (NULL `wallet_id`), still satisfying the identity-owned FKs.

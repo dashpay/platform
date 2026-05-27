@@ -97,10 +97,9 @@ fn tc043_non_wired_up_persisted_but_not_returned() {
     let recipient = Identifier::from([0x22; 32]);
     let token = Identifier::from([0x33; 32]);
     ensure_wallet_meta(&persister, &w);
-    // V002: token_balances FK now targets identities(identity_id), so
-    // the owner identity must exist before any token-balance row is
-    // written. contacts_* is still wallet-scoped, so it doesn't need
-    // an identity row.
+    // token_balances FK targets identities(identity_id), so the owner
+    // identity must exist before any token-balance row is written.
+    // contacts_* is wallet-scoped, so it doesn't need an identity row.
     common::ensure_identity(&persister, owner.as_bytes(), Some(&w));
     let mut sent_requests = std::collections::BTreeMap::new();
     sent_requests.insert(

@@ -40,11 +40,8 @@ fn native_fk_rejects_orphan_child() {
 }
 
 /// CMT-001: an `identity_keys` row whose `identities` parent does not
-/// exist is rejected by the FK to `identities(identity_id)`.
-///
-/// V002: `identity_keys` no longer carries `wallet_id`; the FK has
-/// moved to `identities(identity_id)` (cascade chain through
-/// `wallet_metadata → identities → identity_keys`).
+/// exist is rejected by the FK to `identities(identity_id)` (cascade
+/// chain `wallet_metadata → identities → identity_keys`).
 #[test]
 fn native_fk_rejects_identity_keys_without_identity() {
     let (persister, _tmp, _path) = fresh_persister();

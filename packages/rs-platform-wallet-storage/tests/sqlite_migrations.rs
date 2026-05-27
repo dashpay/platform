@@ -118,8 +118,8 @@ fn tc027_smoke_insert_every_table() {
         ),
         (
             "identity_keys",
-            // V002: identity_keys drops the wallet_id column; the
-            // FK now targets identities(identity_id).
+            // identity_keys is keyed by (identity_id, key_id); the FK
+            // targets identities(identity_id).
             "INSERT INTO identity_keys (identity_id, key_id, public_key_blob, public_key_hash, derivation_blob) VALUES (?1, 0, X'00', X'00', NULL)",
             &[&identity_id.as_slice()],
         ),
@@ -155,20 +155,20 @@ fn tc027_smoke_insert_every_table() {
         ),
         (
             "token_balances",
-            // V002: token_balances PK is (identity_id, token_id);
-            // wallet_id column is gone.
+            // token_balances PK is (identity_id, token_id); the FK
+            // cascades through identities.
             "INSERT INTO token_balances (identity_id, token_id, balance, updated_at) VALUES (?1, ?2, 0, 0)",
             &[&identity_id.as_slice(), &[5u8; 32].as_slice()],
         ),
         (
             "dashpay_profiles",
-            // V002: dashpay_profiles keyed by identity_id only.
+            // dashpay_profiles is keyed by identity_id only.
             "INSERT INTO dashpay_profiles (identity_id, profile_blob) VALUES (?1, X'00')",
             &[&identity_id.as_slice()],
         ),
         (
             "dashpay_payments_overlay",
-            // V002: dashpay_payments_overlay keyed by (identity_id, payment_id).
+            // dashpay_payments_overlay is keyed by (identity_id, payment_id).
             "INSERT INTO dashpay_payments_overlay (identity_id, payment_id, overlay_blob) VALUES (?1, 'pay1', X'00')",
             &[&identity_id.as_slice()],
         ),

@@ -24,10 +24,11 @@ pub mod platform_addrs;
 pub mod token_balances;
 pub mod wallet_meta;
 
-/// How a per-wallet table is row-scoped against a `wallet_id`. After
-/// the V002 schema migration (CODE-002), identity-owned tables drop
-/// their direct `wallet_id` column and reach the parent wallet only
-/// via the cascading FK chain `wallet_metadata → identities → …`.
+/// How a per-wallet table is row-scoped against a `wallet_id`.
+/// Identity-owned tables (`identity_keys`, `token_balances`,
+/// `dashpay_profiles`, `dashpay_payments_overlay`) have no direct
+/// `wallet_id` column; they reach the parent wallet only via the
+/// cascading FK chain `wallet_metadata → identities → …`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WalletScope {
     /// The table carries a `wallet_id` column directly; predicates
@@ -43,8 +44,9 @@ pub enum WalletScope {
 /// row removal and by `inspect` for the table summary. `wallet_metadata`
 /// is the parent and listed first; everything after it depends on the
 /// parent row via the native `ON DELETE CASCADE` foreign keys declared
-/// in `V001__initial.rs` (wallet-scoped tables) and
-/// `V002__cascade_only_identity_refs.rs` (identity-scoped tables).
+/// in `V001__initial.rs`. Identity-owned children cascade through
+/// `identities` (nullable `wallet_id` link) rather than directly off
+/// `wallet_metadata`.
 pub const PER_WALLET_TABLES: &[(&str, WalletScope)] = &[
     ("wallet_metadata", WalletScope::DirectColumn),
     ("account_registrations", WalletScope::DirectColumn),

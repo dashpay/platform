@@ -73,11 +73,10 @@ impl IdentityKeyWire {
     }
 }
 
-/// V002: `identity_keys` is now keyed by `(identity_id, key_id)`
-/// only; the parent FK points at `identities(identity_id)`. The
-/// caller still passes a [`WalletId`] for source compatibility — it
-/// is consulted only to validate the entry's own `wallet_id` field
-/// (when set), keeping the entry-blob and typed columns aligned.
+/// `identity_keys` is keyed by `(identity_id, key_id)`; the parent FK
+/// targets `identities(identity_id)`. The caller-supplied [`WalletId`]
+/// scopes cross-checks against the entry's own `wallet_id` field so
+/// the entry-blob and the typed columns stay aligned.
 pub fn apply(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,

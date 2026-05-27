@@ -14,14 +14,12 @@ pub fn apply(
     cs: &IdentityChangeSet,
 ) -> Result<(), WalletStorageError> {
     if !cs.identities.is_empty() {
-        // V002: PK is `identity_id` alone; `wallet_id` is nullable
-        // and links the identity to its parent wallet for cascade.
-        // The sentinel-zero wallet id (`[0u8; 32]`) is the legacy
-        // placeholder for "no parent wallet known" — stored as NULL
-        // so the FK to `wallet_metadata` doesn't activate.
-        // INTENTIONAL(SEC-001): NULL wallet_id allowed per CODE-002 design;
-        // COALESCE upsert is the intended merge semantic for orphan-identity-to-wallet promotion.
-        // Existing wallet_id is preserved on re-upsert; new wallet_id fills NULL.
+        // PK is `identity_id` alone; `wallet_id` is nullable and links
+        // the identity to its parent wallet for cascade. The all-zero
+        // wallet id is treated as "no parent wallet known" and stored
+        // as NULL so the FK to `wallet_metadata` doesn't activate.
+        // COALESCE order preserves the existing wallet_id on re-upsert;
+        // new wallet_id only fills when the existing row is NULL.
         let mut stmt = tx.prepare_cached(
             "INSERT INTO identities (identity_id, wallet_id, wallet_index, entry_blob, tombstoned) \
              VALUES (?1, ?2, ?3, ?4, 0) \
@@ -52,9 +50,9 @@ pub fn apply(
     Ok(())
 }
 
-/// V002: callers still receive a `WalletId` (32 bytes) from the
-/// caller boundary. Treat the all-zero sentinel as "no parent wallet"
-/// (NULL) so the nullable `identities.wallet_id` FK matches reality.
+/// Map the caller-supplied `WalletId` (32 bytes) to the nullable
+/// `identities.wallet_id` column: the all-zero id is treated as "no
+/// parent wallet" and stored as NULL so the FK doesn't activate.
 fn wallet_id_to_param(wallet_id: &WalletId) -> Option<&[u8]> {
     if wallet_id.iter().all(|b| *b == 0) {
         None
@@ -76,9 +74,9 @@ pub fn fetch(
     identity_id: &[u8; 32],
 ) -> Result<Option<IdentityEntry>, WalletStorageError> {
     use rusqlite::OptionalExtension;
-    // V002: `identity_id` is the PK; the caller-supplied `wallet_id`
-    // is preserved on the signature for source-compatibility but is
-    // no longer part of the lookup key.
+    // `identity_id` is the PK; the caller-supplied `wallet_id` is
+    // preserved on the signature for symmetry with other readers but
+    // is not part of the lookup key.
     let row: Option<Vec<u8>> = conn
         .query_row(
             "SELECT entry_blob FROM identities WHERE identity_id = ?1",
@@ -107,10 +105,10 @@ pub fn load_state(
 ) -> Result<platform_wallet::changeset::IdentityManagerStartState, WalletStorageError> {
     use platform_wallet::changeset::IdentityManagerStartState;
 
-    // V002: wallet_id is nullable on identities; this load path still
-    // wants only the rows belonging to the wallet the caller asked
-    // for, so the WHERE clause matches by wallet_id (orphan identities
-    // — wallet_id NULL — are out of scope for this per-wallet loader).
+    // `identities.wallet_id` is nullable; this load path wants only the
+    // rows belonging to the wallet the caller asked for, so the WHERE
+    // clause matches by wallet_id (orphan identities — wallet_id NULL —
+    // are out of scope for this per-wallet loader).
     let mut stmt = conn.prepare(
         "SELECT identity_id, entry_blob, tombstoned FROM identities WHERE wallet_id = ?1",
     )?;

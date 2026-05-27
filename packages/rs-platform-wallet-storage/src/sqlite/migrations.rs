@@ -18,79 +18,16 @@ pub fn run(conn: &mut rusqlite::Connection) -> Result<refinery::Report, refinery
     migrations::runner().run(conn)
 }
 
-/// Apply migrations on behalf of [`crate::sqlite::persister::SqlitePersister::open`],
-/// re-classifying the V002 sentinel-row CHECK failure into a typed
-/// [`WalletStorageError::MigrationRequiresManualCleanup`] so operators
-/// see what the migration refused on instead of a raw rusqlite error.
+/// Apply migrations on behalf of [`crate::sqlite::persister::SqlitePersister::open`].
 ///
-/// V002 reshapes identity-owned tables, which involves
-/// `DROP TABLE identities` while child tables (`identity_keys`,
-/// `dashpay_profiles`, etc.) carry `ON DELETE CASCADE` FK clauses
-/// pointing at it. SQLite's drop-of-parent semantics fire those
-/// CASCADE clauses when FK enforcement is on, wiping the rows we're
-/// trying to migrate. FK enforcement cannot be toggled inside a
-/// transaction, so the pragma is flipped off here for the migration
-/// window and re-enabled (with assertion) right after — matching
-/// `open_conn`'s normal invariant.
+/// Plain wrapper today — V001 ships the final identity-cascade shape so
+/// there is no FK-toggle dance or sentinel re-classification needed.
+/// Kept as a typed-error chokepoint so future migrations that DO need
+/// to re-classify a refinery error have a single entry point.
 pub(crate) fn run_for_open(
     conn: &mut rusqlite::Connection,
 ) -> Result<refinery::Report, WalletStorageError> {
-    crate::sqlite::conn::set_foreign_keys(conn, false)?;
-    let result = run(conn);
-    // Always restore FK enforcement, even on migration error, so the
-    // caller's connection is in the documented state.
-    crate::sqlite::conn::enforce_foreign_keys(conn)?;
-    match result {
-        Ok(r) => Ok(r),
-        Err(e) => {
-            // The V002 guard uses a CHECK on the temp table
-            // `_v002_sentinel_rows_must_be_zero`; SQLite surfaces that
-            // as a ConstraintViolation whose message names the table.
-            if migration_failure_is_sentinel(&e) {
-                // Re-query the live `token_balances` table for the
-                // count so the typed error carries the actual number
-                // of offending rows. The CHECK message itself does not
-                // expose it.
-                let count: i64 = conn
-                    .query_row(
-                        "SELECT COUNT(*) FROM token_balances \
-                         WHERE wallet_id = X'0000000000000000000000000000000000000000000000000000000000000000'",
-                        [],
-                        |row| row.get(0),
-                    )
-                    .unwrap_or(0);
-                return Err(WalletStorageError::MigrationRequiresManualCleanup {
-                    table: "token_balances",
-                    count,
-                });
-            }
-            Err(WalletStorageError::Migration(e))
-        }
-    }
-}
-
-/// Recognise the V002 sentinel-guard failure by walking the error
-/// chain for a `ConstraintViolation` whose message names the guard
-/// table.
-fn migration_failure_is_sentinel(err: &refinery::Error) -> bool {
-    let mut source: Option<&dyn std::error::Error> = Some(err);
-    while let Some(s) = source {
-        // SQLite surfaces the failing CHECK by predicate text
-        // (`CHECK constraint failed: sentinel_count = 0`), not by table
-        // name. `sentinel_count` is unique to the V002 guard temp
-        // table; matching on the column name keeps the detector tight
-        // without false positives.
-        if let Some(rusqlite::Error::SqliteFailure(code, msg)) = s.downcast_ref::<rusqlite::Error>()
-        {
-            if matches!(code.code, rusqlite::ErrorCode::ConstraintViolation)
-                && msg.as_deref().is_some_and(|m| m.contains("sentinel_count"))
-            {
-                return true;
-            }
-        }
-        source = s.source();
-    }
-    false
+    run(conn).map_err(WalletStorageError::Migration)
 }
 
 /// Return a fresh refinery [`Runner`](refinery::Runner) seeded with the

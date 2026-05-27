@@ -158,9 +158,14 @@ See [`migrations/V001__initial.rs`](./migrations/V001__initial.rs) for
 the canonical schema. It is hand-written `CREATE TABLE … PRIMARY KEY …
 FOREIGN KEY …` SQL with native `ON DELETE CASCADE` constraints; INSERT,
 DELETE-cascade, and UPDATE re-parenting are all enforced by SQLite
-itself. Foreign-key enforcement is enabled and read-back-asserted on
-every connection open via the `open_conn` choke-point — if the linked
-SQLite cannot honor `PRAGMA foreign_keys`, open fails hard. The single
-remaining trigger clears `core_utxos.spent_in_txid` to NULL on
-transaction delete (a native composite `SET NULL` would null the
-NOT-NULL `wallet_id` column too).
+itself. Wallet-scoped tables FK directly to `wallet_metadata`;
+identity-owned tables (`identity_keys`, `token_balances`,
+`dashpay_profiles`, `dashpay_payments_overlay`) are keyed by
+`identity_id` only and cascade through `identities` (whose `wallet_id`
+is nullable to support identity-only flows). Foreign-key enforcement is
+enabled and read-back-asserted on every connection open via the
+`open_conn` choke-point — if the linked SQLite cannot honor
+`PRAGMA foreign_keys`, open fails hard. The single remaining trigger
+clears `core_utxos.spent_in_txid` to NULL on transaction delete (a
+native composite `SET NULL` would null the NOT-NULL `wallet_id` column
+too).

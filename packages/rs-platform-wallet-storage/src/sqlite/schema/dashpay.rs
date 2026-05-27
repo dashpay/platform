@@ -11,13 +11,13 @@ use platform_wallet::wallet::platform_wallet::WalletId;
 use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::schema::blob;
 
-/// V002: both dashpay tables are keyed by identity only; their FK
-/// targets `identities(identity_id)` so cascade flows through the
+/// Both dashpay tables are keyed by identity only; their FK targets
+/// `identities(identity_id)` so cascade flows through the
 /// `wallet_metadata → identities` chain.
 ///
-/// The `_wallet_id` parameter is kept on the signature for source
-/// compatibility with the persister's `write_changeset_in_one_tx`
-/// dispatch table, but it does not feed any column.
+/// The `_wallet_id` parameter is kept on the signature for symmetry
+/// with the persister's `write_changeset_in_one_tx` dispatch table,
+/// but it does not feed any column.
 pub fn apply(
     tx: &Transaction<'_>,
     _wallet_id: &WalletId,

@@ -202,10 +202,7 @@ impl SqlitePersister {
             )?;
         }
 
-        // Apply migrations. `run_for_open` re-classifies the V002
-        // sentinel-row CHECK failure into a typed
-        // `MigrationRequiresManualCleanup` so operators see what
-        // refused instead of a bare rusqlite error.
+        // Apply migrations through the typed-error chokepoint.
         let _report = crate::sqlite::migrations::run_for_open(&mut conn)?;
 
         Ok(Self {
@@ -514,7 +511,7 @@ impl SqlitePersister {
                 // &'static str` constant compiled into the binary. There
                 // is no user input on this path. The SQL flavour
                 // (direct column vs. JOIN via `identities`) is picked
-                // by `count_rows_for_wallet_sql` per V002 schema.
+                // by `count_rows_for_wallet_sql`.
                 let n: i64 = tx
                     .query_row(
                         &count_rows_for_wallet_sql(table, *scope),
@@ -611,8 +608,8 @@ impl SqlitePersister {
         for (table, scope) in PER_WALLET_TABLES {
             // `table` is a compile-time constant — no SQL injection
             // surface despite the `format!`. Per-wallet predicate uses
-            // `count_rows_for_wallet_sql` so V002 identity-scoped
-            // tables join through `identities`.
+            // `count_rows_for_wallet_sql` so identity-scoped tables
+            // join through `identities`.
             let n: i64 = match wallet_id {
                 Some(id) => conn
                     .query_row(

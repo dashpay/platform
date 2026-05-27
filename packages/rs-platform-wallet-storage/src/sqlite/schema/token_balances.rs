@@ -8,15 +8,15 @@ use platform_wallet::wallet::platform_wallet::WalletId;
 use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::util::safe_cast;
 
-/// V002: `token_balances` is now keyed by `(identity_id, token_id)`
-/// only. The caller still supplies a [`WalletId`] for source
-/// compatibility — it is unused on this writer because cascade flows
+/// `token_balances` is keyed by `(identity_id, token_id)`. The caller
+/// supplies a [`WalletId`] for symmetry with sibling writers — it is
+/// unused on this writer because cascade flows
 /// `wallet_metadata → identities → token_balances` through the
 /// nullable `identities.wallet_id` FK.
-// INTENTIONAL(SEC-002): orphan token_balances cleanup is host responsibility.
-// No automatic prune API is provided — V002 cascades through identities only,
-// not through wallet_id (which was dropped from this table). Hosts that delete
-// identities out-of-band must prune token_balances themselves.
+//
+// Orphan-row policy: there is no automatic prune API. Cascade flows
+// through `identities`; hosts that delete identities out-of-band must
+// prune `token_balances` themselves.
 pub fn apply(
     tx: &Transaction<'_>,
     _wallet_id: &WalletId,
