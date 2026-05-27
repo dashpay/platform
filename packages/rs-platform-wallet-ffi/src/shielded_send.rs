@@ -407,11 +407,13 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_fund_from_asset_lock(
     let result = block_on_worker(async move {
         // SAFETY: see the fn-level safety doc — the resolver handle
         // is pinned alive for the duration of this FFI call.
-        let asset_lock_signer = MnemonicResolverCoreSigner::new(
-            core_signer_addr as *mut MnemonicResolverHandle,
-            wallet_id,
-            network,
-        );
+        let asset_lock_signer = unsafe {
+            MnemonicResolverCoreSigner::new(
+                core_signer_addr as *mut MnemonicResolverHandle,
+                wallet_id,
+                network,
+            )
+        };
         let prover = CachedOrchardProver::new();
         wallet
             .shielded_fund_from_asset_lock(
@@ -496,11 +498,15 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_resume_fund_from_asset
     let core_signer_addr = core_signer_handle as usize;
 
     let result = block_on_worker(async move {
-        let asset_lock_signer = MnemonicResolverCoreSigner::new(
-            core_signer_addr as *mut MnemonicResolverHandle,
-            wallet_id,
-            network,
-        );
+        // SAFETY: see the fn-level safety doc — the resolver handle
+        // is pinned alive for the duration of this FFI call.
+        let asset_lock_signer = unsafe {
+            MnemonicResolverCoreSigner::new(
+                core_signer_addr as *mut MnemonicResolverHandle,
+                wallet_id,
+                network,
+            )
+        };
         let prover = CachedOrchardProver::new();
         wallet
             .shielded_fund_from_asset_lock(

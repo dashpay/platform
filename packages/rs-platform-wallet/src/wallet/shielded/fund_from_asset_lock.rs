@@ -153,6 +153,20 @@ impl PlatformWallet {
         // `user_fee_increase` (bypasses Tenderdash's invalid-tx hash
         // cache) and IS-lock rejection triggers an IS→CL upgrade on
         // the same outpoint.
+        //
+        // Subtle: `ShieldFromAssetLockTransition::set_user_fee_increase`
+        // is a no-op (pinned at `state_transition::mod`'s
+        // `test_shield_from_asset_lock_user_fee_increase_is_zero_and_setter_noop`),
+        // so the wrapper's bump cannot directly diversify the ST hash
+        // here the way it does for address-funding. Retries still avoid
+        // Tenderdash's invalid-tx cache because `build_output_only_bundle`
+        // draws fresh randomness from `OsRng` on every call
+        // (`packages/rs-dpp/src/shielded/builder/mod.rs`), so a re-built
+        // bundle has a different Halo 2 proof and therefore a different
+        // signable hash. If the prover is ever made deterministic for
+        // reproducibility, this orchestration would need an explicit
+        // diversifier (e.g. a memo-derived bump) to keep CL-height
+        // retries from silently degrading into duplicate-hash submits.
         let proof_out_point = out_point_from_proof(&proof);
         let sdk = self.sdk.clone();
         match submit_with_cl_height_retry(settings, |s| {
