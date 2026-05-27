@@ -39,7 +39,9 @@ export interface EvoSDKOptions extends ConnectionOptions {
   // Example: ['https://127.0.0.1:1443', 'https://192.168.1.100:1443']
   addresses?: string[];
   // Short name of the devnet (e.g. 'paloma'). Required when network === 'devnet'
-  // unless explicit addresses are provided AND trusted is false.
+  // AND trusted === true (used to derive the quorum URL). When trusted === false,
+  // explicit `addresses` are mandatory and `devnetName` alone is not sufficient
+  // — no masternode addresses can be discovered without a trusted context.
   devnetName?: string;
   // Optional override for the trusted devnet quorum base URL. When omitted,
   // the URL is derived as `https://quorums.<devnetName>.networks.dash.org`.
@@ -221,9 +223,10 @@ export class EvoSDK {
 
   /**
    * Create an EvoSDK instance configured for a devnet, without trusted-context
-   * proof verification. Requires either `devnetName` or explicit `addresses`
-   * in `options`. Proof-bearing queries will fail unless paired with a
-   * trusted context — for proof verification on devnet, use
+   * proof verification. Requires explicit `addresses` in `options` —
+   * `devnetName` alone is not sufficient in non-trusted mode, since no
+   * masternode addresses can be discovered without a trusted context.
+   * Proof-bearing queries will fail; for proof verification on devnet, use
    * `EvoSDK.devnetTrusted` instead.
    */
   static devnet(devnetName: string, options: ConnectionOptions & { addresses?: string[] } = {}): EvoSDK {
