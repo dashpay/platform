@@ -28,6 +28,11 @@ struct WalletDetailView: View {
     @State private var showReceiveAddress = false
     @State private var showSendTransaction = false
     @State private var showWalletInfo = false
+    @State private var showFundPlatformAddress = false
+    /// Set by `PendingPlatformFundFromAssetLocksList`'s Resume tap.
+    @State private var resumingAssetLock: PersistentAssetLock?
+
+    @Query private var walletAssetLocks: [PersistentAssetLock]
 
     // Badge count for "View All Transactions". Transactions are no
     // longer wallet-scoped (the same on-chain tx can land in
@@ -46,6 +51,10 @@ struct WalletDetailView: View {
         )
         descriptor.propertiesToFetch = [\.walletId]
         _walletTxos = Query(descriptor)
+        _walletAssetLocks = Query(
+            filter: PersistentAssetLock.predicate(walletId: walletId),
+            sort: [SortDescriptor(\PersistentAssetLock.updatedAt, order: .reverse)]
+        )
     }
 
     private var transactionCount: Int {
@@ -74,7 +83,9 @@ struct WalletDetailView: View {
             .padding(.top, 8)
 
             // Balance Card
-            BalanceCardView(wallet: wallet)
+            BalanceCardView(wallet: wallet) {
+                showFundPlatformAddress = true
+            }
                 .padding()
 
             // Action Buttons
@@ -96,6 +107,14 @@ struct WalletDetailView: View {
                 .buttonStyle(.bordered)
             }
             .padding(.horizontal)
+
+            PendingPlatformFundFromAssetLocksList(
+                coordinator: walletManager.addressFundFromAssetLockCoordinator,
+                walletId: wallet.walletId,
+                assetLocks: walletAssetLocks,
+                resumingAssetLock: $resumingAssetLock
+            )
+            .padding(.top, 8)
 
             Divider()
                 .padding(.vertical, 8)
@@ -176,6 +195,12 @@ struct WalletDetailView: View {
             WalletInfoView(wallet: wallet) {
                 dismiss()
             }
+        }
+        .sheet(isPresented: $showFundPlatformAddress) {
+            FundFromAssetLockPlatformAddressView(wallet: wallet)
+        }
+        .sheet(item: $resumingAssetLock) { lock in
+            FundFromAssetLockPlatformAddressView(wallet: wallet, resumeFromLock: lock)
         }
         .onAppear {
             appUIState.showWalletsSyncDetails = false
@@ -669,6 +694,12 @@ struct WalletInfoView: View {
 
 struct BalanceCardView: View {
     let wallet: PersistentWallet
+    /// Invoked when the user taps the "+" affordance next to the
+    /// Platform Balance row. The parent owns the sheet presentation
+    /// state, so we surface the intent rather than presenting here.
+    /// `nil` hides the affordance entirely (e.g. for read-only
+    /// surfaces).
+    var onFundPlatform: (() -> Void)?
     @EnvironmentObject var walletManager: PlatformWalletManager
     @EnvironmentObject var platformState: AppState
     @EnvironmentObject var shieldedService: ShieldedService
@@ -677,8 +708,9 @@ struct BalanceCardView: View {
     @Query private var addressBalances: [PersistentPlatformAddress]
     @Query private var syncStates: [PersistentPlatformAddressesSyncState]
 
-    init(wallet: PersistentWallet) {
+    init(wallet: PersistentWallet, onFundPlatform: (() -> Void)? = nil) {
         self.wallet = wallet
+        self.onFundPlatform = onFundPlatform
         let walletId = wallet.walletId
         let walletNetworkRaw = (wallet.network ?? .testnet).rawValue
         _addressBalances = Query(
@@ -739,13 +771,24 @@ struct BalanceCardView: View {
                     unit: .duffs
                 )
 
-                // Platform Balance row
+                // Platform Balance row — when `onFundPlatform` is
+                // wired (i.e. on the editable Wallet Detail surface),
+                // a trailing `+` button opens the Core→Platform
+                // funding sheet. Read-only call sites pass `nil` and
+                // the affordance disappears.
                 WalletBalanceRow(
                     label: "Platform Balance",
                     amount: platformBalance,
                     color: .blue,
                     unit: .credits,
-                    showSyncIndicator: platformBalanceSyncService.isSyncing
+                    showSyncIndicator: platformBalanceSyncService.isSyncing,
+                    trailingAction: onFundPlatform.map { fund in
+                        WalletBalanceRow.TrailingAction(
+                            systemImage: "plus.circle.fill",
+                            accessibilityLabel: "Top Up Platform Balance from Core",
+                            action: fund
+                        )
+                    }
                 )
 
                 // Shielded Balance row
@@ -771,12 +814,23 @@ private enum WalletBalanceUnit {
 }
 
 private struct WalletBalanceRow: View {
+    /// Tappable affordance shown at the trailing edge of the row.
+    /// Used today by the Platform Balance row to surface a "fund
+    /// from Core" entry point without crowding the action button
+    /// strip at the top of the wallet detail screen.
+    struct TrailingAction {
+        let systemImage: String
+        let accessibilityLabel: String
+        let action: () -> Void
+    }
+
     let label: String
     var amount: UInt64
     var incoming: UInt64 = 0
     var color: Color
     var unit: WalletBalanceUnit = .duffs
     var showSyncIndicator: Bool = false
+    var trailingAction: TrailingAction? = nil
 
     var body: some View {
         HStack {
@@ -808,6 +862,15 @@ private struct WalletBalanceRow: View {
                         .font(.caption2)
                         .foregroundColor(.orange)
                 }
+            }
+            if let trailing = trailingAction {
+                Button(action: trailing.action) {
+                    Image(systemName: trailing.systemImage)
+                        .font(.title3)
+                        .foregroundColor(color)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(trailing.accessibilityLabel)
             }
         }
     }
