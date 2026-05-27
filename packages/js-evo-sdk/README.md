@@ -45,14 +45,29 @@ console.log('Current epoch:', epoch.index);
 
 | Option | Type | Default | Notes |
 |--------|------|---------|-------|
-| `network` | `'testnet' \| 'mainnet' \| 'local'` | `'testnet'` | Target network. |
+| `network` | `'testnet' \| 'mainnet' \| 'local' \| 'devnet'` | `'testnet'` | Target network. |
 | `trusted` | `boolean` | `false` | When `true`, pre-fetches quorum keys for proof verification. Required for default query methods. |
+| `addresses` | `string[]` | — | Seed masternode addresses. Required for non-trusted devnet; optional for other networks (replaces built-in defaults). |
+| `devnetName` | `string` | — | Short name of the devnet (e.g. `'paloma'`). Required when `network: 'devnet'` and `trusted: true` (used to derive the quorum URL); ignored otherwise — only valid when `network === 'devnet'`. |
+| `quorumUrl` | `string` | — | Override the trusted-context quorum base URL. Only meaningful when `trusted: true`. Useful for staging endpoints or devnets where the public DNS isn't deployed yet. |
 | `proofs` | `boolean` | `true` | Setting to `false` disables proof requests where supported, but unproved mode is limited — several query paths (e.g. document fetches) force proofs regardless, and some query builders reject the unproved path. Mainly intended for mock/offline replay. |
 | `version` | `number` | latest | Platform protocol version. |
 | `logs` | `string` | — | Tracing/log filter for the underlying Wasm SDK. Accepts simple levels (`'info'`, `'debug'`, …) or a full `EnvFilter` string. |
 | `settings` | `{ connectTimeoutMs?, timeoutMs?, retries?, banFailedAddress? }` | — | DAPI client transport settings. |
 
-Preset factories are available as convenience: `EvoSDK.testnet()`, `EvoSDK.mainnet()`, `EvoSDK.testnetTrusted()`, `EvoSDK.mainnetTrusted()`, `EvoSDK.local()`, and `EvoSDK.localTrusted()` (the last two target a dashmate local node).
+Preset factories are available as convenience: `EvoSDK.testnet()`, `EvoSDK.mainnet()`, `EvoSDK.testnetTrusted()`, `EvoSDK.mainnetTrusted()`, `EvoSDK.local()`, `EvoSDK.localTrusted()` (the last two target a dashmate local node), and the devnet factories `EvoSDK.devnet(name, options)` / `EvoSDK.devnetTrusted(name, options)`.
+
+```typescript
+// Trusted devnet — quorum URL auto-derived from the devnet name.
+const sdk = EvoSDK.devnetTrusted('paloma');
+await sdk.connect();
+
+// Non-trusted devnet — explicit addresses required (no quorum context).
+const local = EvoSDK.devnet('paloma', {
+  addresses: ['https://10.0.0.5:1443'],
+});
+await local.connect();
+```
 
 Two static helpers are also exported:
 
