@@ -6,9 +6,9 @@ use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
 pub use dpp::prelude::AddressNonce;
 
+mod fund_from_asset_lock;
 pub(crate) mod provider;
 mod sync;
-mod fund_from_asset_lock;
 mod transfer;
 mod wallet;
 mod withdrawal;
