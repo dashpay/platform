@@ -1,3 +1,5 @@
+## [3.1.0-dev.7](https://github.com/dashpay/platform/compare/v3.1.0-dev.6...v3.1.0-dev.7) (2026-05-27)
+
 ## [3.1.0-dev.6](https://github.com/dashpay/platform/compare/v3.1.0-dev.5...v3.1.0-dev.6) (2026-05-26)
 
 
