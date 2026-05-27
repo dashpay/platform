@@ -5,11 +5,19 @@
 //! FK clause must live inside `CREATE TABLE`; that requirement is why
 //! the schema is emitted as explicit DDL rather than a query-builder.
 //!
-//! Every per-wallet table carries `wallet_id BLOB` in (or as all of)
-//! its primary key plus a native `FOREIGN KEY (wallet_id) REFERENCES
-//! wallet_metadata(wallet_id) ON DELETE CASCADE`. `identity_keys` and
-//! `dashpay_profiles` additionally key into `identities(wallet_id,
-//! identity_id)`. The one relationship that stays a trigger is
+//! Per-wallet tables carry `wallet_id BLOB` in (or as all of) their
+//! primary key plus a native `FOREIGN KEY (wallet_id) REFERENCES
+//! wallet_metadata(wallet_id) ON DELETE CASCADE`. Identity-owned
+//! tables (`identity_keys`, `dashpay_profiles`,
+//! `dashpay_payments_overlay`, `token_balances`) are keyed by
+//! `identity_id` only; their FK targets `identities(identity_id)` so
+//! cascade flows `wallet_metadata → identities → child` through the
+//! nullable `identities.wallet_id` link. `identities.wallet_id` is
+//! NULL-allowed so identity-only flows (no parent wallet, e.g. the
+//! identity-sync manager populating rows before any wallet is
+//! registered) work without a placeholder.
+//!
+//! The one relationship that stays a trigger is
 //! `core_utxos.spent_in_txid` clearing to NULL on transaction delete —
 //! a native composite `ON DELETE SET NULL` would null the NOT-NULL
 //! `wallet_id` too (SQLite nulls all FK columns), so the single-column
@@ -119,29 +127,27 @@ CREATE TABLE core_sync_state (
 );
 
 CREATE TABLE identities (
-    wallet_id BLOB NOT NULL,
+    identity_id BLOB NOT NULL PRIMARY KEY,
+    wallet_id BLOB,
     wallet_index INTEGER,
-    identity_id BLOB NOT NULL,
     entry_blob BLOB NOT NULL,
     tombstoned INTEGER NOT NULL,
-    PRIMARY KEY (wallet_id, identity_id),
     FOREIGN KEY (wallet_id) REFERENCES wallet_metadata(wallet_id) ON DELETE CASCADE
 );
 
+CREATE INDEX idx_identities_wallet ON identities(wallet_id);
+
 CREATE TABLE identity_keys (
-    wallet_id BLOB NOT NULL,
     identity_id BLOB NOT NULL,
     key_id INTEGER NOT NULL,
     public_key_blob BLOB NOT NULL,
     public_key_hash BLOB NOT NULL,
     derivation_blob BLOB,
-    PRIMARY KEY (wallet_id, identity_id, key_id),
-    FOREIGN KEY (wallet_id) REFERENCES wallet_metadata(wallet_id) ON DELETE CASCADE,
-    FOREIGN KEY (wallet_id, identity_id)
-        REFERENCES identities(wallet_id, identity_id) ON DELETE CASCADE
+    PRIMARY KEY (identity_id, key_id),
+    FOREIGN KEY (identity_id) REFERENCES identities(identity_id) ON DELETE CASCADE
 );
 
-CREATE INDEX idx_identity_keys_wallet_identity ON identity_keys(wallet_id, identity_id);
+CREATE INDEX idx_identity_keys_identity ON identity_keys(identity_id);
 
 CREATE TABLE contacts_sent (
     wallet_id BLOB NOT NULL,
@@ -202,32 +208,26 @@ CREATE TABLE asset_locks (
 );
 
 CREATE TABLE token_balances (
-    wallet_id BLOB NOT NULL,
     identity_id BLOB NOT NULL,
     token_id BLOB NOT NULL,
     balance INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
-    PRIMARY KEY (wallet_id, identity_id, token_id),
-    FOREIGN KEY (wallet_id) REFERENCES wallet_metadata(wallet_id) ON DELETE CASCADE
+    PRIMARY KEY (identity_id, token_id),
+    FOREIGN KEY (identity_id) REFERENCES identities(identity_id) ON DELETE CASCADE
 );
 
 CREATE TABLE dashpay_profiles (
-    wallet_id BLOB NOT NULL,
-    identity_id BLOB NOT NULL,
+    identity_id BLOB NOT NULL PRIMARY KEY,
     profile_blob BLOB NOT NULL,
-    PRIMARY KEY (wallet_id, identity_id),
-    FOREIGN KEY (wallet_id) REFERENCES wallet_metadata(wallet_id) ON DELETE CASCADE,
-    FOREIGN KEY (wallet_id, identity_id)
-        REFERENCES identities(wallet_id, identity_id) ON DELETE CASCADE
+    FOREIGN KEY (identity_id) REFERENCES identities(identity_id) ON DELETE CASCADE
 );
 
 CREATE TABLE dashpay_payments_overlay (
-    wallet_id BLOB NOT NULL,
     identity_id BLOB NOT NULL,
     payment_id TEXT NOT NULL,
     overlay_blob BLOB NOT NULL,
-    PRIMARY KEY (wallet_id, identity_id, payment_id),
-    FOREIGN KEY (wallet_id) REFERENCES wallet_metadata(wallet_id) ON DELETE CASCADE
+    PRIMARY KEY (identity_id, payment_id),
+    FOREIGN KEY (identity_id) REFERENCES identities(identity_id) ON DELETE CASCADE
 );
 ";
 

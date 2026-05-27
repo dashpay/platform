@@ -7,7 +7,8 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use rusqlite::{Connection, OptionalExtension};
 
 use platform_wallet::changeset::{
-    ClientStartState, Merge, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
+    ClientStartState, CommitReport, DeleteWalletReport, Merge, PersistenceError,
+    PlatformWalletChangeSet, PlatformWalletPersistence,
 };
 use platform_wallet::wallet::platform_wallet::WalletId;
 
@@ -15,7 +16,7 @@ use crate::sqlite::backup::{self, BackupKind};
 use crate::sqlite::buffer::Buffer;
 use crate::sqlite::config::{FlushMode, SqlitePersisterConfig, Synchronous};
 use crate::sqlite::error::{AutoBackupOperation, WalletStorageError};
-use crate::sqlite::schema::{self, PER_WALLET_TABLES};
+use crate::sqlite::schema::{self, count_rows_for_wallet_sql, PER_WALLET_TABLES};
 use crate::sqlite::util::permissions::apply_secure_permissions;
 use crate::sqlite::util::safe_cast;
 
@@ -27,12 +28,20 @@ use crate::sqlite::util::safe_cast;
 pub(crate) const LOAD_UNIMPLEMENTED: &[&str] = &["ClientStartState::wallets"];
 
 /// Outcome of a `prune_backups` call.
+///
+/// Invariant: `kept == total_eligible - removed.len()`. A file is
+/// counted as `kept` if it survived the policy (retained-by-rule) OR
+/// if `remove_file` failed (`failed_removals` is a subset of `kept`).
+/// Either way, the file is still on disk after this call.
 #[derive(Debug)]
 pub struct PruneReport {
     /// Paths that were unlinked, sorted oldest-first by filename
     /// timestamp.
     pub removed: Vec<PathBuf>,
-    /// Number of files that remain in the directory after pruning.
+    /// Files still on disk after this call. Equals
+    /// `total_eligible - removed.len()` and includes every
+    /// `failed_removals` entry — a file that couldn't be unlinked is
+    /// still on disk and therefore "kept".
     pub kept: usize,
     /// Files we tried to remove but couldn't, paired with the
     /// underlying `io::Error`. Returned as part of `Ok(report)` so a
@@ -40,43 +49,6 @@ pub struct PruneReport {
     /// — the caller can re-invoke `prune_backups` to retry just the
     /// stragglers. ATOM-011 / A-6.
     pub failed_removals: Vec<(PathBuf, std::io::Error)>,
-}
-
-/// Outcome of a [`SqlitePersister::commit_writes`] call. Carries every
-/// dirty wallet's per-flush outcome so a single failed wallet doesn't
-/// hide the success of its siblings (or vice-versa). The caller can
-/// retry `still_pending` directly; `failed` carries the classified
-/// error per wallet so transient-vs-fatal decisions stay local.
-#[derive(Debug)]
-pub struct CommitReport {
-    /// Wallets that flushed successfully (durable on disk).
-    pub succeeded: Vec<WalletId>,
-    /// Wallets whose flush returned an error. The
-    /// `PersistenceError` carries the classification + source per D-9.
-    pub failed: Vec<(WalletId, PersistenceError)>,
-    /// Wallets we never attempted because an earlier per-flush call
-    /// poisoned a shared resource (today: a `LockPoisoned` short-circuit
-    /// — the connection mutex is gone). Empty on the happy path.
-    pub still_pending: Vec<WalletId>,
-}
-
-impl CommitReport {
-    /// `true` when every dirty wallet flushed cleanly.
-    pub fn is_ok(&self) -> bool {
-        self.failed.is_empty() && self.still_pending.is_empty()
-    }
-}
-
-/// Outcome of a `delete_wallet` / `delete_wallet_skip_backup` call.
-#[derive(Debug, Clone)]
-pub struct DeleteWalletReport {
-    pub wallet_id: WalletId,
-    /// Absolute path of the pre-delete auto-backup written before the
-    /// cascade. `None` ONLY when the caller went through
-    /// [`SqlitePersister::delete_wallet_skip_backup`] — every
-    /// `delete_wallet` success returns `Some(path)`.
-    pub backup_path: Option<PathBuf>,
-    pub rows_removed_per_table: BTreeMap<&'static str, usize>,
 }
 
 /// Retention policy for `prune_backups`.
@@ -123,6 +95,18 @@ pub struct SqlitePersister {
     /// (no public setter outside `#[cfg(any(test, feature = "__test-helpers"))]`).
     #[cfg(any(test, feature = "__test-helpers"))]
     primed_flush_error: Mutex<Option<WalletStorageError>>,
+    /// Test-only one-shot callback fired by `delete_wallet_inner`
+    /// between the pre-delete backup snapshot and the cascade
+    /// EXCLUSIVE acquisition. Lets cross-process delete-race tests
+    /// inject a peer mutation in the otherwise-tiny window left open
+    /// by rusqlite's Backup-API constraint (no source-side write tx).
+    #[cfg(any(test, feature = "__test-helpers"))]
+    post_backup_hook: Mutex<Option<Box<dyn FnOnce() + Send + 'static>>>,
+    /// Test-only one-shot injection consumed by `delete_wallet`'s
+    /// pre-flush phase. Lets TC-CODE-006-2 assert the buffer-restore
+    /// and skip-backup semantics without provoking a real SQL error.
+    #[cfg(any(test, feature = "__test-helpers"))]
+    primed_pre_flush_error: Mutex<Option<WalletStorageError>>,
 }
 
 impl SqlitePersister {
@@ -178,17 +162,9 @@ impl SqlitePersister {
 
         // Determine whether `schema_history` exists *before* we run
         // migrations — that's the signal for "is this DB pre-existing
-        // or brand-new?" (FR-15 vs FR-16). `.optional()?` distinguishes
-        // a genuine "no row" answer from a real SQL error, which we
-        // propagate.
-        let had_schema_history = conn
-            .query_row(
-                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'refinery_schema_history'",
-                [],
-                |_| Ok(()),
-            )
-            .optional()?
-            .is_some();
+        // or brand-new?" (FR-15 vs FR-16). Errors from the underlying
+        // query are propagated, not silently treated as "no history".
+        let had_schema_history = crate::sqlite::migrations::has_schema_history(&conn)?;
         // ATOM-013 (A-8): run integrity_check on a pre-existing DB
         // BEFORE migrations alter it. Bit-rot or escaped-WAL corruption
         // detected here surfaces as the typed `IntegrityCheckFailed`
@@ -226,8 +202,8 @@ impl SqlitePersister {
             )?;
         }
 
-        // Apply migrations.
-        let _report = crate::sqlite::migrations::run(&mut conn)?;
+        // Apply migrations through the typed-error chokepoint.
+        let _report = crate::sqlite::migrations::run_for_open(&mut conn)?;
 
         Ok(Self {
             config,
@@ -235,6 +211,10 @@ impl SqlitePersister {
             buffer: Buffer::new(),
             #[cfg(any(test, feature = "__test-helpers"))]
             primed_flush_error: Mutex::new(None),
+            #[cfg(any(test, feature = "__test-helpers"))]
+            post_backup_hook: Mutex::new(None),
+            #[cfg(any(test, feature = "__test-helpers"))]
+            primed_pre_flush_error: Mutex::new(None),
         })
     }
 
@@ -371,13 +351,11 @@ impl SqlitePersister {
         wallet_id: WalletId,
         skip_backup: bool,
     ) -> Result<DeleteWalletReport, WalletStorageError> {
-        // CMT-008: acquire the connection mutex FIRST and hold it
-        // across drain → existence-check → backup → delete-transaction
-        // → post-commit buffer wipe. Concurrent `store()` calls in
-        // Immediate mode block on this guard (their flush takes conn);
-        // Manual-mode stores can still buffer, so we re-drain after
-        // commit to discard any racing writes (the wallet is going
-        // away — those writes are intentionally void).
+        // CMT-008: acquire the connection mutex FIRST so concurrent
+        // in-process `store()` calls block on it. Cross-process peers
+        // (other rusqlite Connections / sibling `SqlitePersister`s) are
+        // excluded by `BEGIN EXCLUSIVE` below — the in-process mutex
+        // alone never gave that guarantee.
         let mut conn = self.conn()?;
 
         // Drain the buffered changeset so a later flush can't
@@ -404,9 +382,9 @@ impl SqlitePersister {
         };
 
         let result: Result<DeleteWalletReport, WalletStorageError> = (|| {
-            // A wallet exists iff it was buffered OR persisted. Refusing
-            // on a truly-unknown wallet must not waste a backup file.
-            let exists_in_db = conn
+            // Pre-flight existence check on the bare conn (no tx) so
+            // we don't waste a backup file on an unknown wallet.
+            let exists_pre_flush = conn
                 .query_row(
                     "SELECT 1 FROM wallet_metadata WHERE wallet_id = ?1",
                     rusqlite::params![wallet_id.as_slice()],
@@ -414,9 +392,77 @@ impl SqlitePersister {
                 )
                 .optional()?
                 .is_some();
-            if !had_buffered && !exists_in_db {
+            if !had_buffered && !exists_pre_flush {
                 return Err(WalletStorageError::WalletNotFound { wallet_id });
             }
+
+            // Test-only injector for TC-CODE-006-2 — force the pre-
+            // flush below to fail with the primed error without
+            // depending on a real SQL failure. Keeps the test free of
+            // FK-poisoning scaffolding.
+            #[cfg(any(test, feature = "__test-helpers"))]
+            let primed_pre_flush_error = self.consume_primed_pre_flush_error();
+
+            // CODE-006: flush the drained buffer to disk BEFORE
+            // `run_auto_backup` so the pre-delete snapshot includes
+            // every pending write. Without this the backup captures
+            // only already-persisted state and rollback-from-backup
+            // cannot recover the buffered (lost) data.
+            //
+            // The flush opens its own EXCLUSIVE tx and commits;
+            // `run_auto_backup` then runs against the freshly-flushed
+            // DB. On flush failure we restore the buffer via the outer
+            // `restore_buffer` helper and abort the delete — mirrors
+            // CMT-002.
+            //
+            // The cascade-side backup runs BEFORE the cascade's
+            // `BEGIN EXCLUSIVE` because rusqlite's `Backup::new` can't
+            // establish a backup whose source connection holds an
+            // active write tx on its own DB — `sqlite3_backup_step`
+            // would deadlock against the in-flight EXCLUSIVE. The
+            // post-EXCLUSIVE re-check below handles cross-process
+            // peers that mutate the wallet between snapshot and lock.
+            if let Some(cs) = drained_slot.take() {
+                #[cfg(any(test, feature = "__test-helpers"))]
+                if let Some(primed) = primed_pre_flush_error {
+                    drained_slot.set(Some(cs));
+                    return Err(primed);
+                }
+                let pre_flush_tx =
+                    conn.transaction_with_behavior(rusqlite::TransactionBehavior::Exclusive)?;
+                if let Err(e) = apply_changeset_to_tx(&pre_flush_tx, &wallet_id, &cs) {
+                    let _ = pre_flush_tx.rollback();
+                    drained_slot.set(Some(cs));
+                    return Err(e);
+                }
+                if let Err(e) = pre_flush_tx.commit() {
+                    drained_slot.set(Some(cs));
+                    return Err(WalletStorageError::Sqlite(e));
+                }
+            }
+
+            // Re-evaluate existence after the pre-flush: a buffered-
+            // only wallet now has rows on disk.
+            let exists_in_db = if exists_pre_flush {
+                true
+            } else {
+                conn.query_row(
+                    "SELECT 1 FROM wallet_metadata WHERE wallet_id = ?1",
+                    rusqlite::params![wallet_id.as_slice()],
+                    |_| Ok(()),
+                )
+                .optional()?
+                .is_some()
+            };
+
+            // Snapshot the wallet's footprint BEFORE auto_backup so
+            // the post-EXCLUSIVE re-check has a baseline to compare
+            // against. `wallet_footprint` queries every PER_WALLET_TABLES
+            // row count; mismatches between pre-backup and post-lock
+            // mean a peer mutated the wallet inside the lock-free
+            // window the rusqlite Backup API forces us to leave open.
+            let pre_backup_footprint = wallet_footprint(&conn, &wallet_id)?;
+
             let backup_path = if skip_backup {
                 None
             } else {
@@ -427,21 +473,77 @@ impl SqlitePersister {
                     AutoBackupOperation::DeleteWallet,
                 )?
             };
-            let tx = conn.transaction()?;
+
+            // Test-only hook: fires between the backup snapshot and
+            // the cascade EXCLUSIVE so TC-CODE-006-3 can simulate a
+            // cross-process peer that mutates `wallet_metadata` in
+            // the gap rusqlite's Backup API forces us to leave open.
+            #[cfg(any(test, feature = "__test-helpers"))]
+            self.consume_post_backup_hook();
+
+            // SQLite-native EXCLUSIVE for the cascade window. Excludes
+            // cross-process peers (other rusqlite Connections, sibling
+            // `SqlitePersister`s) that would otherwise commit rows for
+            // `wallet_id` between the backup snapshot and the cascade.
+            // The in-process mutex on `conn` alone never gave that
+            // guarantee. Peers waiting on the lock back off via
+            // SQLite's `busy_timeout`.
+            let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Exclusive)?;
+
+            // Re-snapshot the wallet's footprint under EXCLUSIVE and
+            // compare against the pre-backup snapshot. Any change means
+            // a peer mutated the wallet between the backup and the lock
+            // acquisition — the backup we just took is now inconsistent
+            // with the live state, so rollback-from-backup would
+            // silently lose those writes. Abort with the typed
+            // `ConcurrentMutationDuringDelete` so the operator can
+            // retry after quiescing the peer.
+            let post_lock_footprint = wallet_footprint_tx(&tx, &wallet_id)?;
+            if post_lock_footprint != pre_backup_footprint {
+                tracing::warn!(
+                    wallet_id = %hex::encode(wallet_id),
+                    pre_backup = ?pre_backup_footprint,
+                    post_lock = ?post_lock_footprint,
+                    "delete_wallet aborted: peer mutated wallet between auto-backup and EXCLUSIVE"
+                );
+                // Roll back the empty EXCLUSIVE — no destructive work
+                // has happened yet inside this tx, so drop is enough,
+                // but be explicit.
+                let _ = tx.rollback();
+                return Err(WalletStorageError::ConcurrentMutationDuringDelete { wallet_id });
+            }
+
+            // Cross-check existence as a defensive log: post_lock
+            // footprint equality already implies same existence, but
+            // keep the structured log for ops visibility.
+            let post_lock_exists = post_lock_footprint
+                .iter()
+                .any(|(table, n)| *table == "wallet_metadata" && *n > 0);
+            if post_lock_exists != exists_in_db {
+                tracing::info!(
+                    wallet_id = %hex::encode(wallet_id),
+                    pre_lock_exists = exists_in_db,
+                    post_lock_exists,
+                    "wallet_metadata footprint changed across delete_wallet EXCLUSIVE acquisition"
+                );
+            }
+
             let mut rows_removed_per_table = BTreeMap::new();
-            for &table in PER_WALLET_TABLES {
+            for (table, scope) in PER_WALLET_TABLES {
                 // SQL injection note: `table` comes from a `&'static
                 // &'static str` constant compiled into the binary. There
-                // is no user input on this path.
+                // is no user input on this path. The SQL flavour
+                // (direct column vs. JOIN via `identities`) is picked
+                // by `count_rows_for_wallet_sql`.
                 let n: i64 = tx
                     .query_row(
-                        &format!("SELECT COUNT(*) FROM {table} WHERE wallet_id = ?1"),
+                        &count_rows_for_wallet_sql(table, *scope),
                         rusqlite::params![wallet_id.as_slice()],
                         |row| row.get(0),
                     )
                     .optional()?
                     .unwrap_or(0);
-                rows_removed_per_table.insert(table, usize::try_from(n).unwrap_or(usize::MAX));
+                rows_removed_per_table.insert(*table, usize::try_from(n).unwrap_or(usize::MAX));
             }
             crate::sqlite::schema::wallet_meta::delete(&tx, &wallet_id)?;
             tx.commit()?;
@@ -469,8 +571,13 @@ impl SqlitePersister {
         result
     }
 
-    /// In Manual mode: attempt to flush every dirty wallet. In
-    /// Immediate mode: no-op (returns an empty report).
+    /// Attempt to flush every dirty wallet, regardless of flush mode.
+    ///
+    /// In `Manual` mode this is the only way pending writes become
+    /// durable. In `Immediate` mode the buffer is normally empty (each
+    /// `store` flushes inline) but a transient failure during `store`
+    /// leaves the changeset in the buffer — `commit_writes` is the
+    /// retry path that drains those leftovers.
     ///
     /// Continues past per-wallet failures instead of fails-fast (N-1).
     /// Each wallet's flush outcome lands on the returned
@@ -483,14 +590,21 @@ impl SqlitePersister {
     /// (e.g. the buffer mutex is poisoned). Once the loop starts,
     /// every dirty wallet has a slot in the report.
     pub fn commit_writes(&self) -> Result<CommitReport, PersistenceError> {
+        self.commit_writes_inner()
+    }
+
+    fn commit_writes_inner(&self) -> Result<CommitReport, PersistenceError> {
         let mut report = CommitReport {
             succeeded: Vec::new(),
             failed: Vec::new(),
             still_pending: Vec::new(),
         };
-        if matches!(self.config.flush_mode, FlushMode::Immediate) {
-            return Ok(report);
-        }
+        // Even in `FlushMode::Immediate` the buffer can be non-empty:
+        // a transient failure during `store()` re-merges the changeset
+        // back into the buffer via `handle_flush_error`. The retry path
+        // — `commit_writes()` — has to drain that leftover regardless
+        // of flush mode, otherwise transient-failure data sits there
+        // until the next per-wallet `store` happens to retry it.
         let dirty = self
             .buffer
             .dirty_wallets()
@@ -522,13 +636,15 @@ impl SqlitePersister {
     ) -> Result<Vec<(&'static str, usize)>, WalletStorageError> {
         let conn = self.conn()?;
         let mut out = Vec::with_capacity(PER_WALLET_TABLES.len());
-        for &table in PER_WALLET_TABLES {
+        for (table, scope) in PER_WALLET_TABLES {
             // `table` is a compile-time constant — no SQL injection
-            // surface despite the `format!`.
+            // surface despite the `format!`. Per-wallet predicate uses
+            // `count_rows_for_wallet_sql` so identity-scoped tables
+            // join through `identities`.
             let n: i64 = match wallet_id {
                 Some(id) => conn
                     .query_row(
-                        &format!("SELECT COUNT(*) FROM {table} WHERE wallet_id = ?1"),
+                        &count_rows_for_wallet_sql(table, *scope),
                         rusqlite::params![id.as_slice()],
                         |row| row.get(0),
                     )
@@ -541,7 +657,7 @@ impl SqlitePersister {
                     .optional()?
                     .unwrap_or(0),
             };
-            out.push((table, usize::try_from(n).unwrap_or(usize::MAX)));
+            out.push((*table, usize::try_from(n).unwrap_or(usize::MAX)));
         }
         Ok(out)
     }
@@ -609,44 +725,7 @@ impl SqlitePersister {
     ) -> Result<(), WalletStorageError> {
         let mut conn = self.conn()?;
         let tx = conn.transaction()?;
-        if let Some(meta) = cs.wallet_metadata.as_ref() {
-            schema::wallet_meta::upsert(&tx, wallet_id, meta)?;
-        }
-        if !cs.account_registrations.is_empty() {
-            schema::accounts::apply_registrations(&tx, wallet_id, &cs.account_registrations)?;
-        }
-        if !cs.account_address_pools.is_empty() {
-            schema::accounts::apply_pools(&tx, wallet_id, &cs.account_address_pools)?;
-        }
-        if let Some(core) = cs.core.as_ref() {
-            schema::core_state::apply(&tx, wallet_id, core)?;
-        }
-        if let Some(identities) = cs.identities.as_ref() {
-            schema::identities::apply(&tx, wallet_id, identities)?;
-        }
-        if let Some(keys) = cs.identity_keys.as_ref() {
-            schema::identity_keys::apply(&tx, wallet_id, keys)?;
-        }
-        if let Some(contacts) = cs.contacts.as_ref() {
-            schema::contacts::apply(&tx, wallet_id, contacts)?;
-        }
-        if let Some(addrs) = cs.platform_addresses.as_ref() {
-            schema::platform_addrs::apply(&tx, wallet_id, addrs)?;
-        }
-        if let Some(locks) = cs.asset_locks.as_ref() {
-            schema::asset_locks::apply(&tx, wallet_id, locks)?;
-        }
-        if let Some(balances) = cs.token_balances.as_ref() {
-            schema::token_balances::apply(&tx, wallet_id, balances)?;
-        }
-        if cs.dashpay_profiles.is_some() || cs.dashpay_payments_overlay.is_some() {
-            schema::dashpay::apply(
-                &tx,
-                wallet_id,
-                cs.dashpay_profiles.as_ref(),
-                cs.dashpay_payments_overlay.as_ref(),
-            )?;
-        }
+        apply_changeset_to_tx(&tx, wallet_id, cs)?;
         tx.commit()?;
         Ok(())
     }
@@ -742,6 +821,64 @@ impl SqlitePersister {
             .expect("primed_flush_error")
             .take()
     }
+
+    /// Test-only: arm a one-shot callback fired by `delete_wallet`
+    /// after the pre-delete backup snapshot completes and before the
+    /// cascade EXCLUSIVE tx begins. The callback is consumed (taken)
+    /// on first fire — subsequent deletes see the slot empty.
+    #[doc(hidden)]
+    #[cfg(any(test, feature = "__test-helpers"))]
+    pub fn arm_post_backup_hook<F>(&self, hook: F)
+    where
+        F: FnOnce() + Send + 'static,
+    {
+        *self.post_backup_hook.lock().expect("post_backup_hook") = Some(Box::new(hook));
+    }
+
+    #[cfg(any(test, feature = "__test-helpers"))]
+    fn consume_post_backup_hook(&self) {
+        let hook = self
+            .post_backup_hook
+            .lock()
+            .expect("post_backup_hook")
+            .take();
+        if let Some(hook) = hook {
+            hook();
+        }
+    }
+
+    /// Test-only: arm a one-shot pre-flush failure for the next
+    /// `delete_wallet` call. The injection fires only when there is
+    /// a drained buffered changeset to flush — i.e. when `delete_wallet`
+    /// actually exercises the pre-flush branch.
+    #[doc(hidden)]
+    #[cfg(any(test, feature = "__test-helpers"))]
+    pub fn force_next_pre_flush_to_fail(&self, err: WalletStorageError) {
+        *self
+            .primed_pre_flush_error
+            .lock()
+            .expect("primed_pre_flush_error") = Some(err);
+    }
+
+    #[cfg(any(test, feature = "__test-helpers"))]
+    fn consume_primed_pre_flush_error(&self) -> Option<WalletStorageError> {
+        self.primed_pre_flush_error
+            .lock()
+            .expect("primed_pre_flush_error")
+            .take()
+    }
+
+    /// Test-only: probe whether the wallet has a buffered changeset.
+    /// Used by TC-CODE-006-2 to assert the buffer survives a failed
+    /// pre-flush without consuming it.
+    #[doc(hidden)]
+    #[cfg(any(test, feature = "__test-helpers"))]
+    pub fn buffer_has_changeset_for_test(&self, wallet_id: &WalletId) -> bool {
+        self.buffer
+            .dirty_wallets()
+            .map(|v| v.iter().any(|w| w == wallet_id))
+            .unwrap_or(false)
+    }
 }
 
 /// ATOM-007 (N-2): when a `Manual`-mode persister is dropped while
@@ -755,7 +892,7 @@ impl SqlitePersister {
 /// persisters are durable on every `store` so they never trip this.
 impl Drop for SqlitePersister {
     fn drop(&mut self) {
-        if !matches!(self.config.flush_mode, FlushMode::Manual) {
+        if self.config.flush_mode != FlushMode::Manual {
             return;
         }
         // `dirty_wallets` only fails on a poisoned buffer mutex. A
@@ -930,6 +1067,22 @@ impl PlatformWalletPersistence for SqlitePersister {
         let conn = self.conn().map_err(PersistenceError::from)?;
         schema::core_state::get_tx_record(&conn, &wallet_id, txid).map_err(PersistenceError::from)
     }
+
+    /// Trait-dispatch entry into the safe-by-default cascade delete.
+    /// Always takes an auto-backup (`auto_backup_dir` must be set, else
+    /// returns `WalletStorageError::AutoBackupDisabled` mapped into a
+    /// fatal `PersistenceError`). The inherent
+    /// [`SqlitePersister::delete_wallet_skip_backup`] stays available
+    /// for the CLI's `--no-auto-backup` flag and isn't reachable
+    /// through the trait by design.
+    fn delete_wallet(&self, wallet_id: WalletId) -> Result<DeleteWalletReport, PersistenceError> {
+        self.delete_wallet_inner(wallet_id, false)
+            .map_err(PersistenceError::from)
+    }
+
+    fn commit_writes(&self) -> Result<CommitReport, PersistenceError> {
+        self.commit_writes_inner()
+    }
 }
 
 // ----- Helpers -----
@@ -968,6 +1121,33 @@ fn validate_config(config: &SqlitePersisterConfig) -> Result<(), WalletStorageEr
             reason: "synchronous=Off is rejected (data-loss footgun)",
         });
     }
+    // `journal_mode=Memory` keeps the rollback journal in RAM and
+    // `journal_mode=Off` disables it outright. Either turns crash-
+    // safety into a coin flip for a wallet DB — reject loudly instead
+    // of silently corrupting on the next power loss.
+    match config.journal_mode {
+        crate::sqlite::config::JournalMode::Memory => {
+            return Err(WalletStorageError::ConfigInvalid {
+                reason: "journal_mode=Memory is rejected (crash-unsafe)",
+            });
+        }
+        crate::sqlite::config::JournalMode::Off => {
+            return Err(WalletStorageError::ConfigInvalid {
+                reason: "journal_mode=Off is rejected (crash-unsafe)",
+            });
+        }
+        _ => {}
+    }
+    // `busy_timeout=0` makes contended writers fail-fast with BUSY
+    // instead of waiting — non-fatal, but the operator almost certainly
+    // didn't mean it. Warn rather than reject because a few tests
+    // legitimately want the fail-fast behaviour.
+    if config.busy_timeout.is_zero() {
+        tracing::warn!(
+            "SqlitePersisterConfig.busy_timeout=0; contended writers will return BUSY \
+             instead of waiting — set a non-zero timeout (default 5s) unless this is intentional"
+        );
+    }
     Ok(())
 }
 
@@ -984,6 +1164,57 @@ fn apply_pragmas(
         u64::try_from(config.busy_timeout.as_millis()).unwrap_or(i64::MAX as u64),
     )?;
     conn.pragma_update(None, "busy_timeout", ms)?;
+    Ok(())
+}
+
+/// Apply every populated sub-changeset of `cs` against the supplied
+/// SQLite transaction. Does not commit; the caller owns the tx
+/// lifecycle. Splitting this out from `write_changeset_in_one_tx`
+/// lets `delete_wallet_inner` flush a drained buffer into a bespoke
+/// pre-delete tx (CODE-006) without re-opening the connection.
+fn apply_changeset_to_tx(
+    tx: &rusqlite::Transaction<'_>,
+    wallet_id: &WalletId,
+    cs: &PlatformWalletChangeSet,
+) -> Result<(), WalletStorageError> {
+    if let Some(meta) = cs.wallet_metadata.as_ref() {
+        schema::wallet_meta::upsert(tx, wallet_id, meta)?;
+    }
+    if !cs.account_registrations.is_empty() {
+        schema::accounts::apply_registrations(tx, wallet_id, &cs.account_registrations)?;
+    }
+    if !cs.account_address_pools.is_empty() {
+        schema::accounts::apply_pools(tx, wallet_id, &cs.account_address_pools)?;
+    }
+    if let Some(core) = cs.core.as_ref() {
+        schema::core_state::apply(tx, wallet_id, core)?;
+    }
+    if let Some(identities) = cs.identities.as_ref() {
+        schema::identities::apply(tx, wallet_id, identities)?;
+    }
+    if let Some(keys) = cs.identity_keys.as_ref() {
+        schema::identity_keys::apply(tx, wallet_id, keys)?;
+    }
+    if let Some(contacts) = cs.contacts.as_ref() {
+        schema::contacts::apply(tx, wallet_id, contacts)?;
+    }
+    if let Some(addrs) = cs.platform_addresses.as_ref() {
+        schema::platform_addrs::apply(tx, wallet_id, addrs)?;
+    }
+    if let Some(locks) = cs.asset_locks.as_ref() {
+        schema::asset_locks::apply(tx, wallet_id, locks)?;
+    }
+    if let Some(balances) = cs.token_balances.as_ref() {
+        schema::token_balances::apply(tx, wallet_id, balances)?;
+    }
+    if cs.dashpay_profiles.is_some() || cs.dashpay_payments_overlay.is_some() {
+        schema::dashpay::apply(
+            tx,
+            wallet_id,
+            cs.dashpay_profiles.as_ref(),
+            cs.dashpay_payments_overlay.as_ref(),
+        )?;
+    }
     Ok(())
 }
 
@@ -1035,15 +1266,7 @@ fn count_pending(
     conn: &mut Connection,
     embedded: &[(i32, String)],
 ) -> Result<usize, WalletStorageError> {
-    let table_exists = conn
-        .query_row(
-            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'refinery_schema_history'",
-            [],
-            |_| Ok(()),
-        )
-        .optional()?
-        .is_some();
-    if !table_exists {
+    if !crate::sqlite::migrations::has_schema_history(conn)? {
         return Ok(embedded.len());
     }
     let applied: std::collections::HashSet<i64> = {
@@ -1056,6 +1279,50 @@ fn count_pending(
         .iter()
         .filter(|(v, _)| !applied.contains(&(*v as i64)))
         .count())
+}
+
+/// Per-wallet footprint fingerprint: `(table_name, row_count)` for
+/// every entry in `PER_WALLET_TABLES`. Used by `delete_wallet_inner`
+/// to detect cross-process mutations between the pre-delete backup
+/// snapshot and the cascade's EXCLUSIVE acquisition.
+fn wallet_footprint(
+    conn: &Connection,
+    wallet_id: &WalletId,
+) -> Result<Vec<(&'static str, i64)>, WalletStorageError> {
+    let mut out = Vec::with_capacity(PER_WALLET_TABLES.len());
+    for (table, scope) in PER_WALLET_TABLES {
+        let n: i64 = conn
+            .query_row(
+                &count_rows_for_wallet_sql(table, *scope),
+                rusqlite::params![wallet_id.as_slice()],
+                |row| row.get(0),
+            )
+            .optional()?
+            .unwrap_or(0);
+        out.push((*table, n));
+    }
+    Ok(out)
+}
+
+/// Same as [`wallet_footprint`] but on an open transaction so the
+/// post-EXCLUSIVE re-check sees the locked snapshot.
+fn wallet_footprint_tx(
+    tx: &rusqlite::Transaction<'_>,
+    wallet_id: &WalletId,
+) -> Result<Vec<(&'static str, i64)>, WalletStorageError> {
+    let mut out = Vec::with_capacity(PER_WALLET_TABLES.len());
+    for (table, scope) in PER_WALLET_TABLES {
+        let n: i64 = tx
+            .query_row(
+                &count_rows_for_wallet_sql(table, *scope),
+                rusqlite::params![wallet_id.as_slice()],
+                |row| row.get(0),
+            )
+            .optional()?
+            .unwrap_or(0);
+        out.push((*table, n));
+    }
+    Ok(out)
 }
 
 fn current_schema_version(conn: &Connection) -> Result<Option<i32>, WalletStorageError> {

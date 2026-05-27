@@ -17,7 +17,7 @@
 
 use dashcore::hashes::Hash;
 use dpp::identity::accessors::IdentityGettersV0;
-use platform_wallet::wallet::identity::types::funding::IdentityFunding;
+use platform_wallet::AssetLockFunding;
 use rs_sdk_ffi::{SignerHandle, VTableSigner};
 
 use crate::check_ptr;
@@ -105,7 +105,7 @@ pub unsafe extern "C" fn platform_wallet_register_identity_with_funding_signer(
             };
             identity_wallet
                 .register_identity_with_funding(
-                    IdentityFunding::FromWalletBalance {
+                    AssetLockFunding::FromWalletBalance {
                         amount_duffs,
                         account_index,
                     },
@@ -141,7 +141,7 @@ pub unsafe extern "C" fn platform_wallet_register_identity_with_funding_signer(
 /// user now wants to consume the lock from the
 /// "Fund from unused Asset Lock" picker in `CreateIdentityView`.
 ///
-/// The Rust side dispatches via [`IdentityFunding::FromExistingAssetLock`]
+/// The Rust side dispatches via [`AssetLockFunding::FromExistingAssetLock`]
 /// inside the same `register_identity_with_funding` helper used by the
 /// wallet-balance path — the resume logic and IS→CL fallback live
 /// there, not here. This FFI is a thin marshaler.
@@ -220,7 +220,7 @@ pub unsafe extern "C" fn platform_wallet_resume_identity_with_existing_asset_loc
             };
             identity_wallet
                 .register_identity_with_funding(
-                    IdentityFunding::FromExistingAssetLock {
+                    AssetLockFunding::FromExistingAssetLock {
                         out_point: resume_outpoint,
                     },
                     identity_index,

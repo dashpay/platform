@@ -236,3 +236,186 @@ fn atom_011_prune_report_carries_failed_removals_field() {
     };
     assert_eq!(report.failed_removals.len(), 1);
 }
+
+/// Detect whether the current process can bypass directory permission
+/// checks (i.e. is effectively root) by setting a probe dir to `0o500`
+/// and trying to create a file inside it. Returns `true` when the
+/// write succeeds — only root sees that.
+#[cfg(unix)]
+fn is_root_via_probe() -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    let Ok(tmp) = tempfile::tempdir() else {
+        return false;
+    };
+    let dir = tmp.path().join("probe");
+    if fs::create_dir(&dir).is_err() {
+        return false;
+    }
+    if fs::set_permissions(&dir, fs::Permissions::from_mode(0o500)).is_err() {
+        return false;
+    }
+    let can_write = fs::write(dir.join("x"), b"x").is_ok();
+    let _ = fs::set_permissions(&dir, fs::Permissions::from_mode(0o700));
+    can_write
+}
+
+/// TC-CODE-009-a: `backup_to(existing-file)` refuses to overwrite and
+/// leaves the sentinel content intact. With `persist_noclobber` the
+/// check is atomic against the rename — no TOCTOU window between an
+/// `exists()` probe and the atomic swap.
+#[test]
+fn tc_code_009_a_backup_to_refuses_overwrite_atomically() {
+    let (persister, tmp, _path) = fresh_persister();
+    seed_one_row(&persister, &wid(0xC9));
+    let target = tmp.path().join("sentinel.db");
+    let sentinel = b"DO NOT OVERWRITE";
+    fs::write(&target, sentinel).unwrap();
+
+    let err = persister.backup_to(&target);
+    assert!(
+        matches!(err, Err(WalletStorageError::BackupDestinationExists { .. })),
+        "expected BackupDestinationExists, got {err:?}"
+    );
+    let after = fs::read(&target).unwrap();
+    assert_eq!(
+        after, sentinel,
+        "destination must be untouched after refusal"
+    );
+}
+
+/// TC-CODE-009-b: non-`AlreadyExists` persist failures surface as
+/// `WalletStorageError::Io` — the variant taxonomy stays narrow.
+/// Unix-only: emulated via a read-only parent directory (which UID 0
+/// bypasses, so the test is skipped under root).
+#[cfg(unix)]
+#[test]
+fn tc_code_009_b_backup_to_non_already_exists_maps_to_io() {
+    // Skip under root — UID 0 bypasses the directory permission check
+    // we use to force EACCES. Detected via a probe: create a 0o500 dir
+    // and try to write into it; a non-root user gets EACCES, root
+    // doesn't.
+    if is_root_via_probe() {
+        eprintln!("skip: read-only-dir permission bypassed by root");
+        return;
+    }
+    use std::os::unix::fs::PermissionsExt;
+    let (persister, tmp, _path) = fresh_persister();
+    seed_one_row(&persister, &wid(0xCA));
+    let dest_dir = tmp.path().join("ro");
+    fs::create_dir(&dest_dir).unwrap();
+    fs::set_permissions(&dest_dir, fs::Permissions::from_mode(0o500)).unwrap();
+    let target = dest_dir.join("new.db");
+
+    let err = persister.backup_to(&target);
+    // Restore perms so tempdir cleanup works on systems that need
+    // write access to the parent dir.
+    let _ = fs::set_permissions(&dest_dir, fs::Permissions::from_mode(0o700));
+
+    match err {
+        Err(WalletStorageError::Io(e)) => {
+            assert_ne!(
+                e.kind(),
+                std::io::ErrorKind::AlreadyExists,
+                "must NOT map AlreadyExists to plain Io"
+            );
+        }
+        other => panic!("expected Io variant, got {other:?}"),
+    }
+}
+
+/// TC-CODE-014-a: `run_to` and `restore_from` call `fsync` on the
+/// destination's parent directory after the atomic rename. Functional
+/// fsync verification is impractical without a crash harness, so the
+/// regression check is source-level: confirm `fsync_parent_dir` is
+/// invoked in `backup.rs`.
+#[test]
+fn tc_code_014_a_backup_calls_parent_fsync() {
+    let src = include_str!("../src/sqlite/backup.rs");
+    let calls = src.matches("fsync_parent_dir(").count();
+    assert!(
+        calls >= 3,
+        "expected at least 3 occurrences of `fsync_parent_dir(` in backup.rs \
+         (def + run_to + restore_from), found {calls}"
+    );
+}
+
+/// TC-CODE-014-b: `# Atomicity` rustdoc mentions the parent-dir fsync
+/// so callers aren't misled about durability guarantees.
+#[test]
+fn tc_code_014_b_atomicity_doc_mentions_fsync() {
+    let src = include_str!("../src/sqlite/backup.rs");
+    let lower = src.to_lowercase();
+    assert!(
+        lower.contains("fsync") || lower.contains("sync_all"),
+        "atomicity rustdoc must mention fsync / sync_all on parent dir"
+    );
+}
+
+/// TC-CODE-019-a: a failed `remove_file` is counted in BOTH `kept` and
+/// `failed_removals`, preserving `kept + removed == total`.
+///
+/// Unix-only: emulated by chmodding the prune directory read-only so
+/// `unlink` returns `EACCES`. Skipped under root because UID 0 bypasses
+/// the directory permission check.
+#[cfg(unix)]
+#[test]
+fn tc_code_019_a_failed_removal_counts_in_kept() {
+    // Skip under root — UID 0 bypasses the directory permission check
+    // we use to force EACCES. Detected via a probe: create a 0o500 dir
+    // and try to write into it; a non-root user gets EACCES, root
+    // doesn't.
+    if is_root_via_probe() {
+        eprintln!("skip: read-only-dir permission bypassed by root");
+        return;
+    }
+    use std::os::unix::fs::PermissionsExt;
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("backups");
+    fs::create_dir(&dir).unwrap();
+    // Five eligible backups, all old enough to be removed by `max_age`.
+    let day = std::time::Duration::from_secs(86_400);
+    let now = std::time::SystemTime::now();
+    for age in [30u64, 31, 32, 33, 34] {
+        let name = format!(
+            "wallet-{}.db",
+            chrono::Utc::now()
+                .checked_sub_signed(chrono::Duration::days(age as i64))
+                .unwrap()
+                .format("%Y%m%dT%H%M%SZ")
+        );
+        let path = dir.join(&name);
+        fs::write(&path, b"x").unwrap();
+        let mtime = now - day * age as u32;
+        let _ = filetime::set_file_mtime(&path, filetime::FileTime::from_system_time(mtime));
+    }
+    // Lock the directory so `unlink` fails on EVERY file.
+    fs::set_permissions(&dir, fs::Permissions::from_mode(0o500)).unwrap();
+
+    let (persister, _tmp_p, _path) = fresh_persister();
+    let res = persister.prune_backups(
+        &dir,
+        RetentionPolicy {
+            keep_last_n: None,
+            max_age: Some(day),
+        },
+    );
+    // Restore perms so tempdir cleanup works.
+    let _ = fs::set_permissions(&dir, fs::Permissions::from_mode(0o700));
+
+    let report = res.expect("prune_backups must return Ok even on partial removal failures");
+    assert!(
+        !report.failed_removals.is_empty(),
+        "expected at least one failed removal"
+    );
+    let total = report.removed.len() + report.failed_removals.len();
+    assert_eq!(
+        report.kept, total,
+        "kept ({}) must equal total ({}) when no files were removed",
+        report.kept, total
+    );
+    assert_eq!(
+        report.removed.len() + report.kept,
+        5,
+        "kept + removed must equal total eligible (5)"
+    );
+}

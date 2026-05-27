@@ -168,7 +168,7 @@ secret-free.
   without pulling in the `secrets` module (D4).
 - **NFR-4 / TC-082** (`tests/sqlite_persist_roundtrip.rs::tc082_no_box_dyn_error_in_src`):
   all public method signatures use concrete error types
-  (`SqlitePersisterError`, `PersistenceError`) — never
+  (`WalletStorageError`, `PersistenceError`) — never
   `Box<dyn Error>` — so a future leak is caught by `grep`.
 
 The CI advisory check runs `rustsec/audit-check` over `Cargo.lock`;

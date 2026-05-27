@@ -8,12 +8,15 @@
 //!
 //! At the `PlatformWalletPersistence` trait boundary, this type
 //! converts into `PersistenceError`: `LockPoisoned` keeps its
-//! dedicated variant, everything else flows through
-//! `PersistenceError::Backend` with the full `Display` chain.
+//! dedicated variant; everything else flows through
+//! `PersistenceError::Backend { kind, source }` — `kind` is classified
+//! by [`WalletStorageError::persistence_kind`] (Transient / Constraint /
+//! Fatal) and `source` carries the boxed typed error so consumers can
+//! walk `Error::source()` to the underlying `rusqlite` payload.
 
 use std::path::PathBuf;
 
-use platform_wallet::changeset::PersistenceError;
+use platform_wallet::changeset::{PersistenceError, PersistenceErrorKind};
 
 use crate::sqlite::util::safe_cast::SafeCastTarget;
 
@@ -30,9 +33,6 @@ pub enum AutoBackupOperation {
 }
 
 /// Errors produced by the wallet-storage SQLite backend.
-///
-/// `SqlitePersisterError` is preserved as a deprecated alias for one
-/// cycle; new code should use `WalletStorageError`.
 #[derive(Debug, thiserror::Error)]
 pub enum WalletStorageError {
     /// File-system I/O error reaching the database or backup files.
@@ -52,6 +52,8 @@ pub enum WalletStorageError {
     /// `PRAGMA integrity_check` ran successfully but reported a
     /// non-`ok` result. `report` carries SQLite's own diagnostic
     /// text — not a user-facing message, not a stringified source.
+    /// May be multi-line (`\n`-joined): SQLite returns one row per
+    /// detected problem and the helper preserves every line.
     #[error("integrity check failed: {report}")]
     IntegrityCheckFailed { report: String },
 
@@ -117,8 +119,10 @@ pub enum WalletStorageError {
     #[error("persister lock poisoned")]
     LockPoisoned,
 
-    /// `restore_from` tried to acquire an exclusive file-lock on the
-    /// destination and couldn't — another process is holding it open.
+    /// `restore_from` tried to take a SQLite-native `BEGIN EXCLUSIVE`
+    /// on the destination and a peer (another `SqlitePersister`, a
+    /// bare `rusqlite::Connection`, the CLI) is holding it busy
+    /// beyond `busy_timeout`.
     #[error("restore destination is locked or in use")]
     RestoreDestinationLocked,
 
@@ -233,6 +237,26 @@ pub enum WalletStorageError {
         target: SafeCastTarget,
     },
 
+    /// A `delete_wallet` cascade detected that a peer mutated the
+    /// wallet's footprint between the pre-delete auto-backup snapshot
+    /// and the cascade's `BEGIN EXCLUSIVE` acquisition. The auto-backup
+    /// is taken OUTSIDE the EXCLUSIVE tx because rusqlite's Backup API
+    /// can't run inside a write transaction on the source conn; that
+    /// leaves a small window in which a cross-process peer can write
+    /// to the wallet — those writes would survive in the live DB but
+    /// would NOT be in the pre-delete backup (operator rollback path
+    /// would silently lose them).
+    ///
+    /// The cascade aborts on detection so the operator can retry once
+    /// the peer is quiesced. The backup file (if one was written) is
+    /// left in place — it captures the pre-mutation state and is still
+    /// useful for forensics.
+    #[error(
+        "delete_wallet aborted: peer mutated wallet {} between auto-backup snapshot and EXCLUSIVE acquire",
+        hex::encode(wallet_id)
+    )]
+    ConcurrentMutationDuringDelete { wallet_id: [u8; 32] },
+
     /// Flush failed transiently (e.g. `SQLITE_BUSY` / `SQLITE_LOCKED`)
     /// for `wallet_id`. The buffered changeset has been restored — the
     /// next `flush(wallet_id)` will retry the same data merged with
@@ -258,37 +282,15 @@ pub enum WalletStorageError {
     },
 }
 
-/// Deprecated alias preserved for one cycle. Switch downstream
-/// references to [`WalletStorageError`].
-#[deprecated(since = "3.1.0-dev.1", note = "renamed to WalletStorageError")]
-pub type SqlitePersisterError = WalletStorageError;
-
 impl From<WalletStorageError> for PersistenceError {
     fn from(err: WalletStorageError) -> Self {
         match err {
             WalletStorageError::LockPoisoned => PersistenceError::LockPoisoned,
-            other => PersistenceError::Backend(format!("{}", DisplayChain(&other))),
+            other => {
+                let kind = other.persistence_kind();
+                PersistenceError::backend_with_kind(kind, other)
+            }
         }
-    }
-}
-
-/// Renders an error and its `#[source]` chain for the
-/// `PersistenceError::Backend` (`String`) boundary. The trait can't
-/// carry typed sources, so the chain is concatenated for diagnostic
-/// purposes — every typed variant is still preserved on the
-/// `WalletStorageError` value the trait `From` impl consumes.
-struct DisplayChain<'a>(&'a WalletStorageError);
-
-impl std::fmt::Display for DisplayChain<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use std::error::Error;
-        write!(f, "{}", self.0)?;
-        let mut cur: Option<&dyn Error> = self.0.source();
-        while let Some(err) = cur {
-            write!(f, ": {err}")?;
-            cur = err.source();
-        }
-        Ok(())
     }
 }
 
@@ -367,7 +369,41 @@ impl WalletStorageError {
             | Self::IdentityKeyEntryMismatch
             | Self::AssetLockEntryMismatch { .. }
             | Self::BlobTooLarge { .. }
+            | Self::ConcurrentMutationDuringDelete { .. }
             | Self::IntegerOverflow { .. } => false,
+        }
+    }
+
+    /// Trait-boundary classification for the
+    /// [`PersistenceError::Backend`] kind field (CODE-004). Three
+    /// classes:
+    ///
+    /// - [`PersistenceErrorKind::Transient`] — every variant where
+    ///   [`Self::is_transient`] is `true`. Caller MAY retry.
+    /// - [`PersistenceErrorKind::Constraint`] — SQL constraint /
+    ///   FK / NOT NULL / UNIQUE / PK / CHECK violations. Schema /
+    ///   integrity failure; caller bug, not infra.
+    /// - [`PersistenceErrorKind::Fatal`] — everything else.
+    ///
+    /// [`Self::LockPoisoned`] is handled by the `From` impl directly
+    /// (it maps to [`PersistenceError::LockPoisoned`] rather than
+    /// flowing through `Backend`).
+    pub fn persistence_kind(&self) -> PersistenceErrorKind {
+        use rusqlite::ErrorCode;
+        if self.is_transient() {
+            return PersistenceErrorKind::Transient;
+        }
+        match self {
+            Self::Sqlite(rusqlite::Error::SqliteFailure(e, _))
+                if matches!(e.code, ErrorCode::ConstraintViolation) =>
+            {
+                PersistenceErrorKind::Constraint
+            }
+            // Refinery surfaces FK / constraint problems through
+            // rusqlite; if that path leaks through here the typed
+            // variant lives in `Self::Migration`, which we leave as
+            // `Fatal` since a migration failure isn't a caller bug.
+            _ => PersistenceErrorKind::Fatal,
         }
     }
 
@@ -414,6 +450,7 @@ impl WalletStorageError {
             Self::AssetLockEntryMismatch { .. } => "asset_lock_entry_mismatch",
             Self::BlobTooLarge { .. } => "blob_too_large",
             Self::IntegerOverflow { .. } => "integer_overflow",
+            Self::ConcurrentMutationDuringDelete { .. } => "concurrent_mutation_during_delete",
         }
     }
 }
