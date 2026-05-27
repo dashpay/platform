@@ -263,22 +263,14 @@ impl PlatformAddressWallet {
         // drops it from the in-memory map).
 
         // Post-condition: every requested recipient must appear in
-        // the proof-attested `address_infos`. Platform's proof
-        // verifier should never return an empty (or recipient-
-        // missing) result for a top-up call that returned `Ok` —
-        // an empty Ok here would be a DAPI / proof-verifier
-        // contract violation, NOT a successful zero-credit
-        // funding. We fail loud rather than silently consume the
-        // asset lock with no recorded credits.
-        let expected_recipient_count = addresses.len();
-        if address_infos.is_empty() {
-            return Err(PlatformWalletError::AddressSync(format!(
-                "Address-funding ST succeeded but the proof returned no address infos \
-                 (expected {} recipient(s)); refusing to consume the asset lock with \
-                 no recorded credits",
-                expected_recipient_count
-            )));
-        }
+        // the proof-attested `address_infos` with a `Some(_)` info.
+        // A wholly-empty map, an absent recipient, or a
+        // `Some(addr) -> None` entry would each be a DAPI /
+        // proof-verifier contract violation, NOT a successful
+        // zero-credit funding. We fail loud rather than silently
+        // consume the asset lock with no recorded credits for some
+        // or all recipients.
+        validate_address_infos_complete(&addresses, &address_infos)?;
 
         let cs = self
             .write_address_balances_changeset(platform_account_index, &address_infos)
@@ -463,4 +455,131 @@ async fn validate_recipient_addresses(
         }
     }
     Ok(())
+}
+
+/// Post-submit guard: confirm the proof-attested `address_infos` carry a
+/// usable `AddressInfo` for every requested recipient.
+///
+/// A wholly-empty map, an entry whose value is `None`, or a recipient
+/// not present in the map at all are each a DAPI / proof-verifier
+/// contract violation — Platform accepted the transition, but the
+/// proof omits credits for the caller's recipients. Returning `Ok`
+/// here would let `consume_asset_lock` terminally destroy the only
+/// resumable record for the L1 funding outpoint while one or more
+/// recipients silently lose credits, which (since asset locks are
+/// non-refundable) is permanent value loss.
+fn validate_address_infos_complete(
+    addresses: &BTreeMap<PlatformAddress, Option<Credits>>,
+    address_infos: &AddressInfos,
+) -> Result<(), PlatformWalletError> {
+    let expected_recipient_count = addresses.len();
+    if address_infos.is_empty() {
+        return Err(PlatformWalletError::AddressSync(format!(
+            "Address-funding ST succeeded but the proof returned no address infos \
+             (expected {} recipient(s)); refusing to consume the asset lock with \
+             no recorded credits",
+            expected_recipient_count
+        )));
+    }
+
+    let missing_recipients: Vec<String> = addresses
+        .keys()
+        .filter_map(|address| match address_infos.get(address) {
+            Some(Some(_)) => None,
+            _ => Some(format!("{address:?}")),
+        })
+        .collect();
+
+    if !missing_recipients.is_empty() {
+        return Err(PlatformWalletError::AddressSync(format!(
+            "Address-funding ST succeeded but the proof omitted usable AddressInfo \
+             for recipient(s): {}",
+            missing_recipients.join(", ")
+        )));
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dash_sdk::query_types::AddressInfo;
+
+    fn p2pkh(b: u8) -> PlatformAddress {
+        PlatformAddress::P2pkh([b; 20])
+    }
+
+    fn info(addr: PlatformAddress) -> AddressInfo {
+        AddressInfo {
+            address: addr,
+            balance: 1_000,
+            nonce: 0,
+        }
+    }
+
+    #[test]
+    fn rejects_empty_address_infos_for_non_empty_recipients() {
+        let mut addresses = BTreeMap::new();
+        addresses.insert(p2pkh(1), None);
+        let address_infos: AddressInfos = AddressInfos::new();
+        let err = validate_address_infos_complete(&addresses, &address_infos)
+            .expect_err("empty address_infos must be rejected");
+        let msg = format!("{}", err);
+        assert!(
+            msg.contains("returned no address infos"),
+            "unexpected error: {msg}"
+        );
+    }
+
+    #[test]
+    fn rejects_recipient_with_none_address_info() {
+        // The proof contract violation we actually hit in practice:
+        // proof carries the recipient key but with a `None` value.
+        // Pre-fix, this slipped past the inline `is_empty()` guard
+        // and the asset lock got consumed regardless.
+        let mut addresses = BTreeMap::new();
+        addresses.insert(p2pkh(1), None);
+        let mut address_infos: AddressInfos = AddressInfos::new();
+        address_infos.insert(p2pkh(1), None);
+        let err = validate_address_infos_complete(&addresses, &address_infos)
+            .expect_err("None info must be rejected");
+        let msg = format!("{}", err);
+        assert!(
+            msg.contains("omitted usable AddressInfo"),
+            "unexpected: {msg}"
+        );
+    }
+
+    #[test]
+    fn rejects_recipient_absent_from_address_infos() {
+        // Multi-recipient case: proof present for one address but
+        // missing the other entirely. Without the per-recipient
+        // check, this would also silently consume the lock with
+        // partial crediting.
+        let mut addresses = BTreeMap::new();
+        addresses.insert(p2pkh(1), Some(500));
+        addresses.insert(p2pkh(2), None);
+        let mut address_infos: AddressInfos = AddressInfos::new();
+        address_infos.insert(p2pkh(1), Some(info(p2pkh(1))));
+        let err = validate_address_infos_complete(&addresses, &address_infos)
+            .expect_err("missing recipient must be rejected");
+        let msg = format!("{}", err);
+        assert!(
+            msg.contains("omitted usable AddressInfo"),
+            "unexpected: {msg}"
+        );
+    }
+
+    #[test]
+    fn accepts_every_recipient_with_some_address_info() {
+        let mut addresses = BTreeMap::new();
+        addresses.insert(p2pkh(1), Some(500));
+        addresses.insert(p2pkh(2), None);
+        let mut address_infos: AddressInfos = AddressInfos::new();
+        address_infos.insert(p2pkh(1), Some(info(p2pkh(1))));
+        address_infos.insert(p2pkh(2), Some(info(p2pkh(2))));
+        validate_address_infos_complete(&addresses, &address_infos)
+            .expect("complete proof must pass");
+    }
 }
