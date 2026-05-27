@@ -18,6 +18,36 @@ import SwiftData
 ///    Rust side from these rows so an in-flight registration that
 ///    was interrupted by an app kill can resume from the latest
 ///    status without rebroadcasting the asset-lock transaction.
+///
+/// ## Destination conventions per funding type
+///
+/// The destination of the asset lock — what was funded — is stored
+/// in different fields depending on `fundingTypeRaw`. Each funding
+/// type owns one typed field-family rather than sharing a
+/// polymorphic `destinationBytes: Data?` blob; the typed shape
+/// keeps SwiftData predicates working and makes per-type queries
+/// readable.
+///
+/// - **Identity** (`fundingTypeRaw ∈ {0, 1, 2, 3}` —
+///   IdentityRegistration / IdentityTopUp / IdentityTopUpNotBound /
+///   IdentityInvitation): `identityIndexRaw` carries the HD slot of
+///   the destination identity. The identity row itself can be
+///   resolved via `PersistentIdentity` joined on
+///   `(walletId, identityIndex)`.
+///
+/// - **Platform address** (`fundingTypeRaw == 4` —
+///   AssetLockAddressTopUp):
+///   `recipientPlatformAddressHash` + `recipientPlatformAddressType`
+///   identify the destination. Set by Swift on the controller's
+///   `.completed` phase because the recipient is picked at
+///   ST-submit time on the host side; Rust never sees it.
+///
+/// - **Shielded address** (`fundingTypeRaw == 5` —
+///   AssetLockShieldedAddressTopUp, not yet wired): will add a
+///   dedicated `recipientShielded*` field family when the
+///   shielded-funding flow lands. Keep this convention — one typed
+///   field-family per funding type rather than a polymorphic
+///   `destinationBytes` blob.
 @Model
 public final class PersistentAssetLock {
     /// Index `walletId` so per-wallet asset-lock scans (the progress
@@ -95,6 +125,33 @@ public final class PersistentAssetLock {
     /// `ChainLocked`. The load path passes these bytes back over FFI
     /// where Rust decodes them into the live proof.
     public var proofBytes: Data?
+
+    /// 20-byte hash of the recipient platform address for asset
+    /// locks consumed by an `AddressFundingFromAssetLockTransition`
+    /// (`fundingTypeRaw == 4`). Populated by Swift after a
+    /// successful `fundFromAssetLock` call — the recipient is
+    /// known on the caller side, not on the Rust side (which only
+    /// tracks the credit-output key, not the destination address).
+    ///
+    /// `nil` for:
+    /// - Identity-funding asset locks (the destination is the
+    ///   newly-created identity, surfaced via the `identityIndex`
+    ///   slot instead).
+    /// - Address-funding locks that haven't completed yet (status
+    ///   < Consumed).
+    /// - Pre-this-commit address-funding locks that completed
+    ///   before the field existed.
+    ///
+    /// Default `nil` on the column makes SwiftData's lightweight
+    /// migration safe for rows that pre-date this field.
+    public var recipientPlatformAddressHash: Data?
+
+    /// `PlatformAddress` type byte (0 = P2PKH, 1 = P2SH) matching
+    /// `recipientPlatformAddressHash`. Stored alongside the hash so
+    /// the storage explorer can render a typed bech32m string
+    /// without joining against `PersistentPlatformAddress`. `nil`
+    /// whenever `recipientPlatformAddressHash` is `nil`.
+    public var recipientPlatformAddressType: UInt8?
 
     /// Record timestamps.
     public var createdAt: Date
