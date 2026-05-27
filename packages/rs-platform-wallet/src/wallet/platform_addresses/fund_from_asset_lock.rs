@@ -393,13 +393,21 @@ impl PlatformAddressWallet {
                         balance: ai.balance,
                         nonce: ai.nonce,
                     };
-                    account.set_address_credit_balance(p2pkh, funds.balance, key_source.as_ref());
                     // The recipient must exist in the account's
                     // address pool — `validate_recipient_addresses`
                     // verified that upstream. A miss here would
                     // mean the pool was mutated between pre-flight
                     // and now; skip and log rather than mis-attribute
                     // credits to whichever address lives at slot 0.
+                    //
+                    // Look this up BEFORE mutating the in-memory
+                    // balance: if we mutated first and then `continue`d
+                    // on a pool miss, the changeset would be missing
+                    // this recipient's entry while the in-memory state
+                    // already carried the new balance — defeating the
+                    // persist-before-consume invariant the caller
+                    // relies on (the persisted row would stay stale
+                    // while the asset lock is consumed regardless).
                     let Some(address_index) =
                         account
                             .addresses
@@ -418,6 +426,7 @@ impl PlatformAddressWallet {
                         );
                         continue;
                     };
+                    account.set_address_credit_balance(p2pkh, funds.balance, key_source.as_ref());
                     cs.addresses.push(crate::PlatformAddressBalanceEntry {
                         wallet_id: self.wallet_id,
                         account_index: platform_account_index,
