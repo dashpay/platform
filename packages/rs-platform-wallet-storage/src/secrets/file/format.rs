@@ -114,6 +114,48 @@ mod hex_bytes {
     }
 }
 
+/// Const-generic companion to [`hex_bytes`] for fixed-width byte fields.
+/// Wire form is identical (lowercase hex), but the `[u8; N]` deserialize
+/// target moves length validation into the serde seam — a wrong-length
+/// hex blob is rejected at parse with a `serde::de::Error` naming both
+/// the offending size and the expected `N`, so the field is identifiable
+/// in the error message (no anonymous "invalid length").
+pub(super) mod hex_array {
+    use serde::{de::Error as DeError, Deserialize, Deserializer, Serializer};
+
+    // Wired up by R-1/R-2 collapses in the follow-up commits; the unit
+    // test below exercises both functions today.
+    #[allow(dead_code)]
+    pub(in crate::secrets::file) fn serialize<S, const N: usize>(
+        bytes: &[u8; N],
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&hex::encode(bytes))
+    }
+
+    #[allow(dead_code)]
+    pub(in crate::secrets::file) fn deserialize<'de, D, const N: usize>(
+        deserializer: D,
+    ) -> Result<[u8; N], D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        let bytes = hex::decode(&s)
+            .map_err(|e| D::Error::custom(format!("invalid hex (expected {N} bytes): {e}")))?;
+        if bytes.len() != N {
+            let expected = format!("{N} bytes (hex-encoded)");
+            return Err(D::Error::invalid_length(bytes.len(), &expected.as_str()));
+        }
+        let mut out = [0u8; N];
+        out.copy_from_slice(&bytes);
+        Ok(out)
+    }
+}
+
 /// Step-1 probe: read ONLY `version`, tolerating unknown sibling fields
 /// so a future v-N file can be dispatched on before its payload shape is
 /// committed to. MUST NOT use `deny_unknown_fields` (C3).
@@ -400,6 +442,32 @@ mod tests {
             deserialize(&bytes),
             Err(FileStoreError::MalformedVault)
         ));
+    }
+
+    #[test]
+    fn hex_array_round_trips_and_validates_length() {
+        // Probe the adapter directly via a one-field tuple struct so the
+        // collapses below can rely on its serde behaviour.
+        #[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
+        struct Probe(#[serde(with = "hex_array")] [u8; 4]);
+
+        let p = Probe([0xDE, 0xAD, 0xBE, 0xEF]);
+        let s = serde_json::to_string(&p).unwrap();
+        assert_eq!(s, "\"deadbeef\"");
+        let back: Probe = serde_json::from_str(&s).unwrap();
+        assert_eq!(back, p);
+
+        // Wrong length surfaces with both the offending size and the
+        // expected N — no anonymous "invalid length".
+        let err = serde_json::from_str::<Probe>("\"deadbe\"").unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("4 bytes"), "missing expected length: {msg}");
+        assert!(msg.contains('3'), "missing actual length: {msg}");
+
+        // Invalid hex names the field width in the error.
+        let err = serde_json::from_str::<Probe>("\"zzzzzzzz\"").unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("expected 4 bytes"), "bad msg: {msg}");
     }
 
     #[test]
