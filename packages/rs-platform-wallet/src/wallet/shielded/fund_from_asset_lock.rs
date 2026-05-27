@@ -116,7 +116,21 @@ impl PlatformWallet {
         // deliberately removed in favour of caller-supplied
         // `shield_amount`.
         if let AssetLockFunding::FromWalletBalance { amount_duffs, .. } = &funding {
-            let lock_credits = (*amount_duffs).saturating_mul(CREDITS_PER_DUFF);
+            // Use `checked_*` and reject explicitly on overflow.
+            // `saturating_*` (the earlier shape) silently passed
+            // the guard when both sides saturated to `u64::MAX`
+            // (~1.8e16 duffs ≈ 18 million DASH — operationally
+            // absurd but the silent-overflow shape would be the
+            // wrong template for future contributors). With
+            // checked math the guard is honest about its intent.
+            let lock_credits = (*amount_duffs)
+                .checked_mul(CREDITS_PER_DUFF)
+                .ok_or_else(|| {
+                    PlatformWalletError::ShieldedBuildError(format!(
+                        "asset lock amount overflows credits conversion ({amount_duffs} duffs * \
+                     {CREDITS_PER_DUFF} credits/duff > u64::MAX)"
+                    ))
+                })?;
             let min_fee_duffs = self
                 .sdk
                 .version()
@@ -125,8 +139,16 @@ impl PlatformWallet {
                 .identities
                 .asset_locks
                 .required_asset_lock_duff_balance_for_processing_start_for_address_funding;
-            let min_fee_credits = min_fee_duffs.saturating_mul(CREDITS_PER_DUFF);
-            let required = shield_amount.saturating_add(min_fee_credits);
+            let min_fee_credits = min_fee_duffs.checked_mul(CREDITS_PER_DUFF).ok_or_else(|| {
+                PlatformWalletError::ShieldedBuildError(format!(
+                    "protocol min-fee overflows credits conversion ({min_fee_duffs} duffs)"
+                ))
+            })?;
+            let required = shield_amount.checked_add(min_fee_credits).ok_or_else(|| {
+                PlatformWalletError::ShieldedBuildError(format!(
+                    "shield_amount ({shield_amount}) + min_fee ({min_fee_credits}) overflows u64"
+                ))
+            })?;
             if lock_credits < required {
                 return Err(PlatformWalletError::ShieldedBuildError(format!(
                     "asset lock ({lock_credits} credits, from {amount_duffs} duffs) cannot cover \

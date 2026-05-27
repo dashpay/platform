@@ -436,18 +436,31 @@ struct ShieldedFundFromAssetLockView: View {
             }
         }
 
-        // Single-flight gate via the coordinator. The same slot
-        // re-presents the existing controller on a duplicate tap
-        // so two FFI calls never race for the same recipient +
-        // asset lock.
+        // Single-flight gate via the coordinator. Two levels:
+        //   - Same recipient + in-flight: returns the existing
+        //     controller (the user sees the same progress view).
+        //   - Different recipient but another shielded funding in
+        //     flight on this wallet: surfaces a typed "wait"
+        //     error pointing at the in-flight recipient. Mirrors
+        //     the Rust-side `shield_guard` mutex that serializes
+        //     all shield-class ops per wallet.
         let coordinator = walletManager.shieldedFundFromAssetLockCoordinator
-        let controller = coordinator.startFunding(
+        switch coordinator.startFunding(
             walletId: walletId,
             recipientRaw43: recipient,
             shieldAmountCredits: shieldAmount,
             body: body
-        )
-        activeController = controller
+        ) {
+        case .started(let controller):
+            activeController = controller
+        case .blockedByOtherWalletFunding(let blocker):
+            submitError = SubmitError(
+                message: "Another shielded funding is already in progress on this wallet "
+                    + "(recipient \(hexShort(blocker.recipientRaw43))). Shield-class operations "
+                    + "are serialised wallet-wide by the Rust runtime — try again after that "
+                    + "one finishes."
+            )
+        }
     }
 
     /// Parse `<txid display hex>:<vout>` back into (32-byte raw

@@ -6,13 +6,40 @@ import SwiftDashSDK
 /// and network-toggle pressure.
 ///
 /// Mirrors [`AddressFundFromAssetLockCoordinator`] for Type 18
-/// (`ShieldFromAssetLockTransition`). Keyed by
-/// `(walletId, recipientRaw43)` — a wallet can shield to many
-/// distinct Orchard recipients concurrently, but the single-flight
-/// invariant prevents a user from double-tapping the same recipient
-/// during the asset-lock + Halo 2 proof window (~30s).
+/// (`ShieldFromAssetLockTransition`), with one shape difference:
+///
+/// **Per-wallet serialization.** The Rust orchestration takes a
+/// `shield_guard` mutex on the wallet that serializes ALL
+/// shield-class operations (`shielded_fund_from_asset_lock`,
+/// `shielded_shield_from_account`, etc.). So while the slot key is
+/// `(walletId, recipientRaw43)` — fine for deduplicating same-
+/// recipient double-taps — concurrent fundings to *different*
+/// recipients on the same wallet would (a) all block on
+/// `shield_guard` Rust-side, and (b) confuse the progress view,
+/// which queries `PersistentAssetLock` only by `(walletId,
+/// fundingTypeRaw == 5)` and would show the same lock's status to
+/// both controllers.
+///
+/// To match Rust-side reality and avoid the UI race, `startFunding`
+/// returns `.blockedByOtherWalletFunding` when another controller
+/// on the same wallet is still `.inFlight`. The caller surfaces a
+/// typed error and points the user at the in-flight funding.
 @MainActor
 final class ShieldedFundFromAssetLockCoordinator: ObservableObject {
+    /// Outcome of `startFunding`. The caller surfaces the
+    /// distinction in UI — a blocked start needs a typed error,
+    /// a successful start binds the progress view to the
+    /// returned controller.
+    enum StartFundingResult {
+        /// New or restarted controller for this slot. Caller
+        /// should bind progress UI to it.
+        case started(ShieldedFundFromAssetLockController)
+        /// Another shielded funding is already in flight on the
+        /// same wallet (different recipient). Caller surfaces
+        /// the blocker's recipient in a "wait" message.
+        case blockedByOtherWalletFunding(ShieldedFundFromAssetLockController)
+    }
+
     /// Composite key — `walletId` is 32 raw bytes; `recipientRaw43`
     /// is the 43-byte raw Orchard payment address (11-byte
     /// diversifier + 32-byte pk_d).
@@ -59,21 +86,27 @@ final class ShieldedFundFromAssetLockCoordinator: ObservableObject {
     }
 
     /// Start a funding for the slot, or reuse an existing controller
-    /// if one is already in flight. Returns the controller for
-    /// `ShieldedFundFromAssetLockView` to bind a progress section
-    /// against.
+    /// if one is already in flight on the same recipient. Returns a
+    /// `StartFundingResult` so the caller can distinguish a fresh
+    /// start from a wallet-level conflict (see the type doc for
+    /// rationale).
     ///
-    /// Single-flighting is enforced here at the coordinator level —
-    /// the controller's `submit()` only guards within its own phase
-    /// machine, so without a phase check before fresh-slot creation
-    /// a second tap during the FFI window would race two FFI calls
-    /// for the same recipient + asset lock.
+    /// Single-flighting works on two levels:
+    /// 1. **Per-recipient** (slot key match): a second tap on the
+    ///    same recipient during the FFI window re-presents the
+    ///    existing controller, never races a duplicate FFI call.
+    /// 2. **Per-wallet** (new in this revision): if any controller
+    ///    on the same wallet is `.inFlight` for a *different*
+    ///    recipient, reject with
+    ///    `.blockedByOtherWalletFunding`. Mirrors the Rust-side
+    ///    `shield_guard` mutex on `PlatformWallet` that
+    ///    serializes shield-class operations.
     func startFunding(
         walletId: Data,
         recipientRaw43: Data,
         shieldAmountCredits: UInt64,
         body: @escaping () async throws -> Void
-    ) -> ShieldedFundFromAssetLockController {
+    ) -> StartFundingResult {
         let key = SlotKey(walletId: walletId, recipientRaw43: recipientRaw43)
         if let existing = controllers[key] {
             switch existing.phase {
@@ -82,9 +115,20 @@ final class ShieldedFundFromAssetLockCoordinator: ObservableObject {
                 // Returning the existing controller lets the caller
                 // bind to its progress / terminal state without
                 // disrupting it.
-                return existing
+                return .started(existing)
             case .idle, .failed:
-                // Legitimate restart paths.
+                // Legitimate restart paths. We've already checked
+                // the same-recipient slot here; before letting the
+                // restart proceed, fall through to the per-wallet
+                // check below so two concurrent .failed retries on
+                // different recipients can't both unblock at the
+                // same time.
+                if let blocker = inFlightOnWalletExcluding(
+                    walletId: walletId,
+                    excludingRecipient: recipientRaw43
+                ) {
+                    return .blockedByOtherWalletFunding(blocker)
+                }
                 existing.submit(body: body)
                 // No retention sweep here — the slot is sticky on
                 // .failed (we want the user to see + dismiss the
@@ -92,8 +136,17 @@ final class ShieldedFundFromAssetLockCoordinator: ObservableObject {
                 // spawn a second 30s poll Task against the same
                 // controller. Sweep was already scheduled when the
                 // controller was first created.
-                return existing
+                return .started(existing)
             }
+        }
+        // Per-wallet serialization: if another controller on this
+        // wallet is in flight (different recipient), surface the
+        // blocker so the caller can render a typed "wait" message.
+        if let blocker = inFlightOnWalletExcluding(
+            walletId: walletId,
+            excludingRecipient: recipientRaw43
+        ) {
+            return .blockedByOtherWalletFunding(blocker)
         }
         let controller = ShieldedFundFromAssetLockController(
             walletId: walletId,
@@ -103,7 +156,24 @@ final class ShieldedFundFromAssetLockCoordinator: ObservableObject {
         controllers[key] = controller
         controller.submit(body: body)
         scheduleRetentionSweep(key: key, controller: controller)
-        return controller
+        return .started(controller)
+    }
+
+    /// Find any in-flight controller on `walletId` for a recipient
+    /// other than `excludingRecipient`. Used by the per-wallet
+    /// serialization check.
+    private func inFlightOnWalletExcluding(
+        walletId: Data,
+        excludingRecipient: Data
+    ) -> ShieldedFundFromAssetLockController? {
+        for (key, controller) in controllers {
+            guard key.walletId == walletId else { continue }
+            guard key.recipientRaw43 != excludingRecipient else { continue }
+            if case .inFlight = controller.phase {
+                return controller
+            }
+        }
+        return nil
     }
 
     /// Manually drop a controller from the map. Used by the UI's
