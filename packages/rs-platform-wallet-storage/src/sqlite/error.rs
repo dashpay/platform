@@ -262,11 +262,6 @@ pub enum WalletStorageError {
     },
 }
 
-/// Deprecated alias preserved for one cycle. Switch downstream
-/// references to [`WalletStorageError`].
-#[deprecated(since = "3.1.0-dev.1", note = "renamed to WalletStorageError")]
-pub type SqlitePersisterError = WalletStorageError;
-
 impl From<WalletStorageError> for PersistenceError {
     fn from(err: WalletStorageError) -> Self {
         match err {

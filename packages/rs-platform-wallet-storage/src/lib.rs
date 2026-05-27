@@ -30,11 +30,9 @@ pub mod sqlite;
 // names. Adding to or trimming from this list does NOT count as a
 // breaking change of the submodule API.
 #[cfg(feature = "sqlite")]
-#[allow(deprecated)]
 pub use sqlite::{
     default_auto_backup_dir, AutoBackupOperation, FlushMode, JournalMode, PruneReport,
-    RetentionPolicy, SqlitePersister, SqlitePersisterConfig, SqlitePersisterError, Synchronous,
-    WalletStorageError,
+    RetentionPolicy, SqlitePersister, SqlitePersisterConfig, Synchronous, WalletStorageError,
 };
 
 // Compile-time assertions — `Send + Sync`, `PlatformWalletPersistence`

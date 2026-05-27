@@ -24,13 +24,11 @@ struct Cli {
     /// Path to the SQLite database file.
     #[arg(long, value_name = "PATH", global = true)]
     db: Option<PathBuf>,
-    /// Auto-backup directory. The empty-string ("") form is
-    /// **deprecated** as a way to disable auto-backup — use the
-    /// subcommand flag `--no-auto-backup` instead (supported by
-    /// `migrate` and `restore`). The empty-string form still parses for
-    /// one release; a deprecation warning is logged when used.
+    /// Auto-backup directory. To disable auto-backup, pass the
+    /// subcommand flag `--no-auto-backup` (supported by `migrate` and
+    /// `restore`).
     #[arg(long, value_name = "PATH", global = true)]
-    auto_backup_dir: Option<String>,
+    auto_backup_dir: Option<PathBuf>,
     /// Increase log verbosity (stderr). Repeat for more: `-v` enables
     /// `info`, `-vv` enables `debug`, `-vvv` enables `trace`.
     #[arg(long, short, global = true, action = clap::ArgAction::Count)]
@@ -181,22 +179,7 @@ fn run(cli: Cli) -> Result<ExitCode, CliError> {
     let db = cli
         .db
         .ok_or_else(|| CliError::runtime("--db is required"))?;
-    let auto_backup_dir = match cli.auto_backup_dir {
-        None => None,
-        Some(s) if s.is_empty() => {
-            // CODE-030: empty-string sentinel for "disable auto-backup"
-            // is deprecated in favour of the subcommand flag
-            // `--no-auto-backup`. Keep parsing it for one release so
-            // existing operators don't break overnight, but emit a
-            // loud deprecation warning on stderr.
-            eprintln!(
-                "warning: `--auto-backup-dir \"\"` to disable auto-backup is deprecated; \
-                 pass `--no-auto-backup` to the subcommand instead"
-            );
-            Some(None)
-        }
-        Some(s) => Some(Some(PathBuf::from(s))),
-    };
+    let auto_backup_dir: Option<PathBuf> = cli.auto_backup_dir;
 
     // For `prune`, we don't open a persister — pure filesystem op.
     if let Cmd::Prune(args) = &cli.cmd {
@@ -205,7 +188,7 @@ fn run(cli: Cli) -> Result<ExitCode, CliError> {
 
     // `restore` is an associated function; no persister needed beforehand.
     if let Cmd::Restore(args) = &cli.cmd {
-        return run_restore(&db, args, auto_backup_dir.as_ref());
+        return run_restore(&db, args, auto_backup_dir.as_deref());
     }
 
     // For `migrate --no-auto-backup`, we must keep `auto_backup_dir =
@@ -214,17 +197,10 @@ fn run(cli: Cli) -> Result<ExitCode, CliError> {
     // default) in place — the library's safe-by-default semantics
     // still apply.
     let mut config = SqlitePersisterConfig::new(&db);
-    if let Some(dir_opt) = auto_backup_dir.clone() {
-        config = config.with_auto_backup_dir(dir_opt);
+    if let Some(dir) = auto_backup_dir.clone() {
+        config = config.with_auto_backup_dir(Some(dir));
     }
     if let Cmd::Migrate(m) = &cli.cmd {
-        if matches!(&auto_backup_dir, Some(None)) && !m.no_auto_backup {
-            return Err(CliError {
-                message: "auto-backup directory not configured; pass --no-auto-backup to proceed"
-                    .to_string(),
-                code: ExitCode::from(1),
-            });
-        }
         if m.no_auto_backup {
             config = config.with_auto_backup_dir(None);
             eprintln!("warning: auto-backup skipped (--no-auto-backup)");
@@ -322,7 +298,7 @@ fn run_backup(persister: &SqlitePersister, args: BackupArgs) -> Result<ExitCode,
 fn run_restore(
     db: &Path,
     args: &RestoreArgs,
-    auto_backup_dir: Option<&Option<PathBuf>>,
+    auto_backup_dir: Option<&Path>,
 ) -> Result<ExitCode, CliError> {
     if !args.yes {
         return Err(CliError {
@@ -337,11 +313,11 @@ fn run_restore(
         // CLI default mirrors the persister config default
         // (`<db_dir>/backups/auto/`). The CLI doesn't open a
         // persister here, so we compute the default inline.
-        let resolved_dir: Option<PathBuf> = match auto_backup_dir {
-            None => Some(default_auto_backup_dir(db)),
-            Some(opt) => opt.clone(),
+        let resolved_dir: PathBuf = match auto_backup_dir {
+            None => default_auto_backup_dir(db),
+            Some(p) => p.to_path_buf(),
         };
-        SqlitePersister::restore_from(db, &args.from, resolved_dir.as_deref())
+        SqlitePersister::restore_from(db, &args.from, Some(&resolved_dir))
     };
     match result {
         Ok(()) => Ok(ExitCode::SUCCESS),
