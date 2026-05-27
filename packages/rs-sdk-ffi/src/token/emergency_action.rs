@@ -211,6 +211,7 @@ mod tests {
             request_retry_count: 3,
             request_timeout_ms: 5000,
             quorum_url: ptr::null(),
+            platform_version: 0,
         };
 
         let result = unsafe { crate::sdk::dash_sdk_create(&config) };
