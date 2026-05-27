@@ -1,4 +1,11 @@
-const { promisify } = require('util');
+// Inline promisify shim — avoids requiring Node's `util` module so this file
+// can be bundled for browsers without a polyfill. If the codegen template
+// is regenerated, restore this shim.
+function promisify(fn) {
+  return (...args) => new Promise((resolve, reject) => {
+    fn(...args, (err, result) => (err ? reject(err) : resolve(result)));
+  });
+}
 const GrpcError = require('@dashevo/grpc-common/lib/server/error/GrpcError');
 
 const { CoreClient } = require('./core_pb_service');
