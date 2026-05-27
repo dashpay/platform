@@ -25,6 +25,7 @@
 //!    tracked outpoint so the row is marked `Consumed` (terminal)
 //!    and dropped from the in-memory tracked-lock map.
 
+use crate::changeset::Merge;
 use crate::wallet::asset_lock::orchestration::{
     out_point_from_proof, submit_with_cl_height_retry, AssetLockFunding, FundingResolution,
     ResolvedFunding, CL_FALLBACK_TIMEOUT,
@@ -275,6 +276,36 @@ impl PlatformAddressWallet {
         let cs = self
             .write_address_balances_changeset(platform_account_index, &address_infos)
             .await;
+
+        // Mirror `transfer.rs` / `sync.rs`: push the post-submit
+        // balances through the persister so any external store stays
+        // in sync with the in-memory account state we just updated.
+        // Without this, persisted rows for these recipients stay
+        // frozen at pre-top-up values until the next BLAST sync
+        // overwrites them. On the next process start before that
+        // sync, `initialize_from_persisted` would seed
+        // `account.address_credit_balance` from the stale rows while
+        // the asset-lock record is already `Consumed` — leaving
+        // `auto_select_inputs` to under-budget and produce
+        // protocol-level rejections until a sync repairs them.
+        //
+        // The persist MUST happen before `consume_asset_lock` so
+        // we never have a Consumed lock paired with a stale balance
+        // row on disk.
+        //
+        // Log-on-error rather than propagate: Platform already
+        // accepted the transition, and a persistence hiccup shouldn't
+        // mask that. A subsequent sync reconciles.
+        if !cs.is_empty() {
+            if let Err(e) = self.persister.store(cs.clone().into()) {
+                tracing::error!(
+                    error = %e,
+                    "Failed to persist fund-from-asset-lock changeset; \
+                     in-memory balances are updated but durable rows are stale \
+                     until the next BLAST sync"
+                );
+            }
+        }
 
         if let Some(out_point) = tracked_out_point {
             // Platform DID accept the top-up — propagating an Err
