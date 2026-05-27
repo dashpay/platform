@@ -124,10 +124,28 @@ public final class SDK: @unchecked Sendable {
       result = localAddresses.withCString { addressesCStr -> DashSDKResult in
         var mutableConfig = config
         mutableConfig.dapi_addresses = addressesCStr
-        return dash_sdk_create_trusted_with_protocol_version(&mutableConfig, protocolVersion)
+        if protocolVersion == 0 {
+          return dash_sdk_create_trusted(&mutableConfig)
+        }
+
+        var extendedConfig = DashSDKConfigExtended()
+        extendedConfig.base_config = mutableConfig
+        extendedConfig.context_provider = nil
+        extendedConfig.core_sdk_handle = nil
+        extendedConfig.protocol_version = protocolVersion
+        return dash_sdk_create_extended(&extendedConfig)
       }
     } else {
-      result = dash_sdk_create_trusted_with_protocol_version(&config, protocolVersion)
+      if protocolVersion == 0 {
+        result = dash_sdk_create_trusted(&config)
+      } else {
+        var extendedConfig = DashSDKConfigExtended()
+        extendedConfig.base_config = config
+        extendedConfig.context_provider = nil
+        extendedConfig.core_sdk_handle = nil
+        extendedConfig.protocol_version = protocolVersion
+        result = dash_sdk_create_extended(&extendedConfig)
+      }
     }
 
     // Check for errors

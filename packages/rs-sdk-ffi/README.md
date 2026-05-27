@@ -91,9 +91,15 @@ DashSDKConfig config = {
     .request_timeout_ms = 30000
 };
 
+DashSDKConfigExtended extended_config = {
+    .base_config = config,
+    .context_provider = NULL,
+    .core_sdk_handle = NULL,
+    .protocol_version = 11, // 0 keeps the default auto-detect behavior
+};
+
 // Create SDK instance pinned to Platform protocol version 11.
-// Pass 0 to keep the default auto-detect behavior.
-DashSDKResult result = dash_sdk_create_with_protocol_version(&config, 11);
+DashSDKResult result = dash_sdk_create_extended(&extended_config);
 if (result.error) {
     // Handle error
     dash_sdk_error_free(result.error);
@@ -143,6 +149,14 @@ class DashSDKConfig(Structure):
         ("request_timeout_ms", c_uint64)
     ]
 
+class DashSDKConfigExtended(Structure):
+    _fields_ = [
+        ("base_config", DashSDKConfig),
+        ("context_provider", c_void_p),
+        ("core_sdk_handle", c_void_p),
+        ("protocol_version", c_uint32),
+    ]
+
 config = DashSDKConfig(
     network=1,  # Testnet
     dapi_addresses=b"seed-1.testnet.networks.dash.org",
@@ -153,7 +167,13 @@ config = DashSDKConfig(
 
 # Create SDK instance pinned to protocol version 11.
 # Pass 0 to keep the default auto-detect behavior.
-result = lib.dash_sdk_create_with_protocol_version(byref(config), 11)
+extended_config = DashSDKConfigExtended(
+    base_config=config,
+    context_provider=None,
+    core_sdk_handle=None,
+    protocol_version=11,
+)
+result = lib.dash_sdk_create_extended(byref(extended_config))
 # ... handle result and use SDK
 ```
 
@@ -164,7 +184,7 @@ result = lib.dash_sdk_create_with_protocol_version(byref(config), 11)
 #### Core Functions
 - `dash_sdk_init()` - Initialize the FFI library
 - `dash_sdk_create()` - Create an SDK instance
-- `dash_sdk_create_with_protocol_version()` - Create an SDK instance with optional protocol-version pinning
+- `dash_sdk_create_extended()` - Create an SDK instance with extended configuration, including optional `protocol_version` pinning
 - `dash_sdk_destroy()` - Destroy an SDK instance
 - `dash_sdk_version()` - Get the SDK version
 
