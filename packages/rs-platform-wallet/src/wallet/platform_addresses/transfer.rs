@@ -50,6 +50,14 @@ pub enum FeeStrategyResolveError {
     IndexOverflow { kind: &'static str, index: usize },
 }
 
+// INTENTIONAL(CMT-004): FeeStrategyResolveError variants flatten into
+// PlatformWalletError::AddressOperation(String) rather than being promoted
+// to typed PlatformWalletError variants. Rationale: fee-strategy resolution
+// errors are caller-input errors (caller named an address not in the
+// inputs/outputs map they themselves supplied) distinct from wallet-state
+// errors like ChangeBelowMinimumOutput / InputSumOverflow /
+// OnlyOutputAddressesFunded. Keeping the wallet error enum lean by
+// flattening caller-input mistakes into a string is the deliberate trade-off.
 impl From<FeeStrategyResolveError> for PlatformWalletError {
     fn from(e: FeeStrategyResolveError) -> Self {
         PlatformWalletError::AddressOperation(e.to_string())
@@ -136,6 +144,35 @@ impl PlatformAddressWallet {
     /// [`PlatformAddress`]es; the wallet itself holds no key material —
     /// callers supply a seed-backed, hardware, or FFI-trampoline signer.
     ///
+    /// # When to use this vs `transfer_with_change_address`
+    ///
+    /// - `transfer()` — simple entry point with an **indexed**
+    ///   [`AddressFundsFeeStrategy`]. Supports all three [`InputSelection`]
+    ///   variants. Use when you can supply fee-strategy indices directly
+    ///   against the canonical lex-sorted outputs map, or when you want
+    ///   auto-selection.
+    /// - [`Self::transfer_with_change_address`] — wrapper that takes an
+    ///   **address-keyed** [`FeeStrategyByAddress`] and optionally routes
+    ///   surplus from explicit inputs to a change output. Use when you want
+    ///   to identify the fee-bearing row by address (the wrapper resolves to
+    ///   indices after change-augmentation) and/or want the wallet to compute
+    ///   the change amount from over-funded explicit inputs. Rejects
+    ///   [`InputSelection::Auto`].
+    ///
+    /// # Invariant: `Σ inputs == Σ outputs`
+    ///
+    /// The protocol enforces strict equality. Responsibility for satisfying
+    /// it depends on `input_selection`:
+    ///
+    /// - [`InputSelection::Auto`]: the wallet trims selected inputs to match
+    ///   the output sum. No work for the caller. Supported fee strategies
+    ///   under Auto: `[DeductFromInput(0)]` and `[ReduceOutput(0)]` only.
+    /// - [`InputSelection::Explicit`] / [`InputSelection::ExplicitWithNonces`]:
+    ///   **caller** must construct the inputs map such that the sum equals
+    ///   `Σ outputs`. For automatic surplus routing to a change output, use
+    ///   [`Self::transfer_with_change_address`] with
+    ///   `output_change_address: Some(_)`.
+    ///
     /// # Output order semantics
     ///
     /// Outputs are stored on-chain in `AddressFundsTransferTransitionV0` as a
@@ -146,7 +183,7 @@ impl PlatformAddressWallet {
     /// `BTreeMap` is chosen to make this canonical ordering explicit at the
     /// type signature; duplicate destination addresses are structurally
     /// impossible.
-    async fn transfer_inner<S: Signer<PlatformAddress> + Send + Sync>(
+    pub async fn transfer<S: Signer<PlatformAddress> + Send + Sync>(
         &self,
         account_index: u32,
         input_selection: InputSelection,
@@ -282,35 +319,17 @@ impl PlatformAddressWallet {
         Ok(cs)
     }
 
-    /// Transfer credits between platform addresses, indexed fee strategy.
-    ///
-    /// Thin facade over [`Self::transfer_inner`]. Use this entry point when
-    /// the caller already knows the lex-canonical `BTreeMap` order and can
-    /// supply indexes directly. For the address-keyed, change-aware variant
-    /// that resolves indexes after the final outputs map is built, see
-    /// [`Self::transfer_with_change_address`].
-    pub async fn transfer<S: Signer<PlatformAddress> + Send + Sync>(
-        &self,
-        account_index: u32,
-        input_selection: InputSelection,
-        outputs: BTreeMap<PlatformAddress, Credits>,
-        fee_strategy: AddressFundsFeeStrategy,
-        platform_version: Option<&PlatformVersion>,
-        address_signer: &S,
-    ) -> Result<PlatformAddressChangeSet, PlatformWalletError> {
-        self.transfer_inner(
-            account_index,
-            input_selection,
-            outputs,
-            fee_strategy,
-            platform_version,
-            address_signer,
-        )
-        .await
-    }
-
     /// Transfer credits with an address-keyed fee strategy and an optional
     /// "change address" override.
+    ///
+    /// # When to use
+    ///
+    /// Use this wrapper when you want to identify the fee-bearing row by
+    /// [`PlatformAddress`] and/or want the wallet to compute a change output
+    /// from over-funded explicit inputs. For [`InputSelection::Auto`] or
+    /// index-based fee strategies, use [`Self::transfer`] directly — this
+    /// wrapper rejects `Auto` because the auto-selector leaves no surplus
+    /// to route as change.
     ///
     /// The fee-bearing row is identified by [`PlatformAddress`] rather than
     /// by index — the wrapper lowers [`FeeStrategyByAddress`] to the
@@ -402,7 +421,55 @@ impl PlatformAddressWallet {
         // misrouting bug this wrapper exists to prevent.
         let indexed_fee_strategy = fee_strategy.to_indexed(&inputs_for_resolve, &final_outputs)?;
 
-        self.transfer_inner(
+        // Replicate the Auto path's ReduceOutput fee-headroom guard so callers
+        // get a typed wallet-side rejection (and 3x safety-band warning)
+        // instead of a generic chain-time `fee_fully_covered = false`. Covers
+        // ALL `ReduceOutput(i)` steps since `to_indexed` can produce non-zero
+        // indices; mirrors the Auto path's choice to guard outputs only.
+        for step in indexed_fee_strategy.iter() {
+            if let AddressFundsFeeStrategyStep::ReduceOutput(idx) = step {
+                let target = final_outputs
+                    .values()
+                    .nth(*idx as usize)
+                    .copied()
+                    .unwrap_or(0);
+                let estimated_fee = AddressFundsTransferTransition::estimate_min_fee(
+                    inputs_for_resolve.len(),
+                    final_outputs.len(),
+                    version,
+                );
+                if target < estimated_fee {
+                    return Err(PlatformWalletError::AddressOperation(format!(
+                        "ReduceOutput target at index {} ({} credits) cannot absorb \
+                         estimated fee ({} credits); raise that output or switch to \
+                         DeductFromInput-based fee strategy",
+                        idx, target, estimated_fee,
+                    )));
+                }
+                const REDUCE_OUTPUT_FEE_SAFETY_MULTIPLE: Credits = 3;
+                let safe_threshold =
+                    estimated_fee.saturating_mul(REDUCE_OUTPUT_FEE_SAFETY_MULTIPLE);
+                if target < safe_threshold {
+                    tracing::warn!(
+                        target_index = *idx,
+                        target_amount = target,
+                        estimated_fee,
+                        safety_multiple = REDUCE_OUTPUT_FEE_SAFETY_MULTIPLE,
+                        tracking_issue = "platform#3040",
+                        "[ReduceOutputAddress] target ({} credits) is within {}x of the \
+                         static estimated fee ({} credits); chain-time fee may exceed the \
+                         static estimate (platform#3040), risking on-chain rejection. \
+                         Consider raising the target output or switching to \
+                         DeductFromInputAddress.",
+                        target,
+                        REDUCE_OUTPUT_FEE_SAFETY_MULTIPLE,
+                        estimated_fee,
+                    );
+                }
+            }
+        }
+
+        self.transfer(
             account_index,
             input_selection,
             final_outputs,
@@ -700,7 +767,9 @@ fn select_inputs_deduct_from_input(
     ) {
         return Err(PlatformWalletError::AddressOperation(
             "select_inputs_deduct_from_input only supports fee_strategy = \
-             [DeductFromInput(0)]; other shapes must route through the dispatcher"
+             [DeductFromInput(0)]; this is an internal helper — use \
+             InputSelection::Explicit with PlatformAddressWallet::transfer for \
+             other fee-strategy shapes"
                 .to_string(),
         ));
     }
@@ -913,7 +982,9 @@ fn select_inputs_reduce_output(
     if !matches!(fee_strategy, [AddressFundsFeeStrategyStep::ReduceOutput(0)]) {
         return Err(PlatformWalletError::AddressOperation(
             "select_inputs_reduce_output only supports fee_strategy = \
-             [ReduceOutput(0)]; other shapes must route through the dispatcher"
+             [ReduceOutput(0)]; this is an internal helper — use \
+             InputSelection::Explicit with PlatformAddressWallet::transfer for \
+             other fee-strategy shapes"
                 .to_string(),
         ));
     }
@@ -2247,5 +2318,49 @@ mod auto_select_tests {
             .to_indexed(&inputs, &final_outputs)
             .expect("resolve must succeed; old heuristic is gone");
         assert_eq!(indexed, vec![AddressFundsFeeStrategyStep::ReduceOutput(0)]);
+    }
+
+    /// CMT-003: when the wrapper resolves `ReduceOutputAddress` to an output
+    /// row whose amount is below the static `estimated_fee`, it must reject
+    /// pre-broadcast with a typed `AddressOperation` error rather than letting
+    /// the chain refuse it with a generic `fee_fully_covered = false`.
+    #[tokio::test]
+    async fn transfer_with_change_address_rejects_sub_fee_reduce_output_target() {
+        let wallet = build_short_circuit_wallet();
+        let signer = NullSigner;
+        let target = p2pkh(0x77);
+        let input_addr = p2pkh(0x11);
+        // Target output amount well below `estimate_min_fee(1, 1, _)`
+        // (≈6.5M credits): the guard must fire.
+        let outputs = outputs_for(target, 100_000);
+        let mut inputs: BTreeMap<PlatformAddress, Credits> = BTreeMap::new();
+        inputs.insert(input_addr, 100_000);
+        let fee_strategy = FeeStrategyByAddress::reduce_output(target);
+
+        let err = wallet
+            .transfer_with_change_address(
+                0,
+                InputSelection::Explicit(inputs),
+                outputs,
+                None,
+                fee_strategy,
+                None,
+                &signer,
+            )
+            .await
+            .expect_err("sub-fee ReduceOutput target must be rejected");
+        match err {
+            PlatformWalletError::AddressOperation(msg) => {
+                assert!(
+                    msg.contains("cannot absorb estimated fee"),
+                    "unexpected message: {msg}"
+                );
+                assert!(
+                    msg.contains("ReduceOutput target at index"),
+                    "unexpected message: {msg}"
+                );
+            }
+            other => panic!("expected AddressOperation, got {other:?}"),
+        }
     }
 }
