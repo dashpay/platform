@@ -23,10 +23,14 @@
 //   * The recipient defaults to the wallet's own bound shielded
 //     default address (the natural demo case). The user can paste a
 //     43-byte raw Orchard address (display hex) to override.
-//   * Both `amountDuffs` (L1) and `shieldAmountCredits` (what enters
-//     the pool) are exposed — the Rust orchestration takes both
-//     because Type 18's Orchard `value_balance` is baked into the
-//     Halo 2 proof at build time and can't be derived by Platform.
+//   * Only one number is exposed in the UI ("Amount" in DASH = L1
+//     lock size) — same shape as the address-funding sibling and the
+//     identity-funding flow. The Rust API needs both `amountDuffs`
+//     and `shieldAmountCredits` because Type 18's Orchard
+//     `value_balance` is baked into the Halo 2 proof at build time
+//     and can't be derived by Platform; the view computes the
+//     shielded credits internally as `lock_credits − conservative
+//     fee buffer` so the demo UX matches the sibling flows.
 //   * No post-success recipient back-fill — shielded asset-lock
 //     rows don't carry a per-account recipient stamp (the recipient
 //     is an external Orchard address, not allocated from the wallet).
@@ -69,10 +73,6 @@ struct ShieldedFundFromAssetLockView: View {
     /// fight the formatter on partial input.
     @State private var recipientHex: String = ""
     @State private var amountDash: String = "0.001"
-    /// Caller-supplied shielded credits (what enters the Orchard
-    /// pool). String-backed so the user can edit it directly; the
-    /// view also auto-fills it from the L1 amount when blank.
-    @State private var shieldAmountCreditsText: String = ""
 
     // MARK: - Submit state
 
@@ -98,7 +98,6 @@ struct ShieldedFundFromAssetLockView: View {
                     walletSection
                     resumeFromAssetLockSection
                     recipientSection
-                    shieldAmountSection
                     if canSubmit {
                         submitSection
                     }
@@ -107,7 +106,6 @@ struct ShieldedFundFromAssetLockView: View {
                     coreFundingSection
                     recipientSection
                     amountSection
-                    shieldAmountSection
                     if canSubmit {
                         submitSection
                     }
@@ -129,7 +127,6 @@ struct ShieldedFundFromAssetLockView: View {
                 )
             }
             .onAppear(perform: autoSelectDefaults)
-            .onChange(of: amountDash) { _, _ in autoFillShieldAmount() }
         }
     }
 
@@ -230,40 +227,17 @@ struct ShieldedFundFromAssetLockView: View {
                     .foregroundColor(.secondary)
             }
         } header: {
-            Text("L1 Asset-Lock Amount")
+            Text("Amount")
         } footer: {
-            if let amount = parsedDuffs {
+            if let lockDuffs = parsedDuffs, let shield = computedShieldAmount() {
                 Text(
-                    "\(formatDuffs(amount)) duffs will be locked. Minimum: "
-                        + "\(formatDuffs(Self.minDuffs)). Must cover shield amount + "
-                        + "Platform min fee."
+                    "\(formatDuffs(lockDuffs)) will be locked on L1. "
+                        + "\(formatCredits(shield)) enter the shielded pool after the "
+                        + "Platform fee. Minimum lock: \(formatDuffs(Self.minDuffs))."
                 )
             } else {
-                Text("Minimum: \(formatDuffs(Self.minDuffs)) duffs.")
+                Text("Minimum: \(formatDuffs(Self.minDuffs)).")
             }
-        }
-    }
-
-    @ViewBuilder
-    private var shieldAmountSection: some View {
-        Section {
-            HStack {
-                TextField("Shield amount", text: $shieldAmountCreditsText)
-                    .keyboardType(.numberPad)
-                    .textFieldStyle(.roundedBorder)
-                    .disabled(activeController != nil)
-                Text("credits")
-                    .foregroundColor(.secondary)
-            }
-        } header: {
-            Text("Shielded Credits (Orchard value_balance)")
-        } footer: {
-            Text(
-                "Credits that enter the shielded pool. Auto-filled from the L1 amount "
-                    + "minus a conservative fee; override to claim less than the full lock. "
-                    + "The wallet refuses obviously-undersized configurations before "
-                    + "broadcasting the asset lock or building the ~30s Halo 2 proof."
-            )
         }
     }
 
@@ -390,7 +364,7 @@ struct ShieldedFundFromAssetLockView: View {
 
     private func submit() {
         guard let recipient = recipientRaw43 else { return }
-        guard let shieldAmount = parsedShieldAmount, shieldAmount > 0 else { return }
+        guard let shieldAmount = computedShieldAmount(), shieldAmount > 0 else { return }
 
         let walletId = wallet.walletId
         let manager = walletManager
@@ -510,7 +484,10 @@ struct ShieldedFundFromAssetLockView: View {
         return coreAccountOptions.first(where: { $0.accountIndex == idx })?.balanceDuffs ?? 0
     }
 
+    /// Fresh-build path: L1 duffs the user typed in the Amount field.
+    /// Nil on resume (resume reads from the persisted lock).
     private var parsedDuffs: UInt64? {
+        guard resumeFromLock == nil else { return nil }
         let raw = amountDash.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let dash = Double(raw), dash > 0 else { return nil }
         let duffsDouble = dash * Double(Self.duffsPerDash)
@@ -518,20 +495,47 @@ struct ShieldedFundFromAssetLockView: View {
         return UInt64(duffsDouble.rounded(.toNearestOrAwayFromZero))
     }
 
-    private var parsedShieldAmount: UInt64? {
-        UInt64(shieldAmountCreditsText.trimmingCharacters(in: .whitespacesAndNewlines))
+    /// Shielded credits derived from whichever lock size applies —
+    /// the user's typed amount on the fresh path, or the persisted
+    /// lock's `amountDuffs` on the resume path. Always `lock - fee_buffer`
+    /// (the conservative `minFeeBufferDuffs` constant) so the
+    /// caller never has to think about Platform's fee math.
+    /// Returns `nil` when the lock is too small to even cover the
+    /// fee buffer.
+    private func computedShieldAmount() -> UInt64? {
+        let lockDuffs: UInt64? = {
+            if let lock = resumeFromLock {
+                return UInt64(bitPattern: Int64(lock.amountDuffs))
+            }
+            return parsedDuffs
+        }()
+        guard let duffs = lockDuffs else { return nil }
+        let lockCredits = duffs.multipliedReportingOverflow(by: Self.creditsPerDuff)
+        guard !lockCredits.overflow else { return nil }
+        let feeBufferCredits = Self.minFeeBufferDuffs.multipliedReportingOverflow(by: Self.creditsPerDuff)
+        guard !feeBufferCredits.overflow else { return nil }
+        guard lockCredits.partialValue > feeBufferCredits.partialValue else { return nil }
+        return lockCredits.partialValue - feeBufferCredits.partialValue
     }
+
+    /// Conservative L1-side fee buffer in duffs. Wallet's Rust-side
+    /// preflight uses
+    /// `required_asset_lock_duff_balance_for_processing_start_for_address_funding`
+    /// as the floor; we use a slightly larger value here so the
+    /// demo doesn't trip the floor on rounding. 1,000,000 duffs =
+    /// 0.01 DASH, comfortably above the protocol minimum.
+    private static let minFeeBufferDuffs: UInt64 = 1_000_000
 
     private var canSubmit: Bool {
         if resumeFromLock != nil {
             return recipientRaw43 != nil
-                && (parsedShieldAmount ?? 0) > 0
+                && (computedShieldAmount() ?? 0) > 0
                 && activeController == nil
         }
         let amount = parsedDuffs ?? 0
         return fundingCoreAccountIndex != nil
             && recipientRaw43 != nil
-            && (parsedShieldAmount ?? 0) > 0
+            && (computedShieldAmount() ?? 0) > 0
             && amount >= Self.minDuffs
             && selectedCoreAccountBalanceDuffs >= amount
             && activeController == nil
@@ -554,7 +558,6 @@ struct ShieldedFundFromAssetLockView: View {
                 recipientRaw43 = own
             }
         }
-        autoFillShieldAmount()
     }
 
     /// Apply a user-typed hex override to the recipient. Accepts
@@ -581,42 +584,6 @@ struct ShieldedFundFromAssetLockView: View {
             idx = next
         }
         recipientRaw43 = Data(bytes)
-    }
-
-    /// Auto-fill the shield-amount field from the L1 amount when
-    /// the user hasn't touched it manually. Conservative estimate:
-    /// L1 credits minus a small fee buffer. Final precision is
-    /// caller-controlled — the field stays editable.
-    private func autoFillShieldAmount() {
-        // Skip auto-fill if the user has typed a custom value the
-        // L1 amount doesn't naturally produce.
-        if let existing = parsedShieldAmount, existing > 0,
-           let autoComputed = autoComputedShieldCredits(),
-           existing != autoComputed,
-           !shieldAmountCreditsText.isEmpty
-        {
-            // User has manually edited — leave alone.
-            return
-        }
-        if let auto = autoComputedShieldCredits() {
-            shieldAmountCreditsText = String(auto)
-        }
-    }
-
-    /// Default shield amount = L1 credits − minFee (a safe lower
-    /// bound). Returns `nil` when the L1 amount isn't valid yet.
-    private func autoComputedShieldCredits() -> UInt64? {
-        guard let duffs = parsedDuffs else { return nil }
-        let lockCredits = duffs.multipliedReportingOverflow(by: Self.creditsPerDuff)
-        guard !lockCredits.overflow else { return nil }
-        // Mirrors `required_asset_lock_duff_balance_for_processing_start_for_address_funding`
-        // (Type 14 / Type 18 share this constant in the platform
-        // version). 1 million duffs = 1e9 credits, a comfortable
-        // conservative buffer for the example app — Rust-side
-        // preflight catches the precise value if we under-shoot.
-        let minFeeCredits: UInt64 = 1_000_000_000
-        guard lockCredits.partialValue > minFeeCredits else { return nil }
-        return lockCredits.partialValue - minFeeCredits
     }
 
     // MARK: - Formatting
