@@ -604,6 +604,18 @@ public final class ManagedPlatformAddressWallet: @unchecked Sendable {
             )
         }
         for r in recipients {
+            // The Rust FFI accepts only addressType == 0 (P2PKH) — see
+            // `impl TryFrom<PlatformAddressFFI> for PlatformAddress` in
+            // packages/rs-platform-wallet-ffi/src/platform_address_types.rs.
+            // Catch the P2SH discriminant the type signature still
+            // documents so the caller gets a synchronous, type-specific
+            // error instead of paying for the Task detach + signer pin
+            // and then receiving a generic FFI failure.
+            guard r.addressType == 0 else {
+                throw PlatformWalletError.invalidParameter(
+                    "FundFromAssetLockRecipient.addressType must be 0 (P2PKH) for platform-address funding (got \(r.addressType))"
+                )
+            }
             guard r.hash.count == 20 else {
                 throw PlatformWalletError.invalidParameter(
                     "FundFromAssetLockRecipient.hash must be exactly 20 bytes (got \(r.hash.count))"
