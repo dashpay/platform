@@ -34,7 +34,7 @@ use keyring_core::{Entry, Error as KeyringError, Result as KeyringResult};
 
 use crypto::{KdfParams, SALT_LEN};
 use error::FileStoreError;
-use format::{Entry as VaultEntry, Vault};
+use format::{EntryBody, Vault};
 
 use super::secret::{SecretBytes, SecretString};
 use super::validate::{validated_label, WalletId};
@@ -292,7 +292,7 @@ impl EncryptedFileStoreInner {
                 salt,
                 verify_nonce,
                 verify_ct,
-                entries: Vec::new(),
+                entries: std::collections::BTreeMap::new(),
             },
             key,
         ))
@@ -424,33 +424,35 @@ impl EncryptedFileStoreInner {
             let old_key = self.derive_and_verify(&wallet_id, &old_vault)?;
             let (mut new_vault, new_key) = self.new_vault(&wallet_id, &new_passphrase)?;
 
-            new_vault.entries.reserve_exact(old_vault.entries.len());
-            for e in &old_vault.entries {
-                let aad = format::aad(format::FORMAT_VERSION, wallet_id.as_bytes(), &e.label);
+            for (label, body) in &old_vault.entries {
+                let aad = format::aad(format::FORMAT_VERSION, wallet_id.as_bytes(), label);
                 // `derive_and_verify` already proved the old passphrase via
                 // the vault's verify token, so an entry tag failure is
                 // corruption, not a wrong passphrase. Operators must see
                 // this — log the non-secret wallet-id/label, never the
                 // secret. The first such failure aborts the rekey, so this
                 // is not a hot path.
-                let pt =
-                    crypto::open(&old_key, &e.nonce, &aad, &e.ciphertext).map_err(|err| match err {
+                let pt = crypto::open(&old_key, &body.nonce, &aad, &body.ciphertext).map_err(
+                    |err| match err {
                         FileStoreError::Decrypt => {
                             tracing::error!(
                                 wallet_id = %wallet_id.to_hex(),
-                                label = %e.label,
+                                label = %label,
                                 "vault entry failed integrity check during rekey (corruption or tampering)"
                             );
                             FileStoreError::Corruption
                         }
                         other => other,
-                    })?;
+                    },
+                )?;
                 let (nonce, ct) = crypto::seal(&new_key, &aad, pt.expose_secret())?;
-                new_vault.entries.push(VaultEntry {
-                    label: e.label.clone(),
-                    nonce,
-                    ciphertext: ct,
-                });
+                new_vault.entries.insert(
+                    label.clone(),
+                    EntryBody {
+                        nonce,
+                        ciphertext: ct,
+                    },
+                );
             }
             self.write_vault(&path, &new_vault)
         })?;
@@ -483,12 +485,7 @@ impl EncryptedFileStoreInner {
             };
             let aad = format::aad(format::FORMAT_VERSION, wallet_id.as_bytes(), &label);
             let (nonce, ciphertext) = crypto::seal(&key, &aad, secret.expose_secret())?;
-            vault.entries.retain(|e| e.label != label);
-            vault.entries.push(VaultEntry {
-                label,
-                nonce,
-                ciphertext,
-            });
+            vault.entries.insert(label, EntryBody { nonce, ciphertext });
             self.write_vault(&path, &vault)
         })
     }
@@ -510,11 +507,11 @@ impl EncryptedFileStoreInner {
             return Ok(None);
         };
         let key = self.derive_and_verify(wallet_id, &vault)?;
-        let Some(entry) = vault.entries.iter().find(|e| e.label == label) else {
+        let Some(body) = vault.entries.get(label) else {
             return Ok(None);
         };
         let aad = format::aad(format::FORMAT_VERSION, wallet_id.as_bytes(), label);
-        match crypto::open(&key, &entry.nonce, &aad, &entry.ciphertext) {
+        match crypto::open(&key, &body.nonce, &aad, &body.ciphertext) {
             Ok(pt) => Ok(Some(pt)),
             // The verify-token already passed, so the passphrase is
             // correct: an entry tag failure here is corruption/tampering,
@@ -546,9 +543,7 @@ impl EncryptedFileStoreInner {
             // Verify the passphrase before mutating, so a wrong pass
             // can neither delete an entry nor rewrite the vault.
             self.derive_and_verify(wallet_id, &vault)?;
-            let before = vault.entries.len();
-            vault.entries.retain(|e| e.label != label);
-            if vault.entries.len() == before {
+            if vault.entries.remove(label).is_none() {
                 return Ok(false);
             }
             self.write_vault(&path, &vault)?;
@@ -906,18 +901,10 @@ mod tests {
         entry(&s, wid(1), "labelB").set_secret(b"secretB").unwrap();
         let path = s.test_vault_path(&wid(1));
         let mut vault = s.test_read_vault(&path).unwrap().unwrap();
-        let a = vault
-            .entries
-            .iter()
-            .find(|e| e.label == "labelA")
-            .unwrap()
-            .clone();
-        for e in vault.entries.iter_mut() {
-            if e.label == "labelB" {
-                e.nonce = a.nonce;
-                e.ciphertext = a.ciphertext.clone();
-            }
-        }
+        let a = vault.entries["labelA"].clone();
+        let b = vault.entries.get_mut("labelB").unwrap();
+        b.nonce = a.nonce;
+        b.ciphertext = a.ciphertext.clone();
         s.test_write_vault(&path, &vault).unwrap();
         let err = entry(&s, wid(1), "labelB").get_secret().unwrap_err();
         // The verify-token passes (correct passphrase), so the
@@ -1062,7 +1049,7 @@ mod tests {
         // untouched, so the passphrase is still correct.
         let path = s.test_vault_path(&wid(1));
         let mut vault = s.test_read_vault(&path).unwrap().unwrap();
-        vault.entries[0].ciphertext[0] ^= 0x01;
+        vault.entries.get_mut("seed").unwrap().ciphertext[0] ^= 0x01;
         s.test_write_vault(&path, &vault).unwrap();
         let err = entry(&s, wid(1), "seed").get_secret().unwrap_err();
         assert!(is_corruption(&err), "unexpected error: {err:?}");
@@ -1080,7 +1067,7 @@ mod tests {
         // Corrupt the entry ciphertext but leave the verify-token intact.
         let path = s.test_vault_path(&wid(1));
         let mut vault = s.test_read_vault(&path).unwrap().unwrap();
-        vault.entries[0].ciphertext[0] ^= 0x01;
+        vault.entries.get_mut("seed").unwrap().ciphertext[0] ^= 0x01;
         s.test_write_vault(&path, &vault).unwrap();
         // Rekey with the *correct* old passphrase: verify token passes,
         // the entry re-encrypt fails with Corruption, not WrongPassphrase

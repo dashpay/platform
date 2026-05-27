@@ -10,11 +10,17 @@
 //!   "salt": "<32-byte lowercase hex>",
 //!   "verify_nonce": "<24-byte lowercase hex>",
 //!   "verify_ct": "<lowercase hex of AEAD(VERIFY_CONSTANT)>",
-//!   "entries": [
-//!     { "label": "...", "nonce": "<24-byte hex>", "ciphertext": "<hex ct+tag>" }
-//!   ]
+//!   "entries": {
+//!     "<label>": { "nonce": "<24-byte hex>", "ciphertext": "<hex ct+tag>" }
+//!   }
 //! }
 //! ```
+//!
+//! Entries are a JSON object keyed by `label` so lookup is O(log n) and
+//! the on-disk shape excludes a duplicate-label vault by construction
+//! (a JSON object cannot carry two values under the same key). Backed
+//! by `BTreeMap<String, EntryBody>` for stable iteration order — the
+//! tests rely on byte-stable serialization.
 //!
 //! Parsing is two-step: a lax [`VersionProbe`] reads `version` first
 //! (tolerating future-version sibling fields), then — only for the
@@ -26,6 +32,8 @@
 //! fixed constant under the header-derived key — a wrong passphrase
 //! fails its tag, so a mismatched key is rejected before any entry is
 //! written or read (no mixed-key corruption).
+
+use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
@@ -71,17 +79,17 @@ pub(crate) struct Vault {
     pub verify_nonce: [u8; NONCE_LEN],
     #[serde(with = "hex_bytes")]
     pub verify_ct: Vec<u8>,
-    pub entries: Vec<Entry>,
+    pub entries: BTreeMap<String, EntryBody>,
 }
 
-/// One decrypted-on-demand vault entry. Serializes directly to/from the
-/// wire — `hex_array` validates `nonce`'s fixed width at parse, so no
-/// `Vec<u8>`-typed wire mirror is needed. `deny_unknown_fields` fails
-/// closed on a stray sibling (C3).
+/// One decrypted-on-demand vault entry body. The owning `Vault.entries`
+/// `BTreeMap` keys this by `label`, so the label is the map key — not
+/// a field — and the on-disk shape can't carry two entries under the
+/// same label. `hex_array` validates `nonce`'s fixed width at parse;
+/// `deny_unknown_fields` fails closed on a stray sibling (C3).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct Entry {
-    pub label: String,
+pub(crate) struct EntryBody {
     #[serde(with = "hex_array")]
     pub nonce: [u8; NONCE_LEN],
     #[serde(with = "hex_bytes")]
@@ -214,8 +222,8 @@ pub(crate) fn deserialize(buf: &[u8]) -> Result<Vault, FileStoreError> {
         return Err(FileStoreError::MalformedVault);
     }
 
-    for e in &vault.entries {
-        if e.ciphertext.len() < AEAD_TAG_LEN {
+    for body in vault.entries.values() {
+        if body.ciphertext.len() < AEAD_TAG_LEN {
             return Err(FileStoreError::MalformedVault);
         }
     }
@@ -241,7 +249,7 @@ mod tests {
         });
     }
 
-    fn test_vault(entries: Vec<Entry>) -> Vault {
+    fn test_vault(entries: BTreeMap<String, EntryBody>) -> Vault {
         Vault {
             version: FORMAT_VERSION,
             kdf: KdfParams::default_target(),
@@ -254,18 +262,21 @@ mod tests {
 
     #[test]
     fn serialize_deserialize_roundtrip() {
-        let entries = vec![
-            Entry {
-                label: "bip39_mnemonic".into(),
+        let mut entries = BTreeMap::new();
+        entries.insert(
+            "bip39_mnemonic".to_string(),
+            EntryBody {
                 nonce: [3u8; NONCE_LEN],
                 ciphertext: vec![1; AEAD_TAG_LEN + 4],
             },
-            Entry {
-                label: "bip32-seed".into(),
+        );
+        entries.insert(
+            "bip32-seed".to_string(),
+            EntryBody {
                 nonce: [9u8; NONCE_LEN],
                 ciphertext: vec![6; AEAD_TAG_LEN + 2],
             },
-        ];
+        );
         let vault = test_vault(entries);
         let bytes = serialize(&vault);
         let back = deserialize(&bytes).unwrap();
@@ -274,13 +285,16 @@ mod tests {
         assert_eq!(back.verify_nonce, vault.verify_nonce);
         assert_eq!(back.verify_ct, vault.verify_ct);
         assert_eq!(back.entries.len(), 2);
-        assert_eq!(back.entries[0].label, "bip39_mnemonic");
-        assert_eq!(back.entries[1].ciphertext, vec![6; AEAD_TAG_LEN + 2]);
+        assert!(back.entries.contains_key("bip39_mnemonic"));
+        assert_eq!(
+            back.entries["bip32-seed"].ciphertext,
+            vec![6; AEAD_TAG_LEN + 2]
+        );
     }
 
     #[test]
     fn serialized_form_is_json_with_version_and_lowercase_hex() {
-        let bytes = serialize(&test_vault(vec![]));
+        let bytes = serialize(&test_vault(BTreeMap::new()));
         let s = std::str::from_utf8(&bytes).unwrap();
         assert!(s.starts_with('{'), "vault is a JSON object: {s}");
         assert!(s.contains("\"version\":2"));
@@ -295,7 +309,7 @@ mod tests {
             deserialize(b"NOPENOPE...."),
             Err(FileStoreError::MalformedVault)
         ));
-        let mut vault = test_vault(vec![]);
+        let mut vault = test_vault(BTreeMap::new());
         vault.version = 999;
         let bytes = serialize(&vault);
         assert!(matches!(
@@ -309,7 +323,7 @@ mod tests {
         // Unknown algo ids ride through parse so the algorithm gate
         // lives in one place — `KdfParams::enforce_bounds`, called on
         // every `derive_key`. The format layer no longer guards it.
-        let mut vault = test_vault(vec![]);
+        let mut vault = test_vault(BTreeMap::new());
         vault.kdf.id = 7;
         let bytes = serialize(&vault);
         let parsed = deserialize(&bytes).expect("parse must accept unknown id");
@@ -324,7 +338,7 @@ mod tests {
     fn rejects_unknown_payload_field() {
         // A version-2 file with a stray sibling field must fail closed
         // (deny_unknown_fields on Vault, C3).
-        let bytes = br#"{"version":2,"kdf":{"id":1,"m_kib":65536,"t":3,"p":1},"salt":"00","verify_nonce":"00","verify_ct":"00","entries":[],"rogue":true}"#;
+        let bytes = br#"{"version":2,"kdf":{"id":1,"m_kib":65536,"t":3,"p":1},"salt":"00","verify_nonce":"00","verify_ct":"00","entries":{},"rogue":true}"#;
         assert!(matches!(
             deserialize(bytes),
             Err(FileStoreError::MalformedVault)
@@ -335,16 +349,17 @@ mod tests {
     fn wrong_length_nonce_yields_malformed_not_panic() {
         // A 1-byte nonce must not panic — hex_array rejects it at the
         // serde seam before the runtime [u8; NONCE_LEN] is ever filled.
-        // Inject via raw JSON since the wire-typed `Entry` no longer
-        // permits a wrong-width nonce at construction.
+        // Inject via raw JSON since the wire-typed `EntryBody` no
+        // longer permits a wrong-width nonce at construction.
         let mut v: serde_json::Value =
-            serde_json::from_slice(&serialize(&test_vault(vec![]))).unwrap();
-        v["entries"] = serde_json::json!([{
-            "label": "seed",
-            // 2 hex chars = 1 byte, well below NONCE_LEN (24).
-            "nonce": "00",
-            "ciphertext": "0".repeat(AEAD_TAG_LEN * 2),
-        }]);
+            serde_json::from_slice(&serialize(&test_vault(BTreeMap::new()))).unwrap();
+        v["entries"] = serde_json::json!({
+            "seed": {
+                // 2 hex chars = 1 byte, well below NONCE_LEN (24).
+                "nonce": "00",
+                "ciphertext": "0".repeat(AEAD_TAG_LEN * 2),
+            }
+        });
         let bytes = serde_json::to_vec(&v).unwrap();
         assert!(matches!(
             deserialize(&bytes),
@@ -358,7 +373,7 @@ mod tests {
         // raw JSON since Vault.salt is now [u8; SALT_LEN] at the type
         // level.
         let mut v: serde_json::Value =
-            serde_json::from_slice(&serialize(&test_vault(vec![]))).unwrap();
+            serde_json::from_slice(&serialize(&test_vault(BTreeMap::new()))).unwrap();
         v["salt"] = serde_json::json!("0".repeat((SALT_LEN - 1) * 2));
         let bytes = serde_json::to_vec(&v).unwrap();
         assert!(matches!(
@@ -373,12 +388,13 @@ mod tests {
         // the deserialized entries — wire-malformed nonce widths can't
         // even reach this point thanks to hex_array.
         let mut v: serde_json::Value =
-            serde_json::from_slice(&serialize(&test_vault(vec![]))).unwrap();
-        v["entries"] = serde_json::json!([{
-            "label": "seed",
-            "nonce": "0".repeat(NONCE_LEN * 2),
-            "ciphertext": "0".repeat((AEAD_TAG_LEN - 1) * 2),
-        }]);
+            serde_json::from_slice(&serialize(&test_vault(BTreeMap::new()))).unwrap();
+        v["entries"] = serde_json::json!({
+            "seed": {
+                "nonce": "0".repeat(NONCE_LEN * 2),
+                "ciphertext": "0".repeat((AEAD_TAG_LEN - 1) * 2),
+            }
+        });
         let bytes = serde_json::to_vec(&v).unwrap();
         assert!(matches!(
             deserialize(&bytes),
@@ -388,7 +404,7 @@ mod tests {
 
     #[test]
     fn short_verify_ct_below_tag_len_yields_malformed() {
-        let mut vault = test_vault(vec![]);
+        let mut vault = test_vault(BTreeMap::new());
         vault.verify_ct = vec![0u8; AEAD_TAG_LEN - 1];
         let bytes = serialize(&vault);
         assert!(matches!(
@@ -401,28 +417,47 @@ mod tests {
     fn entry_wire_shape_is_byte_identical_with_hand_crafted_json() {
         // Hand-crafted Vault matching the documented schema: parsing
         // serialize() output through the wire-typed Vault and
-        // re-serializing must reproduce the same bytes — proves the wire
-        // format is unchanged across the R-1 + R-2 collapses.
-        let entry = Entry {
-            label: "bip39_mnemonic".into(),
-            nonce: [0x11; NONCE_LEN],
-            ciphertext: vec![0x22; AEAD_TAG_LEN + 8],
-        };
-        let vault = test_vault(vec![entry]);
+        // re-serializing must reproduce the same bytes — proves the
+        // wire format (now BTreeMap-keyed) is stable across the
+        // R-3 collapse.
+        let mut entries = BTreeMap::new();
+        entries.insert(
+            "bip39_mnemonic".to_string(),
+            EntryBody {
+                nonce: [0x11; NONCE_LEN],
+                ciphertext: vec![0x22; AEAD_TAG_LEN + 8],
+            },
+        );
+        let vault = test_vault(entries);
         let bytes = serialize(&vault);
         let parsed: Vault = serde_json::from_slice(&bytes).unwrap();
         let again = serde_json::to_vec(&parsed).unwrap();
         assert_eq!(bytes, again, "wire round-trip must be byte-identical");
 
-        // And the rendered JSON contains the canonical field names + the
-        // 24-byte hex nonce (48 lowercase chars of "11"). Field order
-        // here matches the documented schema (version, kdf, salt,
-        // verify_nonce, verify_ct, entries).
+        // The rendered JSON: label is now an object key (no `"label":`
+        // field), and the body holds nonce/ciphertext.
         let s = std::str::from_utf8(&bytes).unwrap();
         assert!(s.starts_with("{\"version\":2,\"kdf\":{"));
-        assert!(s.contains("\"label\":\"bip39_mnemonic\""));
+        assert!(s.contains("\"bip39_mnemonic\":{"));
+        assert!(!s.contains("\"label\":"));
         assert!(s.contains(&format!("\"nonce\":\"{}\"", "11".repeat(NONCE_LEN))));
         assert!(s.contains("\"ciphertext\":\""));
+    }
+
+    #[test]
+    fn duplicate_label_in_wire_is_collapsed_by_object_semantics() {
+        // BTreeMap-backed entries means the on-disk shape is a JSON
+        // object — a duplicate key is impossible by JSON semantics,
+        // and serde collapses it on parse. Documenting this as a
+        // load-bearing invariant of the R-3 collapse (CMT-010).
+        let bytes = br#"{"version":2,"kdf":{"id":1,"m_kib":65536,"t":3,"p":1},"salt":"0000000000000000000000000000000000000000000000000000000000000007","verify_nonce":"050505050505050505050505050505050505050505050505","verify_ct":"cccccccccccccccccccccccccccccccccccc","entries":{"seed":{"nonce":"010101010101010101010101010101010101010101010101","ciphertext":"00000000000000000000000000000000aa"},"seed":{"nonce":"020202020202020202020202020202020202020202020202","ciphertext":"00000000000000000000000000000000bb"}}}"#;
+        let parsed = deserialize(bytes).expect("dup-key JSON parses to single entry");
+        assert_eq!(parsed.entries.len(), 1);
+        // Last-occurrence wins by serde_json semantics; either value
+        // is acceptable — what matters is that the on-disk shape can
+        // never carry two values under the same label.
+        let body = &parsed.entries["seed"];
+        assert!(body.nonce == [1u8; NONCE_LEN] || body.nonce == [2u8; NONCE_LEN]);
     }
 
     #[test]
