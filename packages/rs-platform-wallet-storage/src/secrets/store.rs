@@ -243,9 +243,9 @@ mod tests {
             unreachable!()
         };
         let path = fs.test_vault_path(&wid(1));
-        let (header, mut entries) = fs.test_read_vault(&path).unwrap().unwrap();
-        entries[0].ciphertext[0] ^= 0x01;
-        fs.test_write_vault(&path, &header, &entries).unwrap();
+        let mut vault = fs.test_read_vault(&path).unwrap().unwrap();
+        vault.entries[0].ciphertext[0] ^= 0x01;
+        fs.test_write_vault(&path, &vault).unwrap();
         let err = s.get(&wid(1), "seed").unwrap_err();
         assert!(
             matches!(err, FileStoreError::Corruption),

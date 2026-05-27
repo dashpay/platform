@@ -18,7 +18,7 @@
 //!
 //! Parsing is two-step: a lax [`VersionProbe`] reads `version` first
 //! (tolerating future-version sibling fields), then — only for the
-//! compiled-in [`FORMAT_VERSION`] — the strict [`VaultFile`] payload is
+//! compiled-in [`FORMAT_VERSION`] — the strict [`Vault`] payload is
 //! parsed. All byte fields are lowercase hex; Argon2 params are JSON
 //! numbers.
 //!
@@ -50,13 +50,40 @@ pub(crate) const VERIFY_LABEL: &str = "\0verify";
 /// than this is structurally impossible and rejected.
 const AEAD_TAG_LEN: usize = 16;
 
-/// Parsed header (KDF params + salt + passphrase-verification token).
-#[derive(Debug, Clone)]
-pub(crate) struct Header {
-    pub params: KdfParams,
+/// The full parsed vault: format `version`, KDF descriptor, salt, the
+/// passphrase-verification token, and all entries. Serializes directly to
+/// the on-disk wire form — `hex_array` validates `salt`/`verify_nonce`
+/// widths at the serde seam, so no parallel `Vec<u8>`-typed wire mirror
+/// is needed. Field order matches the documented schema and `serde_json`
+/// preserves it, so the byte layout is stable.
+///
+/// `deny_unknown_fields` fails closed on a stray sibling for this
+/// compiled-in [`FORMAT_VERSION`] (C3). Forward-compat dispatch on
+/// `version` runs through [`VersionProbe`] before this strict parse.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct Vault {
+    pub version: u32,
+    pub kdf: KdfDescriptor,
+    #[serde(with = "hex_array")]
     pub salt: [u8; SALT_LEN],
+    #[serde(with = "hex_array")]
     pub verify_nonce: [u8; NONCE_LEN],
+    #[serde(with = "hex_bytes")]
     pub verify_ct: Vec<u8>,
+    pub entries: Vec<Entry>,
+}
+
+impl Vault {
+    /// Runtime KDF params projection — drops the algo-id tag, exposing
+    /// the bounds-checkable parameter triple.
+    pub(crate) fn params(&self) -> KdfParams {
+        KdfParams {
+            m_kib: self.kdf.m_kib,
+            t: self.kdf.t,
+            p: self.kdf.p,
+        }
+    }
 }
 
 /// One decrypted-on-demand vault entry. Serializes directly to/from the
@@ -166,57 +193,24 @@ struct VersionProbe {
     version: u32,
 }
 
-/// Step-2 strict payload for the compiled-in [`FORMAT_VERSION`]. Fails
-/// closed on any unknown field (C3).
-#[derive(Serialize, Deserialize)]
+/// On-disk Argon2 descriptor: `id` discriminates the KDF algorithm so
+/// future families can be added without breaking compat; the parameter
+/// triple feeds the bounded `KdfParams` runtime view via [`Vault::params`].
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct VaultFile {
-    version: u32,
-    kdf: KdfDescriptor,
-    #[serde(with = "hex_bytes")]
-    salt: Vec<u8>,
-    #[serde(with = "hex_bytes")]
-    verify_nonce: Vec<u8>,
-    #[serde(with = "hex_bytes")]
-    verify_ct: Vec<u8>,
-    entries: Vec<Entry>,
+pub(crate) struct KdfDescriptor {
+    pub id: u8,
+    pub m_kib: u32,
+    pub t: u32,
+    pub p: u32,
 }
 
-#[derive(Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct KdfDescriptor {
-    id: u8,
-    m_kib: u32,
-    t: u32,
-    p: u32,
-}
-
-/// Serialize a full vault (header + entries) to JSON bytes. Contains
-/// only salt/params (non-secret) + ciphertext — never plaintext.
-pub(crate) fn serialize(header: &Header, entries: &[Entry]) -> Vec<u8> {
-    let file = VaultFile {
-        version: FORMAT_VERSION,
-        kdf: KdfDescriptor {
-            id: KDF_ID_ARGON2ID,
-            m_kib: header.params.m_kib,
-            t: header.params.t,
-            p: header.params.p,
-        },
-        salt: header.salt.to_vec(),
-        verify_nonce: header.verify_nonce.to_vec(),
-        verify_ct: header.verify_ct.clone(),
-        entries: entries.to_vec(),
-    };
-    // VaultFile carries only fixed-width arrays and owned Vecs that
-    // serialize infallibly; a serializer error would be a logic bug.
-    serde_json::to_vec(&file).expect("vault serialization is infallible")
-}
-
-/// Validate a hex-decoded byte field to a fixed-width array, rejecting a
-/// wrong length as [`FileStoreError::MalformedVault`] rather than
-/// panicking in `XNonce::from_slice` / `copy_from_slice`.
-fn fixed<const N: usize>(bytes: &[u8]) -> Result<[u8; N], FileStoreError> {
-    bytes.try_into().map_err(|_| FileStoreError::MalformedVault)
+/// Serialize a full vault to JSON bytes. Contains only salt/params
+/// (non-secret) + ciphertext — never plaintext.
+pub(crate) fn serialize(vault: &Vault) -> Vec<u8> {
+    // Vault carries only fixed-width arrays and owned Vecs that serialize
+    // infallibly; a serializer error would be a logic bug.
+    serde_json::to_vec(vault).expect("vault serialization is infallible")
 }
 
 /// Parse a vault. Two-step: probe `version` (lax), then parse the strict
@@ -224,8 +218,9 @@ fn fixed<const N: usize>(bytes: &[u8]) -> Result<[u8; N], FileStoreError> {
 /// ids, and any malformed/short byte field — fail closed (SEC-REQ-2.2.9).
 /// All `serde_json` errors are mapped to a static [`FileStoreError`] with
 /// the source DISCARDED so input bytes can never leak into an error
-/// string or log.
-pub(crate) fn deserialize(buf: &[u8]) -> Result<(Header, Vec<Entry>), FileStoreError> {
+/// string or log. Salt and nonce widths are validated by `hex_array` at
+/// the serde seam; the AEAD-tag-length floor remains a post-parse check.
+pub(crate) fn deserialize(buf: &[u8]) -> Result<Vault, FileStoreError> {
     let probe: VersionProbe =
         serde_json::from_slice(buf).map_err(|_| FileStoreError::MalformedVault)?;
     if probe.version != FORMAT_VERSION {
@@ -234,40 +229,23 @@ pub(crate) fn deserialize(buf: &[u8]) -> Result<(Header, Vec<Entry>), FileStoreE
         });
     }
 
-    let file: VaultFile =
-        serde_json::from_slice(buf).map_err(|_| FileStoreError::MalformedVault)?;
+    let vault: Vault = serde_json::from_slice(buf).map_err(|_| FileStoreError::MalformedVault)?;
 
-    if file.kdf.id != KDF_ID_ARGON2ID {
+    if vault.kdf.id != KDF_ID_ARGON2ID {
         return Err(FileStoreError::MalformedVault);
     }
 
-    let salt = fixed::<SALT_LEN>(&file.salt)?;
-    let verify_nonce = fixed::<NONCE_LEN>(&file.verify_nonce)?;
-    if file.verify_ct.len() < AEAD_TAG_LEN {
+    if vault.verify_ct.len() < AEAD_TAG_LEN {
         return Err(FileStoreError::MalformedVault);
     }
 
-    // Nonce widths are validated at the serde seam by `hex_array`; only
-    // the AEAD-tag-length structural floor remains a post-parse check.
-    for e in &file.entries {
+    for e in &vault.entries {
         if e.ciphertext.len() < AEAD_TAG_LEN {
             return Err(FileStoreError::MalformedVault);
         }
     }
 
-    Ok((
-        Header {
-            params: KdfParams {
-                m_kib: file.kdf.m_kib,
-                t: file.kdf.t,
-                p: file.kdf.p,
-            },
-            salt,
-            verify_nonce,
-            verify_ct: file.verify_ct,
-        },
-        file.entries,
-    ))
+    Ok(vault)
 }
 
 #[cfg(test)]
@@ -288,18 +266,25 @@ mod tests {
         });
     }
 
-    fn test_header() -> Header {
-        Header {
-            params: KdfParams::default_target(),
+    fn test_vault(entries: Vec<Entry>) -> Vault {
+        let p = KdfParams::default_target();
+        Vault {
+            version: FORMAT_VERSION,
+            kdf: KdfDescriptor {
+                id: KDF_ID_ARGON2ID,
+                m_kib: p.m_kib,
+                t: p.t,
+                p: p.p,
+            },
             salt: [7u8; SALT_LEN],
             verify_nonce: [5u8; NONCE_LEN],
             verify_ct: vec![0xCC; 34],
+            entries,
         }
     }
 
     #[test]
     fn serialize_deserialize_roundtrip() {
-        let header = test_header();
         let entries = vec![
             Entry {
                 label: "bip39_mnemonic".into(),
@@ -312,20 +297,21 @@ mod tests {
                 ciphertext: vec![6; AEAD_TAG_LEN + 2],
             },
         ];
-        let bytes = serialize(&header, &entries);
-        let (h2, e2) = deserialize(&bytes).unwrap();
-        assert_eq!(h2.params, header.params);
-        assert_eq!(h2.salt, header.salt);
-        assert_eq!(h2.verify_nonce, header.verify_nonce);
-        assert_eq!(h2.verify_ct, header.verify_ct);
-        assert_eq!(e2.len(), 2);
-        assert_eq!(e2[0].label, "bip39_mnemonic");
-        assert_eq!(e2[1].ciphertext, vec![6; AEAD_TAG_LEN + 2]);
+        let vault = test_vault(entries);
+        let bytes = serialize(&vault);
+        let back = deserialize(&bytes).unwrap();
+        assert_eq!(back.params(), vault.params());
+        assert_eq!(back.salt, vault.salt);
+        assert_eq!(back.verify_nonce, vault.verify_nonce);
+        assert_eq!(back.verify_ct, vault.verify_ct);
+        assert_eq!(back.entries.len(), 2);
+        assert_eq!(back.entries[0].label, "bip39_mnemonic");
+        assert_eq!(back.entries[1].ciphertext, vec![6; AEAD_TAG_LEN + 2]);
     }
 
     #[test]
     fn serialized_form_is_json_with_version_and_lowercase_hex() {
-        let bytes = serialize(&test_header(), &[]);
+        let bytes = serialize(&test_vault(vec![]));
         let s = std::str::from_utf8(&bytes).unwrap();
         assert!(s.starts_with('{'), "vault is a JSON object: {s}");
         assert!(s.contains("\"version\":2"));
@@ -340,9 +326,9 @@ mod tests {
             deserialize(b"NOPENOPE...."),
             Err(FileStoreError::MalformedVault)
         ));
-        let mut file: VaultFile = serde_json::from_slice(&serialize(&test_header(), &[])).unwrap();
-        file.version = 999;
-        let bytes = serde_json::to_vec(&file).unwrap();
+        let mut vault = test_vault(vec![]);
+        vault.version = 999;
+        let bytes = serialize(&vault);
         assert!(matches!(
             deserialize(&bytes),
             Err(FileStoreError::VersionUnsupported { found: 999 })
@@ -351,9 +337,9 @@ mod tests {
 
     #[test]
     fn rejects_unknown_kdf_id() {
-        let mut file: VaultFile = serde_json::from_slice(&serialize(&test_header(), &[])).unwrap();
-        file.kdf.id = 7;
-        let bytes = serde_json::to_vec(&file).unwrap();
+        let mut vault = test_vault(vec![]);
+        vault.kdf.id = 7;
+        let bytes = serialize(&vault);
         assert!(matches!(
             deserialize(&bytes),
             Err(FileStoreError::MalformedVault)
@@ -363,7 +349,7 @@ mod tests {
     #[test]
     fn rejects_unknown_payload_field() {
         // A version-2 file with a stray sibling field must fail closed
-        // (deny_unknown_fields on VaultFile, C3).
+        // (deny_unknown_fields on Vault, C3).
         let bytes = br#"{"version":2,"kdf":{"id":1,"m_kib":65536,"t":3,"p":1},"salt":"00","verify_nonce":"00","verify_ct":"00","entries":[],"rogue":true}"#;
         assert!(matches!(
             deserialize(bytes),
@@ -378,7 +364,7 @@ mod tests {
         // Inject via raw JSON since the wire-typed `Entry` no longer
         // permits a wrong-width nonce at construction.
         let mut v: serde_json::Value =
-            serde_json::from_slice(&serialize(&test_header(), &[])).unwrap();
+            serde_json::from_slice(&serialize(&test_vault(vec![]))).unwrap();
         v["entries"] = serde_json::json!([{
             "label": "seed",
             // 2 hex chars = 1 byte, well below NONCE_LEN (24).
@@ -394,9 +380,13 @@ mod tests {
 
     #[test]
     fn wrong_length_salt_yields_malformed() {
-        let mut file: VaultFile = serde_json::from_slice(&serialize(&test_header(), &[])).unwrap();
-        file.salt = vec![0u8; SALT_LEN - 1];
-        let bytes = serde_json::to_vec(&file).unwrap();
+        // Same hex_array seam reasoning as the nonce case — inject via
+        // raw JSON since Vault.salt is now [u8; SALT_LEN] at the type
+        // level.
+        let mut v: serde_json::Value =
+            serde_json::from_slice(&serialize(&test_vault(vec![]))).unwrap();
+        v["salt"] = serde_json::json!("0".repeat((SALT_LEN - 1) * 2));
+        let bytes = serde_json::to_vec(&v).unwrap();
         assert!(matches!(
             deserialize(&bytes),
             Err(FileStoreError::MalformedVault)
@@ -409,7 +399,7 @@ mod tests {
         // the deserialized entries — wire-malformed nonce widths can't
         // even reach this point thanks to hex_array.
         let mut v: serde_json::Value =
-            serde_json::from_slice(&serialize(&test_header(), &[])).unwrap();
+            serde_json::from_slice(&serialize(&test_vault(vec![]))).unwrap();
         v["entries"] = serde_json::json!([{
             "label": "seed",
             "nonce": "0".repeat(NONCE_LEN * 2),
@@ -424,9 +414,9 @@ mod tests {
 
     #[test]
     fn short_verify_ct_below_tag_len_yields_malformed() {
-        let mut file: VaultFile = serde_json::from_slice(&serialize(&test_header(), &[])).unwrap();
-        file.verify_ct = vec![0u8; AEAD_TAG_LEN - 1];
-        let bytes = serde_json::to_vec(&file).unwrap();
+        let mut vault = test_vault(vec![]);
+        vault.verify_ct = vec![0u8; AEAD_TAG_LEN - 1];
+        let bytes = serialize(&vault);
         assert!(matches!(
             deserialize(&bytes),
             Err(FileStoreError::MalformedVault)
@@ -435,29 +425,27 @@ mod tests {
 
     #[test]
     fn entry_wire_shape_is_byte_identical_with_hand_crafted_json() {
-        // Hand-crafted JSON matching the documented schema: label is a
-        // string, nonce is lowercase hex (24 bytes → 48 chars),
-        // ciphertext is lowercase hex. Parsing through the new Entry
-        // (post-R-1 collapse) must accept it and re-serializing must
-        // reproduce the same bytes — proves the wire format is unchanged.
-        let header = test_header();
+        // Hand-crafted Vault matching the documented schema: parsing
+        // serialize() output through the wire-typed Vault and
+        // re-serializing must reproduce the same bytes — proves the wire
+        // format is unchanged across the R-1 + R-2 collapses.
         let entry = Entry {
             label: "bip39_mnemonic".into(),
             nonce: [0x11; NONCE_LEN],
             ciphertext: vec![0x22; AEAD_TAG_LEN + 8],
         };
-        let bytes = serialize(&header, &[entry]);
-        // Parsing through VaultFile (the wire mirror) and round-tripping
-        // back to bytes must match byte-for-byte: this proves Entry's
-        // serde shape (label + lowercase-hex nonce + lowercase-hex
-        // ciphertext, no extra fields) is what lands on disk.
-        let parsed: VaultFile = serde_json::from_slice(&bytes).unwrap();
+        let vault = test_vault(vec![entry]);
+        let bytes = serialize(&vault);
+        let parsed: Vault = serde_json::from_slice(&bytes).unwrap();
         let again = serde_json::to_vec(&parsed).unwrap();
         assert_eq!(bytes, again, "wire round-trip must be byte-identical");
 
         // And the rendered JSON contains the canonical field names + the
-        // 24-byte hex nonce (48 lowercase chars of "11").
+        // 24-byte hex nonce (48 lowercase chars of "11"). Field order
+        // here matches the documented schema (version, kdf, salt,
+        // verify_nonce, verify_ct, entries).
         let s = std::str::from_utf8(&bytes).unwrap();
+        assert!(s.starts_with("{\"version\":2,\"kdf\":{"));
         assert!(s.contains("\"label\":\"bip39_mnemonic\""));
         assert!(s.contains(&format!("\"nonce\":\"{}\"", "11".repeat(NONCE_LEN))));
         assert!(s.contains("\"ciphertext\":\""));

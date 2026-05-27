@@ -33,7 +33,7 @@ use keyring_core::{Entry, Error as KeyringError, Result as KeyringResult};
 
 use crypto::{KdfParams, SALT_LEN};
 use error::FileStoreError;
-use format::{Entry as VaultEntry, Header};
+use format::{Entry as VaultEntry, KdfDescriptor, Vault};
 
 use super::secret::{SecretBytes, SecretString};
 use super::validate::{validated_label, WalletId};
@@ -138,10 +138,7 @@ impl EncryptedFileStore {
     }
 
     #[cfg(test)]
-    pub(crate) fn test_read_vault(
-        &self,
-        path: &Path,
-    ) -> Result<Option<(Header, Vec<VaultEntry>)>, FileStoreError> {
+    pub(crate) fn test_read_vault(&self, path: &Path) -> Result<Option<Vault>, FileStoreError> {
         self.inner.read_vault(path)
     }
 
@@ -149,10 +146,9 @@ impl EncryptedFileStore {
     pub(crate) fn test_write_vault(
         &self,
         path: &Path,
-        header: &Header,
-        entries: &[VaultEntry],
+        vault: &Vault,
     ) -> Result<(), FileStoreError> {
-        self.inner.write_vault(path, header, entries)
+        self.inner.write_vault(path, vault)
     }
 }
 
@@ -161,15 +157,17 @@ impl EncryptedFileStoreInner {
         self.dir.join(format!("{}.pwsvault", wallet_id.to_hex()))
     }
 
-    /// Build a fresh header for a brand-new vault: random salt, default
-    /// Argon2 params, and a passphrase-verification token sealed under
-    /// the freshly derived key (SEC-REQ-2.2.x; the token is the
-    /// mixed-key-corruption guard).
-    fn new_header(
+    /// Build a fresh vault skeleton for a brand-new wallet: random salt,
+    /// default Argon2 params, and a passphrase-verification token sealed
+    /// under the freshly derived key (SEC-REQ-2.2.x; the token is the
+    /// mixed-key-corruption guard). Returns the (entry-less) vault and
+    /// the derived key so the caller can seal entries against it without
+    /// re-deriving.
+    fn new_vault(
         &self,
         wallet_id: &WalletId,
         passphrase: &SecretString,
-    ) -> Result<(Header, SecretBytes), FileStoreError> {
+    ) -> Result<(Vault, SecretBytes), FileStoreError> {
         let mut salt = [0u8; SALT_LEN];
         crypto::random_bytes(&mut salt)?;
         let params = KdfParams::default_target();
@@ -177,33 +175,40 @@ impl EncryptedFileStoreInner {
         let v_aad = format::verify_aad(format::FORMAT_VERSION, wallet_id.as_bytes());
         let (verify_nonce, verify_ct) = crypto::seal(&key, &v_aad, format::VERIFY_CONSTANT)?;
         Ok((
-            Header {
-                params,
+            Vault {
+                version: format::FORMAT_VERSION,
+                kdf: KdfDescriptor {
+                    id: format::KDF_ID_ARGON2ID,
+                    m_kib: params.m_kib,
+                    t: params.t,
+                    p: params.p,
+                },
                 salt,
                 verify_nonce,
                 verify_ct,
+                entries: Vec::new(),
             },
             key,
         ))
     }
 
     /// Derive the key from the supplied passphrase and verify it
-    /// against the header's token *before* any entry is touched. A
+    /// against the vault's token *before* any entry is touched. A
     /// wrong passphrase fails the token's AEAD tag (constant-time) and
     /// yields `WrongPassphrase` with no plaintext, so a mismatched key is
     /// rejected before any entry is touched (SEC-REQ-2.2.x).
     fn derive_and_verify(
         &self,
         wallet_id: &WalletId,
-        header: &Header,
+        vault: &Vault,
     ) -> Result<SecretBytes, FileStoreError> {
         let key = crypto::derive_key(
             self.passphrase.expose_secret().as_bytes(),
-            &header.salt,
-            header.params,
+            &vault.salt,
+            vault.params(),
         )?;
         let v_aad = format::verify_aad(format::FORMAT_VERSION, wallet_id.as_bytes());
-        match crypto::open(&key, &header.verify_nonce, &v_aad, &header.verify_ct) {
+        match crypto::open(&key, &vault.verify_nonce, &v_aad, &vault.verify_ct) {
             Ok(_) => Ok(key),
             Err(FileStoreError::Decrypt) => Err(FileStoreError::WrongPassphrase),
             Err(e) => Err(e),
@@ -213,7 +218,7 @@ impl EncryptedFileStoreInner {
     /// Read + parse a vault file, or `None` if it does not exist.
     /// Refuses a pre-existing file with looser-than-0600 perms
     /// (SEC-REQ-2.2.10).
-    fn read_vault(&self, path: &Path) -> Result<Option<(Header, Vec<VaultEntry>)>, FileStoreError> {
+    fn read_vault(&self, path: &Path) -> Result<Option<Vault>, FileStoreError> {
         match fs::metadata(path) {
             Ok(meta) => {
                 check_perms(&meta)?;
@@ -235,13 +240,8 @@ impl EncryptedFileStoreInner {
     /// never an absent one. On `persist` failure the temp drops and
     /// self-cleans — no manual remove racing it. The temp holds only
     /// ciphertext+header, never plaintext.
-    fn write_vault(
-        &self,
-        path: &Path,
-        header: &Header,
-        entries: &[VaultEntry],
-    ) -> Result<(), FileStoreError> {
-        let serialized = format::serialize(header, entries);
+    fn write_vault(&self, path: &Path, vault: &Vault) -> Result<(), FileStoreError> {
+        let serialized = format::serialize(vault);
         // `persist` is atomic-replace only within one filesystem, so the
         // temp MUST share the destination's parent dir (mirrors
         // sqlite/backup.rs).
@@ -278,21 +278,22 @@ impl EncryptedFileStoreInner {
         new_passphrase: SecretString,
     ) -> Result<(), FileStoreError> {
         let path = self.vault_path(&wallet_id);
-        let Some((old_header, old_entries)) = self.read_vault(&path)? else {
+        let Some(old_vault) = self.read_vault(&path)? else {
             self.passphrase = new_passphrase;
             return Ok(());
         };
-        let old_key = self.derive_and_verify(&wallet_id, &old_header)?;
-        let (new_header, new_key) = self.new_header(&wallet_id, &new_passphrase)?;
+        let old_key = self.derive_and_verify(&wallet_id, &old_vault)?;
+        let (mut new_vault, new_key) = self.new_vault(&wallet_id, &new_passphrase)?;
 
-        let mut new_entries = Vec::with_capacity(old_entries.len());
-        for e in &old_entries {
+        new_vault.entries.reserve_exact(old_vault.entries.len());
+        for e in &old_vault.entries {
             let aad = format::aad(format::FORMAT_VERSION, wallet_id.as_bytes(), &e.label);
             // `derive_and_verify` already proved the old passphrase via
-            // the header token, so an entry tag failure is corruption,
-            // not a wrong passphrase. Operators must see this — log the
-            // non-secret wallet-id/label, never the secret. The first such
-            // failure aborts the rekey, so this is not a hot path.
+            // the vault's verify token, so an entry tag failure is
+            // corruption, not a wrong passphrase. Operators must see
+            // this — log the non-secret wallet-id/label, never the
+            // secret. The first such failure aborts the rekey, so this
+            // is not a hot path.
             let pt =
                 crypto::open(&old_key, &e.nonce, &aad, &e.ciphertext).map_err(|err| match err {
                     FileStoreError::Decrypt => {
@@ -306,13 +307,13 @@ impl EncryptedFileStoreInner {
                     other => other,
                 })?;
             let (nonce, ct) = crypto::seal(&new_key, &aad, pt.expose_secret())?;
-            new_entries.push(VaultEntry {
+            new_vault.entries.push(VaultEntry {
                 label: e.label.clone(),
                 nonce,
                 ciphertext: ct,
             });
         }
-        self.write_vault(&path, &new_header, &new_entries)?;
+        self.write_vault(&path, &new_vault)?;
         self.passphrase = new_passphrase;
         Ok(())
     }
@@ -321,25 +322,22 @@ impl EncryptedFileStoreInner {
     fn put(&self, wallet_id: &WalletId, label: &str, bytes: &[u8]) -> Result<(), FileStoreError> {
         let label = validated_label(label)?.to_string();
         let path = self.vault_path(wallet_id);
-        let (header, key, mut entries) = match self.read_vault(&path)? {
-            Some((header, entries)) => {
-                let key = self.derive_and_verify(wallet_id, &header)?;
-                (header, key, entries)
+        let (mut vault, key) = match self.read_vault(&path)? {
+            Some(vault) => {
+                let key = self.derive_and_verify(wallet_id, &vault)?;
+                (vault, key)
             }
-            None => {
-                let (header, key) = self.new_header(wallet_id, &self.passphrase)?;
-                (header, key, Vec::new())
-            }
+            None => self.new_vault(wallet_id, &self.passphrase)?,
         };
         let aad = format::aad(format::FORMAT_VERSION, wallet_id.as_bytes(), &label);
         let (nonce, ciphertext) = crypto::seal(&key, &aad, bytes)?;
-        entries.retain(|e| e.label != label);
-        entries.push(VaultEntry {
+        vault.entries.retain(|e| e.label != label);
+        vault.entries.push(VaultEntry {
             label,
             nonce,
             ciphertext,
         });
-        self.write_vault(&path, &header, &entries)
+        self.write_vault(&path, &vault)
     }
 
     /// `get` — returns the raw plaintext as `Vec<u8>` (the upstream
@@ -348,17 +346,17 @@ impl EncryptedFileStoreInner {
     fn get(&self, wallet_id: &WalletId, label: &str) -> Result<Option<Vec<u8>>, FileStoreError> {
         let label = validated_label(label)?;
         let path = self.vault_path(wallet_id);
-        let Some((header, entries)) = self.read_vault(&path)? else {
+        let Some(vault) = self.read_vault(&path)? else {
             return Ok(None);
         };
-        let key = self.derive_and_verify(wallet_id, &header)?;
-        let Some(entry) = entries.iter().find(|e| e.label == label) else {
+        let key = self.derive_and_verify(wallet_id, &vault)?;
+        let Some(entry) = vault.entries.iter().find(|e| e.label == label) else {
             return Ok(None);
         };
         let aad = format::aad(format::FORMAT_VERSION, wallet_id.as_bytes(), label);
         match crypto::open(&key, &entry.nonce, &aad, &entry.ciphertext) {
             Ok(pt) => Ok(Some(pt.expose_secret().to_vec())),
-            // The header verify-token already passed, so the passphrase is
+            // The verify-token already passed, so the passphrase is
             // correct: an entry tag failure here is corruption/tampering,
             // not a wrong passphrase. Operators must see this — log the
             // non-secret wallet-id/label, never the secret.
@@ -380,18 +378,18 @@ impl EncryptedFileStoreInner {
     fn delete(&self, wallet_id: &WalletId, label: &str) -> Result<bool, FileStoreError> {
         let label = validated_label(label)?;
         let path = self.vault_path(wallet_id);
-        let Some((header, mut entries)) = self.read_vault(&path)? else {
+        let Some(mut vault) = self.read_vault(&path)? else {
             return Ok(false);
         };
         // Verify the passphrase before mutating, so a wrong pass can
         // neither delete an entry nor rewrite the vault.
-        self.derive_and_verify(wallet_id, &header)?;
-        let before = entries.len();
-        entries.retain(|e| e.label != label);
-        if entries.len() == before {
+        self.derive_and_verify(wallet_id, &vault)?;
+        let before = vault.entries.len();
+        vault.entries.retain(|e| e.label != label);
+        if vault.entries.len() == before {
             return Ok(false);
         }
-        self.write_vault(&path, &header, &entries)?;
+        self.write_vault(&path, &vault)?;
         Ok(true)
     }
 }
@@ -663,21 +661,22 @@ mod tests {
         entry(&s, wid(1), "labelA").set_secret(b"secretA").unwrap();
         entry(&s, wid(1), "labelB").set_secret(b"secretB").unwrap();
         let path = s.test_vault_path(&wid(1));
-        let (header, mut entries) = s.test_read_vault(&path).unwrap().unwrap();
-        let a = entries
+        let mut vault = s.test_read_vault(&path).unwrap().unwrap();
+        let a = vault
+            .entries
             .iter()
             .find(|e| e.label == "labelA")
             .unwrap()
             .clone();
-        for e in entries.iter_mut() {
+        for e in vault.entries.iter_mut() {
             if e.label == "labelB" {
                 e.nonce = a.nonce;
                 e.ciphertext = a.ciphertext.clone();
             }
         }
-        s.test_write_vault(&path, &header, &entries).unwrap();
+        s.test_write_vault(&path, &vault).unwrap();
         let err = entry(&s, wid(1), "labelB").get_secret().unwrap_err();
-        // The header verify-token passes (correct passphrase), so the
+        // The verify-token passes (correct passphrase), so the
         // cross-label ciphertext swap surfaces as entry corruption, not
         // a wrong passphrase.
         assert!(is_corruption(&err), "unexpected error: {err:?}");
@@ -815,12 +814,12 @@ mod tests {
         entry(&s, wid(1), "seed").set_secret(b"value").unwrap();
         // Unlock works with the correct passphrase.
         assert_eq!(entry(&s, wid(1), "seed").get_secret().unwrap(), b"value");
-        // Bit-flip the entry ciphertext on disk; the header verify-token
-        // is untouched, so the passphrase is still correct.
+        // Bit-flip the entry ciphertext on disk; the verify-token is
+        // untouched, so the passphrase is still correct.
         let path = s.test_vault_path(&wid(1));
-        let (header, mut entries) = s.test_read_vault(&path).unwrap().unwrap();
-        entries[0].ciphertext[0] ^= 0x01;
-        s.test_write_vault(&path, &header, &entries).unwrap();
+        let mut vault = s.test_read_vault(&path).unwrap().unwrap();
+        vault.entries[0].ciphertext[0] ^= 0x01;
+        s.test_write_vault(&path, &vault).unwrap();
         let err = entry(&s, wid(1), "seed").get_secret().unwrap_err();
         assert!(is_corruption(&err), "unexpected error: {err:?}");
         assert!(
@@ -836,10 +835,10 @@ mod tests {
         entry(&s, wid(1), "seed").set_secret(b"value").unwrap();
         // Corrupt the entry ciphertext but leave the verify-token intact.
         let path = s.test_vault_path(&wid(1));
-        let (header, mut entries) = s.test_read_vault(&path).unwrap().unwrap();
-        entries[0].ciphertext[0] ^= 0x01;
-        s.test_write_vault(&path, &header, &entries).unwrap();
-        // Rekey with the *correct* old passphrase: header verify passes,
+        let mut vault = s.test_read_vault(&path).unwrap().unwrap();
+        vault.entries[0].ciphertext[0] ^= 0x01;
+        s.test_write_vault(&path, &vault).unwrap();
+        // Rekey with the *correct* old passphrase: verify token passes,
         // the entry re-encrypt fails with Corruption, not WrongPassphrase
         // nor Busy.
         let err = s.rekey(wid(1), SecretString::new("pw-new")).unwrap_err();
@@ -970,11 +969,11 @@ mod tests {
         let s = store(dir.path());
         entry(&s, wid(1), "seed").set_secret(b"value").unwrap();
         // Rewrite the on-disk vault's KDF m_kib to u32::MAX via the
-        // header round-trip the test surface exposes.
+        // round-trip the test surface exposes.
         let path = s.test_vault_path(&wid(1));
-        let (mut header, entries) = s.test_read_vault(&path).unwrap().unwrap();
-        header.params.m_kib = u32::MAX;
-        s.test_write_vault(&path, &header, &entries).unwrap();
+        let mut vault = s.test_read_vault(&path).unwrap().unwrap();
+        vault.kdf.m_kib = u32::MAX;
+        s.test_write_vault(&path, &vault).unwrap();
         let err = entry(&s, wid(1), "seed").get_secret().unwrap_err();
         assert!(
             matches!(&err, KeyringError::BadStoreFormat(msg) if *msg == FileStoreError::KdfFailure.to_string()),
