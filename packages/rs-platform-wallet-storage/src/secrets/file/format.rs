@@ -50,7 +50,7 @@ pub(crate) const VERIFY_LABEL: &str = "\0verify";
 /// than this is structurally impossible and rejected.
 const AEAD_TAG_LEN: usize = 16;
 
-/// The full parsed vault: format `version`, KDF descriptor, salt, the
+/// The full parsed vault: format `version`, KDF parameters, salt, the
 /// passphrase-verification token, and all entries. Serializes directly to
 /// the on-disk wire form — `hex_array` validates `salt`/`verify_nonce`
 /// widths at the serde seam, so no parallel `Vec<u8>`-typed wire mirror
@@ -64,7 +64,7 @@ const AEAD_TAG_LEN: usize = 16;
 #[serde(deny_unknown_fields)]
 pub(crate) struct Vault {
     pub version: u32,
-    pub kdf: KdfDescriptor,
+    pub kdf: KdfParams,
     #[serde(with = "hex_array")]
     pub salt: [u8; SALT_LEN],
     #[serde(with = "hex_array")]
@@ -72,18 +72,6 @@ pub(crate) struct Vault {
     #[serde(with = "hex_bytes")]
     pub verify_ct: Vec<u8>,
     pub entries: Vec<Entry>,
-}
-
-impl Vault {
-    /// Runtime KDF params projection — drops the algo-id tag, exposing
-    /// the bounds-checkable parameter triple.
-    pub(crate) fn params(&self) -> KdfParams {
-        KdfParams {
-            m_kib: self.kdf.m_kib,
-            t: self.kdf.t,
-            p: self.kdf.p,
-        }
-    }
 }
 
 /// One decrypted-on-demand vault entry. Serializes directly to/from the
@@ -193,18 +181,6 @@ struct VersionProbe {
     version: u32,
 }
 
-/// On-disk Argon2 descriptor: `id` discriminates the KDF algorithm so
-/// future families can be added without breaking compat; the parameter
-/// triple feeds the bounded `KdfParams` runtime view via [`Vault::params`].
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct KdfDescriptor {
-    pub id: u8,
-    pub m_kib: u32,
-    pub t: u32,
-    pub p: u32,
-}
-
 /// Serialize a full vault to JSON bytes. Contains only salt/params
 /// (non-secret) + ciphertext — never plaintext.
 pub(crate) fn serialize(vault: &Vault) -> Vec<u8> {
@@ -214,12 +190,15 @@ pub(crate) fn serialize(vault: &Vault) -> Vec<u8> {
 }
 
 /// Parse a vault. Two-step: probe `version` (lax), then parse the strict
-/// payload for the known version. Refuses unknown versions, unknown KDF
-/// ids, and any malformed/short byte field — fail closed (SEC-REQ-2.2.9).
-/// All `serde_json` errors are mapped to a static [`FileStoreError`] with
-/// the source DISCARDED so input bytes can never leak into an error
-/// string or log. Salt and nonce widths are validated by `hex_array` at
-/// the serde seam; the AEAD-tag-length floor remains a post-parse check.
+/// payload for the known version. Refuses unknown versions and any
+/// malformed/short byte field — fail closed (SEC-REQ-2.2.9). Unknown KDF
+/// algorithm ids and out-of-range Argon2 params are caught later at
+/// `KdfParams::enforce_bounds` (called on every `derive_key`), so they
+/// can't silently slip past. All `serde_json` errors are mapped to a
+/// static [`FileStoreError`] with the source DISCARDED so input bytes
+/// can never leak into an error string or log. Salt and nonce widths
+/// are validated by `hex_array` at the serde seam; the AEAD-tag-length
+/// floor remains a post-parse check.
 pub(crate) fn deserialize(buf: &[u8]) -> Result<Vault, FileStoreError> {
     let probe: VersionProbe =
         serde_json::from_slice(buf).map_err(|_| FileStoreError::MalformedVault)?;
@@ -230,10 +209,6 @@ pub(crate) fn deserialize(buf: &[u8]) -> Result<Vault, FileStoreError> {
     }
 
     let vault: Vault = serde_json::from_slice(buf).map_err(|_| FileStoreError::MalformedVault)?;
-
-    if vault.kdf.id != KDF_ID_ARGON2ID {
-        return Err(FileStoreError::MalformedVault);
-    }
 
     if vault.verify_ct.len() < AEAD_TAG_LEN {
         return Err(FileStoreError::MalformedVault);
@@ -267,15 +242,9 @@ mod tests {
     }
 
     fn test_vault(entries: Vec<Entry>) -> Vault {
-        let p = KdfParams::default_target();
         Vault {
             version: FORMAT_VERSION,
-            kdf: KdfDescriptor {
-                id: KDF_ID_ARGON2ID,
-                m_kib: p.m_kib,
-                t: p.t,
-                p: p.p,
-            },
+            kdf: KdfParams::default_target(),
             salt: [7u8; SALT_LEN],
             verify_nonce: [5u8; NONCE_LEN],
             verify_ct: vec![0xCC; 34],
@@ -300,7 +269,7 @@ mod tests {
         let vault = test_vault(entries);
         let bytes = serialize(&vault);
         let back = deserialize(&bytes).unwrap();
-        assert_eq!(back.params(), vault.params());
+        assert_eq!(back.kdf, vault.kdf);
         assert_eq!(back.salt, vault.salt);
         assert_eq!(back.verify_nonce, vault.verify_nonce);
         assert_eq!(back.verify_ct, vault.verify_ct);
@@ -336,13 +305,18 @@ mod tests {
     }
 
     #[test]
-    fn rejects_unknown_kdf_id() {
+    fn deserialize_accepts_unknown_kdf_id_and_bounds_check_rejects_later() {
+        // Unknown algo ids ride through parse so the algorithm gate
+        // lives in one place — `KdfParams::enforce_bounds`, called on
+        // every `derive_key`. The format layer no longer guards it.
         let mut vault = test_vault(vec![]);
         vault.kdf.id = 7;
         let bytes = serialize(&vault);
+        let parsed = deserialize(&bytes).expect("parse must accept unknown id");
+        assert_eq!(parsed.kdf.id, 7);
         assert!(matches!(
-            deserialize(&bytes),
-            Err(FileStoreError::MalformedVault)
+            parsed.kdf.enforce_bounds(),
+            Err(FileStoreError::KdfFailure)
         ));
     }
 

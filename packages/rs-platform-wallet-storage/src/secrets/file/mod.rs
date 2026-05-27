@@ -33,7 +33,7 @@ use keyring_core::{Entry, Error as KeyringError, Result as KeyringResult};
 
 use crypto::{KdfParams, SALT_LEN};
 use error::FileStoreError;
-use format::{Entry as VaultEntry, KdfDescriptor, Vault};
+use format::{Entry as VaultEntry, Vault};
 
 use super::secret::{SecretBytes, SecretString};
 use super::validate::{validated_label, WalletId};
@@ -170,19 +170,14 @@ impl EncryptedFileStoreInner {
     ) -> Result<(Vault, SecretBytes), FileStoreError> {
         let mut salt = [0u8; SALT_LEN];
         crypto::random_bytes(&mut salt)?;
-        let params = KdfParams::default_target();
-        let key = crypto::derive_key(passphrase.expose_secret().as_bytes(), &salt, params)?;
+        let kdf = KdfParams::default_target();
+        let key = crypto::derive_key(passphrase.expose_secret().as_bytes(), &salt, kdf)?;
         let v_aad = format::verify_aad(format::FORMAT_VERSION, wallet_id.as_bytes());
         let (verify_nonce, verify_ct) = crypto::seal(&key, &v_aad, format::VERIFY_CONSTANT)?;
         Ok((
             Vault {
                 version: format::FORMAT_VERSION,
-                kdf: KdfDescriptor {
-                    id: format::KDF_ID_ARGON2ID,
-                    m_kib: params.m_kib,
-                    t: params.t,
-                    p: params.p,
-                },
+                kdf,
                 salt,
                 verify_nonce,
                 verify_ct,
@@ -205,7 +200,7 @@ impl EncryptedFileStoreInner {
         let key = crypto::derive_key(
             self.passphrase.expose_secret().as_bytes(),
             &vault.salt,
-            vault.params(),
+            vault.kdf,
         )?;
         let v_aad = format::verify_aad(format::FORMAT_VERSION, wallet_id.as_bytes());
         match crypto::open(&key, &vault.verify_nonce, &v_aad, &vault.verify_ct) {
