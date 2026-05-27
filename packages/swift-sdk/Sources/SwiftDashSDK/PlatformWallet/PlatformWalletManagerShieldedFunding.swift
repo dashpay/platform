@@ -3,23 +3,23 @@ import DashSDKFFI
 
 /// Recipient entry for `shieldedFundFromAssetLock(...)`.
 ///
-/// The Rust-side API today enforces exactly one recipient (the
-/// `Option<Credits>` is ignored — the single recipient always
-/// receives the full asset-lock value minus the protocol minimum
-/// fee). The multi-shape signature is exposed here so the call
-/// site doesn't have to change when DPP grows multi-output Orchard
-/// bundles for Type 18.
+/// The Rust-side API today enforces exactly one recipient — Type
+/// 18's Orchard bundle builder is single-output; multi-recipient
+/// lands when DPP grows multi-output bundles. The list shape is
+/// exposed here so the call site doesn't have to change when that
+/// happens.
 public struct ShieldedFundFromAssetLockRecipient: Sendable {
     /// Raw 43-byte Orchard payment address (11-byte diversifier +
     /// 32-byte pk_d). Same shape `platform_wallet_manager_shielded_default_address`
     /// returns and `shieldedTransfer` consumes.
     public let recipientRaw43: Data
 
-    /// Explicit credit amount, or `nil` to receive the remainder.
-    /// Today the value is ignored — only the address is consumed.
-    public let credits: UInt64?
+    /// Credit amount this recipient receives. Becomes the Orchard
+    /// `value_balance` baked into the Halo 2 proof at build time
+    /// (or its share, once multi-recipient lands).
+    public let credits: UInt64
 
-    public init(recipientRaw43: Data, credits: UInt64? = nil) {
+    public init(recipientRaw43: Data, credits: UInt64) {
         self.recipientRaw43 = recipientRaw43
         self.credits = credits
     }
@@ -52,11 +52,14 @@ extension PlatformWalletManager {
     ///     `bindShielded` uses to look up the bound subwallet).
     ///   - fundingAccountIndex: BIP44 Core account whose UTXOs fund
     ///     the asset lock.
-    ///   - amountDuffs: Amount to lock in Core duffs. The shielded
-    ///     pool receives `amountDuffs * CREDITS_PER_DUFF` minus the
-    ///     protocol minimum fee.
-    ///   - recipients: Destination addresses (exactly one today).
-    ///     Preflight rejects empty or multi-recipient lists.
+    ///   - amountDuffs: L1 amount to lock in Core duffs. Must be
+    ///     large enough to cover `recipients.credits + Platform fee`;
+    ///     undersized locks fail at Platform submission.
+    ///   - recipients: Destination addresses with explicit credit
+    ///     amounts (exactly one entry today; preflight rejects
+    ///     empty or multi-recipient lists). Each recipient's
+    ///     `credits` becomes the Orchard `value_balance` for that
+    ///     output.
     public func shieldedFundFromAssetLock(
         walletId: Data,
         fundingAccountIndex: UInt32,
@@ -70,6 +73,7 @@ extension PlatformWalletManager {
 
         let handle = self.handle
         let recipientRaw43 = recipients[0].recipientRaw43
+        let shieldAmountCredits = recipients[0].credits
         // Constructed on the calling actor so it lives for the
         // entire detached Task. Released after `withExtendedLifetime`
         // returns. See `ManagedPlatformAddressWallet.fundFromAssetLock`
@@ -103,6 +107,7 @@ extension PlatformWalletManager {
                             widPtr,
                             fundingAccountIndex,
                             amountDuffs,
+                            shieldAmountCredits,
                             recipientPtr,
                             coreSigner.handle
                         )
@@ -151,6 +156,7 @@ extension PlatformWalletManager {
 
         let handle = self.handle
         let recipientRaw43 = recipients[0].recipientRaw43
+        let shieldAmountCredits = recipients[0].credits
         let coreSigner = MnemonicResolver()
 
         try await Task.detached(priority: .userInitiated) {
@@ -193,6 +199,7 @@ extension PlatformWalletManager {
                             handle,
                             widPtr,
                             &outPoint,
+                            shieldAmountCredits,
                             recipientPtr,
                             coreSigner.handle
                         )
@@ -240,6 +247,11 @@ extension PlatformWalletManager {
             guard r.recipientRaw43.count == 43 else {
                 throw PlatformWalletError.invalidParameter(
                     "ShieldedFundFromAssetLockRecipient.recipientRaw43 must be exactly 43 bytes (got \(r.recipientRaw43.count))"
+                )
+            }
+            guard r.credits > 0 else {
+                throw PlatformWalletError.invalidParameter(
+                    "ShieldedFundFromAssetLockRecipient.credits must be > 0"
                 )
             }
         }
