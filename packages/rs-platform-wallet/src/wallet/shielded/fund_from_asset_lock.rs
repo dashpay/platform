@@ -27,6 +27,7 @@
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use dash_sdk::platform::transition::put_settings::PutSettings;
 use dpp::address_funds::OrchardAddress;
+use dpp::balances::credits::CREDITS_PER_DUFF;
 use dpp::fee::Credits;
 use dpp::prelude::AssetLockProof;
 use dpp::shielded::builder::{build_shield_from_asset_lock_transition_with_signer, OrchardProver};
@@ -91,13 +92,64 @@ impl PlatformWallet {
         // build, ~30s, only to reject downstream).
         validate_shielded_recipients(&recipients)?;
 
+        // Caller specifies shield_amount per recipient (Type 18's
+        // Orchard `value_balance` is baked into the Halo 2 proof at
+        // build time, unlike address-funding's protocol-level fee
+        // strategy). Identities and platform-addresses take
+        // `amount_duffs` from the caller for the same reason —
+        // Platform handles their fee math inside the transition,
+        // shielded can't.
+        let (recipient, shield_amount) =
+            *recipients.first().expect("preflight enforces len() == 1");
+
+        // Sizing sanity check on the FromWalletBalance path: refuse
+        // obviously-undersized configurations BEFORE we broadcast
+        // the asset-lock tx (single-use L1 funds) or spend ~30s
+        // building a Halo 2 proof Platform would reject.
+        //
+        // Best-effort, not authoritative — Platform's real fee
+        // depends on state we don't track. We only check the lower
+        // bound: lock_credits >= shield_amount + min_required_fee.
+        // The resume path takes an existing tracked outpoint; the
+        // lock value is already pinned on-chain, and checking it
+        // here would re-introduce the asset-lock-value lookup we
+        // deliberately removed in favour of caller-supplied
+        // `shield_amount`.
+        if let AssetLockFunding::FromWalletBalance { amount_duffs, .. } = &funding {
+            let lock_credits = (*amount_duffs).saturating_mul(CREDITS_PER_DUFF);
+            let min_fee_duffs = self
+                .sdk
+                .version()
+                .dpp
+                .state_transitions
+                .identities
+                .asset_locks
+                .required_asset_lock_duff_balance_for_processing_start_for_address_funding;
+            let min_fee_credits = min_fee_duffs.saturating_mul(CREDITS_PER_DUFF);
+            let required = shield_amount.saturating_add(min_fee_credits);
+            if lock_credits < required {
+                return Err(PlatformWalletError::ShieldedBuildError(format!(
+                    "asset lock ({lock_credits} credits, from {amount_duffs} duffs) cannot cover \
+                     shield_amount ({shield_amount}) + protocol min fee ({min_fee_credits}); \
+                     refusing to broadcast a single-use asset lock and build a ~30s Halo 2 proof \
+                     for a submission Platform would reject"
+                )));
+            }
+        }
+
         // Single-flight: serialise shield-class operations on this
         // wallet so two concurrent calls can't race the asset-lock
         // tracker into a half-consumed state.
         let _shield_guard = self.shield_guard.lock().await;
 
-        // Step 2: resolve funding. `AssetLockAddressTopUp` selects the
-        // BIP44 funding family for the Core asset-lock tx;
+        // Step 2: resolve funding. `AssetLockShieldedAddressTopUp`
+        // selects the BIP44 funding family dedicated to shielded
+        // top-ups (`accounts.asset_lock_shielded_address_topup` —
+        // distinct from the platform-address bucket Type 14 uses);
+        // see `wallet/asset_lock/build.rs` for the source-account
+        // selection, `sync/recovery.rs` for resume-time key re-
+        // derivation, and `manager/accessors.rs` for the
+        // persistence/UI tag (`fundingTypeRaw == 5`).
         // `destination_index = 0` is unused for this funding type.
         let ResolvedFunding {
             proof,
@@ -107,7 +159,7 @@ impl PlatformWallet {
             .asset_locks
             .resolve_funding_with_is_timeout_fallback(
                 funding,
-                AssetLockFundingType::AssetLockAddressTopUp,
+                AssetLockFundingType::AssetLockShieldedAddressTopUp,
                 /* destination_index */ 0,
                 asset_lock_signer,
             )
@@ -135,18 +187,6 @@ impl PlatformWallet {
                 }
             }
         };
-
-        // Step 3: shield amount is whatever the caller specified. For
-        // Type 18, the Orchard `value_balance` is baked into the
-        // Halo 2 proof at build time, so the wallet does NOT compute
-        // it from the lock value the way address-funding's
-        // `AddressFundsFeeStrategy` does — the caller sizes the L1
-        // lock to cover `value_balance + Platform fee`. Identities
-        // and platform-addresses take `amount_duffs` from the caller
-        // for the same reason (Platform handles their fee math
-        // inside the transition).
-        let (recipient, shield_amount) =
-            *recipients.first().expect("preflight enforces len() == 1");
 
         // Step 4: submit. Two Platform-side fallback layers — matching
         // the address-funding sibling: CL-height-too-low retries bump
