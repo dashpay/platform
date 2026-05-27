@@ -1,5 +1,5 @@
 import Foundation
-import SwiftDashSDKFFI
+import DashSDKFFI
 
 /// Recipient entry for `shieldedFundFromAssetLock(...)`.
 ///
