@@ -290,6 +290,11 @@ describe('EvoSDK', () => {
       expect(sdk.options.network).to.equal('mainnet');
     });
 
+    it('should reject devnetName on non-devnet networks (typo guard)', () => {
+      expect(() => new EvoSDK({ network: 'testnet', devnetName: 'paloma' }))
+        .to.throw(/devnetName/);
+    });
+
     it('should accept trusted devnet with only quorumUrl (no devnetName)', () => {
       const sdk = new EvoSDK({ network: 'devnet', trusted: true, quorumUrl: 'https://x' });
       expect(sdk.options.quorumUrl).to.equal('https://x');

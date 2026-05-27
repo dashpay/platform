@@ -82,6 +82,10 @@ export class EvoSDK {
       } else if (!hasAddresses) {
         throw new Error("EvoSDK: non-trusted devnet requires explicit addresses (no addresses can be discovered without a trusted context)");
       }
+    } else if (devnetName) {
+      // Surface a likely typo (e.g. network: 'testent' + devnetName: 'paloma')
+      // — devnetName has no effect outside network === 'devnet'.
+      throw new Error("EvoSDK: devnetName is only valid when network === 'devnet'");
     }
     if (quorumUrl && !trusted) {
       throw new Error("EvoSDK: quorumUrl is only meaningful when trusted === true");
