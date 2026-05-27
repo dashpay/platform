@@ -139,6 +139,22 @@ impl TrustedHttpContextProvider {
         base_url: String,
         cache_size: NonZeroUsize,
     ) -> Result<Self, TrustedContextProviderError> {
+        // The base URL is the SDK's root of trust for proof verification
+        // (quorum public keys) and network connectivity (discovered masternode
+        // addresses). For production networks (mainnet/testnet) there is no
+        // legitimate plaintext workflow — HTTPS is deployed — so refuse to
+        // hand a non-TLS quorum URL to the SDK. Devnet/Regtest keep the
+        // plaintext escape hatch (early-stage devnets without a cert yet,
+        // local sidecars on loopback).
+        if matches!(network, Network::Mainnet | Network::Testnet)
+            && !base_url.starts_with("https://")
+        {
+            return Err(TrustedContextProviderError::NetworkError(format!(
+                "Custom quorum URL for {:?} must use https://; got '{}'",
+                network, base_url
+            )));
+        }
+
         // Verify the domain resolves before proceeding (skip on WASM and iOS)
         #[cfg(all(not(target_arch = "wasm32"), not(target_os = "ios")))]
         Self::verify_domain_resolves(&base_url)?;
@@ -831,6 +847,24 @@ mod tests {
         assert!(get_quorum_base_url(Network::Devnet, Some("test")).is_ok());
         assert!(get_quorum_base_url(Network::Devnet, Some("test-123")).is_ok());
         assert!(get_quorum_base_url(Network::Devnet, Some("TEST123")).is_ok());
+    }
+
+    #[test]
+    fn test_new_with_url_rejects_plaintext_for_production_networks() {
+        // Mainnet and testnet have HTTPS deployed; reject plaintext URLs to
+        // prevent silently weakening the trust root via a typo or misconfig.
+        for network in [Network::Mainnet, Network::Testnet] {
+            let result = TrustedHttpContextProvider::new_with_url(
+                network,
+                "http://example.com".to_string(),
+                NonZeroUsize::new(10).unwrap(),
+            );
+            assert!(
+                matches!(result, Err(TrustedContextProviderError::NetworkError(_))),
+                "expected http:// to be rejected for {:?}",
+                network
+            );
+        }
     }
 
     #[test]
