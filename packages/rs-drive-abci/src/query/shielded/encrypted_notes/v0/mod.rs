@@ -49,9 +49,9 @@ impl<C> Platform<C> {
             .query
             .shielded_queries
             .max_query_chunks as u32;
-        let max_notes = max_query_chunks
-            .saturating_mul(mmr_chunk_size as u32)
-            .min(u32::MAX);
+        // `saturating_mul` on u32 already caps at u32::MAX — no extra
+        // clamp needed.
+        let max_notes = max_query_chunks.saturating_mul(mmr_chunk_size as u32);
 
         if start_index % mmr_chunk_size != 0 {
             return Ok(QueryValidationResult::new_with_error(
