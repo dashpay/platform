@@ -74,13 +74,11 @@ struct OptionsView: View {
     @AppStorage("useLocalhostCore") private var customSpvPeersEnabled: Bool = false
     @AppStorage("localCorePeers") private var customSpvPeers: String = ""
 
-    // Devnet endpoint overrides. Read on every SDK creation by
-    // `SDKConfigBuilder`/`SDK.init` (UserDefaults keys
-    // `platformDAPIAddresses` / `platformQuorumURL`). Editing either
-    // here is enough to redirect the next SDK construction; existing
-    // SDKs already in flight are unaffected until a network switch /
-    // app relaunch.
-    @AppStorage("platformDAPIAddresses") private var devnetDAPIAddresses: String = ""
+    // Devnet endpoint override — Quorum URL only. DAPI nodes are
+    // auto-discovered from `{quorumURL}/masternodes` at SDK build
+    // time (see `SDK.discoverDAPIAddresses`); no manual DAPI input.
+    // Read by `SDK.init` on every network switch / launch; editing
+    // here redirects the next SDK construction.
     @AppStorage("platformQuorumURL") private var devnetQuorumURL: String = ""
 
     /// Default localhost peer string for a given network. Used to
@@ -118,22 +116,11 @@ struct OptionsView: View {
                                         appState.useDockerSetup = false
                                     }
 
-                                    // Devnet always needs custom SPV peers
-                                    // (no public seed list on the Rust
-                                    // side), so force the toggle on and
-                                    // seed the peers field with the
-                                    // canonical localhost default when
-                                    // empty. The Sync tab's startSpv()
-                                    // path reads `useLocalhostCore` and
-                                    // `localCorePeers` directly, so this
-                                    // is the minimum state required for
-                                    // SPV to attempt a connection.
-                                    if newNetwork == .devnet {
-                                        customSpvPeersEnabled = true
-                                        if customSpvPeers.isEmpty || !customSpvPeers.contains(":") {
-                                            customSpvPeers = defaultSpvPeers(for: .devnet)
-                                        }
-                                    }
+                                    // Devnet's SPV peers come from
+                                    // `{platformQuorumURL}/masternodes`
+                                    // — no UserDefaults state to seed
+                                    // here. See `CoreContentView.spvPeerOverride`
+                                    // for the devnet branch.
 
                                     // Update platform state (which will trigger SDK switch)
                                     appState.currentNetwork = newNetwork
@@ -225,63 +212,21 @@ struct OptionsView: View {
                             }
                         }
                     } else if appState.currentNetwork == .devnet {
-                        // Devnet has no public seeds (SPV) or default
-                        // DAPI / quorum addresses on the Rust side, so
-                        // all three are always custom. No toggle —
-                        // just show the inputs directly. `useLocalhostCore`
-                        // is force-enabled in the picker's `onChange`
-                        // when devnet is selected.
+                        // Devnet UX: a single user input — the quorum
+                        // list service URL. SPV peers and DAPI nodes
+                        // are both derived from `{quorumURL}/masternodes`
+                        // at SDK build / SPV start time. Each
+                        // masternode entry carries the ip + Core P2P
+                        // port (SPV) and platformHTTPPort (DAPI), so
+                        // we never have to guess. Self-healing on
+                        // node churn — the list re-fetches on every
+                        // network switch / launch.
                         VStack(alignment: .leading, spacing: 6) {
-                            Text("SPV Peers")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            TextField(
-                                defaultSpvPeers(for: .devnet),
-                                text: $customSpvPeers
-                            )
-                            .font(.system(.body, design: .monospaced))
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-
-                            HStack(spacing: 8) {
-                                Text("DAPI URL")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                Spacer()
-                                // Count of nodes the SDK will fan out
-                                // across (commas in the field). 0
-                                // means "auto-discover from
-                                // {QuorumURL}/masternodes on next SDK
-                                // build" — the SDK writes the
-                                // resolved list back into this
-                                // field. See `SDK.discoverDAPIAddresses`.
-                                let nodeCount = devnetDAPIAddresses
-                                    .split(separator: ",")
-                                    .map { $0.trimmingCharacters(in: .whitespaces) }
-                                    .filter { !$0.isEmpty }
-                                    .count
-                                Text(nodeCount == 0
-                                    ? "auto (from /masternodes)"
-                                    : "\(nodeCount) node\(nodeCount == 1 ? "" : "s")")
-                                    .font(.caption2)
-                                    .foregroundColor(.secondary)
-                            }
-                            TextField(
-                                "leave empty to auto-discover from quorum URL",
-                                text: $devnetDAPIAddresses,
-                                axis: .vertical
-                            )
-                            .lineLimit(1...4)
-                            .font(.system(.body, design: .monospaced))
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                            .keyboardType(.URL)
-
                             Text("Quorum URL")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                             TextField(
-                                "https://quorums.devnet.<name>.networks.dash.org",
+                                "http://<host>:8080  (quorum-list-server)",
                                 text: $devnetQuorumURL
                             )
                             .font(.system(.body, design: .monospaced))
@@ -289,7 +234,7 @@ struct OptionsView: View {
                             .autocorrectionDisabled()
                             .keyboardType(.URL)
 
-                            Text("All three required for devnet. Changes apply on the next SDK build (switch network or relaunch).")
+                            Text("SPV Peers + DAPI nodes are auto-discovered from {Quorum URL}/masternodes. Changes apply on the next SDK build (switch network or relaunch).")
                                 .font(.caption2)
                                 .foregroundColor(.secondary)
                         }

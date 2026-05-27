@@ -349,25 +349,51 @@ pub unsafe extern "C" fn platform_wallet_manager_bind_shielded(
     PlatformWalletFFIResult::ok()
 }
 
+// ===========================================================================
+// ⚠️  TEST-ONLY CODE — DELETE BEFORE MERGE ⚠️
 // ---------------------------------------------------------------------------
 // Bind shielded with raw ZIP-32 seed bytes — TEMPORARY DEVNET-TEST ENTRY
 // ---------------------------------------------------------------------------
-
-// TODO(shielded-snapshot-devnet-test): remove this entire entry once
-// SwiftExampleApp adopts a proper test-wallet import flow. Exists only
-// so iOS can bind the chain-side test wallet A from
-// dashpay/drive:3.1-shielded.* (raw ZIP-32 seed = [0x73; 32]) which
-// no BIP-39 mnemonic can derive. Tracked: dashpay/platform#3714.
 //
-// Differs from `platform_wallet_manager_bind_shielded` in exactly one
-// way: replaces the mnemonic-resolver callback path with a raw seed
-// byte buffer that the caller supplies directly. Everything downstream
-// (configure-shielded prerequisite, coordinator lookup, idempotency,
-// per-account derivation, error mapping) is identical.
+// EVERYTHING IN THIS BLOCK is temporary scaffolding for measuring shielded
+// sync against the 1M-note devnet snapshot (dashpay/drive:3.1-shielded.*).
+// To remove cleanly when SwiftExampleApp adopts a real test-wallet import
+// flow:
+//
+//   1. Delete `platform_wallet_manager_bind_shielded_with_raw_seed` (this
+//      FFI symbol below).
+//   2. Delete the matching Swift wrapper `bindShieldedRawSeed`
+//      (packages/swift-sdk/Sources/SwiftDashSDK/PlatformWallet/
+//      PlatformWalletManagerShieldedSync.swift).
+//   3. Delete `ShieldedService.bindWithRawSeed`
+//      (packages/swift-sdk/SwiftExampleApp/SwiftExampleApp/Core/Services/
+//      ShieldedService.swift).
+//   4. Delete the orange "Bind Test Wallet A (Shielded)" button in
+//      packages/swift-sdk/SwiftExampleApp/SwiftExampleApp/Core/Views/
+//      CoreContentView.swift.
+//   5. Delete `NetworkShieldedCoordinator::force_rescan_subwallets`
+//      (packages/rs-platform-wallet/src/wallet/shielded/coordinator.rs).
+//
+// Tracked: dashpay/platform#3714. Tag: TODO(shielded-snapshot-devnet-test).
+//
+// Why this exists: the chain-side seeder bakes test wallet A using a raw
+// ZIP-32 seed `[0x73; 32]`, which no BIP-39 mnemonic can derive. To bind
+// that wallet on iOS for the devnet sync-timing test, we need a side-door
+// that takes the seed bytes directly and bypasses the mnemonic resolver.
+//
+// Differs from `platform_wallet_manager_bind_shielded` in exactly one way:
+// replaces the mnemonic-resolver callback path with a raw seed byte buffer
+// that the caller supplies directly. Everything downstream (configure-
+// shielded prerequisite, coordinator lookup, idempotency, per-account
+// derivation, error mapping) is identical, PLUS one extra step at the end:
+// force-rescan the watermark to 0 (see comment on
+// `force_rescan_subwallets` for why).
+//
+// ===========================================================================
 
-/// **TEMPORARY** — bind shielded keys from a raw ZIP-32 seed byte
-/// slice, bypassing the mnemonic resolver. Used to bind the
-/// devnet-only test wallets seeded by the chain's
+/// **TEMPORARY (test-only, dashpay/platform#3714)** — bind shielded keys
+/// from a raw ZIP-32 seed byte slice, bypassing the mnemonic resolver.
+/// Used to bind the devnet-only test wallets seeded by the chain's
 /// `create_data_for_shielded_pool` (whose owned wallets use raw
 /// `[0x73; 32]` and `[0x74; 32]` ZIP-32 seeds, not BIP-39 derived).
 ///
@@ -456,6 +482,29 @@ pub unsafe extern "C" fn platform_wallet_manager_bind_shielded_with_raw_seed(
             format!("bind_shielded (raw seed) failed: {e}"),
         );
     }
+
+    // ⚠️  TEST-ONLY: force watermark back to 0 for every bound subwallet.
+    //
+    // `bind_shielded` calls `coordinator.unregister_wallet` (which purges
+    // the in-memory store state) then `coordinator.restore_for_wallet`
+    // (which rehydrates watermarks from the persister's disk snapshot).
+    // For the normal mnemonic-bind that's correct — same keys across
+    // restarts, the persisted watermark is valid.
+    //
+    // For THIS path it's wrong: a previous bind under different keys
+    // (typically the BIP-39 wallet's mnemonic-bind) advanced the
+    // watermark to the chain tip. Re-binding here installs new viewing
+    // keys but `restore_for_wallet` brings back the old watermark, so
+    // the next sync pass would skip every position the OLD keys
+    // already saw — and miss this wallet's owned notes (which the OLD
+    // IVK didn't decrypt) entirely.
+    //
+    // Zeroing here forces the next sync to rescan from index 0 with
+    // the freshly-bound IVK. The new watermark will be persisted via
+    // the usual changeset path at the end of the next pass.
+    //
+    // Delete this block when this FFI entry is removed.
+    runtime().block_on(coordinator.force_rescan_subwallets(wallet_id, &accounts));
 
     PlatformWalletFFIResult::ok()
 }

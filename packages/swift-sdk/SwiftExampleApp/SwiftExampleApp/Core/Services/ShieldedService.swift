@@ -329,15 +329,23 @@ class ShieldedService: ObservableObject {
             }
     }
 
-    // TODO(shielded-snapshot-devnet-test): remove `bindWithRawSeed`
-    // once SwiftExampleApp adopts a proper test-wallet import flow.
-    // Exists so the iOS app can bind the chain-side test wallet A
-    // (raw ZIP-32 seed `[0x73; 32]`) seeded by
-    // `dashpay/drive:3.1-shielded.*` — no BIP-39 mnemonic can derive
-    // that seed. Tracked: dashpay/platform#3714.
-    /// **TEMPORARY (test-only)** — bind shielded keys from a raw
-    /// 32-byte ZIP-32 seed. Mirrors `bind(...)` but bypasses the
-    /// mnemonic resolver via
+    // ====================================================================
+    // ⚠️  TEST-ONLY CODE — DELETE BEFORE MERGE ⚠️
+    // --------------------------------------------------------------------
+    // `bindWithRawSeed` — temporary mirror of `bind(...)` for the
+    // devnet sync-timing test. Bypasses the mnemonic resolver to bind
+    // the chain-side test wallet A (raw ZIP-32 seed `[0x73; 32]`,
+    // baked by `dashpay/drive:3.1-shielded.*`) — no BIP-39 mnemonic
+    // can derive that seed.
+    //
+    // Delete when SwiftExampleApp adopts a real test-wallet import
+    // flow (see banner on `platform_wallet_manager_bind_shielded_with_raw_seed`
+    // for the full cleanup checklist across all five sites).
+    // Tag: TODO(shielded-snapshot-devnet-test). Tracked: dashpay/platform#3714.
+    // ====================================================================
+    /// **TEMPORARY (test-only, dashpay/platform#3714)** — bind
+    /// shielded keys from a raw 32-byte ZIP-32 seed. Mirrors
+    /// `bind(...)` but bypasses the mnemonic resolver via
     /// [`PlatformWalletManager.bindShieldedRawSeed`].
     func bindWithRawSeed(
         walletManager: PlatformWalletManager,

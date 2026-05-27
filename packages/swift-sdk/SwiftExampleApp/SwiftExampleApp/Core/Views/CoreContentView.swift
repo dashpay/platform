@@ -624,13 +624,24 @@ var body: some View {
                         .disabled(shieldedService.isSyncing)
                     }
 
-                    // TODO(shielded-snapshot-devnet-test): remove once
-                    // SwiftExampleApp has a real test-wallet import
-                    // flow. Binds the chain-side wallet A
-                    // (`[0x73; 32]`) seeded by the devnet snapshot
-                    // images (`dashpay/drive:3.1-shielded.*`) so the
-                    // user can measure shielded sync time against the
-                    // pre-populated 1M-note pool. Tracked: dashpay/platform#3714.
+                    // ============================================================
+                    // ⚠️  TEST-ONLY UI — DELETE BEFORE MERGE ⚠️
+                    // ------------------------------------------------------------
+                    // "Bind Test Wallet A (Shielded)" button — orange,
+                    // temporary. Binds the chain-side wallet A
+                    // (raw ZIP-32 seed `[0x73; 32]`) baked by
+                    // `dashpay/drive:3.1-shielded.*` so the user can
+                    // measure shielded sync time against the pre-
+                    // populated 1M-note pool. The seed is hardcoded
+                    // here and cannot come from a real wallet import.
+                    //
+                    // Delete this entire HStack block when SwiftExampleApp
+                    // adopts a real test-wallet import flow (see banner
+                    // on `platform_wallet_manager_bind_shielded_with_raw_seed`
+                    // for the full cleanup checklist across all 5 sites).
+                    // Tag: TODO(shielded-snapshot-devnet-test).
+                    // Tracked: dashpay/platform#3714.
+                    // ============================================================
                     HStack {
                         Spacer()
                         Button {
@@ -742,6 +753,21 @@ var body: some View {
         let useDocker = UserDefaults.standard.bool(forKey: "useDockerSetup")
         if platformState.currentNetwork == .regtest && useDocker {
             return ["127.0.0.1:20301"]
+        }
+        // Devnet: auto-discover SPV peers from the quorum-list
+        // service's `/masternodes` endpoint. Each masternode reports
+        // its own `address` field (`ip:CoreP2PPort`) — use the
+        // verbatim values rather than guessing the canonical 29999
+        // port (paloma reports 20001 per masternode, for example).
+        // No manual SPV input on devnet — the quorum URL is the
+        // single source of truth (see `OptionsView`'s devnet branch).
+        if platformState.currentNetwork == .devnet {
+            guard
+                let quorum = UserDefaults.standard.string(forKey: "platformQuorumURL"),
+                !quorum.isEmpty,
+                let active = SDK.discoverActiveMasternodes(quorumBase: quorum)
+            else { return [] }
+            return active.map(\.spvPeer)
         }
         let useLocalCore = UserDefaults.standard.bool(forKey: "useLocalhostCore")
         guard useLocalCore else { return [] }

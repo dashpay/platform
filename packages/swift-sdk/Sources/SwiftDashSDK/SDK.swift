@@ -102,30 +102,27 @@ public final class SDK: @unchecked Sendable {
     return value
   }
 
-  /// Synchronously fetch `{quorumBase}/masternodes` and build a
-  /// comma-separated DAPI URL list (`https://<ip>:<platformHTTPPort>,…`).
-  /// Returns nil on any error (network failure, JSON shape mismatch,
-  /// timeout). Used by `init(network:)` to auto-populate the DAPI
-  /// fan-out list on devnet when the user hasn't supplied one
-  /// manually — saves the "you must paste 13 URLs" UX.
+  /// Synchronously fetch `{quorumBase}/masternodes` and return the
+  /// raw `data` array. Both the DAPI list and the SPV peer list are
+  /// derived from this — DAPI takes `<ip>:<platformHTTPPort>`, SPV
+  /// takes the verbatim `address` field (`<ip>:<CoreP2PPort>`).
   ///
-  /// Timeout: 5s. Long enough to be reliable on a healthy quorum-list
-  /// service; short enough not to stall an `AppState.switchNetwork`
-  /// task indefinitely if the service is unreachable. The SDK init
-  /// then falls back to whatever the user typed (or fails cleanly if
-  /// the field is empty too).
+  /// Returns nil on any failure (timeout, JSON shape mismatch, etc.).
+  /// Filters to `status == "ENABLED"`.
   ///
-  /// Filters to `status == "ENABLED"` so down / banned nodes don't
-  /// pollute the AddressList (the DAPI client would ban them on
-  /// first request anyway, but skipping them up front speeds the
-  /// first sync).
-  private static func discoverDAPIAddresses(quorumBase: String) -> String? {
+  /// `public` because both the SDK init (DAPI fan-out) and the
+  /// SwiftExampleApp's SPV start path call this against the same
+  /// endpoint — keeping it in one place means a single round-trip
+  /// per build instead of two, but callers must handle their own
+  /// caching if needed.
+  public static func discoverActiveMasternodes(
+    quorumBase: String
+  ) -> [(spvPeer: String, dapiUrl: String)]? {
     guard
       var components = URLComponents(string: quorumBase),
       let scheme = components.scheme,
       !scheme.isEmpty
     else { return nil }
-    // Strip any trailing slash so `/masternodes` lands cleanly.
     if components.path.hasSuffix("/") {
       components.path = String(components.path.dropLast())
     }
@@ -136,48 +133,68 @@ public final class SDK: @unchecked Sendable {
     request.timeoutInterval = 5.0
     request.httpMethod = "GET"
 
+    // Reference-typed box for the response so the completion
+    // handler can safely store into it from URLSession's worker
+    // thread without violating Swift 6 strict-concurrency capture
+    // rules (which forbid mutating a captured `var Data?` from a
+    // concurrently-executing closure). The semaphore guarantees
+    // we only read `box.data` after the closure has run to
+    // completion, so the cross-thread access is data-race-free.
+    final class ResponseBox: @unchecked Sendable {
+      var data: Data?
+    }
+    let box = ResponseBox()
     let semaphore = DispatchSemaphore(value: 0)
-    var responseData: Data?
     let task = URLSession.shared.dataTask(with: request) { data, _, _ in
-      responseData = data
+      box.data = data
       semaphore.signal()
     }
     task.resume()
-    // 6s wait is timeout + small slack; semaphore unblocks earlier
-    // on success / faster failures.
     _ = semaphore.wait(timeout: .now() + .seconds(6))
-    guard let data = responseData else {
+    guard let data = box.data else {
       task.cancel()
       return nil
     }
 
-    // Minimal Codable types — match the response shape from
-    // `quorum-list-server` (see
-    // `/Users/ivanshumkov/Projects/dashpay/quorum-list-server/README.md`).
-    struct MasternodesEnvelope: Decodable {
+    struct Envelope: Decodable {
       let success: Bool
       let data: [Masternode]
     }
     struct Masternode: Decodable {
-      let address: String          // "ip:p2pPort"
+      let address: String          // "ip:CoreP2PPort"
       let status: String
       let platformHTTPPort: UInt16
     }
 
     guard
-      let envelope = try? JSONDecoder().decode(MasternodesEnvelope.self, from: data),
-      envelope.success
+      let env = try? JSONDecoder().decode(Envelope.self, from: data),
+      env.success
     else { return nil }
 
-    let urls: [String] = envelope.data.compactMap { mn in
+    let active: [(String, String)] = env.data.compactMap { mn in
       guard mn.status == "ENABLED" else { return nil }
-      // address is `ip:port` (Core P2P port); strip the port,
-      // re-attach `:platformHTTPPort` for the Platform gateway.
       let host = mn.address.split(separator: ":").first.map(String.init) ?? mn.address
-      return "https://\(host):\(mn.platformHTTPPort)"
+      return (mn.address, "https://\(host):\(mn.platformHTTPPort)")
     }
-    guard !urls.isEmpty else { return nil }
-    return urls.joined(separator: ",")
+    return active.isEmpty ? nil : active
+  }
+
+  /// Synchronously fetch `{quorumBase}/masternodes` and build a
+  /// comma-separated DAPI URL list (`https://<ip>:<platformHTTPPort>,…`).
+  /// Returns nil on any error (network failure, JSON shape mismatch,
+  /// timeout). Used by `init(network:)` to auto-populate the DAPI
+  /// fan-out list on devnet when the user hasn't supplied one
+  /// manually — saves the "you must paste 13 URLs" UX.
+  ///
+  /// Filters to `status == "ENABLED"` so down / banned nodes don't
+  /// pollute the AddressList (the DAPI client would ban them on
+  /// first request anyway, but skipping them up front speeds the
+  /// first sync).
+  private static func discoverDAPIAddresses(quorumBase: String) -> String? {
+    guard let active = discoverActiveMasternodes(quorumBase: quorumBase) else {
+      return nil
+    }
+    return active.map(\.dapiUrl).joined(separator: ",")
   }
 
   /// Create a new SDK instance with trusted setup
@@ -221,31 +238,41 @@ public final class SDK: @unchecked Sendable {
         || UserDefaults.standard.bool(forKey: "useDockerSetup")
     let overrideQuorumURL: String? = Self.platformQuorumURL
 
-    // Auto-discover DAPI nodes from `{quorumURL}/masternodes` when the
-    // user has set a quorum URL but not a DAPI URL. Lets the user just
-    // paste the quorum endpoint and get all masternodes for free —
-    // no need to hand-maintain a 13-address list. The discovery
-    // result is written back to the same UserDefaults key so the
-    // OptionsView displays the resolved list, and subsequent SDK
-    // builds (no UserDefaults change) skip re-discovery.
+    // Resolve the DAPI address list. Two paths:
     //
-    // Conditions:
-    //   * useOverrideAddresses == true (devnet, regtest, or
-    //     `useDockerSetup` on mainnet/testnet)
-    //   * quorum URL is set
-    //   * existing platformDAPIAddresses is empty (manual entry wins)
-    let manualAddresses = UserDefaults.standard.string(forKey: "platformDAPIAddresses") ?? ""
-    if useOverrideAddresses
-        && overrideQuorumURL != nil
-        && manualAddresses.isEmpty,
-       let quorum = overrideQuorumURL,
-       let discovered = Self.discoverDAPIAddresses(quorumBase: quorum) {
-      UserDefaults.standard.set(discovered, forKey: "platformDAPIAddresses")
+    //   * Devnet → ALWAYS auto-discover from `{quorumURL}/masternodes`
+    //     fresh on every SDK build. The user input surface for devnet
+    //     is just the quorum URL — DAPI nodes are an implementation
+    //     detail of which masternodes happen to be ENABLED right now.
+    //     Doing this every init is what makes the path self-healing
+    //     when a node goes down on the chain. Cheap: one HTTP round-
+    //     trip (~200ms) at network-switch cadence, which the user
+    //     pays for explicitly anyway.
+    //
+    //   * Regtest / `useDockerSetup` → respect the existing
+    //     `platformDAPIAddresses` UserDefaults override (default
+    //     `http://127.0.0.1:2443`). This is the dashmate-local flow
+    //     that's been stable; it has no /masternodes service to
+    //     consult.
+    //
+    //   * Mainnet/testnet without overrides → Rust side picks seeds.
+    let overrideAddresses: String?
+    if network == .devnet {
+      if let quorum = overrideQuorumURL,
+         let discovered = Self.discoverDAPIAddresses(quorumBase: quorum) {
+        overrideAddresses = discovered
+      } else {
+        // Quorum URL unset, or /masternodes unreachable / wrong shape.
+        // Fall through with nil; Rust will refuse to build the SDK
+        // and the resulting error surfaces in the iOS UI as
+        // "Disconnected", prompting the user to fix the Quorum URL.
+        overrideAddresses = nil
+      }
+    } else if useOverrideAddresses {
+      overrideAddresses = Self.platformDAPIAddresses
+    } else {
+      overrideAddresses = nil
     }
-
-    let overrideAddresses: String? = useOverrideAddresses
-        ? Self.platformDAPIAddresses
-        : nil
 
     result = SDK.withOptionalCStrings(
       overrideAddresses,

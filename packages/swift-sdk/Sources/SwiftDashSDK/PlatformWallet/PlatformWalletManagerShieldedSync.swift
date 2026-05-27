@@ -159,19 +159,28 @@ extension PlatformWalletManager {
         }
     }
 
-    // TODO(shielded-snapshot-devnet-test): remove this method once
-    // SwiftExampleApp adopts a proper test-wallet import flow. Wraps
-    // the temporary FFI entry `platform_wallet_manager_bind_shielded_with_raw_seed`
-    // so the iOS app can bind the chain-side test wallets seeded by
+    // ====================================================================
+    // ⚠️  TEST-ONLY CODE — DELETE BEFORE MERGE ⚠️
+    // --------------------------------------------------------------------
+    // `bindShieldedRawSeed` — TEMPORARY DEVNET-TEST WRAPPER
+    // --------------------------------------------------------------------
+    //
+    // Thin wrapper over the temporary FFI entry
+    // `platform_wallet_manager_bind_shielded_with_raw_seed`. Used by the
+    // SwiftExampleApp's "Bind Test Wallet A (Shielded)" button so the iOS
+    // sync-timing test can bind the chain-side test wallets baked into
     // `dashpay/drive:3.1-shielded.*` (raw ZIP-32 seed `[0x73; 32]` for
-    // wallet A, `[0x74; 32]` for wallet B). No BIP-39 mnemonic can
-    // derive those seeds, so the standard `bindShielded` path can't
-    // reach them. Tracked: dashpay/platform#3714.
-    /// **TEMPORARY (test-only)** — bind shielded keys from a raw
-    /// ZIP-32 seed instead of via mnemonic resolution. Used to bind
-    /// chain-side test wallets whose seeds aren't BIP-39 derived.
-    /// See `bindShielded` for the parameter semantics shared with
-    /// the production path.
+    // wallet A, `[0x74; 32]` for wallet B). No BIP-39 mnemonic can derive
+    // those seeds, so the standard `bindShielded` path can't reach them.
+    //
+    // Delete this method when removing the test scaffolding (see banner
+    // on the matching FFI entry for the full cleanup checklist).
+    // Tag: TODO(shielded-snapshot-devnet-test). Tracked: dashpay/platform#3714.
+    // ====================================================================
+    /// **TEMPORARY (test-only, dashpay/platform#3714)** — bind shielded
+    /// keys from a raw ZIP-32 seed instead of via mnemonic resolution.
+    /// See `bindShielded` for the parameter semantics shared with the
+    /// production path.
     public func bindShieldedRawSeed(
         walletId: Data,
         rawSeed: Data,
