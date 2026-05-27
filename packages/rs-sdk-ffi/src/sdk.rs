@@ -625,9 +625,9 @@ pub unsafe extern "C" fn dash_sdk_register_context_callbacks(
 ///
 /// Wraps the caller-provided callbacks in a `ContextProviderWrapper`, builds
 /// a `DashSDKConfigExtended` borrowing the same `dapi_addresses` pointer
-/// (which is only read by the downstream creation function before
-/// returning), and dispatches to the appropriate creation function based on
-/// `protocol_version` (0 = auto-detect).
+/// (which is only read by `create_extended_sdk_from_config` before
+/// returning), and delegates to it with the resolved Platform version
+/// (`protocol_version == 0` keeps the default auto-detect behavior).
 ///
 /// # Safety
 /// See `dash_sdk_create_with_callbacks` and
@@ -650,6 +650,13 @@ unsafe fn dash_sdk_create_with_callbacks_inner(
             "Callbacks is null".to_string(),
         ));
     }
+
+    // Resolve the platform version before allocating the context-provider
+    // wrapper so an `InvalidParameter` early return doesn't leak the box.
+    let platform_version = match resolve_platform_version(protocol_version) {
+        Ok(platform_version) => platform_version,
+        Err(result) => return result,
+    };
 
     let callbacks = &*callbacks;
     let context_provider = crate::context_callbacks::CallbackContextProvider::new(
@@ -681,11 +688,7 @@ unsafe fn dash_sdk_create_with_callbacks_inner(
         core_sdk_handle: std::ptr::null_mut(),
     };
 
-    let result = if protocol_version == 0 {
-        dash_sdk_create_extended(&extended_config)
-    } else {
-        dash_sdk_create_extended_with_protocol_version(&extended_config, protocol_version)
-    };
+    let result = create_extended_sdk_from_config(&extended_config, platform_version);
 
     // Reclaim the context provider wrapper - the SDK has already cloned what it needs
     // via `provider_wrapper.provider()` inside the extended creation function.
