@@ -94,13 +94,14 @@ public final class SDK: @unchecked Sendable {
   /// This uses a trusted context provider that fetches quorum keys and
   /// data contracts from trusted HTTP endpoints instead of requiring proof verification.
   /// This is suitable for mobile applications where proof verification would be resource-intensive.
-  public init(network: Network) throws {
+  public init(network: Network, platformVersion: UInt32 = 0) throws {
     var config = DashSDKConfig()
     config.network = network.ffiValue
     config.dapi_addresses = nil
     config.skip_asset_lock_proof_verification = false
     config.request_retry_count = 1
     config.request_timeout_ms = 8000 // 8 seconds
+    config.platform_version = platformVersion // 0 = SDK default (auto-detect)
 
     // Create SDK with trusted setup — Rust side auto-detects local/regtest
     // and uses the quorum sidecar at localhost:22444 instead of remote endpoints.
