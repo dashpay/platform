@@ -94,6 +94,7 @@ mod tests {
                 base_config,
                 context_provider: ptr::null_mut(),
                 core_sdk_handle: &mut core_handle,
+                protocol_version: 0, // 0 = auto-detect
             };
 
             // Create SDK with extended config

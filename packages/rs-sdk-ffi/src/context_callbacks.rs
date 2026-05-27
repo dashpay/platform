@@ -115,7 +115,14 @@ impl CallbackContextProvider {
 
     /// Create a callback-based provider using the globally registered callbacks
     /// but replacing the callback handle with the provided Core SDK client handle.
-    pub fn from_core_sdk_handle(
+    ///
+    /// # Safety
+    /// `core_sdk_handle` must either be null or a valid, dereferenceable
+    /// pointer to a `CoreSDKHandle` for the duration of the call. The
+    /// inner `client` pointer is not dereferenced here; it is only stored
+    /// and later passed back to the registered callbacks, which are
+    /// responsible for validating it.
+    pub unsafe fn from_core_sdk_handle(
         core_sdk_handle: *mut CoreSDKHandle,
     ) -> Result<Self, CallbackContextProviderCreateError> {
         if core_sdk_handle.is_null() {
@@ -218,6 +225,49 @@ impl ContextProvider for CallbackContextProvider {
     }
 }
 
+/// Test-only utilities for callers (including other test modules in this
+/// crate) that need to mutate the process-wide `GLOBAL_CALLBACKS` without
+/// races. Wrapped in `cfg(test)` so it never ships in release builds.
+#[cfg(test)]
+pub(crate) mod test_support {
+    use super::*;
+    use std::sync::{Mutex, MutexGuard};
+
+    static TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    /// Guard returned by `lock_global_callbacks_for_test`. Holds a
+    /// crate-wide test mutex so that tests touching `GLOBAL_CALLBACKS`
+    /// are serialized, and restores the previously installed callbacks
+    /// (or `None`) on drop so that subsequent tests start clean.
+    pub struct GlobalCallbacksTestGuard {
+        _lock: MutexGuard<'static, ()>,
+        previous: Option<ContextProviderCallbacks>,
+    }
+
+    impl Drop for GlobalCallbacksTestGuard {
+        fn drop(&mut self) {
+            let storage = GLOBAL_CALLBACKS.get_or_init(|| RwLock::new(None));
+            if let Ok(mut guard) = storage.write() {
+                *guard = self.previous.take();
+            }
+        }
+    }
+
+    /// Acquire exclusive access to the global callback storage for the
+    /// duration of a test, snapshotting any previously installed callbacks
+    /// so they can be restored on guard drop.
+    pub fn lock_global_callbacks_for_test() -> GlobalCallbacksTestGuard {
+        let lock = TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let previous = get_global_callbacks();
+        GlobalCallbacksTestGuard {
+            _lock: lock,
+            previous,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -260,6 +310,8 @@ mod tests {
 
     #[test]
     fn from_core_sdk_handle_uses_client_handle_instead_of_global_handle() {
+        let _guard = test_support::lock_global_callbacks_for_test();
+
         let global_handle = std::ptr::dangling_mut::<c_void>();
         let core_client_handle = std::ptr::without_provenance_mut::<c_void>(0x1234usize);
 
@@ -276,8 +328,10 @@ mod tests {
             client: core_client_handle,
         };
 
-        let provider = CallbackContextProvider::from_core_sdk_handle(&mut core_sdk_handle)
-            .expect("provider should be created from core SDK handle");
+        let provider = unsafe {
+            CallbackContextProvider::from_core_sdk_handle(&mut core_sdk_handle)
+                .expect("provider should be created from core SDK handle")
+        };
 
         let height = provider
             .get_platform_activation_height()
@@ -296,6 +350,8 @@ mod tests {
 
     #[test]
     fn from_core_sdk_handle_rejects_null_client_handle() {
+        let _guard = test_support::lock_global_callbacks_for_test();
+
         unsafe {
             set_global_callbacks(ContextProviderCallbacks {
                 core_handle: std::ptr::dangling_mut::<c_void>(),
@@ -309,10 +365,11 @@ mod tests {
             client: std::ptr::null_mut(),
         };
 
-        let err = match CallbackContextProvider::from_core_sdk_handle(&mut core_sdk_handle) {
-            Ok(_) => panic!("null client handles must be rejected"),
-            Err(err) => err,
-        };
+        let err =
+            match unsafe { CallbackContextProvider::from_core_sdk_handle(&mut core_sdk_handle) } {
+                Ok(_) => panic!("null client handles must be rejected"),
+                Err(err) => err,
+            };
 
         assert_eq!(
             err,

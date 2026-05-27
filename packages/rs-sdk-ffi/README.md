@@ -76,7 +76,13 @@ Build for your target platform using the appropriate Rust target.
 // Initialize the SDK
 dash_sdk_init();
 
-// Create SDK configuration
+// Create SDK configuration.
+//
+// `skip_asset_lock_proof_verification`, despite its name, currently toggles
+// Platform state-proof verification for *all* SDK requests (it is wired to
+// `SdkBuilder::with_proofs`). Leave it `false` in production; set it to
+// `true` only for testing or in trusted-context flows where proof
+// verification is not desired.
 DashSDKConfig config = {
     .network = DASH_SDK_NETWORK_TESTNET,
     .dapi_addresses = "seed-1.testnet.networks.dash.org",

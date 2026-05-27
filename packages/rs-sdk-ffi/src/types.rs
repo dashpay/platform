@@ -71,7 +71,14 @@ pub struct DashSDKConfig {
     /// This pointer is only read during the creation call; the string data is
     /// immediately copied into Rust-owned memory.
     pub dapi_addresses: *const c_char,
-    /// Skip asset lock proof verification (for testing)
+    /// When `true`, disables Platform state-proof verification for **all**
+    /// SDK requests (wired to [`SdkBuilder::with_proofs(false)`]). The field
+    /// name reflects its original use case (skipping asset-lock proofs in
+    /// tests), but its effect is broader: callers should treat it as a
+    /// global "skip proofs" switch and only enable it for testing or for
+    /// trusted-context flows where proof verification is not desired.
+    ///
+    /// [`SdkBuilder::with_proofs(false)`]: https://github.com/dashpay/platform/blob/v3.1-dev/packages/rs-sdk/src/sdk.rs
     pub skip_asset_lock_proof_verification: bool,
     /// Number of retries for failed requests
     pub request_retry_count: u32,
