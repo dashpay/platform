@@ -201,19 +201,19 @@ impl WasmTrustedContext {
     /// `WasmSdkBuilder.local().withTrustedContext(context)`.
     #[wasm_bindgen(js_name = "prefetchLocal")]
     pub async fn prefetch_local() -> Result<WasmTrustedContext, WasmSdkError> {
-        Self::prefetch_local_with_url("http://127.0.0.1:22444").await
+        Self::prefetch_local_with_url("http://127.0.0.1:22444".to_string()).await
     }
 
     /// Pre-fetch quorum keys and masternode addresses for a local network
     /// using a custom quorum sidecar URL.
     #[wasm_bindgen(js_name = "prefetchLocalWithUrl")]
     pub async fn prefetch_local_with_url(
-        base_url: &str,
+        base_url: String,
     ) -> Result<WasmTrustedContext, WasmSdkError> {
         Self::prefetch_for(
             dash_sdk::dpp::dashcore::Network::Regtest,
             None,
-            Some(base_url.to_string()),
+            Some(base_url),
         )
         .await
     }
