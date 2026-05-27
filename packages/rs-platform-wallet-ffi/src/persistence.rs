@@ -1346,12 +1346,11 @@ impl PlatformWalletPersistence for FFIPersister {
             if self.callbacks.on_load_shielded_notes_fn.is_some()
                 != self.callbacks.on_load_shielded_notes_free_fn.is_some()
             {
-                return Err(
+                return Err(PersistenceError::backend(
                     "on_load_shielded_notes_fn and on_load_shielded_notes_free_fn must be \
                      provided together"
-                        .to_string()
-                        .into(),
-                );
+                        .to_string(),
+                ));
             }
             if self.callbacks.on_load_shielded_sync_states_fn.is_some()
                 != self
@@ -1359,12 +1358,11 @@ impl PlatformWalletPersistence for FFIPersister {
                     .on_load_shielded_sync_states_free_fn
                     .is_some()
             {
-                return Err(
+                return Err(PersistenceError::backend(
                     "on_load_shielded_sync_states_fn and on_load_shielded_sync_states_free_fn \
                      must be provided together"
-                        .to_string()
-                        .into(),
-                );
+                        .to_string(),
+                ));
             }
 
             // 1) notes
@@ -1374,9 +1372,10 @@ impl PlatformWalletPersistence for FFIPersister {
                 let rc =
                     unsafe { load_notes(self.callbacks.context, &mut notes_ptr, &mut notes_count) };
                 if rc != 0 {
-                    return Err(
-                        format!("on_load_shielded_notes_fn returned error code {}", rc).into(),
-                    );
+                    return Err(PersistenceError::backend(format!(
+                        "on_load_shielded_notes_fn returned error code {}",
+                        rc
+                    )));
                 }
                 struct NotesGuard {
                     context: *mut c_void,
@@ -1439,11 +1438,10 @@ impl PlatformWalletPersistence for FFIPersister {
                     load_states(self.callbacks.context, &mut states_ptr, &mut states_count)
                 };
                 if rc != 0 {
-                    return Err(format!(
+                    return Err(PersistenceError::backend(format!(
                         "on_load_shielded_sync_states_fn returned error code {}",
                         rc
-                    )
-                    .into());
+                    )));
                 }
                 struct StatesGuard {
                     context: *mut c_void,
