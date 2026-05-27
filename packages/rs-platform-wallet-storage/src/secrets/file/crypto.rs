@@ -8,7 +8,7 @@ use chacha20poly1305::{KeyInit, XChaCha20Poly1305, XNonce};
 use getrandom::getrandom;
 use serde::{Deserialize, Serialize};
 
-use super::super::secret::SecretBytes;
+use super::super::secret::{SecretBytes, SecretString};
 use super::error::FileStoreError;
 use super::format::KDF_ID_ARGON2ID;
 
@@ -92,8 +92,13 @@ impl KdfParams {
 
 /// Derive a 32-byte AEAD key from `passphrase` + `salt` with Argon2id.
 /// Output lands directly in a [`SecretBytes`] (SEC-REQ-2.2.4).
+///
+/// Takes `&SecretString` directly (CMT-005/006) so the bare-byte view
+/// of the passphrase lives only inside this function — callers can no
+/// longer accidentally hand a `&[u8]` (e.g. by holding a stray
+/// `expose_secret().as_bytes()` longer than intended) into KDF input.
 pub(crate) fn derive_key(
-    passphrase: &[u8],
+    passphrase: &SecretString,
     salt: &[u8],
     params: KdfParams,
 ) -> Result<SecretBytes, FileStoreError> {
@@ -105,7 +110,11 @@ pub(crate) fn derive_key(
     let argon = Argon2::new(Algorithm::Argon2id, Version::V0x13, argon_params);
     let mut key = SecretBytes::zeroed(KEY_LEN);
     argon
-        .hash_password_into(passphrase, salt, key.expose_secret_mut())
+        .hash_password_into(
+            passphrase.expose_secret().as_bytes(),
+            salt,
+            key.expose_secret_mut(),
+        )
         .map_err(|_| FileStoreError::KdfFailure)?;
     Ok(key)
 }
@@ -234,7 +243,7 @@ mod tests {
             Err(FileStoreError::KdfFailure)
         ));
         assert!(matches!(
-            derive_key(b"pw", &[0u8; SALT_LEN], bad),
+            derive_key(&SecretString::new("pw"), &[0u8; SALT_LEN], bad),
             Err(FileStoreError::KdfFailure)
         ));
     }
@@ -246,7 +255,7 @@ mod tests {
         // the test, so reaching here at all proves the ceiling fired
         // first.
         let err = derive_key(
-            b"pw",
+            &SecretString::new("pw"),
             &[0u8; SALT_LEN],
             KdfParams {
                 m_kib: u32::MAX,
@@ -261,7 +270,7 @@ mod tests {
     fn seal_open_roundtrip_with_floor_params() {
         let mut salt = [0u8; SALT_LEN];
         random_bytes(&mut salt).unwrap();
-        let key = derive_key(b"correct horse", &salt, floor_params()).unwrap();
+        let key = derive_key(&SecretString::new("correct horse"), &salt, floor_params()).unwrap();
         let aad = b"v1|wallet|label";
         let (nonce, ct) = seal(&key, aad, b"top secret seed").unwrap();
         let pt = open(&key, &nonce, aad, &ct).unwrap();
@@ -270,7 +279,7 @@ mod tests {
 
     #[test]
     fn wrong_aad_fails_with_no_plaintext() {
-        let key = derive_key(b"pw", &[9u8; SALT_LEN], floor_params()).unwrap();
+        let key = derive_key(&SecretString::new("pw"), &[9u8; SALT_LEN], floor_params()).unwrap();
         let (nonce, ct) = seal(&key, b"slot-A", b"seed").unwrap();
         let err = open(&key, &nonce, b"slot-B", &ct).unwrap_err();
         assert!(matches!(err, FileStoreError::Decrypt));
@@ -279,8 +288,8 @@ mod tests {
     #[test]
     fn wrong_key_fails() {
         let salt = [1u8; SALT_LEN];
-        let k1 = derive_key(b"right", &salt, floor_params()).unwrap();
-        let k2 = derive_key(b"wrong", &salt, floor_params()).unwrap();
+        let k1 = derive_key(&SecretString::new("right"), &salt, floor_params()).unwrap();
+        let k2 = derive_key(&SecretString::new("wrong"), &salt, floor_params()).unwrap();
         let (nonce, ct) = seal(&k1, b"aad", b"seed").unwrap();
         assert!(matches!(
             open(&k2, &nonce, b"aad", &ct),
@@ -290,7 +299,7 @@ mod tests {
 
     #[test]
     fn nonces_are_unique_across_seals() {
-        let key = derive_key(b"pw", &[2u8; SALT_LEN], floor_params()).unwrap();
+        let key = derive_key(&SecretString::new("pw"), &[2u8; SALT_LEN], floor_params()).unwrap();
         let mut seen = std::collections::HashSet::new();
         for _ in 0..256 {
             let (nonce, _) = seal(&key, b"aad", b"x").unwrap();

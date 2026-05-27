@@ -138,26 +138,36 @@ impl EncryptedFileStore {
         inner.rekey(wallet_id, new_passphrase)
     }
 
-    /// Store `bytes` under `(wallet_id, label)`, returning the typed
+    /// Store `secret` under `(wallet_id, label)`, returning the typed
     /// [`FileStoreError`] (lossless — no `keyring_core::Error` seam).
-    /// The public [`SecretStore`](crate::secrets::SecretStore) file arm
-    /// delegates here so the structural error distinction survives.
+    /// The public [`SecretStore`](crate::secrets::SecretStore) file
+    /// arm delegates here so the structural error distinction
+    /// survives. Symmetric with [`get_bytes`]: the secret stays
+    /// wrapped in [`SecretBytes`] across this seam (CMT-009); the lone
+    /// bare-buffer exposure lives one layer down at the AEAD seal call.
+    ///
+    /// [`get_bytes`]: Self::get_bytes
     pub(crate) fn put_bytes(
         &self,
         wallet_id: &WalletId,
         label: &str,
-        bytes: &[u8],
+        secret: &SecretBytes,
     ) -> Result<(), FileStoreError> {
-        self.inner.put(wallet_id, label, bytes)
+        self.inner.put(wallet_id, label, secret)
     }
 
     /// Retrieve the plaintext under `(wallet_id, label)`, or `None` if
-    /// absent, returning the typed [`FileStoreError`].
+    /// absent, returning the typed [`FileStoreError`]. The plaintext
+    /// stays inside a zeroizing [`SecretBytes`] all the way to this
+    /// boundary (CMT-008); the single `.expose_secret().to_vec()`
+    /// conversion lives at the upstream `CredentialApi::get_secret`
+    /// SPI seam, the only point where the SPI contract demands a bare
+    /// `Vec<u8>`.
     pub(crate) fn get_bytes(
         &self,
         wallet_id: &WalletId,
         label: &str,
-    ) -> Result<Option<Vec<u8>>, FileStoreError> {
+    ) -> Result<Option<SecretBytes>, FileStoreError> {
         self.inner.get(wallet_id, label)
     }
 
@@ -272,7 +282,7 @@ impl EncryptedFileStoreInner {
         let mut salt = [0u8; SALT_LEN];
         crypto::random_bytes(&mut salt)?;
         let kdf = KdfParams::default_target();
-        let key = crypto::derive_key(passphrase.expose_secret().as_bytes(), &salt, kdf)?;
+        let key = crypto::derive_key(passphrase, &salt, kdf)?;
         let v_aad = format::verify_aad(format::FORMAT_VERSION, wallet_id.as_bytes());
         let (verify_nonce, verify_ct) = crypto::seal(&key, &v_aad, format::VERIFY_CONSTANT)?;
         Ok((
@@ -298,11 +308,7 @@ impl EncryptedFileStoreInner {
         wallet_id: &WalletId,
         vault: &Vault,
     ) -> Result<SecretBytes, FileStoreError> {
-        let key = crypto::derive_key(
-            self.passphrase.expose_secret().as_bytes(),
-            &vault.salt,
-            vault.kdf,
-        )?;
+        let key = crypto::derive_key(&self.passphrase, &vault.salt, vault.kdf)?;
         let v_aad = format::verify_aad(format::FORMAT_VERSION, wallet_id.as_bytes());
         match crypto::open(&key, &vault.verify_nonce, &v_aad, &vault.verify_ct) {
             Ok(_) => Ok(key),
@@ -454,8 +460,17 @@ impl EncryptedFileStoreInner {
 
     /// `put` — overwrite-safe atomic seal under `(wallet_id, label)`.
     /// The read-modify-write span is serialized in-process and
-    /// cross-process via [`with_vault_lock`] (CMT-001).
-    fn put(&self, wallet_id: &WalletId, label: &str, bytes: &[u8]) -> Result<(), FileStoreError> {
+    /// cross-process via [`with_vault_lock`] (CMT-001). Takes
+    /// `&SecretBytes` so the bare plaintext view exists only inside
+    /// the `crypto::seal` call (CMT-009).
+    ///
+    /// [`with_vault_lock`]: Self::with_vault_lock
+    fn put(
+        &self,
+        wallet_id: &WalletId,
+        label: &str,
+        secret: &SecretBytes,
+    ) -> Result<(), FileStoreError> {
         let label = validated_label(label)?.to_string();
         let path = self.vault_path(wallet_id);
         self.with_vault_lock(wallet_id, || {
@@ -467,7 +482,7 @@ impl EncryptedFileStoreInner {
                 None => self.new_vault(wallet_id, &self.passphrase)?,
             };
             let aad = format::aad(format::FORMAT_VERSION, wallet_id.as_bytes(), &label);
-            let (nonce, ciphertext) = crypto::seal(&key, &aad, bytes)?;
+            let (nonce, ciphertext) = crypto::seal(&key, &aad, secret.expose_secret())?;
             vault.entries.retain(|e| e.label != label);
             vault.entries.push(VaultEntry {
                 label,
@@ -478,10 +493,17 @@ impl EncryptedFileStoreInner {
         })
     }
 
-    /// `get` — returns the raw plaintext as `Vec<u8>` (the upstream
-    /// SPI contract). Callers wrap into [`SecretBytes`] at the seam.
-    /// `NoEntry`-shaped absence rides as `Ok(None)`.
-    fn get(&self, wallet_id: &WalletId, label: &str) -> Result<Option<Vec<u8>>, FileStoreError> {
+    /// `get` — returns the plaintext as a zeroizing [`SecretBytes`].
+    /// `crypto::open` already returns `SecretBytes`, so the value
+    /// propagates without an intervening `Vec<u8>` (CMT-008); the
+    /// lone bare-buffer conversion lives at the upstream
+    /// `CredentialApi::get_secret` SPI seam. `NoEntry`-shaped absence
+    /// rides as `Ok(None)`.
+    fn get(
+        &self,
+        wallet_id: &WalletId,
+        label: &str,
+    ) -> Result<Option<SecretBytes>, FileStoreError> {
         let label = validated_label(label)?;
         let path = self.vault_path(wallet_id);
         let Some(vault) = self.read_vault(&path)? else {
@@ -493,7 +515,7 @@ impl EncryptedFileStoreInner {
         };
         let aad = format::aad(format::FORMAT_VERSION, wallet_id.as_bytes(), label);
         match crypto::open(&key, &entry.nonce, &aad, &entry.ciphertext) {
-            Ok(pt) => Ok(Some(pt.expose_secret().to_vec())),
+            Ok(pt) => Ok(Some(pt)),
             // The verify-token already passed, so the passphrase is
             // correct: an entry tag failure here is corruption/tampering,
             // not a wrong passphrase. Operators must see this — log the
@@ -595,15 +617,30 @@ impl CredentialApi for EncryptedFileCredential {
     fn set_secret(&self, secret: &[u8]) -> KeyringResult<()> {
         // Re-validate at every op (defence in depth, M-2 / SEC-REQ-4.3).
         let _ = validated_label(&self.label).map_err(FileStoreError::from)?;
+        // Upstream SPI hands us a bare `&[u8]`; wrap into `SecretBytes`
+        // immediately so the internal `put` chain only sees the
+        // zeroizing wrapper (CMT-009). The wrap allocates once — the
+        // same allocation the AEAD seal would have made anyway — and
+        // gives the buffer mlock + zeroize-on-drop for the brief
+        // window before seal consumes it.
         self.store
-            .put(&self.wallet_id, &self.label, secret)
+            .put(
+                &self.wallet_id,
+                &self.label,
+                &SecretBytes::from_slice(secret),
+            )
             .map_err(KeyringError::from)
     }
 
     fn get_secret(&self) -> KeyringResult<Vec<u8>> {
         let _ = validated_label(&self.label).map_err(FileStoreError::from)?;
         match self.store.get(&self.wallet_id, &self.label) {
-            Ok(Some(v)) => Ok(v),
+            // Upstream SPI demands `Vec<u8>`; the single
+            // `.expose_secret().to_vec()` conversion lives here, the
+            // last point before the bare buffer crosses the SPI seam
+            // (CMT-008). `SecretBytes` zeroizes on drop, so the
+            // wrapped buffer is wiped as soon as it leaves scope.
+            Ok(Some(v)) => Ok(v.expose_secret().to_vec()),
             Ok(None) => Err(KeyringError::NoEntry),
             Err(e) => Err(e.into()),
         }
@@ -1267,7 +1304,7 @@ mod tests {
         let start = Instant::now();
         let err = s
             .inner
-            .put(&wid(1), "other", b"x")
+            .put(&wid(1), "other", &SecretBytes::from_slice(b"x"))
             .expect_err("peer put must contend");
         assert!(matches!(err, FileStoreError::Busy), "got {err:?}");
         assert!(

@@ -65,7 +65,9 @@ impl SecretStore {
     ) -> Result<(), FileStoreError> {
         match self {
             // File arm: the inherent typed path — no lossy SPI seam.
-            Self::File(s) => s.put_bytes(service, label, secret.expose_secret()),
+            // `put_bytes` takes `&SecretBytes` directly (CMT-009), so
+            // the bare-buffer view never crosses this boundary.
+            Self::File(s) => s.put_bytes(service, label, secret),
             Self::Os(store) => {
                 let entry = build_os(store, service, label)?;
                 entry.set_secret(secret.expose_secret()).map_err(map_spi)
@@ -84,8 +86,9 @@ impl SecretStore {
     ) -> Result<Option<SecretBytes>, FileStoreError> {
         match self {
             // File arm: the inherent typed path keeps `WrongPassphrase`
-            // vs `Corruption` distinct (lossless).
-            Self::File(s) => Ok(s.get_bytes(service, label)?.map(SecretBytes::new)),
+            // vs `Corruption` distinct (lossless). Plaintext rides as
+            // `SecretBytes` all the way (CMT-008); no rewrap needed.
+            Self::File(s) => s.get_bytes(service, label),
             Self::Os(store) => {
                 let entry = build_os(store, service, label)?;
                 match entry.get_secret() {
