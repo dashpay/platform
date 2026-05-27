@@ -6,7 +6,7 @@
 //! ## Networks Supported
 //! - **Mainnet**: Uses `https://quorums.mainnet.networks.dash.org/`
 //! - **Testnet**: Uses `https://quorums.testnet.networks.dash.org/`
-//! - **Devnet**: Uses `https://quorums.devnet.<devnet_name>.networks.dash.org/`
+//! - **Devnet**: Uses `https://quorums.<devnet_name>.networks.dash.org/`
 
 pub mod error;
 pub mod provider;
@@ -44,7 +44,7 @@ pub fn get_quorum_base_url(
                         "Devnet name cannot start or end with a hyphen".to_string(),
                     ));
                 }
-                Ok(format!("https://quorums.devnet.{}.networks.dash.org", name))
+                Ok(format!("https://quorums.{}.networks.dash.org", name))
             } else {
                 Err(TrustedContextProviderError::InvalidDevnetName(
                     "Devnet name must be provided for devnet network".to_string(),

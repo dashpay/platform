@@ -30,16 +30,26 @@ export interface ConnectionOptions {
 }
 
 export interface EvoSDKOptions extends ConnectionOptions {
-  network?: 'testnet' | 'mainnet' | 'local';
+  network?: 'testnet' | 'mainnet' | 'local' | 'devnet';
   trusted?: boolean;
-  // Custom masternode addresses. When provided, network and trusted options are ignored.
+  // Custom masternode addresses to seed the SDK with. `network` still
+  // controls which Network enum the underlying builder uses (and, for
+  // trusted mode, which quorums endpoint is prefetched); the addresses
+  // here replace the network's built-in defaults at seed time.
   // Example: ['https://127.0.0.1:1443', 'https://192.168.1.100:1443']
   addresses?: string[];
+  // Short name of the devnet (e.g. 'paloma'). Required when network === 'devnet'
+  // unless explicit addresses are provided AND trusted is false.
+  devnetName?: string;
+  // Optional override for the trusted devnet quorum base URL. When omitted,
+  // the URL is derived as `https://quorums.<devnetName>.networks.dash.org`.
+  // Only consulted when trusted === true && network === 'devnet'.
+  quorumUrl?: string;
 }
 
 export class EvoSDK {
   private wasmSdk?: wasm.WasmSdk;
-  private options: Required<Pick<EvoSDKOptions, 'network' | 'trusted'>> & ConnectionOptions & { addresses?: string[] };
+  private options: Required<Pick<EvoSDKOptions, 'network' | 'trusted'>> & ConnectionOptions & { addresses?: string[]; devnetName?: string; quorumUrl?: string };
 
   public addresses!: AddressesFacade;
   public documents!: DocumentsFacade;
@@ -56,8 +66,27 @@ export class EvoSDK {
   public shielded!: ShieldedFacade;
   constructor(options: EvoSDKOptions = {}) {
     // Apply defaults while preserving any future connection options
-    const { network = 'testnet', trusted = false, addresses, ...connection } = options;
-    this.options = { network, trusted, addresses, ...connection };
+    const { network = 'testnet', trusted = false, addresses, devnetName, quorumUrl, ...connection } = options;
+
+    if (network === 'devnet') {
+      const hasAddresses = !!(addresses && addresses.length > 0);
+      if (!devnetName && !hasAddresses) {
+        throw new Error("EvoSDK: network 'devnet' requires either devnetName or explicit addresses");
+      }
+      if (trusted && !devnetName) {
+        throw new Error("EvoSDK: trusted devnet requires devnetName (used to derive the quorum URL)");
+      }
+      if (!trusted && !hasAddresses) {
+        throw new Error("EvoSDK: non-trusted devnet requires explicit addresses (no addresses can be discovered without a trusted context)");
+      }
+      if (quorumUrl && !trusted) {
+        throw new Error("EvoSDK: quorumUrl is only meaningful when trusted === true");
+      }
+    } else if (quorumUrl) {
+      throw new Error("EvoSDK: quorumUrl is only valid when network === 'devnet'");
+    }
+
+    this.options = { network, trusted, addresses, devnetName, quorumUrl, ...connection };
 
     this.addresses = new AddressesFacade(this);
     this.documents = new DocumentsFacade(this);
@@ -96,7 +125,7 @@ export class EvoSDK {
     }
     await initWasm();
 
-    const { network, trusted, version, proofs, settings, logs, addresses } = this.options;
+    const { network, trusted, version, proofs, settings, logs, addresses, devnetName, quorumUrl } = this.options;
 
     // Prefetch trusted context only when trusted mode is requested
     let context: wasm.WasmTrustedContext | undefined;
@@ -107,6 +136,13 @@ export class EvoSDK {
         context = await wasm.WasmTrustedContext.prefetchTestnet();
       } else if (network === 'local') {
         context = await wasm.WasmTrustedContext.prefetchLocal();
+      } else if (network === 'devnet') {
+        if (!devnetName) {
+          throw new Error("EvoSDK: trusted devnet requires devnetName");
+        }
+        context = quorumUrl
+          ? await wasm.WasmTrustedContext.prefetchDevnetWithUrl(quorumUrl)
+          : await wasm.WasmTrustedContext.prefetchDevnet(devnetName);
       } else {
         throw new Error(`Unknown network: ${network}`);
       }
@@ -122,6 +158,8 @@ export class EvoSDK {
       builder = wasm.WasmSdkBuilder.testnet();
     } else if (network === 'local') {
       builder = wasm.WasmSdkBuilder.local();
+    } else if (network === 'devnet') {
+      builder = wasm.WasmSdkBuilder.newDevnet();
     } else {
       throw new Error(`Unknown network: ${network}`);
     }
@@ -182,10 +220,41 @@ export class EvoSDK {
   static localTrusted(options: ConnectionOptions = {}): EvoSDK { return new EvoSDK({ network: 'local', trusted: true, ...options }); }
 
   /**
+   * Create an EvoSDK instance configured for a devnet, without trusted-context
+   * proof verification. Requires either `devnetName` or explicit `addresses`
+   * in `options`. Proof-bearing queries will fail unless paired with a
+   * trusted context — for proof verification on devnet, use
+   * `EvoSDK.devnetTrusted` instead.
+   */
+  static devnet(devnetName: string, options: ConnectionOptions & { addresses?: string[] } = {}): EvoSDK {
+    return new EvoSDK({ network: 'devnet', devnetName, ...options });
+  }
+
+  /**
+   * Create an EvoSDK instance configured for a devnet with a trusted context.
+   *
+   * The trusted context is prefetched from
+   * `https://quorums.<devnetName>.networks.dash.org` by default. Pass
+   * `quorumUrl` to override (useful when the public DNS is not yet deployed).
+   *
+   * @example
+   * ```typescript
+   * const sdk = EvoSDK.devnetTrusted('paloma');
+   * await sdk.connect();
+   * ```
+   */
+  static devnetTrusted(
+    devnetName: string,
+    options: ConnectionOptions & { quorumUrl?: string } = {},
+  ): EvoSDK {
+    return new EvoSDK({ network: 'devnet', devnetName, trusted: true, ...options });
+  }
+
+  /**
    * Create an EvoSDK instance configured with specific masternode addresses.
    *
    * @param addresses - Array of HTTPS URLs to masternodes (e.g., ['https://127.0.0.1:1443'])
-   * @param network - Network identifier: 'mainnet', 'testnet' (default: 'testnet')
+   * @param network - Network identifier: 'mainnet', 'testnet', 'devnet', or 'local' (default: 'testnet')
    * @param options - Additional connection options
    * @returns A configured EvoSDK instance (not yet connected - call .connect() to establish connection)
    *
@@ -195,7 +264,7 @@ export class EvoSDK {
    * await sdk.connect();
    * ```
    */
-  static withAddresses(addresses: string[], network: 'mainnet' | 'testnet' | 'local' = 'testnet', options: ConnectionOptions = {}): EvoSDK {
+  static withAddresses(addresses: string[], network: 'mainnet' | 'testnet' | 'local' | 'devnet' = 'testnet', options: ConnectionOptions & { devnetName?: string } = {}): EvoSDK {
     return new EvoSDK({ addresses, network, ...options });
   }
 }

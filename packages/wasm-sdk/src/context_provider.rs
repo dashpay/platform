@@ -18,8 +18,9 @@ pub struct WasmContext {}
 ///
 /// Holds pre-fetched quorum keys and discovered masternode addresses for
 /// proof verification and network connectivity. Create one via the async
-/// `prefetchMainnet()`, `prefetchTestnet()`, or `prefetchLocal()` factory
-/// methods, then pass it to a builder via `withTrustedContext()`.
+/// `prefetchMainnet()`, `prefetchTestnet()`, `prefetchDevnet()`, or
+/// `prefetchLocal()` factory methods, then pass it to a builder via
+/// `withTrustedContext()`.
 #[wasm_bindgen]
 #[derive(Clone)]
 pub struct WasmTrustedContext {
@@ -35,7 +36,7 @@ impl ContextProvider for WasmContext {
         _core_chain_locked_height: u32,
     ) -> Result<[u8; 48], ContextProviderError> {
         Err(ContextProviderError::Generic(
-            "Non-trusted mode is not supported in WASM. Please use the trusted SDK builders (new_mainnet_trusted or new_testnet_trusted) instead.".to_string()
+            "Non-trusted mode is not supported in WASM. Please construct a WasmTrustedContext via prefetchMainnet/prefetchTestnet/prefetchDevnet/prefetchLocal and attach it with WasmSdkBuilder.withTrustedContext().".to_string()
         ))
     }
 
@@ -146,6 +147,72 @@ impl WasmTrustedContext {
         let inner = rs_sdk_trusted_context_provider::TrustedHttpContextProvider::new(
             dash_sdk::dpp::dashcore::Network::Testnet,
             None,
+            std::num::NonZeroUsize::new(100).unwrap(),
+        )
+        .map_err(|e| WasmSdkError::generic(format!("Failed to create context provider: {}", e)))?
+        .with_refetch_if_not_found(false);
+
+        let inner = Arc::new(inner);
+
+        inner
+            .update_quorum_caches()
+            .await
+            .map_err(|e| WasmSdkError::generic(format!("Failed to prefetch quorums: {}", e)))?;
+
+        let discovered_addresses = Self::fetch_addresses_from(&inner).await?;
+
+        Ok(WasmTrustedContext {
+            inner,
+            discovered_addresses,
+        })
+    }
+
+    /// Pre-fetch quorum keys and masternode addresses for a devnet.
+    ///
+    /// `devnet_name` is the short name of the devnet (e.g. `"paloma"`). The
+    /// quorum base URL is derived as `https://quorums.<devnet_name>.networks.dash.org`.
+    ///
+    /// Returns a ready-to-use `WasmTrustedContext` that can be passed to
+    /// `WasmSdkBuilder.newDevnet().withTrustedContext(context)`.
+    #[wasm_bindgen(js_name = "prefetchDevnet")]
+    pub async fn prefetch_devnet(devnet_name: String) -> Result<WasmTrustedContext, WasmSdkError> {
+        let inner = rs_sdk_trusted_context_provider::TrustedHttpContextProvider::new(
+            dash_sdk::dpp::dashcore::Network::Devnet,
+            Some(devnet_name),
+            std::num::NonZeroUsize::new(100).unwrap(),
+        )
+        .map_err(|e| WasmSdkError::generic(format!("Failed to create context provider: {}", e)))?
+        .with_refetch_if_not_found(false);
+
+        let inner = Arc::new(inner);
+
+        inner
+            .update_quorum_caches()
+            .await
+            .map_err(|e| WasmSdkError::generic(format!("Failed to prefetch quorums: {}", e)))?;
+
+        let discovered_addresses = Self::fetch_addresses_from(&inner).await?;
+
+        Ok(WasmTrustedContext {
+            inner,
+            discovered_addresses,
+        })
+    }
+
+    /// Pre-fetch quorum keys and masternode addresses for a devnet using a
+    /// fully-specified quorum base URL.
+    ///
+    /// Use this when the default
+    /// `https://quorums.<devnet_name>.networks.dash.org` URL produced by
+    /// `prefetchDevnet` is not yet deployed for a devnet, or when pointing
+    /// at a non-standard quorums endpoint.
+    #[wasm_bindgen(js_name = "prefetchDevnetWithUrl")]
+    pub async fn prefetch_devnet_with_url(
+        base_url: String,
+    ) -> Result<WasmTrustedContext, WasmSdkError> {
+        let inner = rs_sdk_trusted_context_provider::TrustedHttpContextProvider::new_with_url(
+            dash_sdk::dpp::dashcore::Network::Devnet,
+            base_url,
             std::num::NonZeroUsize::new(100).unwrap(),
         )
         .map_err(|e| WasmSdkError::generic(format!("Failed to create context provider: {}", e)))?

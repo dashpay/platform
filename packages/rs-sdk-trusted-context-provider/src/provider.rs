@@ -785,7 +785,7 @@ mod tests {
 
         assert_eq!(
             get_quorum_base_url(Network::Devnet, Some("example")).unwrap(),
-            "https://quorums.devnet.example.networks.dash.org"
+            "https://quorums.example.networks.dash.org"
         );
     }
 
