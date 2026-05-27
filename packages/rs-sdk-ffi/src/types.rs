@@ -77,6 +77,10 @@ pub struct DashSDKConfig {
     pub request_retry_count: u32,
     /// Timeout for requests in milliseconds
     pub request_timeout_ms: u64,
+    /// Pin to a specific Dash Platform protocol version.
+    /// `0` keeps the SDK default (auto-detect / latest); any non-zero value
+    /// is forwarded to `SdkBuilder::with_version` and rejected if unknown.
+    pub platform_version: u32,
 }
 
 /// Result data type indicator for iOS

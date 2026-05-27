@@ -25,6 +25,19 @@ pub struct DashSDKConfigExtended {
     pub core_sdk_handle: *mut CoreSDKHandle,
 }
 
+fn apply_version(builder: SdkBuilder, platform_version: u32) -> Result<SdkBuilder, DashSDKError> {
+    if platform_version == 0 {
+        return Ok(builder);
+    }
+    match dash_sdk::dpp::version::PlatformVersion::get(platform_version) {
+        Ok(v) => Ok(builder.with_version(v)),
+        Err(e) => Err(DashSDKError::new(
+            DashSDKErrorCode::InvalidParameter,
+            format!("Invalid platform_version {}: {}", platform_version, e),
+        )),
+    }
+}
+
 /// Internal SDK wrapper
 pub(crate) struct SDKWrapper {
     pub sdk: Sdk,
@@ -149,6 +162,11 @@ pub unsafe extern "C" fn dash_sdk_create(config: *const DashSDKConfig) -> DashSD
         }
     };
 
+    let builder = match apply_version(builder, config.platform_version) {
+        Ok(b) => b,
+        Err(e) => return DashSDKResult::error(e),
+    };
+
     // Build SDK
     let sdk_result = builder.build().map_err(FFIError::from);
 
@@ -256,6 +274,11 @@ pub unsafe extern "C" fn dash_sdk_create_extended(
             builder = builder.with_context_provider(callback_provider);
         }
     }
+
+    let builder = match apply_version(builder, base_config.platform_version) {
+        Ok(b) => b,
+        Err(e) => return DashSDKResult::error(e),
+    };
 
     // Build SDK
     let sdk_result = builder.build().map_err(FFIError::from);
@@ -420,6 +443,11 @@ pub unsafe extern "C" fn dash_sdk_create_trusted(config: *const DashSDKConfig) -
     info!("dash_sdk_create_trusted: adding trusted context provider to builder");
     let builder = builder.with_context_provider(Arc::clone(&trusted_provider));
 
+    let builder = match apply_version(builder, config.platform_version) {
+        Ok(b) => b,
+        Err(e) => return DashSDKResult::error(e),
+    };
+
     // Build SDK
     let sdk_result = builder.build().map_err(FFIError::from);
 
@@ -572,6 +600,7 @@ pub unsafe extern "C" fn dash_sdk_create_with_callbacks(
             skip_asset_lock_proof_verification: config_ref.skip_asset_lock_proof_verification,
             request_retry_count: config_ref.request_retry_count,
             request_timeout_ms: config_ref.request_timeout_ms,
+            platform_version: config_ref.platform_version,
         },
         context_provider: context_provider_handle,
         core_sdk_handle: std::ptr::null_mut(),
