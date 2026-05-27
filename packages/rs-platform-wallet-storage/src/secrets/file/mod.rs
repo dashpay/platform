@@ -24,9 +24,10 @@ mod format;
 use std::any::Any;
 use std::collections::HashMap;
 use std::fs;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use keyring_core::api::{Credential, CredentialApi, CredentialPersistence, CredentialStoreApi};
 use keyring_core::{Entry, Error as KeyringError, Result as KeyringResult};
@@ -47,6 +48,25 @@ pub const SERVICE_PREFIX: &str = "dash.platform-wallet-storage/";
 const VENDOR: &str = "dash.platform-wallet-storage";
 const STORE_ID: &str = "encrypted-file-store-v1";
 
+/// Structural ceiling on the on-disk vault file (CMT-003). The vault is
+/// attacker-controllable JSON; a multi-GiB file would force a huge
+/// `fs::read` allocation ahead of any tag check, so refuse to even
+/// allocate beyond this cap and surface
+/// [`FileStoreError::VaultTooLarge`].
+pub const MAX_VAULT_SIZE_BYTES: u64 = 128 * 1024 * 1024;
+
+/// Wall-clock budget for the cross-process advisory lock acquired
+/// around every vault RMW (CMT-001). Picked well above any single
+/// vault write's natural duration so honest contention always wins,
+/// but bounded so a stuck peer fails fast as [`FileStoreError::Busy`]
+/// instead of hanging the caller indefinitely.
+const LOCK_WAIT_BUDGET: Duration = Duration::from_secs(5);
+
+/// Poll cadence inside [`LOCK_WAIT_BUDGET`]. Short enough that the
+/// release of a contending peer is observed promptly; long enough that
+/// a busy retry loop costs no CPU worth noticing.
+const LOCK_POLL_INTERVAL: Duration = Duration::from_millis(50);
+
 /// A passphrase-encrypted file-backed credential store.
 ///
 /// The passphrase is held in a [`SecretString`] for the store's
@@ -65,16 +85,35 @@ pub struct EncryptedFileStore {
 struct EncryptedFileStoreInner {
     dir: PathBuf,
     passphrase: SecretString,
+    /// Per-wallet in-process serialization for the put/delete/rekey
+    /// read-modify-write span (CMT-001). The outer `Mutex` only guards
+    /// the map; the inner per-wallet `Mutex<()>` is held across the
+    /// whole RMW. Different wallets stay parallel; same-wallet ops are
+    /// strictly serial. Composed with the cross-process advisory lock
+    /// in [`with_vault_lock`].
+    locks: Mutex<HashMap<WalletId, Arc<Mutex<()>>>>,
 }
 
 impl EncryptedFileStore {
     /// Open (or prepare to create) a vault store rooted at `dir`,
-    /// unlocked by `passphrase`. `dir` is created if missing.
+    /// unlocked by `passphrase`. `dir` is created if missing. On Unix
+    /// the directory is tightened to `0700`; a pre-existing dir whose
+    /// perms were looser is logged at warn level and then tightened in
+    /// place (CMT-002), so the operator sees the prior exposure but
+    /// canonical bootstraps (umask 022 `mkdir`, `tempfile::tempdir`)
+    /// still work. A post-tighten mode that is not `0700` surfaces
+    /// [`FileStoreError::InsecurePermissions`].
     pub fn open(dir: impl AsRef<Path>, passphrase: SecretString) -> Result<Self, FileStoreError> {
         let dir = dir.as_ref().to_path_buf();
+        let preexisted = dir.exists();
         fs::create_dir_all(&dir)?;
+        set_restrictive_dir_perms(&dir, preexisted)?;
         Ok(Self {
-            inner: Arc::new(EncryptedFileStoreInner { dir, passphrase }),
+            inner: Arc::new(EncryptedFileStoreInner {
+                dir,
+                passphrase,
+                locks: Mutex::new(HashMap::new()),
+            }),
         })
     }
 
@@ -157,6 +196,68 @@ impl EncryptedFileStoreInner {
         self.dir.join(format!("{}.pwsvault", wallet_id.to_hex()))
     }
 
+    /// Sidecar advisory-lock path next to a vault. Held across the
+    /// whole put/delete/rekey RMW so a concurrent peer cannot read,
+    /// re-encrypt, and write over our pending swap (CMT-001). Kept
+    /// distinct from the vault file itself so the cross-platform
+    /// `persist` swap never touches the file an open lock fd points at.
+    fn vault_lock_path(&self, wallet_id: &WalletId) -> PathBuf {
+        self.dir
+            .join(format!("{}.pwsvault.lock", wallet_id.to_hex()))
+    }
+
+    /// Per-wallet in-process mutex (lazily inserted). The map mutex is
+    /// only held for the lookup/insert; the returned `Arc<Mutex<()>>`
+    /// is what the caller holds across the RMW.
+    fn wallet_mutex(&self, wallet_id: &WalletId) -> Arc<Mutex<()>> {
+        let mut map = self
+            .locks
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        map.entry(*wallet_id)
+            .or_insert_with(|| Arc::new(Mutex::new(())))
+            .clone()
+    }
+
+    /// Run `f` with the in-process per-wallet mutex held AND the
+    /// cross-process sidecar `.lock` file held exclusively (CMT-001).
+    /// Both layers acquire-release strictly around `f`'s execution; the
+    /// sidecar fd is opened under the in-process mutex so two threads
+    /// in this process cannot fight over the same fd. Lock contention
+    /// past [`LOCK_WAIT_BUDGET`] surfaces as
+    /// [`FileStoreError::Busy`].
+    fn with_vault_lock<R>(
+        &self,
+        wallet_id: &WalletId,
+        f: impl FnOnce() -> Result<R, FileStoreError>,
+    ) -> Result<R, FileStoreError> {
+        let mutex = self.wallet_mutex(wallet_id);
+        let _guard = mutex.lock().unwrap_or_else(|poison| poison.into_inner());
+
+        let lock_path = self.vault_lock_path(wallet_id);
+        let lock_file = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(&lock_path)?;
+        #[cfg(unix)]
+        set_restrictive_perms(&lock_file)?;
+
+        let mut rw = fd_lock::RwLock::new(lock_file);
+        let deadline = Instant::now() + LOCK_WAIT_BUDGET;
+        let _file_guard = loop {
+            match rw.try_write() {
+                Ok(guard) => break guard,
+                Err(_) if Instant::now() < deadline => {
+                    std::thread::sleep(LOCK_POLL_INTERVAL);
+                }
+                Err(_) => return Err(FileStoreError::Busy),
+            }
+        };
+        f()
+    }
+
     /// Build a fresh vault skeleton for a brand-new wallet: random salt,
     /// default Argon2 params, and a passphrase-verification token sealed
     /// under the freshly derived key (SEC-REQ-2.2.x; the token is the
@@ -212,17 +313,45 @@ impl EncryptedFileStoreInner {
 
     /// Read + parse a vault file, or `None` if it does not exist.
     /// Refuses a pre-existing file with looser-than-0600 perms
-    /// (SEC-REQ-2.2.10).
+    /// (SEC-REQ-2.2.10) and a file exceeding [`MAX_VAULT_SIZE_BYTES`]
+    /// (CMT-003).
+    ///
+    /// Eliminates the metadata→read TOCTOU (CMT-004): opens the file
+    /// once with `O_NOFOLLOW` on Unix, then derives perms / size from
+    /// the open handle's `metadata()` and reads from the same fd. A
+    /// symlink swap during the window now reads the original inode the
+    /// open captured.
     fn read_vault(&self, path: &Path) -> Result<Option<Vault>, FileStoreError> {
-        match fs::metadata(path) {
-            Ok(meta) => {
-                check_perms(&meta)?;
-                let bytes = fs::read(path)?;
-                Ok(Some(format::deserialize(&bytes)?))
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-            Err(e) => Err(e.into()),
+        let file = match open_no_follow(path) {
+            Ok(file) => file,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(e) => return Err(e.into()),
+        };
+        let meta = file.metadata()?;
+        check_perms(&meta)?;
+        let len = meta.len();
+        if len > MAX_VAULT_SIZE_BYTES {
+            return Err(FileStoreError::VaultTooLarge {
+                found: len,
+                max: MAX_VAULT_SIZE_BYTES,
+            });
         }
+        let mut bytes = Vec::with_capacity(len as usize);
+        let mut handle = file.take(MAX_VAULT_SIZE_BYTES + 1);
+        handle.read_to_end(&mut bytes)?;
+        // A racing writer that grew the file past the cap between the
+        // metadata check and the read also has to lose the structural
+        // limit — `Read::take` caps the byte count above, but a peer
+        // that resized in-place could still feed us up to that cap; the
+        // explicit re-check guards a 0-padded grow that snuck under the
+        // metadata snapshot.
+        if bytes.len() as u64 > MAX_VAULT_SIZE_BYTES {
+            return Err(FileStoreError::VaultTooLarge {
+                found: bytes.len() as u64,
+                max: MAX_VAULT_SIZE_BYTES,
+            });
+        }
+        Ok(Some(format::deserialize(&bytes)?))
     }
 
     /// Atomically replace the vault, cross-platform (SEC-REQ-2.2.10/.11).
@@ -272,67 +401,81 @@ impl EncryptedFileStoreInner {
         wallet_id: WalletId,
         new_passphrase: SecretString,
     ) -> Result<(), FileStoreError> {
+        // The `&mut self` arrival gates in-process races (the outer
+        // `EncryptedFileStore::rekey` proves exclusive `Arc` ownership
+        // via `Arc::get_mut`). The cross-process advisory lock added in
+        // CMT-001 guards the read→re-encrypt→write span against a peer
+        // process; `with_vault_lock` also takes the in-process per-
+        // wallet mutex so a future refactor that loses the `&mut self`
+        // channel cannot silently regress the safety.
         let path = self.vault_path(&wallet_id);
-        let Some(old_vault) = self.read_vault(&path)? else {
-            self.passphrase = new_passphrase;
-            return Ok(());
-        };
-        let old_key = self.derive_and_verify(&wallet_id, &old_vault)?;
-        let (mut new_vault, new_key) = self.new_vault(&wallet_id, &new_passphrase)?;
+        self.with_vault_lock(&wallet_id, || {
+            let Some(old_vault) = self.read_vault(&path)? else {
+                // No vault on disk yet: the new passphrase becomes the
+                // active one for any future write (set below the lock).
+                return Ok(());
+            };
+            let old_key = self.derive_and_verify(&wallet_id, &old_vault)?;
+            let (mut new_vault, new_key) = self.new_vault(&wallet_id, &new_passphrase)?;
 
-        new_vault.entries.reserve_exact(old_vault.entries.len());
-        for e in &old_vault.entries {
-            let aad = format::aad(format::FORMAT_VERSION, wallet_id.as_bytes(), &e.label);
-            // `derive_and_verify` already proved the old passphrase via
-            // the vault's verify token, so an entry tag failure is
-            // corruption, not a wrong passphrase. Operators must see
-            // this — log the non-secret wallet-id/label, never the
-            // secret. The first such failure aborts the rekey, so this
-            // is not a hot path.
-            let pt =
-                crypto::open(&old_key, &e.nonce, &aad, &e.ciphertext).map_err(|err| match err {
-                    FileStoreError::Decrypt => {
-                        tracing::error!(
-                            wallet_id = %wallet_id.to_hex(),
-                            label = %e.label,
-                            "vault entry failed integrity check during rekey (corruption or tampering)"
-                        );
-                        FileStoreError::Corruption
-                    }
-                    other => other,
-                })?;
-            let (nonce, ct) = crypto::seal(&new_key, &aad, pt.expose_secret())?;
-            new_vault.entries.push(VaultEntry {
-                label: e.label.clone(),
-                nonce,
-                ciphertext: ct,
-            });
-        }
-        self.write_vault(&path, &new_vault)?;
+            new_vault.entries.reserve_exact(old_vault.entries.len());
+            for e in &old_vault.entries {
+                let aad = format::aad(format::FORMAT_VERSION, wallet_id.as_bytes(), &e.label);
+                // `derive_and_verify` already proved the old passphrase via
+                // the vault's verify token, so an entry tag failure is
+                // corruption, not a wrong passphrase. Operators must see
+                // this — log the non-secret wallet-id/label, never the
+                // secret. The first such failure aborts the rekey, so this
+                // is not a hot path.
+                let pt =
+                    crypto::open(&old_key, &e.nonce, &aad, &e.ciphertext).map_err(|err| match err {
+                        FileStoreError::Decrypt => {
+                            tracing::error!(
+                                wallet_id = %wallet_id.to_hex(),
+                                label = %e.label,
+                                "vault entry failed integrity check during rekey (corruption or tampering)"
+                            );
+                            FileStoreError::Corruption
+                        }
+                        other => other,
+                    })?;
+                let (nonce, ct) = crypto::seal(&new_key, &aad, pt.expose_secret())?;
+                new_vault.entries.push(VaultEntry {
+                    label: e.label.clone(),
+                    nonce,
+                    ciphertext: ct,
+                });
+            }
+            self.write_vault(&path, &new_vault)
+        })?;
         self.passphrase = new_passphrase;
         Ok(())
     }
 
     /// `put` — overwrite-safe atomic seal under `(wallet_id, label)`.
+    /// The read-modify-write span is serialized in-process and
+    /// cross-process via [`with_vault_lock`] (CMT-001).
     fn put(&self, wallet_id: &WalletId, label: &str, bytes: &[u8]) -> Result<(), FileStoreError> {
         let label = validated_label(label)?.to_string();
         let path = self.vault_path(wallet_id);
-        let (mut vault, key) = match self.read_vault(&path)? {
-            Some(vault) => {
-                let key = self.derive_and_verify(wallet_id, &vault)?;
-                (vault, key)
-            }
-            None => self.new_vault(wallet_id, &self.passphrase)?,
-        };
-        let aad = format::aad(format::FORMAT_VERSION, wallet_id.as_bytes(), &label);
-        let (nonce, ciphertext) = crypto::seal(&key, &aad, bytes)?;
-        vault.entries.retain(|e| e.label != label);
-        vault.entries.push(VaultEntry {
-            label,
-            nonce,
-            ciphertext,
-        });
-        self.write_vault(&path, &vault)
+        self.with_vault_lock(wallet_id, || {
+            let (mut vault, key) = match self.read_vault(&path)? {
+                Some(vault) => {
+                    let key = self.derive_and_verify(wallet_id, &vault)?;
+                    (vault, key)
+                }
+                None => self.new_vault(wallet_id, &self.passphrase)?,
+            };
+            let aad = format::aad(format::FORMAT_VERSION, wallet_id.as_bytes(), &label);
+            let (nonce, ciphertext) = crypto::seal(&key, &aad, bytes)?;
+            vault.entries.retain(|e| e.label != label);
+            vault.entries.push(VaultEntry {
+                label,
+                nonce,
+                ciphertext,
+            });
+            self.write_vault(&path, &vault)
+        })
     }
 
     /// `get` — returns the raw plaintext as `Vec<u8>` (the upstream
@@ -369,23 +512,26 @@ impl EncryptedFileStoreInner {
 
     /// `delete` — upstream-compliant: returns whether an entry was
     /// removed so the SPI seam can surface `NoEntry` (D3, per the
-    /// `CredentialApi::delete_credential` contract).
+    /// `CredentialApi::delete_credential` contract). The read-modify-
+    /// write span is serialized via [`with_vault_lock`] (CMT-001).
     fn delete(&self, wallet_id: &WalletId, label: &str) -> Result<bool, FileStoreError> {
         let label = validated_label(label)?;
         let path = self.vault_path(wallet_id);
-        let Some(mut vault) = self.read_vault(&path)? else {
-            return Ok(false);
-        };
-        // Verify the passphrase before mutating, so a wrong pass can
-        // neither delete an entry nor rewrite the vault.
-        self.derive_and_verify(wallet_id, &vault)?;
-        let before = vault.entries.len();
-        vault.entries.retain(|e| e.label != label);
-        if vault.entries.len() == before {
-            return Ok(false);
-        }
-        self.write_vault(&path, &vault)?;
-        Ok(true)
+        self.with_vault_lock(wallet_id, || {
+            let Some(mut vault) = self.read_vault(&path)? else {
+                return Ok(false);
+            };
+            // Verify the passphrase before mutating, so a wrong pass
+            // can neither delete an entry nor rewrite the vault.
+            self.derive_and_verify(wallet_id, &vault)?;
+            let before = vault.entries.len();
+            vault.entries.retain(|e| e.label != label);
+            if vault.entries.len() == before {
+                return Ok(false);
+            }
+            self.write_vault(&path, &vault)?;
+            Ok(true)
+        })
     }
 }
 
@@ -558,6 +704,72 @@ fn set_restrictive_perms(f: &fs::File) -> Result<(), FileStoreError> {
 
 #[cfg(not(unix))]
 fn set_restrictive_perms(_f: &fs::File) -> Result<(), FileStoreError> {
+    Ok(())
+}
+
+/// Open a vault file for reading. On Unix the open refuses to traverse
+/// a final-component symlink (`O_NOFOLLOW`) so a symlink swap between
+/// the open and the read cannot redirect us to a different inode
+/// (CMT-004). The file handle then drives every subsequent check
+/// (perms, size, content), so a path-based race window cannot reopen
+/// it.
+#[cfg(unix)]
+fn open_no_follow(path: &Path) -> std::io::Result<fs::File> {
+    use std::os::unix::fs::OpenOptionsExt;
+    fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW)
+        .open(path)
+}
+
+/// Non-Unix fallback: no `O_NOFOLLOW` primitive available. The fd-based
+/// metadata + read still close the metadata→read TOCTOU within this
+/// process; symlink-swap defence on Windows is deferred with the same
+/// scope note as [`check_perms`].
+#[cfg(not(unix))]
+fn open_no_follow(path: &Path) -> std::io::Result<fs::File> {
+    fs::OpenOptions::new().read(true).open(path)
+}
+
+/// Tighten the vault directory to `0700` on Unix (CMT-002). A
+/// pre-existing directory's looser bits are logged at warn level (so
+/// the operator sees the prior exposure) and then in-place tightened
+/// rather than refused — refusing would break the canonical
+/// `tempfile::tempdir()` setup used throughout the test suite and any
+/// real deployment that bootstraps the dir via `mkdir` under a 0o022
+/// umask. After tightening, the mode is re-verified and a non-`0700`
+/// result surfaces [`FileStoreError::InsecurePermissions`] (defence in
+/// depth — `set_permissions` succeeding but not landing the bits is a
+/// surprise worth failing loud).
+#[cfg(unix)]
+fn set_restrictive_dir_perms(dir: &Path, preexisted: bool) -> Result<(), FileStoreError> {
+    use std::os::unix::fs::PermissionsExt;
+    let meta = fs::metadata(dir)?;
+    let mode = meta.permissions().mode() & 0o777;
+    if preexisted && mode & 0o077 != 0 {
+        tracing::warn!(
+            dir = %dir.display(),
+            mode = format_args!("{mode:o}"),
+            "pre-existing vault directory was looser than 0700; tightening in place"
+        );
+    }
+    if mode != 0o700 {
+        fs::set_permissions(dir, fs::Permissions::from_mode(0o700))?;
+        let after = fs::metadata(dir)?.permissions().mode() & 0o777;
+        if after != 0o700 {
+            return Err(FileStoreError::InsecurePermissions { mode: after });
+        }
+    }
+    Ok(())
+}
+
+// INTENTIONAL(CMT-002): Windows ACL dir-tightening is deferred to the
+// same follow-up that covers the file check (CMT-007). Vault dir
+// hardening on Windows requires GetSecurityInfo via windows-acl or
+// winapi; out of scope for the secrets-feature landing. Operators on
+// Windows MUST set ACLs manually until the follow-up lands.
+#[cfg(not(unix))]
+fn set_restrictive_dir_perms(_dir: &Path, _preexisted: bool) -> Result<(), FileStoreError> {
     Ok(())
 }
 
@@ -986,5 +1198,82 @@ mod tests {
         ));
         assert_eq!(s.vendor(), VENDOR);
         assert_eq!(s.id(), STORE_ID);
+    }
+
+    /// CMT-003 — vault files larger than [`MAX_VAULT_SIZE_BYTES`] must
+    /// fail BEFORE the read allocates. Uses a sparse-file truncate so
+    /// the test stays cheap (the allocator never sees real bytes), and
+    /// asserts the typed `VaultTooLarge` projects through the SPI to
+    /// `BadStoreFormat`.
+    #[test]
+    fn vault_above_size_cap_is_rejected_pre_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = store(dir.path());
+        // Materialize a fresh vault file so the path layout matches the
+        // production one; then overwrite-extend to past the cap via a
+        // sparse truncate (zero physical bytes used).
+        entry(&s, wid(1), "seed").set_secret(b"v").unwrap();
+        let path = s.test_vault_path(&wid(1));
+        let oversized = MAX_VAULT_SIZE_BYTES + 1;
+        let f = fs::OpenOptions::new().write(true).open(&path).unwrap();
+        f.set_len(oversized).unwrap();
+        drop(f);
+
+        let err = entry(&s, wid(1), "seed").get_secret().unwrap_err();
+        match &err {
+            KeyringError::BadStoreFormat(msg) => {
+                let expected = FileStoreError::VaultTooLarge {
+                    found: oversized,
+                    max: MAX_VAULT_SIZE_BYTES,
+                }
+                .to_string();
+                assert_eq!(*msg, expected, "unexpected message: {msg}");
+            }
+            other => panic!("expected BadStoreFormat(VaultTooLarge), got {other:?}"),
+        }
+    }
+
+    /// CMT-001 — the cross-process advisory lock on the sidecar
+    /// `.lock` file must serialize same-wallet writers within one
+    /// process too. Holding the sidecar `.lock` from this thread (via
+    /// a directly-held `fd_lock::RwLock::write` guard) must keep a
+    /// peer `put` blocked-then-`Busy` past the wait budget.
+    ///
+    /// The test bypasses the in-process `Mutex<HashMap<...>>` layer on
+    /// purpose: that layer guarantees an in-process serialization, but
+    /// CMT-001's real teeth are the SIDECAR FILE lock (the bit that
+    /// crosses process boundaries). We probe the file-lock branch
+    /// directly so a future refactor that drops the file layer can't
+    /// silently rely on the in-process map alone.
+    #[test]
+    fn vault_lock_contention_surfaces_busy() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = store(dir.path());
+        entry(&s, wid(1), "seed").set_secret(b"v").unwrap();
+        let lock_path = s.inner.vault_lock_path(&wid(1));
+
+        let file = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(&lock_path)
+            .unwrap();
+        let mut rw = fd_lock::RwLock::new(file);
+        let _guard = rw.write().expect("acquire exclusive sidecar lock");
+
+        // While the sidecar is held, a put on the same wallet must hit
+        // the timeout and surface Busy.
+        let start = Instant::now();
+        let err = s
+            .inner
+            .put(&wid(1), "other", b"x")
+            .expect_err("peer put must contend");
+        assert!(matches!(err, FileStoreError::Busy), "got {err:?}");
+        assert!(
+            start.elapsed() >= LOCK_WAIT_BUDGET,
+            "Busy must arrive only after the wait budget; took {:?}",
+            start.elapsed()
+        );
     }
 }

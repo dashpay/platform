@@ -68,13 +68,34 @@ pub enum FileStoreError {
         mode: u32,
     },
 
-    /// `rekey` was called while an `EncryptedFileCredential` (built via
-    /// `CredentialStoreApi::build`) still holds a clone of the inner
-    /// `Arc`, so the store lacks the exclusive reference the atomic
-    /// passphrase swap requires. A recoverable runtime state — drop the
-    /// outstanding credentials and retry — not a logic bug.
-    #[error("store is busy: outstanding credentials prevent rekey")]
+    /// The store is temporarily unavailable. Two recoverable runtime
+    /// causes ride this variant:
+    ///
+    /// 1. `rekey` was called while an `EncryptedFileCredential` (built
+    ///    via `CredentialStoreApi::build`) still holds a clone of the
+    ///    inner `Arc`, so the store lacks the exclusive reference the
+    ///    atomic passphrase swap requires. Drop the outstanding
+    ///    credentials and retry.
+    /// 2. A cross-process advisory lock on the vault sidecar
+    ///    (`*.pwsvault.lock`) could not be acquired before the wait
+    ///    budget elapsed — another process is mid-write. Retry once the
+    ///    contender releases (CMT-001).
+    ///
+    /// A recoverable runtime state, not a logic bug.
+    #[error("store is busy: outstanding credentials or lock contention")]
     Busy,
+
+    /// The on-disk vault file exceeds the structural ceiling
+    /// ([`MAX_VAULT_SIZE_BYTES`](crate::secrets::MAX_VAULT_SIZE_BYTES)).
+    /// Refuse to allocate / parse a multi-GiB attacker-controllable JSON
+    /// payload (CMT-003).
+    #[error("vault file exceeds maximum size of {max} bytes (got {found})")]
+    VaultTooLarge {
+        /// The on-disk size (bytes) of the offending file.
+        found: u64,
+        /// The compiled-in ceiling (bytes).
+        max: u64,
+    },
 
     /// Internal AEAD tag failure with no vault context yet attached. The
     /// crypto seam (`crypto::open`) cannot tell *why* a tag failed, so it
@@ -186,6 +207,7 @@ impl From<FileStoreError> for KeyringError {
             | E::VersionUnsupported { .. }
             | E::MalformedVault
             | E::InsecurePermissions { .. }
+            | E::VaultTooLarge { .. }
             | E::Decrypt
             | E::OsKeyring { .. } => KeyringError::BadStoreFormat(e.to_string()),
             E::InvalidLabel => {

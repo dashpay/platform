@@ -58,7 +58,7 @@ mod store;
 mod validate;
 
 pub use file::error::{FileStoreError, OsKeyringErrorKind};
-pub use file::{EncryptedFileCredential, EncryptedFileStore, SERVICE_PREFIX};
+pub use file::{EncryptedFileCredential, EncryptedFileStore, MAX_VAULT_SIZE_BYTES, SERVICE_PREFIX};
 pub use keyring::default_credential_store;
 pub use secret::{SecretBytes, SecretString};
 pub use store::SecretStore;
