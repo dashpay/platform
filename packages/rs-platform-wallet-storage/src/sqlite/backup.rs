@@ -187,6 +187,31 @@ pub fn run_to(src: &Connection, dest: &Path) -> Result<(), WalletStorageError> {
 /// On Unix, the parent directory is `fsync`-ed after the rename so the
 /// dentry update is durable across power loss; on non-Unix this is a
 /// no-op.
+///
+/// # Lock-release-before-rename trade-off
+///
+/// The EXCLUSIVE lock is released BEFORE the atomic rename, on
+/// purpose. SQLite keeps a kernel file handle on the destination's
+/// (old) inode for as long as the lock conn is alive; holding that
+/// handle across the rename would leave it pointing at the unlinked
+/// old inode while peers opening the new path would race the rename
+/// itself (on some filesystems the rename can outright fail).
+/// Releasing the lock first lets SQLite drop its old-inode handle
+/// before the rename swaps it.
+///
+/// The trade-off: a microsecond window opens between lock release and
+/// rename in which a peer can acquire its own SQLite lock on the
+/// destination's old inode. Any writes it makes within that window
+/// land in the old inode, which the rename immediately unlinks — the
+/// peer's writes are effectively dropped on the floor (the peer keeps
+/// a handle on an inode that no longer has any directory entry; once
+/// it closes, the bytes are reclaimed). That is acceptable for the
+/// restore contract: callers serialize their own restore intent at
+/// the application layer; the window is too short for a non-malicious
+/// peer to land more than a transient miss, and a malicious peer
+/// cannot escalate beyond losing its own write. Correct file-handle
+/// semantics across the rename matter more than absolute lock
+/// coverage.
 pub fn restore_from(dest_db_path: &Path, src_backup: &Path) -> Result<(), WalletStorageError> {
     // 1. Confirm the source is openable, then run cheap pre-staging
     //    integrity + schema-history + max-version sniffs against the

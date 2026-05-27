@@ -1233,11 +1233,9 @@ impl PlatformWalletPersistence for FFIPersister {
         }
 
         if !round_success {
-            return Err(
-                "one or more persistence callbacks failed; changeset was rolled back"
-                    .to_string()
-                    .into(),
-            );
+            return Err(PersistenceError::backend(
+                "one or more persistence callbacks failed; changeset was rolled back",
+            ));
         }
 
         // Merge into pending changesets.
@@ -1251,9 +1249,10 @@ impl PlatformWalletPersistence for FFIPersister {
         if let Some(cb) = self.callbacks.on_store_fn {
             let result = unsafe { cb(self.callbacks.context, wallet_id.as_ptr()) };
             if result != 0 {
-                return Err(
-                    format!("Persistence store callback returned error code {}", result).into(),
-                );
+                return Err(PersistenceError::backend(format!(
+                    "Persistence store callback returned error code {}",
+                    result
+                )));
             }
         }
 
@@ -1265,9 +1264,10 @@ impl PlatformWalletPersistence for FFIPersister {
         if let Some(cb) = self.callbacks.on_flush_fn {
             let result = unsafe { cb(self.callbacks.context, wallet_id.as_ptr()) };
             if result != 0 {
-                return Err(
-                    format!("Persistence flush callback returned error code {}", result).into(),
-                );
+                return Err(PersistenceError::backend(format!(
+                    "Persistence flush callback returned error code {}",
+                    result
+                )));
             }
         }
 
@@ -1293,7 +1293,10 @@ impl PlatformWalletPersistence for FFIPersister {
         let mut count: usize = 0;
         let rc = unsafe { load_cb(self.callbacks.context, &mut entries_ptr, &mut count) };
         if rc != 0 {
-            return Err(format!("on_load_wallet_list_fn returned error code {}", rc).into());
+            return Err(PersistenceError::backend(format!(
+                "on_load_wallet_list_fn returned error code {}",
+                rc
+            )));
         }
         let _guard = LoadGuard {
             context: self.callbacks.context,
@@ -2267,14 +2270,17 @@ fn build_wallet_start_state(
         let xpub_bytes =
             unsafe { slice_from_raw(spec.account_xpub_bytes, spec.account_xpub_bytes_len) };
         let (account_xpub, _): (ExtendedPubKey, usize) =
-            bincode::decode_from_slice(xpub_bytes, config::standard())
-                .map_err(|e| format!("failed to decode account xpub: {}", e))?;
+            bincode::decode_from_slice(xpub_bytes, config::standard()).map_err(|e| {
+                PersistenceError::backend(format!("failed to decode account xpub: {}", e))
+            })?;
         let account =
             Account::from_xpub(Some(entry.wallet_id), account_type, account_xpub, network)
-                .map_err(|e| format!("Account::from_xpub failed: {:?}", e))?;
-        accounts
-            .insert(account)
-            .map_err(|e| format!("AccountCollection::insert failed: {}", e))?;
+                .map_err(|e| {
+                    PersistenceError::backend(format!("Account::from_xpub failed: {:?}", e))
+                })?;
+        accounts.insert(account).map_err(|e| {
+            PersistenceError::backend(format!("AccountCollection::insert failed: {}", e))
+        })?;
     }
 
     // External-signable wallet — the mnemonic / seed lives in the
@@ -2915,7 +2921,7 @@ fn build_unused_asset_locks(
     for spec in specs {
         // Decode the outpoint: 32-byte raw txid + 4-byte LE vout.
         let txid = dashcore::Txid::from_slice(&spec.out_point[..32]).map_err(|e| {
-            PersistenceError::from(format!(
+            PersistenceError::backend(format!(
                 "tracked asset lock: invalid txid in outpoint: {}",
                 e
             ))
@@ -2928,8 +2934,8 @@ fn build_unused_asset_locks(
 
         // Decode the consensus-encoded transaction.
         if spec.transaction_bytes.is_null() || spec.transaction_bytes_len == 0 {
-            return Err(PersistenceError::from(
-                "tracked asset lock: empty transaction bytes".to_string(),
+            return Err(PersistenceError::backend(
+                "tracked asset lock: empty transaction bytes",
             ));
         }
         // SAFETY: Swift guarantees the buffer is valid for the
@@ -2939,7 +2945,7 @@ fn build_unused_asset_locks(
             unsafe { slice::from_raw_parts(spec.transaction_bytes, spec.transaction_bytes_len) };
         let transaction: dashcore::Transaction = dashcore::consensus::deserialize(tx_bytes)
             .map_err(|e| {
-                PersistenceError::from(format!(
+                PersistenceError::backend(format!(
                     "tracked asset lock: failed to decode transaction: {}",
                     e
                 ))
@@ -2959,7 +2965,10 @@ fn build_unused_asset_locks(
                 config::standard(),
             )
             .map_err(|e| {
-                PersistenceError::from(format!("tracked asset lock: failed to decode proof: {}", e))
+                PersistenceError::backend(format!(
+                    "tracked asset lock: failed to decode proof: {}",
+                    e
+                ))
             })?;
             Some(proof)
         };
@@ -3010,7 +3019,7 @@ fn funding_type_from_u8(
         4 => AssetLockFundingType::AssetLockAddressTopUp,
         5 => AssetLockFundingType::AssetLockShieldedAddressTopUp,
         other => {
-            return Err(PersistenceError::from(format!(
+            return Err(PersistenceError::backend(format!(
                 "tracked asset lock: unknown funding_type discriminant {}",
                 other
             )))
@@ -3027,7 +3036,7 @@ fn status_from_u8(b: u8) -> Result<platform_wallet::AssetLockStatus, Persistence
         3 => AssetLockStatus::ChainLocked,
         4 => AssetLockStatus::Consumed,
         other => {
-            return Err(PersistenceError::from(format!(
+            return Err(PersistenceError::backend(format!(
                 "tracked asset lock: unknown status discriminant {}",
                 other
             )))
@@ -3357,10 +3366,10 @@ fn restore_unresolved_asset_lock_tx_records(
         let context = match rec.context_raw {
             2 => {
                 let block_hash = dashcore::BlockHash::from_slice(&rec.block_hash).map_err(|e| {
-                    format!(
+                    PersistenceError::backend(format!(
                         "load: malformed block_hash on unresolved asset-lock tx record: {}",
                         e
-                    )
+                    ))
                 })?;
                 TransactionContext::InBlock(BlockInfo::new(
                     rec.block_height,
@@ -3370,10 +3379,10 @@ fn restore_unresolved_asset_lock_tx_records(
             }
             3 => {
                 let block_hash = dashcore::BlockHash::from_slice(&rec.block_hash).map_err(|e| {
-                    format!(
+                    PersistenceError::backend(format!(
                         "load: malformed block_hash on unresolved asset-lock tx record: {}",
                         e
-                    )
+                    ))
                 })?;
                 TransactionContext::InChainLockedBlock(BlockInfo::new(
                     rec.block_height,

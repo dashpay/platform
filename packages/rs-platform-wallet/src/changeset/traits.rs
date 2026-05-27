@@ -5,7 +5,6 @@
 
 use std::collections::BTreeMap;
 use std::error::Error as StdError;
-use std::fmt;
 use std::path::PathBuf;
 
 use crate::changeset::changeset::PlatformWalletChangeSet;
@@ -132,40 +131,6 @@ impl PersistenceError {
         }
     }
 }
-
-/// String-shaped messages from legacy callers (predominantly the FFI
-/// persister) flow through here. The original construction site
-/// usually doesn't know whether the failure is transient or fatal, so
-/// the conservative default is [`PersistenceErrorKind::Fatal`] —
-/// callers that DO know the kind use [`PersistenceError::backend_with_kind`]
-/// directly.
-impl From<String> for PersistenceError {
-    fn from(msg: String) -> Self {
-        Self::backend(StringSource(msg))
-    }
-}
-
-impl From<&str> for PersistenceError {
-    fn from(msg: &str) -> Self {
-        Self::backend(StringSource(msg.to_string()))
-    }
-}
-
-/// Minimal error wrapper around an owned message so the
-/// `From<String>` / `From<&str>` impls can hand a typed source into
-/// `Backend.source` without allocating a `dyn Error` for every
-/// legacy call site. Kept private to the module — call sites stay
-/// terse via `.into()`.
-#[derive(Debug)]
-struct StringSource(String);
-
-impl fmt::Display for StringSource {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
-impl StdError for StringSource {}
 
 /// Storage backend for [`PlatformWalletChangeSet`] deltas.
 ///

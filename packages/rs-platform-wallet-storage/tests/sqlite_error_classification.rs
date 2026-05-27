@@ -177,6 +177,9 @@ fn samples() -> Vec<WalletStorageError> {
                 Some("busy".into()),
             ),
         },
+        WalletStorageError::ConcurrentMutationDuringDelete {
+            wallet_id: [0xCD; 32],
+        },
     ]
 }
 
@@ -244,6 +247,9 @@ fn tc_p2_005_is_transient_table() {
             WalletStorageError::BlobTooLarge { .. } => (false, "blob_too_large"),
             WalletStorageError::ForeignKeysNotEnforced => (false, "foreign_keys_not_enforced"),
             WalletStorageError::IntegerOverflow { .. } => (false, "integer_overflow"),
+            WalletStorageError::ConcurrentMutationDuringDelete { .. } => {
+                (false, "concurrent_mutation_during_delete")
+            }
         }
     }
 

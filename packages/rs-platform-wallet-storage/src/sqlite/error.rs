@@ -237,6 +237,26 @@ pub enum WalletStorageError {
         target: SafeCastTarget,
     },
 
+    /// A `delete_wallet` cascade detected that a peer mutated the
+    /// wallet's footprint between the pre-delete auto-backup snapshot
+    /// and the cascade's `BEGIN EXCLUSIVE` acquisition. The auto-backup
+    /// is taken OUTSIDE the EXCLUSIVE tx because rusqlite's Backup API
+    /// can't run inside a write transaction on the source conn; that
+    /// leaves a small window in which a cross-process peer can write
+    /// to the wallet — those writes would survive in the live DB but
+    /// would NOT be in the pre-delete backup (operator rollback path
+    /// would silently lose them).
+    ///
+    /// The cascade aborts on detection so the operator can retry once
+    /// the peer is quiesced. The backup file (if one was written) is
+    /// left in place — it captures the pre-mutation state and is still
+    /// useful for forensics.
+    #[error(
+        "delete_wallet aborted: peer mutated wallet {} between auto-backup snapshot and EXCLUSIVE acquire",
+        hex::encode(wallet_id)
+    )]
+    ConcurrentMutationDuringDelete { wallet_id: [u8; 32] },
+
     /// Flush failed transiently (e.g. `SQLITE_BUSY` / `SQLITE_LOCKED`)
     /// for `wallet_id`. The buffered changeset has been restored — the
     /// next `flush(wallet_id)` will retry the same data merged with
@@ -349,6 +369,7 @@ impl WalletStorageError {
             | Self::IdentityKeyEntryMismatch
             | Self::AssetLockEntryMismatch { .. }
             | Self::BlobTooLarge { .. }
+            | Self::ConcurrentMutationDuringDelete { .. }
             | Self::IntegerOverflow { .. } => false,
         }
     }
@@ -429,6 +450,7 @@ impl WalletStorageError {
             Self::AssetLockEntryMismatch { .. } => "asset_lock_entry_mismatch",
             Self::BlobTooLarge { .. } => "blob_too_large",
             Self::IntegerOverflow { .. } => "integer_overflow",
+            Self::ConcurrentMutationDuringDelete { .. } => "concurrent_mutation_during_delete",
         }
     }
 }

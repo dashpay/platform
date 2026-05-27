@@ -455,6 +455,14 @@ impl SqlitePersister {
                 .is_some()
             };
 
+            // Snapshot the wallet's footprint BEFORE auto_backup so
+            // the post-EXCLUSIVE re-check has a baseline to compare
+            // against. `wallet_footprint` queries every PER_WALLET_TABLES
+            // row count; mismatches between pre-backup and post-lock
+            // mean a peer mutated the wallet inside the lock-free
+            // window the rusqlite Backup API forces us to leave open.
+            let pre_backup_footprint = wallet_footprint(&conn, &wallet_id)?;
+
             let backup_path = if skip_backup {
                 None
             } else {
@@ -482,20 +490,35 @@ impl SqlitePersister {
             // SQLite's `busy_timeout`.
             let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Exclusive)?;
 
-            // Re-confirm existence post-EXCLUSIVE: a peer could have
-            // either inserted (raising the wallet from non-existent to
-            // existent) or deleted (vanishing it) between the backup
-            // and the lock acquisition. If a peer just deleted the
-            // wallet, the cascade is a no-op — we still commit because
-            // the operator's intent is satisfied.
-            let post_lock_exists = tx
-                .query_row(
-                    "SELECT 1 FROM wallet_metadata WHERE wallet_id = ?1",
-                    rusqlite::params![wallet_id.as_slice()],
-                    |_| Ok(()),
-                )
-                .optional()?
-                .is_some();
+            // Re-snapshot the wallet's footprint under EXCLUSIVE and
+            // compare against the pre-backup snapshot. Any change means
+            // a peer mutated the wallet between the backup and the lock
+            // acquisition — the backup we just took is now inconsistent
+            // with the live state, so rollback-from-backup would
+            // silently lose those writes. Abort with the typed
+            // `ConcurrentMutationDuringDelete` so the operator can
+            // retry after quiescing the peer.
+            let post_lock_footprint = wallet_footprint_tx(&tx, &wallet_id)?;
+            if post_lock_footprint != pre_backup_footprint {
+                tracing::warn!(
+                    wallet_id = %hex::encode(wallet_id),
+                    pre_backup = ?pre_backup_footprint,
+                    post_lock = ?post_lock_footprint,
+                    "delete_wallet aborted: peer mutated wallet between auto-backup and EXCLUSIVE"
+                );
+                // Roll back the empty EXCLUSIVE — no destructive work
+                // has happened yet inside this tx, so drop is enough,
+                // but be explicit.
+                let _ = tx.rollback();
+                return Err(WalletStorageError::ConcurrentMutationDuringDelete { wallet_id });
+            }
+
+            // Cross-check existence as a defensive log: post_lock
+            // footprint equality already implies same existence, but
+            // keep the structured log for ops visibility.
+            let post_lock_exists = post_lock_footprint
+                .iter()
+                .any(|(table, n)| *table == "wallet_metadata" && *n > 0);
             if post_lock_exists != exists_in_db {
                 tracing::info!(
                     wallet_id = %hex::encode(wallet_id),
@@ -548,8 +571,13 @@ impl SqlitePersister {
         result
     }
 
-    /// In Manual mode: attempt to flush every dirty wallet. In
-    /// Immediate mode: no-op (returns an empty report).
+    /// Attempt to flush every dirty wallet, regardless of flush mode.
+    ///
+    /// In `Manual` mode this is the only way pending writes become
+    /// durable. In `Immediate` mode the buffer is normally empty (each
+    /// `store` flushes inline) but a transient failure during `store`
+    /// leaves the changeset in the buffer — `commit_writes` is the
+    /// retry path that drains those leftovers.
     ///
     /// Continues past per-wallet failures instead of fails-fast (N-1).
     /// Each wallet's flush outcome lands on the returned
@@ -571,9 +599,12 @@ impl SqlitePersister {
             failed: Vec::new(),
             still_pending: Vec::new(),
         };
-        if self.config.flush_mode == FlushMode::Immediate {
-            return Ok(report);
-        }
+        // Even in `FlushMode::Immediate` the buffer can be non-empty:
+        // a transient failure during `store()` re-merges the changeset
+        // back into the buffer via `handle_flush_error`. The retry path
+        // — `commit_writes()` — has to drain that leftover regardless
+        // of flush mode, otherwise transient-failure data sits there
+        // until the next per-wallet `store` happens to retry it.
         let dirty = self
             .buffer
             .dirty_wallets()
@@ -1248,6 +1279,50 @@ fn count_pending(
         .iter()
         .filter(|(v, _)| !applied.contains(&(*v as i64)))
         .count())
+}
+
+/// Per-wallet footprint fingerprint: `(table_name, row_count)` for
+/// every entry in `PER_WALLET_TABLES`. Used by `delete_wallet_inner`
+/// to detect cross-process mutations between the pre-delete backup
+/// snapshot and the cascade's EXCLUSIVE acquisition.
+fn wallet_footprint(
+    conn: &Connection,
+    wallet_id: &WalletId,
+) -> Result<Vec<(&'static str, i64)>, WalletStorageError> {
+    let mut out = Vec::with_capacity(PER_WALLET_TABLES.len());
+    for (table, scope) in PER_WALLET_TABLES {
+        let n: i64 = conn
+            .query_row(
+                &count_rows_for_wallet_sql(table, *scope),
+                rusqlite::params![wallet_id.as_slice()],
+                |row| row.get(0),
+            )
+            .optional()?
+            .unwrap_or(0);
+        out.push((*table, n));
+    }
+    Ok(out)
+}
+
+/// Same as [`wallet_footprint`] but on an open transaction so the
+/// post-EXCLUSIVE re-check sees the locked snapshot.
+fn wallet_footprint_tx(
+    tx: &rusqlite::Transaction<'_>,
+    wallet_id: &WalletId,
+) -> Result<Vec<(&'static str, i64)>, WalletStorageError> {
+    let mut out = Vec::with_capacity(PER_WALLET_TABLES.len());
+    for (table, scope) in PER_WALLET_TABLES {
+        let n: i64 = tx
+            .query_row(
+                &count_rows_for_wallet_sql(table, *scope),
+                rusqlite::params![wallet_id.as_slice()],
+                |row| row.get(0),
+            )
+            .optional()?
+            .unwrap_or(0);
+        out.push((*table, n));
+    }
+    Ok(out)
 }
 
 fn current_schema_version(conn: &Connection) -> Result<Option<i32>, WalletStorageError> {

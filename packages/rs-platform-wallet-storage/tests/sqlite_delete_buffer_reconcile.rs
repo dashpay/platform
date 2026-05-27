@@ -10,9 +10,9 @@
 //! `WalletNotFound`; the pre-delete backup must contain buffered-but-
 //! unflushed rows; a transient pre-flush failure must restore the
 //! buffer and abort the delete without producing a backup; a peer
-//! deleting the wallet in the post-snapshot / pre-cascade window
-//! still yields a successful (no-op) cascade; the flush must not
-//! resurrect a deleted wallet.
+//! mutating the wallet in the post-snapshot / pre-cascade window
+//! aborts the cascade with `ConcurrentMutationDuringDelete`; the
+//! flush must not resurrect a deleted wallet.
 
 mod common;
 
@@ -200,13 +200,14 @@ fn pre_flush_failure_preserves_buffer_and_skips_backup() {
     );
 }
 
-/// TC-CODE-006-3 — a peer that deletes the wallet's metadata row in
-/// the post-snapshot / pre-cascade window still yields a successful
-/// `delete_wallet`: the cascade is a no-op (counts are zero) and the
-/// backup, taken before the peer mutation, still carries the wallet's
-/// pre-deletion state.
+/// TC-CODE-006-3 — a peer that mutates the wallet in the post-snapshot
+/// / pre-cascade window aborts `delete_wallet` with the typed
+/// `ConcurrentMutationDuringDelete` so the operator can retry after
+/// quiescing the peer. The pre-delete backup file is left in place —
+/// it captures the pre-mutation state and is still useful for
+/// forensics — but the cascade itself does NOT run.
 #[test]
-fn peer_delete_between_backup_and_exclusive_returns_ok_with_zero_counts() {
+fn peer_mutation_between_backup_and_exclusive_aborts_with_typed_error() {
     let tmp = tempfile::tempdir().unwrap();
     let path = tmp.path().join("w.db");
     let backup_dir = tmp.path().join("backups");
@@ -220,7 +221,8 @@ fn peer_delete_between_backup_and_exclusive_returns_ok_with_zero_counts() {
     // Arm a hook that fires after the pre-delete backup snapshot and
     // before the cascade `BEGIN EXCLUSIVE`. The hook opens a sibling
     // raw connection to the same DB and deletes the wallet's metadata
-    // row — simulating a cross-process peer.
+    // row — simulating a cross-process peer mutation that the
+    // rusqlite-Backup-API lock-free window left open.
     let peer_path = path.clone();
     persister.arm_post_backup_hook(move || {
         let peer = rusqlite::Connection::open(&peer_path).expect("peer open");
@@ -232,21 +234,24 @@ fn peer_delete_between_backup_and_exclusive_returns_ok_with_zero_counts() {
         .expect("peer delete");
     });
 
-    let report = persister
+    let err = persister
         .delete_wallet(w)
-        .expect("delete_wallet must succeed even when a peer races the cascade");
-    let backup_path = report.backup_path.expect("backup written before peer race");
+        .expect_err("delete_wallet must abort when a peer races the cascade");
+    let observed = match err {
+        WalletStorageError::ConcurrentMutationDuringDelete { wallet_id } => wallet_id,
+        other => panic!("expected ConcurrentMutationDuringDelete, got: {other:?}"),
+    };
+    assert_eq!(observed, *w.as_slice(), "wallet_id mismatch in typed error");
 
-    // Cascade reports zero rows removed because the peer beat it to
-    // every table.
-    for (_table, count) in report.rows_removed_per_table.iter() {
-        assert_eq!(
-            *count, 0,
-            "peer-raced cascade should observe zero per-table counts"
-        );
-    }
-
-    // Backup still contains the pre-peer-deletion state.
+    // The pre-delete backup must still exist so forensics can recover
+    // the pre-peer-mutation state.
+    let backups: Vec<_> = std::fs::read_dir(tmp.path().join("backups"))
+        .expect("backup dir")
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_name().to_string_lossy().starts_with("pre-delete-"))
+        .collect();
+    assert_eq!(backups.len(), 1, "exactly one pre-delete backup expected");
+    let backup_path = backups[0].path();
     let backup = rusqlite::Connection::open_with_flags(
         &backup_path,
         rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
