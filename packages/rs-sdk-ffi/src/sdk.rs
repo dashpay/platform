@@ -167,8 +167,14 @@ pub unsafe extern "C" fn dash_sdk_create(config: *const DashSDKConfig) -> DashSD
         Err(e) => return DashSDKResult::error(e),
     };
 
-    // Build SDK
-    let sdk_result = builder.build().map_err(FFIError::from);
+    // Build SDK inside the shared runtime's Handle::enter() guard so the
+    // builder's boot-time protocol-version calibration spawn lands on our
+    // long-lived runtime instead of being silently skipped (see dash-sdk
+    // SdkBuilder::build doc-comment).
+    let sdk_result = {
+        let _enter = runtime.handle().enter();
+        builder.build().map_err(FFIError::from)
+    };
 
     match sdk_result {
         Ok(sdk) => {
@@ -280,8 +286,12 @@ pub unsafe extern "C" fn dash_sdk_create_extended(
         Err(e) => return DashSDKResult::error(e),
     };
 
-    // Build SDK
-    let sdk_result = builder.build().map_err(FFIError::from);
+    // Build inside the runtime guard so the boot-time calibration spawn
+    // lands on our long-lived runtime (see dash_sdk_create).
+    let sdk_result = {
+        let _enter = runtime.handle().enter();
+        builder.build().map_err(FFIError::from)
+    };
 
     match sdk_result {
         Ok(sdk) => {
@@ -486,8 +496,12 @@ pub unsafe extern "C" fn dash_sdk_create_trusted(config: *const DashSDKConfig) -
         Err(e) => return DashSDKResult::error(e),
     };
 
-    // Build SDK
-    let sdk_result = builder.build().map_err(FFIError::from);
+    // Build inside the runtime guard so the boot-time calibration spawn
+    // lands on our long-lived runtime (see dash_sdk_create).
+    let sdk_result = {
+        let _enter = runtime.handle().enter();
+        builder.build().map_err(FFIError::from)
+    };
 
     match sdk_result {
         Ok(sdk) => {
