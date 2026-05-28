@@ -82,7 +82,7 @@ derive_more = { version = "1.0", features = ["from", "deref", "deref_mut"] }
 async-trait = "0.1.77"
 console-subscriber = { version = "0.4", optional = true }
 bls-signatures = { git = "https://github.com/dashpay/bls-signatures", rev = "0842b17583888e8f46c252a4ee84cdfd58e0546f", optional = true }
-grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "60d121900ad3f1b1aa616b81ad60181d1bc417a8", features = ["test-seeding-ct"] }
+grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "bdc0d6e9d7a5f7cec47b2701d08d6e35f558c7b8" }
 # Low-level Orchard primitives (Note::from_parts, OrchardNoteEncryption) used by
 # the SDK genesis-test-data seeder; grovedb-commitment-tree re-exports most of
 # orchard but not `OrchardNoteEncryption`, so we depend on the same upstream rev.
@@ -116,7 +116,7 @@ dpp = { path = "../rs-dpp", default-features = false, features = [
 drive = { path = "../rs-drive", features = ["fixtures-and-mocks"] }
 drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
 strategy-tests = { path = "../strategy-tests" }
-grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "60d121900ad3f1b1aa616b81ad60181d1bc417a8", features = ["client"] }
+grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "bdc0d6e9d7a5f7cec47b2701d08d6e35f558c7b8", features = ["client"] }
 assert_matches = "1.5.0"
 drive-abci = { path = ".", features = ["testing-config", "mocks"] }
 bls-signatures = { git = "https://github.com/dashpay/bls-signatures", rev = "0842b17583888e8f46c252a4ee84cdfd58e0546f" }
@@ -130,8 +130,8 @@ integer-encoding = { version = "4.0.0" }
 
 # For dump_only_default_and_aux_cfs_under_shielded_subtree_prefix — same
 # subtree-prefix algorithm grovedb uses internally.
-grovedb-path = { git = "https://github.com/dashpay/grovedb", rev = "60d121900ad3f1b1aa616b81ad60181d1bc417a8" }
-grovedb-storage = { git = "https://github.com/dashpay/grovedb", rev = "60d121900ad3f1b1aa616b81ad60181d1bc417a8" }
+grovedb-path = { git = "https://github.com/dashpay/grovedb", rev = "bdc0d6e9d7a5f7cec47b2701d08d6e35f558c7b8" }
+grovedb-storage = { git = "https://github.com/dashpay/grovedb", rev = "bdc0d6e9d7a5f7cec47b2701d08d6e35f558c7b8" }
 
 [features]
 default = ["bls-signatures"]

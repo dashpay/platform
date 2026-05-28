@@ -415,7 +415,7 @@ impl<C> Platform<C> {
                 total_notes = cfg.total_notes,
                 owned_count = cfg.owned_count,
                 rng_seed = format!("0x{:x}", cfg.rng_seed),
-                "seeding shielded pool with SDK test data (Phase 2: frontier-less filler)"
+                "seeding shielded pool with SDK test data (batched append_many_raw)"
             );
             let tx =
                 transaction.ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
@@ -447,9 +447,10 @@ impl<C> Platform<C> {
             );
             assert_eq!(owned_in_order.len() as u32, cfg.owned_count);
 
-            // Read parent-Merk Element to get chunk_power + flags. With the
-            // tail layout, frontier-less seeding requires
-            // `total_count == 0` at entry — assert that too.
+            // Read parent-Merk Element to get chunk_power + flags. The
+            // batched seed path requires `total_count == 0` at entry so
+            // ordinality is well-defined (owned positions = filler.len()..);
+            // assert that too.
             let pool_path_arr = drive::drive::shielded::paths::shielded_credit_pool_path();
             let leaf_key = &[drive::drive::shielded::paths::SHIELDED_NOTES_KEY];
             let parent_path = SubtreePath::from(pool_path_arr.as_slice());
@@ -478,7 +479,7 @@ impl<C> Platform<C> {
             };
             assert_eq!(
                 initial_total_count, 0,
-                "frontier-less bulk seed requires an empty commitment tree"
+                "batched seed requires an empty commitment tree"
             );
 
             // Open a CommitmentTree on the subtree's storage context. We
@@ -513,29 +514,46 @@ impl<C> Platform<C> {
                     )))
                 })?;
 
-            // --- Phase A: bulk-seed filler via append_many_without_frontier
-            // Periodic progress logging so multi-minute bakes are
-            // observable (previously the seeder was silent between
-            // start and end — see docs/genesis-snapshot-design.md §15.7).
-            let phase_a_start = std::time::Instant::now();
-            tracing::info!(
-                filler_count = filler.len(),
-                "seed phase A: starting frontier-less filler bulk-seed"
+            // Single-phase batched seed via `append_many_raw` (grovedb PR
+            // #751). The earlier two-phase split (filler via
+            // `append_many_without_frontier` + owned via per-leaf
+            // `append_raw`) only existed because the old frontier-less API
+            // skipped the Sinsemilla frontier entirely, producing an anchor
+            // that didn't match the actual leaf set — wallets reconstructing
+            // the tree got a root the chain had never recorded and spend
+            // proofs failed. `append_many_raw` is byte-for-byte equivalent
+            // to N × `append_raw` (same frontier, same bulk MMR, same final
+            // roots) but the Sinsemilla anchor + bulk state root are each
+            // computed once at the end. MMR overlay is flushed internally on
+            // return.
+            //
+            // Order is `chain(filler, owned)` so owned notes land at
+            // positions `[filler.len(), filler.len() + owned.len())` — the
+            // same layout as the previous Phase-A-then-Phase-B path, which
+            // downstream test-data construction relies on.
+            assert!(
+                !owned_in_order.is_empty(),
+                "seed: owned_in_order was empty — owned_count must be >= 1"
             );
-            // Inspectable iterator: report progress every 30s without
-            // chunking the bulk append (`append_many_without_frontier`
-            // commits the MMR internally at the end, so calling it more
-            // than once on the same tree confuses the MMR overlay).
+            let bake_start = std::time::Instant::now();
             let filler_total = filler.len();
+            let owned_total = owned_in_order.len();
+            let total = filler_total + owned_total;
+            tracing::info!(
+                filler_count = filler_total,
+                owned_count = owned_total,
+                total,
+                "seed: starting batched commitment-tree append"
+            );
             let mut appended = 0usize;
             let mut last_log = std::time::Instant::now();
-            let start_for_progress = phase_a_start;
-            let iter = filler.into_iter().map(|n| {
+            let start_for_progress = bake_start;
+            let iter = filler.into_iter().chain(owned_in_order.iter().cloned()).map(|n| {
                 appended += 1;
-                if last_log.elapsed().as_secs() >= 30 || appended == filler_total {
+                if last_log.elapsed().as_secs() >= 30 || appended == total {
                     let elapsed = start_for_progress.elapsed();
                     let rate = appended as f64 / elapsed.as_secs_f64().max(0.001);
-                    let remaining = filler_total.saturating_sub(appended);
+                    let remaining = total.saturating_sub(appended);
                     let eta_secs = if rate > 0.0 {
                         (remaining as f64 / rate) as u64
                     } else {
@@ -543,81 +561,40 @@ impl<C> Platform<C> {
                     };
                     tracing::info!(
                         appended,
-                        total = filler_total,
-                        pct = format!("{:.1}%", (appended as f64 / filler_total as f64) * 100.0),
+                        total,
+                        pct = format!("{:.1}%", (appended as f64 / total as f64) * 100.0),
                         elapsed_s = elapsed.as_secs(),
                         rate_per_s = format!("{:.0}", rate),
                         eta_s = eta_secs,
-                        "seed phase A progress"
+                        "seed progress"
                     );
                     last_log = std::time::Instant::now();
                 }
                 (n.cmx, n.rho, n.encrypted_note)
             });
-            ct.append_many_without_frontier(iter).value.map_err(|e| {
+            let append_result = ct.append_many_raw(iter).value.map_err(|e| {
                 Error::Execution(ExecutionError::CorruptedCodeExecution(Box::leak(
-                    format!("seed: append_many_without_frontier: {e}").into_boxed_str(),
+                    format!("seed: append_many_raw: {e}").into_boxed_str(),
                 )))
             })?;
+            // Persist the frontier once at the end (append_many_raw flushes
+            // the MMR overlay internally but doesn't touch the frontier
+            // store — `save` is still our responsibility).
+            ct.save().value.map_err(|e| {
+                Error::Execution(ExecutionError::CorruptedCodeExecution(Box::leak(
+                    format!("seed: ct.save: {e}").into_boxed_str(),
+                )))
+            })?;
+            let combined_root = grovedb_commitment_tree::compute_commitment_tree_state_root(
+                &append_result.sinsemilla_root,
+                &append_result.bulk_state_root,
+            );
             tracing::info!(
                 filler_count = filler_total,
-                elapsed_s = phase_a_start.elapsed().as_secs(),
-                "seed phase A: filler bulk-seed complete"
-            );
-
-            // --- Phase B: append owned through the full Sinsemilla path so
-            // the anchor reflects them and the parent-Merk leaf's
-            // combined_root is consistent. Mirror the per-note pattern from
-            // grovedb's commitment_tree_insert (save + commit_mmr happen
-            // PER note, not just at the end — keeps the MMR overlay
-            // consistent throughout).
-            let phase_b_start = std::time::Instant::now();
-            tracing::info!(
-                owned_count = owned_in_order.len(),
-                "seed phase B: starting full-Sinsemilla owned appends"
-            );
-            let mut last_sinsemilla_root: Option<[u8; 32]> = None;
-            let mut last_bulk_state_root: Option<[u8; 32]> = None;
-            for owned in &owned_in_order {
-                let append_result = ct
-                    .append_raw(owned.cmx, owned.rho, &owned.encrypted_note)
-                    .value
-                    .map_err(|e| {
-                        Error::Execution(ExecutionError::CorruptedCodeExecution(Box::leak(
-                            format!("seed: append_raw owned: {e}").into_boxed_str(),
-                        )))
-                    })?;
-                last_sinsemilla_root = Some(append_result.sinsemilla_root);
-                last_bulk_state_root = Some(append_result.bulk_state_root);
-                ct.save().value.map_err(|e| {
-                    Error::Execution(ExecutionError::CorruptedCodeExecution(Box::leak(
-                        format!("seed: ct.save (owned): {e}").into_boxed_str(),
-                    )))
-                })?;
-                ct.commit_mmr().map_err(|e| {
-                    Error::Execution(ExecutionError::CorruptedCodeExecution(Box::leak(
-                        format!("seed: ct.commit_mmr (owned): {e}").into_boxed_str(),
-                    )))
-                })?;
-            }
-            // combined_root is computed from the final append_raw's result,
-            // not via compute_current_state_root (which would re-read MMR
-            // state and can hit Inconsistent store after intermediate flushes).
-            let sinsemilla_root = last_sinsemilla_root.ok_or(Error::Execution(
-                ExecutionError::CorruptedCodeExecution(
-                    "seed: owned_in_order was empty — owned_count must be >= 1",
-                ),
-            ))?;
-            let bulk_state_root = last_bulk_state_root.unwrap();
-            let combined_root = grovedb_commitment_tree::compute_commitment_tree_state_root(
-                &sinsemilla_root,
-                &bulk_state_root,
-            );
-            tracing::info!(
-                owned_count = owned_in_order.len(),
-                elapsed_s = phase_b_start.elapsed().as_secs(),
+                owned_count = owned_total,
+                elapsed_s = bake_start.elapsed().as_secs(),
                 combined_root = %hex::encode(combined_root),
-                "seed phase B: owned appends complete"
+                "seed: batched append complete"
             );
             drop(ct);
 
