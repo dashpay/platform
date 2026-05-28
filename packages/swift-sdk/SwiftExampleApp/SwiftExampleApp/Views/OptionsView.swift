@@ -81,6 +81,14 @@ struct OptionsView: View {
     // here redirects the next SDK construction.
     @AppStorage("platformQuorumURL") private var devnetQuorumURL: String = ""
 
+    // Devnet identity (`-devnet=<name>` in Dash Core). Required by
+    // `DevnetConfig` so the SPV client embeds `devnet.devnet-<name>`
+    // in its user agent — Dash Core devnet peers drop inbound
+    // handshakes that don't carry the name. Read by SPV start in
+    // CoreContentView (`startSync`); editing here applies on the
+    // next SPV start.
+    @AppStorage("platformDevnetName") private var devnetName: String = ""
+
     /// Default localhost peer string for a given network. Used to
     /// pre-populate the peers text field when the user enables the
     /// custom-SPV toggle. The FFI drops bare-IP entries (no port),
@@ -235,6 +243,22 @@ struct OptionsView: View {
                             .keyboardType(.URL)
 
                             Text("SPV Peers + DAPI nodes are auto-discovered from {Quorum URL}/masternodes. Changes apply on the next SDK build (switch network or relaunch).")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+
+                            Text("Devnet Name")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .padding(.top, 8)
+                            TextField(
+                                "e.g. paloma  (matches dashd -devnet=<name>)",
+                                text: $devnetName
+                            )
+                            .font(.system(.body, design: .monospaced))
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+
+                            Text("Required to start SPV on devnet. The name is embedded in the SPV user agent (`devnet.devnet-<name>`) so Dash Core devnet peers accept the handshake. Applies on the next SPV start.")
                                 .font(.caption2)
                                 .foregroundColor(.secondary)
                         }
