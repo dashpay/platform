@@ -206,6 +206,16 @@ pub struct IdentityKeyEntryFFI {
     // the Swift side switch on a single discriminant without
     // probing pointer values, matching how the rest of this struct
     // encodes optional payloads.
+    //
+    // Ownership: `contract_bounds_document_type` is owned by this
+    // struct EXCLUSIVELY when it is populated by
+    // [`IdentityKeyEntryFFI::from_entry`]. Consumers MUST NOT
+    // copy the struct value and then free both copies — the second
+    // free is a use-after-free / double-free. The Swift binding
+    // copies the doc-type into an owned Swift `String` inside the
+    // callback (per `persistIdentityKeysCallback`) and never
+    // retains the raw pointer past the callback window, which is
+    // the only supported consumption pattern.
     pub contract_bounds_kind: u8,
     pub contract_bounds_id: [u8; 32],
     pub contract_bounds_document_type: *const c_char,
