@@ -15,6 +15,8 @@ services:
         SCCACHE_BUCKET: ${SCCACHE_BUCKET}
         SCCACHE_REGION: ${SCCACHE_REGION}
         SCCACHE_S3_KEY_PREFIX: ${SCCACHE_S3_KEY_PREFIX}
+        # See drive_abci compose for the buildArgs forwarding contract.
+        CARGO_BUILD_PROFILE: ${CARGO_BUILD_PROFILE:-dev}
       secrets:
         - GITHUB_TOKEN
       cache_from:
