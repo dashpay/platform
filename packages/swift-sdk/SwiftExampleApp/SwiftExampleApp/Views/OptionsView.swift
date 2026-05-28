@@ -4,6 +4,7 @@ import SwiftDashSDK
 struct OptionsView: View {
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var walletManager: PlatformWalletManager
+    @EnvironmentObject var walletManagerStore: WalletManagerStore
     @EnvironmentObject var platformBalanceSyncService: PlatformBalanceSyncService
     @EnvironmentObject var shieldedService: ShieldedService
     @State private var showingDataManagement = false
@@ -294,6 +295,23 @@ struct OptionsView: View {
                             try? walletManager.stopSpv()
                             Task {
                                 await appState.switchNetwork(to: .devnet)
+                                // `switchNetwork` rebuilds `appState.sdk` but
+                                // doesn't refresh per-network managers (the
+                                // app-level `.onChange(of: currentNetwork)`
+                                // observer doesn't fire when the value stays
+                                // `.devnet`). Re-`activate` here so the
+                                // store's stale-handle check fires and the
+                                // cached `PlatformWalletManager` rebuilds
+                                // against the new SDK clone — otherwise
+                                // wallet-manager-routed work keeps talking
+                                // to the old DAPI / quorum endpoints.
+                                await MainActor.run {
+                                    if let sdk = appState.sdk {
+                                        try? walletManagerStore.activate(
+                                            network: .devnet, sdk: sdk
+                                        )
+                                    }
+                                }
                             }
                         }
                     } else {
