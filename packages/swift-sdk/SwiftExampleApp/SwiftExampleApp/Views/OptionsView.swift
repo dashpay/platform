@@ -23,6 +23,16 @@ struct OptionsView: View {
         UserDefaults.standard.string(forKey: "faucetRPCPassword") ?? ""
     @State private var faucetValidation: FaucetValidationStatus = .idle
 
+    /// Snapshot of `devnetQuorumURL` / `devnetName` at the moment the
+    /// devnet section appeared. Captured so the `.onDisappear` rebuild
+    /// only fires when the user actually edited a value — without this
+    /// every Options-tab dismissal would tear down and rebuild the SDK,
+    /// even on read-only visits. Set to `nil` outside the devnet branch
+    /// so a mainnet/testnet visit can't accidentally trigger a rebuild
+    /// on dismissal.
+    @State private var devnetQuorumURLSnapshot: String? = nil
+    @State private var devnetNameSnapshot: String? = nil
+
     /// Driven by the 0.5s-debounced `.task(id: faucetPassword)`.
     /// Runs a single cheap `getblockcount` JSON-RPC against the
     /// dashmate-managed Core (`127.0.0.1:<faucetRPCPort>`) and
@@ -242,7 +252,7 @@ struct OptionsView: View {
                             .autocorrectionDisabled()
                             .keyboardType(.URL)
 
-                            Text("SPV Peers + DAPI nodes are auto-discovered from {Quorum URL}/masternodes. Changes apply on the next SDK build (switch network or relaunch).")
+                            Text("Required, alongside Devnet Name. SPV Peers + DAPI nodes are auto-discovered from {Quorum URL}/masternodes. The SDK rebuilds automatically when you leave Options.")
                                 .font(.caption2)
                                 .foregroundColor(.secondary)
 
@@ -263,6 +273,29 @@ struct OptionsView: View {
                                 .foregroundColor(.secondary)
                         }
                         .padding(.top, 4)
+                        .onAppear {
+                            devnetQuorumURLSnapshot = devnetQuorumURL
+                            devnetNameSnapshot = devnetName
+                        }
+                        .onDisappear {
+                            // Rebuild the SDK once on close if either
+                            // devnet field actually changed. Avoids
+                            // per-keystroke churn (TextField onChange
+                            // would fire every character) while still
+                            // saving the user from having to manually
+                            // bounce to testnet and back to pick up
+                            // edits.
+                            let quorumChanged = devnetQuorumURLSnapshot != devnetQuorumURL
+                            let nameChanged = devnetNameSnapshot != devnetName
+                            devnetQuorumURLSnapshot = nil
+                            devnetNameSnapshot = nil
+                            guard quorumChanged || nameChanged else { return }
+                            guard appState.currentNetwork == .devnet else { return }
+                            try? walletManager.stopSpv()
+                            Task {
+                                await appState.switchNetwork(to: .devnet)
+                            }
+                        }
                     } else {
                         Toggle("Use Custom SPV Peers", isOn: $customSpvPeersEnabled)
                             .onChange(of: customSpvPeersEnabled) { _, isOn in
