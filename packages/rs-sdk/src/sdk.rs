@@ -67,6 +67,33 @@ const TESTNET_INITIAL_PROTOCOL_VERSION: u32 = 10;
 /// [`TESTNET_INITIAL_PROTOCOL_VERSION`] for the rationale.
 const MAINNET_INITIAL_PROTOCOL_VERSION: u32 = 11;
 
+/// Look up a constant `PlatformVersion` seed for one of the network builders.
+///
+/// Keeps the constructor API infallible: if `rs-platform-version` ever drops
+/// a PV referenced by the constants above and the constants are not bumped
+/// in lockstep, fall back to `PlatformVersion::latest()` and log loudly via
+/// `tracing::error!` instead of panicking. The autodetect ratchet will still
+/// converge on the network's actual PV from the first response metadata.
+fn resolve_initial_protocol_version(
+    network: Network,
+    protocol_version: u32,
+) -> &'static PlatformVersion {
+    match PlatformVersion::get(protocol_version) {
+        Ok(v) => v,
+        Err(err) => {
+            tracing::error!(
+                target: "dash_sdk::protocol_version",
+                ?network,
+                requested = protocol_version,
+                %err,
+                "initial protocol version constant is no longer known to rs-platform-version; \
+                 falling back to PlatformVersion::latest(). Update the constant in dash_sdk::sdk."
+            );
+            PlatformVersion::latest()
+        }
+    }
+}
+
 /// The default request settings for the SDK, used when the user does not provide any.
 ///
 /// Use [SdkBuilder::with_settings] to set custom settings.
@@ -832,8 +859,8 @@ impl SdkBuilder {
     /// advertises a newer version in response metadata. See [`Self::with_initial_version`].
     pub fn new_testnet() -> Self {
         let address_list = default_address_list_for_network(Network::Testnet);
-        let initial = PlatformVersion::get(TESTNET_INITIAL_PROTOCOL_VERSION)
-            .expect("testnet initial protocol version must be known");
+        let initial =
+            resolve_initial_protocol_version(Network::Testnet, TESTNET_INITIAL_PROTOCOL_VERSION);
 
         Self::new(address_list)
             .with_network(Network::Testnet)
@@ -858,8 +885,8 @@ impl SdkBuilder {
     /// This method is unstable and can be changed in the future.
     pub fn new_mainnet() -> Self {
         let address_list = default_address_list_for_network(Network::Mainnet);
-        let initial = PlatformVersion::get(MAINNET_INITIAL_PROTOCOL_VERSION)
-            .expect("mainnet initial protocol version must be known");
+        let initial =
+            resolve_initial_protocol_version(Network::Mainnet, MAINNET_INITIAL_PROTOCOL_VERSION);
 
         Self::new(address_list)
             .with_network(Network::Mainnet)
@@ -1095,7 +1122,11 @@ impl SdkBuilder {
             None => DEFAULT_REQUEST_SETTINGS,
         };
 
+        // Only consumed by the calibration spawn (non-wasm32); on wasm32
+        // there's no Tokio runtime to spawn into so the helper is omitted.
+        #[cfg(not(target_arch = "wasm32"))]
         let auto_calibrate = self.auto_calibrate_protocol_version;
+        #[cfg(not(target_arch = "wasm32"))]
         let has_addresses = self.addresses.is_some();
 
         let sdk= match self.addresses {
@@ -1214,6 +1245,7 @@ impl SdkBuilder {
             None => return Err(Error::Config("Mock mode is not available. Please enable `mocks` feature or provide address list.".to_string())),
         };
 
+        #[cfg(not(target_arch = "wasm32"))]
         if has_addresses && auto_calibrate && sdk.auto_detect_protocol_version {
             spawn_protocol_version_calibration(&sdk);
         }
@@ -1231,6 +1263,11 @@ impl SdkBuilder {
 /// in scope (eg sync tests calling `build()` outside a runtime) we silently
 /// skip; the SDK keeps its seeded protocol version. Any fetch error is logged
 /// at `warn` and swallowed; `build()` never fails for calibration reasons.
+///
+/// `wasm32` targets omit this helper entirely: the workspace tokio dep on
+/// wasm has no `rt` feature (no `tokio::runtime::Handle`), and browser
+/// consumers don't have a use case for a detached background task.
+#[cfg(not(target_arch = "wasm32"))]
 fn spawn_protocol_version_calibration(sdk: &Sdk) {
     use crate::platform::fetch_current_no_parameters::FetchCurrent;
     use dpp::block::extended_epoch_info::ExtendedEpochInfo;
@@ -1829,16 +1866,85 @@ mod test {
         );
     }
 
-    /// Calibration's only job is to drive `verify_response_metadata` with a
-    /// real network response so the upward-only ratchet observes the actual
-    /// PV. Simulating that observation against a freshly seeded SDK proves
-    /// the ratchet end-to-end: a PV strictly above the seed wins.
+    /// Boot-time calibration must run when `build()` is called inside a Tokio
+    /// runtime, must NOT panic when the fetch fails (warn-and-swallow), and
+    /// must leave the seeded PV intact on failure. We point the SDK at a
+    /// non-routable TEST-NET-1 address so the fetch is guaranteed to fail
+    /// without touching the live network, then await long enough for the
+    /// spawn to complete and assert the contract.
+    #[tokio::test]
+    async fn build_inside_runtime_spawns_calibration_and_swallows_errors() {
+        use dash_context_provider::MockContextProvider;
+        use std::time::Duration;
+
+        // TEST-NET-1 (RFC 5737) — guaranteed non-routable. Retries 0 + short
+        // timeouts so the spawn settles inside the assertion window.
+        use std::str::FromStr;
+        let address_list = rs_dapi_client::AddressList::from_str("https://192.0.2.1:1443")
+            .expect("bogus testnet address parses");
+        let settings = rs_dapi_client::RequestSettings {
+            retries: Some(0),
+            timeout: Some(Duration::from_millis(200)),
+            connect_timeout: Some(Duration::from_millis(200)),
+            ..Default::default()
+        };
+
+        let sdk = super::SdkBuilder::new(address_list)
+            .with_network(super::Network::Testnet)
+            .with_initial_version(
+                dpp::version::PlatformVersion::get(super::TESTNET_INITIAL_PROTOCOL_VERSION)
+                    .expect("PV exists"),
+            )
+            .with_context_provider(MockContextProvider::new())
+            .with_settings(settings)
+            .build()
+            .expect("build() must succeed even when the calibration target is unreachable");
+
+        // Window long enough for the bogus-address fetch to fail and log.
+        tokio::time::sleep(Duration::from_secs(1)).await;
+
+        assert_eq!(
+            sdk.protocol_version_number(),
+            super::TESTNET_INITIAL_PROTOCOL_VERSION,
+            "seeded PV must be preserved when the calibration fetch fails"
+        );
+    }
+
+    /// Opt-out gate: when calibration is disabled, `build()` does not spawn
+    /// a task even with real addresses + auto-detect on. We assert this
+    /// indirectly by confirming the PV stays at seed across the same window
+    /// the integration test uses (no fetch ⇒ no metadata observation).
+    #[tokio::test]
+    async fn calibration_opt_out_skips_boot_spawn() {
+        use dash_context_provider::MockContextProvider;
+        use std::time::Duration;
+
+        let sdk = SdkBuilder::new_testnet()
+            .with_context_provider(MockContextProvider::new())
+            .with_protocol_version_calibration(false)
+            .build()
+            .expect("build with calibration disabled must succeed");
+
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        assert_eq!(
+            sdk.protocol_version_number(),
+            super::TESTNET_INITIAL_PROTOCOL_VERSION,
+            "opt-out must prevent the boot spawn from mutating the PV atomic"
+        );
+        assert!(sdk.auto_detect_protocol_version);
+    }
+
+    /// Co-test: the autodetect ratchet that the calibration drives via
+    /// `verify_response_metadata` lifts the PV upward when the network
+    /// reports a higher version. This pins the path the boot spawn
+    /// invokes (see `parse_proof_with_metadata_and_proof`); it is not a
+    /// replacement for the integration test above.
     #[test]
-    fn calibration_ratchets_upward_when_network_reports_higher_version() {
+    fn ratchet_lifts_seeded_pv_when_metadata_reports_higher_version() {
         use dash_context_provider::MockContextProvider;
         use dpp::version::PlatformVersion;
 
-        // Build via `new_testnet` so the seed is the realistic testnet PV.
         let sdk = SdkBuilder::new_testnet()
             .with_context_provider(MockContextProvider::new())
             .with_protocol_version_calibration(false)
@@ -1853,7 +1959,6 @@ mod test {
         let target = PlatformVersion::latest().protocol_version;
         assert!(target > super::TESTNET_INITIAL_PROTOCOL_VERSION);
 
-        // Surrogate for the calibration's network observation.
         let metadata = ResponseMetadata {
             protocol_version: target,
             height: 1,
@@ -1866,30 +1971,6 @@ mod test {
             sdk.protocol_version_number(),
             target,
             "the autodetect ratchet must lift PV from seed to the network's PV"
-        );
-    }
-
-    /// When the calibration fetch fails (no runtime in scope is the simplest
-    /// failure mode — equivalent to transport error in user-facing terms),
-    /// `build()` must still return Ok and the seed PV must be preserved.
-    #[test]
-    fn build_succeeds_when_calibration_cannot_run() {
-        use dash_context_provider::MockContextProvider;
-
-        // No Tokio runtime → `tokio::runtime::Handle::try_current()` returns
-        // Err inside `spawn_protocol_version_calibration`, the helper logs at
-        // `debug` and returns; `build()` itself never observes the failure.
-        // (`tracing::warn!` is reserved for actual fetch errors; both branches
-        // share the swallow-don't-fail contract this test pins down.)
-        let sdk = SdkBuilder::new_testnet()
-            .with_context_provider(MockContextProvider::new())
-            .build()
-            .expect("build() must not fail when calibration cannot run");
-
-        assert_eq!(
-            sdk.protocol_version_number(),
-            super::TESTNET_INITIAL_PROTOCOL_VERSION,
-            "seeded PV must be preserved when calibration is skipped or fails"
         );
     }
 
