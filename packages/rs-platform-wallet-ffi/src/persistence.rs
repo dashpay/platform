@@ -1348,8 +1348,7 @@ impl PlatformWalletPersistence for FFIPersister {
             {
                 return Err(PersistenceError::backend(
                     "on_load_shielded_notes_fn and on_load_shielded_notes_free_fn must be \
-                     provided together"
-                        .to_string(),
+                     provided together",
                 ));
             }
             if self.callbacks.on_load_shielded_sync_states_fn.is_some()
@@ -1360,8 +1359,7 @@ impl PlatformWalletPersistence for FFIPersister {
             {
                 return Err(PersistenceError::backend(
                     "on_load_shielded_sync_states_fn and on_load_shielded_sync_states_free_fn \
-                     must be provided together"
-                        .to_string(),
+                     must be provided together",
                 ));
             }
 
