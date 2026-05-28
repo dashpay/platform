@@ -196,5 +196,14 @@ still want to encrypt backups at rest using a file-system level tool
 (GnuPG, age, encfs); this crate does not do that for them and never
 ships SQLCipher.
 
+## Future work — maintenance CLI
+
+A unified `platform-wallet-storage secrets <subcommand>` CLI is planned as a follow-up to give operators a way to inspect and manage the secret backends without writing custom code. Out of scope for this PR (#3672); tracked separately. Two commands matter:
+
+- **`secrets probe`** — set/get/delete a `__probe__` entry under `SERVICE_PREFIX`. Works uniformly on **all** backends (kernel keyutils, Secret Service, macOS Keychain, Windows Credential Manager) because it only uses single-entry CRUD. Confirms backend liveness + write-path responsiveness — the canary command for "is the keyring actually wired up on this machine?". Cheap to implement (~30 lines).
+- **`secrets list [--filter <prefix>]`** — enumerate `(wallet_id, label)` pairs in the store. Trivial on the file vault (iterate the in-memory `BTreeMap`). On the OS arm: works on Secret Service, macOS Keychain, and Windows Credential Manager via `CredentialStoreApi::search`; **fails closed** with a typed `ListNotSupported` on Linux **kernel keyutils**, which has no native enumeration (the `keyring-core 1.0.0` default `search` impl returns `NotSupportedByStore` and the `linux-keyutils-keyring-store` backend doesn't override it). Operators on headless Linux who need listing must select Secret Service explicitly.
+
+Other planned subcommands: `secrets put <svc> <label> <hex|@file>`, `secrets delete <svc> <label>`, `secrets rekey <new-passphrase>` (file-vault only). `secrets get` is deliberately omitted (printing a secret to stdout defeats `SecretBytes` zeroize); if added, must require an explicit `--unsafe-print-secret` flag.
+
 [`SecretBytes::new(...)`]: ./src/secrets/secret.rs
 [`FileStoreError`]: ./src/secrets/file/error.rs

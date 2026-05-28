@@ -9,7 +9,7 @@
 //!
 //! ```json
 //! {
-//!   "version": 3,
+//!   "version": 1,
 //!   "kdf": { "id": 1, "m_kib": 65536, "t": 3, "p": 1 },
 //!   "salt": "<32-byte lowercase hex>",
 //!   "verify_nonce": "<24-byte lowercase hex>",
@@ -46,7 +46,7 @@ use serde::{Deserialize, Serialize};
 use super::crypto::{KdfParams, NONCE_LEN, SALT_LEN};
 use super::error::FileStoreError;
 
-pub(crate) const FORMAT_VERSION: u32 = 3;
+pub(crate) const FORMAT_VERSION: u32 = 1;
 pub(crate) const KDF_ID_ARGON2ID: u8 = 1;
 
 /// Fixed plaintext sealed under the header key to form the passphrase-
@@ -334,7 +334,7 @@ mod tests {
         let bytes = serialize(&test_vault(BTreeMap::new()));
         let s = std::str::from_utf8(&bytes).unwrap();
         assert!(s.starts_with('{'), "vault is a JSON object: {s}");
-        assert!(s.contains("\"version\":3"));
+        assert!(s.contains("\"version\":1"));
         assert!(s.contains("\"wallets\":{}"));
         // Salt is 0x07 * 32 → lowercase hex, never uppercase.
         assert!(s.contains(&"07".repeat(SALT_LEN)));
@@ -374,9 +374,9 @@ mod tests {
 
     #[test]
     fn rejects_unknown_payload_field() {
-        // A version-3 file with a stray sibling field must fail closed
+        // A version-1 file with a stray sibling field must fail closed
         // (deny_unknown_fields on Vault, C3).
-        let bytes = br#"{"version":3,"kdf":{"id":1,"m_kib":65536,"t":3,"p":1},"salt":"00","verify_nonce":"00","verify_ct":"00","wallets":{},"rogue":true}"#;
+        let bytes = br#"{"version":1,"kdf":{"id":1,"m_kib":65536,"t":3,"p":1},"salt":"00","verify_nonce":"00","verify_ct":"00","wallets":{},"rogue":true}"#;
         assert!(matches!(
             deserialize(bytes),
             Err(FileStoreError::MalformedVault)
@@ -472,7 +472,7 @@ mod tests {
         assert_eq!(bytes, again, "wire round-trip must be byte-identical");
 
         let s = std::str::from_utf8(&bytes).unwrap();
-        assert!(s.starts_with("{\"version\":3,\"kdf\":{"));
+        assert!(s.starts_with("{\"version\":1,\"kdf\":{"));
         assert!(s.contains(&format!("\"{}\"", "aa".repeat(32))));
         assert!(s.contains("\"bip39_mnemonic\":{"));
         assert!(s.contains(&format!("\"nonce\":\"{}\"", "11".repeat(NONCE_LEN))));
@@ -486,7 +486,7 @@ mod tests {
         // and serde collapses it on parse.
         let wid_hex = hex::encode([1u8; 32]);
         let bytes = format!(
-            r#"{{"version":3,"kdf":{{"id":1,"m_kib":65536,"t":3,"p":1}},"salt":"0000000000000000000000000000000000000000000000000000000000000007","verify_nonce":"050505050505050505050505050505050505050505050505","verify_ct":"cccccccccccccccccccccccccccccccccccc","wallets":{{"{wid_hex}":{{"seed":{{"nonce":"010101010101010101010101010101010101010101010101","ciphertext":"00000000000000000000000000000000aa"}},"seed":{{"nonce":"020202020202020202020202020202020202020202020202","ciphertext":"00000000000000000000000000000000bb"}}}}}}}}"#
+            r#"{{"version":1,"kdf":{{"id":1,"m_kib":65536,"t":3,"p":1}},"salt":"0000000000000000000000000000000000000000000000000000000000000007","verify_nonce":"050505050505050505050505050505050505050505050505","verify_ct":"cccccccccccccccccccccccccccccccccccc","wallets":{{"{wid_hex}":{{"seed":{{"nonce":"010101010101010101010101010101010101010101010101","ciphertext":"00000000000000000000000000000000aa"}},"seed":{{"nonce":"020202020202020202020202020202020202020202020202","ciphertext":"00000000000000000000000000000000bb"}}}}}}}}"#
         );
         let parsed = deserialize(bytes.as_bytes()).expect("dup-key JSON parses to single entry");
         let wallet = &parsed.wallets[&wid_hex];

@@ -10,7 +10,7 @@
 //! `rekey` API; its `keyring_core::api::CredentialApi` /
 //! `CredentialStoreApi` impls project it into `keyring_core::Error` via
 //! [`From`] so SPI callers see a uniform error. The `WrongPassphrase` /
-//! `Busy` variants box the typed `FileStoreError` as the
+//! `AlreadyLocked` variants box the typed `FileStoreError` as the
 //! `NoStorageAccess` source, so an SPI consumer can recover them
 //! losslessly via `source().downcast_ref::<FileStoreError>()`; the
 //! `BadStoreFormat` group has no box slot and carries only a secret-free
@@ -68,22 +68,15 @@ pub enum FileStoreError {
         mode: u32,
     },
 
-    /// The store is temporarily unavailable. Two recoverable runtime
-    /// causes ride this variant:
-    ///
-    /// 1. `rekey` was called while an `EncryptedFileCredential` (built
-    ///    via `CredentialStoreApi::build`) still holds a clone of the
-    ///    inner `Arc`, so the store lacks the exclusive reference the
-    ///    atomic passphrase swap requires. Drop the outstanding
-    ///    credentials and retry.
-    /// 2. The cross-process advisory lock on the vault sidecar
-    ///    (`<vault-path>.lock`) could not be acquired before the wait
-    ///    budget elapsed — another process is mid-write. Retry once
-    ///    the contender releases.
-    ///
+    /// The vault sidecar (`<vault-path>.lock`) is already held by
+    /// another `EncryptedFileStore` handle — in this process or in
+    /// another process. The resident-vault model requires exclusive
+    /// ownership of the vault file for the store's lifetime, so the
+    /// second `open()` fails fast (no retry, no wait budget). Drop the
+    /// other handle, or wait for the other process to exit, and retry.
     /// A recoverable runtime state, not a logic bug.
-    #[error("store is busy: outstanding credentials or lock contention")]
-    Busy,
+    #[error("vault is already locked by another store handle")]
+    AlreadyLocked,
 
     /// The on-disk vault file exceeds the structural ceiling
     /// ([`MAX_VAULT_SIZE_BYTES`](crate::secrets::MAX_VAULT_SIZE_BYTES)).
@@ -171,7 +164,7 @@ impl From<super::super::validate::InvalidLabel> for FileStoreError {
 /// Project a [`FileStoreError`] into `keyring_core::Error` for the
 /// `CredentialApi` / `CredentialStoreApi` SPI seam.
 ///
-/// - [`WrongPassphrase`] and [`Busy`] ride in
+/// - [`WrongPassphrase`] and [`AlreadyLocked`] ride in
 ///   [`KeyringError::NoStorageAccess`] (operator UX: "ask the operator to
 ///   unlock / retry") with the typed `FileStoreError` boxed as the
 ///   source, so an SPI consumer can losslessly recover the variant via
@@ -187,7 +180,7 @@ impl From<super::super::validate::InvalidLabel> for FileStoreError {
 /// - [`Io`] becomes [`KeyringError::PlatformFailure`].
 ///
 /// [`WrongPassphrase`]: FileStoreError::WrongPassphrase
-/// [`Busy`]: FileStoreError::Busy
+/// [`AlreadyLocked`]: FileStoreError::AlreadyLocked
 /// [`Corruption`]: FileStoreError::Corruption
 /// [`KdfFailure`]: FileStoreError::KdfFailure
 /// [`VersionUnsupported`]: FileStoreError::VersionUnsupported
@@ -201,7 +194,7 @@ impl From<FileStoreError> for KeyringError {
     fn from(e: FileStoreError) -> Self {
         use FileStoreError as E;
         match e {
-            E::WrongPassphrase | E::Busy => KeyringError::NoStorageAccess(Box::new(e)),
+            E::WrongPassphrase | E::AlreadyLocked => KeyringError::NoStorageAccess(Box::new(e)),
             E::Corruption
             | E::KdfFailure
             | E::VersionUnsupported { .. }
@@ -223,8 +216,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn wrong_passphrase_and_busy_ride_no_storage_access() {
-        for e in [FileStoreError::WrongPassphrase, FileStoreError::Busy] {
+    fn wrong_passphrase_and_already_locked_ride_no_storage_access() {
+        for e in [
+            FileStoreError::WrongPassphrase,
+            FileStoreError::AlreadyLocked,
+        ] {
             let k: KeyringError = e.into();
             assert!(matches!(k, KeyringError::NoStorageAccess(_)));
         }
@@ -271,11 +267,14 @@ mod tests {
 
     #[test]
     fn wrong_passphrase_is_recoverable_from_no_storage_access_source() {
-        // WrongPassphrase / Busy box the typed FileStoreError as the
-        // NoStorageAccess source, so an SPI consumer recovers the variant
-        // losslessly via `source().downcast_ref::<FileStoreError>()`.
+        // WrongPassphrase / AlreadyLocked box the typed FileStoreError as
+        // the NoStorageAccess source, so an SPI consumer recovers the
+        // variant losslessly via `source().downcast_ref::<FileStoreError>()`.
         use std::error::Error as _;
-        for original in [FileStoreError::WrongPassphrase, FileStoreError::Busy] {
+        for original in [
+            FileStoreError::WrongPassphrase,
+            FileStoreError::AlreadyLocked,
+        ] {
             let want = original.to_string();
             let k: KeyringError = original.into();
             let recovered = k.source().and_then(|s| s.downcast_ref::<FileStoreError>());

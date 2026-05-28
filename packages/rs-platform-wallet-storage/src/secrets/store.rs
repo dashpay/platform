@@ -8,7 +8,7 @@
 //!
 //! Errors surface as the typed [`FileStoreError`] — losslessly for the
 //! [`SecretStore::File`] arm (so `WrongPassphrase` vs `Corruption` vs
-//! `Busy` stay distinct), and as a best-effort projection of
+//! `AlreadyLocked` stay distinct), and as a best-effort projection of
 //! `keyring_core::Error` for the [`SecretStore::Os`] arm. The internal
 //! `keyring_core::api::CredentialApi` / `CredentialStoreApi` impls remain
 //! the backend SPI; `SecretStore` delegates through them.
@@ -231,16 +231,19 @@ mod tests {
 
     #[test]
     fn wrong_passphrase_surfaces_typed_lossless() {
+        // Resident-vault model: the passphrase is verified at open()
+        // time (header verify-token), so a wrong-pass reopen fails at
+        // open() rather than on the first get(). The typed distinction
+        // still survives losslessly on the public path.
         let dir = tempfile::tempdir().unwrap();
         file_store(dir.path())
             .set(&wid(1), "seed", &SecretBytes::from_slice(b"orig"))
             .unwrap();
-        let bad = SecretStore::file(
+        let err = SecretStore::file(
             dir.path().join("vault.pwsvault"),
             SecretString::new("pw-wrong"),
         )
-        .unwrap();
-        let err = bad.get(&wid(1), "seed").unwrap_err();
+        .expect_err("wrong pass must fail open");
         assert!(
             matches!(err, FileStoreError::WrongPassphrase),
             "expected WrongPassphrase, got {err:?}"
@@ -259,7 +262,7 @@ mod tests {
         let SecretStore::File(ref fs) = s else {
             unreachable!()
         };
-        let mut vault = fs.test_read_vault().unwrap().unwrap();
+        let mut vault = fs.test_read_vault_from_disk().unwrap().unwrap();
         vault
             .wallets
             .get_mut(&wid(1).to_hex())
@@ -267,7 +270,8 @@ mod tests {
             .get_mut("seed")
             .unwrap()
             .ciphertext[0] ^= 0x01;
-        fs.test_write_vault(&vault).unwrap();
+        fs.test_write_vault_to_disk(&vault).unwrap();
+        fs.test_reload_from_disk().unwrap();
         let err = s.get(&wid(1), "seed").unwrap_err();
         assert!(
             matches!(err, FileStoreError::Corruption),
@@ -276,21 +280,15 @@ mod tests {
     }
 
     #[test]
-    fn busy_surfaces_typed_lossless() {
-        // `set` builds a credential that clones the inner `Arc`, but it is
-        // dropped at the end of `set`, so `rekey` then has the exclusive
-        // reference. To observe `Busy` we hold a live credential across a
-        // rekey on the same store.
+    fn already_locked_surfaces_typed_lossless() {
+        // Resident-vault model: a second open() of the same path while
+        // the first store is alive returns AlreadyLocked. The typed
+        // distinction survives losslessly on the public path.
         let dir = tempfile::tempdir().unwrap();
-        let mut fs =
-            EncryptedFileStore::open(dir.path().join("vault.pwsvault"), SecretString::new("pw"))
-                .unwrap();
-        let svc = format!("{SERVICE_PREFIX}{}", wid(1).to_hex());
-        let live = fs.build(&svc, "seed", None).unwrap();
-        live.set_secret(b"value").unwrap();
-        let err = fs.rekey(SecretString::new("pw-new")).unwrap_err();
-        assert!(matches!(err, FileStoreError::Busy), "got {err:?}");
-        drop(live);
+        let path = dir.path().join("vault.pwsvault");
+        let _s1 = SecretStore::file(&path, SecretString::new("pw")).unwrap();
+        let err = SecretStore::file(&path, SecretString::new("pw")).unwrap_err();
+        assert!(matches!(err, FileStoreError::AlreadyLocked), "got {err:?}");
     }
 
     #[test]

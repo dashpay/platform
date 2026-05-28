@@ -108,25 +108,48 @@ fn no_box_dyn_error_in_secrets_src() {
 /// `{:?}`-print `keyring_core::Error` either (see `secrets_guard`).
 #[test]
 fn error_display_is_static_and_secret_free() {
+    // Resident-vault model: a wrong passphrase is detected at open()
+    // (verify-token check), not on get(). The exclusive vault lock is
+    // released when the first store drops, so the wrong-pass reopen
+    // can attempt acquisition. The typed distinction survives
+    // losslessly on both the SPI and the SecretStore public paths.
     let dir = tempfile::tempdir().unwrap();
-    let store = open(dir.path());
     let w = WalletId::from([4; 32]);
-    let entry = store.build(&service(w), "seed", None).unwrap();
-    entry.set_secret(b"PLAINTEXTNEEDLE").unwrap();
+    {
+        let store = open(dir.path());
+        let entry = store.build(&service(w), "seed", None).unwrap();
+        entry.set_secret(b"PLAINTEXTNEEDLE").unwrap();
 
-    let bad =
-        EncryptedFileStore::open(vault_path(dir.path()), SecretString::new("wrong-pass")).unwrap();
-    let err = bad
-        .build(&service(w), "seed", None)
-        .unwrap()
-        .get_secret()
-        .unwrap_err();
-    let rendered = format!("{err}");
+        let inv = store.build(&service(w), "../bad", None).unwrap_err();
+        match inv {
+            KeyringError::Invalid(attr, _) => assert_eq!(attr, "user"),
+            other => panic!("expected Invalid, got {other:?}"),
+        }
+    }
+
+    let typed = EncryptedFileStore::open(vault_path(dir.path()), SecretString::new("wrong-pass"))
+        .expect_err("wrong pass must fail open");
+    assert!(matches!(typed, FileStoreError::WrongPassphrase));
+    let rendered = format!("{typed}");
     assert!(!rendered.contains("PLAINTEXTNEEDLE"));
     assert!(!rendered.contains("wrong-pass"));
-    // WrongPassphrase rides in `NoStorageAccess` with the typed
-    // FileStoreError boxed as the source, recoverable losslessly.
-    match &err {
+
+    // The same wrong-pass open through the public `SecretStore` keeps
+    // the typed variant intact.
+    let typed = SecretStore::file(vault_path(dir.path()), SecretString::new("wrong-pass"))
+        .expect_err("wrong pass must fail open via SecretStore");
+    assert!(matches!(typed, FileStoreError::WrongPassphrase));
+
+    // The SPI projection: a typed `FileStoreError::WrongPassphrase`
+    // converted to `KeyringError` rides in `NoStorageAccess` with the
+    // typed error boxed as the source, recoverable losslessly. The
+    // projection itself never sees the bytes, so a plaintext leak is
+    // impossible at this seam.
+    let spi: KeyringError = FileStoreError::WrongPassphrase.into();
+    let spi_rendered = format!("{spi}");
+    assert!(!spi_rendered.contains("PLAINTEXTNEEDLE"));
+    assert!(!spi_rendered.contains("wrong-pass"));
+    match &spi {
         KeyringError::NoStorageAccess(src) => {
             assert!(matches!(
                 src.downcast_ref::<FileStoreError>(),
@@ -134,19 +157,6 @@ fn error_display_is_static_and_secret_free() {
             ));
         }
         other => panic!("expected NoStorageAccess, got {other:?}"),
-    }
-
-    // Same wrong passphrase through the public `SecretStore`: the typed
-    // distinction survives losslessly there too.
-    let bad_store =
-        SecretStore::file(vault_path(dir.path()), SecretString::new("wrong-pass")).unwrap();
-    let typed = bad_store.get(&w, "seed").unwrap_err();
-    assert!(matches!(typed, FileStoreError::WrongPassphrase));
-
-    let inv = store.build(&service(w), "../bad", None).unwrap_err();
-    match inv {
-        KeyringError::Invalid(attr, _) => assert_eq!(attr, "user"),
-        other => panic!("expected Invalid, got {other:?}"),
     }
 }
 

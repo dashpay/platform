@@ -9,7 +9,7 @@
 //! ([`SecretStore::set`]) takes `&SecretBytes`, so a caller cannot pass an
 //! unwrapped buffer. Errors surface as the typed [`FileStoreError`],
 //! losslessly for the file arm (`WrongPassphrase` vs `Corruption` vs
-//! `Busy` stay distinct).
+//! `AlreadyLocked` stay distinct).
 //!
 //! - [`SecretStore::file`] — Argon2id + XChaCha20-Poly1305 vault file.
 //!   Recommended on **headless / server** hosts; fully self-contained.
