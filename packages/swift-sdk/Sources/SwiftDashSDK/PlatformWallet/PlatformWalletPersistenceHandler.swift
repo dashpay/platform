@@ -1347,6 +1347,29 @@ public class PlatformWalletPersistenceHandler {
                     $0.keyId == targetKeyId && $0.identityId == identityHex
                 }
             )
+            // Project the snapshot's ContractBounds enum into the
+            // pair of columns `PersistentPublicKey` uses:
+            //   * `contractBoundsIds` — `[contractId]` (or nil)
+            //   * `contractBoundsDocumentTypeName` — non-nil iff the
+            //     bound was `.singleContractDocumentType`
+            // Keeping both lets the SwiftData row round-trip both
+            // variants verbatim; legacy stores without the
+            // doc-type column just see `nil` for the second field
+            // and reconstruct as `.singleContract`.
+            let snapshotBoundsIds: [Data]?
+            let snapshotBoundsDocType: String?
+            switch entry.contractBounds {
+            case .some(.singleContract(let id)):
+                snapshotBoundsIds = [id]
+                snapshotBoundsDocType = nil
+            case .some(.singleContractDocumentType(let id, let name)):
+                snapshotBoundsIds = [id]
+                snapshotBoundsDocType = name
+            case .none:
+                snapshotBoundsIds = nil
+                snapshotBoundsDocType = nil
+            }
+
             let row: PersistentPublicKey
             if let existing = try? backgroundContext.fetch(descriptor).first {
                 row = existing
@@ -1362,6 +1385,8 @@ public class PlatformWalletPersistenceHandler {
                     publicKeyData: entry.publicKeyData,
                     readOnly: entry.readOnly,
                     disabledAt: entry.disabledAt.map { Int64(bitPattern: $0) },
+                    contractBounds: snapshotBoundsIds,
+                    contractBoundsDocumentTypeName: snapshotBoundsDocType,
                     identityId: identityHex
                 )
                 backgroundContext.insert(row)
@@ -1382,6 +1407,13 @@ public class PlatformWalletPersistenceHandler {
             row.publicKeyData = entry.publicKeyData
             row.readOnly = entry.readOnly
             row.disabledAt = entry.disabledAt.map { Int64(bitPattern: $0) }
+            // Mirror the contract-bounds projection onto an
+            // existing row too — Rust is the source of truth on
+            // each callback, so the snapshot's bounds (which can
+            // change if Drive ever re-emits a key with a different
+            // scope) must overwrite any stale value here.
+            row.contractBounds = snapshotBoundsIds
+            row.contractBoundsDocumentTypeName = snapshotBoundsDocType
 
             // Private-key handling.
             //
@@ -1940,6 +1972,14 @@ public class PlatformWalletPersistenceHandler {
         /// DIP-9 `(identity_index, key_index)` pair. Present iff the
         /// client is expected to re-derive the private key locally.
         let derivationIndices: (identityIndex: UInt32, keyIndex: UInt32)?
+        /// Full ContractBounds projection mirrored from Rust:
+        /// `nil` when the key has no bounds; `.singleContract` for
+        /// kind=1; `.singleContractDocumentType` for kind=2. Carried
+        /// so the SwiftData row preserves the doc-type name on
+        /// round-trip (would otherwise be silently downgraded to
+        /// `.singleContract` and break local DPP projections that
+        /// read `identity.identityPublicKeys`).
+        let contractBounds: ManagedPlatformWallet.ContractBounds?
     }
 
     // MARK: - Watch-only Restore: Account Addresses
@@ -4574,6 +4614,36 @@ private func persistIdentityKeysCallback(
                 e.derivation_indices_is_some
                     ? (e.identity_index, e.key_index)
                     : nil
+
+            // Project the contract-bounds trio (kind / id / doc-
+            // type C-string) into the Swift enum. Mirrors the Rust
+            // `IdentityKeyEntryFFI::from_entry` encoding — kinds:
+            //   0 → no bounds
+            //   1 → SingleContract { id }
+            //   2 → SingleContractDocumentType { id, doc_type_name }
+            // The doc-type C-string for kind=2 is owned by Rust and
+            // freed via `free_identity_key_entry_ffi` after this
+            // callback returns, so we copy it into a Swift String
+            // here. A null doc-type pointer with kind=2 is a
+            // serialization edge case (interior NUL); treat it as
+            // no-bounds rather than constructing a partial variant.
+            let bounds: ManagedPlatformWallet.ContractBounds?
+            switch e.contract_bounds_kind {
+            case 1:
+                bounds = .singleContract(id: dataFromTuple32(e.contract_bounds_id))
+            case 2:
+                if let docPtr = e.contract_bounds_document_type {
+                    bounds = .singleContractDocumentType(
+                        id: dataFromTuple32(e.contract_bounds_id),
+                        documentTypeName: String(cString: docPtr)
+                    )
+                } else {
+                    bounds = nil
+                }
+            default:
+                bounds = nil
+            }
+
             upserts.append(.init(
                 identityId: identityId,
                 keyId: e.key_id,
@@ -4585,7 +4655,8 @@ private func persistIdentityKeysCallback(
                 publicKeyData: pubKey,
                 publicKeyHash: dataFromTuple20(e.public_key_hash),
                 walletId: walletId,
-                derivationIndices: indices
+                derivationIndices: indices,
+                contractBounds: bounds
             ))
         }
     }

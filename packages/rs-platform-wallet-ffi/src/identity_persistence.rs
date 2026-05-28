@@ -188,6 +188,27 @@ pub struct IdentityKeyEntryFFI {
     pub derivation_indices_is_some: bool,
     pub identity_index: u32,
     pub key_index: u32,
+
+    // ContractBounds projection. Mirrors the DPP enum
+    // `ContractBounds` so the client can reconstruct the variant
+    // verbatim instead of dropping the document-type name:
+    //
+    //   * `contract_bounds_kind == 0` — no contract bounds; the
+    //     `id` field is zeroed and the doc-type pointer is null.
+    //   * `contract_bounds_kind == 1` — `SingleContract`; only the
+    //     32-byte `id` is meaningful, doc-type pointer is null.
+    //   * `contract_bounds_kind == 2` — `SingleContractDocumentType`;
+    //     both the `id` and the heap-allocated UTF-8 doc-type
+    //     C-string are meaningful. Doc-type string is released by
+    //     [`free_identity_key_entry_ffi`].
+    //
+    // Keeping the kind tag inline (vs. always nulling fields) lets
+    // the Swift side switch on a single discriminant without
+    // probing pointer values, matching how the rest of this struct
+    // encodes optional payloads.
+    pub contract_bounds_kind: u8,
+    pub contract_bounds_id: [u8; 32],
+    pub contract_bounds_document_type: *const c_char,
 }
 
 /// Composite identifier for [`IdentityKeysChangeSet::removed`] entries
@@ -228,9 +249,13 @@ pub struct IdentityKeyRemovalFFI {
 //   126..=127 (padding to 4)
 //   128..=131 identity_index          u32
 //   132..=135 key_index               u32
+//   136       contract_bounds_kind    u8
+//   137..=168 contract_bounds_id      [u8; 32]
+//   169..=175 (padding to 8 for pointer alignment)
+//   176..=183 contract_bounds_document_type *const c_char
 //
-// Total size = 136, alignment = 8 (from u64 / pointer).
-const _: [u8; 136] = [0u8; std::mem::size_of::<IdentityKeyEntryFFI>()];
+// Total size = 184, alignment = 8 (from u64 / pointer).
+const _: [u8; 184] = [0u8; std::mem::size_of::<IdentityKeyEntryFFI>()];
 const _: [u8; 8] = [0u8; std::mem::align_of::<IdentityKeyEntryFFI>()];
 
 // Compile-time guard for `IdentityEntryFFI`. Same rationale as the
@@ -451,10 +476,12 @@ fn allocate_dpns_arrays(
 impl IdentityKeyEntryFFI {
     /// Copy an [`IdentityKeyEntry`] into a fresh FFI struct. The
     /// caller owns the heap-allocated `public_key_data_ptr` byte
-    /// buffer and (when present) the `private_key_derivation_path`
-    /// C-string; release both via [`free_identity_key_entry_ffi`].
+    /// buffer and (when present) the
+    /// `contract_bounds_document_type` C-string; release both via
+    /// [`free_identity_key_entry_ffi`].
     pub fn from_entry(entry: &IdentityKeyEntry) -> Self {
         use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+        use dpp::identity::identity_public_key::contract_bounds::ContractBounds;
 
         let pk_bytes = entry.public_key.data().as_slice().to_vec();
         let pk_len = pk_bytes.len();
@@ -477,6 +504,26 @@ impl IdentityKeyEntryFFI {
             None => (false, 0, 0),
         };
 
+        // Project the DPP `ContractBounds` enum into the kind /
+        // id / doc-type-cstring trio so the Swift side can switch
+        // on a single discriminant. Strings containing interior
+        // NULs (impossible in practice — DPP rejects them) fall
+        // back to a null pointer, leaving the kind tag set to 2;
+        // Swift treats null doc-type-with-kind-2 as "no bounds"
+        // rather than constructing a half-formed variant.
+        let (contract_bounds_kind, contract_bounds_id, contract_bounds_document_type) =
+            match entry.public_key.contract_bounds() {
+                Some(ContractBounds::SingleContract { id }) => (1u8, id.to_buffer(), ptr::null()),
+                Some(ContractBounds::SingleContractDocumentType { id, document_type_name }) => {
+                    let doc_type_ptr = match CString::new(document_type_name.as_str()) {
+                        Ok(c) => c.into_raw() as *const c_char,
+                        Err(_) => ptr::null(),
+                    };
+                    (2u8, id.to_buffer(), doc_type_ptr)
+                }
+                None => (0u8, [0u8; 32], ptr::null()),
+            };
+
         Self {
             identity_id: entry.identity_id.to_buffer(),
             key_id: entry.key_id,
@@ -494,6 +541,9 @@ impl IdentityKeyEntryFFI {
             derivation_indices_is_some,
             identity_index,
             key_index,
+            contract_bounds_kind,
+            contract_bounds_id,
+            contract_bounds_document_type,
         }
     }
 }
@@ -601,8 +651,12 @@ unsafe fn free_optional_c_string(slot: &mut *const c_char) {
 }
 
 /// Release heap allocations owned by an [`IdentityKeyEntryFFI`] —
-/// the public-key data buffer and, when present, the derivation-path
-/// string for the `AtWalletDerivationPath` variant.
+/// the public-key data buffer and, when present, the contract-bounds
+/// document-type C-string (set when
+/// `contract_bounds_kind == 2`, i.e. SingleContractDocumentType).
+///
+/// Idempotent: pointers are nulled and length zeroed after release,
+/// so a second call is a no-op.
 ///
 /// # Safety
 ///
@@ -620,6 +674,15 @@ pub unsafe fn free_identity_key_entry_ffi(entry: &mut IdentityKeyEntryFFI) {
         let _ = unsafe { Box::from_raw(slice as *mut [u8]) };
         entry.public_key_data_ptr = ptr::null_mut();
         entry.public_key_data_len = 0;
+    }
+    // Release the contract-bounds doc-type C-string. Only allocated
+    // when the original entry carried `SingleContractDocumentType`
+    // bounds (and the doc-type name didn't contain interior NULs).
+    if !entry.contract_bounds_document_type.is_null() {
+        let _ = unsafe {
+            CString::from_raw(entry.contract_bounds_document_type as *mut c_char)
+        };
+        entry.contract_bounds_document_type = ptr::null();
     }
     // No private-key heap allocations to reclaim — the new FFI shape
     // carries only scalar derivation breadcrumbs, not an owned path
@@ -878,6 +941,75 @@ mod tests {
         assert!(ffi.read_only);
         assert!(ffi.disabled_at_is_some);
         assert_eq!(ffi.disabled_at, 1_700_000_000);
+        assert_eq!(ffi.contract_bounds_kind, 0);
+        assert!(ffi.contract_bounds_document_type.is_null());
+        unsafe { free_identity_key_entry_ffi(&mut ffi) };
+    }
+
+    #[test]
+    fn test_identity_key_entry_ffi_contract_bounds_single_contract() {
+        use dpp::identity::identity_public_key::contract_bounds::ContractBounds;
+        let contract_id = Identifier::from([0xAB; 32]);
+        let public_key = IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id: 1,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            contract_bounds: Some(ContractBounds::SingleContract { id: contract_id }),
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: BinaryData::new(vec![0x01; 33]),
+            disabled_at: None,
+        });
+        let entry = IdentityKeyEntry {
+            identity_id: Identifier::from([1u8; 32]),
+            key_id: 1,
+            public_key,
+            public_key_hash: [0x11; 20],
+            wallet_id: None,
+            derivation_indices: None,
+        };
+        let mut ffi = IdentityKeyEntryFFI::from_entry(&entry);
+        assert_eq!(ffi.contract_bounds_kind, 1);
+        assert_eq!(ffi.contract_bounds_id, [0xAB; 32]);
+        assert!(ffi.contract_bounds_document_type.is_null());
+        unsafe { free_identity_key_entry_ffi(&mut ffi) };
+    }
+
+    #[test]
+    fn test_identity_key_entry_ffi_contract_bounds_single_doc_type() {
+        use dpp::identity::identity_public_key::contract_bounds::ContractBounds;
+        let contract_id = Identifier::from([0xCD; 32]);
+        let public_key = IdentityPublicKey::V0(IdentityPublicKeyV0 {
+            id: 2,
+            purpose: Purpose::ENCRYPTION,
+            security_level: SecurityLevel::MEDIUM,
+            contract_bounds: Some(ContractBounds::SingleContractDocumentType {
+                id: contract_id,
+                document_type_name: "contactRequest".to_string(),
+            }),
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: BinaryData::new(vec![0x02; 33]),
+            disabled_at: None,
+        });
+        let entry = IdentityKeyEntry {
+            identity_id: Identifier::from([4u8; 32]),
+            key_id: 2,
+            public_key,
+            public_key_hash: [0x22; 20],
+            wallet_id: None,
+            derivation_indices: None,
+        };
+        let mut ffi = IdentityKeyEntryFFI::from_entry(&entry);
+        assert_eq!(ffi.contract_bounds_kind, 2);
+        assert_eq!(ffi.contract_bounds_id, [0xCD; 32]);
+        assert!(!ffi.contract_bounds_document_type.is_null());
+        // Verify the doc-type CString round-trips.
+        let cstr = unsafe { std::ffi::CStr::from_ptr(ffi.contract_bounds_document_type) };
+        assert_eq!(cstr.to_str().unwrap(), "contactRequest");
+        unsafe { free_identity_key_entry_ffi(&mut ffi) };
+        // Idempotent free.
+        assert!(ffi.contract_bounds_document_type.is_null());
         unsafe { free_identity_key_entry_ffi(&mut ffi) };
     }
 }
