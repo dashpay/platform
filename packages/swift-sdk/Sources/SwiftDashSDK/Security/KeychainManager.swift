@@ -1,5 +1,6 @@
 import Foundation
 import Security
+import os.log
 
 // MARK: - Supporting Types
 
@@ -946,12 +947,30 @@ extension KeychainManager {
             else {
                 continue
             }
-            guard let metadataData = item[kSecAttrGeneric as String] as? Data,
-                  let metadata = try? decoder.decode(
-                    IdentityPrivateKeyMetadata.self,
-                    from: metadataData
-                  )
-            else {
+            // Surface undecodable-metadata rows via os_log rather
+            // than silently skipping them. The caller has asked
+            // for a wholesale identity-scoped wipe, so the safest
+            // action is still to NOT delete a row we can't prove
+            // we own — but the developer needs to know that an
+            // `identity_privkey.*` row exists whose metadata we
+            // can't read (likely a partial / aborted write, a
+            // legacy pre-metadata row, or a future schema rename),
+            // because the user is being told the orphan was
+            // cleaned up. Visible in Console.app under the
+            // `dashpay.SwiftDashSDK` subsystem.
+            guard let metadataData = item[kSecAttrGeneric as String] as? Data else {
+                Self.log.error(
+                    "Skipping identity_privkey row at account \(account, privacy: .public) — missing kSecAttrGeneric metadata blob; private bytes remain"
+                )
+                continue
+            }
+            let metadata: IdentityPrivateKeyMetadata
+            do {
+                metadata = try decoder.decode(IdentityPrivateKeyMetadata.self, from: metadataData)
+            } catch {
+                Self.log.error(
+                    "Skipping identity_privkey row at account \(account, privacy: .public) — metadata JSON decode failed (\(String(describing: error), privacy: .public)); private bytes remain"
+                )
                 continue
             }
             guard metadata.identityId == identityIdBase58 else {
@@ -960,6 +979,21 @@ extension KeychainManager {
             try deleteGenericPassword(account: account)
         }
     }
+
+    /// Subsystem-tagged logger for Keychain operations. Surfaces
+    /// silently-skipped rows from the wholesale sweeps so the
+    /// developer/user is aware that some `identity_privkey.*`
+    /// rows were not touched despite the cleanup running. Filter
+    /// in Console.app with `subsystem:dashpay.SwiftDashSDK
+    /// category:Keychain`.
+    ///
+    /// `nonisolated` so the keychain helpers (which are
+    /// `nonisolated` themselves — they run on the FFI signer
+    /// trampoline's worker thread) can reach the logger without
+    /// hopping to the main actor. `Logger` is already `Sendable`,
+    /// so plain `nonisolated` (not `nonisolated(unsafe)`) is the
+    /// right escape hatch.
+    fileprivate nonisolated static let log = Logger(subsystem: "dashpay.SwiftDashSDK", category: "Keychain")
 
     /// Delete every `identity_privkey.<derivationPath>` keychain row whose
     /// `IdentityPrivateKeyMetadata.walletId` matches `walletId`.
@@ -991,12 +1025,23 @@ extension KeychainManager {
             else {
                 continue
             }
-            guard let metadataData = item[kSecAttrGeneric as String] as? Data,
-                  let metadata = try? decoder.decode(
-                    IdentityPrivateKeyMetadata.self,
-                    from: metadataData
-                  )
-            else {
+            // Same logging-on-skip rationale as
+            // `deleteAllIdentityPrivateKeys(forIdentityIdBase58:)`
+            // above — see that helper's doc comment for why we
+            // refuse to delete rows we can't prove we own.
+            guard let metadataData = item[kSecAttrGeneric as String] as? Data else {
+                Self.log.error(
+                    "Skipping identity_privkey row at account \(account, privacy: .public) — missing kSecAttrGeneric metadata blob; private bytes remain"
+                )
+                continue
+            }
+            let metadata: IdentityPrivateKeyMetadata
+            do {
+                metadata = try decoder.decode(IdentityPrivateKeyMetadata.self, from: metadataData)
+            } catch {
+                Self.log.error(
+                    "Skipping identity_privkey row at account \(account, privacy: .public) — metadata JSON decode failed (\(String(describing: error), privacy: .public)); private bytes remain"
+                )
                 continue
             }
             guard metadata.walletId.caseInsensitiveCompare(walletIdHex) == .orderedSame else {

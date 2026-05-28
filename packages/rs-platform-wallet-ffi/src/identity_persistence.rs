@@ -514,7 +514,10 @@ impl IdentityKeyEntryFFI {
         let (contract_bounds_kind, contract_bounds_id, contract_bounds_document_type) =
             match entry.public_key.contract_bounds() {
                 Some(ContractBounds::SingleContract { id }) => (1u8, id.to_buffer(), ptr::null()),
-                Some(ContractBounds::SingleContractDocumentType { id, document_type_name }) => {
+                Some(ContractBounds::SingleContractDocumentType {
+                    id,
+                    document_type_name,
+                }) => {
                     let doc_type_ptr = match CString::new(document_type_name.as_str()) {
                         Ok(c) => c.into_raw() as *const c_char,
                         Err(_) => ptr::null(),
@@ -679,9 +682,7 @@ pub unsafe fn free_identity_key_entry_ffi(entry: &mut IdentityKeyEntryFFI) {
     // when the original entry carried `SingleContractDocumentType`
     // bounds (and the doc-type name didn't contain interior NULs).
     if !entry.contract_bounds_document_type.is_null() {
-        let _ = unsafe {
-            CString::from_raw(entry.contract_bounds_document_type as *mut c_char)
-        };
+        let _ = unsafe { CString::from_raw(entry.contract_bounds_document_type as *mut c_char) };
         entry.contract_bounds_document_type = ptr::null();
     }
     // No private-key heap allocations to reclaim — the new FFI shape
