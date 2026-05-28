@@ -337,19 +337,17 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_shield(
 ///
 /// `account_index` selects the BIP44 Core account whose UTXOs
 /// fund the asset lock. `amount_duffs` is the L1 amount to lock.
-/// `shield_amount_credits` is what enters the shielded pool — the
-/// Orchard `value_balance` baked into the Halo 2 proof at build
-/// time. The caller is responsible for the relationship
-/// `amount_duffs * CREDITS_PER_DUFF ≥ shield_amount_credits + Platform fee`;
-/// undersized locks fail at Platform submission.
+/// The wallet derives the shielded credit amount internally
+/// (`lock_value − protocol_min_fee`) — callers don't need to know
+/// about Type 18's Halo 2 fee math.
 ///
 /// `recipient_raw_43` is the single Orchard recipient (same shape
 /// `platform_wallet_manager_shielded_default_address` returns); it
-/// receives `shield_amount_credits` credits.
+/// receives the full `lock_value − min_fee` credits.
 ///
-/// Multi-recipient is reserved for a future DPP-side Orchard
-/// multi-output bundle change; today the orchestration rejects
-/// anything but a single recipient.
+/// Multi-recipient with explicit per-recipient amounts is reserved
+/// for a future DPP-side Orchard multi-output bundle change; today
+/// the orchestration rejects anything but a single recipient.
 ///
 /// # Safety
 /// - `wallet_id_bytes` must point to 32 readable bytes.
@@ -366,7 +364,6 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_fund_from_asset_lock(
     wallet_id_bytes: *const u8,
     account_index: u32,
     amount_duffs: u64,
-    shield_amount_credits: u64,
     recipient_raw_43: *const u8,
     core_signer_handle: *mut MnemonicResolverHandle,
 ) -> PlatformWalletFFIResult {
@@ -421,7 +418,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_fund_from_asset_lock(
                     amount_duffs,
                     account_index,
                 },
-                vec![(recipient, shield_amount_credits)],
+                vec![(recipient, None)],
                 &asset_lock_signer,
                 &prover,
                 None,
@@ -459,7 +456,6 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_resume_fund_from_asset
     handle: Handle,
     wallet_id_bytes: *const u8,
     out_point: *const OutPointFFI,
-    shield_amount_credits: u64,
     recipient_raw_43: *const u8,
     core_signer_handle: *mut MnemonicResolverHandle,
 ) -> PlatformWalletFFIResult {
@@ -513,7 +509,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_resume_fund_from_asset
                 AssetLockFunding::FromExistingAssetLock {
                     out_point: resume_outpoint,
                 },
-                vec![(recipient, shield_amount_credits)],
+                vec![(recipient, None)],
                 &asset_lock_signer,
                 &prover,
                 None,

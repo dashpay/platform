@@ -34,6 +34,8 @@ use dpp::shielded::builder::{build_shield_from_asset_lock_transition_with_signer
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 
+use crate::wallet::asset_lock::tracked::TrackedAssetLock;
+
 use crate::error::is_instant_lock_proof_invalid;
 use crate::wallet::asset_lock::orchestration::{
     out_point_from_proof, submit_with_cl_height_retry, AssetLockFunding, FundingResolution,
@@ -54,20 +56,24 @@ impl PlatformWallet {
     ///   builds a fresh asset lock from Core UTXOs; `FromExistingAssetLock`
     ///   resumes from a tracked outpoint (after relaunch or a stuck
     ///   broadcast).
-    /// * `recipients` — Recipient `OrchardAddress` + explicit credit
-    ///   amount per entry. The shape mirrors the platform-address
-    ///   `BTreeMap<PlatformAddress, _>` API for future-compatibility
-    ///   with multi-output Orchard bundles, but today the pre-flight
-    ///   enforces exactly one recipient (Type 18's bundle builder is
-    ///   single-output).
+    /// * `recipients` — Recipient list, shape
+    ///   `Vec<(OrchardAddress, Option<Credits>)>` mirroring the
+    ///   platform-address Type 14 API. Today the pre-flight enforces
+    ///   exactly one recipient with `None` credits — that recipient
+    ///   receives the lock value minus the protocol minimum fee
+    ///   (`required_asset_lock_duff_balance_for_processing_start_for_address_funding`).
     ///
-    ///   Unlike platform-address funding, the caller passes the
-    ///   credit amount explicitly. For Type 18 there is no
-    ///   protocol-side `AddressFundsFeeStrategy`; the Orchard
-    ///   `value_balance` (= `sum(recipient credits)`) is baked into
-    ///   the Halo 2 proof at build time, and the asset-lock value
-    ///   minus that covers the Platform fee. The caller is
-    ///   responsible for sizing the L1 lock to cover both.
+    ///   When DPP grows multi-output Orchard bundles for Type 18,
+    ///   `Some(_)` values will be honored (explicit credit amounts
+    ///   pass through; the single `None` bucket — if any — receives
+    ///   the residual). Keeping the multi-shape signature now means
+    ///   no caller migration is needed at that point.
+    ///
+    ///   Unlike Type 14, Type 18 has no protocol-side
+    ///   `AddressFundsFeeStrategy` — the Orchard `value_balance`
+    ///   (= recipient credits) is baked into the Halo 2 proof at
+    ///   build time. The wallet handles the math here so callers
+    ///   don't have to know about protocol-level fee constants.
     /// * `asset_lock_signer` — External signer for the outer ECDSA
     ///   signature on the state transition. The raw key never crosses
     ///   the FFI boundary.
@@ -78,7 +84,7 @@ impl PlatformWallet {
     pub async fn shielded_fund_from_asset_lock<AS, P>(
         &self,
         funding: AssetLockFunding,
-        recipients: Vec<(OrchardAddress, Credits)>,
+        recipients: Vec<(OrchardAddress, Option<Credits>)>,
         asset_lock_signer: &AS,
         prover: P,
         settings: Option<PutSettings>,
@@ -91,73 +97,6 @@ impl PlatformWallet {
         // an unfundable asset-lock tx (or paying for an Orchard proof
         // build, ~30s, only to reject downstream).
         validate_shielded_recipients(&recipients)?;
-
-        // Caller specifies shield_amount per recipient (Type 18's
-        // Orchard `value_balance` is baked into the Halo 2 proof at
-        // build time, unlike address-funding's protocol-level fee
-        // strategy). Identities and platform-addresses take
-        // `amount_duffs` from the caller for the same reason —
-        // Platform handles their fee math inside the transition,
-        // shielded can't.
-        let (recipient, shield_amount) =
-            *recipients.first().expect("preflight enforces len() == 1");
-
-        // Sizing sanity check on the FromWalletBalance path: refuse
-        // obviously-undersized configurations BEFORE we broadcast
-        // the asset-lock tx (single-use L1 funds) or spend ~30s
-        // building a Halo 2 proof Platform would reject.
-        //
-        // Best-effort, not authoritative — Platform's real fee
-        // depends on state we don't track. We only check the lower
-        // bound: lock_credits >= shield_amount + min_required_fee.
-        // The resume path takes an existing tracked outpoint; the
-        // lock value is already pinned on-chain, and checking it
-        // here would re-introduce the asset-lock-value lookup we
-        // deliberately removed in favour of caller-supplied
-        // `shield_amount`.
-        if let AssetLockFunding::FromWalletBalance { amount_duffs, .. } = &funding {
-            // Use `checked_*` and reject explicitly on overflow.
-            // `saturating_*` (the earlier shape) silently passed
-            // the guard when both sides saturated to `u64::MAX`
-            // (~1.8e16 duffs ≈ 18 million DASH — operationally
-            // absurd but the silent-overflow shape would be the
-            // wrong template for future contributors). With
-            // checked math the guard is honest about its intent.
-            let lock_credits = (*amount_duffs)
-                .checked_mul(CREDITS_PER_DUFF)
-                .ok_or_else(|| {
-                    PlatformWalletError::ShieldedBuildError(format!(
-                        "asset lock amount overflows credits conversion ({amount_duffs} duffs * \
-                     {CREDITS_PER_DUFF} credits/duff > u64::MAX)"
-                    ))
-                })?;
-            let min_fee_duffs = self
-                .sdk
-                .version()
-                .dpp
-                .state_transitions
-                .identities
-                .asset_locks
-                .required_asset_lock_duff_balance_for_processing_start_for_address_funding;
-            let min_fee_credits = min_fee_duffs.checked_mul(CREDITS_PER_DUFF).ok_or_else(|| {
-                PlatformWalletError::ShieldedBuildError(format!(
-                    "protocol min-fee overflows credits conversion ({min_fee_duffs} duffs)"
-                ))
-            })?;
-            let required = shield_amount.checked_add(min_fee_credits).ok_or_else(|| {
-                PlatformWalletError::ShieldedBuildError(format!(
-                    "shield_amount ({shield_amount}) + min_fee ({min_fee_credits}) overflows u64"
-                ))
-            })?;
-            if lock_credits < required {
-                return Err(PlatformWalletError::ShieldedBuildError(format!(
-                    "asset lock ({lock_credits} credits, from {amount_duffs} duffs) cannot cover \
-                     shield_amount ({shield_amount}) + protocol min fee ({min_fee_credits}); \
-                     refusing to broadcast a single-use asset lock and build a ~30s Halo 2 proof \
-                     for a submission Platform would reject"
-                )));
-            }
-        }
 
         // Single-flight: serialise shield-class operations on this
         // wallet so two concurrent calls can't race the asset-lock
@@ -209,6 +148,41 @@ impl PlatformWallet {
                 }
             }
         };
+
+        // Step 3: derive `shield_amount` from the asset-lock value.
+        //
+        // Unlike Type 14 (where Platform deducts the fee inside the
+        // transition via `AddressFundsFeeStrategy`), Type 18 bakes
+        // the Orchard `value_balance` into the Halo 2 proof at build
+        // time — someone *has* to know the precise number before
+        // signing. The wallet is the right place: it already has the
+        // lock value (from the IS proof's TxOut, or from the asset-
+        // lock manager's tracked row for CL-only paths) and the
+        // protocol min-fee constant (from `PlatformVersion`).
+        //
+        // Single-recipient + `None` semantics today: the recipient
+        // receives `lock_value - min_fee`. Future multi-recipient
+        // would honor `Some(_)` values explicitly and route the
+        // residual to the (sole) `None` bucket; the preflight will
+        // change in lockstep with the DPP-side multi-output bundle
+        // builder.
+        let asset_lock_value_credits =
+            lookup_asset_lock_value_credits(self, &proof, tracked_out_point.as_ref()).await?;
+        let min_fee_credits = self.shield_from_asset_lock_min_fee()?;
+        let shield_amount = asset_lock_value_credits
+            .checked_sub(min_fee_credits)
+            .ok_or_else(|| {
+                PlatformWalletError::ShieldedBuildError(format!(
+                    "asset lock value ({asset_lock_value_credits} credits) is below the \
+                     minimum required fee ({min_fee_credits} credits) for ShieldFromAssetLock"
+                ))
+            })?;
+        if shield_amount == 0 {
+            return Err(PlatformWalletError::ShieldedBuildError(
+                "shield amount after fee is zero".to_string(),
+            ));
+        }
+        let (recipient, _) = *recipients.first().expect("preflight enforces len() == 1");
 
         // Step 4: submit. Two Platform-side fallback layers — matching
         // the address-funding sibling: CL-height-too-low retries bump
@@ -318,10 +292,85 @@ impl PlatformWallet {
             }
         }
 
-        tracing::info!(shield_amount, "Shielded fund-from-asset-lock succeeded");
+        tracing::info!(
+            shield_amount,
+            asset_lock_value_credits,
+            min_fee_credits,
+            "Shielded fund-from-asset-lock succeeded"
+        );
 
         Ok(())
     }
+
+    /// Minimum fee for a `ShieldFromAssetLock` (Type 18) state
+    /// transition, in credits. Read from
+    /// `dpp.state_transitions.identities.asset_locks` — the same
+    /// constant Type 14 (address funding) and Platform's
+    /// `StateTransitionEstimatedFeeValidation` use for Type 18.
+    fn shield_from_asset_lock_min_fee(&self) -> Result<Credits, PlatformWalletError> {
+        let pv = self.sdk.version();
+        let min_fee_duffs = pv
+            .dpp
+            .state_transitions
+            .identities
+            .asset_locks
+            .required_asset_lock_duff_balance_for_processing_start_for_address_funding;
+        min_fee_duffs.checked_mul(CREDITS_PER_DUFF).ok_or_else(|| {
+            PlatformWalletError::ShieldedBuildError(format!(
+                "protocol min-fee constant overflowed credits conversion \
+                 ({min_fee_duffs} duffs * {CREDITS_PER_DUFF} credits/duff > u64::MAX)"
+            ))
+        })
+    }
+}
+
+/// Look up the asset-lock value in credits.
+///
+/// Preference order:
+/// 1. If the proof is `Instant`, read directly from
+///    `InstantAssetLockProof::output().value` — no manager lookup
+///    needed.
+/// 2. Otherwise (the IS-timeout-fallback path produced a CL proof
+///    that doesn't carry the tx output), look up the tracked
+///    asset-lock row by outpoint.
+async fn lookup_asset_lock_value_credits(
+    wallet: &PlatformWallet,
+    proof: &AssetLockProof,
+    tracked_out_point: Option<&dashcore::OutPoint>,
+) -> Result<Credits, PlatformWalletError> {
+    let duffs = match proof {
+        AssetLockProof::Instant(is) => {
+            let out = is.output().ok_or_else(|| {
+                PlatformWalletError::AddressSync(
+                    "InstantAssetLockProof has no output at the indicated index".to_string(),
+                )
+            })?;
+            out.value
+        }
+        AssetLockProof::Chain(_) => {
+            let op = tracked_out_point.ok_or_else(|| {
+                PlatformWalletError::AddressSync(
+                    "ChainAssetLockProof but no tracked outpoint to look up value".to_string(),
+                )
+            })?;
+            let locks: Vec<TrackedAssetLock> = wallet.asset_locks.list_tracked_locks().await;
+            locks
+                .iter()
+                .find(|l| l.out_point == *op)
+                .map(|l| l.amount)
+                .ok_or_else(|| {
+                    PlatformWalletError::AddressSync(format!(
+                        "tracked asset lock {} not found in manager",
+                        op
+                    ))
+                })?
+        }
+    };
+    duffs.checked_mul(CREDITS_PER_DUFF).ok_or_else(|| {
+        PlatformWalletError::ShieldedBuildError(format!(
+            "asset lock value ({duffs} duffs * {CREDITS_PER_DUFF} credits/duff > u64::MAX)"
+        ))
+    })
 }
 
 /// Build the Type 18 transition and broadcast-and-wait.
@@ -367,18 +416,20 @@ where
 
 /// Pre-flight check for the recipient list.
 ///
-/// Today: non-empty, exactly one recipient, non-zero amount. The
-/// multi-shape `Vec<(OrchardAddress, Credits)>` API is exposed so
-/// the caller signature is future-compatible — when DPP grows
-/// multi-output Orchard bundles for Type 18, lifting the
-/// single-recipient restriction is a preflight-only change; no FFI
-/// / Swift / caller migration needed.
+/// Today: non-empty, exactly one recipient whose `Credits` value is
+/// `None` (= "remainder" semantics — receives `lock_value − min_fee`
+/// after Step 2 resolves the asset lock). The multi-shape
+/// `Vec<(OrchardAddress, Option<Credits>)>` API is exposed so the
+/// caller signature is future-compatible — when DPP grows
+/// multi-output Orchard bundles for Type 18, `Some(_)` values will
+/// be honored (explicit credit amounts pass through; the single
+/// `None` bucket receives the residual). Same shape as Type 14.
 ///
-/// Generic over `T` so unit tests can pass `(u8, Credits)` instead
-/// of constructing a curve-valid `OrchardAddress` for what is
-/// really a length / cardinality check.
+/// Generic over `T` so unit tests can pass `(u8, Option<Credits>)`
+/// instead of constructing a curve-valid `OrchardAddress` for what
+/// is really a length / cardinality check.
 pub(super) fn validate_shielded_recipients<T>(
-    recipients: &[(T, Credits)],
+    recipients: &[(T, Option<Credits>)],
 ) -> Result<(), PlatformWalletError> {
     if recipients.is_empty() {
         return Err(PlatformWalletError::AddressOperation(
@@ -389,9 +440,9 @@ pub(super) fn validate_shielded_recipients<T>(
     // for Type 18 (`build_output_only_bundle` currently builds a
     // single-output bundle; extending would also affect the Shield
     // Type 15 path that shares it), drop this restriction. The
-    // semantics will become: each recipient's `Credits` flows into
-    // its Orchard output, and the bundle's `value_balance` becomes
-    // `sum(credits)`.
+    // semantics will become: explicit `Some(credits)` flows into
+    // its Orchard output; the (exactly one) `None` bucket receives
+    // the residual `asset_lock_value − sum(explicit) − fee`.
     if recipients.len() != 1 {
         return Err(PlatformWalletError::AddressOperation(format!(
             "shielded_fund_from_asset_lock currently supports exactly one recipient \
@@ -399,9 +450,15 @@ pub(super) fn validate_shielded_recipients<T>(
             recipients.len()
         )));
     }
-    if recipients[0].1 == 0 {
-        return Err(PlatformWalletError::ShieldedBuildError(
-            "shield amount must be > 0".to_string(),
+    if recipients[0].1.is_some() {
+        // TODO(multi-output): drop this when the bundle builder honors
+        // explicit `Some(_)` values per recipient.
+        return Err(PlatformWalletError::AddressOperation(
+            "shielded_fund_from_asset_lock currently ignores explicit recipient credits \
+             (the single recipient receives lock_value - min_fee). Pass `None` for the \
+             remainder semantics; explicit amounts will be honored once DPP grows \
+             multi-output Orchard bundles for Type 18."
+                .to_string(),
         ));
     }
     Ok(())
@@ -419,14 +476,14 @@ mod tests {
 
     #[test]
     fn validate_rejects_empty_recipients() {
-        let v: Vec<(u8, Credits)> = Vec::new();
+        let v: Vec<(u8, Option<Credits>)> = Vec::new();
         let err = validate_shielded_recipients(&v).expect_err("empty must reject");
         assert!(format!("{err}").contains("at least one recipient"));
     }
 
     #[test]
     fn validate_rejects_multi_recipient_for_now() {
-        let v: Vec<(u8, Credits)> = vec![(1, 100), (2, 200)];
+        let v: Vec<(u8, Option<Credits>)> = vec![(1, None), (2, Some(100))];
         let err = validate_shielded_recipients(&v).expect_err("multi-recipient must reject (TODO)");
         let msg = format!("{err}");
         assert!(
@@ -436,18 +493,25 @@ mod tests {
     }
 
     #[test]
-    fn validate_rejects_zero_amount() {
-        let v: Vec<(u8, Credits)> = vec![(0, 0)];
-        let err = validate_shielded_recipients(&v).expect_err("zero amount must reject");
+    fn validate_rejects_explicit_some_for_now() {
+        // Until DPP grows multi-output Orchard bundles for Type 18,
+        // we ignore explicit amounts (the single recipient receives
+        // lock_value - min_fee). Reject explicit `Some(_)` so the
+        // caller's expectation matches the wallet's behaviour
+        // instead of silently dropping the value.
+        let v: Vec<(u8, Option<Credits>)> = vec![(0, Some(500_000))];
+        let err = validate_shielded_recipients(&v)
+            .expect_err("explicit Some must reject until multi-output is wired");
+        let msg = format!("{err}");
         assert!(
-            format!("{err}").contains("must be > 0"),
-            "unexpected error: {err}"
+            msg.contains("currently ignores explicit recipient credits"),
+            "unexpected error: {msg}"
         );
     }
 
     #[test]
-    fn validate_accepts_single_recipient_with_amount() {
-        let v: Vec<(u8, Credits)> = vec![(0, 500_000)];
-        validate_shielded_recipients(&v).expect("single recipient with amount must pass");
+    fn validate_accepts_single_none_recipient() {
+        let v: Vec<(u8, Option<Credits>)> = vec![(0, None)];
+        validate_shielded_recipients(&v).expect("single recipient with None must pass");
     }
 }

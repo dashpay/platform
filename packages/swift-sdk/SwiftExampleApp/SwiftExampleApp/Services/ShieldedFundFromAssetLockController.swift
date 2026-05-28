@@ -74,12 +74,6 @@ final class ShieldedFundFromAssetLockController: ObservableObject {
     /// collide.
     let recipientRaw43: Data
 
-    /// Caller-specified shielded credits — the Orchard
-    /// `value_balance` baked into the Halo 2 proof at build time.
-    /// Surfaced in the terminal banner so the user can confirm what
-    /// they shielded.
-    let shieldAmountCredits: UInt64
-
     /// Timestamp of the most recent `submit` call. Used by the
     /// coordinator's TTL-based retention policy (`.completed` rows
     /// purge ~30s after the success transition).
@@ -90,10 +84,9 @@ final class ShieldedFundFromAssetLockController: ObservableObject {
     /// wired today (the FFI call doesn't yet support clean abort).
     private var task: Task<Void, Never>?
 
-    init(walletId: Data, recipientRaw43: Data, shieldAmountCredits: UInt64) {
+    init(walletId: Data, recipientRaw43: Data) {
         self.walletId = walletId
         self.recipientRaw43 = recipientRaw43
-        self.shieldAmountCredits = shieldAmountCredits
     }
 
     /// Submit the funding. Defensively rejects any phase that

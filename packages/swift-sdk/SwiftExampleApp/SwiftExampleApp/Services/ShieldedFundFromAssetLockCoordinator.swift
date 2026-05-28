@@ -104,7 +104,6 @@ final class ShieldedFundFromAssetLockCoordinator: ObservableObject {
     func startFunding(
         walletId: Data,
         recipientRaw43: Data,
-        shieldAmountCredits: UInt64,
         body: @escaping () async throws -> Void
     ) -> StartFundingResult {
         let key = SlotKey(walletId: walletId, recipientRaw43: recipientRaw43)
@@ -150,8 +149,7 @@ final class ShieldedFundFromAssetLockCoordinator: ObservableObject {
         }
         let controller = ShieldedFundFromAssetLockController(
             walletId: walletId,
-            recipientRaw43: recipientRaw43,
-            shieldAmountCredits: shieldAmountCredits
+            recipientRaw43: recipientRaw43
         )
         controllers[key] = controller
         controller.submit(body: body)

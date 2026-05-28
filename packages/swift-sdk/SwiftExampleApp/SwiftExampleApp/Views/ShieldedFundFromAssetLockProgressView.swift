@@ -312,13 +312,6 @@ struct ShieldedFundFromAssetLockProgressView: View {
                     Label("Shielded", systemImage: "checkmark.seal.fill")
                         .foregroundColor(.green)
                         .font(.headline)
-                    HStack {
-                        Text("Amount shielded")
-                            .foregroundColor(.secondary)
-                        Spacer()
-                        Text(formatCredits(controller.shieldAmountCredits))
-                            .font(.system(.body, design: .monospaced))
-                    }
                     Text(
                         "The shielded note will appear in your balance after the "
                             + "next sync pass — broadcast already succeeded; the note is "
@@ -369,10 +362,4 @@ struct ShieldedFundFromAssetLockProgressView: View {
         }
     }
 
-    private func formatCredits(_ credits: UInt64) -> String {
-        // 1e11 credits per DASH — same divisor as
-        // `AddressFundFromAssetLockProgressView` and `CreateIdentityView`.
-        let dash = Double(credits) / 100_000_000_000.0
-        return String(format: "%.6f DASH (credits)", dash)
-    }
 }

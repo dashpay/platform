@@ -3,23 +3,29 @@ import DashSDKFFI
 
 /// Recipient entry for `shieldedFundFromAssetLock(...)`.
 ///
-/// The Rust-side API today enforces exactly one recipient — Type
-/// 18's Orchard bundle builder is single-output; multi-recipient
-/// lands when DPP grows multi-output bundles. The list shape is
-/// exposed here so the call site doesn't have to change when that
-/// happens.
+/// The Rust-side API today enforces exactly one recipient with
+/// `nil` credits (= "remainder" semantics — receives
+/// `lock_value − protocol_min_fee`). Type 18's Orchard bundle
+/// builder is single-output; multi-recipient with explicit per-
+/// recipient amounts lands when DPP grows multi-output bundles.
+/// The list shape is exposed here so the call site doesn't have
+/// to change when that happens.
 public struct ShieldedFundFromAssetLockRecipient: Sendable {
     /// Raw 43-byte Orchard payment address (11-byte diversifier +
-    /// 32-byte pk_d). Same shape `platform_wallet_manager_shielded_default_address`
-    /// returns and `shieldedTransfer` consumes.
+    /// 32-byte pk_d). Same shape
+    /// `platform_wallet_manager_shielded_default_address` returns
+    /// and `shieldedTransfer` consumes.
     public let recipientRaw43: Data
 
-    /// Credit amount this recipient receives. Becomes the Orchard
-    /// `value_balance` baked into the Halo 2 proof at build time
-    /// (or its share, once multi-recipient lands).
-    public let credits: UInt64
+    /// Explicit credit amount this recipient receives, or `nil`
+    /// for the "remainder" semantics (the recipient gets
+    /// `lock_value − min_fee`). Today the wallet enforces `nil`
+    /// for the single-recipient case; explicit `Some(_)` values
+    /// will be honored once DPP grows multi-output Orchard
+    /// bundles for Type 18.
+    public let credits: UInt64?
 
-    public init(recipientRaw43: Data, credits: UInt64) {
+    public init(recipientRaw43: Data, credits: UInt64? = nil) {
         self.recipientRaw43 = recipientRaw43
         self.credits = credits
     }
@@ -73,7 +79,6 @@ extension PlatformWalletManager {
 
         let handle = self.handle
         let recipientRaw43 = recipients[0].recipientRaw43
-        let shieldAmountCredits = recipients[0].credits
         // Constructed on the calling actor so it lives for the
         // entire detached Task. Released after `withExtendedLifetime`
         // returns. See `ManagedPlatformAddressWallet.fundFromAssetLock`
@@ -107,7 +112,6 @@ extension PlatformWalletManager {
                             widPtr,
                             fundingAccountIndex,
                             amountDuffs,
-                            shieldAmountCredits,
                             recipientPtr,
                             coreSigner.handle
                         )
@@ -156,7 +160,6 @@ extension PlatformWalletManager {
 
         let handle = self.handle
         let recipientRaw43 = recipients[0].recipientRaw43
-        let shieldAmountCredits = recipients[0].credits
         let coreSigner = MnemonicResolver()
 
         try await Task.detached(priority: .userInitiated) {
@@ -199,7 +202,6 @@ extension PlatformWalletManager {
                             handle,
                             widPtr,
                             &outPoint,
-                            shieldAmountCredits,
                             recipientPtr,
                             coreSigner.handle
                         )
@@ -249,9 +251,16 @@ extension PlatformWalletManager {
                     "ShieldedFundFromAssetLockRecipient.recipientRaw43 must be exactly 43 bytes (got \(r.recipientRaw43.count))"
                 )
             }
-            guard r.credits > 0 else {
+            // TODO(multi-output): drop this once DPP grows multi-output
+            // Orchard bundles for Type 18 and honors explicit `Some(_)`
+            // recipient credits. Today the wallet rejects explicit
+            // amounts (the single recipient receives `lock_value - min_fee`),
+            // so we catch it here before paying for the FFI roundtrip.
+            guard r.credits == nil else {
                 throw PlatformWalletError.invalidParameter(
-                    "ShieldedFundFromAssetLockRecipient.credits must be > 0"
+                    "ShieldedFundFromAssetLockRecipient.credits must be nil today "
+                        + "(the single recipient receives lock_value - protocol min fee). "
+                        + "Explicit amounts will be honored when DPP grows multi-output bundles for Type 18."
                 )
             }
         }
