@@ -795,11 +795,20 @@ extension KeychainManager {
     /// `identity_privkey.<walletId>.<path>` account scheme).
     ///
     /// Idempotent; returns true on success or "not found". A
-    /// best-effort sweep of the legacy
-    /// (`identity_privkey.<path>` — no walletId) account is
-    /// included so callers don't end up with a half-migrated state
-    /// where the new-format row is gone but a legacy row at the
-    /// same path lingers.
+    /// guarded sweep of the legacy (`identity_privkey.<path>` —
+    /// no walletId) account is also included so callers don't end
+    /// up with a half-migrated state where the new-format row is
+    /// gone but a legacy row at the same path lingers.
+    ///
+    /// SAFETY: the legacy account format collided across wallets
+    /// (the very bug we are fixing by namespacing the new path),
+    /// so deleting a `identity_privkey.<path>` row unconditionally
+    /// could wipe a DIFFERENT wallet's secret if the two wallets
+    /// happened to derive an identity at the same DIP-9 path. The
+    /// sweep therefore looks up the legacy row, decodes its
+    /// metadata blob, and only deletes when
+    /// `metadata.walletId == walletIdHex`. Pathological in
+    /// practice but cheap to defend against.
     @discardableResult
     public nonisolated func deleteIdentityPrivateKey(
         walletId: Data,
@@ -807,23 +816,94 @@ extension KeychainManager {
     ) -> Bool {
         let walletIdHex = walletId.toHexString()
         let newAccount = "identity_privkey.\(walletIdHex).\(derivationPath)"
-        let legacyAccount = "identity_privkey.\(derivationPath)"
-        var ok = true
-        for account in [newAccount, legacyAccount] {
-            var query: [String: Any] = [
-                kSecClass as String: kSecClassGenericPassword,
-                kSecAttrService as String: serviceName,
-                kSecAttrAccount as String: account,
-            ]
-            if let accessGroup = accessGroup {
-                query[kSecAttrAccessGroup as String] = accessGroup
-            }
-            let status = SecItemDelete(query as CFDictionary)
-            if status != errSecSuccess && status != errSecItemNotFound {
-                ok = false
-            }
+        var newQuery: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: serviceName,
+            kSecAttrAccount as String: newAccount,
+        ]
+        if let accessGroup = accessGroup {
+            newQuery[kSecAttrAccessGroup as String] = accessGroup
+        }
+        let newStatus = SecItemDelete(newQuery as CFDictionary)
+        var ok = newStatus == errSecSuccess || newStatus == errSecItemNotFound
+
+        if !deleteLegacyKeychainEntryIfOwnedByWallet(
+            walletIdHex: walletIdHex,
+            derivationPath: derivationPath
+        ) {
+            // Legacy sweep had a non-recoverable error (something
+            // other than "not found" / "different wallet's row").
+            // The new-format delete already happened, so the
+            // caller's primary intent landed — surface the legacy
+            // failure via the return value so anyone treating it
+            // as a strict success can react.
+            ok = false
         }
         return ok
+    }
+
+    /// Best-effort delete of the legacy (no-walletId) keychain
+    /// entry for `derivationPath`, gated on its decoded
+    /// `IdentityPrivateKeyMetadata.walletId` matching `walletIdHex`.
+    /// No-op when the row doesn't exist or belongs to a different
+    /// wallet. Returns `false` only on a genuine Keychain error
+    /// (NOT for "not found" or "different wallet's data") so the
+    /// caller can distinguish "nothing to do" from "tried + failed".
+    ///
+    /// Shared by both `deleteIdentityPrivateKey` (per-key delete)
+    /// and `WalletKeyHealthSheet.cleanupLegacyKeychainEntry`
+    /// (post-rederive cleanup) so both call sites apply the same
+    /// safety guard.
+    public nonisolated func deleteLegacyKeychainEntryIfOwnedByWallet(
+        walletIdHex: String,
+        derivationPath: String
+    ) -> Bool {
+        let legacyAccount = "identity_privkey.\(derivationPath)"
+        var lookupQuery: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: serviceName,
+            kSecAttrAccount as String: legacyAccount,
+            kSecReturnAttributes as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+        ]
+        if let accessGroup = accessGroup {
+            lookupQuery[kSecAttrAccessGroup as String] = accessGroup
+        }
+
+        var result: AnyObject?
+        let lookupStatus = SecItemCopyMatching(lookupQuery as CFDictionary, &result)
+        if lookupStatus == errSecItemNotFound {
+            return true
+        }
+        guard lookupStatus == errSecSuccess, let attrs = result as? [String: Any] else {
+            return false
+        }
+        guard let metadataData = attrs[kSecAttrGeneric as String] as? Data,
+              let metadata = try? JSONDecoder().decode(
+                IdentityPrivateKeyMetadata.self,
+                from: metadataData
+              )
+        else {
+            // Row exists but metadata is malformed / missing. Be
+            // conservative: refuse to delete data we can't prove
+            // we own. Treat as success — we successfully decided
+            // not to delete.
+            return true
+        }
+        guard metadata.walletId.caseInsensitiveCompare(walletIdHex) == .orderedSame else {
+            return true
+        }
+
+        var deleteQuery: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: serviceName,
+            kSecAttrAccount as String: legacyAccount,
+        ]
+        if let accessGroup = accessGroup {
+            deleteQuery[kSecAttrAccessGroup as String] = accessGroup
+        }
+        let deleteStatus = SecItemDelete(deleteQuery as CFDictionary)
+        return deleteStatus == errSecSuccess || deleteStatus == errSecItemNotFound
     }
 
     /// Delete every `identity_privkey.*` keychain row whose

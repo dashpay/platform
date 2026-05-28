@@ -100,59 +100,22 @@ fileprivate func namespacedKeychainAccount(walletIdHex: String, derivationPath: 
     "identity_privkey.\(walletIdHex).\(derivationPath)"
 }
 
-/// Construct the OLD (no-walletId) keychain account name. Used only
-/// for the post-rederive cleanup sweep.
-fileprivate func legacyKeychainAccount(derivationPath: String) -> String {
-    "identity_privkey.\(derivationPath)"
-}
-
 /// Best-effort delete of the legacy (no-walletId) keychain entry for
 /// `derivationPath`, gated on its metadata's `walletId` matching the
-/// wallet we just migrated from. Skips silently if the metadata says
-/// the row belongs to a different wallet — never clobber data we
-/// don't own. No-op when the row doesn't exist.
+/// wallet we just migrated from. Delegates to
+/// `KeychainManager.deleteLegacyKeychainEntryIfOwnedByWallet` so the
+/// "don't clobber data we don't own" safety check is centralized —
+/// shared with `KeychainManager.deleteIdentityPrivateKey`'s sweep.
 ///
 /// Called after a successful re-derive in
 /// `WalletKeyHealthChecker.rederive` so the keychain ends up with a
 /// single new-format entry per `(wallet, path)`.
 @MainActor
 fileprivate func cleanupLegacyKeychainEntry(walletIdHex: String, derivationPath: String) {
-    let account = legacyKeychainAccount(derivationPath: derivationPath)
-    let serviceName = KeychainManager.shared.serviceName
-    let lookupQuery: [String: Any] = [
-        kSecClass as String: kSecClassGenericPassword,
-        kSecAttrService as String: serviceName,
-        kSecAttrAccount as String: account,
-        kSecReturnAttributes as String: true,
-        kSecMatchLimit as String: kSecMatchLimitOne,
-    ]
-
-    var result: AnyObject?
-    let lookupStatus = SecItemCopyMatching(lookupQuery as CFDictionary, &result)
-    guard lookupStatus == errSecSuccess, let attrs = result as? [String: Any] else {
-        return
-    }
-    guard let metadataData = attrs[kSecAttrGeneric as String] as? Data,
-          let metadata = try? JSONDecoder().decode(
-            IdentityPrivateKeyMetadata.self,
-            from: metadataData
-          )
-    else {
-        return
-    }
-    guard metadata.walletId.caseInsensitiveCompare(walletIdHex) == .orderedSame else {
-        // Different wallet's data sitting at the legacy account —
-        // leave it. (Pathological since we'd have to have lost the
-        // namespaced fix at some point, but defending it is cheap.)
-        return
-    }
-
-    let deleteQuery: [String: Any] = [
-        kSecClass as String: kSecClassGenericPassword,
-        kSecAttrService as String: serviceName,
-        kSecAttrAccount as String: account,
-    ]
-    _ = SecItemDelete(deleteQuery as CFDictionary)
+    _ = KeychainManager.shared.deleteLegacyKeychainEntryIfOwnedByWallet(
+        walletIdHex: walletIdHex,
+        derivationPath: derivationPath
+    )
 }
 
 /// Pure helpers — no UI state. Constructed lazily inside the sheet's
