@@ -622,6 +622,21 @@ var body: some View {
         if platformState.currentNetwork == .regtest && useDocker {
             return ["127.0.0.1:20301"]
         }
+        // Devnet: auto-discover SPV peers from the quorum-list
+        // service's `/masternodes` endpoint. Each masternode reports
+        // its own `address` field (`ip:CoreP2PPort`) — use the
+        // verbatim values rather than guessing the canonical 29999
+        // port (paloma reports 20001 per masternode, for example).
+        // No manual SPV input on devnet — the quorum URL is the
+        // single source of truth (see `OptionsView`'s devnet branch).
+        if platformState.currentNetwork == .devnet {
+            guard
+                let quorum = UserDefaults.standard.string(forKey: "platformQuorumURL"),
+                !quorum.isEmpty,
+                let active = SDK.discoverActiveMasternodes(quorumBase: quorum)
+            else { return [] }
+            return active.map(\.spvPeer)
+        }
         let useLocalCore = UserDefaults.standard.bool(forKey: "useLocalhostCore")
         guard useLocalCore else { return [] }
         let raw = UserDefaults.standard.string(forKey: "localCorePeers") ?? ""

@@ -89,42 +89,228 @@ public final class SDK: @unchecked Sendable {
     return "http://127.0.0.1:2443"
   }
 
+  /// Optional caller-provided base URL for the trusted-context-provider's
+  /// quorum lookups. Read from UserDefaults key `platformQuorumURL`.
+  /// Required to connect to devnets (no built-in default exists on the
+  /// Rust side); also usable to override mainnet/testnet for staging
+  /// shards. Returns nil when unset/empty.
+  private static var platformQuorumURL: String? {
+    guard
+      let value = UserDefaults.standard.string(forKey: "platformQuorumURL"),
+      !value.isEmpty
+    else { return nil }
+    return value
+  }
+
+  /// Synchronously fetch `{quorumBase}/masternodes` and return the
+  /// raw `data` array. Both the DAPI list and the SPV peer list are
+  /// derived from this — DAPI takes `<ip>:<platformHTTPPort>`, SPV
+  /// takes the verbatim `address` field (`<ip>:<CoreP2PPort>`).
+  ///
+  /// Returns nil on any failure (timeout, JSON shape mismatch, etc.).
+  /// Filters to `status == "ENABLED" && version_check == "success"`
+  /// to match the Rust trusted-context provider's active-node policy
+  /// (see `rs-sdk-trusted-context-provider/src/provider.rs`). Without
+  /// the `version_check` filter, nodes the quorum service has
+  /// already flagged as incompatible would be seeded into both the
+  /// DAPI fan-out and the SPV peer list, undermining the
+  /// self-healing rebuild this enables.
+  ///
+  /// `public` because both the SDK init (DAPI fan-out) and the
+  /// SwiftExampleApp's SPV start path call it independently against
+  /// the same endpoint — each caller pays its own round-trip, with
+  /// no shared cache. An SDK rebuild on devnet therefore performs
+  /// two `/masternodes` fetches; if that becomes a problem, the
+  /// expectation is that callers add a short-lived cache locally
+  /// (or refactor to share one through the SDK).
+  public static func discoverActiveMasternodes(
+    quorumBase: String
+  ) -> [(spvPeer: String, dapiUrl: String)]? {
+    guard
+      var components = URLComponents(string: quorumBase),
+      let scheme = components.scheme,
+      !scheme.isEmpty
+    else { return nil }
+    if components.path.hasSuffix("/") {
+      components.path = String(components.path.dropLast())
+    }
+    components.path += "/masternodes"
+    guard let url = components.url else { return nil }
+
+    var request = URLRequest(url: url)
+    request.timeoutInterval = 5.0
+    request.httpMethod = "GET"
+
+    // Reference-typed box for the response so the completion
+    // handler can safely store into it from URLSession's worker
+    // thread without violating Swift 6 strict-concurrency capture
+    // rules (which forbid mutating a captured `var Data?` from a
+    // concurrently-executing closure). The semaphore guarantees
+    // we only read `box.data` after the closure has run to
+    // completion, so the cross-thread access is data-race-free.
+    final class ResponseBox: @unchecked Sendable {
+      var data: Data?
+    }
+    let box = ResponseBox()
+    let semaphore = DispatchSemaphore(value: 0)
+    let task = URLSession.shared.dataTask(with: request) { data, _, _ in
+      box.data = data
+      semaphore.signal()
+    }
+    task.resume()
+    _ = semaphore.wait(timeout: .now() + .seconds(6))
+    guard let data = box.data else {
+      task.cancel()
+      return nil
+    }
+
+    struct Envelope: Decodable {
+      let success: Bool
+      let data: [Masternode]
+    }
+    struct Masternode: Decodable {
+      let address: String          // "ip:CoreP2PPort"
+      let status: String
+      // Optional to match the Rust trusted-context provider, which
+      // tolerates entries missing `platformHTTPPort` and substitutes
+      // a per-network default. Requiring this would make a single
+      // misbehaving JSON entry fail the whole decode (Decodable is
+      // all-or-nothing per object), nuking devnet auto-discovery.
+      //
+      // Note JSON wire keys are camelCase (`platformHTTPPort`,
+      // `versionCheck`) — Rust renames its snake_case fields with
+      // `#[serde(rename = ...)]` to produce that on the wire. Swift's
+      // default `Decodable` synthesis matches property name → JSON
+      // key literally, so no `CodingKeys` is needed here as long as
+      // these property names match the wire keys verbatim.
+      let platformHTTPPort: UInt16?
+      // Same `versionCheck` field the Rust provider filters on.
+      // Optional because older quorum-list-server builds may omit it;
+      // callers below treat missing as "not success" (i.e. excluded).
+      let versionCheck: String?
+    }
+
+    guard
+      let env = try? JSONDecoder().decode(Envelope.self, from: data),
+      env.success
+    else { return nil }
+
+    // Conservative default — matches the Rust trusted-context
+    // provider's fallback when the entry omits `platform_http_port`.
+    let defaultDapiPort: UInt16 = 443
+    let active: [(String, String)] = env.data.compactMap { mn in
+      guard mn.status == "ENABLED", mn.versionCheck == "success" else { return nil }
+      let host = mn.address.split(separator: ":").first.map(String.init) ?? mn.address
+      let dapiPort = mn.platformHTTPPort ?? defaultDapiPort
+      return (mn.address, "https://\(host):\(dapiPort)")
+    }
+    return active.isEmpty ? nil : active
+  }
+
+  /// Synchronously fetch `{quorumBase}/masternodes` and build a
+  /// comma-separated DAPI URL list (`https://<ip>:<platformHTTPPort>,…`).
+  /// Returns nil on any error (network failure, JSON shape mismatch,
+  /// timeout). Used by `init(network:)` to auto-populate the DAPI
+  /// fan-out list on devnet when the user hasn't supplied one
+  /// manually — saves the "you must paste 13 URLs" UX.
+  ///
+  /// Filters to `status == "ENABLED"` so down / banned nodes don't
+  /// pollute the AddressList (the DAPI client would ban them on
+  /// first request anyway, but skipping them up front speeds the
+  /// first sync).
+  private static func discoverDAPIAddresses(quorumBase: String) -> String? {
+    guard let active = discoverActiveMasternodes(quorumBase: quorumBase) else {
+      return nil
+    }
+    return active.map(\.dapiUrl).joined(separator: ",")
+  }
+
   /// Create a new SDK instance with trusted setup
   ///
   /// This uses a trusted context provider that fetches quorum keys and
   /// data contracts from trusted HTTP endpoints instead of requiring proof verification.
   /// This is suitable for mobile applications where proof verification would be resource-intensive.
-  public init(network: Network) throws {
+  public init(network: Network, platformVersion: UInt32 = 0) throws {
     var config = DashSDKConfig()
     config.network = network.ffiValue
     config.dapi_addresses = nil
+    config.quorum_url = nil
     config.skip_asset_lock_proof_verification = false
     config.request_retry_count = 1
     config.request_timeout_ms = 8000 // 8 seconds
+    config.platform_version = platformVersion // 0 = SDK default (auto-detect)
 
-    // Create SDK with trusted setup — Rust side auto-detects local/regtest
-    // and uses the quorum sidecar at localhost:22444 instead of remote endpoints.
+    // Create SDK with trusted setup. DAPI / quorum-URL overrides come from
+    // UserDefaults and apply on:
     //
-    // Regtest has no remote DAPI defaults on the Rust side, so it
-    // *must* be constructed with a local DAPI address regardless of
-    // the user-facing `useDockerSetup` toggle. Without this, building
-    // a regtest SDK from a context where the toggle has been
-    // auto-disabled (e.g. orphan-mnemonic recovery routing wallets to
-    // their original network from a non-regtest active state) fails
-    // with `DAPI addresses not available for network: Regtest` and
-    // the recovery loop stalls.
+    //   * Regtest unconditionally — the Rust side has no built-in DAPI
+    //     defaults for it, so we must supply addresses every time
+    //     (otherwise SDK creation panics with `DAPI addresses not
+    //     available for network: Regtest`, which would stall orphan-
+    //     mnemonic recovery if it ran from a non-regtest active state).
+    //   * Devnet unconditionally — same reason; additionally needs an
+    //     explicit `quorum_url` because the default quorum endpoint
+    //     `https://quorums.devnet.<name>.networks.dash.org` is template-
+    //     interpolated from a devnet name we don't carry across FFI.
+    //   * Mainnet/testnet only when the user opted in via
+    //     `useDockerSetup` (existing dashmate-on-localhost flow). When
+    //     that toggle is off, the Rust side picks the canonical seed
+    //     addresses for the network.
+    //
+    // `quorum_url` is forwarded whenever the UserDefaults override is
+    // set, regardless of network — supports custom mainnet/testnet
+    // shards and any future deployment that needs a non-default
+    // endpoint.
     let result: DashSDKResult
-    let forceLocal = network == .regtest
+    let useOverrideAddresses = network == .regtest
+        || network == .devnet
         || UserDefaults.standard.bool(forKey: "useDockerSetup")
-    if forceLocal {
-      let localAddresses = Self.platformDAPIAddresses
-      result = localAddresses.withCString { addressesCStr -> DashSDKResult in
-        var mutableConfig = config
-        mutableConfig.dapi_addresses = addressesCStr
-        return dash_sdk_create_trusted(&mutableConfig)
+    let overrideQuorumURL: String? = Self.platformQuorumURL
+
+    // Resolve the DAPI address list. Two paths:
+    //
+    //   * Devnet → ALWAYS auto-discover from `{quorumURL}/masternodes`
+    //     fresh on every SDK build. The user input surface for devnet
+    //     is just the quorum URL — DAPI nodes are an implementation
+    //     detail of which masternodes happen to be ENABLED right now.
+    //     Doing this every init is what makes the path self-healing
+    //     when a node goes down on the chain. Cheap: one HTTP round-
+    //     trip (~200ms) at network-switch cadence, which the user
+    //     pays for explicitly anyway.
+    //
+    //   * Regtest / `useDockerSetup` → respect the existing
+    //     `platformDAPIAddresses` UserDefaults override (default
+    //     `http://127.0.0.1:2443`). This is the dashmate-local flow
+    //     that's been stable; it has no /masternodes service to
+    //     consult.
+    //
+    //   * Mainnet/testnet without overrides → Rust side picks seeds.
+    let overrideAddresses: String?
+    if network == .devnet {
+      if let quorum = overrideQuorumURL,
+         let discovered = Self.discoverDAPIAddresses(quorumBase: quorum) {
+        overrideAddresses = discovered
+      } else {
+        // Quorum URL unset, or /masternodes unreachable / wrong shape.
+        // Fall through with nil; Rust will refuse to build the SDK
+        // and the resulting error surfaces in the iOS UI as
+        // "Disconnected", prompting the user to fix the Quorum URL.
+        overrideAddresses = nil
       }
+    } else if useOverrideAddresses {
+      overrideAddresses = Self.platformDAPIAddresses
     } else {
-      result = dash_sdk_create_trusted(&config)
+      overrideAddresses = nil
+    }
+
+    result = SDK.withOptionalCStrings(
+      overrideAddresses,
+      overrideQuorumURL
+    ) { addressesCStr, quorumCStr in
+      var mutableConfig = config
+      if let addressesCStr { mutableConfig.dapi_addresses = addressesCStr }
+      if let quorumCStr { mutableConfig.quorum_url = quorumCStr }
+      return dash_sdk_create_trusted(&mutableConfig)
     }
 
     // Check for errors
@@ -145,6 +331,34 @@ public final class SDK: @unchecked Sendable {
     // Store the handle and network
     handle = result.data?.assumingMemoryBound(to: SDKHandle.self)
     self.network = network
+  }
+
+  /// Run `body` with two optional C-string pointers. Each input string,
+  /// when non-nil, is materialized into a NUL-terminated C buffer that is
+  /// valid for the duration of the call; nil inputs pass through as nil
+  /// pointers. Mirrors `String.withCString` for the two-optional-string
+  /// case so the SDK init can hand both `dapi_addresses` and
+  /// `quorum_url` into a single FFI call without nested withCString
+  /// closures.
+  private static func withOptionalCStrings<R>(
+    _ a: String?,
+    _ b: String?,
+    _ body: (UnsafePointer<CChar>?, UnsafePointer<CChar>?) -> R
+  ) -> R {
+    switch (a, b) {
+    case (nil, nil):
+      return body(nil, nil)
+    case (.some(let sa), nil):
+      return sa.withCString { body($0, nil) }
+    case (nil, .some(let sb)):
+      return sb.withCString { body(nil, $0) }
+    case (.some(let sa), .some(let sb)):
+      return sa.withCString { aPtr in
+        sb.withCString { bPtr in
+          body(aPtr, bPtr)
+        }
+      }
+    }
   }
 
   /// Load known contracts into the trusted context provider

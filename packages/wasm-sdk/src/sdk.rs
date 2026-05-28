@@ -175,7 +175,7 @@ impl WasmSdkBuilder {
     ///
     /// # Arguments
     /// * `addresses` - Array of HTTPS URLs (e.g., ["https://127.0.0.1:1443"])
-    /// * `network` - Network identifier: "mainnet", "testnet" or "local"
+    /// * `network` - Network identifier: "mainnet", "testnet", "devnet", or "local"
     #[wasm_bindgen(js_name = "withAddresses")]
     pub fn new_with_addresses(
         addresses: Vec<String>,
@@ -205,10 +205,11 @@ impl WasmSdkBuilder {
         let network = match network.to_lowercase().as_str() {
             "mainnet" => Network::Mainnet,
             "testnet" => Network::Testnet,
+            "devnet" => Network::Devnet,
             "local" => Network::Regtest,
             _ => {
                 return Err(WasmSdkError::invalid_argument(format!(
-                    "Invalid network '{}'. Expected: mainnet, testnet or local",
+                    "Invalid network '{}'. Expected: mainnet, testnet, devnet, or local",
                     network
                 )));
             }
@@ -238,6 +239,25 @@ impl WasmSdkBuilder {
     #[wasm_bindgen(js_name = "testnet")]
     pub fn new_testnet() -> Self {
         let sdk_builder = SdkBuilder::new_testnet().with_context_provider(WasmContext {});
+
+        Self {
+            inner: sdk_builder,
+            trusted_context: None,
+        }
+    }
+
+    /// Create a new SdkBuilder preconfigured for a devnet.
+    ///
+    /// Devnets have no built-in default address list. The returned builder
+    /// is expected to be paired with either explicit addresses (via the
+    /// `withAddresses` variant) or a `WasmTrustedContext` from
+    /// `WasmTrustedContext.prefetchDevnet(name)`, whose discovered addresses
+    /// will be substituted via `withTrustedContext`.
+    #[wasm_bindgen(js_name = "newDevnet")]
+    pub fn new_devnet() -> Self {
+        let sdk_builder = SdkBuilder::new(dash_sdk::sdk::AddressList::default())
+            .with_network(dash_sdk::dpp::dashcore::Network::Devnet)
+            .with_context_provider(WasmContext {});
 
         Self {
             inner: sdk_builder,

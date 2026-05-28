@@ -129,8 +129,8 @@ async fn build_core_changeset(
             addresses_derived,
             ..
         } => {
-            // Derive UTXO deltas BEFORE moving the record into `records`
-            // so we still have the per-record borrows.
+            // Derive UTXO deltas before moving the record into `records`
+            // so the per-record borrows are still live.
             CoreChangeSet {
                 new_utxos: derive_new_utxos(record),
                 spent_utxos: derive_spent_utxos(record),
@@ -354,5 +354,6 @@ impl CoreChangeSet {
             && self.last_processed_height.is_none()
             && self.synced_height.is_none()
             && self.last_applied_chain_lock.is_none()
+            && self.addresses_derived.is_empty()
     }
 }

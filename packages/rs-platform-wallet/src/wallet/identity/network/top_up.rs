@@ -14,7 +14,7 @@ use dpp::prelude::Identifier;
 use dash_sdk::platform::transition::put_settings::PutSettings;
 
 use crate::error::PlatformWalletError;
-use crate::wallet::identity::types::funding::IdentityFunding;
+use crate::wallet::asset_lock::AssetLockFunding;
 
 use super::*;
 
@@ -24,7 +24,7 @@ impl IdentityWallet {
     ///
     /// Convenience wrapper around
     /// [`top_up_identity_with_funding`](Self::top_up_identity_with_funding)
-    /// for the common case (`IdentityFunding::FromWalletBalance`).
+    /// for the common case (`AssetLockFunding::FromWalletBalance`).
     ///
     /// # Arguments
     ///
@@ -51,7 +51,7 @@ impl IdentityWallet {
     {
         self.top_up_identity_with_funding(
             identity_id,
-            IdentityFunding::FromWalletBalance {
+            AssetLockFunding::FromWalletBalance {
                 amount_duffs,
                 account_index,
             },
