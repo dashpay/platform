@@ -3788,6 +3788,42 @@ public class PlatformWalletPersistenceHandler {
                         row.data = nil
                         row.data_len = 0
                     }
+
+                    // Mirror the contract-bounds projection into
+                    // the restore row so scoped keys (DashPay's
+                    // SingleContractDocumentType, in particular)
+                    // come back with their full variant on cold
+                    // restart instead of silently degrading to
+                    // unbounded. Encoding matches
+                    // `IdentityKeyEntryFFI` on the persist side:
+                    //   * kind=0 → no bounds; id zeroed, doc-type null
+                    //   * kind=1 → SingleContract; id meaningful
+                    //   * kind=2 → SingleContractDocumentType; id +
+                    //     doc-type both meaningful
+                    // Length-validated by `pk.publicKeyData.count
+                    // == 32` (matches the gating in
+                    // `toIdentityPublicKey()`); a row with a
+                    // wrong-length id falls back to "no bounds"
+                    // rather than crashing FFI marshalling on the
+                    // Rust side.
+                    if let id = pk.contractBounds?.first, id.count == 32 {
+                        withUnsafeMutableBytes(of: &row.contract_bounds_id) { dst in
+                            id.copyBytes(to: dst.bindMemory(to: UInt8.self).baseAddress!, count: 32)
+                        }
+                        if let docType = pk.contractBoundsDocumentTypeName, !docType.isEmpty {
+                            row.contract_bounds_kind = 2
+                            row.contract_bounds_document_type = UnsafePointer(
+                                duplicateCString(docType, allocation: allocation)
+                            )
+                        } else {
+                            row.contract_bounds_kind = 1
+                            row.contract_bounds_document_type = nil
+                        }
+                    } else {
+                        row.contract_bounds_kind = 0
+                        row.contract_bounds_document_type = nil
+                    }
+
                     keyBuf[k] = row
                 }
                 entry.keys = UnsafePointer(keyBuf)

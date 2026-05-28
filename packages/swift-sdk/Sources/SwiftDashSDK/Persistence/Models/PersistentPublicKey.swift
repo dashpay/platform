@@ -87,6 +87,18 @@ public final class PersistentPublicKey {
             return strings.compactMap { Data(base64Encoded: $0) }
         }
         set {
+            // Always clear the doc-type column when the contract-
+            // bounds ids change through this setter. The
+            // `documentTypeName` is paired with a SPECIFIC id, so
+            // mutating ids without explicitly carrying the doc-
+            // type would leave the columns inconsistent and make
+            // `toIdentityPublicKey()` reconstruct a stale variant.
+            // Callers that want the full `.singleContractDocumentType`
+            // round-trip should write `contractBoundsDocumentTypeName`
+            // explicitly after this setter, or go through
+            // `PersistentPublicKey.from(IdentityPublicKey, identityId:)`
+            // which sets both columns atomically.
+            contractBoundsDocumentTypeName = nil
             if let newValue = newValue {
                 contractBoundsData = try? JSONSerialization.data(withJSONObject: newValue.map { $0.base64EncodedString() })
             } else {
@@ -140,8 +152,16 @@ extension PersistentPublicKey {
             return nil
         }
 
+        // Validate the persisted id is the canonical 32-byte
+        // contract identifier before constructing a
+        // `ContractBounds` variant. Downstream FFI marshalling
+        // (`ManagedPlatformWallet.pinContractBounds`) hard-asserts
+        // a 32-byte payload, so a corrupt / short / over-long
+        // row would crash on the NEXT call instead of being
+        // rejected here. Drop the bounds projection on length
+        // mismatch — the rest of the key is still recoverable.
         let bounds: ContractBounds?
-        if let id = contractBounds?.first {
+        if let id = contractBounds?.first, id.count == 32 {
             if let docTypeName = contractBoundsDocumentTypeName, !docTypeName.isEmpty {
                 bounds = .singleContractDocumentType(id: id, documentTypeName: docTypeName)
             } else {

@@ -879,16 +879,30 @@ extension KeychainManager {
         guard lookupStatus == errSecSuccess, let attrs = result as? [String: Any] else {
             return false
         }
-        guard let metadataData = attrs[kSecAttrGeneric as String] as? Data,
-              let metadata = try? JSONDecoder().decode(
+        // Row exists but metadata is malformed / missing. Be
+        // conservative: refuse to delete data we can't prove we
+        // own. Surface via `os_log` so the per-key legacy path
+        // is symmetric with the wholesale sweeps
+        // (`deleteAllIdentityPrivateKeys(forIdentityIdBase58:)`
+        // and `forWalletId:`) — all three "skip, can't verify
+        // ownership" branches land in Console.app uniformly.
+        // Treat as success: we successfully decided not to delete.
+        guard let metadataData = attrs[kSecAttrGeneric as String] as? Data else {
+            Self.log.error(
+                "Skipping legacy identity_privkey row at account \(legacyAccount, privacy: .public) — missing kSecAttrGeneric metadata blob; private bytes remain"
+            )
+            return true
+        }
+        let metadata: IdentityPrivateKeyMetadata
+        do {
+            metadata = try JSONDecoder().decode(
                 IdentityPrivateKeyMetadata.self,
                 from: metadataData
-              )
-        else {
-            // Row exists but metadata is malformed / missing. Be
-            // conservative: refuse to delete data we can't prove
-            // we own. Treat as success — we successfully decided
-            // not to delete.
+            )
+        } catch {
+            Self.log.error(
+                "Skipping legacy identity_privkey row at account \(legacyAccount, privacy: .public) — metadata JSON decode failed (\(String(describing: error), privacy: .public)); private bytes remain"
+            )
             return true
         }
         guard metadata.walletId.caseInsensitiveCompare(walletIdHex) == .orderedSame else {

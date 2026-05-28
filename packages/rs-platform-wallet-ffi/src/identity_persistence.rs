@@ -507,23 +507,24 @@ impl IdentityKeyEntryFFI {
         // Project the DPP `ContractBounds` enum into the kind /
         // id / doc-type-cstring trio so the Swift side can switch
         // on a single discriminant. Strings containing interior
-        // NULs (impossible in practice — DPP rejects them) fall
-        // back to a null pointer, leaving the kind tag set to 2;
-        // Swift treats null doc-type-with-kind-2 as "no bounds"
-        // rather than constructing a half-formed variant.
+        // NULs (impossible in practice — DPP rejects them) keep
+        // the discriminant + payload self-consistent by falling
+        // back to `SingleContract { id }` (kind=1 + null doc-type
+        // pointer); emitting kind=2 with a null doc-type pointer
+        // would silently strip the bound on the Swift side, so
+        // demoting to `SingleContract` is the closest faithful
+        // representation — the document-type qualifier is the
+        // only thing lost, the contract id is preserved.
         let (contract_bounds_kind, contract_bounds_id, contract_bounds_document_type) =
             match entry.public_key.contract_bounds() {
                 Some(ContractBounds::SingleContract { id }) => (1u8, id.to_buffer(), ptr::null()),
                 Some(ContractBounds::SingleContractDocumentType {
                     id,
                     document_type_name,
-                }) => {
-                    let doc_type_ptr = match CString::new(document_type_name.as_str()) {
-                        Ok(c) => c.into_raw() as *const c_char,
-                        Err(_) => ptr::null(),
-                    };
-                    (2u8, id.to_buffer(), doc_type_ptr)
-                }
+                }) => match CString::new(document_type_name.as_str()) {
+                    Ok(c) => (2u8, id.to_buffer(), c.into_raw() as *const c_char),
+                    Err(_) => (1u8, id.to_buffer(), ptr::null()),
+                },
                 None => (0u8, [0u8; 32], ptr::null()),
             };
 

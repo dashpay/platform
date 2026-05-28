@@ -351,6 +351,18 @@ enum WalletKeyHealthChecker {
         return RederiveOutcome(success: fixed, failures: failures)
     }
 
+    /// Outcome of a single `deleteOrphan` call. Decouples the
+    /// SwiftData side of the delete (the bit that affects the
+    /// reactive UI — `@Query` results, the report list) from the
+    /// Keychain side (which is observability / cleanup, not UI-
+    /// reactive). The caller can drop the row from the report
+    /// list as long as `swiftDataDeleted == true`, even when
+    /// `keychainError` is non-nil.
+    struct OrphanDeleteOutcome {
+        let swiftDataDeleted: Bool
+        let keychainError: Error?
+    }
+
     /// Cascade-delete an orphan identity from SwiftData AND wipe its
     /// associated Keychain entries.
     ///
@@ -367,14 +379,17 @@ enum WalletKeyHealthChecker {
     ///     `PlatformWalletPersistenceHandler.deleteWalletData`.
     ///  3. Delete the identity itself + save.
     ///
-    /// If the keychain wipe throws we still attempt the SwiftData
-    /// delete so the user can finish the operation; the keychain
-    /// error is surfaced to the caller after the deletes complete.
+    /// Returns a per-side outcome so the caller can distinguish
+    /// "fully clean" from "SwiftData clean, Keychain warning" —
+    /// the latter shouldn't prevent the sheet from dropping the
+    /// now-deleted row from its in-memory `reports` list.
+    /// Genuine SwiftData failures still throw (they're the ones
+    /// that keep the row visible and actionable).
     @MainActor
     static func deleteOrphan(
         identity: PersistentIdentity,
         modelContext: ModelContext
-    ) throws {
+    ) throws -> OrphanDeleteOutcome {
         // Snapshot the base58 id BEFORE the delete — once the row
         // is removed its computed accessor is invalid.
         let identityIdBase58 = identity.identityIdBase58
@@ -411,9 +426,10 @@ enum WalletKeyHealthChecker {
         modelContext.delete(identity)
         try modelContext.save()
 
-        if let keychainError {
-            throw keychainError
-        }
+        return OrphanDeleteOutcome(
+            swiftDataDeleted: true,
+            keychainError: keychainError
+        )
     }
 }
 
@@ -655,16 +671,33 @@ struct WalletKeyHealthSheet: View {
 
     private func deleteIdentity(_ report: WalletIdentityKeyHealthReport) {
         do {
-            try WalletKeyHealthChecker.deleteOrphan(
+            let outcome = try WalletKeyHealthChecker.deleteOrphan(
                 identity: report.identityRow,
                 modelContext: modelContext
             )
-            actionMessage = "Deleted orphan identity \(report.identityIdBase58.prefix(12))…"
-            errorMessage = nil
-            // Drop the now-deleted row from the report list so the
-            // sheet doesn't try to render it again.
-            reports.removeAll { $0.id == report.id }
+            // SwiftData side succeeded → drop the now-deleted row
+            // from the report list regardless of the keychain
+            // side. Keeping it in `reports` after the SwiftData
+            // delete leaves stale UI (the row's relationship
+            // accessors are invalidated and any action against
+            // them throws). A keychain-only failure becomes a
+            // non-blocking warning instead of suppressing the
+            // success state.
+            if outcome.swiftDataDeleted {
+                reports.removeAll { $0.id == report.id }
+            }
+            if let keychainError = outcome.keychainError {
+                actionMessage = "Deleted orphan identity \(report.identityIdBase58.prefix(12))…"
+                errorMessage = "Keychain cleanup warning: \(keychainError.localizedDescription) — re-running Verify Identity Keys can retry."
+            } else {
+                actionMessage = "Deleted orphan identity \(report.identityIdBase58.prefix(12))…"
+                errorMessage = nil
+            }
         } catch {
+            // SwiftData delete failed (the in-memory `reports`
+            // list is still authoritative); surface as a hard
+            // error and leave the row visible so the user can
+            // retry or escalate.
             errorMessage = "Delete failed: \(error.localizedDescription)"
         }
     }
