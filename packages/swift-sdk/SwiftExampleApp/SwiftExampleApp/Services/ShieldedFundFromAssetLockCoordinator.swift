@@ -129,12 +129,17 @@ final class ShieldedFundFromAssetLockCoordinator: ObservableObject {
                     return .blockedByOtherWalletFunding(blocker)
                 }
                 existing.submit(body: body)
-                // No retention sweep here — the slot is sticky on
-                // .failed (we want the user to see + dismiss the
-                // error) and a duplicate sweep on retry would
-                // spawn a second 30s poll Task against the same
-                // controller. Sweep was already scheduled when the
-                // controller was first created.
+                // Spawn a fresh retention sweep. The original sweep
+                // exited the moment the first attempt hit `.failed`
+                // (see `scheduleRetentionSweep`'s `.failed: return`
+                // arm) — without scheduling a new one, a retry that
+                // succeeds would transition to `.completed` with no
+                // Task watching for the 30s auto-purge, leaving the
+                // slot stuck in `controllers` indefinitely and
+                // locking that recipient out of new fundings until
+                // app restart. Idempotent once the previous sweep
+                // returned, so no risk of duplicate observers.
+                scheduleRetentionSweep(key: key, controller: existing)
                 return .started(existing)
             }
         }

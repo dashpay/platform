@@ -98,6 +98,39 @@ impl PlatformWallet {
         // build, ~30s, only to reject downstream).
         validate_shielded_recipients(&recipients)?;
 
+        // Pre-broadcast sizing guard for the `FromWalletBalance` path:
+        // refuse to build an L1 asset-lock that can't even cover the
+        // protocol min-fee for Type 18. Without this check the lock
+        // gets broadcast in Step 2, then Step 3's `checked_sub`
+        // underflows and we return an error with the L1 outpoint
+        // already on-chain — a Resume on the orphaned lock
+        // deterministically hits the same underflow, so the funds
+        // can't be recovered through this code path.
+        //
+        // The Step 3 check (after `resolve_funding_*`) is still the
+        // authoritative safety net for the `FromExistingAssetLock`
+        // resume path, where the lock is already on-chain and the
+        // sizing decision was made by a prior caller. Here we only
+        // protect the fresh-build path.
+        if let AssetLockFunding::FromWalletBalance { amount_duffs, .. } = &funding {
+            let lock_credits = (*amount_duffs)
+                .checked_mul(CREDITS_PER_DUFF)
+                .ok_or_else(|| {
+                    PlatformWalletError::ShieldedBuildError(format!(
+                        "asset lock amount overflows credits conversion ({amount_duffs} duffs * \
+                     {CREDITS_PER_DUFF} credits/duff > u64::MAX)"
+                    ))
+                })?;
+            let min_fee_credits = self.shield_from_asset_lock_min_fee()?;
+            if lock_credits <= min_fee_credits {
+                return Err(PlatformWalletError::ShieldedBuildError(format!(
+                    "asset lock ({lock_credits} credits, from {amount_duffs} duffs) is at or \
+                     below the protocol min fee ({min_fee_credits} credits) — refusing to \
+                     broadcast a single-use L1 outpoint that would be unrecoverable on resume"
+                )));
+            }
+        }
+
         // Single-flight: serialise shield-class operations on this
         // wallet so two concurrent calls can't race the asset-lock
         // tracker into a half-consumed state.
