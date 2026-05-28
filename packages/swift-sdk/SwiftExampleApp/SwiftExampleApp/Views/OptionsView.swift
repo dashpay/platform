@@ -74,6 +74,13 @@ struct OptionsView: View {
     @AppStorage("useLocalhostCore") private var customSpvPeersEnabled: Bool = false
     @AppStorage("localCorePeers") private var customSpvPeers: String = ""
 
+    // Devnet endpoint override — Quorum URL only. DAPI nodes are
+    // auto-discovered from `{quorumURL}/masternodes` at SDK build
+    // time (see `SDK.discoverDAPIAddresses`); no manual DAPI input.
+    // Read by `SDK.init` on every network switch / launch; editing
+    // here redirects the next SDK construction.
+    @AppStorage("platformQuorumURL") private var devnetQuorumURL: String = ""
+
     /// Default localhost peer string for a given network. Used to
     /// pre-populate the peers text field when the user enables the
     /// custom-SPV toggle. The FFI drops bare-IP entries (no port),
@@ -108,6 +115,12 @@ struct OptionsView: View {
                                     if newNetwork != .regtest && appState.useDockerSetup {
                                         appState.useDockerSetup = false
                                     }
+
+                                    // Devnet's SPV peers come from
+                                    // `{platformQuorumURL}/masternodes`
+                                    // — no UserDefaults state to seed
+                                    // here. See `CoreContentView.spvPeerOverride`
+                                    // for the devnet branch.
 
                                     // Update platform state (which will trigger SDK switch)
                                     appState.currentNetwork = newNetwork
@@ -198,6 +211,34 @@ struct OptionsView: View {
                                 }
                             }
                         }
+                    } else if appState.currentNetwork == .devnet {
+                        // Devnet UX: a single user input — the quorum
+                        // list service URL. SPV peers and DAPI nodes
+                        // are both derived from `{quorumURL}/masternodes`
+                        // at SDK build / SPV start time. Each
+                        // masternode entry carries the ip + Core P2P
+                        // port (SPV) and platformHTTPPort (DAPI), so
+                        // we never have to guess. Self-healing on
+                        // node churn — the list re-fetches on every
+                        // network switch / launch.
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Quorum URL")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            TextField(
+                                "http://<host>:8080  (quorum-list-server)",
+                                text: $devnetQuorumURL
+                            )
+                            .font(.system(.body, design: .monospaced))
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .keyboardType(.URL)
+
+                            Text("SPV Peers + DAPI nodes are auto-discovered from {Quorum URL}/masternodes. Changes apply on the next SDK build (switch network or relaunch).")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(.top, 4)
                     } else {
                         Toggle("Use Custom SPV Peers", isOn: $customSpvPeersEnabled)
                             .onChange(of: customSpvPeersEnabled) { _, isOn in

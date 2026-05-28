@@ -33,6 +33,7 @@
 
 pub mod coordinator;
 pub mod file_store;
+pub mod fund_from_asset_lock;
 pub mod keys;
 pub mod note_selection;
 pub mod operations;
