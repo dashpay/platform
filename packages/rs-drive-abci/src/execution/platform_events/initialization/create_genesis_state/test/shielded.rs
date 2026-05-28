@@ -362,23 +362,20 @@ impl<C> Platform<C> {
                             .into_boxed_str(),
                     )))
                 })?;
+                // Persist the Sinsemilla frontier per batch — cheap and
+                // gives durable mid-bake checkpoints if we ever want to
+                // resume from a crash. Mid-bake MMR `commit_mmr` is
+                // intentionally NOT called here: per the upstream fix
+                // `1340db71 fix(commitment-tree): don't commit_mmr inside
+                // append_many_raw`, the MMR's compaction state is
+                // accumulated in memory across `append_many_raw` calls and
+                // flushed exactly once at the end. Calling `commit_mmr`
+                // between batches corrupts the in-memory overlay (manifests
+                // as "MMR get_root failed: Inconsistent store" on the next
+                // call). One final `commit_mmr` follows the loop below.
                 ct.save().value.map_err(|e| {
                     Error::Execution(ExecutionError::CorruptedCodeExecution(Box::leak(
                         format!("seed: ct.save (batch {batch_index}): {e}").into_boxed_str(),
-                    )))
-                })?;
-                // `append_many_raw`'s internal MMR flush is sufficient when
-                // it's the **only** call against a `CommitmentTree` handle.
-                // When chained across batches, the next batch's MMR
-                // `get_root` reads inconsistent state ("Inconsistent store")
-                // unless the dense-tree + MMR overlay is fully flushed
-                // through the storage_ctx between calls. `commit_mmr` is the
-                // explicit flush — mirrors what the old per-leaf Phase B
-                // code did after every `append_raw`.
-                ct.commit_mmr().map_err(|e| {
-                    Error::Execution(ExecutionError::CorruptedCodeExecution(Box::leak(
-                        format!("seed: ct.commit_mmr (batch {batch_index}): {e}")
-                            .into_boxed_str(),
                     )))
                 })?;
 
@@ -414,6 +411,16 @@ impl<C> Platform<C> {
                     "seed batch complete"
                 );
             }
+
+            // Single MMR flush after every batch has appended. The MMR
+            // overlay accumulates across `append_many_raw` calls and is
+            // persisted only here. See the in-loop comment above and the
+            // upstream fix `1340db71` for the rationale.
+            ct.commit_mmr().map_err(|e| {
+                Error::Execution(ExecutionError::CorruptedCodeExecution(Box::leak(
+                    format!("seed: ct.commit_mmr (final): {e}").into_boxed_str(),
+                )))
+            })?;
 
             let combined_root = grovedb_commitment_tree::compute_commitment_tree_state_root(
                 &last_sinsemilla_root,
@@ -1024,10 +1031,12 @@ mod platform_tests {
     /// preserve the Sinsemilla anchor (which is what wallet sync reads to
     /// verify membership proofs).
     ///
-    /// Uses N=5000 to keep wall-clock under ~10s in release. The production
-    /// `ShieldedSeedConfig::sdk_test_data()` constant is now `total_notes =
-    /// 5_000` so this also exercises the values the bake step would produce
-    /// at devnet bring-up time.
+    /// Uses N=30_000 — three batches at `BATCH_SIZE = 10_000`, so the
+    /// seeder exercises the inter-batch MMR-overlay handoff. The upstream
+    /// fix `1340db71 fix(commitment-tree): don't commit_mmr inside
+    /// append_many_raw` (plus our matching loop restructure that defers
+    /// `commit_mmr` to the end) is what makes multi-batch work; this test
+    /// pins that contract.
     #[test]
     #[ignore = "snapshot dump+apply roundtrip; needs the new grovedb branch"]
     fn snapshot_dump_apply_preserves_anchor() {
@@ -1035,7 +1044,10 @@ mod platform_tests {
 
         // --- A: build, seed, capture anchor ---
         let platform_a = build_regtest_platform();
-        let cfg = ShieldedSeedConfig::sdk_test_data();
+        let cfg = ShieldedSeedConfig {
+            total_notes: 30_000,
+            rng_seed: 0xDEAD_BEEF,
+        };
         let tx_a = platform_a.drive.grove.start_transaction();
         platform_a
             .seed_shielded_pool_with_config(
