@@ -1,22 +1,13 @@
-//! Deterministic note generator for the SDK genesis test-data seeder.
+//! Deterministic filler-note generator for the SDK genesis test-data seeder.
 //!
-//! Two tiers:
-//! - **Filler**: random valid Pallas-base `cmx` + random 32-byte ρ + 216 random
-//!   bytes of "ciphertext". The wallet's compact decryption short-circuits on
-//!   the ρ-field check, which is the intended "filler is not decryptable"
-//!   failure mode.
-//! - **Owned**: real Orchard `Note::from_parts(test_wallet_addr, value, ρ,
-//!   rseed)` encrypted via `OrchardNoteEncryption::<DashMemo>` with
-//!   `ovk = None`. The wallet's IVK trial-decrypts it and recovers the exact
-//!   `NoteValue` we set.
+//! Produces N filler notes — random valid Pallas-base `cmx` + random 32-byte
+//! ρ + 216 random bytes of "ciphertext". No note is decryptable by any wallet
+//! (ρ is not constrained to a valid `Nullifier`, so the SDK's compact
+//! decryption short-circuits on the ρ-field check). For wallet-balance tests,
+//! use real shielded-fund transitions post-genesis instead of seeded notes.
 //!
-//! Both tiers go through `ShieldedPoolOperationType::InsertNote` and end up in
-//! the production `commitment_tree_insert_op` code path. All randomness comes
-//! from a single seeded `StdRng` threaded through every loop — no `OsRng`, no
-//! `thread_rng()`. This is what makes the GroveDB root hash byte-identical
-//! across hosts for a fixed seed.
-
-use std::collections::HashSet;
+//! All randomness comes from a single seeded `StdRng`. The GroveDB root hash
+//! is byte-identical across hosts for a fixed `rng_seed`.
 
 use dpp::block::block_info::BlockInfo;
 use dpp::version::PlatformVersion;
@@ -24,16 +15,10 @@ use drive::grovedb::Element;
 use drive::grovedb::TransactionArg;
 use drive::grovedb_path::SubtreePath;
 use drive::grovedb_storage::{Storage, StorageBatch};
-use drive::util::batch::drive_op_batch::{DriveOperation, ShieldedPoolOperationType};
-use grovedb_commitment_tree::{
-    merkle_hash_from_bytes, CommitmentTree, DashMemo, Domain, ExtractedNoteCommitment, Note,
-    NoteValue, OrchardDomain, RandomSeed, Rho,
-};
-use orchard::note_encryption::OrchardNoteEncryption;
+use grovedb_commitment_tree::{merkle_hash_from_bytes, CommitmentTree, DashMemo};
 use rand::rngs::StdRng;
 use rand::{RngCore, SeedableRng};
 
-use super::shielded_test_wallets::{test_wallet_a, test_wallet_b, TestWallet};
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
@@ -54,19 +39,14 @@ const _: () = assert!(ENCRYPTED_NOTE_WIRE_LEN == 216);
 
 /// Configuration for the seeder.
 ///
-/// The chain's `create_data_for_shielded_pool` uses [`Self::sdk_test_data`] —
-/// a hardcoded const-equivalent — so every SDK_TEST_DATA devnet seeds the same
-/// 500k-note pool regardless of operator env. Tests construct custom configs
-/// directly to vary N for unit + integration coverage.
+/// The chain's `create_data_for_shielded_pool` uses [`Self::sdk_test_data`]
+/// (hardcoded const), so every SDK_TEST_DATA devnet seeds the same N-note
+/// pool regardless of operator env. Tests construct custom configs directly
+/// to vary N.
 #[derive(Debug, Clone)]
 pub struct ShieldedSeedConfig {
-    /// Total notes to seed across both tiers.
+    /// Total filler notes to seed.
     pub total_notes: u32,
-    /// Aggregate owned-note count across both wallets. Split evenly via
-    /// [`Self::split_owned_count`].
-    pub owned_count: u32,
-    /// Per-owned-note value in credits.
-    pub owned_value: u64,
     /// RNG seed; identical seed ⇒ identical root hash.
     pub rng_seed: u64,
 }
@@ -75,8 +55,6 @@ impl Default for ShieldedSeedConfig {
     fn default() -> Self {
         Self {
             total_notes: 0,
-            owned_count: 0,
-            owned_value: 100_000,
             rng_seed: 0xDEAD_BEEF,
         }
     }
@@ -85,11 +63,12 @@ impl Default for ShieldedSeedConfig {
 impl ShieldedSeedConfig {
     /// The hardcoded SDK_TEST_DATA seed config used at every devnet genesis.
     ///
-    /// `total_notes = 1_000_000` (filler + owned), `owned_count = 8`
-    /// split 4/4 across wallets A and B, `owned_value = 100_000` ⇒ each
-    /// wallet's expected balance after sync = `4 × 100_000 = 400_000`.
-    /// Seed `0xDEAD_BEEF` is fixed so the GroveDB root hash is
-    /// byte-identical across hosts.
+    /// `total_notes = 1_000_000`, seed `0xDEAD_BEEF` is fixed so the GroveDB
+    /// root hash is byte-identical across hosts.
+    ///
+    /// Wallet-balance UX no longer comes from seeded notes (the test wallet
+    /// hardcoding was removed). For decryptable balance flows in tests, use
+    /// real shielded-fund transitions post-genesis instead.
     ///
     /// At 1M notes the bake step takes ~5-15 min in the docker buildkit
     /// linux VM (release profile required — see
@@ -99,78 +78,17 @@ impl ShieldedSeedConfig {
     pub const fn sdk_test_data() -> Self {
         Self {
             total_notes: 1_000_000,
-            owned_count: 8,
-            owned_value: 100_000,
             rng_seed: 0xDEAD_BEEF,
         }
     }
-
-    /// `(count_for_a, count_for_b)`. Even split; odd remainder goes to A.
-    pub fn split_owned_count(&self) -> (u32, u32) {
-        let a = self.owned_count.div_ceil(2);
-        let b = self.owned_count - a;
-        (a, b)
-    }
 }
 
-/// Per-wallet deterministic position tables for owned notes.
-#[derive(Debug, Clone, Default)]
-pub struct OwnedLayout {
-    pub positions_a: Vec<u32>,
-    pub positions_b: Vec<u32>,
-}
-
-impl OwnedLayout {
-    /// Compute owned positions at the **tail** of the bulk tree.
-    ///
-    /// Phase-2 constraint (grovedb PR #751): `append_*_without_frontier`
-    /// hard-fails if the Sinsemilla frontier is non-empty. Therefore all
-    /// filler must be bulk-seeded FIRST while the frontier is empty, and
-    /// the 8 owned notes go through the regular full-Sinsemilla append
-    /// path AFTER. This places owned notes at bulk positions
-    /// `[total_notes - owned_count, total_notes)` — wallet A occupies the
-    /// first `count_a` slots, wallet B the remaining `count_b`.
-    ///
-    /// Sync correctness is position-agnostic (the wallet trial-decrypts
-    /// every cmx regardless of position), so this layout shift only
-    /// affects internal seeder tests that assert specific positions.
-    /// Update those when bumping this function.
-    pub fn compute(cfg: &ShieldedSeedConfig) -> Self {
-        if cfg.owned_count == 0 || cfg.total_notes == 0 {
-            return Self::default();
-        }
-        let (count_a, count_b) = cfg.split_owned_count();
-        let tail_start = cfg.total_notes.saturating_sub(cfg.owned_count);
-
-        let positions_a: Vec<u32> = (0..count_a).map(|i| tail_start + i).collect();
-        let positions_b: Vec<u32> = (0..count_b).map(|i| tail_start + count_a + i).collect();
-        Self {
-            positions_a,
-            positions_b,
-        }
-    }
-
-    /// Which wallet owns the given position? `Some(0)` = A, `Some(1)` = B,
-    /// `None` = filler. O(N) lookup per call but N is tiny (≤ owned_count).
-    pub fn wallet_at(&self, position: u32) -> Option<usize> {
-        if self.positions_a.iter().any(|&p| p == position) {
-            Some(0)
-        } else if self.positions_b.iter().any(|&p| p == position) {
-            Some(1)
-        } else {
-            None
-        }
-    }
-}
-
-/// A single seeded note ready to be wrapped in
-/// `ShieldedPoolOperationType::InsertNote`.
+/// A single seeded filler note in the BulkAppendTree input shape.
 #[derive(Debug, Clone)]
 pub struct SeededNote {
     pub cmx: [u8; 32],
     /// On-wire `nullifier` field — this is ρ, *not* the spend-time revealed
-    /// nullifier. The SDK reconstructs `OrchardDomain::for_compact_action` from
-    /// these bytes during trial-decryption.
+    /// nullifier.
     pub rho: [u8; 32],
     /// 216 bytes: `epk(32) || enc_ciphertext(104) || out_ciphertext(80)`.
     pub encrypted_note: Vec<u8>,
@@ -189,7 +107,7 @@ fn sample_valid_pallas_base(rng: &mut StdRng) -> [u8; 32] {
 
 /// Build one filler note. ρ is intentionally random 32 bytes (not necessarily
 /// a valid Pallas element) so the SDK's compact decryption short-circuits on
-/// the field check — the cheap "filler is not decryptable" path.
+/// the field check — guarantees the filler is not decryptable by any wallet.
 fn generate_filler_note(rng: &mut StdRng) -> SeededNote {
     let cmx = sample_valid_pallas_base(rng);
     let mut rho = [0u8; 32];
@@ -203,101 +121,21 @@ fn generate_filler_note(rng: &mut StdRng) -> SeededNote {
     }
 }
 
-/// Build one owned note encrypted to `wallet.default_address` with `value`
-/// credits. Tracks ρ uniqueness in `used_rhos` across both wallets.
-///
-/// `out_ciphertext` is zero-filled, not produced by
-/// `encrypt_outgoing_plaintext`. Rationale: the SDK's compact decryption path
-/// (`decrypt.rs::try_decrypt_note`) never reads past byte `32 + COMPACT_NOTE_SIZE
-/// = 84`, so the trailing 132 bytes are opaque to the consumer. Going through
-/// `encrypt_outgoing_plaintext` would also require constructing a
-/// `ValueCommitment` (no `Default` impl) for no observable behaviour change.
-/// This matches the `orchard::note_encryption::testing::fake_compact_action`
-/// pattern which similarly produces no `out_ciphertext`.
-fn generate_owned_note(
-    rng: &mut StdRng,
-    wallet: &TestWallet,
-    value: u64,
-    used_rhos: &mut HashSet<[u8; 32]>,
-) -> SeededNote {
-    // 1. Valid Pallas-base ρ, unique across all owned notes.
-    let rho_bytes = loop {
-        let bytes = sample_valid_pallas_base(rng);
-        if used_rhos.insert(bytes) {
-            break bytes;
-        }
-    };
-    let rho = Rho::from_bytes(&rho_bytes)
-        .into_option()
-        .expect("rho_bytes is a valid Pallas element by construction");
-
-    // 2. Valid RandomSeed. RandomSeed::from_bytes can reject; loop until accepted.
-    let rseed = loop {
-        let mut bytes = [0u8; 32];
-        rng.fill_bytes(&mut bytes);
-        let candidate = RandomSeed::from_bytes(bytes, &rho);
-        if candidate.is_some().into() {
-            break candidate.unwrap();
-        }
-    };
-
-    // 3. Build the Note.
-    let note = Note::from_parts(
-        wallet.default_address,
-        NoteValue::from_raw(value),
-        rho,
-        rseed,
-    )
-    .into_option()
-    .expect("Note::from_parts must succeed for valid (addr, value, rho, rseed)");
-
-    let cmx_bytes = ExtractedNoteCommitment::from(note.commitment()).to_bytes();
-
-    // 4. Encrypt note plaintext via OrchardNoteEncryption<DashMemo>.
-    let encryptor = OrchardNoteEncryption::<DashMemo>::new(None, note, [0u8; 36]);
-    let epk_bytes = OrchardDomain::<DashMemo>::epk_bytes(encryptor.epk()).0;
-    let enc_ciphertext = encryptor.encrypt_note_plaintext();
-
-    // 5. Pack the 216-byte wire format. out_ciphertext = [0; 80]; see fn doc.
-    let mut encrypted_note = Vec::with_capacity(ENCRYPTED_NOTE_WIRE_LEN);
-    encrypted_note.extend_from_slice(&epk_bytes);
-    encrypted_note.extend_from_slice(enc_ciphertext.as_ref());
-    encrypted_note.extend_from_slice(&[0u8; 80]);
-    debug_assert_eq!(encrypted_note.len(), ENCRYPTED_NOTE_WIRE_LEN);
-
-    SeededNote {
-        cmx: cmx_bytes,
-        rho: rho_bytes,
-        encrypted_note,
-    }
+/// Generate `count` filler notes from the seeded `rng`. Each call advances
+/// `rng` deterministically, so chained calls across batches still produce
+/// the byte-identical sequence that a single up-front call would have made.
+pub fn generate_filler_batch(rng: &mut StdRng, count: usize) -> Vec<SeededNote> {
+    (0..count).map(|_| generate_filler_note(rng)).collect()
 }
 
-/// Generate every seeded note in append order. Single seeded RNG threaded
-/// through filler + owned tiers, so the output is byte-identical for a fixed
-/// `cfg.rng_seed`.
-pub fn generate_notes(cfg: &ShieldedSeedConfig, wallets: [&TestWallet; 2]) -> Vec<SeededNote> {
+/// Generate every seeded filler note up front. Equivalent to one
+/// [`generate_filler_batch`] call sized to `cfg.total_notes`; only used by
+/// tests that prefer the eager shape — the production seed path streams
+/// batches via `generate_filler_batch` directly.
+#[cfg(test)]
+fn generate_notes(cfg: &ShieldedSeedConfig) -> Vec<SeededNote> {
     let mut rng = StdRng::seed_from_u64(cfg.rng_seed);
-    let layout = OwnedLayout::compute(cfg);
-    let mut used_rhos: HashSet<[u8; 32]> = HashSet::with_capacity(cfg.owned_count as usize);
-    let mut notes = Vec::with_capacity(cfg.total_notes as usize);
-
-    for position in 0..cfg.total_notes {
-        let note = match layout.wallet_at(position) {
-            Some(idx) => {
-                generate_owned_note(&mut rng, wallets[idx], cfg.owned_value, &mut used_rhos)
-            }
-            None => generate_filler_note(&mut rng),
-        };
-        notes.push(note);
-    }
-
-    debug_assert_eq!(notes.len(), cfg.total_notes as usize);
-    notes
-}
-
-/// Convenience: resolve the two cached test wallets and generate notes.
-pub fn generate_notes_for_test_wallets(cfg: &ShieldedSeedConfig) -> Vec<SeededNote> {
-    generate_notes(cfg, [test_wallet_a(), test_wallet_b()])
+    generate_filler_batch(&mut rng, cfg.total_notes as usize)
 }
 
 impl<C> Platform<C> {
@@ -381,8 +219,6 @@ impl<C> Platform<C> {
         let cfg = ShieldedSeedConfig::sdk_test_data();
         tracing::info!(
             total_notes = cfg.total_notes,
-            owned_count = cfg.owned_count,
-            owned_value = cfg.owned_value,
             rng_seed = format!("0x{:x}", cfg.rng_seed),
             "create_data_for_shielded_pool: seeding SDK_TEST_DATA shielded pool"
         );
@@ -405,15 +241,12 @@ impl<C> Platform<C> {
     ) -> Result<(), Error> {
         tracing::info!(
             cfg_total_notes = cfg.total_notes,
-            cfg_owned_count = cfg.owned_count,
-            cfg_owned_value = cfg.owned_value,
             cfg_rng_seed = format!("0x{:x}", cfg.rng_seed),
             "seed_shielded_pool_with_config: entered"
         );
         if cfg.total_notes > 0 {
             tracing::info!(
                 total_notes = cfg.total_notes,
-                owned_count = cfg.owned_count,
                 rng_seed = format!("0x{:x}", cfg.rng_seed),
                 "seeding shielded pool with SDK test data (batched append_many_raw)"
             );
@@ -422,35 +255,10 @@ impl<C> Platform<C> {
                     "seed_shielded_pool_with_config requires a transaction",
                 )))?;
 
-            // Generate every note up-front; single seeded RNG keeps the output
-            // byte-identical across hosts. ρ uniqueness is enforced internally.
-            let seeded = generate_notes_for_test_wallets(cfg);
-
-            // Partition by ownership. With Phase-2 tail layout the order
-            // matches bulk position order: filler first (positions
-            // [0, N-owned_count)), then owned (positions [N-owned_count, N)).
-            let layout = OwnedLayout::compute(cfg);
-            let mut filler: Vec<SeededNote> =
-                Vec::with_capacity(cfg.total_notes.saturating_sub(cfg.owned_count) as usize);
-            let mut owned_in_order: Vec<SeededNote> = Vec::with_capacity(cfg.owned_count as usize);
-            for (idx, note) in seeded.into_iter().enumerate() {
-                if layout.wallet_at(idx as u32).is_some() {
-                    owned_in_order.push(note);
-                } else {
-                    filler.push(note);
-                }
-            }
-            // Cheap sanity check — generator + layout must agree on counts.
-            assert_eq!(
-                filler.len() as u32 + owned_in_order.len() as u32,
-                cfg.total_notes
-            );
-            assert_eq!(owned_in_order.len() as u32, cfg.owned_count);
-
-            // Read parent-Merk Element to get chunk_power + flags. The
-            // batched seed path requires `total_count == 0` at entry so
-            // ordinality is well-defined (owned positions = filler.len()..);
-            // assert that too.
+            // Read parent-Merk Element to get chunk_power + flags. The batched
+            // seed path requires `total_count == 0` at entry — the running
+            // `CommitmentTree` is opened against an empty subtree and we
+            // accumulate `total_notes` appends on top.
             let pool_path_arr = drive::drive::shielded::paths::shielded_credit_pool_path();
             let leaf_key = &[drive::drive::shielded::paths::SHIELDED_NOTES_KEY];
             let parent_path = SubtreePath::from(pool_path_arr.as_slice());
@@ -482,10 +290,10 @@ impl<C> Platform<C> {
                 "batched seed requires an empty commitment tree"
             );
 
-            // Open a CommitmentTree on the subtree's storage context. We
-            // skip the StorageBatch (None) so writes go directly through the
-            // transaction; the parent-Merk update at the end manages its own
-            // batch via `replace_commitment_tree_subtree_root`.
+            // Open a CommitmentTree on the subtree's storage context. The
+            // StorageBatch buffers every BulkAppendTree / frontier write and
+            // is committed once at the end via `commit_multi_context_batch`
+            // — same shape as the production `commitment_tree_insert` path.
             let subtree_path_segs: Vec<Vec<u8>> = pool_path_arr
                 .iter()
                 .map(|s| s.to_vec())
@@ -495,10 +303,6 @@ impl<C> Platform<C> {
                 subtree_path_segs.iter().map(|v| v.as_slice()).collect();
             let subtree_path = SubtreePath::from(subtree_path_refs.as_slice());
 
-            // Open with a StorageBatch — CommitmentTree's storage operations
-            // require batched writes (mirrors the pattern in grovedb's
-            // commitment_tree_insert). The batch is committed after all
-            // appends + frontier save, before the parent-Merk leaf update.
             let data_batch = StorageBatch::new();
             let storage_ctx = self
                 .drive
@@ -514,87 +318,113 @@ impl<C> Platform<C> {
                     )))
                 })?;
 
-            // Single-phase batched seed via `append_many_raw` (grovedb PR
-            // #751). The earlier two-phase split (filler via
-            // `append_many_without_frontier` + owned via per-leaf
-            // `append_raw`) only existed because the old frontier-less API
-            // skipped the Sinsemilla frontier entirely, producing an anchor
-            // that didn't match the actual leaf set — wallets reconstructing
-            // the tree got a root the chain had never recorded and spend
-            // proofs failed. `append_many_raw` is byte-for-byte equivalent
-            // to N × `append_raw` (same frontier, same bulk MMR, same final
-            // roots) but the Sinsemilla anchor + bulk state root are each
-            // computed once at the end. MMR overlay is flushed internally on
-            // return.
+            // Batched seed via repeated `append_many_raw` (grovedb PR #751).
+            // Each batch:
+            //   1. Generates `BATCH_SIZE` filler notes from the seeded RNG.
+            //   2. Calls `append_many_raw` — byte-for-byte equivalent to N ×
+            //      `append_raw` per the upstream contract; flushes the MMR
+            //      overlay internally.
+            //   3. `ct.save()` persists the Sinsemilla frontier into the
+            //      `data_batch` (still in-memory until the final commit).
+            //   4. Logs the running anchor + bulk-state root so progress is
+            //      observable and post-hoc replay is debuggable.
             //
-            // Order is `chain(filler, owned)` so owned notes land at
-            // positions `[filler.len(), filler.len() + owned.len())` — the
-            // same layout as the previous Phase-A-then-Phase-B path, which
-            // downstream test-data construction relies on.
-            assert!(
-                !owned_in_order.is_empty(),
-                "seed: owned_in_order was empty — owned_count must be >= 1"
-            );
+            // The whole `data_batch` is committed once at the end. A crash
+            // mid-bake loses every batch; durability per batch would require
+            // a per-batch `commit_multi_context_batch`. For a bake binary
+            // that lives in a single Docker stage producing an artifact, the
+            // simpler shape is fine (re-run on failure).
+            const BATCH_SIZE: usize = 10_000;
+            let total = cfg.total_notes as usize;
             let bake_start = std::time::Instant::now();
-            let filler_total = filler.len();
-            let owned_total = owned_in_order.len();
-            let total = filler_total + owned_total;
             tracing::info!(
-                filler_count = filler_total,
-                owned_count = owned_total,
                 total,
+                batch_size = BATCH_SIZE,
                 "seed: starting batched commitment-tree append"
             );
-            let mut appended = 0usize;
-            let mut last_log = std::time::Instant::now();
-            let start_for_progress = bake_start;
-            let iter = filler.into_iter().chain(owned_in_order.iter().cloned()).map(|n| {
-                appended += 1;
-                if last_log.elapsed().as_secs() >= 30 || appended == total {
-                    let elapsed = start_for_progress.elapsed();
-                    let rate = appended as f64 / elapsed.as_secs_f64().max(0.001);
-                    let remaining = total.saturating_sub(appended);
-                    let eta_secs = if rate > 0.0 {
-                        (remaining as f64 / rate) as u64
-                    } else {
-                        0
-                    };
-                    tracing::info!(
-                        appended,
-                        total,
-                        pct = format!("{:.1}%", (appended as f64 / total as f64) * 100.0),
-                        elapsed_s = elapsed.as_secs(),
-                        rate_per_s = format!("{:.0}", rate),
-                        eta_s = eta_secs,
-                        "seed progress"
-                    );
-                    last_log = std::time::Instant::now();
-                }
-                (n.cmx, n.rho, n.encrypted_note)
-            });
-            let append_result = ct.append_many_raw(iter).value.map_err(|e| {
-                Error::Execution(ExecutionError::CorruptedCodeExecution(Box::leak(
-                    format!("seed: append_many_raw: {e}").into_boxed_str(),
-                )))
-            })?;
-            // Persist the frontier once at the end (append_many_raw flushes
-            // the MMR overlay internally but doesn't touch the frontier
-            // store — `save` is still our responsibility).
-            ct.save().value.map_err(|e| {
-                Error::Execution(ExecutionError::CorruptedCodeExecution(Box::leak(
-                    format!("seed: ct.save: {e}").into_boxed_str(),
-                )))
-            })?;
+            let mut rng = StdRng::seed_from_u64(cfg.rng_seed);
+            let mut appended_total = 0usize;
+            let mut last_sinsemilla_root: [u8; 32] = [0u8; 32];
+            let mut last_bulk_state_root: [u8; 32] = [0u8; 32];
+            let mut batch_index = 0usize;
+            while appended_total < total {
+                let this_batch = std::cmp::min(BATCH_SIZE, total - appended_total);
+                let batch_start = std::time::Instant::now();
+                let batch_notes = generate_filler_batch(&mut rng, this_batch);
+                let gen_elapsed = batch_start.elapsed();
+
+                let iter = batch_notes
+                    .into_iter()
+                    .map(|n| (n.cmx, n.rho, n.encrypted_note));
+                let append_result = ct.append_many_raw(iter).value.map_err(|e| {
+                    Error::Execution(ExecutionError::CorruptedCodeExecution(Box::leak(
+                        format!("seed: append_many_raw (batch {batch_index}): {e}")
+                            .into_boxed_str(),
+                    )))
+                })?;
+                ct.save().value.map_err(|e| {
+                    Error::Execution(ExecutionError::CorruptedCodeExecution(Box::leak(
+                        format!("seed: ct.save (batch {batch_index}): {e}").into_boxed_str(),
+                    )))
+                })?;
+                // `append_many_raw`'s internal MMR flush is sufficient when
+                // it's the **only** call against a `CommitmentTree` handle.
+                // When chained across batches, the next batch's MMR
+                // `get_root` reads inconsistent state ("Inconsistent store")
+                // unless the dense-tree + MMR overlay is fully flushed
+                // through the storage_ctx between calls. `commit_mmr` is the
+                // explicit flush — mirrors what the old per-leaf Phase B
+                // code did after every `append_raw`.
+                ct.commit_mmr().map_err(|e| {
+                    Error::Execution(ExecutionError::CorruptedCodeExecution(Box::leak(
+                        format!("seed: ct.commit_mmr (batch {batch_index}): {e}")
+                            .into_boxed_str(),
+                    )))
+                })?;
+
+                last_sinsemilla_root = append_result.sinsemilla_root;
+                last_bulk_state_root = append_result.bulk_state_root;
+                appended_total += this_batch;
+                batch_index += 1;
+
+                let total_elapsed = bake_start.elapsed();
+                let rate = appended_total as f64 / total_elapsed.as_secs_f64().max(0.001);
+                let remaining = total.saturating_sub(appended_total);
+                let eta_secs = if rate > 0.0 {
+                    (remaining as f64 / rate) as u64
+                } else {
+                    0
+                };
+                tracing::info!(
+                    batch_index,
+                    batch_size = this_batch,
+                    appended = appended_total,
+                    total,
+                    pct = format!(
+                        "{:.1}%",
+                        (appended_total as f64 / total as f64) * 100.0
+                    ),
+                    elapsed_s = total_elapsed.as_secs(),
+                    batch_elapsed_ms = batch_start.elapsed().as_millis() as u64,
+                    gen_elapsed_ms = gen_elapsed.as_millis() as u64,
+                    rate_per_s = format!("{:.0}", rate),
+                    eta_s = eta_secs,
+                    sinsemilla_root = %hex::encode(last_sinsemilla_root),
+                    bulk_state_root = %hex::encode(last_bulk_state_root),
+                    "seed batch complete"
+                );
+            }
+
             let combined_root = grovedb_commitment_tree::compute_commitment_tree_state_root(
-                &append_result.sinsemilla_root,
-                &append_result.bulk_state_root,
+                &last_sinsemilla_root,
+                &last_bulk_state_root,
             );
             tracing::info!(
-                filler_count = filler_total,
-                owned_count = owned_total,
+                total,
+                batches = batch_index,
                 elapsed_s = bake_start.elapsed().as_secs(),
                 combined_root = %hex::encode(combined_root),
-                "seed: batched append complete"
+                "seed: all batches complete"
             );
             drop(ct);
 
@@ -673,71 +503,26 @@ impl<C> Platform<C> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use grovedb_commitment_tree::{
-        try_compact_note_decryption, CompactAction, EphemeralKeyBytes, Nullifier, PaymentAddress,
-    };
+    use std::collections::HashSet;
 
     fn small_cfg() -> ShieldedSeedConfig {
         ShieldedSeedConfig {
             total_notes: 16,
-            owned_count: 4,
-            owned_value: 100_000,
             rng_seed: 0xDEAD_BEEF,
         }
     }
 
     #[test]
-    fn split_owned_count_evenly_with_odd_remainder_to_a() {
-        let cfg = ShieldedSeedConfig {
-            owned_count: 7,
-            ..ShieldedSeedConfig::default()
-        };
-        assert_eq!(cfg.split_owned_count(), (4, 3));
-        let cfg = ShieldedSeedConfig {
-            owned_count: 8,
-            ..ShieldedSeedConfig::default()
-        };
-        assert_eq!(cfg.split_owned_count(), (4, 4));
-        let cfg = ShieldedSeedConfig {
-            owned_count: 0,
-            ..ShieldedSeedConfig::default()
-        };
-        assert_eq!(cfg.split_owned_count(), (0, 0));
-    }
-
-    #[test]
-    fn layout_assigns_positions_per_wallet_no_overlap() {
-        let cfg = small_cfg();
-        let layout = OwnedLayout::compute(&cfg);
-        assert_eq!(layout.positions_a.len(), 2);
-        assert_eq!(layout.positions_b.len(), 2);
-
-        // No overlap.
-        let mut all: Vec<u32> = layout
-            .positions_a
-            .iter()
-            .chain(layout.positions_b.iter())
-            .copied()
-            .collect();
-        all.sort();
-        all.dedup();
-        assert_eq!(all.len(), 4);
-
-        // All positions in range.
-        assert!(all.iter().all(|&p| p < cfg.total_notes));
-    }
-
-    #[test]
     fn generate_notes_count_matches_total() {
         let cfg = small_cfg();
-        let notes = generate_notes_for_test_wallets(&cfg);
+        let notes = generate_notes(&cfg);
         assert_eq!(notes.len(), cfg.total_notes as usize);
     }
 
     #[test]
     fn generate_notes_filler_ciphertext_size_pinned_to_216() {
         let cfg = small_cfg();
-        let notes = generate_notes_for_test_wallets(&cfg);
+        let notes = generate_notes(&cfg);
         for n in &notes {
             assert_eq!(
                 n.encrypted_note.len(),
@@ -751,8 +536,8 @@ mod tests {
     #[test]
     fn generate_notes_is_deterministic() {
         let cfg = small_cfg();
-        let a = generate_notes_for_test_wallets(&cfg);
-        let b = generate_notes_for_test_wallets(&cfg);
+        let a = generate_notes(&cfg);
+        let b = generate_notes(&cfg);
         assert_eq!(a.len(), b.len());
         for (i, (na, nb)) in a.iter().zip(b.iter()).enumerate() {
             assert_eq!(na.cmx, nb.cmx, "cmx differs at position {}", i);
@@ -775,242 +560,51 @@ mod tests {
             rng_seed: 2,
             ..small_cfg()
         };
-        let a = generate_notes_for_test_wallets(&cfg_a);
-        let b = generate_notes_for_test_wallets(&cfg_b);
+        let a = generate_notes(&cfg_a);
+        let b = generate_notes(&cfg_b);
         // At least one cmx differs (the first one — different RNG stream).
         assert!(a.iter().zip(b.iter()).any(|(na, nb)| na.cmx != nb.cmx));
     }
 
+    /// The batched generator must produce byte-identical output to a single
+    /// up-front call. Otherwise the seeded GroveDB state diverges between
+    /// "one big append_many_raw" and "N × append_many_raw(BATCH_SIZE)".
     #[test]
-    fn owned_rhos_are_unique() {
-        // ρ uniqueness is critical for Orchard correctness; protect future readers.
+    fn batched_generator_matches_single_call() {
         let cfg = ShieldedSeedConfig {
-            total_notes: 256,
-            owned_count: 32,
-            ..ShieldedSeedConfig::default()
-        };
-        let notes = generate_notes_for_test_wallets(&cfg);
-        let layout = OwnedLayout::compute(&cfg);
-        let mut owned_rhos: HashSet<[u8; 32]> = HashSet::new();
-        for (pos, note) in notes.iter().enumerate() {
-            if layout.wallet_at(pos as u32).is_some() {
-                assert!(
-                    owned_rhos.insert(note.rho),
-                    "duplicate ρ at owned position {}",
-                    pos
-                );
-            }
-        }
-        assert_eq!(owned_rhos.len(), cfg.owned_count as usize);
-    }
-
-    /// Wallet A's IVK must trial-decrypt every note at A's positions.
-    /// This is the load-bearing test for the owned-tier encryption.
-    #[test]
-    fn owned_notes_decrypt_under_target_wallet_ivk() {
-        let cfg = small_cfg();
-        let layout = OwnedLayout::compute(&cfg);
-        let notes = generate_notes_for_test_wallets(&cfg);
-        let wallet_a = test_wallet_a();
-        let wallet_b = test_wallet_b();
-
-        // Wallet A's positions decrypt under A's IVK.
-        for &pos in &layout.positions_a {
-            let note = &notes[pos as usize];
-            let decrypted = try_decrypt(note, &wallet_a.prepared_ivk);
-            assert!(
-                decrypted.is_some(),
-                "wallet A should decrypt its own note at position {}",
-                pos
-            );
-            let (recovered_note, _addr) = decrypted.unwrap();
-            assert_eq!(recovered_note.value().inner(), cfg.owned_value);
-        }
-
-        // Wallet B's positions decrypt under B's IVK.
-        for &pos in &layout.positions_b {
-            let note = &notes[pos as usize];
-            let decrypted = try_decrypt(note, &wallet_b.prepared_ivk);
-            assert!(
-                decrypted.is_some(),
-                "wallet B should decrypt its own note at position {}",
-                pos
-            );
-            let (recovered_note, _addr) = decrypted.unwrap();
-            assert_eq!(recovered_note.value().inner(), cfg.owned_value);
-        }
-    }
-
-    /// Cross-wallet privacy: A's IVK does not decrypt B's notes, and vice versa.
-    /// This is the load-bearing test for §5.1's two-wallet rationale.
-    #[test]
-    fn cross_wallet_privacy_holds() {
-        let cfg = small_cfg();
-        let layout = OwnedLayout::compute(&cfg);
-        let notes = generate_notes_for_test_wallets(&cfg);
-        let wallet_a = test_wallet_a();
-        let wallet_b = test_wallet_b();
-
-        for &pos in &layout.positions_a {
-            let note = &notes[pos as usize];
-            assert!(
-                try_decrypt(note, &wallet_b.prepared_ivk).is_none(),
-                "wallet B must NOT decrypt wallet A's note at position {}",
-                pos
-            );
-        }
-
-        for &pos in &layout.positions_b {
-            let note = &notes[pos as usize];
-            assert!(
-                try_decrypt(note, &wallet_a.prepared_ivk).is_none(),
-                "wallet A must NOT decrypt wallet B's note at position {}",
-                pos
-            );
-        }
-    }
-
-    /// The load-bearing test for the deterministic-balance claim. A real
-    /// wallet does not know which positions are "owned" — it iterates the
-    /// whole pool, trial-decrypts every note with its IVK, and sums the
-    /// recovered `NoteValue`s. This test follows that exact pattern and
-    /// asserts each wallet sees `count_per_wallet × owned_value` total,
-    /// no false-positive decryptions, and no leakage across wallets.
-    ///
-    /// If this test ever fails, the seeded chain cannot meet the design
-    /// doc's §9 acceptance criterion "wallet shows the expected balance"
-    /// — i.e. the seeded notes cannot be safely shipped to consensus.
-    #[test]
-    fn each_wallet_sees_deterministic_aggregate_balance() {
-        let cfg = small_cfg();
-        let (count_a, count_b) = cfg.split_owned_count();
-        let layout = OwnedLayout::compute(&cfg);
-        let notes = generate_notes_for_test_wallets(&cfg);
-        let wallet_a = test_wallet_a();
-        let wallet_b = test_wallet_b();
-
-        // Wallet A: walk the entire pool, sum recovered NoteValues from
-        // successful trial-decryptions, count them, and cross-check each hit
-        // against the expected owned position table.
-        let mut a_balance: u64 = 0;
-        let mut a_decrypts: u32 = 0;
-        for (pos, note) in notes.iter().enumerate() {
-            if let Some((recovered, _addr)) = try_decrypt(note, &wallet_a.prepared_ivk) {
-                a_decrypts += 1;
-                a_balance += recovered.value().inner();
-                assert_eq!(
-                    layout.wallet_at(pos as u32),
-                    Some(0),
-                    "wallet A decrypted at position {} which is not in its owned set",
-                    pos
-                );
-            }
-        }
-        assert_eq!(a_decrypts, count_a, "wallet A decryption count mismatch");
-        assert_eq!(
-            a_balance,
-            u64::from(count_a) * cfg.owned_value,
-            "wallet A balance != count_a × owned_value"
-        );
-
-        // Wallet B: same scan.
-        let mut b_balance: u64 = 0;
-        let mut b_decrypts: u32 = 0;
-        for (pos, note) in notes.iter().enumerate() {
-            if let Some((recovered, _addr)) = try_decrypt(note, &wallet_b.prepared_ivk) {
-                b_decrypts += 1;
-                b_balance += recovered.value().inner();
-                assert_eq!(
-                    layout.wallet_at(pos as u32),
-                    Some(1),
-                    "wallet B decrypted at position {} which is not in its owned set",
-                    pos
-                );
-            }
-        }
-        assert_eq!(b_decrypts, count_b, "wallet B decryption count mismatch");
-        assert_eq!(
-            b_balance,
-            u64::from(count_b) * cfg.owned_value,
-            "wallet B balance != count_b × owned_value"
-        );
-
-        // No overlap: an owned slot belongs to exactly one wallet.
-        assert_eq!(
-            a_decrypts + b_decrypts,
-            cfg.owned_count,
-            "owned-count invariant: A + B decryptions must sum to cfg.owned_count"
-        );
-    }
-
-    /// Same as above, but exercises odd `owned_count` so A and B see different
-    /// per-wallet counts. Pins the (count + 1)/2 split rule end-to-end.
-    #[test]
-    fn deterministic_balance_with_odd_owned_count_splits_correctly() {
-        let cfg = ShieldedSeedConfig {
-            total_notes: 32,
-            owned_count: 7,
-            owned_value: 50_000,
+            total_notes: 100,
             rng_seed: 0xDEAD_BEEF,
         };
-        let (count_a, count_b) = cfg.split_owned_count();
-        assert_eq!((count_a, count_b), (4, 3));
+        let one_shot = generate_notes(&cfg);
 
-        let notes = generate_notes_for_test_wallets(&cfg);
-        let wallet_a = test_wallet_a();
-        let wallet_b = test_wallet_b();
-
-        let a_balance: u64 = notes
-            .iter()
-            .filter_map(|n| try_decrypt(n, &wallet_a.prepared_ivk))
-            .map(|(note, _)| note.value().inner())
-            .sum();
-        let b_balance: u64 = notes
-            .iter()
-            .filter_map(|n| try_decrypt(n, &wallet_b.prepared_ivk))
-            .map(|(note, _)| note.value().inner())
-            .sum();
-
-        assert_eq!(a_balance, u64::from(count_a) * cfg.owned_value); // 4 × 50_000 = 200_000
-        assert_eq!(b_balance, u64::from(count_b) * cfg.owned_value); // 3 × 50_000 = 150_000
-    }
-
-    /// Filler notes are not decryptable by either wallet. ρ is random 32 bytes
-    /// so `Nullifier::from_bytes` rejects roughly 50% of the time; the wallet
-    /// returns `None` either way (rejected ρ or rejected plaintext).
-    #[test]
-    fn filler_notes_do_not_decrypt() {
-        let cfg = small_cfg();
-        let layout = OwnedLayout::compute(&cfg);
-        let notes = generate_notes_for_test_wallets(&cfg);
-        let wallet_a = test_wallet_a();
-        let wallet_b = test_wallet_b();
-
-        for (pos, note) in notes.iter().enumerate() {
-            if layout.wallet_at(pos as u32).is_some() {
-                continue;
-            }
-            assert!(try_decrypt(note, &wallet_a.prepared_ivk).is_none());
-            assert!(try_decrypt(note, &wallet_b.prepared_ivk).is_none());
+        let mut rng = StdRng::seed_from_u64(cfg.rng_seed);
+        let mut batched: Vec<SeededNote> = Vec::with_capacity(100);
+        for _ in 0..10 {
+            batched.extend(generate_filler_batch(&mut rng, 10));
+        }
+        assert_eq!(one_shot.len(), batched.len());
+        for (i, (a, b)) in one_shot.iter().zip(batched.iter()).enumerate() {
+            assert_eq!(a.cmx, b.cmx, "cmx differs at {i}");
+            assert_eq!(a.rho, b.rho, "rho differs at {i}");
+            assert_eq!(a.encrypted_note, b.encrypted_note, "ct differs at {i}");
         }
     }
 
-    /// Local trial-decrypt mirror of the SDK's `try_decrypt_note`. Lives here
-    /// to avoid taking a dep on rs-sdk from rs-drive-abci.
-    fn try_decrypt(
-        note: &SeededNote,
-        ivk: &grovedb_commitment_tree::PreparedIncomingViewingKey,
-    ) -> Option<(Note, PaymentAddress)> {
-        let nf = Nullifier::from_bytes(&note.rho).into_option()?;
-        let cmx = ExtractedNoteCommitment::from_bytes(&note.cmx).into_option()?;
-        let epk_bytes: [u8; 32] = note.encrypted_note[0..32].try_into().ok()?;
-        let enc_compact: [u8; grovedb_commitment_tree::COMPACT_NOTE_SIZE] = note.encrypted_note
-            [32..32 + grovedb_commitment_tree::COMPACT_NOTE_SIZE]
-            .try_into()
-            .ok()?;
-        let compact = CompactAction::from_parts(nf, cmx, EphemeralKeyBytes(epk_bytes), enc_compact);
-        let domain = OrchardDomain::<DashMemo>::for_compact_action(&compact);
-        try_compact_note_decryption(&domain, ivk, &compact)
+    /// Sanity: 1k filler notes have unique cmx values with overwhelming
+    /// probability (Pallas base field is enormous, collisions are
+    /// cryptographically negligible). A regression where cmx is no longer
+    /// drawn freshly per call would surface as a duplicate here.
+    #[test]
+    fn generated_cmx_values_are_unique() {
+        let cfg = ShieldedSeedConfig {
+            total_notes: 1024,
+            rng_seed: 0xDEAD_BEEF,
+        };
+        let notes = generate_notes(&cfg);
+        let mut seen: HashSet<[u8; 32]> = HashSet::with_capacity(notes.len());
+        for n in &notes {
+            assert!(seen.insert(n.cmx), "duplicate cmx in generator output");
+        }
     }
 }
 
@@ -1030,12 +624,10 @@ mod platform_tests {
     use grovedb_commitment_tree::EMPTY_SINSEMILLA_ROOT;
 
     /// Reduced default for integration tests — smaller is faster and still
-    /// exercises every code path (filler, owned-A, owned-B, multi-chunk if N > 2048).
+    /// exercises the batched seed path on small N.
     fn integration_cfg() -> ShieldedSeedConfig {
         ShieldedSeedConfig {
             total_notes: 16,
-            owned_count: 4,
-            owned_value: 100_000,
             rng_seed: 0xDEAD_BEEF,
         }
     }
@@ -1171,7 +763,6 @@ mod platform_tests {
         let platform_version = PlatformVersion::latest();
         let cfg = ShieldedSeedConfig {
             total_notes: 0,
-            owned_count: 0,
             ..ShieldedSeedConfig::default()
         };
         let anchor = build_and_seed(&cfg, platform_version);
@@ -1210,8 +801,6 @@ mod platform_tests {
 
         let cfg = ShieldedSeedConfig {
             total_notes: n,
-            owned_count: 8,
-            owned_value: 100_000,
             rng_seed: 0xDEAD_BEEF,
         };
 
@@ -1294,8 +883,6 @@ mod platform_tests {
         // N ≥ 2^chunk_power).
         let cfg = ShieldedSeedConfig {
             total_notes: 4096, // > one chunk at chunk_power=11 → exercises e/m keys
-            owned_count: 4,
-            owned_value: 100_000,
             rng_seed: 0xDEAD_BEEF,
         };
         let tx = temp.drive.grove.start_transaction();

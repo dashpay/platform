@@ -8,7 +8,6 @@ use drive::grovedb::TransactionArg;
 
 mod addresses;
 mod shielded;
-mod shielded_test_wallets;
 mod tokens;
 
 impl<C> Platform<C> {
