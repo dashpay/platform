@@ -294,10 +294,8 @@ export default function getBaseConfigFactory() {
                 context: path.join(PACKAGE_ROOT_DIR, '..', '..'),
                 dockerFile: path.join(PACKAGE_ROOT_DIR, '..', '..', 'Dockerfile'),
                 target: 'drive-abci',
-                // Extra docker build args (see `dockerBuild` schema). Common
-                // override: `CARGO_BUILD_PROFILE: "release"` for SDK_TEST_DATA
-                // shielded seeding at N > a few thousand
-                // (`docs/shielded-seeder-performance.md`).
+                // Extra Docker build args — see the `buildArgs` field on
+                // `dockerBuild` in the config schema.
                 buildArgs: {},
               },
             },

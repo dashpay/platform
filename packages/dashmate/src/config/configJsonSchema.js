@@ -32,20 +32,11 @@ export default {
         target: {
           type: ['string', 'null'],
         },
-        // Extra build args forwarded to `docker compose build` for this image.
-        // Each key becomes an env var with the same name, picked up by the
-        // `${KEY:-default}` substitutions in `docker-compose.build.*.yml`
-        // which mirror them into the Dockerfile `ARG`s. Shell env overrides
-        // any value set here (so `CARGO_BUILD_PROFILE=release yarn start`
-        // wins per-invocation).
-        //
-        // Common keys (when meaningful for the image's target):
-        // - CARGO_BUILD_PROFILE: "dev" | "release" — Rust profile for
-        //   drive-abci / rs-dapi. Release is required for SDK_TEST_DATA
-        //   shielded seeding at N > a few thousand; see
-        //   `docs/shielded-seeder-performance.md`.
-        // - SDK_TEST_DATA: "true" — enable the SDK test-data cfg flag in
-        //   the binary at compile time.
+        // Extra build args forwarded to `docker compose build` for this
+        // image. Each key/value pair becomes a `build.args` entry rendered
+        // into the per-config `dynamic-compose.yml` and picked up by
+        // compose at build time. Open-ended — image-specific keys live
+        // here (`CARGO_BUILD_PROFILE`, `SDK_TEST_DATA`, …).
         buildArgs: {
           type: 'object',
           additionalProperties: { type: 'string' },

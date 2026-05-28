@@ -1433,6 +1433,17 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
                 .get('platform.drive.tenderdash.docker.image');
             }
 
+            // Backfill the new `buildArgs: {}` field on each build block —
+            // forwarded into `dynamic-compose.yml` as `build.args` entries.
+            if (options.platform?.drive?.abci?.docker?.build
+              && typeof options.platform.drive.abci.docker.build.buildArgs === 'undefined') {
+              options.platform.drive.abci.docker.build.buildArgs = {};
+            }
+            if (options.platform?.dapi?.rsDapi?.docker?.build
+              && typeof options.platform.dapi.rsDapi.docker.build.buildArgs === 'undefined') {
+              options.platform.dapi.rsDapi.docker.build.buildArgs = {};
+            }
+
             if (options.platform?.drive?.tenderdash?.p2p
               && typeof options.platform.drive.tenderdash.p2p.allowlistOnly === 'undefined') {
               options.platform.drive.tenderdash.p2p.allowlistOnly = defaultConfig

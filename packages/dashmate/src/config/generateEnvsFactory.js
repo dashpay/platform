@@ -103,32 +103,6 @@ export default function generateEnvsFactory(configFile, homeDir, getConfigProfil
       ...convertObjectToEnvs(config.getOptions()),
     };
 
-    // Forward extra docker `build.args` declared per-image in dashmate config
-    // (`platform.drive.abci.docker.build.buildArgs`,
-    // `platform.dapi.rsDapi.docker.build.buildArgs`) as env vars under the
-    // arg name. `docker-compose.build.*.yml` reads them via `${NAME}`
-    // substitution and forwards them into the Dockerfile `ARG`.
-    //
-    // Dashmate config is the single source of truth for build args — do NOT
-    // fall back to `process.env[key]`. Operators who need a per-invocation
-    // override should `yarn dashmate config set ...` rather than `FOO=bar
-    // yarn start`. Keeping this single-source matches the `yarn setup` flow
-    // that writes SDK_TEST_DATA into the local config automatically.
-    //
-    // drive-abci and rs-dapi share the workspace so a shared key like
-    // CARGO_BUILD_PROFILE typically wants the same value in both; the merge
-    // order below means drive-abci's value wins on collision.
-    const getBuildArgs = (configPath) => (
-      config.has(configPath) ? (config.get(configPath) || {}) : {}
-    );
-    const mergedBuildArgs = {
-      ...getBuildArgs('platform.dapi.rsDapi.docker.build.buildArgs'),
-      ...getBuildArgs('platform.drive.abci.docker.build.buildArgs'),
-    };
-    for (const [key, value] of Object.entries(mergedBuildArgs)) {
-      envs[key] = value;
-    }
-
     const configuredAccessLogPath = config.get('platform.dapi.rsDapi.logs.accessLogPath');
     const hasConfiguredPath = typeof configuredAccessLogPath === 'string'
       && configuredAccessLogPath.trim() !== '';
