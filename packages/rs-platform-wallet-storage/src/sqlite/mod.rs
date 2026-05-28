@@ -11,6 +11,8 @@ pub mod buffer;
 pub mod config;
 pub(crate) mod conn;
 pub mod error;
+#[cfg(feature = "kv")]
+pub mod kv;
 pub mod migrations;
 pub mod persister;
 pub mod schema;

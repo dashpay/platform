@@ -124,9 +124,13 @@ tracing-test = { version = "0.2", features = ["no-env-filter"] }
 serial_test = "3"
 # `default-features = false` so the off-state CI invocation
 # (`--no-default-features --features sqlite,cli`) actually exercises a
-# build with `secrets` disabled — otherwise the dev-dep view would
+# build with `secrets`/`kv` disabled — otherwise the dev-dep view would
 # silently re-enable the default feature set for every integration test.
-platform-wallet-storage = { path = ".", default-features = false, features = ["__test-helpers"] }
+# Test surface is opted into explicitly: `secrets` and `kv` are listed
+# so the plain `cargo test -p platform-wallet-storage` invocation runs
+# both feature paths (the `kv`-gated `sqlite_kv_store.rs` integration
+# test and the `secrets`-gated unit tests).
+platform-wallet-storage = { path = ".", default-features = false, features = ["sqlite", "cli", "secrets", "kv", "__test-helpers"] }
 tempfile = "3"
 # `sqlite_hardening_3625.rs`, `sqlite_persist_roundtrip.rs`, and
 # `sqlite_load_reconstruction.rs` import `dash_sdk::platform::address_sync::AddressFunds`.
@@ -141,7 +145,7 @@ dash-sdk = { path = "../rs-sdk", default-features = false, features = [
 ] }
 
 [features]
-default = ["sqlite", "cli", "secrets"]
+default = ["sqlite", "cli", "secrets", "kv"]
 # SQLite-backed persister (`platform_wallet_storage::sqlite`).
 sqlite = [
     "dep:platform-wallet",
@@ -189,6 +193,13 @@ secrets = [
     "dep:apple-native-keyring-store",
     "dep:windows-native-keyring-store",
 ]
+# Generic key/value store API (`platform_wallet_storage::KvStore`,
+# `KvError`) plus the SQLite-backed impl. Requires `sqlite` because
+# the only shipped backend is on `SqlitePersister`. The underlying
+# `kv_store` table is always created by V001 so DB files stay
+# interoperable across feature combos; this gate only controls the
+# Rust API surface.
+kv = ["sqlite"]
 # Exposes `lock_conn_for_test` / `config_for_test` accessors on
 # `SqlitePersister` so this crate's own integration tests can probe
 # the write connection. The double-underscore prefix follows Cargo's

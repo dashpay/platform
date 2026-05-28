@@ -26,19 +26,43 @@
 //! Foreign-key enforcement is per-connection and is switched on (and
 //! read back) at every connection open via `open_conn`
 //! (`src/sqlite/conn.rs`).
+//!
+//! Enum-shaped TEXT columns (`network`, `account_type`, `pool_type`,
+//! `status`) carry a `CHECK (col IN (...))` clause whose IN-list is
+//! built from the `*_LABELS` const arrays in
+//! `crate::sqlite::schema::{wallet_meta, accounts, asset_locks}`. The
+//! consts are the single source of truth shared with the writer
+//! mapping functions; the per-module `*_labels_match_enum` unit tests
+//! enforce set-equality between each const and its writer's codomain.
 
-/// The whole schema as one statement batch. refinery runs the returned
-/// string verbatim.
-const SCHEMA_SQL: &str = "\
+fn build_check_in(labels: &[&str]) -> String {
+    let quoted = labels
+        .iter()
+        .map(|l| format!("'{}'", l))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("({})", quoted)
+}
+
+pub fn migration() -> String {
+    let network_check = build_check_in(crate::sqlite::schema::wallet_meta::NETWORK_LABELS);
+    let account_type_check =
+        build_check_in(crate::sqlite::schema::accounts::ACCOUNT_TYPE_LABELS);
+    let pool_type_check = build_check_in(crate::sqlite::schema::accounts::POOL_TYPE_LABELS);
+    let asset_lock_status_check =
+        build_check_in(crate::sqlite::schema::asset_locks::ASSET_LOCK_STATUS_LABELS);
+
+    format!(
+        "\
 CREATE TABLE wallet_metadata (
     wallet_id BLOB NOT NULL PRIMARY KEY,
-    network TEXT NOT NULL,
+    network TEXT NOT NULL CHECK (network IN {network_check}),
     birth_height INTEGER NOT NULL
 );
 
 CREATE TABLE account_registrations (
     wallet_id BLOB NOT NULL,
-    account_type TEXT NOT NULL,
+    account_type TEXT NOT NULL CHECK (account_type IN {account_type_check}),
     account_index INTEGER NOT NULL,
     account_xpub_bytes BLOB NOT NULL,
     PRIMARY KEY (wallet_id, account_type, account_index),
@@ -47,9 +71,9 @@ CREATE TABLE account_registrations (
 
 CREATE TABLE account_address_pools (
     wallet_id BLOB NOT NULL,
-    account_type TEXT NOT NULL,
+    account_type TEXT NOT NULL CHECK (account_type IN {account_type_check}),
     account_index INTEGER NOT NULL,
-    pool_type TEXT NOT NULL,
+    pool_type TEXT NOT NULL CHECK (pool_type IN {pool_type_check}),
     snapshot_blob BLOB NOT NULL,
     PRIMARY KEY (wallet_id, account_type, account_index, pool_type),
     FOREIGN KEY (wallet_id) REFERENCES wallet_metadata(wallet_id) ON DELETE CASCADE
@@ -108,7 +132,7 @@ CREATE TABLE core_instant_locks (
 
 CREATE TABLE core_derived_addresses (
     wallet_id BLOB NOT NULL,
-    account_type TEXT NOT NULL,
+    account_type TEXT NOT NULL CHECK (account_type IN {account_type_check}),
     account_index INTEGER NOT NULL,
     address TEXT NOT NULL,
     derivation_path TEXT NOT NULL,
@@ -198,7 +222,7 @@ CREATE TABLE platform_address_sync (
 CREATE TABLE asset_locks (
     wallet_id BLOB NOT NULL,
     outpoint BLOB NOT NULL,
-    status TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN {asset_lock_status_check}),
     account_index INTEGER NOT NULL,
     identity_index INTEGER NOT NULL,
     amount_duffs INTEGER NOT NULL,
@@ -229,8 +253,27 @@ CREATE TABLE dashpay_payments_overlay (
     PRIMARY KEY (identity_id, payment_id),
     FOREIGN KEY (identity_id) REFERENCES identities(identity_id) ON DELETE CASCADE
 );
-";
 
-pub fn migration() -> String {
-    SCHEMA_SQL.to_string()
+-- Generic key/value store for app-managed data (config,
+-- platform-specific data, anything the host wants to stash alongside
+-- wallet state). See `src/kv.rs` and `SCHEMA.md` for the public API
+-- and the partial-index design.
+--
+-- `wallet_id IS NULL` => global slot (survives wallet deletion).
+-- `wallet_id IS NOT NULL` => per-wallet, cascades on parent delete.
+-- The two partial UNIQUE indexes below partition the rows so each half
+-- gets uniqueness without tripping SQLite's 'each NULL is distinct in
+-- UNIQUE' rule.
+CREATE TABLE kv_store (
+    wallet_id  BLOB,
+    key        TEXT NOT NULL CHECK (length(key) BETWEEN 1 AND 128),
+    value      BLOB NOT NULL,
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    FOREIGN KEY (wallet_id) REFERENCES wallet_metadata(wallet_id) ON DELETE CASCADE
+);
+
+CREATE UNIQUE INDEX idx_kv_store_global ON kv_store(key) WHERE wallet_id IS NULL;
+CREATE UNIQUE INDEX idx_kv_store_wallet ON kv_store(wallet_id, key) WHERE wallet_id IS NOT NULL;
+"
+    )
 }

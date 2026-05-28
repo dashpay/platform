@@ -61,6 +61,27 @@ pub fn apply(
     Ok(())
 }
 
+/// Single source of truth for the `asset_locks.status` TEXT-column
+/// domain.
+///
+/// Mirrors every variant of
+/// [`platform_wallet::wallet::asset_lock::tracked::AssetLockStatus`]
+/// (writer side: [`status_str`]). The migration in
+/// `migrations/V001__initial.rs` interpolates this array into the
+/// `CHECK (status IN (...))` clause so an unknown label is rejected at
+/// insert time rather than landing as silent garbage. The
+/// `asset_lock_status_labels_match_enum` unit test below enforces
+/// set-equality between this array and the writer's output — drift (a
+/// renamed/added variant) becomes a failing test, not a runtime
+/// divergence between Rust and SQLite.
+pub(crate) const ASSET_LOCK_STATUS_LABELS: &[&str] = &[
+    "built",
+    "broadcast",
+    "is_locked",
+    "chain_locked",
+    "consumed",
+];
+
 fn status_str(s: &AssetLockStatus) -> &'static str {
     match s {
         AssetLockStatus::Built => "built",
@@ -150,4 +171,48 @@ pub fn load_state(
         out.entry(acct).or_default().insert(outpoint, tracked);
     }
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    /// Exhaustive sample of every [`AssetLockStatus`] variant. The
+    /// trailing match arm in the loop fails to compile if upstream
+    /// adds a variant — forcing the developer to extend the list,
+    /// `status_str`, and [`ASSET_LOCK_STATUS_LABELS`] together.
+    fn all_asset_lock_status_variants() -> Vec<AssetLockStatus> {
+        let variants = vec![
+            AssetLockStatus::Built,
+            AssetLockStatus::Broadcast,
+            AssetLockStatus::InstantSendLocked,
+            AssetLockStatus::ChainLocked,
+            AssetLockStatus::Consumed,
+        ];
+        for v in &variants {
+            match v {
+                AssetLockStatus::Built
+                | AssetLockStatus::Broadcast
+                | AssetLockStatus::InstantSendLocked
+                | AssetLockStatus::ChainLocked
+                | AssetLockStatus::Consumed => {}
+            }
+        }
+        variants
+    }
+
+    #[test]
+    fn asset_lock_status_labels_match_enum() {
+        let from_writer: HashSet<&'static str> = all_asset_lock_status_variants()
+            .iter()
+            .map(status_str)
+            .collect();
+        let from_const: HashSet<&'static str> = ASSET_LOCK_STATUS_LABELS.iter().copied().collect();
+        assert_eq!(
+            from_writer, from_const,
+            "ASSET_LOCK_STATUS_LABELS ({:?}) drifted from status_str codomain ({:?})",
+            from_const, from_writer
+        );
+    }
 }
