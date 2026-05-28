@@ -89,5 +89,5 @@ opt-level = 3
 
 [workspace.package]
 
-version = "3.1.0-dev.7"
+version = "3.1.0-dev.8"
 rust-version = "1.92"

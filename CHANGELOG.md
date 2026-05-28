@@ -1,3 +1,30 @@
+## [3.1.0-dev.8](https://github.com/dashpay/platform/compare/v3.1.0-dev.7...v3.1.0-dev.8) (2026-05-28)
+
+
+### Features
+
+* enable DashPay iOS flow + key health tooling ([#3765](https://github.com/dashpay/platform/issues/3765))
+* **sdk:** expose document count/sum/average aggregates in js-evo-sdk facade ([#3767](https://github.com/dashpay/platform/issues/3767))
+* shielded funding from asset-lock proofs ([#3753](https://github.com/dashpay/platform/issues/3753))
+* **swift-example-app:** enable SPV on devnet ([#3763](https://github.com/dashpay/platform/issues/3763))
+* **swift-sdk,rs-sdk-ffi:** wire devnet SDK config + auto-discover masternodes ([#3755](https://github.com/dashpay/platform/issues/3755))
+
+
+### Bug Fixes
+
+* **platform-wallet:** auto_select_inputs honors Σ inputs == Σ outputs ([#3554](https://github.com/dashpay/platform/issues/3554))
+
+
+### Miscellaneous Chores
+
+* bump rust-dashcore to eb889af ([#3762](https://github.com/dashpay/platform/issues/3762))
+
+
+### Tests
+
+* **dpp,drive-abci:** cover transfer-key signing rules for token transfers ([#3766](https://github.com/dashpay/platform/issues/3766))
+* **rs-sdk:** relocate DPNS network tests from src/ to tests/ ([#3721](https://github.com/dashpay/platform/issues/3721))
+
 ## [3.1.0-dev.7](https://github.com/dashpay/platform/compare/v3.1.0-dev.6...v3.1.0-dev.7) (2026-05-27)
 
 
