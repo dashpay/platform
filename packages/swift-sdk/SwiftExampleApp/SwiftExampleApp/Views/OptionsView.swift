@@ -311,6 +311,15 @@ struct OptionsView: View {
                                             network: .devnet, sdk: sdk
                                         )
                                     }
+                                    // Drive `rebindWalletScopedServices`
+                                    // via the App scene's observer.
+                                    // Neither `currentNetwork` nor the
+                                    // wallet ID set changes here, so
+                                    // PlatformBalanceSyncService and
+                                    // ShieldedService would otherwise
+                                    // keep referencing the now-stale
+                                    // manager.
+                                    appState.walletScopedServicesRebindTick &+= 1
                                 }
                             }
                         }
