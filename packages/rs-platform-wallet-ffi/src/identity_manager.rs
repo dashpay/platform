@@ -102,17 +102,10 @@ pub unsafe extern "C" fn identity_manager_get_all_identity_ids(
     manager_handle: Handle,
     out_array: *mut IdentifierArray,
 ) -> PlatformWalletFFIResult {
-    use dpp::identity::accessors::IdentityGettersV0;
-
     check_ptr!(out_array);
 
-    let option = IDENTITY_MANAGER_STORAGE.with_item(manager_handle, |manager| {
-        manager
-            .all_identities()
-            .into_iter()
-            .map(|i| i.id())
-            .collect::<Vec<_>>()
-    });
+    let option =
+        IDENTITY_MANAGER_STORAGE.with_item(manager_handle, |manager| manager.identity_ids());
     let ids = unwrap_option_or_return!(option);
     unsafe { *out_array = IdentifierArray::new(ids) };
     PlatformWalletFFIResult::ok()

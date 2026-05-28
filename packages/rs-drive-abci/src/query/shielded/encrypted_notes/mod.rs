@@ -92,8 +92,8 @@ mod tests {
     fn test_query_shielded_encrypted_notes_non_aligned_start_index_rejected() {
         let (platform, state, version) = setup_platform(None, Network::Testnet, None);
 
-        // chunk size is `max_encrypted_notes_per_query` (2048 in v1). Anything
-        // that isn't a multiple of that should be rejected as unaligned.
+        // Alignment is to the MMR chunk size (`1 << SHIELDED_NOTES_CHUNK_POWER`
+        // = 2048). Anything that isn't a multiple of that is rejected.
         let request = GetShieldedEncryptedNotesRequest {
             version: Some(RequestVersion::V0(GetShieldedEncryptedNotesRequestV0 {
                 start_index: 1,
@@ -151,9 +151,10 @@ mod tests {
 
     #[test]
     fn test_query_shielded_encrypted_notes_count_zero_uses_max() {
-        // When count == 0, the limit falls back to `max_encrypted_notes_per_query`.
-        // This exercises the "count == 0 || count > max" branch of the limit
-        // derivation without needing notes to be stored.
+        // When count == 0, the limit falls back to the per-query max
+        // (`max_query_chunks × MMR_CHUNK_SIZE`). This exercises the
+        // "count == 0 || count > max" branch of the limit derivation
+        // without needing notes to be stored.
         let (platform, state, version) = setup_platform(None, Network::Testnet, None);
 
         let request = GetShieldedEncryptedNotesRequest {
@@ -188,11 +189,8 @@ mod tests {
     #[test]
     fn test_query_shielded_encrypted_notes_count_exceeds_max_clamped() {
         let (platform, state, version) = setup_platform(None, Network::Testnet, None);
-        let max = version
-            .drive_abci
-            .query
-            .shielded_queries
-            .max_encrypted_notes_per_query as u32;
+        let max = version.drive_abci.query.shielded_queries.max_query_chunks as u32
+            * (1u32 << drive::drive::shielded::paths::SHIELDED_NOTES_CHUNK_POWER);
 
         let request = GetShieldedEncryptedNotesRequest {
             version: Some(RequestVersion::V0(GetShieldedEncryptedNotesRequestV0 {

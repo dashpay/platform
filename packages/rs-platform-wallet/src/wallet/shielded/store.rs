@@ -34,6 +34,7 @@ use crate::wallet::platform_wallet::WalletId;
 /// sync watermarks inside a [`ShieldedStore`] so a single store
 /// can hold state for many wallets/accounts without leakage.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SubwalletId {
     /// 32-byte wallet identifier (matches `PlatformWallet::wallet_id`).
     pub wallet_id: [u8; 32],
@@ -58,6 +59,7 @@ impl SubwalletId {
 /// `orchard::Note` is in `note_data` as 115 bytes
 /// (`recipient(43) || value(8 LE) || rho(32) || rseed(32)`).
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ShieldedNote {
     /// Global position in the commitment tree.
     pub position: u64,

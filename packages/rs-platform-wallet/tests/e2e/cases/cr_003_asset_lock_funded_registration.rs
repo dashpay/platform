@@ -18,7 +18,7 @@
 //! 1. `setup_with_core_funded_test_wallet` lands `TEST_WALLET_CORE_FUNDING`
 //!    duffs on the test wallet's BIP-44 account 0 (visible to SPV).
 //! 2. `IdentityWallet::register_identity_with_funding`
-//!    with `IdentityFunding::FromWalletBalance { amount_duffs = ASSET_LOCK_AMOUNT, account_index = 0 }`
+//!    with `AssetLockFunding::FromWalletBalance { amount_duffs = ASSET_LOCK_AMOUNT, account_index = 0 }`
 //!    drives the unified asset-lock flow — internally calls
 //!    `AssetLockManager::create_funded_asset_lock_proof` (build →
 //!    broadcast → wait IS / fall back to ChainLock) and submits the
@@ -37,7 +37,7 @@ use dpp::balances::credits::CREDITS_PER_DUFF;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::{KeyID, Purpose, SecurityLevel};
 use dpp::prelude::Identity;
-use platform_wallet::wallet::identity::types::funding::IdentityFunding;
+use platform_wallet::AssetLockFunding;
 
 use crate::framework::prelude::*;
 use crate::framework::signer::{
@@ -159,7 +159,7 @@ async fn cr_003_asset_lock_funded_registration() {
         .platform_wallet()
         .identity()
         .register_identity_with_funding(
-            IdentityFunding::FromWalletBalance {
+            AssetLockFunding::FromWalletBalance {
                 amount_duffs: ASSET_LOCK_AMOUNT,
                 account_index: 0,
             },

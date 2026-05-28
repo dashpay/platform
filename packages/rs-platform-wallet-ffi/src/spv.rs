@@ -3,6 +3,7 @@
 use std::ffi::CStr;
 use std::os::raw::c_char;
 
+use dashcore::sml::llmq_type::LlmqDevnetParams;
 use platform_wallet::spv::{ClientConfig, ProgressPercentage, SyncProgress, SyncState};
 
 use crate::error::*;
@@ -197,6 +198,17 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_tip_unix_seconds(
 /// Hardcoded to `true` here; if a future caller has a real reason to
 /// run SPV without masternode sync, it can construct the wallet
 /// manager without the asset-lock path instead.
+///
+/// Devnet support:
+/// - `devnet_name` must be set (non-null) when `network == Devnet` and
+///   must be null on every other network. When set, the SPV user agent
+///   is rewritten to embed the `devnet.devnet-<name>` substring Dash
+///   Core peers gate inbound devnet handshakes on (matches the format
+///   the `dash-spv` binary uses).
+/// - `llmq_devnet_size` / `llmq_devnet_threshold` mirror Dash Core's
+///   `-llmqdevnetparams=<size>:<threshold>`. Both zero means "no
+///   override". Setting one without the other, or setting them on a
+///   non-devnet network, is rejected.
 #[no_mangle]
 #[allow(clippy::field_reassign_with_default)]
 pub unsafe extern "C" fn platform_wallet_manager_spv_start(
@@ -208,16 +220,62 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_start(
     peer_count: usize,
     restrict_to_configured_peers: bool,
     start_from_height: u32,
+    devnet_name: *const c_char,
+    llmq_devnet_size: u32,
+    llmq_devnet_threshold: u32,
 ) -> PlatformWalletFFIResult {
     check_ptr!(data_dir);
     let data_dir_str = unwrap_result_or_return!(CStr::from_ptr(data_dir).to_str()).to_string();
-    let user_agent_str = if user_agent.is_null() {
+    let mut user_agent_str = if user_agent.is_null() {
         None
     } else {
         Some(unwrap_result_or_return!(CStr::from_ptr(user_agent).to_str()).to_string())
     };
 
     let net: crate::types::Network = network.into();
+
+    let devnet_name_str = if devnet_name.is_null() {
+        None
+    } else {
+        Some(unwrap_result_or_return!(CStr::from_ptr(devnet_name).to_str()).to_string())
+    };
+
+    if net == crate::types::Network::Devnet && devnet_name_str.is_none() {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            "devnet_name is required when network=Devnet",
+        );
+    }
+    if net != crate::types::Network::Devnet && devnet_name_str.is_some() {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            "devnet_name is only valid on devnet",
+        );
+    }
+    if (llmq_devnet_size > 0) ^ (llmq_devnet_threshold > 0) {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            "llmq_devnet_size and llmq_devnet_threshold must both be set or both zero",
+        );
+    }
+    if llmq_devnet_size > 0 && net != crate::types::Network::Devnet {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            "llmq_devnet_params is only valid on devnet",
+        );
+    }
+
+    // Dash Core devnet peers disconnect any inbound connection whose
+    // user agent doesn't contain `devnet.devnet-<name>`. Rebuild the
+    // user agent to embed the substring while keeping whatever base
+    // the caller (or our default) provided. Mirrors the dash-spv
+    // binary's `/rust-dash-spv:VERSION(devnet.devnet-NAME)/` format.
+    if let Some(name) = devnet_name_str.as_deref() {
+        let base = user_agent_str
+            .clone()
+            .unwrap_or_else(|| format!("platform-wallet-ffi:{}", env!("CARGO_PKG_VERSION")));
+        user_agent_str = Some(format!("/{base}(devnet.devnet-{name})/"));
+    }
 
     let mut peer_list: Vec<String> = Vec::new();
     if !peers.is_null() && peer_count > 0 {
@@ -255,6 +313,12 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_start(
             if let Ok(addr) = p.parse() {
                 config.peers.push(addr);
             }
+        }
+        if llmq_devnet_size > 0 {
+            config.llmq_devnet_params = Some(LlmqDevnetParams {
+                size: llmq_devnet_size,
+                threshold: llmq_devnet_threshold,
+            });
         }
 
         let _guard = runtime().enter();

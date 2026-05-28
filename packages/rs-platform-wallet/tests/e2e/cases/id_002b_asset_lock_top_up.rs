@@ -21,7 +21,7 @@
 //!    (ID-001 helper) — cheaper than the asset-lock registration
 //!    path for this test's needs.
 //! 3. `IdentityWallet::top_up_identity_with_funding` with
-//!    `IdentityFunding::FromWalletBalance { amount_duffs: TOP_UP_ASSET_LOCK_AMOUNT, account_index: 0 }`
+//!    `AssetLockFunding::FromWalletBalance { amount_duffs: TOP_UP_ASSET_LOCK_AMOUNT, account_index: 0 }`
 //!    drives the unified asset-lock flow internally —
 //!    `AssetLockManager::create_funded_asset_lock_proof` (build →
 //!    broadcast → wait IS / fall back to ChainLock) and submits an
@@ -38,7 +38,7 @@ use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::Identity;
 use key_wallet::AccountType;
 use platform_wallet::wallet::asset_lock::tracked::AssetLockStatus;
-use platform_wallet::wallet::identity::types::funding::IdentityFunding;
+use platform_wallet::AssetLockFunding;
 use platform_wallet::PlatformWalletError;
 
 use crate::framework::prelude::*;
@@ -178,7 +178,7 @@ async fn id_002b_asset_lock_funded_top_up() {
         .identity()
         .top_up_identity_with_funding(
             &identity_id,
-            IdentityFunding::FromWalletBalance {
+            AssetLockFunding::FromWalletBalance {
                 amount_duffs: TOP_UP_ASSET_LOCK_AMOUNT,
                 account_index: 0,
             },

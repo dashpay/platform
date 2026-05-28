@@ -3666,4 +3666,223 @@ mod token_burn_tests {
             .expect("expected to fetch total supply");
         assert_eq!(total_supply, Some(103000));
     }
+
+    /// Pins the confirmer-step processing fee for a token group burn.
+    ///
+    /// The confirmer (action_is_proposer=false) triggers three drive reads
+    /// inside `try_from_borrowed_base_transition_with_contract_lookup`:
+    /// `fetch_action_is_closed`,
+    /// `fetch_action_id_signers_power_and_add_operations`,
+    /// `fetch_active_action_info_and_add_operations`. Their cost is
+    /// accumulated into a `FeeResult` and added to the
+    /// `execution_context`.
+    ///
+    /// Under `transform_into_action: 1` (PROTOCOL_VERSION_12+) the outer
+    /// `execution_context` is threaded through the transformer, so this
+    /// fee_result reaches the user's bill. Under v0 (PROTOCOL_VERSION_11
+    /// and below) the fee_result lands in a dropped local ctx — verified
+    /// empirically by toggling the version field and re-running this test
+    /// (see commit message of the version bump for the recorded delta).
+    #[tokio::test]
+    async fn test_token_burn_group_action_confirmer_fee_includes_transformer_reads() {
+        run_token_burn_group_action_confirmer_fee_includes_transformer_reads_at_protocol_version(
+            PlatformVersion::latest().protocol_version,
+            4_319_240,
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_11: pre-B7 fee — the transformer's local execution
+    /// context was dropped, so the three group-action drive reads
+    /// (fetch_action_is_closed +
+    /// fetch_action_id_signers_power_and_add_operations +
+    /// fetch_active_action_info_and_add_operations) cost 30_820 credits
+    /// that were not billed. Pinned so v11 chain history stays bit-for-bit
+    /// reproducible.
+    #[tokio::test]
+    async fn test_token_burn_group_action_confirmer_fee_includes_transformer_reads_protocol_version_11(
+    ) {
+        run_token_burn_group_action_confirmer_fee_includes_transformer_reads_at_protocol_version(
+            11, 4_288_420,
+        )
+        .await;
+    }
+
+    async fn run_token_burn_group_action_confirmer_fee_includes_transformer_reads_at_protocol_version(
+        protocol_version: dpp::version::ProtocolVersion,
+        expected_processing_fee: dpp::fee::Credits,
+    ) {
+        let platform_version = PlatformVersion::get(protocol_version)
+            .expect("expected platform version for the requested protocol_version");
+        let mut platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(protocol_version)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let mut rng = StdRng::seed_from_u64(49853);
+        let platform_state = platform.state.load();
+
+        let (identity1, signer1, key1) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+        let (identity2, signer2, key2) =
+            setup_identity(&mut platform, rng.gen(), dash_to_credits!(0.5));
+
+        let (contract, token_id) = create_token_contract_with_owner_identity(
+            &mut platform,
+            identity1.id(),
+            Some(|token_configuration: &mut TokenConfiguration| {
+                token_configuration.set_manual_burning_rules(ChangeControlRules::V0(
+                    ChangeControlRulesV0 {
+                        authorized_to_make_change: AuthorizedActionTakers::Group(0),
+                        admin_action_takers: AuthorizedActionTakers::NoOne,
+                        changing_authorized_action_takers_to_no_one_allowed: false,
+                        changing_admin_action_takers_to_no_one_allowed: false,
+                        self_changing_admin_action_takers_allowed: false,
+                    },
+                ));
+            }),
+            None,
+            Some(
+                [(
+                    0,
+                    Group::V0(GroupV0 {
+                        members: [(identity1.id(), 1), (identity2.id(), 1)].into(),
+                        required_power: 2,
+                    }),
+                )]
+                .into(),
+            ),
+            None,
+            platform_version,
+        );
+
+        add_tokens_to_identity(&platform, token_id, identity1.id(), 100000);
+
+        // Step 1: identity1 proposes the burn — action_is_proposer=true, so
+        // `try_from_borrowed_base_transition_with_contract_lookup` skips the
+        // group-action drive reads (the only path that adds non-empty
+        // fee_results inside the transformer).
+        let propose_transition = BatchTransition::new_token_burn_transition(
+            token_id,
+            identity1.id(),
+            contract.id(),
+            0,
+            100000,
+            None,
+            Some(GroupStateTransitionInfoStatus::GroupStateTransitionInfoProposer(0)),
+            &key1,
+            2,
+            0,
+            &signer1,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expected to create proposer burn transition");
+
+        let propose_serialized = propose_transition
+            .serialize_to_bytes()
+            .expect("expected to serialize proposer burn");
+
+        let transaction = platform.drive.grove.start_transaction();
+        let proposer_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[propose_serialized],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process proposer burn");
+        assert_eq!(proposer_result.valid_count(), 1);
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit proposer burn");
+
+        // Step 2: identity2 confirms the burn — action_is_proposer=false.
+        // The confirmer's `try_from_borrowed_base_transition_with_contract_lookup`
+        // does the three group-action drive reads whose cost we now bill.
+        let action_id = TokenBurnTransition::calculate_action_id_with_fields(
+            token_id.as_bytes(),
+            identity1.id().as_bytes(),
+            2,
+            100000,
+        );
+
+        let confirm_transition = BatchTransition::new_token_burn_transition(
+            token_id,
+            identity2.id(),
+            contract.id(),
+            0,
+            100000,
+            None,
+            Some(
+                GroupStateTransitionInfoStatus::GroupStateTransitionInfoOtherSigner(
+                    GroupStateTransitionInfo {
+                        group_contract_position: 0,
+                        action_id,
+                        action_is_proposer: false,
+                    },
+                ),
+            ),
+            &key2,
+            2,
+            0,
+            &signer2,
+            platform_version,
+            None,
+        )
+        .await
+        .expect("expected to create confirmer burn transition");
+
+        let confirm_serialized = confirm_transition
+            .serialize_to_bytes()
+            .expect("expected to serialize confirmer burn");
+
+        let transaction = platform.drive.grove.start_transaction();
+        let confirmer_result = platform
+            .platform
+            .process_raw_state_transitions(
+                &[confirm_serialized],
+                &platform_state,
+                &BlockInfo::default(),
+                &transaction,
+                platform_version,
+                false,
+                None,
+            )
+            .expect("expected to process confirmer burn");
+        assert_eq!(confirmer_result.valid_count(), 1);
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit confirmer burn");
+
+        // Pin the confirmer's fee, which now includes the three
+        // group-action read costs previously dropped via the local
+        // execution_context.
+        //
+        // Empirical values captured during development:
+        //   * `transform_into_action: 0` (legacy, dropped local ctx): 4_288_420
+        //   * `transform_into_action: 1` (current, threaded outer ctx): 4_319_240
+        //   * delta = 30_820 credits = the three transformer-phase reads
+        //     (fetch_action_is_closed +
+        //      fetch_action_id_signers_power_and_add_operations +
+        //      fetch_active_action_info_and_add_operations) that were
+        //     previously billed to a dropped context.
+        assert_eq!(
+            confirmer_result.aggregated_fees().processing_fee,
+            expected_processing_fee,
+            "PROTOCOL_VERSION_{}: confirmer step processing fee must match the version-specific baseline (transformer-phase group-action reads billed at PV12+, dropped at PV11)",
+            protocol_version,
+        );
+    }
 }

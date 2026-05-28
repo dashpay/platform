@@ -43,6 +43,7 @@ tracing = "0.1"
 # Encoding
 hex = "0.4"
 bs58 = "0.5"
+serde = { version = "1", default-features = false, features = ["derive"], optional = true }
 serde_json = "1.0"
 
 # Image processing (DIP-15 avatar hash + fingerprint)
@@ -117,6 +118,14 @@ shielded = ["dep:grovedb-commitment-tree", "dep:zip32", "dash-sdk/shielded", "dp
 # exercises the shielded-pool cases too. Run with:
 # `cargo test -p platform-wallet --test e2e --features e2e`.
 e2e = ["shielded"]
+# Opt-in serde derives on the changeset types. Activates `key-wallet/serde`,
+# `key-wallet-manager/serde`, and `dash-sdk/serde`. `dpp` derives serde unconditionally.
+serde = [
+    "dep:serde",
+    "key-wallet/serde",
+    "key-wallet-manager/serde",
+    "dash-sdk/serde",
+]
 # Forward to the upstream `key-wallet` / `key-wallet-manager`
 # `keep-finalized-transactions` feature. With it OFF (the default),
 # chainlocked transactions are evicted from the in-memory

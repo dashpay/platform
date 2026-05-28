@@ -38,7 +38,15 @@ use super::store::{ShieldedStore, SubwalletId};
 use crate::changeset::ShieldedChangeSet;
 use crate::error::PlatformWalletError;
 
-/// Server-enforced chunk size — start_index must be a multiple of this.
+/// On-chain MMR chunk size for the shielded notes tree — must stay
+/// in lock-step with `SHIELDED_NOTES_CHUNK_POWER` in
+/// `rs-drive/src/drive/shielded/paths.rs` (`1 << 11 = 2048`).
+/// `start_index` aligns to this regardless of how many chunks one
+/// query spans; multi-chunk fetches still have to begin on a chunk
+/// boundary because that's what the server-side range proof
+/// bisects against. Hardcoded rather than imported because
+/// `rs-platform-wallet` doesn't depend on `drive` directly — bump
+/// here and there together if the chunk power ever changes.
 const CHUNK_SIZE: u64 = 2048;
 
 /// Result of one note-sync pass.

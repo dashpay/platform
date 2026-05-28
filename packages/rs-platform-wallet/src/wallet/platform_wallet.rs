@@ -140,6 +140,12 @@ impl PlatformWallet {
         self.wallet_id
     }
 
+    /// The Dash network this wallet operates on. Delegates to the
+    /// asset-lock manager, which is the single source of truth.
+    pub fn network(&self) -> dashcore::Network {
+        self.asset_locks.network()
+    }
+
     /// Get a reference to the SDK.
     pub fn sdk(&self) -> &dash_sdk::Sdk {
         &self.sdk
@@ -294,6 +300,7 @@ impl PlatformWallet {
             Arc::clone(&sdk),
             Arc::clone(&wallet_manager),
             wallet_id,
+            Arc::clone(&asset_locks),
             wallet_persister.clone(),
         );
 

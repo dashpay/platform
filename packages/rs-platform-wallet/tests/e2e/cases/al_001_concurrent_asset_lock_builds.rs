@@ -84,7 +84,7 @@ use dpp::prelude::Identifier;
 use key_wallet::account::account_type::StandardAccountType;
 use key_wallet::AccountType;
 use platform_wallet::wallet::asset_lock::tracked::AssetLockStatus;
-use platform_wallet::wallet::identity::types::funding::IdentityFunding;
+use platform_wallet::AssetLockFunding;
 use platform_wallet::PlatformWalletError;
 
 use crate::framework::prelude::*;
@@ -322,7 +322,7 @@ async fn al_001_concurrent_asset_lock_builds() {
                 .identity()
                 .top_up_identity_with_funding(
                     &id,
-                    IdentityFunding::FromWalletBalance {
+                    AssetLockFunding::FromWalletBalance {
                         amount_duffs: LOCK_AMOUNT,
                         account_index: 0,
                     },
