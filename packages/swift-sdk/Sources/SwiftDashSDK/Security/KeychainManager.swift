@@ -615,7 +615,31 @@ extension KeychainManager {
         derivationPath: String,
         metadata: IdentityPrivateKeyMetadata
     ) -> String? {
-        let account = "identity_privkey.\(derivationPath)"
+        // Account name MUST be unique per (wallet, derivationPath).
+        // The earlier scheme `"identity_privkey.\(derivationPath)"`
+        // collided whenever two wallets had an identity at the same
+        // `identity_index` — both wallets derive identity keys under
+        // `m/9'/<coin>'/5'/0'/<idIdx>'/<purpose>'/<keyId>'`, so the
+        // path alone isn't unique across wallets. The collision
+        // caused later writes to overwrite earlier ones in Keychain,
+        // leaving prior `PersistentPublicKey` rows pointing at an
+        // account that now holds another wallet's private bytes —
+        // the signing trampoline would happily return them and
+        // produce signatures that wouldn't verify.
+        //
+        // Including the wallet id (hex) in the account name keeps
+        // every wallet's identity-key set independent. Reads via
+        // `retrieveIdentityPrivateKey(publicKeyHex:)` still work
+        // unmodified — that path scans every `identity_privkey.*`
+        // item and matches on the metadata's `publicKey` hex, so the
+        // account-name shape doesn't matter for lookup. The direct
+        // `retrieveKeyData(identifier:)` path uses whatever string
+        // we return here, which the persister stores on the
+        // `PersistentPublicKey.privateKeyKeychainIdentifier` column;
+        // on the next persister upsert the row gets the new account
+        // string, while sessions in between fall back to the
+        // metadata-scan path automatically.
+        let account = "identity_privkey.\(metadata.walletId).\(derivationPath)"
 
         var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,

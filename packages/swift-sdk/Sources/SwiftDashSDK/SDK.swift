@@ -230,6 +230,17 @@ public final class SDK: @unchecked Sendable {
   /// This uses a trusted context provider that fetches quorum keys and
   /// data contracts from trusted HTTP endpoints instead of requiring proof verification.
   /// This is suitable for mobile applications where proof verification would be resource-intensive.
+  ///
+  /// `platformVersion`:
+  /// - `0` (default) — pick a network-appropriate version: PV 11 for the
+  ///   public networks still on pre-v3.1 drive-abci (mainnet, testnet),
+  ///   PV 12 (latest) for the leading-edge networks (devnet, regtest).
+  ///   This avoids the V0/V1 `getDocuments` wire-format mismatch that
+  ///   would otherwise make Platform queries fail with
+  ///   `"decoding error: could not decode data contracts query"` on the
+  ///   public networks until they roll forward. Override by passing an
+  ///   explicit non-zero value.
+  /// - non-zero — pin the SDK to this exact `PlatformVersion`.
   public init(network: Network, platformVersion: UInt32 = 0) throws {
     var config = DashSDKConfig()
     config.network = network.ffiValue
@@ -238,7 +249,18 @@ public final class SDK: @unchecked Sendable {
     config.skip_asset_lock_proof_verification = false
     config.request_retry_count = 1
     config.request_timeout_ms = 8000 // 8 seconds
-    config.platform_version = platformVersion // 0 = SDK default (auto-detect)
+    let resolvedPlatformVersion: UInt32
+    if platformVersion != 0 {
+      resolvedPlatformVersion = platformVersion
+    } else {
+      switch network {
+      case .mainnet, .testnet:
+        resolvedPlatformVersion = 11
+      case .devnet, .regtest:
+        resolvedPlatformVersion = 12
+      }
+    }
+    config.platform_version = resolvedPlatformVersion
 
     // Create SDK with trusted setup. DAPI / quorum-URL overrides come from
     // UserDefaults and apply on:

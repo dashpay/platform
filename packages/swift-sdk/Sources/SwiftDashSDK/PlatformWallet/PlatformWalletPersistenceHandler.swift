@@ -543,6 +543,7 @@ public class PlatformWalletPersistenceHandler {
         // single tx can land in multiple accounts (or wallets), and
         // per-wallet membership is recovered through the TXO graph
         // (`outputs` / `inputs`) rather than a denormalized column.
+        //
         let resolvedWalletId: Data = account.wallet.walletId
         let txidData = hashData(tx.txid)
         let descriptor = FetchDescriptor<PersistentTransaction>(
@@ -2576,7 +2577,8 @@ public class PlatformWalletPersistenceHandler {
                 let walletNetwork = walletRow?.network
 
                 if let walletRow = walletRow {
-                    // Wallet identity relationships are `.nullify`; this delete path cascades them explicitly.
+                    // Wallet → identities is `.nullify`; this delete
+                    // path cascades them explicitly.
                     let identitiesToDelete = Array(walletRow.identities)
                     let identityIds = identitiesToDelete.map { $0.identityId }
 
@@ -2589,9 +2591,62 @@ public class PlatformWalletPersistenceHandler {
                         }
                     }
 
+                    // SwiftData fatals during save() whenever it has
+                    // to null out a non-optional inverse on a child
+                    // being processed in the same save batch (the
+                    // canonical wording is
+                    //   `Cannot remove PersistentX from relationship
+                    //    Y on PersistentZ because an appropriate
+                    //    default value is not configured`).
+                    // Marking children for delete in the SAME batch
+                    // doesn't help — SwiftData still walks their
+                    // inverses during the merge phase.
+                    //
+                    // The workaround is to delete each layer in its
+                    // own `save()`, parent last, so by the time the
+                    // parent's delete runs its relationship
+                    // collections are empty and SwiftData has no
+                    // inverse to clean up. Costs us atomicity (four
+                    // saves) — acceptable for a user-initiated wipe.
+                    //
+                    // PHASE 1: delete every identity's cascade-children
+                    // whose inverse to identity is non-optional
+                    // (DPNS names, DashPay profile, DashPay contact
+                    // requests). PublicKey, Document, and
+                    // TokenBalance inverses to identity are already
+                    // Optional and don't need pre-deletion.
+                    for identity in identitiesToDelete {
+                        for name in Array(identity.dpnsNames) {
+                            backgroundContext.delete(name)
+                        }
+                        if let profile = identity.dashpayProfile {
+                            backgroundContext.delete(profile)
+                        }
+                        for cr in Array(identity.contactRequests) {
+                            backgroundContext.delete(cr)
+                        }
+                    }
+                    try backgroundContext.save()
+
+                    // PHASE 2: delete the identities themselves now
+                    // that their problematic cascade children are
+                    // gone from the store.
                     for identity in identitiesToDelete {
                         backgroundContext.delete(identity)
                     }
+                    try backgroundContext.save()
+
+                    // PHASE 3: delete the wallet's accounts. Same
+                    // reasoning — `PersistentAccount.wallet` is
+                    // non-optional; deleting accounts in their own
+                    // save() pass leaves the wallet's `accounts`
+                    // collection empty when the wallet itself is
+                    // deleted.
+                    let accountsToDelete = Array(walletRow.accounts)
+                    for account in accountsToDelete {
+                        backgroundContext.delete(account)
+                    }
+                    try backgroundContext.save()
                 }
 
                 let txoDescriptor = FetchDescriptor<PersistentTxo>(
