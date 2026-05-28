@@ -252,14 +252,25 @@ struct WalletInfoView: View {
     @State private var isAuthorizingSeedPhrase = false
     @State private var revealedMnemonic: String?
 
+    // "Verify Identity Keys" diagnostic sheet — runs the per-key
+    // health check + offers re-derive / delete-orphan repair actions.
+    // See `WalletKeyHealthSheet`.
+    @State private var showKeyHealthSheet = false
+
     // Account counts come from SwiftData now.
     @Query private var accounts: [PersistentAccount]
+    /// Identities owned by this wallet — passed to the key-health
+    /// sheet so it can iterate them.
+    @Query private var walletIdentities: [PersistentIdentity]
 
     init(wallet: PersistentWallet, onWalletDeleted: @escaping () -> Void = {}) {
         self.wallet = wallet
         self.onWalletDeleted = onWalletDeleted
         let walletId = wallet.walletId
         _accounts = Query(filter: #Predicate<PersistentAccount> { $0.wallet.walletId == walletId })
+        _walletIdentities = Query(
+            filter: #Predicate<PersistentIdentity> { $0.wallet?.walletId == walletId }
+        )
     }
 
     var body: some View {
@@ -455,6 +466,30 @@ struct WalletInfoView: View {
                     .disabled(isAuthorizingSeedPhrase)
                 }
 
+                // Verify Identity Keys Section — diagnostic that
+                // walks every identity's PersistentPublicKey rows,
+                // re-derives the canonical key from this wallet's
+                // mnemonic, and confirms the stored pubkey + the
+                // Keychain bytes match. Offers re-derive (for
+                // wallet-owned keys with missing/wrong keychain
+                // entries) and delete-identity (for orphan rows
+                // whose pubkey doesn't match the wallet's mnemonic
+                // at all). The keychain-collision bug between
+                // wallets at identity_index=0 is the canonical
+                // trigger for needing this.
+                Section {
+                    Button {
+                        showKeyHealthSheet = true
+                    } label: {
+                        HStack {
+                            Spacer()
+                            Label("Verify Identity Keys", systemImage: "checkmark.shield")
+                            Spacer()
+                        }
+                    }
+                    .accessibilityIdentifier("walletInfo.verifyIdentityKeysButton")
+                }
+
                 // Delete Wallet Section
                 Section {
                     Button(action: {
@@ -517,6 +552,34 @@ struct WalletInfoView: View {
             ) {
                 if let phrase = revealedMnemonic {
                     SeedPhraseRevealSheet(mnemonic: phrase)
+                }
+            }
+            .sheet(isPresented: $showKeyHealthSheet) {
+                if let managed = walletManager.wallet(for: wallet.walletId) {
+                    WalletKeyHealthSheet(
+                        wallet: managed,
+                        walletId: wallet.walletId,
+                        identities: walletIdentities,
+                        network: wallet.network ?? .testnet
+                    )
+                } else {
+                    // Wallet manager hasn't loaded this wallet —
+                    // surface a placeholder rather than presenting an
+                    // empty sheet that the user can't interpret.
+                    NavigationView {
+                        ContentUnavailableView(
+                            "Wallet not loaded",
+                            systemImage: "exclamationmark.triangle",
+                            description: Text(
+                                "Open the wallet detail view once before running the key health check."
+                            )
+                        )
+                        .toolbar {
+                            ToolbarItem(placement: .navigationBarTrailing) {
+                                Button("Done") { showKeyHealthSheet = false }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -751,6 +814,13 @@ struct BalanceCardView: View {
     }
 
     /// Platform balance from BLAST sync (preferred) or identity sum (fallback).
+    ///
+    /// Skips identities whose `modelContext` is nil — SwiftData's
+    /// marker for an invalidated row. During a wallet delete the
+    /// relationship array can briefly contain invalidated entries
+    /// before SwiftUI rerenders past them; reading any persisted
+    /// property on an invalidated model fatals with
+    /// `BackingData.swift:866: This model instance was invalidated…`.
     var platformBalance: UInt64 {
         let blastBalance = addressBalances.reduce(0) { $0 + $1.balance }
         let hasSynced = syncStates.first.map { $0.syncHeight > 0 || $0.syncTimestamp > 0 }
@@ -762,9 +832,11 @@ struct BalanceCardView: View {
         // identities (via the SwiftData relationship). Pre-BLAST-
         // sync state shows approximate credit balance aggregated
         // from the on-chain identities we know about.
-        return wallet.identities.reduce(UInt64(0)) { sum, identity in
-            sum + UInt64(bitPattern: identity.balance)
-        }
+        return wallet.identities
+            .filter { $0.modelContext != nil }
+            .reduce(UInt64(0)) { sum, identity in
+                sum + UInt64(bitPattern: identity.balance)
+            }
     }
 
     var body: some View {

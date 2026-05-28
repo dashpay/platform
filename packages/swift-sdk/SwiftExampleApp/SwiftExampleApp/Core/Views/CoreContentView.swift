@@ -858,12 +858,22 @@ struct WalletRowView: View {
     /// Platform balance in credits: prefer BLAST address sync, fall
     /// back to summing identity credits when no addresses have been
     /// synced yet.
+    ///
+    /// Skips identities whose `modelContext` is nil — that's
+    /// SwiftData's marker for an invalidated row (e.g. mid-wallet-
+    /// delete, where the relationship array is briefly visible but
+    /// the underlying rows have already been removed from the
+    /// store). Reading any persisted property on an invalidated
+    /// model crashes with `BackingData.swift:866: This model
+    /// instance was invalidated…`.
     private var platformBalance: UInt64 {
         let blastBalance = addressBalances.reduce(UInt64(0)) { $0 + $1.balance }
         if blastBalance > 0 { return blastBalance }
-        return identitiesForWallet.reduce(UInt64(0)) {
-            $0 + UInt64(bitPattern: $1.balance)
-        }
+        return identitiesForWallet
+            .filter { $0.modelContext != nil }
+            .reduce(UInt64(0)) {
+                $0 + UInt64(bitPattern: $1.balance)
+            }
     }
 
     /// One-shot snapshot of the wallet's per-account Core balances.
