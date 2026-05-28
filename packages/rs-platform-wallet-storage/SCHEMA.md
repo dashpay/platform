@@ -4,7 +4,7 @@ The persister stores **public** wallet-state material (UTXOs, transactions, acco
 
 Schema evolution is version-gated by refinery. All connections turn on `PRAGMA foreign_keys = ON` at open time (`src/sqlite/conn.rs`), so every `ON DELETE CASCADE` clause is active.
 
-The 19 tables are split into four domain diagrams below. `WALLET_METADATA` is the root anchor and appears in each diagram. For full column listings see the [Tables](#tables) section.
+The 20 tables are split into five domain diagrams below. `WALLET_METADATA` is the root anchor and appears in each diagram. For full column listings see the [Tables](#tables) section.
 
 ## Diagram 1 — Core / L1 (Bitcoin/Dash layer)
 
@@ -236,6 +236,43 @@ erDiagram
     }
 ```
 
+## Diagram 5 — App data / KV store
+
+Generic key/value table for arbitrary application-managed data (UI
+config, platform-specific blobs, anything the host app wants to stash
+alongside wallet state). One physical table with a **nullable**
+`wallet_id`: rows where `wallet_id IS NULL` live in a global slot that
+survives wallet deletion; rows with a non-NULL `wallet_id` are scoped
+to a single wallet and cascade on parent delete.
+
+```mermaid
+erDiagram
+    WALLET_METADATA ||--o{ KV_STORE : "scopes (optional)"
+
+    WALLET_METADATA {
+        BLOB wallet_id PK "32-byte WalletId"
+        TEXT network
+        INTEGER birth_height
+    }
+
+    KV_STORE {
+        BLOB wallet_id "NULL = global slot; non-NULL = per-wallet (FK, CASCADE)"
+        TEXT key "1..=128 chars (CHECK constraint)"
+        BLOB value "opaque bytes; app picks its own serialization"
+        INTEGER updated_at "Unix epoch seconds; defaults to unixepoch()"
+    }
+```
+
+> Note: `kv_store` has NO declared `PRIMARY KEY`. Uniqueness is enforced
+> by two **partial** unique indexes (`idx_kv_store_global` over
+> `(key)` `WHERE wallet_id IS NULL`, and `idx_kv_store_wallet` over
+> `(wallet_id, key)` `WHERE wallet_id IS NOT NULL`). The split is
+> deliberate: SQLite treats every NULL in a plain
+> `UNIQUE(wallet_id, key)` as distinct, which would allow duplicate
+> global entries. Partitioning the index over the NULL/NOT NULL
+> predicate gives both halves the uniqueness guarantee we want without
+> a sentinel `wallet_id` value.
+
 ## Tables
 
 ### `wallet_metadata`
@@ -409,6 +446,25 @@ Payment overlay entries for DashPay, keyed by transaction-level
 - PK: `(identity_id, payment_id)`.
 - FK: `identity_id → identities(identity_id) ON DELETE CASCADE`.
 
+### `kv_store`
+
+Generic key/value table for app-managed data. `wallet_id` is nullable:
+NULL rows are global (survive wallet deletion), non-NULL rows scope to
+a single wallet and cascade on parent delete. Values are opaque BLOBs
+— the host app picks its own serialization (bincode, JSON, protobuf,
+raw bytes).
+
+- No declared `PRIMARY KEY`. Uniqueness is enforced by two **partial**
+  unique indexes:
+  - `idx_kv_store_global(key)            WHERE wallet_id IS NULL`
+  - `idx_kv_store_wallet(wallet_id, key) WHERE wallet_id IS NOT NULL`
+- FK: `wallet_id → wallet_metadata(wallet_id) ON DELETE CASCADE` (nullable).
+- `key` is `TEXT` with `CHECK (length(key) BETWEEN 1 AND 128)`.
+- `updated_at` defaults to `unixepoch()` and is refreshed on every
+  `INSERT … ON CONFLICT DO UPDATE`.
+- Public API lives in [`src/kv.rs`](./src/kv.rs); the implementation
+  on `SqlitePersister` is in [`src/sqlite/kv.rs`](./src/sqlite/kv.rs).
+
 ## Enum-domain CHECK constraints
 
 Five TEXT columns hold serialized Rust enum variants and carry a
@@ -479,4 +535,4 @@ having to grep this repo.
 
 | Version | File | Description |
 |---|---|---|
-| V001 | `V001__initial.rs` | Full schema: all 19 tables, indexes, and the `setnull_core_utxos_on_tx_delete` trigger |
+| V001 | `V001__initial.rs` | Full schema: all 20 tables (including `kv_store`), every index (including the two partial UNIQUE indexes on `kv_store`), and the `setnull_core_utxos_on_tx_delete` trigger |

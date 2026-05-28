@@ -11,6 +11,7 @@ pub mod buffer;
 pub mod config;
 pub(crate) mod conn;
 pub mod error;
+pub mod kv;
 pub mod migrations;
 pub mod persister;
 pub mod schema;

@@ -253,6 +253,27 @@ CREATE TABLE dashpay_payments_overlay (
     PRIMARY KEY (identity_id, payment_id),
     FOREIGN KEY (identity_id) REFERENCES identities(identity_id) ON DELETE CASCADE
 );
+
+-- Generic key/value store for app-managed data (config,
+-- platform-specific data, anything the host wants to stash alongside
+-- wallet state). See `src/kv.rs` and `SCHEMA.md` for the public API
+-- and the partial-index design.
+--
+-- `wallet_id IS NULL` => global slot (survives wallet deletion).
+-- `wallet_id IS NOT NULL` => per-wallet, cascades on parent delete.
+-- The two partial UNIQUE indexes below partition the rows so each half
+-- gets uniqueness without tripping SQLite's 'each NULL is distinct in
+-- UNIQUE' rule.
+CREATE TABLE kv_store (
+    wallet_id  BLOB,
+    key        TEXT NOT NULL CHECK (length(key) BETWEEN 1 AND 128),
+    value      BLOB NOT NULL,
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    FOREIGN KEY (wallet_id) REFERENCES wallet_metadata(wallet_id) ON DELETE CASCADE
+);
+
+CREATE UNIQUE INDEX idx_kv_store_global ON kv_store(key) WHERE wallet_id IS NULL;
+CREATE UNIQUE INDEX idx_kv_store_wallet ON kv_store(wallet_id, key) WHERE wallet_id IS NOT NULL;
 "
     )
 }

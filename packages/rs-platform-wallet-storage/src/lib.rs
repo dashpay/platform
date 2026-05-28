@@ -22,6 +22,8 @@
 #![deny(unsafe_code)]
 
 #[cfg(feature = "sqlite")]
+pub mod kv;
+#[cfg(feature = "sqlite")]
 pub mod sqlite;
 // pub mod secrets;   // reserved — future SecretStore submodule.
 
@@ -29,6 +31,8 @@ pub mod sqlite;
 // have to spell out the `::sqlite::` middle segment for the common
 // names. Adding to or trimming from this list does NOT count as a
 // breaking change of the submodule API.
+#[cfg(feature = "sqlite")]
+pub use kv::{KvError, KvStore};
 #[cfg(feature = "sqlite")]
 pub use sqlite::{
     default_auto_backup_dir, AutoBackupOperation, FlushMode, JournalMode, PruneReport,
