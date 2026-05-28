@@ -255,6 +255,14 @@ public final class SDK: @unchecked Sendable {
     } else {
       switch network {
       case .mainnet, .testnet:
+        // TODO(platform-version-bump): bump mainnet/testnet to 12
+        // (or whatever PV is current) once drive-abci 3.1+ has
+        // rolled out on those networks and the new
+        // `getDocuments` V1 wire format is on by default. The
+        // trigger is: a HardFork shipping the V1 wire format
+        // becomes active on mainnet/testnet. Until then, pinning
+        // 11 keeps the SDK speaking the V0 protocol the active
+        // tenderdash quorums understand.
         resolvedPlatformVersion = 11
       case .devnet, .regtest:
         resolvedPlatformVersion = 12

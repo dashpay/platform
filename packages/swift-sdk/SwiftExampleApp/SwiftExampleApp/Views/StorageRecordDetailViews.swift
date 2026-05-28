@@ -1366,7 +1366,7 @@ struct AccountStorageDetailView: View {
                 )
                 FieldRow(
                     label: "Wallet",
-                    value: record.wallet.name ?? hexString(record.wallet.walletId)
+                    value: walletLabel(record.wallet)
                 )
             }
             ForEach(addressSections(), id: \.0) { poolName, addresses in

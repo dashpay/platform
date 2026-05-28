@@ -789,21 +789,96 @@ extension KeychainManager {
         return false
     }
 
-    /// Delete the identity private-key row for `derivationPath`.
-    /// Idempotent; returns true on success or "not found".
+    /// Delete the identity private-key row for the
+    /// `(walletId, derivationPath)` pair — symmetric with
+    /// `storeIdentityPrivateKey` (which writes under the
+    /// `identity_privkey.<walletId>.<path>` account scheme).
+    ///
+    /// Idempotent; returns true on success or "not found". A
+    /// best-effort sweep of the legacy
+    /// (`identity_privkey.<path>` — no walletId) account is
+    /// included so callers don't end up with a half-migrated state
+    /// where the new-format row is gone but a legacy row at the
+    /// same path lingers.
     @discardableResult
-    public nonisolated func deleteIdentityPrivateKey(derivationPath: String) -> Bool {
-        let account = "identity_privkey.\(derivationPath)"
+    public nonisolated func deleteIdentityPrivateKey(
+        walletId: Data,
+        derivationPath: String
+    ) -> Bool {
+        let walletIdHex = walletId.toHexString()
+        let newAccount = "identity_privkey.\(walletIdHex).\(derivationPath)"
+        let legacyAccount = "identity_privkey.\(derivationPath)"
+        var ok = true
+        for account in [newAccount, legacyAccount] {
+            var query: [String: Any] = [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: serviceName,
+                kSecAttrAccount as String: account,
+            ]
+            if let accessGroup = accessGroup {
+                query[kSecAttrAccessGroup as String] = accessGroup
+            }
+            let status = SecItemDelete(query as CFDictionary)
+            if status != errSecSuccess && status != errSecItemNotFound {
+                ok = false
+            }
+        }
+        return ok
+    }
+
+    /// Delete every `identity_privkey.*` keychain row whose
+    /// `IdentityPrivateKeyMetadata.identityId` matches
+    /// `identityIdBase58` — the base58 identity id Swift uses
+    /// throughout the persistence layer. Used by the key-health
+    /// sheet's "Delete orphan identity" action so cascading the
+    /// SwiftData row doesn't leave its keys' private bytes behind
+    /// in Keychain.
+    ///
+    /// Scans the metadata blob (`kSecAttrGeneric`) on every
+    /// matching keychain item — handles both new-format
+    /// (`identity_privkey.<walletId>.<path>`) and legacy-format
+    /// (`identity_privkey.<path>`) accounts uniformly. Idempotent;
+    /// no-op when nothing matches.
+    public nonisolated func deleteAllIdentityPrivateKeys(forIdentityIdBase58 identityIdBase58: String) throws {
         var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: serviceName,
-            kSecAttrAccount as String: account,
+            kSecMatchLimit as String: kSecMatchLimitAll,
+            kSecReturnAttributes as String: true,
         ]
         if let accessGroup = accessGroup {
             query[kSecAttrAccessGroup as String] = accessGroup
         }
-        let status = SecItemDelete(query as CFDictionary)
-        return status == errSecSuccess || status == errSecItemNotFound
+
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        if status == errSecItemNotFound {
+            return
+        }
+        guard status == errSecSuccess, let items = result as? [[String: Any]] else {
+            throw KeychainError.retrieveFailed(status)
+        }
+
+        let decoder = JSONDecoder()
+        for item in items {
+            guard let account = item[kSecAttrAccount as String] as? String,
+                  account.hasPrefix("identity_privkey.")
+            else {
+                continue
+            }
+            guard let metadataData = item[kSecAttrGeneric as String] as? Data,
+                  let metadata = try? decoder.decode(
+                    IdentityPrivateKeyMetadata.self,
+                    from: metadataData
+                  )
+            else {
+                continue
+            }
+            guard metadata.identityId == identityIdBase58 else {
+                continue
+            }
+            try deleteGenericPassword(account: account)
+        }
     }
 
     /// Delete every `identity_privkey.<derivationPath>` keychain row whose

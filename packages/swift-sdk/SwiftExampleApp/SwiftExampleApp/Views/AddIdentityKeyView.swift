@@ -138,25 +138,33 @@ struct AddIdentityKeyView: View {
     /// validation error. Tightening this would require parsing
     /// the per-document-type schema flag into SwiftData rows.
     private var pickerEntries: [BoundsPickerEntry] {
-        let savedIds = Set(contractsForNetwork.map(\.id))
-        let system = Self.systemContractsAllowingKeyBounds
-            .filter { !savedIds.contains($0.id) }
+        // System metadata wins over user-saved rows: the system
+        // registry knows precisely which document types within the
+        // contract carry the bounded-key requirement (DashPay's
+        // `contactRequest`, for example, vs the rest of the
+        // contract). If we let a saved row override the system
+        // entry — even when the IDs match — the picker would fall
+        // back to the "expose every document type" behaviour and
+        // an invalid (contract, doc-type) combo could slip through.
+        let systemIds = Set(Self.systemContractsAllowingKeyBounds.map(\.id))
+        let system = Self.systemContractsAllowingKeyBounds.map {
+            BoundsPickerEntry(
+                id: $0.id,
+                displayName: "\($0.name) (System)",
+                allowsContractScope: $0.allowsContractScope,
+                documentTypesAllowingBounds: $0.documentTypesAllowingBounds
+            )
+        }
+        let saved = contractsForNetwork
+            .filter { !systemIds.contains($0.id) }
             .map {
                 BoundsPickerEntry(
                     id: $0.id,
-                    displayName: "\($0.name) (System)",
-                    allowsContractScope: $0.allowsContractScope,
-                    documentTypesAllowingBounds: $0.documentTypesAllowingBounds
+                    displayName: $0.name,
+                    allowsContractScope: true,
+                    documentTypesAllowingBounds: ($0.documentTypes ?? []).map(\.name).sorted()
                 )
             }
-        let saved = contractsForNetwork.map {
-            BoundsPickerEntry(
-                id: $0.id,
-                displayName: $0.name,
-                allowsContractScope: true,
-                documentTypesAllowingBounds: ($0.documentTypes ?? []).map(\.name).sorted()
-            )
-        }
         return system + saved
     }
 

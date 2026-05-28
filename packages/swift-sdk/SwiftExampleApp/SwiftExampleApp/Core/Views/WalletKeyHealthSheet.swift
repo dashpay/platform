@@ -189,9 +189,35 @@ enum WalletKeyHealthChecker {
                         keyId: kid,
                         network: network
                     )
-                    derivedHex = preview.publicKeyHex
 
-                    if preview.publicKeyData == row.publicKeyData {
+                    // `row.publicKeyData` stores whatever shape was
+                    // registered on Platform — 33-byte compressed
+                    // pubkey for `.ecdsaSecp256k1`, 20-byte HASH160
+                    // for `.ecdsaHash160`. The Rust-derived preview
+                    // is always the raw 33-byte pubkey; hash it
+                    // ourselves before comparing for HASH160 rows.
+                    // (Other variants — BLS, BIP13 script-hash,
+                    // EdDSA — aren't produced by this preview path
+                    // today; treat them as `notSupported` so the
+                    // diagnostic surfaces them instead of silently
+                    // misclassifying them as orphans.)
+                    let derivedComparableHex: String?
+                    switch row.keyTypeEnum ?? .ecdsaSecp256k1 {
+                    case .ecdsaSecp256k1:
+                        derivedComparableHex = preview.publicKeyHex
+                        derivedHex = preview.publicKeyHex
+                    case .ecdsaHash160:
+                        let hashHex = SwiftDashSDK.KeychainManager
+                            .computePublicKeyHashHex(preview.publicKeyData)
+                        derivedComparableHex = hashHex.isEmpty ? nil : hashHex
+                        derivedHex = hashHex
+                    case .bls12_381, .bip13ScriptHash, .eddsa25519Hash160:
+                        derivedComparableHex = nil
+                        derivedHex = preview.publicKeyHex
+                    }
+
+                    if let derivedComparableHex,
+                       derivedComparableHex.caseInsensitiveCompare(storedHex) == .orderedSame {
                         // pubkey matches the wallet's mnemonic →
                         // look up the keychain bytes at the expected
                         // walletId-namespaced account.
@@ -224,9 +250,20 @@ enum WalletKeyHealthChecker {
                                 reason: "No new-format Keychain entry (legacy-only entries don't count)"
                             )
                         }
+                    } else if derivedComparableHex == nil {
+                        // Key type isn't one the diagnostic knows
+                        // how to compare against a Rust-derived
+                        // pubkey today (BLS / BIP13 / EdDSA). Report
+                        // it as orphan with a clear reason so the
+                        // user knows we can't verify it, rather than
+                        // silently passing.
+                        let label = row.keyTypeEnum?.name ?? "type \(row.keyType)"
+                        status = .orphan(
+                            reason: "Key type \(label) isn't supported by the diagnostic — can't verify against derived pubkey"
+                        )
                     } else {
                         status = .orphan(
-                            reason: "Stored pubkey \(storedHex.prefix(12))… doesn't match wallet's derivation \(derivedHex.prefix(12))…"
+                            reason: "Stored \(storedHex.prefix(12))… doesn't match wallet's derivation \(derivedHex.prefix(12))…"
                         )
                     }
                 } catch {
@@ -262,11 +299,30 @@ enum WalletKeyHealthChecker {
         return reports
     }
 
+    /// Per-key result of a rederive pass. `success` is the count of
+    /// keys whose Keychain entry was rewritten; `failures` lists each
+    /// key the pass tried and couldn't fix, with a reason — useful so
+    /// the sheet can show the user *which* key is stuck (not just
+    /// "Re-derived 0 keys").
+    struct RederiveOutcome {
+        let success: Int
+        /// `(keyId, reason)` for each `.needsRederive` key the loop
+        /// touched but did not fix.
+        let failures: [(UInt32, String)]
+    }
+
     /// Re-derive every key in `report` whose status is
     /// `.needsRederive`, write fresh Keychain entries (at the new
     /// walletId-namespaced account), and update each
     /// `PersistentPublicKey.privateKeyKeychainIdentifier` to point
-    /// at the new account. Returns the number of keys fixed.
+    /// at the new account.
+    ///
+    /// Returns a `RederiveOutcome` with both the count fixed and a
+    /// per-key list of failures. Individual key failures are
+    /// collected rather than thrown so one bad key doesn't block
+    /// repair of the rest of the identity's keys; throws only when
+    /// the whole batch is unrecoverable (e.g. the SwiftData save at
+    /// the end fails).
     @MainActor
     static func rederive(
         report: WalletIdentityKeyHealthReport,
@@ -274,15 +330,22 @@ enum WalletKeyHealthChecker {
         walletId: Data,
         network: Network,
         modelContext: ModelContext
-    ) throws -> Int {
+    ) throws -> RederiveOutcome {
         var fixed = 0
+        var failures: [(UInt32, String)] = []
         for key in report.keys {
             guard case .needsRederive = key.status else { continue }
-            let preview = try wallet.deriveIdentityAuthKeyAtSlot(
-                identityIndex: report.identityIndex,
-                keyId: key.keyId,
-                network: network
-            )
+            let preview: ManagedPlatformWallet.IdentityRegistrationKeyPreview
+            do {
+                preview = try wallet.deriveIdentityAuthKeyAtSlot(
+                    identityIndex: report.identityIndex,
+                    keyId: key.keyId,
+                    network: network
+                )
+            } catch {
+                failures.append((key.keyId, "derivation failed: \(error.localizedDescription)"))
+                continue
+            }
             let pubkeyHashHex = SwiftDashSDK.KeychainManager.computePublicKeyHashHex(preview.publicKeyData)
             let metadata = IdentityPrivateKeyMetadata(
                 identityId: report.identityIdBase58,
@@ -302,6 +365,7 @@ enum WalletKeyHealthChecker {
                 derivationPath: preview.derivationPath,
                 metadata: metadata
             ) else {
+                failures.append((key.keyId, "Keychain write at \(preview.derivationPath) returned nil"))
                 continue
             }
             key.row.privateKeyKeychainIdentifier = pkid
@@ -321,22 +385,36 @@ enum WalletKeyHealthChecker {
         if fixed > 0 {
             try modelContext.save()
         }
-        return fixed
+        return RederiveOutcome(success: fixed, failures: failures)
     }
 
-    /// Cascade-delete an orphan identity from SwiftData. Safe to
-    /// call now that the relationship inverses
-    /// (`PersistentPublicKey.identity`, `PersistentDPNSName.identity`,
-    /// `PersistentDashpayProfile.identity`, `PersistentDashpayContactRequest.owner`)
-    /// are all Optional — see the doc comments on those models for
-    /// the SwiftData cascade-on-non-optional crash this avoids.
+    /// Cascade-delete an orphan identity from SwiftData AND wipe its
+    /// associated Keychain entries. Order matters: clear the
+    /// Keychain side first (purely additive to the SwiftData state),
+    /// then drop the row. If Keychain wipe fails we still try the
+    /// SwiftData delete so the user can finish the operation; the
+    /// keychain error is surfaced to the caller.
     @MainActor
     static func deleteOrphan(
         identity: PersistentIdentity,
         modelContext: ModelContext
     ) throws {
+        // Snapshot the base58 id BEFORE the delete — once the row
+        // is removed its computed accessor is invalid.
+        let identityIdBase58 = identity.identityIdBase58
+        var keychainError: Error?
+        do {
+            try KeychainManager.shared.deleteAllIdentityPrivateKeys(
+                forIdentityIdBase58: identityIdBase58
+            )
+        } catch {
+            keychainError = error
+        }
         modelContext.delete(identity)
         try modelContext.save()
+        if let keychainError {
+            throw keychainError
+        }
     }
 }
 
@@ -550,15 +628,23 @@ struct WalletKeyHealthSheet: View {
     private func rederive(_ report: WalletIdentityKeyHealthReport) {
         Task { @MainActor in
             do {
-                let fixed = try WalletKeyHealthChecker.rederive(
+                let outcome = try WalletKeyHealthChecker.rederive(
                     report: report,
                     wallet: wallet,
                     walletId: walletId,
                     network: network,
                     modelContext: modelContext
                 )
-                actionMessage = "Re-derived \(fixed) key\(fixed == 1 ? "" : "s") for identity \(report.identityIdBase58.prefix(12))…"
-                errorMessage = nil
+                let fixed = outcome.success
+                var msg = "Re-derived \(fixed) key\(fixed == 1 ? "" : "s") for identity \(report.identityIdBase58.prefix(12))…"
+                if !outcome.failures.isEmpty {
+                    let detail = outcome.failures
+                        .map { "kid \($0.0): \($0.1)" }
+                        .joined(separator: "; ")
+                    msg += " — \(outcome.failures.count) failed: \(detail)"
+                }
+                actionMessage = msg
+                errorMessage = outcome.failures.isEmpty ? nil : msg
                 // Re-run the check so the report reflects the new
                 // state (formerly-orange rows should turn green).
                 await runCheck()

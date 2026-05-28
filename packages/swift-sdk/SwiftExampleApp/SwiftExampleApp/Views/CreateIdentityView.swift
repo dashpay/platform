@@ -110,11 +110,26 @@ struct CreateIdentityView: View {
         return (base + assetLockBaseCredits + perKey) / 1_000
     }
 
+    /// Whether the DashPay-keys toggle ACTUALLY applies to the
+    /// active submission, mirroring `dashpayKeysSection`'s
+    /// visibility predicate. The Toggle UI is hidden for resume /
+    /// walletless flows (those paths don't pre-derive at custom
+    /// indices today), so an `@State` `addDashPayKeys = true` value
+    /// would still be true when the user is in those flows. Routing
+    /// every call site through this gate keeps the funding-minimum
+    /// calculation and the actual `makeDashpayKeyPair` invocation
+    /// in lock-step with what the user sees.
+    private var shouldRegisterDashPayKeys: Bool {
+        guard case .wallet = walletSelection else { return false }
+        guard fundingSelection != .unusedAssetLock else { return false }
+        return addDashPayKeys
+    }
+
     /// Total identity keys this submission will register, given the
     /// current DashPay-keys toggle. Drives the asset-lock minimum
     /// + the on-screen min-funding hint.
     private var plannedIdentityKeyCount: UInt32 {
-        Self.defaultKeyCount + (addDashPayKeys ? Self.dashPayExtraKeyCount : 0)
+        Self.defaultKeyCount + (shouldRegisterDashPayKeys ? Self.dashPayExtraKeyCount : 0)
     }
 
     /// Per-submission minimum funding in duffs — scales with
@@ -859,7 +874,7 @@ struct CreateIdentityView: View {
         // walletId-namespaced keychain account so the trampoline
         // can find them when DashPay flows ask the new keys to
         // sign.
-        if addDashPayKeys {
+        if shouldRegisterDashPayKeys {
             do {
                 identityPubkeys.append(contentsOf: try makeDashpayKeyPair(
                     managedWallet: managedWallet,
@@ -1409,6 +1424,27 @@ struct CreateIdentityView: View {
                 keyId: keyId,
                 network: network
             )
+
+            // Defence against derivation drift / FFI marshalling
+            // bugs — mirrors `AddIdentityKeyView.submit`'s cross-
+            // check. A mismatched DashPay key lands on Platform as
+            // a key the trampoline can't sign with and surfaces as
+            // an opaque "encrypted xpub" failure on the first
+            // contact-request flow, which is much harder to debug
+            // after the fact than failing fast here.
+            guard
+                KeyValidation.validatePrivateKeyForPublicKey(
+                    privateKeyHex: preview.privateKeyData.toHexString(),
+                    publicKeyHex: preview.publicKeyHex,
+                    keyType: .ecdsaSecp256k1,
+                    network: network
+                )
+            else {
+                throw PlatformWalletError.walletOperation(
+                    "Derived DashPay key (kid \(keyId), purpose \(purpose.name)) didn't match its public key — refusing to persist"
+                )
+            }
+
             let pubKeyHashHex = SwiftDashSDK.KeychainManager.computePublicKeyHashHex(
                 preview.publicKeyData
             )
