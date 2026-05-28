@@ -4,7 +4,9 @@ use std::ffi::CStr;
 use std::os::raw::c_char;
 
 use dashcore::sml::llmq_type::LlmqDevnetParams;
-use platform_wallet::spv::{ClientConfig, ProgressPercentage, SyncProgress, SyncState};
+use platform_wallet::spv::{
+    ClientConfig, DevnetConfig, ProgressPercentage, SyncProgress, SyncState,
+};
 
 use crate::error::*;
 use crate::handle::*;
@@ -314,11 +316,15 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_start(
                 config.peers.push(addr);
             }
         }
-        if llmq_devnet_size > 0 {
-            config.llmq_devnet_params = Some(LlmqDevnetParams {
-                size: llmq_devnet_size,
-                threshold: llmq_devnet_threshold,
-            });
+        if let Some(name) = devnet_name_str.as_deref() {
+            let mut devnet = DevnetConfig::new(name);
+            if llmq_devnet_size > 0 {
+                devnet.llmq_params = Some(LlmqDevnetParams {
+                    size: llmq_devnet_size,
+                    threshold: llmq_devnet_threshold,
+                });
+            }
+            config.devnet = Some(devnet);
         }
 
         let _guard = runtime().enter();
