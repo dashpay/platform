@@ -4939,7 +4939,7 @@ dependencies = [
 
 [[package]]
 name = "platform-wallet-storage"
-version = "3.1.0-dev.6"
+version = "3.1.0-dev.7"
 dependencies = [
  "assert_cmd",
  "bincode",
