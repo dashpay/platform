@@ -254,19 +254,28 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_start(
             "devnet_name is only valid on devnet",
         );
     }
-    // Reject empty / whitespace-only / `/`-containing names
-    // synchronously here rather than letting `DevnetConfig::validate`
-    // surface them asynchronously from `spawn_in_background`. Mirrors
+    // Reject empty / any-whitespace / `/`-containing names synchronously
+    // here rather than letting `DevnetConfig::validate` surface them
+    // asynchronously from `spawn_in_background`. Mirrors
     // `DevnetConfig::validate` (which only checks empty + `/`) and
-    // additionally rejects whitespace-only names so callers without a
-    // pre-filter (other language bindings, integration tests) can't
-    // produce a `(devnet.devnet-   )` user agent that Dash Core peers
-    // silently drop.
+    // additionally rejects any whitespace — leading, trailing, or
+    // interior — so callers without a pre-filter (other language
+    // bindings, integration tests) can't produce a malformed
+    // `(devnet.devnet- foo )` user agent that Dash Core peers silently
+    // drop. Rejecting (rather than auto-trimming) keeps the rule
+    // deterministic and avoids the Unicode-whitespace asymmetry
+    // between `str::trim` and Swift's `CharacterSet.whitespaces`.
     if let Some(name) = devnet_name_str.as_deref() {
-        if name.trim().is_empty() {
+        if name.is_empty() {
             return PlatformWalletFFIResult::err(
                 PlatformWalletFFIResultCode::ErrorInvalidParameter,
-                "devnet_name must not be empty or whitespace-only",
+                "devnet_name must not be empty",
+            );
+        }
+        if name.chars().any(char::is_whitespace) {
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                "devnet_name must not contain whitespace",
             );
         }
         if name.contains('/') {
