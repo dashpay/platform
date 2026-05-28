@@ -4,7 +4,11 @@ The persister stores **public** wallet-state material (UTXOs, transactions, acco
 
 Schema evolution is version-gated by refinery. All connections turn on `PRAGMA foreign_keys = ON` at open time (`src/sqlite/conn.rs`), so every `ON DELETE CASCADE` clause is active.
 
-## Entity-relationship diagram
+The 19 tables are split into four domain diagrams below. `WALLET_METADATA` is the root anchor and appears in each diagram. For full column listings see the [Tables](#tables) section.
+
+## Diagram 1 — Core / L1 (Bitcoin/Dash layer)
+
+Account registrations, address-pool snapshots, transactions, UTXOs, instant locks, derived addresses, and SPV sync state.
 
 ```mermaid
 erDiagram
@@ -15,17 +19,6 @@ erDiagram
     WALLET_METADATA ||--o{ CORE_INSTANT_LOCKS : "holds"
     WALLET_METADATA ||--o{ CORE_DERIVED_ADDRESSES : "derives"
     WALLET_METADATA ||--o| CORE_SYNC_STATE : "tracks"
-    WALLET_METADATA ||--o{ IDENTITIES : "parents"
-    WALLET_METADATA ||--o{ CONTACTS_SENT : "has"
-    WALLET_METADATA ||--o{ CONTACTS_RECV : "has"
-    WALLET_METADATA ||--o{ CONTACTS_ESTABLISHED : "has"
-    WALLET_METADATA ||--o{ PLATFORM_ADDRESSES : "tracks"
-    WALLET_METADATA ||--o| PLATFORM_ADDRESS_SYNC : "syncs"
-    WALLET_METADATA ||--o{ ASSET_LOCKS : "issues"
-    IDENTITIES ||--o{ IDENTITY_KEYS : "has"
-    IDENTITIES ||--o{ TOKEN_BALANCES : "holds"
-    IDENTITIES ||--o| DASHPAY_PROFILES : "has"
-    IDENTITIES ||--o{ DASHPAY_PAYMENTS_OVERLAY : "overlays"
     CORE_TRANSACTIONS ||--o{ CORE_UTXOS : "spends"
 
     WALLET_METADATA {
@@ -67,7 +60,7 @@ erDiagram
         INTEGER height "NULL if unconfirmed"
         INTEGER account_index
         INTEGER spent "0 | 1"
-        BLOB spent_in_txid "NULL until spend recorded; set to NULL by trigger on tx delete"
+        BLOB spent_in_txid "NULL until spend; cleared by trigger on tx delete"
     }
 
     CORE_INSTANT_LOCKS {
@@ -90,11 +83,35 @@ erDiagram
         INTEGER last_processed_height "NULL until first block processed"
         INTEGER synced_height "NULL until first sync"
     }
+```
+
+> Note: the `CORE_TRANSACTIONS → CORE_UTXOS` edge shown above is enforced by the
+> `setnull_core_utxos_on_tx_delete` SQLite trigger, not a declared `FOREIGN KEY`.
+> A native `ON DELETE SET NULL` composite FK would also null the NOT NULL `wallet_id`
+> column — the trigger nulls only `spent_in_txid`, preserving the intended semantics.
+
+## Diagram 2 — Identities + DashPay (Platform L2 identity tree)
+
+Platform identities, their public keys, token balances, and DashPay profiles/payments. Identity-owned tables have no direct `wallet_id` column; cascade flows `wallet_metadata → identities → child`.
+
+```mermaid
+erDiagram
+    WALLET_METADATA ||--o{ IDENTITIES : "parents"
+    IDENTITIES ||--o{ IDENTITY_KEYS : "has"
+    IDENTITIES ||--o{ TOKEN_BALANCES : "holds"
+    IDENTITIES ||--o| DASHPAY_PROFILES : "has"
+    IDENTITIES ||--o{ DASHPAY_PAYMENTS_OVERLAY : "overlays"
+
+    WALLET_METADATA {
+        BLOB wallet_id PK "32-byte WalletId"
+        TEXT network
+        INTEGER birth_height
+    }
 
     IDENTITIES {
         BLOB identity_id PK "32-byte Platform Identifier"
         BLOB wallet_id FK "NULL = orphan identity (no parent wallet yet)"
-        INTEGER wallet_index "BIP-32 index within wallet; NULL for out-of-wallet identities"
+        INTEGER wallet_index "BIP-32 index; NULL for out-of-wallet identities"
         BLOB entry_blob "bincode-encoded IdentityEntry"
         INTEGER tombstoned "0 | 1 (logical delete)"
     }
@@ -105,6 +122,48 @@ erDiagram
         BLOB public_key_blob "bincode-encoded IdentityKeyWire (public material only)"
         BLOB public_key_hash "20-byte HASH160 of the key"
         BLOB derivation_blob "NULL when derivation indices are absent"
+    }
+
+    TOKEN_BALANCES {
+        BLOB identity_id PK
+        BLOB token_id PK "32-byte token contract Identifier"
+        INTEGER balance
+        INTEGER updated_at "Unix timestamp"
+    }
+
+    DASHPAY_PROFILES {
+        BLOB identity_id PK "one row per identity"
+        BLOB profile_blob "bincode-encoded DashPayProfile"
+    }
+
+    DASHPAY_PAYMENTS_OVERLAY {
+        BLOB identity_id PK
+        TEXT payment_id PK "transaction-level string key"
+        BLOB overlay_blob "bincode-encoded PaymentEntry"
+    }
+```
+
+## Diagram 3 — Contacts (DashPay social graph)
+
+Three tables for the three states of a DashPay contact relationship. All three root on `wallet_id`; `IDENTITIES` is repeated here as a minimal placeholder to show that the contact `owner_id` / `sender_id` / `recipient_id` columns are Platform identity identifiers (32-byte blobs), not FK-enforced columns.
+
+```mermaid
+erDiagram
+    WALLET_METADATA ||--o{ CONTACTS_SENT : "has"
+    WALLET_METADATA ||--o{ CONTACTS_RECV : "has"
+    WALLET_METADATA ||--o{ CONTACTS_ESTABLISHED : "has"
+    IDENTITIES ||--o{ CONTACTS_SENT : "sends"
+    IDENTITIES ||--o{ CONTACTS_RECV : "receives"
+    IDENTITIES ||--o{ CONTACTS_ESTABLISHED : "establishes"
+
+    WALLET_METADATA {
+        BLOB wallet_id PK "32-byte WalletId"
+        TEXT network
+        INTEGER birth_height
+    }
+
+    IDENTITIES {
+        BLOB identity_id PK
     }
 
     CONTACTS_SENT {
@@ -126,6 +185,28 @@ erDiagram
         BLOB owner_id PK
         BLOB contact_id PK
         BLOB entry_blob "bincode-encoded EstablishedContact"
+    }
+```
+
+> Note: `owner_id`, `recipient_id`, `sender_id`, and `contact_id` are Platform identity
+> identifiers stored as BLOBs; they are NOT declared `FOREIGN KEY` columns. The
+> relationships to `IDENTITIES` shown above are logical — enforced at the application layer,
+> not by SQLite constraints.
+
+## Diagram 4 — Platform addresses + Asset locks (Platform L2 funding)
+
+Platform P2PKH address pool with its sync watermark, and the asset-lock lifecycle table.
+
+```mermaid
+erDiagram
+    WALLET_METADATA ||--o{ PLATFORM_ADDRESSES : "tracks"
+    WALLET_METADATA ||--o| PLATFORM_ADDRESS_SYNC : "syncs"
+    WALLET_METADATA ||--o{ ASSET_LOCKS : "issues"
+
+    WALLET_METADATA {
+        BLOB wallet_id PK "32-byte WalletId"
+        TEXT network
+        INTEGER birth_height
     }
 
     PLATFORM_ADDRESSES {
@@ -152,24 +233,6 @@ erDiagram
         INTEGER identity_index
         INTEGER amount_duffs
         BLOB lifecycle_blob "bincode-encoded AssetLockEntry"
-    }
-
-    TOKEN_BALANCES {
-        BLOB identity_id PK
-        BLOB token_id PK "32-byte token contract Identifier"
-        INTEGER balance
-        INTEGER updated_at "Unix timestamp"
-    }
-
-    DASHPAY_PROFILES {
-        BLOB identity_id PK "one row per identity"
-        BLOB profile_blob "bincode-encoded DashPayProfile"
-    }
-
-    DASHPAY_PAYMENTS_OVERLAY {
-        BLOB identity_id PK
-        TEXT payment_id PK "transaction-level string key"
-        BLOB overlay_blob "bincode-encoded PaymentEntry"
     }
 ```
 
@@ -356,7 +419,9 @@ Payment overlay entries for DashPay, keyed by transaction-level
 - Identity-owned tables (`identity_keys`, `token_balances`,
   `dashpay_profiles`, `dashpay_payments_overlay`) have no `wallet_id`
   column. Cascade reaches them via `identities(identity_id)`.
-- `core_utxos.spent_in_txid` is cleared by a trigger (`setnull_core_utxos_on_tx_delete`) rather than a native `ON DELETE SET NULL` FK, because SQLite would null every column of a composite FK on SET NULL — including the NOT NULL `wallet_id`.
+- `core_utxos.spent_in_txid` is cleared by the `setnull_core_utxos_on_tx_delete`
+  trigger rather than a native `ON DELETE SET NULL` FK, because SQLite would null
+  every column of a composite FK on SET NULL — including the NOT NULL `wallet_id`.
 - `PRAGMA foreign_keys = ON` is set and verified on every connection open.
 
 ## Migrations
