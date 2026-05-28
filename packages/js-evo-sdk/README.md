@@ -67,7 +67,7 @@ The SDK organises its API into domain-specific facades, each accessible as a pro
 |--------|-------------|
 | [`sdk.addresses`](src/addresses/facade.ts) | Query balances, transfer credits, withdraw to L1 |
 | [`sdk.identities`](src/identities/facade.ts) | Fetch, create, update, and top up identities |
-| [`sdk.documents`](src/documents/facade.ts) | Query, create, replace, delete, and transfer documents |
+| [`sdk.documents`](src/documents/facade.ts) | Query, create, replace, delete, and transfer documents; aggregate `count` / `sum` / `average` over indexed fields |
 | [`sdk.contracts`](src/contracts/facade.ts) | Fetch, publish, and update data contracts |
 | [`sdk.tokens`](src/tokens/facade.ts) | Mint, burn, transfer, freeze tokens and query balances |
 | [`sdk.dpns`](src/dpns/facade.ts) | Register and resolve Dash Platform names |
