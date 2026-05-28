@@ -21,7 +21,7 @@
 #![deny(rust_2018_idioms)]
 #![deny(unsafe_code)]
 
-#[cfg(feature = "sqlite")]
+#[cfg(feature = "kv")]
 pub mod kv;
 #[cfg(feature = "sqlite")]
 pub mod sqlite;
@@ -31,7 +31,7 @@ pub mod sqlite;
 // have to spell out the `::sqlite::` middle segment for the common
 // names. Adding to or trimming from this list does NOT count as a
 // breaking change of the submodule API.
-#[cfg(feature = "sqlite")]
+#[cfg(feature = "kv")]
 pub use kv::{KvError, KvStore};
 #[cfg(feature = "sqlite")]
 pub use sqlite::{

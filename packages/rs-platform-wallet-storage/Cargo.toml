@@ -77,7 +77,7 @@ static_assertions = "1"
 filetime = "0.2"
 tracing-test = { version = "0.2", features = ["no-env-filter"] }
 serial_test = "3"
-platform-wallet-storage = { path = ".", features = ["sqlite", "cli", "__test-helpers"] }
+platform-wallet-storage = { path = ".", features = ["sqlite", "cli", "kv", "__test-helpers"] }
 # `round_trip_consumer.rs` constructs a real `PlatformWalletManager`
 # (consumer) against a real `SqlitePersister` (this crate's impl) so
 # every consumer↔persister contract drift becomes a CI failure (CODE-008
@@ -94,7 +94,7 @@ dash-sdk = { path = "../rs-sdk", default-features = false, features = [
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
 [features]
-default = ["sqlite", "cli"]
+default = ["sqlite", "cli", "kv"]
 # SQLite-backed persister (`platform_wallet_storage::sqlite`).
 sqlite = [
     "dep:platform-wallet",
@@ -123,6 +123,13 @@ cli = [
 # implemented in this build — enabling the feature today is a no-op
 # beyond a `// pub mod secrets;` marker in `src/lib.rs`.
 secrets = []
+# Generic key/value store API (`platform_wallet_storage::KvStore`,
+# `KvError`) plus the SQLite-backed impl. Requires `sqlite` because
+# the only shipped backend is on `SqlitePersister`. The underlying
+# `kv_store` table is always created by V001 so DB files stay
+# interoperable across feature combos; this gate only controls the
+# Rust API surface.
+kv = ["sqlite"]
 # Exposes `lock_conn_for_test` / `config_for_test` accessors on
 # `SqlitePersister` so this crate's own integration tests can probe
 # the write connection. The double-underscore prefix follows Cargo's

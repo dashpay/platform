@@ -7,6 +7,8 @@
 //! semantics, idempotent delete, cascade on wallet delete, key length
 //! validation, and the typed `WalletNotFound` path for FK violations.
 
+#![cfg(feature = "kv")]
+
 mod common;
 
 use common::{ensure_wallet_meta, fresh_persister, wid};
