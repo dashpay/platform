@@ -389,11 +389,24 @@ enum WalletKeyHealthChecker {
     }
 
     /// Cascade-delete an orphan identity from SwiftData AND wipe its
-    /// associated Keychain entries. Order matters: clear the
-    /// Keychain side first (purely additive to the SwiftData state),
-    /// then drop the row. If Keychain wipe fails we still try the
-    /// SwiftData delete so the user can finish the operation; the
-    /// keychain error is surfaced to the caller.
+    /// associated Keychain entries.
+    ///
+    /// Ordering:
+    ///  1. Wipe Keychain first (`identity_privkey.*` rows whose
+    ///     metadata matches this identity). Idempotent on retry.
+    ///  2. Pre-delete the identity's cascade children that have
+    ///     non-Optional inverses back to it — DPNS names, DashPay
+    ///     profile, contact requests — and save. SwiftData fatals
+    ///     on `save()` whenever it tries to null out a non-
+    ///     Optional inverse, so the parent delete in step 3 cannot
+    ///     be in the same save batch as these children; mirrors
+    ///     the per-layer save pattern in
+    ///     `PlatformWalletPersistenceHandler.deleteWalletData`.
+    ///  3. Delete the identity itself + save.
+    ///
+    /// If the keychain wipe throws we still attempt the SwiftData
+    /// delete so the user can finish the operation; the keychain
+    /// error is surfaced to the caller after the deletes complete.
     @MainActor
     static func deleteOrphan(
         identity: PersistentIdentity,
@@ -410,8 +423,31 @@ enum WalletKeyHealthChecker {
         } catch {
             keychainError = error
         }
+
+        // PHASE 1: delete cascade children with non-Optional
+        // inverses to identity. Same reasoning as
+        // `PlatformWalletPersistenceHandler.deleteWalletData` —
+        // PersistentPublicKey / Document / TokenBalance inverses
+        // to identity are already Optional and don't need pre-
+        // deletion; DPNS names, DashPay profile, contact requests
+        // do.
+        for name in Array(identity.dpnsNames) {
+            modelContext.delete(name)
+        }
+        if let profile = identity.dashpayProfile {
+            modelContext.delete(profile)
+        }
+        for cr in Array(identity.contactRequests) {
+            modelContext.delete(cr)
+        }
+        try modelContext.save()
+
+        // PHASE 2: delete the identity itself. Its problematic
+        // cascade children are gone, so SwiftData has no non-
+        // Optional inverse to null out during the merge phase.
         modelContext.delete(identity)
         try modelContext.save()
+
         if let keychainError {
             throw keychainError
         }
