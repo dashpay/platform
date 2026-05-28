@@ -50,6 +50,11 @@ zeroize = "1"
 
 # Shielded pool (optional, behind `shielded` feature)
 grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "5eb7a5380a6e974513343352acfd6b30a8c1f87c", optional = true }
+# Direct `rusqlite` access so `FileBackedShieldedStore::open_path` can set
+# WAL + synchronous=NORMAL pragmas before handing the connection to
+# `ClientPersistentCommitmentTree`. Version locked to match the rev grovedb
+# is built against (its `Cargo.lock` resolves rusqlite at this major).
+rusqlite = { version = "0.38", optional = true }
 zip32 = { version = "0.2.0", default-features = false, optional = true }
 
 [dev-dependencies]
@@ -60,6 +65,10 @@ drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
 rand = "0.8"
 # Drives the parallel decrypt benchmark in `shielded_decrypt_bench.rs`.
 rayon = "1.10"
+# Used by `shielded_tree_append_bench.rs` to open SQLite with tuned PRAGMAs
+# (WAL vs DELETE, sync mode) — confirms whether journal mode is what's
+# making the simulator path so slow.
+rusqlite = "0.38"
 static_assertions = "1.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # `test-util` brings `tokio::time::pause` / `tokio::test(start_paused = true)`
@@ -79,7 +88,7 @@ rs-sdk-trusted-context-provider = { path = "../rs-sdk-trusted-context-provider" 
 default = ["bls", "eddsa"]
 bls = ["key-wallet/bls", "key-wallet-manager/bls"]
 eddsa = ["key-wallet/eddsa", "key-wallet-manager/eddsa"]
-shielded = ["dep:grovedb-commitment-tree", "dep:zip32", "dash-sdk/shielded", "dpp/shielded-client"]
+shielded = ["dep:grovedb-commitment-tree", "dep:rusqlite", "dep:zip32", "dash-sdk/shielded", "dpp/shielded-client"]
 # Opt-in serde derives on the changeset types. Activates `key-wallet/serde`,
 # `key-wallet-manager/serde`, and `dash-sdk/serde`. `dpp` derives serde unconditionally.
 serde = [

@@ -52,11 +52,41 @@ pub struct FileBackedShieldedStore {
 
 impl FileBackedShieldedStore {
     /// Open or create a shielded store at `path`.
+    ///
+    /// SQLite is opened with **WAL journal + synchronous=NORMAL + temp_store=MEMORY**
+    /// rather than the rusqlite defaults (DELETE + sync=FULL). Rationale: every
+    /// `append_commitment` invocation runs an implicit one-statement transaction
+    /// that, under DELETE+FULL, forces a fsync per cmx. On hosts where fsync is
+    /// strictly honored (macOS Mac/simulator filesystems), that turns into the
+    /// dominant cost of cold sync — a 1M-leaf tree build was ~6 min, vs ~17 s
+    /// with the PRAGMAs below, per
+    /// `packages/rs-platform-wallet/tests/shielded_tree_append_bench.rs`.
+    ///
+    /// `synchronous=NORMAL` retains crash-safety for the WAL (the WAL itself is
+    /// fsync'd at checkpoint); we don't need `FULL` because no row in the
+    /// commitment-tree SQLite is "user money" — every commitment is chain-side
+    /// authenticated and can be rebuilt by re-running sync from a recorded
+    /// `last_synced_note_index`. A torn WAL on power loss would at worst
+    /// require resync from the last checkpoint, which is the same cost the
+    /// host already accepts on a fresh install.
     pub fn open_path(
         path: impl AsRef<Path>,
         max_checkpoints: usize,
     ) -> Result<Self, FileShieldedStoreError> {
-        let tree = ClientPersistentCommitmentTree::open_path(path, max_checkpoints)
+        let conn = rusqlite::Connection::open(path.as_ref())
+            .map_err(|e| FileShieldedStoreError(format!("open sqlite: {e}")))?;
+        // Pragmas must be applied before the schema is touched. They survive
+        // for the lifetime of the connection; WAL also persists for any
+        // subsequent reopen on the same file until explicitly changed.
+        for (k, v) in [
+            ("journal_mode", "WAL"),
+            ("synchronous", "NORMAL"),
+            ("temp_store", "MEMORY"),
+        ] {
+            conn.pragma_update(None, k, v)
+                .map_err(|e| FileShieldedStoreError(format!("PRAGMA {k}={v}: {e}")))?;
+        }
+        let tree = ClientPersistentCommitmentTree::open(conn, max_checkpoints)
             .map_err(|e| FileShieldedStoreError(format!("open commitment tree: {e}")))?;
         Ok(Self {
             tree: Mutex::new(tree),

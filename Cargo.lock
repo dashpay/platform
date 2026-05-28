@@ -4844,6 +4844,7 @@ dependencies = [
  "rand 0.8.6",
  "rayon",
  "rs-sdk-trusted-context-provider",
+ "rusqlite",
  "serde",
  "serde_json",
  "sha2",
