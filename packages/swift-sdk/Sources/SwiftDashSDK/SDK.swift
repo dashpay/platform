@@ -108,13 +108,21 @@ public final class SDK: @unchecked Sendable {
   /// takes the verbatim `address` field (`<ip>:<CoreP2PPort>`).
   ///
   /// Returns nil on any failure (timeout, JSON shape mismatch, etc.).
-  /// Filters to `status == "ENABLED"`.
+  /// Filters to `status == "ENABLED" && version_check == "success"`
+  /// to match the Rust trusted-context provider's active-node policy
+  /// (see `rs-sdk-trusted-context-provider/src/provider.rs`). Without
+  /// the `version_check` filter, nodes the quorum service has
+  /// already flagged as incompatible would be seeded into both the
+  /// DAPI fan-out and the SPV peer list, undermining the
+  /// self-healing rebuild this enables.
   ///
   /// `public` because both the SDK init (DAPI fan-out) and the
-  /// SwiftExampleApp's SPV start path call this against the same
-  /// endpoint — keeping it in one place means a single round-trip
-  /// per build instead of two, but callers must handle their own
-  /// caching if needed.
+  /// SwiftExampleApp's SPV start path call it independently against
+  /// the same endpoint — each caller pays its own round-trip, with
+  /// no shared cache. An SDK rebuild on devnet therefore performs
+  /// two `/masternodes` fetches; if that becomes a problem, the
+  /// expectation is that callers add a short-lived cache locally
+  /// (or refactor to share one through the SDK).
   public static func discoverActiveMasternodes(
     quorumBase: String
   ) -> [(spvPeer: String, dapiUrl: String)]? {
@@ -163,7 +171,23 @@ public final class SDK: @unchecked Sendable {
     struct Masternode: Decodable {
       let address: String          // "ip:CoreP2PPort"
       let status: String
-      let platformHTTPPort: UInt16
+      // Optional to match the Rust trusted-context provider, which
+      // tolerates entries missing `platformHTTPPort` and substitutes
+      // a per-network default. Requiring this would make a single
+      // misbehaving JSON entry fail the whole decode (Decodable is
+      // all-or-nothing per object), nuking devnet auto-discovery.
+      //
+      // Note JSON wire keys are camelCase (`platformHTTPPort`,
+      // `versionCheck`) — Rust renames its snake_case fields with
+      // `#[serde(rename = ...)]` to produce that on the wire. Swift's
+      // default `Decodable` synthesis matches property name → JSON
+      // key literally, so no `CodingKeys` is needed here as long as
+      // these property names match the wire keys verbatim.
+      let platformHTTPPort: UInt16?
+      // Same `versionCheck` field the Rust provider filters on.
+      // Optional because older quorum-list-server builds may omit it;
+      // callers below treat missing as "not success" (i.e. excluded).
+      let versionCheck: String?
     }
 
     guard
@@ -171,10 +195,14 @@ public final class SDK: @unchecked Sendable {
       env.success
     else { return nil }
 
+    // Conservative default — matches the Rust trusted-context
+    // provider's fallback when the entry omits `platform_http_port`.
+    let defaultDapiPort: UInt16 = 443
     let active: [(String, String)] = env.data.compactMap { mn in
-      guard mn.status == "ENABLED" else { return nil }
+      guard mn.status == "ENABLED", mn.versionCheck == "success" else { return nil }
       let host = mn.address.split(separator: ":").first.map(String.init) ?? mn.address
-      return (mn.address, "https://\(host):\(mn.platformHTTPPort)")
+      let dapiPort = mn.platformHTTPPort ?? defaultDapiPort
+      return (mn.address, "https://\(host):\(dapiPort)")
     }
     return active.isEmpty ? nil : active
   }

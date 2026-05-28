@@ -53,7 +53,7 @@
 		endpoints. Required so `SDK.discoverActiveMasternodes` can hit
 		`http://<host>:8080/masternodes` (the dash quorum-list-server
 		runs HTTP by default — see
-		`/Users/ivanshumkov/Projects/dashpay/quorum-list-server`).
+		https://github.com/dashpay/quorum-list-server).
 
 		On a production build this MUST be removed and the
 		quorum-list-server fronted by HTTPS. Tracked alongside the rest
