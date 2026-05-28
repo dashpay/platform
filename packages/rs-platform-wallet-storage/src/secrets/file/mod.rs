@@ -69,12 +69,15 @@ const LOCK_POLL_INTERVAL: Duration = Duration::from_millis(50);
 
 /// A passphrase-encrypted file-backed credential store.
 ///
-/// The passphrase is held in a [`SecretString`] for the store's
-/// lifetime so each operation can re-derive the per-vault key; it is
-/// never written anywhere and is zeroized when the store drops
-/// (SEC-REQ-2.2.13). The derived AEAD key is recomputed per operation
-/// and dropped (zeroized) immediately after use — it is never retained
-/// on the struct.
+/// Passphrases are held per-vault: the open-time `passphrase` is the
+/// store-wide default used for any wallet that has not been rekeyed,
+/// and [`rekey`](Self::rekey) registers a per-vault override that only
+/// affects that wallet (CMT-001). This means a multi-wallet store
+/// cannot lock itself out: rekeying wallet A leaves every other vault
+/// readable under its own effective passphrase. Every [`SecretString`]
+/// is zeroized when the store drops (SEC-REQ-2.2.13). The derived AEAD
+/// key is recomputed per operation and dropped (zeroized) immediately
+/// after use — it is never retained on the struct.
 pub struct EncryptedFileStore {
     inner: Arc<EncryptedFileStoreInner>,
 }
@@ -84,7 +87,25 @@ pub struct EncryptedFileStore {
 /// keeping the public handle alive.
 struct EncryptedFileStoreInner {
     dir: PathBuf,
-    passphrase: SecretString,
+    /// The store-wide initial passphrase supplied at [`open`]. Used as
+    /// the fallback for any wallet whose passphrase has not been
+    /// overridden via [`rekey`] (CMT-001). Per-vault storage lives in
+    /// [`passphrases`]; this field is the open-time default.
+    ///
+    /// [`open`]: EncryptedFileStore::open
+    /// [`rekey`]: EncryptedFileStore::rekey
+    /// [`passphrases`]: Self::passphrases
+    default_passphrase: SecretString,
+    /// Per-vault passphrase overrides (CMT-001). Populated only by
+    /// `rekey(wallet_id, new_pp)` so that a per-wallet swap never
+    /// touches another wallet's effective passphrase. Lookup order in
+    /// [`effective_passphrase`]: this map first, falling back to
+    /// [`default_passphrase`]. Guarded by a `Mutex` so the swap is
+    /// atomic with the on-disk re-encrypt under [`with_vault_lock`].
+    ///
+    /// [`effective_passphrase`]: Self::effective_passphrase
+    /// [`default_passphrase`]: Self::default_passphrase
+    passphrases: Mutex<HashMap<WalletId, SecretString>>,
     /// Per-wallet in-process serialization for the put/delete/rekey
     /// read-modify-write span (CMT-001). The outer `Mutex` only guards
     /// the map; the inner per-wallet `Mutex<()>` is held across the
@@ -111,7 +132,8 @@ impl EncryptedFileStore {
         Ok(Self {
             inner: Arc::new(EncryptedFileStoreInner {
                 dir,
-                passphrase,
+                default_passphrase: passphrase,
+                passphrases: Mutex::new(HashMap::new()),
                 locks: Mutex::new(HashMap::new()),
             }),
         })
@@ -119,8 +141,13 @@ impl EncryptedFileStore {
 
     /// Re-encrypt every entry for `wallet_id` under a fresh salt +
     /// fresh per-entry nonces, then atomically replace the vault. No
-    /// `.bak` retains old key material (SEC-REQ-2.2.12). Replaces this
-    /// store's passphrase atomically on success.
+    /// `.bak` retains old key material (SEC-REQ-2.2.12). Registers
+    /// `new_passphrase` as the per-vault passphrase for `wallet_id`
+    /// only — every OTHER vault in the same store keeps its current
+    /// effective passphrase, so multi-wallet stores cannot lock
+    /// themselves out (CMT-001). If `wallet_id` has no vault on disk
+    /// the call is a no-op: `Ok(())` is returned and no passphrase
+    /// state is touched.
     pub fn rekey(
         &mut self,
         wallet_id: WalletId,
@@ -229,6 +256,25 @@ impl EncryptedFileStoreInner {
             .clone()
     }
 
+    /// The passphrase currently in effect for `wallet_id` (CMT-001):
+    /// the per-vault override if `rekey` has set one, otherwise the
+    /// store-wide default supplied at [`open`]. Returns a fresh
+    /// [`SecretString`] copy (the map's slot stays owned, the lock is
+    /// released before the copy crosses out of this method) so callers
+    /// never hold the passphrases map lock across a KDF.
+    ///
+    /// [`open`]: EncryptedFileStore::open
+    fn effective_passphrase(&self, wallet_id: &WalletId) -> SecretString {
+        let map = self
+            .passphrases
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        match map.get(wallet_id) {
+            Some(pp) => SecretString::new(pp.expose_secret().to_string()),
+            None => SecretString::new(self.default_passphrase.expose_secret().to_string()),
+        }
+    }
+
     /// Run `f` with the in-process per-wallet mutex held AND the
     /// cross-process sidecar `.lock` file held exclusively (CMT-001).
     /// Both layers acquire-release strictly around `f`'s execution; the
@@ -259,10 +305,33 @@ impl EncryptedFileStoreInner {
         let _file_guard = loop {
             match rw.try_write() {
                 Ok(guard) => break guard,
-                Err(_) if Instant::now() < deadline => {
+                // Honest lock contention: spin until the wait budget
+                // elapses (CMT-002). `Interrupted` is treated the same
+                // way — a benign signal-interrupt of `flock(2)` /
+                // `LockFileEx`, retry without falsely surfacing a real
+                // I/O failure.
+                Err(e)
+                    if matches!(
+                        e.kind(),
+                        std::io::ErrorKind::WouldBlock | std::io::ErrorKind::Interrupted
+                    ) && Instant::now() < deadline =>
+                {
                     std::thread::sleep(LOCK_POLL_INTERVAL);
                 }
-                Err(_) => return Err(FileStoreError::Busy),
+                Err(e)
+                    if matches!(
+                        e.kind(),
+                        std::io::ErrorKind::WouldBlock | std::io::ErrorKind::Interrupted
+                    ) =>
+                {
+                    return Err(FileStoreError::Busy);
+                }
+                // Non-contention I/O fault (`EIO`, `EBADF`, `EACCES`,
+                // `ENOSPC`, …). Surface the real cause instead of
+                // busy-spinning then collapsing it to `Busy` — the SPI
+                // maps `Busy` to a retryable signal, which would
+                // mislead callers about a genuine fault (CMT-002).
+                Err(e) => return Err(FileStoreError::from(e)),
             }
         };
         f()
@@ -308,7 +377,8 @@ impl EncryptedFileStoreInner {
         wallet_id: &WalletId,
         vault: &Vault,
     ) -> Result<SecretBytes, FileStoreError> {
-        let key = crypto::derive_key(&self.passphrase, &vault.salt, vault.kdf)?;
+        let passphrase = self.effective_passphrase(wallet_id);
+        let key = crypto::derive_key(&passphrase, &vault.salt, vault.kdf)?;
         let v_aad = format::verify_aad(format::FORMAT_VERSION, wallet_id.as_bytes());
         match crypto::open(&key, &vault.verify_nonce, &v_aad, &vault.verify_ct) {
             Ok(_) => Ok(key),
@@ -418,13 +488,18 @@ impl EncryptedFileStoreInner {
         // CMT-001 guards the read→re-encrypt→write span against a peer
         // process; `with_vault_lock` also takes the in-process per-
         // wallet mutex so a future refactor that loses the `&mut self`
-        // channel cannot silently regress the safety.
+        // channel cannot silently regress the safety. The map swap at
+        // the bottom is per-vault (CMT-001) so a multi-wallet store
+        // cannot lock its other vaults out.
         let path = self.vault_path(&wallet_id);
-        self.with_vault_lock(&wallet_id, || {
+        let swap = self.with_vault_lock(&wallet_id, || {
             let Some(old_vault) = self.read_vault(&path)? else {
-                // No vault on disk yet: the new passphrase becomes the
-                // active one for any future write (set below the lock).
-                return Ok(());
+                // No vault on disk yet: rekey is a no-op. Do NOT touch
+                // the passphrases map — registering a passphrase for a
+                // wallet that never existed would silently lock the
+                // operator out the moment they tried to create one
+                // under the old default.
+                return Ok(false);
             };
             let old_key = self.derive_and_verify(&wallet_id, &old_vault)?;
             let (mut new_vault, new_key) = self.new_vault(&wallet_id, &new_passphrase)?;
@@ -445,9 +520,19 @@ impl EncryptedFileStoreInner {
                     },
                 );
             }
-            self.write_vault(&path, &new_vault)
+            self.write_vault(&path, &new_vault)?;
+            Ok(true)
         })?;
-        self.passphrase = new_passphrase;
+        if swap {
+            // Register the new passphrase ONLY for this wallet. Other
+            // vaults in the same store keep their effective passphrase
+            // unchanged (CMT-001).
+            let mut map = self
+                .passphrases
+                .lock()
+                .unwrap_or_else(|poison| poison.into_inner());
+            map.insert(wallet_id, new_passphrase);
+        }
         Ok(())
     }
 
@@ -472,7 +557,10 @@ impl EncryptedFileStoreInner {
                     let key = self.derive_and_verify(wallet_id, &vault)?;
                     (vault, key)
                 }
-                None => self.new_vault(wallet_id, &self.passphrase)?,
+                None => {
+                    let passphrase = self.effective_passphrase(wallet_id);
+                    self.new_vault(wallet_id, &passphrase)?
+                }
             };
             let aad = format::aad(format::FORMAT_VERSION, wallet_id.as_bytes(), &label);
             let (nonce, ciphertext) = crypto::seal(&key, &aad, secret.expose_secret())?;
@@ -1002,6 +1090,61 @@ mod tests {
         drop(live);
         s.rekey(wid(1), SecretString::new("pw-new")).unwrap();
         assert_eq!(entry(&s, wid(1), "seed").get_secret().unwrap(), b"value");
+    }
+
+    /// CMT-001 — rekey targets one wallet's passphrase only. A
+    /// multi-wallet store (`A` + `B` written under the same open-time
+    /// default) must NOT lock `B` out when `A` is rekeyed: `B` stays
+    /// readable under its original (default) passphrase, and `A` is
+    /// only readable under the new one. Without the per-vault
+    /// passphrase map this test fails because the store-wide
+    /// passphrase swap would invalidate `B`'s verify-token.
+    #[test]
+    fn rekey_one_wallet_does_not_lock_out_other_wallets() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut s = store(dir.path());
+        entry(&s, wid(1), "seedA").set_secret(b"value-A").unwrap();
+        entry(&s, wid(2), "seedB").set_secret(b"value-B").unwrap();
+
+        s.rekey(wid(1), SecretString::new("pw-A-new")).unwrap();
+
+        // Wallet B stays readable under the open-time default — the
+        // rekey of A must not have touched B's effective passphrase.
+        assert_eq!(entry(&s, wid(2), "seedB").get_secret().unwrap(), b"value-B");
+        // Wallet A is now readable under its per-vault override.
+        assert_eq!(entry(&s, wid(1), "seedA").get_secret().unwrap(), b"value-A");
+
+        // Reopening with the original default reads B but not A.
+        drop(s);
+        let reopened =
+            EncryptedFileStore::open(dir.path(), SecretString::new("pw-correct")).unwrap();
+        assert_eq!(
+            entry(&reopened, wid(2), "seedB").get_secret().unwrap(),
+            b"value-B"
+        );
+        let err = entry(&reopened, wid(1), "seedA").get_secret().unwrap_err();
+        assert!(is_wrong_passphrase(&err), "unexpected error: {err:?}");
+    }
+
+    /// CMT-001 — rekey on a wallet with NO vault on disk must be a
+    /// no-op: it must not register a passphrase for that wallet, so a
+    /// later first-write under the open-time default still works.
+    /// Without the fix, the missing-vault arm would silently swap the
+    /// store-wide passphrase and lock the operator out of every
+    /// future create.
+    #[test]
+    fn rekey_with_no_vault_on_disk_does_not_register_passphrase() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut s = store(dir.path());
+        // No vault yet for either wallet.
+        s.rekey(wid(7), SecretString::new("pw-unused")).unwrap();
+        // Default passphrase still works for a fresh wallet.
+        entry(&s, wid(1), "seed").set_secret(b"value").unwrap();
+        assert_eq!(entry(&s, wid(1), "seed").get_secret().unwrap(), b"value");
+        // And for the previously-targeted wallet (its slot was never
+        // registered, so the default is still in effect).
+        entry(&s, wid(7), "seed").set_secret(b"value7").unwrap();
+        assert_eq!(entry(&s, wid(7), "seed").get_secret().unwrap(), b"value7");
     }
 
     #[test]

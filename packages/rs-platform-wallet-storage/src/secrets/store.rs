@@ -120,11 +120,19 @@ impl SecretStore {
 }
 
 /// Build the SPI [`Entry`] for `(service, label)` on the OS-keyring arm.
+///
+/// The reject-not-sanitize label allowlist (`^[A-Za-z0-9._-]{1,64}$`)
+/// is enforced here before the call crosses into the OS backend
+/// (CMT-006). Different OS keyrings accept, normalize, or reject
+/// non-allowlisted bytes inconsistently; enforcing the allowlist at
+/// this shim keeps `(service, label)` invariants identical to the
+/// `File` arm and across every OS backend.
 fn build_os(
     store: &Arc<dyn CredentialStoreApi + Send + Sync>,
     service: &WalletId,
     label: &str,
 ) -> Result<Entry, FileStoreError> {
+    let label = super::validate::validated_label(label).map_err(FileStoreError::from)?;
     let svc = format!("{SERVICE_PREFIX}{}", service.to_hex());
     store.build(&svc, label, None).map_err(map_spi)
 }
@@ -278,5 +286,72 @@ mod tests {
         let s = file_store(dir.path());
         let dbg = format!("{s:?}");
         assert!(!dbg.contains("pw-correct"));
+    }
+
+    /// CMT-006 — the OS-keyring shim must enforce the label
+    /// allowlist BEFORE handing the value to the OS backend. The
+    /// per-backend label policies (macOS Keychain vs Windows
+    /// Credential Manager vs Secret Service vs linux-keyutils) differ
+    /// in what they accept, normalize, or reject; the shim must keep
+    /// the `(service, label)` invariant uniform across every arm.
+    ///
+    /// A mock `CredentialStoreApi` that panics if its `build()` is
+    /// invoked proves the bad label never crosses the SPI seam — the
+    /// shim rejects with `FileStoreError::InvalidLabel` first.
+    #[test]
+    fn build_os_rejects_invalid_label_before_spi() {
+        use std::any::Any;
+        use std::collections::HashMap;
+        use std::sync::Arc;
+
+        use keyring_core::api::CredentialStoreApi;
+        use keyring_core::{Entry, Result as KeyringResult};
+
+        struct PanickingStore;
+
+        impl CredentialStoreApi for PanickingStore {
+            fn vendor(&self) -> String {
+                "test".to_string()
+            }
+            fn id(&self) -> String {
+                "panicking".to_string()
+            }
+            fn build(
+                &self,
+                _service: &str,
+                _user: &str,
+                _modifiers: Option<&HashMap<&str, &str>>,
+            ) -> KeyringResult<Entry> {
+                panic!("build_os must reject the label before reaching the SPI (CMT-006)");
+            }
+            fn as_any(&self) -> &dyn Any {
+                self
+            }
+        }
+
+        let store: Arc<dyn CredentialStoreApi + Send + Sync> = Arc::new(PanickingStore);
+        let os = SecretStore::Os(store);
+        // Every operation on the OS arm goes through `build_os`; the
+        // allowlist rejection MUST fire here, so the panicking SPI is
+        // never reached.
+        for bad in ["lab el", "../escape", "", "a:b", "a/b", "lab\0el"] {
+            let err = os
+                .set(&wid(1), bad, &SecretBytes::from_slice(b"x"))
+                .unwrap_err();
+            assert!(
+                matches!(err, FileStoreError::InvalidLabel),
+                "set with label {bad:?} should reject as InvalidLabel, got {err:?}"
+            );
+            let err = os.get(&wid(1), bad).unwrap_err();
+            assert!(
+                matches!(err, FileStoreError::InvalidLabel),
+                "get with label {bad:?} should reject as InvalidLabel, got {err:?}"
+            );
+            let err = os.delete(&wid(1), bad).unwrap_err();
+            assert!(
+                matches!(err, FileStoreError::InvalidLabel),
+                "delete with label {bad:?} should reject as InvalidLabel, got {err:?}"
+            );
+        }
     }
 }
