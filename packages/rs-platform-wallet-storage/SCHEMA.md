@@ -409,6 +409,57 @@ Payment overlay entries for DashPay, keyed by transaction-level
 - PK: `(identity_id, payment_id)`.
 - FK: `identity_id → identities(identity_id) ON DELETE CASCADE`.
 
+## Enum-domain CHECK constraints
+
+Five TEXT columns hold serialized Rust enum variants and carry a
+`CHECK (col IN (...))` clause whose IN-list is built at migration time
+from `pub(crate) const *_LABELS` arrays declared next to each writer
+function:
+
+| Table | Column | Source-of-truth const |
+|---|---|---|
+| `wallet_metadata` | `network` | `sqlite::schema::wallet_meta::NETWORK_LABELS` |
+| `account_registrations` | `account_type` | `sqlite::schema::accounts::ACCOUNT_TYPE_LABELS` |
+| `account_address_pools` | `account_type` | `sqlite::schema::accounts::ACCOUNT_TYPE_LABELS` |
+| `account_address_pools` | `pool_type` | `sqlite::schema::accounts::POOL_TYPE_LABELS` |
+| `core_derived_addresses` | `account_type` | `sqlite::schema::accounts::ACCOUNT_TYPE_LABELS` |
+| `asset_locks` | `status` | `sqlite::schema::asset_locks::ASSET_LOCK_STATUS_LABELS` |
+
+The const arrays are the single source of truth shared by the writer
+mapping functions (`network_to_str`, `account_type_db_label`,
+`pool_type_db_label`, `status_str`) and the migration's CHECK clauses.
+Per-module `*_labels_match_enum` unit tests enforce set-equality
+between each const and the writer's codomain — drift (a renamed/added
+upstream variant) fails the test rather than landing as silent garbage
+in the database. The label inventories are intentionally not duplicated
+in this document; the source files are canonical.
+
+### Upstream-enum coupling
+
+Three of the persisted enums live in the external `rust-dashcore`
+crate (`key_wallet::Network`, `key_wallet::account::AccountType`,
+`key_wallet::managed_account::address_pool::AddressPoolType`); the
+fourth (`platform_wallet::wallet::asset_lock::tracked::AssetLockStatus`)
+is in-tree and carries a `# Schema coupling` rustdoc block.
+
+Because the upstream definitions cannot be edited from this repository,
+the coupling is enforced from the local side instead, by three
+mechanisms working together:
+
+1. **Writer rustdoc** in each `sqlite::schema::*` module names the
+   upstream enum path so an IDE jump-to-definition lands at it.
+2. **Exhaustive `match` arms** in the parity-test variant lists
+   (`all_*_variants` functions) cause an upstream-added variant to
+   fail compilation here, forcing a writer + LABELS update.
+3. **`*_labels_match_enum` unit tests** assert set-equality between
+   each `*_LABELS` array and the writer's codomain.
+
+TODO(rust-dashcore): once the upstream `key_wallet` crate is vendored
+or the project gains push access there, mirror the in-tree
+`AssetLockStatus` `# Schema coupling` doc block on the three upstream
+enums so a developer editing them upstream sees the constraint without
+having to grep this repo.
+
 ## Foreign-key conventions
 
 - All direct-child `wallet_id` columns are `BLOB(32)` references to

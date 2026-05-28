@@ -87,6 +87,19 @@ pub fn delete(tx: &Transaction<'_>, wallet_id: &WalletId) -> Result<usize, Walle
     Ok(n)
 }
 
+/// Single source of truth for the `wallet_metadata.network` TEXT-column
+/// domain.
+///
+/// Mirrors every variant of [`key_wallet::Network`] (writer side:
+/// [`network_to_str`]). The migration in `migrations/V001__initial.rs`
+/// interpolates this array into a `CHECK (network IN (...))` clause so
+/// an unknown label is rejected at insert time rather than landing as
+/// silent garbage. The `network_labels_match_enum` unit test below
+/// enforces set-equality between this array and the writer's output —
+/// drift (a renamed/added variant) becomes a failing test, not a
+/// runtime divergence between Rust and SQLite.
+pub(crate) const NETWORK_LABELS: &[&str] = &["mainnet", "testnet", "devnet", "regtest"];
+
 fn network_to_str(net: key_wallet::Network) -> &'static str {
     match net {
         key_wallet::Network::Mainnet => "mainnet",
@@ -104,5 +117,59 @@ pub fn parse_network(s: &str) -> Option<key_wallet::Network> {
         "devnet" => Some(key_wallet::Network::Devnet),
         "regtest" => Some(key_wallet::Network::Regtest),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    /// Every [`key_wallet::Network`] variant — kept exhaustive by the
+    /// `match` arm below, which the compiler's exhaustiveness check
+    /// turns into a build failure if upstream adds a variant.
+    fn all_network_variants() -> Vec<key_wallet::Network> {
+        // The match's exhaustiveness fails to compile on a new variant.
+        // Mapping every existing variant to itself keeps the list and the
+        // enum in lockstep.
+        let variants = [
+            key_wallet::Network::Mainnet,
+            key_wallet::Network::Testnet,
+            key_wallet::Network::Devnet,
+            key_wallet::Network::Regtest,
+        ];
+        for v in &variants {
+            match v {
+                key_wallet::Network::Mainnet
+                | key_wallet::Network::Testnet
+                | key_wallet::Network::Devnet
+                | key_wallet::Network::Regtest => {}
+            }
+        }
+        variants.to_vec()
+    }
+
+    #[test]
+    fn network_labels_match_enum() {
+        let from_writer: HashSet<&'static str> = all_network_variants()
+            .iter()
+            .copied()
+            .map(network_to_str)
+            .collect();
+        let from_const: HashSet<&'static str> = NETWORK_LABELS.iter().copied().collect();
+        assert_eq!(
+            from_writer, from_const,
+            "NETWORK_LABELS ({:?}) drifted from network_to_str codomain ({:?})",
+            from_const, from_writer
+        );
+    }
+
+    #[test]
+    fn parse_network_round_trips_every_label() {
+        for label in NETWORK_LABELS {
+            let parsed =
+                parse_network(label).unwrap_or_else(|| panic!("parse_network({label}) was None"));
+            assert_eq!(network_to_str(parsed), *label);
+        }
     }
 }
