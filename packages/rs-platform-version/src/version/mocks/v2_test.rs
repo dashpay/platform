@@ -431,6 +431,11 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
                     max_version: 0,
                     default_current_version: 0,
                 },
+                notes_count: FeatureVersionBounds {
+                    min_version: 0,
+                    max_version: 0,
+                    default_current_version: 0,
+                },
                 nullifiers: FeatureVersionBounds {
                     min_version: 0,
                     max_version: 0,

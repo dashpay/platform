@@ -830,6 +830,19 @@ impl std::ops::DerefMut for NullifiersTrunkState {
 )]
 pub struct ShieldedPoolState(pub u64);
 
+/// Total number of notes in the shielded pool MMR (leaf count).
+///
+/// Wallets use this as the denominator for a determinate
+/// shielded-sync progress bar. Unproved — the count is tree
+/// metadata and has no Merkle-key encoding.
+#[derive(Debug, derive_more::From, Clone, Copy)]
+#[cfg_attr(
+    feature = "mocks",
+    derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
+    platform_serialize(unversioned)
+)]
+pub struct ShieldedNotesCount(pub u64);
+
 /// A single encrypted note (cmx + encrypted data)
 #[derive(Debug, Clone)]
 #[cfg_attr(

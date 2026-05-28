@@ -1,9 +1,12 @@
 //! Shielded pool query types and helpers
 use crate::platform::fetch_current_no_parameters::FetchCurrent;
+use crate::platform::fetch_unproved::FetchUnproved;
 use crate::{platform::Fetch, Error, Sdk};
 use async_trait::async_trait;
 use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
-use drive_proof_verifier::types::{NoParamQuery, ShieldedAnchors, ShieldedPoolState};
+use drive_proof_verifier::types::{
+    NoParamQuery, ShieldedAnchors, ShieldedNotesCount, ShieldedPoolState,
+};
 
 #[async_trait]
 impl FetchCurrent for ShieldedPoolState {
@@ -31,6 +34,22 @@ impl FetchCurrent for ShieldedPoolState {
             proof,
         ))
     }
+}
+
+/// Convenience wrapper: fetch the current total leaf count of the
+/// shielded notes MMR. Intended as the denominator for a wallet's
+/// shielded-sync progress bar — see `GetShieldedNotesCount` in
+/// `platform.proto`. Unproved (no proof variant).
+pub async fn fetch_shielded_notes_count(sdk: &Sdk) -> Result<u64, Error> {
+    let (count, _metadata) = <ShieldedNotesCount as FetchUnproved>::fetch_unproved_with_settings(
+        sdk,
+        NoParamQuery {},
+        rs_dapi_client::RequestSettings::default(),
+    )
+    .await?;
+    let ShieldedNotesCount(value) =
+        count.ok_or_else(|| Error::Generic("shielded notes count not found".to_string()))?;
+    Ok(value)
 }
 
 #[async_trait]

@@ -30,10 +30,11 @@ use dapi_grpc::platform::v0::{
 use dapi_grpc::platform::v0::{
     get_most_recent_shielded_anchor_request, get_nullifiers_trunk_state_request,
     get_shielded_anchors_request, get_shielded_encrypted_notes_request,
-    get_shielded_nullifiers_request, get_shielded_pool_state_request, get_status_request,
-    GetContestedResourceIdentityVotesRequest, GetMostRecentShieldedAnchorRequest,
-    GetNullifiersTrunkStateRequest, GetPrefundedSpecializedBalanceRequest,
-    GetShieldedAnchorsRequest, GetShieldedEncryptedNotesRequest, GetShieldedNullifiersRequest,
+    get_shielded_notes_count_request, get_shielded_nullifiers_request,
+    get_shielded_pool_state_request, get_status_request, GetContestedResourceIdentityVotesRequest,
+    GetMostRecentShieldedAnchorRequest, GetNullifiersTrunkStateRequest,
+    GetPrefundedSpecializedBalanceRequest, GetShieldedAnchorsRequest,
+    GetShieldedEncryptedNotesRequest, GetShieldedNotesCountRequest, GetShieldedNullifiersRequest,
     GetShieldedPoolStateRequest, GetStatusRequest, GetTokenDirectPurchasePricesRequest,
     GetTokenPerpetualDistributionLastClaimRequest, GetVotePollsByEndDateRequest, SpecificKeys,
 };
@@ -1174,6 +1175,27 @@ impl Query<GetShieldedPoolStateRequest> for NoParamQuery {
         Ok(GetShieldedPoolStateRequest {
             version: Some(get_shielded_pool_state_request::Version::V0(
                 get_shielded_pool_state_request::GetShieldedPoolStateRequestV0 { prove },
+            )),
+        })
+    }
+}
+
+impl Query<GetShieldedNotesCountRequest> for NoParamQuery {
+    fn query(
+        &self,
+        settings: &crate::platform::QuerySettings<'_>,
+    ) -> Result<GetShieldedNotesCountRequest, Error> {
+        // The notes-count RPC is unproved by design (the leaf count
+        // is tree metadata, not a Merkle-key value), so any caller
+        // that asks for a proof is misusing the API. `FetchUnproved`
+        // strips `prove` via `without_proofs()` before this runs.
+        if settings.prove {
+            unimplemented!("query with proof are not supported for GetShieldedNotesCountRequest");
+        }
+
+        Ok(GetShieldedNotesCountRequest {
+            version: Some(get_shielded_notes_count_request::Version::V0(
+                get_shielded_notes_count_request::GetShieldedNotesCountRequestV0 {},
             )),
         })
     }
