@@ -1,3 +1,29 @@
+## [3.1.0-dev.7](https://github.com/dashpay/platform/compare/v3.1.0-dev.6...v3.1.0-dev.7) (2026-05-27)
+
+
+### ⚠ BREAKING CHANGES
+
+* **drive-abci, sdk:** allow shielded-notes queries to span 4 MMR chunks (#3756)
+
+### Features
+
+* **drive-abci, sdk:** allow shielded-notes queries to span 4 MMR chunks ([#3756](https://github.com/dashpay/platform/issues/3756))
+* platform-address funding from asset-lock proofs ([#3671](https://github.com/dashpay/platform/issues/3671))
+* **rs-platform-wallet-ffi:** expose devnet name and LLMQ_DEVNET override in spv_start ([#3758](https://github.com/dashpay/platform/issues/3758))
+* **rs-sdk-ffi:** expose optional platform_version in DashSDKConfig ([#3751](https://github.com/dashpay/platform/issues/3751))
+* **wasm-sdk:** first-class devnet support with trusted-context prefetch ([#3748](https://github.com/dashpay/platform/issues/3748))
+
+
+### Bug Fixes
+
+* **swift-sdk:** sort transfer outputs lexicographically before ReduceOutput ([#3752](https://github.com/dashpay/platform/issues/3752))
+
+
+### Miscellaneous Chores
+
+* bump rust-dashcore to 58d61ea ([#3757](https://github.com/dashpay/platform/issues/3757))
+* **dapi-grpc:** regenerate obj-c client for SUM/AVG doc updates ([#3759](https://github.com/dashpay/platform/issues/3759))
+
 ## [3.1.0-dev.6](https://github.com/dashpay/platform/compare/v3.1.0-dev.5...v3.1.0-dev.6) (2026-05-26)
 
 

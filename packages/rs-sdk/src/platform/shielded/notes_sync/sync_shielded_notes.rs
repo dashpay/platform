@@ -40,20 +40,38 @@ pub async fn sync_shielded_notes(
 ) -> Result<ShieldedSyncResult, Error> {
     let config = config.unwrap_or_default();
 
-    let chunk_size = sdk
+    // `mmr_chunk_size` is the on-chain MMR chunk size — the unit that
+    // `start_index` must align to. `fetch_size` is how many notes we
+    // pull per request; under `max_query_chunks=4` the server packs 4
+    // MMR chunks into one proof, so each request advances by 4× the
+    // MMR chunk size. Decoupling the two means the SDK can opportunistically
+    // request larger spans without touching the on-chain tree shape.
+    let mmr_chunk_size: u64 = 1u64 << drive::drive::shielded::paths::SHIELDED_NOTES_CHUNK_POWER;
+    let max_query_chunks = sdk
         .version()
         .drive_abci
         .query
         .shielded_queries
-        .max_encrypted_notes_per_query as u64;
+        .max_query_chunks as u64;
+    let fetch_size = mmr_chunk_size
+        .saturating_mul(max_query_chunks)
+        .max(mmr_chunk_size);
 
-    // Validate alignment
-    if chunk_size > 0 && !start_index.is_multiple_of(chunk_size) {
+    // Validate alignment against the MMR chunk size (NOT the multi-chunk
+    // fetch size). The server only requires per-MMR-chunk alignment; any
+    // multiple of `mmr_chunk_size` is a legal start. A `start_index`
+    // produced by a previous sync pass will be a multiple of `fetch_size`
+    // (and therefore of `mmr_chunk_size`) so this check is normally a
+    // no-op — but a hand-built resume point could land on a non-fetch
+    // boundary and still be valid.
+    if mmr_chunk_size > 0 && !start_index.is_multiple_of(mmr_chunk_size) {
         return Err(Error::Generic(format!(
             "start_index {} is not chunk-aligned; must be a multiple of {}",
-            start_index, chunk_size
+            start_index, mmr_chunk_size
         )));
     }
+
+    let chunk_size = fetch_size;
 
     let max_concurrent = config.max_concurrent.max(1);
     let settings = config.request_settings;
