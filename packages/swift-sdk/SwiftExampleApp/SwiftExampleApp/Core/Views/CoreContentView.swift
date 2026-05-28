@@ -584,11 +584,23 @@ var body: some View {
             let peers = spvPeerOverride()
             let restrictToConfiguredPeers = !peers.isEmpty
 
+            // Devnet requires a name so `DevnetConfig` can embed
+            // `devnet.devnet-<name>` in the SPV user agent (Dash
+            // Core devnet peers drop inbound handshakes without it).
+            // Read from the same UserDefaults key OptionsView writes.
+            let devnetName: String? = platformState.currentNetwork == .devnet
+                ? UserDefaults.standard.string(forKey: "platformDevnetName").flatMap {
+                    let trimmed = $0.trimmingCharacters(in: .whitespaces)
+                    return trimmed.isEmpty ? nil : trimmed
+                }
+                : nil
+
             let config = PlatformSpvStartConfig(
                 dataDir: dataDirURL.path,
                 network: platformState.currentNetwork,
                 peers: peers,
-                restrictToConfiguredPeers: restrictToConfiguredPeers
+                restrictToConfiguredPeers: restrictToConfiguredPeers,
+                devnetName: devnetName
             )
             try walletManager.startSpv(config: config)
         } catch {
