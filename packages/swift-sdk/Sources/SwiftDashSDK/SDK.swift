@@ -172,22 +172,22 @@ public final class SDK: @unchecked Sendable {
       let address: String          // "ip:CoreP2PPort"
       let status: String
       // Optional to match the Rust trusted-context provider, which
-      // tolerates entries missing `platform_http_port` and substitutes
+      // tolerates entries missing `platformHTTPPort` and substitutes
       // a per-network default. Requiring this would make a single
       // misbehaving JSON entry fail the whole decode (Decodable is
       // all-or-nothing per object), nuking devnet auto-discovery.
+      //
+      // Note JSON wire keys are camelCase (`platformHTTPPort`,
+      // `versionCheck`) — Rust renames its snake_case fields with
+      // `#[serde(rename = ...)]` to produce that on the wire. Swift's
+      // default `Decodable` synthesis matches property name → JSON
+      // key literally, so no `CodingKeys` is needed here as long as
+      // these property names match the wire keys verbatim.
       let platformHTTPPort: UInt16?
-      // Same `version_check` field the Rust provider filters on.
+      // Same `versionCheck` field the Rust provider filters on.
       // Optional because older quorum-list-server builds may omit it;
       // callers below treat missing as "not success" (i.e. excluded).
       let versionCheck: String?
-
-      enum CodingKeys: String, CodingKey {
-        case address
-        case status
-        case platformHTTPPort
-        case versionCheck = "version_check"
-      }
     }
 
     guard
