@@ -38,13 +38,15 @@ pub enum SecretStore {
 }
 
 impl SecretStore {
-    /// Open (or prepare to create) a file-backed vault rooted at `dir`,
-    /// unlocked by `passphrase`. `dir` is created if missing.
+    /// Open (or prepare to create) a file-backed vault at `path`,
+    /// unlocked by `passphrase`. `path` is the vault file itself
+    /// (operator picks the filename); the parent directory is
+    /// materialized on the first write.
     pub fn file(
-        dir: impl AsRef<std::path::Path>,
+        path: impl AsRef<std::path::Path>,
         passphrase: super::SecretString,
     ) -> Result<Self, FileStoreError> {
-        Ok(Self::File(EncryptedFileStore::open(dir, passphrase)?))
+        Ok(Self::File(EncryptedFileStore::open(path, passphrase)?))
     }
 
     /// Open the platform's default OS keyring, failing closed when none
@@ -185,7 +187,7 @@ mod tests {
     use crate::secrets::SecretString;
 
     fn file_store(dir: &std::path::Path) -> SecretStore {
-        SecretStore::file(dir, SecretString::new("pw-correct")).unwrap()
+        SecretStore::file(dir.join("vault.pwsvault"), SecretString::new("pw-correct")).unwrap()
     }
 
     fn wid(b: u8) -> WalletId {
@@ -233,7 +235,11 @@ mod tests {
         file_store(dir.path())
             .set(&wid(1), "seed", &SecretBytes::from_slice(b"orig"))
             .unwrap();
-        let bad = SecretStore::file(dir.path(), SecretString::new("pw-wrong")).unwrap();
+        let bad = SecretStore::file(
+            dir.path().join("vault.pwsvault"),
+            SecretString::new("pw-wrong"),
+        )
+        .unwrap();
         let err = bad.get(&wid(1), "seed").unwrap_err();
         assert!(
             matches!(err, FileStoreError::WrongPassphrase),
@@ -253,10 +259,15 @@ mod tests {
         let SecretStore::File(ref fs) = s else {
             unreachable!()
         };
-        let path = fs.test_vault_path(&wid(1));
-        let mut vault = fs.test_read_vault(&path).unwrap().unwrap();
-        vault.entries.get_mut("seed").unwrap().ciphertext[0] ^= 0x01;
-        fs.test_write_vault(&path, &vault).unwrap();
+        let mut vault = fs.test_read_vault().unwrap().unwrap();
+        vault
+            .wallets
+            .get_mut(&wid(1).to_hex())
+            .unwrap()
+            .get_mut("seed")
+            .unwrap()
+            .ciphertext[0] ^= 0x01;
+        fs.test_write_vault(&vault).unwrap();
         let err = s.get(&wid(1), "seed").unwrap_err();
         assert!(
             matches!(err, FileStoreError::Corruption),
@@ -271,11 +282,13 @@ mod tests {
         // reference. To observe `Busy` we hold a live credential across a
         // rekey on the same store.
         let dir = tempfile::tempdir().unwrap();
-        let mut fs = EncryptedFileStore::open(dir.path(), SecretString::new("pw")).unwrap();
+        let mut fs =
+            EncryptedFileStore::open(dir.path().join("vault.pwsvault"), SecretString::new("pw"))
+                .unwrap();
         let svc = format!("{SERVICE_PREFIX}{}", wid(1).to_hex());
         let live = fs.build(&svc, "seed", None).unwrap();
         live.set_secret(b"value").unwrap();
-        let err = fs.rekey(wid(1), SecretString::new("pw-new")).unwrap_err();
+        let err = fs.rekey(SecretString::new("pw-new")).unwrap_err();
         assert!(matches!(err, FileStoreError::Busy), "got {err:?}");
         drop(live);
     }

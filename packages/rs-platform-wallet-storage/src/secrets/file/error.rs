@@ -76,10 +76,10 @@ pub enum FileStoreError {
     ///    inner `Arc`, so the store lacks the exclusive reference the
     ///    atomic passphrase swap requires. Drop the outstanding
     ///    credentials and retry.
-    /// 2. A cross-process advisory lock on the vault sidecar
-    ///    (`*.pwsvault.lock`) could not be acquired before the wait
-    ///    budget elapsed — another process is mid-write. Retry once the
-    ///    contender releases (CMT-001).
+    /// 2. The cross-process advisory lock on the vault sidecar
+    ///    (`<vault-path>.lock`) could not be acquired before the wait
+    ///    budget elapsed — another process is mid-write. Retry once
+    ///    the contender releases.
     ///
     /// A recoverable runtime state, not a logic bug.
     #[error("store is busy: outstanding credentials or lock contention")]

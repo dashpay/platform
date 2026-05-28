@@ -6,7 +6,7 @@
 
 #![cfg(feature = "secrets")]
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use keyring_core::api::CredentialStoreApi;
@@ -16,8 +16,12 @@ use platform_wallet_storage::secrets::{
     SERVICE_PREFIX,
 };
 
+fn vault_path(dir: &Path) -> PathBuf {
+    dir.join("vault.pwsvault")
+}
+
 fn open(dir: &Path) -> EncryptedFileStore {
-    EncryptedFileStore::open(dir, SecretString::new("test-pass")).unwrap()
+    EncryptedFileStore::open(vault_path(dir), SecretString::new("test-pass")).unwrap()
 }
 
 fn service(w: WalletId) -> String {
@@ -110,7 +114,8 @@ fn error_display_is_static_and_secret_free() {
     let entry = store.build(&service(w), "seed", None).unwrap();
     entry.set_secret(b"PLAINTEXTNEEDLE").unwrap();
 
-    let bad = EncryptedFileStore::open(dir.path(), SecretString::new("wrong-pass")).unwrap();
+    let bad =
+        EncryptedFileStore::open(vault_path(dir.path()), SecretString::new("wrong-pass")).unwrap();
     let err = bad
         .build(&service(w), "seed", None)
         .unwrap()
@@ -133,7 +138,8 @@ fn error_display_is_static_and_secret_free() {
 
     // Same wrong passphrase through the public `SecretStore`: the typed
     // distinction survives losslessly there too.
-    let bad_store = SecretStore::file(dir.path(), SecretString::new("wrong-pass")).unwrap();
+    let bad_store =
+        SecretStore::file(vault_path(dir.path()), SecretString::new("wrong-pass")).unwrap();
     let typed = bad_store.get(&w, "seed").unwrap_err();
     assert!(matches!(typed, FileStoreError::WrongPassphrase));
 

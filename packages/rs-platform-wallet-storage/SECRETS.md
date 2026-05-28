@@ -31,13 +31,15 @@ arm, so `WrongPassphrase` vs `Corruption` vs `Busy` stay distinct.
 ```rust
 use platform_wallet_storage::secrets::{SecretBytes, SecretStore, SecretString, WalletId};
 
-let store = SecretStore::file("/var/lib/wallet/vault", SecretString::new("pw"))?;
+let store = SecretStore::file("/var/lib/wallet/secrets.pwsvault", SecretString::new("pw"))?;
 let wallet = WalletId::from(wallet_id);
 store.set(&wallet, "mnemonic", &SecretBytes::from_slice(b"abandon ability ..."))?;
 let plaintext: Option<SecretBytes> = store.get(&wallet, "mnemonic")?; // never a bare Vec
 store.delete(&wallet, "mnemonic")?; // idempotent
 ```
 
+`SecretStore::file` takes the vault FILE path (operator picks the
+filename); the parent directory is materialized on the first write.
 Use `SecretStore::os()` for the platform OS keyring arm instead of
 `SecretStore::file(..)`.
 
@@ -82,13 +84,19 @@ unwrapped copy is allocated.
   (memory ≥ 19 MiB, t ≥ 2, defaults 64 MiB / t=3) + XChaCha20-Poly1305
   AEAD with a random 24-byte XNonce per entry. AAD binds ciphertext to
   `format_version ‖ wallet_id ‖ label` so a blob moved between slots
-  fails the tag. A header-stored passphrase-verification token is
-  unsealed before any entry is touched (mixed-key-corruption guard).
-  The vault is one `serde_json` document per `wallet_id`, written
-  atomically via `tempfile::NamedTempFile::persist` (cross-platform
-  replace-over-existing) at mode 0600 on Unix; rekey replaces atomically
-  with no `.bak` (SEC-REQ-2.2.x). Errors surface as the typed
-  `FileStoreError` through `SecretStore`.
+  (or across wallets) fails the tag. A header-stored passphrase-
+  verification token is unsealed before any entry is touched
+  (mixed-key-corruption guard). The vault is ONE `serde_json` document
+  covering every wallet in the store — a single passphrase, a single
+  KDF salt, a single cross-process advisory lock (`<path>.lock`
+  sidecar). Inside, entries are nested `BTreeMap<wallet_id_hex,
+  BTreeMap<label, body>>`. The file is written atomically via
+  `tempfile::NamedTempFile::persist` (cross-platform
+  replace-over-existing) at mode 0600 on Unix; rekey rotates the WHOLE
+  store under a fresh passphrase + salt atomically with no `.bak`
+  (SEC-REQ-2.2.x). One file, one passphrase, one lock — a multi-wallet
+  store cannot lock its other wallets out by construction. Errors
+  surface as the typed `FileStoreError` through `SecretStore`.
 - **OS keyring (`SecretStore::os` / `default_credential_store`)** —
   returns an `Arc<dyn CredentialStoreApi + Send + Sync>` over the
   platform's default credential store (`linux-keyutils-keyring-store` →
@@ -100,8 +108,8 @@ unwrapped copy is allocated.
   `FileStoreError::OsKeyring { kind }`, a non-secret discriminant.
 - **Tests** — integration tests construct a tempdir-backed
   `EncryptedFileStore` directly via
-  `EncryptedFileStore::open(tempfile::tempdir()?.path(), SecretString::new("..."))`,
-  or use the public `SecretStore::file(dir.path(), passphrase)` constructor.
+  `EncryptedFileStore::open(tempfile::tempdir()?.path().join("vault.pwsvault"), SecretString::new("..."))`,
+  or use the public `SecretStore::file(path, passphrase)` constructor.
   No special feature flag is required; both are available under the default
   `secrets` feature.
 
