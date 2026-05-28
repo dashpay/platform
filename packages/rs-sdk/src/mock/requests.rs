@@ -40,7 +40,7 @@ use drive_proof_verifier::types::{
     RecentAddressBalanceChanges, RecentCompactedAddressBalanceChanges,
     MostRecentShieldedAnchor, RecentCompactedNullifierChanges, RecentNullifierChanges,
     RetrievedValues, ShieldedAnchors, TokenPreProgrammedDistributions,
-    ShieldedEncryptedNote, ShieldedEncryptedNotes, ShieldedNullifierStatus,
+    ShieldedEncryptedNote, ShieldedEncryptedNotes, ShieldedNotesCount, ShieldedNullifierStatus,
     ShieldedNullifierStatuses, ShieldedPoolState, TotalCreditsInPlatform,
     VotePollsGroupedByTimestamp, Voters,
 };
@@ -513,6 +513,7 @@ impl_mock_response!(AddressInfo);
 impl_mock_response!(RecentAddressBalanceChanges);
 impl_mock_response!(RecentCompactedAddressBalanceChanges);
 impl_mock_response!(ShieldedPoolState);
+impl_mock_response!(ShieldedNotesCount);
 impl_mock_response!(ShieldedAnchors);
 impl_mock_response!(MostRecentShieldedAnchor);
 impl_mock_response!(ShieldedEncryptedNotes);

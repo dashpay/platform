@@ -30,10 +30,11 @@ use dapi_grpc::platform::v0::{
 use dapi_grpc::platform::v0::{
     get_most_recent_shielded_anchor_request, get_nullifiers_trunk_state_request,
     get_shielded_anchors_request, get_shielded_encrypted_notes_request,
-    get_shielded_nullifiers_request, get_shielded_pool_state_request, get_status_request,
-    GetContestedResourceIdentityVotesRequest, GetMostRecentShieldedAnchorRequest,
-    GetNullifiersTrunkStateRequest, GetPrefundedSpecializedBalanceRequest,
-    GetShieldedAnchorsRequest, GetShieldedEncryptedNotesRequest, GetShieldedNullifiersRequest,
+    get_shielded_notes_count_request, get_shielded_nullifiers_request,
+    get_shielded_pool_state_request, get_status_request, GetContestedResourceIdentityVotesRequest,
+    GetMostRecentShieldedAnchorRequest, GetNullifiersTrunkStateRequest,
+    GetPrefundedSpecializedBalanceRequest, GetShieldedAnchorsRequest,
+    GetShieldedEncryptedNotesRequest, GetShieldedNotesCountRequest, GetShieldedNullifiersRequest,
     GetShieldedPoolStateRequest, GetStatusRequest, GetTokenDirectPurchasePricesRequest,
     GetTokenPerpetualDistributionLastClaimRequest, GetVotePollsByEndDateRequest, SpecificKeys,
 };
@@ -1174,6 +1175,24 @@ impl Query<GetShieldedPoolStateRequest> for NoParamQuery {
         Ok(GetShieldedPoolStateRequest {
             version: Some(get_shielded_pool_state_request::Version::V0(
                 get_shielded_pool_state_request::GetShieldedPoolStateRequestV0 { prove },
+            )),
+        })
+    }
+}
+
+impl Query<GetShieldedNotesCountRequest> for NoParamQuery {
+    fn query(
+        &self,
+        settings: &crate::platform::QuerySettings<'_>,
+    ) -> Result<GetShieldedNotesCountRequest, Error> {
+        let prove = settings.prove;
+        if !prove {
+            unimplemented!("queries without proofs are not supported yet");
+        }
+
+        Ok(GetShieldedNotesCountRequest {
+            version: Some(get_shielded_notes_count_request::Version::V0(
+                get_shielded_notes_count_request::GetShieldedNotesCountRequestV0 { prove },
             )),
         })
     }
