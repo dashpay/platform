@@ -321,11 +321,11 @@ describe('DocumentsFacade', () => {
         documentTypeName: 'grade',
         groupBy: ['class'],
       };
-      const sumProperty = 'score';
+      const averageProperty = 'score';
 
-      await client.documents.average(query, sumProperty);
+      await client.documents.average(query, averageProperty);
 
-      expect(getDocumentsAverageStub).to.be.calledOnceWithExactly(query, sumProperty);
+      expect(getDocumentsAverageStub).to.be.calledOnceWithExactly(query, averageProperty);
     });
   });
 
@@ -337,11 +337,11 @@ describe('DocumentsFacade', () => {
         where: [['class', '==', 'CS101']],
         groupBy: ['semester'],
       };
-      const sumProperty = 'score';
+      const averageProperty = 'score';
 
-      await client.documents.averageWithProof(query, sumProperty);
+      await client.documents.averageWithProof(query, averageProperty);
 
-      expect(getDocumentsAverageWithProofInfoStub).to.be.calledOnceWithExactly(query, sumProperty);
+      expect(getDocumentsAverageWithProofInfoStub).to.be.calledOnceWithExactly(query, averageProperty);
     });
   });
 });
