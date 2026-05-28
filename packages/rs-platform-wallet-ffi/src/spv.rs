@@ -4,7 +4,9 @@ use std::ffi::CStr;
 use std::os::raw::c_char;
 
 use dashcore::sml::llmq_type::LlmqDevnetParams;
-use platform_wallet::spv::{ClientConfig, ProgressPercentage, SyncProgress, SyncState};
+use platform_wallet::spv::{
+    ClientConfig, DevnetConfig, ProgressPercentage, SyncProgress, SyncState,
+};
 
 use crate::error::*;
 use crate::handle::*;
@@ -252,6 +254,37 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_start(
             "devnet_name is only valid on devnet",
         );
     }
+    // Reject empty / any-whitespace / `/`-containing names synchronously
+    // here rather than letting `DevnetConfig::validate` surface them
+    // asynchronously from `spawn_in_background`. Mirrors
+    // `DevnetConfig::validate` (which only checks empty + `/`) and
+    // additionally rejects any whitespace — leading, trailing, or
+    // interior — so callers without a pre-filter (other language
+    // bindings, integration tests) can't produce a malformed
+    // `(devnet.devnet- foo )` user agent that Dash Core peers silently
+    // drop. Rejecting (rather than auto-trimming) keeps the rule
+    // deterministic and avoids the Unicode-whitespace asymmetry
+    // between `str::trim` and Swift's `CharacterSet.whitespaces`.
+    if let Some(name) = devnet_name_str.as_deref() {
+        if name.is_empty() {
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                "devnet_name must not be empty",
+            );
+        }
+        if name.chars().any(char::is_whitespace) {
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                "devnet_name must not contain whitespace",
+            );
+        }
+        if name.contains('/') {
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                "devnet_name must not contain '/'",
+            );
+        }
+    }
     if (llmq_devnet_size > 0) ^ (llmq_devnet_threshold > 0) {
         return PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorInvalidParameter,
@@ -314,11 +347,15 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_start(
                 config.peers.push(addr);
             }
         }
-        if llmq_devnet_size > 0 {
-            config.llmq_devnet_params = Some(LlmqDevnetParams {
-                size: llmq_devnet_size,
-                threshold: llmq_devnet_threshold,
-            });
+        if let Some(name) = devnet_name_str.as_deref() {
+            let mut devnet = DevnetConfig::new(name);
+            if llmq_devnet_size > 0 {
+                devnet.llmq_params = Some(LlmqDevnetParams {
+                    size: llmq_devnet_size,
+                    threshold: llmq_devnet_threshold,
+                });
+            }
+            config.devnet = Some(devnet);
         }
 
         let _guard = runtime().enter();
