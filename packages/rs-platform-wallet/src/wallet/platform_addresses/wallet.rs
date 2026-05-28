@@ -107,6 +107,9 @@ impl PlatformAddressWallet {
     /// [apply.rs](crate::wallet::apply): `None` for the key-source
     /// argument because the gap-limit pool is already restored from
     /// `account_state.addresses` inside `from_persisted`.
+    // TODO(CMT-004): no direct regression test for balance hydration via
+    // initialize_from_persisted; future refactor could silently regress
+    // restart visibility.
     pub async fn initialize_from_persisted(
         &self,
         persisted: crate::PlatformAddressSyncStartState,

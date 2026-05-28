@@ -2550,7 +2550,8 @@ impl FromProof<platform::GetShieldedEncryptedNotesRequest> for ShieldedEncrypted
             .drive_abci
             .query
             .shielded_queries
-            .max_encrypted_notes_per_query as u32;
+            .max_query_chunks as u32
+            * (1u32 << drive::drive::shielded::paths::SHIELDED_NOTES_CHUNK_POWER);
 
         let (root_hash, notes) = Drive::verify_shielded_encrypted_notes(
             &proof.grovedb_proof,
