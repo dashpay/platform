@@ -281,36 +281,15 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                 });
             }
 
-            // Pick the next change address. Peek (advance=false) first; if the
-            // peeked address is already pending from a concurrent in-flight
-            // send (CMT-006), advance the derivation index and peek again
-            // until we find one that is not pending. The final chosen
-            // address is committed (advance=true) inside this same write
-            // lock and inserted into the reservation set so a concurrent
-            // caller can never select the same change address. Advancing
-            // burns at most one index per concurrent in-flight send — a
-            // bounded, acceptable cost for privacy.
-            let pending_change = self.reservations.pending_change_snapshot();
-            let change_addr = loop {
-                let peeked = managed_account
-                    .next_change_address(Some(&xpub), false)
-                    .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
-                if !pending_change.contains(&peeked) {
-                    // Commit the advance now (under the same write lock as
-                    // the outpoint reservation below). On broadcast failure
-                    // a single index is burned — acceptable; on success the
-                    // pending-change entry is released when the guard drops
-                    // post-`check_core_transaction`.
-                    let _ = managed_account
-                        .next_change_address(Some(&xpub), true)
-                        .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
-                    break peeked;
-                }
-                // Burn this index by advancing past it and try again.
-                let _ = managed_account
-                    .next_change_address(Some(&xpub), true)
-                    .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
-            };
+            // Pick a change address no concurrent in-flight send has peeked,
+            // committing the index advance under this write lock. Recorded
+            // into `pending_change` via the outpoint reservation below so a
+            // concurrent caller can never select the same change address.
+            let change_addr = super::change_address::pick_and_reserve_change_address(
+                &self.reservations,
+                managed_account,
+                &xpub,
+            )?;
 
             let mut builder = TransactionBuilder::new()
                 .set_current_height(current_height)

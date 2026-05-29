@@ -190,25 +190,13 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 });
             }
 
-            // Pick a change address that no concurrent send has already
-            // peeked. Commit the advance inside this write lock so the
-            // privacy property holds even if broadcast fails later (one
-            // burned index per failure is acceptable; reuse is not).
-            let pending_change = self.reservations.pending_change_snapshot();
-            let change_addr = loop {
-                let peeked = managed_account
-                    .next_change_address(Some(&funding_xpub), false)
-                    .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
-                if !pending_change.contains(&peeked) {
-                    let _ = managed_account
-                        .next_change_address(Some(&funding_xpub), true)
-                        .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
-                    break peeked;
-                }
-                let _ = managed_account
-                    .next_change_address(Some(&funding_xpub), true)
-                    .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
-            };
+            // Pick a change address no concurrent send has peeked,
+            // committing the index advance under this write lock.
+            let change_addr = crate::wallet::core::change_address::pick_and_reserve_change_address(
+                &self.reservations,
+                managed_account,
+                &funding_xpub,
+            )?;
 
             // Derive the recipient's payment address from the external pool.
             // Done *after* the change-address pick so a derivation failure
