@@ -562,6 +562,12 @@ impl AddressProvider for PlatformPaymentAddressProvider {
         }
         let key_source = KeySource::Public(committed.extended_public_key);
 
+        // The address is now proven used (it received funds), completing
+        // the tri-state Unused → Reserved → Used transition. Release any
+        // ephemeral receive-address reservation held for this index so
+        // the slot stops counting against the in-memory reserved set.
+        super::address_reserve::release_reservation(wallet_id, account_index, address_index);
+
         // Stage the balance update in the in-sync scratch map —
         // `sync_finished` flushes it to the committed `per_wallet`.
         self.per_wallet_in_sync

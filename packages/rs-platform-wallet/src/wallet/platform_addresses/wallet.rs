@@ -16,6 +16,14 @@ use crate::wallet::persister::WalletPersister;
 
 use super::provider::PlatformPaymentAddressProvider;
 
+/// Default age after which an unconfirmed receive-address reservation is
+/// reclaimed by [`PlatformAddressWallet::sweep_expired_reservations`].
+/// One hour comfortably covers a user filling in a payment screen while
+/// freeing slots that were handed out but never paid. The reservation
+/// set is ephemeral (in-memory, rebuilt empty on restart), so this only
+/// bounds leakage within a single long-lived process.
+const RESERVATION_TTL: std::time::Duration = std::time::Duration::from_secs(3600);
+
 /// Platform address wallet providing DIP-17 platform payment address functionality.
 #[derive(Clone)]
 pub struct PlatformAddressWallet {
@@ -285,14 +293,40 @@ impl PlatformAddressWallet {
             key_wallet::KeySource::Public(xpub)
         };
 
-        let address = managed_account
-            .addresses
-            .next_unused(&key_source, true)
-            .map_err(|e| PlatformWalletError::AddressSync(e.to_string()))?;
+        // BRIDGE: tri-state Unused → Reserved → Used. Plain `next_unused`
+        // hands the same index to two concurrent callers because `used`
+        // only flips on a positive-balance sync. `next_unused_and_reserve`
+        // additionally skips reserved-but-unused indices and reserves the
+        // chosen one atomically under the write lock held here. Collapses
+        // to `pool.next_unused_and_reserve(..)` once key-wallet gains a
+        // native Reserved state.
+        let address = super::address_reserve::next_unused_and_reserve(
+            &mut managed_account.addresses,
+            self.wallet_id,
+            account_key.account,
+            &key_source,
+            true,
+        )
+        .map_err(|e| PlatformWalletError::AddressSync(e.to_string()))?;
 
         PlatformAddress::try_from(address).map_err(|e| {
             PlatformWalletError::AddressSync(format!("Failed to convert to PlatformAddress: {e}"))
         })
+    }
+
+    /// Reclaim ephemeral receive-address reservations older than
+    /// [`RESERVATION_TTL`]. A reservation is created every time
+    /// [`next_unused_receive_address`](Self::next_unused_receive_address)
+    /// hands out an address, and cleared when a balance sync proves that
+    /// address used. A caller that reserves an address but never receives
+    /// a payment would otherwise pin the slot for the process lifetime, so
+    /// a long-lived process should call this periodically to free stale
+    /// reservations instead of leaking gap-limit headroom.
+    ///
+    /// Returns the number of indices reclaimed. The reserved set is
+    /// in-memory only, so this never touches persisted state.
+    pub async fn sweep_expired_reservations(&self) -> usize {
+        super::address_reserve::sweep_expired(RESERVATION_TTL)
     }
 
     /// Get all platform addresses with their cached balances.
