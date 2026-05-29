@@ -23,6 +23,9 @@
 //!
 //! # BRIDGE
 //!
+//! This whole module is a deliberate stopgap. The proper home for the
+//! Reserved state is inside `key-wallet`'s `AddressPool` upstream —
+//! tracked at <https://github.com/dashpay/rust-dashcore/issues/791>.
 //! When `key-wallet` gains a native `Reserved` state, replace the body of
 //! [`next_unused_and_reserve`] with a single delegation:
 //!
@@ -92,6 +95,13 @@ struct ReservationTable {
     by_account: HashMap<AccountKey, HashMap<u32, ReservedAt>>,
 }
 
+// TODO(upstream): this process-global reserved table is a deliberate
+// BRIDGE/stopgap. The proper home for the Reserved tri-state
+// (Unused → Reserved → Used) is inside `key-wallet`'s `AddressPool`
+// (rust-dashcore). Remove this static — and collapse
+// `next_unused_and_reserve` to a one-line delegation — once upstream
+// lands native support. Tracked at:
+// https://github.com/dashpay/rust-dashcore/issues/791
 fn table() -> &'static Mutex<ReservationTable> {
     static TABLE: OnceLock<Mutex<ReservationTable>> = OnceLock::new();
     TABLE.get_or_init(|| Mutex::new(ReservationTable::default()))

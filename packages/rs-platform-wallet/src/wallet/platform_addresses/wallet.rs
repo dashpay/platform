@@ -18,11 +18,11 @@ use super::provider::PlatformPaymentAddressProvider;
 
 /// Default age after which an unconfirmed receive-address reservation is
 /// reclaimed by [`PlatformAddressWallet::sweep_expired_reservations`].
-/// One hour comfortably covers a user filling in a payment screen while
-/// freeing slots that were handed out but never paid. The reservation
-/// set is ephemeral (in-memory, rebuilt empty on restart), so this only
-/// bounds leakage within a single long-lived process.
-const RESERVATION_TTL: std::time::Duration = std::time::Duration::from_secs(3600);
+/// Five minutes covers a user filling in a payment screen while letting
+/// abandoned hand-outs reclaim quickly. The reservation set is ephemeral
+/// (in-memory, rebuilt empty on restart), so this only bounds leakage
+/// within a single long-lived process.
+const RESERVATION_TTL: std::time::Duration = std::time::Duration::from_secs(300);
 
 /// Platform address wallet providing DIP-17 platform payment address functionality.
 #[derive(Clone)]
