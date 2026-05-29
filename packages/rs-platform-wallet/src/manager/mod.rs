@@ -228,21 +228,21 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     .on_shielded_sync_progress(cumulative_scanned, block_height);
             },
         )));
-        // TODO(shielded-stream follow-up): wire the second "checked /
-        // committed-to-tree" progress signal here, mirroring the block
-        // above:
-        //   coordinator.install_tree_progress_handler(Some(Arc::new(
-        //       move |leaves_committed, total_target| {
-        //           event_manager.on_shielded_tree_progress(leaves_committed, total_target);
-        //       },
-        //   )));
-        // This needs a new `PlatformEventHandler::on_shielded_tree_progress`
-        // event (events.rs) + its FFI callback slot
-        // (rs-platform-wallet-ffi/src/event_handler.rs:
-        // `on_shielded_sync_progress_fn` has the exact shape to copy) +
-        // the Swift binding for the dual progress bar. The coordinator
-        // hook (`install_tree_progress_handler`) and the wallet plumbing
-        // (`sync_notes_across` firing it per batch) already exist.
+        // Bridge sync-internal tree-commit progress (once per
+        // committed batch) into the public
+        // `PlatformEventHandler::on_shielded_tree_progress` event — the
+        // second "checked / committed-to-tree" signal, distinct from
+        // the "downloaded" counter above. `leaves_committed` is the
+        // cumulative tree leaf count; `total_target` is the on-chain
+        // MMR total (0 ⇒ indeterminate). Lets UI clients render a dual
+        // ProgressView ("downloaded" vs "checked") during cold syncs.
+        let event_manager_for_tree_progress = Arc::clone(&self.event_manager);
+        coordinator.install_tree_progress_handler(Some(Arc::new(
+            move |leaves_committed: u64, total_target: u64| {
+                event_manager_for_tree_progress
+                    .on_shielded_tree_progress(leaves_committed, total_target);
+            },
+        )));
         *slot = Some(coordinator);
         Ok(())
     }

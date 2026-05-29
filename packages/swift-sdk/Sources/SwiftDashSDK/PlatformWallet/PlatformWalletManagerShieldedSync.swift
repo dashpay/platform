@@ -71,6 +71,8 @@ extension PlatformWalletManager {
         // in ShieldedService's currentSyncElapsed timer.
         currentShieldedSyncScanned = nil
         currentShieldedSyncBlockHeight = nil
+        currentShieldedTreeCommitted = nil
+        currentShieldedTreeTotal = nil
     }
 
     /// Per-chunk progress callback. Fires once per ~2048 notes
@@ -80,6 +82,17 @@ extension PlatformWalletManager {
     func handleShieldedSyncProgress(cumulativeScanned: UInt64, blockHeight: UInt64) {
         currentShieldedSyncScanned = cumulativeScanned
         currentShieldedSyncBlockHeight = blockHeight
+    }
+
+    /// Per-batch tree-progress callback — the "checked /
+    /// committed-to-tree" signal. Fires once per committed batch as
+    /// commitments are appended to the local Orchard tree; bridged
+    /// here from the C trampoline `shieldedTreeProgressCallback`.
+    /// `total == 0` means the on-chain total is indeterminate. Cheap
+    /// publish; UI gets it through ShieldedService.
+    func handleShieldedTreeProgress(committed: UInt64, total: UInt64) {
+        currentShieldedTreeCommitted = committed
+        currentShieldedTreeTotal = total
     }
 
     /// Derive Orchard keys for `walletId` from the host-side mnemonic
@@ -624,6 +637,30 @@ func shieldedSyncProgressCallback(
         manager?.handleShieldedSyncProgress(
             cumulativeScanned: cumulativeScanned,
             blockHeight: blockHeight
+        )
+    }
+}
+
+/// C trampoline matching `EventHandlerCallbacks.on_shielded_tree_progress_fn`.
+/// The "checked / committed-to-tree" signal — fires once per committed
+/// batch as commitments are appended to the local Orchard tree.
+/// `totalTarget == 0` means the on-chain total is indeterminate. Cheap —
+/// just hops to the main actor and publishes the snapshot.
+func shieldedTreeProgressCallback(
+    context: UnsafeMutableRawPointer?,
+    leavesCommitted: UInt64,
+    totalTarget: UInt64
+) {
+    guard let context else { return }
+
+    let handler = Unmanaged<PlatformWalletEventHandler>
+        .fromOpaque(context)
+        .takeUnretainedValue()
+
+    Task { @MainActor [weak manager = handler.manager] in
+        manager?.handleShieldedTreeProgress(
+            committed: leavesCommitted,
+            total: totalTarget
         )
     }
 }

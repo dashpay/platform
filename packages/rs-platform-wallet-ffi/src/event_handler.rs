@@ -57,6 +57,21 @@ pub struct EventHandlerCallbacks {
     pub on_shielded_sync_progress_fn: Option<
         unsafe extern "C" fn(context: *mut c_void, cumulative_scanned: u64, block_height: u64),
     >,
+    /// Called once per committed batch during a shielded sync pass as
+    /// decrypted commitments are appended to the local Orchard tree.
+    /// This is the "checked / committed-to-tree" signal, distinct from
+    /// `on_shielded_sync_progress_fn` (which counts *downloaded*
+    /// notes). `leaves_committed` is the cumulative tree leaf count;
+    /// `total_target` is the on-chain MMR total leaf count, with
+    /// `total_target == 0` meaning the total is **indeterminate** (the
+    /// count RPC was unavailable). Pairs with the download progress
+    /// callback to drive a dual ProgressView during cold syncs. Slot
+    /// is plumbed unconditionally for C-ABI stability; only fires when
+    /// the `shielded` feature is enabled in the FFI. Appended at the
+    /// end of the struct to preserve existing field offsets.
+    pub on_shielded_tree_progress_fn: Option<
+        unsafe extern "C" fn(context: *mut c_void, leaves_committed: u64, total_target: u64),
+    >,
 }
 
 // SAFETY: The context pointer is managed by the FFI caller who must ensure
@@ -225,6 +240,16 @@ impl PlatformEventHandler for FFIEventHandler {
         };
         unsafe {
             cb(self.callbacks.context, cumulative_scanned, block_height);
+        }
+    }
+
+    #[cfg(feature = "shielded")]
+    fn on_shielded_tree_progress(&self, leaves_committed: u64, total_target: u64) {
+        let Some(cb) = self.callbacks.on_shielded_tree_progress_fn else {
+            return;
+        };
+        unsafe {
+            cb(self.callbacks.context, leaves_committed, total_target);
         }
     }
 }

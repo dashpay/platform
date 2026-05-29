@@ -63,6 +63,33 @@ pub trait PlatformEventHandler: EventHandler {
     /// Default impl is a no-op.
     #[cfg(feature = "shielded")]
     fn on_shielded_sync_progress(&self, _cumulative_scanned: u64, _block_height: u64) {}
+
+    /// Fired periodically during a shielded sync pass — once per
+    /// committed batch as decrypted commitments are appended to the
+    /// local Orchard commitment tree. This is the "checked /
+    /// committed-to-tree" signal, distinct from
+    /// [`on_shielded_sync_progress`](Self::on_shielded_sync_progress)
+    /// (which counts *downloaded* notes): a note is only "checked"
+    /// once its commitment has been appended to the tree.
+    ///
+    /// `leaves_committed` is the cumulative tree leaf count (starts at
+    /// the pre-sync tree size and grows as commitments are appended).
+    /// `total_target` is the on-chain MMR total leaf count, fetched
+    /// once at pass start; `total_target == 0` means the count RPC
+    /// was unavailable, so the progress is **indeterminate** and the
+    /// host should render a spinner rather than a determinate bar.
+    ///
+    /// Network-scoped, not per-wallet: a single sync pass covers
+    /// every IVK on the coordinator, so the "wallet that's
+    /// progressing" isn't a meaningful concept at this granularity.
+    ///
+    /// Pairs with `on_shielded_sync_progress` to drive a dual
+    /// ProgressView ("downloaded" vs "checked") during long cold
+    /// syncs.
+    ///
+    /// Default impl is a no-op.
+    #[cfg(feature = "shielded")]
+    fn on_shielded_tree_progress(&self, _leaves_committed: u64, _total_target: u64) {}
 }
 
 /// Dispatches events to all registered [`PlatformEventHandler`]s.
@@ -125,6 +152,22 @@ impl PlatformEventManager {
         let handlers = self.handlers.load();
         for h in handlers.iter() {
             h.on_shielded_sync_progress(cumulative_scanned, block_height);
+        }
+    }
+
+    /// Dispatch a shielded tree-progress ("checked / committed-to-tree")
+    /// event to every handler.
+    ///
+    /// Called from inside `sync_notes_across`'s batch loop, once per
+    /// committed batch as commitments are appended to the local
+    /// Orchard tree. `total_target == 0` signals an indeterminate
+    /// total (the on-chain MMR leaf count was unavailable). Cheap-but-
+    /// frequent path during a cold sync.
+    #[cfg(feature = "shielded")]
+    pub fn on_shielded_tree_progress(&self, leaves_committed: u64, total_target: u64) {
+        let handlers = self.handlers.load();
+        for h in handlers.iter() {
+            h.on_shielded_tree_progress(leaves_committed, total_target);
         }
     }
 }

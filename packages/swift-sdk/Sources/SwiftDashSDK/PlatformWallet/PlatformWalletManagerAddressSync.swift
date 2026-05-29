@@ -50,6 +50,7 @@ final class PlatformWalletEventHandler {
         callbacks.on_platform_address_sync_completed_fn = platformAddressSyncCompletedCallback
         callbacks.on_shielded_sync_completed_fn = shieldedSyncCompletedCallback
         callbacks.on_shielded_sync_progress_fn = shieldedSyncProgressCallback
+        callbacks.on_shielded_tree_progress_fn = shieldedTreeProgressCallback
         return callbacks
     }
 }

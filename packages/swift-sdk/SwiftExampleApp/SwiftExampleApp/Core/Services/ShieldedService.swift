@@ -135,10 +135,31 @@ class ShieldedService: ObservableObject {
     /// pass. Pairs with `currentSyncScanned` (same callback).
     @Published var currentSyncBlockHeight: UInt64?
 
+    /// Cumulative note commitments appended to the local Orchard tree
+    /// in the in-flight pass — the "checked / committed-to-tree"
+    /// signal, distinct from `currentSyncScanned` (which counts
+    /// *downloaded* notes). Republished from
+    /// `PlatformWalletManager.currentShieldedTreeCommitted`, fired once
+    /// per committed batch by the Rust tree-progress callback. Nil
+    /// between passes.
+    @Published var currentTreeCommitted: UInt64?
+
+    /// On-chain MMR total leaf count, the denominator for both the
+    /// "downloaded" and "checked" bars (total notes == total leaves).
+    /// Pairs with `currentTreeCommitted` (same callback). A value of 0
+    /// (or nil) means the total is indeterminate — render a spinner
+    /// rather than a determinate bar.
+    @Published var currentTreeTotal: UInt64?
+
     /// Subscription to `walletManager.$currentShieldedSyncScanned`
     /// and `…BlockHeight` for live progress. Created in `bind` /
     /// `bind`, dropped in `reset` / `clearLocalState`.
     private var progressCancellable: AnyCancellable?
+
+    /// Subscription to `walletManager.$currentShieldedTreeCommitted`
+    /// and `…Total` for the "checked / committed-to-tree" bar. Created
+    /// in `bind`, dropped in `reset` / `clearLocalState`.
+    private var treeProgressCancellable: AnyCancellable?
 
     /// `Date()` at the moment `isSyncing` flipped false → true.
     /// Drives both `lastSyncDuration` (at completion) and
@@ -180,6 +201,7 @@ class ShieldedService: ObservableObject {
         self.syncStateCancellable?.cancel()
         self.syncEventCancellable?.cancel()
         self.progressCancellable?.cancel()
+        self.treeProgressCancellable?.cancel()
 
         // Clear the previous wallet's snapshot up front. Without
         // this, switching wallets (or a failed rebind) leaves the
@@ -209,6 +231,8 @@ class ShieldedService: ObservableObject {
         currentSyncStartedAt = nil
         currentSyncScanned = nil
         currentSyncBlockHeight = nil
+        currentTreeCommitted = nil
+        currentTreeTotal = nil
         syncTickTimer?.invalidate()
         syncTickTimer = nil
 
@@ -326,6 +350,18 @@ class ShieldedService: ObservableObject {
                 guard let self else { return }
                 self.currentSyncScanned = scanned
                 self.currentSyncBlockHeight = height
+            }
+
+        // Bridge the second "checked / committed-to-tree" signal from
+        // the manager. Pair `currentShieldedTreeCommitted` and `…Total`;
+        // they're emitted by the same Rust callback so a `combineLatest`
+        // round-trips them coherently into our two @Published mirrors.
+        treeProgressCancellable = walletManager.$currentShieldedTreeCommitted
+            .combineLatest(walletManager.$currentShieldedTreeTotal)
+            .sink { [weak self] committed, total in
+                guard let self else { return }
+                self.currentTreeCommitted = committed
+                self.currentTreeTotal = total
             }
     }
 
@@ -458,6 +494,7 @@ class ShieldedService: ObservableObject {
         syncStateCancellable?.cancel()
         syncEventCancellable?.cancel()
         progressCancellable?.cancel()
+        treeProgressCancellable?.cancel()
         walletManager = nil
         boundWalletId = nil
         isSyncing = false
@@ -480,6 +517,8 @@ class ShieldedService: ObservableObject {
         currentSyncStartedAt = nil
         currentSyncScanned = nil
         currentSyncBlockHeight = nil
+        currentTreeCommitted = nil
+        currentTreeTotal = nil
         syncTickTimer?.invalidate()
         syncTickTimer = nil
     }
@@ -600,6 +639,7 @@ class ShieldedService: ObservableObject {
         syncStateCancellable?.cancel()
         syncEventCancellable?.cancel()
         progressCancellable?.cancel()
+        treeProgressCancellable?.cancel()
         isBound = false
         isSyncing = false
         shieldedBalance = 0
@@ -619,6 +659,8 @@ class ShieldedService: ObservableObject {
         currentSyncStartedAt = nil
         currentSyncScanned = nil
         currentSyncBlockHeight = nil
+        currentTreeCommitted = nil
+        currentTreeTotal = nil
         syncTickTimer?.invalidate()
         syncTickTimer = nil
     }

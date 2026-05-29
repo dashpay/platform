@@ -60,6 +60,20 @@ public class PlatformWalletManager: ObservableObject {
     @Published public internal(set) var currentShieldedSyncScanned: UInt64?
     @Published public internal(set) var currentShieldedSyncBlockHeight: UInt64?
 
+    /// Cumulative count of note commitments appended to the local
+    /// Orchard commitment tree in the **current** in-flight shielded
+    /// sync pass — the "checked / committed-to-tree" signal, distinct
+    /// from `currentShieldedSyncScanned` (which counts *downloaded*
+    /// notes). Published once per committed batch via the Rust-side
+    /// tree-progress callback. Nil between passes.
+    ///
+    /// Paired with `currentShieldedTreeTotal` — emitted in the same
+    /// callback. `currentShieldedTreeTotal == 0` (or nil) means the
+    /// total is indeterminate; the UI should render a spinner rather
+    /// than a determinate bar.
+    @Published public internal(set) var currentShieldedTreeCommitted: UInt64?
+    @Published public internal(set) var currentShieldedTreeTotal: UInt64?
+
     /// When true, `handleShieldedSyncCompleted` drops incoming events
     /// instead of publishing them. Set by `stopShieldedSync` /
     /// `clearShielded` (after the Rust drain returns) and cleared by any
