@@ -1186,8 +1186,16 @@ impl Query<GetShieldedNotesCountRequest> for NoParamQuery {
         settings: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetShieldedNotesCountRequest, Error> {
         let prove = settings.prove;
+        // GetShieldedNotesCount is proved-only: the count is bound by the
+        // Merk value hash, so it is always returned inside a verifiable
+        // proof. Return a recoverable error (not a process-aborting
+        // `unimplemented!`) if a caller explicitly disables proofs on this
+        // public request type.
         if !prove {
-            unimplemented!("queries without proofs are not supported yet");
+            return Err(Error::Generic(
+                "GetShieldedNotesCount requires proofs; unproved queries are not supported"
+                    .to_string(),
+            ));
         }
 
         Ok(GetShieldedNotesCountRequest {
