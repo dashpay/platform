@@ -30,6 +30,7 @@ use crate::changeset::AssetLockEntry;
 /// Marking the enum `#[non_exhaustive]` would force wildcard arms
 /// and silently lose that signal.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum AssetLockStatus {
     Built,
     Broadcast,

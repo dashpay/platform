@@ -590,9 +590,8 @@ pub async fn asset_lock_core_to_platform(
     amount_duff: u64,
     disable_spv: bool,
 ) -> FrameworkResult<()> {
-    use dashcore::PrivateKey;
     use dpp::address_funds::PlatformAddress;
-    use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
+    use platform_wallet::AssetLockFunding;
 
     if disable_spv {
         return Err(FrameworkError::Bank(
@@ -610,47 +609,11 @@ pub async fn asset_lock_core_to_platform(
     let wallet = bank.platform_wallet();
     let core_signer = SeedBackedCoreSigner::new(*bank.seed_bytes(), network);
 
-    // 1. Build/broadcast the asset-lock and wait for its proof. The
-    //    `AssetLockAddressTopUp` funding type derives the credit output
-    //    from the platform-address-topup account (the same account the
-    //    recipient lives in), so `fund_from_asset_lock` can consume it.
-    //    The primitive owns its own 300s proof-wait deadline.
-    let (proof, path, _out_point) = wallet
-        .asset_locks()
-        .create_funded_asset_lock_proof(
-            amount_duff,
-            DEFAULT_ACCOUNT_INDEX_PUB,
-            AssetLockFundingType::AssetLockAddressTopUp,
-            DEFAULT_ACCOUNT_INDEX_PUB,
-            &core_signer,
-        )
-        .await
-        .map_err(|e| {
-            FrameworkError::Bank(format!(
-                "asset-lock bootstrap: create_funded_asset_lock_proof({amount_duff} duffs) \
-                 failed: {e}"
-            ))
-        })?;
-
-    // 2. Materialise the credit-output private key from the seed at the
-    //    builder's derivation path. The harness owns the seed, so this is
-    //    safe; production never does this (signer-only invariant).
-    let secret = core_signer.derive_secret(&path).map_err(|e| {
-        FrameworkError::Bank(format!(
-            "asset-lock bootstrap: deriving credit-output key at {path} failed: {e}"
-        ))
-    })?;
-    // Round-trip through raw bytes so the secp256k1 `SecretKey` type
-    // identity (key_wallet's re-export vs the test crate's `dashcore`)
-    // can't bite us.
-    let asset_lock_private_key = PrivateKey::from_byte_array(&secret.secret_bytes(), network)
-        .map_err(|e| {
-            FrameworkError::Bank(format!(
-                "asset-lock bootstrap: credit-output key byte round-trip failed: {e}"
-            ))
-        })?;
-
-    // 3. Fund the bank's primary Platform address from the asset lock.
+    // Fund the bank's primary Platform address from a wallet-balance
+    // asset lock. The unified `fund_from_asset_lock` flow builds and
+    // broadcasts the Core asset-lock tx, waits for its proof (IS → CL
+    // fallback inside), and submits the platform-address top-up — the
+    // bank harness no longer manages proof derivation by hand.
     let recipient: PlatformAddress = *bank.primary_receive_address();
     let mut addresses: BTreeMap<PlatformAddress, Option<Credits>> = BTreeMap::new();
     addresses.insert(recipient, None);
@@ -658,12 +621,16 @@ pub async fn asset_lock_core_to_platform(
     wallet
         .platform()
         .fund_from_asset_lock(
+            AssetLockFunding::FromWalletBalance {
+                amount_duffs: amount_duff,
+                account_index: DEFAULT_ACCOUNT_INDEX_PUB,
+            },
             DEFAULT_ACCOUNT_INDEX_PUB,
             addresses,
-            proof,
-            asset_lock_private_key,
             bank_fee_strategy(),
             bank.address_signer(),
+            &core_signer,
+            None,
         )
         .await
         .map_err(|e| {

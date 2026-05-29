@@ -1,4 +1,4 @@
-const sample = require('lodash/sample');
+const sample = (arr) => arr[Math.floor(Math.random() * arr.length)];
 const networks = require('@dashevo/dashcore-lib/lib/networks');
 
 class ListDAPIAddressProvider {

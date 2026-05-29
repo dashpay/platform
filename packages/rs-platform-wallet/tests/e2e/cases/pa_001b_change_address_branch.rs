@@ -23,6 +23,7 @@ use crate::framework::wait::{
     wait_for_address_balance_chain_confirmed_n, CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
 };
 use dpp::address_funds::PlatformAddress;
+use platform_wallet::wallet::platform_addresses::transfer::FeeStrategyByAddress;
 use platform_wallet::wallet::platform_addresses::{InputSelection, PlatformAddressWallet};
 
 /// Bank fund per test address. Sized well above the chain-time fee
@@ -96,7 +97,7 @@ async fn pa_001b_change_address_branch_subcase_a() {
             InputSelection::Explicit(inputs),
             user_outputs.into_iter().collect(),
             None, // implicit-change branch
-            default_fee_strategy_for_test(),
+            default_fee_strategy_for_test(addr_2),
             Some(dpp::version::PlatformVersion::latest()),
             s.test_wallet.address_signer(),
         )
@@ -194,7 +195,7 @@ async fn pa_001b_change_address_branch_subcase_b() {
             InputSelection::Explicit(inputs),
             user_outputs.into_iter().collect(),
             Some(change_addr),
-            default_fee_strategy_for_test(),
+            default_fee_strategy_for_test(change_addr),
             Some(dpp::version::PlatformVersion::latest()),
             s.test_wallet.address_signer(),
         )
@@ -251,9 +252,9 @@ fn default_account_index() -> u32 {
     0
 }
 
-/// `[ReduceOutput(0)]` — output 0 absorbs the chain-time fee. Used by
-/// every transfer in this case so the change-address branch can pin
-/// fee semantics on the BTreeMap-lex-smallest output.
-fn default_fee_strategy_for_test() -> dpp::address_funds::AddressFundsFeeStrategy {
-    vec![dpp::address_funds::AddressFundsFeeStrategyStep::ReduceOutput(0)]
+/// `FeeStrategyByAddress::reduce_output(addr)` — the named output
+/// absorbs the chain-time fee. Used by every transfer in this case so
+/// the change-address branch can pin fee semantics on a known output.
+fn default_fee_strategy_for_test(addr: PlatformAddress) -> FeeStrategyByAddress {
+    FeeStrategyByAddress::reduce_output(addr)
 }

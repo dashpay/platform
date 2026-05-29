@@ -1159,6 +1159,12 @@ async fn consume_platform_address_index_zero(wallet: &Arc<PlatformWallet>) -> Fr
             hex::encode(wallet_id)
         ))
     })?;
+    // TODO: reaches into the deprecated platform_payment_managed_account
+    // pool for state the modern PlatformPaymentAddressProvider doesn't yet
+    // expose (used_indices inspection for the Found-026 reserve guard).
+    // Migrate or retire once the pool moves to the provider (per
+    // @QuantumExplorer's review on #3648).
+    #[allow(deprecated)]
     let account = info
         .core_wallet
         .platform_payment_managed_account_at_index_mut(DEFAULT_ACCOUNT_INDEX_PUB)

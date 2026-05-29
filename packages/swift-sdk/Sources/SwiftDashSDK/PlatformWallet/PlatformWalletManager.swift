@@ -544,6 +544,22 @@ public class PlatformWalletManager: ObservableObject {
 
         let identityIds = try persistenceHandler.identityIdsForWallet(walletId: walletId)
 
+        // Wipe Keychain BEFORE the SwiftData identity deletion runs.
+        // Order matters for retry-safety: if `deleteWalletData`
+        // commits identity rows and then throws partway, a retry
+        // would see `identityIdsForWallet == []` and the
+        // `deleteAllKeychainItems(forIdentityId:)` sweep below
+        // could no longer find the keys to purge. Doing the
+        // keychain side first leaves at worst stale SwiftData
+        // rows on a retry — repeating the wipe is harmless, and
+        // every keychain call here is idempotent (no-op on "not
+        // found"). Mnemonic / metadata stay in `WalletStorage`
+        // for now so a retry can still derive any missed key.
+        for identityId in identityIds {
+            try KeychainManager.shared.deleteAllKeychainItems(forIdentityId: identityId)
+        }
+        try KeychainManager.shared.deleteAllIdentityPrivateKeys(forWalletId: walletId)
+
         try walletId.withUnsafeBytes { raw in
             guard let base = raw.baseAddress?.assumingMemoryBound(to: FFIByteTuple32.self) else {
                 throw PlatformWalletError.nullPointer(
@@ -556,11 +572,6 @@ public class PlatformWalletManager: ObservableObject {
         wallets.removeValue(forKey: walletId)
 
         try persistenceHandler.deleteWalletData(walletId: walletId)
-
-        for identityId in identityIds {
-            try KeychainManager.shared.deleteAllKeychainItems(forIdentityId: identityId)
-        }
-        try KeychainManager.shared.deleteAllIdentityPrivateKeys(forWalletId: walletId)
 
         let storage = WalletStorage()
         // Delete metadata first so the mnemonic remains available for retry.

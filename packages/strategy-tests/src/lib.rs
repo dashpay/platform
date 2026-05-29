@@ -759,7 +759,7 @@ impl Strategy {
                 outputs.insert(address, None);
 
                 let funding_transition =
-                    AddressFundingFromAssetLockTransitionV0::try_from_asset_lock_with_signer(
+                    AddressFundingFromAssetLockTransitionV0::try_from_asset_lock_with_signer_and_private_key(
                         asset_lock_proof,
                         private_key.inner.secret_bytes().as_slice(),
                         BTreeMap::new(), // no additional inputs
@@ -2183,7 +2183,7 @@ impl Strategy {
                             outputs.insert(address, None);
 
                             let funding_transition =
-                                AddressFundingFromAssetLockTransitionV0::try_from_asset_lock_with_signer(
+                                AddressFundingFromAssetLockTransitionV0::try_from_asset_lock_with_signer_and_private_key(
                                     asset_lock_proof,
                                     private_key.inner.secret_bytes().as_slice(),
                                     BTreeMap::new(), // no additional inputs

@@ -167,6 +167,12 @@ async fn open_full_gap_window(
     let info = wm
         .get_wallet_info_mut(&wallet_id)
         .expect("wallet present in manager");
+    // TODO: reaches into the deprecated platform_payment_managed_account
+    // pool for state the modern PlatformPaymentAddressProvider doesn't yet
+    // expose (mark_index_used mutation on a boundary index). Migrate or
+    // retire once the pool moves to the provider (per @QuantumExplorer's
+    // review on #3648).
+    #[allow(deprecated)]
     let account = info
         .core_wallet
         .platform_payment_managed_account_at_index_mut(key.account)
@@ -204,14 +210,9 @@ async fn pool_gap_limit(
     wallet: &Arc<platform_wallet::PlatformWallet>,
     key: PlatformPaymentAccountKey,
 ) -> u32 {
-    let manager = wallet.wallet_manager();
-    let wm = manager.read().await;
-    let info = wm
-        .get_wallet_info(&wallet.wallet_id())
-        .expect("wallet present in manager");
-    let account = info
-        .core_wallet
-        .platform_payment_managed_account_at_index(key.account)
-        .expect("default platform-payment account exists");
-    account.addresses.gap_limit
+    wallet
+        .platform()
+        .platform_payment_account_gap_limit(key.account)
+        .await
+        .expect("default platform-payment account exists")
 }

@@ -168,8 +168,28 @@ mod nft_tests {
 
     #[tokio::test]
     async fn test_document_set_price() {
-        let platform_version = PlatformVersion::latest();
+        run_document_set_price_at_protocol_version(
+            PlatformVersion::latest().protocol_version,
+            2485600,
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_11: pre-B4 fee — query_documents cost was discarded.
+    /// Pinned so v11 chain history stays bit-for-bit reproducible.
+    #[tokio::test]
+    async fn test_document_set_price_protocol_version_11() {
+        run_document_set_price_at_protocol_version(11, 2473880).await;
+    }
+
+    async fn run_document_set_price_at_protocol_version(
+        protocol_version: dpp::version::ProtocolVersion,
+        expected_processing_fee: dpp::fee::Credits,
+    ) {
+        let platform_version = PlatformVersion::get(protocol_version)
+            .expect("expected platform version for the requested protocol_version");
         let (mut platform, contract) = TestPlatformBuilder::new()
+            .with_initial_protocol_version(protocol_version)
             .build_with_mock_rpc()
             .set_initial_state_structure()
             .with_crypto_card_game_nft(TradeMode::DirectPurchase);
@@ -346,7 +366,12 @@ mod nft_tests {
 
         assert_eq!(processing_result.valid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 2473880);
+        assert_eq!(
+            processing_result.aggregated_fees().processing_fee,
+            expected_processing_fee,
+            "PROTOCOL_VERSION_{}: set-price processing fee must match the version-specific baseline",
+            protocol_version,
+        );
 
         let query_sender_results = platform
             .drive
@@ -379,8 +404,36 @@ mod nft_tests {
 
     #[tokio::test]
     async fn test_document_set_price_and_purchase() {
-        let platform_version = PlatformVersion::latest();
+        run_document_set_price_and_purchase_at_protocol_version(
+            PlatformVersion::latest().protocol_version,
+            126440160,
+            2485600,
+            4092360,
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_11: pre-B4/B7 fees — query_documents cost was
+    /// discarded on the set-price and purchase transitions, and the
+    /// transformer-phase grovedb reads on the prior create transition were
+    /// dropped into a local context. Pinned so v11 chain history stays
+    /// bit-for-bit reproducible.
+    #[tokio::test]
+    async fn test_document_set_price_and_purchase_protocol_version_11() {
+        run_document_set_price_and_purchase_at_protocol_version(11, 126435860, 2473880, 4080480)
+            .await;
+    }
+
+    async fn run_document_set_price_and_purchase_at_protocol_version(
+        protocol_version: dpp::version::ProtocolVersion,
+        original_creation_cost: dpp::fee::Credits,
+        expected_set_price_fee: dpp::fee::Credits,
+        expected_purchase_fee: dpp::fee::Credits,
+    ) {
+        let platform_version = PlatformVersion::get(protocol_version)
+            .expect("expected platform version for the requested protocol_version");
         let (mut platform, contract) = TestPlatformBuilder::new()
+            .with_initial_protocol_version(protocol_version)
             .build_with_mock_rpc()
             .set_initial_state_structure()
             .with_crypto_card_game_nft(TradeMode::DirectPurchase);
@@ -469,11 +522,9 @@ mod nft_tests {
                 .change(),
             &BalanceChange::RemoveFromBalance {
                 required_removed_balance: 123579000,
-                desired_removed_balance: 126435860,
+                desired_removed_balance: original_creation_cost,
             }
         );
-
-        let original_creation_cost = 126435860;
 
         platform
             .drive
@@ -602,7 +653,12 @@ mod nft_tests {
             None
         );
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 2473880);
+        assert_eq!(
+            processing_result.aggregated_fees().processing_fee,
+            expected_set_price_fee,
+            "PROTOCOL_VERSION_{}: set-price processing fee must match the version-specific baseline",
+            protocol_version,
+        );
 
         let seller_balance = platform
             .drive
@@ -613,7 +669,7 @@ mod nft_tests {
         // the seller should have received 0.1 and already had 0.1 minus the processing fee and storage fee
         assert_eq!(
             seller_balance,
-            dash_to_credits!(0.1) - original_creation_cost - 2689880
+            dash_to_credits!(0.1) - original_creation_cost - expected_set_price_fee - 216000
         );
 
         let query_sender_results = platform
@@ -709,7 +765,12 @@ mod nft_tests {
 
         assert_eq!(processing_result.aggregated_fees().storage_fee, 64611000);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 4080480);
+        assert_eq!(
+            processing_result.aggregated_fees().processing_fee,
+            expected_purchase_fee,
+            "PROTOCOL_VERSION_{}: purchase processing fee must match the version-specific baseline",
+            protocol_version,
+        );
 
         assert_eq!(
             processing_result
@@ -743,7 +804,9 @@ mod nft_tests {
         // the seller should have received 0.1 and already had 0.1 minus the processing fee and storage fee
         assert_eq!(
             seller_balance,
-            dash_to_credits!(0.2) - original_creation_cost + 20014623
+            dash_to_credits!(0.2) - original_creation_cost + 22704503
+                - expected_set_price_fee
+                - 216000
         );
 
         let buyers_balance = platform
@@ -753,13 +816,49 @@ mod nft_tests {
             .expect("expected that purchaser exists");
 
         // the buyer paid 0.1, but also storage and processing fees
-        assert_eq!(buyers_balance, dash_to_credits!(0.9) - 68691480);
+        assert_eq!(
+            buyers_balance,
+            dash_to_credits!(0.9) - expected_purchase_fee - 64611000
+        );
     }
 
     #[tokio::test]
     async fn test_document_set_price_and_purchase_different_epoch_documents_mutable() {
-        let platform_version = PlatformVersion::latest();
+        run_document_set_price_and_purchase_different_epoch_documents_mutable_at_protocol_version(
+            PlatformVersion::latest().protocol_version,
+            141238960,
+            2729120,
+            2733160,
+            4357440,
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_11: pre-B4/B7 fees — query_documents cost was
+    /// discarded on each set-price and the purchase transition, and the
+    /// transformer-phase grovedb reads on the prior create transition were
+    /// dropped into a local context. Pinned so v11 chain history stays
+    /// bit-for-bit reproducible.
+    #[tokio::test]
+    async fn test_document_set_price_and_purchase_different_epoch_documents_mutable_protocol_version_11(
+    ) {
+        run_document_set_price_and_purchase_different_epoch_documents_mutable_at_protocol_version(
+            11, 141234660, 2717400, 2721160, 4345280,
+        )
+        .await;
+    }
+
+    async fn run_document_set_price_and_purchase_different_epoch_documents_mutable_at_protocol_version(
+        protocol_version: dpp::version::ProtocolVersion,
+        original_creation_cost: dpp::fee::Credits,
+        expected_set_price_fee_1: dpp::fee::Credits,
+        expected_set_price_fee_2: dpp::fee::Credits,
+        expected_purchase_fee: dpp::fee::Credits,
+    ) {
+        let platform_version = PlatformVersion::get(protocol_version)
+            .expect("expected platform version for the requested protocol_version");
         let mut platform = TestPlatformBuilder::new()
+            .with_initial_protocol_version(protocol_version)
             .build_with_mock_rpc()
             .set_initial_state_structure();
 
@@ -864,11 +963,9 @@ mod nft_tests {
                 .change(),
             &BalanceChange::RemoveFromBalance {
                 required_removed_balance: 138159000,
-                desired_removed_balance: 141234660,
+                desired_removed_balance: original_creation_cost,
             }
         );
-
-        let original_creation_cost = 141234660;
 
         platform
             .drive
@@ -1017,7 +1114,12 @@ mod nft_tests {
             None
         );
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 2717400);
+        assert_eq!(
+            processing_result.aggregated_fees().processing_fee,
+            expected_set_price_fee_1,
+            "PROTOCOL_VERSION_{}: first set-price processing fee must match the version-specific baseline",
+            protocol_version,
+        );
 
         let seller_balance = platform
             .drive
@@ -1028,7 +1130,7 @@ mod nft_tests {
         // the seller should have received 0.1 and already had 0.1 minus the processing fee and storage fee
         assert_eq!(
             seller_balance,
-            dash_to_credits!(0.1) - original_creation_cost - 2717400 - 378000
+            dash_to_credits!(0.1) - original_creation_cost - expected_set_price_fee_1 - 378000
         );
 
         // now let's update price, but first go to next epoch
@@ -1106,7 +1208,12 @@ mod nft_tests {
             None
         );
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 2721160);
+        assert_eq!(
+            processing_result.aggregated_fees().processing_fee,
+            expected_set_price_fee_2,
+            "PROTOCOL_VERSION_{}: second set-price processing fee must match the version-specific baseline",
+            protocol_version,
+        );
 
         let seller_balance = platform
             .drive
@@ -1117,7 +1224,12 @@ mod nft_tests {
         // the seller should have received 0.1 and already had 0.1 minus the processing fee and storage fee
         assert_eq!(
             seller_balance,
-            dash_to_credits!(0.1) - original_creation_cost - 2717400 - 378000 - 2721160 - 216000
+            dash_to_credits!(0.1)
+                - original_creation_cost
+                - expected_set_price_fee_1
+                - 378000
+                - expected_set_price_fee_2
+                - 216000
         );
 
         let query_sender_results = platform
@@ -1230,7 +1342,12 @@ mod nft_tests {
 
         assert_eq!(processing_result.aggregated_fees().storage_fee, 64611000);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 4345280);
+        assert_eq!(
+            processing_result.aggregated_fees().processing_fee,
+            expected_purchase_fee,
+            "PROTOCOL_VERSION_{}: purchase processing fee must match the version-specific baseline",
+            protocol_version,
+        );
 
         assert_eq!(
             processing_result
@@ -1264,7 +1381,11 @@ mod nft_tests {
         // the seller should have received 0.1 and already had 0.1 minus the processing fee and storage fee
         assert_eq!(
             seller_balance,
-            dash_to_credits!(0.2) - original_creation_cost + 46955162
+            dash_to_credits!(0.2) - original_creation_cost + 52987722
+                - expected_set_price_fee_1
+                - 378000
+                - expected_set_price_fee_2
+                - 216000
         );
 
         let buyers_balance = platform
@@ -1274,13 +1395,46 @@ mod nft_tests {
             .expect("expected that purchaser exists");
 
         // the buyer paid 0.1, but also storage and processing fees
-        assert_eq!(buyers_balance, dash_to_credits!(0.9) - 68956280);
+        assert_eq!(
+            buyers_balance,
+            dash_to_credits!(0.9) - expected_purchase_fee - 64611000
+        );
     }
 
     #[tokio::test]
     async fn test_document_set_price_and_purchase_different_epoch() {
-        let platform_version = PlatformVersion::latest();
+        run_document_set_price_and_purchase_different_epoch_at_protocol_version(
+            PlatformVersion::latest().protocol_version,
+            126440160,
+            2485600,
+            4092360,
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_11: pre-B4/B7 fees — query_documents cost was
+    /// discarded on the set-price and purchase transitions, and the
+    /// transformer-phase grovedb reads on the prior create transition were
+    /// dropped into a local context. Pinned so v11 chain history stays
+    /// bit-for-bit reproducible.
+    #[tokio::test]
+    async fn test_document_set_price_and_purchase_different_epoch_protocol_version_11() {
+        run_document_set_price_and_purchase_different_epoch_at_protocol_version(
+            11, 126435860, 2473880, 4080480,
+        )
+        .await;
+    }
+
+    async fn run_document_set_price_and_purchase_different_epoch_at_protocol_version(
+        protocol_version: dpp::version::ProtocolVersion,
+        original_creation_cost: dpp::fee::Credits,
+        expected_set_price_fee: dpp::fee::Credits,
+        expected_purchase_fee: dpp::fee::Credits,
+    ) {
+        let platform_version = PlatformVersion::get(protocol_version)
+            .expect("expected platform version for the requested protocol_version");
         let (mut platform, contract) = TestPlatformBuilder::new()
+            .with_initial_protocol_version(protocol_version)
             .build_with_mock_rpc()
             .set_initial_state_structure()
             .with_crypto_card_game_nft(TradeMode::DirectPurchase);
@@ -1369,11 +1523,9 @@ mod nft_tests {
                 .change(),
             &BalanceChange::RemoveFromBalance {
                 required_removed_balance: 123579000,
-                desired_removed_balance: 126435860,
+                desired_removed_balance: original_creation_cost,
             }
         );
-
-        let original_creation_cost = 126435860;
 
         platform
             .drive
@@ -1506,7 +1658,12 @@ mod nft_tests {
             None
         );
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 2473880);
+        assert_eq!(
+            processing_result.aggregated_fees().processing_fee,
+            expected_set_price_fee,
+            "PROTOCOL_VERSION_{}: set-price processing fee must match the version-specific baseline",
+            protocol_version,
+        );
 
         let seller_balance = platform
             .drive
@@ -1517,7 +1674,7 @@ mod nft_tests {
         // the seller should have received 0.1 and already had 0.1 minus the processing fee and storage fee
         assert_eq!(
             seller_balance,
-            dash_to_credits!(0.1) - original_creation_cost - 2689880
+            dash_to_credits!(0.1) - original_creation_cost - expected_set_price_fee - 216000
         );
 
         let query_sender_results = platform
@@ -1615,7 +1772,12 @@ mod nft_tests {
 
         assert_eq!(processing_result.aggregated_fees().storage_fee, 64611000);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 4080480);
+        assert_eq!(
+            processing_result.aggregated_fees().processing_fee,
+            expected_purchase_fee,
+            "PROTOCOL_VERSION_{}: purchase processing fee must match the version-specific baseline",
+            protocol_version,
+        );
 
         assert_eq!(
             processing_result
@@ -1649,7 +1811,9 @@ mod nft_tests {
         // the seller should have received 0.1 and already had 0.1 minus the processing fee and storage fee
         assert_eq!(
             seller_balance,
-            dash_to_credits!(0.2) - original_creation_cost + 20014623
+            dash_to_credits!(0.2) - original_creation_cost + 22704503
+                - expected_set_price_fee
+                - 216000
         );
 
         let buyers_balance = platform
@@ -1659,7 +1823,10 @@ mod nft_tests {
             .expect("expected that purchaser exists");
 
         // the buyer paid 0.1, but also storage and processing fees
-        assert_eq!(buyers_balance, dash_to_credits!(0.9) - 68691480);
+        assert_eq!(
+            buyers_balance,
+            dash_to_credits!(0.9) - expected_purchase_fee - 64611000
+        );
     }
 
     /// Helper for the paired Purchase-at-wrong-price test. Same scenario at
@@ -2434,8 +2601,32 @@ mod nft_tests {
     #[tokio::test]
     async fn test_document_set_price_and_purchase_with_enough_credits_to_buy_but_not_enough_to_pay_for_processing(
     ) {
-        let platform_version = PlatformVersion::latest();
+        run_document_set_price_and_purchase_with_enough_credits_to_buy_but_not_enough_to_pay_for_processing_at_protocol_version(
+            PlatformVersion::latest().protocol_version,
+            2485600,
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_11: pre-B4 fee — query_documents cost was discarded.
+    /// Pinned so v11 chain history stays bit-for-bit reproducible.
+    #[tokio::test]
+    async fn test_document_set_price_and_purchase_with_enough_credits_to_buy_but_not_enough_to_pay_for_processing_protocol_version_11(
+    ) {
+        run_document_set_price_and_purchase_with_enough_credits_to_buy_but_not_enough_to_pay_for_processing_at_protocol_version(
+            11, 2473880,
+        )
+        .await;
+    }
+
+    async fn run_document_set_price_and_purchase_with_enough_credits_to_buy_but_not_enough_to_pay_for_processing_at_protocol_version(
+        protocol_version: dpp::version::ProtocolVersion,
+        expected_set_price_fee: dpp::fee::Credits,
+    ) {
+        let platform_version = PlatformVersion::get(protocol_version)
+            .expect("expected platform version for the requested protocol_version");
         let (mut platform, contract) = TestPlatformBuilder::new()
+            .with_initial_protocol_version(protocol_version)
             .build_with_mock_rpc()
             .set_initial_state_structure()
             .with_crypto_card_game_nft(TradeMode::DirectPurchase);
@@ -2613,7 +2804,12 @@ mod nft_tests {
 
         assert_eq!(processing_result.valid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 2473880);
+        assert_eq!(
+            processing_result.aggregated_fees().processing_fee,
+            expected_set_price_fee,
+            "PROTOCOL_VERSION_{}: set-price processing fee must match the version-specific baseline",
+            protocol_version,
+        );
 
         let query_sender_results = platform
             .drive
@@ -2922,7 +3118,7 @@ mod nft_tests {
     async fn test_document_set_price_on_not_owned_document() {
         run_document_set_price_on_not_owned_document_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            571240,
+            582960,
         )
         .await;
     }

@@ -27,6 +27,7 @@ pub enum PrivateKeyData {
 
 /// Identity lifecycle status on Platform.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum IdentityStatus {
     #[default]
     Unknown,
@@ -38,6 +39,7 @@ pub enum IdentityStatus {
 
 /// DPNS username associated with an identity.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct DpnsNameInfo {
     pub label: String,
     pub acquired_at: Option<u64>,

@@ -2,7 +2,8 @@ use dashcore::OutPoint;
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
 use dpp::identifier::Identifier;
-use key_wallet::{account::StandardAccountType, Network};
+use key_wallet::account::StandardAccountType;
+use key_wallet::Network;
 
 /// Errors that can occur in platform wallet operations
 #[derive(Debug, thiserror::Error)]

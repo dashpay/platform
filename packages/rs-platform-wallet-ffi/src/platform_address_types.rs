@@ -137,6 +137,9 @@ pub unsafe fn parse_explicit_inputs(
     if count > 0 {
         for entry in std::slice::from_raw_parts(ptr, count) {
             let addr = PlatformAddress::try_from(entry.address)?;
+            if map.contains_key(&addr) {
+                return Err("Duplicate input address");
+            }
             map.insert(addr, entry.balance);
         }
     }
@@ -158,6 +161,9 @@ pub unsafe fn parse_explicit_inputs_with_nonces(
     if count > 0 {
         for entry in std::slice::from_raw_parts(ptr, count) {
             let addr = PlatformAddress::try_from(entry.address)?;
+            if map.contains_key(&addr) {
+                return Err("Duplicate input address");
+            }
             map.insert(addr, (entry.nonce, entry.balance));
         }
     }
@@ -182,26 +188,32 @@ pub struct AddressBalanceEntryFFI {
     pub address_index: u32,
 }
 
-/// Parse output entries into an insertion-ordered `IndexMap`.
+/// Parse output entries into the DPP-canonical `BTreeMap`.
 ///
-/// Mirrors `platform-wallet`'s public-API output ordering (QA-002): the
-/// wallet preserves the caller's order for UI/debug while DPP still
-/// keys the transition by lex-smallest address. Use `IndexMap` here so
-/// the caller's array order survives the FFI boundary.
+/// Outputs land on-chain in `AddressFundsTransferTransitionV0` as a
+/// `BTreeMap<PlatformAddress, Credits>` keyed in lexicographic order;
+/// matching that here keeps the FFI boundary aligned with the public
+/// transfer API. Duplicate destination addresses are rejected with an
+/// explicit error rather than relying on `BTreeMap`'s last-write-wins
+/// behaviour, so Swift/Kotlin callers that send the same address twice
+/// get a deterministic `Err`.
 ///
 /// # Safety
 /// `ptr` must point to `count` valid elements.
 pub unsafe fn parse_outputs(
     ptr: *const AddressBalanceEntryFFI,
     count: usize,
-) -> Result<indexmap::IndexMap<PlatformAddress, Credits>, &'static str> {
+) -> Result<BTreeMap<PlatformAddress, Credits>, &'static str> {
     if ptr.is_null() && count > 0 {
         return Err("Null output pointer with non-zero count");
     }
-    let mut map = indexmap::IndexMap::new();
+    let mut map = BTreeMap::new();
     if count > 0 {
         for entry in std::slice::from_raw_parts(ptr, count) {
             let addr = PlatformAddress::try_from(entry.address)?;
+            if map.contains_key(&addr) {
+                return Err("Duplicate output address");
+            }
             map.insert(addr, entry.balance);
         }
     }
@@ -209,7 +221,7 @@ pub unsafe fn parse_outputs(
 }
 
 // ---------------------------------------------------------------------------
-// Funding address entry (for fund_from_asset_lock)
+// Funding address entry (for top_up)
 // ---------------------------------------------------------------------------
 
 /// Address entry for asset lock funding. Exactly one must have `has_balance = false`.
@@ -414,5 +426,129 @@ impl From<&platform_wallet::PlatformAddressChangeSet> for PlatformAddressChangeS
             updated: updated_ptr,
             updated_count,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// CMT-003: `parse_outputs` must reject duplicate destination addresses
+    /// instead of silently overwriting earlier entries. The diagnostic must
+    /// name the offending address.
+    #[test]
+    fn parse_outputs_rejects_duplicate_destination_address() {
+        let dup = PlatformAddressFFI {
+            address_type: 0,
+            hash: [0xAB; 20],
+        };
+        let entries = [
+            AddressBalanceEntryFFI {
+                address: dup,
+                balance: 1_000_000,
+                nonce: 0,
+                account_index: 0,
+                address_index: 0,
+            },
+            AddressBalanceEntryFFI {
+                address: dup,
+                balance: 2_000_000,
+                nonce: 0,
+                account_index: 0,
+                address_index: 0,
+            },
+        ];
+
+        let err = unsafe { parse_outputs(entries.as_ptr(), entries.len()) }
+            .expect_err("duplicate output address must be rejected");
+        assert_eq!(err, "Duplicate output address");
+    }
+
+    /// CMT-003: `parse_explicit_inputs` must reject duplicate input addresses
+    /// instead of silently overwriting earlier entries. The diagnostic must
+    /// name the offending address.
+    #[test]
+    fn parse_explicit_inputs_rejects_duplicate_input_address() {
+        let dup = PlatformAddressFFI {
+            address_type: 0,
+            hash: [0xCD; 20],
+        };
+        let entries = [
+            ExplicitInputFFI {
+                address: dup,
+                balance: 1_000_000,
+            },
+            ExplicitInputFFI {
+                address: dup,
+                balance: 2_000_000,
+            },
+        ];
+
+        let err = unsafe { parse_explicit_inputs(entries.as_ptr(), entries.len()) }
+            .expect_err("duplicate input address must be rejected");
+        assert_eq!(err, "Duplicate input address");
+    }
+
+    /// CMT-003: `parse_explicit_inputs_with_nonces` must reject duplicate
+    /// input addresses. Same precondition as `parse_explicit_inputs`; the
+    /// nonce field doesn't excuse a collision on the address key.
+    #[test]
+    fn parse_explicit_inputs_with_nonces_rejects_duplicate_input_address() {
+        let dup = PlatformAddressFFI {
+            address_type: 0,
+            hash: [0xEF; 20],
+        };
+        let entries = [
+            ExplicitInputWithNonceFFI {
+                address: dup,
+                nonce: 1,
+                balance: 1_000_000,
+            },
+            ExplicitInputWithNonceFFI {
+                address: dup,
+                nonce: 2,
+                balance: 2_000_000,
+            },
+        ];
+
+        let err = unsafe { parse_explicit_inputs_with_nonces(entries.as_ptr(), entries.len()) }
+            .expect_err("duplicate input address must be rejected");
+        assert_eq!(err, "Duplicate input address");
+    }
+
+    /// Distinct addresses are accepted and the keys end up in DPP-canonical
+    /// (lexicographic) order regardless of the caller's array order.
+    #[test]
+    fn parse_outputs_yields_lex_order_for_distinct_addresses() {
+        // Caller-supplied order is intentionally non-lex (0x22 then 0x11);
+        // the BTreeMap return type must canonicalize on the way out.
+        let entries = [
+            AddressBalanceEntryFFI {
+                address: PlatformAddressFFI {
+                    address_type: 0,
+                    hash: [0x22; 20],
+                },
+                balance: 2,
+                nonce: 0,
+                account_index: 0,
+                address_index: 0,
+            },
+            AddressBalanceEntryFFI {
+                address: PlatformAddressFFI {
+                    address_type: 0,
+                    hash: [0x11; 20],
+                },
+                balance: 1,
+                nonce: 0,
+                account_index: 0,
+                address_index: 0,
+            },
+        ];
+
+        let map = unsafe { parse_outputs(entries.as_ptr(), entries.len()) }.expect("parse");
+        assert_eq!(map.len(), 2);
+        let keys: Vec<_> = map.keys().copied().collect();
+        assert_eq!(keys[0], PlatformAddress::P2pkh([0x11; 20]));
+        assert_eq!(keys[1], PlatformAddress::P2pkh([0x22; 20]));
     }
 }

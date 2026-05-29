@@ -35,11 +35,9 @@ use dpp::address_funds::{
 use dpp::fee::Credits;
 use dpp::identity::core_script::CoreScript;
 use dpp::identity::signer::Signer;
-use dpp::prelude::AssetLockProof;
 use dpp::shielded::builder::{
-    build_shield_from_asset_lock_transition, build_shield_transition,
-    build_shielded_transfer_transition, build_shielded_withdrawal_transition,
-    build_unshield_transition, OrchardProver, SpendableNote,
+    build_shield_transition, build_shielded_transfer_transition,
+    build_shielded_withdrawal_transition, build_unshield_transition, OrchardProver, SpendableNote,
 };
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
@@ -298,8 +296,10 @@ async fn broadcast_shield_st(
 
 // -------------------------------------------------------------------------
 // ShieldFromAssetLock: Core L1 asset lock -> shielded pool (Type 18)
+// (orchestrated entry point lives in `wallet/shielded/fund_from_asset_lock.rs`)
 // -------------------------------------------------------------------------
 
+<<<<<<< HEAD
 /// Shield credits from a Core L1 asset lock into the shielded
 /// pool, with the resulting note assigned to `account`'s default
 /// Orchard payment address derived from `keys`.
@@ -374,6 +374,8 @@ pub fn build_shield_from_asset_lock_st<P: OrchardProver>(
     .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))
 }
 
+=======
+>>>>>>> feat/rs-platform-wallet-e2e
 // -------------------------------------------------------------------------
 // Unshield: shielded pool -> platform address (Type 17)
 // -------------------------------------------------------------------------
