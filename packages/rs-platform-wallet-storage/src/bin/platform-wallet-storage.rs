@@ -21,7 +21,9 @@ use platform_wallet_storage::{
     about = "Maintenance CLI for the SQLite-backed platform wallet persister"
 )]
 struct Cli {
-    /// Path to the SQLite database file.
+    /// Path to the SQLite database file. Required by `migrate`,
+    /// `backup`, `restore`, and `inspect`; ignored by `prune` (which
+    /// operates purely on the backups directory).
     #[arg(long, value_name = "PATH", global = true)]
     db: Option<PathBuf>,
     /// Auto-backup directory. To disable auto-backup, pass the
@@ -176,15 +178,20 @@ impl CliError {
 }
 
 fn run(cli: Cli) -> Result<ExitCode, CliError> {
-    let db = cli
-        .db
-        .ok_or_else(|| CliError::runtime("--db is required"))?;
     let auto_backup_dir: Option<PathBuf> = cli.auto_backup_dir;
 
-    // For `prune`, we don't open a persister — pure filesystem op.
+    // CMT-014: `prune` is a pure filesystem op against the backups
+    // directory — `--db` is meaningless for it and must not be
+    // required. Handle the subcommand BEFORE extracting `cli.db` so the
+    // operator can run `prune --backups-dir ... --keep-last N` without
+    // also passing a database path.
     if let Cmd::Prune(args) = &cli.cmd {
         return run_prune(args);
     }
+
+    let db = cli
+        .db
+        .ok_or_else(|| CliError::runtime("--db is required"))?;
 
     // `restore` is an associated function; no persister needed beforehand.
     if let Cmd::Restore(args) = &cli.cmd {
@@ -255,8 +262,21 @@ fn map_open_err_for_cli(err: WalletStorageError) -> CliError {
 /// or query failure is propagated as `Err` so callers don't mistake a
 /// transient failure for "version 0".
 fn peek_schema_version(db: &Path) -> Result<Option<i64>, rusqlite::Error> {
-    use rusqlite::OptionalExtension;
-    let conn = rusqlite::Connection::open(db)?;
+    use rusqlite::{OpenFlags, OptionalExtension};
+    // CMT-010: open READ-ONLY (no SQLITE_OPEN_CREATE) so a typo'd --db
+    // path errors out at this gate rather than silently materialising a
+    // zero-byte SQLite file that bypasses the crate's 0o600 invariant.
+    // A genuinely fresh `migrate` invocation against a non-existent DB
+    // file is normal — surface that as `Ok(None)` so the migrate path
+    // proceeds and `SqlitePersister::open` creates the file under the
+    // crate's 0o600 invariant.
+    if !db.exists() {
+        return Ok(None);
+    }
+    let conn = rusqlite::Connection::open_with_flags(
+        db,
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_URI,
+    )?;
     // Pre-migration the history table may not exist yet — that is a
     // legitimate "no version" answer, not a failure.
     let has_history = conn
@@ -398,4 +418,30 @@ fn run_inspect(persister: &SqlitePersister, args: InspectArgs) -> Result<ExitCod
         }
     }
     Ok(ExitCode::SUCCESS)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// CMT-010: `peek_schema_version` on a non-existent path must NOT
+    /// materialise a zero-byte SQLite file at that path. Pre-fix used
+    /// `Connection::open` with implicit SQLITE_OPEN_CREATE which would
+    /// silently reward a typo with a stub file lacking the crate's
+    /// 0o600 mode invariant.
+    #[test]
+    fn peek_schema_version_on_missing_db_does_not_create_stub() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let typo = tmp.path().join("absent.db");
+        assert!(!typo.exists(), "precondition: path must not exist");
+
+        let v = peek_schema_version(&typo).expect("must succeed with Ok(None)");
+        assert_eq!(v, None);
+
+        assert!(
+            !typo.exists(),
+            "peek_schema_version silently created a stub at {}",
+            typo.display()
+        );
+    }
 }

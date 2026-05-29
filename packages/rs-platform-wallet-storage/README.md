@@ -98,7 +98,7 @@ synchronous, and an auto-backup dir at `<db_dir>/backups/auto/`.
 platform-wallet-storage --db <path> migrate [--no-auto-backup]
 platform-wallet-storage --db <path> backup --out <dir-or-file>
 platform-wallet-storage --db <path> restore --from <backup.db> --yes
-platform-wallet-storage --db <path> prune --in <dir> [--keep-last N] [--max-age 30d]
+platform-wallet-storage prune --in <dir> [--keep-last N] [--max-age 30d]
 platform-wallet-storage --db <path> inspect [--wallet-id <hex>] [--format text|tsv|json]
 ```
 
