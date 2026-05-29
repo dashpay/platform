@@ -584,11 +584,23 @@ var body: some View {
             let peers = spvPeerOverride()
             let restrictToConfiguredPeers = !peers.isEmpty
 
+            // Devnet requires a name so `DevnetConfig` can embed
+            // `devnet.devnet-<name>` in the SPV user agent (Dash
+            // Core devnet peers drop inbound handshakes without it).
+            // Read from the same UserDefaults key OptionsView writes.
+            let devnetName: String? = platformState.currentNetwork == .devnet
+                ? UserDefaults.standard.string(forKey: "platformDevnetName").flatMap {
+                    let trimmed = $0.trimmingCharacters(in: .whitespaces)
+                    return trimmed.isEmpty ? nil : trimmed
+                }
+                : nil
+
             let config = PlatformSpvStartConfig(
                 dataDir: dataDirURL.path,
                 network: platformState.currentNetwork,
                 peers: peers,
-                restrictToConfiguredPeers: restrictToConfiguredPeers
+                restrictToConfiguredPeers: restrictToConfiguredPeers,
+                devnetName: devnetName
             )
             try walletManager.startSpv(config: config)
         } catch {
@@ -621,6 +633,21 @@ var body: some View {
         let useDocker = UserDefaults.standard.bool(forKey: "useDockerSetup")
         if platformState.currentNetwork == .regtest && useDocker {
             return ["127.0.0.1:20301"]
+        }
+        // Devnet: auto-discover SPV peers from the quorum-list
+        // service's `/masternodes` endpoint. Each masternode reports
+        // its own `address` field (`ip:CoreP2PPort`) — use the
+        // verbatim values rather than guessing the canonical 29999
+        // port (paloma reports 20001 per masternode, for example).
+        // No manual SPV input on devnet — the quorum URL is the
+        // single source of truth (see `OptionsView`'s devnet branch).
+        if platformState.currentNetwork == .devnet {
+            guard
+                let quorum = UserDefaults.standard.string(forKey: "platformQuorumURL"),
+                !quorum.isEmpty,
+                let active = SDK.discoverActiveMasternodes(quorumBase: quorum)
+            else { return [] }
+            return active.map(\.spvPeer)
         }
         let useLocalCore = UserDefaults.standard.bool(forKey: "useLocalhostCore")
         guard useLocalCore else { return [] }
@@ -831,12 +858,22 @@ struct WalletRowView: View {
     /// Platform balance in credits: prefer BLAST address sync, fall
     /// back to summing identity credits when no addresses have been
     /// synced yet.
+    ///
+    /// Skips identities whose `modelContext` is nil — that's
+    /// SwiftData's marker for an invalidated row (e.g. mid-wallet-
+    /// delete, where the relationship array is briefly visible but
+    /// the underlying rows have already been removed from the
+    /// store). Reading any persisted property on an invalidated
+    /// model crashes with `BackingData.swift:866: This model
+    /// instance was invalidated…`.
     private var platformBalance: UInt64 {
         let blastBalance = addressBalances.reduce(UInt64(0)) { $0 + $1.balance }
         if blastBalance > 0 { return blastBalance }
-        return identitiesForWallet.reduce(UInt64(0)) {
-            $0 + UInt64(bitPattern: $1.balance)
-        }
+        return identitiesForWallet
+            .filter { $0.modelContext != nil }
+            .reduce(UInt64(0)) {
+                $0 + UInt64(bitPattern: $1.balance)
+            }
     }
 
     /// One-shot snapshot of the wallet's per-account Core balances.

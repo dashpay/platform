@@ -438,8 +438,12 @@ impl Sdk {
 
         let documents = Document::fetch_many(self, query).await?;
 
-        // If no documents found, the name is available
-        Ok(documents.is_empty())
+        // `Document::fetch_many` returns `BTreeMap<Identifier, Option<Document>>`
+        // — a non-existence proof comes back as a non-empty map whose values are
+        // all `None`. Checking `documents.is_empty()` would treat a proven
+        // non-existence as "taken". The name is available iff no entry in the
+        // map carries an actual document.
+        Ok(documents.values().all(|d| d.is_none()))
     }
 
     /// Resolve a DPNS name to an identity ID

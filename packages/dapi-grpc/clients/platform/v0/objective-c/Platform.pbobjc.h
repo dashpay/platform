@@ -3092,9 +3092,15 @@ GPB_FINAL @interface GetDocumentsRequest_GetDocumentsRequestV1 : GPBMessage
  *
  * **Currently rejected when `selects.len() > 1`** with
  * `Unsupported("multi-projection SELECT is not yet
- * implemented")`. The single-projection cases (`DOCUMENTS`,
- * `COUNT(*)`) are evaluated today; `SUM` / `AVG` / `MIN` /
- * `MAX` are rejected at the per-function gate. When
+ * implemented")`. The single-projection cases `DOCUMENTS`,
+ * `COUNT(*)`, `SUM(<field>)`, and `AVG(<field>)` are evaluated
+ * end-to-end today and route through the drive count / sum /
+ * average dispatchers (see the `GetDocumentsResponseV1`
+ * docstring for the wire-shape table). `COUNT(<field>)`,
+ * `MIN(<field>)`, and `MAX(<field>)` remain rejected at the
+ * per-function gate — see the `Select` message-level docstring
+ * for the rationale (no grovedb min/max primitive; COUNT(field)
+ * needs a non-null counter walk that doesn't exist yet). When
  * multi-projection lands the response shape gains a parallel
  * `repeated AggregateValue values` field, so caller code
  * structured around `repeated Select` doesn't need to be
@@ -3182,12 +3188,18 @@ typedef GPB_ENUM(GetDocumentsRequest_GetDocumentsRequestV1_Select_FieldNumber) {
  * `group_by` (empty → single, non-empty → per-group entries) —
  * same rule as today's `COUNT` routing.
  *
- * **Server capability today**: only `DOCUMENTS` and
- * `COUNT(*)` (empty `field`) are evaluated. `SUM` / `AVG`
- * and `COUNT(field)` are wire-stable but rejected at routing
- * time with `Unsupported("… is not yet implemented")` so the
+ * **Server capability today**: `DOCUMENTS`, `COUNT(*)` (empty
+ * `field`), `SUM(<field>)`, and `AVG(<field>)` are evaluated
+ * end-to-end (no-proof and proof paths route through the drive
+ * count / sum / average dispatchers). `COUNT(<field>)` (non-null
+ * value counting on a specific field), `MIN(<field>)`, and
+ * `MAX(<field>)` are wire-stable but rejected at routing time
+ * with `Unsupported("SELECT … is not yet implemented")` so the
  * surface is shipped first and execution lands later without
- * another version bump.
+ * another version bump. MIN/MAX in particular wait on a grovedb
+ * primitive — there's no min/max aggregate on count or sum
+ * trees today, and the order-by-then-LIMIT-1 emulation has the
+ * wrong proof shape for the cryptographic verifier.
  **/
 GPB_FINAL @interface GetDocumentsRequest_GetDocumentsRequestV1_Select : GPBMessage
 
@@ -3324,21 +3336,23 @@ typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_Result_OneOfCase) {
  *   - `select=DOCUMENTS` (no prove)            → `result.data.documents`.
  *   - `select=COUNT, group_by=[]` (no prove)   → `result.data.counts.aggregate_count`.
  *   - `select=COUNT, group_by=[…]` (no prove)  → `result.data.counts.entries`.
- *   - `select=SUM, group_by=[]` (no prove)     → `result.data.sums.aggregate_sum` (scaffold-only: dispatcher returns NotYetImplemented).
- *   - `select=SUM, group_by=[…]` (no prove)    → `result.data.sums.entries` (scaffold-only).
- *   - `select=AVG, group_by=[]` (no prove)     → `result.data.averages.aggregate_average` (scaffold-only).
- *   - `select=AVG, group_by=[…]` (no prove)    → `result.data.averages.entries` (scaffold-only).
- *   - any select (prove)                        → `result.proof` (DOCUMENTS / COUNT only — SUM / AVG prove paths are scaffold-only).
+ *   - `select=SUM, group_by=[]` (no prove)     → `result.data.sums.aggregate_sum`.
+ *   - `select=SUM, group_by=[…]` (no prove)    → `result.data.sums.entries`.
+ *   - `select=AVG, group_by=[]` (no prove)     → `result.data.averages.aggregate_average`.
+ *   - `select=AVG, group_by=[…]` (no prove)    → `result.data.averages.entries`.
+ *   - any select (prove)                        → `result.proof`.
  *
- * **SUM / AVG status**: the request/response wire surfaces are
- * stable so callers can encode against them today, but the
- * server-side executor returns `NotYetImplemented` until the
- * rs-drive executor bodies + grovedb PR 670's
- * `verify_aggregate_sum_query` / `verify_aggregate_count_and_sum_query`
- * primitives land in a follow-up. The `data.sums` / `data.averages`
- * variants documented above are the response shapes the dispatcher
- * *will* emit once execution lands; today every SUM / AVG request
- * surfaces a typed not-implemented error to the caller.
+ * **SUM / AVG status**: all four shapes above are wired
+ * end-to-end on the drive dispatcher (no-proof and proof paths
+ * both terminate at grovedb's aggregate-sum / sum-tree-walk
+ * primitives, not at a `NotYetImplemented` stub). The four
+ * resolved-mode tables (`compute_aggregate_mode_and_check_limit_v0`,
+ * `detect_count_mode`, `detect_sum_mode`, AVG mirror) decide which
+ * executor to run from the (mode × range × group_by × prove)
+ * tuple; the executors compose count and sum walks for AVG so
+ * there's no separate average primitive on the grovedb side.
+ * Routing details live in
+ * `packages/rs-drive/src/query/drive_document_{sum,average}_query/`.
  *
  * `CountResults` / `CountEntry` / `CountEntries` are nested in
  * `GetDocumentsResponseV1` rather than re-exported from a
