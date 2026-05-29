@@ -75,6 +75,13 @@ pub struct ShieldedChunkBatch {
     /// notes before the next sync, so the consumer resumes from this
     /// chunk's `start_index` next pass.
     pub is_partial: bool,
+    /// On-chain total number of notes in the shielded `CommitmentTree` at
+    /// the block this chunk's proof was taken against — the sync
+    /// progress-bar denominator. Extracted from the SAME note-fetch proof
+    /// (no separate RPC), so it arrives with the very first batch and is
+    /// stable across the sync; carrying it per-batch is intentional and
+    /// cheap.
+    pub total_count: u64,
 }
 
 /// A note that was successfully decrypted (belongs to the viewer).
@@ -104,4 +111,10 @@ pub struct ShieldedSyncResult {
     pub total_notes_scanned: u64,
     /// Platform block height at the time of the most recent chunk response.
     pub block_height: u64,
+    /// On-chain total number of notes in the shielded `CommitmentTree` — the
+    /// sync progress-bar denominator. Extracted from the note-fetch proofs
+    /// (no separate RPC); taken as the max/last-seen across the sync's
+    /// batches. `0` if no chunk was fetched (e.g. an aligned start past the
+    /// end of the tree returned nothing).
+    pub total_count: u64,
 }

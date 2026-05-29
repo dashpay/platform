@@ -169,7 +169,7 @@ async fn shielded_chunk_timing_bench() {
         let result = ShieldedEncryptedNotes::fetch_with_metadata(sdk.as_ref(), q, None).await;
         let call_ms = call_start.elapsed().as_millis();
         match result {
-            Ok((Some(ShieldedEncryptedNotes(notes)), _)) => {
+            Ok((Some(ShieldedEncryptedNotes { notes, .. }), _)) => {
                 total_notes += notes.len();
                 println!(
                     "  chunk {:>3} @ idx {:>8} -> {:>6.0} ms  ({} notes)",

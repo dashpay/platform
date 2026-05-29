@@ -29,7 +29,6 @@ use std::sync::Arc;
 
 use dash_sdk::platform::shielded::nullifier_sync::{NullifierSyncCheckpoint, NullifierSyncConfig};
 use dash_sdk::platform::shielded::{sync_shielded_notes_stream, try_decrypt_note};
-use dash_sdk::platform::types::shielded::fetch_shielded_notes_count;
 use futures::StreamExt;
 use grovedb_commitment_tree::{Note as OrchardNote, PaymentAddress};
 use tokio::sync::RwLock;
@@ -227,19 +226,18 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
     );
 
     // Denominator for the tree-progress ("checked") bar: the on-chain
-    // total leaf count of the shielded MMR. This is a progress-only RPC
-    // — if it fails, degrade gracefully (warn + pass 0, which the host
-    // treats as an indeterminate total) rather than failing the sync.
-    let total_target: u64 = match fetch_shielded_notes_count(sdk).await {
-        Ok(n) => n,
-        Err(e) => {
-            warn!(
-                error = %e,
-                "fetch_shielded_notes_count failed; tree-progress total is indeterminate"
-            );
-            0
-        }
-    };
+    // total leaf count of the shielded `CommitmentTree`. This now comes
+    // from the note-fetch proofs themselves — every streamed batch carries
+    // `total_count`, extracted from the SAME proof that delivers the notes
+    // (the parent CommitmentTree element is always present in it). That
+    // removes the separate up-front `GetShieldedNotesCount` RPC: the
+    // denominator works against currently-deployed nodes with no dependency
+    // on that RPC being deployed, and costs no extra round-trip.
+    //
+    // It is unknown until the first batch arrives, so it starts at 0
+    // (indeterminate — the host's existing indeterminate handling) and is
+    // set from `batch.total_count` as soon as the first batch lands.
+    let mut total_target: u64 = 0;
 
     // Drive the FIRST subwallet's IVK as the streaming driver. Its hits
     // come back per batch as `batch.decrypted`; every other subwallet's
@@ -331,6 +329,11 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
     while let Some(item) = stream.next().await {
         let batch = item.map_err(|e| PlatformWalletError::ShieldedSyncFailed(e.to_string()))?;
         max_block_height = max_block_height.max(batch.block_height);
+        // The denominator arrives with the batch (extracted from the
+        // note-fetch proof). It is stable across a sync; take the max-seen
+        // so a late chunk proven at a slightly higher block never lowers
+        // it. Stays 0 (indeterminate) only if no batch is ever produced.
+        total_target = total_target.max(batch.total_count);
         total_notes_scanned += batch.notes.len() as u64;
         if !batch.notes.is_empty() {
             last_nonempty = Some((batch.start_index, batch.is_partial));
@@ -357,8 +360,10 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
 
         // 2. Fire the tree-progress ("checked") callback once per batch
         //    (already coarse at ~8192-note batches). `total_target` is
-        //    0 when the count RPC failed → indeterminate total on the
-        //    host.
+        //    sourced from this batch's proof above; it is set by the first
+        //    batch and stable thereafter. It is 0 (indeterminate on the
+        //    host) only before any batch lands — which can't happen inside
+        //    this loop since we're holding a batch.
         if let Some(cb) = on_tree_progress {
             cb(leaves_committed, total_target);
         }

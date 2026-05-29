@@ -2553,7 +2553,7 @@ impl FromProof<platform::GetShieldedEncryptedNotesRequest> for ShieldedEncrypted
             .max_query_chunks as u32
             * (1u32 << drive::drive::shielded::paths::SHIELDED_NOTES_CHUNK_POWER);
 
-        let (root_hash, notes) = Drive::verify_shielded_encrypted_notes(
+        let (root_hash, notes, total_count) = Drive::verify_shielded_encrypted_notes(
             &proof.grovedb_proof,
             start_index,
             count,
@@ -2565,20 +2565,22 @@ impl FromProof<platform::GetShieldedEncryptedNotesRequest> for ShieldedEncrypted
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
-        let result = if notes.is_empty() {
-            None
-        } else {
-            Some(ShieldedEncryptedNotes(
-                notes
-                    .into_iter()
-                    .map(|(cmx, nullifier, encrypted_note)| ShieldedEncryptedNote {
-                        cmx,
-                        nullifier,
-                        encrypted_note,
-                    })
-                    .collect(),
-            ))
-        };
+        // `total_count` (the on-chain total note count) is extracted from the
+        // same proof, so it is available even when this chunk returned no
+        // notes — return the result whenever the proof verified, carrying the
+        // count for the sync progress-bar denominator. `None` would only be
+        // appropriate if the proof itself were absent, which is handled above.
+        let result = Some(ShieldedEncryptedNotes {
+            notes: notes
+                .into_iter()
+                .map(|(cmx, nullifier, encrypted_note)| ShieldedEncryptedNote {
+                    cmx,
+                    nullifier,
+                    encrypted_note,
+                })
+                .collect(),
+            total_count,
+        });
 
         Ok((result, mtd.clone(), proof.clone()))
     }

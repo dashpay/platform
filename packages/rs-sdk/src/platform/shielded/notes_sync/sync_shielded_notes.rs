@@ -32,8 +32,9 @@ fn resolve_sizes(sdk: &Sdk) -> (u64, u64) {
     (mmr_chunk_size, fetch_size)
 }
 
-type ChunkFuture =
-    Pin<Box<dyn Future<Output = Result<(u64, Vec<ShieldedEncryptedNote>, u64), Error>> + Send>>;
+type ChunkFuture = Pin<
+    Box<dyn Future<Output = Result<(u64, Vec<ShieldedEncryptedNote>, u64, u64), Error>> + Send>,
+>;
 
 /// Pure, network-free reorder buffer + emit watermark.
 ///
@@ -101,7 +102,8 @@ struct StreamState {
     next_chunk_index: u64,
     /// Out-of-order completed chunks waiting for their predecessor to be
     /// emitted, plus the emit watermark. Drained in ascending order.
-    reorder: ReorderBuffer<(Vec<ShieldedEncryptedNote>, u64)>,
+    /// Payload: `(notes, block_height, total_count)`.
+    reorder: ReorderBuffer<(Vec<ShieldedEncryptedNote>, u64, u64)>,
     /// Set once a partial (short) chunk is observed — stops queuing new
     /// fetches.
     reached_end: bool,
@@ -110,6 +112,10 @@ struct StreamState {
     cumulative_scanned: u64,
     /// Max block height across every completed chunk so far.
     max_block_height: u64,
+    /// On-chain total note count extracted from the note-fetch proofs —
+    /// max/last-seen across completed chunks. Carried into every emitted
+    /// batch as the sync progress-bar denominator.
+    total_count: u64,
 }
 
 impl StreamState {
@@ -131,7 +137,7 @@ impl StreamState {
     /// If the chunk at the emit watermark is buffered, build its batch,
     /// advance the watermark, and return it. Otherwise `None`.
     fn pop_ready(&mut self) -> Option<ShieldedChunkBatch> {
-        let (start_index, (notes, block_height)) = self.reorder.pop_ready()?;
+        let (start_index, (notes, block_height, total_count)) = self.reorder.pop_ready()?;
         let is_partial = (notes.len() as u64) < self.chunk_size;
 
         // Trial-decrypt this chunk before emission (moved out of the
@@ -157,6 +163,7 @@ impl StreamState {
             decrypted,
             block_height,
             is_partial,
+            total_count,
         })
     }
 }
@@ -233,6 +240,7 @@ pub fn sync_shielded_notes_stream(
         reached_end: false,
         cumulative_scanned: 0,
         max_block_height: 0,
+        total_count: 0,
     };
     for _ in 0..max_concurrent {
         state.queue_next();
@@ -271,7 +279,7 @@ pub fn sync_shielded_notes_stream(
                     // is exhausted.
                     return None;
                 };
-                let (chunk_idx, notes, block_height) = match result {
+                let (chunk_idx, notes, block_height, total_count) = match result {
                     Ok(v) => v,
                     Err(e) => return Some((Err(e), (state, None, true))),
                 };
@@ -279,6 +287,10 @@ pub fn sync_shielded_notes_stream(
                 let is_partial = (notes.len() as u64) < state.chunk_size;
                 state.cumulative_scanned += notes.len() as u64;
                 state.max_block_height = state.max_block_height.max(block_height);
+                // The on-chain total is stable across a sync; take the
+                // max-seen so a late-arriving chunk proven at a slightly
+                // higher block never lowers the denominator.
+                state.total_count = state.total_count.max(total_count);
                 if is_partial {
                     state.reached_end = true;
                 }
@@ -287,7 +299,9 @@ pub fn sync_shielded_notes_stream(
                 if let Some(cb) = state.on_progress.as_ref() {
                     cb(state.cumulative_scanned, state.max_block_height);
                 }
-                state.reorder.insert(chunk_idx, (notes, block_height));
+                state
+                    .reorder
+                    .insert(chunk_idx, (notes, block_height, total_count));
 
                 if let Some(batch) = state.pop_ready() {
                     state.queue_next();
@@ -340,6 +354,10 @@ pub async fn sync_shielded_notes(
     let mut decrypted_notes: Vec<DecryptedNote> = Vec::new();
     let mut total_notes_scanned: u64 = 0;
     let mut max_block_height: u64 = 0;
+    // On-chain total note count from the note-fetch proofs (max-seen). The
+    // value is stable across a sync; max-seen guards against a late chunk
+    // proven at a slightly higher block lowering the denominator.
+    let mut total_count: u64 = 0;
     // Mirrors the original one-shot logic exactly: track the LAST
     // non-empty chunk's `(start_index, is_partial)`. Batches arrive in
     // ascending `start_index`, so the last non-empty one we observe is
@@ -354,6 +372,7 @@ pub async fn sync_shielded_notes(
     while let Some(item) = stream.next().await {
         let batch = item?;
         max_block_height = max_block_height.max(batch.block_height);
+        total_count = total_count.max(batch.total_count);
         total_notes_scanned += batch.notes.len() as u64;
         if !batch.notes.is_empty() {
             last_nonempty = Some((batch.start_index, batch.is_partial));
@@ -383,6 +402,7 @@ pub async fn sync_shielded_notes(
         next_start_index,
         total_notes_scanned,
         block_height: max_block_height,
+        total_count,
     })
 }
 
