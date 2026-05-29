@@ -739,6 +739,48 @@ mod tests {
         )
     }
 
+    /// CW-002: a standalone change-address hand-out must not return a
+    /// change address that an in-flight `send_to_addresses` already peeked
+    /// into `pending_change`. The avoid-loop in `reserve_bip44_address`
+    /// skips it and hands out the next index instead.
+    #[tokio::test]
+    async fn next_change_address_skips_pending_change_reservation() {
+        let (wm, wallet_id, _recipient, _signer) = build_funded_wallet_manager(2_000_000);
+        let cw =
+            make_core_wallet_for_manager(Arc::clone(&wm), wallet_id, Arc::new(FailingBroadcaster));
+
+        // Peek (advance=false) the change address the bridge would pick
+        // first, without committing the index or bridge-reserving it.
+        let pending = {
+            let mut guard = wm.write().await;
+            let (wallet, info) = guard.get_wallet_and_info_mut(&wallet_id).unwrap();
+            let xpub = wallet
+                .accounts
+                .standard_bip44_accounts
+                .get(&0)
+                .unwrap()
+                .account_xpub;
+            let managed = info
+                .core_wallet
+                .accounts
+                .standard_bip44_accounts
+                .get_mut(&0)
+                .unwrap();
+            managed.next_change_address(Some(&xpub), false).unwrap()
+        };
+
+        // Mark it pending, as the broadcast loop does before a send confirms.
+        let _guard = cw.reservations.reserve(vec![], Some(pending.clone()));
+        assert!(cw.reservations.change_address_pending(&pending));
+
+        // A standalone hand-out must steer clear of the pending address.
+        let handed_out = cw.next_change_address_for_account(0).await.unwrap();
+        assert_ne!(
+            handed_out, pending,
+            "change hand-out returned an address already pending from an in-flight send"
+        );
+    }
+
     /// Two concurrent `send_to_addresses` calls on one wallet with one UTXO must yield exactly
     /// one broadcast. The loser must get [`PlatformWalletError::NoSpendableInputs`] — never
     /// `TransactionBroadcast` (that would mean it reached the network, which is the bug closed).
