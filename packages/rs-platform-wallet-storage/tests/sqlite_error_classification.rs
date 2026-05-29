@@ -153,6 +153,9 @@ fn samples() -> Vec<WalletStorageError> {
         },
         WalletStorageError::InvalidWalletIdLength { actual: 10 },
         WalletStorageError::ConfigInvalid { reason: "bad knob" },
+        WalletStorageError::SchemaInvariantViolated {
+            detail: "unknown table",
+        },
         // BincodeEncode / BincodeDecode / HashDecode / ConsensusCodec
         // need real upstream errors — synthesise minimal ones via the
         // public constructors / `From` impls.
@@ -176,9 +179,6 @@ fn samples() -> Vec<WalletStorageError> {
                 },
                 Some("busy".into()),
             ),
-        },
-        WalletStorageError::ConcurrentMutationDuringDelete {
-            wallet_id: [0xCD; 32],
         },
     ]
 }
@@ -232,6 +232,9 @@ fn tc_p2_005_is_transient_table() {
             WalletStorageError::InvalidWalletIdHex { .. } => (false, "invalid_wallet_id_hex"),
             WalletStorageError::InvalidWalletIdLength { .. } => (false, "invalid_wallet_id_length"),
             WalletStorageError::ConfigInvalid { .. } => (false, "config_invalid"),
+            WalletStorageError::SchemaInvariantViolated { .. } => {
+                (false, "schema_invariant_violated")
+            }
             WalletStorageError::BincodeEncode { .. } => (false, "bincode_encode"),
             WalletStorageError::BincodeDecode { .. } => (false, "bincode_decode"),
             WalletStorageError::BlobDecode { .. } => (false, "blob_decode"),
@@ -247,9 +250,6 @@ fn tc_p2_005_is_transient_table() {
             WalletStorageError::BlobTooLarge { .. } => (false, "blob_too_large"),
             WalletStorageError::ForeignKeysNotEnforced => (false, "foreign_keys_not_enforced"),
             WalletStorageError::IntegerOverflow { .. } => (false, "integer_overflow"),
-            WalletStorageError::ConcurrentMutationDuringDelete { .. } => {
-                (false, "concurrent_mutation_during_delete")
-            }
         }
     }
 

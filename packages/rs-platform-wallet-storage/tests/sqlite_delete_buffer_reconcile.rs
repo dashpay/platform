@@ -9,9 +9,7 @@
 //! buffered-only wallet must delete cleanly without spurious
 //! `WalletNotFound`; the pre-delete backup must contain buffered-but-
 //! unflushed rows; a transient pre-flush failure must restore the
-//! buffer and abort the delete without producing a backup; a peer
-//! mutating the wallet in the post-snapshot / pre-cascade window
-//! aborts the cascade with `ConcurrentMutationDuringDelete`; the
+//! buffer and abort the delete without producing a backup; the
 //! flush must not resurrect a deleted wallet.
 
 mod common;
@@ -197,76 +195,6 @@ fn pre_flush_failure_preserves_buffer_and_skips_backup() {
     assert!(
         persister.buffer_has_changeset_for_test(&w),
         "buffer must still hold the changeset after a failed pre-flush"
-    );
-}
-
-/// TC-CODE-006-3 — a peer that mutates the wallet in the post-snapshot
-/// / pre-cascade window aborts `delete_wallet` with the typed
-/// `ConcurrentMutationDuringDelete` so the operator can retry after
-/// quiescing the peer. The pre-delete backup file is left in place —
-/// it captures the pre-mutation state and is still useful for
-/// forensics — but the cascade itself does NOT run.
-#[test]
-fn peer_mutation_between_backup_and_exclusive_aborts_with_typed_error() {
-    let tmp = tempfile::tempdir().unwrap();
-    let path = tmp.path().join("w.db");
-    let backup_dir = tmp.path().join("backups");
-    let cfg = SqlitePersisterConfig::new(&path)
-        .with_flush_mode(FlushMode::Manual)
-        .with_auto_backup_dir(Some(backup_dir));
-    let persister = SqlitePersister::open(cfg).unwrap();
-    let w = wid(0xC3);
-    persister.store(w, full_changeset(13)).unwrap();
-
-    // Arm a hook that fires after the pre-delete backup snapshot and
-    // before the cascade `BEGIN EXCLUSIVE`. The hook opens a sibling
-    // raw connection to the same DB and deletes the wallet's metadata
-    // row — simulating a cross-process peer mutation that the
-    // rusqlite-Backup-API lock-free window left open.
-    let peer_path = path.clone();
-    persister.arm_post_backup_hook(move || {
-        let peer = rusqlite::Connection::open(&peer_path).expect("peer open");
-        peer.execute("PRAGMA foreign_keys = ON", []).unwrap();
-        peer.execute(
-            "DELETE FROM wallet_metadata WHERE wallet_id = ?1",
-            rusqlite::params![&[0xC3u8; 32][..]],
-        )
-        .expect("peer delete");
-    });
-
-    let err = persister
-        .delete_wallet(w)
-        .expect_err("delete_wallet must abort when a peer races the cascade");
-    let observed = match err {
-        WalletStorageError::ConcurrentMutationDuringDelete { wallet_id } => wallet_id,
-        other => panic!("expected ConcurrentMutationDuringDelete, got: {other:?}"),
-    };
-    assert_eq!(observed, *w.as_slice(), "wallet_id mismatch in typed error");
-
-    // The pre-delete backup must still exist so forensics can recover
-    // the pre-peer-mutation state.
-    let backups: Vec<_> = std::fs::read_dir(tmp.path().join("backups"))
-        .expect("backup dir")
-        .filter_map(|e| e.ok())
-        .filter(|e| e.file_name().to_string_lossy().starts_with("pre-delete-"))
-        .collect();
-    assert_eq!(backups.len(), 1, "exactly one pre-delete backup expected");
-    let backup_path = backups[0].path();
-    let backup = rusqlite::Connection::open_with_flags(
-        &backup_path,
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-    )
-    .unwrap();
-    let in_backup_meta: i64 = backup
-        .query_row(
-            "SELECT COUNT(*) FROM wallet_metadata WHERE wallet_id = ?1",
-            rusqlite::params![w.as_slice()],
-            |row| row.get(0),
-        )
-        .unwrap();
-    assert_eq!(
-        in_backup_meta, 1,
-        "backup must carry the wallet that existed at snapshot time"
     );
 }
 

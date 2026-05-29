@@ -123,7 +123,7 @@ fn tc027_smoke_insert_every_table() {
             "identity_keys",
             // identity_keys is keyed by (identity_id, key_id); the FK
             // targets identities(identity_id).
-            "INSERT INTO identity_keys (identity_id, key_id, public_key_blob, public_key_hash, derivation_blob) VALUES (?1, 0, X'00', X'00', NULL)",
+            "INSERT INTO identity_keys (identity_id, key_id, public_key_blob, public_key_hash) VALUES (?1, 0, X'00', X'00')",
             &[&identity_id.as_slice()],
         ),
         (
@@ -188,7 +188,7 @@ fn tc027_smoke_insert_every_table() {
         conn.execute(sql, *params).expect(table);
         let n: i64 = conn
             .query_row(
-                &count_rows_for_wallet_sql(table, scope_for(table)),
+                &count_rows_for_wallet_sql(table, scope_for(table)).expect("table is allowlisted"),
                 rusqlite::params![wallet_id.as_slice()],
                 |row| row.get(0),
             )

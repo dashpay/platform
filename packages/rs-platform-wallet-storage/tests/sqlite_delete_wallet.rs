@@ -151,7 +151,8 @@ fn concurrent_store_does_not_resurrect_deleted_wallet() {
     for (table, scope) in PER_WALLET_TABLES {
         let n: i64 = conn
             .query_row(
-                &count_rows_for_wallet_sql(table, *scope),
+                &count_rows_for_wallet_sql(table, *scope)
+                    .expect("table is in PER_WALLET_TABLES allowlist"),
                 rusqlite::params![w.as_slice()],
                 |row| row.get(0),
             )
