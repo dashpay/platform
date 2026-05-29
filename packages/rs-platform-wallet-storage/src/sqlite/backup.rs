@@ -298,30 +298,7 @@ pub fn restore_from(dest_db_path: &Path, src_backup: &Path) -> Result<(), Wallet
         crate::sqlite::migrations::assert_schema_version_supported(&staged)?;
     }
 
-    // 5. Atomicity gate: every staged-file validation has now passed,
-    //    so it's safe to clear WAL/SHM siblings the replaced DB might
-    //    have left behind. Doing this BEFORE persist ensures that
-    //    either both the main DB and its siblings get replaced/cleared,
-    //    or — if any earlier check failed — none of them are touched.
-    //
-    // CODE-011: build sibling paths via `OsString::push` so non-UTF-8
-    // bytes round-trip intact; `remove_file` runs unconditionally and
-    // `ErrorKind::NotFound` is a silent no-op (closes the `exists()`
-    // TOCTOU gate).
-    if let Some(file_name) = dest_db_path.file_name() {
-        for ext in ["-wal", "-shm"] {
-            let mut sibling_name = file_name.to_os_string();
-            sibling_name.push(ext);
-            let sibling = dest_db_path.with_file_name(sibling_name);
-            match std::fs::remove_file(&sibling) {
-                Ok(()) => {}
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-                Err(e) => return Err(WalletStorageError::Io(e)),
-            }
-        }
-    }
-
-    // 6. ATOM-010 (A-5): chmod 600 on the temp BEFORE persist so the
+    // 5. ATOM-010 (A-5): chmod 600 on the temp BEFORE persist so the
     //    destination inherits owner-only mode via the atomic rename.
     //    Pre-A-5 the chmod ran post-persist — a rare chmod failure
     //    returned Err while leaving the new DB live at the destination
@@ -333,18 +310,44 @@ pub fn restore_from(dest_db_path: &Path, src_backup: &Path) -> Result<(), Wallet
             .set_permissions(std::fs::Permissions::from_mode(0o600))?;
     }
 
-    // 7. Release the SQLite-native EXCLUSIVE lock BEFORE the rename.
-    //    Dropping `dest_lock_conn` causes SQLite to close its file
-    //    handle on the old inode; if we kept it alive across `persist`
-    //    the handle would point at the unlinked old inode while the
-    //    new DB took its place — peers reopening would race the rename
-    //    and (on some filesystems) the rename itself could fail.
+    // 6. Release the SQLite-native EXCLUSIVE lock BEFORE touching the
+    //    on-disk WAL/SHM siblings or running the rename. On Windows /
+    //    some FUSE / AV-scanned mounts, `remove_file` against a file
+    //    still held open by another handle on the same process returns
+    //    `PermissionDenied`; on Unix the unlinked inodes remain
+    //    reachable through the open fd but the rename window still
+    //    benefits from a clean close.
     if let Some(conn) = dest_lock_conn.take() {
         // Best-effort rollback of the empty EXCLUSIVE tx; an error here
         // means SQLite is already in trouble and `drop(conn)` covers
         // the rest. Silent because the conn is about to drop anyway.
         let _ = conn.execute_batch("ROLLBACK");
         drop(conn);
+    }
+
+    // 7. Atomicity gate: every staged-file validation has now passed
+    //    and our writer handle is closed, so it's safe to clear WAL/SHM
+    //    siblings the replaced DB might have left behind. Doing this
+    //    BEFORE persist ensures that either both the main DB and its
+    //    siblings get replaced/cleared, or — if any earlier check
+    //    failed — none of them are touched.
+    //
+    // CODE-011: build sibling paths via `OsString::push` so non-UTF-8
+    // bytes round-trip intact; `remove_file` runs unconditionally and
+    // `ErrorKind::NotFound` is a silent no-op (closes the `exists()`
+    // TOCTOU gate). CMT-009: ordering requires the dest lock conn to be
+    // dropped first so cross-platform unlink semantics hold.
+    if let Some(file_name) = dest_db_path.file_name() {
+        for ext in ["-wal", "-shm"] {
+            let mut sibling_name = file_name.to_os_string();
+            sibling_name.push(ext);
+            let sibling = dest_db_path.with_file_name(sibling_name);
+            match std::fs::remove_file(&sibling) {
+                Ok(()) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => return Err(WalletStorageError::Io(e)),
+            }
+        }
     }
 
     // 8. Persist atomically over the destination.
