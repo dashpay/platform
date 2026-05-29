@@ -305,7 +305,8 @@ impl IdentityWallet {
         // Broadcast and wait for confirmation.
         let result = state_transition
             .broadcast_and_wait(&self.sdk, settings)
-            .await?;
+            .await?
+            .into_inner();
 
         Ok(result)
     }

@@ -134,6 +134,7 @@ impl WasmSdkError {
             ),
             None,
             false,
+            None,
         )
     }
 }
@@ -285,9 +286,13 @@ impl From<SdkError> for WasmSdkError {
                     None,
                 )
             }
-            DriveInternalError(msg) => {
-                Self::new(WasmSdkErrorKind::DriveInternalError, msg, None, retriable)
-            }
+            DriveInternalError(msg) => Self::new(
+                WasmSdkErrorKind::DriveInternalError,
+                msg,
+                None,
+                retriable,
+                None,
+            ),
             NoAvailableAddressesToRetry(inner) => Self::new(
                 WasmSdkErrorKind::DapiClientError,
                 format!("no available addresses to retry, last error: {}", inner),

@@ -114,7 +114,7 @@ pub trait PutIdentity<IS: Signer<IdentityPublicKey>>: Waitable {
         Self: Sized,
     {
         let state_transition = self
-            .put_to_platform(
+            .put_to_platform_with_private_key(
                 sdk,
                 asset_lock_proof,
                 asset_lock_proof_private_key,
