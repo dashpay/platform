@@ -166,7 +166,6 @@ CREATE TABLE identity_keys (
     key_id INTEGER NOT NULL,
     public_key_blob BLOB NOT NULL,
     public_key_hash BLOB NOT NULL,
-    derivation_blob BLOB,
     PRIMARY KEY (identity_id, key_id),
     FOREIGN KEY (identity_id) REFERENCES identities(identity_id) ON DELETE CASCADE
 );

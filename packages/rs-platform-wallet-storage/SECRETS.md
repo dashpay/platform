@@ -99,13 +99,26 @@ unwrapped copy is allocated.
   surface as the typed `FileStoreError` through `SecretStore`.
 - **OS keyring (`SecretStore::os` / `default_credential_store`)** —
   returns an `Arc<dyn CredentialStoreApi + Send + Sync>` over the
-  platform's default credential store (`linux-keyutils-keyring-store` →
-  `dbus-secret-service-keyring-store` on Linux/FreeBSD;
-  `apple-native-keyring-store` on macOS; `windows-native-keyring-store`
-  on Windows). Fail-closed with `keyring_core::Error::NoDefaultStore`
-  on headless / unknown OS (SEC-REQ-2.1.3 / AR-4) — never a silent
-  plaintext fallback. Through `SecretStore`, keyring failures project to
+  platform's default credential store. Probe order on Linux/FreeBSD is
+  `linux-keyutils-keyring-store` first, then
+  `dbus-secret-service-keyring-store`; on macOS
+  `apple-native-keyring-store`; on Windows
+  `windows-native-keyring-store`. Fail-closed with
+  `keyring_core::Error::NoDefaultStore` on headless / unknown OS
+  (SEC-REQ-2.1.3 / AR-4) — never a silent plaintext fallback. Through
+  `SecretStore`, keyring failures project to
   `FileStoreError::OsKeyring { kind }`, a non-secret discriminant.
+
+  **Persistence caveat (Linux/FreeBSD).** The keyutils backend wins
+  whenever the kernel keyring is reachable, which on a typical Linux
+  box means "almost always". The keyring it binds to (session
+  `@s`, user-session `@us`, user `@u`, persistent `@p`) is chosen by
+  the upstream `linux-keyutils-keyring-store` crate; the non-persistent
+  options do **not** survive logout/reboot even though
+  `CredentialPersistence` advertises `UntilDelete`. Callers that need
+  durable cross-reboot storage without re-prompting should pin
+  `SecretStore::file(...)` (encrypted-file vault) instead of relying on
+  the OS keyring on Linux.
 - **Tests** — integration tests construct a tempdir-backed
   `EncryptedFileStore` directly via
   `EncryptedFileStore::open(tempfile::tempdir()?.path().join("vault.pwsvault"), SecretString::new("..."))`,

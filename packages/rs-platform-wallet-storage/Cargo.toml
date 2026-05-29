@@ -179,6 +179,11 @@ cli = [
 secrets = [
     "dep:argon2",
     "dep:chacha20poly1305",
+    # CMT-021: secrets uses serde directly (vault format + crypto
+    # envelope derive `Serialize`/`Deserialize`); declare the dep here
+    # so `--no-default-features --features secrets` builds without
+    # leaning on the `sqlite` feature also having `dep:serde`.
+    "dep:serde",
     "dep:serde_json",
     "dep:tempfile",
     "dep:zeroize",

@@ -85,12 +85,11 @@ pub fn apply(
     if !cs.upserts.is_empty() {
         let mut stmt = tx.prepare_cached(
             "INSERT INTO identity_keys \
-                (identity_id, key_id, public_key_blob, public_key_hash, derivation_blob) \
-             VALUES (?1, ?2, ?3, ?4, NULL) \
+                (identity_id, key_id, public_key_blob, public_key_hash) \
+             VALUES (?1, ?2, ?3, ?4) \
              ON CONFLICT(identity_id, key_id) DO UPDATE SET \
                 public_key_blob = excluded.public_key_blob, \
-                public_key_hash = excluded.public_key_hash, \
-                derivation_blob = NULL",
+                public_key_hash = excluded.public_key_hash",
         )?;
         for ((identity_id, key_id), entry) in &cs.upserts {
             // Reject any disagreement between the map key / outer

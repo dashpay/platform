@@ -15,7 +15,7 @@ use key_wallet::managed_account::transaction_record::TransactionRecord;
 
 /// Retry classification for [`PersistenceError::Backend`].
 ///
-/// The kind carries the persistor's `is_transient()` contract across
+/// The kind carries the persister's `is_transient()` contract across
 /// the trait boundary so consumers can decide whether to retry, undo
 /// in-memory state, or surface the failure to the user without
 /// guessing from a string message.
@@ -24,12 +24,12 @@ use key_wallet::managed_account::transaction_record::TransactionRecord;
 /// kind MUST force every consumer match to update explicitly.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PersistenceErrorKind {
-    /// The persistor reports the write was not committed and the
+    /// The persister reports the write was not committed and the
     /// buffered state is preserved (e.g. `SQLITE_BUSY`, `SQLITE_FULL`,
     /// `SQLITE_IOERR`, `SQLITE_NOMEM`). Callers MAY retry with
     /// exponential backoff.
     Transient,
-    /// The persistor reports an unrecoverable failure (schema
+    /// The persister reports an unrecoverable failure (schema
     /// corruption, logic bug, I/O error not covered by the transient
     /// class). Callers MUST NOT retry — the buffered changeset is
     /// gone and the same call will keep failing.
@@ -92,7 +92,7 @@ impl PersistenceError {
     }
 
     /// Construct a [`Self::Backend`] with an explicit kind. Use this
-    /// at the persistor boundary where the kind is known (e.g.
+    /// at the persister boundary where the kind is known (e.g.
     /// `From<WalletStorageError>` checks `is_transient()` and the
     /// constraint codes before calling this).
     pub fn backend_with_kind<E>(kind: PersistenceErrorKind, source: E) -> Self

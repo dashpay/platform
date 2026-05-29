@@ -121,7 +121,6 @@ erDiagram
         INTEGER key_id PK "KeyID"
         BLOB public_key_blob "bincode-encoded IdentityKeyWire (public material only)"
         BLOB public_key_hash "20-byte HASH160 of the key"
-        BLOB derivation_blob "NULL when derivation indices are absent"
     }
 
     TOKEN_BALANCES {

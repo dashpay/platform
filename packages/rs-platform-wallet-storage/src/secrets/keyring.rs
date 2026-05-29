@@ -17,21 +17,39 @@
 //! Does **not** cover **A2/A3** same-user malware (most OS keyrings
 //! hand the secret to any same-user process that asks), **A5** if the
 //! keyring daemon itself is scraped, or **headless Linux** with no
-//! Secret Service — that fails closed
+//! Secret Service / keyutils — that fails closed
 //! ([`keyring_core::Error::NoDefaultStore`]), never degrades to
 //! plaintext.
 //!
 //! ### Per-OS reality
 //!
-//! - **Linux/FreeBSD:** Secret Service (gnome-keyring / KWallet) needs
-//!   a D-Bus session + unlocked collection. Headless / SSH / CI boxes
-//!   frequently lack it → fail closed; the operator selects
-//!   [`EncryptedFileStore`](super::EncryptedFileStore) explicitly.
+//! - **Linux/FreeBSD:** the backend probe runs in this order:
+//!   1. `linux-keyutils` (kernel keyring) — succeeds whenever the
+//!      `keyutils` syscall surface is reachable, which on a typical
+//!      Linux box means "almost always". The upstream binding selects
+//!      the kernel keyring it attaches to; depending on its choice
+//!      (`@s` session, `@us` user-session, `@u` user, `@p` persistent)
+//!      the items may **not survive logout or reboot**. Treat keyutils
+//!      as best-effort caching, not durable storage.
+//!   2. Secret Service (gnome-keyring / KWallet) — requires a D-Bus
+//!      session + unlocked collection; headless / SSH / CI boxes
+//!      frequently lack it.
+//!   3. Both unavailable → `NoDefaultStore`; the operator selects
+//!      [`EncryptedFileStore`](super::EncryptedFileStore) explicitly.
+//!
+//!   Because step 1 wins on most desktops, the persistence contract for
+//!   Linux/FreeBSD is "until logout/reboot at minimum, until delete on
+//!   a persistent keyring". Callers that need cross-reboot durability
+//!   without re-prompting should pin
+//!   [`EncryptedFileStore`](super::EncryptedFileStore) instead of
+//!   relying on this backend.
 //! - **macOS:** Keychain ACL — a re-signed binary with the same
-//!   code-signing identity is A3 (accepted, AR-5).
+//!   code-signing identity is A3 (accepted, AR-5). Items persist
+//!   `UntilDelete`.
 //! - **Windows:** Credential Manager / DPAPI is user-profile scoped; a
 //!   same-user process can unprotect it. DPAPI is **not** a defense
-//!   against same-user malware, only A1/A4.
+//!   against same-user malware, only A1/A4. Items persist
+//!   `UntilDelete`.
 
 use std::sync::Arc;
 
@@ -55,7 +73,9 @@ pub fn default_credential_store() -> Result<Arc<dyn CredentialStoreApi + Send + 
 fn platform_default_store() -> Result<Arc<dyn CredentialStoreApi + Send + Sync>, KeyringError> {
     // Prefer the kernel keyutils store; fall back to Secret Service.
     // Both failing (headless, no session keyring, no D-Bus) is
-    // fail-closed by design (SEC-REQ-2.1.3 / AR-4).
+    // fail-closed by design (SEC-REQ-2.1.3 / AR-4). NOTE: keyutils
+    // typically binds to a session/user-session keyring that does NOT
+    // survive logout — see the module-level rustdoc precedence table.
     if let Ok(s) = linux_keyutils_keyring_store::Store::new() {
         return Ok(s);
     }

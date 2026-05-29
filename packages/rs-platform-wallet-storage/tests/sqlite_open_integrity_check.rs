@@ -86,7 +86,16 @@ fn corrupt_multiple_pages(path: &std::path::Path) {
         .open(path)
         .expect("open db for multi-page corruption");
     let len = f.metadata().unwrap().len();
-    assert!(len > 8192, "expected at least two full pages");
+    // CMT-018: we corrupt two full 4096-byte pages starting at offsets
+    // 4096 and 8192; `read_exact` at offset 8192 panics unless the file
+    // is at least THREE full pages long. The old `> 8192` guard
+    // accepted file lengths in `(8192, 12288)` that would panic the
+    // read.
+    assert!(
+        len >= 12_288,
+        "expected at least three full pages ({} bytes); got {len}",
+        12_288
+    );
     for page_start in [4096u64, 8192] {
         f.seek(SeekFrom::Start(page_start)).unwrap();
         let mut buf = vec![0u8; 4096];

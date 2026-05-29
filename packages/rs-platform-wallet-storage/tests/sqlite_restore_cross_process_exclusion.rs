@@ -77,8 +77,12 @@ fn restore_blocks_when_peer_holds_exclusive() {
     let backup_path = persister.backup_to(backup_dir.path()).unwrap();
     drop(persister);
 
-    // Peer opens a writer conn, sets a SHORT busy_timeout so we don't
-    // wedge the test on a wedge — then takes EXCLUSIVE and holds it.
+    // Peer opens a writer conn. `PRAGMA busy_timeout` is
+    // connection-local (per the SQLite C API), so the 50ms set here
+    // ONLY governs how this peer waits when acquiring EXCLUSIVE —
+    // restore's own destination-lock connection sets its own busy
+    // timeout independently. Keeping the peer's wait short means we
+    // don't wedge the test on a deadlock during EXCLUSIVE acquisition.
     let mut peer = ro_conn_rw(&db_path);
     peer.pragma_update(None, "busy_timeout", 50i64).unwrap();
     let tx = peer

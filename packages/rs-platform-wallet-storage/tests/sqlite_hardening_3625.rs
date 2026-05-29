@@ -50,8 +50,8 @@ fn native_fk_rejects_identity_keys_without_identity() {
     let conn = persister.lock_conn_for_test();
     let res = conn.execute(
         "INSERT INTO identity_keys \
-            (identity_id, key_id, public_key_blob, public_key_hash, derivation_blob) \
-         VALUES (?1, 0, X'00', X'00', NULL)",
+            (identity_id, key_id, public_key_blob, public_key_hash) \
+         VALUES (?1, 0, X'00', X'00')",
         params![[3u8; 32].as_slice()],
     );
     let err = res.unwrap_err().to_string();
