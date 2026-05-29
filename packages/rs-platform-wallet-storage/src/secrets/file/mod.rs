@@ -90,41 +90,30 @@ pub const MAX_VAULT_SIZE_BYTES: u64 = 128 * 1024 * 1024;
 /// ciphertext, but the structure is fully populated so reads do not
 /// re-touch disk.
 pub struct EncryptedFileStore {
-    inner: Arc<EncryptedFileStoreInner>,
+    inner: Arc<Mutex<EncryptedFileStoreInner>>,
 }
 
-/// Reference-counted backing so credentials returned from
-/// [`CredentialStoreApi::build`] hold a clone of the store without
-/// keeping the public handle alive.
+/// All resident state for the store — path, advisory file lock,
+/// in-memory vault, cached AEAD key, and the store-wide passphrase —
+/// coalesced behind a single [`Mutex`] at the [`Arc`] wrapper level so
+/// every mutation observes a consistent triple (vault matches the key
+/// it was sealed under, key matches the passphrase that derived it).
+///
+/// A single lock keeps put/get/delete/rekey serialized against each
+/// other so a concurrent put cannot seal under an old key while rekey
+/// is swapping in a new one (CMT-001). The disk write happens while
+/// the lock is held; the file-lock sidecar already serializes
+/// cross-process so this does not introduce a new I/O contention
+/// point.
 struct EncryptedFileStoreInner {
     /// Vault file path supplied by the caller at [`open`].
     ///
     /// [`open`]: EncryptedFileStore::open
     path: PathBuf,
-    /// All mutable state — resident vault, cached AEAD key, and the
-    /// store-wide passphrase — behind a single coarse-grained
-    /// [`Mutex`]. A single lock keeps put/get/delete/rekey serialized
-    /// against each other so a concurrent put cannot seal under an old
-    /// key while rekey is swapping in a new one (CMT-001). The disk
-    /// write happens while the lock is held; the file-lock sidecar
-    /// already serializes cross-process so this does not introduce a
-    /// new I/O contention point.
-    state: Mutex<InnerState>,
-    /// Holds the cross-platform advisory write-lock on `<path>.lock`
-    /// for the entire lifetime of the store. Dropped (releasing the
-    /// flock / LockFileEx) when the store drops.
-    _lock: VaultLock,
-}
-
-/// All mutable resident state for the store. Coalesced behind a single
-/// [`Mutex`] on the inner so every mutation observes a consistent
-/// triple (vault matches the key it was sealed under, key matches the
-/// passphrase that derived it). See [`EncryptedFileStoreInner::state`]
-/// for the locking rationale (CMT-001).
-struct InnerState {
     /// In-memory vault. Mutations edit this directly and then call
-    /// `sync_to_disk` to re-encrypt and atomically replace the on-disk
-    /// file. Reads return clones from here without hitting disk.
+    /// `sync_to_disk_locked` to re-encrypt and atomically replace the
+    /// on-disk file. Reads return clones from here without hitting
+    /// disk.
     vault: Vault,
     /// Cached AEAD key derived once at [`open`] from the salt + KDF
     /// params + passphrase. Re-derived only on [`rekey`]. Keeping the
@@ -141,6 +130,10 @@ struct InnerState {
     ///
     /// [`rekey`]: EncryptedFileStore::rekey
     passphrase: SecretString,
+    /// Holds the cross-platform advisory write-lock on `<path>.lock`
+    /// for the entire lifetime of the store. Dropped (releasing the
+    /// flock / LockFileEx) when the store drops.
+    _lock: VaultLock,
 }
 
 impl EncryptedFileStore {
@@ -186,15 +179,13 @@ impl EncryptedFileStore {
         };
 
         Ok(Self {
-            inner: Arc::new(EncryptedFileStoreInner {
+            inner: Arc::new(Mutex::new(EncryptedFileStoreInner {
                 path,
-                state: Mutex::new(InnerState {
-                    vault,
-                    derived_key,
-                    passphrase,
-                }),
+                vault,
+                derived_key,
+                passphrase,
                 _lock: lock,
-            }),
+            })),
         })
     }
 
@@ -229,9 +220,9 @@ impl EncryptedFileStore {
     /// material (SEC-REQ-2.2.12). The swap is whole-store: every
     /// wallet's entries are re-keyed in one shot, so the store cannot
     /// end up half-rotated. The in-memory vault, derived key, and
-    /// passphrase advance together under the resident-state mutexes.
+    /// passphrase advance together under the resident-state mutex.
     pub fn rekey(&mut self, new_passphrase: SecretString) -> Result<(), FileStoreError> {
-        self.inner.rekey(new_passphrase)
+        rekey_locked(&self.inner, new_passphrase)
     }
 
     /// Store `secret` under `(wallet_id, label)`, returning the typed
@@ -249,7 +240,7 @@ impl EncryptedFileStore {
         label: &str,
         secret: &SecretBytes,
     ) -> Result<(), FileStoreError> {
-        self.inner.put(wallet_id, label, secret)
+        put_locked(&self.inner, wallet_id, label, secret)
     }
 
     /// Retrieve the plaintext under `(wallet_id, label)`, or `None` if
@@ -264,7 +255,7 @@ impl EncryptedFileStore {
         wallet_id: &WalletId,
         label: &str,
     ) -> Result<Option<SecretBytes>, FileStoreError> {
-        self.inner.get(wallet_id, label)
+        get_locked(&self.inner, wallet_id, label)
     }
 
     /// Delete the entry under `(wallet_id, label)`; `Ok(false)` if it was
@@ -274,17 +265,17 @@ impl EncryptedFileStore {
         wallet_id: &WalletId,
         label: &str,
     ) -> Result<bool, FileStoreError> {
-        self.inner.delete(wallet_id, label)
+        delete_locked(&self.inner, wallet_id, label)
     }
 
     #[cfg(test)]
     pub(crate) fn test_read_vault_from_disk(&self) -> Result<Option<Vault>, FileStoreError> {
-        read_vault_at(&self.inner.path)
+        read_vault_at(&lock_inner(&self.inner).path)
     }
 
     #[cfg(test)]
     pub(crate) fn test_write_vault_to_disk(&self, vault: &Vault) -> Result<(), FileStoreError> {
-        write_vault_at(&self.inner.path, vault)
+        write_vault_at(&lock_inner(&self.inner).path, vault)
     }
 
     /// Drop the in-memory copy of the vault and reload it from disk
@@ -294,8 +285,8 @@ impl EncryptedFileStore {
     /// caches the loaded state).
     #[cfg(test)]
     pub(crate) fn test_reload_from_disk(&self) -> Result<(), FileStoreError> {
-        let mut state = self.inner.lock_state();
-        let Some(vault) = read_vault_at(&self.inner.path)? else {
+        let mut state = lock_inner(&self.inner);
+        let Some(vault) = read_vault_at(&state.path)? else {
             return Err(FileStoreError::MalformedVault);
         };
         let key = derive_and_verify(&vault, &state.passphrase)?;
@@ -305,195 +296,200 @@ impl EncryptedFileStore {
     }
 }
 
+/// Acquire the single coarse-grained state lock on `inner`.
+/// Poisoned-mutex recovery is "log and continue": a previously-panicked
+/// holder cannot have left the [`EncryptedFileStoreInner`] half-written
+/// (every mutation either succeeds wholesale and writes to disk or
+/// reverts), so the inner value is safe to keep using.
+fn lock_inner(
+    inner: &Arc<Mutex<EncryptedFileStoreInner>>,
+) -> std::sync::MutexGuard<'_, EncryptedFileStoreInner> {
+    inner.lock().unwrap_or_else(|p| p.into_inner())
+}
+
 impl EncryptedFileStoreInner {
-    /// Acquire the single coarse-grained state lock. Poisoned-mutex
-    /// recovery is "log and continue": a previously-panicked holder
-    /// cannot have left the typed `InnerState` half-written (every
-    /// mutation either succeeds wholesale and writes to disk or
-    /// reverts), so the inner value is safe to keep using.
-    fn lock_state(&self) -> std::sync::MutexGuard<'_, InnerState> {
-        self.state.lock().unwrap_or_else(|p| p.into_inner())
-    }
-
     /// Re-encrypt the resident vault under the cached derived key and
-    /// atomically replace the on-disk file. Caller must hold the state
-    /// lock; the file-lock sidecar serializes cross-process writers so
-    /// holding the in-process mutex across the disk I/O does not stall
-    /// any other in-process operation that is not already waiting on
-    /// the same lock.
-    fn sync_to_disk_locked(&self, state: &InnerState) -> Result<(), FileStoreError> {
-        write_vault_at(&self.path, &state.vault)
+    /// atomically replace the on-disk file. Caller holds the state lock
+    /// (this is a `&mut self` method called through the [`Mutex`]
+    /// guard); the file-lock sidecar serializes cross-process writers
+    /// so holding the in-process mutex across the disk I/O does not
+    /// stall any other in-process operation that is not already waiting
+    /// on the same lock.
+    fn sync_to_disk_locked(&self) -> Result<(), FileStoreError> {
+        write_vault_at(&self.path, &self.vault)
+    }
+}
+
+/// Re-encrypt the whole store under `new_passphrase`. Holds the single
+/// state lock across the re-seal of every entry and the disk write so
+/// a concurrent put/get/delete cannot see a mid-swap (vault, key)
+/// pairing (CMT-001). Argon2 for the new key runs OUTSIDE the lock —
+/// it does not touch resident state.
+fn rekey_locked(
+    inner: &Arc<Mutex<EncryptedFileStoreInner>>,
+    new_passphrase: SecretString,
+) -> Result<(), FileStoreError> {
+    let (mut new_vault, new_key) = build_fresh_vault(&new_passphrase)?;
+
+    let mut state = lock_inner(inner);
+
+    for (wallet_hex, entries) in &state.vault.wallets {
+        let wallet_bytes = decode_wallet_id_hex(wallet_hex)?;
+        let mut new_entries: std::collections::BTreeMap<String, EntryBody> =
+            std::collections::BTreeMap::new();
+        for (label, body) in entries {
+            let aad = format::aad(format::FORMAT_VERSION, &wallet_bytes, label);
+            let pt = entry_decrypt_or_corruption(
+                wallet_hex,
+                label,
+                crypto::open(&state.derived_key, &body.nonce, &aad, &body.ciphertext),
+            )?;
+            let (nonce, ct) = crypto::seal(&new_key, &aad, pt.expose_secret())?;
+            new_entries.insert(
+                label.clone(),
+                EntryBody {
+                    nonce,
+                    ciphertext: ct,
+                },
+            );
+        }
+        new_vault.wallets.insert(wallet_hex.clone(), new_entries);
     }
 
-    fn rekey(&self, new_passphrase: SecretString) -> Result<(), FileStoreError> {
-        // Build a fresh header (salt + verify-token) under the new
-        // passphrase OUTSIDE the lock — Argon2 is the slow step and
-        // does not touch resident state.
-        let (mut new_vault, new_key) = build_fresh_vault(&new_passphrase)?;
+    // Stage the new triple in memory, write to disk, and on failure
+    // restore the old triple so the live handle keeps serving under the
+    // still-on-disk key.
+    let old_vault = std::mem::replace(&mut state.vault, new_vault);
+    let old_key = std::mem::replace(&mut state.derived_key, new_key);
+    let old_pp = std::mem::replace(&mut state.passphrase, new_passphrase);
 
-        let mut state = self.lock_state();
+    if let Err(e) = state.sync_to_disk_locked() {
+        state.vault = old_vault;
+        state.derived_key = old_key;
+        state.passphrase = old_pp;
+        return Err(e);
+    }
+    Ok(())
+}
 
-        // Re-encrypt every entry from the resident vault under the new
-        // key while holding the lock. A concurrent put/get/delete is
-        // blocked here, so it cannot see a mid-swap (vault, key)
-        // pairing (CMT-001).
-        for (wallet_hex, entries) in &state.vault.wallets {
-            let wallet_bytes = decode_wallet_id_hex(wallet_hex)?;
-            let mut new_entries: std::collections::BTreeMap<String, EntryBody> =
-                std::collections::BTreeMap::new();
-            for (label, body) in entries {
-                let aad = format::aad(format::FORMAT_VERSION, &wallet_bytes, label);
-                let pt = entry_decrypt_or_corruption(
-                    wallet_hex,
-                    label,
-                    crypto::open(&state.derived_key, &body.nonce, &aad, &body.ciphertext),
-                )?;
-                let (nonce, ct) = crypto::seal(&new_key, &aad, pt.expose_secret())?;
-                new_entries.insert(
-                    label.clone(),
-                    EntryBody {
-                        nonce,
-                        ciphertext: ct,
-                    },
-                );
+/// `put` — overwrite-safe atomic seal under `(wallet_id, label)`.
+/// Edits the in-memory vault, then re-encrypts and atomically writes
+/// the whole vault back to disk (eager sync). Takes `&SecretBytes` so
+/// the bare plaintext view exists only inside the `crypto::seal` call
+/// (CMT-009). The seal and the disk write run under the single state
+/// lock so rekey cannot race the key out from under the seal
+/// (CMT-001).
+fn put_locked(
+    inner: &Arc<Mutex<EncryptedFileStoreInner>>,
+    wallet_id: &WalletId,
+    label: &str,
+    secret: &SecretBytes,
+) -> Result<(), FileStoreError> {
+    let label = validated_label(label)?.to_string();
+    let aad = format::aad(format::FORMAT_VERSION, wallet_id.as_bytes(), &label);
+
+    let mut state = lock_inner(inner);
+
+    let (nonce, ciphertext) = crypto::seal(&state.derived_key, &aad, secret.expose_secret())?;
+
+    // Mutate in memory; remember the prior body so we can roll back on
+    // a disk-write failure (the resident state must always match what
+    // is on disk after a returned-Ok mutation).
+    let prior = {
+        let entries = state.vault.wallets.entry(wallet_id.to_hex()).or_default();
+        entries.insert(label.clone(), EntryBody { nonce, ciphertext })
+    };
+
+    if let Err(e) = state.sync_to_disk_locked() {
+        let entries = state
+            .vault
+            .wallets
+            .get_mut(&wallet_id.to_hex())
+            .expect("entry just inserted");
+        match prior {
+            Some(prev) => {
+                entries.insert(label, prev);
             }
-            new_vault.wallets.insert(wallet_hex.clone(), new_entries);
-        }
-
-        // Stage the new triple in memory, write to disk, and on failure
-        // restore the old triple so the live handle keeps serving under
-        // the still-on-disk key.
-        let old_vault = std::mem::replace(&mut state.vault, new_vault);
-        let old_key = std::mem::replace(&mut state.derived_key, new_key);
-        let old_pp = std::mem::replace(&mut state.passphrase, new_passphrase);
-
-        if let Err(e) = self.sync_to_disk_locked(&state) {
-            state.vault = old_vault;
-            state.derived_key = old_key;
-            state.passphrase = old_pp;
-            return Err(e);
-        }
-        Ok(())
-    }
-
-    /// `put` — overwrite-safe atomic seal under `(wallet_id, label)`.
-    /// Edits the in-memory vault, then re-encrypts and atomically
-    /// writes the whole vault back to disk (eager sync). Takes
-    /// `&SecretBytes` so the bare plaintext view exists only inside
-    /// the `crypto::seal` call (CMT-009). The seal and the disk write
-    /// run under the single state lock so rekey cannot race the key
-    /// out from under the seal (CMT-001).
-    fn put(
-        &self,
-        wallet_id: &WalletId,
-        label: &str,
-        secret: &SecretBytes,
-    ) -> Result<(), FileStoreError> {
-        let label = validated_label(label)?.to_string();
-        let aad = format::aad(format::FORMAT_VERSION, wallet_id.as_bytes(), &label);
-
-        let mut state = self.lock_state();
-
-        let (nonce, ciphertext) = crypto::seal(&state.derived_key, &aad, secret.expose_secret())?;
-
-        // Mutate in memory; remember the prior body so we can roll back
-        // on a disk-write failure (the resident state must always match
-        // what is on disk after a returned-Ok mutation).
-        let prior = {
-            let entries = state.vault.wallets.entry(wallet_id.to_hex()).or_default();
-            entries.insert(label.clone(), EntryBody { nonce, ciphertext })
-        };
-
-        if let Err(e) = self.sync_to_disk_locked(&state) {
-            let entries = state
-                .vault
-                .wallets
-                .get_mut(&wallet_id.to_hex())
-                .expect("entry just inserted");
-            match prior {
-                Some(prev) => {
-                    entries.insert(label, prev);
+            None => {
+                entries.remove(&label);
+                if entries.is_empty() {
+                    state.vault.wallets.remove(&wallet_id.to_hex());
                 }
-                None => {
-                    entries.remove(&label);
-                    if entries.is_empty() {
-                        state.vault.wallets.remove(&wallet_id.to_hex());
-                    }
-                }
             }
-            return Err(e);
         }
-        Ok(())
+        return Err(e);
     }
+    Ok(())
+}
 
-    /// `get` — returns the plaintext as a zeroizing [`SecretBytes`].
-    /// Reads from the resident vault so there is no disk hit; the
-    /// header verify-token check already happened at [`open`], so a
-    /// per-op KDF is not needed.
-    ///
-    /// `crypto::open` already returns `SecretBytes`, so the value
-    /// propagates without an intervening `Vec<u8>` (CMT-008); the
-    /// lone bare-buffer conversion lives at the upstream
-    /// `CredentialApi::get_secret` SPI seam. `NoEntry`-shaped absence
-    /// rides as `Ok(None)`.
-    ///
-    /// [`open`]: EncryptedFileStore::open
-    fn get(
-        &self,
-        wallet_id: &WalletId,
-        label: &str,
-    ) -> Result<Option<SecretBytes>, FileStoreError> {
-        let label = validated_label(label)?;
-        let wallet_hex = wallet_id.to_hex();
-        let aad = format::aad(format::FORMAT_VERSION, wallet_id.as_bytes(), label);
+/// `get` — returns the plaintext as a zeroizing [`SecretBytes`]. Reads
+/// from the resident vault so there is no disk hit; the header
+/// verify-token check already happened at [`EncryptedFileStore::open`],
+/// so a per-op KDF is not needed.
+///
+/// `crypto::open` already returns `SecretBytes`, so the value
+/// propagates without an intervening `Vec<u8>` (CMT-008); the lone
+/// bare-buffer conversion lives at the upstream
+/// `CredentialApi::get_secret` SPI seam. `NoEntry`-shaped absence
+/// rides as `Ok(None)`.
+fn get_locked(
+    inner: &Arc<Mutex<EncryptedFileStoreInner>>,
+    wallet_id: &WalletId,
+    label: &str,
+) -> Result<Option<SecretBytes>, FileStoreError> {
+    let label = validated_label(label)?;
+    let wallet_hex = wallet_id.to_hex();
+    let aad = format::aad(format::FORMAT_VERSION, wallet_id.as_bytes(), label);
 
-        let state = self.lock_state();
-        let Some(entries) = state.vault.wallets.get(&wallet_hex) else {
-            return Ok(None);
+    let state = lock_inner(inner);
+    let Some(entries) = state.vault.wallets.get(&wallet_hex) else {
+        return Ok(None);
+    };
+    let Some(body) = entries.get(label) else {
+        return Ok(None);
+    };
+    entry_decrypt_or_corruption(
+        &wallet_hex,
+        label,
+        crypto::open(&state.derived_key, &body.nonce, &aad, &body.ciphertext),
+    )
+    .map(Some)
+}
+
+/// `delete` — upstream-compliant: returns whether an entry was removed
+/// so the SPI seam can surface `NoEntry` (D3, per the
+/// `CredentialApi::delete_credential` contract). Edits the resident
+/// vault then syncs to disk; when the wallet's entry map empties, the
+/// wallet slot itself is removed so the on-disk shape stays clean.
+fn delete_locked(
+    inner: &Arc<Mutex<EncryptedFileStoreInner>>,
+    wallet_id: &WalletId,
+    label: &str,
+) -> Result<bool, FileStoreError> {
+    let label = validated_label(label)?;
+    let wallet_hex = wallet_id.to_hex();
+
+    let mut state = lock_inner(inner);
+    let removed = {
+        let Some(entries) = state.vault.wallets.get_mut(&wallet_hex) else {
+            return Ok(false);
         };
-        let Some(body) = entries.get(label) else {
-            return Ok(None);
+        let Some(prev) = entries.remove(label) else {
+            return Ok(false);
         };
-        entry_decrypt_or_corruption(
-            &wallet_hex,
-            label,
-            crypto::open(&state.derived_key, &body.nonce, &aad, &body.ciphertext),
-        )
-        .map(Some)
-    }
-
-    /// `delete` — upstream-compliant: returns whether an entry was
-    /// removed so the SPI seam can surface `NoEntry` (D3, per the
-    /// `CredentialApi::delete_credential` contract). Edits the
-    /// resident vault then syncs to disk; when the wallet's entry map
-    /// empties, the wallet slot itself is removed so the on-disk shape
-    /// stays clean.
-    fn delete(&self, wallet_id: &WalletId, label: &str) -> Result<bool, FileStoreError> {
-        let label = validated_label(label)?;
-        let wallet_hex = wallet_id.to_hex();
-
-        let mut state = self.lock_state();
-        let removed = {
-            let Some(entries) = state.vault.wallets.get_mut(&wallet_hex) else {
-                return Ok(false);
-            };
-            let Some(prev) = entries.remove(label) else {
-                return Ok(false);
-            };
-            let wallet_emptied = entries.is_empty();
-            if wallet_emptied {
-                state.vault.wallets.remove(&wallet_hex);
-            }
-            (prev, wallet_emptied)
-        };
-
-        if let Err(e) = self.sync_to_disk_locked(&state) {
-            let entries = state.vault.wallets.entry(wallet_hex).or_default();
-            entries.insert(label.to_string(), removed.0);
-            return Err(e);
+        let wallet_emptied = entries.is_empty();
+        if wallet_emptied {
+            state.vault.wallets.remove(&wallet_hex);
         }
-        Ok(true)
+        (prev, wallet_emptied)
+    };
+
+    if let Err(e) = state.sync_to_disk_locked() {
+        let entries = state.vault.wallets.entry(wallet_hex).or_default();
+        entries.insert(label.to_string(), removed.0);
+        return Err(e);
     }
+    Ok(true)
 }
 
 impl Drop for EncryptedFileStoreInner {
@@ -502,12 +498,12 @@ impl Drop for EncryptedFileStoreInner {
         // every mutation makes this redundant in the success path, but
         // a final write lets a future feature (e.g. opportunistic
         // background buffering) hang off the same Drop without changing
-        // the contract.
-        let state = self.lock_state();
-        if let Err(e) = self.sync_to_disk_locked(&state) {
+        // the contract. `&mut self` here implies unique ownership —
+        // the outer `Mutex` is being dropped too, so no other holder
+        // can be waiting.
+        if let Err(e) = self.sync_to_disk_locked() {
             tracing::warn!(error = %e, "drop-time vault sync failed");
         }
-        drop(state);
         // Re-assert restrictive perms on Unix. Between writes the file
         // is already 0600, but this defends against a peer that
         // loosened them through some other path while we held the
@@ -846,7 +842,7 @@ fn parse_service(service: &str) -> Result<WalletId, KeyringError> {
 /// the credential layer — the open already failed if the passphrase
 /// was wrong.
 pub struct EncryptedFileCredential {
-    store: Arc<EncryptedFileStoreInner>,
+    store: Arc<Mutex<EncryptedFileStoreInner>>,
     wallet_id: WalletId,
     label: String,
 }
@@ -863,18 +859,18 @@ impl std::fmt::Debug for EncryptedFileCredential {
 impl CredentialApi for EncryptedFileCredential {
     fn set_secret(&self, secret: &[u8]) -> KeyringResult<()> {
         let _ = validated_label(&self.label).map_err(FileStoreError::from)?;
-        self.store
-            .put(
-                &self.wallet_id,
-                &self.label,
-                &SecretBytes::from_slice(secret),
-            )
-            .map_err(KeyringError::from)
+        put_locked(
+            &self.store,
+            &self.wallet_id,
+            &self.label,
+            &SecretBytes::from_slice(secret),
+        )
+        .map_err(KeyringError::from)
     }
 
     fn get_secret(&self) -> KeyringResult<Vec<u8>> {
         let _ = validated_label(&self.label).map_err(FileStoreError::from)?;
-        match self.store.get(&self.wallet_id, &self.label) {
+        match get_locked(&self.store, &self.wallet_id, &self.label) {
             Ok(Some(v)) => Ok(v.expose_secret().to_vec()),
             Ok(None) => Err(KeyringError::NoEntry),
             Err(e) => Err(e.into()),
@@ -883,7 +879,7 @@ impl CredentialApi for EncryptedFileCredential {
 
     fn delete_credential(&self) -> KeyringResult<()> {
         let _ = validated_label(&self.label).map_err(FileStoreError::from)?;
-        match self.store.delete(&self.wallet_id, &self.label) {
+        match delete_locked(&self.store, &self.wallet_id, &self.label) {
             Ok(true) => Ok(()),
             Ok(false) => Err(KeyringError::NoEntry),
             Err(e) => Err(e.into()),
@@ -945,7 +941,7 @@ impl CredentialStoreApi for EncryptedFileStore {
 impl std::fmt::Debug for EncryptedFileStore {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("EncryptedFileStore")
-            .field("path", &self.inner.path)
+            .field("path", &lock_inner(&self.inner).path)
             .finish_non_exhaustive()
     }
 }
@@ -1581,22 +1577,22 @@ mod tests {
     }
 
     /// CMT-001 regression. Two threads share the same
-    /// `Arc<EncryptedFileStoreInner>` (the shape `EncryptedFileCredential`
-    /// already uses): one hammers `put` + `get`, the other calls
-    /// `rekey`. Under the pre-fix three-mutex layout a put could
-    /// capture the OLD key, then insert under the NEW vault, so the
-    /// body would be undecryptable. With the single state lock every
-    /// put/get/rekey is serialized — every `get` returns either the
-    /// right plaintext, `Ok(None)`, or a clean typed error, NEVER
-    /// garbled bytes from a mis-keyed seal (which would surface as
-    /// `Corruption`).
+    /// `Arc<Mutex<EncryptedFileStoreInner>>` (the shape
+    /// `EncryptedFileCredential` already uses): one hammers `put` +
+    /// `get`, the other calls `rekey`. Under the pre-fix three-mutex
+    /// layout a put could capture the OLD key, then insert under the
+    /// NEW vault, so the body would be undecryptable. With the single
+    /// state lock every put/get/rekey is serialized — every `get`
+    /// returns either the right plaintext, `Ok(None)`, or a clean
+    /// typed error, NEVER garbled bytes from a mis-keyed seal (which
+    /// would surface as `Corruption`).
     #[test]
     fn rekey_does_not_race_put_into_corruption() {
         let dir = tempfile::tempdir().unwrap();
         let path = vault_path(dir.path());
         let store = store_at(&path);
-        let inner_writer = Arc::clone(&store.inner);
-        let inner_rekeyer = Arc::clone(&store.inner);
+        let inner_writer: Arc<Mutex<EncryptedFileStoreInner>> = Arc::clone(&store.inner);
+        let inner_rekeyer: Arc<Mutex<EncryptedFileStoreInner>> = Arc::clone(&store.inner);
 
         // Iteration counts are tuned for cost: every rekey runs Argon2
         // at the default-target params, so the rekey loop dominates
@@ -1618,10 +1614,14 @@ mod tests {
                 buf.clear();
                 buf.extend_from_slice(PREFIX);
                 buf.extend_from_slice(&(i as u32).to_le_bytes());
-                inner_writer
-                    .put(&wallet, label, &SecretBytes::from_slice(&buf))
-                    .expect("put");
-                match inner_writer.get(&wallet, label) {
+                put_locked(
+                    &inner_writer,
+                    &wallet,
+                    label,
+                    &SecretBytes::from_slice(&buf),
+                )
+                .expect("put");
+                match get_locked(&inner_writer, &wallet, label) {
                     Ok(Some(bytes)) => {
                         // Must be one of OUR payloads — never random
                         // bytes from a mis-keyed seal. Compare only
@@ -1643,9 +1643,7 @@ mod tests {
             // model and keeps the race window real).
             let passphrases = ["pw-A", "pw-B"];
             for i in 0..REKEY_ITERS {
-                inner_rekeyer
-                    .rekey(SecretString::new(passphrases[i % 2]))
-                    .expect("rekey");
+                rekey_locked(&inner_rekeyer, SecretString::new(passphrases[i % 2])).expect("rekey");
             }
         });
 
