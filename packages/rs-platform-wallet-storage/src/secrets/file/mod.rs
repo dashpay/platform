@@ -960,6 +960,12 @@ fn set_restrictive_perms(f: &fs::File) -> Result<(), FileStoreError> {
     Ok(())
 }
 
+// INTENTIONAL(CMT-008): Windows ACL tightening deferred to the same
+// follow-up as `check_perms` above — tracked at
+// https://github.com/dashpay/platform/issues/3754. Vault file mode
+// hardening on Windows requires SetSecurityInfo via `windows-acl` or
+// `winapi`; out of scope for the secrets-feature landing. Operators on
+// Windows MUST set ACLs manually until the follow-up lands.
 #[cfg(not(unix))]
 fn set_restrictive_perms(_f: &fs::File) -> Result<(), FileStoreError> {
     Ok(())
