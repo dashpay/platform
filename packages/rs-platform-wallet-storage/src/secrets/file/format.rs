@@ -243,8 +243,17 @@ pub(crate) fn deserialize(buf: &[u8]) -> Result<Vault, FileStoreError> {
         return Err(FileStoreError::MalformedVault);
     }
 
-    for wallet in vault.wallets.values() {
-        for body in wallet.values() {
+    // CMT-005: validate outer wallet-id keys and inner label keys at
+    // parse time. The serde shape allows any string for either key, so
+    // a malformed file (or a tampered one) could otherwise smuggle a
+    // bogus wallet id past parse and surface only at the first `put` /
+    // `get` / `delete`. Reject the whole vault on the first offender so
+    // a single bad key fails the file open, not a downstream op.
+    for (wallet_hex, entries) in &vault.wallets {
+        super::decode_wallet_id_hex(wallet_hex)?;
+        for (label, body) in entries {
+            super::super::validate::validated_label(label)
+                .map_err(|_| FileStoreError::InvalidLabel)?;
             if body.ciphertext.len() < AEAD_TAG_LEN {
                 return Err(FileStoreError::MalformedVault);
             }
@@ -514,6 +523,88 @@ mod tests {
         let err = serde_json::from_str::<Probe>("\"zzzzzzzz\"").unwrap_err();
         let msg = err.to_string();
         assert!(msg.contains("expected 4 bytes"), "bad msg: {msg}");
+    }
+
+    #[test]
+    fn deserialize_rejects_non_hex_wallet_id_key(/* CMT-005 */) {
+        // A non-hex outer key must be rejected at parse, not surface
+        // later at put/get/delete.
+        let mut entries = BTreeMap::new();
+        entries.insert(
+            "seed".to_string(),
+            EntryBody {
+                nonce: [0u8; NONCE_LEN],
+                ciphertext: vec![0xCC; AEAD_TAG_LEN],
+            },
+        );
+        let mut wallets = BTreeMap::new();
+        wallets.insert("not-a-hex".to_string(), entries);
+        let bytes = serialize(&test_vault(wallets));
+        assert!(matches!(
+            deserialize(&bytes),
+            Err(FileStoreError::MalformedVault)
+        ));
+    }
+
+    #[test]
+    fn deserialize_rejects_short_wallet_id_key(/* CMT-005 */) {
+        // 32-hex chars is half the required width; reject at parse.
+        let mut entries = BTreeMap::new();
+        entries.insert(
+            "seed".to_string(),
+            EntryBody {
+                nonce: [0u8; NONCE_LEN],
+                ciphertext: vec![0xCC; AEAD_TAG_LEN],
+            },
+        );
+        let mut wallets = BTreeMap::new();
+        wallets.insert("ab".repeat(16), entries);
+        let bytes = serialize(&test_vault(wallets));
+        assert!(matches!(
+            deserialize(&bytes),
+            Err(FileStoreError::MalformedVault)
+        ));
+    }
+
+    #[test]
+    fn deserialize_rejects_traversal_label(/* CMT-005 */) {
+        // A label that would not survive `validated_label` (path
+        // traversal attempt) must fail at parse, not at the first get.
+        let mut entries = BTreeMap::new();
+        entries.insert(
+            "../escape".to_string(),
+            EntryBody {
+                nonce: [0u8; NONCE_LEN],
+                ciphertext: vec![0xCC; AEAD_TAG_LEN],
+            },
+        );
+        let mut wallets = BTreeMap::new();
+        wallets.insert(hex::encode([1u8; 32]), entries);
+        let bytes = serialize(&test_vault(wallets));
+        assert!(matches!(
+            deserialize(&bytes),
+            Err(FileStoreError::InvalidLabel)
+        ));
+    }
+
+    #[test]
+    fn deserialize_rejects_oversize_label(/* CMT-005 */) {
+        // 65 chars busts the 1..=64 allowlist bound.
+        let mut entries = BTreeMap::new();
+        entries.insert(
+            "a".repeat(65),
+            EntryBody {
+                nonce: [0u8; NONCE_LEN],
+                ciphertext: vec![0xCC; AEAD_TAG_LEN],
+            },
+        );
+        let mut wallets = BTreeMap::new();
+        wallets.insert(hex::encode([1u8; 32]), entries);
+        let bytes = serialize(&test_vault(wallets));
+        assert!(matches!(
+            deserialize(&bytes),
+            Err(FileStoreError::InvalidLabel)
+        ));
     }
 
     #[test]
