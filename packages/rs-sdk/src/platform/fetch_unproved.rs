@@ -117,10 +117,6 @@ impl FetchUnproved for drive_proof_verifier::types::CurrentQuorumsInfo {
     type Request = platform_proto::GetCurrentQuorumsInfoRequest;
 }
 
-impl FetchUnproved for drive_proof_verifier::types::ShieldedNotesCount {
-    type Request = platform_proto::GetShieldedNotesCountRequest;
-}
-
 impl FetchUnproved for EvoNodeStatus {
     type Request = EvoNode;
 }

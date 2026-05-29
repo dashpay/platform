@@ -1,5 +1,5 @@
 use crate::types::evonode_status::EvoNodeStatus;
-use crate::types::{CurrentQuorumsInfo, ShieldedNotesCount};
+use crate::types::CurrentQuorumsInfo;
 use crate::Error;
 use dapi_grpc::platform::v0::ResponseMetadata;
 use dapi_grpc::platform::v0::{self as platform};
@@ -293,28 +293,6 @@ impl FromUnproved<platform::GetStatusRequest> for EvoNodeStatus {
         let status = Self::try_from(response.into())?;
         // we use default response metadata, as this request does not return any metadata
         Ok((Some(status), Default::default()))
-    }
-}
-
-impl FromUnproved<platform::GetShieldedNotesCountRequest> for ShieldedNotesCount {
-    type Request = platform::GetShieldedNotesCountRequest;
-    type Response = platform::GetShieldedNotesCountResponse;
-
-    fn maybe_from_unproved_with_metadata<I: Into<Self::Request>, O: Into<Self::Response>>(
-        _request: I,
-        response: O,
-        _network: Network,
-        _platform_version: &PlatformVersion,
-    ) -> Result<(Option<Self>, ResponseMetadata), Error>
-    where
-        Self: Sized,
-    {
-        let response: platform::GetShieldedNotesCountResponse = response.into();
-        let inner = match response.version.ok_or(Error::EmptyVersion)? {
-            platform::get_shielded_notes_count_response::Version::V0(v0) => v0,
-        };
-        let metadata = inner.metadata.ok_or(Error::EmptyResponseMetadata)?;
-        Ok((Some(ShieldedNotesCount(inner.total_notes_count)), metadata))
     }
 }
 

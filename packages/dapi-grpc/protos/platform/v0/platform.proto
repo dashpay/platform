@@ -2929,19 +2929,27 @@ message GetShieldedPoolStateResponse {
   oneof version { GetShieldedPoolStateResponseV0 v0 = 1; }
 }
 
-// Lightweight unproved count of leaves in the shielded notes MMR.
+// Count of leaves in the shielded notes commitment tree.
 // Used by wallets at the start of a shielded sync to seed a
-// determinate progress-bar denominator. The count is tree metadata
-// (not a stored key), so there is no proof variant.
+// determinate progress-bar denominator. The count IS bound by the
+// Merk value hash: it is the first field (`total_count`) of the
+// serialized `CommitmentTree` element whose bytes are hashed into the
+// app/root hash, so it is provable via a PathQuery proof of that
+// element (set `prove = true`).
 message GetShieldedNotesCountRequest {
-  message GetShieldedNotesCountRequestV0 {}
+  message GetShieldedNotesCountRequestV0 {
+    bool prove = 1;
+  }
   oneof version { GetShieldedNotesCountRequestV0 v0 = 1; }
 }
 
 message GetShieldedNotesCountResponse {
   message GetShieldedNotesCountResponseV0 {
-    uint64 total_notes_count = 1 [jstype = JS_STRING];
-    ResponseMetadata metadata = 2;
+    oneof result {
+      uint64 total_notes_count = 1 [jstype = JS_STRING];
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
   }
   oneof version { GetShieldedNotesCountResponseV0 v0 = 1; }
 }

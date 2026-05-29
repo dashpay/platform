@@ -16,11 +16,12 @@ impl<C> Platform<C> {
     /// Returns the total number of notes currently stored in the
     /// shielded credit pool's CommitmentTree (its leaf count).
     ///
-    /// Lightweight, unproved query intended to seed a wallet
-    /// progress-bar denominator at the start of a shielded sync.
-    /// The count is tree metadata (not a stored key), so there is no
-    /// proof variant — see `GetShieldedNotesCountResponse` in
-    /// `platform.proto`.
+    /// Intended to seed a wallet progress-bar denominator at the start
+    /// of a shielded sync. Supports both unproved and proved modes: the
+    /// count is the first field (`total_count`) of the serialized
+    /// `CommitmentTree` element, whose bytes are bound into the Merk
+    /// value hash, so it is provable via a PathQuery proof of that
+    /// element — see `GetShieldedNotesCountResponse` in `platform.proto`.
     pub fn query_shielded_notes_count(
         &self,
         GetShieldedNotesCountRequest { version }: GetShieldedNotesCountRequest,
@@ -78,6 +79,7 @@ mod tests {
     use super::*;
     use crate::query::tests::setup_platform;
     use dapi_grpc::platform::v0::get_shielded_notes_count_request::GetShieldedNotesCountRequestV0;
+    use dapi_grpc::platform::v0::get_shielded_notes_count_response::get_shielded_notes_count_response_v0;
     use dpp::dashcore::Network;
 
     #[test]
@@ -101,7 +103,9 @@ mod tests {
         let (platform, state, version) = setup_platform(None, Network::Testnet, None);
 
         let request = GetShieldedNotesCountRequest {
-            version: Some(RequestVersion::V0(GetShieldedNotesCountRequestV0 {})),
+            version: Some(RequestVersion::V0(GetShieldedNotesCountRequestV0 {
+                prove: false,
+            })),
         };
 
         let result = platform
@@ -114,10 +118,41 @@ mod tests {
             Some(ResponseVersion::V0(v)) => v,
             _ => panic!("expected v0 response"),
         };
-        assert_eq!(
-            inner.total_notes_count, 0,
-            "expected zero notes on fresh state",
-        );
+        match inner.result {
+            Some(get_shielded_notes_count_response_v0::Result::TotalNotesCount(count)) => {
+                assert_eq!(count, 0, "expected zero notes on fresh state");
+            }
+            other => panic!("expected TotalNotesCount result, got {:?}", other),
+        }
+        assert!(inner.metadata.is_some(), "expected metadata present");
+    }
+
+    #[test]
+    fn test_query_shielded_notes_count_empty_state_proof() {
+        let (platform, state, version) = setup_platform(None, Network::Testnet, None);
+
+        let request = GetShieldedNotesCountRequest {
+            version: Some(RequestVersion::V0(GetShieldedNotesCountRequestV0 {
+                prove: true,
+            })),
+        };
+
+        let result = platform
+            .query_shielded_notes_count(request, &state, version)
+            .expect("expected query to succeed");
+
+        assert!(result.errors.is_empty(), "expected no errors for proof");
+        let response = result.data.expect("expected response data");
+        let inner = match response.version {
+            Some(ResponseVersion::V0(v)) => v,
+            _ => panic!("expected v0 response"),
+        };
+        match inner.result {
+            Some(get_shielded_notes_count_response_v0::Result::Proof(proof)) => {
+                assert!(!proof.grovedb_proof.is_empty(), "expected non-empty proof");
+            }
+            other => panic!("expected Proof result, got {:?}", other),
+        }
         assert!(inner.metadata.is_some(), "expected metadata present");
     }
 }

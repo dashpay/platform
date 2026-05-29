@@ -113,6 +113,8 @@
 @class GetShieldedAnchorsResponse;
 @class GetShieldedEncryptedNotesRequest;
 @class GetShieldedEncryptedNotesResponse;
+@class GetShieldedNotesCountRequest;
+@class GetShieldedNotesCountResponse;
 @class GetShieldedNullifiersRequest;
 @class GetShieldedNullifiersResponse;
 @class GetShieldedPoolStateRequest;
@@ -415,6 +417,10 @@ NS_ASSUME_NONNULL_BEGIN
 #pragma mark getShieldedPoolState(GetShieldedPoolStateRequest) returns (GetShieldedPoolStateResponse)
 
 - (GRPCUnaryProtoCall *)getShieldedPoolStateWithMessage:(GetShieldedPoolStateRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getShieldedNotesCount(GetShieldedNotesCountRequest) returns (GetShieldedNotesCountResponse)
+
+- (GRPCUnaryProtoCall *)getShieldedNotesCountWithMessage:(GetShieldedNotesCountRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
 #pragma mark getShieldedNullifiers(GetShieldedNullifiersRequest) returns (GetShieldedNullifiersResponse)
 
@@ -911,6 +917,13 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)getShieldedPoolStateWithRequest:(GetShieldedPoolStateRequest *)request handler:(void(^)(GetShieldedPoolStateResponse *_Nullable response, NSError *_Nullable error))handler;
 
 - (GRPCProtoCall *)RPCTogetShieldedPoolStateWithRequest:(GetShieldedPoolStateRequest *)request handler:(void(^)(GetShieldedPoolStateResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getShieldedNotesCount(GetShieldedNotesCountRequest) returns (GetShieldedNotesCountResponse)
+
+- (void)getShieldedNotesCountWithRequest:(GetShieldedNotesCountRequest *)request handler:(void(^)(GetShieldedNotesCountResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetShieldedNotesCountWithRequest:(GetShieldedNotesCountRequest *)request handler:(void(^)(GetShieldedNotesCountResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
 #pragma mark getShieldedNullifiers(GetShieldedNullifiersRequest) returns (GetShieldedNullifiersResponse)

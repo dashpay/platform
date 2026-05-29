@@ -830,11 +830,13 @@ impl std::ops::DerefMut for NullifiersTrunkState {
 )]
 pub struct ShieldedPoolState(pub u64);
 
-/// Total number of notes in the shielded pool MMR (leaf count).
+/// Total number of notes in the shielded pool commitment tree (leaf count).
 ///
 /// Wallets use this as the denominator for a determinate
-/// shielded-sync progress bar. Unproved — the count is tree
-/// metadata and has no Merkle-key encoding.
+/// shielded-sync progress bar. The count IS provable: it is the first
+/// field (`total_count`) of the serialized `CommitmentTree` element
+/// whose bytes are bound into the Merk value hash, so a PathQuery proof
+/// of that element authenticates it against the root hash.
 #[derive(Debug, derive_more::From, Clone, Copy)]
 #[cfg_attr(
     feature = "mocks",

@@ -1185,17 +1185,22 @@ impl Query<GetShieldedNotesCountRequest> for NoParamQuery {
         &self,
         settings: &crate::platform::QuerySettings<'_>,
     ) -> Result<GetShieldedNotesCountRequest, Error> {
-        // The notes-count RPC is unproved by design (the leaf count
-        // is tree metadata, not a Merkle-key value), so any caller
-        // that asks for a proof is misusing the API. `FetchUnproved`
-        // strips `prove` via `without_proofs()` before this runs.
-        if settings.prove {
-            unimplemented!("query with proof are not supported for GetShieldedNotesCountRequest");
+        let prove = settings.prove;
+        // GetShieldedNotesCount is proved-only: the count is bound by the
+        // Merk value hash, so it is always returned inside a verifiable
+        // proof. Return a recoverable error (not a process-aborting
+        // `unimplemented!`) if a caller explicitly disables proofs on this
+        // public request type.
+        if !prove {
+            return Err(Error::Generic(
+                "GetShieldedNotesCount requires proofs; unproved queries are not supported"
+                    .to_string(),
+            ));
         }
 
         Ok(GetShieldedNotesCountRequest {
             version: Some(get_shielded_notes_count_request::Version::V0(
-                get_shielded_notes_count_request::GetShieldedNotesCountRequestV0 {},
+                get_shielded_notes_count_request::GetShieldedNotesCountRequestV0 { prove },
             )),
         })
     }
