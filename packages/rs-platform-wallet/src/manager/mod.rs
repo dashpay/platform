@@ -228,6 +228,21 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                     .on_shielded_sync_progress(cumulative_scanned, block_height);
             },
         )));
+        // TODO(shielded-stream follow-up): wire the second "checked /
+        // committed-to-tree" progress signal here, mirroring the block
+        // above:
+        //   coordinator.install_tree_progress_handler(Some(Arc::new(
+        //       move |leaves_committed, total_target| {
+        //           event_manager.on_shielded_tree_progress(leaves_committed, total_target);
+        //       },
+        //   )));
+        // This needs a new `PlatformEventHandler::on_shielded_tree_progress`
+        // event (events.rs) + its FFI callback slot
+        // (rs-platform-wallet-ffi/src/event_handler.rs:
+        // `on_shielded_sync_progress_fn` has the exact shape to copy) +
+        // the Swift binding for the dual progress bar. The coordinator
+        // hook (`install_tree_progress_handler`) and the wallet plumbing
+        // (`sync_notes_across` firing it per batch) already exist.
         *slot = Some(coordinator);
         Ok(())
     }

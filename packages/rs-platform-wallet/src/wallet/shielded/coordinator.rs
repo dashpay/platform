@@ -55,10 +55,25 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-/// Callback fired once per chunk during a coordinator sync pass.
+/// Callback fired once per chunk during a coordinator sync pass —
+/// the **"downloaded"** progress signal.
 /// Arguments: `(cumulative_scanned, latest_block_height)`. Forwarded
-/// straight from `sync_shielded_notes`'s chunk loop.
+/// straight from the SDK stream's per-chunk download completion.
 pub type ShieldedProgressCallback = Arc<dyn Fn(u64, u64) + Send + Sync>;
+
+/// Callback fired as commitments are committed to the coordinator's
+/// local Merkle tree — the **"checked / committed-to-tree"** progress
+/// signal, distinct from [`ShieldedProgressCallback`] (network
+/// download). Fired once per appended batch during the interleaved
+/// stream consume in [`sync_notes_across`].
+///
+/// Arguments: `(cumulative_leaves_committed, total_leaves_target)`.
+/// `total_leaves_target` is the on-chain MMR leaf count fetched once at
+/// the start of the pass; it is `0` when that progress-only RPC failed,
+/// which the UI should treat as an indeterminate total.
+///
+/// [`sync_notes_across`]: super::sync::sync_notes_across
+pub type ShieldedTreeProgressCallback = Arc<dyn Fn(u64, u64) + Send + Sync>;
 use std::time::{Duration, Instant};
 
 use tokio::sync::RwLock;
@@ -156,6 +171,16 @@ pub struct NetworkShieldedCoordinator {
     /// is taken once per sync pass to read the snapshot — no hot-path
     /// contention.
     progress_handler: std::sync::Mutex<Option<ShieldedProgressCallback>>,
+
+    /// Optional tree-progress callback fired as commitments are
+    /// committed to the local Merkle tree during the interleaved sync
+    /// (the "checked" signal, distinct from `progress_handler`'s
+    /// "downloaded" signal). Installed by the manager via
+    /// [`install_tree_progress_handler`](Self::install_tree_progress_handler);
+    /// `None` (default) disables tree-progress reporting.
+    ///
+    /// Same `std::sync::Mutex` rationale as `progress_handler`.
+    tree_progress_handler: std::sync::Mutex<Option<ShieldedTreeProgressCallback>>,
 }
 
 impl NetworkShieldedCoordinator {
@@ -181,6 +206,7 @@ impl NetworkShieldedCoordinator {
             persisters: Arc::new(RwLock::new(BTreeMap::new())),
             last_caught_up_at: std::sync::Mutex::new(None),
             progress_handler: std::sync::Mutex::new(None),
+            tree_progress_handler: std::sync::Mutex::new(None),
         }
     }
 
@@ -206,6 +232,28 @@ impl NetworkShieldedCoordinator {
     /// Snapshot of the currently installed progress handler.
     pub(super) fn progress_handler(&self) -> Option<ShieldedProgressCallback> {
         self.progress_handler.lock().ok().and_then(|g| g.clone())
+    }
+
+    /// Install (or replace) the tree-progress handler — the "checked /
+    /// committed-to-tree" signal fired as commitments are appended to
+    /// the local Merkle tree during the interleaved sync. Fired once per
+    /// appended batch (~8192-note batches), so it's already coarse;
+    /// still keep the callback cheap. Used by `PlatformWalletManager`
+    /// to bridge tree progress into a second progress bar, distinct
+    /// from the download progress handler. Passing `None` removes any
+    /// installed handler.
+    pub fn install_tree_progress_handler(&self, handler: Option<ShieldedTreeProgressCallback>) {
+        if let Ok(mut slot) = self.tree_progress_handler.lock() {
+            *slot = handler;
+        }
+    }
+
+    /// Snapshot of the currently installed tree-progress handler.
+    pub(super) fn tree_progress_handler(&self) -> Option<ShieldedTreeProgressCallback> {
+        self.tree_progress_handler
+            .lock()
+            .ok()
+            .and_then(|g| g.clone())
     }
 
     /// The on-disk SQLite path the coordinator opened. Used by
@@ -480,11 +528,15 @@ impl NetworkShieldedCoordinator {
         // updates during long cold syncs instead of one delayed
         // burst at the end.
         let on_progress = self.progress_handler();
+        // Second, distinct signal: commitments committed to the local
+        // tree as the interleaved consumer drains the SDK stream.
+        let on_tree_progress = self.tree_progress_handler();
         let notes = match super::sync::sync_notes_across(
             &self.sdk,
             &self.store,
             &subwallets,
             on_progress.as_ref(),
+            on_tree_progress.as_ref(),
         )
         .await
         {

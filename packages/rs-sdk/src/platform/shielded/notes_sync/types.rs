@@ -45,6 +45,38 @@ impl Default for ShieldedSyncConfig {
     }
 }
 
+/// One chunk of encrypted notes emitted by the streaming sync entry
+/// point [`sync_shielded_notes_stream`](super::sync_shielded_notes::sync_shielded_notes_stream).
+///
+/// Batches are yielded **in strictly ascending tree-position order**
+/// (`start_index`) even when the underlying network fetches complete
+/// out of order — the stream's reorder buffer holds an early-finishing
+/// later chunk until every predecessor has been emitted. This lets the
+/// consumer append commitments to a position-ordered Merkle tree the
+/// instant a contiguous chunk is ready, overlapping tree-append with
+/// later network fetches.
+pub struct ShieldedChunkBatch {
+    /// Chunk start position in the commitment tree (tree order). Always
+    /// a multiple of the fetch size for non-final chunks.
+    pub start_index: u64,
+    /// Raw encrypted notes for this chunk, in tree order. The note at
+    /// vec index `i` has global tree position `start_index + i`.
+    pub notes: Vec<ShieldedEncryptedNote>,
+    /// Driver-IVK trial-decryption hits within this chunk (the notes
+    /// that decrypted under the `ivk` passed to the stream). Positions
+    /// are absolute (already offset by `start_index`).
+    pub decrypted: Vec<DecryptedNote>,
+    /// Platform block height reported by the response that produced
+    /// this chunk.
+    pub block_height: u64,
+    /// True for the final (buffer) chunk — a short read
+    /// (`notes.len() < fetch_size`) that signals end-of-stream. The
+    /// BulkAppendTree buffer chunk is mutable and may receive more
+    /// notes before the next sync, so the consumer resumes from this
+    /// chunk's `start_index` next pass.
+    pub is_partial: bool,
+}
+
 /// A note that was successfully decrypted (belongs to the viewer).
 pub struct DecryptedNote {
     /// Global position of this note in the commitment tree.

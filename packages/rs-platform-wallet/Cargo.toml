@@ -56,6 +56,10 @@ grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "5
 # is built against (its `Cargo.lock` resolves rusqlite at this major).
 rusqlite = { version = "0.38", optional = true }
 zip32 = { version = "0.2.0", default-features = false, optional = true }
+# `StreamExt`/`pin_mut!` to consume the SDK's `sync_shielded_notes_stream`
+# in the interleaved fetch/tree-append consumer (shielded sync only).
+# Same version as `dash-sdk` so the lockfile resolves a single copy.
+futures = { version = "0.3.30", optional = true }
 
 [dev-dependencies]
 # Used by `tests/shielded_chunk_timing_bench.rs` and
@@ -88,7 +92,7 @@ rs-sdk-trusted-context-provider = { path = "../rs-sdk-trusted-context-provider" 
 default = ["bls", "eddsa"]
 bls = ["key-wallet/bls", "key-wallet-manager/bls"]
 eddsa = ["key-wallet/eddsa", "key-wallet-manager/eddsa"]
-shielded = ["dep:grovedb-commitment-tree", "dep:rusqlite", "dep:zip32", "dash-sdk/shielded", "dpp/shielded-client"]
+shielded = ["dep:grovedb-commitment-tree", "dep:rusqlite", "dep:zip32", "dep:futures", "dash-sdk/shielded", "dpp/shielded-client"]
 # Opt-in serde derives on the changeset types. Activates `key-wallet/serde`,
 # `key-wallet-manager/serde`, and `dash-sdk/serde`. `dpp` derives serde unconditionally.
 serde = [
