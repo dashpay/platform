@@ -1,21 +1,18 @@
-//! Generic key reservation set with an RAII guard, plus domain-specific
-//! aliases / wrappers used across the platform-wallet race-protection paths:
+//! Generic key reservation set with an RAII guard, plus the
+//! [`OutpointReservations`] wrapper used by the platform-wallet
+//! UTXO race-protection path.
 //!
-//! * [`OutpointReservations`] — closes the same-UTXO concurrent-selection
-//!   race in [`CoreWallet::send_to_addresses`](super::broadcast). Composes
-//!   a generic `Reservations<OutPoint>` with a parallel
-//!   `Reservations<Address>` tracking change addresses peeked but not yet
-//!   committed to a confirmed broadcast.
-//! * [`AddressReservations`] — closes the back-to-back
-//!   `next_unused_receive_address` hand-out race (Found-026) without
-//!   eagerly advancing `highest_used` in the upstream `AddressPool`. Keys
-//!   are `(account_index, address_index)` pairs.
+//! [`OutpointReservations`] closes the same-UTXO concurrent-selection
+//! race in [`CoreWallet::send_to_addresses`](super::broadcast). It
+//! composes a generic `Reservations<OutPoint>` with a parallel
+//! `Reservations<Address>` tracking change addresses peeked but not yet
+//! committed to a confirmed broadcast.
 //!
-//! Both paths share the [`Reservations<K>`] core: a single `Mutex`-protected
-//! `HashSet<K>` with an RAII [`ReservationGuard<K>`] that releases keys on
-//! drop, with `release_after_commit` and `leak_until_sync` escape hatches
-//! mirroring the broadcast-success / unrecoverable-leak distinction
-//! introduced in PR #3585.
+//! Both inner sets share the [`Reservations<K>`] core: a single
+//! `Mutex`-protected `HashSet<K>` with an RAII [`ReservationGuard<K>`]
+//! that releases keys on drop, with `release_after_commit` and
+//! `leak_until_sync` escape hatches mirroring the broadcast-success /
+//! unrecoverable-leak distinction.
 
 use std::collections::HashSet;
 use std::hash::Hash;
@@ -67,6 +64,7 @@ impl<K: Eq + Hash + Clone + std::fmt::Debug> Clone for Reservations<K> {
 }
 
 impl<K: Eq + Hash + Clone + std::fmt::Debug> Reservations<K> {
+    #[cfg(test)]
     pub(crate) fn new() -> Self {
         Self::default()
     }
@@ -190,26 +188,8 @@ impl<K: Eq + Hash + Clone + std::fmt::Debug> Drop for ReservationGuard<K> {
 }
 
 // =====================================================================
-// Domain aliases / wrappers
+// Domain wrapper
 // =====================================================================
-
-/// `(account_index, address_index)` key for [`AddressReservations`].
-pub(crate) type AddressReservationKey = (u32, u32);
-
-/// Per-wallet set of `(account_index, address_index)` slots handed out
-/// by [`PlatformAddressWallet::next_unused_receive_address`](crate::wallet::platform_addresses::PlatformAddressWallet::next_unused_receive_address)
-/// but not yet flipped to `used` by a positive-balance sync hit.
-/// Closes the Found-026 back-to-back hand-out race without prematurely
-/// advancing the upstream `AddressPool`'s `highest_used`.
-pub(crate) type AddressReservations = Reservations<AddressReservationKey>;
-
-/// RAII guard for [`AddressReservations`]. The platform-payment
-/// hand-out path leaks this via `leak_until_sync` after a successful
-/// hand-out — exposed as a named alias so any future caller that wants
-/// to thread the guard onto its own state (e.g., a transfer builder
-/// dropping the guard on broadcast failure) can spell the type.
-#[allow(dead_code)] // surfaced for API completeness; no in-tree caller yet
-pub(crate) type AddressReservationGuard = ReservationGuard<AddressReservationKey>;
 
 /// Per-wallet set of outpoints reserved by an in-flight
 /// `send_to_addresses` plus any change addresses peeked but not yet
@@ -411,82 +391,5 @@ mod tests {
             res.contains(&a),
             "leak_until_sync must keep the outpoint reserved until process restart"
         );
-    }
-
-    // =====================================================================
-    // Generic `Reservations<K>` tests — exercise the address-reservation
-    // alias the platform-payment hand-out path uses (Found-026).
-    // =====================================================================
-
-    #[test]
-    fn address_reservation_same_key_twice_is_redundant_release() {
-        // Reserving the same `(account, index)` from two distinct guards
-        // is *allowed* (HashSet idempotency) but dropping one releases
-        // the slot — the second guard would then mistakenly hold a key
-        // the set no longer contains. The platform-address hand-out
-        // path guards against this by **checking `contains` before
-        // reserving** and advancing past any reserved index, so the
-        // duplicate-reserve case never arises in practice. This test
-        // documents the invariant rather than the (would-be-broken)
-        // overlapping-guards behaviour.
-        let res: AddressReservations = AddressReservations::new();
-        let k = (0u32, 5u32);
-        let g = res.reserve(vec![k]);
-        assert!(res.contains(&k));
-        assert!(
-            res.contains(&k),
-            "second `contains` would also return true — callers must skip past it"
-        );
-        drop(g);
-        assert!(!res.contains(&k));
-    }
-
-    #[test]
-    fn address_reservation_distinct_keys_independent() {
-        // Mirrors the outpoint `second_reservation_is_disjoint` test
-        // for the address-reservation alias: two distinct
-        // `(account, address_index)` slots can be reserved
-        // concurrently and both remain held until each guard drops.
-        let res: AddressReservations = AddressReservations::new();
-        let k1 = (0u32, 0u32);
-        let k2 = (0u32, 1u32);
-        let g1 = res.reserve(vec![k1]);
-        let g2 = res.reserve(vec![k2]);
-        assert!(res.contains(&k1));
-        assert!(res.contains(&k2));
-        drop(g1);
-        assert!(!res.contains(&k1));
-        assert!(res.contains(&k2));
-        drop(g2);
-        assert!(!res.contains(&k2));
-    }
-
-    #[test]
-    fn address_reservation_leak_until_sync_holds_slot() {
-        // The hand-out path leaks the guard so the slot stays reserved
-        // until the next balance-positive sync flips `used` on the
-        // pool — at which point the in-memory reservation is harmless
-        // because `next_unused` will skip the index regardless. This
-        // test pins that semantic for the address alias.
-        let res: AddressReservations = AddressReservations::new();
-        let k = (0u32, 7u32);
-        let g = res.reserve(vec![k]);
-        g.leak_until_sync();
-        assert!(
-            res.contains(&k),
-            "leak_until_sync must keep the address slot reserved until process restart"
-        );
-    }
-
-    #[test]
-    fn address_reservation_snapshot_reflects_state() {
-        let res: AddressReservations = AddressReservations::new();
-        let k1 = (0u32, 0u32);
-        let k2 = (1u32, 3u32);
-        let _g = res.reserve(vec![k1, k2]);
-        let snap = res.snapshot();
-        assert!(snap.contains(&k1));
-        assert!(snap.contains(&k2));
-        assert_eq!(snap.len(), 2);
     }
 }
