@@ -466,7 +466,7 @@ async fn incremental_catch_up<P: AddressProvider>(
     // unknown-address replay (rare, end-of-pass) materializes any extra
     // allocation. Buffered misses are bounded by the count of foreign /
     // post-snapshot addresses in the response.
-    let mut pending_unknown: Vec<PendingUnknownChange> = Vec::new();
+    let mut pending_unknown: Vec<PendingMiss> = Vec::new();
 
     let mut current_height = start_height;
     let mut observed_tip_height = start_height;
@@ -626,7 +626,7 @@ async fn incremental_catch_up<P: AddressProvider>(
                     entry
                         .changes
                         .iter()
-                        .map(|(a, op)| (a, AddressBalanceChange::Compacted(op))),
+                        .map(|(a, op)| (a, BalanceOp::Compacted(op))),
                     current_height,
                     provider,
                     result,
@@ -668,7 +668,7 @@ async fn incremental_catch_up<P: AddressProvider>(
                 entry
                     .changes
                     .iter()
-                    .map(|(a, op)| (a, AddressBalanceChange::Recent(op))),
+                    .map(|(a, op)| (a, BalanceOp::Recent(op))),
                 current_height,
                 provider,
                 result,
@@ -700,80 +700,59 @@ async fn incremental_catch_up<P: AddressProvider>(
 
 // ── Address-balance change application ────────────────────────────────
 
-/// A single address balance change, abstracting the recent (`CreditOperation`)
-/// and compacted (`BlockAwareCreditOperation`) shapes so one pure function can
-/// apply both phases identically.
+/// A single borrowed address balance change, abstracting the recent
+/// (`CreditOperation`) and compacted (`BlockAwareCreditOperation`) shapes so one
+/// pure function can apply both phases identically.
 #[derive(Clone, Copy)]
-pub(crate) enum AddressBalanceChange<'a> {
+pub(crate) enum BalanceOp<'a> {
     /// A recent (per-block) credit operation.
     Recent(&'a CreditOperation),
     /// A compacted (block-range) credit operation.
     Compacted(&'a BlockAwareCreditOperation),
 }
 
-impl AddressBalanceChange<'_> {
-    /// Resolve the post-change balance given the address's current balance and
-    /// the catch-up cursor height. Mirrors the two original inline loops
-    /// exactly (compacted height-filtered sum vs. recent flat add).
-    fn new_balance(&self, current_balance: Credits, current_height: u64) -> Credits {
-        match self {
-            AddressBalanceChange::Recent(op) => match op {
-                CreditOperation::SetCredits(credits) => *credits,
-                CreditOperation::AddToCredits(credits) => current_balance.saturating_add(*credits),
-            },
-            AddressBalanceChange::Compacted(op) => match op {
-                BlockAwareCreditOperation::SetCredits(credits) => *credits,
-                BlockAwareCreditOperation::AddToCreditsOperations(operations) => {
-                    let total_to_add: u64 = operations
-                        .iter()
-                        .filter(|(height, _)| **height >= current_height)
-                        .map(|(_, credits)| *credits)
-                        .fold(0u64, |acc, c| acc.saturating_add(c));
-                    current_balance.saturating_add(total_to_add)
-                }
-            },
-        }
-    }
-
-    /// Owned snapshot of the change for end-of-pass replay. Cheap for
-    /// `Recent` (the inner op is `Copy`); clones the operations vector for
-    /// `Compacted`. Only called for unknown addresses.
-    fn into_owned(self) -> OwnedAddressBalanceChange {
-        match self {
-            AddressBalanceChange::Recent(op) => OwnedAddressBalanceChange::Recent(*op),
-            AddressBalanceChange::Compacted(op) => OwnedAddressBalanceChange::Compacted(op.clone()),
-        }
-    }
-}
-
-/// Owned counterpart of [`AddressBalanceChange`] so unknown-address changes
-/// can outlive the per-block iterator and be replayed at end-of-pass.
+/// Owned arity of [`BalanceOp`], used only to buffer a miss past the borrow of
+/// its response entry so it can be replayed at end-of-pass.
 #[derive(Clone)]
-pub(crate) enum OwnedAddressBalanceChange {
+pub(crate) enum OwnedBalanceOp {
     Recent(CreditOperation),
     Compacted(BlockAwareCreditOperation),
 }
 
-impl OwnedAddressBalanceChange {
-    fn as_borrowed(&self) -> AddressBalanceChange<'_> {
-        match self {
-            OwnedAddressBalanceChange::Recent(op) => AddressBalanceChange::Recent(op),
-            OwnedAddressBalanceChange::Compacted(op) => AddressBalanceChange::Compacted(op),
-        }
+/// A buffered miss: raw GroveDB key, owned change, and the catch-up cursor
+/// height at the original block (feeds the compacted height filter on replay;
+/// ignored by `Recent`).
+type PendingMiss = (Vec<u8>, OwnedBalanceOp, u64);
+
+/// Resolve the post-change balance from the current balance and the catch-up
+/// cursor height. Compacted sums only operations at or after `current_height`;
+/// recent applies a flat set/add.
+fn apply_op(op: BalanceOp<'_>, current_balance: Credits, current_height: u64) -> Credits {
+    match op {
+        BalanceOp::Recent(op) => match op {
+            CreditOperation::SetCredits(credits) => *credits,
+            CreditOperation::AddToCredits(credits) => current_balance.saturating_add(*credits),
+        },
+        BalanceOp::Compacted(op) => match op {
+            BlockAwareCreditOperation::SetCredits(credits) => *credits,
+            BlockAwareCreditOperation::AddToCreditsOperations(operations) => {
+                let total_to_add: u64 = operations
+                    .iter()
+                    .filter(|(height, _)| **height >= current_height)
+                    .map(|(_, credits)| *credits)
+                    .fold(0u64, |acc, c| acc.saturating_add(c));
+                current_balance.saturating_add(total_to_add)
+            }
+        },
     }
 }
 
-/// A single change for an address that wasn't in the entry-time snapshot.
-/// Buffered across the catch-up pass and replayed once at the end after a
-/// single `pending_addresses()` refresh.
-pub(crate) struct PendingUnknownChange {
-    /// Raw GroveDB key bytes — joined against the refreshed lookup.
-    key: Vec<u8>,
-    /// Owned change so the underlying response entries can be dropped.
-    change: OwnedAddressBalanceChange,
-    /// Catch-up cursor at the time of the original block — feeds the
-    /// compacted height filter on replay. Ignored by `Recent`.
-    current_height: u64,
+/// Borrow an owned op back into [`BalanceOp`] for replay.
+fn borrow_op(op: &OwnedBalanceOp) -> BalanceOp<'_> {
+    match op {
+        OwnedBalanceOp::Recent(op) => BalanceOp::Recent(op),
+        OwnedBalanceOp::Compacted(op) => BalanceOp::Compacted(op),
+    }
 }
 
 /// Apply one block's changes against the borrowed entry-time lookup, drive
@@ -788,10 +767,10 @@ async fn apply_block_changes<'a, P, I>(
     current_height: u64,
     provider: &mut P,
     result: &mut AddressSyncResult<P::Tag, P::Address>,
-    pending_unknown: &mut Vec<PendingUnknownChange>,
+    pending_unknown: &mut Vec<PendingMiss>,
 ) where
     P: AddressProvider,
-    I: IntoIterator<Item = (&'a PlatformAddress, AddressBalanceChange<'a>)>,
+    I: IntoIterator<Item = (&'a PlatformAddress, BalanceOp<'a>)>,
 {
     let mut local_applied: Vec<(P::Tag, P::Address, AddressFunds)> = Vec::new();
 
@@ -805,7 +784,7 @@ async fn apply_block_changes<'a, P, I>(
                 .map(|f| f.balance)
                 .unwrap_or(0);
 
-            let new_balance = change.new_balance(current_balance, current_height);
+            let new_balance = apply_op(change, current_balance, current_height);
 
             if new_balance != current_balance {
                 // TODO: incremental RPCs carry only balance deltas, never
@@ -823,11 +802,11 @@ async fn apply_block_changes<'a, P, I>(
                 local_applied.push((tag, address, funds));
             }
         } else {
-            pending_unknown.push(PendingUnknownChange {
-                key: addr_bytes,
-                change: change.into_owned(),
-                current_height,
-            });
+            let owned = match change {
+                BalanceOp::Recent(op) => OwnedBalanceOp::Recent(*op),
+                BalanceOp::Compacted(op) => OwnedBalanceOp::Compacted(op.clone()),
+            };
+            pending_unknown.push((addr_bytes, owned, current_height));
             // NOTE: this buffer is intentionally unbounded — premature optimization here
             // would couple the catch-up loop to ad-hoc memory heuristics. We log a
             // one-shot warning above a generous threshold so a future operator can
@@ -871,7 +850,7 @@ const REPLAY_REFRESH_MAX_ITERATIONS: usize = 3;
 /// or the cap [`REPLAY_REFRESH_MAX_ITERATIONS`] is reached.
 async fn refresh_and_replay_unknown<P: AddressProvider>(
     key_to_tag: &HashMap<Vec<u8>, (P::Tag, P::Address)>,
-    pending_unknown: Vec<PendingUnknownChange>,
+    pending_unknown: Vec<PendingMiss>,
     provider: &mut P,
     result: &mut AddressSyncResult<P::Tag, P::Address>,
 ) {
@@ -880,8 +859,10 @@ async fn refresh_and_replay_unknown<P: AddressProvider>(
     }
 
     // Build the set of unknown keys for a fast intersection probe.
-    let unknown_keys: std::collections::HashSet<&[u8]> =
-        pending_unknown.iter().map(|p| p.key.as_slice()).collect();
+    let unknown_keys: std::collections::HashSet<&[u8]> = pending_unknown
+        .iter()
+        .map(|(key, _, _)| key.as_slice())
+        .collect();
 
     // Keys resolved across all iterations so we don't double-apply a
     // delta if a follow-on iteration's `extras` still contains an
@@ -931,11 +912,11 @@ async fn refresh_and_replay_unknown<P: AddressProvider>(
         // height filter still sees the same `current_height` it would
         // have seen on the forward pass.
         let mut iteration_applied: Vec<(P::Tag, P::Address, AddressFunds)> = Vec::new();
-        for pending in &pending_unknown {
-            if resolved_keys.contains(&pending.key) {
+        for (key, change, height) in &pending_unknown {
+            if resolved_keys.contains(key) {
                 continue;
             }
-            let Some(&(tag, address)) = extras.get(pending.key.as_slice()) else {
+            let Some(&(tag, address)) = extras.get(key.as_slice()) else {
                 continue;
             };
             let result_key = (tag, address);
@@ -944,10 +925,7 @@ async fn refresh_and_replay_unknown<P: AddressProvider>(
                 .get(&result_key)
                 .map(|f| f.balance)
                 .unwrap_or(0);
-            let new_balance = pending
-                .change
-                .as_borrowed()
-                .new_balance(current_balance, pending.current_height);
+            let new_balance = apply_op(borrow_op(change), current_balance, *height);
 
             if new_balance != current_balance {
                 // TODO: same synthesized nonce=0 gap as the forward pass.
@@ -965,9 +943,9 @@ async fn refresh_and_replay_unknown<P: AddressProvider>(
         // Mark every key whose entry resolved in `extras` as resolved
         // this pass — even if no balance moved — so the next iteration
         // doesn't reconsider it.
-        for pending in &pending_unknown {
-            if extras.contains_key(pending.key.as_slice()) {
-                resolved_keys.insert(pending.key.clone());
+        for (key, _, _) in &pending_unknown {
+            if extras.contains_key(key.as_slice()) {
+                resolved_keys.insert(key.clone());
             }
         }
 
@@ -1002,7 +980,7 @@ async fn refresh_and_replay_unknown<P: AddressProvider>(
 
     let still_unknown = pending_unknown
         .iter()
-        .filter(|p| !resolved_keys.contains(&p.key))
+        .filter(|(key, _, _)| !resolved_keys.contains(key))
         .count();
     if still_unknown > 0 {
         debug!(
@@ -1734,10 +1712,10 @@ mod tests {
             found: Vec::new(),
         };
         let mut result: AddressSyncResult<u32, PlatformAddress> = AddressSyncResult::new();
-        let mut pending_unknown: Vec<PendingUnknownChange> = Vec::new();
+        let mut pending_unknown: Vec<PendingMiss> = Vec::new();
 
         let op = BlockAwareCreditOperation::SetCredits(42_000);
-        let changes = [(&late, AddressBalanceChange::Compacted(&op))];
+        let changes = [(&late, BalanceOp::Compacted(&op))];
 
         apply_block_changes(
             &lookup,
@@ -1822,9 +1800,9 @@ mod tests {
         result.absent.insert((tag, addr));
 
         let op = BlockAwareCreditOperation::SetCredits(7_777);
-        let changes = [(&addr, AddressBalanceChange::Compacted(&op))];
+        let changes = [(&addr, BalanceOp::Compacted(&op))];
 
-        let mut pending_unknown: Vec<PendingUnknownChange> = Vec::new();
+        let mut pending_unknown: Vec<PendingMiss> = Vec::new();
         apply_block_changes(
             &lookup,
             changes.iter().map(|(a, c)| (*a, *c)),
@@ -1914,11 +1892,11 @@ mod tests {
         );
         let late_op = BlockAwareCreditOperation::SetCredits(7_000);
         let changes = [
-            (&known, AddressBalanceChange::Compacted(&known_op)),
-            (&late, AddressBalanceChange::Compacted(&late_op)),
+            (&known, BalanceOp::Compacted(&known_op)),
+            (&late, BalanceOp::Compacted(&late_op)),
         ];
 
-        let mut pending_unknown: Vec<PendingUnknownChange> = Vec::new();
+        let mut pending_unknown: Vec<PendingMiss> = Vec::new();
         apply_block_changes(
             &lookup,
             changes.iter().map(|(a, c)| (*a, *c)),
@@ -2009,7 +1987,7 @@ mod tests {
             pending_polls: std::sync::atomic::AtomicUsize::new(0),
             found_calls: 0,
         };
-        let mut pending_unknown: Vec<PendingUnknownChange> = Vec::new();
+        let mut pending_unknown: Vec<PendingMiss> = Vec::new();
 
         // Three separate "blocks" (representing the per-entry calls
         // inside `incremental_catch_up`), every change but the first
@@ -2021,7 +1999,7 @@ mod tests {
             (&foreign_3, 5_000),
         ] {
             let op = BlockAwareCreditOperation::SetCredits(credits);
-            let changes = [(addr, AddressBalanceChange::Compacted(&op))];
+            let changes = [(addr, BalanceOp::Compacted(&op))];
             apply_block_changes(
                 &lookup,
                 changes.iter().map(|(a, c)| (*a, *c)),
@@ -2172,17 +2150,9 @@ mod tests {
         // had already seen them and stashed them for end-of-pass replay.
         let op_a = BlockAwareCreditOperation::SetCredits(1_111);
         let op_b = BlockAwareCreditOperation::SetCredits(2_222);
-        let pending_unknown = vec![
-            PendingUnknownChange {
-                key: a.to_bytes(),
-                change: OwnedAddressBalanceChange::Compacted(op_a),
-                current_height: 0,
-            },
-            PendingUnknownChange {
-                key: b.to_bytes(),
-                change: OwnedAddressBalanceChange::Compacted(op_b),
-                current_height: 0,
-            },
+        let pending_unknown: Vec<PendingMiss> = vec![
+            (a.to_bytes(), OwnedBalanceOp::Compacted(op_a), 0),
+            (b.to_bytes(), OwnedBalanceOp::Compacted(op_b), 0),
         ];
 
         refresh_and_replay_unknown(&lookup, pending_unknown, &mut provider, &mut result).await;
