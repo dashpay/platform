@@ -25,6 +25,19 @@ pub struct DashSDKConfigExtended {
     pub core_sdk_handle: *mut CoreSDKHandle,
 }
 
+fn apply_version(builder: SdkBuilder, platform_version: u32) -> Result<SdkBuilder, DashSDKError> {
+    if platform_version == 0 {
+        return Ok(builder);
+    }
+    match dash_sdk::dpp::version::PlatformVersion::get(platform_version) {
+        Ok(v) => Ok(builder.with_version(v)),
+        Err(e) => Err(DashSDKError::new(
+            DashSDKErrorCode::InvalidParameter,
+            format!("Invalid platform_version {}: {}", platform_version, e),
+        )),
+    }
+}
+
 /// Internal SDK wrapper
 pub(crate) struct SDKWrapper {
     pub sdk: Sdk,
@@ -149,6 +162,11 @@ pub unsafe extern "C" fn dash_sdk_create(config: *const DashSDKConfig) -> DashSD
         }
     };
 
+    let builder = match apply_version(builder, config.platform_version) {
+        Ok(b) => b,
+        Err(e) => return DashSDKResult::error(e),
+    };
+
     // Build SDK
     let sdk_result = builder.build().map_err(FFIError::from);
 
@@ -257,6 +275,11 @@ pub unsafe extern "C" fn dash_sdk_create_extended(
         }
     }
 
+    let builder = match apply_version(builder, base_config.platform_version) {
+        Ok(b) => b,
+        Err(e) => return DashSDKResult::error(e),
+    };
+
     // Build SDK
     let sdk_result = builder.build().map_err(FFIError::from);
 
@@ -311,10 +334,47 @@ pub unsafe extern "C" fn dash_sdk_create_trusted(config: *const DashSDKConfig) -
         "dash_sdk_create_trusted: creating trusted context provider"
     );
 
-    // Create trusted context provider
-    // For regtest, use the quorum sidecar at localhost:22444 (dashmate Docker default)
-    let is_local = matches!(network, Network::Regtest);
-    let trusted_provider = if is_local {
+    // Create trusted context provider. Resolution order for the quorum
+    // lookup base URL:
+    //   1. Caller-provided `config.quorum_url` (highest priority — required
+    //      for devnet, also usable for non-default mainnet/testnet shards).
+    //   2. Regtest fallback to the local quorum sidecar `127.0.0.1:22444`
+    //      (the dashmate Docker default).
+    //   3. Network-derived default (mainnet/testnet only).
+    let explicit_quorum_url: Option<String> = if config.quorum_url.is_null() {
+        None
+    } else {
+        match unsafe { CStr::from_ptr(config.quorum_url) }.to_str() {
+            Ok(s) if !s.is_empty() => Some(s.to_string()),
+            Ok(_) => None,
+            Err(e) => {
+                return DashSDKResult::error(DashSDKError::new(
+                    DashSDKErrorCode::InvalidParameter,
+                    format!("Invalid quorum URL string: {}", e),
+                ))
+            }
+        }
+    };
+    let trusted_provider = if let Some(quorum_url) = explicit_quorum_url {
+        info!(
+            quorum_url = %quorum_url,
+            "dash_sdk_create_trusted: using caller-provided quorum URL"
+        );
+        match rs_sdk_trusted_context_provider::TrustedHttpContextProvider::new_with_url(
+            network,
+            quorum_url,
+            std::num::NonZeroUsize::new(100).unwrap(),
+        ) {
+            Ok(provider) => Arc::new(provider),
+            Err(e) => {
+                error!(error = %e, "dash_sdk_create_trusted: failed to create context provider from override URL");
+                return DashSDKResult::error(DashSDKError::new(
+                    DashSDKErrorCode::InternalError,
+                    format!("Failed to create context provider: {}", e),
+                ));
+            }
+        }
+    } else if matches!(network, Network::Regtest) {
         info!("dash_sdk_create_trusted: using local quorum sidecar for regtest");
         match rs_sdk_trusted_context_provider::TrustedHttpContextProvider::new_with_url(
             network,
@@ -353,10 +413,11 @@ pub unsafe extern "C" fn dash_sdk_create_trusted(config: *const DashSDKConfig) -
         }
     };
 
-    // Parse DAPI addresses - for trusted setup, we always need real addresses
+    // Parse DAPI addresses - for trusted setup, we always need real addresses.
+    // Devnet/regtest have no built-in defaults; callers must supply
+    // `dapi_addresses` (and typically `quorum_url`) for those networks.
     let builder = if config.dapi_addresses.is_null() {
         info!("dash_sdk_create_trusted: no DAPI addresses provided, using defaults for network");
-        // Use default addresses for the network
         match network {
             Network::Testnet => SdkBuilder::new_testnet(),
             Network::Mainnet => SdkBuilder::new_mainnet(),
@@ -419,6 +480,11 @@ pub unsafe extern "C" fn dash_sdk_create_trusted(config: *const DashSDKConfig) -
     // Add trusted context provider
     info!("dash_sdk_create_trusted: adding trusted context provider to builder");
     let builder = builder.with_context_provider(Arc::clone(&trusted_provider));
+
+    let builder = match apply_version(builder, config.platform_version) {
+        Ok(b) => b,
+        Err(e) => return DashSDKResult::error(e),
+    };
 
     // Build SDK
     let sdk_result = builder.build().map_err(FFIError::from);
@@ -572,6 +638,8 @@ pub unsafe extern "C" fn dash_sdk_create_with_callbacks(
             skip_asset_lock_proof_verification: config_ref.skip_asset_lock_proof_verification,
             request_retry_count: config_ref.request_retry_count,
             request_timeout_ms: config_ref.request_timeout_ms,
+            quorum_url: config_ref.quorum_url,
+            platform_version: config_ref.platform_version,
         },
         context_provider: context_provider_handle,
         core_sdk_handle: std::ptr::null_mut(),

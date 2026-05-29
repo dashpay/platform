@@ -7,7 +7,6 @@
 
 pub mod block_time;
 pub mod dashpay;
-pub mod funding;
 pub mod key_storage;
 
 pub use block_time::BlockTime;
@@ -15,5 +14,4 @@ pub use dashpay::{
     ContactRequest, DashPayProfile, DashpayAddressMatch, EstablishedContact, PaymentDirection,
     PaymentEntry, PaymentStatus, ProfileUpdate,
 };
-pub use funding::IdentityFunding;
 pub use key_storage::{DpnsNameInfo, IdentityStatus, KeyStorage, PrivateKeyData};

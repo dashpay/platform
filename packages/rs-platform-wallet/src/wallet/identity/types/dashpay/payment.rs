@@ -19,6 +19,7 @@ use dpp::prelude::Identifier;
 
 /// Direction of a DashPay payment, from the owner's point of view.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum PaymentDirection {
     /// The owner sent this payment to the counterparty.
     Sent,
@@ -28,6 +29,7 @@ pub enum PaymentDirection {
 
 /// Status of a DashPay payment on Core chain.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum PaymentStatus {
     /// Broadcast but not yet confirmed.
     #[default]
@@ -63,6 +65,7 @@ pub struct DashpayAddressMatch {
 /// Keyed by transaction id (hex string, matching evo-tool's
 /// `dashpay_payments.tx_id` column which is `TEXT UNIQUE NOT NULL`).
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PaymentEntry {
     /// The other identity in this payment. Whether they're the
     /// sender or receiver is encoded in `direction`.

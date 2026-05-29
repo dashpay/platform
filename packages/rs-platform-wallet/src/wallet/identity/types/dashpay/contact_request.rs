@@ -8,6 +8,7 @@ use dpp::prelude::{CoreBlockHeight, Identifier};
 
 /// A contact request represents a one-way relationship between two identities
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ContactRequest {
     /// The unique id of the sender (owner of the contact request)
     pub sender_id: Identifier,

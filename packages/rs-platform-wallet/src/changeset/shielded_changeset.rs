@@ -22,6 +22,7 @@ use crate::wallet::shielded::{ShieldedNote, SubwalletId};
 
 /// Aggregated delta of shielded state for one persister flush.
 #[derive(Debug, Clone, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ShieldedChangeSet {
     /// Notes discovered (or re-saved with updated state) per
     /// subwallet. Keyed by `(wallet_id, account_index)`. Order
