@@ -299,7 +299,6 @@ async fn broadcast_shield_st(
 // (orchestrated entry point lives in `wallet/shielded/fund_from_asset_lock.rs`)
 // -------------------------------------------------------------------------
 
-<<<<<<< HEAD
 /// Shield credits from a Core L1 asset lock into the shielded
 /// pool, with the resulting note assigned to `account`'s default
 /// Orchard payment address derived from `keys`.
@@ -374,8 +373,6 @@ pub fn build_shield_from_asset_lock_st<P: OrchardProver>(
     .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))
 }
 
-=======
->>>>>>> feat/rs-platform-wallet-e2e
 // -------------------------------------------------------------------------
 // Unshield: shielded pool -> platform address (Type 17)
 // -------------------------------------------------------------------------

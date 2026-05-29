@@ -117,7 +117,6 @@ shielded = ["dep:grovedb-commitment-tree", "dep:zip32", "dash-sdk/shielded", "dp
 # runs the network-dependent harness. Pulls in `shielded` so an e2e run
 # exercises the shielded-pool cases too. Run with:
 # `cargo test -p platform-wallet --test e2e --features e2e`.
-<<<<<<< HEAD
 e2e = ["shielded", "test-utils"]
 # Test-only seams that expose internal shielded spend-assembly
 # (extract-spends, note reservation, build-against-a-chosen-note, and an
@@ -125,8 +124,6 @@ e2e = ["shielded", "test-utils"]
 # cases. NOT in `default`; pulled in by `e2e`. Never enable in production
 # builds — these bypass the wallet's spend guards by design.
 test-utils = ["shielded"]
-=======
-e2e = ["shielded"]
 # Opt-in serde derives on the changeset types. Activates `key-wallet/serde`,
 # `key-wallet-manager/serde`, and `dash-sdk/serde`. `dpp` derives serde unconditionally.
 serde = [
@@ -135,7 +132,6 @@ serde = [
     "key-wallet-manager/serde",
     "dash-sdk/serde",
 ]
->>>>>>> feat/rs-platform-wallet-e2e
 # Forward to the upstream `key-wallet` / `key-wallet-manager`
 # `keep-finalized-transactions` feature. With it OFF (the default),
 # chainlocked transactions are evicted from the in-memory
