@@ -117,6 +117,7 @@ pub struct DriveAbciQueryShieldedVersions {
     pub anchors: FeatureVersionBounds,
     pub most_recent_anchor: FeatureVersionBounds,
     pub pool_state: FeatureVersionBounds,
+    pub notes_count: FeatureVersionBounds,
     pub nullifiers: FeatureVersionBounds,
     pub nullifiers_trunk_state: FeatureVersionBounds,
     pub nullifiers_branch_state: FeatureVersionBounds,

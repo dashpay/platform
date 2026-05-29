@@ -3106,6 +3106,7 @@ fn build_wallet_identity_bucket(
 unsafe fn build_identity_public_keys(
     spec: &IdentityRestoreEntryFFI,
 ) -> BTreeMap<KeyID, IdentityPublicKey> {
+    use dpp::identity::identity_public_key::contract_bounds::ContractBounds;
     let mut map: BTreeMap<KeyID, IdentityPublicKey> = BTreeMap::new();
     if spec.keys.is_null() || spec.keys_count == 0 {
         return map;
@@ -3125,11 +3126,46 @@ unsafe fn build_identity_public_keys(
             continue;
         }
         let bytes: Vec<u8> = slice::from_raw_parts(row.data, row.data_len).to_vec();
+
+        // Reconstruct the ContractBounds variant from the kind tag
+        // + id + optional doc-type C-string trio. Mirrors the
+        // encoding in `IdentityKeyEntryFFI::from_entry`. A kind=2
+        // row with a null doc-type pointer is an FFI-side
+        // inconsistency (the writer is supposed to demote to
+        // kind=1 in that case — see identity_persistence.rs); we
+        // demote it here too rather than fabricating an empty doc-
+        // type name. Invalid kind tags load as unbounded so a
+        // forward-compatible writer doesn't lock us out.
+        let contract_bounds: Option<ContractBounds> = match row.contract_bounds_kind {
+            0 => None,
+            1 => Some(ContractBounds::SingleContract {
+                id: row.contract_bounds_id.into(),
+            }),
+            2 => {
+                if row.contract_bounds_document_type.is_null() {
+                    Some(ContractBounds::SingleContract {
+                        id: row.contract_bounds_id.into(),
+                    })
+                } else {
+                    match CStr::from_ptr(row.contract_bounds_document_type).to_str() {
+                        Ok(name) => Some(ContractBounds::SingleContractDocumentType {
+                            id: row.contract_bounds_id.into(),
+                            document_type_name: name.to_string(),
+                        }),
+                        Err(_) => Some(ContractBounds::SingleContract {
+                            id: row.contract_bounds_id.into(),
+                        }),
+                    }
+                }
+            }
+            _ => None,
+        };
+
         let pk = IdentityPublicKey::V0(IdentityPublicKeyV0 {
             id: row.key_id,
             purpose,
             security_level,
-            contract_bounds: None,
+            contract_bounds,
             key_type,
             read_only: row.read_only,
             data: BinaryData::new(bytes),

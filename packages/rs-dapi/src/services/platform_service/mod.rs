@@ -582,6 +582,12 @@ impl Platform for PlatformServiceImpl {
     );
 
     drive_method!(
+        get_shielded_notes_count,
+        dapi_grpc::platform::v0::GetShieldedNotesCountRequest,
+        dapi_grpc::platform::v0::GetShieldedNotesCountResponse
+    );
+
+    drive_method!(
         get_shielded_nullifiers,
         dapi_grpc::platform::v0::GetShieldedNullifiersRequest,
         dapi_grpc::platform::v0::GetShieldedNullifiersResponse

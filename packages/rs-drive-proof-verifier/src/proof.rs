@@ -2452,6 +2452,42 @@ impl FromProof<platform::GetShieldedPoolStateRequest> for ShieldedPoolState {
     }
 }
 
+impl FromProof<platform::GetShieldedNotesCountRequest> for ShieldedNotesCount {
+    type Request = platform::GetShieldedNotesCountRequest;
+    type Response = platform::GetShieldedNotesCountResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        _request: I,
+        response: O,
+        _network: Network,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
+    where
+        Self: Sized + 'a,
+    {
+        let response: Self::Response = response.into();
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+
+        // Mirrors `ShieldedPoolState` above; the only difference is the
+        // proved element type — `verify_shielded_notes_count` decodes
+        // `total_count` out of the `CommitmentTree` element rather than a
+        // `SumItem` balance.
+        let (root_hash, maybe_count) =
+            Drive::verify_shielded_notes_count(&proof.grovedb_proof, false, platform_version)
+                .map_drive_error(proof, mtd)?;
+
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+        Ok((
+            maybe_count.map(ShieldedNotesCount),
+            mtd.clone(),
+            proof.clone(),
+        ))
+    }
+}
+
 impl FromProof<platform::GetShieldedAnchorsRequest> for ShieldedAnchors {
     type Request = platform::GetShieldedAnchorsRequest;
     type Response = platform::GetShieldedAnchorsResponse;
@@ -5487,6 +5523,24 @@ mod tests {
         let provider = unreachable_provider();
         let err = <ShieldedPoolState as FromProof<
             platform::GetShieldedPoolStateRequest,
+        >>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::NoProofInResult), "got: {err:?}");
+    }
+
+    #[test]
+    fn shielded_notes_count_no_proof_when_response_empty() {
+        let response = platform::GetShieldedNotesCountResponse::default();
+        let request = platform::GetShieldedNotesCountRequest::default();
+        let provider = unreachable_provider();
+        let err = <ShieldedNotesCount as FromProof<
+            platform::GetShieldedNotesCountRequest,
         >>::maybe_from_proof(
             request,
             response,

@@ -1364,7 +1364,10 @@ struct AccountStorageDetailView: View {
                     label: "Platform Addresses",
                     value: "\(record.platformAddresses.count)"
                 )
-                FieldRow(label: "Wallet", value: record.wallet.name ?? hexString(record.wallet.walletId))
+                FieldRow(
+                    label: "Wallet",
+                    value: walletLabel(record.wallet)
+                )
             }
             ForEach(addressSections(), id: \.0) { poolName, addresses in
                 Section("\(poolName) Addresses (\(addresses.count))") {
