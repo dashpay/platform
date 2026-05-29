@@ -52,7 +52,6 @@ struct AddIdentityKeyView: View {
     @State private var keyType: KeyType = .ecdsaSecp256k1
     @State private var purpose: KeyPurpose = .authentication
     @State private var authSecurityLevel: SecurityLevel = .high
-    @State private var encryptionSecurityLevel: SecurityLevel = .high
     /// Selected contract id for Encryption / Decryption bounds, in
     /// the canonical 32-byte form. `nil` until the user picks one.
     @State private var boundContractId: Data?
@@ -91,25 +90,128 @@ struct AddIdentityKeyView: View {
         allContracts.filter { $0.network == appState.currentNetwork }
     }
 
-    /// Document-type names declared by the currently-selected
-    /// contract. Drives the optional document-type picker.
-    private var documentTypesForSelectedContract: [String] {
-        guard let id = boundContractId,
-              let contract = contractsForNetwork.first(where: { $0.id == id })
-        else {
-            return []
+    /// System contracts that declare `requiresIdentityEncryptionBoundedKey`
+    /// somewhere — either contract-level or on at least one document
+    /// type. These are network-agnostic (same canonical 32-byte ID
+    /// on every network) so they're always selectable in the bounds
+    /// picker — the user shouldn't have to fetch them onto the
+    /// device first just to bind an encryption key to them.
+    ///
+    /// Today only DashPay qualifies (its `contactRequest` document
+    /// type declares the requirement). DPNS / withdrawals /
+    /// masternode-reward-shares / token-history / keyword-search
+    /// don't bind encryption keys.
+    ///
+    /// **Important:** DPP rejects `ContractBounds::SingleContract`
+    /// unless the *contract config* itself declares the requirement
+    /// (see `packages/rs-drive-abci/.../validate_identity_public_key_contract_bounds/v0/mod.rs:82`).
+    /// DashPay declares it only at the document-type level, so
+    /// `allowsContractScope` is `false` and the document-type
+    /// picker is required (not optional).
+    ///
+    /// ID source: `packages/dashpay-contract/src/lib.rs::ID_BYTES`.
+    /// Document-type names: `packages/dashpay-contract/schema/v1/dashpay.schema.json`.
+    private static let systemContractsAllowingKeyBounds: [SystemContractEntry] = [
+        SystemContractEntry(
+            name: "DashPay",
+            id: Data([
+                162, 161, 180, 172, 111, 239, 34, 234,
+                42, 26, 104, 232, 18, 54, 68, 179,
+                87, 135, 95, 107, 65, 44, 24, 16,
+                146, 129, 193, 70, 231, 178, 113, 188,
+            ]),
+            allowsContractScope: false,
+            documentTypesAllowingBounds: ["contactRequest"]
+        ),
+    ]
+
+    /// Combined picker entries: system contracts first (always
+    /// available), then user-saved contracts filtered to the
+    /// current network. Saved-contract rows that happen to match
+    /// a system contract by ID are skipped to avoid a duplicate.
+    ///
+    /// Caveat: for user-saved (`PersistentDataContract`) entries
+    /// we don't currently know which document types declare the
+    /// bounded-key requirement, so we conservatively expose ALL
+    /// of them and allow contract-scope. Picking an invalid
+    /// combination there will fail at submit time with a DPP
+    /// validation error. Tightening this would require parsing
+    /// the per-document-type schema flag into SwiftData rows.
+    private var pickerEntries: [BoundsPickerEntry] {
+        // System metadata wins over user-saved rows: the system
+        // registry knows precisely which document types within the
+        // contract carry the bounded-key requirement (DashPay's
+        // `contactRequest`, for example, vs the rest of the
+        // contract). If we let a saved row override the system
+        // entry — even when the IDs match — the picker would fall
+        // back to the "expose every document type" behaviour and
+        // an invalid (contract, doc-type) combo could slip through.
+        let systemIds = Set(Self.systemContractsAllowingKeyBounds.map(\.id))
+        let system = Self.systemContractsAllowingKeyBounds.map {
+            BoundsPickerEntry(
+                id: $0.id,
+                displayName: "\($0.name) (System)",
+                allowsContractScope: $0.allowsContractScope,
+                documentTypesAllowingBounds: $0.documentTypesAllowingBounds
+            )
         }
-        return (contract.documentTypes ?? []).map { $0.name }.sorted()
+        let saved = contractsForNetwork
+            .filter { !systemIds.contains($0.id) }
+            .map {
+                BoundsPickerEntry(
+                    id: $0.id,
+                    displayName: $0.name,
+                    allowsContractScope: true,
+                    documentTypesAllowingBounds: ($0.documentTypes ?? []).map(\.name).sorted()
+                )
+            }
+        return system + saved
     }
 
-    /// Effective security level for the current purpose. Transfer
-    /// is locked at Critical per the form's contract; everything
-    /// else picks from the user's selected value.
+    /// The currently-selected picker entry, if any.
+    private var selectedEntry: BoundsPickerEntry? {
+        guard let id = boundContractId else { return nil }
+        return pickerEntries.first { $0.id == id }
+    }
+
+    /// Document-type names valid for binding on the selected contract.
+    private var documentTypesForSelectedContract: [String] {
+        selectedEntry?.documentTypesAllowingBounds ?? []
+    }
+
+    /// Whether the user must pick a document type (i.e. the selected
+    /// contract does not allow a contract-scope binding). Drives
+    /// the "Any document type" option visibility and gates submit.
+    private var documentTypeRequired: Bool {
+        guard let entry = selectedEntry else { return false }
+        return !entry.allowsContractScope
+    }
+
+    /// Effective security level for the current purpose. Several
+    /// purposes are protocol-locked:
+    ///   - `transfer`            → Critical
+    ///   - `encryption`/`decryption` → Medium  (DPP enforces only
+    ///     `SecurityLevel::MEDIUM`; see
+    ///     `validate_identity_public_keys_structure/v0/mod.rs`)
+    /// Auth-style purposes (Authentication today) are user-pickable.
     private var effectiveSecurityLevel: SecurityLevel {
         switch purpose {
         case .transfer: return .critical
-        case .encryption, .decryption: return encryptionSecurityLevel
+        case .encryption, .decryption: return .medium
         default: return authSecurityLevel
+        }
+    }
+
+    /// Effective key type for the current purpose. ENCRYPTION /
+    /// DECRYPTION are locked to ECDSA secp256k1: the rest of the
+    /// stack does ECDH via `dashcore::secp256k1::PublicKey` (see
+    /// `packages/rs-platform-wallet/.../contacts.rs`), HASH160
+    /// stores only the hash so there's no full pubkey to ECDH
+    /// against, and BLS is the wrong curve.
+    private var effectiveKeyType: KeyType {
+        switch purpose {
+        case .encryption, .decryption: return .ecdsaSecp256k1
+        default: return keyType
         }
     }
 
@@ -124,28 +226,31 @@ struct AddIdentityKeyView: View {
     /// Whether Encryption / Decryption purposes are missing their
     /// required contract bounds. Surfaces a disabled-Submit hint
     /// rather than letting the user submit a doomed transition.
+    /// Also covers the case where the selected contract requires a
+    /// document type (DashPay does) but the user hasn't picked one.
     private var contractBoundsMissing: Bool {
         switch purpose {
         case .encryption, .decryption:
-            return boundContractId == nil
+            guard boundContractId != nil else { return true }
+            if documentTypeRequired {
+                let trimmed = boundDocumentTypeName.trimmingCharacters(in: .whitespacesAndNewlines)
+                return trimmed.isEmpty
+            }
+            return false
         default:
             return false
         }
     }
 
     private var canSubmit: Bool {
-        !isSubmitting && keyType != .bls12_381 && !contractBoundsMissing
+        !isSubmitting && effectiveKeyType != .bls12_381 && !contractBoundsMissing
     }
 
     var body: some View {
         NavigationStack {
             Form {
                 Section("New Key") {
-                    Picker("Key Type", selection: $keyType) {
-                        ForEach(Self.pickableKeyTypes, id: \.self) { type in
-                            Text(type.name).tag(type)
-                        }
-                    }
+                    keyTypePicker
                     Picker("Purpose", selection: $purpose) {
                         ForEach(Self.pickablePurposes, id: \.self) { p in
                             Text(p.name).tag(p)
@@ -167,7 +272,7 @@ struct AddIdentityKeyView: View {
                         .foregroundColor(.secondary)
                 }
 
-                if keyType == .bls12_381 {
+                if effectiveKeyType == .bls12_381 {
                     Section {
                         Label(
                             "BLS derivation is not yet wired through the FFI for this flow. Pick ECDSA secp256k1 or ECDSA Hash160 to add a key now.",
@@ -222,17 +327,53 @@ struct AddIdentityKeyView: View {
             .onChange(of: boundContractId) { _, _ in
                 // Switching contracts invalidates the document-type
                 // selection (different contracts have different
-                // schemas).
-                boundDocumentTypeName = ""
+                // schemas). When the new contract requires a
+                // document-type binding and only one valid choice
+                // exists, auto-pick it so the user can submit
+                // immediately (DashPay → `contactRequest`). When
+                // contract-scope is allowed, default to the empty
+                // "Any document type" option.
+                if let entry = selectedEntry,
+                   !entry.allowsContractScope,
+                   entry.documentTypesAllowingBounds.count == 1
+                {
+                    boundDocumentTypeName = entry.documentTypesAllowingBounds[0]
+                } else {
+                    boundDocumentTypeName = ""
+                }
             }
         }
     }
 
     // MARK: Sub-views
 
-    /// Security-level picker. Hidden + auto-Critical for Transfer
-    /// (per the form's contract); pickable for Auth / Encryption /
-    /// Decryption with Master excluded.
+    /// Key-type picker. Locked to ECDSA secp256k1 for Encryption /
+    /// Decryption purposes since ECDH only works against a full
+    /// secp256k1 pubkey. Pickable for all other purposes; the
+    /// `effectiveKeyType` computed property carries the locked
+    /// value through to the submit path.
+    @ViewBuilder
+    private var keyTypePicker: some View {
+        switch purpose {
+        case .encryption, .decryption:
+            LabeledContent("Key Type") {
+                Text(KeyType.ecdsaSecp256k1.name)
+                    .foregroundColor(.secondary)
+            }
+        default:
+            Picker("Key Type", selection: $keyType) {
+                ForEach(Self.pickableKeyTypes, id: \.self) { type in
+                    Text(type.name).tag(type)
+                }
+            }
+        }
+    }
+
+    /// Security-level picker. Locked rows for purposes the protocol
+    /// constrains to a single level (Transfer → Critical;
+    /// Encryption / Decryption → Medium per DPP
+    /// `validate_identity_public_keys_structure/v0/mod.rs`). Pickable
+    /// for Auth-style purposes with Master excluded.
     @ViewBuilder
     private var securityLevelPicker: some View {
         switch purpose {
@@ -242,10 +383,9 @@ struct AddIdentityKeyView: View {
                     .foregroundColor(.secondary)
             }
         case .encryption, .decryption:
-            Picker("Security Level", selection: $encryptionSecurityLevel) {
-                ForEach(Self.nonMasterSecurityLevels, id: \.self) { lvl in
-                    Text(lvl.name).tag(lvl)
-                }
+            LabeledContent("Security Level") {
+                Text("Medium")
+                    .foregroundColor(.secondary)
             }
         default:
             Picker("Security Level", selection: $authSecurityLevel) {
@@ -262,27 +402,48 @@ struct AddIdentityKeyView: View {
     @ViewBuilder
     private var contractBoundsSection: some View {
         Section("Contract Bounds (required)") {
-            if contractsForNetwork.isEmpty {
-                Text("No contracts saved on this device. Add or fetch a contract on the Contracts tab first.")
-                    .font(.caption)
-                    .foregroundColor(.orange)
-            } else {
-                Picker("Contract", selection: $boundContractId) {
-                    Text("Select a contract").tag(Data?.none)
-                    ForEach(contractsForNetwork, id: \.id) { contract in
-                        Text(contract.name).tag(Optional(contract.id))
-                    }
+            // `pickerEntries` always contains the system-contract
+            // entries (DashPay today), so the picker is never empty
+            // even on a fresh install. The Contracts tab is still
+            // the way to add non-system contracts to the list.
+            Picker("Contract", selection: $boundContractId) {
+                Text("Select a contract").tag(Data?.none)
+                ForEach(pickerEntries, id: \.id) { entry in
+                    Text(entry.displayName).tag(Optional(entry.id))
                 }
+            }
 
-                if !documentTypesForSelectedContract.isEmpty {
-                    Picker("Document Type (optional)", selection: $boundDocumentTypeName) {
+            if !documentTypesForSelectedContract.isEmpty {
+                // When the contract permits a contract-scope bound
+                // (the `requires_identity_encryption_bounded_key`
+                // flag is set on the contract config itself), the
+                // user can leave the document type unset → results
+                // in `SingleContract` bounds. When it isn't set —
+                // DashPay's case, where the flag lives only on
+                // `contactRequest` — the user MUST pick one of the
+                // listed document types. DPP rejects
+                // `SingleContract` bounds against DashPay with
+                // `DataContractBoundsNotPresentError`.
+                Picker(
+                    documentTypeRequired
+                        ? "Document Type (required)"
+                        : "Document Type (optional)",
+                    selection: $boundDocumentTypeName
+                ) {
+                    if !documentTypeRequired {
                         Text("Any document type").tag("")
-                        ForEach(documentTypesForSelectedContract, id: \.self) { name in
-                            Text(name).tag(name)
-                        }
+                    }
+                    ForEach(documentTypesForSelectedContract, id: \.self) { name in
+                        Text(name).tag(name)
                     }
                 }
+            }
 
+            if documentTypeRequired {
+                Text("This contract requires the key to be bound to a specific document type — picking a contract scope alone would be rejected at submit.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            } else {
                 Text("Encryption / decryption keys must be scoped to a specific contract. A document type narrows the scope further; leaving it blank lets the key operate across all of the contract's document types.")
                     .font(.caption)
                     .foregroundColor(.secondary)
@@ -305,6 +466,11 @@ struct AddIdentityKeyView: View {
         let network = appState.sdk?.network ?? .testnet
         let chosenKeyId = nextKeyId
         let chosenSecurityLevel = effectiveSecurityLevel
+        // Use the effective (purpose-aware) key type so encryption /
+        // decryption submissions always carry ECDSA secp256k1
+        // regardless of what's in the `keyType` @State from a prior
+        // purpose selection.
+        let chosenKeyType = effectiveKeyType
 
         // Build the contract bounds shape from the picker state.
         // Encryption / Decryption are gated above so we can assume
@@ -377,7 +543,7 @@ struct AddIdentityKeyView: View {
             let pubKeyHashHex =
                 SwiftDashSDK.KeychainManager.computePublicKeyHashHex(preview.publicKeyData)
             let metadataPublicKeyHex: String =
-                keyType == .ecdsaHash160 ? pubKeyHashHex : preview.publicKeyHex
+                chosenKeyType == .ecdsaHash160 ? pubKeyHashHex : preview.publicKeyHex
             let metadata = IdentityPrivateKeyMetadata(
                 identityId: identity.identityIdString,
                 keyId: chosenKeyId,
@@ -387,7 +553,7 @@ struct AddIdentityKeyView: View {
                 derivationPath: preview.derivationPath,
                 publicKey: metadataPublicKeyHex,
                 publicKeyHash: pubKeyHashHex,
-                keyType: keyType.rawValue,
+                keyType: chosenKeyType.rawValue,
                 purpose: purpose.rawValue,
                 securityLevel: chosenSecurityLevel.rawValue
             )
@@ -421,7 +587,7 @@ struct AddIdentityKeyView: View {
             //    matches the selected key type's expected byte
             //    length.
             let pubkeyBytesForFFI: Data
-            if keyType == .ecdsaHash160 {
+            if chosenKeyType == .ecdsaHash160 {
                 guard let hashBytes = Data(hexString: pubKeyHashHex), hashBytes.count == 20 else {
                     isSubmitting = false
                     errorMessage =
@@ -435,7 +601,7 @@ struct AddIdentityKeyView: View {
 
             let newKey = ManagedPlatformWallet.IdentityPubkey(
                 keyId: chosenKeyId,
-                keyType: keyType,
+                keyType: chosenKeyType,
                 purpose: purpose,
                 securityLevel: chosenSecurityLevel,
                 pubkeyBytes: pubkeyBytesForFFI,
@@ -456,4 +622,37 @@ struct AddIdentityKeyView: View {
             errorMessage = error.localizedDescription
         }
     }
+}
+
+// MARK: - Picker support types
+
+/// A system data contract that should always be available in the
+/// contract-bounds picker. Network-agnostic — system contracts have
+/// the same canonical 32-byte ID on every network.
+///
+/// `allowsContractScope` mirrors the contract-level
+/// `requiresIdentityEncryptionBoundedKey` flag — when `false`,
+/// `ContractBounds::SingleContract` is rejected by DPP and the
+/// picker has to force a document-type selection.
+///
+/// `documentTypesAllowingBounds` lists only the document types
+/// that themselves declare `requiresIdentityEncryptionBoundedKey`,
+/// since picking any other DT would fail DPP validation with
+/// `DataContractBoundsNotPresentError`.
+private struct SystemContractEntry {
+    let name: String
+    let id: Data
+    let allowsContractScope: Bool
+    let documentTypesAllowingBounds: [String]
+}
+
+/// Unified row shape for the bounds picker — covers both the static
+/// `SystemContractEntry` registry and per-network
+/// `PersistentDataContract` rows. Lets the picker iterate one list
+/// regardless of origin.
+private struct BoundsPickerEntry {
+    let id: Data
+    let displayName: String
+    let allowsContractScope: Bool
+    let documentTypesAllowingBounds: [String]
 }

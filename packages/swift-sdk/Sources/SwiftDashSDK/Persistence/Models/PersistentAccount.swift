@@ -89,6 +89,19 @@ public final class PersistentAccount {
     /// Parent wallet. Every account currently belongs to a wallet. If
     /// standalone non-wallet accounts are introduced later, this
     /// becomes optional again.
+    ///
+    /// Kept non-optional. SwiftData would otherwise fatal during
+    /// the `save()` phase of a wallet delete
+    /// (`Cannot remove PersistentWallet from relationship wallet on
+    /// PersistentAccount because an appropriate default value is
+    /// not configured`); the workaround is in
+    /// `PlatformWalletPersistenceHandler.deleteWalletData`, which
+    /// deletes all of the wallet's accounts in a separate
+    /// `save()` BEFORE deleting the wallet itself. By the time the
+    /// wallet row is deleted, its `accounts` collection is empty
+    /// and SwiftData has no inverse to null out. This costs
+    /// atomicity (two saves instead of one) — acceptable for a
+    /// user-initiated wipe.
     public var wallet: PersistentWallet
 
     /// Addresses from this account's address pools (external +
