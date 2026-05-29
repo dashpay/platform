@@ -64,11 +64,6 @@ impl<K: Eq + Hash + Clone + std::fmt::Debug> Clone for Reservations<K> {
 }
 
 impl<K: Eq + Hash + Clone + std::fmt::Debug> Reservations<K> {
-    #[cfg(test)]
-    pub(crate) fn new() -> Self {
-        Self::default()
-    }
-
     /// Test whether `key` is currently reserved. Only used by tests and
     /// the [`OutpointReservations`] wrapper's `#[cfg(test)]` accessors —
     /// production paths use [`snapshot`](Self::snapshot) to filter many
