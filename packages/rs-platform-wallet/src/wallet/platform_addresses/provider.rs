@@ -566,7 +566,12 @@ impl AddressProvider for PlatformPaymentAddressProvider {
         // the tri-state Unused → Reserved → Used transition. Release any
         // ephemeral receive-address reservation held for this index so
         // the slot stops counting against the in-memory reserved set.
-        super::address_reserve::release_reservation(wallet_id, account_index, address_index);
+        super::address_reserve::release_reservation(
+            wallet_id,
+            super::address_reserve::PoolKind::PlatformReceive,
+            account_index,
+            address_index,
+        );
 
         // Stage the balance update in the in-sync scratch map —
         // `sync_finished` flushes it to the committed `per_wallet`.

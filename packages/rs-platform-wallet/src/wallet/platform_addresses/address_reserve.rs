@@ -1,4 +1,9 @@
-//! Platform-local "Reserved" bridge for receive-address hand-out.
+//! Platform-local "Reserved" bridge for HD address hand-out.
+//!
+//! Serves every pool whose hand-out suffers the two-state race: the
+//! DIP-17 platform-payment receive pool and the core BIP-44 external
+//! (receive) and internal (change) pools. Each pool's index space is
+//! kept disjoint by the [`PoolKind`] discriminant in the table key.
 //!
 //! # Why this module exists
 //!
@@ -69,9 +74,24 @@ use key_wallet::Address;
 
 use crate::wallet::platform_wallet::WalletId;
 
-/// Account-scoped key for the reservation table: a receive-address slot
-/// is identified by which wallet and which DIP-17 account it belongs to.
-type AccountKey = (WalletId, u32);
+/// Which HD pool a reservation belongs to. A single `(wallet_id, account)`
+/// owns several independent index spaces — the DIP-17 platform-payment
+/// pool, plus the BIP-44 external (receive) and internal (change) pools —
+/// and an index reserved in one must never steer hand-out in another.
+/// Including the pool kind in the table key keeps those spaces disjoint.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum PoolKind {
+    /// DIP-17 platform-payment receive pool.
+    PlatformReceive,
+    /// BIP-44 external (receive) pool.
+    CoreReceive,
+    /// BIP-44 internal (change) pool.
+    CoreChange,
+}
+
+/// Account-scoped key for the reservation table: a slot is identified by
+/// which wallet, which pool, and which account it belongs to.
+type AccountKey = (WalletId, PoolKind, u32);
 
 /// One reserved index plus the instant it was reserved, so the TTL sweep
 /// can release stale entries without a separate timestamp map.
@@ -187,11 +207,12 @@ fn reserve_first_free(key: AccountKey, addresses: &BTreeMap<u32, AddressInfo>) -
 pub(crate) fn next_unused_and_reserve(
     pool: &mut AddressPool,
     wallet_id: WalletId,
+    pool_kind: PoolKind,
     account_index: u32,
     key_source: &KeySource,
     add_to_state: bool,
 ) -> Result<Address, KeyWalletError> {
-    let index = reserve_first_free((wallet_id, account_index), &pool.addresses);
+    let index = reserve_first_free((wallet_id, pool_kind, account_index), &pool.addresses);
 
     let result = match pool.address_at_index(index) {
         Some(address) => Ok(address),
@@ -211,7 +232,7 @@ pub(crate) fn next_unused_and_reserve(
     if result.is_err() {
         // Derivation failed — give the index back so it isn't pinned by a
         // hand-out that produced nothing.
-        release_reservation(wallet_id, account_index, index);
+        release_reservation(wallet_id, pool_kind, account_index, index);
     }
     result
 }
@@ -220,12 +241,18 @@ pub(crate) fn next_unused_and_reserve(
 /// `on_address_found` path once an address is proven used. Idempotent —
 /// releasing an index that was never reserved (or already released) is a
 /// no-op.
-pub(crate) fn release_reservation(wallet_id: WalletId, account_index: u32, index: u32) {
+pub(crate) fn release_reservation(
+    wallet_id: WalletId,
+    pool_kind: PoolKind,
+    account_index: u32,
+    index: u32,
+) {
+    let key = (wallet_id, pool_kind, account_index);
     with_table(|t| {
-        if let Some(m) = t.by_account.get_mut(&(wallet_id, account_index)) {
+        if let Some(m) = t.by_account.get_mut(&key) {
             m.remove(&index);
             if m.is_empty() {
-                t.by_account.remove(&(wallet_id, account_index));
+                t.by_account.remove(&key);
             }
         }
     });
@@ -236,10 +263,14 @@ pub(crate) fn release_reservation(wallet_id: WalletId, account_index: u32, index
 /// reserved frontier advances on hand-out while the pool's `used`
 /// frontier does not advance until a sync hit.
 #[cfg(test)]
-pub(crate) fn highest_reserved(wallet_id: WalletId, account_index: u32) -> Option<u32> {
+pub(crate) fn highest_reserved(
+    wallet_id: WalletId,
+    pool_kind: PoolKind,
+    account_index: u32,
+) -> Option<u32> {
     with_table(|t| {
         t.by_account
-            .get(&(wallet_id, account_index))
+            .get(&(wallet_id, pool_kind, account_index))
             .and_then(|m| m.keys().copied().max())
     })
 }
@@ -281,7 +312,7 @@ mod tests {
         let n = NEXT.fetch_add(1, Ordering::Relaxed);
         let mut wid = [0u8; 32];
         wid[..4].copy_from_slice(&n.to_be_bytes());
-        (wid, 0)
+        (wid, PoolKind::PlatformReceive, 0)
     }
 
     fn info(index: u32, used: bool) -> AddressInfo {
@@ -408,19 +439,51 @@ mod tests {
     /// out of future hand-outs.
     #[test]
     fn release_on_use_clears_reservation() {
-        let (wid, acct) = unique_account();
+        let (wid, pk, acct) = unique_account();
         let mut addrs = pool_map(&[(0, false), (1, false)]);
-        let idx = reserve_first_free((wid, acct), &addrs);
+        let idx = reserve_first_free((wid, pk, acct), &addrs);
         assert_eq!(idx, 0);
-        assert_eq!(highest_reserved(wid, acct), Some(0));
+        assert_eq!(highest_reserved(wid, pk, acct), Some(0));
 
         // Sync proves index 0 used: provider flips the flag and releases.
         addrs.get_mut(&0).unwrap().used = true;
-        release_reservation(wid, acct, 0);
-        assert_eq!(highest_reserved(wid, acct), None);
+        release_reservation(wid, pk, acct, 0);
+        assert_eq!(highest_reserved(wid, pk, acct), None);
 
         // Next hand-out skips the now-used 0 via the pool flag, lands on 1.
-        assert_eq!(reserve_first_free((wid, acct), &addrs), 1);
+        assert_eq!(reserve_first_free((wid, pk, acct), &addrs), 1);
+    }
+
+    /// Reservations in different pools of the SAME `(wallet, account)` are
+    /// independent: reserving index 0 in `CoreReceive` must not steer the
+    /// first `CoreChange` hand-out off index 0. Guards the `PoolKind`
+    /// discriminant in the table key.
+    #[test]
+    fn distinct_pool_kinds_do_not_collide() {
+        let (wid, _pk, acct) = unique_account();
+        let addrs = pool_map(&[(0, false), (1, false)]);
+
+        let recv = reserve_first_free((wid, PoolKind::CoreReceive, acct), &addrs);
+        let change = reserve_first_free((wid, PoolKind::CoreChange, acct), &addrs);
+        let platform = reserve_first_free((wid, PoolKind::PlatformReceive, acct), &addrs);
+
+        // Each pool reserves from its own empty index space, so all three
+        // land on index 0 despite sharing the wallet and account.
+        assert_eq!((recv, change, platform), (0, 0, 0));
+        assert_eq!(highest_reserved(wid, PoolKind::CoreReceive, acct), Some(0));
+        assert_eq!(highest_reserved(wid, PoolKind::CoreChange, acct), Some(0));
+        assert_eq!(
+            highest_reserved(wid, PoolKind::PlatformReceive, acct),
+            Some(0)
+        );
+
+        // A second CoreReceive hand-out skips its own index 0 but the other
+        // pools are untouched.
+        assert_eq!(
+            reserve_first_free((wid, PoolKind::CoreReceive, acct), &addrs),
+            1
+        );
+        assert_eq!(highest_reserved(wid, PoolKind::CoreChange, acct), Some(0));
     }
 
     /// Behavioral shift vs the old `mark_index_used` idiom: hand-out
@@ -428,14 +491,14 @@ mod tests {
     /// does NOT advance until a sync hit flips `used`.
     #[test]
     fn handout_advances_reserved_not_used() {
-        let (wid, acct) = unique_account();
+        let (wid, pk, acct) = unique_account();
         let addrs = pool_map(&[(0, false), (1, false), (2, false)]);
 
-        assert_eq!(highest_reserved(wid, acct), None);
-        reserve_first_free((wid, acct), &addrs);
-        assert_eq!(highest_reserved(wid, acct), Some(0));
-        reserve_first_free((wid, acct), &addrs);
-        assert_eq!(highest_reserved(wid, acct), Some(1));
+        assert_eq!(highest_reserved(wid, pk, acct), None);
+        reserve_first_free((wid, pk, acct), &addrs);
+        assert_eq!(highest_reserved(wid, pk, acct), Some(0));
+        reserve_first_free((wid, pk, acct), &addrs);
+        assert_eq!(highest_reserved(wid, pk, acct), Some(1));
 
         // No sync ran, so every pool entry is still unused — the `used`
         // frontier has not moved at all.
@@ -446,11 +509,11 @@ mod tests {
 
     #[test]
     fn sweep_expired_releases_old_reservations() {
-        let (wid, acct) = unique_account();
+        let (wid, pk, acct) = unique_account();
         let addrs = pool_map(&[(0, false), (1, false)]);
-        reserve_first_free((wid, acct), &addrs);
-        reserve_first_free((wid, acct), &addrs);
-        assert_eq!(highest_reserved(wid, acct), Some(1));
+        reserve_first_free((wid, pk, acct), &addrs);
+        reserve_first_free((wid, pk, acct), &addrs);
+        assert_eq!(highest_reserved(wid, pk, acct), Some(1));
 
         std::thread::sleep(Duration::from_millis(2));
         let reclaimed = sweep_expired(Duration::from_millis(1));
@@ -458,18 +521,18 @@ mod tests {
             reclaimed >= 2,
             "both reservations reclaimed, got {reclaimed}"
         );
-        assert_eq!(highest_reserved(wid, acct), None);
+        assert_eq!(highest_reserved(wid, pk, acct), None);
     }
 
     #[test]
     fn sweep_keeps_fresh_reservations() {
-        let (wid, acct) = unique_account();
+        let (wid, pk, acct) = unique_account();
         let addrs = pool_map(&[(0, false)]);
-        reserve_first_free((wid, acct), &addrs);
+        reserve_first_free((wid, pk, acct), &addrs);
         // Huge TTL — nothing is stale.
         let reclaimed = sweep_expired(Duration::from_secs(3600));
         assert_eq!(reclaimed, 0);
-        assert_eq!(highest_reserved(wid, acct), Some(0));
+        assert_eq!(highest_reserved(wid, pk, acct), Some(0));
     }
 
     // ----- mandatory concurrency stress test -----

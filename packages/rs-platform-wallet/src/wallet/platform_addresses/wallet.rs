@@ -303,6 +303,7 @@ impl PlatformAddressWallet {
         let address = super::address_reserve::next_unused_and_reserve(
             &mut managed_account.addresses,
             self.wallet_id,
+            super::address_reserve::PoolKind::PlatformReceive,
             account_key.account,
             &key_source,
             true,

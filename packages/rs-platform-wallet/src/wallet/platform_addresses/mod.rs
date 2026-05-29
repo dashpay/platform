@@ -9,7 +9,7 @@ pub use dpp::prelude::AddressNonce;
 #[cfg(doc)]
 use crate::PlatformWalletError;
 
-mod address_reserve;
+pub(crate) mod address_reserve;
 mod fund_from_asset_lock;
 pub(crate) mod provider;
 mod sync;

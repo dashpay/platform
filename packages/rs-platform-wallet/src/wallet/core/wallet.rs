@@ -8,11 +8,43 @@ use super::reservations::OutpointReservations;
 use dashcore::Address as DashAddress;
 use tokio::sync::RwLock;
 
+use key_wallet::managed_account::address_pool::AddressPool;
+use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
+use key_wallet::wallet::Wallet;
+use key_wallet::KeySource;
 use key_wallet_manager::WalletManager;
 
 use crate::broadcaster::TransactionBroadcaster;
 use crate::error::PlatformWalletError;
+use crate::wallet::platform_addresses::address_reserve::{self, PoolKind};
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
+
+/// Which pool of a standard BIP-44 account to hand an address from.
+#[derive(Clone, Copy)]
+enum Bip44Pool {
+    /// External (receive) pool — `address_pools_mut()[0]`.
+    External,
+    /// Internal (change) pool — `address_pools_mut()[1]`.
+    Internal,
+}
+
+impl Bip44Pool {
+    /// Position of this pool in `ManagedAccountType::address_pools_mut`,
+    /// which returns `[external, internal]` for standard accounts.
+    fn pool_position(self) -> usize {
+        match self {
+            Bip44Pool::External => 0,
+            Bip44Pool::Internal => 1,
+        }
+    }
+
+    fn reserve_pool_kind(self) -> PoolKind {
+        match self {
+            Bip44Pool::External => PoolKind::CoreReceive,
+            Bip44Pool::Internal => PoolKind::CoreChange,
+        }
+    }
+}
 
 /// Core wallet providing UTXO, balance, and address functionality.
 ///
@@ -69,17 +101,37 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
         self.wallet_id
     }
 
-    /// Get the next unused BIP-44 external (receive) address for a specific account.
-    pub async fn next_receive_address_for_account(
+    /// Pick and atomically reserve the next unused address from a standard
+    /// BIP-44 account's external or internal pool.
+    ///
+    /// BRIDGE: tri-state Unused → Reserved → Used. The upstream pool only
+    /// flips `used` on a positive-balance sync, so plain `next_unused`
+    /// hands the same index to two concurrent callers. This routes the
+    /// pick through [`address_reserve::next_unused_and_reserve`], which
+    /// skips reserved-but-unused indices and reserves the chosen one
+    /// atomically under the wallet write lock the caller already holds.
+    /// Reservations are ephemeral and released by the TTL sweep; once the
+    /// address is actually paid, the pool's own `used` flag keeps it out
+    /// of future hand-out, making the lingering reservation harmless.
+    /// Collapses to `pool.next_unused_and_reserve(..)` once key-wallet
+    /// gains a native Reserved state — see rust-dashcore#791.
+    ///
+    /// The change pool is shared with the broadcast loop, which peeks
+    /// change addresses into `OutpointReservations.pending_change` before a
+    /// send confirms. A standalone change hand-out must skip those too, so
+    /// the internal pool also consults `pending_change` and retries; the
+    /// receive pool has no such cross-path sharing and never retries.
+    fn reserve_bip44_address(
         &self,
+        wallet: &Wallet,
+        info: &mut PlatformWalletInfo,
         account_index: u32,
+        pool: Bip44Pool,
     ) -> Result<DashAddress, PlatformWalletError> {
-        let mut wm = self.wallet_manager.write().await;
-        let (wallet, info) = wm.get_wallet_and_info_mut(&self.wallet_id).ok_or_else(|| {
-            crate::error::PlatformWalletError::WalletNotFound(
-                "Wallet not found in wallet manager".to_string(),
-            )
-        })?;
+        let avoid = match pool {
+            Bip44Pool::Internal => self.reservations.pending_change_snapshot(),
+            Bip44Pool::External => std::collections::HashSet::new(),
+        };
 
         let xpub = wallet
             .accounts
@@ -105,9 +157,53 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                 ))
             })?;
 
-        account
-            .next_receive_address(Some(&xpub), true)
-            .map_err(|e| PlatformWalletError::AddressOperation(e.to_string()))
+        let address_pool: &mut AddressPool = account
+            .managed_account_type_mut()
+            .address_pools_mut()
+            .into_iter()
+            .nth(pool.pool_position())
+            .ok_or_else(|| {
+                PlatformWalletError::AddressOperation(format!(
+                    "BIP-44 account {} has no pool at position {}",
+                    account_index,
+                    pool.pool_position()
+                ))
+            })?;
+
+        // Each rejected index stays reserved in the bridge's CoreChange
+        // set, so the next pick advances past it — the loop converges to
+        // the first index that is neither bridge-reserved nor pending from
+        // an in-flight send. `avoid` is empty for the receive pool, so that
+        // path returns on the first iteration.
+        loop {
+            let address = address_reserve::next_unused_and_reserve(
+                address_pool,
+                self.wallet_id,
+                pool.reserve_pool_kind(),
+                account_index,
+                &KeySource::Public(xpub),
+                true,
+            )
+            .map_err(|e| PlatformWalletError::AddressOperation(e.to_string()))?;
+
+            if !avoid.contains(&address) {
+                return Ok(address);
+            }
+        }
+    }
+
+    /// Get the next unused BIP-44 external (receive) address for a specific account.
+    pub async fn next_receive_address_for_account(
+        &self,
+        account_index: u32,
+    ) -> Result<DashAddress, PlatformWalletError> {
+        let mut wm = self.wallet_manager.write().await;
+        let (wallet, info) = wm.get_wallet_and_info_mut(&self.wallet_id).ok_or_else(|| {
+            crate::error::PlatformWalletError::WalletNotFound(
+                "Wallet not found in wallet manager".to_string(),
+            )
+        })?;
+        self.reserve_bip44_address(wallet, info, account_index, Bip44Pool::External)
     }
 
     /// Blocking version of `next_receive_address_for_account`.
@@ -121,34 +217,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                 "Wallet not found in wallet manager".to_string(),
             )
         })?;
-
-        let xpub = wallet
-            .accounts
-            .standard_bip44_accounts
-            .get(&account_index)
-            .map(|a| a.account_xpub)
-            .ok_or_else(|| {
-                PlatformWalletError::WalletNotFound(format!(
-                    "BIP-44 account {} not found",
-                    account_index
-                ))
-            })?;
-
-        let account = info
-            .core_wallet
-            .accounts
-            .standard_bip44_accounts
-            .get_mut(&account_index)
-            .ok_or_else(|| {
-                PlatformWalletError::WalletNotFound(format!(
-                    "BIP-44 managed account {} not found",
-                    account_index
-                ))
-            })?;
-
-        account
-            .next_receive_address(Some(&xpub), true)
-            .map_err(|e| PlatformWalletError::AddressOperation(e.to_string()))
+        self.reserve_bip44_address(wallet, info, account_index, Bip44Pool::External)
     }
 
     /// Get the next unused BIP-44 internal (change) address for a specific account.
@@ -162,34 +231,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                 "Wallet not found in wallet manager".to_string(),
             )
         })?;
-
-        let xpub = wallet
-            .accounts
-            .standard_bip44_accounts
-            .get(&account_index)
-            .map(|a| a.account_xpub)
-            .ok_or_else(|| {
-                PlatformWalletError::WalletNotFound(format!(
-                    "BIP-44 account {} not found",
-                    account_index
-                ))
-            })?;
-
-        let account = info
-            .core_wallet
-            .accounts
-            .standard_bip44_accounts
-            .get_mut(&account_index)
-            .ok_or_else(|| {
-                PlatformWalletError::WalletNotFound(format!(
-                    "BIP-44 managed account {} not found",
-                    account_index
-                ))
-            })?;
-
-        account
-            .next_change_address(Some(&xpub), true)
-            .map_err(|e| PlatformWalletError::AddressOperation(e.to_string()))
+        self.reserve_bip44_address(wallet, info, account_index, Bip44Pool::Internal)
     }
 
     /// Blocking version of `next_change_address_for_account`.
@@ -203,34 +245,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                 "Wallet not found in wallet manager".to_string(),
             )
         })?;
-
-        let xpub = wallet
-            .accounts
-            .standard_bip44_accounts
-            .get(&account_index)
-            .map(|a| a.account_xpub)
-            .ok_or_else(|| {
-                PlatformWalletError::WalletNotFound(format!(
-                    "BIP-44 account {} not found",
-                    account_index
-                ))
-            })?;
-
-        let account = info
-            .core_wallet
-            .accounts
-            .standard_bip44_accounts
-            .get_mut(&account_index)
-            .ok_or_else(|| {
-                PlatformWalletError::WalletNotFound(format!(
-                    "BIP-44 managed account {} not found",
-                    account_index
-                ))
-            })?;
-
-        account
-            .next_change_address(Some(&xpub), true)
-            .map_err(|e| PlatformWalletError::AddressOperation(e.to_string()))
+        self.reserve_bip44_address(wallet, info, account_index, Bip44Pool::Internal)
     }
 
     /// Get the network from the SDK.
