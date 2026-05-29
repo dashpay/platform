@@ -96,8 +96,9 @@ fn no_secret_substrings_in_schema_or_migrations() {
     // `src/sqlite/schema` (SQLite-backend column definitions and blob
     // encoders) and `migrations/` (refinery DDL) are the entire
     // persistence surface for non-secret material. `src/secrets/` is
-    // exempt by design — that submodule WILL legitimately mention
-    // `private`, `mnemonic`, `seed` once the SecretStore lands.
+    // exempt by design — that submodule legitimately mentions
+    // `private`, `mnemonic`, `seed`; its own `secrets_guard.rs` test
+    // covers it.
     scan_dir(&manifest.join("src/sqlite/schema"), &mut offenders);
     scan_dir(&manifest.join("migrations"), &mut offenders);
     assert!(

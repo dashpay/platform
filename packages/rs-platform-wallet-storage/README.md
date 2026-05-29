@@ -1,12 +1,14 @@
 # platform-wallet-storage
 
 Storage backends for the
-[`platform-wallet`](../rs-platform-wallet) crate. Today this crate
-ships a SQLite-backed implementation of `PlatformWalletPersistence`
-under [`sqlite`](src/sqlite/) plus a maintenance CLI; the crate is
-structured so a future `SecretStore` (currently sketched in
-[`SECRETS.md`](./SECRETS.md)) can land as a sibling submodule under
-[`secrets`](src/) without a crate split.
+[`platform-wallet`](../rs-platform-wallet) crate. This crate ships a
+SQLite-backed implementation of `PlatformWalletPersistence` under
+[`sqlite`](src/sqlite/), a maintenance CLI, and the
+[`secrets`](src/secrets/) submodule — a `keyring_core` SPI
+implementation pairing the in-house `EncryptedFileStore`
+(Argon2id + XChaCha20-Poly1305 on-disk vault) with the OS keyring
+backends. All three are on by default; see [`SECRETS.md`](./SECRETS.md)
+for the secret-storage threat model and design.
 
 ## At a glance
 
@@ -141,14 +143,13 @@ to make Manual-mode writes durable.
 |---|---|---|
 | `sqlite` | yes | SQLite persister (`platform_wallet_storage::sqlite`) and all of its native deps (`rusqlite`, `refinery`, `dpp`, `dash-sdk`, `key-wallet`, etc.) |
 | `cli` | yes | Maintenance binary `platform-wallet-storage`. Implies `sqlite`. |
-| `secrets` | no | Reserved for the future `SecretStore` submodule. No code lands today. |
+| `secrets` | yes | `platform_wallet_storage::secrets` submodule — zeroizing secret wrappers (`SecretBytes`, `SecretString`), the `EncryptedFileStore` Argon2id + XChaCha20-Poly1305 vault backend, and the `default_credential_store()` OS-keyring constructor. Implements the upstream `keyring_core::api::{CredentialApi, CredentialStoreApi}` SPI. |
 | `__test-helpers` | no | Crate-private `lock_conn_for_test` / `config_for_test` accessors. The double-underscore prefix follows Cargo's "do not enable from downstream" convention; the methods are also `#[doc(hidden)]`. |
 
-`cargo build -p platform-wallet-storage --no-default-features` builds
-the crate with neither the SQLite backend nor the CLI compiled in.
-The resulting library has no public surface today; the build mode
-exists to support a future split where one cargo target wants only
-the secrets feature.
+`cargo build -p platform-wallet-storage --no-default-features` builds a
+minimal core with neither the SQLite backend, the CLI, nor the secrets
+submodule. `--no-default-features --features sqlite,cli` is the
+"persister-only" build mode (no crypto dependencies).
 
 ## Schema
 

@@ -1,12 +1,18 @@
 //! Storage backends for the `platform-wallet` crate.
 //!
-//! Today this crate ships the SQLite-backed
-//! [`sqlite::SqlitePersister`] implementation of
-//! [`PlatformWalletPersistence`](platform_wallet::changeset::PlatformWalletPersistence).
-//! The crate is structured so a future `secrets` submodule — a
-//! `SecretStore` for mnemonic / private-key material, sketched in
-//! [`SECRETS.md`](../SECRETS.md) — can ship alongside it without a
-//! crate split.
+//! The SQLite-backed [`sqlite::SqlitePersister`] implements
+//! [`PlatformWalletPersistence`](platform_wallet::changeset::PlatformWalletPersistence)
+//! for the persister DTO (public wallet state — no secrets).
+//!
+//! The [`secrets`] submodule's consumer entry point is
+//! [`secrets::SecretStore`]: `get` yields a zeroizing
+//! [`secrets::SecretBytes`] (never a raw `Vec<u8>`) and `set` takes
+//! `&SecretBytes`, over an Argon2id + XChaCha20-Poly1305 vault file or
+//! the platform OS keyring. The internal SPI is
+//! `keyring_core::api::CredentialStoreApi`
+//! ([`secrets::EncryptedFileStore`], [`secrets::default_credential_store`]).
+//! See [`SECRETS.md`](../SECRETS.md) for the full key shape,
+//! memory-hygiene contract, and audit hooks.
 //!
 //! ## Canonical type paths
 //!
@@ -25,7 +31,9 @@
 pub mod kv;
 #[cfg(feature = "sqlite")]
 pub mod sqlite;
-// pub mod secrets;   // reserved — future SecretStore submodule.
+
+#[cfg(feature = "secrets")]
+pub mod secrets;
 
 // Convenience re-exports kept under the crate root so embedders don't
 // have to spell out the `::sqlite::` middle segment for the common
@@ -56,4 +64,22 @@ const _: () = {
 fn _object_safety_check(persister: SqlitePersister) {
     let _: std::sync::Arc<dyn platform_wallet::changeset::PlatformWalletPersistence> =
         std::sync::Arc::new(persister);
+}
+
+// The keyring SPI must be object-safe and its error `Send + Sync`, so
+// a backend can be held behind `Arc<dyn CredentialStoreApi + Send +
+// Sync>` and its errors crossed between threads / FFI.
+#[cfg(feature = "secrets")]
+#[allow(dead_code)]
+const fn _secrets_send_sync_check<T: Send + Sync>() {}
+#[cfg(feature = "secrets")]
+const _: () = {
+    _secrets_send_sync_check::<keyring_core::Error>();
+    _secrets_send_sync_check::<secrets::FileStoreError>();
+};
+#[cfg(feature = "secrets")]
+#[allow(dead_code)]
+fn _credential_store_object_safety_check(store: secrets::EncryptedFileStore) {
+    let _: std::sync::Arc<dyn keyring_core::api::CredentialStoreApi + Send + Sync> =
+        std::sync::Arc::new(store);
 }

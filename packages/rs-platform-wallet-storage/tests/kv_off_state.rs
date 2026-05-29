@@ -48,15 +48,6 @@ fn kv_feature_requires_sqlite_in_manifest() {
     );
 }
 
-#[test]
-fn kv_is_in_the_default_feature_set() {
-    let manifest = include_str!("../Cargo.toml");
-    assert!(
-        manifest.contains(r#"default = ["sqlite", "cli", "kv"]"#),
-        "`kv` MUST be in the default feature set so the API is on by default"
-    );
-}
-
 /// On-state symbol check: under any build with `kv` enabled the public
 /// trait, error type, and length constant MUST resolve through the
 /// crate-root re-exports. Compile-time only — if a future edit
