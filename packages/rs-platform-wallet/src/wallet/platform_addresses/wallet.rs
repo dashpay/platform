@@ -479,7 +479,24 @@ mod found_026_tests {
             .insert_wallet(wallet, info)
             .expect("insert");
         let persister = WalletPersister::new(wallet_id, Arc::new(NoPlatformPersistence));
-        PlatformAddressWallet::new(sdk, wallet_manager, wallet_id, persister)
+
+        // Asset-lock manager is required by the constructor but never
+        // exercised here — these tests only drive receive-address hand-out.
+        let event_manager = Arc::new(crate::events::PlatformEventManager::new(Vec::new()));
+        let spv = Arc::new(crate::spv::SpvRuntime::new(
+            Arc::clone(&wallet_manager),
+            event_manager,
+        ));
+        let broadcaster = Arc::new(SpvBroadcaster::new(spv));
+        let asset_locks = Arc::new(AssetLockManager::new(
+            Arc::clone(&sdk),
+            Arc::clone(&wallet_manager),
+            wallet_id,
+            Arc::new(tokio::sync::Notify::new()),
+            broadcaster,
+            persister.clone(),
+        ));
+        PlatformAddressWallet::new(sdk, wallet_manager, wallet_id, asset_locks, persister)
     }
 
     /// Found-026 durable guard: two `next_unused_receive_address` calls
