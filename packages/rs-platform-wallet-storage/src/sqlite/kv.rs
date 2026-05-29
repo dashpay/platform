@@ -22,7 +22,7 @@ use rusqlite::{params, OptionalExtension};
 
 use platform_wallet::wallet::platform_wallet::WalletId;
 
-use crate::kv::{validate_key, KvError, KvStore};
+use crate::kv::{validate_key, KvError, KvStore, MAX_VALUE_LEN};
 use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::persister::SqlitePersister;
 
@@ -81,6 +81,35 @@ impl KvStore for SqlitePersister {
     fn get(&self, wallet_id: Option<&WalletId>, key: &str) -> Result<Option<Vec<u8>>, KvError> {
         validate_key(key)?;
         let conn = self.conn().map_err(KvError::from)?;
+        // Two-step read: pull `length(value)` first so a tampered or
+        // corrupted row that exceeds `MAX_VALUE_LEN` cannot force a
+        // multi-gigabyte allocation when we materialise the blob.
+        // Mirrors `sqlite::schema::blob`'s `BLOB_SIZE_LIMIT_BYTES`
+        // ceiling. CMT-006.
+        let len: Option<i64> = match wallet_id {
+            None => conn
+                .query_row(
+                    "SELECT length(value) FROM kv_store WHERE wallet_id IS NULL AND key = ?1",
+                    params![key],
+                    |row| row.get::<_, i64>(0),
+                )
+                .optional()?,
+            Some(wid) => conn
+                .query_row(
+                    "SELECT length(value) FROM kv_store WHERE wallet_id = ?1 AND key = ?2",
+                    params![wid.as_slice(), key],
+                    |row| row.get::<_, i64>(0),
+                )
+                .optional()?,
+        };
+        let Some(len) = len else { return Ok(None) };
+        let found = usize::try_from(len.max(0)).unwrap_or(usize::MAX);
+        if found > MAX_VALUE_LEN {
+            return Err(KvError::ValueTooLarge {
+                found,
+                max: MAX_VALUE_LEN,
+            });
+        }
         let value = match wallet_id {
             None => conn
                 .query_row(
@@ -292,6 +321,31 @@ mod tests {
                 assert_eq!(ffi.extended_code, rusqlite::ffi::SQLITE_CONSTRAINT_UNIQUE);
             }
             other => panic!("expected SQLITE_CONSTRAINT_UNIQUE, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn get_rejects_oversized_value_before_materialising() {
+        // CMT-006: a row larger than MAX_VALUE_LEN (planted via direct
+        // SQL — bypassing `put`'s implicit cap) must surface as
+        // ValueTooLarge instead of OOMing the process.
+        use rusqlite::params;
+        let (p, _tmp) = open_persister();
+        let oversize = vec![0u8; MAX_VALUE_LEN + 1];
+        {
+            let conn = p.lock_conn_for_test();
+            conn.execute(
+                "INSERT INTO kv_store (wallet_id, key, value) VALUES (NULL, ?1, ?2)",
+                params!["huge", oversize.as_slice()],
+            )
+            .expect("seed oversize row");
+        }
+        match p.get(None, "huge") {
+            Err(KvError::ValueTooLarge { found, max }) => {
+                assert_eq!(found, MAX_VALUE_LEN + 1);
+                assert_eq!(max, MAX_VALUE_LEN);
+            }
+            other => panic!("expected ValueTooLarge, got {other:?}"),
         }
     }
 

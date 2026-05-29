@@ -30,6 +30,12 @@ use platform_wallet::wallet::platform_wallet::WalletId;
 /// (length(key) BETWEEN 1 AND 128)`).
 pub const MAX_KEY_LEN: usize = 128;
 
+/// Hard cap on the size of a single KV value, in bytes. Mirrors the
+/// `BLOB_SIZE_LIMIT_BYTES` ceiling on bincode-serde blobs in
+/// `sqlite::schema::blob` so a tampered or corrupted backup row cannot
+/// force a multi-gigabyte allocation on the next `get`. CMT-006.
+pub const MAX_VALUE_LEN: usize = 16 * 1024 * 1024;
+
 /// Errors returned by [`KvStore`] operations.
 ///
 /// `Sqlite` is the only backend-specific variant today; new backends
@@ -43,6 +49,12 @@ pub enum KvError {
     /// Key exceeded [`MAX_KEY_LEN`].
     #[error("kv key too long: {len} bytes (max {})", MAX_KEY_LEN)]
     KeyTooLong { len: usize },
+
+    /// Stored value exceeded [`MAX_VALUE_LEN`] on read. Surfaced before
+    /// the bytes are materialised so a tampered row cannot OOM the
+    /// process. CMT-006.
+    #[error("kv value too large: {found} bytes (max {max})")]
+    ValueTooLarge { found: usize, max: usize },
 
     /// Per-wallet `put` referenced a wallet that has no
     /// `wallet_metadata` row. Surfaced as a typed variant instead of a
@@ -65,7 +77,9 @@ pub enum KvError {
 /// See the module-level docs for scoping and value semantics.
 pub trait KvStore {
     /// Read the value bound to `(wallet_id, key)`. Returns `Ok(None)`
-    /// when the key is absent.
+    /// when the key is absent. Backends MUST reject values larger than
+    /// [`MAX_VALUE_LEN`] with [`KvError::ValueTooLarge`] before
+    /// materialising the bytes (CMT-006).
     fn get(&self, wallet_id: Option<&WalletId>, key: &str) -> Result<Option<Vec<u8>>, KvError>;
 
     /// Insert or overwrite the value bound to `(wallet_id, key)`.
