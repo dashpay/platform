@@ -132,6 +132,11 @@ ignore:
   - "packages/rs-drive-abci/src/mimic/**"
   - "packages/rs-sdk-trusted-context-provider/**"
   - "packages/rs-drive-abci/src/replay/**"
+  # Shielded-pool snapshot bake/apply tooling — only reachable via the
+  # `snapshot-bake` CLI subcommand (build-time) and the InitChain
+  # `DRIVE_SHIELDED_SNAPSHOT` env fast-path; both require full GroveDB genesis
+  # seeding and are exercised by create_genesis_state integration tests
+  - "packages/rs-drive-abci/src/shielded_snapshot/**"
   # DPP signing test module — integration tests, not unit-testable
   - "packages/rs-dpp/src/state_transition/state_transitions/address_funds/**/signing_tests.rs"
   # Drive extra tests — integration tests in production code tree
