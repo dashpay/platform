@@ -406,15 +406,22 @@ pub unsafe extern "C" fn platform_wallet_manager_configure_shielded(
 /// network-scoped coordinator, and reset the caught-up cooldown
 /// stamp.
 ///
-/// The single SQLite commitment-tree file stays open — Clear
-/// semantics are "wipe my host-side persistence and start
-/// re-syncing from index 0 on the shared tree", **not** "blow
-/// away the chain-wide cache". The host is responsible for
-/// wiping its own per-wallet persistence layer (e.g. SwiftData
-/// rows) since Rust can't reach into iOS / Android persistence;
-/// after that, the next [`platform_wallet_manager_bind_shielded`]
-/// call repopulates the coordinator's registries and the next
-/// sync pass re-saves notes via the changeset path.
+/// The SQLite commitment-tree file stays on disk but its contents
+/// are reset to empty — Clear semantics are "wipe my shielded
+/// state and cold-resync from index 0 on the shared tree". The
+/// host is responsible for wiping its own per-wallet persistence
+/// layer (e.g. SwiftData rows) since Rust can't reach into iOS /
+/// Android persistence; after that, the next
+/// [`platform_wallet_manager_bind_shielded`] call repopulates the
+/// coordinator's registries and the next sync pass re-saves notes
+/// via the changeset path.
+///
+/// Returns `ErrorWalletOperation` if the Rust-side store reset
+/// fails. The host **must** check this before wiping its own
+/// persistence: a silent failure would leave the shared tree
+/// populated while the host drops its rows, and the next cold
+/// resync would gate-skip every re-downloaded position against the
+/// stale tree size.
 ///
 /// Idempotent: calling Clear when shielded support has never
 /// been configured (no coordinator installed) is still a
@@ -428,13 +435,19 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_clear(
         // Single library call: `clear_shielded` quiesces the sync
         // manager (cancel + drain the in-flight pass, incl. persister
         // fan-out, so nothing re-persists after Clear) and then clears
-        // the coordinator registries. Keeping the quiesce+clear
-        // sequencing in the library (not stitched here) follows the
-        // FFI's "resolve handle, call one function, marshal result"
-        // contract.
-        runtime().block_on(manager.clear_shielded());
+        // the coordinator registries + resets the shared store. Keeping
+        // the quiesce+clear sequencing in the library (not stitched
+        // here) follows the FFI's "resolve handle, call one function,
+        // marshal result" contract.
+        runtime().block_on(manager.clear_shielded())
     });
-    unwrap_option_or_return!(option);
+    let result = unwrap_option_or_return!(option);
+    if let Err(e) = result {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorWalletOperation,
+            format!("clear_shielded failed: {e}"),
+        );
+    }
     PlatformWalletFFIResult::ok()
 }
 

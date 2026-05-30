@@ -460,13 +460,30 @@ impl NetworkShieldedCoordinator {
     ///
     /// [`platform_wallet_manager_shielded_clear`]:
     ///     rs-platform-wallet-ffi's FFI entry point
-    pub async fn clear(&self) {
+    ///
+    /// Returns an error if either store reset (subwallet purge or
+    /// commitment-tree reset) fails. The caller **must** surface this:
+    /// the host only wipes its own per-wallet persistence (e.g.
+    /// SwiftData rows) after `clear()` succeeds. If a reset fails
+    /// silently the host could drop its rows while the shared tree
+    /// stays populated, and the next cold resync would gate-skip every
+    /// re-downloaded position against the stale `tree_size`.
+    pub async fn clear(&self) -> Result<(), crate::error::PlatformWalletError> {
         self.accounts.write().await.clear();
         self.persisters.write().await.clear();
+        // Attempt both resets even if the first fails, so the store is
+        // left as clean as possible, but capture the first error to
+        // propagate to the caller.
+        let mut first_err: Option<crate::error::PlatformWalletError> = None;
         {
             let mut store = self.store.write().await;
             if let Err(e) = store.purge_all_subwallets() {
                 tracing::warn!(error = %e, "Failed to purge subwallet store state on clear");
+                first_err.get_or_insert_with(|| {
+                    crate::error::PlatformWalletError::ShieldedStoreError(format!(
+                        "purge_all_subwallets failed: {e}"
+                    ))
+                });
             }
             // Reset the shared commitment tree under the same write
             // guard so the watermark (now 0) and the tree size reset
@@ -474,10 +491,22 @@ impl NetworkShieldedCoordinator {
             // every re-downloaded position into the still-full tree.
             if let Err(e) = store.reset_commitment_tree() {
                 tracing::warn!(error = %e, "Failed to reset commitment tree on clear");
+                first_err.get_or_insert_with(|| {
+                    crate::error::PlatformWalletError::ShieldedStoreError(format!(
+                        "reset_commitment_tree failed: {e}"
+                    ))
+                });
             }
         }
+        // Reset the cooldown regardless so a post-clear retry (or the
+        // first background pass after a successful clear) runs
+        // immediately rather than honoring a stale "caught up" stamp.
         if let Ok(mut g) = self.last_caught_up_at.lock() {
             *g = None;
+        }
+        match first_err {
+            Some(e) => Err(e),
+            None => Ok(()),
         }
     }
 

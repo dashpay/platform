@@ -314,21 +314,32 @@ async fn run_wallet_balance_test(wallet: WalletIndex) {
 /// balance would exceed `count_b × value`.
 #[tokio::main(flavor = "multi_thread", worker_threads = 1)]
 async fn main() {
-    // Sanity-check the hardcoded expectations stay coherent if someone bumps
-    // the constants (was a `#[cfg(test)]` unit test in the old test file).
-    assert_eq!(EXPECTED_BALANCE_A, COUNT_A as u64 * OWNED_VALUE);
-    assert_eq!(EXPECTED_BALANCE_B, COUNT_B as u64 * OWNED_VALUE);
-    assert_ne!(SEED_A, SEED_B);
-
     let wallet = match std::env::var("SHIELDED_SYNC_WALLET")
         .unwrap_or_default()
         .trim()
         .to_ascii_uppercase()
         .as_str()
     {
+        "" | "A" => WalletIndex::A,
         "B" => WalletIndex::B,
-        _ => WalletIndex::A,
+        other => panic!("invalid SHIELDED_SYNC_WALLET `{other}`; expected A or B"),
     };
 
     run_wallet_balance_test(wallet).await;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Keep the hardcoded expectations coherent with the seed constants
+    /// so `cargo test` (not just a manual example run) catches drift if
+    /// someone bumps `COUNT_*` / `OWNED_VALUE` without updating the
+    /// expected balances, or accidentally aliases the two seeds.
+    #[test]
+    fn expected_balances_match_seed_constants() {
+        assert_eq!(EXPECTED_BALANCE_A, COUNT_A as u64 * OWNED_VALUE);
+        assert_eq!(EXPECTED_BALANCE_B, COUNT_B as u64 * OWNED_VALUE);
+        assert_ne!(SEED_A, SEED_B);
+    }
 }

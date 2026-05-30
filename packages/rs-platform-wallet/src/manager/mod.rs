@@ -270,14 +270,19 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// nothing can re-persist notes after this returns), then **clear**
     /// the network coordinator's per-subwallet registries. Idempotent —
     /// the coordinator step is a no-op when shielded support was never
-    /// configured. The per-network commitment-tree SQLite file is left
-    /// intact (chain-wide data; the next bind re-syncs against it).
+    /// configured. The per-network commitment-tree SQLite file stays on
+    /// disk but its contents are reset to empty so the next bind cold-
+    /// resyncs from index 0.
+    ///
+    /// Returns an error if the coordinator's store reset fails; the host
+    /// must not commit its own persistence wipe in that case.
     #[cfg(feature = "shielded")]
-    pub async fn clear_shielded(&self) {
+    pub async fn clear_shielded(&self) -> Result<(), crate::error::PlatformWalletError> {
         self.shielded_sync_manager.quiesce().await;
         if let Some(coord) = self.shielded_coordinator().await {
-            coord.clear().await;
+            coord.clear().await?;
         }
+        Ok(())
     }
 
     /// Stop all background tasks and wait for them to exit.
