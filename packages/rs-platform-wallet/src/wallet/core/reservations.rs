@@ -13,6 +13,14 @@
 //! that releases keys on drop, with `release_after_commit` and
 //! `leak_until_sync` escape hatches mirroring the broadcast-success /
 //! unrecoverable-leak distinction.
+//!
+//! This is one of two reservation models in platform-wallet, with a
+//! distinct reclaim discipline: here reservations are released on guard
+//! **drop** (RAII), bound to a single in-flight broadcast. The sibling
+//! [`address_reserve`](super::super::platform_addresses::address_reserve)
+//! is a process-global table reclaimed by a **TTL sweep**, for receive /
+//! change address hand-outs that have no single owning scope. A change to
+//! one's reclaim model should be weighed against the other.
 
 use std::collections::HashSet;
 use std::hash::Hash;
@@ -281,6 +289,17 @@ impl OutpointReservationGuard {
         if let Some(g) = self.change_guard {
             g.leak_until_sync();
         }
+    }
+
+    /// Total slots this guard holds reserved (outpoints plus an optional
+    /// change address). Lets the leak path report how many reservations
+    /// are pinned until restart.
+    pub(crate) fn reserved_count(&self) -> usize {
+        self.outpoint_guard.reserved_count()
+            + self
+                .change_guard
+                .as_ref()
+                .map_or(0, ReservationGuard::reserved_count)
     }
 }
 

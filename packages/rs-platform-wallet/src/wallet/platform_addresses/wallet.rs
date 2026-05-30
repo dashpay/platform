@@ -16,13 +16,7 @@ use crate::wallet::persister::WalletPersister;
 
 use super::provider::PlatformPaymentAddressProvider;
 
-/// Default age after which an unconfirmed receive-address reservation is
-/// reclaimed by [`PlatformAddressWallet::sweep_expired_reservations`].
-/// Five minutes covers a user filling in a payment screen while letting
-/// abandoned hand-outs reclaim quickly. The reservation set is ephemeral
-/// (in-memory, rebuilt empty on restart), so this only bounds leakage
-/// within a single long-lived process.
-const RESERVATION_TTL: std::time::Duration = std::time::Duration::from_secs(300);
+use super::address_reserve::RESERVATION_TTL;
 
 /// Platform address wallet providing DIP-17 platform payment address functionality.
 #[derive(Clone)]
