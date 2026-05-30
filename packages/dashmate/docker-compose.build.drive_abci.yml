@@ -19,8 +19,7 @@ services:
         # Forwarded by dashmate from
         # `platform.drive.abci.docker.build.buildArgs.CARGO_BUILD_PROFILE`
         # (overridable per-invocation via shell env). "release" is required
-        # for SDK_TEST_DATA shielded seeding at N > a few thousand — see
-        # docs/shielded-seeder-performance.md.
+        # for SDK_TEST_DATA shielded seeding at N > a few thousand.
         CARGO_BUILD_PROFILE: ${CARGO_BUILD_PROFILE:-dev}
       secrets:
         - GITHUB_TOKEN

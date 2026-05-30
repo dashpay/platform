@@ -469,7 +469,6 @@ When `format_version` bumps, the apply side rejects older snapshots with
 - Remove `create_data_for_shielded_pool` runtime path entirely.
 - Remove `CARGO_BUILD_PROFILE=release` workaround in `setup_local_network.sh`.
 - All 11 tests above. Fuzz target. Equivalence test gated `#[ignore]`.
-- Update `docs/shielded-seeder-performance.md` to point at the new flow.
 
 **Out of scope (follow-ups, if ever needed):**
 - Other Element kinds (no genericity built in — if a second case appears, factor out shared pieces THEN, informed by two real cases).

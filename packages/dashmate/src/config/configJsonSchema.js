@@ -42,8 +42,7 @@ export default {
         // Common keys (when meaningful for the image's target):
         // - CARGO_BUILD_PROFILE: "dev" | "release" — Rust profile for
         //   drive-abci / rs-dapi. Release is required for SDK_TEST_DATA
-        //   shielded seeding at N > a few thousand; see
-        //   `docs/shielded-seeder-performance.md`.
+        //   shielded seeding at N > a few thousand.
         // - SDK_TEST_DATA: "true" — enable the SDK test-data cfg flag in
         //   the binary at compile time.
         buildArgs: {

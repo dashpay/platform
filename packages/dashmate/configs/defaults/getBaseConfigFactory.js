@@ -296,8 +296,7 @@ export default function getBaseConfigFactory() {
                 target: 'drive-abci',
                 // Extra docker build args (see `dockerBuild` schema). Common
                 // override: `CARGO_BUILD_PROFILE: "release"` for SDK_TEST_DATA
-                // shielded seeding at N > a few thousand
-                // (`docs/shielded-seeder-performance.md`).
+                // shielded seeding at N > a few thousand.
                 buildArgs: {},
               },
             },
