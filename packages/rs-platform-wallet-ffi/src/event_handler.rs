@@ -14,6 +14,25 @@ use std::os::raw::{c_char, c_void};
 ///
 /// All callbacks are optional (`Option<fn>`) — pass null for events you don't
 /// care about. The default behavior is to ignore the event.
+///
+/// # ABI growth constraint (accepted limitation)
+///
+/// New callback slots are appended at the **end** of this struct, which
+/// preserves the byte offsets of all pre-existing fields. That keeps the
+/// ABI stable for callers that read individual fields, but it does NOT make
+/// by-value struct growth safe: `platform_wallet_manager_create` consumes
+/// the struct via `std::ptr::read`, which copies `size_of::<Self>()` bytes
+/// from the caller's pointer. A caller compiled against an older, shorter
+/// copy of the generated header allocates a smaller struct, so each appended
+/// slot makes `ptr::read` over-read past that allocation.
+///
+/// This is accepted for now because the only consumer is the in-tree Swift
+/// SDK, which is regenerated (cbindgen) and rebuilt in lockstep with this
+/// crate — there is no out-of-tree consumer pinned to a stale header. A
+/// proper fix (a leading `size`/`version` discriminator passed to
+/// `platform_wallet_manager_create`, or per-callback registration
+/// entrypoints) is tracked as a follow-up and is out of scope for the
+/// sync-progress work that added these slots.
 #[repr(C)]
 pub struct EventHandlerCallbacks {
     /// Opaque context pointer passed to all callbacks.
