@@ -800,3 +800,107 @@ fn build_per_wallet_summary(
     }
     summary
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::wallet::persister::NoPlatformPersistence;
+    use crate::wallet::shielded::keys::OrchardKeySet;
+
+    /// Unique temp directory for a test's SQLite tree (no `tempfile` dev-dep).
+    fn temp_dir(tag: &str) -> PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!("shielded_coordinator_test_{tag}_{nanos}"))
+    }
+
+    /// Build a coordinator backed by a fresh file store under `dir`, with one
+    /// wallet registered so `accounts` / `persisters` are both non-empty.
+    async fn coordinator_with_one_wallet(dir: &std::path::Path) -> NetworkShieldedCoordinator {
+        std::fs::create_dir_all(dir).expect("create temp dir");
+        let db_path = dir.join("tree.sqlite");
+        let store = FileBackedShieldedStore::open_path(&db_path, 100).expect("open file store");
+        let coordinator = NetworkShieldedCoordinator::new(
+            Arc::new(dash_sdk::Sdk::new_mock()),
+            dashcore::Network::Testnet,
+            db_path,
+            store,
+        );
+
+        let wallet_id: WalletId = [0x11; 32];
+        let views = OrchardKeySet::from_seed(&[0x42u8; 64], dashcore::Network::Testnet, 0)
+            .expect("derive viewing keys")
+            .viewing_keys();
+        let mut account_views = BTreeMap::new();
+        account_views.insert(0u32, views);
+        let persister = WalletPersister::new(wallet_id, Arc::new(NoPlatformPersistence));
+        coordinator
+            .register_wallet(wallet_id, account_views, persister)
+            .await;
+        coordinator
+    }
+
+    /// Success path: a healthy `clear()` empties the shared commitment tree
+    /// AND drops the in-memory account / persister registries, returning `Ok`.
+    #[tokio::test]
+    async fn clear_success_empties_tree_and_registries() {
+        let dir = temp_dir("clear_ok");
+        let coordinator = coordinator_with_one_wallet(&dir).await;
+
+        // Put a leaf in the tree so the reset is observable.
+        {
+            let mut store = coordinator.store().write().await;
+            store.append_commitment(&[7u8; 32], true).unwrap();
+            assert_eq!(store.tree_size().unwrap(), 1);
+        }
+        assert!(!coordinator.accounts.read().await.is_empty());
+        assert!(!coordinator.persisters.read().await.is_empty());
+
+        coordinator.clear().await.expect("clear should succeed");
+
+        assert_eq!(
+            coordinator.store().read().await.tree_size().unwrap(),
+            0,
+            "tree must be empty after a successful clear"
+        );
+        assert!(coordinator.accounts.read().await.is_empty());
+        assert!(coordinator.persisters.read().await.is_empty());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Failure path — regression guard for the partial-clear bug: when the
+    /// store reset fails, `clear()` must return `Err` and leave the account /
+    /// persister registries populated, so the coordinator does not silently
+    /// forget every bound wallet (turning future syncs into no-ops) while the
+    /// host is told to keep its own persisted state.
+    #[tokio::test]
+    async fn clear_failure_preserves_registries() {
+        let dir = temp_dir("clear_err");
+        let coordinator = coordinator_with_one_wallet(&dir).await;
+        assert!(!coordinator.accounts.read().await.is_empty());
+        assert!(!coordinator.persisters.read().await.is_empty());
+
+        // Force `reset_commitment_tree` to fail: remove the directory holding
+        // the SQLite file so the reset's `Connection::open(path)` can't reopen
+        // it. The store's already-open handle keeps working on the unlinked
+        // inode, but a fresh open at the now-missing path errors.
+        std::fs::remove_dir_all(&dir).expect("remove temp dir to break reopen");
+
+        let result = coordinator.clear().await;
+        assert!(
+            result.is_err(),
+            "clear must surface the store-reset failure rather than swallow it"
+        );
+        assert!(
+            !coordinator.accounts.read().await.is_empty(),
+            "accounts must survive a failed clear so sync does not become a no-op"
+        );
+        assert!(
+            !coordinator.persisters.read().await.is_empty(),
+            "persisters must survive a failed clear"
+        );
+    }
+}
