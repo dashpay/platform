@@ -876,6 +876,14 @@ mod tests {
     /// persister registries populated, so the coordinator does not silently
     /// forget every bound wallet (turning future syncs into no-ops) while the
     /// host is told to keep its own persisted state.
+    ///
+    /// Unix-only: the failure injection relies on POSIX unlink-while-open
+    /// semantics — removing the directory orphans the inode the store's open
+    /// SQLite handle keeps using, but a fresh `Connection::open` at the now
+    /// missing path fails, which is what drives `reset_commitment_tree` to
+    /// error. Windows refuses to remove a directory with open files, so the
+    /// injection wouldn't model a reset failure there.
+    #[cfg(unix)]
     #[tokio::test]
     async fn clear_failure_preserves_registries() {
         let dir = temp_dir("clear_err");
