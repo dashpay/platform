@@ -310,8 +310,12 @@ pub fn sync_shielded_notes_stream(
                 // "Downloaded" progress fires per network chunk
                 // completion, preserving the existing meaning.
                 if let Some(cb) = state.on_progress.as_ref() {
-                    // Absolute downloaded position (= aligned_start + scanned)
-                    // so the "Downloaded" bar shares the "Checked" baseline.
+                    // Absolute downloaded position (start_index + cumulative
+                    // scanned). `start_index` can rewind below prior progress
+                    // on a resume, so a consumer that also tracks committed
+                    // ("checked") progress must clamp this to its own baseline
+                    // to keep "Downloaded" from reading below "Checked" — the
+                    // wallet does exactly that in `sync_notes_across`.
                     cb(
                         state.start_index + state.cumulative_scanned,
                         state.max_block_height,

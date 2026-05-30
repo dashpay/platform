@@ -259,7 +259,25 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
         ..Default::default()
     };
     if let Some(cb) = on_progress {
-        sync_config.on_chunk_completed = Some(cb.clone());
+        // Clamp the SDK's "downloaded" value up to the pre-stream tree leaf
+        // count before forwarding it to the host. The SDK reports downloaded
+        // as `aligned_start + scanned`, where `aligned_start` is the rewound
+        // MIN watermark across subwallets and can sit far below `tree_size`
+        // (a second subwallet binding at watermark 0 collapses it to 0; a
+        // partial-chunk-tail resume rewinds it below the tail). The "checked"
+        // signal is the absolute tree size, so over the gate-skipped re-scan
+        // region (`global_pos < tree_size`, no new appends) the unclamped
+        // download value reads *below* checked and breaks the advertised
+        // `Checked ≤ Downloaded ≤ total` invariant. Everything already in the
+        // tree was necessarily downloaded on a prior pass, so counting it as
+        // downloaded is accurate; the clamp is a no-op once the stream
+        // advances past `tree_size`, and the cold-sync case (tree_size == 0)
+        // is entirely unaffected.
+        let cb = cb.clone();
+        let tree_baseline = tree_size;
+        sync_config.on_chunk_completed = Some(Arc::new(move |downloaded: u64, height: u64| {
+            cb(downloaded.max(tree_baseline), height);
+        }));
     }
 
     // Acquire the store write lock for the whole interleaved consume.
