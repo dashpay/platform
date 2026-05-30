@@ -469,11 +469,14 @@ impl NetworkShieldedCoordinator {
     /// stays populated, and the next cold resync would gate-skip every
     /// re-downloaded position against the stale `tree_size`.
     pub async fn clear(&self) -> Result<(), crate::error::PlatformWalletError> {
-        self.accounts.write().await.clear();
-        self.persisters.write().await.clear();
-        // Attempt both resets even if the first fails, so the store is
-        // left as clean as possible, but capture the first error to
-        // propagate to the caller.
+        // Reset the persistent store FIRST and bail before mutating any
+        // in-memory state if it fails. Clearing `accounts` / `persisters`
+        // makes the coordinator forget every bound wallet (no syncs until
+        // the host rebinds), so doing that while the store reset failed —
+        // and the host therefore keeps its own local state — would leave
+        // the two halves inconsistent. Both resets are still attempted
+        // even if the first fails, so the store is left as clean as
+        // possible, but the first error is captured and propagated.
         let mut first_err: Option<crate::error::PlatformWalletError> = None;
         {
             let mut store = self.store.write().await;
@@ -498,16 +501,21 @@ impl NetworkShieldedCoordinator {
                 });
             }
         }
-        // Reset the cooldown regardless so a post-clear retry (or the
-        // first background pass after a successful clear) runs
-        // immediately rather than honoring a stale "caught up" stamp.
+        if let Some(e) = first_err {
+            return Err(e);
+        }
+
+        // Store reset succeeded — now it is safe to drop the in-memory
+        // registries and reset the cooldown so the first post-clear
+        // background pass runs immediately rather than honoring a stale
+        // "caught up" stamp. On the failure path above none of this runs,
+        // so a failed clear leaves coordinator state untouched.
+        self.accounts.write().await.clear();
+        self.persisters.write().await.clear();
         if let Ok(mut g) = self.last_caught_up_at.lock() {
             *g = None;
         }
-        match first_err {
-            Some(e) => Err(e),
-            None => Ok(()),
-        }
+        Ok(())
     }
 
     /// Run one shielded sync pass for every registered wallet on
