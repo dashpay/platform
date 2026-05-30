@@ -249,14 +249,15 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
     // the stream. The tree-progress ("checked") callback is owned by
     // this consumer and fired below — it never travels through the SDK
     // config (the SDK doesn't append to a tree).
-    let mut sync_config =
-        dash_sdk::platform::shielded::notes_sync::types::ShieldedSyncConfig::default();
     // Fetch up to 16 chunks concurrently (default is 4) to parallelize
     // across the network's ~13 nodes. The per-chunk cost is dominated by
     // server-side proof generation, so more in-flight requests is the main
     // client-side lever; the pull-based stream still caps in-flight fetches
     // at this bound and keeps memory bounded.
-    sync_config.max_concurrent = 16;
+    let mut sync_config = dash_sdk::platform::shielded::notes_sync::types::ShieldedSyncConfig {
+        max_concurrent: 16,
+        ..Default::default()
+    };
     if let Some(cb) = on_progress {
         sync_config.on_chunk_completed = Some(cb.clone());
     }
