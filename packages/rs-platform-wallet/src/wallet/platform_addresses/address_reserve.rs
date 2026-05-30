@@ -5,6 +5,14 @@
 //! (receive) and internal (change) pools. Each pool's index space is
 //! kept disjoint by the [`PoolKind`] discriminant in the table key.
 //!
+//! This is one of two reservation models in platform-wallet, with a
+//! distinct reclaim discipline: here reservations live in a process-global
+//! table reclaimed by a **TTL sweep** ([`sweep_expired`]), because an
+//! address hand-out has no single owning scope. The sibling
+//! [`OutpointReservations`](crate::wallet::core::reservations) releases on
+//! guard **drop** (RAII), bound to one in-flight broadcast. A change to
+//! one's reclaim model should be weighed against the other.
+//!
 //! # Why this module exists
 //!
 //! The upstream `key-wallet` [`AddressPool`] models only a two-state
@@ -275,11 +283,23 @@ pub(crate) fn highest_reserved(
     })
 }
 
+/// Default age after which an unconfirmed reservation is reclaimed by
+/// [`sweep_expired`]. Five minutes covers a user filling in a payment
+/// screen while letting abandoned hand-outs reclaim quickly. The reserved
+/// set is ephemeral (in-memory, rebuilt empty on restart), so this only
+/// bounds leakage within a single long-lived process. Driven on every
+/// completed sync pass via the address-sync `sync_finished` seam, and also
+/// exposed through
+/// [`PlatformAddressWallet::sweep_expired_reservations`](super::wallet::PlatformAddressWallet::sweep_expired_reservations)
+/// for hosts that prefer their own timer.
+pub(crate) const RESERVATION_TTL: Duration = Duration::from_secs(300);
+
 /// Release every reservation older than `ttl`, returning the number of
-/// indices reclaimed. A long-lived process calls this periodically so a
-/// caller that reserved an address but never received a payment (the user
-/// closed the screen, the request timed out) eventually frees the slot
-/// instead of leaking it for the process lifetime.
+/// indices reclaimed. Driven once per completed sync pass (see
+/// [`RESERVATION_TTL`]) so a caller that reserved an address but never
+/// received a payment (the user closed the screen, the request timed out)
+/// eventually frees the slot instead of leaking it for the process
+/// lifetime.
 pub(crate) fn sweep_expired(ttl: Duration) -> usize {
     let now = Instant::now();
     with_table(|t| {

@@ -170,6 +170,12 @@ impl<K: Eq + Hash + Clone + std::fmt::Debug> ReservationGuard<K> {
         std::mem::forget(self);
     }
 
+    /// Number of keys this guard holds reserved. Lets the leak path log
+    /// how many reservations were pinned until restart.
+    pub(crate) fn reserved_count(&self) -> usize {
+        self.keys.len()
+    }
+
     fn do_release(&mut self) {
         let mut inner = self
             .reservations

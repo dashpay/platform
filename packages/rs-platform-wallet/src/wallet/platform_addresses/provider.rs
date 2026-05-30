@@ -693,6 +693,21 @@ impl AddressProvider for PlatformPaymentAddressProvider {
                 account_state.absent = account_scratch.absent;
             }
         }
+
+        // Reclaim ephemeral address reservations (all pool kinds) handed out
+        // but never paid within the TTL. A completed sync pass is the natural
+        // periodic seam: addresses proven used are already released eagerly in
+        // `on_address_found`, so this only frees stale hand-outs. The reserved
+        // table is process-global and in-memory, so sweeping once per pass is
+        // correct and cheap.
+        let reclaimed =
+            super::address_reserve::sweep_expired(super::address_reserve::RESERVATION_TTL);
+        if reclaimed > 0 {
+            tracing::debug!(
+                reclaimed,
+                "swept expired address reservations on sync_finished"
+            );
+        }
     }
 
     fn current_balances(

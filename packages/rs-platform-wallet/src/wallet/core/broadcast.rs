@@ -141,6 +141,7 @@ where
             event = "post_broadcast_reservation_leaked_until_sync",
             %txid,
             wallet_id = %hex::encode(wallet_id),
+            leaked_reservations = reservation.reserved_count(),
             "leaking outpoint reservation: post-broadcast reconciliation failed"
         );
         reservation.leak_until_sync();
