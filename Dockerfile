@@ -707,12 +707,18 @@ COPY --from=build-drive-abci /artifacts/drive-abci /usr/bin/drive-abci
 COPY --from=bake-shielded-snapshot /artifacts/ /opt/dashmate/snapshots/
 COPY packages/rs-drive-abci/.env.mainnet /var/lib/dash/rs-drive-abci/.env
 
-# When the bake stage produced a real snapshot (SDK_TEST_DATA=true at
-# build time), point InitChain's apply-side at it. The InitChain hook in
-# create_data_for_shielded_pool reads this env var; if unset OR the file
-# is the sentinel left by the SDK_TEST_DATA=false branch, the runtime
-# seeder runs instead.
-ENV DRIVE_SHIELDED_SNAPSHOT=/opt/dashmate/snapshots/shielded-pool.snap
+# Only point InitChain's apply-side at the snapshot when the bake stage
+# actually produced one (SDK_TEST_DATA=true). On the SDK_TEST_DATA=false
+# branch the bake stage leaves only a `.no-shielded-snapshot` sentinel, so
+# exporting DRIVE_SHIELDED_SNAPSHOT unconditionally would make
+# create_data_for_shielded_pool try to apply a missing file and fail
+# instead of falling back to the runtime seeder. We gate on the real file's
+# existence (writing the var into the binary's .env, which is loaded via
+# dotenvy and left unset otherwise so the seeder fallback runs).
+RUN if [ -f /opt/dashmate/snapshots/shielded-pool.snap ]; then \
+        echo "DRIVE_SHIELDED_SNAPSHOT=/opt/dashmate/snapshots/shielded-pool.snap" \
+            >> /var/lib/dash/rs-drive-abci/.env ; \
+    fi
 
 # Create a volume
 VOLUME /var/lib/dash/rs-drive-abci/db

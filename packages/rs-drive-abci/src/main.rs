@@ -20,7 +20,7 @@ use drive_abci::{logging, server};
 use itertools::Itertools;
 #[cfg(all(tokio_unstable, feature = "console"))]
 use std::net::SocketAddr;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -450,7 +450,7 @@ mod noop_core_rpc_impl {
 /// Intended for the Dockerfile bake stage: produce a snapshot once during
 /// image build, embed in the runtime image, load it at every InitChain via
 /// `DRIVE_SHIELDED_SNAPSHOT`.
-fn snapshot_bake(_config: &PlatformConfig, out_path: &PathBuf) -> Result<(), String> {
+fn snapshot_bake(_config: &PlatformConfig, out_path: &Path) -> Result<(), String> {
     use dpp::version::PlatformVersion;
     use drive_abci::config::PlatformConfig;
     use drive_abci::platform_types::platform::Platform;
@@ -478,6 +478,13 @@ fn snapshot_bake(_config: &PlatformConfig, out_path: &PathBuf) -> Result<(), Str
 
     let platform_version = PlatformVersion::latest();
     let tx = platform.drive.grove.start_transaction();
+
+    // Defensively unset DRIVE_SHIELDED_SNAPSHOT before seeding. The seeder
+    // (`create_data_for_shielded_pool`) checks this env var first and, if set,
+    // APPLIES the referenced snapshot instead of running the seeder. A developer
+    // (or the Dockerfile env) with it exported would make `snapshot-bake`
+    // recursively re-dump an inherited snapshot rather than seeding a fresh one.
+    std::env::remove_var("DRIVE_SHIELDED_SNAPSHOT");
 
     tracing::info!("snapshot-bake: running create_genesis_state (seeds shielded pool under cfg(create_sdk_test_data))");
     platform

@@ -1,6 +1,7 @@
 use crate::drive::shielded::paths::{shielded_credit_pool_path_vec, SHIELDED_NOTES_KEY};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
+use crate::error::proof::ProofError;
 use crate::error::Error;
 use crate::verify::RootHash;
 use grovedb::{Element, GroveDb, PathQuery, Query, QueryItem, SizedQuery, SubqueryBranch};
@@ -137,11 +138,21 @@ impl Drive {
             },
         };
 
-        let (_count_root_hash, mut count_proved_key_values) = GroveDb::verify_subset_query(
+        let (count_root_hash, mut count_proved_key_values) = GroveDb::verify_subset_query(
             proof,
             &count_path_query,
             &platform_version.drive.grove_version,
         )?;
+
+        // Both verifications run against the SAME proof bytes, so they must
+        // derive the same root by construction. Make that invariant explicit:
+        // a mismatch means the count sub-proof and the note-fetch proof came
+        // from different state and the result cannot be trusted.
+        if count_root_hash != root_hash {
+            return Err(Error::Proof(ProofError::IncorrectProof(
+                "shielded notes count sub-proof root mismatch".to_string(),
+            )));
+        }
 
         let total_count = match count_proved_key_values.pop() {
             Some((_, _, Some(Element::CommitmentTree(total_count, _, _)))) => total_count,

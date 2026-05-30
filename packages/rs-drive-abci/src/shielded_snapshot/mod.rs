@@ -277,9 +277,7 @@ pub fn dump_shielded_subtree(
     //    prepend anything — it expects already-final bytes.
     let subtree_segments = shielded_subtree_segments();
     let subtree_path = SubtreePath::from(subtree_segments.as_slice());
-    let prefix: [u8; 32] = RocksDbStorage::build_prefix(subtree_path.clone())
-        .unwrap()
-        .into();
+    let prefix: [u8; 32] = RocksDbStorage::build_prefix(subtree_path.clone()).unwrap();
 
     // 3. Open transactional storage context at the subtree path. We use the
     //    caller's transaction if provided; otherwise start a local one.
@@ -368,15 +366,28 @@ pub fn dump_shielded_subtree(
         .map_err(|e| ShieldedSnapshotError::RocksDb(format!("SstFileWriter::finish: {e}")))?;
     let sst_bytes_on_disk = std::fs::metadata(&sst_tmp)?.len();
 
-    // Release the iter_ctx borrow before writing the output file.
-    drop(iter_ctx);
-
     // 8. Compose the output file: header || sst_bytes || blake3 checksum.
+    //
+    // The header encodes exactly one flags byte. Fail loudly rather than
+    // silently truncating a wider flags vec: a snapshot-booted devnet would
+    // otherwise diverge from a seeder-built one on the parent-Merk root if the
+    // CommitmentTree flags ever widen past a single byte.
+    let flags_byte = match flags.as_ref() {
+        None => 0,
+        Some(v) if v.is_empty() => 0,
+        Some(v) if v.len() == 1 => v[0],
+        Some(v) => {
+            return Err(ShieldedSnapshotError::Inconsistent(format!(
+                "parent-leaf flags has {} bytes; snapshot format only encodes 1 — bump FORMAT_VERSION and widen the header",
+                v.len()
+            )));
+        }
+    };
     let header = SnapshotHeader {
         format_version: FORMAT_VERSION,
         total_count,
         chunk_power,
-        flags_byte: flags.as_ref().and_then(|v| v.first().copied()).unwrap_or(0),
+        flags_byte,
         combined_root,
         sst_len: sst_bytes_on_disk,
     };

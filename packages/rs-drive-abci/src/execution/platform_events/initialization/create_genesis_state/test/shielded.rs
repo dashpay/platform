@@ -211,8 +211,8 @@ impl<C> Platform<C> {
                 )))?;
             self.drive
                 .record_shielded_pool_anchor_if_changed(GENESIS_ANCHOR_HEIGHT, tx, platform_version)
-                .map_err(Into::into)
-                .and_then(|_| Ok::<_, Error>(()))?;
+                .map_err(Into::<Error>::into)
+                .map(|_| ())?;
             return Ok(());
         }
 

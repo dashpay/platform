@@ -217,6 +217,24 @@ pub trait ShieldedStore: Send + Sync {
     /// of every wallet. The shared commitment tree is left
     /// untouched. Used by `NetworkShieldedCoordinator::clear()`.
     fn purge_all_subwallets(&mut self) -> Result<(), Self::Error>;
+
+    /// Empty the shared commitment tree back to zero leaves.
+    ///
+    /// After this returns, [`Self::tree_size`] reports `0` and the
+    /// next [`Self::append_commitment`] starts at position `0`. The
+    /// per-subwallet watermarks ([`Self::last_synced_note_index`])
+    /// are *not* touched here — callers that want a cold rebuild
+    /// pair this with [`Self::purge_all_subwallets`] so the
+    /// re-download watermark and the tree reset together.
+    ///
+    /// Used by `NetworkShieldedCoordinator::clear()` so the host's
+    /// "Clear" action is a true cold reset rather than a watermark
+    /// rewind into an already-full tree. Without it, Clear leaves
+    /// the tree at its full size while the watermark drops to 0, so
+    /// every re-fetched position is gate-skipped (`global_pos <
+    /// tree_size`) and the "Checked" progress bar stays pinned at
+    /// the stale leaf count while "Downloaded" climbs from 0.
+    fn reset_commitment_tree(&mut self) -> Result<(), Self::Error>;
 }
 
 // ── Per-subwallet bookkeeping ──────────────────────────────────────────
@@ -464,6 +482,18 @@ impl ShieldedStore for InMemoryShieldedStore {
         self.subwallets.clear();
         Ok(())
     }
+
+    fn reset_commitment_tree(&mut self) -> Result<(), Self::Error> {
+        // Flat-list backing: clearing the commitment / mark /
+        // checkpoint vectors drops `tree_size()` to 0 and makes the
+        // next append start at position 0, matching the file-backed
+        // store's reset contract.
+        self.commitments.clear();
+        self.marked_positions.clear();
+        self.checkpoints.clear();
+        self.anchor = [0u8; 32];
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -551,5 +581,25 @@ mod tests {
         store.append_commitment(&[2u8; 32], false).unwrap();
         store.checkpoint_tree(1).unwrap();
         assert_eq!(store.tree_anchor().unwrap(), [0u8; 32]);
+    }
+
+    #[test]
+    fn test_reset_commitment_tree_empties_and_reappends_from_zero() {
+        let mut store = InMemoryShieldedStore::new();
+        store.append_commitment(&[1u8; 32], true).unwrap();
+        store.append_commitment(&[2u8; 32], true).unwrap();
+        store.checkpoint_tree(2).unwrap();
+        assert_eq!(store.tree_size().unwrap(), 2);
+
+        store.reset_commitment_tree().unwrap();
+        assert_eq!(
+            store.tree_size().unwrap(),
+            0,
+            "tree_size must be 0 after reset"
+        );
+
+        // Re-append starts from position 0 again.
+        store.append_commitment(&[3u8; 32], true).unwrap();
+        assert_eq!(store.tree_size().unwrap(), 1);
     }
 }

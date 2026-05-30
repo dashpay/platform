@@ -83,15 +83,6 @@ async-trait = "0.1.77"
 console-subscriber = { version = "0.4", optional = true }
 bls-signatures = { git = "https://github.com/dashpay/bls-signatures", rev = "0842b17583888e8f46c252a4ee84cdfd58e0546f", optional = true }
 grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "5eb7a5380a6e974513343352acfd6b30a8c1f87c" }
-# Low-level Orchard primitives (Note::from_parts, OrchardNoteEncryption) used by
-# the SDK genesis-test-data seeder; grovedb-commitment-tree re-exports most of
-# orchard but not `OrchardNoteEncryption`, so we depend on the same upstream rev.
-# Used only inside `#[cfg(create_sdk_test_data)]` paths.
-orchard = { git = "https://github.com/dashpay/orchard.git", rev = "898258d76aab2822249492aede59a02d49278fff", features = ["circuit"] }
-# ZIP-32 hierarchical key derivation — matches the `OrchardKeySet::from_seed`
-# path in `rs-platform-wallet`, so the test wallets are derivable from the same
-# seed on both the chain side (here) and the wallet side (rs-platform-wallet).
-zip32 = "0.2"
 nonempty = "0.11"
 # Shielded-pool snapshot needs raw RocksDB SstFileWriter + ingest_external_file_cf
 # bindings, and blake3 for the snapshot-file checksum.

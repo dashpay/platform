@@ -14,7 +14,7 @@
 use std::collections::BTreeMap;
 use std::error::Error as StdError;
 use std::fmt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use grovedb_commitment_tree::{ClientPersistentCommitmentTree, Position, Retention};
@@ -45,6 +45,21 @@ pub struct FileBackedShieldedStore {
     /// `RwLock<S>`; this inner mutex is just a `Sync`-restoring
     /// shim and is uncontended in practice.
     tree: Mutex<ClientPersistentCommitmentTree>,
+    /// Backing SQLite path, retained so [`reset_commitment_tree`]
+    /// can wipe the on-disk tree tables and rebuild a fresh
+    /// `ClientPersistentCommitmentTree` over the same file. The
+    /// wrapper takes its `Connection` by value and exposes no
+    /// public truncate, so a full reset reopens the tree rather
+    /// than mutating the live handle in place.
+    ///
+    /// [`reset_commitment_tree`]: ShieldedStore::reset_commitment_tree
+    path: PathBuf,
+    /// `max_checkpoints` passed at open time, retained so the
+    /// rebuilt tree in [`reset_commitment_tree`] matches the
+    /// original retention policy.
+    ///
+    /// [`reset_commitment_tree`]: ShieldedStore::reset_commitment_tree
+    max_checkpoints: usize,
     /// Per-subwallet notes + sync state, keyed by `(wallet_id,
     /// account_index)`. Lazily populated on first use of an id.
     subwallets: BTreeMap<SubwalletId, SubwalletState>,
@@ -73,7 +88,30 @@ impl FileBackedShieldedStore {
         path: impl AsRef<Path>,
         max_checkpoints: usize,
     ) -> Result<Self, FileShieldedStoreError> {
-        let conn = rusqlite::Connection::open(path.as_ref())
+        let path = path.as_ref().to_path_buf();
+        let conn = Self::open_tuned_connection(&path)?;
+        let tree = ClientPersistentCommitmentTree::open(conn, max_checkpoints)
+            .map_err(|e| FileShieldedStoreError(format!("open commitment tree: {e}")))?;
+        Ok(Self {
+            tree: Mutex::new(tree),
+            path,
+            max_checkpoints,
+            subwallets: BTreeMap::new(),
+        })
+    }
+
+    /// Open a `rusqlite::Connection` on `path` with the same WAL /
+    /// `synchronous=NORMAL` / `temp_store=MEMORY` PRAGMAs the cold-sync
+    /// append path depends on (see [`open_path`] for the rationale).
+    ///
+    /// Shared by [`open_path`] and [`reset_commitment_tree`] so any
+    /// connection the store hands to `ClientPersistentCommitmentTree`
+    /// — original or post-reset — is configured identically.
+    ///
+    /// [`open_path`]: Self::open_path
+    /// [`reset_commitment_tree`]: ShieldedStore::reset_commitment_tree
+    fn open_tuned_connection(path: &Path) -> Result<rusqlite::Connection, FileShieldedStoreError> {
+        let conn = rusqlite::Connection::open(path)
             .map_err(|e| FileShieldedStoreError(format!("open sqlite: {e}")))?;
         // Pragmas must be applied before the schema is touched. They survive
         // for the lifetime of the connection; WAL also persists for any
@@ -86,12 +124,7 @@ impl FileBackedShieldedStore {
             conn.pragma_update(None, k, v)
                 .map_err(|e| FileShieldedStoreError(format!("PRAGMA {k}={v}: {e}")))?;
         }
-        let tree = ClientPersistentCommitmentTree::open(conn, max_checkpoints)
-            .map_err(|e| FileShieldedStoreError(format!("open commitment tree: {e}")))?;
-        Ok(Self {
-            tree: Mutex::new(tree),
-            subwallets: BTreeMap::new(),
-        })
+        Ok(conn)
     }
 }
 
@@ -255,6 +288,42 @@ impl ShieldedStore for FileBackedShieldedStore {
         self.subwallets.clear();
         Ok(())
     }
+
+    fn reset_commitment_tree(&mut self) -> Result<(), Self::Error> {
+        // The `ClientPersistentCommitmentTree` wrapper owns its
+        // `Connection` and exposes no public truncate (only the inner
+        // `SqliteShardStore` has `truncate_shards`). A full reset
+        // therefore (1) wipes the four `commitment_tree_*` tables on a
+        // fresh connection, then (2) rebuilds the wrapper over the now
+        // empty DB so the in-memory shardtree frontier/cap reflect the
+        // empty state. Reopening — rather than mutating the live tree —
+        // is what guarantees `tree_size()` reads back 0: the wrapper
+        // caches frontier nodes that a bare `DELETE` wouldn't clear.
+        let mut tree = self
+            .tree
+            .lock()
+            .map_err(|e| FileShieldedStoreError(format!("tree mutex poisoned: {e}")))?;
+
+        {
+            let conn = Self::open_tuned_connection(&self.path)?;
+            // `commitment_tree_cap` is included alongside the three
+            // shard/checkpoint tables: it caches upper-level tree nodes,
+            // so leaving it populated while the shards are empty would
+            // reopen into an inconsistent (non-empty) tree state.
+            conn.execute_batch(
+                "DELETE FROM commitment_tree_checkpoint_marks_removed;
+                 DELETE FROM commitment_tree_checkpoints;
+                 DELETE FROM commitment_tree_shards;
+                 DELETE FROM commitment_tree_cap;",
+            )
+            .map_err(|e| FileShieldedStoreError(format!("reset commitment tree tables: {e}")))?;
+        }
+
+        let conn = Self::open_tuned_connection(&self.path)?;
+        *tree = ClientPersistentCommitmentTree::open(conn, self.max_checkpoints)
+            .map_err(|e| FileShieldedStoreError(format!("reopen commitment tree: {e}")))?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -369,6 +438,69 @@ mod tests {
             size, N,
             "tree size must survive persist + reload — the append gate \
              reads it on cold start to avoid re-appending existing leaves"
+        );
+    }
+
+    /// `reset_commitment_tree()` must empty the shared tree back to
+    /// zero leaves so the host's "Clear" action becomes a true cold
+    /// rebuild: after a reset, `tree_size()` is 0, a fresh append
+    /// starts at position 0, and the emptied state survives a
+    /// persist + reload (the on-disk tables are genuinely wiped, not
+    /// just the in-memory frontier). Without this, Clear rewinds the
+    /// per-subwallet watermark to 0 but leaves the tree at its full
+    /// size, so every re-downloaded position is gate-skipped and the
+    /// "Checked" progress bar stalls.
+    #[test]
+    fn reset_commitment_tree_empties_and_allows_reappend_from_zero() {
+        let path = temp_tree_path("reset");
+        let mut store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+
+        // Build a non-trivial tree.
+        const N: u64 = 6;
+        for i in 0..N {
+            let mut cmx = [0u8; 32];
+            cmx[0] = (i as u8) + 1;
+            store.append_commitment(&cmx, true).unwrap();
+        }
+        store.checkpoint_tree(N as u32).unwrap();
+        assert_eq!(
+            store.tree_size().unwrap(),
+            N,
+            "precondition: tree holds N leaves before reset"
+        );
+
+        // Reset wipes it back to empty.
+        store.reset_commitment_tree().unwrap();
+        assert_eq!(
+            store.tree_size().unwrap(),
+            0,
+            "tree_size must be 0 immediately after reset"
+        );
+
+        // A fresh append starts at position 0 again and the count
+        // climbs from there — the cold-rebuild contract Clear relies on.
+        let mut cmx = [0u8; 32];
+        cmx[0] = 42;
+        store.append_commitment(&cmx, true).unwrap();
+        assert_eq!(
+            store.tree_size().unwrap(),
+            1,
+            "first post-reset append must land at position 0 (size 1)"
+        );
+        store.checkpoint_tree(1).unwrap();
+
+        // The emptied + re-appended state must survive persist +
+        // reload, proving the reset wiped the on-disk tables rather
+        // than only the in-memory frontier.
+        drop(store);
+        let store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+        let size = store.tree_size().unwrap();
+        let _ = std::fs::remove_file(&path);
+
+        assert_eq!(
+            size, 1,
+            "post-reset tree state (1 leaf) must survive persist + reload, \
+             confirming reset cleared the SQLite tree tables"
         );
     }
 }

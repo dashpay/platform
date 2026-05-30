@@ -2048,7 +2048,6 @@ dependencies = [
  "metrics-exporter-prometheus",
  "mockall",
  "nonempty",
- "orchard",
  "platform-version",
  "prost 0.14.3",
  "rand 0.8.6",
@@ -2070,7 +2069,6 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
- "zip32",
 ]
 
 [[package]]

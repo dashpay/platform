@@ -69,6 +69,18 @@ extension PlatformWalletManager {
         // this pass is no longer meaningful — clear so the next pass
         // starts from nil. Also matches the false→true edge UI gating
         // in ShieldedService's currentSyncElapsed timer.
+        resetCurrentShieldedProgress()
+    }
+
+    /// Clear the four per-pass live-progress mirrors so the next pass
+    /// starts from nil. Routed through by every path that ends a pass:
+    /// the normal completion (`handleShieldedSyncCompleted`) plus the
+    /// `stopShieldedSync()` / `clearShielded()` paths that suppress the
+    /// trailing completion event — without this, a pass stopped/cleared
+    /// mid-flight would leave the last published `currentShielded*`
+    /// values visible (stale UI) between passes. Main-actor-isolated
+    /// like every other member of this `@MainActor` class.
+    private func resetCurrentShieldedProgress() {
         currentShieldedSyncScanned = nil
         currentShieldedSyncBlockHeight = nil
         currentShieldedTreeCommitted = nil
@@ -224,6 +236,10 @@ extension PlatformWalletManager {
         // The Rust drain returned; suppress any trailing completion
         // event the main actor delivers after this point.
         suppressShieldedCompletionEvents = true
+        // The suppressed completion would normally clear the per-pass
+        // progress mirrors; do it here so a pass stopped mid-flight
+        // doesn't leave stale `currentShielded*` values on the UI.
+        resetCurrentShieldedProgress()
     }
 
     /// Reset the Rust-side shielded state on this manager:
@@ -251,6 +267,10 @@ extension PlatformWalletManager {
         // event the main actor delivers after Clear (it would otherwise
         // briefly repopulate the mirror the host is about to wipe).
         suppressShieldedCompletionEvents = true
+        // The suppressed completion would normally clear the per-pass
+        // progress mirrors; do it here so a pass cleared mid-flight
+        // doesn't leave stale `currentShielded*` values on the UI.
+        resetCurrentShieldedProgress()
     }
 
     public func isShieldedSyncRunning() throws -> Bool {

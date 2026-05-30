@@ -94,6 +94,12 @@ struct StreamState {
     sdk: Sdk,
     ivk: PreparedIncomingViewingKey,
     chunk_size: u64,
+    /// The sync's absolute start position. Added to `cumulative_scanned`
+    /// when firing the download progress callback so the "Downloaded"
+    /// bar is absolute-toward-total — it shares a baseline with the
+    /// wallet's "Checked" (= tree leaf count) signal, keeping
+    /// Checked <= Downloaded even on a resume where the tree is full.
+    start_index: u64,
     settings: rs_dapi_client::RequestSettings,
     on_progress: Option<super::types::ProgressCallback>,
     /// In-flight chunk fetches (sliding window of `max_concurrent`).
@@ -102,8 +108,11 @@ struct StreamState {
     next_chunk_index: u64,
     /// Out-of-order completed chunks waiting for their predecessor to be
     /// emitted, plus the emit watermark. Drained in ascending order.
-    /// Payload: `(notes, block_height, total_count)`.
-    reorder: ReorderBuffer<(Vec<ShieldedEncryptedNote>, u64, u64)>,
+    /// Payload: `(notes, block_height)`. The progress denominator is NOT
+    /// buffered per chunk — the emitted batch carries `self.total_count`
+    /// (the monotonic max-seen) so out-of-order completion can never make
+    /// the determinate progress bar regress mid-sync.
+    reorder: ReorderBuffer<(Vec<ShieldedEncryptedNote>, u64)>,
     /// Set once a partial (short) chunk is observed — stops queuing new
     /// fetches.
     reached_end: bool,
@@ -137,7 +146,7 @@ impl StreamState {
     /// If the chunk at the emit watermark is buffered, build its batch,
     /// advance the watermark, and return it. Otherwise `None`.
     fn pop_ready(&mut self) -> Option<ShieldedChunkBatch> {
-        let (start_index, (notes, block_height, total_count)) = self.reorder.pop_ready()?;
+        let (start_index, (notes, block_height)) = self.reorder.pop_ready()?;
         let is_partial = (notes.len() as u64) < self.chunk_size;
 
         // Trial-decrypt this chunk before emission (moved out of the
@@ -163,7 +172,10 @@ impl StreamState {
             decrypted,
             block_height,
             is_partial,
-            total_count,
+            // Emit the monotonic max-seen denominator, not this chunk's
+            // own proven total. An older chunk completing after a newer
+            // proof already raised the count must NOT lower it again.
+            total_count: self.total_count,
         })
     }
 }
@@ -232,6 +244,7 @@ pub fn sync_shielded_notes_stream(
         sdk: sdk.clone(),
         ivk: ivk.clone(),
         chunk_size,
+        start_index,
         settings: config.request_settings,
         on_progress: config.on_chunk_completed.clone(),
         futures,
@@ -297,11 +310,14 @@ pub fn sync_shielded_notes_stream(
                 // "Downloaded" progress fires per network chunk
                 // completion, preserving the existing meaning.
                 if let Some(cb) = state.on_progress.as_ref() {
-                    cb(state.cumulative_scanned, state.max_block_height);
+                    // Absolute downloaded position (= aligned_start + scanned)
+                    // so the "Downloaded" bar shares the "Checked" baseline.
+                    cb(
+                        state.start_index + state.cumulative_scanned,
+                        state.max_block_height,
+                    );
                 }
-                state
-                    .reorder
-                    .insert(chunk_idx, (notes, block_height, total_count));
+                state.reorder.insert(chunk_idx, (notes, block_height));
 
                 if let Some(batch) = state.pop_ready() {
                     state.queue_next();

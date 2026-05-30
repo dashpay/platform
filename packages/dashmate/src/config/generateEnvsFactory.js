@@ -125,7 +125,15 @@ export default function generateEnvsFactory(configFile, homeDir, getConfigProfil
       ...getBuildArgs('platform.dapi.rsDapi.docker.build.buildArgs'),
       ...getBuildArgs('platform.drive.abci.docker.build.buildArgs'),
     };
+    const reservedEnvKeys = new Set([
+      'COMPOSE_FILE', 'COMPOSE_PROJECT_NAME', 'COMPOSE_PROFILES', 'COMPOSE_PATH_SEPARATOR',
+      'DOCKER_BUILDKIT', 'COMPOSE_DOCKER_CLI_BUILD', 'CONFIG_NAME', 'DASHMATE_HOME_DIR', 'LOCAL_UID', 'LOCAL_GID',
+    ]);
     for (const [key, value] of Object.entries(mergedBuildArgs)) {
+      // don't let buildArgs clobber reserved compose/runtime envs
+      if (reservedEnvKeys.has(key)) {
+        continue;
+      }
       envs[key] = value;
     }
 

@@ -114,16 +114,16 @@ In `packages/rs-drive-abci/src/shielded_snapshot/mod.rs`:
 pub fn dump_shielded_subtree(
     grove: &GroveDb,
     transaction: TransactionArg,
-    out: &mut impl Write,
+    out_path: &Path,
+    platform_version: &PlatformVersion,
 ) -> Result<DumpStats, ShieldedSnapshotError>;
 
 pub fn apply_shielded_snapshot(
     grove: &GroveDb,
-    snapshot: &mut impl Read,
     transaction: TransactionArg,
-) -> Result<(), ShieldedSnapshotError>;
-
-pub fn read_header(snapshot: &mut impl Read) -> Result<SnapshotHeader, ShieldedSnapshotError>;
+    snapshot_path: &Path,
+    platform_version: &PlatformVersion,
+) -> Result<ApplyStats, ShieldedSnapshotError>;
 ```
 
 Errors are structured. `ShieldedSnapshotError::PartiallyApplied { ingested_cfs, failed_cf, cause }` lets the caller distinguish "no-op,
@@ -216,12 +216,26 @@ Transactional contract (per feasibility F3 + your direction):
   parent leaf and the InitChain handler returns an error, triggering
   exactly the wipe-and-restart path the abort case relies on.
 
-The existing runtime `create_data_for_shielded_pool` path is **removed**.
-No fallback. If the snapshot file is missing and `create_sdk_test_data` cfg
-is active, InitChain fails loud (`Error::Execution("DRIVE_SHIELDED_SNAPSHOT
-required when built with create_sdk_test_data")`). This forces the bake
-stage in the Dockerfile to be the only supported way to populate the
-shielded pool at genesis.
+`create_data_for_shielded_pool` branches on the `DRIVE_SHIELDED_SNAPSHOT`
+env var:
+
+- **Snapshot fast-path (env var set):** the snapshot file is applied via SST
+  ingest. Any failure here — file missing, magic mismatch, format/version
+  skew, checksum failure, or `combined_root` cross-validation drift — is
+  **fatal**: `apply_shielded_snapshot` returns a `ShieldedSnapshotError` and
+  InitChain surfaces it as `Error::Execution(...)` and aborts. There is no
+  silent fallback to the seeder once the env var is set; the operator is
+  expected to fix the snapshot rather than get different state than asked for.
+- **Runtime seeding fallback (env var unset):** the chain seeds the shielded
+  pool at genesis from `ShieldedSeedConfig::sdk_test_data()` (the slow
+  Sinsemilla runtime path). This is the path used when the binary is built
+  with `create_sdk_test_data` but no baked snapshot is shipped.
+
+The Dockerfile only exports `DRIVE_SHIELDED_SNAPSHOT` when the bake stage
+actually produced a snapshot file (`SDK_TEST_DATA=true`); otherwise the bake
+stage leaves a `.no-shielded-snapshot` sentinel and the env var is left unset
+so the runtime seeder fallback runs. The bake-then-apply route is the fast,
+recommended way to populate the shielded pool at genesis.
 
 `record_shielded_pool_anchor_if_changed(height=1)` runs after the snapshot
 apply, same as before, so the anchor matches the snapshot's frontier.

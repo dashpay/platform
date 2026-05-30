@@ -8,9 +8,13 @@
 //! verification) split — so we get both the aggregate distribution and the
 //! per-call breakdown without further instrumentation.
 //!
+//! This is an opt-in example (NOT a test) because it performs real network
+//! I/O against a live devnet; cargo examples are compiled but never run by
+//! `cargo test`.
+//!
 //! Run:
-//!   cargo test -p platform-wallet --release --features shielded \
-//!     --test shielded_chunk_timing_bench -- --ignored --nocapture
+//!   cargo run -p platform-wallet --release --features shielded \
+//!     --example shielded_chunk_timing_bench
 //!
 //! Env overrides (all optional):
 //! - `PALOMA_QUORUM_URL`     defaults to http://44.238.203.84:8080
@@ -87,9 +91,8 @@ fn percentile(sorted: &[u128], pct: f64) -> u128 {
     sorted[idx.min(sorted.len() - 1)]
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-#[ignore = "Hits live paloma devnet; opt in via --ignored --nocapture"]
-async fn shielded_chunk_timing_bench() {
+#[tokio::main(flavor = "multi_thread", worker_threads = 4)]
+async fn main() {
     let _ = tracing_subscriber::FmtSubscriber::builder()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()

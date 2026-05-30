@@ -421,11 +421,11 @@ impl NetworkShieldedCoordinator {
 
     /// Drop every wallet registration, purge all per-subwallet
     /// store state (notes, spent marks, sync watermarks,
-    /// nullifier checkpoints), and reset the cooldown stamp. The
-    /// single SQLite handle (commitment tree) stays open — Clear
-    /// semantics on the host side are "wipe my persistence and
-    /// start re-syncing from index 0 on the shared tree", not
-    /// "blow away the chain-wide cache".
+    /// nullifier checkpoints), empty the shared commitment tree,
+    /// and reset the cooldown stamp. The single SQLite handle stays
+    /// open — Clear semantics on the host side are "wipe my
+    /// persistence and cold-rebuild from index 0", not "blow away
+    /// the SQLite file".
     ///
     /// Purging the in-memory `subwallets` store is what actually
     /// delivers the "re-sync from index 0" contract: the sync
@@ -435,6 +435,18 @@ impl NetworkShieldedCoordinator {
     /// caught-up and never re-emit notes to the host (it would
     /// only work after a process restart that drops the
     /// in-memory state). Clearing it here closes that gap.
+    ///
+    /// Emptying the commitment tree is what keeps the two reset
+    /// halves coherent. The watermark rewinds to 0 but the tree's
+    /// append gate is `tree_size`, so a tree left at its full
+    /// (~1M-leaf) size would gate-skip every re-downloaded position
+    /// (`global_pos < tree_size`) — nothing new appends, the
+    /// "Checked" progress bar stays pinned at the stale leaf count
+    /// while "Downloaded" climbs from 0, and the host pointlessly
+    /// re-downloads into an already-complete tree. Resetting the
+    /// tree alongside the watermarks makes Clear+resync a true cold
+    /// rebuild: `tree_size` returns to 0 and "Checked" climbs 0→N
+    /// trailing "Downloaded".
     ///
     /// Used by [`platform_wallet_manager_shielded_clear`] (the
     /// host's Clear button). The host then wipes its own
@@ -451,8 +463,18 @@ impl NetworkShieldedCoordinator {
     pub async fn clear(&self) {
         self.accounts.write().await.clear();
         self.persisters.write().await.clear();
-        if let Err(e) = self.store.write().await.purge_all_subwallets() {
-            tracing::warn!(error = %e, "Failed to purge subwallet store state on clear");
+        {
+            let mut store = self.store.write().await;
+            if let Err(e) = store.purge_all_subwallets() {
+                tracing::warn!(error = %e, "Failed to purge subwallet store state on clear");
+            }
+            // Reset the shared commitment tree under the same write
+            // guard so the watermark (now 0) and the tree size reset
+            // together — otherwise the post-clear resync gate-skips
+            // every re-downloaded position into the still-full tree.
+            if let Err(e) = store.reset_commitment_tree() {
+                tracing::warn!(error = %e, "Failed to reset commitment tree on clear");
+            }
         }
         if let Ok(mut g) = self.last_caught_up_at.lock() {
             *g = None;

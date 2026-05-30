@@ -1,4 +1,4 @@
-//! Functional test for the SDK_TEST_DATA seeded shielded pool.
+//! Functional example for the SDK_TEST_DATA seeded shielded pool.
 //!
 //! Drives the **full PlatformWalletManager flow** end-to-end: create wallet
 //! → bind shielded → trigger a sync pass via the network coordinator → check
@@ -6,8 +6,12 @@
 //! so any breakage in `bind_shielded`, `NetworkShieldedCoordinator::sync`, the
 //! gRPC layer, or proof verification surfaces here.
 //!
+//! This is an opt-in example (NOT a test) because it performs real network
+//! I/O against a running devnet; cargo examples are compiled but never run by
+//! `cargo test`.
+//!
 //! The in-process unit tests in `rs-drive-abci/.../create_genesis_state/test/
-//! shielded.rs` prove crypto + drive integration are correct. This test
+//! shielded.rs` prove crypto + drive integration are correct. This example
 //! closes the remaining gap by running a real wallet against a real chain.
 //!
 //! # Expected chain config
@@ -37,8 +41,13 @@
 //! # Running
 //!
 //! ```bash
-//! DASH_SDK_CORE_PASSWORD='<password>' cargo test -p platform-wallet \
-//!     --test shielded_sync --features shielded -- --ignored --nocapture
+//! # Wallet A (default):
+//! DASH_SDK_CORE_PASSWORD='<password>' cargo run -p platform-wallet \
+//!     --example shielded_sync --features shielded
+//!
+//! # Wallet B (cross-wallet privacy check):
+//! SHIELDED_SYNC_WALLET=B DASH_SDK_CORE_PASSWORD='<password>' \
+//!     cargo run -p platform-wallet --example shielded_sync --features shielded
 //! ```
 
 #![cfg(feature = "shielded")]
@@ -63,7 +72,7 @@ use platform_wallet::PlatformWalletManager;
 /// (`SpendingKey::from_zip32_seed(seed, coin_type=1, account=0)`), so the
 /// recipient address the chain encrypts to is byte-identical to the address
 /// the wallet's IVK trial-decrypts under. If the chain-side switches
-/// derivation, this test fails with "decrypted 0 notes".
+/// derivation, this example fails with "decrypted 0 notes".
 const SEED_A: [u8; 32] = [0x73; 32];
 
 /// Wallet B seed — see [`SEED_A`].
@@ -94,7 +103,7 @@ impl WalletIndex {
     }
 }
 
-/// In-memory no-op persister. Real wallets persist; for this test we only
+/// In-memory no-op persister. Real wallets persist; for this example we only
 /// care that a single sync pass recovers the right balance.
 struct NoopPersister;
 impl PlatformWalletPersistence for NoopPersister {
@@ -233,7 +242,7 @@ async fn run_wallet_balance_test(wallet: WalletIndex) {
         .expect("configure_shielded");
 
     // --- 4. Create a platform wallet. The transparent-layer seed is a
-    //        BIP-39-style 64-byte seed and is immaterial for this test
+    //        BIP-39-style 64-byte seed and is immaterial for this example
     //        (we never spend or query transparent state); we duplicate
     //        the 32-byte shielded seed into a deterministic 64-byte
     //        pattern so the wallet ID is reproducible per `wallet`. ---
@@ -269,8 +278,8 @@ async fn run_wallet_balance_test(wallet: WalletIndex) {
         .expect("bind_shielded");
 
     // --- 6. Run a single sync pass through the coordinator. `force = true`
-    //        skips the cooldown gate so the test runs immediately after the
-    //        chain comes up. ---
+    //        skips the cooldown gate so the example runs immediately after
+    //        the chain comes up. ---
     let summary = coordinator.sync(true).await;
     eprintln!("{:?}: sync summary: {:?}", wallet, summary);
 
@@ -296,40 +305,30 @@ async fn run_wallet_balance_test(wallet: WalletIndex) {
     let _ = std::fs::remove_dir_all(&shielded_db_dir);
 }
 
-/// Sync wallet A against the seeded pool and verify balance =
-/// `count_a × owned_value`.
-#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-#[ignore = "requires a SDK_TEST_DATA devnet — see file header"]
-async fn wallet_a_recovers_deterministic_balance_via_manager_sync() {
-    run_wallet_balance_test(WalletIndex::A).await;
-}
+/// Sync a wallet against the seeded pool and verify balance =
+/// `count × owned_value`.
+///
+/// Defaults to wallet A; set `SHIELDED_SYNC_WALLET=B` to run wallet B
+/// instead. Running wallet B also pins cross-wallet privacy at the network
+/// layer — if A's IVK leaked over the wire and B picked up A's notes, B's
+/// balance would exceed `count_b × value`.
+#[tokio::main(flavor = "multi_thread", worker_threads = 1)]
+async fn main() {
+    // Sanity-check the hardcoded expectations stay coherent if someone bumps
+    // the constants (was a `#[cfg(test)]` unit test in the old test file).
+    assert_eq!(EXPECTED_BALANCE_A, COUNT_A as u64 * OWNED_VALUE);
+    assert_eq!(EXPECTED_BALANCE_B, COUNT_B as u64 * OWNED_VALUE);
+    assert_ne!(SEED_A, SEED_B);
 
-/// Sync wallet B against the seeded pool and verify balance =
-/// `count_b × owned_value`. Together with the wallet-A test, this also pins
-/// cross-wallet privacy at the network layer — if A's IVK leaked over the
-/// wire and B picked up A's notes, B's balance would exceed `count_b × value`.
-#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-#[ignore = "requires a SDK_TEST_DATA devnet — see file header"]
-async fn wallet_b_recovers_deterministic_balance_via_manager_sync() {
-    run_wallet_balance_test(WalletIndex::B).await;
-}
+    let wallet = match std::env::var("SHIELDED_SYNC_WALLET")
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_uppercase()
+        .as_str()
+    {
+        "B" => WalletIndex::B,
+        _ => WalletIndex::A,
+    };
 
-#[cfg(test)]
-mod constants {
-    //! Sanity-checks for the hardcoded expectations. Always-on tests so the
-    //! test binary compiles even when no devnet is up, and the math stays
-    //! coherent if someone bumps the constants.
-
-    use super::*;
-
-    #[test]
-    fn expected_balance_matches_count_times_value() {
-        assert_eq!(EXPECTED_BALANCE_A, COUNT_A as u64 * OWNED_VALUE);
-        assert_eq!(EXPECTED_BALANCE_B, COUNT_B as u64 * OWNED_VALUE);
-    }
-
-    #[test]
-    fn wallet_seeds_are_distinct() {
-        assert_ne!(SEED_A, SEED_B);
-    }
+    run_wallet_balance_test(wallet).await;
 }

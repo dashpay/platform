@@ -48,6 +48,7 @@ export default {
         //   the binary at compile time.
         buildArgs: {
           type: 'object',
+          propertyNames: { type: 'string', pattern: '^[A-Za-z_][A-Za-z0-9_]*$' },
           additionalProperties: { type: 'string' },
         },
       },

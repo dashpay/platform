@@ -31,7 +31,7 @@ yarn dashmate config set core.insight.enabled true --config local_seed
 # (debug bake fits in tenderdash's InitChain window only at small N).
 for i in $(seq 1 ${MASTERNODES_COUNT}); do
     yarn dashmate config set --config=local_${i} \
-        platform.drive.abci.docker.build.buildArgs.SDK_TEST_DATA "true"
+        platform.drive.abci.docker.build.buildArgs.SDK_TEST_DATA '"true"'
     yarn dashmate config set --config=local_${i} \
-        platform.drive.abci.docker.build.buildArgs.CARGO_BUILD_PROFILE "release"
+        platform.drive.abci.docker.build.buildArgs.CARGO_BUILD_PROFILE '"release"'
 done

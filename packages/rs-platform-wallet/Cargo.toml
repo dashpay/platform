@@ -61,8 +61,26 @@ zip32 = { version = "0.2.0", default-features = false, optional = true }
 # Same version as `dash-sdk` so the lockfile resolves a single copy.
 futures = { version = "0.3.30", optional = true }
 
+# Networked, opt-in example binaries. Each one performs real network I/O
+# against a live devnet, so they are examples (compiled, never run by
+# `cargo test`) rather than `#[ignore]`d tests. They are crate-gated on the
+# `shielded` feature (`#![cfg(feature = "shielded")]`), so `required-features`
+# lets cargo skip building them entirely when the feature is off — otherwise
+# the emptied file would have no `main`.
+[[example]]
+name = "shielded_sync"
+required-features = ["shielded"]
+
+[[example]]
+name = "shielded_sync_paloma"
+required-features = ["shielded"]
+
+[[example]]
+name = "shielded_chunk_timing_bench"
+required-features = ["shielded"]
+
 [dev-dependencies]
-# Used by `tests/shielded_chunk_timing_bench.rs` and
+# Used by `examples/shielded_chunk_timing_bench.rs` and
 # `tests/shielded_decrypt_bench.rs` to assemble per-chunk wire
 # fixtures and decode the `ShieldedEncryptedNote` wire type.
 drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
@@ -82,7 +100,7 @@ tokio = { version = "1", features = ["sync", "rt", "time", "macros", "test-util"
 # Re-enable the SDK with mocks feature for test-only mock builders;
 # the non-test build keeps the leaner default-feature SDK above.
 dash-sdk = { path = "../rs-sdk", default-features = false, features = ["dashpay-contract", "dpns-contract", "wallet", "mocks"] }
-# Used by `tests/shielded_sync_paloma.rs` to build the SDK against
+# Used by `examples/shielded_sync_paloma.rs` to build the SDK against
 # a remote devnet that doesn't have Core RPC reachable — supplies
 # proof verification via a separate HTTP quorum-list service.
 rs-sdk-trusted-context-provider = { path = "../rs-sdk-trusted-context-provider" }

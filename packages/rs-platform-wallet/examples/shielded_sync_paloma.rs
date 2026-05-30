@@ -1,9 +1,13 @@
-//! Remote-devnet variant of `shielded_sync.rs`. Binds wallet A
+//! Remote-devnet variant of the `shielded_sync` example. Binds wallet A
 //! (raw ZIP-32 seed `[0x73; 32]`) against a live devnet that's been
 //! deployed from a `SDK_TEST_DATA=true` image, drives one shielded sync
 //! pass, and asserts the recovered balance.
 //!
-//! Diverges from [`shielded_sync.rs`] in two ways:
+//! This is an opt-in example (NOT a test) because it performs real network
+//! I/O against a live devnet; cargo examples are compiled but never run by
+//! `cargo test`.
+//!
+//! Diverges from the `shielded_sync` example in two ways:
 //!
 //! 1. **No Core RPC.** The remote devnet's Core RPC ports are
 //!    firewalled, so we can't use `SdkBuilder::with_core(...)`. Instead
@@ -33,8 +37,7 @@
 //! # Running
 //!
 //! ```bash
-//! cargo test -p platform-wallet --test shielded_sync_paloma --features shielded \
-//!     -- --ignored --nocapture
+//! cargo run -p platform-wallet --example shielded_sync_paloma --features shielded
 //! ```
 //!
 //! Env overrides (all optional):
@@ -106,8 +109,8 @@ const DEFAULT_DAPI_ADDRESSES: &[&str] = &[
 ];
 
 /// In-memory no-op persister — matches the same in-test stub from
-/// `shielded_sync.rs`. We only need a single sync pass to compute the
-/// balance; persisted state across runs is irrelevant.
+/// the `shielded_sync` example. We only need a single sync pass to compute
+/// the balance; persisted state across runs is irrelevant.
 struct NoopPersister;
 impl PlatformWalletPersistence for NoopPersister {
     fn store(
@@ -161,9 +164,8 @@ fn quorum_url() -> String {
     std::env::var("PALOMA_QUORUM_URL").unwrap_or_else(|_| DEFAULT_QUORUM_URL.to_string())
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-#[ignore = "requires a reachable SDK_TEST_DATA devnet — see file header"]
-async fn wallet_a_recovers_balance_on_paloma() {
+#[tokio::main(flavor = "multi_thread", worker_threads = 1)]
+async fn main() {
     let _ = tracing_subscriber::FmtSubscriber::builder()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
