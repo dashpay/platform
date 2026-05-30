@@ -234,10 +234,17 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
     // denominator works against currently-deployed nodes with no dependency
     // on that RPC being deployed, and costs no extra round-trip.
     //
-    // It is unknown until the first batch arrives, so it starts at 0
-    // (indeterminate — the host's existing indeterminate handling) and is
-    // set from `batch.total_count` as soon as the first batch lands.
-    let mut total_target: u64 = 0;
+    // Seeded from the local `tree_size`, not 0: the on-chain count is
+    // append-only, so the real total can never legitimately fall below what
+    // we have already committed locally, and both numerators are floored at
+    // `tree_size` (the download clamp below and `leaves_committed`'s seed).
+    // Starting at 0 would let a first batch proven by a lagging node report
+    // `total_count < tree_size`, making the numerators briefly read above the
+    // denominator (progress > 100%) until a fresher chunk arrives. It is then
+    // raised to `batch.total_count` as batches land. On a cold sync
+    // `tree_size == 0`, so this preserves the host's indeterminate handling
+    // (total 0) until the first batch lands.
+    let mut total_target: u64 = tree_size;
 
     // Drive the FIRST subwallet's IVK as the streaming driver. Its hits
     // come back per batch as `batch.decrypted`; every other subwallet's
