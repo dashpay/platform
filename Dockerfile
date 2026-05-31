@@ -18,8 +18,12 @@
 # - ALPINE_VERSION - use different version of Alpine base image; requires also rust:apline...
 #   image to be available
 # - USERNAME, USER_UID, USER_GID - specification of user used to run the binary
-# - SDK_TEST_DATA - set to `true` to create SDK test data on chain genesis. It should be used only for testing
-#   purpose in local development environment
+# - SDK_TEST_DATA - set to `true` to create SDK test data on chain genesis.
+#   For local devnet workflows use `yarn dashmate config set
+#   platform.drive.abci.docker.build.buildArgs.SDK_TEST_DATA true` (the
+#   `yarn setup` script does this automatically for the `local` config) —
+#   do NOT pass it as a shell env. The value flows through dashmate ->
+#   docker-compose `build.args:` -> this ARG.
 #
 # # sccache cache backends
 #
@@ -422,9 +426,11 @@ RUN --mount=type=secret,id=AWS \
 # This will prebuild majority of dependencies
 FROM deps AS build-drive-abci
 
-# Pass SDK_TEST_DATA=true to create SDK test data on chain genesis
-# This is only for testing purpose and should be used only for
-# local development environment
+# SDK_TEST_DATA is forwarded by dashmate from each `local_N` config's
+# `platform.drive.abci.docker.build.buildArgs.SDK_TEST_DATA` field (set by
+# `scripts/setup_local_network.sh` after `dashmate setup local`, as part of
+# `yarn setup`). Do NOT set this via shell env — single source of truth is the
+# dashmate config.
 ARG SDK_TEST_DATA
 ARG ADDITIONAL_FEATURES=""
 
@@ -555,6 +561,37 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
 
 
 #
+# STAGE: BAKE SHIELDED-POOL SNAPSHOT
+#
+# Self-contained bake step: runs `drive-abci snapshot-bake` against a fresh
+# in-container tempdir to produce /artifacts/shielded-pool.snap. The runtime
+# image COPYs that file in and sets `DRIVE_SHIELDED_SNAPSHOT` so the
+# InitChain hook applies it instead of running the runtime seeder.
+#
+# Skipped (file replaced with a sentinel) when SDK_TEST_DATA != "true", so
+# production / non-SDK builds don't carry test data.
+#
+FROM build-drive-abci AS bake-shielded-snapshot
+
+ARG SDK_TEST_DATA
+
+# libgcc + libstdc++ for the dynamically-linked drive-abci binary (build
+# stage's alpine image normally has them; explicit `apk add` is a no-op if
+# already present).
+RUN apk add --no-cache libgcc libstdc++
+
+RUN set -ex; \
+    mkdir -p /artifacts; \
+    if [ "${SDK_TEST_DATA}" = "true" ]; then \
+        /artifacts/drive-abci snapshot-bake --out /artifacts/shielded-pool.snap ; \
+        ls -la /artifacts/shielded-pool.snap ; \
+    else \
+        echo "SDK_TEST_DATA != true; skipping shielded-pool snapshot bake" ; \
+        : > /artifacts/.no-shielded-snapshot ; \
+    fi
+
+
+#
 # STAGE: BUILD JAVASCRIPT INTERMEDIATE IMAGE
 #
 FROM deps AS build-js
@@ -667,7 +704,21 @@ RUN mkdir -p /var/log/dash \
     ${REJECTIONS_PATH}
 
 COPY --from=build-drive-abci /artifacts/drive-abci /usr/bin/drive-abci
+COPY --from=bake-shielded-snapshot /artifacts/ /opt/dashmate/snapshots/
 COPY packages/rs-drive-abci/.env.mainnet /var/lib/dash/rs-drive-abci/.env
+
+# Only point InitChain's apply-side at the snapshot when the bake stage
+# actually produced one (SDK_TEST_DATA=true). On the SDK_TEST_DATA=false
+# branch the bake stage leaves only a `.no-shielded-snapshot` sentinel, so
+# exporting DRIVE_SHIELDED_SNAPSHOT unconditionally would make
+# create_data_for_shielded_pool try to apply a missing file and fail
+# instead of falling back to the runtime seeder. We gate on the real file's
+# existence (writing the var into the binary's .env, which is loaded via
+# dotenvy and left unset otherwise so the seeder fallback runs).
+RUN if [ -f /opt/dashmate/snapshots/shielded-pool.snap ]; then \
+        echo "DRIVE_SHIELDED_SNAPSHOT=/opt/dashmate/snapshots/shielded-pool.snap" \
+            >> /var/lib/dash/rs-drive-abci/.env ; \
+    fi
 
 # Create a volume
 VOLUME /var/lib/dash/rs-drive-abci/db

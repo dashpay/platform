@@ -861,14 +861,26 @@ pub struct ShieldedEncryptedNote {
     pub encrypted_note: Vec<u8>,
 }
 
-/// Collection of encrypted notes returned by query
-#[derive(Debug, Clone, Default, derive_more::From)]
+/// Collection of encrypted notes returned by query.
+///
+/// `total_count` is the on-chain total number of notes in the shielded
+/// `CommitmentTree` at the proven block — the denominator a wallet needs
+/// for a sync progress bar. It is extracted from the SAME note-fetch proof
+/// (the parent CommitmentTree element is always present in that proof), so
+/// every chunk fetch carries the total "for free" with no separate RPC.
+#[derive(Debug, Clone, Default)]
 #[cfg_attr(
     feature = "mocks",
     derive(Encode, Decode, PlatformSerialize, PlatformDeserialize),
     platform_serialize(unversioned)
 )]
-pub struct ShieldedEncryptedNotes(pub Vec<ShieldedEncryptedNote>);
+pub struct ShieldedEncryptedNotes {
+    /// The encrypted notes for the requested chunk, in tree order.
+    pub notes: Vec<ShieldedEncryptedNote>,
+    /// On-chain total number of notes in the shielded `CommitmentTree`.
+    /// Stable across a sync; carried on every chunk fetch.
+    pub total_count: u64,
+}
 
 /// Valid anchors for building spend proofs
 #[derive(Debug, Clone, Default, derive_more::From)]
