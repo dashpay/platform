@@ -93,7 +93,17 @@ extension PlatformWalletManager {
     /// processed during a cold sync; bridged here from the C
     /// trampoline `shieldedSyncProgressCallback`. Cheap publish; UI
     /// gets it through ShieldedService.
-    func handleShieldedSyncProgress(cumulativeScanned: UInt64, blockHeight: UInt64) {
+    ///
+    /// Generation-guarded like `handleShieldedSyncCompleted`: a stale
+    /// progress hop delivered after a stop/clear bumped the generation
+    /// must be dropped so it can't re-publish phantom progress over the
+    /// `resetCurrentShieldedProgress()` mirrors the stop/clear just reset.
+    func handleShieldedSyncProgress(
+        cumulativeScanned: UInt64,
+        blockHeight: UInt64,
+        generation: UInt64
+    ) {
+        guard generation == shieldedSyncGeneration.current() else { return }
         currentShieldedSyncScanned = cumulativeScanned
         currentShieldedSyncBlockHeight = blockHeight
     }
@@ -104,7 +114,18 @@ extension PlatformWalletManager {
     /// here from the C trampoline `shieldedTreeProgressCallback`.
     /// `total == 0` means the on-chain total is indeterminate. Cheap
     /// publish; UI gets it through ShieldedService.
-    func handleShieldedTreeProgress(committed: UInt64, total: UInt64) {
+    ///
+    /// Generation-guarded like `handleShieldedSyncCompleted`: a stale
+    /// tree-progress hop delivered after a stop/clear bumped the
+    /// generation must be dropped so it can't re-publish phantom progress
+    /// over the `resetCurrentShieldedProgress()` mirrors the stop/clear
+    /// just reset.
+    func handleShieldedTreeProgress(
+        committed: UInt64,
+        total: UInt64,
+        generation: UInt64
+    ) {
+        guard generation == shieldedSyncGeneration.current() else { return }
         currentShieldedTreeCommitted = committed
         currentShieldedTreeTotal = total
     }
@@ -664,10 +685,16 @@ func shieldedSyncProgressCallback(
         .fromOpaque(context)
         .takeUnretainedValue()
 
+    // Snapshot the generation now, on the FFI callback thread, BEFORE the
+    // event is enqueued onto the main actor. A subsequent stop/clear bumps
+    // the counter, so this trailing event is dropped when it finally runs.
+    let generation = handler.manager?.shieldedSyncGeneration.current() ?? 0
+
     Task { @MainActor [weak manager = handler.manager] in
         manager?.handleShieldedSyncProgress(
             cumulativeScanned: cumulativeScanned,
-            blockHeight: blockHeight
+            blockHeight: blockHeight,
+            generation: generation
         )
     }
 }
@@ -688,10 +715,16 @@ func shieldedTreeProgressCallback(
         .fromOpaque(context)
         .takeUnretainedValue()
 
+    // Snapshot the generation now, on the FFI callback thread, BEFORE the
+    // event is enqueued onto the main actor. A subsequent stop/clear bumps
+    // the counter, so this trailing event is dropped when it finally runs.
+    let generation = handler.manager?.shieldedSyncGeneration.current() ?? 0
+
     Task { @MainActor [weak manager = handler.manager] in
         manager?.handleShieldedTreeProgress(
             committed: leavesCommitted,
-            total: totalTarget
+            total: totalTarget,
+            generation: generation
         )
     }
 }

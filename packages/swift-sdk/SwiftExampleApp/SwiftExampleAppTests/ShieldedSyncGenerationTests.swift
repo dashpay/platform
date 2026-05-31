@@ -121,4 +121,114 @@ final class ShieldedSyncGenerationTests: XCTestCase {
             "a superseded straggler must not overwrite the last valid event"
         )
     }
+
+    // MARK: - Per-chunk sync-progress guard
+
+    /// A sync-progress hop captured under generation N is dropped once the
+    /// counter is bumped to N+1 before delivery: neither
+    /// `currentShieldedSyncScanned` nor `currentShieldedSyncBlockHeight` is set.
+    func testStaleSyncProgressIsDroppedAfterGenerationBump() {
+        let manager = PlatformWalletManager()
+        XCTAssertNil(manager.currentShieldedSyncScanned, "fresh manager has no scanned mirror")
+        XCTAssertNil(manager.currentShieldedSyncBlockHeight, "fresh manager has no block-height mirror")
+
+        // Snapshot the generation at "enqueue" time, the way the FFI callback
+        // thread does, then advance it (as stop/clear would) before delivery.
+        let capturedGeneration = manager.shieldedSyncGeneration.current()
+        manager.shieldedSyncGeneration.bump()
+
+        manager.handleShieldedSyncProgress(
+            cumulativeScanned: 2_048,
+            blockHeight: 100,
+            generation: capturedGeneration
+        )
+
+        XCTAssertNil(
+            manager.currentShieldedSyncScanned,
+            "a progress hop under a superseded generation must not publish scanned"
+        )
+        XCTAssertNil(
+            manager.currentShieldedSyncBlockHeight,
+            "a progress hop under a superseded generation must not publish block height"
+        )
+    }
+
+    /// A sync-progress hop captured under the CURRENT generation is published:
+    /// both `currentShieldedSync*` mirrors are set to the delivered values.
+    func testCurrentGenerationSyncProgressIsPublished() {
+        let manager = PlatformWalletManager()
+
+        let currentGeneration = manager.shieldedSyncGeneration.current()
+        manager.handleShieldedSyncProgress(
+            cumulativeScanned: 4_096,
+            blockHeight: 200,
+            generation: currentGeneration
+        )
+
+        XCTAssertEqual(
+            manager.currentShieldedSyncScanned,
+            4_096,
+            "a progress hop under the current generation must publish scanned"
+        )
+        XCTAssertEqual(
+            manager.currentShieldedSyncBlockHeight,
+            200,
+            "a progress hop under the current generation must publish block height"
+        )
+    }
+
+    // MARK: - Per-batch tree-progress guard
+
+    /// A tree-progress hop captured under generation N is dropped once the
+    /// counter is bumped to N+1 before delivery: neither
+    /// `currentShieldedTreeCommitted` nor `currentShieldedTreeTotal` is set.
+    func testStaleTreeProgressIsDroppedAfterGenerationBump() {
+        let manager = PlatformWalletManager()
+        XCTAssertNil(manager.currentShieldedTreeCommitted, "fresh manager has no committed mirror")
+        XCTAssertNil(manager.currentShieldedTreeTotal, "fresh manager has no total mirror")
+
+        // Snapshot the generation at "enqueue" time, then advance it (as
+        // stop/clear would) before delivery.
+        let capturedGeneration = manager.shieldedSyncGeneration.current()
+        manager.shieldedSyncGeneration.bump()
+
+        manager.handleShieldedTreeProgress(
+            committed: 512,
+            total: 1_000,
+            generation: capturedGeneration
+        )
+
+        XCTAssertNil(
+            manager.currentShieldedTreeCommitted,
+            "a tree-progress hop under a superseded generation must not publish committed"
+        )
+        XCTAssertNil(
+            manager.currentShieldedTreeTotal,
+            "a tree-progress hop under a superseded generation must not publish total"
+        )
+    }
+
+    /// A tree-progress hop captured under the CURRENT generation is published:
+    /// both `currentShieldedTree*` mirrors are set to the delivered values.
+    func testCurrentGenerationTreeProgressIsPublished() {
+        let manager = PlatformWalletManager()
+
+        let currentGeneration = manager.shieldedSyncGeneration.current()
+        manager.handleShieldedTreeProgress(
+            committed: 768,
+            total: 2_000,
+            generation: currentGeneration
+        )
+
+        XCTAssertEqual(
+            manager.currentShieldedTreeCommitted,
+            768,
+            "a tree-progress hop under the current generation must publish committed"
+        )
+        XCTAssertEqual(
+            manager.currentShieldedTreeTotal,
+            2_000,
+            "a tree-progress hop under the current generation must publish total"
+        )
+    }
 }
