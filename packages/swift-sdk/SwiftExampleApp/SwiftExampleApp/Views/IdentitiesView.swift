@@ -24,21 +24,12 @@ struct IdentityRow: View {
     }
 
     private var hasAnyPrivateKey: Bool {
+        // A stored *PrivateKeyIdentifier only proves an identifier string
+        // was persisted on the row — the backing Keychain item can still
+        // be missing (wiped, never written, restored on another device).
+        // Rely solely on concrete key-presence checks against the
+        // Keychain so the "No Keys" badge reflects what's actually there.
         let km = KeychainManager.shared
-        // A stored identifier only proves an identifier string was
-        // persisted on the row — the backing Keychain item can still be
-        // missing (wiped, never written, restored on another device).
-        // Confirm the key actually exists before counting it, otherwise
-        // the "No Keys" badge gets hidden for identities that have none.
-        for identifier in [
-            identity.votingPrivateKeyIdentifier,
-            identity.ownerPrivateKeyIdentifier,
-            identity.payoutPrivateKeyIdentifier,
-        ] {
-            if let identifier, km.hasSpecialKey(identifier: identifier) {
-                return true
-            }
-        }
         for publicKey in identity.identityPublicKeys {
             if km.hasPrivateKey(identityId: identity.identityId, keyIndex: Int32(publicKey.id)) {
                 return true
