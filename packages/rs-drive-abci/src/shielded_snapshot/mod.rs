@@ -44,7 +44,9 @@ use grovedb_commitment_tree::{CommitmentTree, DashMemo};
 /// File magic — 8 bytes, matches the `b"DRVSHLD\0"` literal.
 const MAGIC: [u8; 8] = *b"DRVSHLD\0";
 /// Snapshot file format version. Bump on any breaking header/section change.
-const FORMAT_VERSION: u32 = 1;
+/// v2: parent-leaf flags encoded as `[present, byte]` (injective `Option<u8>`)
+/// instead of a single byte that collapsed `None` and `Some(0)`.
+const FORMAT_VERSION: u32 = 2;
 
 /// Max permitted `chunk_power`. BulkAppendTree internally caps at 31; for
 /// genesis snapshots we want a tighter sanity bound — anything > 16 would
@@ -137,12 +139,18 @@ pub struct SnapshotHeader {
     pub format_version: u32,
     pub total_count: u64,
     pub chunk_power: u8,
-    /// First byte of the parent-leaf `Element::CommitmentTree` flags
-    /// (`Option<ElementFlags>` where `ElementFlags = Vec<u8>`). We only
-    /// encode one byte because the shielded leaf in practice carries either
-    /// `None` flags or a single-byte flags vector; if we ever ship multi-
-    /// byte flags this needs to widen and `FORMAT_VERSION` must bump.
-    pub flags_byte: u8,
+    /// Parent-leaf `Element::CommitmentTree` flags (`Option<ElementFlags>`
+    /// where `ElementFlags = Vec<u8>`), narrowed to "absent, or exactly one
+    /// byte" — the only shapes the shielded leaf carries in practice.
+    ///
+    /// Encoded as a presence discriminator byte plus the value byte so the
+    /// round-trip is injective: `None` and `Some(0)` are distinct on the
+    /// wire (a single `flags_byte` collapsed both to `0`, silently rewriting
+    /// `Some(vec![0])` as `None` and diverging the parent-Merk serialization
+    /// from a live-seeded tree even though `combined_root` still matched).
+    /// The dumper rejects an empty or multi-byte flags vec loudly; widening
+    /// past one byte requires bumping `FORMAT_VERSION`.
+    pub flags: Option<u8>,
     pub combined_root: [u8; 32],
     pub sst_len: u64,
 }
@@ -150,14 +158,21 @@ pub struct SnapshotHeader {
 impl SnapshotHeader {
     /// Wire size of the encoded header (NOT including the SST blob or the
     /// trailing checksum).
-    const ENCODED_LEN: usize = 8 + 4 + 8 + 1 + 1 + 32 + 8; // = 62 bytes
+    // flags is encoded as 2 bytes: [present, byte].
+    const ENCODED_LEN: usize = 8 + 4 + 8 + 1 + 2 + 32 + 8; // = 63 bytes
 
     fn write_to<W: Write>(&self, w: &mut W) -> Result<(), std::io::Error> {
         w.write_all(&MAGIC)?;
         w.write_all(&self.format_version.to_be_bytes())?;
         w.write_all(&self.total_count.to_be_bytes())?;
         w.write_all(&[self.chunk_power])?;
-        w.write_all(&[self.flags_byte])?;
+        // [present, byte]: present=1 means Some(byte); present=0 means None
+        // (byte then ignored). Keeps None distinct from Some(0).
+        let (present, byte) = match self.flags {
+            Some(b) => (1u8, b),
+            None => (0u8, 0u8),
+        };
+        w.write_all(&[present, byte])?;
         w.write_all(&self.combined_root)?;
         w.write_all(&self.sst_len.to_be_bytes())?;
         Ok(())
@@ -190,8 +205,17 @@ impl SnapshotHeader {
                 max: MAX_CHUNK_POWER,
             });
         }
-        r.read_exact(&mut one)?;
-        let flags_byte = one[0];
+        let mut two = [0u8; 2];
+        r.read_exact(&mut two)?;
+        let flags = match two[0] {
+            0 => None,
+            1 => Some(two[1]),
+            other => {
+                return Err(ShieldedSnapshotError::Inconsistent(format!(
+                    "invalid flags presence discriminator {other}; expected 0 (None) or 1 (Some)"
+                )));
+            }
+        };
         let mut combined_root = [0u8; 32];
         r.read_exact(&mut combined_root)?;
         r.read_exact(&mut buf8)?;
@@ -200,7 +224,7 @@ impl SnapshotHeader {
             format_version,
             total_count,
             chunk_power,
-            flags_byte,
+            flags,
             combined_root,
             sst_len,
         })
@@ -368,17 +392,19 @@ pub fn dump_shielded_subtree(
 
     // 8. Compose the output file: header || sst_bytes || blake3 checksum.
     //
-    // The header encodes exactly one flags byte. Fail loudly rather than
-    // silently truncating a wider flags vec: a snapshot-booted devnet would
-    // otherwise diverge from a seeder-built one on the parent-Merk root if the
-    // CommitmentTree flags ever widen past a single byte.
-    let flags_byte = match flags.as_ref() {
-        None => 0,
-        Some(v) if v.is_empty() => 0,
-        Some(v) if v.len() == 1 => v[0],
+    // The header encodes the parent-leaf flags as `Option<u8>` — absent, or
+    // exactly one byte — preserving `None` vs `Some(0)` so a snapshot-booted
+    // devnet reconstructs the identical parent-Merk leaf. Fail loudly on any
+    // other shape (empty or multi-byte vec) rather than lossily folding it:
+    // either would diverge from a seeder-built tree on the parent-Merk root
+    // even though `combined_root` (which covers only the rebuilt subtree)
+    // still matches.
+    let flags_opt: Option<u8> = match flags.as_deref() {
+        None => None,
+        Some([b]) => Some(*b),
         Some(v) => {
             return Err(ShieldedSnapshotError::Inconsistent(format!(
-                "parent-leaf flags has {} bytes; snapshot format only encodes 1 — bump FORMAT_VERSION and widen the header",
+                "parent-leaf flags has {} bytes; snapshot format encodes None or exactly 1 byte — bump FORMAT_VERSION and widen the header",
                 v.len()
             )));
         }
@@ -387,7 +413,7 @@ pub fn dump_shielded_subtree(
         format_version: FORMAT_VERSION,
         total_count,
         chunk_power,
-        flags_byte,
+        flags: flags_opt,
         combined_root,
         sst_len: sst_bytes_on_disk,
     };
@@ -531,11 +557,7 @@ pub fn apply_shielded_snapshot(
     let parent_segments = shielded_credit_pool_path_vec();
     let parent_path = SubtreePath::from(parent_segments.as_slice());
     let leaf_key = &[SHIELDED_NOTES_KEY];
-    let flags = if header.flags_byte == 0 {
-        None
-    } else {
-        Some(vec![header.flags_byte])
-    };
+    let flags = header.flags.map(|b| vec![b]);
 
     grove
         .replace_commitment_tree_subtree_root(
@@ -565,5 +587,74 @@ struct SstTmpGuard(PathBuf);
 impl Drop for SstTmpGuard {
     fn drop(&mut self) {
         let _ = std::fs::remove_file(&self.0);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Encode a header with the given parent-leaf flags, decode it back, and
+    /// return the decoded `flags` so a test can assert the round-trip.
+    fn roundtrip_flags(flags: Option<u8>) -> Option<u8> {
+        let header = SnapshotHeader {
+            format_version: FORMAT_VERSION,
+            total_count: 7,
+            chunk_power: 11,
+            flags,
+            combined_root: [0xAB; 32],
+            sst_len: 123,
+        };
+        let mut buf = Vec::with_capacity(SnapshotHeader::ENCODED_LEN);
+        header.write_to(&mut buf).expect("write_to");
+        assert_eq!(
+            buf.len(),
+            SnapshotHeader::ENCODED_LEN,
+            "encoded header length must match ENCODED_LEN"
+        );
+        let mut cursor = std::io::Cursor::new(buf);
+        SnapshotHeader::read_from(&mut cursor)
+            .expect("read_from")
+            .flags
+    }
+
+    /// The flags round-trip must be injective: `None` and `Some(0)` are
+    /// distinct on the wire. A prior single-byte encoding collapsed both to
+    /// `0`/`None`, silently rewriting `Some(vec![0])` as `None` on apply.
+    #[test]
+    fn flags_roundtrip_is_injective() {
+        assert_eq!(roundtrip_flags(None), None, "None must stay None");
+        assert_eq!(
+            roundtrip_flags(Some(0)),
+            Some(0),
+            "Some(0) must stay Some(0), not collapse to None"
+        );
+        assert_eq!(roundtrip_flags(Some(0xAB)), Some(0xAB));
+        // The two cases that previously aliased are now distinguishable.
+        assert_ne!(roundtrip_flags(None), roundtrip_flags(Some(0)));
+    }
+
+    /// An invalid presence discriminator (anything but 0 or 1) is rejected.
+    #[test]
+    fn flags_invalid_presence_discriminator_rejected() {
+        let header = SnapshotHeader {
+            format_version: FORMAT_VERSION,
+            total_count: 0,
+            chunk_power: 0,
+            flags: None,
+            combined_root: [0u8; 32],
+            sst_len: 0,
+        };
+        let mut buf = Vec::new();
+        header.write_to(&mut buf).expect("write_to");
+        // Corrupt the presence byte (immediately after MAGIC + version +
+        // total_count + chunk_power = 8 + 4 + 8 + 1 = offset 21).
+        buf[21] = 2;
+        let mut cursor = std::io::Cursor::new(buf);
+        let err = SnapshotHeader::read_from(&mut cursor).unwrap_err();
+        assert!(
+            matches!(err, ShieldedSnapshotError::Inconsistent(_)),
+            "expected Inconsistent for bad presence discriminator, got {err:?}"
+        );
     }
 }
