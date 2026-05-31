@@ -1811,9 +1811,13 @@ public class PlatformWalletPersistenceHandler {
         // 1. Resolve the wallet's network from SwiftData. We need it
         //    to feed `KeyDerivation.getIdentityAuthenticationPath`
         //    so the path chooses the right `coin_type` (mainnet vs
-        //    testnet).
+        //    testnet). Scope to THIS handler's network via
+        //    `walletRecordPredicate` — the same `walletId` can now have
+        //    a row per network, and a bare walletId-only fetch could
+        //    resolve to a sibling network's row and derive the key on
+        //    the wrong chain (unusable on-chain).
         let walletDescriptor = FetchDescriptor<PersistentWallet>(
-            predicate: PersistentWallet.predicate(walletId: walletId)
+            predicate: walletRecordPredicate(walletId: walletId)
         )
         guard
             let persistentWallet = try? backgroundContext.fetch(walletDescriptor).first
