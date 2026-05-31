@@ -99,6 +99,13 @@ pub struct PlatformAddressSyncManager {
     background_cancel: StdMutex<Option<CancellationToken>>,
     interval_secs: AtomicU64,
     is_syncing: AtomicBool,
+    /// Set by [`quiesce`](Self::quiesce) to gate new passes while it
+    /// drains an in-flight one. `sync_now` bails (after taking the
+    /// `is_syncing` slot) when this is set, so once `quiesce` observes
+    /// `is_syncing == false` no further pass can start — giving shutdown
+    /// a real "no more host-visible sync-completed callbacks" barrier
+    /// that cancel-only [`stop`](Self::stop) does not provide.
+    quiescing: AtomicBool,
     /// Unix seconds of the last completed pass. `0` = never.
     last_sync_unix: AtomicU64,
     /// Shared config applied uniformly across wallets and accounts.
@@ -120,6 +127,7 @@ impl PlatformAddressSyncManager {
             background_cancel: StdMutex::new(None),
             interval_secs: AtomicU64::new(DEFAULT_SYNC_INTERVAL_SECS),
             is_syncing: AtomicBool::new(false),
+            quiescing: AtomicBool::new(false),
             last_sync_unix: AtomicU64::new(0),
             config: ArcSwapOption::empty(),
         }
@@ -224,6 +232,14 @@ impl PlatformAddressSyncManager {
     }
 
     /// Stop the background sync loop. No-op if not running.
+    ///
+    /// **Cancel-only**: requests cancellation and returns immediately. A
+    /// pass already inside `sync_now` keeps running to completion,
+    /// including its `on_platform_address_sync_completed` host-callback
+    /// dispatch. For a real "nothing is running and nothing more will
+    /// fire a host callback" barrier — required by manager shutdown so
+    /// the host can free the event-handler context — use
+    /// [`quiesce`](Self::quiesce).
     pub fn stop(&self) {
         if let Some(token) = self
             .background_cancel
@@ -233,6 +249,34 @@ impl PlatformAddressSyncManager {
         {
             token.cancel();
         }
+    }
+
+    /// Cancel the background loop **and wait for any in-flight sync pass
+    /// to fully drain** before returning — a real quiescence barrier,
+    /// unlike cancel-only [`stop`](Self::stop).
+    ///
+    /// After this returns, no sync pass is running and none can start
+    /// until the next [`start`](Self::start) / `sync_now`, so a caller
+    /// that immediately tears the manager down (and frees the host-owned
+    /// event-handler context the FFI handed to us) cannot be raced by a
+    /// pass that fires `on_platform_address_sync_completed` through a
+    /// now-dangling pointer.
+    ///
+    /// Mechanism: set the `quiescing` gate so any pass that hasn't yet
+    /// taken the `is_syncing` slot bails, cancel the loop, then wait for
+    /// `is_syncing` to clear. `is_syncing` is held for the whole pass
+    /// including the completion-event dispatch (`sync_now` clears it only
+    /// after `on_platform_address_sync_completed` returns), so its
+    /// falling edge (with the gate up) is a sound "fully drained" signal.
+    /// The gate is reopened before returning so a later start/sync works
+    /// normally.
+    pub async fn quiesce(&self) {
+        self.quiescing.store(true, Ordering::Release);
+        self.stop();
+        while self.is_syncing.load(Ordering::Acquire) {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        self.quiescing.store(false, Ordering::Release);
     }
 
     /// Run one sync pass across every registered wallet.
@@ -245,6 +289,16 @@ impl PlatformAddressSyncManager {
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
             .is_err()
         {
+            return PlatformAddressSyncSummary::default();
+        }
+
+        // A `quiesce()` may have raised the gate between our CAS and
+        // here; if so, release the slot and bail without running a pass
+        // so the drain can complete and shutdown gets a true barrier
+        // (no further `on_platform_address_sync_completed` host callback
+        // after quiesce returns).
+        if self.quiescing.load(Ordering::Acquire) {
+            self.is_syncing.store(false, Ordering::Release);
             return PlatformAddressSyncSummary::default();
         }
 
@@ -277,10 +331,19 @@ impl PlatformAddressSyncManager {
             .unwrap_or(0);
         summary.sync_unix_seconds = now;
         self.last_sync_unix.store(now, Ordering::Release);
-        self.is_syncing.store(false, Ordering::Release);
 
+        // Dispatch the completion event BEFORE clearing `is_syncing`.
+        // `quiesce()` drains on the falling edge of `is_syncing`, so if
+        // we cleared the flag first a shutdown caller could unblock and
+        // free the host event-handler context while this completion
+        // event (FFI callback → host handler) is still pending — a
+        // use-after-free. Holding the flag across the dispatch makes
+        // quiesce's barrier cover the host callback too. Mirrors the
+        // ordering in `ShieldedSyncManager::sync_now`.
         self.event_manager
             .on_platform_address_sync_completed(&summary);
+
+        self.is_syncing.store(false, Ordering::Release);
 
         summary
     }
@@ -313,5 +376,133 @@ impl std::fmt::Debug for PlatformAddressSyncManager {
             .field("interval_secs", &self.interval_secs.load(Ordering::Acquire))
             .field("last_sync_unix", &self.last_sync_unix_seconds())
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
+
+    use dash_spv::EventHandler;
+
+    use crate::events::PlatformEventHandler;
+
+    /// Event handler that just counts `on_platform_address_sync_completed`
+    /// dispatches. Stands in for the host's FFI handler so we can assert
+    /// the quiescing gate suppresses the completion callback.
+    struct CompletionCounter {
+        completions: AtomicUsize,
+    }
+
+    impl CompletionCounter {
+        fn new() -> Self {
+            Self {
+                completions: AtomicUsize::new(0),
+            }
+        }
+    }
+
+    impl EventHandler for CompletionCounter {}
+
+    impl PlatformEventHandler for CompletionCounter {
+        fn on_platform_address_sync_completed(&self, _summary: &PlatformAddressSyncSummary) {
+            self.completions.fetch_add(1, AtomicOrdering::SeqCst);
+        }
+    }
+
+    /// Build a manager over an empty wallet map wired to a completion
+    /// counter. No wallets means `sync_now` runs zero per-wallet syncs
+    /// but still drives the full flag → gate → completion-event protocol
+    /// we're testing here.
+    fn make_manager() -> (Arc<PlatformAddressSyncManager>, Arc<CompletionCounter>) {
+        let wallets = Arc::new(RwLock::new(BTreeMap::new()));
+        let counter = Arc::new(CompletionCounter::new());
+        let event_manager = Arc::new(PlatformEventManager::new(vec![
+            Arc::clone(&counter) as Arc<dyn PlatformEventHandler>
+        ]));
+        (
+            Arc::new(PlatformAddressSyncManager::new(wallets, event_manager)),
+            counter,
+        )
+    }
+
+    /// A normal pass (no gate) fires the completion event and leaves the
+    /// flags clean. Baseline for the gated case below.
+    #[tokio::test]
+    async fn sync_now_fires_completion_when_not_quiescing() {
+        let (mgr, counter) = make_manager();
+        mgr.sync_now().await;
+        assert_eq!(counter.completions.load(AtomicOrdering::SeqCst), 1);
+        assert!(!mgr.is_syncing());
+    }
+
+    /// `quiesce()` must not return while a pass is in flight, and must
+    /// return promptly once the pass drains.
+    ///
+    /// Drives the real `is_syncing` lifecycle: a background task takes
+    /// the slot via the same `compare_exchange` the real `sync_now`
+    /// uses, holds it across a sleep (standing in for the pass body +
+    /// completion-event dispatch, which `sync_now` keeps the flag set
+    /// across), then clears it.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn quiesce_blocks_until_in_flight_pass_drains() {
+        let (mgr, _counter) = make_manager();
+
+        let holder = Arc::clone(&mgr);
+        let pass = tokio::spawn(async move {
+            assert!(
+                holder
+                    .is_syncing
+                    .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+                    .is_ok(),
+                "test should own the is_syncing slot"
+            );
+            tokio::time::sleep(Duration::from_millis(200)).await;
+            holder.is_syncing.store(false, Ordering::Release);
+        });
+
+        while !mgr.is_syncing() {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+
+        let quiesce_fut = mgr.quiesce();
+        tokio::pin!(quiesce_fut);
+
+        tokio::select! {
+            _ = &mut quiesce_fut => panic!("quiesce returned while a pass was in flight"),
+            _ = tokio::time::sleep(Duration::from_millis(50)) => {}
+        }
+        assert!(mgr.is_syncing(), "pass should still be in flight");
+
+        tokio::time::timeout(Duration::from_secs(2), &mut quiesce_fut)
+            .await
+            .expect("quiesce did not return after the pass drained");
+
+        assert!(!mgr.quiescing.load(Ordering::Acquire));
+        assert!(!mgr.is_syncing());
+        pass.await.unwrap();
+    }
+
+    /// A `sync_now()` invoked while `quiescing` is set must bail without
+    /// running the pass — in particular, without firing the
+    /// `on_platform_address_sync_completed` host callback. This is the
+    /// gate that prevents a pass from slipping in between `quiesce`'s
+    /// `stop()` and its drain.
+    #[tokio::test]
+    async fn sync_now_bails_when_quiescing() {
+        let (mgr, counter) = make_manager();
+
+        // Raise the gate as `quiesce()` would.
+        mgr.quiescing.store(true, Ordering::Release);
+
+        let summary = mgr.sync_now().await;
+
+        // Empty summary, no host completion callback, slot released so a
+        // later (post-quiesce) pass can still run.
+        assert!(summary.is_empty());
+        assert_eq!(counter.completions.load(AtomicOrdering::SeqCst), 0);
+        assert!(!mgr.is_syncing());
     }
 }

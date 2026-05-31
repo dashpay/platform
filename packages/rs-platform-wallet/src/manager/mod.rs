@@ -287,16 +287,28 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
 
     /// Stop all background tasks and wait for them to exit.
     ///
-    /// Stops the periodic coordinators (`PlatformAddressSyncManager`,
-    /// `IdentitySyncManager`) and the wallet-event adapter task.
+    /// **Quiesces** the periodic coordinators
+    /// (`PlatformAddressSyncManager`, `IdentitySyncManager`,
+    /// `ShieldedSyncManager`) — cancelling each loop *and draining any
+    /// in-flight pass to completion*, including its persister /
+    /// host-callback fan-out — then drains the wallet-event adapter task.
     /// Idempotent. Call before dropping the manager when a clean
     /// shutdown is required (e.g. on app termination); a dirty drop
     /// simply leaks the tasks until the runtime exits.
+    ///
+    /// Ordering matters: cancel-only `stop()` would let a pass already
+    /// inside `sync_now` keep running and call `persister.store(...)` /
+    /// fire a host completion callback after the FFI's `destroy`
+    /// returned and the host freed the persister / event-handler
+    /// context — a use-after-free. So we `quiesce()` the sync managers
+    /// FIRST (so no further persister store or host callback can start),
+    /// and only THEN cancel + join the event adapter, which is the sink
+    /// those stores feed into.
     pub async fn shutdown(&self) {
-        self.platform_address_sync_manager.stop();
-        self.identity_sync_manager.stop();
+        self.platform_address_sync_manager.quiesce().await;
+        self.identity_sync_manager.quiesce().await;
         #[cfg(feature = "shielded")]
-        self.shielded_sync_manager.stop();
+        self.shielded_sync_manager.quiesce().await;
 
         self.event_adapter_cancel.cancel();
         if let Some(handle) = self.event_adapter_join.lock().await.take() {
