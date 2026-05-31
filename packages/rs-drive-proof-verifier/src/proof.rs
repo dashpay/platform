@@ -1500,8 +1500,12 @@ impl FromProof<platform::GetDocumentHistoryRequest> for DocumentHistory {
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
+        // Preserve the distinction between a verified-but-empty history page
+        // (e.g. an offset/start_at_ms past the last revision) and an absent
+        // result: DocumentHistory carries retrieved values, not proof-of-absence,
+        // so a proven empty page is a legitimate `Some(empty)` rather than `None`.
         Ok((
-            maybe_history.and_then(|history| IndexMap::from_iter(history).into_option()),
+            maybe_history.map(IndexMap::from_iter),
             mtd.clone(),
             proof.clone(),
         ))
