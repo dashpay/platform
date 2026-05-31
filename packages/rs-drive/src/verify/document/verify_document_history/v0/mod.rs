@@ -59,6 +59,18 @@ impl Drive {
                 DriveError::CorruptedDocumentPath("document history key is not a valid timestamp"),
             ))?;
 
+            // All historical revisions are decoded with the current `document_type`,
+            // even though older revisions were written under an earlier contract
+            // version. This is sound because data contract updates are constrained to
+            // be backwards compatible: the schema-compatibility validator forbids
+            // removing, reordering, or retyping existing properties and only permits
+            // appending new (optional) properties at higher `$position` values
+            // (see rs-json-schema-compatibility-validator and
+            // DocumentType::validate_update). Documents serialize their properties in
+            // `$position` order, and the deserializer skips trailing properties that
+            // are absent from older bytes. So an old revision decodes correctly and
+            // merely omits properties that were added after it was written — which is
+            // accurate, since those properties did not exist in that revision.
             let maybe_document = maybe_element
                 .map(|element| {
                     element
