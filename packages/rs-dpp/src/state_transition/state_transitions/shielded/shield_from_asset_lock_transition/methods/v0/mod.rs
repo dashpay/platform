@@ -22,6 +22,33 @@ pub trait ShieldFromAssetLockTransitionMethodsV0 {
         platform_version: &PlatformVersion,
     ) -> Result<StateTransition, ProtocolError>;
 
+    /// Build a `ShieldFromAssetLock` state transition where the
+    /// asset-lock-proof signature is produced by an external
+    /// [`key_wallet::signer::Signer`].
+    ///
+    /// `asset_lock_signer` produces the outer state-transition ECDSA
+    /// signature for the key at `asset_lock_proof_path` — atomically
+    /// deriving, signing, and zeroising inside the signer's trust
+    /// boundary. This is the signing path used by hosts that hold
+    /// their private keys outside Rust (the iOS Swift SDK, hardware
+    /// wallets, remote signers); the raw key never crosses the FFI
+    /// boundary.
+    #[cfg(all(feature = "state-transition-signing", feature = "core_key_wallet"))]
+    #[allow(clippy::too_many_arguments)]
+    async fn try_from_asset_lock_with_bundle_and_signer<AS>(
+        asset_lock_proof: AssetLockProof,
+        asset_lock_proof_path: &::key_wallet::bip32::DerivationPath,
+        asset_lock_signer: &AS,
+        actions: Vec<SerializedAction>,
+        value_balance: u64,
+        anchor: [u8; 32],
+        proof: Vec<u8>,
+        binding_signature: [u8; 64],
+        platform_version: &PlatformVersion,
+    ) -> Result<StateTransition, ProtocolError>
+    where
+        AS: ::key_wallet::signer::Signer;
+
     /// Get State Transition Type
     fn get_type() -> StateTransitionType {
         StateTransitionType::ShieldFromAssetLock

@@ -392,6 +392,11 @@ impl Fetch for drive_proof_verifier::types::ShieldedPoolState {
     type Request = platform_proto::GetShieldedPoolStateRequest;
 }
 
+impl Fetch for drive_proof_verifier::types::ShieldedNotesCount {
+    type Query = platform_proto::GetShieldedNotesCountRequest;
+    type Request = platform_proto::GetShieldedNotesCountRequest;
+}
+
 impl Fetch for drive_proof_verifier::types::ShieldedAnchors {
     type Query = platform_proto::GetShieldedAnchorsRequest;
     type Request = platform_proto::GetShieldedAnchorsRequest;

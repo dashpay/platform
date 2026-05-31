@@ -15,7 +15,7 @@ This crate provides a trusted HTTP-based context provider for the Dash SDK that 
 
 - **Mainnet**: Uses `https://quorums.mainnet.networks.dash.org/`
 - **Testnet**: Uses `https://quorums.testnet.networks.dash.org/`
-- **Devnet**: Uses `https://quorums.devnet.<devnet_name>.networks.dash.org/`
+- **Devnet**: Uses `https://quorums.<devnet_name>.networks.dash.org/`
 
 ## Usage
 

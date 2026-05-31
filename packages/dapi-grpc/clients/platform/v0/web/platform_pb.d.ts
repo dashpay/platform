@@ -12134,6 +12134,123 @@ export namespace GetShieldedPoolStateResponse {
   }
 }
 
+export class GetShieldedNotesCountRequest extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0 | undefined;
+  setV0(value?: GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0): void;
+
+  getVersionCase(): GetShieldedNotesCountRequest.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetShieldedNotesCountRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: GetShieldedNotesCountRequest): GetShieldedNotesCountRequest.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetShieldedNotesCountRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetShieldedNotesCountRequest;
+  static deserializeBinaryFromReader(message: GetShieldedNotesCountRequest, reader: jspb.BinaryReader): GetShieldedNotesCountRequest;
+}
+
+export namespace GetShieldedNotesCountRequest {
+  export type AsObject = {
+    v0?: GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0.AsObject,
+  }
+
+  export class GetShieldedNotesCountRequestV0 extends jspb.Message {
+    getProve(): boolean;
+    setProve(value: boolean): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetShieldedNotesCountRequestV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetShieldedNotesCountRequestV0): GetShieldedNotesCountRequestV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetShieldedNotesCountRequestV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetShieldedNotesCountRequestV0;
+    static deserializeBinaryFromReader(message: GetShieldedNotesCountRequestV0, reader: jspb.BinaryReader): GetShieldedNotesCountRequestV0;
+  }
+
+  export namespace GetShieldedNotesCountRequestV0 {
+    export type AsObject = {
+      prove: boolean,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class GetShieldedNotesCountResponse extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0 | undefined;
+  setV0(value?: GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0): void;
+
+  getVersionCase(): GetShieldedNotesCountResponse.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetShieldedNotesCountResponse.AsObject;
+  static toObject(includeInstance: boolean, msg: GetShieldedNotesCountResponse): GetShieldedNotesCountResponse.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetShieldedNotesCountResponse, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetShieldedNotesCountResponse;
+  static deserializeBinaryFromReader(message: GetShieldedNotesCountResponse, reader: jspb.BinaryReader): GetShieldedNotesCountResponse;
+}
+
+export namespace GetShieldedNotesCountResponse {
+  export type AsObject = {
+    v0?: GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0.AsObject,
+  }
+
+  export class GetShieldedNotesCountResponseV0 extends jspb.Message {
+    hasTotalNotesCount(): boolean;
+    clearTotalNotesCount(): void;
+    getTotalNotesCount(): string;
+    setTotalNotesCount(value: string): void;
+
+    hasProof(): boolean;
+    clearProof(): void;
+    getProof(): Proof | undefined;
+    setProof(value?: Proof): void;
+
+    hasMetadata(): boolean;
+    clearMetadata(): void;
+    getMetadata(): ResponseMetadata | undefined;
+    setMetadata(value?: ResponseMetadata): void;
+
+    getResultCase(): GetShieldedNotesCountResponseV0.ResultCase;
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetShieldedNotesCountResponseV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetShieldedNotesCountResponseV0): GetShieldedNotesCountResponseV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetShieldedNotesCountResponseV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetShieldedNotesCountResponseV0;
+    static deserializeBinaryFromReader(message: GetShieldedNotesCountResponseV0, reader: jspb.BinaryReader): GetShieldedNotesCountResponseV0;
+  }
+
+  export namespace GetShieldedNotesCountResponseV0 {
+    export type AsObject = {
+      totalNotesCount: string,
+      proof?: Proof.AsObject,
+      metadata?: ResponseMetadata.AsObject,
+    }
+
+    export enum ResultCase {
+      RESULT_NOT_SET = 0,
+      TOTAL_NOTES_COUNT = 1,
+      PROOF = 2,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
 export class GetShieldedNullifiersRequest extends jspb.Message {
   hasV0(): boolean;
   clearV0(): void;

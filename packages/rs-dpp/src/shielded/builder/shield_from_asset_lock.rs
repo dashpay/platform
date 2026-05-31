@@ -58,6 +58,66 @@ pub fn build_shield_from_asset_lock_transition<P: OrchardProver>(
     )
 }
 
+/// Builds a ShieldFromAssetLock state transition where the
+/// asset-lock-proof signature is produced by an external
+/// [`key_wallet::signer::Signer`] (Swift / hardware-wallet / HSM
+/// flow). The raw private key never crosses the FFI boundary;
+/// derive + sign + zeroise happen inside the signer.
+///
+/// # Parameters
+/// - `recipient` - Orchard address to receive the shielded note
+/// - `shield_amount` - Amount of credits to shield (from the asset lock)
+/// - `asset_lock_proof` - Proof that funds are locked on core chain
+/// - `asset_lock_proof_path` - BIP32 path to the asset-lock key inside `asset_lock_signer`
+/// - `asset_lock_signer` - External signer that produces the outer ECDSA signature
+/// - `prover` - Orchard prover (holds the Halo 2 proving key)
+/// - `memo` - 36-byte structured memo for the recipient (4-byte type tag + 32-byte payload)
+/// - `platform_version` - Protocol version
+#[cfg(feature = "core_key_wallet")]
+#[allow(clippy::too_many_arguments)]
+pub async fn build_shield_from_asset_lock_transition_with_signer<P, AS>(
+    recipient: &OrchardAddress,
+    shield_amount: u64,
+    asset_lock_proof: AssetLockProof,
+    asset_lock_proof_path: &::key_wallet::bip32::DerivationPath,
+    asset_lock_signer: &AS,
+    prover: &P,
+    memo: [u8; 36],
+    platform_version: &PlatformVersion,
+) -> Result<StateTransition, ProtocolError>
+where
+    P: OrchardProver,
+    AS: ::key_wallet::signer::Signer,
+{
+    let bundle = build_output_only_bundle(recipient, shield_amount, memo, prover)?;
+    let sb = serialize_authorized_bundle(&bundle);
+
+    // For output-only bundles, Orchard value_balance is negative (value flowing in).
+    // Convert to u64 (absolute amount entering the pool).
+    let value_balance = sb
+        .value_balance
+        .checked_neg()
+        .and_then(|v| u64::try_from(v).ok())
+        .ok_or_else(|| {
+            ProtocolError::ShieldedBuildError(
+                "shield_from_asset_lock: bundle value_balance is not negative".to_string(),
+            )
+        })?;
+
+    ShieldFromAssetLockTransition::try_from_asset_lock_with_bundle_and_signer(
+        asset_lock_proof,
+        asset_lock_proof_path,
+        asset_lock_signer,
+        sb.actions,
+        value_balance,
+        sb.anchor,
+        sb.proof,
+        sb.binding_signature,
+        platform_version,
+    )
+    .await
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::{build_output_only_bundle, serialize_authorized_bundle};

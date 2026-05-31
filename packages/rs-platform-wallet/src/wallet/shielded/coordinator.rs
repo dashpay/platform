@@ -54,6 +54,26 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+
+/// Callback fired once per chunk during a coordinator sync pass —
+/// the **"downloaded"** progress signal.
+/// Arguments: `(cumulative_scanned, latest_block_height)`. Forwarded
+/// straight from the SDK stream's per-chunk download completion.
+pub type ShieldedProgressCallback = Arc<dyn Fn(u64, u64) + Send + Sync>;
+
+/// Callback fired as commitments are committed to the coordinator's
+/// local Merkle tree — the **"checked / committed-to-tree"** progress
+/// signal, distinct from [`ShieldedProgressCallback`] (network
+/// download). Fired once per appended batch during the interleaved
+/// stream consume in [`sync_notes_across`].
+///
+/// Arguments: `(cumulative_leaves_committed, total_leaves_target)`.
+/// `total_leaves_target` is the on-chain MMR leaf count fetched once at
+/// the start of the pass; it is `0` when that progress-only RPC failed,
+/// which the UI should treat as an indeterminate total.
+///
+/// [`sync_notes_across`]: super::sync::sync_notes_across
+pub type ShieldedTreeProgressCallback = Arc<dyn Fn(u64, u64) + Send + Sync>;
 use std::time::{Duration, Instant};
 
 use tokio::sync::RwLock;
@@ -137,6 +157,30 @@ pub struct NetworkShieldedCoordinator {
     /// network instead of once per wallet. Cleared on any
     /// activity; bypassed by `force` syncs.
     last_caught_up_at: std::sync::Mutex<Option<Instant>>,
+
+    /// Optional progress callback fired once per chunk inside
+    /// `sync_shielded_notes`. Lets the manager translate chunk-level
+    /// progress into `PlatformEventHandler::on_shielded_sync_progress`
+    /// events without sync_notes_across knowing about the event
+    /// manager. Installed by the manager via
+    /// [`install_progress_handler`](Self::install_progress_handler);
+    /// `None` (default) disables progress reporting (the test path).
+    ///
+    /// `std::sync::Mutex` rather than `ArcSwap` because `arc_swap`
+    /// requires `T: Sized` and we need to hold a `dyn Fn`. The lock
+    /// is taken once per sync pass to read the snapshot — no hot-path
+    /// contention.
+    progress_handler: std::sync::Mutex<Option<ShieldedProgressCallback>>,
+
+    /// Optional tree-progress callback fired as commitments are
+    /// committed to the local Merkle tree during the interleaved sync
+    /// (the "checked" signal, distinct from `progress_handler`'s
+    /// "downloaded" signal). Installed by the manager via
+    /// [`install_tree_progress_handler`](Self::install_tree_progress_handler);
+    /// `None` (default) disables tree-progress reporting.
+    ///
+    /// Same `std::sync::Mutex` rationale as `progress_handler`.
+    tree_progress_handler: std::sync::Mutex<Option<ShieldedTreeProgressCallback>>,
 }
 
 impl NetworkShieldedCoordinator {
@@ -161,6 +205,8 @@ impl NetworkShieldedCoordinator {
             accounts: Arc::new(RwLock::new(BTreeMap::new())),
             persisters: Arc::new(RwLock::new(BTreeMap::new())),
             last_caught_up_at: std::sync::Mutex::new(None),
+            progress_handler: std::sync::Mutex::new(None),
+            tree_progress_handler: std::sync::Mutex::new(None),
         }
     }
 
@@ -169,6 +215,45 @@ impl NetworkShieldedCoordinator {
     /// coordinator agree on the network.
     pub fn network(&self) -> dashcore::Network {
         self.network
+    }
+
+    /// Install (or replace) the per-chunk progress handler. The
+    /// callback runs from inside `sync_shielded_notes`'s chunk loop
+    /// — once per ~2048 notes processed — so keep it cheap. Used by
+    /// `PlatformWalletManager` to bridge sync-internal progress into
+    /// `PlatformEventHandler::on_shielded_sync_progress` events.
+    /// Passing `None` removes any installed handler.
+    pub fn install_progress_handler(&self, handler: Option<ShieldedProgressCallback>) {
+        if let Ok(mut slot) = self.progress_handler.lock() {
+            *slot = handler;
+        }
+    }
+
+    /// Snapshot of the currently installed progress handler.
+    pub(super) fn progress_handler(&self) -> Option<ShieldedProgressCallback> {
+        self.progress_handler.lock().ok().and_then(|g| g.clone())
+    }
+
+    /// Install (or replace) the tree-progress handler — the "checked /
+    /// committed-to-tree" signal fired as commitments are appended to
+    /// the local Merkle tree during the interleaved sync. Fired once per
+    /// appended batch (~8192-note batches), so it's already coarse;
+    /// still keep the callback cheap. Used by `PlatformWalletManager`
+    /// to bridge tree progress into a second progress bar, distinct
+    /// from the download progress handler. Passing `None` removes any
+    /// installed handler.
+    pub fn install_tree_progress_handler(&self, handler: Option<ShieldedTreeProgressCallback>) {
+        if let Ok(mut slot) = self.tree_progress_handler.lock() {
+            *slot = handler;
+        }
+    }
+
+    /// Snapshot of the currently installed tree-progress handler.
+    pub(super) fn tree_progress_handler(&self) -> Option<ShieldedTreeProgressCallback> {
+        self.tree_progress_handler
+            .lock()
+            .ok()
+            .and_then(|g| g.clone())
     }
 
     /// The on-disk SQLite path the coordinator opened. Used by
@@ -336,11 +421,11 @@ impl NetworkShieldedCoordinator {
 
     /// Drop every wallet registration, purge all per-subwallet
     /// store state (notes, spent marks, sync watermarks,
-    /// nullifier checkpoints), and reset the cooldown stamp. The
-    /// single SQLite handle (commitment tree) stays open — Clear
-    /// semantics on the host side are "wipe my persistence and
-    /// start re-syncing from index 0 on the shared tree", not
-    /// "blow away the chain-wide cache".
+    /// nullifier checkpoints), empty the shared commitment tree,
+    /// and reset the cooldown stamp. The single SQLite handle stays
+    /// open — Clear semantics on the host side are "wipe my
+    /// persistence and cold-rebuild from index 0", not "blow away
+    /// the SQLite file".
     ///
     /// Purging the in-memory `subwallets` store is what actually
     /// delivers the "re-sync from index 0" contract: the sync
@@ -350,6 +435,18 @@ impl NetworkShieldedCoordinator {
     /// caught-up and never re-emit notes to the host (it would
     /// only work after a process restart that drops the
     /// in-memory state). Clearing it here closes that gap.
+    ///
+    /// Emptying the commitment tree is what keeps the two reset
+    /// halves coherent. The watermark rewinds to 0 but the tree's
+    /// append gate is `tree_size`, so a tree left at its full
+    /// (~1M-leaf) size would gate-skip every re-downloaded position
+    /// (`global_pos < tree_size`) — nothing new appends, the
+    /// "Checked" progress bar stays pinned at the stale leaf count
+    /// while "Downloaded" climbs from 0, and the host pointlessly
+    /// re-downloads into an already-complete tree. Resetting the
+    /// tree alongside the watermarks makes Clear+resync a true cold
+    /// rebuild: `tree_size` returns to 0 and "Checked" climbs 0→N
+    /// trailing "Downloaded".
     ///
     /// Used by [`platform_wallet_manager_shielded_clear`] (the
     /// host's Clear button). The host then wipes its own
@@ -363,15 +460,62 @@ impl NetworkShieldedCoordinator {
     ///
     /// [`platform_wallet_manager_shielded_clear`]:
     ///     rs-platform-wallet-ffi's FFI entry point
-    pub async fn clear(&self) {
+    ///
+    /// Returns an error if either store reset (subwallet purge or
+    /// commitment-tree reset) fails. The caller **must** surface this:
+    /// the host only wipes its own per-wallet persistence (e.g.
+    /// SwiftData rows) after `clear()` succeeds. If a reset fails
+    /// silently the host could drop its rows while the shared tree
+    /// stays populated, and the next cold resync would gate-skip every
+    /// re-downloaded position against the stale `tree_size`.
+    pub async fn clear(&self) -> Result<(), crate::error::PlatformWalletError> {
+        // Reset the persistent store FIRST and bail before mutating any
+        // in-memory state if it fails. Clearing `accounts` / `persisters`
+        // makes the coordinator forget every bound wallet (no syncs until
+        // the host rebinds), so doing that while the store reset failed —
+        // and the host therefore keeps its own local state — would leave
+        // the two halves inconsistent. Both resets are still attempted
+        // even if the first fails, so the store is left as clean as
+        // possible, but the first error is captured and propagated.
+        let mut first_err: Option<crate::error::PlatformWalletError> = None;
+        {
+            let mut store = self.store.write().await;
+            if let Err(e) = store.purge_all_subwallets() {
+                tracing::warn!(error = %e, "Failed to purge subwallet store state on clear");
+                first_err.get_or_insert_with(|| {
+                    crate::error::PlatformWalletError::ShieldedStoreError(format!(
+                        "purge_all_subwallets failed: {e}"
+                    ))
+                });
+            }
+            // Reset the shared commitment tree under the same write
+            // guard so the watermark (now 0) and the tree size reset
+            // together — otherwise the post-clear resync gate-skips
+            // every re-downloaded position into the still-full tree.
+            if let Err(e) = store.reset_commitment_tree() {
+                tracing::warn!(error = %e, "Failed to reset commitment tree on clear");
+                first_err.get_or_insert_with(|| {
+                    crate::error::PlatformWalletError::ShieldedStoreError(format!(
+                        "reset_commitment_tree failed: {e}"
+                    ))
+                });
+            }
+        }
+        if let Some(e) = first_err {
+            return Err(e);
+        }
+
+        // Store reset succeeded — now it is safe to drop the in-memory
+        // registries and reset the cooldown so the first post-clear
+        // background pass runs immediately rather than honoring a stale
+        // "caught up" stamp. On the failure path above none of this runs,
+        // so a failed clear leaves coordinator state untouched.
         self.accounts.write().await.clear();
         self.persisters.write().await.clear();
-        if let Err(e) = self.store.write().await.purge_all_subwallets() {
-            tracing::warn!(error = %e, "Failed to purge subwallet store state on clear");
-        }
         if let Ok(mut g) = self.last_caught_up_at.lock() {
             *g = None;
         }
+        Ok(())
     }
 
     /// Run one shielded sync pass for every registered wallet on
@@ -437,7 +581,23 @@ impl NetworkShieldedCoordinator {
         }
 
         // ONE SDK call covers every registered IVK on the network.
-        let notes = match super::sync::sync_notes_across(&self.sdk, &self.store, &subwallets).await
+        // Snapshot the optional progress handler installed by the
+        // manager; sync_notes_across feeds it into the SDK's chunk
+        // loop so callers see live (cumulative_scanned, block_height)
+        // updates during long cold syncs instead of one delayed
+        // burst at the end.
+        let on_progress = self.progress_handler();
+        // Second, distinct signal: commitments committed to the local
+        // tree as the interleaved consumer drains the SDK stream.
+        let on_tree_progress = self.tree_progress_handler();
+        let notes = match super::sync::sync_notes_across(
+            &self.sdk,
+            &self.store,
+            &subwallets,
+            on_progress.as_ref(),
+            on_tree_progress.as_ref(),
+        )
+        .await
         {
             Ok(r) => r,
             Err(e) => return self.fail_all_wallets(&subwallets, &e),
@@ -639,4 +799,116 @@ fn build_per_wallet_summary(
         );
     }
     summary
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::wallet::persister::NoPlatformPersistence;
+    use crate::wallet::shielded::keys::OrchardKeySet;
+
+    /// Unique temp directory for a test's SQLite tree (no `tempfile` dev-dep).
+    fn temp_dir(tag: &str) -> PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!("shielded_coordinator_test_{tag}_{nanos}"))
+    }
+
+    /// Build a coordinator backed by a fresh file store under `dir`, with one
+    /// wallet registered so `accounts` / `persisters` are both non-empty.
+    async fn coordinator_with_one_wallet(dir: &std::path::Path) -> NetworkShieldedCoordinator {
+        std::fs::create_dir_all(dir).expect("create temp dir");
+        let db_path = dir.join("tree.sqlite");
+        let store = FileBackedShieldedStore::open_path(&db_path, 100).expect("open file store");
+        let coordinator = NetworkShieldedCoordinator::new(
+            Arc::new(dash_sdk::Sdk::new_mock()),
+            dashcore::Network::Testnet,
+            db_path,
+            store,
+        );
+
+        let wallet_id: WalletId = [0x11; 32];
+        let views = OrchardKeySet::from_seed(&[0x42u8; 64], dashcore::Network::Testnet, 0)
+            .expect("derive viewing keys")
+            .viewing_keys();
+        let mut account_views = BTreeMap::new();
+        account_views.insert(0u32, views);
+        let persister = WalletPersister::new(wallet_id, Arc::new(NoPlatformPersistence));
+        coordinator
+            .register_wallet(wallet_id, account_views, persister)
+            .await;
+        coordinator
+    }
+
+    /// Success path: a healthy `clear()` empties the shared commitment tree
+    /// AND drops the in-memory account / persister registries, returning `Ok`.
+    #[tokio::test]
+    async fn clear_success_empties_tree_and_registries() {
+        let dir = temp_dir("clear_ok");
+        let coordinator = coordinator_with_one_wallet(&dir).await;
+
+        // Put a leaf in the tree so the reset is observable.
+        {
+            let mut store = coordinator.store().write().await;
+            store.append_commitment(&[7u8; 32], true).unwrap();
+            assert_eq!(store.tree_size().unwrap(), 1);
+        }
+        assert!(!coordinator.accounts.read().await.is_empty());
+        assert!(!coordinator.persisters.read().await.is_empty());
+
+        coordinator.clear().await.expect("clear should succeed");
+
+        assert_eq!(
+            coordinator.store().read().await.tree_size().unwrap(),
+            0,
+            "tree must be empty after a successful clear"
+        );
+        assert!(coordinator.accounts.read().await.is_empty());
+        assert!(coordinator.persisters.read().await.is_empty());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Failure path — regression guard for the partial-clear bug: when the
+    /// store reset fails, `clear()` must return `Err` and leave the account /
+    /// persister registries populated, so the coordinator does not silently
+    /// forget every bound wallet (turning future syncs into no-ops) while the
+    /// host is told to keep its own persisted state.
+    ///
+    /// Unix-only: the failure injection relies on POSIX unlink-while-open
+    /// semantics — removing the directory orphans the inode the store's open
+    /// SQLite handle keeps using, but a fresh `Connection::open` at the now
+    /// missing path fails, which is what drives `reset_commitment_tree` to
+    /// error. Windows refuses to remove a directory with open files, so the
+    /// injection wouldn't model a reset failure there.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn clear_failure_preserves_registries() {
+        let dir = temp_dir("clear_err");
+        let coordinator = coordinator_with_one_wallet(&dir).await;
+        assert!(!coordinator.accounts.read().await.is_empty());
+        assert!(!coordinator.persisters.read().await.is_empty());
+
+        // Force `reset_commitment_tree` to fail: remove the directory holding
+        // the SQLite file so the reset's `Connection::open(path)` can't reopen
+        // it. The store's already-open handle keeps working on the unlinked
+        // inode, but a fresh open at the now-missing path errors.
+        std::fs::remove_dir_all(&dir).expect("remove temp dir to break reopen");
+
+        let result = coordinator.clear().await;
+        assert!(
+            result.is_err(),
+            "clear must surface the store-reset failure rather than swallow it"
+        );
+        assert!(
+            !coordinator.accounts.read().await.is_empty(),
+            "accounts must survive a failed clear so sync does not become a no-op"
+        );
+        assert!(
+            !coordinator.persisters.read().await.is_empty(),
+            "persisters must survive a failed clear"
+        );
+    }
 }

@@ -53,4 +53,48 @@ impl ShieldFromAssetLockTransitionMethodsV0 for ShieldFromAssetLockTransition {
             }),
         }
     }
+
+    #[cfg(all(feature = "state-transition-signing", feature = "core_key_wallet"))]
+    async fn try_from_asset_lock_with_bundle_and_signer<AS>(
+        asset_lock_proof: AssetLockProof,
+        asset_lock_proof_path: &::key_wallet::bip32::DerivationPath,
+        asset_lock_signer: &AS,
+        actions: Vec<SerializedAction>,
+        value_balance: u64,
+        anchor: [u8; 32],
+        proof: Vec<u8>,
+        binding_signature: [u8; 64],
+        platform_version: &PlatformVersion,
+    ) -> Result<StateTransition, ProtocolError>
+    where
+        AS: ::key_wallet::signer::Signer,
+    {
+        match platform_version
+            .dpp
+            .state_transition_serialization_versions
+            .shield_from_asset_lock_state_transition
+            .default_current_version
+        {
+            0 => {
+                ShieldFromAssetLockTransitionV0::try_from_asset_lock_with_bundle_and_signer(
+                    asset_lock_proof,
+                    asset_lock_proof_path,
+                    asset_lock_signer,
+                    actions,
+                    value_balance,
+                    anchor,
+                    proof,
+                    binding_signature,
+                    platform_version,
+                )
+                .await
+            }
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "ShieldFromAssetLockTransition::try_from_asset_lock_with_bundle_and_signer"
+                    .to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
+        }
+    }
 }

@@ -2001,6 +2001,39 @@ $root.org = (function() {
                          */
 
                         /**
+                         * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getShieldedNotesCount}.
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @typedef getShieldedNotesCountCallback
+                         * @type {function}
+                         * @param {Error|null} error Error, if any
+                         * @param {org.dash.platform.dapi.v0.GetShieldedNotesCountResponse} [response] GetShieldedNotesCountResponse
+                         */
+
+                        /**
+                         * Calls getShieldedNotesCount.
+                         * @function getShieldedNotesCount
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetShieldedNotesCountRequest} request GetShieldedNotesCountRequest message or plain object
+                         * @param {org.dash.platform.dapi.v0.Platform.getShieldedNotesCountCallback} callback Node-style callback called with the error, if any, and GetShieldedNotesCountResponse
+                         * @returns {undefined}
+                         * @variation 1
+                         */
+                        Object.defineProperty(Platform.prototype.getShieldedNotesCount = function getShieldedNotesCount(request, callback) {
+                            return this.rpcCall(getShieldedNotesCount, $root.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest, $root.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse, request, callback);
+                        }, "name", { value: "getShieldedNotesCount" });
+
+                        /**
+                         * Calls getShieldedNotesCount.
+                         * @function getShieldedNotesCount
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetShieldedNotesCountRequest} request GetShieldedNotesCountRequest message or plain object
+                         * @returns {Promise<org.dash.platform.dapi.v0.GetShieldedNotesCountResponse>} Promise
+                         * @variation 2
+                         */
+
+                        /**
                          * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getShieldedNullifiers}.
                          * @memberof org.dash.platform.dapi.v0.Platform
                          * @typedef getShieldedNullifiersCallback
@@ -94495,6 +94528,892 @@ $root.org = (function() {
                         })();
 
                         return GetShieldedPoolStateResponse;
+                    })();
+
+                    v0.GetShieldedNotesCountRequest = (function() {
+
+                        /**
+                         * Properties of a GetShieldedNotesCountRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetShieldedNotesCountRequest
+                         * @property {org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.IGetShieldedNotesCountRequestV0|null} [v0] GetShieldedNotesCountRequest v0
+                         */
+
+                        /**
+                         * Constructs a new GetShieldedNotesCountRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetShieldedNotesCountRequest.
+                         * @implements IGetShieldedNotesCountRequest
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetShieldedNotesCountRequest=} [properties] Properties to set
+                         */
+                        function GetShieldedNotesCountRequest(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetShieldedNotesCountRequest v0.
+                         * @member {org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.IGetShieldedNotesCountRequestV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountRequest
+                         * @instance
+                         */
+                        GetShieldedNotesCountRequest.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetShieldedNotesCountRequest version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountRequest
+                         * @instance
+                         */
+                        Object.defineProperty(GetShieldedNotesCountRequest.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetShieldedNotesCountRequest instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetShieldedNotesCountRequest=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetShieldedNotesCountRequest} GetShieldedNotesCountRequest instance
+                         */
+                        GetShieldedNotesCountRequest.create = function create(properties) {
+                            return new GetShieldedNotesCountRequest(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetShieldedNotesCountRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetShieldedNotesCountRequest} message GetShieldedNotesCountRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetShieldedNotesCountRequest.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetShieldedNotesCountRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetShieldedNotesCountRequest} message GetShieldedNotesCountRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetShieldedNotesCountRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetShieldedNotesCountRequest message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetShieldedNotesCountRequest} GetShieldedNotesCountRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetShieldedNotesCountRequest.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetShieldedNotesCountRequest message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetShieldedNotesCountRequest} GetShieldedNotesCountRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetShieldedNotesCountRequest.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetShieldedNotesCountRequest message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountRequest
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetShieldedNotesCountRequest.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetShieldedNotesCountRequest message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountRequest
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetShieldedNotesCountRequest} GetShieldedNotesCountRequest
+                         */
+                        GetShieldedNotesCountRequest.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetShieldedNotesCountRequest message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetShieldedNotesCountRequest} message GetShieldedNotesCountRequest
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetShieldedNotesCountRequest.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetShieldedNotesCountRequest to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountRequest
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetShieldedNotesCountRequest.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0 = (function() {
+
+                            /**
+                             * Properties of a GetShieldedNotesCountRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountRequest
+                             * @interface IGetShieldedNotesCountRequestV0
+                             * @property {boolean|null} [prove] GetShieldedNotesCountRequestV0 prove
+                             */
+
+                            /**
+                             * Constructs a new GetShieldedNotesCountRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountRequest
+                             * @classdesc Represents a GetShieldedNotesCountRequestV0.
+                             * @implements IGetShieldedNotesCountRequestV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.IGetShieldedNotesCountRequestV0=} [properties] Properties to set
+                             */
+                            function GetShieldedNotesCountRequestV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetShieldedNotesCountRequestV0 prove.
+                             * @member {boolean} prove
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0
+                             * @instance
+                             */
+                            GetShieldedNotesCountRequestV0.prototype.prove = false;
+
+                            /**
+                             * Creates a new GetShieldedNotesCountRequestV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.IGetShieldedNotesCountRequestV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0} GetShieldedNotesCountRequestV0 instance
+                             */
+                            GetShieldedNotesCountRequestV0.create = function create(properties) {
+                                return new GetShieldedNotesCountRequestV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetShieldedNotesCountRequestV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.IGetShieldedNotesCountRequestV0} message GetShieldedNotesCountRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetShieldedNotesCountRequestV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
+                                    writer.uint32(/* id 1, wireType 0 =*/8).bool(message.prove);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetShieldedNotesCountRequestV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.IGetShieldedNotesCountRequestV0} message GetShieldedNotesCountRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetShieldedNotesCountRequestV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetShieldedNotesCountRequestV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0} GetShieldedNotesCountRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetShieldedNotesCountRequestV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.prove = reader.bool();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetShieldedNotesCountRequestV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0} GetShieldedNotesCountRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetShieldedNotesCountRequestV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetShieldedNotesCountRequestV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetShieldedNotesCountRequestV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    if (typeof message.prove !== "boolean")
+                                        return "prove: boolean expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetShieldedNotesCountRequestV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0} GetShieldedNotesCountRequestV0
+                             */
+                            GetShieldedNotesCountRequestV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0();
+                                if (object.prove != null)
+                                    message.prove = Boolean(object.prove);
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetShieldedNotesCountRequestV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0} message GetShieldedNotesCountRequestV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetShieldedNotesCountRequestV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults)
+                                    object.prove = false;
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    object.prove = message.prove;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetShieldedNotesCountRequestV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetShieldedNotesCountRequestV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetShieldedNotesCountRequestV0;
+                        })();
+
+                        return GetShieldedNotesCountRequest;
+                    })();
+
+                    v0.GetShieldedNotesCountResponse = (function() {
+
+                        /**
+                         * Properties of a GetShieldedNotesCountResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetShieldedNotesCountResponse
+                         * @property {org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.IGetShieldedNotesCountResponseV0|null} [v0] GetShieldedNotesCountResponse v0
+                         */
+
+                        /**
+                         * Constructs a new GetShieldedNotesCountResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetShieldedNotesCountResponse.
+                         * @implements IGetShieldedNotesCountResponse
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetShieldedNotesCountResponse=} [properties] Properties to set
+                         */
+                        function GetShieldedNotesCountResponse(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetShieldedNotesCountResponse v0.
+                         * @member {org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.IGetShieldedNotesCountResponseV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountResponse
+                         * @instance
+                         */
+                        GetShieldedNotesCountResponse.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetShieldedNotesCountResponse version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountResponse
+                         * @instance
+                         */
+                        Object.defineProperty(GetShieldedNotesCountResponse.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetShieldedNotesCountResponse instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetShieldedNotesCountResponse=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetShieldedNotesCountResponse} GetShieldedNotesCountResponse instance
+                         */
+                        GetShieldedNotesCountResponse.create = function create(properties) {
+                            return new GetShieldedNotesCountResponse(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetShieldedNotesCountResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetShieldedNotesCountResponse} message GetShieldedNotesCountResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetShieldedNotesCountResponse.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetShieldedNotesCountResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetShieldedNotesCountResponse} message GetShieldedNotesCountResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetShieldedNotesCountResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetShieldedNotesCountResponse message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetShieldedNotesCountResponse} GetShieldedNotesCountResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetShieldedNotesCountResponse.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetShieldedNotesCountResponse message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetShieldedNotesCountResponse} GetShieldedNotesCountResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetShieldedNotesCountResponse.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetShieldedNotesCountResponse message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountResponse
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetShieldedNotesCountResponse.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetShieldedNotesCountResponse message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountResponse
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetShieldedNotesCountResponse} GetShieldedNotesCountResponse
+                         */
+                        GetShieldedNotesCountResponse.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetShieldedNotesCountResponse message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetShieldedNotesCountResponse} message GetShieldedNotesCountResponse
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetShieldedNotesCountResponse.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetShieldedNotesCountResponse to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountResponse
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetShieldedNotesCountResponse.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0 = (function() {
+
+                            /**
+                             * Properties of a GetShieldedNotesCountResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountResponse
+                             * @interface IGetShieldedNotesCountResponseV0
+                             * @property {number|Long|null} [totalNotesCount] GetShieldedNotesCountResponseV0 totalNotesCount
+                             * @property {org.dash.platform.dapi.v0.IProof|null} [proof] GetShieldedNotesCountResponseV0 proof
+                             * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetShieldedNotesCountResponseV0 metadata
+                             */
+
+                            /**
+                             * Constructs a new GetShieldedNotesCountResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountResponse
+                             * @classdesc Represents a GetShieldedNotesCountResponseV0.
+                             * @implements IGetShieldedNotesCountResponseV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.IGetShieldedNotesCountResponseV0=} [properties] Properties to set
+                             */
+                            function GetShieldedNotesCountResponseV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetShieldedNotesCountResponseV0 totalNotesCount.
+                             * @member {number|Long} totalNotesCount
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0
+                             * @instance
+                             */
+                            GetShieldedNotesCountResponseV0.prototype.totalNotesCount = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                            /**
+                             * GetShieldedNotesCountResponseV0 proof.
+                             * @member {org.dash.platform.dapi.v0.IProof|null|undefined} proof
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0
+                             * @instance
+                             */
+                            GetShieldedNotesCountResponseV0.prototype.proof = null;
+
+                            /**
+                             * GetShieldedNotesCountResponseV0 metadata.
+                             * @member {org.dash.platform.dapi.v0.IResponseMetadata|null|undefined} metadata
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0
+                             * @instance
+                             */
+                            GetShieldedNotesCountResponseV0.prototype.metadata = null;
+
+                            // OneOf field names bound to virtual getters and setters
+                            var $oneOfFields;
+
+                            /**
+                             * GetShieldedNotesCountResponseV0 result.
+                             * @member {"totalNotesCount"|"proof"|undefined} result
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0
+                             * @instance
+                             */
+                            Object.defineProperty(GetShieldedNotesCountResponseV0.prototype, "result", {
+                                get: $util.oneOfGetter($oneOfFields = ["totalNotesCount", "proof"]),
+                                set: $util.oneOfSetter($oneOfFields)
+                            });
+
+                            /**
+                             * Creates a new GetShieldedNotesCountResponseV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.IGetShieldedNotesCountResponseV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0} GetShieldedNotesCountResponseV0 instance
+                             */
+                            GetShieldedNotesCountResponseV0.create = function create(properties) {
+                                return new GetShieldedNotesCountResponseV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetShieldedNotesCountResponseV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.IGetShieldedNotesCountResponseV0} message GetShieldedNotesCountResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetShieldedNotesCountResponseV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.totalNotesCount != null && Object.hasOwnProperty.call(message, "totalNotesCount"))
+                                    writer.uint32(/* id 1, wireType 0 =*/8).uint64(message.totalNotesCount);
+                                if (message.proof != null && Object.hasOwnProperty.call(message, "proof"))
+                                    $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
+                                    $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetShieldedNotesCountResponseV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.IGetShieldedNotesCountResponseV0} message GetShieldedNotesCountResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetShieldedNotesCountResponseV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetShieldedNotesCountResponseV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0} GetShieldedNotesCountResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetShieldedNotesCountResponseV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.totalNotesCount = reader.uint64();
+                                        break;
+                                    case 2:
+                                        message.proof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
+                                        break;
+                                    case 3:
+                                        message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetShieldedNotesCountResponseV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0} GetShieldedNotesCountResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetShieldedNotesCountResponseV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetShieldedNotesCountResponseV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetShieldedNotesCountResponseV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                var properties = {};
+                                if (message.totalNotesCount != null && message.hasOwnProperty("totalNotesCount")) {
+                                    properties.result = 1;
+                                    if (!$util.isInteger(message.totalNotesCount) && !(message.totalNotesCount && $util.isInteger(message.totalNotesCount.low) && $util.isInteger(message.totalNotesCount.high)))
+                                        return "totalNotesCount: integer|Long expected";
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    if (properties.result === 1)
+                                        return "result: multiple values";
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
+                                        if (error)
+                                            return "proof." + error;
+                                    }
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata")) {
+                                    var error = $root.org.dash.platform.dapi.v0.ResponseMetadata.verify(message.metadata);
+                                    if (error)
+                                        return "metadata." + error;
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetShieldedNotesCountResponseV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0} GetShieldedNotesCountResponseV0
+                             */
+                            GetShieldedNotesCountResponseV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0();
+                                if (object.totalNotesCount != null)
+                                    if ($util.Long)
+                                        (message.totalNotesCount = $util.Long.fromValue(object.totalNotesCount)).unsigned = true;
+                                    else if (typeof object.totalNotesCount === "string")
+                                        message.totalNotesCount = parseInt(object.totalNotesCount, 10);
+                                    else if (typeof object.totalNotesCount === "number")
+                                        message.totalNotesCount = object.totalNotesCount;
+                                    else if (typeof object.totalNotesCount === "object")
+                                        message.totalNotesCount = new $util.LongBits(object.totalNotesCount.low >>> 0, object.totalNotesCount.high >>> 0).toNumber(true);
+                                if (object.proof != null) {
+                                    if (typeof object.proof !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0.proof: object expected");
+                                    message.proof = $root.org.dash.platform.dapi.v0.Proof.fromObject(object.proof);
+                                }
+                                if (object.metadata != null) {
+                                    if (typeof object.metadata !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0.metadata: object expected");
+                                    message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.fromObject(object.metadata);
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetShieldedNotesCountResponseV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0} message GetShieldedNotesCountResponseV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetShieldedNotesCountResponseV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults)
+                                    object.metadata = null;
+                                if (message.totalNotesCount != null && message.hasOwnProperty("totalNotesCount")) {
+                                    if (typeof message.totalNotesCount === "number")
+                                        object.totalNotesCount = options.longs === String ? String(message.totalNotesCount) : message.totalNotesCount;
+                                    else
+                                        object.totalNotesCount = options.longs === String ? $util.Long.prototype.toString.call(message.totalNotesCount) : options.longs === Number ? new $util.LongBits(message.totalNotesCount.low >>> 0, message.totalNotesCount.high >>> 0).toNumber(true) : message.totalNotesCount;
+                                    if (options.oneofs)
+                                        object.result = "totalNotesCount";
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    object.proof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.proof, options);
+                                    if (options.oneofs)
+                                        object.result = "proof";
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata"))
+                                    object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetShieldedNotesCountResponseV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetShieldedNotesCountResponseV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetShieldedNotesCountResponseV0;
+                        })();
+
+                        return GetShieldedNotesCountResponse;
                     })();
 
                     v0.GetShieldedNullifiersRequest = (function() {

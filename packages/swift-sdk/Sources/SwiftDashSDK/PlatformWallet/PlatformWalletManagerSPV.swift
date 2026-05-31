@@ -112,6 +112,20 @@ public struct PlatformSpvStartConfig {
     public var peers: [String]
     public var restrictToConfiguredPeers: Bool
     public var startFromHeight: UInt32
+    /// Devnet name (e.g. `"333"` for `devnet-333`). Required when
+    /// `network == .devnet`, must be `nil` on every other network.
+    /// The FFI rebuilds the user agent to embed
+    /// `devnet.devnet-<name>` so Dash Core devnet peers accept the
+    /// handshake.
+    public var devnetName: String?
+    /// LLMQ_DEVNET quorum size override (matches Dash Core's
+    /// `-llmqdevnetparams=<size>:<threshold>`). `0` means "no
+    /// override". Must be paired with `llmqDevnetThreshold` and only
+    /// valid on devnet.
+    public var llmqDevnetSize: UInt32
+    /// LLMQ_DEVNET signing threshold override. See
+    /// `llmqDevnetSize`.
+    public var llmqDevnetThreshold: UInt32
 
     public init(
         dataDir: String,
@@ -119,7 +133,10 @@ public struct PlatformSpvStartConfig {
         userAgent: String? = nil,
         peers: [String] = [],
         restrictToConfiguredPeers: Bool = false,
-        startFromHeight: UInt32 = 0
+        startFromHeight: UInt32 = 0,
+        devnetName: String? = nil,
+        llmqDevnetSize: UInt32 = 0,
+        llmqDevnetThreshold: UInt32 = 0
     ) {
         self.dataDir = dataDir
         self.network = network
@@ -127,6 +144,9 @@ public struct PlatformSpvStartConfig {
         self.peers = peers
         self.restrictToConfiguredPeers = restrictToConfiguredPeers
         self.startFromHeight = startFromHeight
+        self.devnetName = devnetName
+        self.llmqDevnetSize = llmqDevnetSize
+        self.llmqDevnetThreshold = llmqDevnetThreshold
     }
 }
 
@@ -194,6 +214,9 @@ extension PlatformWalletManager {
             let userAgentPtr = config.userAgent.flatMap { strdup($0) }
             defer { if let p = userAgentPtr { free(p) } }
 
+            let devnetNamePtr = config.devnetName.flatMap { strdup($0) }
+            defer { if let p = devnetNamePtr { free(p) } }
+
             try peerCStrings.withUnsafeBufferPointer { peersBuf in
                 let peersPtr: UnsafePointer<UnsafePointer<CChar>?>? = peersBuf.baseAddress.map {
                     UnsafeRawPointer($0).assumingMemoryBound(to: UnsafePointer<CChar>?.self)
@@ -206,7 +229,10 @@ extension PlatformWalletManager {
                     peersPtr,
                     UInt(peerCStrings.count),
                     config.restrictToConfiguredPeers,
-                    config.startFromHeight
+                    config.startFromHeight,
+                    devnetNamePtr,
+                    config.llmqDevnetSize,
+                    config.llmqDevnetThreshold
                 ).check()
             }
         }

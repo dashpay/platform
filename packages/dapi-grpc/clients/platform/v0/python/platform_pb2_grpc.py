@@ -299,6 +299,11 @@ class PlatformStub(object):
                 request_serializer=platform__pb2.GetShieldedPoolStateRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetShieldedPoolStateResponse.FromString,
                 )
+        self.getShieldedNotesCount = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getShieldedNotesCount',
+                request_serializer=platform__pb2.GetShieldedNotesCountRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetShieldedNotesCountResponse.FromString,
+                )
         self.getShieldedNullifiers = channel.unary_unary(
                 '/org.dash.platform.dapi.v0.Platform/getShieldedNullifiers',
                 request_serializer=platform__pb2.GetShieldedNullifiersRequest.SerializeToString,
@@ -678,6 +683,12 @@ class PlatformServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def getShieldedNotesCount(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def getShieldedNullifiers(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
@@ -995,6 +1006,11 @@ def add_PlatformServicer_to_server(servicer, server):
                     servicer.getShieldedPoolState,
                     request_deserializer=platform__pb2.GetShieldedPoolStateRequest.FromString,
                     response_serializer=platform__pb2.GetShieldedPoolStateResponse.SerializeToString,
+            ),
+            'getShieldedNotesCount': grpc.unary_unary_rpc_method_handler(
+                    servicer.getShieldedNotesCount,
+                    request_deserializer=platform__pb2.GetShieldedNotesCountRequest.FromString,
+                    response_serializer=platform__pb2.GetShieldedNotesCountResponse.SerializeToString,
             ),
             'getShieldedNullifiers': grpc.unary_unary_rpc_method_handler(
                     servicer.getShieldedNullifiers,
@@ -1997,6 +2013,23 @@ class Platform(object):
         return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getShieldedPoolState',
             platform__pb2.GetShieldedPoolStateRequest.SerializeToString,
             platform__pb2.GetShieldedPoolStateResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getShieldedNotesCount(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getShieldedNotesCount',
+            platform__pb2.GetShieldedNotesCountRequest.SerializeToString,
+            platform__pb2.GetShieldedNotesCountResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 

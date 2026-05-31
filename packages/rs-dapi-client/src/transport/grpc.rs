@@ -496,6 +496,15 @@ impl_transport_request_grpc!(
     get_shielded_pool_state
 );
 
+// rpc getShieldedNotesCount(GetShieldedNotesCountRequest) returns (GetShieldedNotesCountResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetShieldedNotesCountRequest,
+    platform_proto::GetShieldedNotesCountResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_shielded_notes_count
+);
+
 // rpc getShieldedNullifiers(GetShieldedNullifiersRequest) returns (GetShieldedNullifiersResponse);
 impl_transport_request_grpc!(
     platform_proto::GetShieldedNullifiersRequest,

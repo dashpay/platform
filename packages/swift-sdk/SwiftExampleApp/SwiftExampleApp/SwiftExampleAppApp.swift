@@ -150,6 +150,18 @@ struct SwiftExampleAppApp: App {
                     activateManager(for: newNetwork)
                     rebindWalletScopedServices()
                 }
+                // Devnet→devnet rebuild from OptionsView: when the user
+                // edits the quorum URL / devnet name the SDK is rebuilt
+                // and `WalletManagerStore.activate` swaps the cached
+                // `PlatformWalletManager`, but neither of the two
+                // observers above fires (network stays `.devnet`;
+                // wallet ID set stays identical after persistor reload).
+                // PlatformBalanceSyncService and ShieldedService would
+                // keep retaining the old manager. Listen for the explicit
+                // tick OptionsView publishes after the activate completes.
+                .onChange(of: platformState.walletScopedServicesRebindTick) { _, _ in
+                    rebindWalletScopedServices()
+                }
         }
     }
 

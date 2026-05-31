@@ -30,10 +30,13 @@ use crate::execution::validation::state_transition::batch::data_triggers::{DataT
 /// # Returns
 ///
 /// A `DataTriggerExecutionResult` indicating the success or failure of the trigger execution.
+// PROTOCOL_VERSION_11 consensus-safety: body byte-identical to
+// v3.1-dev. Only the `context` param type changed from `&` to `&mut`
+// (compile-time only — the body never mutates the context).
 #[inline(always)]
 pub(super) fn create_contact_request_data_trigger_v0(
     document_transition: &DocumentTransitionAction,
-    context: &DataTriggerExecutionContext<'_>,
+    context: &mut DataTriggerExecutionContext<'_>,
     platform_version: &PlatformVersion,
 ) -> Result<DataTriggerExecutionResult, Error> {
     let data_contract_fetch_info = document_transition.base().data_contract_fetch_info();
@@ -177,18 +180,20 @@ mod test {
 
         transition_execution_context.enable_dry_run();
 
-        let data_trigger_context = DataTriggerExecutionContext {
+        let trigger_block_info = BlockInfo::default();
+        let mut data_trigger_context = DataTriggerExecutionContext {
             platform: &platform_ref,
+            block_info: &trigger_block_info,
             owner_id,
-            state_transition_execution_context: &transition_execution_context,
+            state_transition_execution_context: &mut transition_execution_context,
             transaction: None,
         };
 
-        let result = create_contact_request_data_trigger(
+        let result = create_contact_request_data_trigger(  // dispatches to _v0 (per-trigger version field = 0 at this test's default PV)
             &DocumentCreateTransitionAction::try_from_document_borrowed_create_transition_with_contract_lookup(&platform.drive, *owner_id,  None, document_create_transition, &BlockInfo::default(), 0, |_identifier| {
                 Ok(Arc::new(DataContractFetchInfo::dashpay_contract_fixture(protocol_version)))
             }, platform_version).expect("expected to create action").0.into_data().expect("expected to be a valid transition").as_document_action().expect("expected document action"),
-            &data_trigger_context,
+            &mut data_trigger_context,
             platform_version,
         )
         .expect("the execution result should be returned");
@@ -279,7 +284,7 @@ mod test {
             .as_transition_create()
             .expect("expected a document create transition");
 
-        let transition_execution_context =
+        let mut transition_execution_context =
             StateTransitionExecutionContext::default_for_platform_version(platform_version)
                 .unwrap();
         let identity_fixture =
@@ -298,20 +303,22 @@ mod test {
             )
             .expect("expected to insert identity");
 
-        let data_trigger_context = DataTriggerExecutionContext {
+        let trigger_block_info = BlockInfo::default();
+        let mut data_trigger_context = DataTriggerExecutionContext {
             platform: &platform_ref,
+            block_info: &trigger_block_info,
             owner_id: &owner_id,
-            state_transition_execution_context: &transition_execution_context,
+            state_transition_execution_context: &mut transition_execution_context,
             transaction: None,
         };
 
         let _dashpay_identity_id = data_trigger_context.owner_id.to_owned();
 
-        let result = create_contact_request_data_trigger(
+        let result = create_contact_request_data_trigger(  // dispatches to _v0 (per-trigger version field = 0 at this test's default PV)
             &DocumentCreateTransitionAction::try_from_document_borrowed_create_transition_with_contract_lookup(&platform.drive, owner_id, None, document_create_transition, &BlockInfo::default(), 0, |_identifier| {
                 Ok(Arc::new(DataContractFetchInfo::dashpay_contract_fixture(protocol_version)))
             }, platform_version).expect("expected to create action").0.into_data().expect("expected to be a valid transition").as_document_action().expect("expected document action"),
-            &data_trigger_context,
+            &mut data_trigger_context,
             platform_version,
         )
         .expect("data trigger result should be returned");
@@ -412,24 +419,26 @@ mod test {
             .as_transition_create()
             .expect("expected a document create transition");
 
-        let transition_execution_context =
+        let mut transition_execution_context =
             StateTransitionExecutionContext::default_for_platform_version(platform_version)
                 .unwrap();
 
-        let data_trigger_context = DataTriggerExecutionContext {
+        let trigger_block_info = BlockInfo::default();
+        let mut data_trigger_context = DataTriggerExecutionContext {
             platform: &platform_ref,
+            block_info: &trigger_block_info,
             owner_id: &owner_id,
-            state_transition_execution_context: &transition_execution_context,
+            state_transition_execution_context: &mut transition_execution_context,
             transaction: None,
         };
 
         let _dashpay_identity_id = data_trigger_context.owner_id.to_owned();
 
-        let result = create_contact_request_data_trigger(
+        let result = create_contact_request_data_trigger(  // dispatches to _v0 (per-trigger version field = 0 at this test's default PV)
             &DocumentCreateTransitionAction::try_from_document_borrowed_create_transition_with_contract_lookup(&platform.drive, owner_id, None, document_create_transition, &BlockInfo::default(), 0, |_identifier| {
                 Ok(Arc::new(DataContractFetchInfo::dashpay_contract_fixture(protocol_version)))
             }, platform_version).expect("expected to create action").0.into_data().expect("expected to be a valid transition").as_document_action().expect("expected document action"),
-            &data_trigger_context,
+            &mut data_trigger_context,
             platform_version,
         )
         .expect("data trigger result should be returned");
@@ -443,5 +452,19 @@ mod test {
                 e.message() == format!("Identity {contract_request_to_user_id} doesn't exist")
             }
         ));
+
+        // T3 PROTOCOL_VERSION_12+ billing assertion: this test runs at
+        // `PlatformVersion::latest()` where
+        // `create_contact_request_data_trigger: 1` dispatches to `_v1`.
+        // `_v1` must surface the `fetch_identity_balance_with_costs`
+        // cost via `add_operation`. If a regression drops the
+        // `add_operation` call in `_v1`, this assertion fails.
+        let ops = data_trigger_context
+            .state_transition_execution_context
+            .operations_slice();
+        assert!(
+            !ops.is_empty(),
+            "T3: _v1 must add operations to execution_context (caught zero ops)"
+        );
     }
 }

@@ -128,6 +128,8 @@ service Platform {
       returns (GetMostRecentShieldedAnchorResponse);
   rpc getShieldedPoolState(GetShieldedPoolStateRequest)
       returns (GetShieldedPoolStateResponse);
+  rpc getShieldedNotesCount(GetShieldedNotesCountRequest)
+      returns (GetShieldedNotesCountResponse);
   rpc getShieldedNullifiers(GetShieldedNullifiersRequest)
       returns (GetShieldedNullifiersResponse);
   rpc getNullifiersTrunkState(GetNullifiersTrunkStateRequest)
@@ -2970,6 +2972,31 @@ message GetShieldedPoolStateResponse {
     ResponseMetadata metadata = 3;
   }
   oneof version { GetShieldedPoolStateResponseV0 v0 = 1; }
+}
+
+// Count of leaves in the shielded notes commitment tree.
+// Used by wallets at the start of a shielded sync to seed a
+// determinate progress-bar denominator. The count IS bound by the
+// Merk value hash: it is the first field (`total_count`) of the
+// serialized `CommitmentTree` element whose bytes are hashed into the
+// app/root hash, so it is provable via a PathQuery proof of that
+// element (set `prove = true`).
+message GetShieldedNotesCountRequest {
+  message GetShieldedNotesCountRequestV0 {
+    bool prove = 1;
+  }
+  oneof version { GetShieldedNotesCountRequestV0 v0 = 1; }
+}
+
+message GetShieldedNotesCountResponse {
+  message GetShieldedNotesCountResponseV0 {
+    oneof result {
+      uint64 total_notes_count = 1 [jstype = JS_STRING];
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+  oneof version { GetShieldedNotesCountResponseV0 v0 = 1; }
 }
 
 message GetShieldedNullifiersRequest {

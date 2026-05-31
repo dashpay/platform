@@ -52,13 +52,14 @@ use dapi_grpc::platform::v0::{
     GetRecentCompactedNullifierChangesResponse, GetRecentNullifierChangesRequest,
     GetRecentNullifierChangesResponse, GetShieldedAnchorsRequest, GetShieldedAnchorsResponse,
     GetShieldedEncryptedNotesRequest, GetShieldedEncryptedNotesResponse,
-    GetShieldedNullifiersRequest, GetShieldedNullifiersResponse, GetShieldedPoolStateRequest,
-    GetShieldedPoolStateResponse, GetStatusRequest, GetStatusResponse, GetTokenContractInfoRequest,
-    GetTokenContractInfoResponse, GetTokenDirectPurchasePricesRequest,
-    GetTokenDirectPurchasePricesResponse, GetTokenPerpetualDistributionLastClaimRequest,
-    GetTokenPerpetualDistributionLastClaimResponse, GetTokenPreProgrammedDistributionsRequest,
-    GetTokenPreProgrammedDistributionsResponse, GetTokenStatusesRequest, GetTokenStatusesResponse,
-    GetTokenTotalSupplyRequest, GetTokenTotalSupplyResponse, GetTotalCreditsInPlatformRequest,
+    GetShieldedNotesCountRequest, GetShieldedNotesCountResponse, GetShieldedNullifiersRequest,
+    GetShieldedNullifiersResponse, GetShieldedPoolStateRequest, GetShieldedPoolStateResponse,
+    GetStatusRequest, GetStatusResponse, GetTokenContractInfoRequest, GetTokenContractInfoResponse,
+    GetTokenDirectPurchasePricesRequest, GetTokenDirectPurchasePricesResponse,
+    GetTokenPerpetualDistributionLastClaimRequest, GetTokenPerpetualDistributionLastClaimResponse,
+    GetTokenPreProgrammedDistributionsRequest, GetTokenPreProgrammedDistributionsResponse,
+    GetTokenStatusesRequest, GetTokenStatusesResponse, GetTokenTotalSupplyRequest,
+    GetTokenTotalSupplyResponse, GetTotalCreditsInPlatformRequest,
     GetTotalCreditsInPlatformResponse, GetVotePollsByEndDateRequest, GetVotePollsByEndDateResponse,
     WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse,
 };
@@ -944,6 +945,18 @@ impl PlatformService for QueryService {
             request,
             Platform::<DefaultCoreRPC>::query_shielded_pool_state,
             "get_shielded_pool_state",
+        )
+        .await
+    }
+
+    async fn get_shielded_notes_count(
+        &self,
+        request: Request<GetShieldedNotesCountRequest>,
+    ) -> Result<Response<GetShieldedNotesCountResponse>, Status> {
+        self.handle_blocking_query(
+            request,
+            Platform::<DefaultCoreRPC>::query_shielded_notes_count,
+            "get_shielded_notes_count",
         )
         .await
     }
