@@ -23,6 +23,24 @@ struct IdentityRow: View {
         return String(format: "%.2f DASH", dashAmount)
     }
 
+    private var hasAnyPrivateKey: Bool {
+        if identity.votingPrivateKeyIdentifier != nil
+            || identity.ownerPrivateKeyIdentifier != nil
+            || identity.payoutPrivateKeyIdentifier != nil {
+            return true
+        }
+        let km = KeychainManager.shared
+        for publicKey in identity.identityPublicKeys {
+            if km.hasPrivateKey(identityId: identity.identityId, keyIndex: Int32(publicKey.id)) {
+                return true
+            }
+            if km.hasIdentityPrivateKey(publicKeyHex: publicKey.data.toHexString()) {
+                return true
+            }
+        }
+        return false
+    }
+
     var body: some View {
         NavigationLink(destination: IdentityDetailView(identityId: identity.identityId)) {
             VStack(alignment: .leading, spacing: 4) {
@@ -63,6 +81,23 @@ struct IdentityRow: View {
                     .foregroundColor(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
+
+                let identityType = identity.identityTypeEnum
+                if identityType != .user || !hasAnyPrivateKey || identity.wallet == nil {
+                    HStack(spacing: 6) {
+                        if identityType == .masternode {
+                            IdentityBadge(text: "Masternode", icon: "server.rack", color: .purple)
+                        } else if identityType == .evonode {
+                            IdentityBadge(text: "Evonode", icon: "server.rack", color: .indigo)
+                        }
+                        if !hasAnyPrivateKey {
+                            IdentityBadge(text: "No Keys", icon: "key.slash", color: .red)
+                        }
+                        if identity.wallet == nil {
+                            IdentityBadge(text: "No Wallet", icon: "wallet.pass", color: .orange)
+                        }
+                    }
+                }
 
                 if identity.isLocal {
                     HStack {
@@ -158,5 +193,24 @@ struct IdentityRow: View {
                 )
             }
         }
+    }
+}
+
+private struct IdentityBadge: View {
+    let text: String
+    let icon: String
+    let color: Color
+
+    var body: some View {
+        HStack(spacing: 3) {
+            Image(systemName: icon)
+            Text(text)
+        }
+        .font(.caption2)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background(color.opacity(0.15))
+        .foregroundColor(color)
+        .cornerRadius(4)
     }
 }

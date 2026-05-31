@@ -619,10 +619,20 @@ public class PlatformWalletManager: ObservableObject {
 
         try persistenceHandler.deleteWalletData(walletId: walletId)
 
-        let storage = WalletStorage()
-        // Delete metadata first so the mnemonic remains available for retry.
-        try storage.deleteMetadata(for: walletId)
-        try storage.deleteMnemonic(for: walletId)
+        // The mnemonic + metadata blobs in the Keychain are keyed by
+        // `walletId` alone and shared by every network the wallet
+        // lives on (same seed → same id on all chains). Only purge
+        // them once this was the wallet's LAST remaining
+        // `PersistentWallet` row — otherwise deleting the wallet from
+        // one network would orphan it on the others by destroying the
+        // recovery phrase they still rely on.
+        let remaining = try persistenceHandler.walletRowCountAcrossNetworks(walletId: walletId)
+        if remaining == 0 {
+            let storage = WalletStorage()
+            // Delete metadata first so the mnemonic remains available for retry.
+            try storage.deleteMetadata(for: walletId)
+            try storage.deleteMnemonic(for: walletId)
+        }
     }
 
     // MARK: - Per-wallet lookup

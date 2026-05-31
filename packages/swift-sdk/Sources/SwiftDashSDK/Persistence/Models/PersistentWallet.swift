@@ -18,9 +18,14 @@ public final class PersistentWallet {
     /// "is there a wallet on this chain yet" lookups) don't degrade
     /// to a table scan.
     #Index<PersistentWallet>([\.networkRaw])
+    #Unique<PersistentWallet>([\.walletId, \.networkRaw])
 
-    /// 32-byte wallet ID (SHA256 of root public key).
-    @Attribute(.unique) public var walletId: Data
+    /// 32-byte wallet ID (SHA256 of root public key). Not unique on
+    /// its own — the same seed yields the same `walletId` on every
+    /// network, so a wallet that exists on multiple chains has one
+    /// row per network. Uniqueness is the composite
+    /// `(walletId, networkRaw)` declared above.
+    public var walletId: Data
     /// Network this wallet belongs to. `nil` means "not yet known" —
     /// the row was created by a changeset before `persistWalletMetadata`
     /// filled the network in. Views treat `nil` as unknown.
@@ -139,5 +144,15 @@ extension PersistentWallet {
 extension PersistentWallet {
     public static func predicate(walletId: Data) -> Predicate<PersistentWallet> {
         #Predicate<PersistentWallet> { $0.walletId == walletId }
+    }
+
+    public static func predicate(
+        walletId: Data,
+        network: Network
+    ) -> Predicate<PersistentWallet> {
+        let networkRaw = network.rawValue
+        return #Predicate<PersistentWallet> {
+            $0.walletId == walletId && $0.networkRaw == networkRaw
+        }
     }
 }

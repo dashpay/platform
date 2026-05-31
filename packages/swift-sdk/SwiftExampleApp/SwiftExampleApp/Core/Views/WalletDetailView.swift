@@ -229,6 +229,7 @@ struct WalletInfoView: View {
     @Environment(\.dismiss) var dismiss
     @Environment(\.modelContext) var modelContext
     @EnvironmentObject var walletManager: PlatformWalletManager
+    @EnvironmentObject var walletManagerStore: WalletManagerStore
     let wallet: PersistentWallet
     var onWalletDeleted: () -> Void = {}
 
@@ -628,16 +629,20 @@ struct WalletInfoView: View {
     }
 
     private func loadNetworkStates() {
-        switch wallet.network ?? .testnet {
-        case .mainnet:
-            mainnetEnabled = true
-        case .testnet:
-            testnetEnabled = true
-        case .regtest:
-            regtestEnabled = true
-        case .devnet:
-            devnetEnabled = true
-        }
+        // A wallet now has one `PersistentWallet` row per network it
+        // lives on (same `walletId`, distinct `networkRaw`). Reflect
+        // the actual set of rows rather than the single `wallet.network`
+        // this view was opened with.
+        let walletId = wallet.walletId
+        let descriptor = FetchDescriptor<PersistentWallet>(
+            predicate: PersistentWallet.predicate(walletId: walletId)
+        )
+        let rows = (try? modelContext.fetch(descriptor)) ?? [wallet]
+        let networks = Set(rows.compactMap { $0.network })
+        mainnetEnabled = networks.contains(.mainnet)
+        testnetEnabled = networks.contains(.testnet)
+        regtestEnabled = networks.contains(.regtest)
+        devnetEnabled = networks.contains(.devnet)
     }
 
     private func loadAccountCounts() {
@@ -715,18 +720,39 @@ struct WalletInfoView: View {
         isUpdatingNetworks = true
         defer { isUpdatingNetworks = false }
 
-        // TODO(platform-wallet): Proper multi-network wallet support once the
-        // Rust side exposes add-network. For now we only refresh UI state.
+        // Add the existing wallet to another network by re-creating it
+        // from the stored mnemonic in that network's manager. The
+        // `walletId` is network-independent, so this just stamps a new
+        // per-network `PersistentWallet` row via the persister
+        // callback — same sanctioned path the create + orphan-recovery
+        // flows use. Reusing `createWallet(mnemonic:)` keeps all
+        // derivation on the Rust side (no Swift orchestration).
+        let mnemonic: String
         do {
-            try modelContext.save()
-            loadNetworkStates()
-            loadAccountCounts()
+            mnemonic = try WalletStorage().retrieveMnemonic(for: wallet.walletId)
         } catch {
-            await MainActor.run {
-                errorMessage = "Failed to enable network: \(error.localizedDescription)"
-                showError = true
-            }
+            errorMessage = "This wallet's recovery phrase isn't stored on this device, so it can't be added to another network."
+            showError = true
+            return
         }
+
+        do {
+            let mgr = try walletManagerStore.backgroundManager(for: network)
+            _ = try mgr.createWallet(
+                mnemonic: mnemonic,
+                network: network,
+                name: wallet.name ?? wallet.label
+            )
+        } catch {
+            // An "already exists" throw means the wallet is already on
+            // this network — treat as a no-op and just refresh below.
+            SDKLogger.error(
+                "enableNetwork(\(network.displayName)) create returned: \(error.localizedDescription)"
+            )
+        }
+
+        loadNetworkStates()
+        loadAccountCounts()
     }
 
     private func deleteWallet() async {

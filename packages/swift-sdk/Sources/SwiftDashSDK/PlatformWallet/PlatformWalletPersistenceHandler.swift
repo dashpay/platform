@@ -401,12 +401,12 @@ public class PlatformWalletPersistenceHandler {
     /// stale post-deletion callbacks can't resurrect a wiped wallet.
     private func ensureWalletRecord(walletId: Data) -> PersistentWallet {
         let descriptor = FetchDescriptor<PersistentWallet>(
-            predicate: #Predicate { $0.walletId == walletId }
+            predicate: walletRecordPredicate(walletId: walletId)
         )
         if let existing = try? backgroundContext.fetch(descriptor).first {
             return existing
         }
-        let record = PersistentWallet(walletId: walletId, network: nil)
+        let record = PersistentWallet(walletId: walletId, network: self.network)
         backgroundContext.insert(record)
         return record
     }
@@ -415,9 +415,25 @@ public class PlatformWalletPersistenceHandler {
     /// when no row exists.
     private func findWalletRecord(walletId: Data) -> PersistentWallet? {
         let descriptor = FetchDescriptor<PersistentWallet>(
-            predicate: #Predicate { $0.walletId == walletId }
+            predicate: walletRecordPredicate(walletId: walletId)
         )
         return try? backgroundContext.fetch(descriptor).first
+    }
+
+    /// Predicate matching the `PersistentWallet` row owned by THIS
+    /// handler. A handler is constructed per-network, so when
+    /// `self.network` is set we scope to `(walletId, networkRaw)` —
+    /// otherwise the mainnet handler would find and overwrite the
+    /// devnet row (and vice versa) now that the same `walletId` can
+    /// have one row per network. When `self.network` is `nil` (the
+    /// advanced `configure(sdkPointer:network:nil)` path) we fall
+    /// back to walletId-only matching to preserve that behaviour.
+    private func walletRecordPredicate(walletId: Data) -> Predicate<PersistentWallet> {
+        if let network = self.network {
+            let networkRaw = network.rawValue
+            return #Predicate { $0.walletId == walletId && $0.networkRaw == networkRaw }
+        }
+        return #Predicate { $0.walletId == walletId }
     }
 
     /// Look up a `PersistentWallet` to hang on
@@ -429,7 +445,7 @@ public class PlatformWalletPersistenceHandler {
     private func fetchWalletForLink(walletId: Data?) -> PersistentWallet? {
         guard let walletId else { return nil }
         let descriptor = FetchDescriptor<PersistentWallet>(
-            predicate: #Predicate { $0.walletId == walletId }
+            predicate: walletRecordPredicate(walletId: walletId)
         )
         return try? backgroundContext.fetch(descriptor).first
     }
@@ -2594,10 +2610,24 @@ public class PlatformWalletPersistenceHandler {
         }
     }
 
-    public func identityIdsForWallet(walletId: Data) throws -> [Data] {
+    /// Count `PersistentWallet` rows for `walletId` across ALL
+    /// networks (deliberately ignores `self.network`). The mnemonic /
+    /// metadata in the Keychain are shared by every network's row, so
+    /// `deleteWallet` consults this after wiping its own network's row
+    /// to decide whether the shared Keychain material can be purged.
+    public func walletRowCountAcrossNetworks(walletId: Data) throws -> Int {
         try onQueue {
             let descriptor = FetchDescriptor<PersistentWallet>(
                 predicate: PersistentWallet.predicate(walletId: walletId)
+            )
+            return try backgroundContext.fetchCount(descriptor)
+        }
+    }
+
+    public func identityIdsForWallet(walletId: Data) throws -> [Data] {
+        try onQueue {
+            let descriptor = FetchDescriptor<PersistentWallet>(
+                predicate: walletRecordPredicate(walletId: walletId)
             )
             guard let walletRow = try backgroundContext.fetch(descriptor).first else {
                 return []
@@ -2611,7 +2641,7 @@ public class PlatformWalletPersistenceHandler {
         try onQueue {
             do {
                 let walletDescriptor = FetchDescriptor<PersistentWallet>(
-                    predicate: PersistentWallet.predicate(walletId: walletId)
+                    predicate: walletRecordPredicate(walletId: walletId)
                 )
                 let walletRow = try backgroundContext.fetch(walletDescriptor).first
                 let walletNetwork = walletRow?.network
