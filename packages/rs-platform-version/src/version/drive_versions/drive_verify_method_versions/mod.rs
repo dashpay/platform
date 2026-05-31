@@ -44,6 +44,7 @@ pub struct DriveVerifyContractMethodVersions {
 pub struct DriveVerifyDocumentMethodVersions {
     pub verify_proof: FeatureVersion,
     pub verify_proof_keep_serialized: FeatureVersion,
+    pub verify_document_history: FeatureVersion,
     pub verify_start_at_document_in_proof: FeatureVersion,
 }
 

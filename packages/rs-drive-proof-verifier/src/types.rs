@@ -106,6 +106,10 @@ pub type RetrievedValues<K, I> = IndexMap<K, I>;
 ///
 /// Contains a map of data contract revisions to data contracts.
 pub type DataContractHistory = RetrievedValues<u64, DataContract>;
+/// History of a document.
+///
+/// Contains a map of revision timestamps to documents.
+pub type DocumentHistory = RetrievedValues<u64, Document>;
 /// Multiple data contracts.
 ///
 /// Mapping between data contract IDs and data contracts.
