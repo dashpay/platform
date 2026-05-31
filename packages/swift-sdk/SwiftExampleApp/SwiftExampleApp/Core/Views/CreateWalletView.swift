@@ -341,6 +341,17 @@ struct CreateWalletView: View {
                 // is stamped on every per-network row.
                 try await MainActor.run {
                     var createdWalletId: Data?
+                    // Networks the wallet now actually has a row on —
+                    // either freshly created or pre-existing ("already
+                    // exists"). Only these get stamped into the keychain
+                    // metadata; recording a network that failed would
+                    // make orphan-recovery believe a row exists where it
+                    // doesn't.
+                    var presentNetworks: [Network] = []
+                    // Real (non-"already exists") failures, surfaced to
+                    // the user so a partial create isn't reported as
+                    // success.
+                    var failures: [(network: Network, message: String)] = []
                     for net in selectedNetworks {
                         do {
                             let mgr = try walletManagerStore.backgroundManager(for: net)
@@ -350,23 +361,38 @@ struct CreateWalletView: View {
                                 name: walletLabel
                             )
                             createdWalletId = managed.walletId
+                            presentNetworks.append(net)
                         } catch {
-                            // An "already exists" throw for one network
-                            // (wallet was previously created there) is
-                            // non-fatal — keep creating the others.
-                            SDKLogger.error(
-                                "Wallet creation skipped for \(net.displayName): \(error.localizedDescription)"
-                            )
+                            let message = error.localizedDescription
+                            // An "already exists" throw means the wallet
+                            // is already on this network — benign, the
+                            // row is present, so count it. Any other
+                            // error is a genuine failure to record.
+                            if message.range(of: "already exists", options: .caseInsensitive) != nil {
+                                presentNetworks.append(net)
+                                SDKLogger.error(
+                                    "Wallet already present on \(net.displayName); continuing"
+                                )
+                            } else {
+                                failures.append((net, message))
+                                SDKLogger.error(
+                                    "Wallet creation failed for \(net.displayName): \(message)"
+                                )
+                            }
                         }
                     }
 
                     guard let walletId = createdWalletId else {
                         struct AllNetworksFailed: LocalizedError {
+                            let detail: String
                             var errorDescription: String? {
-                                "Wallet could not be created on any selected network."
+                                "Wallet could not be created on any selected network.\n\(detail)"
                             }
                         }
-                        throw AllNetworksFailed()
+                        let detail = failures
+                            .map { "\($0.network.displayName): \($0.message)" }
+                            .joined(separator: "\n")
+                        throw AllNetworksFailed(detail: detail)
                     }
 
                     // Persist the mnemonic in the iOS Keychain keyed
@@ -398,15 +424,17 @@ struct CreateWalletView: View {
                         try? modelContext.save()
                     }
 
-                    // Mirror the name + ticked networks + birth height
-                    // into the keychain alongside the mnemonic so an
-                    // orphan-recovery after a wipe restores the
-                    // original label / networks / birth height.
+                    // Mirror the name + birth height + the networks the
+                    // wallet ACTUALLY has a row on (not every ticked
+                    // network) into the keychain alongside the mnemonic
+                    // so an orphan-recovery after a wipe restores the
+                    // original label / networks / birth height without
+                    // claiming networks that failed to create.
                     do {
                         let metadata = WalletKeychainMetadata(
                             name: walletLabel,
                             walletDescription: nil,
-                            networks: selectedNetworks.map { $0.networkName },
+                            networks: presentNetworks.map { $0.networkName },
                             birthHeight: rows.first?.birthHeight
                         )
                         try storage.setMetadata(metadata, for: walletId)
@@ -415,6 +443,24 @@ struct CreateWalletView: View {
                             "Failed to persist wallet metadata to keychain: \(error.localizedDescription)"
                         )
                     }
+
+                    // If some (but not all) networks failed, the wallet
+                    // exists — but the user must know it wasn't added
+                    // everywhere they ticked. Surface the partial
+                    // failure instead of silently dismissing as success.
+                    if !failures.isEmpty {
+                        struct PartialCreate: LocalizedError {
+                            let detail: String
+                            var errorDescription: String? {
+                                "Wallet created, but not on every selected network:\n\(detail)"
+                            }
+                        }
+                        let detail = failures
+                            .map { "\($0.network.displayName): \($0.message)" }
+                            .joined(separator: "\n")
+                        throw PartialCreate(detail: detail)
+                    }
+
                     dismiss()
                 }
 
