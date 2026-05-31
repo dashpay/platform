@@ -20,7 +20,7 @@ use drive_abci::{logging, server};
 use itertools::Itertools;
 #[cfg(all(tokio_unstable, feature = "console"))]
 use std::net::SocketAddr;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::ExitCode;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -79,7 +79,8 @@ enum Commands {
     /// embedded into the runtime image and consumed at boot via
     /// `DRIVE_SHIELDED_SNAPSHOT=<path>`. Requires the binary to be built
     /// with `--cfg create_sdk_test_data` so that `create_genesis_state`
-    /// invokes the seeder.
+    /// invokes the seeder — the command is compiled out otherwise.
+    #[cfg(create_sdk_test_data)]
     #[command()]
     SnapshotBake {
         /// Where to write the snapshot file. Parent directory must exist.
@@ -184,6 +185,7 @@ impl Cli {
             Commands::Config => dump_config(&config)?,
             Commands::Status => runtime.block_on(check_status(&config))?,
             Commands::Verify => drive_abci::verify::run(&config, true)?,
+            #[cfg(create_sdk_test_data)]
             Commands::SnapshotBake { out } => snapshot_bake(&config, &out)?,
             Commands::Version => print_version(),
             #[cfg(feature = "replay")]
@@ -202,12 +204,16 @@ fn main() -> Result<(), ExitCode> {
     // SnapshotBake runs against an in-container tempdir with no chain env —
     // skip `load_config` (which would panic on missing GRPC_BIND_ADDRESS etc.)
     // and use a sensible default. Other subcommands (Start / Status / etc.)
-    // still need the full config.
+    // still need the full config. The command only exists under
+    // `create_sdk_test_data`, so the branch is compiled out otherwise.
+    #[cfg(create_sdk_test_data)]
     let config = if matches!(cli.command, Commands::SnapshotBake { .. }) {
         drive_abci::config::PlatformConfig::default_local()
     } else {
         load_config(&cli.config)
     };
+    #[cfg(not(create_sdk_test_data))]
+    let config = load_config(&cli.config);
 
     // Start tokio runtime and thread listening for signals.
     // The runtime will be reused by Prometheus and rs-tenderdash-abci.
@@ -345,8 +351,13 @@ fn dump_config(config: &PlatformConfig) -> Result<(), String> {
 /// of its methods (no chain locks, transactions, or quorum lookups happen
 /// during genesis). Every method is `unreachable!()` so a bake that
 /// accidentally tries to talk to Core surfaces as a loud panic.
+///
+/// Only the `snapshot-bake` command uses it, so it is compiled out unless
+/// `create_sdk_test_data` is set (the cfg that command lives behind).
+#[cfg(create_sdk_test_data)]
 struct NoopCoreRPC;
 
+#[cfg(create_sdk_test_data)]
 mod noop_core_rpc_impl {
     use super::NoopCoreRPC;
     use dpp::dashcore::ephemerealdata::chain_lock::ChainLock;
@@ -450,7 +461,8 @@ mod noop_core_rpc_impl {
 /// Intended for the Dockerfile bake stage: produce a snapshot once during
 /// image build, embed in the runtime image, load it at every InitChain via
 /// `DRIVE_SHIELDED_SNAPSHOT`.
-fn snapshot_bake(_config: &PlatformConfig, out_path: &Path) -> Result<(), String> {
+#[cfg(create_sdk_test_data)]
+fn snapshot_bake(_config: &PlatformConfig, out_path: &std::path::Path) -> Result<(), String> {
     use dpp::version::PlatformVersion;
     use drive_abci::config::PlatformConfig;
     use drive_abci::platform_types::platform::Platform;
