@@ -2719,32 +2719,51 @@ public class PlatformWalletPersistenceHandler {
                     try backgroundContext.save()
                 }
 
-                let txoDescriptor = FetchDescriptor<PersistentTxo>(
-                    predicate: #Predicate<PersistentTxo> { $0.walletId == walletId }
+                // The txo / pending-input / asset-lock tables are keyed
+                // by the network-independent walletId (same mnemonic →
+                // same id on every network) and carry no network column,
+                // so their rows are shared by every network this wallet
+                // lives on. Only wipe them when this is the wallet's LAST
+                // remaining per-network row — otherwise deleting the
+                // wallet from one network would erase a sibling network's
+                // cached UTXOs / pending inputs / asset-lock state.
+                // (The walletRow itself, deleted below, IS network-scoped
+                // via `walletRecordPredicate`.) Counted before walletRow
+                // is removed, so `<= 1` means "this is the last one".
+                let siblingDescriptor = FetchDescriptor<PersistentWallet>(
+                    predicate: #Predicate<PersistentWallet> { $0.walletId == walletId }
                 )
-                for row in try backgroundContext.fetch(txoDescriptor) {
-                    backgroundContext.delete(row)
-                }
+                let isLastNetworkRow =
+                    ((try? backgroundContext.fetchCount(siblingDescriptor)) ?? 0) <= 1
 
-                let pendingDescriptor = FetchDescriptor<PersistentPendingInput>(
-                    predicate: #Predicate<PersistentPendingInput> { $0.walletId == walletId }
-                )
-                for row in try backgroundContext.fetch(pendingDescriptor) {
-                    backgroundContext.delete(row)
-                }
+                if isLastNetworkRow {
+                    let txoDescriptor = FetchDescriptor<PersistentTxo>(
+                        predicate: #Predicate<PersistentTxo> { $0.walletId == walletId }
+                    )
+                    for row in try backgroundContext.fetch(txoDescriptor) {
+                        backgroundContext.delete(row)
+                    }
 
-                // `loadCachedAssetLocksOnQueue` rehydrates these rows on
-                // the wallet-load path back into the Rust-side
-                // `unused_asset_locks` map so an in-flight registration
-                // can resume across an app kill. Without this cleanup,
-                // delete-then-reimport of the same wallet would
-                // resurrect stale Pending / Resumable asset-lock state
-                // that the user thought they had wiped.
-                let assetLockDescriptor = FetchDescriptor<PersistentAssetLock>(
-                    predicate: #Predicate<PersistentAssetLock> { $0.walletId == walletId }
-                )
-                for row in try backgroundContext.fetch(assetLockDescriptor) {
-                    backgroundContext.delete(row)
+                    let pendingDescriptor = FetchDescriptor<PersistentPendingInput>(
+                        predicate: #Predicate<PersistentPendingInput> { $0.walletId == walletId }
+                    )
+                    for row in try backgroundContext.fetch(pendingDescriptor) {
+                        backgroundContext.delete(row)
+                    }
+
+                    // `loadCachedAssetLocksOnQueue` rehydrates these rows on
+                    // the wallet-load path back into the Rust-side
+                    // `unused_asset_locks` map so an in-flight registration
+                    // can resume across an app kill. Without this cleanup,
+                    // delete-then-reimport of the same wallet would
+                    // resurrect stale Pending / Resumable asset-lock state
+                    // that the user thought they had wiped.
+                    let assetLockDescriptor = FetchDescriptor<PersistentAssetLock>(
+                        predicate: #Predicate<PersistentAssetLock> { $0.walletId == walletId }
+                    )
+                    for row in try backgroundContext.fetch(assetLockDescriptor) {
+                        backgroundContext.delete(row)
+                    }
                 }
 
                 if let walletRow = walletRow {
@@ -4059,8 +4078,14 @@ public class PlatformWalletPersistenceHandler {
     /// `PersistentWallet` row. Returns `nil` if the wallet row
     /// doesn't exist or its network hasn't been resolved yet.
     private func walletNetwork(walletId: Data) -> Network? {
+        // Scope to this handler's network when one is set so a mnemonic
+        // that lives on multiple networks resolves to the row for THIS
+        // manager's network — not an arbitrary sibling row that would
+        // mis-stamp persisted sync state / identity / token writes and
+        // feed the wrong coin type into key derivation. Falls back to
+        // walletId-only when no network is set (legacy / no-container).
         let descriptor = FetchDescriptor<PersistentWallet>(
-            predicate: #Predicate { $0.walletId == walletId }
+            predicate: walletRecordPredicate(walletId: walletId)
         )
         guard let wallet = try? backgroundContext.fetch(descriptor).first else {
             return nil

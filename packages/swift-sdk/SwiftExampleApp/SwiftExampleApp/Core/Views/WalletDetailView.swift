@@ -744,10 +744,21 @@ struct WalletInfoView: View {
                 name: wallet.name ?? wallet.label
             )
         } catch {
+            let description = error.localizedDescription
             // An "already exists" throw means the wallet is already on
-            // this network — treat as a no-op and just refresh below.
+            // this network — a genuine no-op, so fall through to refresh.
+            // Any other failure (SDK build error, Rust-side error, etc.)
+            // must surface to the user instead of silently doing nothing.
+            if description.range(of: "already exists", options: .caseInsensitive) == nil {
+                SDKLogger.error(
+                    "enableNetwork(\(network.displayName)) failed: \(description)"
+                )
+                errorMessage = "Failed to add \(network.displayName): \(description)"
+                showError = true
+                return
+            }
             SDKLogger.error(
-                "enableNetwork(\(network.displayName)) create returned: \(error.localizedDescription)"
+                "enableNetwork(\(network.displayName)) create returned: \(description)"
             )
         }
 
