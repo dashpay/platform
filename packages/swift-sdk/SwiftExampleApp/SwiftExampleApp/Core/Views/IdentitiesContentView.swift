@@ -13,8 +13,12 @@ struct IdentitiesContentView: View {
     @EnvironmentObject var platformBalanceSyncService: PlatformBalanceSyncService
     @EnvironmentObject var walletManager: PlatformWalletManager
     @Environment(\.modelContext) private var modelContext
-    @Query(sort: \PersistentIdentity.identityIndex)
-    private var identities: [PersistentIdentity]
+    /// Active network the parent threads in. Scopes the identities
+    /// query below so rows from another network don't leak into the
+    /// list after a network switch — same pattern as
+    /// `ContractsTabView`.
+    private let network: Network
+    @Query private var identities: [PersistentIdentity]
     /// All tracked asset locks across wallets. Filtered into
     /// "resumable" rows (status >= `InstantSendLocked` AND no
     /// `PersistentIdentity` at the same `(walletId, identityIndex)`
@@ -40,6 +44,15 @@ struct IdentitiesContentView: View {
     /// presentation of a pre-configured `CreateIdentityView`. Cleared
     /// when the sheet dismisses (SwiftUI nils the binding for us).
     @State private var resumingAssetLock: PersistentAssetLock?
+
+    init(network: Network) {
+        self.network = network
+        _identities = Query(
+            filter: PersistentIdentity.predicate(network: network),
+            sort: \PersistentIdentity.identityIndex,
+            order: .forward
+        )
+    }
 
     var body: some View {
         List {
@@ -181,6 +194,7 @@ struct IdentitiesContentView: View {
         }
         .sheet(isPresented: $showingSearchWallets) {
             SearchWalletsForIdentitiesView()
+                .environmentObject(platformState)
         }
         .refreshable {
             await platformBalanceSyncService.performSync()
