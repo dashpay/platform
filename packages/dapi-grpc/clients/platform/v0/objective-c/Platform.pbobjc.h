@@ -246,6 +246,8 @@ CF_EXTERN_C_BEGIN
 @class GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0;
 @class GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNote;
 @class GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNotes;
+@class GetShieldedNotesCountRequest_GetShieldedNotesCountRequestV0;
+@class GetShieldedNotesCountResponse_GetShieldedNotesCountResponseV0;
 @class GetShieldedNullifiersRequest_GetShieldedNullifiersRequestV0;
 @class GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0;
 @class GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0_NullifierStatus;
@@ -10349,6 +10351,108 @@ GPB_FINAL @interface GetShieldedPoolStateResponse_GetShieldedPoolStateResponseV0
  * Clears whatever value was set for the oneof 'result'.
  **/
 void GetShieldedPoolStateResponse_GetShieldedPoolStateResponseV0_ClearResultOneOfCase(GetShieldedPoolStateResponse_GetShieldedPoolStateResponseV0 *message);
+
+#pragma mark - GetShieldedNotesCountRequest
+
+typedef GPB_ENUM(GetShieldedNotesCountRequest_FieldNumber) {
+  GetShieldedNotesCountRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetShieldedNotesCountRequest_Version_OneOfCase) {
+  GetShieldedNotesCountRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetShieldedNotesCountRequest_Version_OneOfCase_V0 = 1,
+};
+
+/**
+ * Count of leaves in the shielded notes commitment tree.
+ * Used by wallets at the start of a shielded sync to seed a
+ * determinate progress-bar denominator. The count IS bound by the
+ * Merk value hash: it is the first field (`total_count`) of the
+ * serialized `CommitmentTree` element whose bytes are hashed into the
+ * app/root hash, so it is provable via a PathQuery proof of that
+ * element (set `prove = true`).
+ **/
+GPB_FINAL @interface GetShieldedNotesCountRequest : GPBMessage
+
+@property(nonatomic, readonly) GetShieldedNotesCountRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetShieldedNotesCountRequest_GetShieldedNotesCountRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetShieldedNotesCountRequest_ClearVersionOneOfCase(GetShieldedNotesCountRequest *message);
+
+#pragma mark - GetShieldedNotesCountRequest_GetShieldedNotesCountRequestV0
+
+typedef GPB_ENUM(GetShieldedNotesCountRequest_GetShieldedNotesCountRequestV0_FieldNumber) {
+  GetShieldedNotesCountRequest_GetShieldedNotesCountRequestV0_FieldNumber_Prove = 1,
+};
+
+GPB_FINAL @interface GetShieldedNotesCountRequest_GetShieldedNotesCountRequestV0 : GPBMessage
+
+@property(nonatomic, readwrite) BOOL prove;
+
+@end
+
+#pragma mark - GetShieldedNotesCountResponse
+
+typedef GPB_ENUM(GetShieldedNotesCountResponse_FieldNumber) {
+  GetShieldedNotesCountResponse_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetShieldedNotesCountResponse_Version_OneOfCase) {
+  GetShieldedNotesCountResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetShieldedNotesCountResponse_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetShieldedNotesCountResponse : GPBMessage
+
+@property(nonatomic, readonly) GetShieldedNotesCountResponse_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetShieldedNotesCountResponse_GetShieldedNotesCountResponseV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetShieldedNotesCountResponse_ClearVersionOneOfCase(GetShieldedNotesCountResponse *message);
+
+#pragma mark - GetShieldedNotesCountResponse_GetShieldedNotesCountResponseV0
+
+typedef GPB_ENUM(GetShieldedNotesCountResponse_GetShieldedNotesCountResponseV0_FieldNumber) {
+  GetShieldedNotesCountResponse_GetShieldedNotesCountResponseV0_FieldNumber_TotalNotesCount = 1,
+  GetShieldedNotesCountResponse_GetShieldedNotesCountResponseV0_FieldNumber_Proof = 2,
+  GetShieldedNotesCountResponse_GetShieldedNotesCountResponseV0_FieldNumber_Metadata = 3,
+};
+
+typedef GPB_ENUM(GetShieldedNotesCountResponse_GetShieldedNotesCountResponseV0_Result_OneOfCase) {
+  GetShieldedNotesCountResponse_GetShieldedNotesCountResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetShieldedNotesCountResponse_GetShieldedNotesCountResponseV0_Result_OneOfCase_TotalNotesCount = 1,
+  GetShieldedNotesCountResponse_GetShieldedNotesCountResponseV0_Result_OneOfCase_Proof = 2,
+};
+
+GPB_FINAL @interface GetShieldedNotesCountResponse_GetShieldedNotesCountResponseV0 : GPBMessage
+
+@property(nonatomic, readonly) GetShieldedNotesCountResponse_GetShieldedNotesCountResponseV0_Result_OneOfCase resultOneOfCase;
+
+@property(nonatomic, readwrite) uint64_t totalNotesCount;
+
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'result'.
+ **/
+void GetShieldedNotesCountResponse_GetShieldedNotesCountResponseV0_ClearResultOneOfCase(GetShieldedNotesCountResponse_GetShieldedNotesCountResponseV0 *message);
 
 #pragma mark - GetShieldedNullifiersRequest
 

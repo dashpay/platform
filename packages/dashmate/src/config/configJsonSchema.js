@@ -34,11 +34,16 @@ export default {
         },
         // Extra build args forwarded to `docker compose build` for this
         // image. Each key/value pair becomes a `build.args` entry rendered
-        // into the per-config `dynamic-compose.yml` and picked up by
-        // compose at build time. Open-ended — image-specific keys live
-        // here (`CARGO_BUILD_PROFILE`, `SDK_TEST_DATA`, …).
+        // into the per-config `dynamic-compose.yml` and picked up by compose
+        // at build time. Image-specific keys live here:
+        // - CARGO_BUILD_PROFILE: "dev" | "release" — Rust profile for
+        //   drive-abci / rs-dapi. Release is required for SDK_TEST_DATA
+        //   shielded seeding at N > a few thousand.
+        // - SDK_TEST_DATA: "true" — enable the SDK test-data cfg flag in
+        //   the binary at compile time.
         buildArgs: {
           type: 'object',
+          propertyNames: { type: 'string', pattern: '^[A-Za-z_][A-Za-z0-9_]*$' },
           additionalProperties: { type: 'string' },
         },
       },
