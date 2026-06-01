@@ -231,7 +231,14 @@ impl DistributionFunction {
                     .distribution_function_evaluate_version
                 {
                     0 => (diff as f64).powf(exponent),
-                    _ => pow(diff as f64, exponent),
+                    1 => pow(diff as f64, exponent),
+                    version => {
+                        return Err(ProtocolError::UnknownVersionMismatch {
+                            method: "DistributionFunction::evaluate (Polynomial)".to_string(),
+                            known_versions: vec![0, 1],
+                            received: version,
+                        })
+                    }
                 };
 
                 if !diff_exp.is_finite() {
@@ -342,7 +349,14 @@ impl DistributionFunction {
                     .distribution_function_evaluate_version
                 {
                     0 => exponent.exp(),
-                    _ => exp(exponent),
+                    1 => exp(exponent),
+                    version => {
+                        return Err(ProtocolError::UnknownVersionMismatch {
+                            method: "DistributionFunction::evaluate (Exponential)".to_string(),
+                            known_versions: vec![0, 1],
+                            received: version,
+                        })
+                    }
                 };
                 let value = ((*a as f64) * exp_val / (*d as f64)) + (*b as f64);
                 if let Some(max_value) = max_value {
@@ -424,7 +438,14 @@ impl DistributionFunction {
                     .distribution_function_evaluate_version
                 {
                     0 => argument.ln(),
-                    _ => log(argument),
+                    1 => log(argument),
+                    version => {
+                        return Err(ProtocolError::UnknownVersionMismatch {
+                            method: "DistributionFunction::evaluate (Logarithmic)".to_string(),
+                            known_versions: vec![0, 1],
+                            received: version,
+                        })
+                    }
                 };
 
                 // Ensure the computed value is finite and within the u64 range.
@@ -569,7 +590,15 @@ impl DistributionFunction {
                     .distribution_function_evaluate_version
                 {
                     0 => argument.ln(),
-                    _ => log(argument),
+                    1 => log(argument),
+                    version => {
+                        return Err(ProtocolError::UnknownVersionMismatch {
+                            method: "DistributionFunction::evaluate (InvertedLogarithmic)"
+                                .to_string(),
+                            known_versions: vec![0, 1],
+                            received: version,
+                        })
+                    }
                 };
 
                 // Ensure the computed value is finite and within the u64 range.
@@ -1603,7 +1632,7 @@ mod tests {
         #[test]
         fn test_inverted_logarithmic_deterministic_libm_path() {
             // f(x) = 10 * ln(100 / (1 * x)) / 1 + 5
-            // At x=1 (with o=1, so arg = 100/1 = 100): ln(100) ≈ 4.605, * 10 = 46.05 + 5 = 51
+            // At x=0 (with start_moment=0 and o=1, so diff = 0 - 0 + 1 = 1, arg = 100/1 = 100): ln(100) ≈ 4.605, * 10 = 46.05 + 5 = 51
             let distribution = DistributionFunction::InvertedLogarithmic {
                 a: 10,
                 d: 1,
