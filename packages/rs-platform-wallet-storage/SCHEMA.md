@@ -2,7 +2,7 @@
 
 The persister stores **public** wallet-state material (UTXOs, transactions, account registrations, address pools, identities, identity public keys, contacts, asset locks, token balances, DashPay overlays, and platform-address sync snapshots) in a SQLite database managed by [refinery](https://crates.io/crates/refinery) migrations. **No secrets are stored here** — see [SECRETS.md](./SECRETS.md) for the secret-bearing backends.
 
-Schema evolution is version-gated by refinery. Every read-write connection turns on `PRAGMA foreign_keys = ON` and `PRAGMA recursive_triggers = ON` at open time (`src/sqlite/conn.rs`), so every `ON DELETE CASCADE` clause is active and the `meta_*` soft-cascade triggers fire even for parents removed by an FK cascade.
+Schema evolution is version-gated by refinery. Every read-write connection turns on `PRAGMA foreign_keys = ON` at open time (`src/sqlite/conn.rs`), so every `ON DELETE CASCADE` clause is active. The `meta_*` soft-cascade `AFTER DELETE` triggers fire even for parent rows removed by an FK cascade (SQLite does this natively), so deleting a wallet transitively cleans all its metadata.
 
 The 25 tables are split into five domain diagrams below. `WALLET_METADATA` is the root anchor and appears in each diagram. For full column listings see the [Tables](#tables) section.
 
@@ -305,10 +305,9 @@ erDiagram
 > Note: every `meta_*` table's uniqueness comes straight from its
 > composite `PRIMARY KEY` (id column(s) + `key`) — no partial indexes
 > and no nullable scope column. The five typed tables carry no FK; their
-> `AFTER DELETE` triggers require `recursive_triggers = ON` (set in
-> `src/sqlite/conn.rs`) so they also fire for parents removed by an FK
-> cascade (e.g. `delete_wallet` → `identities` cascade → `meta_identity`
-> trigger), not only for directly-deleted parents.
+> `AFTER DELETE` triggers also fire for parents removed by an FK cascade
+> (SQLite does this natively, e.g. `delete_wallet` → `identities` cascade
+> → `meta_identity` trigger), not only for directly-deleted parents.
 
 ## Tables
 
@@ -501,9 +500,9 @@ host apps can attach metadata independently of sync ordering (and a
 global-config persister can write to typed scopes whose parent tables
 stay empty). Cleanup is instead a soft cascade — an `AFTER DELETE`
 trigger on each parent removes the matching metadata when the object is
-deleted, so metadata never outlives its object. The triggers require
-`recursive_triggers = ON` (set in `src/sqlite/conn.rs`) to fire for
-parents removed by an FK cascade, not only directly-deleted ones.
+deleted, so metadata never outlives its object. SQLite fires these
+triggers for parents removed by an FK cascade too, so deleting a wallet
+cleans its metadata transitively.
 
 #### `meta_global`
 
@@ -613,10 +612,9 @@ having to grep this repo.
   trigger rather than a native `ON DELETE SET NULL` FK, because SQLite would null
   every column of a composite FK on SET NULL — including the NOT NULL `wallet_id`.
 - The five typed `meta_*` tables carry **no FK** (writes may precede the parent);
-  cleanup is a per-parent `AFTER DELETE` trigger (soft cascade) requiring
-  `recursive_triggers = ON`.
-- `PRAGMA foreign_keys = ON` and `PRAGMA recursive_triggers = ON` are set and
-  verified on every read-write connection open.
+  cleanup is a per-parent `AFTER DELETE` trigger (soft cascade) that SQLite fires
+  for FK-cascade-deleted parents too, so it cleans transitively.
+- `PRAGMA foreign_keys = ON` is set and verified on every read-write connection open.
 
 ## Triggers
 

@@ -355,7 +355,7 @@ fn tc_md_017b_cascade_identity_via_wallet() {
         .expect("delete wallet_metadata");
     }
     // wallet_metadata delete → identities FK cascade → meta_identity
-    // trigger. Only fires with recursive_triggers = ON.
+    // trigger (SQLite fires it for FK-cascade-deleted rows natively).
     assert_eq!(p.get(&scope, "k").unwrap(), None);
 }
 
@@ -546,7 +546,7 @@ fn det_write_before_parent_then_create_then_delete() {
 }
 
 // ---------------------------------------------------------------------
-// recursive_triggers must not break the pre-existing
+// The meta_* triggers coexist with the pre-existing
 // `setnull_core_utxos_on_tx_delete` trigger during delete_wallet: a
 // wallet with core_transactions + core_utxos (a UTXO spent_in that tx)
 // deletes cleanly and leaves nothing behind.
@@ -606,18 +606,15 @@ fn delete_wallet_with_core_tx_and_utxo_stays_consistent() {
 }
 
 // ---------------------------------------------------------------------
-// Pragma-interaction proof. SQLite's `recursive_triggers` governs only
-// triggers firing OTHER triggers, not whether a trigger fires for a row
-// removed by an FK cascade — that fires regardless. This locks the
-// empirically-verified behavior: on a RAW connection with
-// foreign_keys=ON and recursive_triggers=OFF, the transitive chain
-// (wallet_metadata delete → identities FK cascade → meta_identity
-// trigger) STILL cleans up. recursive_triggers=ON (set in conn.rs) is
-// therefore defensive, not load-bearing, for this cleanup.
+// Trigger-on-FK-cascade proof at SQLite defaults. SQLite fires an AFTER
+// DELETE trigger for a row removed by an FK ON DELETE CASCADE natively —
+// `recursive_triggers` (off by default) does not gate this. On a RAW
+// connection at defaults, the one-hop chain wallet_metadata delete →
+// identities FK cascade → meta_identity trigger cleans up.
 // ---------------------------------------------------------------------
 
 #[test]
-fn meta_identity_cleanup_fires_even_with_recursive_triggers_off() {
+fn meta_identity_cleanup_fires_on_wallet_cascade() {
     use rusqlite::{params, Connection};
 
     let tmp = tempfile::tempdir().expect("tempdir");
@@ -625,15 +622,14 @@ fn meta_identity_cleanup_fires_even_with_recursive_triggers_off() {
     let mut conn = Connection::open(&path).expect("open raw conn");
     platform_wallet_storage::sqlite::migrations::run(&mut conn).expect("apply migration");
 
+    // FK cascade on; recursive_triggers left at SQLite's default (OFF).
     conn.pragma_update(None, "foreign_keys", "ON").unwrap();
-    conn.pragma_update(None, "recursive_triggers", "OFF")
-        .unwrap();
     assert_eq!(
         conn.query_row("SELECT * FROM pragma_recursive_triggers", [], |r| r
             .get::<_, i64>(0))
             .unwrap(),
         0,
-        "precondition: recursive_triggers must be OFF for this test"
+        "precondition: recursive_triggers is OFF by default"
     );
 
     let w = [0x90u8; 32];
@@ -681,8 +677,93 @@ fn meta_identity_cleanup_fires_even_with_recursive_triggers_off() {
         .unwrap();
     assert_eq!(
         meta_rows, 0,
-        "the meta_identity trigger fires for the FK-cascade-deleted parent \
-         even with recursive_triggers OFF"
+        "the meta_identity trigger fires for the FK-cascade-deleted parent"
+    );
+}
+
+// ---------------------------------------------------------------------
+// Two-hop trigger-on-FK-cascade proof at SQLite defaults. The meta_token
+// chain spans two FK cascades: wallet_metadata delete → identities (FK
+// cascade) → token_balances (FK cascade) → meta_token trigger. This
+// fires natively without recursive_triggers.
+// ---------------------------------------------------------------------
+
+#[test]
+fn meta_token_cleanup_fires_on_wallet_cascade_two_hops() {
+    use rusqlite::{params, Connection};
+
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let path = tmp.path().join("raw.db");
+    let mut conn = Connection::open(&path).expect("open raw conn");
+    platform_wallet_storage::sqlite::migrations::run(&mut conn).expect("apply migration");
+
+    // FK cascade on; recursive_triggers left at SQLite's default (OFF).
+    conn.pragma_update(None, "foreign_keys", "ON").unwrap();
+    assert_eq!(
+        conn.query_row("SELECT * FROM pragma_recursive_triggers", [], |r| r
+            .get::<_, i64>(0))
+            .unwrap(),
+        0,
+        "precondition: recursive_triggers is OFF by default"
+    );
+
+    let w = [0xA0u8; 32];
+    let idy = [0xA1u8; 32];
+    let token = [0xA2u8; 32];
+    conn.execute(
+        "INSERT INTO wallet_metadata (wallet_id, network, birth_height) \
+         VALUES (?1, 'testnet', 0)",
+        params![&w[..]],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO identities (identity_id, wallet_id, wallet_index, entry_blob, tombstoned) \
+         VALUES (?1, ?2, NULL, X'00', 0)",
+        params![&idy[..], &w[..]],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO token_balances (identity_id, token_id, balance, updated_at) \
+         VALUES (?1, ?2, 0, 0)",
+        params![&idy[..], &token[..]],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO meta_token (identity_id, token_id, key, value) \
+         VALUES (?1, ?2, 'alias', X'00')",
+        params![&idy[..], &token[..]],
+    )
+    .unwrap();
+
+    // Two-hop cascade: wallet → identities → token_balances → trigger.
+    conn.execute(
+        "DELETE FROM wallet_metadata WHERE wallet_id = ?1",
+        params![&w[..]],
+    )
+    .unwrap();
+
+    let token_rows: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM token_balances WHERE identity_id = ?1 AND token_id = ?2",
+            params![&idy[..], &token[..]],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        token_rows, 0,
+        "two-hop FK cascade must remove the token balance"
+    );
+
+    let meta_rows: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM meta_token WHERE identity_id = ?1 AND token_id = ?2",
+            params![&idy[..], &token[..]],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        meta_rows, 0,
+        "the meta_token trigger fires across the two-hop FK cascade"
     );
 }
 

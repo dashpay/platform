@@ -266,10 +266,9 @@ CREATE TABLE dashpay_payments_overlay (
 -- meta_* tables carry NO FK: host apps attach metadata to an object
 -- before/independently of that object being synced into its typed table
 -- (async sync ordering; a global-config persister whose parent tables
--- stay empty). The AFTER DELETE triggers below preserve the rule that
--- metadata cannot outlive its object while dropping the insert-time
--- parent requirement. recursive_triggers = ON (set in conn.rs) makes
--- them fire for parents removed via FK cascade, not just direct deletes.
+-- stay empty). Cleanup is the AFTER DELETE triggers below, which SQLite
+-- fires even for parent rows removed by an FK ON DELETE CASCADE — so
+-- deleting a wallet transitively cleans all of its metadata.
 CREATE TABLE meta_global (
     key        TEXT NOT NULL PRIMARY KEY CHECK (length(key) BETWEEN 1 AND 128),
     value      BLOB NOT NULL,
@@ -321,9 +320,9 @@ CREATE TABLE meta_platform_address (
 );
 
 -- Soft-cascade cleanup: drop a scope's metadata when its parent object
--- is deleted. Requires `recursive_triggers = ON` to also fire for
--- parents removed by an FK cascade (e.g. wallet_metadata delete →
--- identities cascade → meta_identity trigger).
+-- is deleted. SQLite fires these for parents removed by an FK cascade
+-- too (e.g. wallet_metadata delete → identities cascade → meta_identity
+-- trigger), so deleting a wallet cleans its metadata transitively.
 CREATE TRIGGER cascade_meta_wallet_on_wallet_delete
 AFTER DELETE ON wallet_metadata
 FOR EACH ROW

@@ -194,10 +194,6 @@ fn tc_code_004_b_fatal_variants_map_to_fatal_kind() {
             WalletStorageError::ForeignKeysNotEnforced,
         ),
         (
-            "RecursiveTriggersNotEnforced",
-            WalletStorageError::RecursiveTriggersNotEnforced,
-        ),
-        (
             "IdentityKeyEntryMismatch",
             WalletStorageError::IdentityKeyEntryMismatch,
         ),

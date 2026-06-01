@@ -236,13 +236,6 @@ pub enum WalletStorageError {
     #[error("SQLite foreign-key enforcement could not be enabled on this connection")]
     ForeignKeysNotEnforced,
 
-    /// `PRAGMA recursive_triggers = ON` was issued on open but the
-    /// read-back reported it is still off. Without it the `meta_*` soft-
-    /// cascade triggers would miss parents removed by an FK cascade,
-    /// leaking orphan metadata. Hard-error at open.
-    #[error("SQLite recursive-trigger enforcement could not be enabled on this connection")]
-    RecursiveTriggersNotEnforced,
-
     /// A value couldn't be cast to the database's native i64
     /// representation without losing magnitude.
     #[error("integer overflow casting `{field}` (value={value}) to {target}")]
@@ -362,7 +355,6 @@ impl WalletStorageError {
             | Self::ConsensusCodec { .. }
             | Self::BackupDestinationExists { .. }
             | Self::ForeignKeysNotEnforced
-            | Self::RecursiveTriggersNotEnforced
             | Self::IdentityKeyEntryMismatch
             | Self::AssetLockEntryMismatch { .. }
             | Self::BlobTooLarge { .. }
@@ -443,7 +435,6 @@ impl WalletStorageError {
             Self::ConsensusCodec { .. } => "consensus_codec",
             Self::BackupDestinationExists { .. } => "backup_destination_exists",
             Self::ForeignKeysNotEnforced => "foreign_keys_not_enforced",
-            Self::RecursiveTriggersNotEnforced => "recursive_triggers_not_enforced",
             Self::IdentityKeyEntryMismatch => "identity_key_entry_mismatch",
             Self::AssetLockEntryMismatch { .. } => "asset_lock_entry_mismatch",
             Self::BlobTooLarge { .. } => "blob_too_large",
