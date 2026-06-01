@@ -27,7 +27,7 @@ services:
     build:
       args:
         {{~ driveBuildArgs :pair }}
-        {{=pair[0]}}: "{{=pair[1]}}"
+        {{=pair[0]}}: {{=JSON.stringify(pair[1])}}
         {{~}}
     {{?}}
   {{?}}
@@ -55,7 +55,7 @@ services:
     build:
       args:
         {{~ rsDapiBuildArgs :pair }}
-        {{=pair[0]}}: "{{=pair[1]}}"
+        {{=pair[0]}}: {{=JSON.stringify(pair[1])}}
         {{~}}
     {{?}}
   {{?}}

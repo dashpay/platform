@@ -2,12 +2,12 @@ import { expect } from 'chai';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import yaml from 'js-yaml';
 import dot from 'dot';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const currentDir = path.dirname(fileURLToPath(import.meta.url));
 const TEMPLATE_PATH = path.resolve(
-  __dirname,
+  currentDir,
   '../../../templates/dynamic-compose.yml.dot',
 );
 
@@ -50,6 +50,17 @@ describe('dynamic-compose buildArgs rendering', () => {
       rsDapi: { CARGO_BUILD_PROFILE: 'release' },
     });
     expect(out).to.match(/rs_dapi:[\s\S]*build:[\s\S]*args:[\s\S]*CARGO_BUILD_PROFILE:\s*"release"/);
+  });
+
+  it('escapes special characters so the rendered YAML stays valid', () => {
+    // A value containing a quote, backslash and newline would break naive
+    // `KEY: "value"` interpolation. JSON.stringify in the template emits a
+    // properly quoted/escaped scalar; parsing it back must yield the original.
+    const tricky = 'a"b\\c\nd';
+    const out = render({ drive: { TRICKY: tricky } });
+
+    const parsed = yaml.load(out);
+    expect(parsed.services.drive_abci.build.args.TRICKY).to.equal(tricky);
   });
 
   it('omits the build block entirely when buildArgs is empty', () => {
