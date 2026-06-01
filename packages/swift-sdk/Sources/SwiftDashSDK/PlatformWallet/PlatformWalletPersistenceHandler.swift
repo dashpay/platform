@@ -627,6 +627,18 @@ public class PlatformWalletPersistenceHandler {
         }
     }
 
+    /// `true` if the spending tx has reached a confirmed context. Used
+    /// to gate `isSpent` writes so a mempool-sighting alone — which is
+    /// reversible by RBF or mempool eviction — doesn't permanently flip
+    /// the input TXO out of the unspent set. The TXO becomes truly spent
+    /// only when the spending tx lands in a block; until then the
+    /// persisted state reflects "still spendable from this row's POV",
+    /// and the catch-up classifier on the next launch reloads the
+    /// row and recognises it as ours when the block arrives.
+    private static func spendIsInBlock(_ tx: PersistentTransaction) -> Bool {
+        tx.context >= TransactionContextType.inBlock.rawValue
+    }
+
     /// Mark the `PersistentTxo` whose 36-byte `outpoint` matches the
     /// given input as spent and link it to `spendingTransaction`.
     /// If no matching TXO exists yet (in-Swift out-of-order, or
@@ -644,16 +656,21 @@ public class PlatformWalletPersistenceHandler {
             predicate: #Predicate { $0.outpoint == outpoint }
         )
         if let txo = try? backgroundContext.fetch(txoDescriptor).first {
-            // Only touch the row if the linkage actually changes —
-            // an idempotent re-upsert of the same tx must not
-            // gratuitously bump `lastUpdated` and trigger a follow-on
-            // changeset emit.
+            // `isSpent` only flips once the spending tx is in a block
+            // (see `spendIsInBlock`'s doc) — a mempool sighting
+            // alone links the spending relationship but keeps the
+            // row in the unspent set so a `restartWalletManager()`
+            // load can hand the TXO back to Rust for the post-restart
+            // catch-up classifier to recognise as ours. The next
+            // upsert of this same tx with a confirmed context flips
+            // `isSpent` then.
+            let expectedIsSpent = Self.spendIsInBlock(spendingTransaction)
             let linkageChanged =
-                !txo.isSpent
+                txo.isSpent != expectedIsSpent
                 || txo.spendingTransaction?.txid != spendingTxid
                 || txo.spendingInputIndex != inputIndex
             if linkageChanged {
-                txo.isSpent = true
+                txo.isSpent = expectedIsSpent
                 if txo.spendingTransaction?.txid != spendingTxid {
                     txo.spendingTransaction = spendingTransaction
                 }
@@ -822,7 +839,24 @@ public class PlatformWalletPersistenceHandler {
             // visible spendingTransaction matches the most recent
             // observation; the rest are dropped.
             let chosen = pendingRows.max(by: { $0.createdAt < $1.createdAt }) ?? pendingRows[0]
-            record.isSpent = true
+
+            // Resolve the spending tx (prefer the relationship; fall
+            // back to a txid lookup if the row wasn't faulted in).
+            // We need its `context` to gate `isSpent` — same rule as
+            // `resolveInputOutpoint`: mempool sighting links the
+            // spendingTransaction but doesn't flip `isSpent` until
+            // the spending tx is in a block.
+            let resolvedSpending: PersistentTransaction?
+            if let spending = chosen.spendingTransaction {
+                resolvedSpending = spending
+            } else {
+                let spendingTxid = chosen.spendingTxid
+                let txDescriptor = FetchDescriptor<PersistentTransaction>(
+                    predicate: #Predicate { $0.txid == spendingTxid }
+                )
+                resolvedSpending = try? backgroundContext.fetch(txDescriptor).first
+            }
+
             // Carry the vin index forward so the spending tx's
             // detail view can render its inputs in the canonical
             // serialized order. Same source as the linkage write
@@ -830,21 +864,12 @@ public class PlatformWalletPersistenceHandler {
             // pending rows captures the index from FFI's
             // `input_outpoints` slice, which mirrors `tx.input.iter()`.
             record.spendingInputIndex = chosen.inputIndex
-            if let spending = chosen.spendingTransaction {
-                if record.spendingTransaction?.txid != spending.txid {
-                    record.spendingTransaction = spending
-                }
-            } else {
-                // Pending row's parent tx wasn't faulted in; fall
-                // back to a txid lookup so the linkage still lands.
-                let spendingTxid = chosen.spendingTxid
-                let txDescriptor = FetchDescriptor<PersistentTransaction>(
-                    predicate: #Predicate { $0.txid == spendingTxid }
-                )
-                if let spending = try? backgroundContext.fetch(txDescriptor).first,
-                   record.spendingTransaction?.txid != spending.txid {
-                    record.spendingTransaction = spending
-                }
+            if let spending = resolvedSpending,
+               record.spendingTransaction?.txid != spending.txid {
+                record.spendingTransaction = spending
+            }
+            if let spending = resolvedSpending {
+                record.isSpent = Self.spendIsInBlock(spending)
             }
             record.lastUpdated = Date()
             for row in pendingRows {
@@ -864,7 +889,6 @@ public class PlatformWalletPersistenceHandler {
         guard let txo = try? backgroundContext.fetch(descriptor).first else {
             return
         }
-        txo.isSpent = true
         // Link the spending transaction. The FFI now carries
         // `spending_txid` alongside the outpoint (the txid of the
         // `TransactionRecord` whose inputs included this outpoint),
@@ -875,15 +899,29 @@ public class PlatformWalletPersistenceHandler {
         // next flush carrying that tx triggers another upsert
         // round and eventually catches up.
         let spendingTxid = hashData(entry.spending_txid)
-        if !spendingTxid.isEmpty,
-           !spendingTxid.allSatisfy({ $0 == 0 }),
-           txo.spendingTransaction?.txid != spendingTxid {
-            let txDescriptor = FetchDescriptor<PersistentTransaction>(
-                predicate: #Predicate { $0.txid == spendingTxid }
-            )
-            if let spendingTx = try? backgroundContext.fetch(txDescriptor).first {
-                txo.spendingTransaction = spendingTx
+        var spendingTx: PersistentTransaction? = nil
+        if !spendingTxid.isEmpty, !spendingTxid.allSatisfy({ $0 == 0 }) {
+            if txo.spendingTransaction?.txid == spendingTxid {
+                spendingTx = txo.spendingTransaction
+            } else {
+                let txDescriptor = FetchDescriptor<PersistentTransaction>(
+                    predicate: #Predicate { $0.txid == spendingTxid }
+                )
+                spendingTx = try? backgroundContext.fetch(txDescriptor).first
+                if let spending = spendingTx {
+                    txo.spendingTransaction = spending
+                }
             }
+        }
+        // Gate the `isSpent` flip on the spending tx being in a
+        // block — same rule as `resolveInputOutpoint`. When the
+        // spending tx isn't resolved this flush, leave `isSpent`
+        // alone instead of writing `false`: the next upsert round
+        // carrying the spending tx will run `resolveInputOutpoint`
+        // and set it then. Writing `false` here would flap a
+        // previously-true `isSpent` on every reordered emit.
+        if let spending = spendingTx {
+            txo.isSpent = Self.spendIsInBlock(spending)
         }
         txo.lastUpdated = Date()
         // The spend signal landed both via the legacy
