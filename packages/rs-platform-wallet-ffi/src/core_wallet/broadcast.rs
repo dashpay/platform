@@ -127,6 +127,99 @@ pub unsafe extern "C" fn core_wallet_send_to_addresses(
     PlatformWalletFFIResult::ok()
 }
 
+/// Sweep the entire spendable balance of the wallet's CoinJoin account
+/// (BIP44 purpose 4') into a single output to `dest_address`, leaving no
+/// change so the account is fully emptied.
+///
+/// CoinJoin "mixed coins" live on a dedicated account that
+/// [`core_wallet_send_to_addresses`] cannot reach (it only handles
+/// standard BIP44/BIP32 accounts). Used by the DashSync → SwiftDashSDK
+/// migration to recover a user's mixed coins (no longer supported) into
+/// their spendable balance. Uses the same external mnemonic-resolver
+/// signer model as [`core_wallet_send_to_addresses`].
+///
+/// On success, `out_tx_bytes`/`out_tx_len` receive the serialized signed
+/// transaction; free it with [`core_wallet_free_tx_bytes`].
+///
+/// # Safety
+/// - `dest_address` must be a valid NUL-terminated C string.
+/// - `core_signer_handle` must be a valid, non-destroyed
+///   `*mut MnemonicResolverHandle`. Ownership is retained by the caller.
+#[no_mangle]
+pub unsafe extern "C" fn core_wallet_sweep_coinjoin(
+    handle: Handle,
+    account_index: u32,
+    dest_address: *const c_char,
+    core_signer_handle: *mut MnemonicResolverHandle,
+    out_tx_bytes: *mut *mut u8,
+    out_tx_len: *mut usize,
+) -> PlatformWalletFFIResult {
+    check_ptr!(dest_address);
+    check_ptr!(core_signer_handle);
+    check_ptr!(out_tx_bytes);
+    check_ptr!(out_tx_len);
+
+    let dest_str = unwrap_result_or_return!(std::ffi::CStr::from_ptr(dest_address).to_str());
+    let dest = unwrap_result_or_return!(dashcore::Address::from_str(dest_str)).assume_checked();
+
+    let signer_addr = core_signer_handle as usize;
+
+    let option = CORE_WALLET_STORAGE.with_item(handle, |wallet| {
+        let wallet_id = wallet.wallet_id();
+        let network = wallet.network();
+        // SAFETY: the resolver handle is pinned alive for the duration of
+        // this FFI call (see fn-level safety doc). The
+        // `MnemonicResolverCoreSigner` lives on this stack frame and is
+        // dropped before the function returns.
+        let signer = unsafe {
+            MnemonicResolverCoreSigner::new(
+                signer_addr as *mut MnemonicResolverHandle,
+                wallet_id,
+                network,
+            )
+        };
+        runtime().block_on(wallet.sweep_coinjoin_to_address(account_index, dest, &signer))
+    });
+    let result = unwrap_option_or_return!(option);
+    let tx = unwrap_result_or_return!(result);
+    let serialized = dashcore::consensus::serialize(&tx);
+    let len = serialized.len();
+    let boxed = serialized.into_boxed_slice();
+    *out_tx_bytes = Box::into_raw(boxed) as *mut u8;
+    *out_tx_len = len;
+    PlatformWalletFFIResult::ok()
+}
+
+/// Widen the wallet's CoinJoin account (BIP44 purpose 4') address gap limit
+/// to `gap_limit` and generate the addresses so SPV watches the wider window.
+///
+/// Used by the DashSync → SwiftDashSDK migration's one-time CoinJoin recovery
+/// scan. CoinJoin mixed coins are scattered with holes wider than the default
+/// gap (30), so for wallets that used CoinJoin the app widens the gap (to match
+/// DashSync's 400) before starting SPV, then reverts once the coins are swept.
+/// The widened limit is in-memory only and not persisted.
+///
+/// On success, `out_highest_index` receives the pool's highest generated
+/// address index after generation. Idempotent: re-running is a cheap no-op
+/// once the window is covered.
+#[no_mangle]
+pub unsafe extern "C" fn core_wallet_set_coinjoin_gap_limit(
+    handle: Handle,
+    account_index: u32,
+    gap_limit: u32,
+    out_highest_index: *mut u32,
+) -> PlatformWalletFFIResult {
+    check_ptr!(out_highest_index);
+
+    let option = CORE_WALLET_STORAGE.with_item(handle, |wallet| {
+        runtime().block_on(wallet.set_coinjoin_gap_limit(account_index, gap_limit))
+    });
+    let result = unwrap_option_or_return!(option);
+    let highest = unwrap_result_or_return!(result);
+    *out_highest_index = highest;
+    PlatformWalletFFIResult::ok()
+}
+
 /// Free transaction bytes returned by `core_wallet_send_to_addresses`.
 #[no_mangle]
 pub unsafe extern "C" fn core_wallet_free_tx_bytes(bytes: *mut u8, len: usize) {

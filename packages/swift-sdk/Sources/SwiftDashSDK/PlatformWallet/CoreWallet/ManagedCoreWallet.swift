@@ -162,6 +162,76 @@ public class ManagedCoreWallet {
         return Data(bytes: ptr, count: Int(txLen))
     }
 
+    /// Sweep the entire spendable balance of the wallet's CoinJoin account
+    /// into a single output to `destination`, leaving no change so the
+    /// account is fully emptied.
+    ///
+    /// CoinJoin "mixed coins" live on a dedicated account (BIP44 purpose 4')
+    /// that ``sendToAddresses(accountType:accountIndex:recipients:)`` cannot
+    /// reach. Used by the DashSync → SwiftDashSDK migration to move a user's
+    /// mixed coins (no longer supported) into their spendable balance.
+    ///
+    /// Returns the serialized signed transaction (already broadcast by the
+    /// FFI), mirroring `sendToAddresses`.
+    public func sweepCoinJoinAccount(
+        accountIndex: UInt32 = 0,
+        destination: String
+    ) throws -> Data {
+        var txBytesPtr: UnsafeMutablePointer<UInt8>? = nil
+        var txLen: UInt = 0
+
+        // Single owned recipient string; the resolver-backed signer owns
+        // mnemonic access for the lifetime of the call (same model as
+        // `sendToAddresses`).
+        let resolver = MnemonicResolver()
+
+        try destination.withCString { destPtr in
+            try withExtendedLifetime(resolver) {
+                try core_wallet_sweep_coinjoin(
+                    handle,
+                    accountIndex,
+                    destPtr,
+                    resolver.handle,
+                    &txBytesPtr,
+                    &txLen
+                ).check()
+            }
+        }
+
+        guard let ptr = txBytesPtr, txLen > 0 else {
+            throw PlatformWalletError.unknown("FFI returned success but tx buffer was empty")
+        }
+        defer { core_wallet_free_tx_bytes(ptr, txLen) }
+
+        return Data(bytes: ptr, count: Int(txLen))
+    }
+
+    /// Widen the wallet's CoinJoin account address gap limit to `gapLimit` and
+    /// generate the addresses so SPV watches the wider window.
+    ///
+    /// CoinJoin "mixed coins" (BIP44 purpose 4') are scattered with holes wider
+    /// than the default gap (30), so a fresh post-migration scan would miss
+    /// deep coins. The DashSync → SwiftDashSDK migration calls this — only for
+    /// wallets that used CoinJoin — before starting SPV so the one-time
+    /// recovery scan finds every mixed coin. The widened limit is in-memory
+    /// only (not persisted), so a later launch reverts to the default gap.
+    ///
+    /// Idempotent. Returns the pool's highest generated address index.
+    @discardableResult
+    public func setCoinJoinGapLimit(
+        accountIndex: UInt32 = 0,
+        gapLimit: UInt32
+    ) throws -> UInt32 {
+        var highestIndex: UInt32 = 0
+        try core_wallet_set_coinjoin_gap_limit(
+            handle,
+            accountIndex,
+            gapLimit,
+            &highestIndex
+        ).check()
+        return highestIndex
+    }
+
     /// Broadcast a raw signed transaction.
     ///
     /// Returns the transaction ID as a hex string.
