@@ -22,6 +22,9 @@ pub struct DriveDocumentQueryMethodVersions {
     pub query_contested_documents: FeatureVersion,
     pub query_contested_documents_vote_state: FeatureVersion,
     pub query_documents_with_flags: FeatureVersion,
+    pub fetch_document_history_query: FeatureVersion,
+    pub fetch_document_history: FeatureVersion,
+    pub prove_document_history: FeatureVersion,
     /// Mode-detection routing table for `SELECT COUNT` queries.
     /// Versioned because the routing table is consensus-relevant on
     /// the query surface — a future protocol version that changes

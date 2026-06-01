@@ -207,14 +207,15 @@ impl SpvRuntime {
         let client_guard = self.client.read().await;
         let client = client_guard
             .as_ref()
-            .ok_or(PlatformWalletError::SpvNotRunning)?;
+            .ok_or(PlatformWalletError::SpvNotRunning)?
+            .clone();
+        drop(client_guard);
 
         let result = client
             .run()
             .await
             .map_err(|e| PlatformWalletError::SpvError(e.to_string()));
 
-        drop(client_guard);
         let mut client = self.client.write().await;
         let _ = client.take();
 
