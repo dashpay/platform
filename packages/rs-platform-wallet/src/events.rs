@@ -135,8 +135,7 @@ impl PlatformEventManager {
     /// path during a cold sync.
     #[cfg(feature = "shielded")]
     pub fn on_shielded_sync_progress(&self, cumulative_scanned: u64, block_height: u64) {
-        let handlers = self.handlers.load();
-        for h in handlers.iter() {
+        for h in self.handlers.iter() {
             h.on_shielded_sync_progress(cumulative_scanned, block_height);
         }
     }
@@ -151,8 +150,7 @@ impl PlatformEventManager {
     /// frequent path during a cold sync.
     #[cfg(feature = "shielded")]
     pub fn on_shielded_tree_progress(&self, leaves_committed: u64, total_target: u64) {
-        let handlers = self.handlers.load();
-        for h in handlers.iter() {
+        for h in self.handlers.iter() {
             h.on_shielded_tree_progress(leaves_committed, total_target);
         }
     }
