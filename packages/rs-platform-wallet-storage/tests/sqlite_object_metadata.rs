@@ -17,7 +17,7 @@ use common::{
     ensure_wallet_meta, fresh_persister, wid,
 };
 
-use platform_wallet_storage::kv::{KvError, MAX_KEY_LEN, MAX_VALUE_LEN};
+use platform_wallet_storage::kv::{KvError, ObjectKind, MAX_KEY_LEN, MAX_VALUE_LEN};
 use platform_wallet_storage::{KvStore, ObjectId};
 
 fn id32(byte: u8) -> [u8; 32] {
@@ -116,63 +116,84 @@ fn tc_md_006_roundtrip_platform_address() {
 // five FK scopes. TC-MD-012 — Global put on empty DB → Ok.
 // ---------------------------------------------------------------------
 
-fn assert_object_not_found(res: Result<(), KvError>) {
+/// Assert the `put` failed with `ObjectNotFound` carrying exactly
+/// `expected_kind` — a kind-swap bug in `classify_put_error`/`ScopeSql`
+/// must fail here, not just any FK violation.
+fn assert_object_not_found(res: Result<(), KvError>, expected_kind: ObjectKind) {
     match res {
-        Err(KvError::ObjectNotFound { .. }) => {}
-        other => panic!("expected ObjectNotFound, got {other:?}"),
+        Err(KvError::ObjectNotFound { kind }) => assert_eq!(
+            kind, expected_kind,
+            "ObjectNotFound carried {kind:?}, expected {expected_kind:?}"
+        ),
+        other => panic!("expected ObjectNotFound {{ {expected_kind:?} }}, got {other:?}"),
     }
 }
 
 #[test]
 fn tc_md_007_put_wallet_absent_parent() {
     let (p, _tmp, _path) = fresh_persister();
-    assert_object_not_found(p.put(&ObjectId::Wallet(wid(0xAB)), "k", b"v"));
+    assert_object_not_found(
+        p.put(&ObjectId::Wallet(wid(0xAB)), "k", b"v"),
+        ObjectKind::Wallet,
+    );
 }
 
 #[test]
 fn tc_md_008_put_identity_absent_parent() {
     let (p, _tmp, _path) = fresh_persister();
-    assert_object_not_found(p.put(&ObjectId::Identity(id32(0xAC)), "k", b"v"));
+    assert_object_not_found(
+        p.put(&ObjectId::Identity(id32(0xAC)), "k", b"v"),
+        ObjectKind::Identity,
+    );
 }
 
 #[test]
 fn tc_md_009_put_token_absent_parent() {
     let (p, _tmp, _path) = fresh_persister();
-    assert_object_not_found(p.put(
-        &ObjectId::Token {
-            identity_id: id32(0xAD),
-            token_id: id32(0xAE),
-        },
-        "k",
-        b"v",
-    ));
+    assert_object_not_found(
+        p.put(
+            &ObjectId::Token {
+                identity_id: id32(0xAD),
+                token_id: id32(0xAE),
+            },
+            "k",
+            b"v",
+        ),
+        ObjectKind::Token,
+    );
 }
 
 #[test]
 fn tc_md_010_put_contact_absent_parent() {
     let (p, _tmp, _path) = fresh_persister();
-    assert_object_not_found(p.put(
-        &ObjectId::Contact {
-            wallet_id: wid(0xAF),
-            owner_id: id32(0xB0),
-            contact_id: id32(0xB1),
-        },
-        "k",
-        b"v",
-    ));
+    assert_object_not_found(
+        p.put(
+            &ObjectId::Contact {
+                wallet_id: wid(0xAF),
+                owner_id: id32(0xB0),
+                contact_id: id32(0xB1),
+            },
+            "k",
+            b"v",
+        ),
+        ObjectKind::Contact,
+    );
 }
 
 #[test]
 fn tc_md_011_put_platform_address_absent_parent() {
     let (p, _tmp, _path) = fresh_persister();
-    assert_object_not_found(p.put(
-        &ObjectId::PlatformAddress {
-            wallet_id: wid(0xB2),
-            address: vec![0x01, 0x02, 0x03],
-        },
-        "k",
-        b"v",
-    ));
+    assert_object_not_found(
+        p.put(
+            &ObjectId::PlatformAddress {
+                wallet_id: wid(0xB2),
+                address: vec![0x01, 0x02, 0x03],
+            },
+            "k",
+            b"v",
+        ),
+        ObjectKind::PlatformAddress,
+    );
 }
 
 #[test]
@@ -182,6 +203,37 @@ fn tc_md_012_put_global_on_empty_db_is_ok() {
     assert_eq!(
         p.get(&ObjectId::Global, "k").unwrap().as_deref(),
         Some(&b"v"[..])
+    );
+}
+
+// ---------------------------------------------------------------------
+// QA-002 — delete of a never-existing key is idempotent (returns Ok),
+// for both a no-FK scope and an FK scope.
+// ---------------------------------------------------------------------
+
+#[test]
+fn delete_missing_key_is_idempotent() {
+    let (p, _tmp, _path) = fresh_persister();
+    p.delete(&ObjectId::Global, "never-existed").unwrap();
+    let w = wid(0x90);
+    ensure_wallet_meta(&p, &w);
+    p.delete(&ObjectId::Wallet(w), "never-existed").unwrap();
+}
+
+// ---------------------------------------------------------------------
+// QA-003 — list_keys returns keys in ascending order regardless of
+// insertion order.
+// ---------------------------------------------------------------------
+
+#[test]
+fn list_keys_is_ascending_regardless_of_insert_order() {
+    let (p, _tmp, _path) = fresh_persister();
+    for k in ["c", "a", "b"] {
+        p.put(&ObjectId::Global, k, b"v").unwrap();
+    }
+    assert_eq!(
+        p.list_keys(&ObjectId::Global, None).unwrap(),
+        vec!["a", "b", "c"]
     );
 }
 

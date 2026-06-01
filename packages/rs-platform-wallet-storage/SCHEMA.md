@@ -275,8 +275,8 @@ erDiagram
     }
 
     META_TOKEN {
-        BLOB identity_id PK "FK → token_balances, CASCADE"
-        BLOB token_id PK
+        BLOB identity_id PK "composite FK → token_balances, CASCADE"
+        BLOB token_id PK "part of composite FK → token_balances"
         TEXT key PK
         BLOB value
         INTEGER updated_at

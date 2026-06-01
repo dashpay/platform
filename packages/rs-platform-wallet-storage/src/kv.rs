@@ -88,11 +88,13 @@ impl ObjectId {
     }
 }
 
-/// Maximum allowed key length, in bytes/chars (ASCII assumed for the
-/// fast path; SQLite's `length()` counts UTF-8 chars for TEXT, so
-/// non-ASCII keys are also capped at 128 code points). Enforced in
-/// Rust (typed-error pre-check) AND in the SQL schema (`CHECK
-/// (length(key) BETWEEN 1 AND 128)`).
+/// Maximum allowed key length. Enforced in Rust as a **byte**-length
+/// bound (`validate_key` rejects with `KeyTooLong`/`KeyEmpty` on
+/// `key.len()`) and in SQL as a **code-point** bound
+/// (`CHECK (length(key) BETWEEN 1 AND 128)`, where SQLite's `length()`
+/// counts UTF-8 code points). For ASCII keys the two coincide; for
+/// non-ASCII keys the Rust byte bound is the stricter of the two, so no
+/// over-length key reaches SQL.
 pub const MAX_KEY_LEN: usize = 128;
 
 /// Hard cap on the size of a single KV value, in bytes. Mirrors the
