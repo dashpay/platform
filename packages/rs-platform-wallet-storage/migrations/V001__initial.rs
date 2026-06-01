@@ -256,15 +256,20 @@ CREATE TABLE dashpay_payments_overlay (
 -- Per-object-type key/value metadata for app-managed data (aliases,
 -- flags, notes, sync hints, ordering — anything the host wants to stash
 -- alongside a wallet object). One dedicated table per `ObjectId`
--- variant; see `src/kv.rs` and `SCHEMA.md` for the public API.
+-- variant; see `src/kv.rs` and `SCHEMA.md` for the public API. Every
+-- table shares the same value contract — `key` (1..=128 chars), opaque
+-- `value` BLOB, `updated_at` defaulting to `unixepoch()` — plus a
+-- composite PRIMARY KEY of its id column(s) and `key`.
 --
--- Every table shares the same value contract — `key` (1..=128 chars),
--- opaque `value` BLOB, `updated_at` defaulting to `unixepoch()` — plus a
--- composite PRIMARY KEY of its id column(s) and `key`. `meta_global` is
--- the only table without a parent, so it has no FK and survives every
--- wallet delete; the other five carry a native `FOREIGN KEY … ON DELETE
--- CASCADE` to their parent's PRIMARY KEY, so metadata cannot attach to a
--- non-existent object and dies with its object.
+-- Unlike every other per-wallet table (hard FOREIGN KEY ON DELETE
+-- CASCADE, so the parent must exist at write time), the five scoped
+-- meta_* tables carry NO FK: host apps attach metadata to an object
+-- before/independently of that object being synced into its typed table
+-- (async sync ordering; a global-config persister whose parent tables
+-- stay empty). The AFTER DELETE triggers below preserve the rule that
+-- metadata cannot outlive its object while dropping the insert-time
+-- parent requirement. recursive_triggers = ON (set in conn.rs) makes
+-- them fire for parents removed via FK cascade, not just direct deletes.
 CREATE TABLE meta_global (
     key        TEXT NOT NULL PRIMARY KEY CHECK (length(key) BETWEEN 1 AND 128),
     value      BLOB NOT NULL,
@@ -276,8 +281,7 @@ CREATE TABLE meta_wallet (
     key        TEXT NOT NULL CHECK (length(key) BETWEEN 1 AND 128),
     value      BLOB NOT NULL,
     updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
-    PRIMARY KEY (wallet_id, key),
-    FOREIGN KEY (wallet_id) REFERENCES wallet_metadata(wallet_id) ON DELETE CASCADE
+    PRIMARY KEY (wallet_id, key)
 );
 
 CREATE TABLE meta_identity (
@@ -285,8 +289,7 @@ CREATE TABLE meta_identity (
     key         TEXT NOT NULL CHECK (length(key) BETWEEN 1 AND 128),
     value       BLOB NOT NULL,
     updated_at  INTEGER NOT NULL DEFAULT (unixepoch()),
-    PRIMARY KEY (identity_id, key),
-    FOREIGN KEY (identity_id) REFERENCES identities(identity_id) ON DELETE CASCADE
+    PRIMARY KEY (identity_id, key)
 );
 
 CREATE TABLE meta_token (
@@ -295,9 +298,7 @@ CREATE TABLE meta_token (
     key         TEXT NOT NULL CHECK (length(key) BETWEEN 1 AND 128),
     value       BLOB NOT NULL,
     updated_at  INTEGER NOT NULL DEFAULT (unixepoch()),
-    PRIMARY KEY (identity_id, token_id, key),
-    FOREIGN KEY (identity_id, token_id)
-        REFERENCES token_balances(identity_id, token_id) ON DELETE CASCADE
+    PRIMARY KEY (identity_id, token_id, key)
 );
 
 CREATE TABLE meta_contact (
@@ -307,9 +308,7 @@ CREATE TABLE meta_contact (
     key        TEXT NOT NULL CHECK (length(key) BETWEEN 1 AND 128),
     value      BLOB NOT NULL,
     updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
-    PRIMARY KEY (wallet_id, owner_id, contact_id, key),
-    FOREIGN KEY (wallet_id, owner_id, contact_id)
-        REFERENCES contacts_established(wallet_id, owner_id, contact_id) ON DELETE CASCADE
+    PRIMARY KEY (wallet_id, owner_id, contact_id, key)
 );
 
 CREATE TABLE meta_platform_address (
@@ -318,10 +317,52 @@ CREATE TABLE meta_platform_address (
     key        TEXT NOT NULL CHECK (length(key) BETWEEN 1 AND 128),
     value      BLOB NOT NULL,
     updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
-    PRIMARY KEY (wallet_id, address, key),
-    FOREIGN KEY (wallet_id, address)
-        REFERENCES platform_addresses(wallet_id, address) ON DELETE CASCADE
+    PRIMARY KEY (wallet_id, address, key)
 );
+
+-- Soft-cascade cleanup: drop a scope's metadata when its parent object
+-- is deleted. Requires `recursive_triggers = ON` to also fire for
+-- parents removed by an FK cascade (e.g. wallet_metadata delete →
+-- identities cascade → meta_identity trigger).
+CREATE TRIGGER cascade_meta_wallet_on_wallet_delete
+AFTER DELETE ON wallet_metadata
+FOR EACH ROW
+BEGIN
+    DELETE FROM meta_wallet WHERE wallet_id = OLD.wallet_id;
+END;
+
+CREATE TRIGGER cascade_meta_identity_on_identity_delete
+AFTER DELETE ON identities
+FOR EACH ROW
+BEGIN
+    DELETE FROM meta_identity WHERE identity_id = OLD.identity_id;
+END;
+
+CREATE TRIGGER cascade_meta_token_on_token_balance_delete
+AFTER DELETE ON token_balances
+FOR EACH ROW
+BEGIN
+    DELETE FROM meta_token
+        WHERE identity_id = OLD.identity_id AND token_id = OLD.token_id;
+END;
+
+CREATE TRIGGER cascade_meta_contact_on_contact_delete
+AFTER DELETE ON contacts_established
+FOR EACH ROW
+BEGIN
+    DELETE FROM meta_contact
+        WHERE wallet_id = OLD.wallet_id
+          AND owner_id = OLD.owner_id
+          AND contact_id = OLD.contact_id;
+END;
+
+CREATE TRIGGER cascade_meta_platform_address_on_address_delete
+AFTER DELETE ON platform_addresses
+FOR EACH ROW
+BEGIN
+    DELETE FROM meta_platform_address
+        WHERE wallet_id = OLD.wallet_id AND address = OLD.address;
+END;
 "
     )
 }

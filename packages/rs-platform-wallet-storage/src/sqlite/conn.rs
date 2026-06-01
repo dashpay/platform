@@ -1,11 +1,16 @@
 //! Single connection-open choke-point.
 //!
-//! `PRAGMA foreign_keys` is per-connection and resets to OFF on every
-//! open — it is not persisted in the database file, and no compile-time
-//! knob in `libsqlite3-sys`'s bundled build forces it on. Enforcement is
-//! therefore a runtime discipline: every connection that mutates rows
-//! must enable it, and we must *prove* it took, because the pragma
-//! silently no-ops on a SQLite built without FK support.
+//! `PRAGMA foreign_keys` and `PRAGMA recursive_triggers` are both
+//! per-connection and reset to OFF on every open — neither is persisted
+//! in the database file, and no compile-time knob in `libsqlite3-sys`'s
+//! bundled build forces them on. Enforcement is therefore a runtime
+//! discipline: every connection that mutates rows must enable them, and
+//! we must *prove* each took, because the pragma silently no-ops on a
+//! SQLite built without the corresponding support. `recursive_triggers`
+//! is required so the `meta_*` soft-cascade `AFTER DELETE` triggers fire
+//! for parents removed via an FK cascade (e.g. `delete_wallet` →
+//! `identities` cascade → `meta_identity` trigger), not just for
+//! directly-deleted parents.
 //!
 //! Every library connection-open site routes through [`open_conn`] so
 //! there is exactly one place that owns flags + FK enforcement. The CLI
@@ -21,20 +26,22 @@ use crate::sqlite::error::WalletStorageError;
 /// How the opened connection will be used.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Access {
-    /// Read-write writer connection. Enables `foreign_keys` and asserts
-    /// the read-back equals 1.
+    /// Read-write writer connection. Enables `foreign_keys` and
+    /// `recursive_triggers` and asserts each read-back equals 1.
     ReadWrite,
-    /// Read-only handle (backup source, restore probe, CLI peek). FK
-    /// enforcement is irrelevant — no mutations flow through it — so the
-    /// pragma + read-back are skipped.
+    /// Read-only handle (backup source, restore probe, CLI peek). FK and
+    /// trigger enforcement is irrelevant — no mutations flow through it —
+    /// so the pragmas + read-backs are skipped.
     ReadOnly,
 }
 
 /// Open a SQLite connection through the crate's single choke-point.
 ///
 /// For [`Access::ReadWrite`], enables `PRAGMA foreign_keys = ON` and
-/// reads it back, returning [`WalletStorageError::ForeignKeysNotEnforced`]
-/// if the result is not `1`. For [`Access::ReadOnly`], opens with
+/// `PRAGMA recursive_triggers = ON` and reads each back, returning
+/// [`WalletStorageError::ForeignKeysNotEnforced`] /
+/// [`WalletStorageError::RecursiveTriggersNotEnforced`] if a result is
+/// not `1`. For [`Access::ReadOnly`], opens with
 /// `SQLITE_OPEN_READ_ONLY | SQLITE_OPEN_URI` and performs no pragma.
 pub(crate) fn open_conn(path: &Path, access: Access) -> Result<Connection, WalletStorageError> {
     let conn = match access {
@@ -46,6 +53,7 @@ pub(crate) fn open_conn(path: &Path, access: Access) -> Result<Connection, Walle
     };
     if access == Access::ReadWrite {
         enforce_foreign_keys(&conn)?;
+        enforce_recursive_triggers(&conn)?;
     }
     Ok(conn)
 }
@@ -57,6 +65,18 @@ pub(crate) fn enforce_foreign_keys(conn: &Connection) -> Result<(), WalletStorag
     let on: i64 = conn.pragma_query_value(None, "foreign_keys", |r| r.get(0))?;
     if on != 1 {
         return Err(WalletStorageError::ForeignKeysNotEnforced);
+    }
+    Ok(())
+}
+
+/// Enable `recursive_triggers` and assert via read-back. Required so the
+/// `meta_*` soft-cascade triggers fire for parents removed by an FK
+/// cascade, not only directly-deleted parents.
+pub(crate) fn enforce_recursive_triggers(conn: &Connection) -> Result<(), WalletStorageError> {
+    conn.pragma_update(None, "recursive_triggers", "ON")?;
+    let on: i64 = conn.pragma_query_value(None, "recursive_triggers", |r| r.get(0))?;
+    if on != 1 {
+        return Err(WalletStorageError::RecursiveTriggersNotEnforced);
     }
     Ok(())
 }
@@ -85,5 +105,24 @@ mod tests {
     fn foreign_keys_not_enforced_variant_renders() {
         let err = WalletStorageError::ForeignKeysNotEnforced;
         assert!(format!("{err}").contains("foreign-key enforcement"));
+    }
+
+    /// A read-write open enables recursive_triggers and the read-back
+    /// confirms it — the assertion path that lets the meta_* soft-cascade
+    /// triggers fire through FK cascades.
+    #[test]
+    fn read_write_open_enforces_and_reads_back_recursive_triggers() {
+        let conn = Connection::open_in_memory().expect("in-memory open");
+        enforce_recursive_triggers(&conn).expect("recursive_triggers enforcement");
+        let on: i64 = conn
+            .pragma_query_value(None, "recursive_triggers", |r| r.get(0))
+            .expect("read-back");
+        assert_eq!(on, 1, "read-back must observe recursive_triggers is on");
+    }
+
+    #[test]
+    fn recursive_triggers_not_enforced_variant_renders() {
+        let err = WalletStorageError::RecursiveTriggersNotEnforced;
+        assert!(format!("{err}").contains("recursive-trigger enforcement"));
     }
 }

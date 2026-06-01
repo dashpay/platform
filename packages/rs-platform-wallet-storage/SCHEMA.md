@@ -2,7 +2,7 @@
 
 The persister stores **public** wallet-state material (UTXOs, transactions, account registrations, address pools, identities, identity public keys, contacts, asset locks, token balances, DashPay overlays, and platform-address sync snapshots) in a SQLite database managed by [refinery](https://crates.io/crates/refinery) migrations. **No secrets are stored here** — see [SECRETS.md](./SECRETS.md) for the secret-bearing backends.
 
-Schema evolution is version-gated by refinery. All connections turn on `PRAGMA foreign_keys = ON` at open time (`src/sqlite/conn.rs`), so every `ON DELETE CASCADE` clause is active.
+Schema evolution is version-gated by refinery. Every read-write connection turns on `PRAGMA foreign_keys = ON` and `PRAGMA recursive_triggers = ON` at open time (`src/sqlite/conn.rs`), so every `ON DELETE CASCADE` clause is active and the `meta_*` soft-cascade triggers fire even for parents removed by an FK cascade.
 
 The 25 tables are split into five domain diagrams below. `WALLET_METADATA` is the root anchor and appears in each diagram. For full column listings see the [Tables](#tables) section.
 
@@ -241,18 +241,20 @@ Per-object-type key/value metadata for arbitrary application-managed
 data (aliases, flags, notes, sync hints, ordering — anything the host
 app wants to stash alongside a wallet object). One dedicated `meta_*`
 table per [`ObjectId`](./src/kv.rs) variant. `meta_global` has no parent
-and survives wallet deletion; the other five anchor metadata to a wallet
-object via a native `FOREIGN KEY … ON DELETE CASCADE`, so the metadata
-cannot attach to a non-existent object and dies with it. `meta_identity`
-and `meta_token` reach the parent wallet only through `identities`.
+and survives wallet deletion. The other five carry **no foreign key**:
+metadata may be written before its parent object is synced into its
+typed table. An `AFTER DELETE` trigger on each parent table removes the
+matching metadata when the object is deleted (soft cascade), so metadata
+never outlives its object. The dashed edges below denote trigger-based
+cleanup, not an FK relationship.
 
 ```mermaid
 erDiagram
-    WALLET_METADATA ||--o{ META_WALLET : "annotates"
-    WALLET_METADATA ||--o{ META_CONTACT : "via contacts_established"
-    WALLET_METADATA ||--o{ META_PLATFORM_ADDRESS : "via platform_addresses"
-    IDENTITIES ||--o{ META_IDENTITY : "annotates"
-    TOKEN_BALANCES ||--o{ META_TOKEN : "annotates"
+    WALLET_METADATA ||..o{ META_WALLET : "trigger cleanup"
+    WALLET_METADATA ||..o{ META_CONTACT : "trigger (via contacts_established)"
+    WALLET_METADATA ||..o{ META_PLATFORM_ADDRESS : "trigger (via platform_addresses)"
+    IDENTITIES ||..o{ META_IDENTITY : "trigger cleanup"
+    TOKEN_BALANCES ||..o{ META_TOKEN : "trigger cleanup"
 
     META_GLOBAL {
         TEXT key PK "1..=128 chars; no parent (survives wallet delete)"
@@ -261,29 +263,29 @@ erDiagram
     }
 
     META_WALLET {
-        BLOB wallet_id PK "FK → wallet_metadata, CASCADE"
+        BLOB wallet_id PK "no FK; trigger cleanup on wallet_metadata delete"
         TEXT key PK
         BLOB value
         INTEGER updated_at
     }
 
     META_IDENTITY {
-        BLOB identity_id PK "FK → identities, CASCADE"
+        BLOB identity_id PK "no FK; trigger cleanup on identities delete"
         TEXT key PK
         BLOB value
         INTEGER updated_at
     }
 
     META_TOKEN {
-        BLOB identity_id PK "composite FK → token_balances, CASCADE"
-        BLOB token_id PK "part of composite FK → token_balances"
+        BLOB identity_id PK "no FK; trigger cleanup on token_balances delete"
+        BLOB token_id PK
         TEXT key PK
         BLOB value
         INTEGER updated_at
     }
 
     META_CONTACT {
-        BLOB wallet_id PK "FK → contacts_established, CASCADE"
+        BLOB wallet_id PK "no FK; trigger cleanup on contacts_established delete"
         BLOB owner_id PK
         BLOB contact_id PK
         TEXT key PK
@@ -292,7 +294,7 @@ erDiagram
     }
 
     META_PLATFORM_ADDRESS {
-        BLOB wallet_id PK "FK → platform_addresses, CASCADE"
+        BLOB wallet_id PK "no FK; trigger cleanup on platform_addresses delete"
         BLOB address PK
         TEXT key PK
         BLOB value
@@ -302,8 +304,11 @@ erDiagram
 
 > Note: every `meta_*` table's uniqueness comes straight from its
 > composite `PRIMARY KEY` (id column(s) + `key`) — no partial indexes
-> and no nullable scope column. Each FK targets the parent table's own
-> PRIMARY KEY, so the cascade is native.
+> and no nullable scope column. The five typed tables carry no FK; their
+> `AFTER DELETE` triggers require `recursive_triggers = ON` (set in
+> `src/sqlite/conn.rs`) so they also fire for parents removed by an FK
+> cascade (e.g. `delete_wallet` → `identities` cascade → `meta_identity`
+> trigger), not only for directly-deleted parents.
 
 ## Tables
 
@@ -490,49 +495,58 @@ comes from each table's composite `PRIMARY KEY` (id column(s) + `key`).
 Public API lives in [`src/kv.rs`](./src/kv.rs); the SQLite implementation
 is in [`src/sqlite/kv.rs`](./src/sqlite/kv.rs).
 
+Unlike every other per-wallet table, the five typed `meta_*` tables carry
+**no foreign key**: a write succeeds before its parent object exists, so
+host apps can attach metadata independently of sync ordering (and a
+global-config persister can write to typed scopes whose parent tables
+stay empty). Cleanup is instead a soft cascade — an `AFTER DELETE`
+trigger on each parent removes the matching metadata when the object is
+deleted, so metadata never outlives its object. The triggers require
+`recursive_triggers = ON` (set in `src/sqlite/conn.rs`) to fire for
+parents removed by an FK cascade, not only directly-deleted ones.
+
 #### `meta_global`
 
 Global metadata with no parent — survives every wallet delete.
 
 - PK: `key`.
-- No foreign key.
+- No foreign key, no trigger.
 
 #### `meta_wallet`
 
-Per-wallet metadata.
+Per-wallet metadata. Writable before the wallet exists.
 
 - PK: `(wallet_id, key)`.
-- FK: `wallet_id → wallet_metadata(wallet_id) ON DELETE CASCADE`.
+- No FK. Cleanup: `cascade_meta_wallet_on_wallet_delete` (AFTER DELETE ON `wallet_metadata`).
 
 #### `meta_identity`
 
-Per-identity metadata. Cascade reaches the parent wallet (when any)
-through `identities`.
+Per-identity metadata. Writable before the identity exists.
 
 - PK: `(identity_id, key)`.
-- FK: `identity_id → identities(identity_id) ON DELETE CASCADE`.
+- No FK. Cleanup: `cascade_meta_identity_on_identity_delete` (AFTER DELETE ON `identities`).
 
 #### `meta_token`
 
-Per-token-balance metadata. Cascade flows through `token_balances` and
-on through `identities`.
+Per-token-balance metadata. Writable before the token balance exists.
 
 - PK: `(identity_id, token_id, key)`.
-- FK: `(identity_id, token_id) → token_balances(identity_id, token_id) ON DELETE CASCADE`.
+- No FK. Cleanup: `cascade_meta_token_on_token_balance_delete` (AFTER DELETE ON `token_balances`).
 
 #### `meta_contact`
 
-Per-established-contact metadata.
+Per-established-contact metadata. Writable before the contact exists.
 
 - PK: `(wallet_id, owner_id, contact_id, key)`.
-- FK: `(wallet_id, owner_id, contact_id) → contacts_established(wallet_id, owner_id, contact_id) ON DELETE CASCADE`.
+- No FK. Cleanup: `cascade_meta_contact_on_contact_delete` (AFTER DELETE ON `contacts_established`).
 
 #### `meta_platform_address`
 
-Per-platform-address metadata. `address` is an opaque `BLOB`.
+Per-platform-address metadata. `address` is an opaque `BLOB`. Writable
+before the address exists.
 
 - PK: `(wallet_id, address, key)`.
-- FK: `(wallet_id, address) → platform_addresses(wallet_id, address) ON DELETE CASCADE`.
+- No FK. Cleanup: `cascade_meta_platform_address_on_address_delete` (AFTER DELETE ON `platform_addresses`).
 
 ## Enum-domain CHECK constraints
 
@@ -598,10 +612,25 @@ having to grep this repo.
 - `core_utxos.spent_in_txid` is cleared by the `setnull_core_utxos_on_tx_delete`
   trigger rather than a native `ON DELETE SET NULL` FK, because SQLite would null
   every column of a composite FK on SET NULL — including the NOT NULL `wallet_id`.
-- `PRAGMA foreign_keys = ON` is set and verified on every connection open.
+- The five typed `meta_*` tables carry **no FK** (writes may precede the parent);
+  cleanup is a per-parent `AFTER DELETE` trigger (soft cascade) requiring
+  `recursive_triggers = ON`.
+- `PRAGMA foreign_keys = ON` and `PRAGMA recursive_triggers = ON` are set and
+  verified on every read-write connection open.
+
+## Triggers
+
+| Trigger | Fires | Action |
+|---|---|---|
+| `setnull_core_utxos_on_tx_delete` | AFTER DELETE ON `core_transactions` | NULL `core_utxos.spent_in_txid` for the deleted tx |
+| `cascade_meta_wallet_on_wallet_delete` | AFTER DELETE ON `wallet_metadata` | delete matching `meta_wallet` rows |
+| `cascade_meta_identity_on_identity_delete` | AFTER DELETE ON `identities` | delete matching `meta_identity` rows |
+| `cascade_meta_token_on_token_balance_delete` | AFTER DELETE ON `token_balances` | delete matching `meta_token` rows |
+| `cascade_meta_contact_on_contact_delete` | AFTER DELETE ON `contacts_established` | delete matching `meta_contact` rows |
+| `cascade_meta_platform_address_on_address_delete` | AFTER DELETE ON `platform_addresses` | delete matching `meta_platform_address` rows |
 
 ## Migrations
 
 | Version | File | Description |
 |---|---|---|
-| V001 | `V001__initial.rs` | Full schema: all 25 tables (including the six `meta_*` per-object metadata tables), every index, and the `setnull_core_utxos_on_tx_delete` trigger |
+| V001 | `V001__initial.rs` | Full schema: all 25 tables (including the six `meta_*` per-object metadata tables), every index, and six triggers (`setnull_core_utxos_on_tx_delete` + the five `meta_*` soft-cascade triggers) |

@@ -2,11 +2,11 @@
 //! `SqlitePersister`.
 //!
 //! Covers the public [`KvStore`] surface (`get` / `put` / `delete` /
-//! `list_keys`) across all six [`ObjectId`] scopes, the referential
-//! integrity contract (parent-absent `put` → `ObjectNotFound`), the
-//! native per-object and per-wallet cascades, the `delete_wallet` report
-//! wiring, key/value bounds, prefix escaping, and scope isolation.
-//! (TC-MD-001..025.)
+//! `list_keys`) across all six [`ObjectId`] scopes, the soft-cascade
+//! contract (parentless `put` succeeds; an `AFTER DELETE` trigger cleans
+//! the metadata up when the parent is deleted, including via FK cascade),
+//! the `delete_wallet` report wiring, key/value bounds, prefix escaping,
+//! and scope isolation. (TC-MD-001..025.)
 
 #![cfg(feature = "kv")]
 
@@ -17,7 +17,7 @@ use common::{
     ensure_wallet_meta, fresh_persister, wid,
 };
 
-use platform_wallet_storage::kv::{KvError, ObjectKind, MAX_KEY_LEN, MAX_VALUE_LEN};
+use platform_wallet_storage::kv::{KvError, MAX_KEY_LEN, MAX_VALUE_LEN};
 use platform_wallet_storage::{KvStore, ObjectId};
 
 fn id32(byte: u8) -> [u8; 32] {
@@ -112,87 +112,64 @@ fn tc_md_006_roundtrip_platform_address() {
 }
 
 // ---------------------------------------------------------------------
-// TC-MD-007..011 — `put` with parent row ABSENT → ObjectNotFound for the
-// five FK scopes. TC-MD-012 — Global put on empty DB → Ok.
+// TC-MD-007..011 — parentless `put` SUCCEEDS for the five typed scopes
+// (no parent row seeded) and the value reads back. TC-MD-012 — Global
+// put on empty DB → Ok.
 // ---------------------------------------------------------------------
 
-/// Assert the `put` failed with `ObjectNotFound` carrying exactly
-/// `expected_kind` — a kind-swap bug in `classify_put_error`/`ScopeSql`
-/// must fail here, not just any FK violation.
-fn assert_object_not_found(res: Result<(), KvError>, expected_kind: ObjectKind) {
-    match res {
-        Err(KvError::ObjectNotFound { kind }) => assert_eq!(
-            kind, expected_kind,
-            "ObjectNotFound carried {kind:?}, expected {expected_kind:?}"
-        ),
-        other => panic!("expected ObjectNotFound {{ {expected_kind:?} }}, got {other:?}"),
-    }
+/// Put `(scope, "k") = b"v"` with NO parent row present, then read it
+/// back. Asserts the soft-cascade model: writes don't require a parent.
+fn assert_parentless_put_roundtrips(p: &impl KvStore, scope: &ObjectId) {
+    p.put(scope, "k", b"v").unwrap();
+    assert_eq!(p.get(scope, "k").unwrap().as_deref(), Some(&b"v"[..]));
 }
 
 #[test]
-fn tc_md_007_put_wallet_absent_parent() {
+fn parentless_put_succeeds_wallet() {
     let (p, _tmp, _path) = fresh_persister();
-    assert_object_not_found(
-        p.put(&ObjectId::Wallet(wid(0xAB)), "k", b"v"),
-        ObjectKind::Wallet,
+    assert_parentless_put_roundtrips(&p, &ObjectId::Wallet(wid(0xAB)));
+}
+
+#[test]
+fn parentless_put_succeeds_identity() {
+    let (p, _tmp, _path) = fresh_persister();
+    assert_parentless_put_roundtrips(&p, &ObjectId::Identity(id32(0xAC)));
+}
+
+#[test]
+fn parentless_put_succeeds_token() {
+    let (p, _tmp, _path) = fresh_persister();
+    assert_parentless_put_roundtrips(
+        &p,
+        &ObjectId::Token {
+            identity_id: id32(0xAD),
+            token_id: id32(0xAE),
+        },
     );
 }
 
 #[test]
-fn tc_md_008_put_identity_absent_parent() {
+fn parentless_put_succeeds_contact() {
     let (p, _tmp, _path) = fresh_persister();
-    assert_object_not_found(
-        p.put(&ObjectId::Identity(id32(0xAC)), "k", b"v"),
-        ObjectKind::Identity,
+    assert_parentless_put_roundtrips(
+        &p,
+        &ObjectId::Contact {
+            wallet_id: wid(0xAF),
+            owner_id: id32(0xB0),
+            contact_id: id32(0xB1),
+        },
     );
 }
 
 #[test]
-fn tc_md_009_put_token_absent_parent() {
+fn parentless_put_succeeds_platform_address() {
     let (p, _tmp, _path) = fresh_persister();
-    assert_object_not_found(
-        p.put(
-            &ObjectId::Token {
-                identity_id: id32(0xAD),
-                token_id: id32(0xAE),
-            },
-            "k",
-            b"v",
-        ),
-        ObjectKind::Token,
-    );
-}
-
-#[test]
-fn tc_md_010_put_contact_absent_parent() {
-    let (p, _tmp, _path) = fresh_persister();
-    assert_object_not_found(
-        p.put(
-            &ObjectId::Contact {
-                wallet_id: wid(0xAF),
-                owner_id: id32(0xB0),
-                contact_id: id32(0xB1),
-            },
-            "k",
-            b"v",
-        ),
-        ObjectKind::Contact,
-    );
-}
-
-#[test]
-fn tc_md_011_put_platform_address_absent_parent() {
-    let (p, _tmp, _path) = fresh_persister();
-    assert_object_not_found(
-        p.put(
-            &ObjectId::PlatformAddress {
-                wallet_id: wid(0xB2),
-                address: vec![0x01, 0x02, 0x03],
-            },
-            "k",
-            b"v",
-        ),
-        ObjectKind::PlatformAddress,
+    assert_parentless_put_roundtrips(
+        &p,
+        &ObjectId::PlatformAddress {
+            wallet_id: wid(0xB2),
+            address: vec![0x01, 0x02, 0x03],
+        },
     );
 }
 
@@ -208,7 +185,7 @@ fn tc_md_012_put_global_on_empty_db_is_ok() {
 
 // ---------------------------------------------------------------------
 // QA-002 — delete of a never-existing key is idempotent (returns Ok),
-// for both a no-FK scope and an FK scope.
+// for the Global scope and a typed scope.
 // ---------------------------------------------------------------------
 
 #[test]
@@ -238,8 +215,8 @@ fn list_keys_is_ascending_regardless_of_insert_order() {
 }
 
 // ---------------------------------------------------------------------
-// TC-MD-013..016 — native per-object cascade: seed+put, DELETE FROM the
-// direct parent table, assert the meta row is gone.
+// TC-MD-013..016 — soft cascade via AFTER DELETE trigger: seed+put,
+// DELETE FROM the direct parent table, assert the meta row is gone.
 // ---------------------------------------------------------------------
 
 #[test]
@@ -377,7 +354,8 @@ fn tc_md_017b_cascade_identity_via_wallet() {
         )
         .expect("delete wallet_metadata");
     }
-    // wallet → identities → meta_identity cascade chain.
+    // wallet_metadata delete → identities FK cascade → meta_identity
+    // trigger. Only fires with recursive_triggers = ON.
     assert_eq!(p.get(&scope, "k").unwrap(), None);
 }
 
@@ -526,6 +504,105 @@ fn tc_md_019_delete_wallet_report_counts_meta_tables() {
         !counts.contains_key("meta_global"),
         "meta_global must not appear in the per-wallet delete report"
     );
+}
+
+// ---------------------------------------------------------------------
+// DET scenario — write metadata before the parent exists, read it back,
+// then create the parent (metadata still present), then delete the
+// parent (the AFTER DELETE trigger removes the metadata).
+// ---------------------------------------------------------------------
+
+#[test]
+fn det_write_before_parent_then_create_then_delete() {
+    use rusqlite::params;
+    let (p, _tmp, _path) = fresh_persister();
+    let idy = id32(0x80);
+    let scope = ObjectId::Identity(idy);
+
+    // 1. Write metadata with no parent identity row — succeeds.
+    p.put(&scope, "alias", b"satoshi").unwrap();
+    assert_eq!(
+        p.get(&scope, "alias").unwrap().as_deref(),
+        Some(&b"satoshi"[..])
+    );
+
+    // 2. The parent identity is synced in later — metadata persists.
+    ensure_identity(&p, &idy, None);
+    assert_eq!(
+        p.get(&scope, "alias").unwrap().as_deref(),
+        Some(&b"satoshi"[..])
+    );
+
+    // 3. The parent is deleted — the trigger removes the metadata.
+    {
+        let conn = p.lock_conn_for_test();
+        conn.execute(
+            "DELETE FROM identities WHERE identity_id = ?1",
+            params![&idy[..]],
+        )
+        .expect("delete identity");
+    }
+    assert_eq!(p.get(&scope, "alias").unwrap(), None);
+}
+
+// ---------------------------------------------------------------------
+// recursive_triggers must not break the pre-existing
+// `setnull_core_utxos_on_tx_delete` trigger during delete_wallet: a
+// wallet with core_transactions + core_utxos (a UTXO spent_in that tx)
+// deletes cleanly and leaves nothing behind.
+// ---------------------------------------------------------------------
+
+#[test]
+fn delete_wallet_with_core_tx_and_utxo_stays_consistent() {
+    use rusqlite::params;
+    let (p, _tmp, _path) = fresh_persister();
+    let w = wid(0x82);
+    ensure_wallet_meta(&p, &w);
+
+    let txid = vec![0xABu8; 32];
+    let outpoint = vec![0xCDu8; 36];
+    {
+        let conn = p.lock_conn_for_test();
+        conn.execute(
+            "INSERT INTO core_transactions \
+                (wallet_id, txid, finalized, record_blob) \
+             VALUES (?1, ?2, 1, X'00')",
+            params![w.as_slice(), txid.as_slice()],
+        )
+        .expect("seed core_transactions");
+        conn.execute(
+            "INSERT INTO core_utxos \
+                (wallet_id, outpoint, value, script, account_index, spent, spent_in_txid) \
+             VALUES (?1, ?2, 1000, X'00', 0, 1, ?3)",
+            params![w.as_slice(), outpoint.as_slice(), txid.as_slice()],
+        )
+        .expect("seed core_utxos");
+    }
+
+    p.put(&ObjectId::Wallet(w), "k", b"v").unwrap();
+
+    p.delete_wallet(w).expect("delete_wallet must succeed");
+
+    {
+        let conn = p.lock_conn_for_test();
+        let tx_rows: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM core_transactions WHERE wallet_id = ?1",
+                params![w.as_slice()],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let utxo_rows: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM core_utxos WHERE wallet_id = ?1",
+                params![w.as_slice()],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(tx_rows, 0, "core_transactions must be cascaded away");
+        assert_eq!(utxo_rows, 0, "core_utxos must be cascaded away");
+    }
+    assert_eq!(p.get(&ObjectId::Wallet(w), "k").unwrap(), None);
 }
 
 // ---------------------------------------------------------------------

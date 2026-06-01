@@ -4,9 +4,10 @@
 //! `meta_wallet`, `meta_identity`, `meta_token`, `meta_contact`,
 //! `meta_platform_address`). Each table has a composite PRIMARY KEY of
 //! its id column(s) plus `key`, so uniqueness comes straight from the PK
-//! — no partial indexes, no nullable scope column. `meta_global` is the
-//! only table without a parent FK; the other five `CASCADE` on parent
-//! delete via the native `FOREIGN KEY` declared in `V001__initial.rs`.
+//! — no partial indexes, no nullable scope column. None of the tables
+//! carry an FK: a `put` succeeds before its parent object exists. The
+//! `AFTER DELETE` triggers in `V001__initial.rs` clean a scope's
+//! metadata up when its parent is deleted.
 //!
 //! `match scope` resolves each operation to its table and id-column
 //! bindings; the SQL body (length-precheck read, upsert, delete,
@@ -126,22 +127,6 @@ impl<'a> ScopeSql<'a> {
     }
 }
 
-/// Translate a `rusqlite` error from a `put` into a typed [`KvError`].
-/// A foreign-key violation only arises on the five FK-bearing `meta_*`
-/// tables (every scope except [`ObjectId::Global`]); it is surfaced as
-/// [`KvError::ObjectNotFound`] carrying the scope's [`ObjectKind`] rather
-/// than the raw SQLite error so callers don't inspect extended codes.
-fn classify_put_error(err: rusqlite::Error, scope: &ObjectId) -> KvError {
-    if let rusqlite::Error::SqliteFailure(ffi_err, _) = &err {
-        if ffi_err.extended_code == rusqlite::ffi::SQLITE_CONSTRAINT_FOREIGNKEY {
-            if let Some(kind) = scope.kind() {
-                return KvError::ObjectNotFound { kind };
-            }
-        }
-    }
-    KvError::Sqlite(err)
-}
-
 impl From<WalletStorageError> for KvError {
     fn from(err: WalletStorageError) -> Self {
         match err {
@@ -214,7 +199,7 @@ impl KvStore for SqlitePersister {
         let mut params: Vec<&dyn ToSql> = sql.id_vals.iter().map(|v| v as &dyn ToSql).collect();
         params.push(&key);
         params.push(&value);
-        let res = conn.execute(
+        conn.execute(
             &format!(
                 "INSERT INTO {} ({col_list}, value) VALUES ({value_phs}, ?{value_ph}) \
                  ON CONFLICT({conflict_target}) \
@@ -222,8 +207,8 @@ impl KvStore for SqlitePersister {
                 sql.table
             ),
             params.as_slice(),
-        );
-        res.map(|_| ()).map_err(|e| classify_put_error(e, scope))
+        )?;
+        Ok(())
     }
 
     fn delete(&self, scope: &ObjectId, key: &str) -> Result<(), KvError> {

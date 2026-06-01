@@ -11,11 +11,13 @@
 //! bounded `TEXT` (1..=128 chars).
 //!
 //! Scoping: each [`ObjectId`] variant addresses a dedicated table. The
-//! [`ObjectId::Global`] slot has no parent and survives wallet deletion;
-//! every other variant is anchored to a wallet object and cascades when
-//! that object is removed (natively, via `ON DELETE CASCADE`). The same
-//! key string under different scopes is independent — the scopes live in
-//! separate tables.
+//! [`ObjectId::Global`] slot has no parent and survives wallet deletion.
+//! Every other variant names a wallet object, but a write does NOT
+//! require that object to exist yet — metadata may be attached ahead of
+//! sync. When the object is later deleted, an `AFTER DELETE` trigger on
+//! its parent table removes the matching metadata, so metadata never
+//! outlives its object. The same key string under different scopes is
+//! independent — the scopes live in separate tables.
 //!
 //! This API is **independent of [`platform_wallet::changeset::PlatformWalletPersistence`]**:
 //! KV is for app metadata, not wallet domain state. Reads and writes go
@@ -24,29 +26,14 @@
 
 use platform_wallet::wallet::platform_wallet::WalletId;
 
-/// Object an [`ObjectId`] addresses, identifying which `meta_*` table a
-/// scope maps to. Carried by [`KvError::ObjectNotFound`] so callers can
-/// branch on the missing parent's kind without a wallet id — token and
-/// identity scopes may have no parent wallet at all.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ObjectKind {
-    /// A wallet (`wallet_metadata`).
-    Wallet,
-    /// An identity (`identities`).
-    Identity,
-    /// A token balance (`token_balances`).
-    Token,
-    /// An established contact (`contacts_established`).
-    Contact,
-    /// A platform address (`platform_addresses`).
-    PlatformAddress,
-}
-
 /// Scope of a metadata entry — one variant per dedicated `meta_*` table.
 ///
-/// [`ObjectId::Global`] has no parent and survives wallet deletion; the
-/// other variants anchor metadata to a wallet object via a cascading
-/// foreign key, so the metadata dies natively with its object.
+/// [`ObjectId::Global`] has no parent and survives wallet deletion. The
+/// other variants name a wallet object but carry no insert-time
+/// existence requirement: metadata may be written before its parent
+/// object is synced into its typed table. An `AFTER DELETE` trigger on
+/// each parent removes the matching metadata when the object is deleted,
+/// so metadata never outlives its object.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ObjectId {
     /// Global app metadata; no parent (`meta_global`).
@@ -71,21 +58,6 @@ pub enum ObjectId {
         wallet_id: WalletId,
         address: Vec<u8>,
     },
-}
-
-impl ObjectId {
-    /// The [`ObjectKind`] of this scope, or `None` for
-    /// [`ObjectId::Global`] (which has no parent object).
-    pub fn kind(&self) -> Option<ObjectKind> {
-        match self {
-            ObjectId::Global => None,
-            ObjectId::Wallet(_) => Some(ObjectKind::Wallet),
-            ObjectId::Identity(_) => Some(ObjectKind::Identity),
-            ObjectId::Token { .. } => Some(ObjectKind::Token),
-            ObjectId::Contact { .. } => Some(ObjectKind::Contact),
-            ObjectId::PlatformAddress { .. } => Some(ObjectKind::PlatformAddress),
-        }
-    }
 }
 
 /// Maximum allowed key length. Enforced in Rust as a **byte**-length
@@ -123,14 +95,6 @@ pub enum KvError {
     #[error("kv value too large: {found} bytes (max {max})")]
     ValueTooLarge { found: usize, max: usize },
 
-    /// A scoped `put` referenced a parent object that has no row in its
-    /// table (an FK violation on a `meta_*` insert). Carries the
-    /// [`ObjectKind`] rather than a wallet id, since token/identity
-    /// scopes may have no parent wallet. [`ObjectId::Global`] never
-    /// raises this — `meta_global` has no FK.
-    #[error("object not found for kv put: {kind:?}")]
-    ObjectNotFound { kind: ObjectKind },
-
     /// Backend-specific SQLite failure.
     #[error("sqlite error")]
     Sqlite(#[from] rusqlite::Error),
@@ -154,9 +118,9 @@ pub trait KvStore {
 
     /// Insert or overwrite the value bound to `(scope, key)`. Upserts
     /// via `INSERT … ON CONFLICT(…) DO UPDATE` — repeat puts of the same
-    /// key replace the previous value. A non-[`ObjectId::Global`] scope
-    /// whose parent object is absent fails with
-    /// [`KvError::ObjectNotFound`].
+    /// key replace the previous value. Succeeds even when the scope's
+    /// parent object does not exist yet; an `AFTER DELETE` trigger cleans
+    /// the metadata up if that object is later removed.
     fn put(&self, scope: &ObjectId, key: &str, value: &[u8]) -> Result<(), KvError>;
 
     /// Remove the row bound to `(scope, key)`. Idempotent — a missing
