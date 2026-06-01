@@ -21,7 +21,8 @@ use dash_spv::client::config::MempoolStrategy;
 use dash_spv::network::NetworkEvent;
 use dash_spv::sync::{ManagerIdentifier, ProgressPercentage, SyncEvent, SyncState};
 use dash_spv::types::ValidationMode;
-use dash_spv::ClientConfig;
+use dash_spv::{ClientConfig, DevnetConfig};
+use dashcore::sml::llmq_type::LlmqDevnetParams;
 use dashcore::Network;
 use platform_wallet::events::{EventHandler, PlatformEventHandler, WalletEvent};
 use platform_wallet::{changeset::PlatformWalletPersistence, PlatformWalletManager, SpvRuntime};
@@ -433,6 +434,27 @@ fn build_client_config(
         .with_mempool_tracking(MempoolStrategy::BloomFilter);
 
     seed_p2p_peers(&mut client_config, config, address_list);
+
+    if network == Network::Devnet {
+        // Mirrors packages/rs-platform-wallet-ffi/src/spv.rs:306-358 (devnet handshake + LLMQ).
+        // Dash Core devnet peers drop any inbound connection whose user agent
+        // lacks `devnet.devnet-<name>`; rebuild it in the FFI's exact
+        // `/<base>(devnet.devnet-<name>)/` shape.
+        let base = client_config
+            .user_agent
+            .clone()
+            .unwrap_or_else(|| format!("platform-wallet-e2e:{}", env!("CARGO_PKG_VERSION")));
+        client_config.user_agent = Some(format!("/{base}(devnet.devnet-{})/", config.devnet_name));
+
+        let mut devnet = DevnetConfig::new(config.devnet_name.clone());
+        if config.devnet_llmq_size > 0 {
+            devnet.llmq_params = Some(LlmqDevnetParams {
+                size: config.devnet_llmq_size,
+                threshold: config.devnet_llmq_threshold,
+            });
+        }
+        client_config.devnet = Some(devnet);
+    }
 
     // TODO(porter-live-run): SPV P2P handshake to porter devnet is refused —
     // dash-spv (rev cfb01fa) advertises PROTOCOL_VERSION 70237 but porter Dash
