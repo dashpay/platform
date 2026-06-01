@@ -152,32 +152,35 @@ impl KvStore for SqlitePersister {
         // Bind the id values then the key in placeholder order.
         let mut params: Vec<&dyn ToSql> = sql.id_vals.iter().map(|v| v as &dyn ToSql).collect();
         params.push(&key);
-        // Two-step read: pull `length(value)` first so a tampered or
-        // corrupted row that exceeds `MAX_VALUE_LEN` cannot force a
-        // multi-gigabyte allocation when we materialise the blob. CMT-006.
-        let len: Option<i64> = conn
+        // Single-snapshot read: select `length(value)` and `value` in one
+        // row. The length (column 0) is checked against `MAX_VALUE_LEN`
+        // before `row.get(1)` materialises the BLOB — rusqlite reads the
+        // BLOB lazily on that call, so the cap still gates the allocation,
+        // now without a cross-snapshot TOCTOU window (CMT-001/006). The
+        // inner `Result` carries the over-cap length out of the closure
+        // without ever touching column 1.
+        let row: Option<Result<Vec<u8>, usize>> = conn
             .query_row(
-                &format!("SELECT length(value) FROM {} {where_key}", sql.table),
+                &format!("SELECT length(value), value FROM {} {where_key}", sql.table),
                 params.as_slice(),
-                |row| row.get::<_, i64>(0),
+                |row| {
+                    let len = row.get::<_, i64>(0)?;
+                    let found = usize::try_from(len.max(0)).unwrap_or(usize::MAX);
+                    if found > MAX_VALUE_LEN {
+                        return Ok(Err(found));
+                    }
+                    Ok(Ok(row.get::<_, Vec<u8>>(1)?))
+                },
             )
             .optional()?;
-        let Some(len) = len else { return Ok(None) };
-        let found = usize::try_from(len.max(0)).unwrap_or(usize::MAX);
-        if found > MAX_VALUE_LEN {
-            return Err(KvError::ValueTooLarge {
+        match row {
+            None => Ok(None),
+            Some(Ok(value)) => Ok(Some(value)),
+            Some(Err(found)) => Err(KvError::ValueTooLarge {
                 found,
                 max: MAX_VALUE_LEN,
-            });
+            }),
         }
-        let value = conn
-            .query_row(
-                &format!("SELECT value FROM {} {where_key}", sql.table),
-                params.as_slice(),
-                |row| row.get::<_, Vec<u8>>(0),
-            )
-            .optional()?;
-        Ok(value)
     }
 
     fn put(&self, scope: &ObjectId, key: &str, value: &[u8]) -> Result<(), KvError> {
