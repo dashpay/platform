@@ -469,13 +469,18 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     if  [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then \
     mv .cargo/config-release.toml .cargo/config.toml; \
     fi && \
+    FEATURES_LIST=""; \
     if [[ -n "${ADDITIONAL_FEATURES_TRIMMED}" ]]; then \
-    export FEATURES_FLAG="--features=${ADDITIONAL_FEATURES_TRIMMED}"; \
+    FEATURES_LIST="${ADDITIONAL_FEATURES_TRIMMED}"; \
     fi && \
     if [ "${SHIELDED_TEST_DATA}" == "true" ]; then \
     mv .cargo/config-shielded-test-data.toml .cargo/config.toml; \
+    FEATURES_LIST="${FEATURES_LIST:+${FEATURES_LIST},}unsafe-dump-load"; \
     elif [ "${SDK_TEST_DATA}" == "true" ]; then \
     mv .cargo/config-test-sdk-data.toml .cargo/config.toml; \
+    fi && \
+    if [[ -n "${FEATURES_LIST}" ]]; then \
+    export FEATURES_FLAG="--features=${FEATURES_LIST}"; \
     fi && \
     cargo chef cook \
     --recipe-path recipe.json \
@@ -556,13 +561,18 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     else \
     export OUT_DIRECTORY=debug; \
     fi && \
+    FEATURES_LIST=""; \
     if [[ -n "${ADDITIONAL_FEATURES_TRIMMED}" ]]; then \
-    export FEATURES_FLAG="--features=${ADDITIONAL_FEATURES_TRIMMED}"; \
+    FEATURES_LIST="${ADDITIONAL_FEATURES_TRIMMED}"; \
     fi && \
     if [ "${SHIELDED_TEST_DATA}" == "true" ]; then \
     mv .cargo/config-shielded-test-data.toml .cargo/config.toml; \
+    FEATURES_LIST="${FEATURES_LIST:+${FEATURES_LIST},}unsafe-dump-load"; \
     elif [ "${SDK_TEST_DATA}" == "true" ]; then \
     mv .cargo/config-test-sdk-data.toml .cargo/config.toml; \
+    fi && \
+    if [[ -n "${FEATURES_LIST}" ]]; then \
+    export FEATURES_FLAG="--features=${FEATURES_LIST}"; \
     fi && \
     # Workaround: as we cache dapi-grpc, its build.rs is not rerun, so we need to touch it
     echo "// $(date) " >> /platform/packages/dapi-grpc/build.rs && \

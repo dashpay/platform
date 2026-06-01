@@ -437,8 +437,7 @@ impl<C> Platform<C> {
 
             // Commit the subtree's data_batch through the transaction —
             // makes all the BulkAppendTree / frontier writes visible to
-            // subsequent reads (including replace_commitment_tree_subtree_root's
-            // own batch).
+            // subsequent reads (including replace_subtree_root's own batch).
             self.drive
                 .grove
                 .raw_storage()
@@ -451,14 +450,17 @@ impl<C> Platform<C> {
                 })?;
 
             // --- Update parent Merk leaf with the new state ---
+            let new_element = drive::grovedb::Element::new_commitment_tree(
+                u64::from(cfg.total_notes),
+                chunk_power,
+                flags,
+            );
             self.drive
                 .grove
-                .replace_commitment_tree_subtree_root(
+                .replace_subtree_root(
                     parent_path,
                     leaf_key,
-                    u64::from(cfg.total_notes),
-                    chunk_power,
-                    flags,
+                    new_element,
                     combined_root,
                     Some(tx),
                     &platform_version.drive.grove_version,
@@ -466,7 +468,7 @@ impl<C> Platform<C> {
                 .value
                 .map_err(|e| {
                     Error::Execution(ExecutionError::CorruptedCodeExecution(Box::leak(
-                        format!("seed: replace_commitment_tree_subtree_root: {e}").into_boxed_str(),
+                        format!("seed: replace_subtree_root: {e}").into_boxed_str(),
                     )))
                 })?;
 
