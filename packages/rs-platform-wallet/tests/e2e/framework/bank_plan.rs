@@ -26,7 +26,9 @@ use dpp::fee::Credits;
 
 use super::bank::BankWallet;
 use super::bank_identity::BankIdentity;
-use super::bank_rebalance::{self, CREDITS_PER_DUFF};
+use super::bank_rebalance::{
+    self, bootstrap_lock_duff, CREDITS_PER_DUFF, PLATFORM_BOOTSTRAP_FEE_RESERVE,
+};
 use super::config::Config;
 use super::{FrameworkError, FrameworkResult};
 
@@ -144,12 +146,6 @@ pub struct InsufficientFunds {
     pub shortfalls: Vec<TypeShortfall>,
 }
 
-/// Fee reserve (credits) kept on Platform when sizing the E5 bootstrap so
-/// the post-bootstrap Platform balance can still pay the leaf-funding
-/// transition fees. Generous; the bootstrap is a once-per-fresh-network
-/// event.
-const PLATFORM_BOOTSTRAP_FEE_RESERVE: Credits = 100_000_000;
-
 /// Compute the cost-ordered plan from measured balances + minimums.
 ///
 /// Pure and deterministic — no I/O. Returns the ordered [`Move`]s to run
@@ -184,7 +180,7 @@ pub fn plan(balances: Balances, mins: Mins) -> Result<Vec<Move>, InsufficientFun
         let want_credits = platform_deficit.saturating_add(PLATFORM_BOOTSTRAP_FEE_RESERVE);
         let lock_credits = want_credits.min(core_surplus_credits);
         if lock_credits >= platform_deficit && lock_credits > 0 {
-            let amount_duff = lock_credits / CREDITS_PER_DUFF;
+            let amount_duff = bootstrap_lock_duff(0, lock_credits);
             if amount_duff > 0 {
                 moves.push(Move::AssetLockCoreToPlatform { amount_duff });
                 platform_spendable =
