@@ -60,8 +60,7 @@ use dapi_grpc::platform::v0::{
     get_recent_compacted_address_balance_changes_request, GetAddressesBranchStateRequest,
     GetRecentAddressBalanceChangesRequest, GetRecentCompactedAddressBalanceChangesRequest, Proof,
 };
-use dpp::address_funds::PlatformAddress;
-use dpp::balances::credits::{BlockAwareCreditOperation, CreditOperation, Credits};
+use dpp::balances::credits::{BlockAwareCreditOperation, CreditOperation};
 use dpp::prelude::AddressNonce;
 use dpp::version::PlatformVersion;
 use drive::drive::{Drive, RootTree};
@@ -73,7 +72,7 @@ use rs_dapi_client::{
     DapiRequest, ExecutionError, ExecutionResponse, InnerInto, IntoInner, RequestSettings,
 };
 use std::collections::HashMap;
-use tracing::{debug, info, trace, warn};
+use tracing::{debug, info, trace};
 
 /// Server limit for compacted address balance changes per request.
 const COMPACTED_BATCH_LIMIT: usize = 25;
@@ -459,11 +458,8 @@ async fn incremental_catch_up<P: AddressProvider>(
     settings: RequestSettings,
 ) -> Result<(), Error> {
     // `key_to_tag` is already keyed by raw GroveDB bytes with
-    // `(tag, address)` values. Found-025: take an owned, refreshable copy
-    // so a balance change for an address derived *after* the entry-time
-    // snapshot can still be resolved by re-polling `pending_addresses()`
-    // mid-pass (mirrors `after_branch_iteration`'s tree-scan refresh).
-    let mut address_lookup: HashMap<Vec<u8>, (P::Tag, P::Address)> = key_to_tag.clone();
+    // `(tag, address)` values, so it can serve as the lookup directly.
+    let address_lookup = key_to_tag;
 
     let mut current_height = start_height;
     let mut observed_tip_height = start_height;
@@ -618,17 +614,39 @@ async fn incremental_catch_up<P: AddressProvider>(
             result.metrics.compacted_entries_returned += entry_count;
 
             for entry in &entries {
-                apply_block_changes(
-                    &mut address_lookup,
-                    entry
-                        .changes
-                        .iter()
-                        .map(|(a, op)| (a, AddressBalanceChange::Compacted(op))),
-                    current_height,
-                    provider,
-                    result,
-                )
-                .await;
+                for (platform_addr, credit_op) in &entry.changes {
+                    let addr_bytes = platform_addr.to_bytes();
+                    if let Some(&(tag, address)) = address_lookup.get(&addr_bytes) {
+                        let result_key = (tag, address);
+                        let current_balance = result
+                            .found
+                            .get(&result_key)
+                            .map(|f| f.balance)
+                            .unwrap_or(0);
+
+                        let new_balance = match credit_op {
+                            BlockAwareCreditOperation::SetCredits(credits) => *credits,
+                            BlockAwareCreditOperation::AddToCreditsOperations(operations) => {
+                                let total_to_add: u64 = operations
+                                    .iter()
+                                    .filter(|(height, _)| **height >= current_height)
+                                    .map(|(_, credits)| *credits)
+                                    .fold(0u64, |acc, c| acc.saturating_add(c));
+                                current_balance.saturating_add(total_to_add)
+                            }
+                        };
+
+                        if new_balance != current_balance {
+                            let nonce = result.found.get(&result_key).map(|f| f.nonce).unwrap_or(0);
+                            let funds = AddressFunds {
+                                nonce,
+                                balance: new_balance,
+                            };
+                            result.found.insert(result_key, funds);
+                            provider.on_address_found(tag, &address, funds).await;
+                        }
+                    }
+                }
 
                 if entry.end_block_height.saturating_add(1) > current_height {
                     current_height = entry.end_block_height.saturating_add(1);
@@ -659,17 +677,34 @@ async fn incremental_catch_up<P: AddressProvider>(
                 highest_recent_block = entry.block_height;
             }
 
-            apply_block_changes(
-                &mut address_lookup,
-                entry
-                    .changes
-                    .iter()
-                    .map(|(a, op)| (a, AddressBalanceChange::Recent(op))),
-                current_height,
-                provider,
-                result,
-            )
-            .await;
+            for (platform_addr, credit_op) in &entry.changes {
+                let addr_bytes = platform_addr.to_bytes();
+                if let Some(&(tag, address)) = address_lookup.get(&addr_bytes) {
+                    let result_key = (tag, address);
+                    let current_balance = result
+                        .found
+                        .get(&result_key)
+                        .map(|f| f.balance)
+                        .unwrap_or(0);
+
+                    let new_balance = match credit_op {
+                        CreditOperation::SetCredits(credits) => *credits,
+                        CreditOperation::AddToCredits(credits) => {
+                            current_balance.saturating_add(*credits)
+                        }
+                    };
+
+                    if new_balance != current_balance {
+                        let nonce = result.found.get(&result_key).map(|f| f.nonce).unwrap_or(0);
+                        let funds = AddressFunds {
+                            nonce,
+                            balance: new_balance,
+                        };
+                        result.found.insert(result_key, funds);
+                        provider.on_address_found(tag, &address, funds).await;
+                    }
+                }
+            }
 
             if entry.block_height.saturating_add(1) > current_height {
                 current_height = entry.block_height.saturating_add(1);
@@ -686,198 +721,6 @@ async fn incremental_catch_up<P: AddressProvider>(
     // this stays at 0 and the next sync falls back to RangeFrom (inclusive).
     result.last_known_recent_block = highest_recent_block;
     Ok(())
-}
-
-// ── Pure changes-application seam (Found-025) ─────────────────────────
-
-/// A single address balance change, abstracting the recent (`CreditOperation`)
-/// and compacted (`BlockAwareCreditOperation`) shapes so one pure function can
-/// apply both phases identically.
-#[derive(Clone, Copy)]
-pub(crate) enum AddressBalanceChange<'a> {
-    /// A recent (per-block) credit operation.
-    Recent(&'a CreditOperation),
-    /// A compacted (block-range) credit operation.
-    Compacted(&'a BlockAwareCreditOperation),
-}
-
-impl AddressBalanceChange<'_> {
-    /// Resolve the post-change balance given the address's current balance and
-    /// the catch-up cursor height. Mirrors the two original inline loops
-    /// exactly (compacted height-filtered sum vs. recent flat add).
-    fn new_balance(&self, current_balance: Credits, current_height: u64) -> Credits {
-        match self {
-            AddressBalanceChange::Recent(op) => match op {
-                CreditOperation::SetCredits(credits) => *credits,
-                CreditOperation::AddToCredits(credits) => current_balance.saturating_add(*credits),
-            },
-            AddressBalanceChange::Compacted(op) => match op {
-                BlockAwareCreditOperation::SetCredits(credits) => *credits,
-                BlockAwareCreditOperation::AddToCreditsOperations(operations) => {
-                    let total_to_add: u64 = operations
-                        .iter()
-                        .filter(|(height, _)| **height >= current_height)
-                        .map(|(_, credits)| *credits)
-                        .fold(0u64, |acc, c| acc.saturating_add(c));
-                    current_balance.saturating_add(total_to_add)
-                }
-            },
-        }
-    }
-}
-
-/// Outcome of applying one block's address balance changes.
-///
-/// Carries the applied updates (so the caller can drive the async
-/// `on_address_found` callback outside this pure function) and — the
-/// Found-025 fix — the addresses the platform reported a change for but
-/// that were absent from the lookup snapshot, so they are never silently
-/// discarded.
-pub(crate) struct AppliedAddressChanges<Tag, Address> {
-    /// `(tag, address, funds)` triples whose balance actually moved.
-    pub applied: Vec<(Tag, Address, AddressFunds)>,
-    /// Raw GroveDB key bytes the platform returned a change for but which
-    /// were not in `address_lookup` (post-snapshot / unregistered).
-    pub unknown: Vec<Vec<u8>>,
-}
-
-/// Apply one block's worth of address balance changes against the lookup.
-///
-/// Pure: no `Sdk`, no network, no async. Updates `result.found` for every
-/// changed known address and returns the applied triples plus any unknown
-/// addresses (Found-025: the unknown set makes a post-snapshot address
-/// observable instead of silently dropped).
-///
-/// `current_height` is the catch-up cursor used by the compacted height
-/// filter; it is ignored for recent changes.
-pub(crate) fn apply_address_changes<'a, Tag, Address, I>(
-    address_lookup: &HashMap<Vec<u8>, (Tag, Address)>,
-    changes: I,
-    current_height: u64,
-    result: &mut AddressSyncResult<Tag, Address>,
-) -> AppliedAddressChanges<Tag, Address>
-where
-    Tag: Copy + Ord,
-    Address: AddressToBytes,
-    I: IntoIterator<Item = (&'a PlatformAddress, AddressBalanceChange<'a>)>,
-{
-    let mut applied = Vec::new();
-    let mut unknown = Vec::new();
-
-    for (platform_addr, change) in changes {
-        let addr_bytes = platform_addr.to_bytes();
-        if let Some(&(tag, address)) = address_lookup.get(&addr_bytes) {
-            let result_key = (tag, address);
-            let current_balance = result
-                .found
-                .get(&result_key)
-                .map(|f| f.balance)
-                .unwrap_or(0);
-
-            let new_balance = change.new_balance(current_balance, current_height);
-
-            if new_balance != current_balance {
-                let nonce = result.found.get(&result_key).map(|f| f.nonce).unwrap_or(0);
-                let funds = AddressFunds {
-                    nonce,
-                    balance: new_balance,
-                };
-                result.found.insert(result_key, funds);
-                applied.push((tag, address, funds));
-            }
-        } else {
-            // Found-025: the platform returned a chain-confirmed balance
-            // change for an address absent from the pre-RPC snapshot. The
-            // old code dropped it silently (no else). Surface it so the
-            // caller can refresh the lookup and re-apply instead.
-            unknown.push(addr_bytes);
-        }
-    }
-
-    AppliedAddressChanges { applied, unknown }
-}
-
-/// Apply one block's changes, drive the provider's `on_address_found`
-/// callbacks, and — Found-025 — recover addresses missing from the
-/// snapshot by re-polling `pending_addresses()` and applying only the
-/// previously-unknown changes.
-///
-/// `changes` is collected once so the unknown subset can be replayed
-/// after a refresh. Known addresses behave exactly as before: they are
-/// applied in the first pass and excluded from the replay, so a delta
-/// (`AddToCredits`) is never double-counted. An address the platform
-/// reported but that is still unknown after the refresh is logged at
-/// `warn` (observable, never silently dropped).
-async fn apply_block_changes<'a, P, I>(
-    address_lookup: &mut HashMap<Vec<u8>, (P::Tag, P::Address)>,
-    changes: I,
-    current_height: u64,
-    provider: &mut P,
-    result: &mut AddressSyncResult<P::Tag, P::Address>,
-) where
-    P: AddressProvider,
-    I: IntoIterator<Item = (&'a PlatformAddress, AddressBalanceChange<'a>)>,
-{
-    let changes: Vec<(&PlatformAddress, AddressBalanceChange<'_>)> = changes.into_iter().collect();
-
-    let outcome = apply_address_changes(
-        address_lookup,
-        changes.iter().map(|(a, c)| (*a, *c)),
-        current_height,
-        result,
-    );
-    for (tag, address, funds) in &outcome.applied {
-        provider.on_address_found(*tag, address, *funds).await;
-    }
-
-    if outcome.unknown.is_empty() {
-        return;
-    }
-
-    // Found-025: the platform returned chain-confirmed balance changes for
-    // addresses absent from the entry-time snapshot. Re-poll the provider
-    // (a fresh receive address may have been derived mid-pass), then apply
-    // ONLY the previously-unknown subset so already-applied known
-    // addresses are not re-processed (delta double-count safe).
-    let before = address_lookup.len();
-    for (tag, address) in provider.pending_addresses() {
-        address_lookup
-            .entry(address.to_bytes())
-            .or_insert((tag, address));
-    }
-
-    if address_lookup.len() == before {
-        warn!(
-            "Address sync: {} platform-reported balance change(s) reference address(es) \
-             absent from the provider snapshot and the refresh found no new addresses; \
-             they will be resolved on the next full sync (Found-025)",
-            outcome.unknown.len()
-        );
-        return;
-    }
-
-    let unknown: std::collections::HashSet<&[u8]> =
-        outcome.unknown.iter().map(|b| b.as_slice()).collect();
-    let replay = apply_address_changes(
-        address_lookup,
-        changes
-            .iter()
-            .filter(|(a, _)| unknown.contains(a.to_bytes().as_slice()))
-            .map(|(a, c)| (*a, *c)),
-        current_height,
-        result,
-    );
-    for (tag, address, funds) in &replay.applied {
-        provider.on_address_found(*tag, address, *funds).await;
-    }
-    if !replay.unknown.is_empty() {
-        warn!(
-            "Address sync: {} platform-reported balance change(s) still reference \
-             address(es) absent from the provider snapshot after refresh; they \
-             will be resolved on the next full sync (Found-025)",
-            replay.unknown.len()
-        );
-    }
 }
 
 /// Extract the highest block height from the recent tree boundaries in the proof.
@@ -1536,271 +1379,6 @@ mod tests {
         assert!(
             matches!(err, Error::InvalidProvedResponse(ref msg) if msg.contains("balance")),
             "expected balance conversion error, got: {err:?}"
-        );
-    }
-
-    // ── Found-025 regression guards ──────────────────────────────────
-    //
-    // Found-025: `incremental_catch_up` built `key_to_tag` once from a
-    // single pre-RPC `pending_addresses()` snapshot and the apply loops
-    // had no `else` on the lookup miss — a balance change the platform
-    // returned for an address derived *after* the snapshot was silently
-    // dropped (no log, no metric, `result.found` never got it). These
-    // tests pin the corrected behavior via the pure `pub(crate)` seam,
-    // no `Sdk`/proof/network needed. Pre-fix logic had no `unknown`
-    // channel and no provider refresh, so both tests below would fail
-    // on the old code (the post-snapshot address would never surface).
-
-    use dpp::address_funds::PlatformAddress;
-    use dpp::balances::credits::{BlockAwareCreditOperation, CreditOperation};
-
-    fn p2pkh(byte: u8) -> PlatformAddress {
-        PlatformAddress::P2pkh([byte; 20])
-    }
-
-    /// Pure-seam guard: a balance change for an address absent from the
-    /// stale lookup is surfaced via `unknown` (never silently dropped),
-    /// while a known address still applies exactly as before.
-    #[test]
-    fn found_025_apply_address_changes_surfaces_unknown_address() {
-        let known = p2pkh(0xAA);
-        let post_snapshot = p2pkh(0xBB);
-
-        // Stale snapshot: contains `known`, MISSING `post_snapshot`
-        // (derived after the snapshot was taken).
-        let mut lookup: HashMap<Vec<u8>, (u32, PlatformAddress)> = HashMap::new();
-        lookup.insert(known.to_bytes(), (1u32, known));
-
-        let mut result: AddressSyncResult<u32, PlatformAddress> = AddressSyncResult::new();
-
-        let known_op = CreditOperation::SetCredits(5_000);
-        let post_op = CreditOperation::SetCredits(9_000);
-        let changes = [
-            (&known, AddressBalanceChange::Recent(&known_op)),
-            (&post_snapshot, AddressBalanceChange::Recent(&post_op)),
-        ];
-
-        let outcome = apply_address_changes(
-            &lookup,
-            changes.iter().map(|(a, c)| (*a, *c)),
-            0,
-            &mut result,
-        );
-
-        // Known address: applied exactly as the old inline loop did.
-        assert_eq!(
-            result.found.get(&(1u32, known)).map(|f| f.balance),
-            Some(5_000),
-            "known address must still apply identically (no regression)"
-        );
-        assert_eq!(
-            outcome.applied,
-            vec![(
-                1u32,
-                known,
-                AddressFunds {
-                    nonce: 0,
-                    balance: 5_000
-                }
-            )]
-        );
-
-        // Found-025: the post-snapshot address is NOT silently dropped —
-        // it is reported in `unknown`. Pre-fix there was no `unknown`
-        // channel at all, so this assertion could not even be written
-        // and the change vanished without a trace.
-        assert_eq!(
-            outcome.unknown,
-            vec![post_snapshot.to_bytes()],
-            "post-snapshot address must be observable, not silently discarded"
-        );
-        assert!(
-            !result.found.contains_key(&(2u32, post_snapshot)),
-            "unresolved address must not be applied with a guessed tag"
-        );
-    }
-
-    /// End-to-end guard through `apply_block_changes`: a provider that
-    /// derives a fresh address mid-pass (so the entry-time lookup misses
-    /// it) gets the balance applied AND `on_address_found` fired after
-    /// the in-pass refresh. This is the exact Found-025 scenario.
-    #[tokio::test]
-    async fn found_025_apply_block_changes_recovers_post_snapshot_address() {
-        use async_trait::async_trait;
-
-        struct GrowingProvider {
-            // The address was derived mid-pass — *after* the entry-time
-            // snapshot (the empty `lookup` passed in) but before the
-            // Found-025 refresh poll, so `pending_addresses()` yields it.
-            late: PlatformAddress,
-            found: Vec<(u32, PlatformAddress, AddressFunds)>,
-        }
-
-        #[async_trait]
-        impl AddressProvider for GrowingProvider {
-            type Tag = u32;
-            type Address = PlatformAddress;
-
-            fn gap_limit(&self) -> AddressIndex {
-                0
-            }
-
-            fn pending_addresses(&self) -> impl Iterator<Item = (Self::Tag, Self::Address)> + '_ {
-                std::iter::once((7u32, self.late))
-            }
-
-            async fn on_address_found(
-                &mut self,
-                tag: Self::Tag,
-                address: &Self::Address,
-                funds: AddressFunds,
-            ) {
-                self.found.push((tag, *address, funds));
-            }
-
-            async fn on_address_absent(&mut self, _tag: Self::Tag, _address: &Self::Address) {}
-
-            fn current_balances(
-                &self,
-            ) -> impl Iterator<Item = (Self::Tag, Self::Address, AddressFunds)> + '_ {
-                std::iter::empty()
-            }
-        }
-
-        let late = p2pkh(0xCD);
-
-        // Entry-time snapshot (built before the RPC) is empty — exactly
-        // the Found-025 race window: `late` was derived after this.
-        let mut lookup: HashMap<Vec<u8>, (u32, PlatformAddress)> = HashMap::new();
-
-        let mut provider = GrowingProvider {
-            late,
-            found: Vec::new(),
-        };
-        let mut result: AddressSyncResult<u32, PlatformAddress> = AddressSyncResult::new();
-
-        // The platform returns a chain-confirmed balance for `late`.
-        let op = BlockAwareCreditOperation::SetCredits(42_000);
-        let changes = [(&late, AddressBalanceChange::Compacted(&op))];
-
-        apply_block_changes(
-            &mut lookup,
-            changes.iter().map(|(a, c)| (*a, *c)),
-            0,
-            &mut provider,
-            &mut result,
-        )
-        .await;
-
-        // Pre-fix: `late` absent from the snapshot → silently dropped:
-        // `result.found` empty, `on_address_found` never called.
-        // Post-fix: the in-pass refresh picks `late` up and the change
-        // is applied and surfaced.
-        assert_eq!(
-            result.found.get(&(7u32, late)).map(|f| f.balance),
-            Some(42_000),
-            "post-snapshot address balance must be applied after refresh (Found-025)"
-        );
-        assert!(
-            provider
-                .found
-                .iter()
-                .any(|(t, a, f)| *t == 7 && *a == late && f.balance == 42_000),
-            "on_address_found must fire for the recovered post-snapshot address"
-        );
-    }
-
-    /// The Found-025 refresh must not double-count a known address's
-    /// `AddToCredits` delta when it replays the unknown subset in the
-    /// same block (the replay must exclude already-applied addresses).
-    #[tokio::test]
-    async fn found_025_known_delta_not_double_counted_on_refresh() {
-        use async_trait::async_trait;
-
-        let known = p2pkh(0x11);
-        let late = p2pkh(0x22);
-
-        struct GrowingProvider {
-            late: PlatformAddress,
-        }
-
-        #[async_trait]
-        impl AddressProvider for GrowingProvider {
-            type Tag = u32;
-            type Address = PlatformAddress;
-
-            fn gap_limit(&self) -> AddressIndex {
-                0
-            }
-
-            fn pending_addresses(&self) -> impl Iterator<Item = (Self::Tag, Self::Address)> + '_ {
-                std::iter::once((9u32, self.late))
-            }
-
-            async fn on_address_found(
-                &mut self,
-                _tag: Self::Tag,
-                _address: &Self::Address,
-                _funds: AddressFunds,
-            ) {
-            }
-
-            async fn on_address_absent(&mut self, _tag: Self::Tag, _address: &Self::Address) {}
-
-            fn current_balances(
-                &self,
-            ) -> impl Iterator<Item = (Self::Tag, Self::Address, AddressFunds)> + '_ {
-                std::iter::empty()
-            }
-        }
-
-        // `known` is in the snapshot with a starting balance; `late` is
-        // not (post-snapshot) and forces the refresh + replay path.
-        let mut lookup: HashMap<Vec<u8>, (u32, PlatformAddress)> = HashMap::new();
-        lookup.insert(known.to_bytes(), (3u32, known));
-
-        let mut result: AddressSyncResult<u32, PlatformAddress> = AddressSyncResult::new();
-        result.found.insert(
-            (3u32, known),
-            AddressFunds {
-                nonce: 0,
-                balance: 1_000,
-            },
-        );
-
-        let mut provider = GrowingProvider { late };
-
-        // Same block: a +500 delta for the known address, and a set for
-        // the post-snapshot address (the latter triggers the replay).
-        let known_op = BlockAwareCreditOperation::AddToCreditsOperations(
-            std::iter::once((0u64, 500u64)).collect(),
-        );
-        let late_op = BlockAwareCreditOperation::SetCredits(7_000);
-        let changes = [
-            (&known, AddressBalanceChange::Compacted(&known_op)),
-            (&late, AddressBalanceChange::Compacted(&late_op)),
-        ];
-
-        apply_block_changes(
-            &mut lookup,
-            changes.iter().map(|(a, c)| (*a, *c)),
-            0,
-            &mut provider,
-            &mut result,
-        )
-        .await;
-
-        // Known delta applied exactly once: 1000 + 500 (NOT 1000 + 500 +
-        // 500). The replay must skip the already-applied known address.
-        assert_eq!(
-            result.found.get(&(3u32, known)).map(|f| f.balance),
-            Some(1_500),
-            "known AddToCredits delta must apply exactly once across refresh"
-        );
-        assert_eq!(
-            result.found.get(&(9u32, late)).map(|f| f.balance),
-            Some(7_000),
-            "post-snapshot address still recovered after refresh"
         );
     }
 }

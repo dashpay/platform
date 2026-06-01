@@ -41,6 +41,53 @@ pub trait PlatformEventHandler: EventHandler {
     /// [`ShieldedSyncManager`]: crate::manager::shielded_sync::ShieldedSyncManager
     #[cfg(feature = "shielded")]
     fn on_shielded_sync_completed(&self, _summary: &ShieldedSyncPassSummary) {}
+
+    /// Fired periodically during a shielded sync pass — once per
+    /// completed chunk inside `sync_shielded_notes`. Carries the
+    /// cumulative count of encrypted notes scanned so far in the
+    /// current pass and the latest block height observed.
+    ///
+    /// Network-scoped, not per-wallet: a single sync pass covers
+    /// every IVK on the coordinator, so the "wallet that's
+    /// progressing" isn't a meaningful concept at this granularity.
+    /// Clients that bind a single wallet at a time can scope
+    /// per-wallet from context.
+    ///
+    /// Lets clients render a live progress counter / `ProgressView`
+    /// during long initial syncs (a cold sync of a 1M-note pool can
+    /// take 20+ min in a single `sync_shielded_notes` call; without
+    /// this event there's no signal between start and end).
+    ///
+    /// Default impl is a no-op.
+    #[cfg(feature = "shielded")]
+    fn on_shielded_sync_progress(&self, _cumulative_scanned: u64, _block_height: u64) {}
+
+    /// Fired periodically during a shielded sync pass — once per
+    /// committed batch as decrypted commitments are appended to the
+    /// local Orchard commitment tree. This is the "checked /
+    /// committed-to-tree" signal, distinct from
+    /// [`on_shielded_sync_progress`](Self::on_shielded_sync_progress)
+    /// (which counts *downloaded* notes): a note is only "checked"
+    /// once its commitment has been appended to the tree.
+    ///
+    /// `leaves_committed` is the cumulative tree leaf count (starts at
+    /// the pre-sync tree size and grows as commitments are appended).
+    /// `total_target` is the on-chain MMR total leaf count, fetched
+    /// once at pass start; `total_target == 0` means the count RPC
+    /// was unavailable, so the progress is **indeterminate** and the
+    /// host should render a spinner rather than a determinate bar.
+    ///
+    /// Network-scoped, not per-wallet: a single sync pass covers
+    /// every IVK on the coordinator, so the "wallet that's
+    /// progressing" isn't a meaningful concept at this granularity.
+    ///
+    /// Pairs with `on_shielded_sync_progress` to drive a dual
+    /// ProgressView ("downloaded" vs "checked") during long cold
+    /// syncs.
+    ///
+    /// Default impl is a no-op.
+    #[cfg(feature = "shielded")]
+    fn on_shielded_tree_progress(&self, _leaves_committed: u64, _total_target: u64) {}
 }
 
 /// Dispatches events to a fixed set of [`PlatformEventHandler`]s.
@@ -78,6 +125,33 @@ impl PlatformEventManager {
     pub fn on_shielded_sync_completed(&self, summary: &ShieldedSyncPassSummary) {
         for h in self.handlers.iter() {
             h.on_shielded_sync_completed(summary);
+        }
+    }
+
+    /// Dispatch a shielded sync progress event to every handler.
+    ///
+    /// Called from inside `sync_shielded_notes`'s chunk loop, once
+    /// per chunk (~every 2048 notes processed). Cheap-but-frequent
+    /// path during a cold sync.
+    #[cfg(feature = "shielded")]
+    pub fn on_shielded_sync_progress(&self, cumulative_scanned: u64, block_height: u64) {
+        for h in self.handlers.iter() {
+            h.on_shielded_sync_progress(cumulative_scanned, block_height);
+        }
+    }
+
+    /// Dispatch a shielded tree-progress ("checked / committed-to-tree")
+    /// event to every handler.
+    ///
+    /// Called from inside `sync_notes_across`'s batch loop, once per
+    /// committed batch as commitments are appended to the local
+    /// Orchard tree. `total_target == 0` signals an indeterminate
+    /// total (the on-chain MMR leaf count was unavailable). Cheap-but-
+    /// frequent path during a cold sync.
+    #[cfg(feature = "shielded")]
+    pub fn on_shielded_tree_progress(&self, leaves_committed: u64, total_target: u64) {
+        for h in self.handlers.iter() {
+            h.on_shielded_tree_progress(leaves_committed, total_target);
         }
     }
 }

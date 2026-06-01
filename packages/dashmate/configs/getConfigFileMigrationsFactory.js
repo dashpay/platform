@@ -1433,6 +1433,19 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
                 .get('platform.drive.tenderdash.docker.image');
             }
 
+            // Backfill docker build `buildArgs` added to the base config.
+            // Pre-3.1.0 configs predate the field, so default it to an empty
+            // object when missing (idempotent: existing values are preserved).
+            if (options.platform?.drive?.abci?.docker?.build
+              && typeof options.platform.drive.abci.docker.build.buildArgs === 'undefined') {
+              options.platform.drive.abci.docker.build.buildArgs = {};
+            }
+
+            if (options.platform?.dapi?.rsDapi?.docker?.build
+              && typeof options.platform.dapi.rsDapi.docker.build.buildArgs === 'undefined') {
+              options.platform.dapi.rsDapi.docker.build.buildArgs = {};
+            }
+
             if (options.platform?.drive?.tenderdash?.p2p
               && typeof options.platform.drive.tenderdash.p2p.allowlistOnly === 'undefined') {
               options.platform.drive.tenderdash.p2p.allowlistOnly = defaultConfig

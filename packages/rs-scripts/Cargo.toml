@@ -11,11 +11,19 @@ path = "src/bin/decode_document.rs"
 name = "check-contract-properties"
 path = "src/bin/check_contract_properties.rs"
 
+[[bin]]
+name = "register-contract"
+path = "src/bin/register_contract.rs"
+
 [dependencies]
-dpp = { path = "../rs-dpp", features = ["system_contracts"] }
+dpp = { path = "../rs-dpp", features = ["system_contracts", "json-conversion", "state-transition-signing"] }
 dapi-grpc = { path = "../dapi-grpc", features = ["client"] }
 data-contracts = { path = "../data-contracts" }
 platform-version = { path = "../rs-platform-version" }
+dash-sdk = { path = "../rs-sdk" }
+rs-dapi-client = { path = "../rs-dapi-client", default-features = false }
+rs-sdk-trusted-context-provider = { path = "../rs-sdk-trusted-context-provider" }
+simple-signer = { path = "../simple-signer" }
 base64 = "0.22"
 chrono = "0.4"
 hex = "0.4"

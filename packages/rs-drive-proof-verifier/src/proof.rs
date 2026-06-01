@@ -39,7 +39,7 @@ use dapi_grpc::platform::v0::get_protocol_version_upgrade_vote_status_request::{
 use dapi_grpc::platform::v0::security_level_map::KeyKindRequestType as GrpcKeyKind;
 use dapi_grpc::platform::v0::{
     get_address_info_request, get_addresses_infos_request,
-    get_contested_resource_identity_votes_request, get_data_contract_history_request, get_data_contract_request, get_data_contracts_request, get_epochs_info_request, get_evonodes_proposed_epoch_blocks_by_ids_request, get_evonodes_proposed_epoch_blocks_by_range_request, get_finalized_epoch_infos_request, get_identities_balances_request, get_identities_contract_keys_request, get_identity_balance_and_revision_request, get_identity_balance_request, get_identity_by_non_unique_public_key_hash_request,
+    get_contested_resource_identity_votes_request, get_data_contract_history_request, get_data_contract_request, get_data_contracts_request, get_document_history_request, get_epochs_info_request, get_evonodes_proposed_epoch_blocks_by_ids_request, get_evonodes_proposed_epoch_blocks_by_range_request, get_finalized_epoch_infos_request, get_identities_balances_request, get_identities_contract_keys_request, get_identity_balance_and_revision_request, get_identity_balance_request, get_identity_by_non_unique_public_key_hash_request,
     get_identity_by_public_key_hash_request, get_identity_contract_nonce_request, get_identity_keys_request, get_identity_nonce_request, get_identity_request, get_path_elements_request, get_prefunded_specialized_balance_request, GetContestedResourceVotersForIdentityRequest, GetContestedResourceVotersForIdentityResponse, GetPathElementsRequest, GetPathElementsResponse, GetProtocolVersionUpgradeStateRequest, GetProtocolVersionUpgradeStateResponse, GetProtocolVersionUpgradeVoteStatusRequest, GetProtocolVersionUpgradeVoteStatusResponse, Proof, ResponseMetadata
 };
 use dapi_grpc::platform::{
@@ -51,6 +51,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::EpochIndex;
 use dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dpp::core_subsidy::NetworkCoreSubsidy;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::{Network, ProTxHash};
 use dpp::document::{Document, DocumentV0Getters};
@@ -1428,6 +1429,89 @@ impl FromProof<platform::GetDataContractHistoryRequest> for DataContractHistory 
     }
 }
 
+impl FromProof<platform::GetDocumentHistoryRequest> for DocumentHistory {
+    type Request = platform::GetDocumentHistoryRequest;
+    type Response = platform::GetDocumentHistoryResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        _network: Network,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
+    where
+        Self: Sized + 'a,
+    {
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+
+        let (contract_id, document_type_name, document_id, limit, offset, start_at_ms) =
+            match request.version.ok_or(Error::EmptyVersion)? {
+                get_document_history_request::Version::V0(v0) => {
+                    let contract_id =
+                        Identifier::from_bytes(&v0.data_contract_id).map_err(|e| {
+                            Error::ProtocolError {
+                                error: e.to_string(),
+                            }
+                        })?;
+                    let document_id = Identifier::from_bytes(&v0.document_id).map_err(|e| {
+                        Error::ProtocolError {
+                            error: e.to_string(),
+                        }
+                    })?;
+                    let limit = u32_to_u16_opt(v0.limit.unwrap_or_default())?;
+                    let offset = u32_to_u16_opt(v0.offset.unwrap_or_default())?;
+                    (
+                        contract_id,
+                        v0.document_type_name,
+                        document_id,
+                        limit,
+                        offset,
+                        v0.start_at_ms,
+                    )
+                }
+            };
+
+        let data_contract = provider
+            .get_data_contract(&contract_id, platform_version)?
+            .ok_or(Error::NotFound)?;
+        let document_type = data_contract
+            .document_type_for_name(&document_type_name)
+            .map_err(|e| Error::ProtocolError {
+                error: e.to_string(),
+            })?;
+
+        let (root_hash, maybe_history) = Drive::verify_document_history(
+            &proof.grovedb_proof,
+            contract_id.into_buffer(),
+            &document_type_name,
+            document_type,
+            document_id.into_buffer(),
+            start_at_ms,
+            limit,
+            offset,
+            platform_version,
+        )
+        .map_drive_error(proof, mtd)?;
+
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+        // Preserve the distinction between a verified-but-empty history page
+        // (e.g. an offset/start_at_ms past the last revision) and an absent
+        // result: DocumentHistory carries retrieved values, not proof-of-absence,
+        // so a proven empty page is a legitimate `Some(empty)` rather than `None`.
+        Ok((
+            maybe_history.map(IndexMap::from_iter),
+            mtd.clone(),
+            proof.clone(),
+        ))
+    }
+}
+
 impl FromProof<platform::BroadcastStateTransitionRequest> for StateTransitionProofResult {
     type Request = platform::BroadcastStateTransitionRequest;
     type Response = platform::WaitForStateTransitionResultResponse;
@@ -2452,6 +2536,42 @@ impl FromProof<platform::GetShieldedPoolStateRequest> for ShieldedPoolState {
     }
 }
 
+impl FromProof<platform::GetShieldedNotesCountRequest> for ShieldedNotesCount {
+    type Request = platform::GetShieldedNotesCountRequest;
+    type Response = platform::GetShieldedNotesCountResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        _request: I,
+        response: O,
+        _network: Network,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
+    where
+        Self: Sized + 'a,
+    {
+        let response: Self::Response = response.into();
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+
+        // Mirrors `ShieldedPoolState` above; the only difference is the
+        // proved element type — `verify_shielded_notes_count` decodes
+        // `total_count` out of the `CommitmentTree` element rather than a
+        // `SumItem` balance.
+        let (root_hash, maybe_count) =
+            Drive::verify_shielded_notes_count(&proof.grovedb_proof, false, platform_version)
+                .map_drive_error(proof, mtd)?;
+
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+        Ok((
+            maybe_count.map(ShieldedNotesCount),
+            mtd.clone(),
+            proof.clone(),
+        ))
+    }
+}
+
 impl FromProof<platform::GetShieldedAnchorsRequest> for ShieldedAnchors {
     type Request = platform::GetShieldedAnchorsRequest;
     type Response = platform::GetShieldedAnchorsResponse;
@@ -2553,7 +2673,7 @@ impl FromProof<platform::GetShieldedEncryptedNotesRequest> for ShieldedEncrypted
             .max_query_chunks as u32
             * (1u32 << drive::drive::shielded::paths::SHIELDED_NOTES_CHUNK_POWER);
 
-        let (root_hash, notes) = Drive::verify_shielded_encrypted_notes(
+        let (root_hash, notes, total_count) = Drive::verify_shielded_encrypted_notes(
             &proof.grovedb_proof,
             start_index,
             count,
@@ -2565,20 +2685,22 @@ impl FromProof<platform::GetShieldedEncryptedNotesRequest> for ShieldedEncrypted
 
         verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
 
-        let result = if notes.is_empty() {
-            None
-        } else {
-            Some(ShieldedEncryptedNotes(
-                notes
-                    .into_iter()
-                    .map(|(cmx, nullifier, encrypted_note)| ShieldedEncryptedNote {
-                        cmx,
-                        nullifier,
-                        encrypted_note,
-                    })
-                    .collect(),
-            ))
-        };
+        // `total_count` (the on-chain total note count) is extracted from the
+        // same proof, so it is available even when this chunk returned no
+        // notes — return the result whenever the proof verified, carrying the
+        // count for the sync progress-bar denominator. `None` would only be
+        // appropriate if the proof itself were absent, which is handled above.
+        let result = Some(ShieldedEncryptedNotes {
+            notes: notes
+                .into_iter()
+                .map(|(cmx, nullifier, encrypted_note)| ShieldedEncryptedNote {
+                    cmx,
+                    nullifier,
+                    encrypted_note,
+                })
+                .collect(),
+            total_count,
+        });
 
         Ok((result, mtd.clone(), proof.clone()))
     }
@@ -2848,6 +2970,7 @@ macro_rules! define_length {
 
 define_length!(DataContract);
 define_length!(DataContractHistory, |d: &DataContractHistory| d.len());
+define_length!(DocumentHistory, |d: &DocumentHistory| d.len());
 define_length!(Document);
 define_length!(Identity);
 define_length!(IdentityBalance);
@@ -3220,6 +3343,90 @@ mod tests {
         PlatformVersion::latest()
     }
 
+    struct NoDataContractProvider;
+
+    impl dash_context_provider::ContextProvider for NoDataContractProvider {
+        fn get_data_contract(
+            &self,
+            _id: &dpp::prelude::Identifier,
+            _platform_version: &PlatformVersion,
+        ) -> Result<Option<std::sync::Arc<DataContract>>, dash_context_provider::ContextProviderError>
+        {
+            Ok(None)
+        }
+
+        fn get_token_configuration(
+            &self,
+            _token_id: &dpp::prelude::Identifier,
+        ) -> Result<
+            Option<dpp::data_contract::TokenConfiguration>,
+            dash_context_provider::ContextProviderError,
+        > {
+            panic!("token configuration should not be requested")
+        }
+
+        fn get_quorum_public_key(
+            &self,
+            _quorum_type: u32,
+            _quorum_hash: [u8; 32],
+            _core_chain_locked_height: u32,
+        ) -> Result<[u8; 48], dash_context_provider::ContextProviderError> {
+            panic!("quorum public key should not be requested")
+        }
+
+        fn get_platform_activation_height(
+            &self,
+        ) -> Result<dpp::prelude::CoreBlockHeight, dash_context_provider::ContextProviderError>
+        {
+            panic!("platform activation height should not be requested")
+        }
+    }
+
+    struct StaticDataContractProvider {
+        data_contract: std::sync::Arc<DataContract>,
+    }
+
+    impl dash_context_provider::ContextProvider for StaticDataContractProvider {
+        fn get_data_contract(
+            &self,
+            id: &dpp::prelude::Identifier,
+            _platform_version: &PlatformVersion,
+        ) -> Result<Option<std::sync::Arc<DataContract>>, dash_context_provider::ContextProviderError>
+        {
+            if self.data_contract.id() == *id {
+                Ok(Some(self.data_contract.clone()))
+            } else {
+                Ok(None)
+            }
+        }
+
+        fn get_token_configuration(
+            &self,
+            _token_id: &dpp::prelude::Identifier,
+        ) -> Result<
+            Option<dpp::data_contract::TokenConfiguration>,
+            dash_context_provider::ContextProviderError,
+        > {
+            panic!("token configuration should not be requested")
+        }
+
+        fn get_quorum_public_key(
+            &self,
+            _quorum_type: u32,
+            _quorum_hash: [u8; 32],
+            _core_chain_locked_height: u32,
+        ) -> Result<[u8; 48], dash_context_provider::ContextProviderError> {
+            panic!("quorum public key should not be requested")
+        }
+
+        fn get_platform_activation_height(
+            &self,
+        ) -> Result<dpp::prelude::CoreBlockHeight, dash_context_provider::ContextProviderError>
+        {
+            panic!("platform activation height should not be requested")
+        }
+    }
+
     /// Build a fully-populated `GetIdentityResponse` shell so that
     /// `response.proof()` and `response.metadata()` both succeed. The
     /// enclosed proof is empty, so any real verification would fail — but
@@ -3234,6 +3441,56 @@ mod tests {
                 metadata: Some(ResponseMetadata::default()),
             })),
         }
+    }
+
+    fn document_history_response_with_proof_and_metadata() -> platform::GetDocumentHistoryResponse {
+        use platform::get_document_history_response::{
+            get_document_history_response_v0::Result as V0Result, GetDocumentHistoryResponseV0,
+            Version,
+        };
+        platform::GetDocumentHistoryResponse {
+            version: Some(Version::V0(GetDocumentHistoryResponseV0 {
+                result: Some(V0Result::Proof(Proof::default())),
+                metadata: Some(ResponseMetadata::default()),
+            })),
+        }
+    }
+
+    fn document_history_request(
+        data_contract_id: Vec<u8>,
+        document_type_name: &str,
+        document_id: Vec<u8>,
+        limit: Option<u32>,
+        offset: Option<u32>,
+    ) -> platform::GetDocumentHistoryRequest {
+        use dapi_grpc::platform::v0::get_document_history_request::GetDocumentHistoryRequestV0;
+        GetDocumentHistoryRequestV0 {
+            data_contract_id,
+            document_type_name: document_type_name.to_string(),
+            document_id,
+            limit,
+            offset,
+            start_at_ms: 0,
+            prove: true,
+        }
+        .into()
+    }
+
+    fn document_history_error(
+        request: platform::GetDocumentHistoryRequest,
+        response: platform::GetDocumentHistoryResponse,
+        provider: &dyn ContextProvider,
+    ) -> Error {
+        <DocumentHistory as FromProof<
+            platform::GetDocumentHistoryRequest,
+        >>::maybe_from_proof_with_metadata(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            provider,
+        )
+        .unwrap_err()
     }
 
     #[test]
@@ -4670,6 +4927,122 @@ mod tests {
     }
 
     #[test]
+    fn document_history_no_proof_when_response_empty() {
+        let request = platform::GetDocumentHistoryRequest::default();
+        let response = platform::GetDocumentHistoryResponse::default();
+        let provider = unreachable_provider();
+
+        let err = document_history_error(request, response, &provider);
+
+        assert!(matches!(err, Error::NoProofInResult), "got: {err:?}");
+    }
+
+    #[test]
+    fn document_history_empty_response_metadata() {
+        use platform::get_document_history_response::{
+            get_document_history_response_v0::Result as V0Result, GetDocumentHistoryResponseV0,
+            Version,
+        };
+        let request = platform::GetDocumentHistoryRequest::default();
+        let response = platform::GetDocumentHistoryResponse {
+            version: Some(Version::V0(GetDocumentHistoryResponseV0 {
+                result: Some(V0Result::Proof(Proof::default())),
+                metadata: None,
+            })),
+        };
+        let provider = unreachable_provider();
+
+        let err = document_history_error(request, response, &provider);
+
+        assert!(matches!(err, Error::EmptyResponseMetadata), "got: {err:?}");
+    }
+
+    #[test]
+    fn document_history_empty_version() {
+        let request = platform::GetDocumentHistoryRequest { version: None };
+        let response = document_history_response_with_proof_and_metadata();
+        let provider = unreachable_provider();
+
+        let err = document_history_error(request, response, &provider);
+
+        assert!(matches!(err, Error::EmptyVersion), "got: {err:?}");
+    }
+
+    #[test]
+    fn document_history_rejects_bad_contract_id_length() {
+        let request =
+            document_history_request(vec![0u8; 5], "niceDocument", vec![1u8; 32], None, None);
+        let response = document_history_response_with_proof_and_metadata();
+        let provider = unreachable_provider();
+
+        let err = document_history_error(request, response, &provider);
+
+        assert!(matches!(err, Error::ProtocolError { .. }), "got: {err:?}");
+    }
+
+    #[test]
+    fn document_history_rejects_bad_document_id_length() {
+        let request =
+            document_history_request(vec![0u8; 32], "niceDocument", vec![1u8; 5], None, None);
+        let response = document_history_response_with_proof_and_metadata();
+        let provider = unreachable_provider();
+
+        let err = document_history_error(request, response, &provider);
+
+        assert!(matches!(err, Error::ProtocolError { .. }), "got: {err:?}");
+    }
+
+    #[test]
+    fn document_history_rejects_overflowing_limit() {
+        let request = document_history_request(
+            vec![0u8; 32],
+            "niceDocument",
+            vec![1u8; 32],
+            Some(100_000),
+            None,
+        );
+        let response = document_history_response_with_proof_and_metadata();
+        let provider = unreachable_provider();
+
+        let err = document_history_error(request, response, &provider);
+
+        assert!(matches!(err, Error::RequestError { .. }), "got: {err:?}");
+    }
+
+    #[test]
+    fn document_history_returns_not_found_when_contract_provider_misses() {
+        let request =
+            document_history_request(vec![0u8; 32], "niceDocument", vec![1u8; 32], None, None);
+        let response = document_history_response_with_proof_and_metadata();
+        let provider = NoDataContractProvider;
+
+        let err = document_history_error(request, response, &provider);
+
+        assert!(matches!(err, Error::NotFound), "got: {err:?}");
+    }
+
+    #[test]
+    fn document_history_rejects_unknown_document_type() {
+        let data_contract = dpp::tests::fixtures::get_data_contract_fixture(
+            None,
+            0,
+            default_platform_version().protocol_version,
+        )
+        .data_contract_owned();
+        let contract_id = data_contract.id().to_vec();
+        let provider = StaticDataContractProvider {
+            data_contract: std::sync::Arc::new(data_contract),
+        };
+        let request =
+            document_history_request(contract_id, "missingDocument", vec![1u8; 32], None, None);
+        let response = document_history_response_with_proof_and_metadata();
+
+        let err = document_history_error(request, response, &provider);
+
+        assert!(matches!(err, Error::ProtocolError { .. }), "got: {err:?}");
+    }
+
+    #[test]
     fn address_info_rejects_bad_address_bytes() {
         // PlatformAddress::from_bytes fails for invalid lengths.
         use dapi_grpc::platform::v0::get_address_info_request::GetAddressInfoRequestV0;
@@ -5487,6 +5860,24 @@ mod tests {
         let provider = unreachable_provider();
         let err = <ShieldedPoolState as FromProof<
             platform::GetShieldedPoolStateRequest,
+        >>::maybe_from_proof(
+            request,
+            response,
+            Network::Testnet,
+            default_platform_version(),
+            &provider,
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::NoProofInResult), "got: {err:?}");
+    }
+
+    #[test]
+    fn shielded_notes_count_no_proof_when_response_empty() {
+        let response = platform::GetShieldedNotesCountResponse::default();
+        let request = platform::GetShieldedNotesCountRequest::default();
+        let provider = unreachable_provider();
+        let err = <ShieldedNotesCount as FromProof<
+            platform::GetShieldedNotesCountRequest,
         >>::maybe_from_proof(
             request,
             response,
