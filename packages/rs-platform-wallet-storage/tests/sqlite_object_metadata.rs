@@ -606,6 +606,87 @@ fn delete_wallet_with_core_tx_and_utxo_stays_consistent() {
 }
 
 // ---------------------------------------------------------------------
+// Pragma-interaction proof. SQLite's `recursive_triggers` governs only
+// triggers firing OTHER triggers, not whether a trigger fires for a row
+// removed by an FK cascade — that fires regardless. This locks the
+// empirically-verified behavior: on a RAW connection with
+// foreign_keys=ON and recursive_triggers=OFF, the transitive chain
+// (wallet_metadata delete → identities FK cascade → meta_identity
+// trigger) STILL cleans up. recursive_triggers=ON (set in conn.rs) is
+// therefore defensive, not load-bearing, for this cleanup.
+// ---------------------------------------------------------------------
+
+#[test]
+fn meta_identity_cleanup_fires_even_with_recursive_triggers_off() {
+    use rusqlite::{params, Connection};
+
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let path = tmp.path().join("raw.db");
+    let mut conn = Connection::open(&path).expect("open raw conn");
+    platform_wallet_storage::sqlite::migrations::run(&mut conn).expect("apply migration");
+
+    conn.pragma_update(None, "foreign_keys", "ON").unwrap();
+    conn.pragma_update(None, "recursive_triggers", "OFF")
+        .unwrap();
+    assert_eq!(
+        conn.query_row("SELECT * FROM pragma_recursive_triggers", [], |r| r
+            .get::<_, i64>(0))
+            .unwrap(),
+        0,
+        "precondition: recursive_triggers must be OFF for this test"
+    );
+
+    let w = [0x90u8; 32];
+    let idy = [0x91u8; 32];
+    conn.execute(
+        "INSERT INTO wallet_metadata (wallet_id, network, birth_height) \
+         VALUES (?1, 'testnet', 0)",
+        params![&w[..]],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO identities (identity_id, wallet_id, wallet_index, entry_blob, tombstoned) \
+         VALUES (?1, ?2, NULL, X'00', 0)",
+        params![&idy[..], &w[..]],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO meta_identity (identity_id, key, value) VALUES (?1, 'alias', X'00')",
+        params![&idy[..]],
+    )
+    .unwrap();
+
+    // wallet_metadata delete → identities FK cascade → meta_identity trigger.
+    conn.execute(
+        "DELETE FROM wallet_metadata WHERE wallet_id = ?1",
+        params![&w[..]],
+    )
+    .unwrap();
+
+    let identity_rows: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM identities WHERE identity_id = ?1",
+            params![&idy[..]],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(identity_rows, 0, "FK cascade must remove the identity");
+
+    let meta_rows: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM meta_identity WHERE identity_id = ?1",
+            params![&idy[..]],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        meta_rows, 0,
+        "the meta_identity trigger fires for the FK-cascade-deleted parent \
+         even with recursive_triggers OFF"
+    );
+}
+
+// ---------------------------------------------------------------------
 // TC-MD-020..022 — key bounds.
 // ---------------------------------------------------------------------
 

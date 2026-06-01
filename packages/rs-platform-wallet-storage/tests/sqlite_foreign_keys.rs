@@ -1,6 +1,6 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! TC-045..TC-048 — native foreign-key enforcement.
+//! TC-045..TC-049 — native foreign-key + recursive-trigger enforcement.
 
 mod common;
 
@@ -15,6 +15,22 @@ fn tc045_foreign_keys_on() {
         .query_row("SELECT * FROM pragma_foreign_keys", [], |row| row.get(0))
         .unwrap();
     assert_eq!(fk, 1, "foreign_keys pragma not ON");
+}
+
+/// TC-049: PRAGMA recursive_triggers is ON on the REAL persister
+/// connection (the `open_conn` path), guarding against removal of the
+/// `enforce_recursive_triggers` call. The bare-connection unit test in
+/// `conn.rs` would not catch that regression.
+#[test]
+fn tc049_recursive_triggers_on() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let conn = persister.lock_conn_for_test();
+    let rt: i64 = conn
+        .query_row("SELECT * FROM pragma_recursive_triggers", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(rt, 1, "recursive_triggers pragma not ON");
 }
 
 /// TC-046: insert into a child table without a wallet_metadata parent fails.
