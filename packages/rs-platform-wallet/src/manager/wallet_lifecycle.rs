@@ -128,6 +128,20 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         wallet: Wallet,
         birth_height_override: Option<u32>,
     ) -> Result<Arc<PlatformWallet>, PlatformWalletError> {
+        // NOTE: the wallet id is NETWORK-SCOPED by construction.
+        // `Wallet::from_mnemonic` / `from_seed_bytes` now stamp a
+        // network-scoped id (key-wallet folds a domain-tagged,
+        // wire-stable network byte into the digest), so the same
+        // mnemonic yields a DISTINCT id per network. That makes every
+        // downstream `walletId`-keyed structure network-correct by
+        // construction — no per-network disambiguation needed in the
+        // persistence layer, and network-blind child tables (UTXOs,
+        // asset locks, platform addresses) can no longer cross-feed
+        // between a mnemonic's per-network wallets. The watch-only
+        // restore path (`Wallet::new_external_signable`) reuses the
+        // persisted id verbatim, so it stays self-consistent across
+        // launches.
+
         // Birth height resolution: explicit override wins; otherwise
         // fall back to SPV's confirmed header tip (default for fresh
         // wallets — they only need to see funding from now on); 0 if
@@ -437,5 +451,67 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         }
 
         Ok(removed)
+    }
+}
+
+#[cfg(test)]
+mod scoped_wallet_id_tests {
+    use key_wallet::mnemonic::{Language, Mnemonic};
+    use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+    use key_wallet::wallet::Wallet;
+    use key_wallet::Network;
+
+    // Canonical all-`abandon` BIP-39 test vector. Deterministic, so the
+    // ids below are reproducible across runs.
+    const TEST_MNEMONIC: &str = "abandon abandon abandon abandon abandon abandon \
+         abandon abandon abandon abandon abandon about";
+
+    fn wallet_id_for(network: Network) -> [u8; 32] {
+        let mnemonic =
+            Mnemonic::from_phrase(TEST_MNEMONIC, Language::English).expect("valid test mnemonic");
+        let wallet =
+            Wallet::from_mnemonic(mnemonic, network, WalletAccountCreationOptions::Default)
+                .expect("wallet construction");
+        // This is the id the manager keys on (insert_wallet returns it,
+        // the create FFI hands it to Swift) — exercises the same
+        // construction path `create_wallet_from_mnemonic` uses.
+        wallet.wallet_id
+    }
+
+    /// The same mnemonic must yield a DISTINCT wallet id on each network.
+    /// This is the property the whole per-network persistence model now
+    /// relies on (rust-dashcore #793: network-scoped id by default).
+    #[test]
+    fn same_mnemonic_yields_distinct_ids_per_network() {
+        let mainnet = wallet_id_for(Network::Mainnet);
+        let testnet = wallet_id_for(Network::Testnet);
+        let devnet = wallet_id_for(Network::Devnet);
+        let regtest = wallet_id_for(Network::Regtest);
+
+        let all = [mainnet, testnet, devnet, regtest];
+        for i in 0..all.len() {
+            for j in (i + 1)..all.len() {
+                assert_ne!(
+                    all[i], all[j],
+                    "wallet ids for two different networks must differ \
+                     (index {i} vs {j}) — scoped-id regression"
+                );
+            }
+        }
+    }
+
+    /// Re-deriving the same (mnemonic, network) must be stable, otherwise
+    /// the watch-only restore path (which reuses the persisted id) would
+    /// drift across launches.
+    #[test]
+    fn same_mnemonic_same_network_is_stable() {
+        assert_eq!(
+            wallet_id_for(Network::Testnet),
+            wallet_id_for(Network::Testnet)
+        );
+        assert_eq!(
+            wallet_id_for(Network::Mainnet),
+            wallet_id_for(Network::Mainnet)
+        );
     }
 }

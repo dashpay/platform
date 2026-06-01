@@ -722,11 +722,15 @@ struct WalletInfoView: View {
 
         // Add the existing wallet to another network by re-creating it
         // from the stored mnemonic in that network's manager. The
-        // `walletId` is network-independent, so this just stamps a new
-        // per-network `PersistentWallet` row via the persister
-        // callback — same sanctioned path the create + orphan-recovery
-        // flows use. Reusing `createWallet(mnemonic:)` keeps all
-        // derivation on the Rust side (no Swift orchestration).
+        // `walletId` is now network-scoped — the same mnemonic produces
+        // a DIFFERENT id on the target network — so the freshly-created
+        // wallet gets its OWN scoped id, and its mnemonic must be stored
+        // under that new id (the source wallet's keychain entry is keyed
+        // by the source network's id and won't be found when the new
+        // network's wallet looks itself up). Reusing
+        // `createWallet(mnemonic:)` keeps all derivation on the Rust side
+        // (no Swift orchestration); the keychain write below is the
+        // sanctioned Swift-owned persist step.
         let mnemonic: String
         do {
             mnemonic = try WalletStorage().retrieveMnemonic(for: wallet.walletId)
@@ -738,11 +742,22 @@ struct WalletInfoView: View {
 
         do {
             let mgr = try walletManagerStore.backgroundManager(for: network)
-            _ = try mgr.createWallet(
+            let created = try mgr.createWallet(
                 mnemonic: mnemonic,
                 network: network,
                 name: wallet.name ?? wallet.label
             )
+            // Persist the mnemonic under the newly-enabled network's
+            // scoped walletId so that wallet is independently recoverable
+            // and its own keychain lookups resolve. Best-effort — a
+            // failure here doesn't undo the successful create.
+            do {
+                try WalletStorage().storeMnemonic(mnemonic, for: created.walletId)
+            } catch {
+                SDKLogger.error(
+                    "Failed to persist mnemonic to keychain for \(network.displayName): \(error.localizedDescription)"
+                )
+            }
         } catch {
             let description = error.localizedDescription
             // An "already exists" throw means the wallet is already on
