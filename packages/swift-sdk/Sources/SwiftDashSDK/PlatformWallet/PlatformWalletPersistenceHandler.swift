@@ -2586,14 +2586,26 @@ public class PlatformWalletPersistenceHandler {
     private var shieldedSyncStateLoadAllocations:
         [UnsafeRawPointer: ShieldedSyncStateLoadAllocation] = [:]
 
-    /// Set network + birth height on the `PersistentWallet` row. Fires
-    /// once at wallet registration with values the Rust side can
-    /// contribute but Swift can't easily recompute (network is on the
-    /// manager's SDK; birth height is SPV's confirmed tip at creation).
-    func persistWalletMetadata(walletId: Data, network: Network, birthHeight: UInt32) {
+    /// Set network, group id + birth height on the `PersistentWallet`
+    /// row. Fires once at wallet registration with values the Rust side
+    /// can contribute but Swift can't easily recompute (network is on
+    /// the manager's SDK; the group id is the network-independent digest
+    /// Rust derives from the root key; birth height is SPV's confirmed
+    /// tip at creation). `walletGroupId` ties this row to its
+    /// sibling-network rows for the same seed; it is left empty only if
+    /// Rust handed back no bytes.
+    func persistWalletMetadata(
+        walletId: Data,
+        network: Network,
+        walletGroupId: Data,
+        birthHeight: UInt32
+    ) {
         onQueue {
             let wallet = ensureWalletRecord(walletId: walletId)
             wallet.network = network
+            if !walletGroupId.isEmpty {
+                wallet.walletGroupId = walletGroupId
+            }
             wallet.birthHeight = birthHeight
             wallet.lastUpdated = Date()
             if !self.inChangeset { try? backgroundContext.save() }
@@ -5037,6 +5049,7 @@ private func persistWalletMetadataCallback(
     context: UnsafeMutableRawPointer?,
     walletIdPtr: UnsafePointer<UInt8>?,
     network: FFINetwork,
+    walletGroupIdPtr: UnsafePointer<UInt8>?,
     birthHeight: UInt32
 ) -> Int32 {
     guard let context = context,
@@ -5047,9 +5060,11 @@ private func persistWalletMetadataCallback(
         .fromOpaque(context)
         .takeUnretainedValue()
     let walletId = Data(bytes: walletIdPtr, count: 32)
+    let walletGroupId = walletGroupIdPtr.map { Data(bytes: $0, count: 32) } ?? Data()
     handler.persistWalletMetadata(
         walletId: walletId,
         network: Network(ffiNetwork: network),
+        walletGroupId: walletGroupId,
         birthHeight: birthHeight
     )
     return 0

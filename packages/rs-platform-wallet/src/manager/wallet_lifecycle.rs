@@ -220,6 +220,20 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             address_snapshots.push((account_type, vec![(pool.pool_type, infos)]));
         }
 
+        // Network-INDEPENDENT group id, snapshotted BEFORE `wallet` is
+        // moved into `insert_wallet` below. The per-network `wallet_id`
+        // differs per network for the same seed (see the scoping note
+        // above); this digest deliberately omits the network byte
+        // (`None`), so every network's wallet for one seed shares it and
+        // the persister can group a seed's sibling-network rows by it.
+        // Watch-only / external-signable wallets carry no root key, so
+        // there's nothing to hash — fall back to the scoped `wallet_id`
+        // (a group of one).
+        let wallet_group_id = wallet
+            .root_extended_pub_key_cow()
+            .map(|root| Wallet::compute_wallet_id_from_root_extended_pub_key(&root, None))
+            .unwrap_or(wallet.wallet_id);
+
         let platform_info = PlatformWalletInfo {
             core_wallet: wallet_info,
             balance: Arc::clone(&balance),
@@ -259,6 +273,7 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         let mut registration_changeset = PlatformWalletChangeSet {
             wallet_metadata: Some(WalletMetadataEntry {
                 network: self.sdk.network,
+                wallet_group_id,
                 birth_height,
             }),
             account_registrations: account_specs
@@ -478,6 +493,22 @@ mod scoped_wallet_id_tests {
         wallet.wallet_id
     }
 
+    /// The network-INDEPENDENT group id `register_wallet` computes and
+    /// persists onto every per-network row, so the iOS Wallet Info
+    /// "Networks" section can group a seed's sibling-network wallets.
+    /// Mirrors the `register_wallet` derivation exactly.
+    fn wallet_group_id_for(network: Network) -> [u8; 32] {
+        let mnemonic =
+            Mnemonic::from_phrase(TEST_MNEMONIC, Language::English).expect("valid test mnemonic");
+        let wallet =
+            Wallet::from_mnemonic(mnemonic, network, WalletAccountCreationOptions::Default)
+                .expect("wallet construction");
+        wallet
+            .root_extended_pub_key_cow()
+            .map(|root| Wallet::compute_wallet_id_from_root_extended_pub_key(&root, None))
+            .unwrap_or(wallet.wallet_id)
+    }
+
     /// The same mnemonic must yield a DISTINCT wallet id on each network.
     /// This is the property the whole per-network persistence model now
     /// relies on (rust-dashcore #793: network-scoped id by default).
@@ -517,5 +548,32 @@ mod scoped_wallet_id_tests {
                 "wallet id must be stable across re-derivation for {network:?}"
             );
         }
+    }
+
+    /// The group id must be network-INDEPENDENT: the same seed yields
+    /// the SAME group id on every network (this is what lets the Wallet
+    /// Info "Networks" section discover a seed's sibling-network rows
+    /// now that the scoped `walletId` differs per network). It must also
+    /// differ from the scoped id, or grouping would collapse back into
+    /// the per-network id and find nothing.
+    #[test]
+    fn group_id_is_network_independent_and_differs_from_scoped_id() {
+        let g_main = wallet_group_id_for(Network::Mainnet);
+        let g_test = wallet_group_id_for(Network::Testnet);
+        let g_dev = wallet_group_id_for(Network::Devnet);
+        let g_reg = wallet_group_id_for(Network::Regtest);
+
+        // Same seed → identical group id across every network.
+        assert_eq!(g_main, g_test, "group id must not depend on network");
+        assert_eq!(g_main, g_dev, "group id must not depend on network");
+        assert_eq!(g_main, g_reg, "group id must not depend on network");
+
+        // …but the group id is NOT the scoped id (else grouping siblings
+        // by it would degenerate to the per-network id and miss them).
+        assert_ne!(
+            g_main,
+            wallet_id_for(Network::Mainnet),
+            "group id must differ from the network-scoped id"
+        );
     }
 }

@@ -630,14 +630,24 @@ struct WalletInfoView: View {
 
     private func loadNetworkStates() {
         // A wallet now has one `PersistentWallet` row per network it
-        // lives on (same `walletId`, distinct `networkRaw`). Reflect
-        // the actual set of rows rather than the single `wallet.network`
-        // this view was opened with.
-        let walletId = wallet.walletId
-        let descriptor = FetchDescriptor<PersistentWallet>(
-            predicate: PersistentWallet.predicate(walletId: walletId)
-        )
-        let rows = (try? modelContext.fetch(descriptor)) ?? [wallet]
+        // lives on. Since network-scoping, those rows have DISTINCT
+        // `walletId`s (the network byte is folded into the digest), so
+        // they can't be matched by `walletId` anymore. They share a
+        // network-independent `walletGroupId` instead — group by that
+        // to reflect the actual set of rows rather than the single
+        // `wallet.network` this view was opened with.
+        let groupId = wallet.walletGroupId
+        let rows: [PersistentWallet]
+        if groupId.isEmpty {
+            // Legacy row written before the group-id column existed —
+            // fall back to this single row.
+            rows = [wallet]
+        } else {
+            let descriptor = FetchDescriptor<PersistentWallet>(
+                predicate: PersistentWallet.predicate(walletGroupId: groupId)
+            )
+            rows = (try? modelContext.fetch(descriptor)) ?? [wallet]
+        }
         let networks = Set(rows.compactMap { $0.network })
         mainnetEnabled = networks.contains(.mainnet)
         testnetEnabled = networks.contains(.testnet)
@@ -747,15 +757,36 @@ struct WalletInfoView: View {
                 network: network,
                 name: wallet.name ?? wallet.label
             )
-            // Persist the mnemonic under the newly-enabled network's
-            // scoped walletId so that wallet is independently recoverable
-            // and its own keychain lookups resolve. Best-effort — a
+            // Persist the mnemonic AND the per-wallet metadata under the
+            // newly-enabled network's scoped walletId so that wallet is
+            // independently recoverable and its own keychain lookups
+            // resolve. The metadata is load-bearing for orphan-recovery
+            // and the post-launch warmup: `ContentView.recoverWallet`
+            // and the bootstrap pre-warm pick the restore network from
+            // `metadata.resolvedNetworks`, so without it a wiped wallet
+            // falls back to whatever network is active and could be
+            // recreated on the wrong chain. Mirror the same blob shape
+            // `CreateWalletView` writes per network. Best-effort — a
             // failure here doesn't undo the successful create.
+            let storage = WalletStorage()
             do {
-                try WalletStorage().storeMnemonic(mnemonic, for: created.walletId)
+                try storage.storeMnemonic(mnemonic, for: created.walletId)
             } catch {
                 SDKLogger.error(
                     "Failed to persist mnemonic to keychain for \(network.displayName): \(error.localizedDescription)"
+                )
+            }
+            do {
+                let metadata = WalletKeychainMetadata(
+                    name: wallet.name ?? wallet.label,
+                    walletDescription: wallet.walletDescription,
+                    networks: [network.networkName],
+                    birthHeight: wallet.birthHeight
+                )
+                try storage.setMetadata(metadata, for: created.walletId)
+            } catch {
+                SDKLogger.error(
+                    "Failed to persist wallet metadata to keychain for \(network.displayName): \(error.localizedDescription)"
                 )
             }
         } catch {
