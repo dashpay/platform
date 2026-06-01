@@ -20,21 +20,16 @@ yarn dashmate config set core.insight.enabled true --config local_seed
 # Bake SDK_TEST_DATA=true into the drive-abci docker build for each masternode
 # so the genesis shielded-pool seeder + identity/contract fixtures run on every
 # local devnet bring-up. Production / release builds explicitly do NOT set this.
-# Each value is JSON-quoted because `dashmate config set` JSON-parses the value,
+# The value is JSON-quoted because `dashmate config set` JSON-parses the value,
 # and `buildArgs` entries must be strings (a bare `true` would parse to boolean
 # and fail schema validation). Forwarded into `dynamic-compose.yml` build.args.
 #
-# CARGO_BUILD_PROFILE=release is mandatory at the current default N=1_000_000.
-# Release-mode Sinsemilla is ~10× faster than debug; without it the bake
-# stage during `docker build` would take hours. Apply at runtime InitChain
-# is ~134 ms regardless of profile (single SST ingest, no Sinsemilla work).
-#
-# Drop back to `dev` only if you also lower
-# `ShieldedSeedConfig::sdk_test_data().total_notes` to ~5k or below
-# (debug bake fits in tenderdash's InitChain window only at small N).
+# CARGO_BUILD_PROFILE is intentionally NOT pinned here — operators choose it
+# per-invocation (`dashmate config set ...buildArgs.CARGO_BUILD_PROFILE '"release"'`).
+# Release is strongly recommended when SDK_TEST_DATA seeds at large N: release
+# Sinsemilla is ~10× faster than debug, so a `dev` bake during `docker build`
+# can take hours at the higher seed sizes.
 for i in $(seq 1 ${MASTERNODES_COUNT}); do
     yarn dashmate config set --config=local_${i} \
         platform.drive.abci.docker.build.buildArgs.SDK_TEST_DATA '"true"'
-    yarn dashmate config set --config=local_${i} \
-        platform.drive.abci.docker.build.buildArgs.CARGO_BUILD_PROFILE '"release"'
 done
