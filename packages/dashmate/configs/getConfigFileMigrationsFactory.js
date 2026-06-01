@@ -1447,7 +1447,6 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
               options.platform.dapi.rsDapi.docker.build.buildArgs = {};
             }
 
-
             if (options.platform?.drive?.tenderdash?.p2p
               && typeof options.platform.drive.tenderdash.p2p.allowlistOnly === 'undefined') {
               options.platform.drive.tenderdash.p2p.allowlistOnly = defaultConfig
