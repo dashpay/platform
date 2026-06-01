@@ -1038,7 +1038,6 @@ mod platform_tests {
     /// `commit_mmr` to the end) is what makes multi-batch work; this test
     /// pins that contract.
     #[test]
-    #[ignore = "snapshot dump+apply roundtrip; needs the new grovedb branch"]
     fn snapshot_dump_apply_preserves_anchor() {
         let platform_version = PlatformVersion::latest();
 
