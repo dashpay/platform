@@ -383,6 +383,19 @@ struct CreateWalletView: View {
                     }
 
                     guard let walletId = createdWalletId else {
+                        // No wallet was freshly created. Two cases:
+                        if failures.isEmpty {
+                            // Every selected network reported "already
+                            // exists" — the wallet is present on all of
+                            // them and its mnemonic/metadata were stored
+                            // at the original creation. Re-importing is a
+                            // benign no-op; dismiss without a misleading
+                            // "could not be created" error.
+                            dismiss()
+                            return
+                        }
+                        // At least one network had a real failure and
+                        // none succeeded — surface the failure detail.
                         struct AllNetworksFailed: LocalizedError {
                             let detail: String
                             var errorDescription: String? {

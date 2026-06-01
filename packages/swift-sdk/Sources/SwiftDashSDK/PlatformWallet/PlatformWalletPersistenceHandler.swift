@@ -2734,11 +2734,23 @@ public class PlatformWalletPersistenceHandler {
                 // (The walletRow itself, deleted below, IS network-scoped
                 // via `walletRecordPredicate`.) Counted before walletRow
                 // is removed, so `<= 1` means "this is the last one".
-                let siblingDescriptor = FetchDescriptor<PersistentWallet>(
-                    predicate: #Predicate<PersistentWallet> { $0.walletId == walletId }
-                )
-                let isLastNetworkRow =
-                    ((try? backgroundContext.fetchCount(siblingDescriptor)) ?? 0) <= 1
+                // Guard on `walletRow != nil`: if this handler doesn't
+                // own a row for `walletId` (asked to delete a wallet it
+                // doesn't have), a sibling network's row can still make
+                // the cross-network count 1 — which would wrongly read
+                // as "last row" and wipe the shared child tables out
+                // from under that other network. No owned row → never
+                // treat it as the last one.
+                let isLastNetworkRow: Bool
+                if walletRow != nil {
+                    let siblingDescriptor = FetchDescriptor<PersistentWallet>(
+                        predicate: #Predicate<PersistentWallet> { $0.walletId == walletId }
+                    )
+                    isLastNetworkRow =
+                        ((try? backgroundContext.fetchCount(siblingDescriptor)) ?? 0) <= 1
+                } else {
+                    isLastNetworkRow = false
+                }
 
                 if isLastNetworkRow {
                     let txoDescriptor = FetchDescriptor<PersistentTxo>(
