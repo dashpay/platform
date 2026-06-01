@@ -237,6 +237,14 @@ impl SqlitePersister {
     /// is `None`; pass `auto_backup_dir = None` only via the CLI's
     /// `--no-auto-backup` flag (or directly through
     /// [`restore_from_skip_backup`](Self::restore_from_skip_backup)).
+    ///
+    /// # Cross-process rollback caveat
+    ///
+    /// The pre-restore auto-backup is taken BEFORE the SQLite-native
+    /// `BEGIN EXCLUSIVE` that guards the restore body. Under concurrent
+    /// cross-process access the rollback point may therefore miss writes
+    /// a peer committed between the snapshot and the lock. Serializing
+    /// restore intent across processes is the caller's responsibility.
     pub fn restore_from(
         dest_db_path: &Path,
         src_backup: &Path,
@@ -315,6 +323,14 @@ impl SqlitePersister {
     /// To skip the auto-backup explicitly — wired up by the CLI's
     /// `--no-auto-backup` — call
     /// [`delete_wallet_skip_backup`](Self::delete_wallet_skip_backup).
+    ///
+    /// # Cross-process rollback caveat
+    ///
+    /// The pre-delete auto-backup is taken BEFORE the SQLite-native
+    /// `BEGIN EXCLUSIVE` that guards the cascade. Under concurrent
+    /// cross-process access the rollback point may therefore miss writes
+    /// a peer committed between the snapshot and the lock. Serializing
+    /// delete intent across processes is the caller's responsibility.
     ///
     /// # Racing stores
     ///
