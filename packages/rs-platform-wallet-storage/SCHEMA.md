@@ -4,7 +4,7 @@ The persister stores **public** wallet-state material (UTXOs, transactions, acco
 
 Schema evolution is version-gated by refinery. All connections turn on `PRAGMA foreign_keys = ON` at open time (`src/sqlite/conn.rs`), so every `ON DELETE CASCADE` clause is active.
 
-The 20 tables are split into five domain diagrams below. `WALLET_METADATA` is the root anchor and appears in each diagram. For full column listings see the [Tables](#tables) section.
+The 25 tables are split into five domain diagrams below. `WALLET_METADATA` is the root anchor and appears in each diagram. For full column listings see the [Tables](#tables) section.
 
 ## Diagram 1 — Core / L1 (Bitcoin/Dash layer)
 
@@ -235,42 +235,75 @@ erDiagram
     }
 ```
 
-## Diagram 5 — App data / KV store
+## Diagram 5 — Per-object metadata (KV)
 
-Generic key/value table for arbitrary application-managed data (UI
-config, platform-specific blobs, anything the host app wants to stash
-alongside wallet state). One physical table with a **nullable**
-`wallet_id`: rows where `wallet_id IS NULL` live in a global slot that
-survives wallet deletion; rows with a non-NULL `wallet_id` are scoped
-to a single wallet and cascade on parent delete.
+Per-object-type key/value metadata for arbitrary application-managed
+data (aliases, flags, notes, sync hints, ordering — anything the host
+app wants to stash alongside a wallet object). One dedicated `meta_*`
+table per [`ObjectId`](./src/kv.rs) variant. `meta_global` has no parent
+and survives wallet deletion; the other five anchor metadata to a wallet
+object via a native `FOREIGN KEY … ON DELETE CASCADE`, so the metadata
+cannot attach to a non-existent object and dies with it. `meta_identity`
+and `meta_token` reach the parent wallet only through `identities`.
 
 ```mermaid
 erDiagram
-    WALLET_METADATA ||--o{ KV_STORE : "scopes (optional)"
+    WALLET_METADATA ||--o{ META_WALLET : "annotates"
+    WALLET_METADATA ||--o{ META_CONTACT : "via contacts_established"
+    WALLET_METADATA ||--o{ META_PLATFORM_ADDRESS : "via platform_addresses"
+    IDENTITIES ||--o{ META_IDENTITY : "annotates"
+    TOKEN_BALANCES ||--o{ META_TOKEN : "annotates"
 
-    WALLET_METADATA {
-        BLOB wallet_id PK "32-byte WalletId"
-        TEXT network
-        INTEGER birth_height
-    }
-
-    KV_STORE {
-        BLOB wallet_id "NULL = global slot; non-NULL = per-wallet (FK, CASCADE)"
-        TEXT key "1..=128 chars (CHECK constraint)"
+    META_GLOBAL {
+        TEXT key PK "1..=128 chars; no parent (survives wallet delete)"
         BLOB value "opaque bytes; app picks its own serialization"
         INTEGER updated_at "Unix epoch seconds; defaults to unixepoch()"
     }
+
+    META_WALLET {
+        BLOB wallet_id PK "FK → wallet_metadata, CASCADE"
+        TEXT key PK
+        BLOB value
+        INTEGER updated_at
+    }
+
+    META_IDENTITY {
+        BLOB identity_id PK "FK → identities, CASCADE"
+        TEXT key PK
+        BLOB value
+        INTEGER updated_at
+    }
+
+    META_TOKEN {
+        BLOB identity_id PK "FK → token_balances, CASCADE"
+        BLOB token_id PK
+        TEXT key PK
+        BLOB value
+        INTEGER updated_at
+    }
+
+    META_CONTACT {
+        BLOB wallet_id PK "FK → contacts_established, CASCADE"
+        BLOB owner_id PK
+        BLOB contact_id PK
+        TEXT key PK
+        BLOB value
+        INTEGER updated_at
+    }
+
+    META_PLATFORM_ADDRESS {
+        BLOB wallet_id PK "FK → platform_addresses, CASCADE"
+        BLOB address PK
+        TEXT key PK
+        BLOB value
+        INTEGER updated_at
+    }
 ```
 
-> Note: `kv_store` has NO declared `PRIMARY KEY`. Uniqueness is enforced
-> by two **partial** unique indexes (`idx_kv_store_global` over
-> `(key)` `WHERE wallet_id IS NULL`, and `idx_kv_store_wallet` over
-> `(wallet_id, key)` `WHERE wallet_id IS NOT NULL`). The split is
-> deliberate: SQLite treats every NULL in a plain
-> `UNIQUE(wallet_id, key)` as distinct, which would allow duplicate
-> global entries. Partitioning the index over the NULL/NOT NULL
-> predicate gives both halves the uniqueness guarantee we want without
-> a sentinel `wallet_id` value.
+> Note: every `meta_*` table's uniqueness comes straight from its
+> composite `PRIMARY KEY` (id column(s) + `key`) — no partial indexes
+> and no nullable scope column. Each FK targets the parent table's own
+> PRIMARY KEY, so the cascade is native.
 
 ## Tables
 
@@ -445,24 +478,61 @@ Payment overlay entries for DashPay, keyed by transaction-level
 - PK: `(identity_id, payment_id)`.
 - FK: `identity_id → identities(identity_id) ON DELETE CASCADE`.
 
-### `kv_store`
+### Per-object metadata (`meta_*`)
 
-Generic key/value table for app-managed data. `wallet_id` is nullable:
-NULL rows are global (survive wallet deletion), non-NULL rows scope to
-a single wallet and cascade on parent delete. Values are opaque BLOBs
-— the host app picks its own serialization (bincode, JSON, protobuf,
-raw bytes).
+Six dedicated key/value tables for app-managed metadata, one per
+[`ObjectId`](./src/kv.rs) variant. Values are opaque BLOBs — the host app
+picks its own serialization (bincode, JSON, protobuf, raw bytes). Shared
+across all six: `key` is `TEXT` with `CHECK (length(key) BETWEEN 1 AND
+128)`; `value` is `BLOB NOT NULL`; `updated_at` defaults to `unixepoch()`
+and is refreshed on every `INSERT … ON CONFLICT DO UPDATE`. Uniqueness
+comes from each table's composite `PRIMARY KEY` (id column(s) + `key`).
+Public API lives in [`src/kv.rs`](./src/kv.rs); the SQLite implementation
+is in [`src/sqlite/kv.rs`](./src/sqlite/kv.rs).
 
-- No declared `PRIMARY KEY`. Uniqueness is enforced by two **partial**
-  unique indexes:
-  - `idx_kv_store_global(key)            WHERE wallet_id IS NULL`
-  - `idx_kv_store_wallet(wallet_id, key) WHERE wallet_id IS NOT NULL`
-- FK: `wallet_id → wallet_metadata(wallet_id) ON DELETE CASCADE` (nullable).
-- `key` is `TEXT` with `CHECK (length(key) BETWEEN 1 AND 128)`.
-- `updated_at` defaults to `unixepoch()` and is refreshed on every
-  `INSERT … ON CONFLICT DO UPDATE`.
-- Public API lives in [`src/kv.rs`](./src/kv.rs); the implementation
-  on `SqlitePersister` is in [`src/sqlite/kv.rs`](./src/sqlite/kv.rs).
+#### `meta_global`
+
+Global metadata with no parent — survives every wallet delete.
+
+- PK: `key`.
+- No foreign key.
+
+#### `meta_wallet`
+
+Per-wallet metadata.
+
+- PK: `(wallet_id, key)`.
+- FK: `wallet_id → wallet_metadata(wallet_id) ON DELETE CASCADE`.
+
+#### `meta_identity`
+
+Per-identity metadata. Cascade reaches the parent wallet (when any)
+through `identities`.
+
+- PK: `(identity_id, key)`.
+- FK: `identity_id → identities(identity_id) ON DELETE CASCADE`.
+
+#### `meta_token`
+
+Per-token-balance metadata. Cascade flows through `token_balances` and
+on through `identities`.
+
+- PK: `(identity_id, token_id, key)`.
+- FK: `(identity_id, token_id) → token_balances(identity_id, token_id) ON DELETE CASCADE`.
+
+#### `meta_contact`
+
+Per-established-contact metadata.
+
+- PK: `(wallet_id, owner_id, contact_id, key)`.
+- FK: `(wallet_id, owner_id, contact_id) → contacts_established(wallet_id, owner_id, contact_id) ON DELETE CASCADE`.
+
+#### `meta_platform_address`
+
+Per-platform-address metadata. `address` is an opaque `BLOB`.
+
+- PK: `(wallet_id, address, key)`.
+- FK: `(wallet_id, address) → platform_addresses(wallet_id, address) ON DELETE CASCADE`.
 
 ## Enum-domain CHECK constraints
 
@@ -534,4 +604,4 @@ having to grep this repo.
 
 | Version | File | Description |
 |---|---|---|
-| V001 | `V001__initial.rs` | Full schema: all 20 tables (including `kv_store`), every index (including the two partial UNIQUE indexes on `kv_store`), and the `setnull_core_utxos_on_tx_delete` trigger |
+| V001 | `V001__initial.rs` | Full schema: all 25 tables (including the six `meta_*` per-object metadata tables), every index, and the `setnull_core_utxos_on_tx_delete` trigger |
