@@ -275,6 +275,19 @@ struct ContentView: View {
         let separate = choices.filter { !$0.samePinCode }
         var recovered: Set<Data> = []
 
+        SDKLogger.log(
+            "Recovery: authorize+recover — \(choices.count) wallet(s) "
+                + "(\(shared.count) shared-prompt, \(separate.count) per-wallet)",
+            minimumLevel: .low
+        )
+
+        // Both auth failures (per-wallet biometric prompt errors) and
+        // recovery failures (SDK init / manager prep / createWallet
+        // errors returned from `recoverWallet`) accumulate here so the
+        // user sees every problem at the end rather than the last one
+        // overwriting earlier messages.
+        var perWalletFailures: [String] = []
+
         if !shared.isEmpty {
             let reason = shared.count == 1
                 ? "Re-derive your wallet from the stored recovery phrase."
@@ -282,7 +295,9 @@ struct ContentView: View {
             switch await runAuthPrompt(reason: reason) {
             case .authorized:
                 for entry in shared {
-                    if await recoverWallet(entry: entry) {
+                    if let failure = await recoverWallet(entry: entry) {
+                        perWalletFailures.append(failure)
+                    } else {
                         recovered.insert(entry.walletId)
                     }
                 }
@@ -293,32 +308,36 @@ struct ContentView: View {
                 showDeletePrompt = true
                 return
             case .unavailable(let detail):
-                recoveryError = "Authentication is unavailable on this device: \(detail)"
+                let message = "Authentication is unavailable on this device: \(detail)"
+                SDKLogger.error("Recovery: \(message)")
+                recoveryError = message
                 showDeletePrompt = true
                 return
             case .failed(let detail):
-                recoveryError = "Authorization failed: \(detail)"
+                let message = "Authorization failed: \(detail)"
+                SDKLogger.error("Recovery: \(message)")
+                recoveryError = message
                 showDeletePrompt = true
                 return
             }
         }
 
-        // Per-wallet auth failures accumulate so the user sees every
-        // one when the loop ends rather than the last one clobbering
-        // earlier messages. Mirrors the same `[String]` pattern
-        // `deleteStoredMnemonics` uses for cross-wallet error
-        // aggregation.
-        var perWalletFailures: [String] = []
         for entry in separate {
             let reason = "Re-derive \"\(entry.displayName)\" from its stored recovery phrase."
             switch await runAuthPrompt(reason: reason) {
             case .authorized:
-                if await recoverWallet(entry: entry) {
+                if let failure = await recoverWallet(entry: entry) {
+                    perWalletFailures.append(failure)
+                } else {
                     recovered.insert(entry.walletId)
                 }
             case .denied:
                 // Skip this one — user said no to this specific
                 // wallet — but keep going through the rest.
+                SDKLogger.log(
+                    "Recovery: user denied auth for \"\(entry.displayName)\"; skipping",
+                    minimumLevel: .medium
+                )
                 continue
             case .unavailable(let detail):
                 // Same shape as the shared-branch handler: surface
@@ -326,11 +345,15 @@ struct ContentView: View {
                 // so the user has a path forward instead of being
                 // left with stale orphans queued internally with
                 // no UI to act on them.
-                recoveryError = "Authentication is unavailable on this device: \(detail)"
+                let message = "Authentication is unavailable on this device: \(detail)"
+                SDKLogger.error("Recovery: \(message)")
+                recoveryError = message
                 showDeletePrompt = true
                 return
             case .failed(let detail):
-                perWalletFailures.append("\(entry.displayName): \(detail)")
+                let entryFailure = "\(entry.displayName): \(detail)"
+                SDKLogger.error("Recovery: auth failed — \(entryFailure)")
+                perWalletFailures.append(entryFailure)
                 continue
             }
         }
@@ -338,9 +361,11 @@ struct ContentView: View {
             // One combined prompt at the end, joining every wallet's
             // failure into one message so none get lost.
             let prefix = perWalletFailures.count == 1
-                ? "Authorization failed: "
-                : "Authorization failed for \(perWalletFailures.count) wallets:\n"
-            recoveryError = prefix + perWalletFailures.joined(separator: "\n")
+                ? "Recovery failed: "
+                : "Recovery failed for \(perWalletFailures.count) wallets:\n"
+            let combined = prefix + perWalletFailures.joined(separator: "\n")
+            SDKLogger.error("Recovery: aggregated failures — \(combined)")
+            recoveryError = combined
         }
 
         // Drop the entries we just recreated. If the user skipped
@@ -392,17 +417,22 @@ struct ContentView: View {
     }
 
     /// Read the keychain mnemonic + metadata for `entry`, then
-    /// re-create the wallet. Returns `true` on success so the caller
-    /// can drop the entry from the orphan set.
+    /// re-create the wallet. Returns `nil` on success or the
+    /// failure message on failure. The caller aggregates failures
+    /// across multiple recoveries — relying on `recoveryError`
+    /// (a single `String?`) loses every error but the last when a
+    /// multi-wallet recovery has more than one failure.
     @MainActor
-    private func recoverWallet(entry: OrphanWalletEntry) async -> Bool {
+    private func recoverWallet(entry: OrphanWalletEntry) async -> String? {
         let storage = WalletStorage()
         let mnemonic: String
         do {
             mnemonic = try storage.retrieveMnemonic(for: entry.walletId)
         } catch {
-            recoveryError = "Failed to read stored mnemonic: \(error.localizedDescription)"
-            return false
+            let message = "\"\(entry.displayName)\": failed to read stored mnemonic — "
+                + error.localizedDescription
+            SDKLogger.error("Recovery: \(message)")
+            return message
         }
 
         // Re-fetch metadata at recovery time rather than relying on
@@ -437,17 +467,18 @@ struct ContentView: View {
         // would persist the row as testnet. `backgroundManager`
         // lazy-builds the per-network manager (and its SDK) without
         // changing the user's currently visible network.
-        let targetManager: PlatformWalletManager
+        let recoveryManager: PlatformWalletManager
         do {
-            targetManager = try walletManagerStore.backgroundManager(for: restoredNetwork)
+            recoveryManager = try walletManagerStore.backgroundManager(for: restoredNetwork)
         } catch {
-            recoveryError = "Failed to prepare \(restoredNetwork.displayName) manager "
-                + "for \"\(entry.displayName)\": \(error.localizedDescription)"
-            return false
+            let message = "\"\(entry.displayName)\" (\(restoredNetwork.displayName)): "
+                + "failed to prepare wallet manager — \(error.localizedDescription)"
+            SDKLogger.error("Recovery: \(message) (raw: \(error))")
+            return message
         }
 
         do {
-            let managed = try targetManager.createWallet(
+            let managed = try recoveryManager.createWallet(
                 mnemonic: mnemonic,
                 network: restoredNetwork,
                 name: restoredName
@@ -496,10 +527,12 @@ struct ContentView: View {
                 }
                 try? modelContext.save()
             }
-            return true
+            return nil
         } catch {
-            recoveryError = "Failed to recreate \"\(entry.displayName)\": \(error.localizedDescription)"
-            return false
+            let message = "\"\(entry.displayName)\" (\(restoredNetwork.displayName)): "
+                + error.localizedDescription
+            SDKLogger.error("Recovery: createWallet failed — \(message) (raw: \(error))")
+            return message
         }
     }
 

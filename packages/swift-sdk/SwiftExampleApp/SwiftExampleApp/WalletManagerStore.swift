@@ -56,6 +56,16 @@ final class WalletManagerStore: ObservableObject {
     /// of each network; lookup is O(1).
     private var managers: [Network: PlatformWalletManager] = [:]
 
+    /// SDK handle pointer the cached manager was configured against.
+    /// Used in `activate()` to detect a stale cache when `AppState`
+    /// rebuilds the SDK (network switch / `platformDAPIAddresses` or
+    /// `platformQuorumURL` change in Options). On mismatch we tear
+    /// down the cached manager and rebuild against the fresh SDK —
+    /// otherwise the cached manager keeps using its own Sdk clone
+    /// with stale DAPI / quorum endpoints, and proof verification
+    /// fails forever ("no available addresses to use").
+    private var managerSdkHandles: [Network: UnsafeMutablePointer<SDKHandle>] = [:]
+
     /// SwiftData container shared across every manager. Each
     /// manager's persistence handler narrows its `loadWalletList`
     /// fetch to its own network so the shared store doesn't cause
@@ -85,11 +95,35 @@ final class WalletManagerStore: ObservableObject {
     /// network) that need a manager for a non-active network without
     /// triggering a user-visible network switch.
     func activate(network: Network, sdk: SDK, makeActive: Bool = true) throws {
+        // Stale-cache check: the cached manager's Sdk clone is locked
+        // in at `configure` time (the FFI is single-shot — see
+        // `PlatformWalletManager.configure`'s `precondition(!isConfigured)`).
+        // If `AppState` has rebuilt the SDK since (network switch or
+        // UserDefaults endpoint override change), the cached manager
+        // is still pointing at the old endpoints and would keep
+        // failing proof verification. Drop it so the rebuild below
+        // picks up the fresh SDK.
         if let existing = managers[network] {
-            if makeActive && existing !== activeManager {
-                activeManager = existing
+            let cachedHandle = managerSdkHandles[network]
+            if cachedHandle == sdk.handle {
+                if makeActive && existing !== activeManager {
+                    activeManager = existing
+                }
+                return
             }
-            return
+            SDKLogger.log(
+                "WalletManagerStore: SDK changed for \(network.displayName); "
+                    + "rebuilding cached manager",
+                minimumLevel: .medium
+            )
+            // No `activeManager = nil` — the field isn't optional. The
+            // rebuild below will overwrite it via `if makeActive {
+            // activeManager = manager }`. Until that line runs, the
+            // old `activeManager` reference still points at the
+            // now-stale cached manager, but it'll be replaced before
+            // any caller observes it (this method is synchronous).
+            managers[network] = nil
+            managerSdkHandles[network] = nil
         }
         let manager = PlatformWalletManager()
         try manager.configure(sdk: sdk, modelContainer: modelContainer)
@@ -108,6 +142,7 @@ final class WalletManagerStore: ObservableObject {
             )
         }
         managers[network] = manager
+        managerSdkHandles[network] = sdk.handle
         if makeActive {
             activeManager = manager
         }

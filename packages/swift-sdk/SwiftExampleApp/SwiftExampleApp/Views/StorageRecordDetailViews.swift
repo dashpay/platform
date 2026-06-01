@@ -1364,7 +1364,10 @@ struct AccountStorageDetailView: View {
                     label: "Platform Addresses",
                     value: "\(record.platformAddresses.count)"
                 )
-                FieldRow(label: "Wallet", value: record.wallet.name ?? hexString(record.wallet.walletId))
+                FieldRow(
+                    label: "Wallet",
+                    value: walletLabel(record.wallet)
+                )
             }
             ForEach(addressSections(), id: \.0) { poolName, addresses in
                 Section("\(poolName) Addresses (\(addresses.count))") {
@@ -1791,6 +1794,74 @@ struct WalletManagerMetadataStorageDetailView: View {
     }
 }
 
+// MARK: - PersistentShieldedNote
+
+struct ShieldedNoteStorageDetailView: View {
+    let record: PersistentShieldedNote
+
+    var body: some View {
+        Form {
+            Section("Identity") {
+                FieldRow(label: "Wallet ID", value: hexString(record.walletId))
+                FieldRow(label: "Account Index", value: "\(record.accountIndex)")
+                FieldRow(label: "Position", value: "\(record.position)")
+            }
+            Section("Commitment") {
+                FieldRow(label: "cmx", value: hexString(record.cmx))
+                FieldRow(label: "Nullifier", value: hexString(record.nullifier))
+            }
+            Section("State") {
+                FieldRow(label: "Block Height", value: "\(record.blockHeight)")
+                FieldRow(label: "Spent", value: record.isSpent ? "Yes" : "No")
+                FieldRow(label: "Value", value: "\(record.value) credits")
+            }
+            Section("Note Bytes") {
+                Text(hexString(record.noteData))
+                    .font(.system(.caption2, design: .monospaced))
+                    .textSelection(.enabled)
+            }
+            Section("Timestamps") {
+                FieldRow(label: "Created", value: dateString(record.createdAt))
+                FieldRow(label: "Updated", value: dateString(record.lastUpdated))
+            }
+        }
+        .navigationTitle("Shielded Note")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+// MARK: - PersistentShieldedSyncState
+
+struct ShieldedSyncStateStorageDetailView: View {
+    let record: PersistentShieldedSyncState
+
+    var body: some View {
+        Form {
+            Section("Identity") {
+                FieldRow(label: "Wallet ID", value: hexString(record.walletId))
+                FieldRow(label: "Account Index", value: "\(record.accountIndex)")
+            }
+            Section("Sync") {
+                FieldRow(label: "Last Synced Index", value: "\(record.lastSyncedIndex)")
+            }
+            Section("Nullifier Checkpoint") {
+                FieldRow(label: "Present", value: record.hasNullifierCheckpoint ? "Yes" : "No")
+                if record.hasNullifierCheckpoint {
+                    FieldRow(label: "Height", value: "\(record.nullifierCheckpointHeight)")
+                    FieldRow(label: "Timestamp", value: "\(record.nullifierCheckpointTimestamp)")
+                }
+            }
+            Section("Timestamps") {
+                FieldRow(label: "Updated", value: dateString(record.lastUpdated))
+            }
+        }
+        .navigationTitle("Shielded Sync State")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+// MARK: - PersistentAssetLock
+
 struct AssetLockStorageDetailView: View {
     let record: PersistentAssetLock
 
@@ -1800,6 +1871,13 @@ struct AssetLockStorageDetailView: View {
     /// using the predicate alone would miss legacy rows that
     /// don't yet have the `wallet` relationship populated.
     @Query private var candidateIdentities: [PersistentIdentity]
+
+    /// Wallet this asset lock belongs to. Filtered by walletId so
+    /// the bech32m HRP picker on the Recipient section reads the
+    /// correct network. `@Query` is reactive; if the wallet row
+    /// vanishes (e.g. wallet deletion), the helper falls back to
+    /// testnet HRP rather than crashing.
+    @Query private var owningWallets: [PersistentWallet]
 
     init(record: PersistentAssetLock) {
         self.record = record
@@ -1814,6 +1892,12 @@ struct AssetLockStorageDetailView: View {
         _candidateIdentities = Query(
             filter: #Predicate<PersistentIdentity> { identity in
                 identity.identityIndex == identityIndex
+            }
+        )
+        let walletId = record.walletId
+        _owningWallets = Query(
+            filter: #Predicate<PersistentWallet> { wallet in
+                wallet.walletId == walletId
             }
         )
     }
@@ -1843,6 +1927,40 @@ struct AssetLockStorageDetailView: View {
                 FieldRow(label: "Identity Index", value: "\(record.identityIndexRaw)")
                 FieldRow(label: "Amount (duffs)", value: "\(record.amountDuffs)")
                 FieldRow(label: "Wallet ID", value: hexString(record.walletId))
+            }
+            if isAddressFunding {
+                // Address-funding section: show the recipient
+                // platform address when Swift stamped it after a
+                // successful `fundFromAssetLock`. `nil` on rows
+                // that pre-date this column or whose funding hasn't
+                // completed yet — communicate either case
+                // explicitly so the explorer entry is self-
+                // describing.
+                Section("Recipient Platform Address") {
+                    if let hash = record.recipientPlatformAddressHash {
+                        FieldRow(label: "Hash", value: hexString(hash))
+                        FieldRow(
+                            label: "Address Type",
+                            value: addressTypeLabel(record.recipientPlatformAddressType)
+                        )
+                        if let encoded = bech32mPlatformAddress(
+                            hash: hash,
+                            addressType: record.recipientPlatformAddressType
+                        ) {
+                            FieldRow(label: "Bech32m", value: encoded)
+                        }
+                    } else if record.statusRaw == 4 {
+                        FieldRow(
+                            label: "Recipient",
+                            value: "— (pre-this-commit row)"
+                        )
+                    } else {
+                        FieldRow(
+                            label: "Recipient",
+                            value: "— (funding not yet completed)"
+                        )
+                    }
+                }
             }
             if isIdentityFunding {
                 // Identity section is always shown for identity-
@@ -1918,6 +2036,168 @@ struct AssetLockStorageDetailView: View {
     private var isIdentityFunding: Bool {
         record.fundingTypeRaw == 0 || record.fundingTypeRaw == 1
     }
+
+    /// True when this asset lock funded a platform address via
+    /// `AddressFundingFromAssetLockTransition` (`fundingTypeRaw == 4`).
+    /// The Recipient Platform Address section shows the destination
+    /// hash + bech32m encoding when set.
+    private var isAddressFunding: Bool {
+        record.fundingTypeRaw == 4
+    }
+
+    /// Render the recipient address-type byte as a human label.
+    /// 0 = P2PKH (the only shape the wallet generates today),
+    /// 1 = P2SH (reserved). Defensive for future-shape support.
+    private func addressTypeLabel(_ raw: UInt8?) -> String {
+        switch raw {
+        case 0: return "P2PKH"
+        case 1: return "P2SH"
+        case .some(let v): return "Unknown(\(v))"
+        case .none: return "—"
+        }
+    }
+
+    /// Encode the recipient hash as a DIP-0018 bech32m platform
+    /// address. Returns `nil` for unsupported shapes (so the row
+    /// silently falls back to the hex display) and on any encoder
+    /// failure.
+    ///
+    /// HRP selection follows DIP-0018 — `dash` on mainnet, `tdash`
+    /// on every other network. We pull the network from the
+    /// matching wallet row when available; absent that we default
+    /// to testnet which is the common case in this example app.
+    private func bech32mPlatformAddress(
+        hash: Data,
+        addressType: UInt8?
+    ) -> String? {
+        guard hash.count == 20 else { return nil }
+        // Bech32m type byte: 0xb0 for P2PKH, 0x80 for P2SH (per
+        // DIP-0018). Note these differ from the storage discriminant
+        // (0 / 1) — same conversion the Rust side does in
+        // `PlatformAddress::to_bech32m_string` /
+        // `from_bech32m_string`.
+        let typeByte: UInt8
+        switch addressType {
+        case 0: typeByte = 0xb0
+        case 1: typeByte = 0x80
+        default: return nil
+        }
+        var payload5: [UInt8] = []
+        let payload8: [UInt8] = [typeByte] + Array(hash)
+        // Convert 8-bit → 5-bit groups. Bech32m payloads carry
+        // 5-bit "data" symbols.
+        guard convertBits(payload8, fromBits: 8, toBits: 5, pad: true, out: &payload5) else {
+            return nil
+        }
+        let hrp = networkHRP()
+        return bech32mEncode(hrp: hrp, data: payload5)
+    }
+
+    /// Determine the network HRP for the wallet that owns this
+    /// asset lock. Reads from the matching `PersistentWallet`'s
+    /// `network` field per DIP-0018 (`dash` on mainnet, `tdash`
+    /// everywhere else). Falls back to testnet only when the
+    /// owning wallet row can't be resolved (deleted wallet, legacy
+    /// row without the relationship populated) — that case is
+    /// already non-functional so the fallback string is
+    /// inconsequential.
+    private func networkHRP() -> String {
+        guard let wallet = owningWallets.first, let network = wallet.network else {
+            return "tdash"
+        }
+        switch network {
+        case .mainnet: return "dash"
+        default: return "tdash"
+        }
+    }
+}
+
+// MARK: - Bech32m helpers
+
+/// Standard bech32 / bech32m bit-conversion. Inputs are unsigned
+/// integers in `fromBits`-bit groups; outputs are unsigned
+/// integers in `toBits`-bit groups. Returns false on overflow
+/// (which never happens for the 8→5 case we use here).
+private func convertBits(
+    _ data: [UInt8],
+    fromBits: Int,
+    toBits: Int,
+    pad: Bool,
+    out: inout [UInt8]
+) -> Bool {
+    var acc: UInt32 = 0
+    var bits: UInt32 = 0
+    let maxv: UInt32 = (1 << toBits) - 1
+    for value in data {
+        let v = UInt32(value)
+        if (v >> fromBits) != 0 { return false }
+        acc = (acc << fromBits) | v
+        bits += UInt32(fromBits)
+        while bits >= toBits {
+            bits -= UInt32(toBits)
+            out.append(UInt8((acc >> bits) & maxv))
+        }
+    }
+    if pad {
+        if bits > 0 {
+            out.append(UInt8((acc << (UInt32(toBits) - bits)) & maxv))
+        }
+    } else if bits >= fromBits || (acc << (UInt32(toBits) - bits)) & maxv != 0 {
+        return false
+    }
+    return true
+}
+
+/// Encode a bech32m string (BIP-350). The checksum constant is the
+/// BIP-350 0x2bc830a3 vs bech32's 1; everything else matches.
+private func bech32mEncode(hrp: String, data: [UInt8]) -> String {
+    let charset = "qpzry9x8gf2tvdw0s3jn54khce6mua7l"
+    var combined = data
+    combined.append(contentsOf: bech32mCreateChecksum(hrp: hrp, data: data))
+    let charsetArr = Array(charset)
+    var result = hrp + "1"
+    for v in combined {
+        result.append(charsetArr[Int(v)])
+    }
+    return result
+}
+
+private func bech32mCreateChecksum(hrp: String, data: [UInt8]) -> [UInt8] {
+    var values: [UInt8] = bech32mHRPExpand(hrp)
+    values.append(contentsOf: data)
+    values.append(contentsOf: [0, 0, 0, 0, 0, 0])
+    let mod = bech32mPolymod(values) ^ 0x2bc830a3
+    var out: [UInt8] = []
+    for i in 0..<6 {
+        out.append(UInt8((mod >> (5 * (5 - i))) & 31))
+    }
+    return out
+}
+
+private func bech32mHRPExpand(_ hrp: String) -> [UInt8] {
+    var ret: [UInt8] = []
+    for c in hrp.utf8 { ret.append(UInt8(c >> 5)) }
+    ret.append(0)
+    for c in hrp.utf8 { ret.append(UInt8(c & 31)) }
+    return ret
+}
+
+private func bech32mPolymod(_ values: [UInt8]) -> UInt32 {
+    let gen: [UInt32] = [0x3b6a57b2, 0x26508e6d, 0x1ea119fa, 0x3d4233dd, 0x2a1462b3]
+    var chk: UInt32 = 1
+    for v in values {
+        let top = chk >> 25
+        chk = ((chk & 0x1ffffff) << 5) ^ UInt32(v)
+        for i in 0..<5 {
+            if (top >> i) & 1 != 0 {
+                chk ^= gen[i]
+            }
+        }
+    }
+    return chk
+}
+
+private extension AssetLockStorageDetailView {
 
     /// Label for the pending row shown when no identity row has
     /// been persisted for this slot yet. Communicates whether the

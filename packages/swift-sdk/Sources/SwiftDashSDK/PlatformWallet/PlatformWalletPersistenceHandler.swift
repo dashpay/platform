@@ -543,6 +543,7 @@ public class PlatformWalletPersistenceHandler {
         // single tx can land in multiple accounts (or wallets), and
         // per-wallet membership is recovered through the TXO graph
         // (`outputs` / `inputs`) rather than a denormalized column.
+        //
         let resolvedWalletId: Data = account.wallet.walletId
         let txidData = hashData(tx.txid)
         let descriptor = FetchDescriptor<PersistentTransaction>(
@@ -942,6 +943,15 @@ public class PlatformWalletPersistenceHandler {
         cb.on_persist_identity_keys_fn = persistIdentityKeysCallback
         cb.on_persist_token_balances_fn = persistTokenBalancesCallback
         cb.on_persist_contacts_fn = persistContactsCallback
+        cb.on_persist_shielded_notes_fn = persistShieldedNotesCallback
+        cb.on_persist_shielded_nullifiers_spent_fn = persistShieldedNullifiersSpentCallback
+        cb.on_persist_shielded_synced_indices_fn = persistShieldedSyncedIndicesCallback
+        cb.on_persist_shielded_nullifier_checkpoints_fn =
+            persistShieldedNullifierCheckpointsCallback
+        cb.on_load_shielded_notes_fn = loadShieldedNotesCallback
+        cb.on_load_shielded_notes_free_fn = loadShieldedNotesFreeCallback
+        cb.on_load_shielded_sync_states_fn = loadShieldedSyncStatesCallback
+        cb.on_load_shielded_sync_states_free_fn = loadShieldedSyncStatesFreeCallback
         cb.on_persist_asset_locks_fn = persistAssetLocksCallback
         cb.on_get_core_tx_record_fn = getCoreTxRecordCallback
         cb.on_get_core_tx_record_free_fn = getCoreTxRecordFreeCallback
@@ -1337,6 +1347,29 @@ public class PlatformWalletPersistenceHandler {
                     $0.keyId == targetKeyId && $0.identityId == identityHex
                 }
             )
+            // Project the snapshot's ContractBounds enum into the
+            // pair of columns `PersistentPublicKey` uses:
+            //   * `contractBoundsIds` — `[contractId]` (or nil)
+            //   * `contractBoundsDocumentTypeName` — non-nil iff the
+            //     bound was `.singleContractDocumentType`
+            // Keeping both lets the SwiftData row round-trip both
+            // variants verbatim; legacy stores without the
+            // doc-type column just see `nil` for the second field
+            // and reconstruct as `.singleContract`.
+            let snapshotBoundsIds: [Data]?
+            let snapshotBoundsDocType: String?
+            switch entry.contractBounds {
+            case .some(.singleContract(let id)):
+                snapshotBoundsIds = [id]
+                snapshotBoundsDocType = nil
+            case .some(.singleContractDocumentType(let id, let name)):
+                snapshotBoundsIds = [id]
+                snapshotBoundsDocType = name
+            case .none:
+                snapshotBoundsIds = nil
+                snapshotBoundsDocType = nil
+            }
+
             let row: PersistentPublicKey
             if let existing = try? backgroundContext.fetch(descriptor).first {
                 row = existing
@@ -1352,6 +1385,8 @@ public class PlatformWalletPersistenceHandler {
                     publicKeyData: entry.publicKeyData,
                     readOnly: entry.readOnly,
                     disabledAt: entry.disabledAt.map { Int64(bitPattern: $0) },
+                    contractBounds: snapshotBoundsIds,
+                    contractBoundsDocumentTypeName: snapshotBoundsDocType,
                     identityId: identityHex
                 )
                 backgroundContext.insert(row)
@@ -1372,6 +1407,13 @@ public class PlatformWalletPersistenceHandler {
             row.publicKeyData = entry.publicKeyData
             row.readOnly = entry.readOnly
             row.disabledAt = entry.disabledAt.map { Int64(bitPattern: $0) }
+            // Mirror the contract-bounds projection onto an
+            // existing row too — Rust is the source of truth on
+            // each callback, so the snapshot's bounds (which can
+            // change if Drive ever re-emits a key with a different
+            // scope) must overwrite any stale value here.
+            row.contractBounds = snapshotBoundsIds
+            row.contractBoundsDocumentTypeName = snapshotBoundsDocType
 
             // Private-key handling.
             //
@@ -1930,6 +1972,14 @@ public class PlatformWalletPersistenceHandler {
         /// DIP-9 `(identity_index, key_index)` pair. Present iff the
         /// client is expected to re-derive the private key locally.
         let derivationIndices: (identityIndex: UInt32, keyIndex: UInt32)?
+        /// Full ContractBounds projection mirrored from Rust:
+        /// `nil` when the key has no bounds; `.singleContract` for
+        /// kind=1; `.singleContractDocumentType` for kind=2. Carried
+        /// so the SwiftData row preserves the doc-type name on
+        /// round-trip (would otherwise be silently downgraded to
+        /// `.singleContract` and break local DPP projections that
+        /// read `identity.identityPublicKeys`).
+        let contractBounds: ManagedPlatformWallet.ContractBounds?
     }
 
     // MARK: - Watch-only Restore: Account Addresses
@@ -2166,6 +2216,356 @@ public class PlatformWalletPersistenceHandler {
 
     // MARK: - Watch-only Restore: Wallet Metadata
 
+    // MARK: - Shielded persistence (Orchard)
+
+    /// One incoming shielded-note row from
+    /// `ShieldedChangeSet::notes_saved`. Decoupled from
+    /// `ShieldedNoteFFI` so the trampoline can copy bytes out
+    /// before this method runs on `onQueue`.
+    struct ShieldedNoteSnapshot {
+        let walletId: Data
+        let accountIndex: UInt32
+        let position: UInt64
+        let cmx: Data
+        let nullifier: Data
+        let blockHeight: UInt64
+        let isSpent: Bool
+        let value: UInt64
+        let noteData: Data
+    }
+
+    /// Upsert a batch of decrypted shielded notes by `nullifier`.
+    /// Re-saves with the same nullifier overwrite the existing
+    /// row in place — Orchard nullifiers are globally unique.
+    func persistShieldedNotes(walletId: Data, snapshots: [ShieldedNoteSnapshot]) {
+        onQueue {
+            for snap in snapshots {
+                let nf = snap.nullifier
+                let predicate = #Predicate<PersistentShieldedNote> { $0.nullifier == nf }
+                var descriptor = FetchDescriptor<PersistentShieldedNote>(predicate: predicate)
+                descriptor.fetchLimit = 1
+                if let existing = try? backgroundContext.fetch(descriptor).first {
+                    existing.walletId = snap.walletId
+                    existing.accountIndex = snap.accountIndex
+                    existing.position = snap.position
+                    existing.cmx = snap.cmx
+                    existing.blockHeight = snap.blockHeight
+                    existing.isSpent = snap.isSpent
+                    existing.value = snap.value
+                    existing.noteData = snap.noteData
+                    existing.lastUpdated = Date()
+                } else {
+                    let row = PersistentShieldedNote(
+                        walletId: snap.walletId,
+                        accountIndex: snap.accountIndex,
+                        position: snap.position,
+                        cmx: snap.cmx,
+                        nullifier: snap.nullifier,
+                        blockHeight: snap.blockHeight,
+                        isSpent: snap.isSpent,
+                        value: snap.value,
+                        noteData: snap.noteData
+                    )
+                    backgroundContext.insert(row)
+                }
+            }
+            if !self.inChangeset { try? backgroundContext.save() }
+        }
+    }
+
+    /// Mark notes as spent by nullifier.
+    func persistShieldedNullifiersSpent(
+        walletId: Data,
+        entries: [(walletId: Data, accountIndex: UInt32, nullifier: Data)]
+    ) {
+        onQueue {
+            for entry in entries {
+                let nf = entry.nullifier
+                let predicate = #Predicate<PersistentShieldedNote> { $0.nullifier == nf }
+                var descriptor = FetchDescriptor<PersistentShieldedNote>(predicate: predicate)
+                descriptor.fetchLimit = 1
+                if let row = try? backgroundContext.fetch(descriptor).first {
+                    if !row.isSpent {
+                        row.isSpent = true
+                        row.lastUpdated = Date()
+                    }
+                }
+            }
+            if !self.inChangeset { try? backgroundContext.save() }
+        }
+    }
+
+    /// Upsert per-subwallet sync watermarks.
+    func persistShieldedSyncedIndices(
+        walletId: Data,
+        entries: [(walletId: Data, accountIndex: UInt32, lastSyncedIndex: UInt64)]
+    ) {
+        onQueue {
+            for entry in entries {
+                let row = ensureShieldedSyncStateRow(
+                    walletId: entry.walletId,
+                    accountIndex: entry.accountIndex
+                )
+                if entry.lastSyncedIndex > row.lastSyncedIndex {
+                    row.lastSyncedIndex = entry.lastSyncedIndex
+                }
+                row.lastUpdated = Date()
+            }
+            if !self.inChangeset { try? backgroundContext.save() }
+        }
+    }
+
+    /// Upsert per-subwallet nullifier-sync checkpoints.
+    func persistShieldedNullifierCheckpoints(
+        walletId: Data,
+        entries: [(walletId: Data, accountIndex: UInt32, height: UInt64, timestamp: UInt64)]
+    ) {
+        onQueue {
+            for entry in entries {
+                let row = ensureShieldedSyncStateRow(
+                    walletId: entry.walletId,
+                    accountIndex: entry.accountIndex
+                )
+                row.hasNullifierCheckpoint = true
+                row.nullifierCheckpointHeight = entry.height
+                row.nullifierCheckpointTimestamp = entry.timestamp
+                row.lastUpdated = Date()
+            }
+            if !self.inChangeset { try? backgroundContext.save() }
+        }
+    }
+
+    /// Fetch-or-create a `PersistentShieldedSyncState` row for
+    /// `(walletId, accountIndex)`. Caller must be on `onQueue`.
+    private func ensureShieldedSyncStateRow(
+        walletId: Data,
+        accountIndex: UInt32
+    ) -> PersistentShieldedSyncState {
+        let predicate = #Predicate<PersistentShieldedSyncState> { row in
+            row.walletId == walletId && row.accountIndex == accountIndex
+        }
+        var descriptor = FetchDescriptor<PersistentShieldedSyncState>(predicate: predicate)
+        descriptor.fetchLimit = 1
+        if let row = try? backgroundContext.fetch(descriptor).first {
+            return row
+        }
+        let row = PersistentShieldedSyncState(
+            walletId: walletId,
+            accountIndex: accountIndex
+        )
+        backgroundContext.insert(row)
+        return row
+    }
+
+    /// Wallet ids belonging to the handler's bound network, used to
+    /// scope the shielded loaders the same way `loadWalletList()` scopes
+    /// its wallet fetch. Returns `nil` when the handler has no bound
+    /// network (legacy callers that haven't threaded `network` through),
+    /// signalling "don't filter" so those paths keep their pre-refactor
+    /// cross-network behavior. Caller must be on `onQueue`.
+    private func inNetworkWalletIds() -> Set<Data>? {
+        guard let network = self.network else { return nil }
+        let raw = network.rawValue
+        let descriptor = FetchDescriptor<PersistentWallet>(
+            predicate: #Predicate { $0.networkRaw == raw }
+        )
+        let wallets = (try? backgroundContext.fetch(descriptor)) ?? []
+        return Set(wallets.map { $0.walletId })
+    }
+
+    /// Build the host-allocated `ShieldedNoteRestoreFFI` array Rust
+    /// reads at boot. The allocation is tracked in
+    /// `shieldedLoadAllocations` and freed by
+    /// `loadShieldedNotesFree` once Rust hands the pointer back.
+    func loadShieldedNotes() -> (
+        entries: UnsafePointer<ShieldedNoteRestoreFFI>?,
+        count: Int,
+        errored: Bool
+    ) {
+        var resultEntries: UnsafePointer<ShieldedNoteRestoreFFI>?
+        var resultCount: Int = 0
+        var resultErrored = false
+        onQueue {
+            let descriptor = FetchDescriptor<PersistentShieldedNote>()
+            var rows: [PersistentShieldedNote]
+            do {
+                rows = try backgroundContext.fetch(descriptor)
+            } catch {
+                resultErrored = true
+                return
+            }
+            // Scope to the handler's bound network so a per-network
+            // manager never rehydrates another network's shielded notes
+            // (the commitment tree DB is network-scoped). `nil` ids =>
+            // no in-network wallets => nothing to restore.
+            if let inNetworkIds = self.inNetworkWalletIds() {
+                rows = rows.filter { inNetworkIds.contains($0.walletId) }
+            }
+            if rows.isEmpty {
+                return
+            }
+            let allocation = ShieldedLoadAllocation()
+            // Allocate the entries buffer up front; populate slots
+            // one by one and track `entriesInitialized` so a
+            // mid-loop bail-out can deinit only the populated
+            // slots. (Today nothing fails in this loop, but
+            // matching the existing `LoadAllocation` pattern keeps
+            // future field additions safe.)
+            let buf = UnsafeMutablePointer<ShieldedNoteRestoreFFI>.allocate(capacity: rows.count)
+            allocation.entries = buf
+            allocation.entriesCount = rows.count
+            // `written` is the next free slot in `buf`; we increment it
+            // only after a row's struct is fully populated, so the
+            // returned prefix `[0..written)` is contiguous initialized
+            // memory regardless of how many rows are skipped by the
+            // length guards below. Indexing by `rows.enumerated()`'s
+            // `idx` here would leave gaps when an early row is skipped
+            // and Rust would read uninitialized bytes off the
+            // `slice::from_raw_parts(ptr, count)` it builds in
+            // `FFIPersister::load`.
+            var written = 0
+            for row in rows {
+                guard row.walletId.count == 32 else { continue }
+                guard row.cmx.count == 32 else { continue }
+                guard row.nullifier.count == 32 else { continue }
+                let noteDataBuf = UnsafeMutablePointer<UInt8>.allocate(capacity: row.noteData.count)
+                row.noteData.copyBytes(to: noteDataBuf, count: row.noteData.count)
+                allocation.scalarBuffers.append((noteDataBuf, row.noteData.count))
+
+                var walletIdTuple: FFIByteTuple32 = (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0)
+                row.walletId.withUnsafeBytes { src in
+                    Swift.withUnsafeMutableBytes(of: &walletIdTuple) { dst in
+                        dst.copyMemory(from: src)
+                    }
+                }
+                var cmxTuple: FFIByteTuple32 = (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0)
+                row.cmx.withUnsafeBytes { src in
+                    Swift.withUnsafeMutableBytes(of: &cmxTuple) { dst in
+                        dst.copyMemory(from: src)
+                    }
+                }
+                var nullifierTuple: FFIByteTuple32 = (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0)
+                row.nullifier.withUnsafeBytes { src in
+                    Swift.withUnsafeMutableBytes(of: &nullifierTuple) { dst in
+                        dst.copyMemory(from: src)
+                    }
+                }
+                buf[written] = ShieldedNoteRestoreFFI(
+                    wallet_id: walletIdTuple,
+                    account_index: row.accountIndex,
+                    position: row.position,
+                    cmx: cmxTuple,
+                    nullifier: nullifierTuple,
+                    block_height: row.blockHeight,
+                    is_spent: row.isSpent ? 1 : 0,
+                    value: row.value,
+                    note_data_ptr: UnsafePointer(noteDataBuf),
+                    note_data_len: UInt(row.noteData.count)
+                )
+                written += 1
+                allocation.entriesInitialized = written
+            }
+            let entriesPtr = UnsafePointer(buf)
+            shieldedLoadAllocations[UnsafeRawPointer(entriesPtr)] = allocation
+            resultEntries = entriesPtr
+            resultCount = written
+        }
+        return (resultEntries, resultCount, resultErrored)
+    }
+
+    func loadShieldedNotesFree(entries: UnsafeRawPointer?) {
+        onQueue {
+            guard let entries = entries,
+                  let allocation = shieldedLoadAllocations.removeValue(forKey: entries) else {
+                return
+            }
+            allocation.release()
+        }
+    }
+
+    /// Build the host-allocated `ShieldedSubwalletSyncStateFFI`
+    /// array Rust reads at boot. Same allocation pattern as
+    /// `loadShieldedNotes`.
+    func loadShieldedSyncStates() -> (
+        entries: UnsafePointer<ShieldedSubwalletSyncStateFFI>?,
+        count: Int,
+        errored: Bool
+    ) {
+        var resultEntries: UnsafePointer<ShieldedSubwalletSyncStateFFI>?
+        var resultCount: Int = 0
+        var resultErrored = false
+        onQueue {
+            let descriptor = FetchDescriptor<PersistentShieldedSyncState>()
+            var rows: [PersistentShieldedSyncState]
+            do {
+                rows = try backgroundContext.fetch(descriptor)
+            } catch {
+                resultErrored = true
+                return
+            }
+            // Same network scoping as `loadShieldedNotes` — keep both
+            // loaders consistent so a per-network manager doesn't restore
+            // foreign-network sync watermarks.
+            if let inNetworkIds = self.inNetworkWalletIds() {
+                rows = rows.filter { inNetworkIds.contains($0.walletId) }
+            }
+            if rows.isEmpty {
+                return
+            }
+            let allocation = ShieldedSyncStateLoadAllocation()
+            let buf = UnsafeMutablePointer<ShieldedSubwalletSyncStateFFI>.allocate(
+                capacity: rows.count
+            )
+            allocation.entries = buf
+            allocation.entriesCount = rows.count
+            // Same `written`-counter pattern as `loadShieldedNotes`:
+            // skip malformed rows without leaving holes in the
+            // contiguous prefix Rust will read.
+            var written = 0
+            for row in rows {
+                guard row.walletId.count == 32 else { continue }
+                var walletIdTuple: FFIByteTuple32 = (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0)
+                row.walletId.withUnsafeBytes { src in
+                    Swift.withUnsafeMutableBytes(of: &walletIdTuple) { dst in
+                        dst.copyMemory(from: src)
+                    }
+                }
+                buf[written] = ShieldedSubwalletSyncStateFFI(
+                    wallet_id: walletIdTuple,
+                    account_index: row.accountIndex,
+                    last_synced_index: row.lastSyncedIndex,
+                    has_nullifier_checkpoint: row.hasNullifierCheckpoint ? 1 : 0,
+                    nullifier_checkpoint_height: row.nullifierCheckpointHeight,
+                    nullifier_checkpoint_timestamp: row.nullifierCheckpointTimestamp
+                )
+                written += 1
+                allocation.entriesInitialized = written
+            }
+            let entriesPtr = UnsafePointer(buf)
+            shieldedSyncStateLoadAllocations[UnsafeRawPointer(entriesPtr)] = allocation
+            resultEntries = entriesPtr
+            resultCount = written
+        }
+        return (resultEntries, resultCount, resultErrored)
+    }
+
+    func loadShieldedSyncStatesFree(entries: UnsafeRawPointer?) {
+        onQueue {
+            guard let entries = entries,
+                  let allocation = shieldedSyncStateLoadAllocations.removeValue(forKey: entries)
+            else {
+                return
+            }
+            allocation.release()
+        }
+    }
+
+    /// Outstanding shielded-load allocations keyed by the entries
+    /// pointer we handed Rust. Drained by `loadShieldedNotesFree`.
+    private var shieldedLoadAllocations: [UnsafeRawPointer: ShieldedLoadAllocation] = [:]
+    private var shieldedSyncStateLoadAllocations:
+        [UnsafeRawPointer: ShieldedSyncStateLoadAllocation] = [:]
+
     /// Set network + birth height on the `PersistentWallet` row. Fires
     /// once at wallet registration with values the Rust side can
     /// contribute but Swift can't easily recompute (network is on the
@@ -2217,7 +2617,8 @@ public class PlatformWalletPersistenceHandler {
                 let walletNetwork = walletRow?.network
 
                 if let walletRow = walletRow {
-                    // Wallet identity relationships are `.nullify`; this delete path cascades them explicitly.
+                    // Wallet → identities is `.nullify`; this delete
+                    // path cascades them explicitly.
                     let identitiesToDelete = Array(walletRow.identities)
                     let identityIds = identitiesToDelete.map { $0.identityId }
 
@@ -2230,9 +2631,62 @@ public class PlatformWalletPersistenceHandler {
                         }
                     }
 
+                    // SwiftData fatals during save() whenever it has
+                    // to null out a non-optional inverse on a child
+                    // being processed in the same save batch (the
+                    // canonical wording is
+                    //   `Cannot remove PersistentX from relationship
+                    //    Y on PersistentZ because an appropriate
+                    //    default value is not configured`).
+                    // Marking children for delete in the SAME batch
+                    // doesn't help — SwiftData still walks their
+                    // inverses during the merge phase.
+                    //
+                    // The workaround is to delete each layer in its
+                    // own `save()`, parent last, so by the time the
+                    // parent's delete runs its relationship
+                    // collections are empty and SwiftData has no
+                    // inverse to clean up. Costs us atomicity (four
+                    // saves) — acceptable for a user-initiated wipe.
+                    //
+                    // PHASE 1: delete every identity's cascade-children
+                    // whose inverse to identity is non-optional
+                    // (DPNS names, DashPay profile, DashPay contact
+                    // requests). PublicKey, Document, and
+                    // TokenBalance inverses to identity are already
+                    // Optional and don't need pre-deletion.
+                    for identity in identitiesToDelete {
+                        for name in Array(identity.dpnsNames) {
+                            backgroundContext.delete(name)
+                        }
+                        if let profile = identity.dashpayProfile {
+                            backgroundContext.delete(profile)
+                        }
+                        for cr in Array(identity.contactRequests) {
+                            backgroundContext.delete(cr)
+                        }
+                    }
+                    try backgroundContext.save()
+
+                    // PHASE 2: delete the identities themselves now
+                    // that their problematic cascade children are
+                    // gone from the store.
                     for identity in identitiesToDelete {
                         backgroundContext.delete(identity)
                     }
+                    try backgroundContext.save()
+
+                    // PHASE 3: delete the wallet's accounts. Same
+                    // reasoning — `PersistentAccount.wallet` is
+                    // non-optional; deleting accounts in their own
+                    // save() pass leaves the wallet's `accounts`
+                    // collection empty when the wallet itself is
+                    // deleted.
+                    let accountsToDelete = Array(walletRow.accounts)
+                    for account in accountsToDelete {
+                        backgroundContext.delete(account)
+                    }
+                    try backgroundContext.save()
                 }
 
                 let txoDescriptor = FetchDescriptor<PersistentTxo>(
@@ -2459,7 +2913,7 @@ public class PlatformWalletPersistenceHandler {
             var unspentDescriptor = FetchDescriptor<PersistentTxo>(
                 predicate: #Predicate { $0.isSpent == false }
             )
-            unspentDescriptor.relationshipKeyPathsForPrefetching = [\.account, \.account?.wallet]
+            unspentDescriptor.relationshipKeyPathsForPrefetching = [\.account]
             // Bail with `errored = true` on a SwiftData failure rather
             // than degrading to an empty bucket map. Without this, Rust
             // would see `entry.utxos_count == 0` for every wallet,
@@ -2717,6 +3171,17 @@ public class PlatformWalletPersistenceHandler {
             entry.utxos = utxoBuf.map { UnsafePointer($0) }
             entry.utxos_count = UInt(utxoCount)
 
+            let (poolBuf, poolCount, poolErrored) = buildCoreAddressPoolBuffer(
+                accounts: sortedAccounts,
+                allocation: allocation
+            )
+            if poolErrored {
+                allocation.release()
+                return (nil, 0, true)
+            }
+            entry.core_address_pools = poolBuf.map { UnsafePointer($0) }
+            entry.core_address_pools_count = UInt(poolCount)
+
             // Tracked asset-lock rows. The Rust side rehydrates these
             // into `unused_asset_locks` so an in-flight registration
             // that was killed mid-flight can resume from the latest
@@ -2904,6 +3369,85 @@ public class PlatformWalletPersistenceHandler {
             return (nil, 0, false)
         }
         allocation.utxoArrays.append((buf, written))
+        return (buf, written, false)
+    }
+
+    /// Build a contiguous `[AccountAddressPoolFFI]` buffer for one
+    /// wallet's persisted core address pools
+    private func buildCoreAddressPoolBuffer(
+        accounts: [PersistentAccount],
+        allocation: LoadAllocation
+    ) -> (UnsafeMutablePointer<AccountAddressPoolFFI>?, Int, Bool) {
+        var groups: [(account: PersistentAccount, poolTypeTag: UInt8, rows: [PersistentCoreAddress])] = []
+        for account in accounts {
+            if account.coreAddresses.isEmpty { continue }
+            var byPool: [UInt8: [PersistentCoreAddress]] = [:]
+            for addr in account.coreAddresses {
+                byPool[addr.poolTypeTag, default: []].append(addr)
+            }
+            for (tag, rows) in byPool.sorted(by: { $0.key < $1.key }) {
+                groups.append((account, tag, rows))
+            }
+        }
+        if groups.isEmpty {
+            return (nil, 0, false)
+        }
+
+        let buf = UnsafeMutablePointer<AccountAddressPoolFFI>.allocate(capacity: groups.count)
+        var written = 0
+        for group in groups {
+            let account = group.account
+            guard let typeTagByte = UInt8(exactly: account.accountType) else {
+                NSLog(
+                    "[persistor-load:swift] aborting load: address-pool account row has accountType %u out of UInt8 range",
+                    account.accountType
+                )
+                buf.deallocate()
+                return (nil, 0, true)
+            }
+
+            // Inner CoreAddressEntryFFI array — one row per address.
+            let rowBuf = UnsafeMutablePointer<CoreAddressEntryFFI>.allocate(
+                capacity: group.rows.count
+            )
+            for (j, row) in group.rows.enumerated() {
+                var e = CoreAddressEntryFFI()
+                copyBytes(row.publicKey, into: &e.public_key)
+                e.has_public_key = (row.publicKey.count == 33)
+                e.pool_type_tag = group.poolTypeTag
+                e.address_index = row.addressIndex
+                e.is_used = row.isUsed
+                e.balance = row.balance
+                e.address_base58 = UnsafePointer(
+                    duplicateCString(row.address, allocation: allocation)
+                )
+                e.derivation_path = UnsafePointer(
+                    duplicateCString(row.derivationPath, allocation: allocation)
+                )
+                rowBuf[j] = e
+            }
+            allocation.coreAddressEntryArrays.append((rowBuf, group.rows.count))
+
+            var spec = AccountSpecFFI()
+            spec.type_tag = typeTagByte
+            spec.standard_tag = account.standardTag
+            spec.index = account.accountIndex
+            spec.registration_index = account.registrationIndex
+            spec.key_class = account.keyClass
+            copyBytes(account.userIdentityId, into: &spec.user_identity_id)
+            copyBytes(account.friendIdentityId, into: &spec.friend_identity_id)
+            spec.account_xpub_bytes = nil
+            spec.account_xpub_bytes_len = 0
+
+            var pool = AccountAddressPoolFFI()
+            pool.account = spec
+            pool.pool_type_tag = group.poolTypeTag
+            pool.addresses_ptr = UnsafePointer(rowBuf)
+            pool.addresses_count = UInt(group.rows.count)
+            buf[written] = pool
+            written += 1
+        }
+        allocation.coreAddressPoolArrays.append((buf, written))
         return (buf, written, false)
     }
 
@@ -3244,6 +3788,42 @@ public class PlatformWalletPersistenceHandler {
                         row.data = nil
                         row.data_len = 0
                     }
+
+                    // Mirror the contract-bounds projection into
+                    // the restore row so scoped keys (DashPay's
+                    // SingleContractDocumentType, in particular)
+                    // come back with their full variant on cold
+                    // restart instead of silently degrading to
+                    // unbounded. Encoding matches
+                    // `IdentityKeyEntryFFI` on the persist side:
+                    //   * kind=0 → no bounds; id zeroed, doc-type null
+                    //   * kind=1 → SingleContract; id meaningful
+                    //   * kind=2 → SingleContractDocumentType; id +
+                    //     doc-type both meaningful
+                    // Length-validated by `pk.publicKeyData.count
+                    // == 32` (matches the gating in
+                    // `toIdentityPublicKey()`); a row with a
+                    // wrong-length id falls back to "no bounds"
+                    // rather than crashing FFI marshalling on the
+                    // Rust side.
+                    if let id = pk.contractBounds?.first, id.count == 32 {
+                        withUnsafeMutableBytes(of: &row.contract_bounds_id) { dst in
+                            id.copyBytes(to: dst.bindMemory(to: UInt8.self).baseAddress!, count: 32)
+                        }
+                        if let docType = pk.contractBoundsDocumentTypeName, !docType.isEmpty {
+                            row.contract_bounds_kind = 2
+                            row.contract_bounds_document_type = UnsafePointer(
+                                duplicateCString(docType, allocation: allocation)
+                            )
+                        } else {
+                            row.contract_bounds_kind = 1
+                            row.contract_bounds_document_type = nil
+                        }
+                    } else {
+                        row.contract_bounds_kind = 0
+                        row.contract_bounds_document_type = nil
+                    }
+
                     keyBuf[k] = row
                 }
                 entry.keys = UnsafePointer(keyBuf)
@@ -3516,6 +4096,11 @@ private final class LoadAllocation {
     /// so the next chain-lock event can cascade-promote them. The
     /// `tx_bytes` buffer each row references lives in `scalarBuffers`.
     var unresolvedAssetLockTxRecordArrays: [(UnsafeMutablePointer<UnresolvedAssetLockTxRecordFFI>, Int)] = []
+    /// Per-wallet `AccountAddressPoolFFI` arrays, the persisted core
+    /// address pools
+    var coreAddressPoolArrays: [(UnsafeMutablePointer<AccountAddressPoolFFI>, Int)] = []
+    /// Inner `CoreAddressEntryFFI` arrays, one per pool entry above.
+    var coreAddressEntryArrays: [(UnsafeMutablePointer<CoreAddressEntryFFI>, Int)] = []
 
     func release() {
         if let entries = entries {
@@ -3566,6 +4151,55 @@ private final class LoadAllocation {
         for (ptr, count) in unresolvedAssetLockTxRecordArrays {
             ptr.deinitialize(count: count)
             ptr.deallocate()
+        }
+        for (ptr, count) in coreAddressEntryArrays {
+            ptr.deinitialize(count: count)
+            ptr.deallocate()
+        }
+        for (ptr, count) in coreAddressPoolArrays {
+            ptr.deinitialize(count: count)
+            ptr.deallocate()
+        }
+    }
+}
+
+/// Allocation tracker for `loadShieldedNotes` — the entries
+/// buffer plus per-row `note_data` byte buffers.
+private final class ShieldedLoadAllocation {
+    var entries: UnsafeMutablePointer<ShieldedNoteRestoreFFI>?
+    var entriesCount: Int = 0
+    var entriesInitialized: Int = 0
+    /// Per-row `note_data` byte buffers; each entry's
+    /// `note_data_ptr` references one of these.
+    var scalarBuffers: [(UnsafeMutablePointer<UInt8>, Int)] = []
+
+    func release() {
+        if let entries = entries {
+            if entriesInitialized > 0 {
+                entries.deinitialize(count: entriesInitialized)
+            }
+            entries.deallocate()
+        }
+        for (ptr, _) in scalarBuffers {
+            ptr.deallocate()
+        }
+    }
+}
+
+/// Allocation tracker for `loadShieldedSyncStates`. No nested
+/// buffers — every field is plain-data — so this is just the
+/// entries buffer.
+private final class ShieldedSyncStateLoadAllocation {
+    var entries: UnsafeMutablePointer<ShieldedSubwalletSyncStateFFI>?
+    var entriesCount: Int = 0
+    var entriesInitialized: Int = 0
+
+    func release() {
+        if let entries = entries {
+            if entriesInitialized > 0 {
+                entries.deinitialize(count: entriesInitialized)
+            }
+            entries.deallocate()
         }
     }
 }
@@ -4016,6 +4650,36 @@ private func persistIdentityKeysCallback(
                 e.derivation_indices_is_some
                     ? (e.identity_index, e.key_index)
                     : nil
+
+            // Project the contract-bounds trio (kind / id / doc-
+            // type C-string) into the Swift enum. Mirrors the Rust
+            // `IdentityKeyEntryFFI::from_entry` encoding — kinds:
+            //   0 → no bounds
+            //   1 → SingleContract { id }
+            //   2 → SingleContractDocumentType { id, doc_type_name }
+            // The doc-type C-string for kind=2 is owned by Rust and
+            // freed via `free_identity_key_entry_ffi` after this
+            // callback returns, so we copy it into a Swift String
+            // here. A null doc-type pointer with kind=2 is a
+            // serialization edge case (interior NUL); treat it as
+            // no-bounds rather than constructing a partial variant.
+            let bounds: ManagedPlatformWallet.ContractBounds?
+            switch e.contract_bounds_kind {
+            case 1:
+                bounds = .singleContract(id: dataFromTuple32(e.contract_bounds_id))
+            case 2:
+                if let docPtr = e.contract_bounds_document_type {
+                    bounds = .singleContractDocumentType(
+                        id: dataFromTuple32(e.contract_bounds_id),
+                        documentTypeName: String(cString: docPtr)
+                    )
+                } else {
+                    bounds = nil
+                }
+            default:
+                bounds = nil
+            }
+
             upserts.append(.init(
                 identityId: identityId,
                 keyId: e.key_id,
@@ -4027,7 +4691,8 @@ private func persistIdentityKeysCallback(
                 publicKeyData: pubKey,
                 publicKeyHash: dataFromTuple20(e.public_key_hash),
                 walletId: walletId,
-                derivationIndices: indices
+                derivationIndices: indices,
+                contractBounds: bounds
             ))
         }
     }
@@ -4318,6 +4983,197 @@ private func persistWalletMetadataCallback(
     )
     return 0
 }
+
+// MARK: - Shielded persistence (Orchard)
+//
+// Mirror of the four `on_persist_shielded_*_fn` callbacks declared
+// in `rs-platform-wallet-ffi/src/persistence.rs` plus the matching
+// load callbacks used at boot to rehydrate `SubwalletState`s.
+
+private func persistShieldedNotesCallback(
+    context: UnsafeMutableRawPointer?,
+    walletIdPtr: UnsafePointer<UInt8>?,
+    entriesPtr: UnsafePointer<ShieldedNoteFFI>?,
+    count: UInt
+) -> Int32 {
+    guard let context = context, let walletIdPtr = walletIdPtr else { return 0 }
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>
+        .fromOpaque(context)
+        .takeUnretainedValue()
+    let walletId = Data(bytes: walletIdPtr, count: 32)
+
+    var snapshots: [PlatformWalletPersistenceHandler.ShieldedNoteSnapshot] = []
+    if count > 0, let entriesPtr = entriesPtr {
+        snapshots.reserveCapacity(Int(count))
+        for i in 0..<Int(count) {
+            let e = entriesPtr[i]
+            let noteData: Data
+            if let dataPtr = e.note_data_ptr, e.note_data_len > 0 {
+                noteData = Data(bytes: dataPtr, count: Int(e.note_data_len))
+            } else {
+                noteData = Data()
+            }
+            snapshots.append(.init(
+                walletId: dataFromTuple32(e.wallet_id),
+                accountIndex: e.account_index,
+                position: e.position,
+                cmx: dataFromTuple32(e.cmx),
+                nullifier: dataFromTuple32(e.nullifier),
+                blockHeight: e.block_height,
+                isSpent: e.is_spent != 0,
+                value: e.value,
+                noteData: noteData
+            ))
+        }
+    }
+    handler.persistShieldedNotes(walletId: walletId, snapshots: snapshots)
+    return 0
+}
+
+private func persistShieldedNullifiersSpentCallback(
+    context: UnsafeMutableRawPointer?,
+    walletIdPtr: UnsafePointer<UInt8>?,
+    entriesPtr: UnsafePointer<ShieldedNullifierSpentFFI>?,
+    count: UInt
+) -> Int32 {
+    guard let context = context, let walletIdPtr = walletIdPtr else { return 0 }
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>
+        .fromOpaque(context)
+        .takeUnretainedValue()
+    let walletId = Data(bytes: walletIdPtr, count: 32)
+
+    var entries: [(walletId: Data, accountIndex: UInt32, nullifier: Data)] = []
+    if count > 0, let entriesPtr = entriesPtr {
+        entries.reserveCapacity(Int(count))
+        for i in 0..<Int(count) {
+            let e = entriesPtr[i]
+            entries.append((
+                walletId: dataFromTuple32(e.wallet_id),
+                accountIndex: e.account_index,
+                nullifier: dataFromTuple32(e.nullifier)
+            ))
+        }
+    }
+    handler.persistShieldedNullifiersSpent(walletId: walletId, entries: entries)
+    return 0
+}
+
+private func persistShieldedSyncedIndicesCallback(
+    context: UnsafeMutableRawPointer?,
+    walletIdPtr: UnsafePointer<UInt8>?,
+    entriesPtr: UnsafePointer<ShieldedSyncedIndexFFI>?,
+    count: UInt
+) -> Int32 {
+    guard let context = context, let walletIdPtr = walletIdPtr else { return 0 }
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>
+        .fromOpaque(context)
+        .takeUnretainedValue()
+    let walletId = Data(bytes: walletIdPtr, count: 32)
+
+    var entries: [(walletId: Data, accountIndex: UInt32, lastSyncedIndex: UInt64)] = []
+    if count > 0, let entriesPtr = entriesPtr {
+        entries.reserveCapacity(Int(count))
+        for i in 0..<Int(count) {
+            let e = entriesPtr[i]
+            entries.append((
+                walletId: dataFromTuple32(e.wallet_id),
+                accountIndex: e.account_index,
+                lastSyncedIndex: e.last_synced_index
+            ))
+        }
+    }
+    handler.persistShieldedSyncedIndices(walletId: walletId, entries: entries)
+    return 0
+}
+
+private func persistShieldedNullifierCheckpointsCallback(
+    context: UnsafeMutableRawPointer?,
+    walletIdPtr: UnsafePointer<UInt8>?,
+    entriesPtr: UnsafePointer<ShieldedNullifierCheckpointFFI>?,
+    count: UInt
+) -> Int32 {
+    guard let context = context, let walletIdPtr = walletIdPtr else { return 0 }
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>
+        .fromOpaque(context)
+        .takeUnretainedValue()
+    let walletId = Data(bytes: walletIdPtr, count: 32)
+
+    var entries: [(walletId: Data, accountIndex: UInt32, height: UInt64, timestamp: UInt64)] = []
+    if count > 0, let entriesPtr = entriesPtr {
+        entries.reserveCapacity(Int(count))
+        for i in 0..<Int(count) {
+            let e = entriesPtr[i]
+            entries.append((
+                walletId: dataFromTuple32(e.wallet_id),
+                accountIndex: e.account_index,
+                height: e.height,
+                timestamp: e.timestamp
+            ))
+        }
+    }
+    handler.persistShieldedNullifierCheckpoints(walletId: walletId, entries: entries)
+    return 0
+}
+
+private func loadShieldedNotesCallback(
+    context: UnsafeMutableRawPointer?,
+    outEntries: UnsafeMutablePointer<UnsafePointer<ShieldedNoteRestoreFFI>?>?,
+    outCount: UnsafeMutablePointer<UInt>?
+) -> Int32 {
+    guard let context = context, let outEntries = outEntries, let outCount = outCount else {
+        return 1
+    }
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>
+        .fromOpaque(context)
+        .takeUnretainedValue()
+    let (entries, count, errored) = handler.loadShieldedNotes()
+    outEntries.pointee = entries
+    outCount.pointee = UInt(count)
+    return errored ? 1 : 0
+}
+
+private func loadShieldedNotesFreeCallback(
+    context: UnsafeMutableRawPointer?,
+    entries: UnsafePointer<ShieldedNoteRestoreFFI>?,
+    _ count: UInt
+) {
+    guard let context = context else { return }
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>
+        .fromOpaque(context)
+        .takeUnretainedValue()
+    handler.loadShieldedNotesFree(entries: entries.map(UnsafeRawPointer.init))
+}
+
+private func loadShieldedSyncStatesCallback(
+    context: UnsafeMutableRawPointer?,
+    outEntries: UnsafeMutablePointer<UnsafePointer<ShieldedSubwalletSyncStateFFI>?>?,
+    outCount: UnsafeMutablePointer<UInt>?
+) -> Int32 {
+    guard let context = context, let outEntries = outEntries, let outCount = outCount else {
+        return 1
+    }
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>
+        .fromOpaque(context)
+        .takeUnretainedValue()
+    let (entries, count, errored) = handler.loadShieldedSyncStates()
+    outEntries.pointee = entries
+    outCount.pointee = UInt(count)
+    return errored ? 1 : 0
+}
+
+private func loadShieldedSyncStatesFreeCallback(
+    context: UnsafeMutableRawPointer?,
+    entries: UnsafePointer<ShieldedSubwalletSyncStateFFI>?,
+    _ count: UInt
+) {
+    guard let context = context else { return }
+    let handler = Unmanaged<PlatformWalletPersistenceHandler>
+        .fromOpaque(context)
+        .takeUnretainedValue()
+    handler.loadShieldedSyncStatesFree(entries: entries.map(UnsafeRawPointer.init))
+}
+
+// MARK: - Core tx-record persister fallback
 
 /// C shim for `on_get_core_tx_record_fn`. Calls
 /// `PlatformWalletPersistenceHandler.coreTxRecord(...)` and writes

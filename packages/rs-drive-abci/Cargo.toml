@@ -82,8 +82,12 @@ derive_more = { version = "1.0", features = ["from", "deref", "deref_mut"] }
 async-trait = "0.1.77"
 console-subscriber = { version = "0.4", optional = true }
 bls-signatures = { git = "https://github.com/dashpay/bls-signatures", rev = "0842b17583888e8f46c252a4ee84cdfd58e0546f", optional = true }
-grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "352c2f5504fba8795e8ed1056753bfd73c13b4cc" }
+grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "5eb7a5380a6e974513343352acfd6b30a8c1f87c" }
 nonempty = "0.11"
+# Shielded-pool snapshot needs raw RocksDB SstFileWriter + ingest_external_file_cf
+# bindings, and blake3 for the snapshot-file checksum.
+rocksdb = { git = "https://github.com/QuantumExplorer/rust-rocksdb.git", rev = "52772eea7bcd214d1d07d80aa538b1d24e5015b7" }
+blake3 = "1.5"
 
 [dev-dependencies]
 platform-version = { path = "../rs-platform-version", features = [
@@ -103,7 +107,7 @@ dpp = { path = "../rs-dpp", default-features = false, features = [
 drive = { path = "../rs-drive", features = ["fixtures-and-mocks"] }
 drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
 strategy-tests = { path = "../strategy-tests" }
-grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "352c2f5504fba8795e8ed1056753bfd73c13b4cc", features = ["client"] }
+grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "5eb7a5380a6e974513343352acfd6b30a8c1f87c", features = ["client"] }
 assert_matches = "1.5.0"
 drive-abci = { path = ".", features = ["testing-config", "mocks"] }
 bls-signatures = { git = "https://github.com/dashpay/bls-signatures", rev = "0842b17583888e8f46c252a4ee84cdfd58e0546f" }
@@ -114,6 +118,11 @@ libc = "0.2"
 # For tests of grovedb verify
 rocksdb = { git = "https://github.com/QuantumExplorer/rust-rocksdb.git", rev = "52772eea7bcd214d1d07d80aa538b1d24e5015b7" }
 integer-encoding = { version = "4.0.0" }
+
+# For dump_only_default_and_aux_cfs_under_shielded_subtree_prefix — same
+# subtree-prefix algorithm grovedb uses internally.
+grovedb-path = { git = "https://github.com/dashpay/grovedb", rev = "5eb7a5380a6e974513343352acfd6b30a8c1f87c" }
+grovedb-storage = { git = "https://github.com/dashpay/grovedb", rev = "5eb7a5380a6e974513343352acfd6b30a8c1f87c" }
 
 [features]
 default = ["bls-signatures"]

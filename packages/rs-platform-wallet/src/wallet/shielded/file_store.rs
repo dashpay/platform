@@ -1,28 +1,26 @@
 //! File-backed `ShieldedStore` impl.
 //!
-//! The Orchard commitment tree is shared across every wallet that
-//! decrypts notes against the same network — there is one global
-//! tree of commitments and each wallet keeps its own decrypted-note
-//! subset. This store therefore persists the tree to a SQLite file
-//! (via [`ClientPersistentCommitmentTree`]) while keeping the
-//! per-wallet decrypted notes and nullifier bookkeeping in memory.
-//! Notes are rediscovered on cold start by re-running
-//! [`ShieldedWallet::sync_notes`](super::ShieldedWallet::sync_notes)
-//! against the cached tree.
-//!
-//! Witness generation (needed for spends) is intentionally not
-//! implemented yet — the spend signer pipeline that drives it lands
-//! in a follow-up.
+//! The Orchard commitment tree is shared across every subwallet
+//! that decrypts notes against the same network — the on-chain
+//! commitment stream is identical for every consumer. This store
+//! therefore persists the tree to a SQLite file (via
+//! [`ClientPersistentCommitmentTree`]) and keeps per-subwallet
+//! decrypted notes / nullifier bookkeeping in memory, scoped by
+//! [`SubwalletId`]. Notes are rediscovered on cold start by
+//! re-running [`ShieldedWallet::sync_notes`] against the cached
+//! tree (or, when the host persister is wired up, restored from
+//! SwiftData before sync runs).
 
 use std::collections::BTreeMap;
 use std::error::Error as StdError;
 use std::fmt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use grovedb_commitment_tree::{ClientPersistentCommitmentTree, Position, Retention};
 
-use super::store::{ShieldedNote, ShieldedStore};
+use super::store::{ShieldedNote, ShieldedStore, SubwalletId, SubwalletState};
+use crate::wallet::platform_wallet::WalletId;
 
 /// Error type for [`FileBackedShieldedStore`].
 #[derive(Debug)]
@@ -36,94 +34,150 @@ impl fmt::Display for FileShieldedStoreError {
 
 impl StdError for FileShieldedStoreError {}
 
-/// File-backed shielded store: SQLite-persisted commitment tree plus
-/// in-memory decrypted notes / nullifier bookkeeping.
-///
-/// The commitment tree is keyed per-network at the call site (the
-/// path is supplied by [`Self::open_path`]). Decrypted notes are
-/// kept in memory and rediscovered via trial decryption on every
-/// cold start — same shape the previous `ShieldedPoolClient` had,
-/// suitable for the MVP shielded sync path. Persisting notes via
-/// the host's data store is a follow-up.
+/// File-backed shielded store: SQLite-persisted commitment tree
+/// plus in-memory per-subwallet decrypted notes / nullifier
+/// bookkeeping.
 pub struct FileBackedShieldedStore {
-    /// SQLite-backed commitment tree. Wrapped in a `Mutex` rather than
-    /// relying on `&mut self` because the underlying SQLite store is
-    /// not `Sync` on its own and the [`ShieldedStore`] trait requires
-    /// `Send + Sync`. Outer concurrency is still serialized through
-    /// `ShieldedWallet`'s `RwLock<S>`; this inner mutex is just a
-    /// `Sync`-restoring shim and is uncontended in practice.
+    /// SQLite-backed commitment tree. Wrapped in a `Mutex` because
+    /// the underlying SQLite store is not `Sync`; the
+    /// [`ShieldedStore`] trait requires `Send + Sync`. Outer
+    /// concurrency is still serialized through `ShieldedWallet`'s
+    /// `RwLock<S>`; this inner mutex is just a `Sync`-restoring
+    /// shim and is uncontended in practice.
     tree: Mutex<ClientPersistentCommitmentTree>,
-    notes: Vec<ShieldedNote>,
-    /// Nullifier → index into `notes`, for `mark_spent` lookups.
-    nullifier_index: BTreeMap<[u8; 32], usize>,
-    /// Last global note index synced from Platform.
-    last_synced_index: u64,
-    /// `(height, timestamp)` from the most recent nullifier sync.
-    nullifier_checkpoint: Option<(u64, u64)>,
+    /// Backing SQLite path, retained so [`reset_commitment_tree`]
+    /// can wipe the on-disk tree tables and rebuild a fresh
+    /// `ClientPersistentCommitmentTree` over the same file. The
+    /// wrapper takes its `Connection` by value and exposes no
+    /// public truncate, so a full reset reopens the tree rather
+    /// than mutating the live handle in place.
+    ///
+    /// [`reset_commitment_tree`]: ShieldedStore::reset_commitment_tree
+    path: PathBuf,
+    /// `max_checkpoints` passed at open time, retained so the
+    /// rebuilt tree in [`reset_commitment_tree`] matches the
+    /// original retention policy.
+    ///
+    /// [`reset_commitment_tree`]: ShieldedStore::reset_commitment_tree
+    max_checkpoints: usize,
+    /// Per-subwallet notes + sync state, keyed by `(wallet_id,
+    /// account_index)`. Lazily populated on first use of an id.
+    subwallets: BTreeMap<SubwalletId, SubwalletState>,
 }
 
 impl FileBackedShieldedStore {
     /// Open or create a shielded store at `path`.
     ///
-    /// `max_checkpoints` controls how many tree checkpoints the
-    /// underlying [`ClientPersistentCommitmentTree`] retains for
-    /// witness generation. A value of `100` matches what the previous
-    /// SDK-side client used.
+    /// SQLite is opened with **WAL journal + synchronous=NORMAL + temp_store=MEMORY**
+    /// rather than the rusqlite defaults (DELETE + sync=FULL). Rationale: every
+    /// `append_commitment` invocation runs an implicit one-statement transaction
+    /// that, under DELETE+FULL, forces a fsync per cmx. On hosts where fsync is
+    /// strictly honored (macOS Mac/simulator filesystems), that turns into the
+    /// dominant cost of cold sync — a 1M-leaf tree build was ~6 min, vs ~17 s
+    /// with the PRAGMAs below, per
+    /// `packages/rs-platform-wallet/tests/shielded_tree_append_bench.rs`.
+    ///
+    /// `synchronous=NORMAL` retains crash-safety for the WAL (the WAL itself is
+    /// fsync'd at checkpoint); we don't need `FULL` because no row in the
+    /// commitment-tree SQLite is "user money" — every commitment is chain-side
+    /// authenticated and can be rebuilt by re-running sync from a recorded
+    /// `last_synced_note_index`. A torn WAL on power loss would at worst
+    /// require resync from the last checkpoint, which is the same cost the
+    /// host already accepts on a fresh install.
     pub fn open_path(
         path: impl AsRef<Path>,
         max_checkpoints: usize,
     ) -> Result<Self, FileShieldedStoreError> {
-        let tree = ClientPersistentCommitmentTree::open_path(path, max_checkpoints)
+        let path = path.as_ref().to_path_buf();
+        let conn = Self::open_tuned_connection(&path)?;
+        let tree = ClientPersistentCommitmentTree::open(conn, max_checkpoints)
             .map_err(|e| FileShieldedStoreError(format!("open commitment tree: {e}")))?;
         Ok(Self {
             tree: Mutex::new(tree),
-            notes: Vec::new(),
-            nullifier_index: BTreeMap::new(),
-            last_synced_index: 0,
-            nullifier_checkpoint: None,
+            path,
+            max_checkpoints,
+            subwallets: BTreeMap::new(),
         })
+    }
+
+    /// Open a `rusqlite::Connection` on `path` with the same WAL /
+    /// `synchronous=NORMAL` / `temp_store=MEMORY` PRAGMAs the cold-sync
+    /// append path depends on (see [`open_path`] for the rationale).
+    ///
+    /// Shared by [`open_path`] and [`reset_commitment_tree`] so any
+    /// connection the store hands to `ClientPersistentCommitmentTree`
+    /// — original or post-reset — is configured identically.
+    ///
+    /// [`open_path`]: Self::open_path
+    /// [`reset_commitment_tree`]: ShieldedStore::reset_commitment_tree
+    fn open_tuned_connection(path: &Path) -> Result<rusqlite::Connection, FileShieldedStoreError> {
+        let conn = rusqlite::Connection::open(path)
+            .map_err(|e| FileShieldedStoreError(format!("open sqlite: {e}")))?;
+        // Pragmas must be applied before the schema is touched. They survive
+        // for the lifetime of the connection; WAL also persists for any
+        // subsequent reopen on the same file until explicitly changed.
+        for (k, v) in [
+            ("journal_mode", "WAL"),
+            ("synchronous", "NORMAL"),
+            ("temp_store", "MEMORY"),
+        ] {
+            conn.pragma_update(None, k, v)
+                .map_err(|e| FileShieldedStoreError(format!("PRAGMA {k}={v}: {e}")))?;
+        }
+        Ok(conn)
     }
 }
 
 impl ShieldedStore for FileBackedShieldedStore {
     type Error = FileShieldedStoreError;
 
-    fn save_note(&mut self, note: &ShieldedNote) -> Result<(), Self::Error> {
-        // Re-saving an already-known note (e.g. a re-scan after a
-        // cold start trial-decrypts the same chunk) used to append
-        // a duplicate `ShieldedNote` while overwriting the
-        // nullifier index. The result was a double-counted balance
-        // (`get_unspent_notes` returned both copies) and a stuck
-        // unspent flag (`mark_spent` only marked the second copy).
-        // Orchard nullifiers are globally unique, so an existing
-        // entry for the same nullifier means we already have this
-        // note — overwrite-in-place rather than append.
-        if let Some(&existing_idx) = self.nullifier_index.get(&note.nullifier) {
-            self.notes[existing_idx] = note.clone();
-            return Ok(());
-        }
-        let idx = self.notes.len();
-        self.nullifier_index.insert(note.nullifier, idx);
-        self.notes.push(note.clone());
+    fn save_note(&mut self, id: SubwalletId, note: &ShieldedNote) -> Result<(), Self::Error> {
+        self.subwallets.entry(id).or_default().save_note(note);
         Ok(())
     }
 
-    fn get_unspent_notes(&self) -> Result<Vec<ShieldedNote>, Self::Error> {
-        Ok(self.notes.iter().filter(|n| !n.is_spent).cloned().collect())
+    fn get_unspent_notes(&self, id: SubwalletId) -> Result<Vec<ShieldedNote>, Self::Error> {
+        Ok(self
+            .subwallets
+            .get(&id)
+            .map(SubwalletState::unspent_notes)
+            .unwrap_or_default())
     }
 
-    fn get_all_notes(&self) -> Result<Vec<ShieldedNote>, Self::Error> {
-        Ok(self.notes.clone())
+    fn get_all_notes(&self, id: SubwalletId) -> Result<Vec<ShieldedNote>, Self::Error> {
+        Ok(self
+            .subwallets
+            .get(&id)
+            .map(SubwalletState::all_notes)
+            .unwrap_or_default())
     }
 
-    fn mark_spent(&mut self, nullifier: &[u8; 32]) -> Result<bool, Self::Error> {
-        if let Some(&idx) = self.nullifier_index.get(nullifier) {
-            if !self.notes[idx].is_spent {
-                self.notes[idx].is_spent = true;
-                return Ok(true);
-            }
-        }
-        Ok(false)
+    fn mark_spent(&mut self, id: SubwalletId, nullifier: &[u8; 32]) -> Result<bool, Self::Error> {
+        Ok(self
+            .subwallets
+            .get_mut(&id)
+            .map(|sw| sw.mark_spent(nullifier))
+            .unwrap_or(false))
+    }
+
+    fn mark_pending(&mut self, id: SubwalletId, nullifier: &[u8; 32]) -> Result<bool, Self::Error> {
+        Ok(self
+            .subwallets
+            .entry(id)
+            .or_default()
+            .mark_pending(nullifier))
+    }
+
+    fn clear_pending(
+        &mut self,
+        id: SubwalletId,
+        nullifier: &[u8; 32],
+    ) -> Result<bool, Self::Error> {
+        Ok(self
+            .subwallets
+            .get_mut(&id)
+            .map(|sw| sw.clear_pending(nullifier))
+            .unwrap_or(false))
     }
 
     fn append_commitment(&mut self, cmx: &[u8; 32], marked: bool) -> Result<(), Self::Error> {
@@ -160,31 +214,293 @@ impl ShieldedStore for FileBackedShieldedStore {
             .map_err(|e| FileShieldedStoreError(format!("read tree anchor: {e}")))
     }
 
-    fn witness(&self, _position: u64) -> Result<Vec<u8>, Self::Error> {
-        // Witness path serialization lives with the spend signer; the
-        // sync path doesn't call this, and spend ops haven't been
-        // routed back through `ShieldedStore` yet.
-        let _ = Position::from(_position); // keep the import alive
-        Err(FileShieldedStoreError(
-            "witness generation deferred until spend signer lands".into(),
-        ))
+    fn witness(
+        &self,
+        position: u64,
+    ) -> Result<Option<grovedb_commitment_tree::MerklePath>, Self::Error> {
+        let tree = self
+            .tree
+            .lock()
+            .map_err(|e| FileShieldedStoreError(format!("tree mutex poisoned: {e}")))?;
+        // `checkpoint_depth = 0` = current tree state. The Halo 2
+        // proof we're about to build uses `tree_anchor()` — also
+        // depth 0 — so the witness root must agree.
+        tree.witness(Position::from(position), 0)
+            .map_err(|e| FileShieldedStoreError(format!("witness({position}): {e}")))
     }
 
-    fn last_synced_note_index(&self) -> Result<u64, Self::Error> {
-        Ok(self.last_synced_index)
+    fn tree_size(&self) -> Result<u64, Self::Error> {
+        let tree = self
+            .tree
+            .lock()
+            .map_err(|e| FileShieldedStoreError(format!("tree mutex poisoned: {e}")))?;
+        let size = tree
+            .max_leaf_position()
+            .map_err(|e| FileShieldedStoreError(format!("read tree size: {e}")))?
+            .map(|p| u64::from(p) + 1)
+            .unwrap_or(0);
+        Ok(size)
     }
 
-    fn set_last_synced_note_index(&mut self, index: u64) -> Result<(), Self::Error> {
-        self.last_synced_index = index;
+    fn last_synced_note_index(&self, id: SubwalletId) -> Result<u64, Self::Error> {
+        Ok(self
+            .subwallets
+            .get(&id)
+            .map(|sw| sw.last_synced_index)
+            .unwrap_or(0))
+    }
+
+    fn set_last_synced_note_index(
+        &mut self,
+        id: SubwalletId,
+        index: u64,
+    ) -> Result<(), Self::Error> {
+        self.subwallets.entry(id).or_default().last_synced_index = index;
         Ok(())
     }
 
-    fn nullifier_checkpoint(&self) -> Result<Option<(u64, u64)>, Self::Error> {
-        Ok(self.nullifier_checkpoint)
+    fn nullifier_checkpoint(&self, id: SubwalletId) -> Result<Option<(u64, u64)>, Self::Error> {
+        Ok(self
+            .subwallets
+            .get(&id)
+            .and_then(|sw| sw.nullifier_checkpoint))
     }
 
-    fn set_nullifier_checkpoint(&mut self, height: u64, timestamp: u64) -> Result<(), Self::Error> {
-        self.nullifier_checkpoint = Some((height, timestamp));
+    fn set_nullifier_checkpoint(
+        &mut self,
+        id: SubwalletId,
+        height: u64,
+        timestamp: u64,
+    ) -> Result<(), Self::Error> {
+        self.subwallets.entry(id).or_default().nullifier_checkpoint = Some((height, timestamp));
         Ok(())
+    }
+
+    fn purge_wallet(&mut self, wallet_id: WalletId) -> Result<(), Self::Error> {
+        // Per-subwallet note / watermark / checkpoint state is
+        // in-memory only (`subwallets`); the commitment tree in
+        // SQLite is chain-wide and intentionally left intact.
+        self.subwallets.retain(|id, _| id.wallet_id != wallet_id);
+        Ok(())
+    }
+
+    fn purge_all_subwallets(&mut self) -> Result<(), Self::Error> {
+        self.subwallets.clear();
+        Ok(())
+    }
+
+    fn reset_commitment_tree(&mut self) -> Result<(), Self::Error> {
+        // The `ClientPersistentCommitmentTree` wrapper owns its
+        // `Connection` and exposes no public truncate (only the inner
+        // `SqliteShardStore` has `truncate_shards`). A full reset
+        // therefore (1) wipes the four `commitment_tree_*` tables on a
+        // fresh connection, then (2) rebuilds the wrapper over the now
+        // empty DB so the in-memory shardtree frontier/cap reflect the
+        // empty state. Reopening — rather than mutating the live tree —
+        // is what guarantees `tree_size()` reads back 0: the wrapper
+        // caches frontier nodes that a bare `DELETE` wouldn't clear.
+        let mut tree = self
+            .tree
+            .lock()
+            .map_err(|e| FileShieldedStoreError(format!("tree mutex poisoned: {e}")))?;
+
+        {
+            let conn = Self::open_tuned_connection(&self.path)?;
+            // `commitment_tree_cap` is included alongside the three
+            // shard/checkpoint tables: it caches upper-level tree nodes,
+            // so leaving it populated while the shards are empty would
+            // reopen into an inconsistent (non-empty) tree state.
+            conn.execute_batch(
+                "DELETE FROM commitment_tree_checkpoint_marks_removed;
+                 DELETE FROM commitment_tree_checkpoints;
+                 DELETE FROM commitment_tree_shards;
+                 DELETE FROM commitment_tree_cap;",
+            )
+            .map_err(|e| FileShieldedStoreError(format!("reset commitment tree tables: {e}")))?;
+        }
+
+        let conn = Self::open_tuned_connection(&self.path)?;
+        *tree = ClientPersistentCommitmentTree::open(conn, self.max_checkpoints)
+            .map_err(|e| FileShieldedStoreError(format!("reopen commitment tree: {e}")))?;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Unique temp path for a test tree (no `tempfile` dev-dep).
+    fn temp_tree_path(tag: &str) -> std::path::PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!("shielded_tree_test_{tag}_{nanos}.sqlite"))
+    }
+
+    /// Regression test for the "Shielded Merkle witness
+    /// unavailable" spend failure (multi-wallet shared-tree bug).
+    ///
+    /// Root cause: the shared commitment tree previously appended
+    /// commitments as `Ephemeral` unless the owning wallet's IVK
+    /// recognized them in that very sync pass. With multiple
+    /// wallets sharing one tree and binding at different times, a
+    /// note appended before its owner bound stayed Ephemeral
+    /// forever — shardtree has no retroactive marking — so the
+    /// balance showed but the spend failed to build a witness.
+    /// Observed on-disk symptom: every position un-witnessable
+    /// (missing internal nodes at `Level(2) index 0` /
+    /// `Level(1) index 2`).
+    ///
+    /// The fix: the shared tree marks EVERY position
+    /// (`append_commitment(.., true)`); per-wallet ownership is
+    /// tracked separately in the notes store. This test asserts
+    /// that a fully-marked tree witnesses every position —
+    /// including the rightmost (frontier) leaf whose sibling
+    /// doesn't exist yet — across a persist + reload cycle (the
+    /// cross-session round-trip a real wallet does between sync
+    /// and spend).
+    #[test]
+    fn all_marked_tree_witnesses_every_position_after_reload() {
+        let path = temp_tree_path("all_marked");
+        let mut store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+
+        // Mirror the real failing wallet's tree shape: 6
+        // commitments, single checkpoint at the tip. The fix
+        // marks ALL of them regardless of ownership.
+        const N: u64 = 6;
+        for i in 0..N {
+            let mut cmx = [0u8; 32];
+            cmx[0] = (i as u8) + 1; // distinct non-zero leaves
+            store.append_commitment(&cmx, true).unwrap();
+        }
+        store.checkpoint_tree(N as u32).unwrap();
+
+        // Persist to SQLite and reopen — the wallet builds the
+        // tree in one app session and witnesses it (at spend
+        // time) in a later one.
+        drop(store);
+        let store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+
+        let mut failures = Vec::new();
+        for pos in 0..N {
+            match store.witness(pos) {
+                Ok(Some(_)) => {}
+                Ok(None) => failures.push(format!("position {pos}: witness returned None")),
+                Err(e) => failures.push(format!("position {pos}: {e}")),
+            }
+        }
+
+        let _ = std::fs::remove_file(&path);
+
+        assert!(
+            failures.is_empty(),
+            "every position in a fully-marked tree must be witnessable, but: {failures:?}"
+        );
+    }
+
+    /// `tree_size()` is the append gate the multi-subwallet sync
+    /// relies on to stay idempotent (it appends only positions
+    /// `>= tree_size`). If the count were wrong — or didn't survive
+    /// the persist + reload the wallet does between sessions — a
+    /// re-fetch from a chunk boundary would double-append and
+    /// corrupt the tree ("Anchor not found in the recorded anchors
+    /// tree" on the next spend). This asserts the count is exact
+    /// from empty, after appends, and across a reopen.
+    #[test]
+    fn tree_size_tracks_leaf_count_across_reload() {
+        let path = temp_tree_path("tree_size");
+        let mut store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+
+        assert_eq!(store.tree_size().unwrap(), 0, "empty tree has size 0");
+
+        const N: u64 = 6;
+        for i in 0..N {
+            let mut cmx = [0u8; 32];
+            cmx[0] = (i as u8) + 1;
+            store.append_commitment(&cmx, true).unwrap();
+            assert_eq!(
+                store.tree_size().unwrap(),
+                i + 1,
+                "size must equal leaves appended so far"
+            );
+        }
+        store.checkpoint_tree(N as u32).unwrap();
+
+        drop(store);
+        let store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+
+        let size = store.tree_size().unwrap();
+        let _ = std::fs::remove_file(&path);
+
+        assert_eq!(
+            size, N,
+            "tree size must survive persist + reload — the append gate \
+             reads it on cold start to avoid re-appending existing leaves"
+        );
+    }
+
+    /// `reset_commitment_tree()` must empty the shared tree back to
+    /// zero leaves so the host's "Clear" action becomes a true cold
+    /// rebuild: after a reset, `tree_size()` is 0, a fresh append
+    /// starts at position 0, and the emptied state survives a
+    /// persist + reload (the on-disk tables are genuinely wiped, not
+    /// just the in-memory frontier). Without this, Clear rewinds the
+    /// per-subwallet watermark to 0 but leaves the tree at its full
+    /// size, so every re-downloaded position is gate-skipped and the
+    /// "Checked" progress bar stalls.
+    #[test]
+    fn reset_commitment_tree_empties_and_allows_reappend_from_zero() {
+        let path = temp_tree_path("reset");
+        let mut store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+
+        // Build a non-trivial tree.
+        const N: u64 = 6;
+        for i in 0..N {
+            let mut cmx = [0u8; 32];
+            cmx[0] = (i as u8) + 1;
+            store.append_commitment(&cmx, true).unwrap();
+        }
+        store.checkpoint_tree(N as u32).unwrap();
+        assert_eq!(
+            store.tree_size().unwrap(),
+            N,
+            "precondition: tree holds N leaves before reset"
+        );
+
+        // Reset wipes it back to empty.
+        store.reset_commitment_tree().unwrap();
+        assert_eq!(
+            store.tree_size().unwrap(),
+            0,
+            "tree_size must be 0 immediately after reset"
+        );
+
+        // A fresh append starts at position 0 again and the count
+        // climbs from there — the cold-rebuild contract Clear relies on.
+        let mut cmx = [0u8; 32];
+        cmx[0] = 42;
+        store.append_commitment(&cmx, true).unwrap();
+        assert_eq!(
+            store.tree_size().unwrap(),
+            1,
+            "first post-reset append must land at position 0 (size 1)"
+        );
+        store.checkpoint_tree(1).unwrap();
+
+        // The emptied + re-appended state must survive persist +
+        // reload, proving the reset wiped the on-disk tables rather
+        // than only the in-memory frontier.
+        drop(store);
+        let store = FileBackedShieldedStore::open_path(&path, 100).unwrap();
+        let size = store.tree_size().unwrap();
+        let _ = std::fs::remove_file(&path);
+
+        assert_eq!(
+            size, 1,
+            "post-reset tree state (1 leaf) must survive persist + reload, \
+             confirming reset cleared the SQLite tree tables"
+        );
     }
 }

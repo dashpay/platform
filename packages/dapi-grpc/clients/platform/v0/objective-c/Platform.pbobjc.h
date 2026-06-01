@@ -103,11 +103,18 @@ CF_EXTERN_C_BEGIN
 @class GetDocumentsResponse_GetDocumentsResponseV0;
 @class GetDocumentsResponse_GetDocumentsResponseV0_Documents;
 @class GetDocumentsResponse_GetDocumentsResponseV1;
+@class GetDocumentsResponse_GetDocumentsResponseV1_AverageAggregate;
+@class GetDocumentsResponse_GetDocumentsResponseV1_AverageEntries;
+@class GetDocumentsResponse_GetDocumentsResponseV1_AverageEntry;
+@class GetDocumentsResponse_GetDocumentsResponseV1_AverageResults;
 @class GetDocumentsResponse_GetDocumentsResponseV1_CountEntries;
 @class GetDocumentsResponse_GetDocumentsResponseV1_CountEntry;
 @class GetDocumentsResponse_GetDocumentsResponseV1_CountResults;
 @class GetDocumentsResponse_GetDocumentsResponseV1_Documents;
 @class GetDocumentsResponse_GetDocumentsResponseV1_ResultData;
+@class GetDocumentsResponse_GetDocumentsResponseV1_SumEntries;
+@class GetDocumentsResponse_GetDocumentsResponseV1_SumEntry;
+@class GetDocumentsResponse_GetDocumentsResponseV1_SumResults;
 @class GetEpochsInfoRequest_GetEpochsInfoRequestV0;
 @class GetEpochsInfoResponse_GetEpochsInfoResponseV0;
 @class GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfo;
@@ -239,6 +246,8 @@ CF_EXTERN_C_BEGIN
 @class GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0;
 @class GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNote;
 @class GetShieldedEncryptedNotesResponse_GetShieldedEncryptedNotesResponseV0_EncryptedNotes;
+@class GetShieldedNotesCountRequest_GetShieldedNotesCountRequestV0;
+@class GetShieldedNotesCountResponse_GetShieldedNotesCountResponseV0;
 @class GetShieldedNullifiersRequest_GetShieldedNullifiersRequestV0;
 @class GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0;
 @class GetShieldedNullifiersResponse_GetShieldedNullifiersResponseV0_NullifierStatus;
@@ -3085,9 +3094,15 @@ GPB_FINAL @interface GetDocumentsRequest_GetDocumentsRequestV1 : GPBMessage
  *
  * **Currently rejected when `selects.len() > 1`** with
  * `Unsupported("multi-projection SELECT is not yet
- * implemented")`. The single-projection cases (`DOCUMENTS`,
- * `COUNT(*)`) are evaluated today; `SUM` / `AVG` / `MIN` /
- * `MAX` are rejected at the per-function gate. When
+ * implemented")`. The single-projection cases `DOCUMENTS`,
+ * `COUNT(*)`, `SUM(<field>)`, and `AVG(<field>)` are evaluated
+ * end-to-end today and route through the drive count / sum /
+ * average dispatchers (see the `GetDocumentsResponseV1`
+ * docstring for the wire-shape table). `COUNT(<field>)`,
+ * `MIN(<field>)`, and `MAX(<field>)` remain rejected at the
+ * per-function gate — see the `Select` message-level docstring
+ * for the rationale (no grovedb min/max primitive; COUNT(field)
+ * needs a non-null counter walk that doesn't exist yet). When
  * multi-projection lands the response shape gains a parallel
  * `repeated AggregateValue values` field, so caller code
  * structured around `repeated Select` doesn't need to be
@@ -3175,12 +3190,18 @@ typedef GPB_ENUM(GetDocumentsRequest_GetDocumentsRequestV1_Select_FieldNumber) {
  * `group_by` (empty → single, non-empty → per-group entries) —
  * same rule as today's `COUNT` routing.
  *
- * **Server capability today**: only `DOCUMENTS` and
- * `COUNT(*)` (empty `field`) are evaluated. `SUM` / `AVG`
- * and `COUNT(field)` are wire-stable but rejected at routing
- * time with `Unsupported("… is not yet implemented")` so the
+ * **Server capability today**: `DOCUMENTS`, `COUNT(*)` (empty
+ * `field`), `SUM(<field>)`, and `AVG(<field>)` are evaluated
+ * end-to-end (no-proof and proof paths route through the drive
+ * count / sum / average dispatchers). `COUNT(<field>)` (non-null
+ * value counting on a specific field), `MIN(<field>)`, and
+ * `MAX(<field>)` are wire-stable but rejected at routing time
+ * with `Unsupported("SELECT … is not yet implemented")` so the
  * surface is shipped first and execution lands later without
- * another version bump.
+ * another version bump. MIN/MAX in particular wait on a grovedb
+ * primitive — there's no min/max aggregate on count or sum
+ * trees today, and the order-by-then-LIMIT-1 emulation has the
+ * wrong proof shape for the cryptographic verifier.
  **/
 GPB_FINAL @interface GetDocumentsRequest_GetDocumentsRequestV1_Select : GPBMessage
 
@@ -3314,10 +3335,26 @@ typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_Result_OneOfCase) {
  * canonical without flattening to a three-variant oneof.
  *
  * Wire shape by `request.select` × `group_by` × `prove`:
- *   - `select=DOCUMENTS` (no prove)         → `result.data.documents`.
- *   - `select=COUNT, group_by=[]` (no prove) → `result.data.counts.aggregate_count`.
- *   - `select=COUNT, group_by=[…]` (no prove) → `result.data.counts.entries`.
- *   - any select (prove)                     → `result.proof`.
+ *   - `select=DOCUMENTS` (no prove)            → `result.data.documents`.
+ *   - `select=COUNT, group_by=[]` (no prove)   → `result.data.counts.aggregate_count`.
+ *   - `select=COUNT, group_by=[…]` (no prove)  → `result.data.counts.entries`.
+ *   - `select=SUM, group_by=[]` (no prove)     → `result.data.sums.aggregate_sum`.
+ *   - `select=SUM, group_by=[…]` (no prove)    → `result.data.sums.entries`.
+ *   - `select=AVG, group_by=[]` (no prove)     → `result.data.averages.aggregate_average`.
+ *   - `select=AVG, group_by=[…]` (no prove)    → `result.data.averages.entries`.
+ *   - any select (prove)                        → `result.proof`.
+ *
+ * **SUM / AVG status**: all four shapes above are wired
+ * end-to-end on the drive dispatcher (no-proof and proof paths
+ * both terminate at grovedb's aggregate-sum / sum-tree-walk
+ * primitives, not at a `NotYetImplemented` stub). The four
+ * resolved-mode tables (`compute_aggregate_mode_and_check_limit_v0`,
+ * `detect_count_mode`, `detect_sum_mode`, AVG mirror) decide which
+ * executor to run from the (mode × range × group_by × prove)
+ * tuple; the executors compose count and sum walks for AVG so
+ * there's no separate average primitive on the grovedb side.
+ * Routing details live in
+ * `packages/rs-drive/src/query/drive_document_{sum,average}_query/`.
  *
  * `CountResults` / `CountEntry` / `CountEntries` are nested in
  * `GetDocumentsResponseV1` rather than re-exported from a
@@ -3451,23 +3488,227 @@ GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1_CountResults : 
  **/
 void GetDocumentsResponse_GetDocumentsResponseV1_CountResults_ClearVariantOneOfCase(GetDocumentsResponse_GetDocumentsResponseV1_CountResults *message);
 
+#pragma mark - GetDocumentsResponse_GetDocumentsResponseV1_SumEntry
+
+typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_SumEntry_FieldNumber) {
+  GetDocumentsResponse_GetDocumentsResponseV1_SumEntry_FieldNumber_InKey = 1,
+  GetDocumentsResponse_GetDocumentsResponseV1_SumEntry_FieldNumber_Key = 2,
+  GetDocumentsResponse_GetDocumentsResponseV1_SumEntry_FieldNumber_Sum = 3,
+};
+
+/**
+ * Sum-side analog of `CountEntry` — one per matched key for
+ * `select=SUM, group_by=[...]` queries. `in_key` carries the
+ * outer prefix value for compound `(In, range)` shapes; `key`
+ * carries the terminator value. `sum` is signed because grovedb's
+ * SumTree values are `i64` and sums can in principle be negative
+ * (deliberate i64-overflow signaling — see the sum-tree book
+ * chapter's "Signed `i64` overflow" note). For tip-jar-style
+ * non-negative sums this stays >= 0 in practice.
+ **/
+GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1_SumEntry : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *inKey;
+/** Test to see if @c inKey has been set. */
+@property(nonatomic, readwrite) BOOL hasInKey;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *key;
+
+/**
+ * `jstype = JS_STRING` so JS/Web clients receive a string
+ * and don't round large sums to the nearest Number.
+ **/
+@property(nonatomic, readwrite) int64_t sum;
+
+@end
+
+#pragma mark - GetDocumentsResponse_GetDocumentsResponseV1_SumEntries
+
+typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_SumEntries_FieldNumber) {
+  GetDocumentsResponse_GetDocumentsResponseV1_SumEntries_FieldNumber_EntriesArray = 1,
+};
+
+GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1_SumEntries : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetDocumentsResponse_GetDocumentsResponseV1_SumEntry*> *entriesArray;
+/** The number of items in @c entriesArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger entriesArray_Count;
+
+@end
+
+#pragma mark - GetDocumentsResponse_GetDocumentsResponseV1_SumResults
+
+typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_SumResults_FieldNumber) {
+  GetDocumentsResponse_GetDocumentsResponseV1_SumResults_FieldNumber_AggregateSum = 1,
+  GetDocumentsResponse_GetDocumentsResponseV1_SumResults_FieldNumber_Entries = 2,
+};
+
+typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_SumResults_Variant_OneOfCase) {
+  GetDocumentsResponse_GetDocumentsResponseV1_SumResults_Variant_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetDocumentsResponse_GetDocumentsResponseV1_SumResults_Variant_OneOfCase_AggregateSum = 1,
+  GetDocumentsResponse_GetDocumentsResponseV1_SumResults_Variant_OneOfCase_Entries = 2,
+};
+
+/**
+ * Non-proof sum result. Same shape as `CountResults` for the
+ * sum surface — the variants mirror count's:
+ *   * `aggregate_sum`: `select=SUM, group_by=[]` — single signed
+ *     sum with no per-key breakdown.
+ *   * `entries`: `select=SUM, group_by=[…]` — one SumEntry per
+ *     distinct group.
+ **/
+GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1_SumResults : GPBMessage
+
+@property(nonatomic, readonly) GetDocumentsResponse_GetDocumentsResponseV1_SumResults_Variant_OneOfCase variantOneOfCase;
+
+@property(nonatomic, readwrite) int64_t aggregateSum;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentsResponse_GetDocumentsResponseV1_SumEntries *entries;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'variant'.
+ **/
+void GetDocumentsResponse_GetDocumentsResponseV1_SumResults_ClearVariantOneOfCase(GetDocumentsResponse_GetDocumentsResponseV1_SumResults *message);
+
+#pragma mark - GetDocumentsResponse_GetDocumentsResponseV1_AverageEntry
+
+typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_AverageEntry_FieldNumber) {
+  GetDocumentsResponse_GetDocumentsResponseV1_AverageEntry_FieldNumber_InKey = 1,
+  GetDocumentsResponse_GetDocumentsResponseV1_AverageEntry_FieldNumber_Key = 2,
+  GetDocumentsResponse_GetDocumentsResponseV1_AverageEntry_FieldNumber_Count = 3,
+  GetDocumentsResponse_GetDocumentsResponseV1_AverageEntry_FieldNumber_Sum = 4,
+};
+
+/**
+ * Average-side analog of `SumEntry` — one per matched key for
+ * `select=AVG, group_by=[…]` queries. Each entry carries BOTH
+ * the count and the sum for its group; the client divides
+ * `sum / count` to compute the actual average.
+ *
+ * Why no `average` field on the wire? Returning the (count, sum)
+ * pair preserves full precision and lets the client pick the
+ * representation it wants (integer-truncated division, floating-
+ * point, decimal). Returning a single pre-computed `average`
+ * would force the server to choose, and any choice loses
+ * information for callers that wanted a different one.
+ *
+ * This shape is produced by grovedb's `AggregateCountAndSumOnRange`
+ * primitive (one root-hash-committed traversal returning both
+ * metrics) which lands as part of grovedb PR 670 alongside the
+ * PCPS (`ProvableCountProvableSumTree`) tree element.
+ **/
+GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1_AverageEntry : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *inKey;
+/** Test to see if @c inKey has been set. */
+@property(nonatomic, readwrite) BOOL hasInKey;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *key;
+
+/**
+ * `jstype = JS_STRING` on both fields so JS/Web clients receive
+ * strings and don't lose precision on counts/sums exceeding
+ * `Number.MAX_SAFE_INTEGER`.
+ **/
+@property(nonatomic, readwrite) uint64_t count;
+
+@property(nonatomic, readwrite) int64_t sum;
+
+@end
+
+#pragma mark - GetDocumentsResponse_GetDocumentsResponseV1_AverageEntries
+
+typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_AverageEntries_FieldNumber) {
+  GetDocumentsResponse_GetDocumentsResponseV1_AverageEntries_FieldNumber_EntriesArray = 1,
+};
+
+GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1_AverageEntries : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetDocumentsResponse_GetDocumentsResponseV1_AverageEntry*> *entriesArray;
+/** The number of items in @c entriesArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger entriesArray_Count;
+
+@end
+
+#pragma mark - GetDocumentsResponse_GetDocumentsResponseV1_AverageAggregate
+
+typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_AverageAggregate_FieldNumber) {
+  GetDocumentsResponse_GetDocumentsResponseV1_AverageAggregate_FieldNumber_Count = 1,
+  GetDocumentsResponse_GetDocumentsResponseV1_AverageAggregate_FieldNumber_Sum = 2,
+};
+
+/**
+ * Aggregate average across all matched documents (no group_by).
+ * Same `(count, sum)` shape as a single entry — the client
+ * computes `avg = sum / count` itself.
+ **/
+GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1_AverageAggregate : GPBMessage
+
+@property(nonatomic, readwrite) uint64_t count;
+
+@property(nonatomic, readwrite) int64_t sum;
+
+@end
+
+#pragma mark - GetDocumentsResponse_GetDocumentsResponseV1_AverageResults
+
+typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_AverageResults_FieldNumber) {
+  GetDocumentsResponse_GetDocumentsResponseV1_AverageResults_FieldNumber_AggregateAverage = 1,
+  GetDocumentsResponse_GetDocumentsResponseV1_AverageResults_FieldNumber_Entries = 2,
+};
+
+typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_AverageResults_Variant_OneOfCase) {
+  GetDocumentsResponse_GetDocumentsResponseV1_AverageResults_Variant_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetDocumentsResponse_GetDocumentsResponseV1_AverageResults_Variant_OneOfCase_AggregateAverage = 1,
+  GetDocumentsResponse_GetDocumentsResponseV1_AverageResults_Variant_OneOfCase_Entries = 2,
+};
+
+/**
+ * Non-proof average result. Same outer shape as
+ * `CountResults` / `SumResults`; the variants mirror them:
+ *   * `aggregate_average`: `select=AVG, group_by=[]` — single
+ *     `(count, sum)` pair with no per-key breakdown.
+ *   * `entries`: `select=AVG, group_by=[…]` — one AverageEntry
+ *     per distinct group, each carrying its own `(count, sum)`.
+ **/
+GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1_AverageResults : GPBMessage
+
+@property(nonatomic, readonly) GetDocumentsResponse_GetDocumentsResponseV1_AverageResults_Variant_OneOfCase variantOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentsResponse_GetDocumentsResponseV1_AverageAggregate *aggregateAverage;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentsResponse_GetDocumentsResponseV1_AverageEntries *entries;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'variant'.
+ **/
+void GetDocumentsResponse_GetDocumentsResponseV1_AverageResults_ClearVariantOneOfCase(GetDocumentsResponse_GetDocumentsResponseV1_AverageResults *message);
+
 #pragma mark - GetDocumentsResponse_GetDocumentsResponseV1_ResultData
 
 typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_ResultData_FieldNumber) {
   GetDocumentsResponse_GetDocumentsResponseV1_ResultData_FieldNumber_Documents = 1,
   GetDocumentsResponse_GetDocumentsResponseV1_ResultData_FieldNumber_Counts = 2,
+  GetDocumentsResponse_GetDocumentsResponseV1_ResultData_FieldNumber_Sums = 3,
+  GetDocumentsResponse_GetDocumentsResponseV1_ResultData_FieldNumber_Averages = 4,
 };
 
 typedef GPB_ENUM(GetDocumentsResponse_GetDocumentsResponseV1_ResultData_Variant_OneOfCase) {
   GetDocumentsResponse_GetDocumentsResponseV1_ResultData_Variant_OneOfCase_GPBUnsetOneOfCase = 0,
   GetDocumentsResponse_GetDocumentsResponseV1_ResultData_Variant_OneOfCase_Documents = 1,
   GetDocumentsResponse_GetDocumentsResponseV1_ResultData_Variant_OneOfCase_Counts = 2,
+  GetDocumentsResponse_GetDocumentsResponseV1_ResultData_Variant_OneOfCase_Sums = 3,
+  GetDocumentsResponse_GetDocumentsResponseV1_ResultData_Variant_OneOfCase_Averages = 4,
 };
 
 /**
  * Non-proof result wrapper. The outer `oneof result` switches
  * between this and `proof`; this inner oneof switches between
- * the two non-proof shapes the v1 surface can return.
+ * the four non-proof shapes the v1 surface can return.
  **/
 GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1_ResultData : GPBMessage
 
@@ -3476,6 +3717,27 @@ GPB_FINAL @interface GetDocumentsResponse_GetDocumentsResponseV1_ResultData : GP
 @property(nonatomic, readwrite, strong, null_resettable) GetDocumentsResponse_GetDocumentsResponseV1_Documents *documents;
 
 @property(nonatomic, readwrite, strong, null_resettable) GetDocumentsResponse_GetDocumentsResponseV1_CountResults *counts;
+
+/**
+ * Sum-aggregate result. Routed when the request's
+ * `select.function == SUM` and the dispatcher's
+ * [`DriveDocumentSumQuery`] (in rs-drive) returns a
+ * non-proof variant. The schema field name (`sums`) parallels
+ * `counts` above; field numbers stay 1/2/3/4 per the proto-
+ * wire-stability rule (additions only, never renumbers).
+ **/
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentsResponse_GetDocumentsResponseV1_SumResults *sums;
+
+/**
+ * Average-aggregate result. Routed when the request's
+ * `select.function == AVG`. The dispatcher returns the
+ * `(count, sum)` pair grovedb's `AggregateCountAndSumOnRange`
+ * primitive produces in one root-hash-committed traversal;
+ * the client divides to obtain the actual average. See
+ * `book/src/drive/average-index-examples.md` for the design
+ * and the grades-contract worked example.
+ **/
+@property(nonatomic, readwrite, strong, null_resettable) GetDocumentsResponse_GetDocumentsResponseV1_AverageResults *averages;
 
 @end
 
@@ -10089,6 +10351,108 @@ GPB_FINAL @interface GetShieldedPoolStateResponse_GetShieldedPoolStateResponseV0
  * Clears whatever value was set for the oneof 'result'.
  **/
 void GetShieldedPoolStateResponse_GetShieldedPoolStateResponseV0_ClearResultOneOfCase(GetShieldedPoolStateResponse_GetShieldedPoolStateResponseV0 *message);
+
+#pragma mark - GetShieldedNotesCountRequest
+
+typedef GPB_ENUM(GetShieldedNotesCountRequest_FieldNumber) {
+  GetShieldedNotesCountRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetShieldedNotesCountRequest_Version_OneOfCase) {
+  GetShieldedNotesCountRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetShieldedNotesCountRequest_Version_OneOfCase_V0 = 1,
+};
+
+/**
+ * Count of leaves in the shielded notes commitment tree.
+ * Used by wallets at the start of a shielded sync to seed a
+ * determinate progress-bar denominator. The count IS bound by the
+ * Merk value hash: it is the first field (`total_count`) of the
+ * serialized `CommitmentTree` element whose bytes are hashed into the
+ * app/root hash, so it is provable via a PathQuery proof of that
+ * element (set `prove = true`).
+ **/
+GPB_FINAL @interface GetShieldedNotesCountRequest : GPBMessage
+
+@property(nonatomic, readonly) GetShieldedNotesCountRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetShieldedNotesCountRequest_GetShieldedNotesCountRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetShieldedNotesCountRequest_ClearVersionOneOfCase(GetShieldedNotesCountRequest *message);
+
+#pragma mark - GetShieldedNotesCountRequest_GetShieldedNotesCountRequestV0
+
+typedef GPB_ENUM(GetShieldedNotesCountRequest_GetShieldedNotesCountRequestV0_FieldNumber) {
+  GetShieldedNotesCountRequest_GetShieldedNotesCountRequestV0_FieldNumber_Prove = 1,
+};
+
+GPB_FINAL @interface GetShieldedNotesCountRequest_GetShieldedNotesCountRequestV0 : GPBMessage
+
+@property(nonatomic, readwrite) BOOL prove;
+
+@end
+
+#pragma mark - GetShieldedNotesCountResponse
+
+typedef GPB_ENUM(GetShieldedNotesCountResponse_FieldNumber) {
+  GetShieldedNotesCountResponse_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetShieldedNotesCountResponse_Version_OneOfCase) {
+  GetShieldedNotesCountResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetShieldedNotesCountResponse_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetShieldedNotesCountResponse : GPBMessage
+
+@property(nonatomic, readonly) GetShieldedNotesCountResponse_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetShieldedNotesCountResponse_GetShieldedNotesCountResponseV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetShieldedNotesCountResponse_ClearVersionOneOfCase(GetShieldedNotesCountResponse *message);
+
+#pragma mark - GetShieldedNotesCountResponse_GetShieldedNotesCountResponseV0
+
+typedef GPB_ENUM(GetShieldedNotesCountResponse_GetShieldedNotesCountResponseV0_FieldNumber) {
+  GetShieldedNotesCountResponse_GetShieldedNotesCountResponseV0_FieldNumber_TotalNotesCount = 1,
+  GetShieldedNotesCountResponse_GetShieldedNotesCountResponseV0_FieldNumber_Proof = 2,
+  GetShieldedNotesCountResponse_GetShieldedNotesCountResponseV0_FieldNumber_Metadata = 3,
+};
+
+typedef GPB_ENUM(GetShieldedNotesCountResponse_GetShieldedNotesCountResponseV0_Result_OneOfCase) {
+  GetShieldedNotesCountResponse_GetShieldedNotesCountResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetShieldedNotesCountResponse_GetShieldedNotesCountResponseV0_Result_OneOfCase_TotalNotesCount = 1,
+  GetShieldedNotesCountResponse_GetShieldedNotesCountResponseV0_Result_OneOfCase_Proof = 2,
+};
+
+GPB_FINAL @interface GetShieldedNotesCountResponse_GetShieldedNotesCountResponseV0 : GPBMessage
+
+@property(nonatomic, readonly) GetShieldedNotesCountResponse_GetShieldedNotesCountResponseV0_Result_OneOfCase resultOneOfCase;
+
+@property(nonatomic, readwrite) uint64_t totalNotesCount;
+
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'result'.
+ **/
+void GetShieldedNotesCountResponse_GetShieldedNotesCountResponseV0_ClearResultOneOfCase(GetShieldedNotesCountResponse_GetShieldedNotesCountResponseV0 *message);
 
 #pragma mark - GetShieldedNullifiersRequest
 

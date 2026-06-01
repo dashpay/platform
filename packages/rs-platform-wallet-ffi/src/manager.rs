@@ -65,17 +65,31 @@ pub unsafe extern "C" fn platform_wallet_manager_create(
     PlatformWalletFFIResult::ok()
 }
 
-/// Create a wallet from raw seed bytes (64 bytes).
+/// Map the C `has_x: bool` + `x` companion-pair idiom to a Rust `Option<u32>`.
 ///
-/// On success, `out_wallet_handle` is set to a `PlatformWallet` handle and
-/// `out_wallet_id` is filled with the 32-byte wallet ID.
-#[no_mangle]
-pub unsafe extern "C" fn platform_wallet_manager_create_wallet_from_seed(
+/// `has == true` yields `Some(value)` — including `Some(0)`, kept distinct
+/// from `has == false` which yields `None`. Mirrors the crate's `has_config`
+/// optional-scalar convention; there is no `u32::MAX` sentinel.
+fn birth_height_override_opt(has: bool, value: u32) -> Option<u32> {
+    if has {
+        Some(value)
+    } else {
+        None
+    }
+}
+
+/// Shared body for the seed-based wallet-creation exports.
+///
+/// `birth_height_override` is threaded verbatim into
+/// `create_wallet_from_seed_bytes`; the no-override export passes `None`.
+#[allow(clippy::too_many_arguments)]
+unsafe fn create_wallet_from_seed_impl(
     manager_handle: Handle,
     network: FFINetwork,
     seed_bytes: *const u8,
     seed_len: usize,
     account_options: u32,
+    birth_height_override: Option<u32>,
     out_wallet_handle: *mut Handle,
     out_wallet_id: *mut [u8; 32],
 ) -> PlatformWalletFFIResult {
@@ -101,7 +115,12 @@ pub unsafe extern "C" fn platform_wallet_manager_create_wallet_from_seed(
     };
 
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(manager_handle, |manager| {
-        runtime().block_on(manager.create_wallet_from_seed_bytes(network, seed, accounts))
+        runtime().block_on(manager.create_wallet_from_seed_bytes(
+            network,
+            seed,
+            accounts,
+            birth_height_override,
+        ))
     });
     let result = unwrap_option_or_return!(option);
     let wallet = unwrap_result_or_return!(result);
@@ -112,16 +131,16 @@ pub unsafe extern "C" fn platform_wallet_manager_create_wallet_from_seed(
     PlatformWalletFFIResult::ok()
 }
 
-/// Create a wallet from a BIP39 mnemonic phrase (English).
+/// Shared body for the mnemonic-based wallet-creation exports.
 ///
-/// On success, `out_wallet_handle` is set to a `PlatformWallet` handle and
-/// `out_wallet_id` is filled with the 32-byte wallet ID.
-#[no_mangle]
-pub unsafe extern "C" fn platform_wallet_manager_create_wallet_from_mnemonic(
+/// `birth_height_override` is threaded verbatim into
+/// `create_wallet_from_mnemonic`; the no-override export passes `None`.
+unsafe fn create_wallet_from_mnemonic_impl(
     manager_handle: Handle,
     mnemonic: *const std::os::raw::c_char,
     network: FFINetwork,
     account_options: u32,
+    birth_height_override: Option<u32>,
     out_wallet_handle: *mut Handle,
     out_wallet_id: *mut [u8; 32],
 ) -> PlatformWalletFFIResult {
@@ -139,7 +158,12 @@ pub unsafe extern "C" fn platform_wallet_manager_create_wallet_from_mnemonic(
     };
 
     let option = PLATFORM_WALLET_MANAGER_STORAGE.with_item(manager_handle, |manager| {
-        runtime().block_on(manager.create_wallet_from_mnemonic(mnemonic_str, network, accounts))
+        runtime().block_on(manager.create_wallet_from_mnemonic(
+            mnemonic_str,
+            network,
+            accounts,
+            birth_height_override,
+        ))
     });
     let result = unwrap_option_or_return!(option);
     let wallet = unwrap_result_or_return!(result);
@@ -148,6 +172,124 @@ pub unsafe extern "C" fn platform_wallet_manager_create_wallet_from_mnemonic(
     *out_wallet_handle = wallet_handle;
     *out_wallet_id = wallet_id;
     PlatformWalletFFIResult::ok()
+}
+
+/// Create a wallet from raw seed bytes (64 bytes).
+///
+/// On success, `out_wallet_handle` is set to a `PlatformWallet` handle and
+/// `out_wallet_id` is filled with the 32-byte wallet ID.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_create_wallet_from_seed(
+    manager_handle: Handle,
+    network: FFINetwork,
+    seed_bytes: *const u8,
+    seed_len: usize,
+    account_options: u32,
+    out_wallet_handle: *mut Handle,
+    out_wallet_id: *mut [u8; 32],
+) -> PlatformWalletFFIResult {
+    create_wallet_from_seed_impl(
+        manager_handle,
+        network,
+        seed_bytes,
+        seed_len,
+        account_options,
+        None,
+        out_wallet_handle,
+        out_wallet_id,
+    )
+}
+
+/// Create a wallet from raw seed bytes (64 bytes) with an optional
+/// birth-height override.
+///
+/// Identical to [`platform_wallet_manager_create_wallet_from_seed`] but lets
+/// the caller pin the wallet's birth height. `has_birth_height_override ==
+/// false` behaves exactly like the no-override export (`None`);
+/// `has_birth_height_override == true` passes `Some(birth_height_override)`,
+/// including `Some(0)`.
+///
+/// On success, `out_wallet_handle` is set to a `PlatformWallet` handle and
+/// `out_wallet_id` is filled with the 32-byte wallet ID.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_create_wallet_from_seed_with_birth_height(
+    manager_handle: Handle,
+    network: FFINetwork,
+    seed_bytes: *const u8,
+    seed_len: usize,
+    account_options: u32,
+    has_birth_height_override: bool,
+    birth_height_override: u32,
+    out_wallet_handle: *mut Handle,
+    out_wallet_id: *mut [u8; 32],
+) -> PlatformWalletFFIResult {
+    create_wallet_from_seed_impl(
+        manager_handle,
+        network,
+        seed_bytes,
+        seed_len,
+        account_options,
+        birth_height_override_opt(has_birth_height_override, birth_height_override),
+        out_wallet_handle,
+        out_wallet_id,
+    )
+}
+
+/// Create a wallet from a BIP39 mnemonic phrase (English).
+///
+/// On success, `out_wallet_handle` is set to a `PlatformWallet` handle and
+/// `out_wallet_id` is filled with the 32-byte wallet ID.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_create_wallet_from_mnemonic(
+    manager_handle: Handle,
+    mnemonic: *const std::os::raw::c_char,
+    network: FFINetwork,
+    account_options: u32,
+    out_wallet_handle: *mut Handle,
+    out_wallet_id: *mut [u8; 32],
+) -> PlatformWalletFFIResult {
+    create_wallet_from_mnemonic_impl(
+        manager_handle,
+        mnemonic,
+        network,
+        account_options,
+        None,
+        out_wallet_handle,
+        out_wallet_id,
+    )
+}
+
+/// Create a wallet from a BIP39 mnemonic phrase (English) with an optional
+/// birth-height override.
+///
+/// Identical to [`platform_wallet_manager_create_wallet_from_mnemonic`] but
+/// lets the caller pin the wallet's birth height. `has_birth_height_override
+/// == false` behaves exactly like the no-override export (`None`);
+/// `has_birth_height_override == true` passes `Some(birth_height_override)`,
+/// including `Some(0)`.
+///
+/// On success, `out_wallet_handle` is set to a `PlatformWallet` handle and
+/// `out_wallet_id` is filled with the 32-byte wallet ID.
+#[no_mangle]
+pub unsafe extern "C" fn platform_wallet_manager_create_wallet_from_mnemonic_with_birth_height(
+    manager_handle: Handle,
+    mnemonic: *const std::os::raw::c_char,
+    network: FFINetwork,
+    account_options: u32,
+    has_birth_height_override: bool,
+    birth_height_override: u32,
+    out_wallet_handle: *mut Handle,
+    out_wallet_id: *mut [u8; 32],
+) -> PlatformWalletFFIResult {
+    create_wallet_from_mnemonic_impl(
+        manager_handle,
+        mnemonic,
+        network,
+        account_options,
+        birth_height_override_opt(has_birth_height_override, birth_height_override),
+        out_wallet_handle,
+        out_wallet_id,
+    )
 }
 
 /// Hydrate the manager from its persister.
@@ -210,7 +352,15 @@ pub unsafe extern "C" fn platform_wallet_manager_destroy(
     handle: Handle,
 ) -> PlatformWalletFFIResult {
     if let Some(manager) = PLATFORM_WALLET_MANAGER_STORAGE.remove(handle) {
-        manager.platform_address_sync().stop();
+        // Run the full lifecycle shutdown to completion, not just the
+        // platform-address sync. Every background task (identity sync,
+        // shielded sync, the wallet-event adapter) can fire callbacks
+        // through the host-owned `context` pointer; once `destroy`
+        // returns the host may free that context, so no task may be
+        // left alive to fire a callback against freed memory.
+        // `shutdown()` is idempotent, so this is safe even if the host
+        // already stopped some sync managers before calling destroy.
+        runtime().block_on(manager.shutdown());
     }
     PlatformWalletFFIResult::ok()
 }
@@ -243,5 +393,26 @@ pub unsafe extern "C" fn platform_wallet_manager_remove_wallet(
                 e
             ),
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn birth_height_override_opt_true_zero_is_some_zero() {
+        assert_eq!(birth_height_override_opt(true, 0), Some(0));
+    }
+
+    #[test]
+    fn birth_height_override_opt_true_value_is_some_value() {
+        assert_eq!(birth_height_override_opt(true, 42), Some(42));
+    }
+
+    #[test]
+    fn birth_height_override_opt_false_is_none_regardless_of_value() {
+        assert_eq!(birth_height_override_opt(false, 0), None);
+        assert_eq!(birth_height_override_opt(false, 99), None);
     }
 }

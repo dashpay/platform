@@ -9,7 +9,7 @@ use async_trait::async_trait;
 use dashcore::ephemerealdata::chain_lock::ChainLock;
 use dashcore::ephemerealdata::instant_lock::InstantLock;
 use dashcore::prelude::CoreBlockHeight;
-use dashcore::{Address as DashAddress, Transaction, Txid};
+use dashcore::{Address as DashAddress, ScriptBuf, Transaction, Txid};
 
 use key_wallet::account::AccountType;
 use key_wallet::bip32::ExtendedPubKey;
@@ -95,6 +95,10 @@ impl WalletInfoInterface for PlatformWalletInfo {
 
     fn monitored_addresses(&self) -> Vec<DashAddress> {
         self.core_wallet.monitored_addresses()
+    }
+
+    fn monitored_script_pubkeys(&self) -> Vec<ScriptBuf> {
+        self.core_wallet.monitored_script_pubkeys()
     }
 
     fn utxos(&self) -> BTreeSet<&Utxo> {

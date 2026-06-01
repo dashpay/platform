@@ -59,6 +59,25 @@ pub struct PlatformWalletManager<P: PlatformWalletPersistence + 'static> {
     /// `start` after wallets are registered.
     #[cfg(feature = "shielded")]
     pub(super) shielded_sync_manager: Arc<ShieldedSyncManager>,
+    /// Network-scoped shielded coordinator. `None` until
+    /// `configure_shielded` opens the per-network SQLite tree;
+    /// once `Some`, every wallet's `bind_shielded` reuses the
+    /// same `Arc<RwLock<FileBackedShieldedStore>>` (held inside
+    /// the coordinator) so there's exactly one SQLite handle per
+    /// network manager. Phase 2 will move the sync loop here
+    /// from the per-wallet `ShieldedSyncManager` iteration; Phase
+    /// 4 deletes `ShieldedWallet` outright and the coordinator
+    /// owns the spend surface too.
+    #[cfg(feature = "shielded")]
+    pub(super) shielded_coordinator:
+        Arc<RwLock<Option<Arc<crate::wallet::shielded::NetworkShieldedCoordinator>>>>,
+    /// Shared `PlatformEventManager` — held on the manager so
+    /// `configure_shielded` can install a per-chunk progress handler
+    /// onto the freshly-created `NetworkShieldedCoordinator` that
+    /// forwards into `on_shielded_sync_progress`. Sub-managers
+    /// (`SpvRuntime`, `PlatformAddressSyncManager`, etc.) hold their
+    /// own clones already.
+    pub(super) event_manager: Arc<PlatformEventManager>,
     pub(super) persister: Arc<P>,
     /// Cancellation token + join handle for the wallet-event adapter
     /// task. Held so [`shutdown`] can stop it cleanly when the manager
@@ -119,9 +138,13 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             Arc::clone(&persister),
         ));
         #[cfg(feature = "shielded")]
+        let shielded_coordinator: Arc<
+            RwLock<Option<Arc<crate::wallet::shielded::NetworkShieldedCoordinator>>>,
+        > = Arc::new(RwLock::new(None));
+        #[cfg(feature = "shielded")]
         let shielded_sync = Arc::new(ShieldedSyncManager::new(
-            Arc::clone(&wallets),
             Arc::clone(&event_manager),
+            Arc::clone(&shielded_coordinator),
         ));
         Self {
             sdk,
@@ -133,24 +156,159 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             identity_sync_manager: identity_sync,
             #[cfg(feature = "shielded")]
             shielded_sync_manager: shielded_sync,
+            #[cfg(feature = "shielded")]
+            shielded_coordinator,
+            event_manager,
             persister,
             event_adapter_cancel,
             event_adapter_join: tokio::sync::Mutex::new(Some(event_adapter_join)),
         }
     }
 
+    /// Configure network-scoped shielded support. Opens the
+    /// per-network commitment-tree SQLite file at `db_path` and
+    /// installs a [`NetworkShieldedCoordinator`] that every
+    /// subsequent `PlatformWallet::bind_shielded` will share.
+    ///
+    /// Must be called before any wallet's `bind_shielded` —
+    /// per-wallet bind looks up the coordinator from the manager
+    /// and errors out if it hasn't been configured.
+    ///
+    /// Subsequent calls with the **same** `db_path` are a no-op
+    /// (configuration is idempotent at the path level). A second
+    /// call with a **different** path returns
+    /// `ShieldedNotConfigured` — the SQLite handle is opened
+    /// once per manager and can't be repointed at a different
+    /// file mid-flight. (Design-doc choice (c): the path is a
+    /// manager-level concern, not per-wallet.)
+    #[cfg(feature = "shielded")]
+    pub async fn configure_shielded(
+        &self,
+        db_path: impl AsRef<std::path::Path>,
+    ) -> Result<(), crate::error::PlatformWalletError> {
+        use crate::wallet::shielded::{FileBackedShieldedStore, NetworkShieldedCoordinator};
+        let db_path: std::path::PathBuf = db_path.as_ref().to_path_buf();
+
+        let mut slot = self.shielded_coordinator.write().await;
+        if let Some(existing) = slot.as_ref() {
+            if existing.db_path() == db_path.as_path() {
+                return Ok(());
+            }
+            return Err(crate::error::PlatformWalletError::ShieldedStoreError(
+                format!(
+                    "shielded already configured at {} — refusing to repoint at {}",
+                    existing.db_path().display(),
+                    db_path.display(),
+                ),
+            ));
+        }
+
+        // The store opens (and creates if missing) the SQLite
+        // file synchronously. 100 = shardtree's max retained
+        // checkpoints; matches the prior per-wallet default at
+        // `PlatformWallet::bind_shielded`.
+        let store = FileBackedShieldedStore::open_path(&db_path, 100)
+            .map_err(|e| crate::error::PlatformWalletError::ShieldedStoreError(e.to_string()))?;
+
+        let coordinator = Arc::new(NetworkShieldedCoordinator::new(
+            Arc::clone(&self.sdk),
+            self.sdk.network,
+            db_path,
+            store,
+        ));
+        // Bridge sync-internal chunk progress (~every 2048 notes)
+        // into the public `PlatformEventHandler::on_shielded_sync_progress`
+        // event so UI clients can render a live counter / progress
+        // bar during long cold syncs. Cheap closure — just forwards
+        // two u64s to the event manager.
+        let event_manager_for_progress = Arc::clone(&self.event_manager);
+        coordinator.install_progress_handler(Some(Arc::new(
+            move |cumulative_scanned: u64, block_height: u64| {
+                event_manager_for_progress
+                    .on_shielded_sync_progress(cumulative_scanned, block_height);
+            },
+        )));
+        // Bridge sync-internal tree-commit progress (once per
+        // committed batch) into the public
+        // `PlatformEventHandler::on_shielded_tree_progress` event — the
+        // second "checked / committed-to-tree" signal, distinct from
+        // the "downloaded" counter above. `leaves_committed` is the
+        // cumulative tree leaf count; `total_target` is the on-chain
+        // MMR total (0 ⇒ indeterminate). Lets UI clients render a dual
+        // ProgressView ("downloaded" vs "checked") during cold syncs.
+        let event_manager_for_tree_progress = Arc::clone(&self.event_manager);
+        coordinator.install_tree_progress_handler(Some(Arc::new(
+            move |leaves_committed: u64, total_target: u64| {
+                event_manager_for_tree_progress
+                    .on_shielded_tree_progress(leaves_committed, total_target);
+            },
+        )));
+        *slot = Some(coordinator);
+        Ok(())
+    }
+
+    /// Snapshot of the currently-installed shielded coordinator,
+    /// or `None` if `configure_shielded` hasn't run yet on this
+    /// manager. Cloned `Arc` so callers can hold the coordinator
+    /// past the read-lock guard's drop.
+    #[cfg(feature = "shielded")]
+    pub async fn shielded_coordinator(
+        &self,
+    ) -> Option<Arc<crate::wallet::shielded::NetworkShieldedCoordinator>> {
+        self.shielded_coordinator
+            .read()
+            .await
+            .as_ref()
+            .map(Arc::clone)
+    }
+
+    /// Tear down shielded sync state for a Clear / wipe flow.
+    ///
+    /// Single library entry point so the FFI stays a one-call bridge:
+    /// first **quiesce** the sync manager (cancel the loop *and* drain
+    /// any in-flight pass, including its persister-callback fan-out, so
+    /// nothing can re-persist notes after this returns), then **clear**
+    /// the network coordinator's per-subwallet registries. Idempotent —
+    /// the coordinator step is a no-op when shielded support was never
+    /// configured. The per-network commitment-tree SQLite file stays on
+    /// disk but its contents are reset to empty so the next bind cold-
+    /// resyncs from index 0.
+    ///
+    /// Returns an error if the coordinator's store reset fails; the host
+    /// must not commit its own persistence wipe in that case.
+    #[cfg(feature = "shielded")]
+    pub async fn clear_shielded(&self) -> Result<(), crate::error::PlatformWalletError> {
+        self.shielded_sync_manager.quiesce().await;
+        if let Some(coord) = self.shielded_coordinator().await {
+            coord.clear().await?;
+        }
+        Ok(())
+    }
+
     /// Stop all background tasks and wait for them to exit.
     ///
-    /// Stops the periodic coordinators (`PlatformAddressSyncManager`,
-    /// `IdentitySyncManager`) and the wallet-event adapter task.
+    /// **Quiesces** the periodic coordinators
+    /// (`PlatformAddressSyncManager`, `IdentitySyncManager`,
+    /// `ShieldedSyncManager`) — cancelling each loop *and draining any
+    /// in-flight pass to completion*, including its persister /
+    /// host-callback fan-out — then drains the wallet-event adapter task.
     /// Idempotent. Call before dropping the manager when a clean
     /// shutdown is required (e.g. on app termination); a dirty drop
     /// simply leaks the tasks until the runtime exits.
+    ///
+    /// Ordering matters: cancel-only `stop()` would let a pass already
+    /// inside `sync_now` keep running and call `persister.store(...)` /
+    /// fire a host completion callback after the FFI's `destroy`
+    /// returned and the host freed the persister / event-handler
+    /// context — a use-after-free. So we `quiesce()` the sync managers
+    /// FIRST (so no further persister store or host callback can start),
+    /// and only THEN cancel + join the event adapter, which is the sink
+    /// those stores feed into.
     pub async fn shutdown(&self) {
-        self.platform_address_sync_manager.stop();
-        self.identity_sync_manager.stop();
+        self.platform_address_sync_manager.quiesce().await;
+        self.identity_sync_manager.quiesce().await;
         #[cfg(feature = "shielded")]
-        self.shielded_sync_manager.stop();
+        self.shielded_sync_manager.quiesce().await;
 
         self.event_adapter_cancel.cancel();
         if let Some(handle) = self.event_adapter_join.lock().await.take() {

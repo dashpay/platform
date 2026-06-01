@@ -35,6 +35,8 @@ service Platform {
       returns (GetDataContractHistoryResponse);
   rpc getDataContracts(GetDataContractsRequest)
       returns (GetDataContractsResponse);
+  rpc getDocumentHistory(GetDocumentHistoryRequest)
+      returns (GetDocumentHistoryResponse);
   rpc getDocuments(GetDocumentsRequest) returns (GetDocumentsResponse);
   rpc getIdentityByPublicKeyHash(GetIdentityByPublicKeyHashRequest)
       returns (GetIdentityByPublicKeyHashResponse);
@@ -126,6 +128,8 @@ service Platform {
       returns (GetMostRecentShieldedAnchorResponse);
   rpc getShieldedPoolState(GetShieldedPoolStateRequest)
       returns (GetShieldedPoolStateResponse);
+  rpc getShieldedNotesCount(GetShieldedNotesCountRequest)
+      returns (GetShieldedNotesCountResponse);
   rpc getShieldedNullifiers(GetShieldedNullifiersRequest)
       returns (GetShieldedNullifiersResponse);
   rpc getNullifiersTrunkState(GetNullifiersTrunkStateRequest)
@@ -911,12 +915,18 @@ message GetDocumentsRequest {
     // `group_by` (empty → single, non-empty → per-group entries) —
     // same rule as today's `COUNT` routing.
     //
-    // **Server capability today**: only `DOCUMENTS` and
-    // `COUNT(*)` (empty `field`) are evaluated. `SUM` / `AVG`
-    // and `COUNT(field)` are wire-stable but rejected at routing
-    // time with `Unsupported("… is not yet implemented")` so the
+    // **Server capability today**: `DOCUMENTS`, `COUNT(*)` (empty
+    // `field`), `SUM(<field>)`, and `AVG(<field>)` are evaluated
+    // end-to-end (no-proof and proof paths route through the drive
+    // count / sum / average dispatchers). `COUNT(<field>)` (non-null
+    // value counting on a specific field), `MIN(<field>)`, and
+    // `MAX(<field>)` are wire-stable but rejected at routing time
+    // with `Unsupported("SELECT … is not yet implemented")` so the
     // surface is shipped first and execution lands later without
-    // another version bump.
+    // another version bump. MIN/MAX in particular wait on a grovedb
+    // primitive — there's no min/max aggregate on count or sum
+    // trees today, and the order-by-then-LIMIT-1 emulation has the
+    // wrong proof shape for the cryptographic verifier.
     message Select {
       enum Function {
         DOCUMENTS = 0;
@@ -1022,9 +1032,15 @@ message GetDocumentsRequest {
     //
     // **Currently rejected when `selects.len() > 1`** with
     // `Unsupported("multi-projection SELECT is not yet
-    // implemented")`. The single-projection cases (`DOCUMENTS`,
-    // `COUNT(*)`) are evaluated today; `SUM` / `AVG` / `MIN` /
-    // `MAX` are rejected at the per-function gate. When
+    // implemented")`. The single-projection cases `DOCUMENTS`,
+    // `COUNT(*)`, `SUM(<field>)`, and `AVG(<field>)` are evaluated
+    // end-to-end today and route through the drive count / sum /
+    // average dispatchers (see the `GetDocumentsResponseV1`
+    // docstring for the wire-shape table). `COUNT(<field>)`,
+    // `MIN(<field>)`, and `MAX(<field>)` remain rejected at the
+    // per-function gate — see the `Select` message-level docstring
+    // for the rationale (no grovedb min/max primitive; COUNT(field)
+    // needs a non-null counter walk that doesn't exist yet). When
     // multi-projection lands the response shape gains a parallel
     // `repeated AggregateValue values` field, so caller code
     // structured around `repeated Select` doesn't need to be
@@ -1095,10 +1111,26 @@ message GetDocumentsResponse {
   // canonical without flattening to a three-variant oneof.
   //
   // Wire shape by `request.select` × `group_by` × `prove`:
-  //   - `select=DOCUMENTS` (no prove)         → `result.data.documents`.
-  //   - `select=COUNT, group_by=[]` (no prove) → `result.data.counts.aggregate_count`.
-  //   - `select=COUNT, group_by=[…]` (no prove) → `result.data.counts.entries`.
-  //   - any select (prove)                     → `result.proof`.
+  //   - `select=DOCUMENTS` (no prove)            → `result.data.documents`.
+  //   - `select=COUNT, group_by=[]` (no prove)   → `result.data.counts.aggregate_count`.
+  //   - `select=COUNT, group_by=[…]` (no prove)  → `result.data.counts.entries`.
+  //   - `select=SUM, group_by=[]` (no prove)     → `result.data.sums.aggregate_sum`.
+  //   - `select=SUM, group_by=[…]` (no prove)    → `result.data.sums.entries`.
+  //   - `select=AVG, group_by=[]` (no prove)     → `result.data.averages.aggregate_average`.
+  //   - `select=AVG, group_by=[…]` (no prove)    → `result.data.averages.entries`.
+  //   - any select (prove)                        → `result.proof`.
+  //
+  // **SUM / AVG status**: all four shapes above are wired
+  // end-to-end on the drive dispatcher (no-proof and proof paths
+  // both terminate at grovedb's aggregate-sum / sum-tree-walk
+  // primitives, not at a `NotYetImplemented` stub). The four
+  // resolved-mode tables (`compute_aggregate_mode_and_check_limit_v0`,
+  // `detect_count_mode`, `detect_sum_mode`, AVG mirror) decide which
+  // executor to run from the (mode × range × group_by × prove)
+  // tuple; the executors compose count and sum walks for AVG so
+  // there's no separate average primitive on the grovedb side.
+  // Routing details live in
+  // `packages/rs-drive/src/query/drive_document_{sum,average}_query/`.
   //
   // `CountResults` / `CountEntry` / `CountEntries` are nested in
   // `GetDocumentsResponseV1` rather than re-exported from a
@@ -1150,13 +1182,112 @@ message GetDocumentsResponse {
       }
     }
 
+    // Sum-side analog of `CountEntry` — one per matched key for
+    // `select=SUM, group_by=[...]` queries. `in_key` carries the
+    // outer prefix value for compound `(In, range)` shapes; `key`
+    // carries the terminator value. `sum` is signed because grovedb's
+    // SumTree values are `i64` and sums can in principle be negative
+    // (deliberate i64-overflow signaling — see the sum-tree book
+    // chapter's "Signed `i64` overflow" note). For tip-jar-style
+    // non-negative sums this stays >= 0 in practice.
+    message SumEntry {
+      optional bytes in_key = 1;
+      bytes key = 2;
+      // `jstype = JS_STRING` so JS/Web clients receive a string
+      // and don't round large sums to the nearest Number.
+      sint64 sum = 3 [jstype = JS_STRING];
+    }
+
+    message SumEntries {
+      repeated SumEntry entries = 1;
+    }
+
+    // Non-proof sum result. Same shape as `CountResults` for the
+    // sum surface — the variants mirror count's:
+    //   * `aggregate_sum`: `select=SUM, group_by=[]` — single signed
+    //     sum with no per-key breakdown.
+    //   * `entries`: `select=SUM, group_by=[…]` — one SumEntry per
+    //     distinct group.
+    message SumResults {
+      oneof variant {
+        sint64 aggregate_sum = 1 [jstype = JS_STRING];
+        SumEntries entries = 2;
+      }
+    }
+
+    // Average-side analog of `SumEntry` — one per matched key for
+    // `select=AVG, group_by=[…]` queries. Each entry carries BOTH
+    // the count and the sum for its group; the client divides
+    // `sum / count` to compute the actual average.
+    //
+    // Why no `average` field on the wire? Returning the (count, sum)
+    // pair preserves full precision and lets the client pick the
+    // representation it wants (integer-truncated division, floating-
+    // point, decimal). Returning a single pre-computed `average`
+    // would force the server to choose, and any choice loses
+    // information for callers that wanted a different one.
+    //
+    // This shape is produced by grovedb's `AggregateCountAndSumOnRange`
+    // primitive (one root-hash-committed traversal returning both
+    // metrics) which lands as part of grovedb PR 670 alongside the
+    // PCPS (`ProvableCountProvableSumTree`) tree element.
+    message AverageEntry {
+      optional bytes in_key = 1;
+      bytes key = 2;
+      // `jstype = JS_STRING` on both fields so JS/Web clients receive
+      // strings and don't lose precision on counts/sums exceeding
+      // `Number.MAX_SAFE_INTEGER`.
+      uint64 count = 3 [jstype = JS_STRING];
+      sint64 sum = 4 [jstype = JS_STRING];
+    }
+
+    message AverageEntries {
+      repeated AverageEntry entries = 1;
+    }
+
+    // Aggregate average across all matched documents (no group_by).
+    // Same `(count, sum)` shape as a single entry — the client
+    // computes `avg = sum / count` itself.
+    message AverageAggregate {
+      uint64 count = 1 [jstype = JS_STRING];
+      sint64 sum = 2 [jstype = JS_STRING];
+    }
+
+    // Non-proof average result. Same outer shape as
+    // `CountResults` / `SumResults`; the variants mirror them:
+    //   * `aggregate_average`: `select=AVG, group_by=[]` — single
+    //     `(count, sum)` pair with no per-key breakdown.
+    //   * `entries`: `select=AVG, group_by=[…]` — one AverageEntry
+    //     per distinct group, each carrying its own `(count, sum)`.
+    message AverageResults {
+      oneof variant {
+        AverageAggregate aggregate_average = 1;
+        AverageEntries entries = 2;
+      }
+    }
+
     // Non-proof result wrapper. The outer `oneof result` switches
     // between this and `proof`; this inner oneof switches between
-    // the two non-proof shapes the v1 surface can return.
+    // the four non-proof shapes the v1 surface can return.
     message ResultData {
       oneof variant {
         Documents documents = 1;
         CountResults counts = 2;
+        // Sum-aggregate result. Routed when the request's
+        // `select.function == SUM` and the dispatcher's
+        // [`DriveDocumentSumQuery`] (in rs-drive) returns a
+        // non-proof variant. The schema field name (`sums`) parallels
+        // `counts` above; field numbers stay 1/2/3/4 per the proto-
+        // wire-stability rule (additions only, never renumbers).
+        SumResults sums = 3;
+        // Average-aggregate result. Routed when the request's
+        // `select.function == AVG`. The dispatcher returns the
+        // `(count, sum)` pair grovedb's `AggregateCountAndSumOnRange`
+        // primitive produces in one root-hash-committed traversal;
+        // the client divides to obtain the actual average. See
+        // `book/src/drive/average-index-examples.md` for the design
+        // and the grades-contract worked example.
+        AverageResults averages = 4;
       }
     }
 
@@ -1171,6 +1302,49 @@ message GetDocumentsResponse {
     GetDocumentsResponseV0 v0 = 1;
     GetDocumentsResponseV1 v1 = 2;
   }
+}
+
+message GetDocumentHistoryRequest {
+  message GetDocumentHistoryRequestV0 {
+    bytes data_contract_id = 1; // The ID of the data contract
+    string document_type_name = 2; // The document type name
+    bytes document_id = 3; // The document ID
+    google.protobuf.UInt32Value limit =
+        4; // The maximum number of history entries to return
+    google.protobuf.UInt32Value offset =
+        5; // The offset for pagination through the document history
+    uint64 start_at_ms = 6 [
+      jstype = JS_STRING
+    ];              // Only return results after this time in milliseconds
+    bool prove = 7; // Flag to request a proof as the response
+  }
+  oneof version { GetDocumentHistoryRequestV0 v0 = 1; }
+}
+
+message GetDocumentHistoryResponse {
+  message GetDocumentHistoryResponseV0 {
+    // Represents a single entry in a document's history
+    message DocumentHistoryEntry {
+      uint64 date = 1 [ jstype = JS_STRING ]; // The date of the history entry
+      bytes value = 2; // The value of the document at this point in history
+    }
+
+    // Collection of document history entries
+    message DocumentHistory {
+      repeated DocumentHistoryEntry document_entries =
+          1; // List of history entries
+    }
+
+    oneof result {
+      DocumentHistory document_history =
+          1; // The actual history of the document
+      Proof proof =
+          2; // Cryptographic proof of the document history, if requested
+    }
+
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
+  }
+  oneof version { GetDocumentHistoryResponseV0 v0 = 1; }
 }
 
 message GetIdentityByPublicKeyHashRequest {
@@ -2798,6 +2972,31 @@ message GetShieldedPoolStateResponse {
     ResponseMetadata metadata = 3;
   }
   oneof version { GetShieldedPoolStateResponseV0 v0 = 1; }
+}
+
+// Count of leaves in the shielded notes commitment tree.
+// Used by wallets at the start of a shielded sync to seed a
+// determinate progress-bar denominator. The count IS bound by the
+// Merk value hash: it is the first field (`total_count`) of the
+// serialized `CommitmentTree` element whose bytes are hashed into the
+// app/root hash, so it is provable via a PathQuery proof of that
+// element (set `prove = true`).
+message GetShieldedNotesCountRequest {
+  message GetShieldedNotesCountRequestV0 {
+    bool prove = 1;
+  }
+  oneof version { GetShieldedNotesCountRequestV0 v0 = 1; }
+}
+
+message GetShieldedNotesCountResponse {
+  message GetShieldedNotesCountResponseV0 {
+    oneof result {
+      uint64 total_notes_count = 1 [jstype = JS_STRING];
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+  oneof version { GetShieldedNotesCountResponseV0 v0 = 1; }
 }
 
 message GetShieldedNullifiersRequest {

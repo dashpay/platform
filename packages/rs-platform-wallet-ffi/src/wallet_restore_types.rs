@@ -29,6 +29,7 @@ use std::os::raw::{c_char, c_void};
 use crate::asset_lock_persistence::AssetLockEntryFFI;
 use crate::platform_address_types::AddressBalanceEntryFFI;
 use crate::types::FFINetwork;
+use crate::wallet_registration_persistence::AccountAddressPoolFFI;
 
 /// Discriminant for [`key_wallet::account::AccountType`].
 ///
@@ -181,12 +182,16 @@ pub struct AccountSpecFFI {
 /// BLS → 48; etc.). The pointer is Swift-owned and valid only for the
 /// duration of the load callback.
 ///
-/// Disabled-at, contract-bounds and other non-essential fields are
-/// intentionally omitted — they're either always `None` for newly
-/// derived identity-auth keys or get re-populated by the next
-/// identity sync round if they exist on chain. The scope of this
-/// restore is narrowly "make `Identity.public_keys` non-empty so
-/// auth-key gates pass".
+/// `contract_bounds_*` mirror the [`IdentityKeyEntryFFI`]
+/// projection of DPP's `ContractBounds` enum (kind tag: 0=none,
+/// 1=SingleContract, 2=SingleContractDocumentType). Including them
+/// here closes the persist↔restore round-trip — without it, scoped
+/// DashPay keys (registered with `SingleContractDocumentType`) come
+/// back as unbounded on cold restart.
+///
+/// Disabled-at and other non-essential fields remain omitted —
+/// they're either always `None` for newly derived identity-auth
+/// keys or get re-populated by the next identity sync round.
 #[repr(C)]
 pub struct IdentityKeyRestoreFFI {
     pub key_id: u32,
@@ -198,6 +203,19 @@ pub struct IdentityKeyRestoreFFI {
     /// Valid for callback duration only; Swift owns the allocation.
     pub data: *const u8,
     pub data_len: usize,
+    /// ContractBounds discriminant: 0=none, 1=SingleContract,
+    /// 2=SingleContractDocumentType. Mirrors the encoding in
+    /// [`crate::identity_persistence::IdentityKeyEntryFFI`].
+    pub contract_bounds_kind: u8,
+    /// 32-byte contract identifier. Zeroed when
+    /// `contract_bounds_kind == 0`; otherwise the contract id the
+    /// key is bound to.
+    pub contract_bounds_id: [u8; 32],
+    /// NUL-terminated UTF-8 doc-type name. Non-null iff
+    /// `contract_bounds_kind == 2`. Swift-owned (released by the
+    /// same load-callback allocation arena that frees the public-
+    /// key data buffer).
+    pub contract_bounds_document_type: *const c_char,
 }
 
 /// Per-identity entry attached to a [`WalletRestoreEntryFFI`].
@@ -435,6 +453,9 @@ pub struct WalletRestoreEntryFFI {
     /// unresolved asset locks.
     pub unresolved_asset_lock_tx_records: *const UnresolvedAssetLockTxRecordFFI,
     pub unresolved_asset_lock_tx_records_count: usize,
+    /// Persisted core address pools for this wallet
+    pub core_address_pools: *const AccountAddressPoolFFI,
+    pub core_address_pools_count: usize,
     /// Bincode-serialised
     /// `dashcore::ephemerealdata::chain_lock::ChainLock`
     /// (`bincode::config::standard()`) carrying the persisted
@@ -471,8 +492,9 @@ unsafe impl Sync for UtxoRestoreEntryFFI {}
 /// accounts arrays, the optional per-wallet platform-address balance
 /// arrays, every xpub byte buffer, the per-wallet identity arrays,
 /// every nested c-string + c-string pointer array carried by the
-/// identity entries, and every per-identity `IdentityKeyRestoreFFI`
+/// identity entries, every per-identity `IdentityKeyRestoreFFI`
 /// array together with the public-key byte buffers each row points
-/// at. Called exactly once after a successful load.
+/// at, and every per-wallet core-address-pool. Called exactly once
+/// after a successful load.
 pub type LoadWalletListFreeFn =
     unsafe extern "C" fn(context: *mut c_void, entries: *const WalletRestoreEntryFFI, count: usize);

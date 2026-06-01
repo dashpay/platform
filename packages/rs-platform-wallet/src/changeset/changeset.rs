@@ -79,6 +79,7 @@ use crate::wallet::identity::{ContactRequest, DashPayProfile, EstablishedContact
 /// upstream type. Tests that need to inspect a changeset's contents
 /// reach into individual fields directly.
 #[derive(Debug, Clone, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct CoreChangeSet {
     /// Transaction records produced by this batch.
     ///
@@ -257,6 +258,7 @@ impl Merge for CoreChangeSet {
 /// call [`IdentityEntry::from_managed`] to produce a fresh scalar
 /// snapshot so the merge can resolve the latest state by last-write-wins.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct IdentityEntry {
     /// Identity identifier.
     pub id: Identifier,
@@ -331,6 +333,7 @@ impl IdentityEntry {
 /// path — platform-wallet itself never carries or persists the key
 /// bytes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct IdentityKeyDerivationIndices {
     /// DIP-9 identity index (hardened).
     pub identity_index: u32,
@@ -351,6 +354,7 @@ pub struct IdentityKeyDerivationIndices {
 /// persist it. When either is `None` the key is watch-only from
 /// this wallet's point of view.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct IdentityKeyEntry {
     /// Owning identity.
     pub identity_id: Identifier,
@@ -379,6 +383,7 @@ pub struct IdentityKeyEntry {
 /// `{upsert, remove}` per key per mutation — the merge does not resolve
 /// insert-vs-tombstone for the same key.
 #[derive(Debug, Clone, Default, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct IdentityKeysChangeSet {
     /// Inserted or updated identity keys keyed by (identity_id, key_id).
     pub upserts: BTreeMap<(Identifier, KeyID), IdentityKeyEntry>,
@@ -415,6 +420,7 @@ impl Merge for IdentityKeysChangeSet {
 /// [`ContactChangeSet`]; same mitigation: every current emitter
 /// produces only one of {insert, tombstone} per key per mutation.
 #[derive(Debug, Clone, Default, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct IdentityChangeSet {
     /// Inserted or updated identities keyed by identifier.
     pub identities: BTreeMap<Identifier, IdentityEntry>,
@@ -500,6 +506,7 @@ impl Merge for IdentityChangeSet {
 ///
 /// Modelled after [`crate::wallet::identity::ContactRequest`].
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ContactRequestEntry {
     /// The contact request.
     pub request: ContactRequest,
@@ -508,6 +515,7 @@ pub struct ContactRequestEntry {
 /// Key for sent contact requests: the **owner** sent a request TO the
 /// **recipient**. Used for `sent_requests` and `removed_sent`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SentContactRequestKey {
     /// The identity owned by this wallet (the sender).
     pub owner_id: Identifier,
@@ -519,6 +527,7 @@ pub struct SentContactRequestKey {
 /// FROM the **sender**. Used for `incoming_requests` and
 /// `removed_incoming`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ReceivedContactRequestKey {
     /// The identity owned by this wallet (the recipient).
     pub owner_id: Identifier,
@@ -567,6 +576,7 @@ pub struct ReceivedContactRequestKey {
 /// semantics, the merge impl should resolve `sent_requests ∩
 /// removed_sent` by last-seen rather than carrying both.
 #[derive(Debug, Clone, Default, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ContactChangeSet {
     /// Sent contact requests keyed by (owner → recipient).
     pub sent_requests: BTreeMap<SentContactRequestKey, ContactRequestEntry>,
@@ -629,6 +639,7 @@ impl Merge for ContactChangeSet {
 /// persisters can apply the entry without guessing which account or
 /// HD slot it belongs to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PlatformAddressBalanceEntry {
     pub wallet_id: WalletId,
     pub account_index: u32,
@@ -638,6 +649,7 @@ pub struct PlatformAddressBalanceEntry {
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PlatformAddressChangeSet {
     /// Updated platform addresses produced by the last sync pass.
     /// A `Vec` rather than a map because the diff already deduplicates
@@ -694,6 +706,7 @@ impl Merge for PlatformAddressChangeSet {
 
 /// Changes to the asset lock store.
 #[derive(Debug, Clone, Default, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct AssetLockChangeSet {
     /// Asset lock entries keyed by outpoint (txid + output index).
     ///
@@ -710,6 +723,7 @@ pub struct AssetLockChangeSet {
 /// Contains all fields needed to fully reconstruct a
 /// [`TrackedAssetLock`](crate::wallet::asset_lock::tracked::TrackedAssetLock).
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct AssetLockEntry {
     /// The outpoint identifying this credit output (txid + vout).
     pub out_point: OutPoint,
@@ -752,6 +766,7 @@ impl Merge for AssetLockChangeSet {
 /// purely in the manager's in-memory cache. Persistence carries only
 /// the post-sync balance updates and tombstones.
 #[derive(Debug, Clone, Default, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct TokenBalanceChangeSet {
     /// Updated token balances keyed by `(identity_id, token_id)`.
     /// Last write wins on merge.
@@ -792,6 +807,7 @@ impl Merge for TokenBalanceChangeSet {
 /// time; the parent `Option<...>` field stays `None` for every other
 /// flush.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct WalletMetadataEntry {
     /// Network the wallet is bound to.
     pub network: Network,
@@ -816,6 +832,7 @@ pub struct WalletMetadataEntry {
 /// is simple `extend` and dedup is the apply-side caller's
 /// responsibility if it ever matters.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct AccountRegistrationEntry {
     /// The account variant being registered.
     pub account_type: AccountType,
@@ -849,6 +866,7 @@ pub struct AccountRegistrationEntry {
 /// the upstream type. Tests that need to inspect snapshot contents
 /// reach into the `addresses` vec by index instead.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct AccountAddressPoolEntry {
     /// Which account this pool belongs to.
     pub account_type: AccountType,
@@ -876,6 +894,7 @@ pub struct AccountAddressPoolEntry {
 /// Not `PartialEq` because [`CoreChangeSet`] isn't (its `records` carry
 /// `TransactionRecord`, which is `Debug + Clone` only upstream).
 #[derive(Debug, Clone, Default)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PlatformWalletChangeSet {
     /// Core-wallet deltas projected from upstream `WalletEvent`s:
     /// transaction records, UTXO add/remove, height checkpoints, IS-lock
@@ -920,6 +939,12 @@ pub struct PlatformWalletChangeSet {
     /// gap-limit population) and on any pool extension / "used" flip.
     /// See [`AccountAddressPoolEntry`] for the merge policy.
     pub account_address_pools: Vec<AccountAddressPoolEntry>,
+    /// Shielded sub-wallet deltas: per-subwallet decrypted notes,
+    /// spent marks, sync watermarks, nullifier checkpoints. The
+    /// commitment tree itself is **not** in here — it lives on
+    /// disk in `ClientPersistentCommitmentTree`'s SQLite file.
+    #[cfg(feature = "shielded")]
+    pub shielded: Option<crate::changeset::ShieldedChangeSet>,
 }
 
 impl From<PlatformAddressChangeSet> for PlatformWalletChangeSet {
@@ -1016,10 +1041,14 @@ impl Merge for PlatformWalletChangeSet {
             .extend(other.account_registrations);
         self.account_address_pools
             .extend(other.account_address_pools);
+        #[cfg(feature = "shielded")]
+        {
+            self.shielded.merge(other.shielded);
+        }
     }
 
     fn is_empty(&self) -> bool {
-        self.core.is_empty()
+        let core_empty = self.core.is_empty()
             && self.identities.is_empty()
             && self.identity_keys.is_empty()
             && self.contacts.is_empty()
@@ -1033,7 +1062,15 @@ impl Merge for PlatformWalletChangeSet {
                 .is_none_or(|m| m.is_empty())
             && self.wallet_metadata.is_none()
             && self.account_registrations.is_empty()
-            && self.account_address_pools.is_empty()
+            && self.account_address_pools.is_empty();
+        #[cfg(feature = "shielded")]
+        {
+            core_empty && self.shielded.as_ref().is_none_or(|s| s.is_empty())
+        }
+        #[cfg(not(feature = "shielded"))]
+        {
+            core_empty
+        }
     }
 }
 

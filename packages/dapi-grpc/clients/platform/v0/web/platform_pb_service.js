@@ -136,6 +136,15 @@ Platform.getDataContracts = {
   responseType: platform_pb.GetDataContractsResponse
 };
 
+Platform.getDocumentHistory = {
+  methodName: "getDocumentHistory",
+  service: Platform,
+  requestStream: false,
+  responseStream: false,
+  requestType: platform_pb.GetDocumentHistoryRequest,
+  responseType: platform_pb.GetDocumentHistoryResponse
+};
+
 Platform.getDocuments = {
   methodName: "getDocuments",
   service: Platform,
@@ -521,6 +530,15 @@ Platform.getShieldedPoolState = {
   responseStream: false,
   requestType: platform_pb.GetShieldedPoolStateRequest,
   responseType: platform_pb.GetShieldedPoolStateResponse
+};
+
+Platform.getShieldedNotesCount = {
+  methodName: "getShieldedNotesCount",
+  service: Platform,
+  requestStream: false,
+  responseStream: false,
+  requestType: platform_pb.GetShieldedNotesCountRequest,
+  responseType: platform_pb.GetShieldedNotesCountResponse
 };
 
 Platform.getShieldedNullifiers = {
@@ -983,6 +1001,37 @@ PlatformClient.prototype.getDataContracts = function getDataContracts(requestMes
     callback = arguments[1];
   }
   var client = grpc.unary(Platform.getDataContracts, {
+    request: requestMessage,
+    host: this.serviceHost,
+    metadata: metadata,
+    transport: this.options.transport,
+    debug: this.options.debug,
+    onEnd: function (response) {
+      if (callback) {
+        if (response.status !== grpc.Code.OK) {
+          var err = new Error(response.statusMessage);
+          err.code = response.status;
+          err.metadata = response.trailers;
+          callback(err, null);
+        } else {
+          callback(null, response.message);
+        }
+      }
+    }
+  });
+  return {
+    cancel: function () {
+      callback = null;
+      client.close();
+    }
+  };
+};
+
+PlatformClient.prototype.getDocumentHistory = function getDocumentHistory(requestMessage, metadata, callback) {
+  if (arguments.length === 2) {
+    callback = arguments[1];
+  }
+  var client = grpc.unary(Platform.getDocumentHistory, {
     request: requestMessage,
     host: this.serviceHost,
     metadata: metadata,
@@ -2316,6 +2365,37 @@ PlatformClient.prototype.getShieldedPoolState = function getShieldedPoolState(re
     callback = arguments[1];
   }
   var client = grpc.unary(Platform.getShieldedPoolState, {
+    request: requestMessage,
+    host: this.serviceHost,
+    metadata: metadata,
+    transport: this.options.transport,
+    debug: this.options.debug,
+    onEnd: function (response) {
+      if (callback) {
+        if (response.status !== grpc.Code.OK) {
+          var err = new Error(response.statusMessage);
+          err.code = response.status;
+          err.metadata = response.trailers;
+          callback(err, null);
+        } else {
+          callback(null, response.message);
+        }
+      }
+    }
+  });
+  return {
+    cancel: function () {
+      callback = null;
+      client.close();
+    }
+  };
+};
+
+PlatformClient.prototype.getShieldedNotesCount = function getShieldedNotesCount(requestMessage, metadata, callback) {
+  if (arguments.length === 2) {
+    callback = arguments[1];
+  }
+  var client = grpc.unary(Platform.getShieldedNotesCount, {
     request: requestMessage,
     host: this.serviceHost,
     metadata: metadata,

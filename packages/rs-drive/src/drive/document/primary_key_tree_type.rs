@@ -13,11 +13,26 @@ pub trait DocumentTypePrimaryKeyTreeType {
     ///
     /// The primary key tree (key `[0]` under the document type path) stores
     /// document references keyed by document ID. The tree type depends on the
-    /// document type's configuration:
+    /// document type's configuration, with the count and sum flag families
+    /// composing orthogonally:
     ///
-    /// - `range_countable = true` → `ProvableCountTree`
-    /// - `documents_countable = true` → `CountTree`
-    /// - otherwise → `NormalTree`
+    /// | `range_summable` | `documents_summable` | `range_countable` | `documents_countable` | → TreeType |
+    /// |---|---|---|---|---|
+    /// | – | – | – | – | `NormalTree` |
+    /// | – | – | – | ✓ | `CountTree` |
+    /// | – | – | ✓ | (✓) | `ProvableCountTree` |
+    /// | – | ✓ | – | – | `SumTree` |
+    /// | ✓ | (✓) | – | – | `ProvableSumTree` |
+    /// | – | ✓ | – | ✓ | `CountSumTree` |
+    /// | – | ✓ | ✓ | (✓) | `ProvableCountSumTree` (per-node count, root-only sum) |
+    /// | ✓ | (✓) | ✓ | (✓) | `ProvableCountProvableSumTree` (per-node BOTH) |
+    /// | ✓ | (✓) | – | ✓ | `ProvableCountProvableSumTree` (upgrades count to per-node) |
+    ///
+    /// `ProvableCountSumTree` and `ProvableCountProvableSumTree` are
+    /// distinct: the former commits per-node counts but only a
+    /// root-level sum; the latter commits both per-node. The full
+    /// dispatch matrix in the v1 arm makes the distinction explicit
+    /// per-flag-combination.
     fn primary_key_tree_type(&self, platform_version: &PlatformVersion) -> Result<TreeType, Error>;
 }
 
@@ -30,6 +45,9 @@ impl DocumentTypePrimaryKeyTreeType for DocumentTypeRef<'_> {
             .primary_key_tree_type
         {
             0 => {
+                // v0: count-only dispatch (pre-sum). Preserved verbatim so
+                // older platform versions return the exact same tree
+                // variant they did before — sum flags are ignored here.
                 if self.range_countable() {
                     Ok(TreeType::ProvableCountTree)
                 } else if self.documents_countable() {
@@ -38,9 +56,67 @@ impl DocumentTypePrimaryKeyTreeType for DocumentTypeRef<'_> {
                     Ok(TreeType::NormalTree)
                 }
             }
+            1 => {
+                // v1: count × sum composition over the expanded
+                // grovedb TreeType set. The four flags map to nine
+                // distinct cases per the dispatch table below — note
+                // the **per-axis** distinction between provable
+                // (per-node aggregation, range-queryable) and root-only
+                // aggregation:
+                //
+                // | rc | dc | rs | ds | TreeType                          |
+                // |----|----|----|----|-----------------------------------|
+                // | F  | F  | F  | F  | NormalTree                        |
+                // | F  | T  | F  | F  | CountTree                         |
+                // | T  | _  | F  | F  | ProvableCountTree                 |
+                // | F  | F  | F  | T  | SumTree                           |
+                // | F  | F  | T  | _  | ProvableSumTree                   |
+                // | F  | T  | F  | T  | CountSumTree                      |
+                // | T  | _  | F  | T  | ProvableCountSumTree              |
+                // | F  | T  | T  | _  | ProvableCountProvableSumTree (*)  |
+                // | T  | _  | T  | _  | ProvableCountProvableSumTree      |
+                //
+                // (*) "count root-only + sum provable" has no
+                // dedicated grovedb variant; we upgrade the count
+                // side to per-node too. Same storage cost as
+                // ProvableCountSumTree's count-half (per-node counts)
+                // because ProvableCountProvableSumTree is the only
+                // way to have a per-node sum aggregate.
+                //
+                // `ProvableCountProvableSumTree` is distinct from
+                // `ProvableCountSumTree`: the latter carries per-node
+                // counts but only a *root-level* sum.
+                let rc = self.range_countable();
+                let dc = self.documents_countable();
+                let rs = self.range_summable();
+                let ds = self.documents_summable().is_some();
+
+                let count_provable = rc;
+                let count_root_only = dc && !rc;
+                let sum_provable = rs;
+                let sum_root_only = ds && !rs;
+
+                Ok(
+                    match (count_provable, count_root_only, sum_provable, sum_root_only) {
+                        // No flags
+                        (false, false, false, false) => TreeType::NormalTree,
+                        // Pure count
+                        (false, true, false, false) => TreeType::CountTree,
+                        (true, _, false, false) => TreeType::ProvableCountTree,
+                        // Pure sum
+                        (false, false, false, true) => TreeType::SumTree,
+                        (false, false, true, _) => TreeType::ProvableSumTree,
+                        // Combined
+                        (false, true, false, true) => TreeType::CountSumTree,
+                        (true, _, false, true) => TreeType::ProvableCountSumTree,
+                        (true, _, true, _) => TreeType::ProvableCountProvableSumTree,
+                        (false, true, true, _) => TreeType::ProvableCountProvableSumTree,
+                    },
+                )
+            }
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "DocumentTypeRef::primary_key_tree_type".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
