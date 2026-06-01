@@ -1,0 +1,271 @@
+name: "Close Stale AI Draft PRs"
+
+# Daily housekeeping job that warns about, and eventually closes, draft PRs
+# opened by automated agents once they go quiet. A draft is "stale" after a
+# week with no activity; it is then closed after an additional grace period
+# unless someone touches it again.
+
+on:
+  schedule:
+    - cron: "0 7 * * *" # Daily 07:00 UTC
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Log the actions that would be taken without applying them"
+        type: boolean
+        default: false
+
+permissions:
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: close-stale-ai-draft-prs
+  cancel-in-progress: false
+
+jobs:
+  close-stale-ai-draft-prs:
+    name: Close stale AI draft PRs
+    runs-on: ubuntu-24.04
+    if: github.repository == 'dashpay/platform'
+    steps:
+      - name: Warn and close stale AI-authored draft PRs
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
+        env:
+          # Comma / space / newline separated GitHub logins treated as AI agents.
+          # Override without editing this file by setting the `AI_AGENT_AUTHORS`
+          # repository variable (Settings → Secrets and variables → Actions → Variables).
+          AGENT_AUTHORS: ${{ vars.AI_AGENT_AUTHORS }}
+          # Days of inactivity before a draft is marked stale and warned.
+          DAYS_BEFORE_STALE: "7"
+          # Additional days after the warning before the draft is closed.
+          DAYS_BEFORE_CLOSE: "3"
+          STALE_LABEL: "stale"
+          # "true" on a manual run with the dry_run input checked; otherwise "false".
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
+        with:
+          script: |
+            const DAY_MS = 24 * 60 * 60 * 1000;
+            const now = Date.now();
+
+            const daysBeforeStale = Number(process.env.DAYS_BEFORE_STALE || '7');
+            const daysBeforeClose = Number(process.env.DAYS_BEFORE_CLOSE || '3');
+            const staleLabel = (process.env.STALE_LABEL || 'stale').trim();
+            const dryRun = String(process.env.DRY_RUN || 'false') === 'true';
+
+            // Actors whose activity is this workflow's own bookkeeping and must NOT
+            // count as "the author or a maintainer touched the PR".
+            const botActors = new Set(['github-actions[bot]', 'github-actions']);
+
+            // Default agent allowlist, used when AI_AGENT_AUTHORS is not configured.
+            const defaultAgents = ['Claudius-Maginificent', 'thepastaclaw'];
+            const configured = (process.env.AGENT_AUTHORS || '')
+              .split(/[\s,]+/)
+              .map((s) => s.trim())
+              .filter(Boolean);
+            const agentLogins = new Set(
+              (configured.length ? configured : defaultAgents).map((s) => s.toLowerCase())
+            );
+
+            core.info(`AI agent authors: ${[...agentLogins].join(', ')}`);
+            core.info(
+              `Thresholds: warn after ${daysBeforeStale}d idle, close ${daysBeforeClose}d after the warning`
+            );
+            if (dryRun) core.info('DRY RUN — no changes will be made');
+
+            const { owner, repo } = context.repo;
+
+            const allOpen = await github.paginate(github.rest.pulls.list, {
+              owner,
+              repo,
+              state: 'open',
+              per_page: 100,
+            });
+
+            const targets = allOpen.filter(
+              (pr) => pr.draft && pr.user && agentLogins.has(pr.user.login.toLowerCase())
+            );
+
+            core.info(`Found ${targets.length} open draft PR(s) authored by AI agents`);
+            if (targets.length === 0) return;
+
+            // Most recent activity (ms) that is NOT this workflow's own stale-label
+            // bookkeeping or comments. Used to decide idleness and to reset the clock
+            // when a human/agent resumes work on a stale PR.
+            async function lastActivityMs(pr) {
+              const events = await github.paginate(github.rest.issues.listEventsForTimeline, {
+                owner,
+                repo,
+                issue_number: pr.number,
+                per_page: 100,
+              });
+
+              let last = new Date(pr.created_at).getTime();
+
+              for (const e of events) {
+                // Ignore the stale label being added/removed — it is our own bookkeeping.
+                if (
+                  (e.event === 'labeled' || e.event === 'unlabeled') &&
+                  e.label &&
+                  e.label.name === staleLabel
+                ) {
+                  continue;
+                }
+
+                const actor = (e.actor && e.actor.login) || (e.user && e.user.login) || null;
+                if (actor && botActors.has(actor)) continue;
+
+                const ts =
+                  e.created_at ||
+                  e.submitted_at ||
+                  (e.committer && e.committer.date) ||
+                  (e.author && e.author.date) ||
+                  null;
+                if (!ts) continue;
+
+                const t = new Date(ts).getTime();
+                if (!Number.isNaN(t) && t > last) last = t;
+              }
+
+              return last;
+            }
+
+            // When (ms) the stale label was most recently applied, or null if not found.
+            async function staleSinceMs(pr) {
+              const evs = await github.paginate(github.rest.issues.listEvents, {
+                owner,
+                repo,
+                issue_number: pr.number,
+                per_page: 100,
+              });
+              let when = null;
+              for (const e of evs) {
+                if (e.event === 'labeled' && e.label && e.label.name === staleLabel) {
+                  const t = new Date(e.created_at).getTime();
+                  if (when === null || t > when) when = t;
+                }
+              }
+              return when;
+            }
+
+            // Make sure the stale label exists before we try to apply it.
+            async function ensureLabel(name) {
+              try {
+                await github.rest.issues.getLabel({ owner, repo, name });
+              } catch (err) {
+                if (err.status !== 404) throw err;
+                core.info(`Creating missing label "${name}"`);
+                if (!dryRun) {
+                  await github.rest.issues.createLabel({
+                    owner,
+                    repo,
+                    name,
+                    color: 'ededed',
+                    description: 'No recent activity; scheduled for automatic close',
+                  });
+                }
+              }
+            }
+
+            let labelEnsured = false;
+
+            for (const pr of targets) {
+              const hasStale = (pr.labels || []).some((l) => (l.name || l) === staleLabel);
+              const lastMs = await lastActivityMs(pr);
+              const idleDays = (now - lastMs) / DAY_MS;
+
+              core.info(
+                `#${pr.number} "${pr.title}" by @${pr.user.login} — idle ${idleDays.toFixed(
+                  1
+                )}d, stale=${hasStale}`
+              );
+
+              // Not yet warned: mark stale once it crosses the inactivity threshold.
+              if (!hasStale) {
+                if (idleDays < daysBeforeStale) continue;
+
+                core.info(`  → marking stale (idle ${idleDays.toFixed(1)}d ≥ ${daysBeforeStale}d)`);
+                if (dryRun) continue;
+
+                if (!labelEnsured) {
+                  await ensureLabel(staleLabel);
+                  labelEnsured = true;
+                }
+
+                await github.rest.issues.addLabels({
+                  owner,
+                  repo,
+                  issue_number: pr.number,
+                  labels: [staleLabel],
+                });
+                await github.rest.issues.createComment({
+                  owner,
+                  repo,
+                  issue_number: pr.number,
+                  body: [
+                    `👋 This draft PR has had no activity for **${Math.floor(idleDays)} days**.`,
+                    ``,
+                    `It was opened by an automated agent, so it has been marked **\`${staleLabel}\`** and will be **closed in ${daysBeforeClose} days** unless there is new activity.`,
+                    ``,
+                    `To keep it open, just push a commit, leave a comment, or remove the \`${staleLabel}\` label. Closed PRs can be reopened at any time.`,
+                  ].join('\n'),
+                });
+                continue;
+              }
+
+              // Already warned but active again: clear the label and reset the clock.
+              if (idleDays < daysBeforeStale) {
+                core.info(
+                  `  → activity resumed (idle ${idleDays.toFixed(1)}d) — removing \`${staleLabel}\` label`
+                );
+                if (dryRun) continue;
+                await github.rest.issues
+                  .removeLabel({ owner, repo, issue_number: pr.number, name: staleLabel })
+                  .catch((err) =>
+                    core.warning(`Could not remove label from #${pr.number}: ${err.message}`)
+                  );
+                continue;
+              }
+
+              // Still stale: close only after the grace period has elapsed since the warning.
+              const warnedAt = await staleSinceMs(pr);
+              if (warnedAt === null) {
+                core.warning(
+                  `  #${pr.number} is labeled \`${staleLabel}\` but no labeling event was found; skipping`
+                );
+                continue;
+              }
+              const daysSinceWarning = (now - warnedAt) / DAY_MS;
+              if (daysSinceWarning < daysBeforeClose) {
+                core.info(
+                  `  → in grace period (${daysSinceWarning.toFixed(1)}d / ${daysBeforeClose}d since warning)`
+                );
+                continue;
+              }
+
+              core.info(
+                `  → closing (idle ${idleDays.toFixed(1)}d, ${daysSinceWarning.toFixed(
+                  1
+                )}d since warning)`
+              );
+              if (dryRun) continue;
+
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: pr.number,
+                body: [
+                  `🤖 Closing this draft PR after **${Math.floor(
+                    idleDays
+                  )} days** without activity (warned ${Math.floor(daysSinceWarning)} days ago).`,
+                  ``,
+                  `Feel free to reopen it if work continues.`,
+                ].join('\n'),
+              });
+              await github.rest.pulls.update({
+                owner,
+                repo,
+                pull_number: pr.number,
+                state: 'closed',
+              });
+            }
