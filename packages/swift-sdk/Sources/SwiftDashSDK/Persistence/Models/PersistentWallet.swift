@@ -20,16 +20,20 @@ public final class PersistentWallet {
     /// "Networks" lookup — which fetches every sibling-network row for
     /// a seed by its group id — stays a keyed scan.
     #Index<PersistentWallet>([\.networkRaw], [\.walletGroupId])
-    #Unique<PersistentWallet>([\.walletId, \.networkRaw])
+    #Unique<PersistentWallet>([\.walletId])
 
-    /// 32-byte NETWORK-SCOPED wallet ID. Since the network-scoping
-    /// change the same seed yields a DISTINCT `walletId` per network
-    /// (a domain-tagged network byte is folded into the digest), so a
-    /// wallet that exists on multiple chains has one row per network,
-    /// each with its own id. Uniqueness is the composite
-    /// `(walletId, networkRaw)` declared above. To gather a seed's
-    /// sibling-network rows, group by `walletGroupId` (which is the
-    /// same across networks), not by this id.
+    /// 32-byte NETWORK-SCOPED wallet ID, and the row's primary
+    /// uniqueness key. Since the network-scoping change the same seed
+    /// yields a DISTINCT `walletId` per network (a domain-tagged network
+    /// byte is folded into the digest), so a wallet that exists on
+    /// multiple chains has one row per network, each with its own id —
+    /// the network is already baked into the id, so `walletId` alone is
+    /// globally unique (an earlier `(walletId, networkRaw)` composite
+    /// was a leftover from the pre-scoping model, where one seed shared
+    /// a single id across networks and `networkRaw` was the only
+    /// distinguishing column). To gather a seed's sibling-network rows,
+    /// group by `walletGroupId` (which is the same across networks),
+    /// not by this id.
     public var walletId: Data
     /// 32-byte NETWORK-INDEPENDENT group id shared by every network's
     /// wallet derived from the same seed (Rust computes it as the
