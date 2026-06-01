@@ -7,12 +7,14 @@ use dash_sdk::dpp::document::Document;
 use dash_sdk::dpp::platform_value::Value;
 use dash_sdk::dpp::prelude::Identifier;
 use dash_sdk::drive::query::SelectProjection;
+use dash_sdk::platform::documents::document_history_query::DocumentHistoryQuery;
 use dash_sdk::platform::documents::document_query::DocumentQuery;
 use dash_sdk::platform::Fetch;
 use dash_sdk::platform::FetchMany;
 use drive::query::{OrderClause, WhereClause, WhereOperator};
+use drive_proof_verifier::types::DocumentHistory;
 use drive_proof_verifier::{DocumentSplitAverages, DocumentSplitCounts, DocumentSplitSums};
-use js_sys::Map;
+use js_sys::{BigInt, Map};
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -118,12 +120,53 @@ export interface DocumentsQuery {
    */
   groupBy?: string[];
 }
+
+/**
+ * Query parameters for retrieving document history.
+ */
+export interface DocumentHistoryQuery {
+  /**
+   * Data contract identifier.
+   */
+  dataContractId: IdentifierLike
+
+  /**
+   * Document type name.
+   */
+  documentTypeName: string;
+
+  /**
+   * Document identifier.
+   */
+  documentId: IdentifierLike
+
+  /**
+   * Millisecond timestamp (exclusive) to start after.
+   * @default 0
+   */
+  startAtMs?: number;
+
+  /**
+   * Maximum number of entries to return.
+   * @default undefined
+   */
+  limit?: number;
+
+  /**
+   * Offset for pagination through the document history.
+   * @default undefined
+   */
+  offset?: number;
+}
 "#;
 
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(typescript_type = "DocumentsQuery")]
     pub type DocumentsQueryJs;
+
+    #[wasm_bindgen(typescript_type = "DocumentHistoryQuery")]
+    pub type DocumentHistoryQueryJs;
 }
 
 #[derive(Deserialize)]
@@ -152,6 +195,36 @@ struct DocumentsQueryInput {
     // `orderBy` field — the first clause's direction controls
     // split-mode entry ordering and `(In + prove)` walk order. No
     // separate `orderByAscending` knob.
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DocumentHistoryQueryInput {
+    data_contract_id: IdentifierWasm,
+    document_type_name: String,
+    document_id: IdentifierWasm,
+    #[serde(default)]
+    start_at_ms: Option<u64>,
+    #[serde(default)]
+    limit: Option<u32>,
+    #[serde(default)]
+    offset: Option<u32>,
+}
+
+fn parse_document_history_query(
+    query: DocumentHistoryQueryJs,
+) -> Result<DocumentHistoryQuery, WasmSdkError> {
+    let input: DocumentHistoryQueryInput =
+        deserialize_required_query(query, "Query object is required", "document history query")?;
+
+    Ok(DocumentHistoryQuery {
+        data_contract_id: input.data_contract_id.into(),
+        document_type_name: input.document_type_name,
+        document_id: input.document_id.into(),
+        start_at_ms: input.start_at_ms.unwrap_or(0),
+        limit: input.limit,
+        offset: input.offset,
+    })
 }
 
 async fn build_documents_query(
@@ -451,6 +524,85 @@ fn json_to_platform_value(json_val: &JsonValue) -> Result<Value, WasmSdkError> {
 
 #[wasm_bindgen]
 impl WasmSdk {
+    #[wasm_bindgen(
+        js_name = "getDocumentHistory",
+        unchecked_return_type = "Map<bigint, Document>"
+    )]
+    pub async fn get_document_history(
+        &self,
+        query: DocumentHistoryQueryJs,
+    ) -> Result<Map, WasmSdkError> {
+        let query = parse_document_history_query(query)?;
+        let contract_id = query.data_contract_id;
+        let document_type_name = query.document_type_name.clone();
+
+        let data_contract = self.get_or_fetch_contract(contract_id).await?;
+        data_contract
+            .document_type_for_name(&document_type_name)
+            .map_err(|e| WasmSdkError::not_found(format!("Document type not found: {}", e)))?;
+
+        let history_result = DocumentHistory::fetch(self.as_ref(), query).await?;
+        let history_map = Map::new();
+
+        if let Some(history) = history_result {
+            for (block_time_ms, document) in history {
+                let document_js = JsValue::from(DocumentWasm::new(
+                    document,
+                    contract_id,
+                    document_type_name.clone(),
+                    None,
+                ));
+                let key = JsValue::from(BigInt::from(block_time_ms));
+
+                history_map.set(&key, &document_js);
+            }
+        }
+
+        Ok(history_map)
+    }
+
+    #[wasm_bindgen(
+        js_name = "getDocumentHistoryWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<Map<bigint, Document>>"
+    )]
+    pub async fn get_document_history_with_proof_info(
+        &self,
+        query: DocumentHistoryQueryJs,
+    ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
+        let query = parse_document_history_query(query)?;
+        let contract_id = query.data_contract_id;
+        let document_type_name = query.document_type_name.clone();
+
+        let data_contract = self.get_or_fetch_contract(contract_id).await?;
+        data_contract
+            .document_type_for_name(&document_type_name)
+            .map_err(|e| WasmSdkError::not_found(format!("Document type not found: {}", e)))?;
+
+        let (history_result, metadata, proof) =
+            DocumentHistory::fetch_with_metadata_and_proof(self.as_ref(), query, None).await?;
+        let history_map = Map::new();
+
+        if let Some(history) = history_result {
+            for (block_time_ms, document) in history {
+                let document_js = JsValue::from(DocumentWasm::new(
+                    document,
+                    contract_id,
+                    document_type_name.clone(),
+                    None,
+                ));
+                let key = JsValue::from(BigInt::from(block_time_ms));
+
+                history_map.set(&key, &document_js);
+            }
+        }
+
+        Ok(ProofMetadataResponseWasm::from_sdk_parts(
+            history_map,
+            metadata,
+            proof,
+        ))
+    }
+
     #[wasm_bindgen(
         js_name = "getDocuments",
         unchecked_return_type = "Map<string, Document | undefined>"

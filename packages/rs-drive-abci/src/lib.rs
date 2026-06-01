@@ -88,5 +88,14 @@ pub mod utils;
 pub mod replay;
 /// Drive server
 pub mod server;
+/// Shielded-pool genesis snapshot — bake/apply.
+///
+/// Test-data tooling only: the bake reads a pool seeded by
+/// `create_sdk_test_data` and the apply runs from that same seeder's
+/// fast-path, so the module has no purpose in a production build. Gated on
+/// `create_sdk_test_data` (its only callers) plus `test` (the genesis
+/// seeder's test module exercises it under `cargo test`).
+#[cfg(any(create_sdk_test_data, test))]
+pub mod shielded_snapshot;
 /// Verification helpers
 pub mod verify;

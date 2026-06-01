@@ -7,6 +7,7 @@ use dpp::prelude::{BlockHeight, CoreBlockHeight, TimestampMillis};
 
 /// Block time information containing height, core height, and timestamp
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct BlockTime {
     /// Platform block height
     pub height: BlockHeight,

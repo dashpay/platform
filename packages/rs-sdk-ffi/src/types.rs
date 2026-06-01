@@ -77,6 +77,26 @@ pub struct DashSDKConfig {
     pub request_retry_count: u32,
     /// Timeout for requests in milliseconds
     pub request_timeout_ms: u64,
+    /// Optional override for the trusted-context-provider quorum lookup base URL
+    /// (e.g., `"https://quorums.devnet.example.networks.dash.org"` or
+    /// `"http://127.0.0.1:22444"`). When null/empty, the provider uses the
+    /// default endpoint derived from `network` (mainnet/testnet only — devnet
+    /// needs an explicit URL, regtest defaults to the local sidecar).
+    ///
+    /// **Only honored on the `dash_sdk_create_trusted` path** — that's the
+    /// path that builds a `TrustedHttpContextProvider`, which is the
+    /// component that actually performs quorum lookups. The callback-based
+    /// path (`dash_sdk_create_with_callbacks`) uses `CallbackContextProvider`
+    /// and ignores this field entirely; non-null values there are silently
+    /// dropped.
+    ///
+    /// Same lifetime contract as `dapi_addresses`: borrowed, copied
+    /// immediately, caller may free after the FFI call returns.
+    pub quorum_url: *const c_char,
+    /// Pin to a specific Dash Platform protocol version.
+    /// `0` keeps the SDK default (auto-detect / latest); any non-zero value
+    /// is forwarded to `SdkBuilder::with_version` and rejected if unknown.
+    pub platform_version: u32,
 }
 
 /// Result data type indicator for iOS

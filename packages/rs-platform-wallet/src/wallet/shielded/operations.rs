@@ -35,11 +35,9 @@ use dpp::address_funds::{
 use dpp::fee::Credits;
 use dpp::identity::core_script::CoreScript;
 use dpp::identity::signer::Signer;
-use dpp::prelude::AssetLockProof;
 use dpp::shielded::builder::{
-    build_shield_from_asset_lock_transition, build_shield_transition,
-    build_shielded_transfer_transition, build_shielded_withdrawal_transition,
-    build_unshield_transition, OrchardProver, SpendableNote,
+    build_shield_transition, build_shielded_transfer_transition,
+    build_shielded_withdrawal_transition, build_unshield_transition, OrchardProver, SpendableNote,
 };
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::withdrawal::Pooling;
@@ -261,57 +259,8 @@ pub async fn shield<Sig: Signer<PlatformAddress>, P: OrchardProver>(
 
 // -------------------------------------------------------------------------
 // ShieldFromAssetLock: Core L1 asset lock -> shielded pool (Type 18)
+// (orchestrated entry point lives in `wallet/shielded/fund_from_asset_lock.rs`)
 // -------------------------------------------------------------------------
-
-/// Shield credits from a Core L1 asset lock into the shielded
-/// pool, with the resulting note assigned to `account`'s default
-/// Orchard payment address derived from `keys`.
-pub async fn shield_from_asset_lock<P: OrchardProver>(
-    sdk: &Arc<dash_sdk::Sdk>,
-    keys: &OrchardKeySet,
-    account: u32,
-    asset_lock_proof: AssetLockProof,
-    private_key: &[u8],
-    amount: u64,
-    prover: &P,
-) -> Result<(), PlatformWalletError> {
-    let recipient_addr = default_orchard_address(keys)?;
-
-    info!(
-        account,
-        credits = amount,
-        "Shield from asset lock: building state transition"
-    );
-
-    let state_transition = build_shield_from_asset_lock_transition(
-        &recipient_addr,
-        amount,
-        asset_lock_proof,
-        private_key,
-        prover,
-        [0u8; 36],
-        sdk.version(),
-    )
-    .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
-
-    trace!("Shield from asset lock: state transition built, broadcasting...");
-    // Wait for proven execution rather than relay-ACK. This matters most
-    // for Type 18: the asset-lock proof is single-use, so a false-
-    // positive success on a transition Platform later rejects would
-    // strand the user's L1 outpoint with no in-app signal. The proven
-    // result is discarded; we only need the confirmation.
-    state_transition
-        .broadcast_and_wait::<StateTransitionProofResult>(sdk, None)
-        .await
-        .map_err(|e| PlatformWalletError::ShieldedBroadcastFailed(e.to_string()))?;
-
-    info!(
-        account,
-        credits = amount,
-        "Shield from asset lock broadcast succeeded"
-    );
-    Ok(())
-}
 
 // -------------------------------------------------------------------------
 // Unshield: shielded pool -> platform address (Type 17)

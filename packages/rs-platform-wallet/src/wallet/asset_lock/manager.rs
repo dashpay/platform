@@ -82,7 +82,14 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
 
     /// Queue an `AssetLockChangeSet` onto the per-wallet persister.
     /// No-op when the changeset is empty.
-    pub(super) fn queue_asset_lock_changeset(&self, cs: AssetLockChangeSet) {
+    ///
+    /// `pub(crate)` so the orchestrated funding flows in
+    /// `wallet::platform_addresses` and `wallet::identity::network`
+    /// can pair an `advance_asset_lock_status` call with a flush
+    /// without going through the asset-lock module boundary. The
+    /// internal-only flag (no `pub`) keeps the API hidden from
+    /// crate consumers.
+    pub(crate) fn queue_asset_lock_changeset(&self, cs: AssetLockChangeSet) {
         if <AssetLockChangeSet as crate::changeset::Merge>::is_empty(&cs) {
             return;
         }
