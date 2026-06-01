@@ -69,6 +69,15 @@ pub const PER_WALLET_TABLES: &[(&str, WalletScope)] = &[
     ("token_balances", WalletScope::ViaIdentity),
     ("dashpay_profiles", WalletScope::ViaIdentity),
     ("dashpay_payments_overlay", WalletScope::ViaIdentity),
+    // Per-object metadata tables (`src/kv.rs`). Registered so
+    // `delete_wallet`/`inspect` purge and count them even when the `kv`
+    // API is compiled out. `meta_global` has no wallet scope and is
+    // intentionally absent — it survives wallet delete.
+    ("meta_wallet", WalletScope::DirectColumn),
+    ("meta_identity", WalletScope::ViaIdentity),
+    ("meta_token", WalletScope::ViaIdentity),
+    ("meta_contact", WalletScope::DirectColumn),
+    ("meta_platform_address", WalletScope::DirectColumn),
 ];
 
 /// SQL fragment for counting rows of `table` belonging to a single

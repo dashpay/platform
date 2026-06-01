@@ -1,28 +1,27 @@
 //! SQLite-backed [`KvStore`] implementation for [`SqlitePersister`].
 //!
-//! Single physical table `kv_store` with a nullable `wallet_id`:
-//! `NULL` rows live in the global slot, non-NULL rows are wallet-scoped
-//! and `CASCADE` on parent delete via the FK to `wallet_metadata`.
+//! One dedicated table per [`ObjectId`] variant (`meta_global`,
+//! `meta_wallet`, `meta_identity`, `meta_token`, `meta_contact`,
+//! `meta_platform_address`). Each table has a composite PRIMARY KEY of
+//! its id column(s) plus `key`, so uniqueness comes straight from the PK
+//! — no partial indexes, no nullable scope column. `meta_global` is the
+//! only table without a parent FK; the other five `CASCADE` on parent
+//! delete via the native `FOREIGN KEY` declared in `V001__initial.rs`.
 //!
-//! Uniqueness is enforced by two **partial** unique indexes:
-//!
-//! - `idx_kv_store_global  ON kv_store(key)             WHERE wallet_id IS NULL`
-//! - `idx_kv_store_wallet  ON kv_store(wallet_id, key)  WHERE wallet_id IS NOT NULL`
-//!
-//! Partial indexes are needed because SQLite treats every NULL in a
-//! plain `UNIQUE(wallet_id, key)` as distinct, which would allow
-//! duplicate globals. Splitting into two predicates partitions the
-//! rows and gives both halves the uniqueness guarantee we want.
+//! `match scope` resolves each operation to its table and id-column
+//! bindings; the SQL body (length-precheck read, upsert, delete,
+//! prefix-list) is factored once per op and parameterised by table name
+//! and id predicate. Table and column names come from the matched
+//! variant — compile-time constants, never caller input — so they are
+//! `format!`-spliced; the id *values* are bound parameters.
 //!
 //! All operations reuse `SqlitePersister`'s single `Mutex<Connection>`
 //! via the crate-private `conn()` accessor; no separate connection is
 //! opened.
 
-use rusqlite::{params, OptionalExtension};
+use rusqlite::{OptionalExtension, ToSql};
 
-use platform_wallet::wallet::platform_wallet::WalletId;
-
-use crate::kv::{validate_key, KvError, KvStore, MAX_VALUE_LEN};
+use crate::kv::{validate_key, KvError, KvStore, ObjectId, MAX_VALUE_LEN};
 use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::persister::SqlitePersister;
 
@@ -45,16 +44,98 @@ fn escape_like_prefix(prefix: &str) -> String {
     out
 }
 
-/// Translate a `rusqlite` error from a `put` into a typed `KvError`.
-/// A foreign-key violation against `wallet_metadata` only happens on
-/// per-wallet writes and is surfaced as
-/// [`KvError::WalletNotFound`] rather than the raw SQLite error so
-/// callers don't have to inspect extended error codes.
-fn classify_put_error(err: rusqlite::Error, wallet_id: Option<&WalletId>) -> KvError {
+/// Resolved table + id-column bindings for one [`ObjectId`] scope. The
+/// `table` name and `id_cols` are compile-time constants from the
+/// matched variant; `id_vals` are the owned byte buffers bound as
+/// parameters. `key` (and `prefix`, where used) bind after the id
+/// values, in the order the SQL placeholders appear.
+struct ScopeSql<'a> {
+    table: &'static str,
+    id_cols: &'static [&'static str],
+    id_vals: Vec<&'a [u8]>,
+}
+
+impl<'a> ScopeSql<'a> {
+    /// Resolve a scope to its table and id bindings.
+    fn resolve(scope: &'a ObjectId) -> Self {
+        match scope {
+            ObjectId::Global => ScopeSql {
+                table: "meta_global",
+                id_cols: &[],
+                id_vals: Vec::new(),
+            },
+            ObjectId::Wallet(wallet_id) => ScopeSql {
+                table: "meta_wallet",
+                id_cols: &["wallet_id"],
+                id_vals: vec![wallet_id.as_slice()],
+            },
+            ObjectId::Identity(identity_id) => ScopeSql {
+                table: "meta_identity",
+                id_cols: &["identity_id"],
+                id_vals: vec![identity_id.as_slice()],
+            },
+            ObjectId::Token {
+                identity_id,
+                token_id,
+            } => ScopeSql {
+                table: "meta_token",
+                id_cols: &["identity_id", "token_id"],
+                id_vals: vec![identity_id.as_slice(), token_id.as_slice()],
+            },
+            ObjectId::Contact {
+                wallet_id,
+                owner_id,
+                contact_id,
+            } => ScopeSql {
+                table: "meta_contact",
+                id_cols: &["wallet_id", "owner_id", "contact_id"],
+                id_vals: vec![
+                    wallet_id.as_slice(),
+                    owner_id.as_slice(),
+                    contact_id.as_slice(),
+                ],
+            },
+            ObjectId::PlatformAddress { wallet_id, address } => ScopeSql {
+                table: "meta_platform_address",
+                id_cols: &["wallet_id", "address"],
+                id_vals: vec![wallet_id.as_slice(), address.as_slice()],
+            },
+        }
+    }
+
+    /// `col1 = ?1 AND col2 = ?2 AND …` for the id columns, numbered from
+    /// 1. Empty (no fragment) for the id-less global scope.
+    fn id_predicate(&self) -> String {
+        self.id_cols
+            .iter()
+            .enumerate()
+            .map(|(i, col)| format!("{col} = ?{}", i + 1))
+            .collect::<Vec<_>>()
+            .join(" AND ")
+    }
+
+    /// `WHERE <id_predicate> AND key = ?n` (or `WHERE key = ?1` when the
+    /// scope has no id columns), with `key` bound at the next slot.
+    fn where_key(&self) -> String {
+        let key_ph = self.id_cols.len() + 1;
+        if self.id_cols.is_empty() {
+            format!("WHERE key = ?{key_ph}")
+        } else {
+            format!("WHERE {} AND key = ?{key_ph}", self.id_predicate())
+        }
+    }
+}
+
+/// Translate a `rusqlite` error from a `put` into a typed [`KvError`].
+/// A foreign-key violation only arises on the five FK-bearing `meta_*`
+/// tables (every scope except [`ObjectId::Global`]); it is surfaced as
+/// [`KvError::ObjectNotFound`] carrying the scope's [`ObjectKind`] rather
+/// than the raw SQLite error so callers don't inspect extended codes.
+fn classify_put_error(err: rusqlite::Error, scope: &ObjectId) -> KvError {
     if let rusqlite::Error::SqliteFailure(ffi_err, _) = &err {
         if ffi_err.extended_code == rusqlite::ffi::SQLITE_CONSTRAINT_FOREIGNKEY {
-            if let Some(wid) = wallet_id {
-                return KvError::WalletNotFound { wallet_id: *wid };
+            if let Some(kind) = scope.kind() {
+                return KvError::ObjectNotFound { kind };
             }
         }
     }
@@ -78,30 +159,24 @@ impl From<WalletStorageError> for KvError {
 }
 
 impl KvStore for SqlitePersister {
-    fn get(&self, wallet_id: Option<&WalletId>, key: &str) -> Result<Option<Vec<u8>>, KvError> {
+    fn get(&self, scope: &ObjectId, key: &str) -> Result<Option<Vec<u8>>, KvError> {
         validate_key(key)?;
+        let sql = ScopeSql::resolve(scope);
         let conn = self.conn().map_err(KvError::from)?;
+        let where_key = sql.where_key();
+        // Bind the id values then the key in placeholder order.
+        let mut params: Vec<&dyn ToSql> = sql.id_vals.iter().map(|v| v as &dyn ToSql).collect();
+        params.push(&key);
         // Two-step read: pull `length(value)` first so a tampered or
         // corrupted row that exceeds `MAX_VALUE_LEN` cannot force a
-        // multi-gigabyte allocation when we materialise the blob.
-        // Mirrors `sqlite::schema::blob`'s `BLOB_SIZE_LIMIT_BYTES`
-        // ceiling. CMT-006.
-        let len: Option<i64> = match wallet_id {
-            None => conn
-                .query_row(
-                    "SELECT length(value) FROM kv_store WHERE wallet_id IS NULL AND key = ?1",
-                    params![key],
-                    |row| row.get::<_, i64>(0),
-                )
-                .optional()?,
-            Some(wid) => conn
-                .query_row(
-                    "SELECT length(value) FROM kv_store WHERE wallet_id = ?1 AND key = ?2",
-                    params![wid.as_slice(), key],
-                    |row| row.get::<_, i64>(0),
-                )
-                .optional()?,
-        };
+        // multi-gigabyte allocation when we materialise the blob. CMT-006.
+        let len: Option<i64> = conn
+            .query_row(
+                &format!("SELECT length(value) FROM {} {where_key}", sql.table),
+                params.as_slice(),
+                |row| row.get::<_, i64>(0),
+            )
+            .optional()?;
         let Some(len) = len else { return Ok(None) };
         let found = usize::try_from(len.max(0)).unwrap_or(usize::MAX);
         if found > MAX_VALUE_LEN {
@@ -110,121 +185,100 @@ impl KvStore for SqlitePersister {
                 max: MAX_VALUE_LEN,
             });
         }
-        let value = match wallet_id {
-            None => conn
-                .query_row(
-                    "SELECT value FROM kv_store WHERE wallet_id IS NULL AND key = ?1",
-                    params![key],
-                    |row| row.get::<_, Vec<u8>>(0),
-                )
-                .optional()?,
-            Some(wid) => conn
-                .query_row(
-                    "SELECT value FROM kv_store WHERE wallet_id = ?1 AND key = ?2",
-                    params![wid.as_slice(), key],
-                    |row| row.get::<_, Vec<u8>>(0),
-                )
-                .optional()?,
-        };
+        let value = conn
+            .query_row(
+                &format!("SELECT value FROM {} {where_key}", sql.table),
+                params.as_slice(),
+                |row| row.get::<_, Vec<u8>>(0),
+            )
+            .optional()?;
         Ok(value)
     }
 
-    fn put(&self, wallet_id: Option<&WalletId>, key: &str, value: &[u8]) -> Result<(), KvError> {
+    fn put(&self, scope: &ObjectId, key: &str, value: &[u8]) -> Result<(), KvError> {
         validate_key(key)?;
+        let sql = ScopeSql::resolve(scope);
         let conn = self.conn().map_err(KvError::from)?;
-        // Two SQL statements because the conflict target differs: the
-        // global slot's uniqueness is enforced by the partial index
-        // `idx_kv_store_global` (key only), the per-wallet slot by
-        // `idx_kv_store_wallet` (wallet_id, key). Naming the index in
-        // `ON CONFLICT` lets SQLite pick the right partial index even
-        // though no UNIQUE constraint exists on the columns directly.
-        let res = match wallet_id {
-            None => conn.execute(
-                "INSERT INTO kv_store (wallet_id, key, value) VALUES (NULL, ?1, ?2) \
-                 ON CONFLICT(key) WHERE wallet_id IS NULL \
+        // Column list / placeholders / conflict target all include the
+        // id columns ahead of `key`; the plain composite PK is the
+        // conflict target. Upsert refreshes `updated_at` on overwrite.
+        let mut cols: Vec<&str> = sql.id_cols.to_vec();
+        cols.push("key");
+        let col_list = cols.join(", ");
+        let value_phs = (1..=cols.len())
+            .map(|i| format!("?{i}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let conflict_target = cols.join(", ");
+        let value_ph = cols.len() + 1;
+        let mut params: Vec<&dyn ToSql> = sql.id_vals.iter().map(|v| v as &dyn ToSql).collect();
+        params.push(&key);
+        params.push(&value);
+        let res = conn.execute(
+            &format!(
+                "INSERT INTO {} ({col_list}, value) VALUES ({value_phs}, ?{value_ph}) \
+                 ON CONFLICT({conflict_target}) \
                  DO UPDATE SET value = excluded.value, updated_at = unixepoch()",
-                params![key, value],
+                sql.table
             ),
-            Some(wid) => conn.execute(
-                "INSERT INTO kv_store (wallet_id, key, value) VALUES (?1, ?2, ?3) \
-                 ON CONFLICT(wallet_id, key) WHERE wallet_id IS NOT NULL \
-                 DO UPDATE SET value = excluded.value, updated_at = unixepoch()",
-                params![wid.as_slice(), key, value],
-            ),
-        };
-        res.map(|_| ())
-            .map_err(|e| classify_put_error(e, wallet_id))
+            params.as_slice(),
+        );
+        res.map(|_| ()).map_err(|e| classify_put_error(e, scope))
     }
 
-    fn delete(&self, wallet_id: Option<&WalletId>, key: &str) -> Result<(), KvError> {
+    fn delete(&self, scope: &ObjectId, key: &str) -> Result<(), KvError> {
         validate_key(key)?;
+        let sql = ScopeSql::resolve(scope);
         let conn = self.conn().map_err(KvError::from)?;
-        match wallet_id {
-            None => conn.execute(
-                "DELETE FROM kv_store WHERE wallet_id IS NULL AND key = ?1",
-                params![key],
-            )?,
-            Some(wid) => conn.execute(
-                "DELETE FROM kv_store WHERE wallet_id = ?1 AND key = ?2",
-                params![wid.as_slice(), key],
-            )?,
-        };
+        let mut params: Vec<&dyn ToSql> = sql.id_vals.iter().map(|v| v as &dyn ToSql).collect();
+        params.push(&key);
+        conn.execute(
+            &format!("DELETE FROM {} {}", sql.table, sql.where_key()),
+            params.as_slice(),
+        )?;
         Ok(())
     }
 
-    fn list_keys(
-        &self,
-        wallet_id: Option<&WalletId>,
-        prefix: Option<&str>,
-    ) -> Result<Vec<String>, KvError> {
+    fn list_keys(&self, scope: &ObjectId, prefix: Option<&str>) -> Result<Vec<String>, KvError> {
+        let sql = ScopeSql::resolve(scope);
         let conn = self.conn().map_err(KvError::from)?;
-        let escaped = prefix.map(escape_like_prefix);
-        let pattern = escaped.as_ref().map(|p| format!("{p}%"));
-        let collect = |mut stmt: rusqlite::Statement<'_>,
-                       params: &[&dyn rusqlite::ToSql]|
-         -> Result<Vec<String>, rusqlite::Error> {
-            let rows = stmt.query_map(params, |row| row.get::<_, String>(0))?;
-            let mut out = Vec::new();
-            for r in rows {
-                out.push(r?);
-            }
-            Ok(out)
-        };
-        let rows = match (wallet_id, pattern.as_deref()) {
-            (None, None) => {
-                let stmt = conn
-                    .prepare("SELECT key FROM kv_store WHERE wallet_id IS NULL ORDER BY key ASC")?;
-                collect(stmt, &[])?
-            }
-            (None, Some(p)) => {
-                let stmt = conn.prepare(
-                    "SELECT key FROM kv_store \
-                     WHERE wallet_id IS NULL AND key LIKE ?1 ESCAPE '\\' \
-                     ORDER BY key ASC",
-                )?;
-                collect(stmt, &[&p])?
-            }
-            (Some(wid), None) => {
-                let stmt =
-                    conn.prepare("SELECT key FROM kv_store WHERE wallet_id = ?1 ORDER BY key ASC")?;
-                collect(stmt, &[&wid.as_slice()])?
-            }
-            (Some(wid), Some(p)) => {
-                let stmt = conn.prepare(
-                    "SELECT key FROM kv_store \
-                     WHERE wallet_id = ?1 AND key LIKE ?2 ESCAPE '\\' \
-                     ORDER BY key ASC",
-                )?;
-                collect(stmt, &[&wid.as_slice(), &p])?
+        let pattern = prefix.map(|p| format!("{}%", escape_like_prefix(p)));
+        // id predicate first; `key LIKE ?` (escaped) appended when a
+        // prefix is supplied, bound at the slot after the id values.
+        let id_pred = sql.id_predicate();
+        let where_clause = match (&pattern, id_pred.is_empty()) {
+            (None, true) => String::new(),
+            (None, false) => format!("WHERE {id_pred}"),
+            (Some(_), true) => format!("WHERE key LIKE ?{} ESCAPE '\\'", sql.id_cols.len() + 1),
+            (Some(_), false) => {
+                format!(
+                    "WHERE {id_pred} AND key LIKE ?{} ESCAPE '\\'",
+                    sql.id_cols.len() + 1
+                )
             }
         };
-        Ok(rows)
+        let mut params: Vec<&dyn ToSql> = sql.id_vals.iter().map(|v| v as &dyn ToSql).collect();
+        if let Some(p) = pattern.as_ref() {
+            params.push(p);
+        }
+        let mut stmt = conn.prepare(&format!(
+            "SELECT key FROM {} {where_clause} ORDER BY key ASC",
+            sql.table
+        ))?;
+        let rows = stmt.query_map(params.as_slice(), |row| row.get::<_, String>(0))?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r?);
+        }
+        Ok(out)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use platform_wallet::wallet::platform_wallet::WalletId;
+    use rusqlite::params;
 
     fn open_persister() -> (SqlitePersister, tempfile::TempDir) {
         let tmp = tempfile::tempdir().expect("tempdir");
@@ -235,7 +289,6 @@ mod tests {
     }
 
     fn seed_wallet(p: &SqlitePersister, id: u8) -> WalletId {
-        use rusqlite::params;
         let wid: WalletId = [id; 32];
         let conn = p.lock_conn_for_test();
         conn.execute(
@@ -256,71 +309,83 @@ mod tests {
     #[test]
     fn global_round_trip() {
         let (p, _tmp) = open_persister();
-        assert_eq!(p.get(None, "k").unwrap(), None);
-        p.put(None, "k", b"v1").unwrap();
-        assert_eq!(p.get(None, "k").unwrap().as_deref(), Some(&b"v1"[..]));
-        p.put(None, "k", b"v2").unwrap();
-        assert_eq!(p.get(None, "k").unwrap().as_deref(), Some(&b"v2"[..]));
-        p.delete(None, "k").unwrap();
-        assert_eq!(p.get(None, "k").unwrap(), None);
+        assert_eq!(p.get(&ObjectId::Global, "k").unwrap(), None);
+        p.put(&ObjectId::Global, "k", b"v1").unwrap();
+        assert_eq!(
+            p.get(&ObjectId::Global, "k").unwrap().as_deref(),
+            Some(&b"v1"[..])
+        );
+        p.put(&ObjectId::Global, "k", b"v2").unwrap();
+        assert_eq!(
+            p.get(&ObjectId::Global, "k").unwrap().as_deref(),
+            Some(&b"v2"[..])
+        );
+        p.delete(&ObjectId::Global, "k").unwrap();
+        assert_eq!(p.get(&ObjectId::Global, "k").unwrap(), None);
     }
 
     #[test]
     fn per_wallet_round_trip() {
         let (p, _tmp) = open_persister();
-        let wid = seed_wallet(&p, 1);
-        p.put(Some(&wid), "k", b"v1").unwrap();
-        assert_eq!(p.get(Some(&wid), "k").unwrap().as_deref(), Some(&b"v1"[..]));
-        p.delete(Some(&wid), "k").unwrap();
-        assert_eq!(p.get(Some(&wid), "k").unwrap(), None);
+        let scope = ObjectId::Wallet(seed_wallet(&p, 1));
+        p.put(&scope, "k", b"v1").unwrap();
+        assert_eq!(p.get(&scope, "k").unwrap().as_deref(), Some(&b"v1"[..]));
+        p.delete(&scope, "k").unwrap();
+        assert_eq!(p.get(&scope, "k").unwrap(), None);
     }
 
     #[test]
-    fn null_scope_uniqueness_via_partial_index() {
+    fn global_composite_pk_rejects_duplicate() {
         // Direct INSERTs (no ON CONFLICT) must be rejected because the
-        // partial index enforces global-key uniqueness.
+        // composite PRIMARY KEY enforces per-key uniqueness.
         let (p, _tmp) = open_persister();
         let conn = p.lock_conn_for_test();
         conn.execute(
-            "INSERT INTO kv_store (wallet_id, key, value) VALUES (NULL, 'k', X'01')",
+            "INSERT INTO meta_global (key, value) VALUES ('k', X'01')",
             [],
         )
         .expect("first insert");
         let err = conn
             .execute(
-                "INSERT INTO kv_store (wallet_id, key, value) VALUES (NULL, 'k', X'02')",
+                "INSERT INTO meta_global (key, value) VALUES ('k', X'02')",
                 [],
             )
             .expect_err("second insert must fail");
         match err {
             rusqlite::Error::SqliteFailure(ffi, _) => {
-                assert_eq!(ffi.extended_code, rusqlite::ffi::SQLITE_CONSTRAINT_UNIQUE);
+                assert_eq!(
+                    ffi.extended_code,
+                    rusqlite::ffi::SQLITE_CONSTRAINT_PRIMARYKEY
+                );
             }
-            other => panic!("expected SQLITE_CONSTRAINT_UNIQUE, got {other:?}"),
+            other => panic!("expected SQLITE_CONSTRAINT_PRIMARYKEY, got {other:?}"),
         }
     }
 
     #[test]
-    fn per_wallet_uniqueness_via_partial_index() {
+    fn per_wallet_composite_pk_rejects_duplicate() {
         let (p, _tmp) = open_persister();
         let wid = seed_wallet(&p, 7);
         let conn = p.lock_conn_for_test();
         conn.execute(
-            "INSERT INTO kv_store (wallet_id, key, value) VALUES (?1, 'k', X'01')",
+            "INSERT INTO meta_wallet (wallet_id, key, value) VALUES (?1, 'k', X'01')",
             params![wid.as_slice()],
         )
         .expect("first insert");
         let err = conn
             .execute(
-                "INSERT INTO kv_store (wallet_id, key, value) VALUES (?1, 'k', X'02')",
+                "INSERT INTO meta_wallet (wallet_id, key, value) VALUES (?1, 'k', X'02')",
                 params![wid.as_slice()],
             )
             .expect_err("second insert must fail");
         match err {
             rusqlite::Error::SqliteFailure(ffi, _) => {
-                assert_eq!(ffi.extended_code, rusqlite::ffi::SQLITE_CONSTRAINT_UNIQUE);
+                assert_eq!(
+                    ffi.extended_code,
+                    rusqlite::ffi::SQLITE_CONSTRAINT_PRIMARYKEY
+                );
             }
-            other => panic!("expected SQLITE_CONSTRAINT_UNIQUE, got {other:?}"),
+            other => panic!("expected SQLITE_CONSTRAINT_PRIMARYKEY, got {other:?}"),
         }
     }
 
@@ -329,18 +394,17 @@ mod tests {
         // CMT-006: a row larger than MAX_VALUE_LEN (planted via direct
         // SQL — bypassing `put`'s implicit cap) must surface as
         // ValueTooLarge instead of OOMing the process.
-        use rusqlite::params;
         let (p, _tmp) = open_persister();
         let oversize = vec![0u8; MAX_VALUE_LEN + 1];
         {
             let conn = p.lock_conn_for_test();
             conn.execute(
-                "INSERT INTO kv_store (wallet_id, key, value) VALUES (NULL, ?1, ?2)",
+                "INSERT INTO meta_global (key, value) VALUES (?1, ?2)",
                 params!["huge", oversize.as_slice()],
             )
             .expect("seed oversize row");
         }
-        match p.get(None, "huge") {
+        match p.get(&ObjectId::Global, "huge") {
             Err(KvError::ValueTooLarge { found, max }) => {
                 assert_eq!(found, MAX_VALUE_LEN + 1);
                 assert_eq!(max, MAX_VALUE_LEN);
@@ -351,22 +415,24 @@ mod tests {
 
     #[test]
     fn cascade_on_wallet_delete() {
-        use rusqlite::params;
         let (p, _tmp) = open_persister();
-        let wid = seed_wallet(&p, 5);
-        p.put(None, "global", b"survives").unwrap();
-        p.put(Some(&wid), "scoped", b"cascades").unwrap();
+        let scope = ObjectId::Wallet(seed_wallet(&p, 5));
+        p.put(&ObjectId::Global, "global", b"survives").unwrap();
+        p.put(&scope, "scoped", b"cascades").unwrap();
         {
             let conn = p.lock_conn_for_test();
+            let ObjectId::Wallet(wid) = &scope else {
+                unreachable!()
+            };
             conn.execute(
                 "DELETE FROM wallet_metadata WHERE wallet_id = ?1",
                 params![wid.as_slice()],
             )
             .expect("delete wallet");
         }
-        assert_eq!(p.get(Some(&wid), "scoped").unwrap(), None);
+        assert_eq!(p.get(&scope, "scoped").unwrap(), None);
         assert_eq!(
-            p.get(None, "global").unwrap().as_deref(),
+            p.get(&ObjectId::Global, "global").unwrap().as_deref(),
             Some(&b"survives"[..])
         );
     }

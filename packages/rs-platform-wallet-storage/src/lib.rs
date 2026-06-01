@@ -40,7 +40,7 @@ pub mod secrets;
 // names. Adding to or trimming from this list does NOT count as a
 // breaking change of the submodule API.
 #[cfg(feature = "kv")]
-pub use kv::{KvError, KvStore};
+pub use kv::{KvError, KvStore, ObjectId};
 #[cfg(feature = "sqlite")]
 pub use sqlite::{
     default_auto_backup_dir, AutoBackupOperation, FlushMode, JournalMode, PruneReport,
