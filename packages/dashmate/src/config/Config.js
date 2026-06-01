@@ -73,8 +73,8 @@ export default class Config {
     // Reject empty segments (leading/trailing/double dots, e.g. `a..b` or
     // `…buildArgs.`) — an empty key must not slip through a map's
     // `additionalProperties` descent.
-    const segments = path.split('.');
-    if (segments.some((segment) => segment.length === 0)) return false;
+    const pathSegments = path.split('.');
+    if (pathSegments.some((segment) => segment.length === 0)) return false;
 
     const resolveRef = (node) => {
       if (!node || typeof node !== 'object') return node;
@@ -93,7 +93,7 @@ export default class Config {
     let node = resolveRef(configJsonSchema);
     if (!node) return false;
 
-    for (const segment of segments) {
+    for (const segment of pathSegments) {
       node = resolveRef(node);
       if (!node || typeof node !== 'object') return false;
 
