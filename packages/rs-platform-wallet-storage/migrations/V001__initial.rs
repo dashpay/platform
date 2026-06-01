@@ -253,26 +253,75 @@ CREATE TABLE dashpay_payments_overlay (
     FOREIGN KEY (identity_id) REFERENCES identities(identity_id) ON DELETE CASCADE
 );
 
--- Generic key/value store for app-managed data (config,
--- platform-specific data, anything the host wants to stash alongside
--- wallet state). See `src/kv.rs` and `SCHEMA.md` for the public API
--- and the partial-index design.
+-- Per-object-type key/value metadata for app-managed data (aliases,
+-- flags, notes, sync hints, ordering — anything the host wants to stash
+-- alongside a wallet object). One dedicated table per `ObjectId`
+-- variant; see `src/kv.rs` and `SCHEMA.md` for the public API.
 --
--- `wallet_id IS NULL` => global slot (survives wallet deletion).
--- `wallet_id IS NOT NULL` => per-wallet, cascades on parent delete.
--- The two partial UNIQUE indexes below partition the rows so each half
--- gets uniqueness without tripping SQLite's 'each NULL is distinct in
--- UNIQUE' rule.
-CREATE TABLE kv_store (
-    wallet_id  BLOB,
+-- Every table shares the same value contract — `key` (1..=128 chars),
+-- opaque `value` BLOB, `updated_at` defaulting to `unixepoch()` — plus a
+-- composite PRIMARY KEY of its id column(s) and `key`. `meta_global` is
+-- the only table without a parent, so it has no FK and survives every
+-- wallet delete; the other five carry a native `FOREIGN KEY … ON DELETE
+-- CASCADE` to their parent's PRIMARY KEY, so metadata cannot attach to a
+-- non-existent object and dies with its object.
+CREATE TABLE meta_global (
+    key        TEXT NOT NULL PRIMARY KEY CHECK (length(key) BETWEEN 1 AND 128),
+    value      BLOB NOT NULL,
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+);
+
+CREATE TABLE meta_wallet (
+    wallet_id  BLOB NOT NULL,
     key        TEXT NOT NULL CHECK (length(key) BETWEEN 1 AND 128),
     value      BLOB NOT NULL,
     updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (wallet_id, key),
     FOREIGN KEY (wallet_id) REFERENCES wallet_metadata(wallet_id) ON DELETE CASCADE
 );
 
-CREATE UNIQUE INDEX idx_kv_store_global ON kv_store(key) WHERE wallet_id IS NULL;
-CREATE UNIQUE INDEX idx_kv_store_wallet ON kv_store(wallet_id, key) WHERE wallet_id IS NOT NULL;
+CREATE TABLE meta_identity (
+    identity_id BLOB NOT NULL,
+    key         TEXT NOT NULL CHECK (length(key) BETWEEN 1 AND 128),
+    value       BLOB NOT NULL,
+    updated_at  INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (identity_id, key),
+    FOREIGN KEY (identity_id) REFERENCES identities(identity_id) ON DELETE CASCADE
+);
+
+CREATE TABLE meta_token (
+    identity_id BLOB NOT NULL,
+    token_id    BLOB NOT NULL,
+    key         TEXT NOT NULL CHECK (length(key) BETWEEN 1 AND 128),
+    value       BLOB NOT NULL,
+    updated_at  INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (identity_id, token_id, key),
+    FOREIGN KEY (identity_id, token_id)
+        REFERENCES token_balances(identity_id, token_id) ON DELETE CASCADE
+);
+
+CREATE TABLE meta_contact (
+    wallet_id  BLOB NOT NULL,
+    owner_id   BLOB NOT NULL,
+    contact_id BLOB NOT NULL,
+    key        TEXT NOT NULL CHECK (length(key) BETWEEN 1 AND 128),
+    value      BLOB NOT NULL,
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (wallet_id, owner_id, contact_id, key),
+    FOREIGN KEY (wallet_id, owner_id, contact_id)
+        REFERENCES contacts_established(wallet_id, owner_id, contact_id) ON DELETE CASCADE
+);
+
+CREATE TABLE meta_platform_address (
+    wallet_id  BLOB NOT NULL,
+    address    BLOB NOT NULL,
+    key        TEXT NOT NULL CHECK (length(key) BETWEEN 1 AND 128),
+    value      BLOB NOT NULL,
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    PRIMARY KEY (wallet_id, address, key),
+    FOREIGN KEY (wallet_id, address)
+        REFERENCES platform_addresses(wallet_id, address) ON DELETE CASCADE
+);
 "
     )
 }
