@@ -473,42 +473,29 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
 
     /// Snapshot of the wallet's tracked-asset-lock list. Reads the
     /// `info.tracked_asset_locks` map once under the lock.
+    ///
+    /// Uses `blocking_read`; safe only from a synchronous context (FFI /
+    /// explorer). From within an async task use
+    /// [`Self::tracked_asset_locks`] instead — `blocking_read` panics when
+    /// called on a thread driving the tokio runtime.
     pub fn tracked_asset_locks_blocking(
         &self,
         wallet_id: &WalletId,
     ) -> Vec<TrackedAssetLockSnapshot> {
         let wm = self.wallet_manager.blocking_read();
-        let Some(info) = wm.get_wallet_info(wallet_id) else {
-            return Vec::new();
-        };
-        info.tracked_asset_locks
-            .values()
-            .map(|lock| {
-                use crate::wallet::asset_lock::tracked::AssetLockStatus;
-                let status: u8 = match &lock.status {
-                    AssetLockStatus::Built => 0,
-                    AssetLockStatus::Broadcast => 1,
-                    AssetLockStatus::InstantSendLocked => 2,
-                    AssetLockStatus::ChainLocked => 3,
-                    AssetLockStatus::Consumed => 4,
-                };
-                let (instant_lock_present, chain_lock_height) = match &lock.proof {
-                    Some(dpp::prelude::AssetLockProof::Instant(_)) => (true, 0u32),
-                    Some(dpp::prelude::AssetLockProof::Chain(c)) => {
-                        (false, c.core_chain_locked_height)
-                    }
-                    None => (false, 0u32),
-                };
-                TrackedAssetLockSnapshot {
-                    outpoint: lock.out_point,
-                    lock_type: asset_lock_funding_type_to_u8(&lock.funding_type),
-                    status,
-                    registration_index: lock.identity_index,
-                    instant_lock_present,
-                    chain_lock_height,
-                }
-            })
-            .collect()
+        wm.get_wallet_info(wallet_id)
+            .map(snapshot_tracked_asset_locks)
+            .unwrap_or_default()
+    }
+
+    /// Async sibling of [`Self::tracked_asset_locks_blocking`] — reads the
+    /// tracked-asset-lock map via `.read().await`, safe to call from within
+    /// the tokio runtime.
+    pub async fn tracked_asset_locks(&self, wallet_id: &WalletId) -> Vec<TrackedAssetLockSnapshot> {
+        let wm = self.wallet_manager.read().await;
+        wm.get_wallet_info(wallet_id)
+            .map(snapshot_tracked_asset_locks)
+            .unwrap_or_default()
     }
 
     /// Snapshot of the wallet's InstantSend lock txid set. Returns
@@ -744,6 +731,40 @@ fn asset_lock_funding_type_to_u8(
         AssetLockFundingType::AssetLockAddressTopUp => 4,
         AssetLockFundingType::AssetLockShieldedAddressTopUp => 5,
     }
+}
+
+/// Project a wallet's `tracked_asset_locks` map into stable FFI snapshots.
+/// Shared by the blocking and async tracked-lock accessors so they can't
+/// drift.
+fn snapshot_tracked_asset_locks(
+    info: &crate::wallet::platform_wallet::PlatformWalletInfo,
+) -> Vec<TrackedAssetLockSnapshot> {
+    use crate::wallet::asset_lock::tracked::AssetLockStatus;
+    info.tracked_asset_locks
+        .values()
+        .map(|lock| {
+            let status: u8 = match &lock.status {
+                AssetLockStatus::Built => 0,
+                AssetLockStatus::Broadcast => 1,
+                AssetLockStatus::InstantSendLocked => 2,
+                AssetLockStatus::ChainLocked => 3,
+                AssetLockStatus::Consumed => 4,
+            };
+            let (instant_lock_present, chain_lock_height) = match &lock.proof {
+                Some(dpp::prelude::AssetLockProof::Instant(_)) => (true, 0u32),
+                Some(dpp::prelude::AssetLockProof::Chain(c)) => (false, c.core_chain_locked_height),
+                None => (false, 0u32),
+            };
+            TrackedAssetLockSnapshot {
+                outpoint: lock.out_point,
+                lock_type: asset_lock_funding_type_to_u8(&lock.funding_type),
+                status,
+                registration_index: lock.identity_index,
+                instant_lock_present,
+                chain_lock_height,
+            }
+        })
+        .collect()
 }
 
 fn pool_snapshot(pool: &AddressPool) -> AccountAddressPoolSnapshot {

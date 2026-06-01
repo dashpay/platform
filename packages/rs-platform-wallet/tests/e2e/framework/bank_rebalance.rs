@@ -45,7 +45,7 @@ use super::bank_identity::BankIdentity;
 use super::config::Config;
 use super::signer::{derive_identity_key, SeedBackedCoreSigner};
 use super::wait::wait_for_identity_balance;
-use super::wallet_factory::{bank_fee_strategy, DEFAULT_ACCOUNT_INDEX_PUB};
+use super::wallet_factory::{default_fee_strategy, DEFAULT_ACCOUNT_INDEX_PUB};
 use super::{FrameworkError, FrameworkResult};
 
 /// Headroom kept on the bank identity after a Platform-side drain so a
@@ -635,6 +635,9 @@ pub async fn asset_lock_core_to_platform(
     let mut addresses: BTreeMap<PlatformAddress, Option<Credits>> = BTreeMap::new();
     addresses.insert(recipient, None);
 
+    // The asset-lock-funded transition has NO address inputs (the value
+    // source is the lock itself), so `DeductFromInput(0)` is out of bounds.
+    // Take the fee from the single recipient output instead.
     wallet
         .platform()
         .fund_from_asset_lock(
@@ -644,7 +647,7 @@ pub async fn asset_lock_core_to_platform(
             },
             DEFAULT_ACCOUNT_INDEX_PUB,
             addresses,
-            bank_fee_strategy(),
+            default_fee_strategy(),
             bank.address_signer(),
             &core_signer,
             None,

@@ -55,11 +55,22 @@ use super::{FrameworkError, FrameworkResult};
 /// registers a fresh test identity at index 0.
 pub const BANK_IDENTITY_INDEX: u32 = 0xBA77;
 
-/// Funding the bootstrap registration consumes from the bank's
-/// primary receive address. Sized well above the chain-time
-/// registration fee so the new identity carries useful balance for
-/// swept credits to land on top of.
-pub const BANK_IDENTITY_BOOTSTRAP_FUNDING: Credits = 80_000_000;
+/// Minimum credits the bank's primary Platform address must hold before
+/// the bootstrap registers the bank identity. Doubles as the self-fund
+/// trigger floor. Live paloma runs show the registration transition's
+/// chain-time `required_balance` is ~96M credits, so this sits well above
+/// that so a partially-funded address (e.g. ~87M from an interrupted prior
+/// run) still triggers a top-up rather than dead-ending in registration.
+pub const BANK_IDENTITY_BOOTSTRAP_FUNDING: Credits = 200_000_000;
+
+/// Credit headroom added to the self-fund lock target to absorb the
+/// asset-lock address-funding transition's own chain-time fee, which is
+/// deducted (`ReduceOutput(0)`) from the locked amount BEFORE it lands on
+/// the address. Live paloma runs show this fee is ~93M credits, so the
+/// gross lock must exceed the registration requirement by at least that
+/// much or the net balance underflows it. Sized with headroom for fee
+/// drift; over-locking only leaves the bank more usable Platform balance.
+const BOOTSTRAP_ASSET_LOCK_FEE_RESERVE: Credits = 150_000_000;
 
 /// Core (duff) headroom required on top of the asset-lock amount for the
 /// L1 lock transaction's own fee. The asset-lock builder picks the exact
@@ -471,7 +482,8 @@ async fn self_fund_bootstrap(
     // erroring.
     let wallet_id = bank.platform_wallet().wallet_id();
     let pending: Vec<_> = manager
-        .tracked_asset_locks_blocking(&wallet_id)
+        .tracked_asset_locks(&wallet_id)
+        .await
         .into_iter()
         .filter(|l| is_unconsumed_address_lock(l.lock_type, l.status))
         .collect();
@@ -492,8 +504,13 @@ async fn self_fund_bootstrap(
         )));
     }
 
-    let target_credits =
-        BANK_IDENTITY_BOOTSTRAP_FUNDING.saturating_add(PLATFORM_BOOTSTRAP_FEE_RESERVE);
+    // Gross lock target: the registration funding floor + post-bootstrap
+    // leaf-funding reserve + the asset-lock funding fee (deducted from the
+    // lock before it lands). The first two set the NET the address must
+    // hold; the third keeps that net intact through the funding fee.
+    let target_credits = BANK_IDENTITY_BOOTSTRAP_FUNDING
+        .saturating_add(PLATFORM_BOOTSTRAP_FEE_RESERVE)
+        .saturating_add(BOOTSTRAP_ASSET_LOCK_FEE_RESERVE);
     let lock_duff = bootstrap_lock_duff(current_credits, target_credits);
     let required_core_duff = lock_duff.saturating_add(BOOTSTRAP_CORE_FEE_RESERVE_DUFF);
     let confirmed_core_duff = bank.core_balance_confirmed();
@@ -612,9 +629,11 @@ mod tests {
 
     #[test]
     fn lock_sizing_from_empty_hits_the_exact_duff_count() {
-        // 80M + 100M = 180M credits / 1000 credits-per-duff == 180_000 duffs.
-        let target = BANK_IDENTITY_BOOTSTRAP_FUNDING.saturating_add(PLATFORM_BOOTSTRAP_FEE_RESERVE);
-        assert_eq!(bootstrap_lock_duff(0, target), 180_000);
+        // 200M + 100M + 150M = 450M credits / 1000 credits-per-duff == 450_000 duffs.
+        let target = BANK_IDENTITY_BOOTSTRAP_FUNDING
+            .saturating_add(PLATFORM_BOOTSTRAP_FEE_RESERVE)
+            .saturating_add(BOOTSTRAP_ASSET_LOCK_FEE_RESERVE);
+        assert_eq!(bootstrap_lock_duff(0, target), 450_000);
     }
 
     #[test]
