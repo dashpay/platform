@@ -161,13 +161,16 @@ mod tests {
     }
 
     /// A truncated / malformed outpoint key is a typed decode error, not
-    /// a panic — replaces the old fixed-36-byte length check.
+    /// a panic — replaces the old fixed-36-byte length check. A 4-byte
+    /// input is too short for the 32-byte txid prefix, so bincode fails
+    /// deterministically with `BincodeDecode` (UnexpectedEnd) before the
+    /// trailing-bytes check.
     #[test]
     fn decode_outpoint_rejects_malformed_bytes() {
         let res = decode_outpoint(&[0x01u8; 4]);
         assert!(
-            res.is_err(),
-            "a 4-byte payload must not decode as an OutPoint, got {res:?}"
+            matches!(res, Err(WalletStorageError::BincodeDecode { .. })),
+            "a 4-byte payload must fail as BincodeDecode, got {res:?}"
         );
     }
 }

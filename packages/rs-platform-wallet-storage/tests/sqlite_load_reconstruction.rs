@@ -635,7 +635,7 @@ fn tc_p4_008c_asset_locks_corruption_is_hard_error() {
     ensure_wallet_meta(&persister, &good);
     {
         let conn = persister.lock_conn_for_test();
-        // bad_blob: valid 36-byte outpoint, undecodable lifecycle_blob.
+        // bad_blob: decodable outpoint key, undecodable lifecycle_blob.
         conn.execute(
             "INSERT INTO asset_locks \
                 (wallet_id, outpoint, status, account_index, identity_index, amount_duffs, lifecycle_blob) \
@@ -699,13 +699,12 @@ fn tc_p4_008c_asset_locks_corruption_is_hard_error() {
         matches!(blob_result, Err(WalletStorageError::BincodeDecode { .. })),
         "garbage asset_locks lifecycle_blob must be a typed BincodeDecode; got {blob_result:?}"
     );
+    // A 4-byte outpoint is too short for the 32-byte txid prefix, so
+    // bincode fails deterministically with BincodeDecode (UnexpectedEnd)
+    // before the trailing-bytes check.
     assert!(
-        matches!(
-            op_result,
-            Err(WalletStorageError::BincodeDecode { .. })
-                | Err(WalletStorageError::BlobDecode { .. })
-        ),
-        "malformed asset_locks outpoint must be a typed decode error; got {op_result:?}"
+        matches!(op_result, Err(WalletStorageError::BincodeDecode { .. })),
+        "malformed asset_locks outpoint must be a typed BincodeDecode; got {op_result:?}"
     );
     assert_eq!(good_state[&0].len(), 1);
 }
