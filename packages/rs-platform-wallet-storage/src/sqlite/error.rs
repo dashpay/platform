@@ -285,7 +285,8 @@ impl From<WalletStorageError> for PersistenceError {
 impl WalletStorageError {
     /// Construct a typed `BlobDecode` error from a static reason.
     /// Used by schema modules that hit a structural decode error
-    /// (e.g. an outpoint column that isn't 36 bytes).
+    /// (e.g. a 32-byte id column with the wrong length, or trailing
+    /// bytes after a payload).
     pub(crate) fn blob_decode(reason: &'static str) -> Self {
         Self::BlobDecode { reason }
     }

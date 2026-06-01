@@ -318,7 +318,7 @@ fn asset_lock_typed_vs_blob_mismatch_rejected() {
         proof: None,
     };
     let lifecycle_blob = blob::encode(&entry).unwrap();
-    let op_bytes = blob::encode_outpoint(&outpoint);
+    let op_bytes = blob::encode_outpoint(&outpoint).unwrap();
 
     {
         let conn = persister.lock_conn_for_test();

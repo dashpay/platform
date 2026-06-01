@@ -34,7 +34,7 @@ pub fn apply(
                 lifecycle_blob = excluded.lifecycle_blob",
         )?;
         for (op, entry) in &cs.asset_locks {
-            let op_bytes = blob::encode_outpoint(op);
+            let op_bytes = blob::encode_outpoint(op)?;
             let lifecycle_blob = blob::encode(entry)?;
             stmt.execute(params![
                 wallet_id.as_slice(),
@@ -54,7 +54,7 @@ pub fn apply(
         let mut stmt =
             tx.prepare_cached("DELETE FROM asset_locks WHERE wallet_id = ?1 AND outpoint = ?2")?;
         for op in &cs.removed {
-            let op_bytes = blob::encode_outpoint(op);
+            let op_bytes = blob::encode_outpoint(op)?;
             stmt.execute(params![wallet_id.as_slice(), &op_bytes[..]])?;
         }
     }

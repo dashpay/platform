@@ -54,7 +54,7 @@ erDiagram
 
     CORE_UTXOS {
         BLOB wallet_id PK
-        BLOB outpoint PK "36-byte encoded OutPoint"
+        BLOB outpoint PK "bincode-encoded OutPoint"
         INTEGER value "satoshis"
         BLOB script "scriptPubKey bytes"
         INTEGER height "NULL if unconfirmed"
@@ -226,7 +226,7 @@ erDiagram
 
     ASSET_LOCKS {
         BLOB wallet_id PK
-        BLOB outpoint PK "36-byte encoded OutPoint"
+        BLOB outpoint PK "bincode-encoded OutPoint"
         TEXT status "built | broadcast | is_locked | chain_locked | consumed"
         INTEGER account_index
         INTEGER identity_index

@@ -614,8 +614,8 @@ fn tc_p4_008b_contacts_corruption_is_hard_error() {
 }
 
 /// TC-P4-008c: `asset_locks::load_state` is fail-hard. A garbage
-/// `lifecycle_blob` yields a typed `BincodeDecode`; a non-36-byte
-/// `outpoint` column yields a typed `BlobDecode`. An intact wallet
+/// `lifecycle_blob` yields a typed `BincodeDecode`; a malformed
+/// `outpoint` column yields a typed decode error. An intact wallet
 /// still decodes cleanly.
 #[test]
 fn tc_p4_008c_asset_locks_corruption_is_hard_error() {
@@ -643,8 +643,8 @@ fn tc_p4_008c_asset_locks_corruption_is_hard_error() {
             rusqlite::params![bad_blob.as_slice(), &[0x01u8; 36][..]],
         )
         .unwrap();
-        // bad_op: outpoint column is only 4 bytes — fails the 36-byte
-        // length check before any blob decode is attempted.
+        // bad_op: outpoint column is 4 bytes — too short to bincode-decode
+        // a full OutPoint, so it fails as a typed decode error.
         conn.execute(
             "INSERT INTO asset_locks \
                 (wallet_id, outpoint, status, account_index, identity_index, amount_duffs, lifecycle_blob) \
@@ -700,8 +700,12 @@ fn tc_p4_008c_asset_locks_corruption_is_hard_error() {
         "garbage asset_locks lifecycle_blob must be a typed BincodeDecode; got {blob_result:?}"
     );
     assert!(
-        matches!(op_result, Err(WalletStorageError::BlobDecode { .. })),
-        "non-36-byte asset_locks outpoint must be a typed BlobDecode; got {op_result:?}"
+        matches!(
+            op_result,
+            Err(WalletStorageError::BincodeDecode { .. })
+                | Err(WalletStorageError::BlobDecode { .. })
+        ),
+        "malformed asset_locks outpoint must be a typed decode error; got {op_result:?}"
     );
     assert_eq!(good_state[&0].len(), 1);
 }

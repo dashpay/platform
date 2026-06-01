@@ -93,7 +93,7 @@ pub fn apply(
         let mut upsert_stmt = tx.prepare_cached(UPSERT_UTXO_SQL)?;
         let mut lookup_stmt = tx.prepare_cached(ACCOUNT_INDEX_BY_ADDRESS_SQL)?;
         for utxo in &cs.spent_utxos {
-            let op = blob::encode_outpoint(&utxo.outpoint);
+            let op = blob::encode_outpoint(&utxo.outpoint)?;
             let exists: bool = exists_stmt
                 .query_row(params![wallet_id.as_slice(), &op[..]], |_| Ok(true))
                 .optional()?
@@ -154,7 +154,7 @@ fn execute_upsert_utxo(
     utxo: &Utxo,
     spent: bool,
 ) -> Result<(), WalletStorageError> {
-    let op = blob::encode_outpoint(&utxo.outpoint);
+    let op = blob::encode_outpoint(&utxo.outpoint)?;
     let address = utxo.address.to_string();
     // `Utxo` carries no account index; recover it from the
     // derived-address map written earlier in this transaction.

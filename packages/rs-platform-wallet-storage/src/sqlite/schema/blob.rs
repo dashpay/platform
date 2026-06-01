@@ -5,9 +5,11 @@
 //! evolution is gated by the refinery migration version on the
 //! database as a whole — there is no per-blob revision tag.
 //!
-//! [`encode_outpoint`] / [`decode_outpoint`] are a separate concern:
-//! outpoints serve as primary-key fragments in typed columns, not as
-//! blob payloads, and need a fixed on-disk layout for indexed lookups.
+//! [`encode_outpoint`] / [`decode_outpoint`] encode a `dashcore::OutPoint`
+//! the same way — via bincode-serde — for the `outpoint` PRIMARY KEY
+//! columns (`core_utxos`, `asset_locks`). The bytes are a stable but not
+//! fixed-length key; both columns are used for exact-match PK lookups, so
+//! variable width is fine (no range scans or byte-order dependence).
 
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -36,8 +38,7 @@ pub fn encode<T: Serialize>(value: &T) -> Result<Vec<u8>, WalletStorageError> {
 
 /// Decode a `BLOB` payload back into a serde-derived value. Rejects
 /// trailing bytes so a corrupt or forward-incompatible payload fails
-/// loudly instead of decoding a stale prefix — mirroring the strict
-/// length check in [`decode_outpoint`]. Also caps in-decode
+/// loudly instead of decoding a stale prefix. Also caps in-decode
 /// allocations at [`BLOB_SIZE_LIMIT_BYTES`] so a crafted length
 /// prefix can't OOM the host (CMT-006).
 pub fn decode<T: DeserializeOwned>(blob: &[u8]) -> Result<T, WalletStorageError> {
@@ -65,29 +66,18 @@ pub fn decode<T: DeserializeOwned>(blob: &[u8]) -> Result<T, WalletStorageError>
     Ok(value)
 }
 
-/// Encode a `dashcore::OutPoint` (txid + vout) as 36 bytes.
-pub fn encode_outpoint(op: &dashcore::OutPoint) -> [u8; 36] {
-    let mut out = [0u8; 36];
-    out[..32].copy_from_slice(op.txid.as_ref());
-    out[32..].copy_from_slice(&op.vout.to_le_bytes());
-    out
+/// Encode a `dashcore::OutPoint` for an `outpoint` PRIMARY KEY column.
+/// Uses the same bincode-serde path as every other column — a stable
+/// (not fixed-length) key, which the exact-match PK lookups don't mind.
+pub fn encode_outpoint(op: &dashcore::OutPoint) -> Result<Vec<u8>, WalletStorageError> {
+    encode(op)
 }
 
-/// Decode a 36-byte outpoint.
+/// Decode an outpoint key produced by [`encode_outpoint`]. Rejects
+/// malformed or trailing bytes with a typed [`WalletStorageError`] via
+/// the shared [`decode`] path.
 pub fn decode_outpoint(bytes: &[u8]) -> Result<dashcore::OutPoint, WalletStorageError> {
-    use dashcore::hashes::Hash;
-    if bytes.len() != 36 {
-        return Err(WalletStorageError::blob_decode(
-            "outpoint must be exactly 36 bytes",
-        ));
-    }
-    let txid = dashcore::Txid::from_slice(&bytes[..32])?;
-    let mut vout_bytes = [0u8; 4];
-    vout_bytes.copy_from_slice(&bytes[32..]);
-    Ok(dashcore::OutPoint {
-        txid,
-        vout: u32::from_le_bytes(vout_bytes),
-    })
+    decode(bytes)
 }
 
 #[cfg(test)]
@@ -153,7 +143,31 @@ mod tests {
             txid: dashcore::Txid::from_byte_array([7u8; 32]),
             vout: 9,
         };
-        let bytes = encode_outpoint(&op);
+        let bytes = encode_outpoint(&op).unwrap();
         assert_eq!(decode_outpoint(&bytes).unwrap(), op);
+    }
+
+    /// A non-zero vout round-trips too — bincode varint-encodes the vout,
+    /// so the key length is not fixed but decoding recovers the value.
+    #[test]
+    fn outpoint_roundtrip_large_vout() {
+        use dashcore::hashes::Hash;
+        let op = dashcore::OutPoint {
+            txid: dashcore::Txid::from_byte_array([0xABu8; 32]),
+            vout: u32::MAX,
+        };
+        let bytes = encode_outpoint(&op).unwrap();
+        assert_eq!(decode_outpoint(&bytes).unwrap(), op);
+    }
+
+    /// A truncated / malformed outpoint key is a typed decode error, not
+    /// a panic — replaces the old fixed-36-byte length check.
+    #[test]
+    fn decode_outpoint_rejects_malformed_bytes() {
+        let res = decode_outpoint(&[0x01u8; 4]);
+        assert!(
+            res.is_err(),
+            "a 4-byte payload must not decode as an OutPoint, got {res:?}"
+        );
     }
 }
