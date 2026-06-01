@@ -78,9 +78,9 @@ enum Commands {
     /// Intended for the Dockerfile bake stage, where the snapshot file is
     /// embedded into the runtime image and consumed at boot via
     /// `DRIVE_SHIELDED_SNAPSHOT=<path>`. Requires the binary to be built
-    /// with `--cfg create_sdk_test_data` so that `create_genesis_state`
+    /// with `--cfg create_shielded_test_data` so that `create_genesis_state`
     /// invokes the seeder — the command is compiled out otherwise.
-    #[cfg(create_sdk_test_data)]
+    #[cfg(create_shielded_test_data)]
     #[command()]
     SnapshotBake {
         /// Where to write the snapshot file. Parent directory must exist.
@@ -185,8 +185,8 @@ impl Cli {
             Commands::Config => dump_config(&config)?,
             Commands::Status => runtime.block_on(check_status(&config))?,
             Commands::Verify => drive_abci::verify::run(&config, true)?,
-            #[cfg(create_sdk_test_data)]
-            Commands::SnapshotBake { out } => snapshot_bake(&config, &out)?,
+            #[cfg(create_shielded_test_data)]
+            Commands::SnapshotBake { out } => snapshot_bake_main::run(&config, &out)?,
             Commands::Version => print_version(),
             #[cfg(feature = "replay")]
             Commands::Replay(args) => {
@@ -205,14 +205,14 @@ fn main() -> Result<(), ExitCode> {
     // skip `load_config` (which would panic on missing GRPC_BIND_ADDRESS etc.)
     // and use a sensible default. Other subcommands (Start / Status / etc.)
     // still need the full config. The command only exists under
-    // `create_sdk_test_data`, so the branch is compiled out otherwise.
-    #[cfg(create_sdk_test_data)]
+    // `create_shielded_test_data`, so the branch is compiled out otherwise.
+    #[cfg(create_shielded_test_data)]
     let config = if matches!(cli.command, Commands::SnapshotBake { .. }) {
         drive_abci::config::PlatformConfig::default_local()
     } else {
         load_config(&cli.config)
     };
-    #[cfg(not(create_sdk_test_data))]
+    #[cfg(not(create_shielded_test_data))]
     let config = load_config(&cli.config);
 
     // Start tokio runtime and thread listening for signals.
@@ -346,20 +346,12 @@ fn dump_config(config: &PlatformConfig) -> Result<(), String> {
     Ok(())
 }
 
-/// Stub CoreRPCLike used during `snapshot-bake` — Platform::open_with_client
-/// requires a CoreRPCLike, but create_genesis_state never actually calls any
-/// of its methods (no chain locks, transactions, or quorum lookups happen
-/// during genesis). Every method is `unreachable!()` so a bake that
-/// accidentally tries to talk to Core surfaces as a loud panic.
-///
-/// Only the `snapshot-bake` command uses it, so it is compiled out unless
-/// `create_sdk_test_data` is set (the cfg that command lives behind).
-#[cfg(create_sdk_test_data)]
-struct NoopCoreRPC;
-
-#[cfg(create_sdk_test_data)]
-mod noop_core_rpc_impl {
-    use super::NoopCoreRPC;
+/// Everything that exists only to support the `snapshot-bake` subcommand
+/// (used by the Dockerfile bake stage to pre-build a shielded-pool snapshot
+/// for the runtime image to apply at InitChain). Gated as a whole on
+/// `create_shielded_test_data` so production builds carry none of it.
+#[cfg(create_shielded_test_data)]
+mod snapshot_bake_main {
     use dpp::dashcore::ephemerealdata::chain_lock::ChainLock;
     use dpp::dashcore::{Block, BlockHash, Header, InstantLock, QuorumHash, Transaction, Txid};
     use dpp::dashcore_rpc::dashcore_rpc_json::{
@@ -369,8 +361,18 @@ mod noop_core_rpc_impl {
     use dpp::dashcore_rpc::json::GetRawTransactionResult;
     use dpp::dashcore_rpc::Error;
     use dpp::prelude::TimestampMillis;
+    use dpp::version::PlatformVersion;
+    use drive_abci::config::PlatformConfig;
+    use drive_abci::platform_types::platform::Platform;
     use drive_abci::rpc::core::CoreRPCLike;
     use serde_json::Value;
+
+    /// Stub CoreRPCLike — Platform::open_with_client requires a CoreRPCLike,
+    /// but create_genesis_state never actually touches Core (no chain locks,
+    /// transactions, or quorum lookups happen during genesis). Every method
+    /// is `unreachable!()` so a bake that accidentally tries to talk to Core
+    /// surfaces as a loud panic.
+    pub(super) struct NoopCoreRPC;
 
     impl CoreRPCLike for NoopCoreRPC {
         fn get_block_hash(&self, _: u32) -> Result<BlockHash, Error> {
@@ -450,93 +452,92 @@ mod noop_core_rpc_impl {
             unreachable!()
         }
     }
-}
 
-/// Produce a shielded-pool snapshot at `out_path` from a fresh temporary
-/// GroveDB. Runs the full `create_genesis_state` cycle (which, under
-/// `cfg(create_sdk_test_data)`, invokes the shielded-pool seeder), then
-/// dumps the resulting subtree. Self-contained — `config` is ignored
-/// (we use a tempdir + sensible defaults).
-///
-/// Intended for the Dockerfile bake stage: produce a snapshot once during
-/// image build, embed in the runtime image, load it at every InitChain via
-/// `DRIVE_SHIELDED_SNAPSHOT`.
-#[cfg(create_sdk_test_data)]
-fn snapshot_bake(_config: &PlatformConfig, out_path: &std::path::Path) -> Result<(), String> {
-    use dpp::version::PlatformVersion;
-    use drive_abci::config::PlatformConfig;
-    use drive_abci::platform_types::platform::Platform;
+    /// Produce a shielded-pool snapshot at `out_path` from a fresh temporary
+    /// GroveDB. Runs the full `create_genesis_state` cycle (which, under
+    /// `cfg(create_shielded_test_data)`, invokes the shielded-pool seeder),
+    /// then dumps the resulting subtree. Self-contained — `_config` is
+    /// ignored (we use a tempdir + sensible defaults).
+    ///
+    /// Intended for the Dockerfile bake stage: produce a snapshot once during
+    /// image build, embed in the runtime image, load it at every InitChain
+    /// via `DRIVE_SHIELDED_SNAPSHOT`.
+    pub(super) fn run(
+        _config: &PlatformConfig,
+        out_path: &std::path::Path,
+    ) -> Result<(), String> {
+        tracing::info!(
+            out = %out_path.display(),
+            "snapshot-bake: creating tempdir + bootstrapping fresh GroveDB",
+        );
 
-    tracing::info!(
-        out = %out_path.display(),
-        "snapshot-bake: creating tempdir + bootstrapping fresh GroveDB",
-    );
+        let tempdir = tempfile::tempdir().map_err(|e| format!("tempdir: {e}"))?;
 
-    let tempdir = tempfile::tempdir().map_err(|e| format!("tempdir: {e}"))?;
+        // Use the local (regtest) config — same network the bake target image
+        // will run on. We use NoopCoreRPC so we don't try to connect to a
+        // non-existent Core node during the in-container bake.
+        let mut platform_config = PlatformConfig::default_local();
+        platform_config.db_path = tempdir.path().to_path_buf();
 
-    // Use the local (regtest) config — same network the bake target image
-    // will run on. We use NoopCoreRPC so we don't try to connect to a
-    // non-existent Core node during the in-container bake.
-    let mut platform_config = PlatformConfig::default_local();
-    platform_config.db_path = tempdir.path().to_path_buf();
+        let platform = Platform::<NoopCoreRPC>::open_with_client(
+            tempdir.path(),
+            Some(platform_config),
+            NoopCoreRPC,
+            None,
+        )
+        .map_err(|e| format!("open platform: {e}"))?;
 
-    let platform = Platform::<NoopCoreRPC>::open_with_client(
-        tempdir.path(),
-        Some(platform_config),
-        NoopCoreRPC,
-        None,
-    )
-    .map_err(|e| format!("open platform: {e}"))?;
+        let platform_version = PlatformVersion::latest();
+        let tx = platform.drive.grove.start_transaction();
 
-    let platform_version = PlatformVersion::latest();
-    let tx = platform.drive.grove.start_transaction();
+        // Defensively unset DRIVE_SHIELDED_SNAPSHOT before seeding. The seeder
+        // (`create_data_for_shielded_pool`) checks this env var first and, if
+        // set, APPLIES the referenced snapshot instead of running the seeder.
+        // A developer (or the Dockerfile env) with it exported would make
+        // `snapshot-bake` recursively re-dump an inherited snapshot rather
+        // than seeding a fresh one.
+        std::env::remove_var("DRIVE_SHIELDED_SNAPSHOT");
 
-    // Defensively unset DRIVE_SHIELDED_SNAPSHOT before seeding. The seeder
-    // (`create_data_for_shielded_pool`) checks this env var first and, if set,
-    // APPLIES the referenced snapshot instead of running the seeder. A developer
-    // (or the Dockerfile env) with it exported would make `snapshot-bake`
-    // recursively re-dump an inherited snapshot rather than seeding a fresh one.
-    std::env::remove_var("DRIVE_SHIELDED_SNAPSHOT");
+        tracing::info!("snapshot-bake: running create_genesis_state (seeds shielded pool under cfg(create_shielded_test_data))");
+        platform
+            .create_genesis_state(
+                1, // genesis_core_height (placeholder for bake)
+                0, // genesis_time (placeholder for bake)
+                Some(&tx),
+                platform_version,
+            )
+            .map_err(|e| format!("create_genesis_state: {e}"))?;
+        tx.commit().map_err(|e| format!("commit: {e}"))?;
 
-    tracing::info!("snapshot-bake: running create_genesis_state (seeds shielded pool under cfg(create_sdk_test_data))");
-    platform
-        .create_genesis_state(
-            1, // genesis_core_height (placeholder for bake)
-            0, // genesis_time (placeholder for bake)
-            Some(&tx),
+        tracing::info!(
+            out = %out_path.display(),
+            "snapshot-bake: dumping shielded subtree to snapshot file",
+        );
+        let stats = drive_abci::shielded_snapshot::dump_shielded_subtree(
+            &platform.drive.grove,
+            None,
+            out_path,
             platform_version,
         )
-        .map_err(|e| format!("create_genesis_state: {e}"))?;
-    tx.commit().map_err(|e| format!("commit: {e}"))?;
+        .map_err(|e| format!("snapshot dump failed: {e}"))?;
 
-    tracing::info!(
-        out = %out_path.display(),
-        "snapshot-bake: dumping shielded subtree to snapshot file",
-    );
-    let stats = drive_abci::shielded_snapshot::dump_shielded_subtree(
-        &platform.drive.grove,
-        None,
-        out_path,
-        platform_version,
-    )
-    .map_err(|e| format!("snapshot dump failed: {e}"))?;
+        tracing::info!(
+            out = %out_path.display(),
+            total_count = stats.total_count,
+            key_count = stats.key_count,
+            sst_bytes = stats.sst_bytes,
+            "snapshot-bake: wrote shielded-pool snapshot",
+        );
+        println!(
+            "wrote {} bytes ({} keys, total_count={}) to {}",
+            stats.sst_bytes,
+            stats.key_count,
+            stats.total_count,
+            out_path.display(),
+        );
 
-    tracing::info!(
-        out = %out_path.display(),
-        total_count = stats.total_count,
-        key_count = stats.key_count,
-        sst_bytes = stats.sst_bytes,
-        "snapshot-bake: wrote shielded-pool snapshot",
-    );
-    println!(
-        "wrote {} bytes ({} keys, total_count={}) to {}",
-        stats.sst_bytes,
-        stats.key_count,
-        stats.total_count,
-        out_path.display(),
-    );
-
-    Ok(())
+        Ok(())
+    }
 }
 
 fn list_enabled_features() -> Vec<&'static str> {

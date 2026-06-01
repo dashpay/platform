@@ -142,5 +142,6 @@ path = "src/main.rs"
 unexpected_cfgs = { level = "warn", check-cfg = [
   'cfg(tokio_unstable)',
   'cfg(create_sdk_test_data)',
+  'cfg(create_shielded_test_data)',
   'cfg(feature, values("__shielded_strategy_tests"))',
 ] }
