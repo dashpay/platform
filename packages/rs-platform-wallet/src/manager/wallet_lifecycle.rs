@@ -505,13 +505,17 @@ mod scoped_wallet_id_tests {
     /// drift across launches.
     #[test]
     fn same_mnemonic_same_network_is_stable() {
-        assert_eq!(
-            wallet_id_for(Network::Testnet),
-            wallet_id_for(Network::Testnet)
-        );
-        assert_eq!(
-            wallet_id_for(Network::Mainnet),
-            wallet_id_for(Network::Mainnet)
-        );
+        for network in [
+            Network::Mainnet,
+            Network::Testnet,
+            Network::Devnet,
+            Network::Regtest,
+        ] {
+            assert_eq!(
+                wallet_id_for(network),
+                wallet_id_for(network),
+                "wallet id must be stable across re-derivation for {network:?}"
+            );
+        }
     }
 }
