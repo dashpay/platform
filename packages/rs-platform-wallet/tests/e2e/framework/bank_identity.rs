@@ -44,7 +44,9 @@ use platform_wallet::PlatformWalletManager;
 use serde::{Deserialize, Serialize};
 
 use super::bank::BankWallet;
-use super::bank_rebalance::{self, bootstrap_lock_duff, PLATFORM_BOOTSTRAP_FEE_RESERVE};
+use super::bank_rebalance::{
+    self, bootstrap_lock_duff, BOOTSTRAP_ASSET_LOCK_FEE_RESERVE, PLATFORM_BOOTSTRAP_FEE_RESERVE,
+};
 use super::signer::{derive_identity_key, SeedBackedIdentitySigner};
 use super::wait::{wait_for_identity_balance, wait_for_identity_visible_to_platform};
 use super::{FrameworkError, FrameworkResult};
@@ -62,15 +64,6 @@ pub const BANK_IDENTITY_INDEX: u32 = 0xBA77;
 /// that so a partially-funded address (e.g. ~87M from an interrupted prior
 /// run) still triggers a top-up rather than dead-ending in registration.
 pub const BANK_IDENTITY_BOOTSTRAP_FUNDING: Credits = 200_000_000;
-
-/// Credit headroom added to the self-fund lock target to absorb the
-/// asset-lock address-funding transition's own chain-time fee, which is
-/// deducted (`ReduceOutput(0)`) from the locked amount BEFORE it lands on
-/// the address. Live paloma runs show this fee is ~93M credits, so the
-/// gross lock must exceed the registration requirement by at least that
-/// much or the net balance underflows it. Sized with headroom for fee
-/// drift; over-locking only leaves the bank more usable Platform balance.
-const BOOTSTRAP_ASSET_LOCK_FEE_RESERVE: Credits = 150_000_000;
 
 /// Core (duff) headroom required on top of the asset-lock amount for the
 /// L1 lock transaction's own fee. The asset-lock builder picks the exact
