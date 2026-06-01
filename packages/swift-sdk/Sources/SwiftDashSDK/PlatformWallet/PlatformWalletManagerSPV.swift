@@ -99,6 +99,12 @@ public struct PlatformSpvSyncProgress: Sendable, Equatable {
 }
 
 /// Config for starting the SPV sync.
+///
+/// Masternode sync (and the IS/CL P2P subscriptions that come with it)
+/// is always enabled — `AssetLockManager::wait_for_proof` requires it
+/// to receive InstantSend and ChainLock signatures from peers, so
+/// exposing a toggle here would silently break asset-lock-funded
+/// identity registration in trusted-SDK setups.
 public struct PlatformSpvStartConfig {
     public var dataDir: String
     public var network: Network
@@ -106,7 +112,20 @@ public struct PlatformSpvStartConfig {
     public var peers: [String]
     public var restrictToConfiguredPeers: Bool
     public var startFromHeight: UInt32
-    public var masternodeSyncEnabled: Bool
+    /// Devnet name (e.g. `"333"` for `devnet-333`). Required when
+    /// `network == .devnet`, must be `nil` on every other network.
+    /// The FFI rebuilds the user agent to embed
+    /// `devnet.devnet-<name>` so Dash Core devnet peers accept the
+    /// handshake.
+    public var devnetName: String?
+    /// LLMQ_DEVNET quorum size override (matches Dash Core's
+    /// `-llmqdevnetparams=<size>:<threshold>`). `0` means "no
+    /// override". Must be paired with `llmqDevnetThreshold` and only
+    /// valid on devnet.
+    public var llmqDevnetSize: UInt32
+    /// LLMQ_DEVNET signing threshold override. See
+    /// `llmqDevnetSize`.
+    public var llmqDevnetThreshold: UInt32
 
     public init(
         dataDir: String,
@@ -115,7 +134,9 @@ public struct PlatformSpvStartConfig {
         peers: [String] = [],
         restrictToConfiguredPeers: Bool = false,
         startFromHeight: UInt32 = 0,
-        masternodeSyncEnabled: Bool = true
+        devnetName: String? = nil,
+        llmqDevnetSize: UInt32 = 0,
+        llmqDevnetThreshold: UInt32 = 0
     ) {
         self.dataDir = dataDir
         self.network = network
@@ -123,7 +144,9 @@ public struct PlatformSpvStartConfig {
         self.peers = peers
         self.restrictToConfiguredPeers = restrictToConfiguredPeers
         self.startFromHeight = startFromHeight
-        self.masternodeSyncEnabled = masternodeSyncEnabled
+        self.devnetName = devnetName
+        self.llmqDevnetSize = llmqDevnetSize
+        self.llmqDevnetThreshold = llmqDevnetThreshold
     }
 }
 
@@ -191,6 +214,9 @@ extension PlatformWalletManager {
             let userAgentPtr = config.userAgent.flatMap { strdup($0) }
             defer { if let p = userAgentPtr { free(p) } }
 
+            let devnetNamePtr = config.devnetName.flatMap { strdup($0) }
+            defer { if let p = devnetNamePtr { free(p) } }
+
             try peerCStrings.withUnsafeBufferPointer { peersBuf in
                 let peersPtr: UnsafePointer<UnsafePointer<CChar>?>? = peersBuf.baseAddress.map {
                     UnsafeRawPointer($0).assumingMemoryBound(to: UnsafePointer<CChar>?.self)
@@ -204,7 +230,9 @@ extension PlatformWalletManager {
                     UInt(peerCStrings.count),
                     config.restrictToConfiguredPeers,
                     config.startFromHeight,
-                    config.masternodeSyncEnabled
+                    devnetNamePtr,
+                    config.llmqDevnetSize,
+                    config.llmqDevnetThreshold
                 ).check()
             }
         }

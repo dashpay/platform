@@ -102,14 +102,34 @@ class SendViewModel: ObservableObject {
     }
 
     /// Amount in platform credits (1 DASH = 1e11 credits). Used by
-    /// platform-credit flows. Same `Decimal`-backed parsing as
+    /// every flow that touches the credits ledger
+    /// (`platformToShielded`, `shieldedToShielded`,
+    /// `shieldedToPlatform`, `shieldedToCore`,
+    /// `platformToPlatform`). Same `Decimal`-backed parsing as
     /// `amount`; the divisor difference is just the `decimals` arg.
     var amountCredits: UInt64? {
         parseTokenAmount(amountString, decimals: 11)
     }
 
+    /// Unit-explicit alias for [`amount`] — kept so the Core-side
+    /// shielded send flows that read `amountDuffs` stay self-documenting
+    /// (Core uses duffs; Platform / shielded use credits).
+    var amountDuffs: UInt64? { amount }
+
     var canSend: Bool {
-        detectedFlow != nil && amount != nil && !isSending
+        guard let flow = detectedFlow, !isSending else { return false }
+        // Gate on the scaled integer for the *active* flow's unit, not
+        // just non-nil. A sub-unit amount (e.g. "0.000000001" in DASH)
+        // parses to 0 once scaled; sending that reaches the backend as a
+        // zero-value transfer. Core/L1 settles in duffs (1e8); every
+        // credits-ledger flow settles in credits (1e11).
+        switch flow {
+        case .coreToCore:
+            return (amountDuffs ?? 0) > 0
+        case .platformToPlatform, .platformToShielded,
+             .shieldedToShielded, .shieldedToPlatform, .shieldedToCore:
+            return (amountCredits ?? 0) > 0
+        }
     }
 
     /// Determine which fund sources are available based on destination and balances.
@@ -175,6 +195,7 @@ class SendViewModel: ObservableObject {
 
     func executeSend(
         sdk: SDK,
+        walletManager: PlatformWalletManager,
         shieldedService: ShieldedService,
         platformState: AppState,
         wallet: PersistentWallet,
@@ -195,14 +216,17 @@ class SendViewModel: ObservableObject {
         do {
             switch flow {
             case .coreToCore:
+                guard let amountDuffs else {
+                    error = "Invalid amount"
+                    return
+                }
                 guard let core = coreWallet else {
                     error = "Core wallet not available"
                     return
                 }
-                guard let amount = amount else { return }
                 let address = recipientAddress.trimmingCharacters(in: .whitespacesAndNewlines)
                 let _ = try core.sendToAddresses(
-                    recipients: [(address: address, amountDuffs: amount)]
+                    recipients: [(address: address, amountDuffs: amountDuffs)]
                 )
                 successMessage = "Payment sent"
 
@@ -307,23 +331,110 @@ class SendViewModel: ObservableObject {
 
                 successMessage = "Platform transfer sent"
 
-            case .platformToShielded,
-                 .shieldedToShielded,
-                 .shieldedToPlatform,
-                 .shieldedToCore:
-                // Shielded send paths are being moved to the Rust
-                // platform-wallet shielded coordinator. The previous
-                // SDK-side bundle/build/broadcast surface was deleted
-                // along with the duplicate `ShieldedPoolClient` FFI;
-                // wiring back up against the new manager-driven path
-                // happens in a follow-up PR.
+            case .shieldedToShielded:
+                // Shielded → Shielded: spend notes from this
+                // wallet's shielded balance, create a new note
+                // for the recipient. Amount is in **credits**
+                // (1 DASH = 1e11) — the entire shielded ledger
+                // works on the credits scale.
+                guard let amountCredits else {
+                    error = "Invalid amount"
+                    return
+                }
+                let trimmed = recipientAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+                let parsed = DashAddress.parse(trimmed, network: network)
+                guard case .orchard(let recipientRaw) = parsed.type else {
+                    error = "Recipient is not a shielded address"
+                    return
+                }
+                try await walletManager.shieldedTransfer(
+                    walletId: wallet.walletId,
+                    account: 0,
+                    recipientRaw43: recipientRaw,
+                    amount: amountCredits
+                )
+                successMessage = "Shielded transfer complete"
+
+            case .shieldedToPlatform:
+                // Shielded → Platform: spend notes, credit the
+                // platform address (also credits scale). The
+                // bech32m string is forwarded as-is — Rust parses
+                // it via `PlatformAddress::from_bech32m_string`
+                // and verifies the network.
+                guard let amountCredits else {
+                    error = "Invalid amount"
+                    return
+                }
+                let trimmed = recipientAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+                try await walletManager.shieldedUnshield(
+                    walletId: wallet.walletId,
+                    account: 0,
+                    toPlatformAddress: trimmed,
+                    amount: amountCredits
+                )
+                successMessage = "Unshield complete"
+
+            case .shieldedToCore:
+                // Shielded → Core L1: spend notes (credits), create
+                // an L1 withdrawal. The shielded-side amount is in
+                // credits; the network converts to L1 duffs at the
+                // 1000:1 conversion rate.
+                guard let amountCredits else {
+                    error = "Invalid amount"
+                    return
+                }
+                let trimmed = recipientAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+                try await walletManager.shieldedWithdraw(
+                    walletId: wallet.walletId,
+                    account: 0,
+                    toCoreAddress: trimmed,
+                    amount: amountCredits,
+                    coreFeePerByte: 1
+                )
+                successMessage = "Withdrawal submitted"
+
+            case .platformToShielded:
+                // Platform → Shielded (Type 15): spend credits from
+                // the wallet's first Platform Payment account into
+                // the bound shielded pool. Credits scale.
+                guard let amountCredits else {
+                    error = "Invalid amount"
+                    return
+                }
                 _ = platformState
-                _ = shieldedService
-                _ = wallet
-                _ = modelContext
                 _ = sdk
-                error = "Shielded sending is being rebuilt — see follow-up PR"
-                return
+                // `shieldedShield` has no recipient parameter — Rust
+                // always shields into this wallet's own default Orchard
+                // address (shieldedAccount 0). If the user typed a
+                // *different* Orchard address we'd report success while
+                // nothing reached that recipient, so constrain this path
+                // to self-shield only.
+                let enteredRecipient = recipientAddress
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                let ownShieldedAddress =
+                    shieldedService.addressesByAccount[0]
+                    ?? shieldedService.orchardDisplayAddress
+                if !enteredRecipient.isEmpty,
+                   enteredRecipient != ownShieldedAddress {
+                    // Don't advertise "leave it blank": a blank recipient
+                    // clears `detectedFlow` upstream (detectAddressType →
+                    // updateFlow), so `canSend` disables the button and
+                    // this branch is only reachable with a non-empty
+                    // address. Tell the user to enter their own.
+                    error = "Shield always sends to your own shielded "
+                        + "address; enter your own shielded address as "
+                        + "the recipient"
+                    return
+                }
+                let signer = KeychainSigner(modelContainer: modelContext.container)
+                try await walletManager.shieldedShield(
+                    walletId: wallet.walletId,
+                    shieldedAccount: 0,
+                    paymentAccount: 0,
+                    amount: amountCredits,
+                    addressSigner: signer
+                )
+                successMessage = "Shielding complete"
             }
 
         } catch {

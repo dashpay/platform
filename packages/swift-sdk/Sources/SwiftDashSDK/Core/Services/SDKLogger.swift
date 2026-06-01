@@ -65,10 +65,23 @@ public enum LoggingPreferences {
 public enum SDKLogger {
     public static func log(_ message: String, minimumLevel level: LoggingPreset = .medium) {
         guard LoggingPreferences.allows(level) else { return }
+        // Mirror to NSLog (unified logging) in addition to stdout so
+        // `xcrun simctl spawn booted log stream` and Console.app see
+        // the message even when no Xcode debugger is attached. The
+        // `print` path is preserved because the dev loop still wants
+        // stdout for in-Xcode use; NSLog goes to os_log.
+        NSLog("%@", message)
         Swift.print(message)
     }
 
     public static func error(_ message: String) {
+        // Route through both `NSLog` (unified log — Console.app, device
+        // console, Xcode debug area without depending on stdout
+        // capture) and `Swift.print` (stdout — preserves the existing
+        // dev-loop behaviour where `print` output is what's visible).
+        // Errors are rare; double-emit is fine and makes them harder
+        // to miss when something does go wrong.
+        NSLog("%@", message)
         Swift.print(message)
     }
 }

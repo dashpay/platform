@@ -37,6 +37,17 @@ class AppState: ObservableObject {
 
     @Published var dataStatistics: (identities: Int, documents: Int, contracts: Int, tokenBalances: Int)?
 
+    /// Monotonic tick incremented when a wallet-scoped service rebind
+    /// is needed but neither of the standard triggers
+    /// (`currentNetwork.onChange`, `wallets.keys.onChange`) will fire.
+    /// Concretely: a devnet→devnet SDK rebuild from OptionsView swaps
+    /// the cached `PlatformWalletManager` but leaves the network and
+    /// wallet ID set unchanged, so `PlatformBalanceSyncService` and
+    /// `ShieldedService` keep their references to the old manager.
+    /// SwiftExampleAppApp observes this tick to re-run
+    /// `rebindWalletScopedServices()` in that edge case.
+    @Published var walletScopedServicesRebindTick: Int = 0
+
     @Published var useDockerSetup: Bool {
         didSet {
             UserDefaults.standard.set(useDockerSetup, forKey: "useDockerSetup")

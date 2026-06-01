@@ -1,8 +1,56 @@
-//! Identity registration flows.
+//! Identity registration and top-up flows.
+//!
+//! Two public entry points — one to register, one to top up:
+//!
+//! - [`register_identity_with_funding`](IdentityWallet::register_identity_with_funding)
+//! - [`top_up_identity_with_funding`](IdentityWallet::top_up_identity_with_funding)
+//!
+//! Each handles pre-flight, funding resolution, submission with
+//! Platform-side retries, IS→CL fallback, and IdentityManager
+//! bookkeeping. The SDK's `_with_signer` calls are issued inline
+//! at the submission site — no thin "primitive" wrappers, since
+//! a primitive that bypasses the recovery layers has no caller in
+//! this codebase. If a single-shot use case ever materialises
+//! (e.g. an external tool managing its own submission policy),
+//! factor it out then; cheaper to add a method than to maintain a
+//! dead one.
+//!
+//! ## Platform-side recovery layers
+//!
+//! Both methods wrap the SDK submission in two retry layers, in
+//! this order:
+//!
+//! 1. **CL-height-too-low** (`InvalidAssetLockProofCoreChainHeightError`,
+//!    consensus code 10506) — Platform's observed Core tip is briefly
+//!    behind the wallet's SPV-verified CL. Bump
+//!    `PutSettings::user_fee_increase` (changes ST signable bytes →
+//!    different ST hash → bypasses Tenderdash's 24h invalid-tx cache)
+//!    and resubmit the same proof. See
+//!    [`submit_with_cl_height_retry`].
+//!
+//! 2. **IS-lock rejection** (`InvalidInstantAssetLockProofSignatureError`)
+//!    — Drive rejected because the IS-lock signing quorum has rotated
+//!    out. Detected via [`crate::error::is_instant_lock_proof_invalid`].
+//!    Upgrade IS→CL via `upgrade_to_chain_lock_proof` and retry. The
+//!    CL retry is itself wrapped in the CL-height-too-low loop.
+//!
+//! On the funding-build side, a third recovery handles the
+//! Core-side IS timeout:
+//!
+//! 3. **IS-lock build-time timeout** —
+//!    [`create_funded_asset_lock_proof`](crate::wallet::asset_lock::manager::AssetLockManager::create_funded_asset_lock_proof)
+//!    returns `PlatformWalletError::FinalityTimeout` because the
+//!    IS-lock didn't propagate within 300s. Resolved by re-entering
+//!    `resume_asset_lock` (which will fall through to the
+//!    `metadata.last_applied_chain_lock` fallback in `proof.rs`).
+//!
+//! All recovery paths share the same outpoint-keyed cleanup —
+//! [`consume_asset_lock`](crate::wallet::asset_lock::manager::AssetLockManager::consume_asset_lock)
+//! — once Platform finally accepts the submission.
 
 use std::collections::BTreeMap;
-use std::time::Duration;
 
+use dpp::identity::accessors::IdentitySettersV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::v0::IdentityV0;
 use dpp::identity::Identity;
@@ -10,72 +58,84 @@ use dpp::identity::IdentityPublicKey;
 use dpp::identity::KeyID;
 use dpp::identity::Purpose;
 use dpp::identity::SecurityLevel;
-use dpp::prelude::AssetLockProof;
 use dpp::prelude::Identifier;
+use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 
 use dash_sdk::platform::transition::put_identity::PutIdentity;
 use dash_sdk::platform::transition::put_settings::PutSettings;
 use dash_sdk::platform::transition::top_up_identity::TopUpIdentity;
 
-use crate::error::PlatformWalletError;
-// PrivateKeyData no longer needed at the registration call sites —
-// `add_key` takes a flat `Option<(wallet_id, identity_index, key_index)>`
-// breadcrumb directly.
-
-use crate::wallet::identity::types::funding::IdentityFunding;
+use crate::error::{is_instant_lock_proof_invalid, PlatformWalletError};
+use crate::wallet::asset_lock::orchestration::{
+    out_point_from_proof, submit_with_cl_height_retry, FundingResolution, ResolvedFunding,
+    CL_FALLBACK_TIMEOUT,
+};
+use crate::wallet::asset_lock::AssetLockFunding;
 
 use super::*;
-use crate::wallet::identity::types::funding::IdentityFundingMethod;
 
 // ---------------------------------------------------------------------------
-// Identity registration
+// register
 // ---------------------------------------------------------------------------
 
 impl IdentityWallet {
-    /// Register a new asset-lock-funded identity on Platform using an
-    /// externally-supplied signer + caller-derived authentication keys.
+    /// Register a new asset-lock-funded identity on Platform.
     ///
-    /// The caller must provide:
+    /// Single entry point for every register-with-asset-lock case:
     ///
-    /// - `funding`: an `IdentityFundingMethod`.
-    /// - `identity_index`: BIP-9 identity index.
-    /// - `keys_map`: the auth pubkeys the new identity will be created
-    ///   with. Caller must derive these from the wallet seed (or from
-    ///   iOS Keychain via `dash_sdk_derive_identity_keys_from_mnemonic`)
-    ///   and persist the matching private keys to whatever store the
-    ///   `signer` reads from. The first key (id=0) MUST be a MASTER /
-    ///   AUTHENTICATION key — DPP's IdentityCreate state transition
-    ///   itself must be signed by a MASTER-level identity key, and we
-    ///   pin that role on id=0 by convention so callers don't need
-    ///   protocol knowledge to assemble the map. The asset-lock-spend
-    ///   signature on the same transition is a separate signature
-    ///   keyed off `asset_lock_private_key`, supplied via `funding`.
-    /// - `signer`: external signer for the IdentityCreate transition's
-    ///   per-key signatures.
+    /// 1. Pre-flight — validate `keys_map[0]` is a MASTER +
+    ///    AUTHENTICATION key (the IdentityCreate transition itself
+    ///    must be signed by a MASTER-level identity key, and we pin
+    ///    that role on id=0 by convention).
+    /// 2. Resolve the [`AssetLockFunding`] to an asset-lock proof +
+    ///    derivation path.
+    /// 3. Submit via
+    ///    `Identity::put_to_platform_and_wait_for_response_with_signer`
+    ///    inside `submit_with_cl_height_retry`, with IS→CL fallback
+    ///    on **both** Core-side timeout (`FinalityTimeout`) and
+    ///    Platform-side rejection
+    ///    (`InvalidInstantAssetLockProofSignatureError`).
+    /// 4. On success, add the confirmed identity to the local
+    ///    `IdentityManager` and record each key's derivation breadcrumb.
+    /// 5. Remove the tracked asset lock (if any) — the credit output
+    ///    has been consumed, so the entry is no longer needed.
     ///
-    /// On success the new identity is added to the local manager and
-    /// each key is recorded with its derivation breadcrumb for the
-    /// persister callback. IS->CL fallback is retained.
-    pub async fn register_identity_with_funding_external_signer<S>(
+    /// # The IS→CL fallback path
+    ///
+    /// The Core-side timeout fallback is the architectural fix this
+    /// iter introduces. Before, `create_funded_asset_lock_proof`'s
+    /// 300s IS-lock timeout was terminal: a chain-locked but
+    /// IS-unlocked asset-lock would leave the funded DASH stranded.
+    /// The fix uses the **same** asset-lock signer for the CL retry —
+    /// no priv-key materialisation Rust-side — so the "no private keys
+    /// outside Swift, even briefly between operations" architectural
+    /// invariant is preserved.
+    ///
+    /// # Idempotency note
+    ///
+    /// The IS→CL retry is bounded (180s waiting for ChainLock). If the
+    /// CL retry itself fails, the asset-lock stays tracked (cleanup
+    /// only runs on Platform success) so subsequent registration
+    /// attempts can resume via `FromExistingAssetLock`.
+    pub async fn register_identity_with_funding<S, AS>(
         &self,
-        funding: IdentityFundingMethod,
+        funding: AssetLockFunding,
         identity_index: u32,
         keys_map: BTreeMap<u32, IdentityPublicKey>,
-        signer: &S,
+        identity_signer: &S,
+        asset_lock_signer: &AS,
         settings: Option<PutSettings>,
     ) -> Result<Identity, PlatformWalletError>
     where
         S: Signer<IdentityPublicKey> + Send + Sync,
+        AS: ::key_wallet::signer::Signer + Send + Sync,
     {
+        // Step 1: pre-flight on the caller-supplied keys map.
         if keys_map.is_empty() {
             return Err(PlatformWalletError::InvalidIdentityData(
                 "keys_map must contain at least one identity public key".to_string(),
             ));
         }
-        // Defensive: pin id=0 to MASTER+AUTHENTICATION at the FFI
-        // boundary so a malformed map fails fast here instead of
-        // surfacing as an opaque protocol-side rejection from
-        // `put_to_platform_and_wait_for_response`.
         {
             use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
             match keys_map.get(&0) {
@@ -97,97 +157,123 @@ impl IdentityWallet {
             }
         }
 
-        // Step 1: obtain asset lock proof + private key.
-        let (asset_lock_proof, asset_lock_private_key) = match funding {
-            IdentityFundingMethod::UseAssetLock { proof, private_key } => (proof, private_key),
-            IdentityFundingMethod::FundWithWallet { amount_duffs } => {
-                use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
-                let (proof, key, _out_point) = self
+        // Step 2: resolve funding to a proof + derivation path. The
+        // resolver catches IS-lock timeouts and surfaces them as a
+        // structured outcome carrying the tracked outpoint, so the
+        // CL retry uses the SAME credit output (no new asset lock).
+        let ResolvedFunding {
+            proof,
+            path,
+            tracked_out_point,
+        } = match self
+            .asset_locks
+            .resolve_funding_with_is_timeout_fallback(
+                funding,
+                AssetLockFundingType::IdentityRegistration,
+                identity_index,
+                asset_lock_signer,
+            )
+            .await?
+        {
+            FundingResolution::Resolved(rf) => rf,
+            FundingResolution::IsTimeout { out_point } => {
+                tracing::warn!(
+                    "IS-lock did not propagate within 300s for funded identity registration \
+                     (tx {}), falling back to ChainLock proof",
+                    out_point.txid
+                );
+                let chain_proof = self
                     .asset_locks
-                    .create_funded_asset_lock_proof(
-                        amount_duffs,
-                        0,
-                        AssetLockFundingType::IdentityRegistration,
-                        identity_index,
-                    )
+                    .upgrade_to_chain_lock_proof(&out_point, CL_FALLBACK_TIMEOUT)
                     .await?;
-                (proof, key)
+                // Recover the credit-output derivation path. The
+                // asset lock is now CL-attached (status advanced by
+                // `upgrade_to_chain_lock_proof`'s caller path), so
+                // `resume_asset_lock` short-circuits to the existing-
+                // proof branch and just re-derives the path. This is
+                // cheap (no SPV wait) and avoids duplicating the
+                // path-derivation logic here.
+                let (_, path) = self
+                    .asset_locks
+                    .resume_asset_lock(&out_point, CL_FALLBACK_TIMEOUT)
+                    .await?;
+                ResolvedFunding {
+                    proof: chain_proof,
+                    path,
+                    tracked_out_point: Some(out_point),
+                }
             }
         };
 
-        // Step 2: build the placeholder identity from caller-supplied keys.
-        let identity = Identity::V0(IdentityV0 {
+        // Build the placeholder identity ONCE so both the primary
+        // attempt and the IS→CL retry submit the same key set
+        // without a `keys_map` deep clone on the retry path.
+        let placeholder = Identity::V0(IdentityV0 {
             id: Identifier::default(),
             public_keys: keys_map,
             balance: 0,
             revision: 0,
         });
 
-        // Step 3: submit, with IS->CL fallback on InstantSend rejection.
-        let proof_out_point = Self::out_point_from_proof(&asset_lock_proof);
-
-        let identity = match identity
-            .put_to_platform_and_wait_for_response(
+        // Step 3: submit, with two layers of Platform-side fallback:
+        //   - **CL-height-too-low** (transient): bump `user_fee_increase`
+        //     and retry the same proof. See [`submit_with_cl_height_retry`].
+        //   - **IS-lock rejection** (quorum rotated): upgrade IS→CL on
+        //     the same credit-output outpoint — no new asset lock built,
+        //     no new funding-tx broadcast.
+        //
+        // Both retries share the original `placeholder` Identity; the
+        // CL-height retry also iterates inside the IS→CL fallback branch
+        // so a freshly-upgraded CL proof gets the same patience.
+        let proof_out_point = out_point_from_proof(&proof);
+        let identity = match submit_with_cl_height_retry(settings, |s| {
+            placeholder.put_to_platform_and_wait_for_response_with_signer(
                 &self.sdk,
-                asset_lock_proof,
-                &asset_lock_private_key,
-                signer,
-                settings,
+                proof.clone(),
+                &path,
+                asset_lock_signer,
+                identity_signer,
+                s,
             )
-            .await
+        })
+        .await
         {
             Ok(identity) => identity,
-            Err(e) if crate::error::is_instant_lock_proof_invalid(&e) => {
-                if let Some(out_point) = proof_out_point {
-                    tracing::warn!(
-                        "IS-lock proof rejected for identity registration (tx {}, external signer), \
-                         retrying with ChainLock proof",
-                        out_point.txid
-                    );
-                    let chain_proof = self
-                        .asset_locks
-                        .upgrade_to_chain_lock_proof(&out_point, Duration::from_secs(180))
-                        .await?;
-                    identity
-                        .put_to_platform_and_wait_for_response(
-                            &self.sdk,
-                            chain_proof,
-                            &asset_lock_private_key,
-                            signer,
-                            settings,
-                        )
-                        .await
-                        .map_err(|e| {
-                            PlatformWalletError::InvalidIdentityData(format!(
-                                "Failed to register identity on Platform (ChainLock retry): {}",
-                                e
-                            ))
-                        })?
-                } else {
-                    return Err(PlatformWalletError::InvalidIdentityData(format!(
-                        "Failed to register identity on Platform: {}",
-                        e
-                    )));
-                }
+            Err(e) if is_instant_lock_proof_invalid(&e) => {
+                let out_point = proof_out_point;
+                tracing::warn!(
+                    "IS-lock proof rejected by Platform for identity registration (tx {}), \
+                     retrying with ChainLock proof",
+                    out_point.txid
+                );
+                let chain_proof = self
+                    .asset_locks
+                    .upgrade_to_chain_lock_proof(&out_point, CL_FALLBACK_TIMEOUT)
+                    .await?;
+                submit_with_cl_height_retry(settings, |s| {
+                    placeholder.put_to_platform_and_wait_for_response_with_signer(
+                        &self.sdk,
+                        chain_proof.clone(),
+                        &path,
+                        asset_lock_signer,
+                        identity_signer,
+                        s,
+                    )
+                })
+                .await
+                .map_err(PlatformWalletError::Sdk)?
             }
-            Err(e) => {
-                return Err(PlatformWalletError::InvalidIdentityData(format!(
-                    "Failed to register identity on Platform: {}",
-                    e
-                )));
-            }
+            Err(e) => return Err(PlatformWalletError::Sdk(e)),
         };
 
-        // Step 4: add to local manager + record key derivation
-        // breadcrumbs (mirrors the legacy variant exactly so the
-        // persister callback fires the same way regardless of which
-        // path produced the identity).
+        // Step 4: bookkeeping — add to local IdentityManager + record
+        // key derivation breadcrumbs.
         {
             use dpp::identity::accessors::IdentityGettersV0;
 
             let mut wm = self.wallet_manager.write().await;
             let info = wm.get_wallet_info_mut(&self.wallet_id).ok_or_else(|| {
-                crate::error::PlatformWalletError::WalletNotFound(
+                PlatformWalletError::WalletNotFound(
                     "Wallet info not found in wallet manager".to_string(),
                 )
             })?;
@@ -219,273 +305,258 @@ impl IdentityWallet {
             }
         }
 
-        Ok(identity)
-    }
-
-    /// Register a new identity using an externally-provided identity, asset
-    /// lock proof, and signer.
-    ///
-    /// Unlike
-    /// [`register_identity_with_funding_external_signer`](Self::register_identity_with_funding_external_signer),
-    /// this method does **not** derive keys or manage the internal
-    /// `IdentityManager`. The caller supplies a fully-constructed `Identity`
-    /// object, the asset lock proof + private key, and a `Signer`
-    /// implementation directly.
-    ///
-    /// This is useful when the caller manages identities outside of the
-    /// platform-wallet `IdentityManager` (e.g. evo-tool's
-    /// `QualifiedIdentity`).
-    ///
-    /// Returns the confirmed `Identity` from Platform.
-    pub async fn register_identity_with_signer<S: Signer<IdentityPublicKey>>(
-        &self,
-        identity: &Identity,
-        asset_lock_proof: AssetLockProof,
-        asset_lock_private_key: &dashcore::PrivateKey,
-        signer: &S,
-        settings: Option<PutSettings>,
-    ) -> Result<Identity, dash_sdk::Error> {
-        identity
-            .put_to_platform_and_wait_for_response(
-                &self.sdk,
-                asset_lock_proof,
-                asset_lock_private_key,
-                signer,
-                settings,
-            )
-            .await
-    }
-
-    /// Top up an identity's credit balance using an externally-provided
-    /// identity and asset lock proof.
-    ///
-    /// Unlike [`top_up_identity_with_funding`](Self::top_up_identity_with_funding),
-    /// this method does **not** look up the identity in the internal
-    /// `IdentityManager`. The caller supplies the `Identity` object and the
-    /// asset lock proof + private key directly.
-    ///
-    /// This is useful when the caller manages identities outside of the
-    /// platform-wallet `IdentityManager` (e.g. evo-tool's
-    /// `QualifiedIdentity`).
-    ///
-    /// Returns the new credit balance.
-    pub async fn top_up_identity_with_signer(
-        &self,
-        identity: &Identity,
-        asset_lock_proof: AssetLockProof,
-        asset_lock_private_key: &dashcore::PrivateKey,
-        settings: Option<PutSettings>,
-    ) -> Result<u64, dash_sdk::Error> {
-        identity
-            .top_up_identity(
-                &self.sdk,
-                asset_lock_proof,
-                asset_lock_private_key,
-                settings.and_then(|s| s.user_fee_increase),
-                settings,
-            )
-            .await
-    }
-
-    /// Register a new identity using an [`IdentityFunding`] variant and an
-    /// externally-provided identity + signer.
-    ///
-    /// This method unifies funding resolution and Platform submission in a
-    /// single call:
-    ///
-    /// * **`FromWalletBalance`** — builds an asset lock from wallet UTXOs via
-    ///   [`AssetLockManager::create_funded_asset_lock_proof`], then submits the
-    ///   identity registration to Platform.
-    /// * **`FromExistingAssetLock`** — resumes a tracked asset lock by outpoint,
-    ///   re-deriving the proof and private key from whatever stage the lock
-    ///   is at.
-    ///
-    /// Unlike
-    /// [`register_identity_with_funding_external_signer`](Self::register_identity_with_funding_external_signer),
-    /// this method does **not** derive keys or manage the internal
-    /// `IdentityManager`. The caller supplies a fully-constructed `Identity`
-    /// and a `Signer` implementation, making it suitable for callers that
-    /// manage identities externally (e.g. evo-tool's `QualifiedIdentity`).
-    ///
-    /// Returns the confirmed `Identity` from Platform.
-    pub async fn funded_register_identity<S: Signer<IdentityPublicKey>>(
-        &self,
-        identity: &Identity,
-        funding: IdentityFunding,
-        identity_index: u32,
-        signer: &S,
-        settings: Option<PutSettings>,
-    ) -> Result<Identity, PlatformWalletError> {
-        use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
-
-        let (asset_lock_proof, asset_lock_private_key, tracked_out_point) = match funding {
-            IdentityFunding::FromWalletBalance { amount_duffs } => {
-                let (proof, key, out_point) = self
-                    .asset_locks
-                    .create_funded_asset_lock_proof(
-                        amount_duffs,
-                        0,
-                        AssetLockFundingType::IdentityRegistration,
-                        identity_index,
-                    )
-                    .await?;
-                (proof, key, Some(out_point))
-            }
-            IdentityFunding::FromExistingAssetLock { out_point } => {
-                let (proof, key) = self
-                    .asset_locks
-                    .resume_asset_lock(&out_point, Duration::from_secs(300))
-                    .await?;
-                (proof, key, Some(out_point))
-            }
-        };
-
-        // Extract the outpoint before consuming the proof, in case we need to
-        // build a ChainLock proof for recovery.
-        let proof_out_point = Self::out_point_from_proof(&asset_lock_proof);
-
-        let result = match self
-            .register_identity_with_signer(
-                identity,
-                asset_lock_proof,
-                &asset_lock_private_key,
-                signer,
-                settings,
-            )
-            .await
-        {
-            Ok(identity) => identity,
-            Err(e) if crate::error::is_instant_lock_proof_invalid(&e) => {
-                if let Some(out_point) = proof_out_point {
-                    tracing::warn!(
-                        "IS-lock proof rejected for funded identity registration (tx {}), \
-                         retrying with ChainLock proof",
-                        out_point.txid
-                    );
-                    let chain_proof = self
-                        .asset_locks
-                        .upgrade_to_chain_lock_proof(&out_point, Duration::from_secs(180))
-                        .await?;
-                    self.register_identity_with_signer(
-                        identity,
-                        chain_proof,
-                        &asset_lock_private_key,
-                        signer,
-                        settings,
-                    )
-                    .await
-                    .map_err(PlatformWalletError::Sdk)?
-                } else {
-                    return Err(PlatformWalletError::Sdk(e));
-                }
-            }
-            Err(e) => return Err(PlatformWalletError::Sdk(e)),
-        };
-
-        // Clean up the tracked asset lock after successful consumption.
+        // Step 5: clean up the tracked asset lock — Platform has
+        // accepted the registration and the credit output is now
+        // consumed. Both `AssetLockFunding` variants produce a tracked
+        // lock so `tracked_out_point` is always `Some` today; the
+        // `Option` is retained for future variants that may not have
+        // wallet-owned lifecycle.
         if let Some(out_point) = tracked_out_point {
-            self.asset_locks.remove_asset_lock(&out_point).await;
+            // Cleanup failure here can only mean WalletNotFound
+            // (the wallet handle that just registered an identity
+            // vanished). Surface as a warn — the identity DID
+            // register successfully on Platform, so propagating the
+            // error to the caller would be misleading.
+            if let Err(e) = self.asset_locks.consume_asset_lock(&out_point).await {
+                tracing::warn!(
+                    outpoint = %out_point,
+                    error = %e,
+                    "consume_asset_lock failed after successful Platform submit"
+                );
+            }
         }
 
-        Ok(result)
+        Ok(identity)
     }
+}
 
-    /// Top up an identity using an [`IdentityFunding`] variant and an
-    /// externally-provided identity.
+// ---------------------------------------------------------------------------
+// top-up
+// ---------------------------------------------------------------------------
+
+impl IdentityWallet {
+    /// Top up an existing identity's credit balance.
     ///
-    /// This method unifies funding resolution and Platform submission in a
-    /// single call:
+    /// Mirror of [`register_identity_with_funding`](Self::register_identity_with_funding)
+    /// for top-ups:
     ///
-    /// * **`FromWalletBalance`** — builds an asset lock from wallet UTXOs via
-    ///   [`AssetLockManager::create_funded_asset_lock_proof`], then submits the
-    ///   top-up to Platform.
-    /// * **`FromExistingAssetLock`** — resumes a tracked asset lock by outpoint,
-    ///   re-deriving the proof and private key from whatever stage the lock
-    ///   is at.
-    ///
-    /// Unlike [`top_up_identity_with_funding`](Self::top_up_identity_with_funding),
-    /// this method does **not** look up the identity in the internal
-    /// `IdentityManager`. The caller supplies the `Identity` object directly,
-    /// making it suitable for callers that manage identities externally
-    /// (e.g. evo-tool's `QualifiedIdentity`).
-    ///
-    /// Returns the new credit balance.
-    pub async fn funded_top_up_identity(
+    /// 1. Look up the identity by `identity_id` in the local
+    ///    `IdentityManager`. Return `IdentityNotFound` if missing.
+    /// 2. Resolve the [`AssetLockFunding`] to an asset-lock proof.
+    /// 3. Submit via `Identity::top_up_identity_with_signer` inside
+    ///    `submit_with_cl_height_retry`, with IS→CL fallback on
+    ///    Core-side timeout and Platform-side rejection (same as
+    ///    register).
+    /// 4. Persist the new credit balance + remove the tracked asset
+    ///    lock.
+    pub async fn top_up_identity_with_funding<AS>(
         &self,
-        identity: &Identity,
-        funding: IdentityFunding,
-        identity_index: u32,
+        identity_id: &Identifier,
+        funding: AssetLockFunding,
+        asset_lock_signer: &AS,
         settings: Option<PutSettings>,
-    ) -> Result<u64, PlatformWalletError> {
-        use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
+    ) -> Result<u64, PlatformWalletError>
+    where
+        AS: ::key_wallet::signer::Signer + Send + Sync,
+    {
+        // Step 1: retrieve the identity + its HD index.
+        let (identity, identity_index) = {
+            let wm = self.wallet_manager.read().await;
+            let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
+                PlatformWalletError::WalletNotFound(
+                    "Wallet info not found in wallet manager".to_string(),
+                )
+            })?;
+            let manager = &info.identity_manager;
+            let identity = manager
+                .identity(identity_id)
+                .map(|m| m.identity.clone())
+                .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
+            let index = manager
+                .identity_index(identity_id)
+                .ok_or(PlatformWalletError::IdentityIndexNotSet(*identity_id))?;
+            (identity, index)
+        };
 
-        let (asset_lock_proof, asset_lock_private_key, tracked_out_point) = match funding {
-            IdentityFunding::FromWalletBalance { amount_duffs } => {
-                let (proof, key, out_point) = self
+        // Step 2: resolve funding. Same IS→CL fallback shape as
+        // `register_identity_with_funding` — see that method for the
+        // architectural rationale.
+        let ResolvedFunding {
+            proof,
+            path,
+            tracked_out_point,
+        } = match self
+            .asset_locks
+            .resolve_funding_with_is_timeout_fallback(
+                funding,
+                AssetLockFundingType::IdentityTopUp,
+                identity_index,
+                asset_lock_signer,
+            )
+            .await?
+        {
+            FundingResolution::Resolved(rf) => rf,
+            FundingResolution::IsTimeout { out_point } => {
+                tracing::warn!(
+                    "IS-lock did not propagate within 300s for funded identity top-up \
+                     (tx {}), falling back to ChainLock proof",
+                    out_point.txid
+                );
+                let chain_proof = self
                     .asset_locks
-                    .create_funded_asset_lock_proof(
-                        amount_duffs,
-                        0,
-                        AssetLockFundingType::IdentityTopUp,
-                        identity_index,
-                    )
+                    .upgrade_to_chain_lock_proof(&out_point, CL_FALLBACK_TIMEOUT)
                     .await?;
-                (proof, key, Some(out_point))
-            }
-            IdentityFunding::FromExistingAssetLock { out_point } => {
-                let (proof, key) = self
+                let (_, path) = self
                     .asset_locks
-                    .resume_asset_lock(&out_point, Duration::from_secs(300))
+                    .resume_asset_lock(&out_point, CL_FALLBACK_TIMEOUT)
                     .await?;
-                (proof, key, Some(out_point))
+                ResolvedFunding {
+                    proof: chain_proof,
+                    path,
+                    tracked_out_point: Some(out_point),
+                }
             }
         };
 
-        // Extract the outpoint before consuming the proof, in case we need to
-        // build a ChainLock proof for recovery.
-        let proof_out_point = Self::out_point_from_proof(&asset_lock_proof);
-
-        let new_balance = match self
-            .top_up_identity_with_signer(
-                identity,
-                asset_lock_proof,
-                &asset_lock_private_key,
-                settings,
+        // Step 3: submit. Two Platform-side fallback layers (matches
+        // `register_identity_with_funding`): CL-height-too-low retries
+        // bump `user_fee_increase` to bypass Tenderdash's invalid-tx
+        // cache, and IS-lock rejection triggers an IS→CL upgrade on the
+        // same outpoint.
+        let proof_out_point = out_point_from_proof(&proof);
+        let new_balance = match submit_with_cl_height_retry(settings, |s| {
+            identity.top_up_identity_with_signer(
+                &self.sdk,
+                proof.clone(),
+                &path,
+                asset_lock_signer,
+                s,
             )
-            .await
+        })
+        .await
         {
             Ok(balance) => balance,
-            Err(e) if crate::error::is_instant_lock_proof_invalid(&e) => {
-                if let Some(out_point) = proof_out_point {
-                    tracing::warn!(
-                        "IS-lock proof rejected for funded identity top-up (tx {}), \
-                         retrying with ChainLock proof",
-                        out_point.txid
-                    );
-                    let chain_proof = self
-                        .asset_locks
-                        .upgrade_to_chain_lock_proof(&out_point, Duration::from_secs(180))
-                        .await?;
-                    self.top_up_identity_with_signer(
-                        identity,
-                        chain_proof,
-                        &asset_lock_private_key,
-                        settings,
+            Err(e) if is_instant_lock_proof_invalid(&e) => {
+                let out_point = proof_out_point;
+                tracing::warn!(
+                    "IS-lock proof rejected by Platform for identity top-up (tx {}), \
+                     retrying with ChainLock proof",
+                    out_point.txid
+                );
+                let chain_proof = self
+                    .asset_locks
+                    .upgrade_to_chain_lock_proof(&out_point, CL_FALLBACK_TIMEOUT)
+                    .await?;
+                submit_with_cl_height_retry(settings, |s| {
+                    identity.top_up_identity_with_signer(
+                        &self.sdk,
+                        chain_proof.clone(),
+                        &path,
+                        asset_lock_signer,
+                        s,
                     )
-                    .await
-                    .map_err(PlatformWalletError::Sdk)?
-                } else {
-                    return Err(PlatformWalletError::Sdk(e));
-                }
+                })
+                .await
+                .map_err(PlatformWalletError::Sdk)?
             }
             Err(e) => return Err(PlatformWalletError::Sdk(e)),
         };
 
-        // Clean up the tracked asset lock after successful consumption.
+        // Step 4: persist the new balance + clean up the tracked lock.
+        {
+            let mut wm = self.wallet_manager.write().await;
+            let info = wm.get_wallet_info_mut(&self.wallet_id).ok_or_else(|| {
+                PlatformWalletError::WalletNotFound(
+                    "Wallet info not found in wallet manager".to_string(),
+                )
+            })?;
+            if let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) {
+                managed.identity.set_balance(new_balance);
+                if let Err(e) = self.persister.store(managed.snapshot_changeset().into()) {
+                    tracing::error!(
+                        identity = %identity_id,
+                        error = %e,
+                        "Failed to persist identity balance update after top_up"
+                    );
+                }
+            }
+        }
         if let Some(out_point) = tracked_out_point {
-            self.asset_locks.remove_asset_lock(&out_point).await;
+            // Cleanup failure here can only mean WalletNotFound
+            // (the wallet handle that just registered an identity
+            // vanished). Surface as a warn — the identity DID
+            // register successfully on Platform, so propagating the
+            // error to the caller would be misleading.
+            if let Err(e) = self.asset_locks.consume_asset_lock(&out_point).await {
+                tracing::warn!(
+                    outpoint = %out_point,
+                    error = %e,
+                    "consume_asset_lock failed after successful Platform submit"
+                );
+            }
         }
 
         Ok(new_balance)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+// `find_tracked_unproven_lock` was removed when
+// `PlatformWalletError::FinalityTimeout` was widened to carry the full
+// `OutPoint` (previously only the `Txid`). The IS→CL fallback now reads
+// the outpoint directly off the error payload — no BTreeMap walk by
+// `(funding_type, identity_index)` is needed, which also closes the
+// non-determinism gap when multiple unproven locks shared that key.
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::error::is_instant_lock_timeout;
+    use dashcore::{OutPoint, Txid};
+
+    /// Pins the IS-timeout discriminator: only `FinalityTimeout`
+    /// matches, so the IS→CL fallback arms route exactly the cases
+    /// we expect. Companion to `is_instant_lock_proof_invalid`
+    /// (which discriminates SDK errors at the Platform-rejection
+    /// boundary).
+    #[test]
+    fn is_instant_lock_timeout_only_matches_finality_timeout() {
+        let timeout = PlatformWalletError::FinalityTimeout(OutPoint {
+            txid: Txid::from([0u8; 32]),
+            vout: 0,
+        });
+        assert!(
+            is_instant_lock_timeout(&timeout),
+            "FinalityTimeout must route to IS→CL fallback"
+        );
+
+        // Adjacent error shapes that share the asset-lock domain but
+        // are NOT timeouts — must NOT trigger the fallback.
+        let expired = PlatformWalletError::AssetLockExpired("CL not yet available".to_string());
+        assert!(
+            !is_instant_lock_timeout(&expired),
+            "AssetLockExpired must NOT trigger IS→CL fallback \
+             (the lock is already past the CL grace window)"
+        );
+
+        let not_cl = PlatformWalletError::AssetLockNotChainLocked("missing".to_string());
+        assert!(
+            !is_instant_lock_timeout(&not_cl),
+            "AssetLockNotChainLocked must NOT trigger IS→CL fallback"
+        );
+
+        let wait_err = PlatformWalletError::AssetLockProofWait("not tracked".to_string());
+        assert!(
+            !is_instant_lock_timeout(&wait_err),
+            "AssetLockProofWait must NOT trigger IS→CL fallback \
+             (wallet-state mismatch is a hard failure)"
+        );
     }
 }

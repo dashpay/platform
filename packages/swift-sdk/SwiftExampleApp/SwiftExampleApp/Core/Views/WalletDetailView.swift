@@ -22,11 +22,18 @@ struct WalletDetailView: View {
     @EnvironmentObject var walletManager: PlatformWalletManager
     @EnvironmentObject var platformState: AppState
     @EnvironmentObject var appUIState: AppUIState
+    @EnvironmentObject var shieldedService: ShieldedService
     @Environment(\.dismiss) private var dismiss
     let wallet: PersistentWallet
     @State private var showReceiveAddress = false
     @State private var showSendTransaction = false
     @State private var showWalletInfo = false
+    @State private var showFundPlatformAddress = false
+    @State private var showShieldFromAssetLock = false
+    /// Set by `PendingPlatformFundFromAssetLocksList`'s Resume tap.
+    @State private var resumingAssetLock: PersistentAssetLock?
+
+    @Query private var walletAssetLocks: [PersistentAssetLock]
 
     // Badge count for "View All Transactions". Transactions are no
     // longer wallet-scoped (the same on-chain tx can land in
@@ -45,6 +52,10 @@ struct WalletDetailView: View {
         )
         descriptor.propertiesToFetch = [\.walletId]
         _walletTxos = Query(descriptor)
+        _walletAssetLocks = Query(
+            filter: PersistentAssetLock.predicate(walletId: walletId),
+            sort: [SortDescriptor(\PersistentAssetLock.updatedAt, order: .reverse)]
+        )
     }
 
     private var transactionCount: Int {
@@ -73,7 +84,11 @@ struct WalletDetailView: View {
             .padding(.top, 8)
 
             // Balance Card
-            BalanceCardView(wallet: wallet)
+            BalanceCardView(
+                wallet: wallet,
+                onFundPlatform: { showFundPlatformAddress = true },
+                onFundShielded: { showShieldFromAssetLock = true }
+            )
                 .padding()
 
             // Action Buttons
@@ -95,6 +110,14 @@ struct WalletDetailView: View {
                 .buttonStyle(.bordered)
             }
             .padding(.horizontal)
+
+            PendingPlatformFundFromAssetLocksList(
+                coordinator: walletManager.addressFundFromAssetLockCoordinator,
+                walletId: wallet.walletId,
+                assetLocks: walletAssetLocks,
+                resumingAssetLock: $resumingAssetLock
+            )
+            .padding(.top, 8)
 
             Divider()
                 .padding(.vertical, 8)
@@ -176,7 +199,27 @@ struct WalletDetailView: View {
                 dismiss()
             }
         }
-        .onAppear { appUIState.showWalletsSyncDetails = false }
+        .sheet(isPresented: $showFundPlatformAddress) {
+            FundFromAssetLockPlatformAddressView(wallet: wallet)
+        }
+        .sheet(item: $resumingAssetLock) { lock in
+            FundFromAssetLockPlatformAddressView(wallet: wallet, resumeFromLock: lock)
+        }
+        .sheet(isPresented: $showShieldFromAssetLock) {
+            ShieldedFundFromAssetLockView(wallet: wallet)
+        }
+        .onAppear {
+            appUIState.showWalletsSyncDetails = false
+            // Repoint the singleton ShieldedService at THIS wallet —
+            // the app-level bind only attaches it to `firstWallet`,
+            // so without this every detail screen would show the
+            // first-bound wallet's shielded balance regardless of
+            // which wallet the user opened.
+            shieldedService.switchTo(walletId: wallet.walletId)
+        }
+        .onChange(of: wallet.walletId) { _, newId in
+            shieldedService.switchTo(walletId: newId)
+        }
     }
 }
 
@@ -185,6 +228,7 @@ struct WalletDetailView: View {
 struct WalletInfoView: View {
     @Environment(\.dismiss) var dismiss
     @Environment(\.modelContext) var modelContext
+    @EnvironmentObject var walletManager: PlatformWalletManager
     let wallet: PersistentWallet
     var onWalletDeleted: () -> Void = {}
 
@@ -208,14 +252,25 @@ struct WalletInfoView: View {
     @State private var isAuthorizingSeedPhrase = false
     @State private var revealedMnemonic: String?
 
+    // "Verify Identity Keys" diagnostic sheet — runs the per-key
+    // health check + offers re-derive / delete-orphan repair actions.
+    // See `WalletKeyHealthSheet`.
+    @State private var showKeyHealthSheet = false
+
     // Account counts come from SwiftData now.
     @Query private var accounts: [PersistentAccount]
+    /// Identities owned by this wallet — passed to the key-health
+    /// sheet so it can iterate them.
+    @Query private var walletIdentities: [PersistentIdentity]
 
     init(wallet: PersistentWallet, onWalletDeleted: @escaping () -> Void = {}) {
         self.wallet = wallet
         self.onWalletDeleted = onWalletDeleted
         let walletId = wallet.walletId
         _accounts = Query(filter: #Predicate<PersistentAccount> { $0.wallet.walletId == walletId })
+        _walletIdentities = Query(
+            filter: #Predicate<PersistentIdentity> { $0.wallet?.walletId == walletId }
+        )
     }
 
     var body: some View {
@@ -411,6 +466,30 @@ struct WalletInfoView: View {
                     .disabled(isAuthorizingSeedPhrase)
                 }
 
+                // Verify Identity Keys Section — diagnostic that
+                // walks every identity's PersistentPublicKey rows,
+                // re-derives the canonical key from this wallet's
+                // mnemonic, and confirms the stored pubkey + the
+                // Keychain bytes match. Offers re-derive (for
+                // wallet-owned keys with missing/wrong keychain
+                // entries) and delete-identity (for orphan rows
+                // whose pubkey doesn't match the wallet's mnemonic
+                // at all). The keychain-collision bug between
+                // wallets at identity_index=0 is the canonical
+                // trigger for needing this.
+                Section {
+                    Button {
+                        showKeyHealthSheet = true
+                    } label: {
+                        HStack {
+                            Spacer()
+                            Label("Verify Identity Keys", systemImage: "checkmark.shield")
+                            Spacer()
+                        }
+                    }
+                    .accessibilityIdentifier("walletInfo.verifyIdentityKeysButton")
+                }
+
                 // Delete Wallet Section
                 Section {
                     Button(action: {
@@ -473,6 +552,34 @@ struct WalletInfoView: View {
             ) {
                 if let phrase = revealedMnemonic {
                     SeedPhraseRevealSheet(mnemonic: phrase)
+                }
+            }
+            .sheet(isPresented: $showKeyHealthSheet) {
+                if let managed = walletManager.wallet(for: wallet.walletId) {
+                    WalletKeyHealthSheet(
+                        wallet: managed,
+                        walletId: wallet.walletId,
+                        identities: walletIdentities,
+                        network: wallet.network ?? .testnet
+                    )
+                } else {
+                    // Wallet manager hasn't loaded this wallet —
+                    // surface a placeholder rather than presenting an
+                    // empty sheet that the user can't interpret.
+                    NavigationView {
+                        ContentUnavailableView(
+                            "Wallet not loaded",
+                            systemImage: "exclamationmark.triangle",
+                            description: Text(
+                                "Open the wallet detail view once before running the key health check."
+                            )
+                        )
+                        .toolbar {
+                            ToolbarItem(placement: .navigationBarTrailing) {
+                                Button("Done") { showKeyHealthSheet = false }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -627,19 +734,14 @@ struct WalletInfoView: View {
 
         await MainActor.run { isDeleting = true }
 
-        // Cascade-delete rules on `accounts` / `identities` null out
-        // or cascade the children automatically.
-        modelContext.delete(wallet)
+        // `PlatformWalletManager.deleteWallet` handles the full wipe:
+        // Rust manager-side drop, in-memory dict removal, SwiftData
+        // cascade + orphan sweep (transactions / pending inputs /
+        // identities the @Relationship rule doesn't reach), and the
+        // Keychain mnemonic + metadata blobs.
         do {
-            try modelContext.save()
-            let storage = WalletStorage()
-            try storage.deleteMnemonic(for: walletId)
-            // Keychain metadata is independent of the mnemonic
-            // row — clear it here so a deleted wallet doesn't
-            // leave stale name/description behind.
-            try storage.deleteMetadata(for: walletId)
+            try walletManager.deleteWallet(walletId: walletId)
         } catch {
-            modelContext.rollback()
             SDKLogger.error(
                 "Failed to fully delete wallet: \(error.localizedDescription)"
             )
@@ -656,13 +758,21 @@ struct WalletInfoView: View {
             dismiss()
             onWalletDeleted()
         }
-        // TODO(platform-wallet): expose wallet removal on PlatformWalletManager
-        // so the Rust side also drops the in-memory handle.
     }
 }
 
 struct BalanceCardView: View {
     let wallet: PersistentWallet
+    /// Invoked when the user taps the "+" affordance next to the
+    /// Platform Balance row. The parent owns the sheet presentation
+    /// state, so we surface the intent rather than presenting here.
+    /// `nil` hides the affordance entirely (e.g. for read-only
+    /// surfaces).
+    var onFundPlatform: (() -> Void)?
+    /// Same shape as `onFundPlatform`, for the Shielded Balance row.
+    /// Opens the Core L1 → shielded-pool funding sheet
+    /// (`ShieldedFundFromAssetLockView`, Type 18).
+    var onFundShielded: (() -> Void)?
     @EnvironmentObject var walletManager: PlatformWalletManager
     @EnvironmentObject var platformState: AppState
     @EnvironmentObject var shieldedService: ShieldedService
@@ -671,8 +781,14 @@ struct BalanceCardView: View {
     @Query private var addressBalances: [PersistentPlatformAddress]
     @Query private var syncStates: [PersistentPlatformAddressesSyncState]
 
-    init(wallet: PersistentWallet) {
+    init(
+        wallet: PersistentWallet,
+        onFundPlatform: (() -> Void)? = nil,
+        onFundShielded: (() -> Void)? = nil
+    ) {
         self.wallet = wallet
+        self.onFundPlatform = onFundPlatform
+        self.onFundShielded = onFundShielded
         let walletId = wallet.walletId
         let walletNetworkRaw = (wallet.network ?? .testnet).rawValue
         _addressBalances = Query(
@@ -698,6 +814,13 @@ struct BalanceCardView: View {
     }
 
     /// Platform balance from BLAST sync (preferred) or identity sum (fallback).
+    ///
+    /// Skips identities whose `modelContext` is nil — SwiftData's
+    /// marker for an invalidated row. During a wallet delete the
+    /// relationship array can briefly contain invalidated entries
+    /// before SwiftUI rerenders past them; reading any persisted
+    /// property on an invalidated model fatals with
+    /// `BackingData.swift:866: This model instance was invalidated…`.
     var platformBalance: UInt64 {
         let blastBalance = addressBalances.reduce(0) { $0 + $1.balance }
         let hasSynced = syncStates.first.map { $0.syncHeight > 0 || $0.syncTimestamp > 0 }
@@ -709,9 +832,11 @@ struct BalanceCardView: View {
         // identities (via the SwiftData relationship). Pre-BLAST-
         // sync state shows approximate credit balance aggregated
         // from the on-chain identities we know about.
-        return wallet.identities.reduce(UInt64(0)) { sum, identity in
-            sum + UInt64(bitPattern: identity.balance)
-        }
+        return wallet.identities
+            .filter { $0.modelContext != nil }
+            .reduce(UInt64(0)) { sum, identity in
+                sum + UInt64(bitPattern: identity.balance)
+            }
     }
 
     var body: some View {
@@ -733,22 +858,44 @@ struct BalanceCardView: View {
                     unit: .duffs
                 )
 
-                // Platform Balance row
+                // Platform Balance row — when `onFundPlatform` is
+                // wired (i.e. on the editable Wallet Detail surface),
+                // a trailing `+` button opens the Core→Platform
+                // funding sheet. Read-only call sites pass `nil` and
+                // the affordance disappears.
                 WalletBalanceRow(
                     label: "Platform Balance",
                     amount: platformBalance,
                     color: .blue,
                     unit: .credits,
-                    showSyncIndicator: platformBalanceSyncService.isSyncing
+                    showSyncIndicator: platformBalanceSyncService.isSyncing,
+                    trailingAction: onFundPlatform.map { fund in
+                        WalletBalanceRow.TrailingAction(
+                            systemImage: "plus.circle.fill",
+                            accessibilityLabel: "Top Up Platform Balance from Core",
+                            action: fund
+                        )
+                    }
                 )
 
-                // Shielded Balance row
+                // Shielded Balance row — mirrors the Platform
+                // Balance row's trailing `+` affordance. When
+                // `onFundShielded` is wired the user can open the
+                // Core L1 → shielded-pool funding sheet (Type 18,
+                // `ShieldFromAssetLockTransition`).
                 WalletBalanceRow(
                     label: "Shielded Balance",
                     amount: shieldedService.shieldedBalance,
                     color: .purple,
                     unit: .credits,
-                    showSyncIndicator: shieldedService.isSyncing
+                    showSyncIndicator: shieldedService.isSyncing,
+                    trailingAction: onFundShielded.map { fund in
+                        WalletBalanceRow.TrailingAction(
+                            systemImage: "plus.circle.fill",
+                            accessibilityLabel: "Shield from Core Asset Lock",
+                            action: fund
+                        )
+                    }
                 )
             }
         }
@@ -765,12 +912,23 @@ private enum WalletBalanceUnit {
 }
 
 private struct WalletBalanceRow: View {
+    /// Tappable affordance shown at the trailing edge of the row.
+    /// Used today by the Platform Balance row to surface a "fund
+    /// from Core" entry point without crowding the action button
+    /// strip at the top of the wallet detail screen.
+    struct TrailingAction {
+        let systemImage: String
+        let accessibilityLabel: String
+        let action: () -> Void
+    }
+
     let label: String
     var amount: UInt64
     var incoming: UInt64 = 0
     var color: Color
     var unit: WalletBalanceUnit = .duffs
     var showSyncIndicator: Bool = false
+    var trailingAction: TrailingAction? = nil
 
     var body: some View {
         HStack {
@@ -802,6 +960,15 @@ private struct WalletBalanceRow: View {
                         .font(.caption2)
                         .foregroundColor(.orange)
                 }
+            }
+            if let trailing = trailingAction {
+                Button(action: trailing.action) {
+                    Image(systemName: trailing.systemImage)
+                        .font(.title3)
+                        .foregroundColor(color)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(trailing.accessibilityLabel)
             }
         }
     }

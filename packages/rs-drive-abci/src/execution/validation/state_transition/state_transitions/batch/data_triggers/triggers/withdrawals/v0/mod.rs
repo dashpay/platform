@@ -33,10 +33,13 @@ use crate::execution::validation::state_transition::batch::data_triggers::{DataT
 /// # Returns
 ///
 /// A `DataTriggerExecutionResult` indicating the success or failure of the trigger execution.
+// PROTOCOL_VERSION_11 consensus-safety: body byte-identical to
+// v3.1-dev. Only the `context` param type changed from `&` to `&mut`
+// (compile-time only — the body never mutates the context).
 #[inline(always)]
 pub(super) fn delete_withdrawal_data_trigger_v0(
     document_transition: &DocumentTransitionAction,
-    context: &DataTriggerExecutionContext<'_>,
+    context: &mut DataTriggerExecutionContext<'_>,
     platform_version: &PlatformVersion,
 ) -> Result<DataTriggerExecutionResult, Error> {
     let data_contract_fetch_info = document_transition.base().data_contract_fetch_info();
@@ -141,7 +144,9 @@ mod tests {
     use dpp::version::PlatformVersion;
     use drive::util::object_size_info::DocumentInfo::DocumentRefInfo;
     use drive::util::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
-    use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
+    use crate::execution::types::state_transition_execution_context::{
+        StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
+    };
     use dpp::withdrawal::Pooling;
     use drive::drive::contract::DataContractFetchInfo;
     use crate::execution::types::state_transition_execution_context::v0::StateTransitionExecutionContextV0;
@@ -160,7 +165,7 @@ mod tests {
         };
         let platform_version = state_read_guard.current_platform_version().unwrap();
 
-        let transition_execution_context = StateTransitionExecutionContextV0::default();
+        let mut transition_execution_context = StateTransitionExecutionContextV0::default();
         let data_contract = get_data_contract_fixture(None, 0, platform_version.protocol_version)
             .data_contract_owned();
         let owner_id = data_contract.owner_id();
@@ -181,18 +186,20 @@ mod tests {
         .into();
 
         let document_transition = DocumentTransitionAction::DeleteAction(delete_transition);
-        let data_trigger_context = DataTriggerExecutionContext {
+        let mut state_transition_execution_context_outer =
+            StateTransitionExecutionContext::V0(transition_execution_context);
+        let trigger_block_info = BlockInfo::default();
+        let mut data_trigger_context = DataTriggerExecutionContext {
             platform: &platform_ref,
+            block_info: &trigger_block_info,
             owner_id: &owner_id,
-            state_transition_execution_context: &StateTransitionExecutionContext::V0(
-                transition_execution_context,
-            ),
+            state_transition_execution_context: &mut state_transition_execution_context_outer,
             transaction: None,
         };
 
         let result = delete_withdrawal_data_trigger_v0(
             &document_transition,
-            &data_trigger_context,
+            &mut data_trigger_context,
             platform_version,
         )
         .expect_err("the execution result should be returned");
@@ -252,7 +259,7 @@ mod tests {
             config: &platform.config,
         };
 
-        let transition_execution_context =
+        let mut transition_execution_context =
             StateTransitionExecutionContext::V0(StateTransitionExecutionContextV0::default());
 
         let platform_version = state_read_guard
@@ -320,15 +327,17 @@ mod tests {
             }),
         );
 
-        let data_trigger_context = DataTriggerExecutionContext {
+        let trigger_block_info = BlockInfo::default();
+        let mut data_trigger_context = DataTriggerExecutionContext {
             platform: &platform_ref,
+            block_info: &trigger_block_info,
             owner_id: &owner_id,
-            state_transition_execution_context: &transition_execution_context,
+            state_transition_execution_context: &mut transition_execution_context,
             transaction: None,
         };
         let result = delete_withdrawal_data_trigger_v0(
             &document_transition,
-            &data_trigger_context,
+            &mut data_trigger_context,
             platform_version,
         )
         .expect("the execution result should be returned");
@@ -340,6 +349,47 @@ mod tests {
         assert_eq!(
             error.to_string(),
             "withdrawal deletion is allowed only for COMPLETE statuses"
+        );
+
+        // PROTOCOL_VERSION_11 byte-identity assertion: _v0 must NOT add
+        // any operations to the execution_context. Catches any regression
+        // that accidentally re-introduces billing in _v0.
+        assert!(
+            data_trigger_context
+                .state_transition_execution_context
+                .operations_slice()
+                .is_empty(),
+            "delete_withdrawal_data_trigger_v0 must not add operations (PV11 byte-identity)"
+        );
+
+        // T4 PROTOCOL_VERSION_12+ billing assertion: run the same
+        // scenario through `_v1` directly and verify it DID add an
+        // operation. Same fixture, different code path — catches the
+        // regression where `_v1` drops the `add_operation` call.
+        let mut transition_execution_context_v1 =
+            StateTransitionExecutionContext::V0(StateTransitionExecutionContextV0::default());
+        let trigger_block_info_v1 = BlockInfo::default();
+        let mut data_trigger_context_v1 = DataTriggerExecutionContext {
+            platform: &platform_ref,
+            block_info: &trigger_block_info_v1,
+            owner_id: &owner_id,
+            state_transition_execution_context: &mut transition_execution_context_v1,
+            transaction: None,
+        };
+        use super::super::v1::delete_withdrawal_data_trigger_v1;
+        let result_v1 = delete_withdrawal_data_trigger_v1(
+            &document_transition,
+            &mut data_trigger_context_v1,
+            platform_version,
+        )
+        .expect("the execution result should be returned (v1)");
+        assert!(!result_v1.is_valid());
+        assert!(
+            !data_trigger_context_v1
+                .state_transition_execution_context
+                .operations_slice()
+                .is_empty(),
+            "T4: delete_withdrawal_data_trigger_v1 must add operations to execution_context"
         );
     }
 }

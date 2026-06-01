@@ -39,11 +39,6 @@ import SwiftDashSDK
 /// dev-focused example app where flipping is common.
 @MainActor
 final class WalletManagerStore: ObservableObject {
-    private struct ManagerEntry {
-        let sdkIdentity: ObjectIdentifier
-        let manager: PlatformWalletManager
-    }
-
     /// Currently-active manager. Reassigned when the user switches
     /// networks; SwiftUI re-injects this into the env object so
     /// every `@EnvironmentObject var walletManager:
@@ -59,7 +54,17 @@ final class WalletManagerStore: ObservableObject {
 
     /// Per-network managers. Lazily populated on first activation
     /// of each network; lookup is O(1).
-    private var managers: [Network: ManagerEntry] = [:]
+    private var managers: [Network: PlatformWalletManager] = [:]
+
+    /// SDK handle pointer the cached manager was configured against.
+    /// Used in `activate()` to detect a stale cache when `AppState`
+    /// rebuilds the SDK (network switch / `platformDAPIAddresses` or
+    /// `platformQuorumURL` change in Options). On mismatch we tear
+    /// down the cached manager and rebuild against the fresh SDK —
+    /// otherwise the cached manager keeps using its own Sdk clone
+    /// with stale DAPI / quorum endpoints, and proof verification
+    /// fails forever ("no available addresses to use").
+    private var managerSdkHandles: [Network: UnsafeMutablePointer<SDKHandle>] = [:]
 
     /// SwiftData container shared across every manager. Each
     /// manager's persistence handler narrows its `loadWalletList`
@@ -90,12 +95,35 @@ final class WalletManagerStore: ObservableObject {
     /// network) that need a manager for a non-active network without
     /// triggering a user-visible network switch.
     func activate(network: Network, sdk: SDK, makeActive: Bool = true) throws {
-        let sdkIdentity = ObjectIdentifier(sdk)
-        if let existing = managers[network], existing.sdkIdentity == sdkIdentity {
-            if makeActive && existing.manager !== activeManager {
-                activeManager = existing.manager
+        // Stale-cache check: the cached manager's Sdk clone is locked
+        // in at `configure` time (the FFI is single-shot — see
+        // `PlatformWalletManager.configure`'s `precondition(!isConfigured)`).
+        // If `AppState` has rebuilt the SDK since (network switch or
+        // UserDefaults endpoint override change), the cached manager
+        // is still pointing at the old endpoints and would keep
+        // failing proof verification. Drop it so the rebuild below
+        // picks up the fresh SDK.
+        if let existing = managers[network] {
+            let cachedHandle = managerSdkHandles[network]
+            if cachedHandle == sdk.handle {
+                if makeActive && existing !== activeManager {
+                    activeManager = existing
+                }
+                return
             }
-            return
+            SDKLogger.log(
+                "WalletManagerStore: SDK changed for \(network.displayName); "
+                    + "rebuilding cached manager",
+                minimumLevel: .medium
+            )
+            // No `activeManager = nil` — the field isn't optional. The
+            // rebuild below will overwrite it via `if makeActive {
+            // activeManager = manager }`. Until that line runs, the
+            // old `activeManager` reference still points at the
+            // now-stale cached manager, but it'll be replaced before
+            // any caller observes it (this method is synchronous).
+            managers[network] = nil
+            managerSdkHandles[network] = nil
         }
         let manager = PlatformWalletManager()
         try manager.configure(sdk: sdk, modelContainer: modelContainer)
@@ -113,10 +141,8 @@ final class WalletManagerStore: ObservableObject {
                     + "\(network.displayName): \(error.localizedDescription)"
             )
         }
-        managers[network] = ManagerEntry(
-            sdkIdentity: sdkIdentity,
-            manager: manager
-        )
+        managers[network] = manager
+        managerSdkHandles[network] = sdk.handle
         if makeActive {
             activeManager = manager
         }
@@ -127,7 +153,7 @@ final class WalletManagerStore: ObservableObject {
     /// Memory Explorer) that want to inspect a specific network's
     /// state without forcing it active.
     func manager(for network: Network) -> PlatformWalletManager? {
-        managers[network]?.manager
+        managers[network]
     }
 
     /// Get-or-build the manager for `network` without changing the
@@ -144,11 +170,11 @@ final class WalletManagerStore: ObservableObject {
     /// the testnet manager lands as a testnet row).
     func backgroundManager(for network: Network) throws -> PlatformWalletManager {
         if let existing = managers[network] {
-            return existing.manager
+            return existing
         }
         let sdk = try SDK(network: network)
         try activate(network: network, sdk: sdk, makeActive: false)
-        guard let manager = managers[network]?.manager else {
+        guard let manager = managers[network] else {
             throw PlatformWalletError.invalidParameter(
                 "Failed to materialize manager for \(network.displayName)"
             )

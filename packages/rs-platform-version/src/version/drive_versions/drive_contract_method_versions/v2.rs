@@ -37,5 +37,6 @@ pub const DRIVE_CONTRACT_METHOD_VERSIONS_V2: DriveContractMethodVersions =
             get_cached_contract_with_fetch_info: 0,
             get_contract_with_fetch_info: 0,
             get_contracts_with_fetch_info: 0,
+            get_system_or_user_contract_with_fee: 0,
         },
     };

@@ -6,7 +6,9 @@ use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
 use tokio::sync::RwLock;
 
+use crate::broadcaster::SpvBroadcaster;
 use crate::error::PlatformWalletError;
+use crate::wallet::asset_lock::manager::AssetLockManager;
 use crate::wallet::platform_wallet::{PlatformWalletInfo, WalletId};
 use key_wallet_manager::WalletManager;
 
@@ -27,6 +29,11 @@ pub struct PlatformAddressWallet {
     /// wallets don't allocate empty state. Sync takes a `write` lock;
     /// transfer/withdraw paths take `read` for key_source lookups.
     pub(crate) provider: Arc<RwLock<Option<PlatformPaymentAddressProvider>>>,
+    /// Shared asset-lock manager. Threaded in so the orchestrated
+    /// `fund_from_asset_lock` path can drive
+    /// build → IS-or-CL wait → consume on the same tracked locks
+    /// every other sub-wallet sees. Cloned `Arc`, not owned.
+    pub(crate) asset_locks: Arc<AssetLockManager<SpvBroadcaster>>,
     /// Per-wallet persistence handle for queuing changesets.
     pub(crate) persister: WalletPersister,
 }
@@ -39,6 +46,7 @@ impl PlatformAddressWallet {
         sdk: Arc<dash_sdk::Sdk>,
         wallet_manager: Arc<RwLock<WalletManager<PlatformWalletInfo>>>,
         wallet_id: WalletId,
+        asset_locks: Arc<AssetLockManager<SpvBroadcaster>>,
         persister: WalletPersister,
     ) -> Self {
         Self {
@@ -46,6 +54,7 @@ impl PlatformAddressWallet {
             wallet_manager,
             wallet_id,
             provider: Arc::new(RwLock::new(None)),
+            asset_locks,
             persister,
         }
     }
@@ -98,6 +107,9 @@ impl PlatformAddressWallet {
     /// [apply.rs](crate::wallet::apply): `None` for the key-source
     /// argument because the gap-limit pool is already restored from
     /// `account_state.addresses` inside `from_persisted`.
+    // TODO(CMT-004): no direct regression test for balance hydration via
+    // initialize_from_persisted; future refactor could silently regress
+    // restart visibility.
     pub async fn initialize_from_persisted(
         &self,
         persisted: crate::PlatformAddressSyncStartState,
@@ -108,6 +120,12 @@ impl PlatformAddressWallet {
         // no read→write upgrade — doing the write-lock dance first
         // keeps both paths simple and avoids exposing a new public
         // accessor on the provider.
+        //
+        // Required by spend paths that enumerate funded addresses
+        // (e.g. `shielded_shield_from_account`): without this, after
+        // a restart they read `available = 0` until the first BLAST
+        // sync repopulates the in-memory map, even though SwiftData
+        // reports a real balance to the UI.
         {
             let mut wm = self.wallet_manager.write().await;
             if let Some(info) = wm.get_wallet_info_mut(&self.wallet_id) {
@@ -142,6 +160,14 @@ impl PlatformAddressWallet {
     /// Get the network from the SDK.
     pub fn network(&self) -> key_wallet::Network {
         self.sdk.network
+    }
+
+    /// Wallet id this `PlatformAddressWallet` operates on. Exposed so
+    /// FFI callers that build a `MnemonicResolverCoreSigner` on demand
+    /// can thread the wallet id through to the resolver callback.
+    /// Mirrors [`AssetLockManager::wallet_id`].
+    pub fn wallet_id(&self) -> WalletId {
+        self.wallet_id
     }
 
     /// Rebuild the provider so it covers a newly added account.
@@ -285,6 +311,21 @@ impl PlatformAddressWallet {
                     .collect()
             })
             .unwrap_or_default()
+    }
+
+    /// Current incremental-sync watermark (`last_known_recent_block`)
+    /// from the unified platform-address provider.
+    ///
+    /// Returns `None` when the provider hasn't been initialised yet or
+    /// when no incremental sync has produced a watermark. A zero-valued
+    /// watermark is reported as `None` to match the "no stored watermark"
+    /// convention used by [`Self::apply_sync_state`]. Intended for
+    /// progress checks where the precise "uninitialised vs. zero"
+    /// distinction is not material.
+    pub async fn sync_watermark(&self) -> Option<u64> {
+        let guard = self.provider.read().await;
+        let raw = guard.as_ref().map(|p| p.last_known_recent_block())?;
+        (raw > 0).then_some(raw)
     }
 
     /// Get total platform credits across all addresses.

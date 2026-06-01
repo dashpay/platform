@@ -1,195 +1,64 @@
-//! Top up an identity's credit balance.
+//! Identity top-up convenience wrapper.
+//!
+//! The substantive top-up logic lives next to identity registration in
+//! [`super::registration`] — both flows share the same funding
+//! resolution, IS→CL fallback, and asset-lock cleanup machinery, so
+//! keeping them in one module avoids duplication.
+//!
+//! This file just hosts the convenience wrapper `top_up_identity`
+//! (defaults to wallet-balance funding) that delegates to the L2
+//! orchestrator `top_up_identity_with_funding`.
 
-use std::time::Duration;
-
-use dpp::identity::accessors::IdentitySettersV0;
 use dpp::prelude::Identifier;
 
 use dash_sdk::platform::transition::put_settings::PutSettings;
-use dash_sdk::platform::transition::top_up_identity::TopUpIdentity;
 
 use crate::error::PlatformWalletError;
-
-use crate::wallet::identity::types::funding::TopUpFundingMethod;
+use crate::wallet::asset_lock::AssetLockFunding;
 
 use super::*;
 
-// ---------------------------------------------------------------------------
-// Top-up
-// ---------------------------------------------------------------------------
-
 impl IdentityWallet {
-    /// Top up an existing identity's credit balance.
+    /// Top up an existing identity's credit balance from this wallet's
+    /// UTXOs.
     ///
-    /// Convenience wrapper that uses `FundWithWallet` funding. For other
-    /// funding methods, use [`top_up_identity_with_funding`](Self::top_up_identity_with_funding).
+    /// Convenience wrapper around
+    /// [`top_up_identity_with_funding`](Self::top_up_identity_with_funding)
+    /// for the common case (`AssetLockFunding::FromWalletBalance`).
     ///
     /// # Arguments
     ///
     /// * `identity_id` - The identifier of the identity to top up.
-    /// * `topup_index` - An incrementing index distinguishing successive
-    ///   top-ups for the same identity.
     /// * `amount_duffs` - Amount of Dash (in duffs) to add.
-    pub async fn top_up_identity(
+    /// * `account_index` - BIP44 standard-account index to draw the
+    ///   funding UTXOs from. Only BIP44 standard accounts are
+    ///   supported today (CoinJoin / BIP32 are out of scope).
+    /// * `asset_lock_signer` - External ECDSA signer that produces both
+    ///   the funding-input P2PKH signatures during asset-lock build and
+    ///   the consume-phase outer signature on the IdentityTopUp
+    ///   transition. In Swift this is a `MnemonicResolverCoreSigner`
+    ///   wrapping the Keychain resolver vtable.
+    pub async fn top_up_identity<AS>(
         &self,
         identity_id: &Identifier,
-        topup_index: u32,
         amount_duffs: u64,
+        account_index: u32,
+        asset_lock_signer: &AS,
         settings: Option<PutSettings>,
-    ) -> Result<(), PlatformWalletError> {
+    ) -> Result<(), PlatformWalletError>
+    where
+        AS: ::key_wallet::signer::Signer + Send + Sync,
+    {
         self.top_up_identity_with_funding(
             identity_id,
-            TopUpFundingMethod::FundWithWallet { amount_duffs },
-            topup_index,
+            AssetLockFunding::FromWalletBalance {
+                amount_duffs,
+                account_index,
+            },
+            asset_lock_signer,
             settings,
         )
-        .await
-    }
-
-    /// Top up an existing identity's credit balance with a specified funding method.
-    ///
-    /// # Funding methods
-    ///
-    /// * `UseAssetLock` - Use a pre-existing proof and private key directly.
-    /// * `FundWithWallet` - Build an asset lock from wallet UTXOs (default).
-    ///
-    /// # IS -> CL fallback
-    ///
-    /// See [`register_identity_with_funding`](Self::register_identity_with_funding)
-    /// for details on the IS -> CL fallback strategy.
-    pub async fn top_up_identity_with_funding(
-        &self,
-        identity_id: &Identifier,
-        funding: TopUpFundingMethod,
-        // TODO(platform-wallet): route `topup_index` through the
-        // derivation path for the top-up asset lock. Currently
-        // unused; the function derives from `identity_index`
-        // alone.
-        _topup_index: u32,
-        settings: Option<PutSettings>,
-    ) -> Result<(), PlatformWalletError> {
-        // Retrieve the identity and its HD index from the manager.
-        let (identity, identity_index) = {
-            let wm = self.wallet_manager.read().await;
-            let info = wm.get_wallet_info(&self.wallet_id).ok_or_else(|| {
-                crate::error::PlatformWalletError::WalletNotFound(
-                    "Wallet info not found in wallet manager".to_string(),
-                )
-            })?;
-            let manager = &info.identity_manager;
-            let identity = manager
-                .identity(identity_id)
-                .map(|m| m.identity.clone())
-                .ok_or(PlatformWalletError::IdentityNotFound(*identity_id))?;
-            let index = manager
-                .identity_index(identity_id)
-                .ok_or(PlatformWalletError::IdentityIndexNotSet(*identity_id))?;
-            (identity, index)
-        };
-
-        // Step 1: Obtain the asset lock proof and private key.
-        let (asset_lock_proof, asset_lock_private_key) = match funding {
-            TopUpFundingMethod::UseAssetLock { proof, private_key } => (proof, private_key),
-            TopUpFundingMethod::FundWithWallet { amount_duffs } => {
-                use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
-                let (proof, key, _out_point) = self
-                    .asset_locks
-                    .create_funded_asset_lock_proof(
-                        amount_duffs,
-                        0,
-                        AssetLockFundingType::IdentityTopUp,
-                        identity_index,
-                    )
-                    .await?;
-                (proof, key)
-            }
-        };
-
-        // Extract the outpoint before consuming the proof, in case we need to
-        // build a ChainLock proof for recovery.
-        let proof_out_point = Self::out_point_from_proof(&asset_lock_proof);
-
-        // Step 2: Submit the top-up state transition.
-        let user_fee_increase = settings.and_then(|s| s.user_fee_increase);
-        let new_balance = match identity
-            .top_up_identity(
-                &self.sdk,
-                asset_lock_proof,
-                &asset_lock_private_key,
-                user_fee_increase,
-                settings,
-            )
-            .await
-        {
-            Ok(balance) => balance,
-            Err(e) if crate::error::is_instant_lock_proof_invalid(&e) => {
-                // IS-lock proof was rejected — try to upgrade to ChainLock.
-                if let Some(out_point) = proof_out_point {
-                    tracing::warn!(
-                        "IS-lock proof rejected for identity top-up (tx {}), \
-                         retrying with ChainLock proof",
-                        out_point.txid
-                    );
-                    let chain_proof = self
-                        .asset_locks
-                        .upgrade_to_chain_lock_proof(&out_point, Duration::from_secs(180))
-                        .await?;
-                    identity
-                        .top_up_identity(
-                            &self.sdk,
-                            chain_proof,
-                            &asset_lock_private_key,
-                            user_fee_increase,
-                            settings,
-                        )
-                        .await
-                        .map_err(|e| {
-                            PlatformWalletError::InvalidIdentityData(format!(
-                                "Failed to top up identity (ChainLock retry): {}",
-                                e
-                            ))
-                        })?
-                } else {
-                    return Err(PlatformWalletError::InvalidIdentityData(format!(
-                        "Failed to top up identity: {}",
-                        e
-                    )));
-                }
-            }
-            Err(e) => {
-                return Err(PlatformWalletError::InvalidIdentityData(format!(
-                    "Failed to top up identity: {}",
-                    e
-                )));
-            }
-        };
-
-        // Update the identity's balance in the local manager and
-        // queue the snapshot so the new balance survives relaunch.
-        //
-        // `set_balance` on the inner DPP `Identity` doesn't know about
-        // the persister, so we drive it ourselves via
-        // `ManagedIdentity::snapshot_changeset` + `WalletPersister::store`
-        // (both `pub(crate)`, usable inside this crate).
-        {
-            let mut wm = self.wallet_manager.write().await;
-            let info = wm.get_wallet_info_mut(&self.wallet_id).ok_or_else(|| {
-                crate::error::PlatformWalletError::WalletNotFound(
-                    "Wallet info not found in wallet manager".to_string(),
-                )
-            })?;
-            if let Some(managed) = info.identity_manager.managed_identity_mut(identity_id) {
-                managed.identity.set_balance(new_balance);
-                if let Err(e) = self.persister.store(managed.snapshot_changeset().into()) {
-                    tracing::error!(
-                        identity = %identity_id,
-                        error = %e,
-                        "Failed to persist identity balance update after top_up"
-                    );
-                }
-            }
-        }
-
+        .await?;
         Ok(())
     }
 }

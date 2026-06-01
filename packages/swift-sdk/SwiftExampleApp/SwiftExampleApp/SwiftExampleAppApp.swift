@@ -113,6 +113,13 @@ struct SwiftExampleAppApp: App {
                 // PlatformWalletManager` consumers see the right
                 // network's manager without any view changes.
                 .environmentObject(walletManager)
+                // Inject the store itself so flows that need to
+                // operate on a non-active network's manager
+                // (orphan-mnemonic recovery — wallets restored
+                // from keychain may belong to networks the user
+                // isn't currently looking at) can route through
+                // `backgroundManager(for:)` without flipping the
+                // user's active view.
                 .environmentObject(walletManagerStore)
                 .environmentObject(shieldedService)
                 .environmentObject(platformBalanceSyncService)
@@ -166,6 +173,18 @@ struct SwiftExampleAppApp: App {
                           pending.requestID != platformState.readySDKRequestID
                     else { return }
                     pendingWalletManagerActivation = nil
+                }
+                // Devnet→devnet rebuild from OptionsView: when the user
+                // edits the quorum URL / devnet name the SDK is rebuilt
+                // and `WalletManagerStore.activate` swaps the cached
+                // `PlatformWalletManager`, but neither of the two
+                // observers above fires (network stays `.devnet`;
+                // wallet ID set stays identical after persistor reload).
+                // PlatformBalanceSyncService and ShieldedService would
+                // keep retaining the old manager. Listen for the explicit
+                // tick OptionsView publishes after the activate completes.
+                .onChange(of: platformState.walletScopedServicesRebindTick) { _, _ in
+                    rebindWalletScopedServices()
                 }
         }
     }
@@ -274,6 +293,14 @@ struct SwiftExampleAppApp: App {
     private func bootstrap() async {
         do {
             LoggingPreferences.configure()
+
+            // Kick off Halo 2 proving-key build on a background
+            // thread so the first shielded send doesn't pay the
+            // ~30 s build cost inline. Idempotent — global
+            // OnceLock on the Rust side guards repeat calls.
+            Task.detached(priority: .background) {
+                await PlatformWalletManager.warmUpShieldedProver()
+            }
 
             platformState.initializeSDK(modelContext: modelContainer.mainContext)
 

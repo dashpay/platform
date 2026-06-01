@@ -386,7 +386,7 @@ mod tests {
         fee_strategy: Vec<AddressFundsFeeStrategyStep>,
         user_fee_increase: u16,
     ) -> StateTransition {
-        AddressFundingFromAssetLockTransitionV0::try_from_asset_lock_with_signer(
+        AddressFundingFromAssetLockTransitionV0::try_from_asset_lock_with_signer_and_private_key(
             asset_lock_proof,
             asset_lock_private_key,
             inputs,
@@ -8224,7 +8224,7 @@ mod tests {
             .into();
 
             let identity_create_transition: StateTransition =
-                IdentityCreateTransition::try_from_identity_with_signer(
+                IdentityCreateTransition::try_from_identity_with_signer_and_private_key(
                     &identity_to_fail,
                     asset_lock_proof.clone(),
                     pk.as_slice(),
@@ -8440,7 +8440,7 @@ mod tests {
             .into();
 
             let identity_create_transition: StateTransition =
-                IdentityCreateTransition::try_from_identity_with_signer(
+                IdentityCreateTransition::try_from_identity_with_signer_and_private_key(
                     &identity,
                     asset_lock_proof.clone(),
                     pk.as_slice(),

@@ -1,9 +1,9 @@
 use crate::version::drive_abci_versions::drive_abci_query_versions::{
-    DriveAbciQueryAddressFundsVersions, DriveAbciQueryDataContractVersions,
-    DriveAbciQueryGroupVersions, DriveAbciQueryIdentityVersions,
-    DriveAbciQueryPrefundedSpecializedBalancesVersions, DriveAbciQueryShieldedVersions,
-    DriveAbciQuerySystemVersions, DriveAbciQueryTokenVersions, DriveAbciQueryValidatorVersions,
-    DriveAbciQueryVersions, DriveAbciQueryVotingVersions,
+    DriveAbciDocumentQueryHelperVersions, DriveAbciQueryAddressFundsVersions,
+    DriveAbciQueryDataContractVersions, DriveAbciQueryGroupVersions,
+    DriveAbciQueryIdentityVersions, DriveAbciQueryPrefundedSpecializedBalancesVersions,
+    DriveAbciQueryShieldedVersions, DriveAbciQuerySystemVersions, DriveAbciQueryTokenVersions,
+    DriveAbciQueryValidatorVersions, DriveAbciQueryVersions, DriveAbciQueryVotingVersions,
 };
 use versioned_feature_core::FeatureVersionBounds;
 
@@ -23,6 +23,14 @@ pub const DRIVE_ABCI_QUERY_VERSIONS_V1: DriveAbciQueryVersions = DriveAbciQueryV
         // until they re-pin their versions.
         max_version: 1,
         default_current_version: 1,
+    },
+    document_history: FeatureVersionBounds {
+        min_version: 0,
+        max_version: 0,
+        default_current_version: 0,
+    },
+    document_query_helpers: DriveAbciDocumentQueryHelperVersions {
+        compute_aggregate_mode_and_check_limit: 0,
     },
     prefunded_specialized_balances: DriveAbciQueryPrefundedSpecializedBalancesVersions {
         balance: FeatureVersionBounds {
@@ -276,6 +284,11 @@ pub const DRIVE_ABCI_QUERY_VERSIONS_V1: DriveAbciQueryVersions = DriveAbciQueryV
             max_version: 0,
             default_current_version: 0,
         },
+        notes_count: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 0,
+            default_current_version: 0,
+        },
         nullifiers: FeatureVersionBounds {
             min_version: 0,
             max_version: 0,
@@ -301,7 +314,7 @@ pub const DRIVE_ABCI_QUERY_VERSIONS_V1: DriveAbciQueryVersions = DriveAbciQueryV
             max_version: 0,
             default_current_version: 0,
         },
-        max_encrypted_notes_per_query: 2048,
+        max_query_chunks: 4,
     },
     address_funds_queries: DriveAbciQueryAddressFundsVersions {
         addresses_infos: FeatureVersionBounds {

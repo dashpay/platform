@@ -3,6 +3,19 @@ import SwiftData
 import Combine
 import DashSDKFFI
 
+/// Lock-guarded monotonic generation counter, safe to read and bump from
+/// any thread. Used to drop shielded sync completion events that belong
+/// to a generation already superseded by a `stop`/`clear`, even when a
+/// restart happens in the same `@MainActor` turn (a plain boolean gate
+/// can't, because the restart re-opens the gate before the stale,
+/// previously-enqueued completion task runs).
+final class ShieldedSyncGenerationCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: UInt64 = 0
+    func current() -> UInt64 { lock.withLock { value } }
+    @discardableResult func bump() -> UInt64 { lock.withLock { value &+= 1; return value } }
+}
+
 /// The one thing SwiftUI needs for all wallet operations.
 ///
 /// Owns the Rust-side `PlatformWalletManager` handle which drives:
@@ -45,6 +58,55 @@ public class PlatformWalletManager: ObservableObject {
 
     /// Last completed shielded sync event emitted by Rust.
     @Published public internal(set) var lastShieldedSyncEvent: ShieldedSyncEvent?
+
+    /// Cumulative number of encrypted notes scanned in the **current**
+    /// in-flight shielded sync pass, published once per chunk (~every
+    /// 2048 notes) via the Rust-side progress callback. Nil between
+    /// passes. Lets UI render a live counter / `ProgressView` during
+    /// the cold sync of a large pool (1M notes can take 20+ min in a
+    /// single SDK call; without this there's no signal between start
+    /// and end).
+    ///
+    /// Paired with `currentShieldedSyncBlockHeight` — emitted in the
+    /// same callback. They update together; the chain-tip number lets
+    /// the UI estimate "still N blocks behind".
+    @Published public internal(set) var currentShieldedSyncScanned: UInt64?
+    @Published public internal(set) var currentShieldedSyncBlockHeight: UInt64?
+
+    /// Cumulative count of note commitments appended to the local
+    /// Orchard commitment tree in the **current** in-flight shielded
+    /// sync pass — the "checked / committed-to-tree" signal, distinct
+    /// from `currentShieldedSyncScanned` (which counts *downloaded*
+    /// notes). Published once per committed batch via the Rust-side
+    /// tree-progress callback. Nil between passes.
+    ///
+    /// Paired with `currentShieldedTreeTotal` — emitted in the same
+    /// callback. `currentShieldedTreeTotal == 0` (or nil) means the
+    /// total is indeterminate; the UI should render a spinner rather
+    /// than a determinate bar.
+    @Published public internal(set) var currentShieldedTreeCommitted: UInt64?
+    @Published public internal(set) var currentShieldedTreeTotal: UInt64?
+
+    /// Monotonic generation for shielded sync passes. Each `stop`/`clear`
+    /// bumps it; the FFI completion callback snapshots the generation at
+    /// enqueue time and `handleShieldedSyncCompleted` drops any event whose
+    /// snapshot no longer matches the current generation.
+    ///
+    /// The Rust quiesce barrier guarantees no persistence after stop/clear,
+    /// but the completion callback is re-dispatched onto this `@MainActor`,
+    /// so a final, already-dispatched event can land just after stop/clear
+    /// returns. A plain boolean gate is bypassable: a caller can stop (set
+    /// the flag) and restart (clear the flag) in the same actor turn, which
+    /// re-opens the gate before the stale, previously-enqueued completion
+    /// task runs — so the old event leaks into the new run. Tying
+    /// suppression to a generation closes that race: the stale task carries
+    /// the pre-stop generation, the restart does not reset the counter, so
+    /// the snapshot mismatches and the event is dropped even on a same-turn
+    /// restart.
+    ///
+    /// `nonisolated` + lock-guarded so the FFI callback thread can snapshot
+    /// it without hopping onto the main actor first.
+    nonisolated let shieldedSyncGeneration = ShieldedSyncGenerationCounter()
 
     /// All wallets currently held by the Rust-side
     /// `PlatformWalletManager`, keyed by the 32-byte wallet id.
@@ -319,7 +381,248 @@ public class PlatformWalletManager: ObservableObject {
             }
         }
 
+        // Kick off a background catch-up pass for every persisted
+        // asset lock at `statusRaw < 2`. Closes the SPV-restart gap:
+        // the wallet's in-memory transactions map was just
+        // selectively repopulated by the load path (Rust-side
+        // `restore_unresolved_asset_lock_tx_records`), so the next
+        // chain-lock event picked up by SPV will cascade through
+        // `apply_chain_lock` and promote each funding tx; the
+        // catch-up `Task` parks on `wait_for_proof` until that
+        // happens and on success the Rust changeset writes
+        // `statusRaw = 3 + proofBytes` back to SwiftData. UI updates
+        // reactively via `@Query`.
+        catchUpStuckAssetLocks(wallets: restored)
+
         return restored
+    }
+
+    /// For every persisted asset lock at `statusRaw < 2` (Built /
+    /// Broadcast), kick off a background `Task` that drives
+    /// `asset_lock_manager_catch_up_blocking` to completion or
+    /// timeout. Fire-and-forget — the proof reaches the UI via the
+    /// `AssetLockChangeSet` that the catch-up call queues internally.
+    ///
+    /// Called from `loadFromPersistor` after every wallet is
+    /// inserted. App-foreground / network-reconnect callers can
+    /// invoke this directly to retry whatever was still pending.
+    public func catchUpStuckAssetLocks(wallets: [ManagedPlatformWallet]) {
+        guard let persistenceHandler = persistenceHandler else { return }
+        for wallet in wallets {
+            let walletId = wallet.walletId
+            let locks = persistenceHandler.loadCachedAssetLocks(walletId: walletId)
+            let pending = locks.filter { $0.statusRaw < 2 }
+            if pending.isEmpty { continue }
+
+            // Snapshot the asset-lock manager wrapper ON the main
+            // actor (where `wallet` lives), then hand the wrapper
+            // itself — not just its bare `Handle` — to the detached
+            // tasks. Each task's capture is a retain on the wrapper,
+            // so `deinit` (which calls `asset_lock_manager_destroy`
+            // and invalidates the FFI handle) can't fire until the
+            // last in-flight catch-up task drops its retain. That
+            // closes the lifetime race where a follow-up
+            // `catchUpStuckAssetLocks` call (e.g. on
+            // app-foreground / network-reconnect) used to destroy
+            // the previous batch's handles mid-FFI-call.
+            //
+            // `ManagedAssetLockManager` is `@unchecked Sendable`
+            // (immutable `let handle`, no shared mutable state, deinit
+            // runs exactly once via ARC), so capturing it across
+            // task boundaries is safe.
+            let assetLockManager: ManagedAssetLockManager
+            do {
+                assetLockManager = try wallet.assetLockManager()
+            } catch {
+                self.lastError = error
+                continue
+            }
+
+            // Cap concurrency to avoid saturating iOS's cooperative
+            // thread pool. Each catch-up `block_on` parks a worker
+            // thread for up to 300s; N stuck locks at launch (after a
+            // multi-identity registration interrupted by an app kill)
+            // would otherwise spawn N parallel parked threads,
+            // starving every other `Task` in the app (UI updates,
+            // SwiftData writes, network calls).
+            //
+            // `MAX_CONCURRENT_CATCH_UPS = 4` is conservative for a
+            // 4-8 worker pool typical on iPhones. The real bottleneck
+            // is per-lock SPV chainlock arrival, not the catch-up
+            // throughput — running 4 in parallel vs 50 changes nothing
+            // about how fast each individual lock resolves.
+            let outpoints: [(txid: Data, vout: UInt32)] = pending.compactMap {
+                PlatformWalletManager.decodeOutPointForCatchUp($0.outPointHex)
+            }
+            guard !outpoints.isEmpty else { continue }
+            Task.detached(priority: .background) {
+                await withTaskGroup(of: Void.self) { group in
+                    let maxConcurrent = 4
+                    var nextIndex = 0
+                    // Seed the group with up to `maxConcurrent` tasks.
+                    // Each `group.addTask` closure captures
+                    // `assetLockManager` — that retain keeps the
+                    // wrapper alive for the duration of the FFI call,
+                    // independently of the outer detached task and
+                    // independently of any future
+                    // `catchUpStuckAssetLocks` invocation.
+                    while nextIndex < outpoints.count && nextIndex < maxConcurrent {
+                        let (txid, vout) = outpoints[nextIndex]
+                        group.addTask {
+                            Self.runCatchUp(assetLockManager: assetLockManager, txid: txid, vout: vout)
+                        }
+                        nextIndex += 1
+                    }
+                    // As each finishes, queue the next pending entry.
+                    while await group.next() != nil {
+                        if nextIndex < outpoints.count {
+                            let (txid, vout) = outpoints[nextIndex]
+                            group.addTask {
+                                Self.runCatchUp(assetLockManager: assetLockManager, txid: txid, vout: vout)
+                            }
+                            nextIndex += 1
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Single catch-up invocation body. Extracted from the inline
+    /// `Task.detached` so the `withTaskGroup` coordinator can call it
+    /// directly. The `assetLockManager` parameter is captured by each
+    /// task closure — the task's retain on the wrapper guarantees the
+    /// FFI handle (read via `assetLockManager.handle`) stays valid
+    /// for the entire `asset_lock_manager_catch_up_blocking` call,
+    /// even if a follow-up `catchUpStuckAssetLocks` invocation
+    /// replaces the manager-wide reference midway through.
+    ///
+    /// `nonisolated` because `PlatformWalletManager` is
+    /// `@MainActor`-isolated by default and the detached task body
+    /// runs off the main actor — the FFI call is synchronous and
+    /// reads no `PlatformWalletManager` state.
+    nonisolated private static func runCatchUp(assetLockManager: ManagedAssetLockManager, txid: Data, vout: UInt32) {
+        // Build the txid tuple inline so the Task body captures only
+        // Sendable values.
+        var txidTuple: FFIByteTuple32 =
+            (0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+             0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0)
+        txid.withUnsafeBytes { buf in
+            withUnsafeMutableBytes(of: &txidTuple) { dst in
+                dst.copyBytes(from: buf.prefix(32))
+            }
+        }
+        // Five-minute ceiling matches the `wait_for_proof` deadline
+        // the production resume path uses.
+        let result = asset_lock_manager_catch_up_blocking(
+            assetLockManager.handle, &txidTuple, vout, 300
+        )
+        // Timeouts and proof-wait failures (catch-up
+        // `errorWalletOperation`) are expected during normal
+        // operation (SPV not yet caught up to the funding block,
+        // chain-lock hasn't fired yet) — discard.
+        // `errorInvalidHandle` is NOT expected: each task retains its
+        // own `assetLockManager` wrapper, so the handle is guaranteed
+        // valid for the duration of this call. If it surfaces, log it
+        // loudly via NSLog so an operator running without `tracing`
+        // capture still sees the programmer error.
+        let code = PlatformWalletResultCode(ffi: result.code)
+        if code == .errorInvalidHandle {
+            NSLog(
+                "[catch-up] asset_lock_manager_catch_up_blocking returned errorInvalidHandle for outpoint %@:%u — handle invalid despite task-owned wrapper retain",
+                txid.map { String(format: "%02x", $0) }.joined(),
+                vout
+            )
+        }
+    }
+
+    /// Parse `<txid_hex (display order)>:<vout>` into the wire-order
+    /// 32-byte `txid` + `vout` pair the FFI expects. Internal to
+    /// `catchUpStuckAssetLocks`; mirrors the Swift-side
+    /// `decodeOutPointHex` helper without taking a dependency on the
+    /// private one in the persistence handler.
+    private static func decodeOutPointForCatchUp(
+        _ hex: String
+    ) -> (txid: Data, vout: UInt32)? {
+        let parts = hex.split(separator: ":", maxSplits: 1, omittingEmptySubsequences: false)
+        guard parts.count == 2 else { return nil }
+        let txidHex = String(parts[0])
+        guard let vout = UInt32(parts[1]) else { return nil }
+        guard txidHex.count == 64 else { return nil }
+        var txid = Data(capacity: 32)
+        var idx = txidHex.startIndex
+        for _ in 0..<32 {
+            let end = txidHex.index(idx, offsetBy: 2)
+            guard let byte = UInt8(txidHex[idx..<end], radix: 16) else { return nil }
+            txid.append(byte)
+            idx = end
+        }
+        // outPointHex is display-order; the FFI expects wire-order
+        // (the same orientation `PersistentTransaction.txid` is
+        // stored in).
+        return (txid: Data(txid.reversed()), vout: vout)
+    }
+
+    // MARK: - Wallet deletion
+
+    /// Fully wipe a wallet's Rust, SwiftData, and Keychain footprint.
+    ///
+    /// Requires the manager to have been `configure`d with a
+    /// `ModelContainer` — the per-identity Keychain sweep needs the
+    /// wallet's identity ids, which only the persistence handler can
+    /// resolve. The no-persistence configuration mode is rejected
+    /// here rather than silently leaving identity key material behind.
+    ///
+    /// Deleting an already-removed wallet succeeds unless an
+    /// operation fails.
+    public func deleteWallet(walletId: Data) throws {
+        try ensureConfigured()
+        guard walletId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "walletId must be 32 bytes, got \(walletId.count)"
+            )
+        }
+        guard let persistenceHandler = persistenceHandler else {
+            throw PlatformWalletError.invalidHandle(
+                "deleteWallet requires a persistence handler — configure the manager with a ModelContainer"
+            )
+        }
+
+        let identityIds = try persistenceHandler.identityIdsForWallet(walletId: walletId)
+
+        // Wipe Keychain BEFORE the SwiftData identity deletion runs.
+        // Order matters for retry-safety: if `deleteWalletData`
+        // commits identity rows and then throws partway, a retry
+        // would see `identityIdsForWallet == []` and the
+        // `deleteAllKeychainItems(forIdentityId:)` sweep below
+        // could no longer find the keys to purge. Doing the
+        // keychain side first leaves at worst stale SwiftData
+        // rows on a retry — repeating the wipe is harmless, and
+        // every keychain call here is idempotent (no-op on "not
+        // found"). Mnemonic / metadata stay in `WalletStorage`
+        // for now so a retry can still derive any missed key.
+        for identityId in identityIds {
+            try KeychainManager.shared.deleteAllKeychainItems(forIdentityId: identityId)
+        }
+        try KeychainManager.shared.deleteAllIdentityPrivateKeys(forWalletId: walletId)
+
+        try walletId.withUnsafeBytes { raw in
+            guard let base = raw.baseAddress?.assumingMemoryBound(to: FFIByteTuple32.self) else {
+                throw PlatformWalletError.nullPointer(
+                    "wallet_id buffer base address was nil"
+                )
+            }
+            try platform_wallet_manager_remove_wallet(handle, base).check()
+        }
+
+        wallets.removeValue(forKey: walletId)
+
+        try persistenceHandler.deleteWalletData(walletId: walletId)
+
+        let storage = WalletStorage()
+        // Delete metadata first so the mnemonic remains available for retry.
+        try storage.deleteMetadata(for: walletId)
+        try storage.deleteMnemonic(for: walletId)
     }
 
     // MARK: - Per-wallet lookup

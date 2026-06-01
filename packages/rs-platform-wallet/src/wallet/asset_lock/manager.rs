@@ -82,7 +82,14 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
 
     /// Queue an `AssetLockChangeSet` onto the per-wallet persister.
     /// No-op when the changeset is empty.
-    pub(super) fn queue_asset_lock_changeset(&self, cs: AssetLockChangeSet) {
+    ///
+    /// `pub(crate)` so the orchestrated funding flows in
+    /// `wallet::platform_addresses` and `wallet::identity::network`
+    /// can pair an `advance_asset_lock_status` call with a flush
+    /// without going through the asset-lock module boundary. The
+    /// internal-only flag (no `pub`) keeps the API hidden from
+    /// crate consumers.
+    pub(crate) fn queue_asset_lock_changeset(&self, cs: AssetLockChangeSet) {
         if <AssetLockChangeSet as crate::changeset::Merge>::is_empty(&cs) {
             return;
         }
@@ -106,6 +113,21 @@ impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
 // ---------------------------------------------------------------------------
 
 impl<B: TransactionBroadcaster + ?Sized> AssetLockManager<B> {
+    /// Wallet id this manager operates on. Exposed so FFI callers that
+    /// build a `MnemonicResolverCoreSigner` (or similar) on demand can
+    /// thread the wallet id through to the resolver callback without
+    /// reaching into private fields.
+    pub fn wallet_id(&self) -> WalletId {
+        self.wallet_id
+    }
+
+    /// Network the SDK was constructed with. Same rationale as
+    /// [`Self::wallet_id`] — needed by FFI callers that build a
+    /// `key_wallet::signer::Signer` per call.
+    pub fn network(&self) -> dashcore::Network {
+        self.sdk.network
+    }
+
     /// List all tracked asset locks (blocking version for UI / synchronous contexts).
     ///
     /// Uses `tokio::sync::RwLock::blocking_read` — must NOT be called from
