@@ -93,17 +93,20 @@ class GetStatusResponse {
       driveNextEpochProtocol,
     );
 
-    const nodeId = bytesToHex(new Uint8Array(v0.getNode().getId()));
-    const proTxHash = bytesToHex(new Uint8Array(v0.getNode().getProTxHash()));
+    // Use _asU8 so we get bytes regardless of the underlying protobuf
+    // representation (grpc-js: Uint8Array; grpc-web: base64 string).
+    // new Uint8Array(string) does NOT base64-decode, silently losing bytes.
+    const nodeId = bytesToHex(v0.getNode().getId_asU8());
+    const proTxHash = bytesToHex(v0.getNode().getProTxHash_asU8());
 
     const node = new NodeStatus(nodeId, proTxHash);
 
     const catchingUp = v0.getChain().getCatchingUp();
-    const latestBlockHash = bytesToHex(new Uint8Array(v0.getChain().getLatestBlockHash()));
-    const latestAppHash = bytesToHex(new Uint8Array(v0.getChain().getLatestAppHash()));
+    const latestBlockHash = bytesToHex(v0.getChain().getLatestBlockHash_asU8());
+    const latestAppHash = bytesToHex(v0.getChain().getLatestAppHash_asU8());
     const latestBlockHeight = BigInt(v0.getChain().getLatestBlockHeight());
-    const earliestBlockHash = bytesToHex(new Uint8Array(v0.getChain().getEarliestBlockHash()));
-    const earliestAppHash = bytesToHex(new Uint8Array(v0.getChain().getEarliestAppHash()));
+    const earliestBlockHash = bytesToHex(v0.getChain().getEarliestBlockHash_asU8());
+    const earliestAppHash = bytesToHex(v0.getChain().getEarliestAppHash_asU8());
     const earliestBlockHeight = BigInt(v0.getChain().getEarliestBlockHeight());
     const maxPeerBlockHeight = BigInt(v0.getChain().getMaxPeerBlockHeight());
     const coreChainLockedHeight = v0.getChain().getCoreChainLockedHeight();

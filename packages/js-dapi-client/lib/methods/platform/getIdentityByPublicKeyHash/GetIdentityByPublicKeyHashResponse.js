@@ -26,10 +26,11 @@ class GetIdentityByPublicKeyHashResponse extends AbstractResponse {
   static createFromProto(proto) {
     const { metadata, proof } = AbstractResponse.createMetadataAndProofFromProto(proto);
 
-    const identity = proto.getV0().getIdentity();
-
     return new GetIdentityByPublicKeyHashResponse(
-      new Uint8Array(identity),
+      // Use _asU8 so we get bytes regardless of the underlying protobuf
+      // representation (grpc-js: Uint8Array; grpc-web: base64 string).
+      // new Uint8Array(string) does NOT base64-decode, silently losing bytes.
+      proto.getV0().getIdentity_asU8(),
       metadata,
       proof,
     );

@@ -38,7 +38,10 @@ class WaitForStateTransitionResultResponse extends AbstractResponse {
       let data;
 
       if (proto.getV0().getError().getData()) {
-        data = new Uint8Array(proto.getV0().getError().getData());
+        // Use _asU8 so we get bytes regardless of the underlying protobuf
+        // representation (grpc-js: Uint8Array; grpc-web: base64 string).
+        // new Uint8Array(string) does NOT base64-decode, silently losing bytes.
+        data = proto.getV0().getError().getData_asU8();
       }
 
       error = new ErrorResult(

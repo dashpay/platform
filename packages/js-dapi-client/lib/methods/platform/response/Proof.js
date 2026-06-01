@@ -47,10 +47,13 @@ class Proof {
    * @returns {Proof}
    */
   static createFromProto(proofProto) {
+    // Use _asU8 so we get bytes regardless of the underlying protobuf
+    // representation (grpc-js: Uint8Array; grpc-web: base64 string).
+    // new Uint8Array(string) does NOT base64-decode, silently losing bytes.
     return new Proof({
-      merkleProof: new Uint8Array(proofProto.getGrovedbProof()),
-      quorumHash: new Uint8Array(proofProto.getQuorumHash()),
-      signature: new Uint8Array(proofProto.getSignature()),
+      merkleProof: proofProto.getGrovedbProof_asU8(),
+      quorumHash: proofProto.getQuorumHash_asU8(),
+      signature: proofProto.getSignature_asU8(),
       round: proofProto.getRound(),
     });
   }

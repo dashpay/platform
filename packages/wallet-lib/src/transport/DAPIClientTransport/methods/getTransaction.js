@@ -21,7 +21,10 @@ module.exports = async function getTransaction(txid) {
     } = response;
 
     return {
-      transaction: new Transaction(response.getTransaction()),
+      // dapi-client returns the raw transaction as a plain Uint8Array, but
+      // dashcore-lib's Transaction reader relies on Buffer methods. Wrap to
+      // Buffer here, consistent with the other raw-transaction call sites.
+      transaction: new Transaction(Buffer.from(response.getTransaction())),
       // dapi-client returns blockHash as a plain Uint8Array, whose toString()
       // ignores the encoding argument. Wrap to Buffer to get hex semantics.
       blockHash: Buffer.from(response.getBlockHash()).toString('hex'),

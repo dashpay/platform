@@ -33,7 +33,10 @@ class GetIdentityResponse extends AbstractResponse {
     }
 
     return new GetIdentityResponse(
-      new Uint8Array(proto.getV0().getIdentity()),
+      // Use _asU8 so we get bytes regardless of the underlying protobuf
+      // representation (grpc-js: Uint8Array; grpc-web: base64 string).
+      // new Uint8Array(string) does NOT base64-decode, silently losing bytes.
+      proto.getV0().getIdentity_asU8(),
       metadata,
       proof,
     );

@@ -75,8 +75,11 @@ class GetTransactionResponse {
     }
 
     return new GetTransactionResponse({
-      transaction: new Uint8Array(transactionBinaryArray),
-      blockHash: new Uint8Array(proto.getBlockHash()),
+      // Use _asU8 so we get bytes regardless of the underlying protobuf
+      // representation (grpc-js: Uint8Array; grpc-web: base64 string).
+      // new Uint8Array(string) does NOT base64-decode, silently losing bytes.
+      transaction: proto.getTransaction_asU8(),
+      blockHash: proto.getBlockHash_asU8(),
       height: proto.getHeight(),
       confirmations: proto.getConfirmations(),
       isInstantLocked: proto.getIsInstantLocked(),
