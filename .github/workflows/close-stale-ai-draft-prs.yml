@@ -40,7 +40,11 @@ jobs:
           DAYS_BEFORE_STALE: "7"
           # Additional days after the warning before the draft is closed.
           DAYS_BEFORE_CLOSE: "3"
-          STALE_LABEL: "stale"
+          # Workflow-private label. Do NOT use a generic name like "stale": this
+          # label is the state for the warn → close machine, and an unrelated
+          # actor applying a generic label must not be able to drive or
+          # short-circuit it.
+          STALE_LABEL: "ai-agent-stale"
           # "true" on a manual run with the dry_run input checked; otherwise "false".
           DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
         with:
@@ -50,12 +54,48 @@ jobs:
 
             const daysBeforeStale = Number(process.env.DAYS_BEFORE_STALE || '7');
             const daysBeforeClose = Number(process.env.DAYS_BEFORE_CLOSE || '3');
-            const staleLabel = (process.env.STALE_LABEL || 'stale').trim();
+            const staleLabel = (process.env.STALE_LABEL || 'ai-agent-stale').trim();
             const dryRun = String(process.env.DRY_RUN || 'false') === 'true';
 
-            // Actors whose activity is this workflow's own bookkeeping and must NOT
-            // count as "the author or a maintainer touched the PR".
+            // Exact bot logins always treated as automation, plus the general
+            // rule below (any login ending in "[bot]") that covers GitHub Apps
+            // such as coderabbitai[bot], dependabot[bot], codecov[bot], etc.
             const botActors = new Set(['github-actions[bot]', 'github-actions']);
+            const isBotLogin = (login) =>
+              !!login && (botActors.has(login) || /\[bot\]$/i.test(login));
+
+            // A commit's timeline entry carries no GitHub user object — identity
+            // lives in author/committer name+email. Treat "[bot]" markers there
+            // (e.g. github-actions[bot], release scripts) as automation so a
+            // bot-driven rebase/force-push cannot keep an abandoned draft alive.
+            const isBotCommit = (e) =>
+              /\[bot\]/i.test(
+                [
+                  e.author && e.author.name,
+                  e.author && e.author.email,
+                  e.committer && e.committer.name,
+                  e.committer && e.committer.email,
+                ]
+                  .filter(Boolean)
+                  .join(' ')
+              );
+
+            // Only these timeline events reset the inactivity clock. Bookkeeping
+            // events (subscribed/mentioned/assigned/…) are intentionally ignored.
+            // `labeled`/`unlabeled` are included so a human removing the stale
+            // label counts as a deliberate "keep this open" signal; this
+            // workflow's own label changes are filtered out via isBotLogin.
+            const activityEvents = new Set([
+              'committed',
+              'head_ref_force_pushed',
+              'commented',
+              'reviewed',
+              'review_requested',
+              'ready_for_review',
+              'renamed',
+              'labeled',
+              'unlabeled',
+            ]);
 
             // Default agent allowlist, used when AI_AGENT_AUTHORS is not configured.
             const defaultAgents = ['Claudius-Maginificent', 'thepastaclaw'];
@@ -89,9 +129,10 @@ jobs:
             core.info(`Found ${targets.length} open draft PR(s) authored by AI agents`);
             if (targets.length === 0) return;
 
-            // Most recent activity (ms) that is NOT this workflow's own stale-label
-            // bookkeeping or comments. Used to decide idleness and to reset the clock
-            // when a human/agent resumes work on a stale PR.
+            // Most recent genuine activity (ms). Automation — this workflow's own
+            // label/comment bookkeeping and any other bot — is excluded so it can
+            // never reset the clock, while real human/agent work (commits,
+            // comments, reviews, deliberate label changes) does.
             async function lastActivityMs(pr) {
               const events = await github.paginate(github.rest.issues.listEventsForTimeline, {
                 owner,
@@ -103,17 +144,14 @@ jobs:
               let last = new Date(pr.created_at).getTime();
 
               for (const e of events) {
-                // Ignore the stale label being added/removed — it is our own bookkeeping.
-                if (
-                  (e.event === 'labeled' || e.event === 'unlabeled') &&
-                  e.label &&
-                  e.label.name === staleLabel
-                ) {
-                  continue;
-                }
+                if (!activityEvents.has(e.event)) continue;
 
-                const actor = (e.actor && e.actor.login) || (e.user && e.user.login) || null;
-                if (actor && botActors.has(actor)) continue;
+                if (e.event === 'committed') {
+                  if (isBotCommit(e)) continue;
+                } else {
+                  const actor = (e.actor && e.actor.login) || (e.user && e.user.login) || null;
+                  if (isBotLogin(actor)) continue;
+                }
 
                 const ts =
                   e.created_at ||
@@ -130,7 +168,9 @@ jobs:
               return last;
             }
 
-            // When (ms) the stale label was most recently applied, or null if not found.
+            // When (ms) this workflow most recently applied the stale label, or
+            // null if it never did. Only bot-applied labels count so the grace
+            // period is measured from our own warning, not a manual label.
             async function staleSinceMs(pr) {
               const evs = await github.paginate(github.rest.issues.listEvents, {
                 owner,
@@ -140,7 +180,12 @@ jobs:
               });
               let when = null;
               for (const e of evs) {
-                if (e.event === 'labeled' && e.label && e.label.name === staleLabel) {
+                if (
+                  e.event === 'labeled' &&
+                  e.label &&
+                  e.label.name === staleLabel &&
+                  isBotLogin(e.actor && e.actor.login)
+                ) {
                   const t = new Date(e.created_at).getTime();
                   if (when === null || t > when) when = t;
                 }
@@ -161,7 +206,7 @@ jobs:
                     repo,
                     name,
                     color: 'ededed',
-                    description: 'No recent activity; scheduled for automatic close',
+                    description: 'Idle AI-agent draft PR scheduled for automatic close',
                   });
                 }
               }
@@ -169,7 +214,9 @@ jobs:
 
             let labelEnsured = false;
 
-            for (const pr of targets) {
+            // Process a single PR. Returns once it has taken (or skipped) its
+            // action; the caller isolates failures so one PR cannot abort the run.
+            async function processPr(pr) {
               const hasStale = (pr.labels || []).some((l) => (l.name || l) === staleLabel);
               const lastMs = await lastActivityMs(pr);
               const idleDays = (now - lastMs) / DAY_MS;
@@ -182,10 +229,10 @@ jobs:
 
               // Not yet warned: mark stale once it crosses the inactivity threshold.
               if (!hasStale) {
-                if (idleDays < daysBeforeStale) continue;
+                if (idleDays < daysBeforeStale) return;
 
                 core.info(`  → marking stale (idle ${idleDays.toFixed(1)}d ≥ ${daysBeforeStale}d)`);
-                if (dryRun) continue;
+                if (dryRun) return;
 
                 if (!labelEnsured) {
                   await ensureLabel(staleLabel);
@@ -210,7 +257,7 @@ jobs:
                     `To keep it open, just push a commit, leave a comment, or remove the \`${staleLabel}\` label. Closed PRs can be reopened at any time.`,
                   ].join('\n'),
                 });
-                continue;
+                return;
               }
 
               // Already warned but active again: clear the label and reset the clock.
@@ -218,29 +265,29 @@ jobs:
                 core.info(
                   `  → activity resumed (idle ${idleDays.toFixed(1)}d) — removing \`${staleLabel}\` label`
                 );
-                if (dryRun) continue;
+                if (dryRun) return;
                 await github.rest.issues
                   .removeLabel({ owner, repo, issue_number: pr.number, name: staleLabel })
                   .catch((err) =>
                     core.warning(`Could not remove label from #${pr.number}: ${err.message}`)
                   );
-                continue;
+                return;
               }
 
               // Still stale: close only after the grace period has elapsed since the warning.
               const warnedAt = await staleSinceMs(pr);
               if (warnedAt === null) {
                 core.warning(
-                  `  #${pr.number} is labeled \`${staleLabel}\` but no labeling event was found; skipping`
+                  `  #${pr.number} has \`${staleLabel}\` but this workflow never applied it; skipping`
                 );
-                continue;
+                return;
               }
               const daysSinceWarning = (now - warnedAt) / DAY_MS;
               if (daysSinceWarning < daysBeforeClose) {
                 core.info(
                   `  → in grace period (${daysSinceWarning.toFixed(1)}d / ${daysBeforeClose}d since warning)`
                 );
-                continue;
+                return;
               }
 
               core.info(
@@ -248,7 +295,7 @@ jobs:
                   1
                 )}d since warning)`
               );
-              if (dryRun) continue;
+              if (dryRun) return;
 
               await github.rest.issues.createComment({
                 owner,
@@ -268,4 +315,12 @@ jobs:
                 pull_number: pr.number,
                 state: 'closed',
               });
+            }
+
+            for (const pr of targets) {
+              try {
+                await processPr(pr);
+              } catch (err) {
+                core.warning(`Failed to process #${pr.number}: ${err.message}`);
+              }
             }
