@@ -386,7 +386,7 @@ mod tests {
         fee_strategy: Vec<AddressFundsFeeStrategyStep>,
         user_fee_increase: u16,
     ) -> StateTransition {
-        AddressFundingFromAssetLockTransitionV0::try_from_asset_lock_with_signer(
+        AddressFundingFromAssetLockTransitionV0::try_from_asset_lock_with_signer_and_private_key(
             asset_lock_proof,
             asset_lock_private_key,
             inputs,

@@ -10,6 +10,7 @@ use dpp::prelude::Identifier;
 ///
 /// This is formed when both identities have sent contact requests to each other.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct EstablishedContact {
     /// The contact's identity unique identifier
     pub contact_identity_id: Identifier,

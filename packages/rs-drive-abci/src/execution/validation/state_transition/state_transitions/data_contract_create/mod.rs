@@ -4357,6 +4357,93 @@ mod tests {
                 valid_keywords_for_verification.retain(|&x| x != keyword);
             }
         }
+
+        #[test]
+        fn test_document_type_keywords_rejected_by_v1_meta_schema() {
+            use dpp::ProtocolError;
+
+            // `keywords` is a contract-level field only. The v1 document-type
+            // meta schema (active as of protocol v12) must reject it on any
+            // document type via its root-level `additionalProperties: false`.
+            // Pinned to v12 because this is the specific version that introduced
+            // v1 meta schema enforcement.
+            //
+            // No platform/identity setup: this test exercises meta-schema
+            // validation inside `DataContract::from_value`, which is a pure DPP
+            // call and never reaches Drive or the state-transition pipeline.
+            let platform_version = PlatformVersion::get(12).expect("expected v12");
+
+            let data_contract = json_document_to_contract_with_ids(
+                "tests/supporting_files/contract/keyword_test/keyword_base_contract.json",
+                None,
+                None,
+                false,
+                platform_version,
+            )
+            .expect("expected to load contract");
+
+            let mut contract_value = data_contract
+                .to_value(platform_version)
+                .expect("to_value failed");
+
+            // Inject `keywords` onto the `preorder` document type schema — the
+            // wrong place for it. This should be rejected by the v1 meta
+            // schema during `DataContract::from_value` full validation.
+            contract_value["documentSchemas"]["preorder"]["keywords"] =
+                Value::Array(vec![Value::Text("invalid".to_string())]);
+
+            let err = DataContract::from_value(contract_value, true, platform_version)
+                .expect_err("meta schema validation must reject document-type keywords");
+
+            // Assert the failure is specifically a JSON schema validation error
+            // (i.e. the meta schema rejected the unknown `keywords` property),
+            // not an unrelated error such as a serialization or structural issue.
+            match err {
+                ProtocolError::ConsensusError(consensus_err) => match *consensus_err {
+                    ConsensusError::BasicError(BasicError::JsonSchemaError(js_err)) => {
+                        // The rejection must be driven by `additionalProperties`
+                        // / `unevaluatedProperties`, and the offending property
+                        // name must be `keywords` — not just any schema error
+                        // whose summary happens to mention the string.
+                        let keyword = js_err.keyword();
+                        assert!(
+                            matches!(
+                                keyword,
+                                "additionalProperties" | "unevaluatedProperties"
+                            ),
+                            "expected additionalProperties/unevaluatedProperties rejection, got keyword={keyword:?}, summary={}",
+                            js_err.error_summary()
+                        );
+
+                        let param_key = if keyword == "additionalProperties" {
+                            "additionalProperties"
+                        } else {
+                            "unexpected"
+                        };
+                        let unexpected = js_err
+                            .params()
+                            .get(param_key)
+                            .ok()
+                            .flatten()
+                            .and_then(|v| v.as_array())
+                            .unwrap_or_else(|| {
+                                panic!(
+                                    "expected params[{param_key:?}] array, got params={:?}",
+                                    js_err.params()
+                                )
+                            });
+                        assert!(
+                            unexpected.iter().any(|v| v.as_str() == Some("keywords")),
+                            "expected `keywords` in rejected properties, got {unexpected:?}"
+                        );
+                    }
+                    other => panic!(
+                        "expected BasicError::JsonSchemaError, got ConsensusError: {other:?}"
+                    ),
+                },
+                other => panic!("expected ProtocolError::ConsensusError, got: {other:?}"),
+            }
+        }
     }
 
     mod descriptions {

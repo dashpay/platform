@@ -268,6 +268,7 @@ export default function getBaseConfigFactory() {
                 context: path.join(PACKAGE_ROOT_DIR, '..', '..'),
                 dockerFile: path.join(PACKAGE_ROOT_DIR, '..', '..', 'Dockerfile'),
                 target: 'rs-dapi',
+                buildArgs: {},
               },
             },
             metrics: {
@@ -293,6 +294,9 @@ export default function getBaseConfigFactory() {
                 context: path.join(PACKAGE_ROOT_DIR, '..', '..'),
                 dockerFile: path.join(PACKAGE_ROOT_DIR, '..', '..', 'Dockerfile'),
                 target: 'drive-abci',
+                // Extra Docker build args — see the `buildArgs` field on
+                // `dockerBuild` in the config schema.
+                buildArgs: {},
               },
             },
             logs: {

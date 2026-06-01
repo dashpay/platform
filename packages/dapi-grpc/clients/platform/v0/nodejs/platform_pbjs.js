@@ -549,6 +549,39 @@ $root.org = (function() {
                          */
 
                         /**
+                         * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getDocumentHistory}.
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @typedef getDocumentHistoryCallback
+                         * @type {function}
+                         * @param {Error|null} error Error, if any
+                         * @param {org.dash.platform.dapi.v0.GetDocumentHistoryResponse} [response] GetDocumentHistoryResponse
+                         */
+
+                        /**
+                         * Calls getDocumentHistory.
+                         * @function getDocumentHistory
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetDocumentHistoryRequest} request GetDocumentHistoryRequest message or plain object
+                         * @param {org.dash.platform.dapi.v0.Platform.getDocumentHistoryCallback} callback Node-style callback called with the error, if any, and GetDocumentHistoryResponse
+                         * @returns {undefined}
+                         * @variation 1
+                         */
+                        Object.defineProperty(Platform.prototype.getDocumentHistory = function getDocumentHistory(request, callback) {
+                            return this.rpcCall(getDocumentHistory, $root.org.dash.platform.dapi.v0.GetDocumentHistoryRequest, $root.org.dash.platform.dapi.v0.GetDocumentHistoryResponse, request, callback);
+                        }, "name", { value: "getDocumentHistory" });
+
+                        /**
+                         * Calls getDocumentHistory.
+                         * @function getDocumentHistory
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetDocumentHistoryRequest} request GetDocumentHistoryRequest message or plain object
+                         * @returns {Promise<org.dash.platform.dapi.v0.GetDocumentHistoryResponse>} Promise
+                         * @variation 2
+                         */
+
+                        /**
                          * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getDocuments}.
                          * @memberof org.dash.platform.dapi.v0.Platform
                          * @typedef getDocumentsCallback
@@ -1964,6 +1997,39 @@ $root.org = (function() {
                          * @instance
                          * @param {org.dash.platform.dapi.v0.IGetShieldedPoolStateRequest} request GetShieldedPoolStateRequest message or plain object
                          * @returns {Promise<org.dash.platform.dapi.v0.GetShieldedPoolStateResponse>} Promise
+                         * @variation 2
+                         */
+
+                        /**
+                         * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getShieldedNotesCount}.
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @typedef getShieldedNotesCountCallback
+                         * @type {function}
+                         * @param {Error|null} error Error, if any
+                         * @param {org.dash.platform.dapi.v0.GetShieldedNotesCountResponse} [response] GetShieldedNotesCountResponse
+                         */
+
+                        /**
+                         * Calls getShieldedNotesCount.
+                         * @function getShieldedNotesCount
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetShieldedNotesCountRequest} request GetShieldedNotesCountRequest message or plain object
+                         * @param {org.dash.platform.dapi.v0.Platform.getShieldedNotesCountCallback} callback Node-style callback called with the error, if any, and GetShieldedNotesCountResponse
+                         * @returns {undefined}
+                         * @variation 1
+                         */
+                        Object.defineProperty(Platform.prototype.getShieldedNotesCount = function getShieldedNotesCount(request, callback) {
+                            return this.rpcCall(getShieldedNotesCount, $root.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest, $root.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse, request, callback);
+                        }, "name", { value: "getShieldedNotesCount" });
+
+                        /**
+                         * Calls getShieldedNotesCount.
+                         * @function getShieldedNotesCount
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetShieldedNotesCountRequest} request GetShieldedNotesCountRequest message or plain object
+                         * @returns {Promise<org.dash.platform.dapi.v0.GetShieldedNotesCountResponse>} Promise
                          * @variation 2
                          */
 
@@ -26891,6 +26957,1504 @@ $root.org = (function() {
                         })();
 
                         return GetDocumentsResponse;
+                    })();
+
+                    v0.GetDocumentHistoryRequest = (function() {
+
+                        /**
+                         * Properties of a GetDocumentHistoryRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetDocumentHistoryRequest
+                         * @property {org.dash.platform.dapi.v0.GetDocumentHistoryRequest.IGetDocumentHistoryRequestV0|null} [v0] GetDocumentHistoryRequest v0
+                         */
+
+                        /**
+                         * Constructs a new GetDocumentHistoryRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetDocumentHistoryRequest.
+                         * @implements IGetDocumentHistoryRequest
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetDocumentHistoryRequest=} [properties] Properties to set
+                         */
+                        function GetDocumentHistoryRequest(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetDocumentHistoryRequest v0.
+                         * @member {org.dash.platform.dapi.v0.GetDocumentHistoryRequest.IGetDocumentHistoryRequestV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryRequest
+                         * @instance
+                         */
+                        GetDocumentHistoryRequest.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetDocumentHistoryRequest version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryRequest
+                         * @instance
+                         */
+                        Object.defineProperty(GetDocumentHistoryRequest.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetDocumentHistoryRequest instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetDocumentHistoryRequest=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetDocumentHistoryRequest} GetDocumentHistoryRequest instance
+                         */
+                        GetDocumentHistoryRequest.create = function create(properties) {
+                            return new GetDocumentHistoryRequest(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetDocumentHistoryRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentHistoryRequest.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetDocumentHistoryRequest} message GetDocumentHistoryRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetDocumentHistoryRequest.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetDocumentHistoryRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentHistoryRequest.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetDocumentHistoryRequest} message GetDocumentHistoryRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetDocumentHistoryRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetDocumentHistoryRequest message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetDocumentHistoryRequest} GetDocumentHistoryRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetDocumentHistoryRequest.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetDocumentHistoryRequest();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetDocumentHistoryRequest message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetDocumentHistoryRequest} GetDocumentHistoryRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetDocumentHistoryRequest.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetDocumentHistoryRequest message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryRequest
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetDocumentHistoryRequest.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetDocumentHistoryRequest message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryRequest
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetDocumentHistoryRequest} GetDocumentHistoryRequest
+                         */
+                        GetDocumentHistoryRequest.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetDocumentHistoryRequest)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetDocumentHistoryRequest();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetDocumentHistoryRequest.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetDocumentHistoryRequest message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetDocumentHistoryRequest} message GetDocumentHistoryRequest
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetDocumentHistoryRequest.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetDocumentHistoryRequest to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryRequest
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetDocumentHistoryRequest.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetDocumentHistoryRequest.GetDocumentHistoryRequestV0 = (function() {
+
+                            /**
+                             * Properties of a GetDocumentHistoryRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryRequest
+                             * @interface IGetDocumentHistoryRequestV0
+                             * @property {Uint8Array|null} [dataContractId] GetDocumentHistoryRequestV0 dataContractId
+                             * @property {string|null} [documentTypeName] GetDocumentHistoryRequestV0 documentTypeName
+                             * @property {Uint8Array|null} [documentId] GetDocumentHistoryRequestV0 documentId
+                             * @property {google.protobuf.IUInt32Value|null} [limit] GetDocumentHistoryRequestV0 limit
+                             * @property {google.protobuf.IUInt32Value|null} [offset] GetDocumentHistoryRequestV0 offset
+                             * @property {number|Long|null} [startAtMs] GetDocumentHistoryRequestV0 startAtMs
+                             * @property {boolean|null} [prove] GetDocumentHistoryRequestV0 prove
+                             */
+
+                            /**
+                             * Constructs a new GetDocumentHistoryRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryRequest
+                             * @classdesc Represents a GetDocumentHistoryRequestV0.
+                             * @implements IGetDocumentHistoryRequestV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetDocumentHistoryRequest.IGetDocumentHistoryRequestV0=} [properties] Properties to set
+                             */
+                            function GetDocumentHistoryRequestV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetDocumentHistoryRequestV0 dataContractId.
+                             * @member {Uint8Array} dataContractId
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0
+                             * @instance
+                             */
+                            GetDocumentHistoryRequestV0.prototype.dataContractId = $util.newBuffer([]);
+
+                            /**
+                             * GetDocumentHistoryRequestV0 documentTypeName.
+                             * @member {string} documentTypeName
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0
+                             * @instance
+                             */
+                            GetDocumentHistoryRequestV0.prototype.documentTypeName = "";
+
+                            /**
+                             * GetDocumentHistoryRequestV0 documentId.
+                             * @member {Uint8Array} documentId
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0
+                             * @instance
+                             */
+                            GetDocumentHistoryRequestV0.prototype.documentId = $util.newBuffer([]);
+
+                            /**
+                             * GetDocumentHistoryRequestV0 limit.
+                             * @member {google.protobuf.IUInt32Value|null|undefined} limit
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0
+                             * @instance
+                             */
+                            GetDocumentHistoryRequestV0.prototype.limit = null;
+
+                            /**
+                             * GetDocumentHistoryRequestV0 offset.
+                             * @member {google.protobuf.IUInt32Value|null|undefined} offset
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0
+                             * @instance
+                             */
+                            GetDocumentHistoryRequestV0.prototype.offset = null;
+
+                            /**
+                             * GetDocumentHistoryRequestV0 startAtMs.
+                             * @member {number|Long} startAtMs
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0
+                             * @instance
+                             */
+                            GetDocumentHistoryRequestV0.prototype.startAtMs = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                            /**
+                             * GetDocumentHistoryRequestV0 prove.
+                             * @member {boolean} prove
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0
+                             * @instance
+                             */
+                            GetDocumentHistoryRequestV0.prototype.prove = false;
+
+                            /**
+                             * Creates a new GetDocumentHistoryRequestV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDocumentHistoryRequest.IGetDocumentHistoryRequestV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0} GetDocumentHistoryRequestV0 instance
+                             */
+                            GetDocumentHistoryRequestV0.create = function create(properties) {
+                                return new GetDocumentHistoryRequestV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetDocumentHistoryRequestV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDocumentHistoryRequest.IGetDocumentHistoryRequestV0} message GetDocumentHistoryRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetDocumentHistoryRequestV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.dataContractId != null && Object.hasOwnProperty.call(message, "dataContractId"))
+                                    writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.dataContractId);
+                                if (message.documentTypeName != null && Object.hasOwnProperty.call(message, "documentTypeName"))
+                                    writer.uint32(/* id 2, wireType 2 =*/18).string(message.documentTypeName);
+                                if (message.documentId != null && Object.hasOwnProperty.call(message, "documentId"))
+                                    writer.uint32(/* id 3, wireType 2 =*/26).bytes(message.documentId);
+                                if (message.limit != null && Object.hasOwnProperty.call(message, "limit"))
+                                    $root.google.protobuf.UInt32Value.encode(message.limit, writer.uint32(/* id 4, wireType 2 =*/34).fork()).ldelim();
+                                if (message.offset != null && Object.hasOwnProperty.call(message, "offset"))
+                                    $root.google.protobuf.UInt32Value.encode(message.offset, writer.uint32(/* id 5, wireType 2 =*/42).fork()).ldelim();
+                                if (message.startAtMs != null && Object.hasOwnProperty.call(message, "startAtMs"))
+                                    writer.uint32(/* id 6, wireType 0 =*/48).uint64(message.startAtMs);
+                                if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
+                                    writer.uint32(/* id 7, wireType 0 =*/56).bool(message.prove);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetDocumentHistoryRequestV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDocumentHistoryRequest.IGetDocumentHistoryRequestV0} message GetDocumentHistoryRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetDocumentHistoryRequestV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetDocumentHistoryRequestV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0} GetDocumentHistoryRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetDocumentHistoryRequestV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.dataContractId = reader.bytes();
+                                        break;
+                                    case 2:
+                                        message.documentTypeName = reader.string();
+                                        break;
+                                    case 3:
+                                        message.documentId = reader.bytes();
+                                        break;
+                                    case 4:
+                                        message.limit = $root.google.protobuf.UInt32Value.decode(reader, reader.uint32());
+                                        break;
+                                    case 5:
+                                        message.offset = $root.google.protobuf.UInt32Value.decode(reader, reader.uint32());
+                                        break;
+                                    case 6:
+                                        message.startAtMs = reader.uint64();
+                                        break;
+                                    case 7:
+                                        message.prove = reader.bool();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetDocumentHistoryRequestV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0} GetDocumentHistoryRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetDocumentHistoryRequestV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetDocumentHistoryRequestV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetDocumentHistoryRequestV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.dataContractId != null && message.hasOwnProperty("dataContractId"))
+                                    if (!(message.dataContractId && typeof message.dataContractId.length === "number" || $util.isString(message.dataContractId)))
+                                        return "dataContractId: buffer expected";
+                                if (message.documentTypeName != null && message.hasOwnProperty("documentTypeName"))
+                                    if (!$util.isString(message.documentTypeName))
+                                        return "documentTypeName: string expected";
+                                if (message.documentId != null && message.hasOwnProperty("documentId"))
+                                    if (!(message.documentId && typeof message.documentId.length === "number" || $util.isString(message.documentId)))
+                                        return "documentId: buffer expected";
+                                if (message.limit != null && message.hasOwnProperty("limit")) {
+                                    var error = $root.google.protobuf.UInt32Value.verify(message.limit);
+                                    if (error)
+                                        return "limit." + error;
+                                }
+                                if (message.offset != null && message.hasOwnProperty("offset")) {
+                                    var error = $root.google.protobuf.UInt32Value.verify(message.offset);
+                                    if (error)
+                                        return "offset." + error;
+                                }
+                                if (message.startAtMs != null && message.hasOwnProperty("startAtMs"))
+                                    if (!$util.isInteger(message.startAtMs) && !(message.startAtMs && $util.isInteger(message.startAtMs.low) && $util.isInteger(message.startAtMs.high)))
+                                        return "startAtMs: integer|Long expected";
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    if (typeof message.prove !== "boolean")
+                                        return "prove: boolean expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetDocumentHistoryRequestV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0} GetDocumentHistoryRequestV0
+                             */
+                            GetDocumentHistoryRequestV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0();
+                                if (object.dataContractId != null)
+                                    if (typeof object.dataContractId === "string")
+                                        $util.base64.decode(object.dataContractId, message.dataContractId = $util.newBuffer($util.base64.length(object.dataContractId)), 0);
+                                    else if (object.dataContractId.length >= 0)
+                                        message.dataContractId = object.dataContractId;
+                                if (object.documentTypeName != null)
+                                    message.documentTypeName = String(object.documentTypeName);
+                                if (object.documentId != null)
+                                    if (typeof object.documentId === "string")
+                                        $util.base64.decode(object.documentId, message.documentId = $util.newBuffer($util.base64.length(object.documentId)), 0);
+                                    else if (object.documentId.length >= 0)
+                                        message.documentId = object.documentId;
+                                if (object.limit != null) {
+                                    if (typeof object.limit !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0.limit: object expected");
+                                    message.limit = $root.google.protobuf.UInt32Value.fromObject(object.limit);
+                                }
+                                if (object.offset != null) {
+                                    if (typeof object.offset !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0.offset: object expected");
+                                    message.offset = $root.google.protobuf.UInt32Value.fromObject(object.offset);
+                                }
+                                if (object.startAtMs != null)
+                                    if ($util.Long)
+                                        (message.startAtMs = $util.Long.fromValue(object.startAtMs)).unsigned = true;
+                                    else if (typeof object.startAtMs === "string")
+                                        message.startAtMs = parseInt(object.startAtMs, 10);
+                                    else if (typeof object.startAtMs === "number")
+                                        message.startAtMs = object.startAtMs;
+                                    else if (typeof object.startAtMs === "object")
+                                        message.startAtMs = new $util.LongBits(object.startAtMs.low >>> 0, object.startAtMs.high >>> 0).toNumber(true);
+                                if (object.prove != null)
+                                    message.prove = Boolean(object.prove);
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetDocumentHistoryRequestV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0} message GetDocumentHistoryRequestV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetDocumentHistoryRequestV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults) {
+                                    if (options.bytes === String)
+                                        object.dataContractId = "";
+                                    else {
+                                        object.dataContractId = [];
+                                        if (options.bytes !== Array)
+                                            object.dataContractId = $util.newBuffer(object.dataContractId);
+                                    }
+                                    object.documentTypeName = "";
+                                    if (options.bytes === String)
+                                        object.documentId = "";
+                                    else {
+                                        object.documentId = [];
+                                        if (options.bytes !== Array)
+                                            object.documentId = $util.newBuffer(object.documentId);
+                                    }
+                                    object.limit = null;
+                                    object.offset = null;
+                                    if ($util.Long) {
+                                        var long = new $util.Long(0, 0, true);
+                                        object.startAtMs = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                    } else
+                                        object.startAtMs = options.longs === String ? "0" : 0;
+                                    object.prove = false;
+                                }
+                                if (message.dataContractId != null && message.hasOwnProperty("dataContractId"))
+                                    object.dataContractId = options.bytes === String ? $util.base64.encode(message.dataContractId, 0, message.dataContractId.length) : options.bytes === Array ? Array.prototype.slice.call(message.dataContractId) : message.dataContractId;
+                                if (message.documentTypeName != null && message.hasOwnProperty("documentTypeName"))
+                                    object.documentTypeName = message.documentTypeName;
+                                if (message.documentId != null && message.hasOwnProperty("documentId"))
+                                    object.documentId = options.bytes === String ? $util.base64.encode(message.documentId, 0, message.documentId.length) : options.bytes === Array ? Array.prototype.slice.call(message.documentId) : message.documentId;
+                                if (message.limit != null && message.hasOwnProperty("limit"))
+                                    object.limit = $root.google.protobuf.UInt32Value.toObject(message.limit, options);
+                                if (message.offset != null && message.hasOwnProperty("offset"))
+                                    object.offset = $root.google.protobuf.UInt32Value.toObject(message.offset, options);
+                                if (message.startAtMs != null && message.hasOwnProperty("startAtMs"))
+                                    if (typeof message.startAtMs === "number")
+                                        object.startAtMs = options.longs === String ? String(message.startAtMs) : message.startAtMs;
+                                    else
+                                        object.startAtMs = options.longs === String ? $util.Long.prototype.toString.call(message.startAtMs) : options.longs === Number ? new $util.LongBits(message.startAtMs.low >>> 0, message.startAtMs.high >>> 0).toNumber(true) : message.startAtMs;
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    object.prove = message.prove;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetDocumentHistoryRequestV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryRequest.GetDocumentHistoryRequestV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetDocumentHistoryRequestV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetDocumentHistoryRequestV0;
+                        })();
+
+                        return GetDocumentHistoryRequest;
+                    })();
+
+                    v0.GetDocumentHistoryResponse = (function() {
+
+                        /**
+                         * Properties of a GetDocumentHistoryResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetDocumentHistoryResponse
+                         * @property {org.dash.platform.dapi.v0.GetDocumentHistoryResponse.IGetDocumentHistoryResponseV0|null} [v0] GetDocumentHistoryResponse v0
+                         */
+
+                        /**
+                         * Constructs a new GetDocumentHistoryResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetDocumentHistoryResponse.
+                         * @implements IGetDocumentHistoryResponse
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetDocumentHistoryResponse=} [properties] Properties to set
+                         */
+                        function GetDocumentHistoryResponse(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetDocumentHistoryResponse v0.
+                         * @member {org.dash.platform.dapi.v0.GetDocumentHistoryResponse.IGetDocumentHistoryResponseV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryResponse
+                         * @instance
+                         */
+                        GetDocumentHistoryResponse.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetDocumentHistoryResponse version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryResponse
+                         * @instance
+                         */
+                        Object.defineProperty(GetDocumentHistoryResponse.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetDocumentHistoryResponse instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetDocumentHistoryResponse=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetDocumentHistoryResponse} GetDocumentHistoryResponse instance
+                         */
+                        GetDocumentHistoryResponse.create = function create(properties) {
+                            return new GetDocumentHistoryResponse(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetDocumentHistoryResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentHistoryResponse.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetDocumentHistoryResponse} message GetDocumentHistoryResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetDocumentHistoryResponse.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetDocumentHistoryResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentHistoryResponse.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetDocumentHistoryResponse} message GetDocumentHistoryResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetDocumentHistoryResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetDocumentHistoryResponse message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetDocumentHistoryResponse} GetDocumentHistoryResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetDocumentHistoryResponse.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetDocumentHistoryResponse();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetDocumentHistoryResponse message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetDocumentHistoryResponse} GetDocumentHistoryResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetDocumentHistoryResponse.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetDocumentHistoryResponse message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryResponse
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetDocumentHistoryResponse.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetDocumentHistoryResponse message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryResponse
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetDocumentHistoryResponse} GetDocumentHistoryResponse
+                         */
+                        GetDocumentHistoryResponse.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetDocumentHistoryResponse)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetDocumentHistoryResponse();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetDocumentHistoryResponse.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetDocumentHistoryResponse message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetDocumentHistoryResponse} message GetDocumentHistoryResponse
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetDocumentHistoryResponse.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetDocumentHistoryResponse to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryResponse
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetDocumentHistoryResponse.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetDocumentHistoryResponse.GetDocumentHistoryResponseV0 = (function() {
+
+                            /**
+                             * Properties of a GetDocumentHistoryResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryResponse
+                             * @interface IGetDocumentHistoryResponseV0
+                             * @property {org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.IDocumentHistory|null} [documentHistory] GetDocumentHistoryResponseV0 documentHistory
+                             * @property {org.dash.platform.dapi.v0.IProof|null} [proof] GetDocumentHistoryResponseV0 proof
+                             * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetDocumentHistoryResponseV0 metadata
+                             */
+
+                            /**
+                             * Constructs a new GetDocumentHistoryResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryResponse
+                             * @classdesc Represents a GetDocumentHistoryResponseV0.
+                             * @implements IGetDocumentHistoryResponseV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetDocumentHistoryResponse.IGetDocumentHistoryResponseV0=} [properties] Properties to set
+                             */
+                            function GetDocumentHistoryResponseV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetDocumentHistoryResponseV0 documentHistory.
+                             * @member {org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.IDocumentHistory|null|undefined} documentHistory
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0
+                             * @instance
+                             */
+                            GetDocumentHistoryResponseV0.prototype.documentHistory = null;
+
+                            /**
+                             * GetDocumentHistoryResponseV0 proof.
+                             * @member {org.dash.platform.dapi.v0.IProof|null|undefined} proof
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0
+                             * @instance
+                             */
+                            GetDocumentHistoryResponseV0.prototype.proof = null;
+
+                            /**
+                             * GetDocumentHistoryResponseV0 metadata.
+                             * @member {org.dash.platform.dapi.v0.IResponseMetadata|null|undefined} metadata
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0
+                             * @instance
+                             */
+                            GetDocumentHistoryResponseV0.prototype.metadata = null;
+
+                            // OneOf field names bound to virtual getters and setters
+                            var $oneOfFields;
+
+                            /**
+                             * GetDocumentHistoryResponseV0 result.
+                             * @member {"documentHistory"|"proof"|undefined} result
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0
+                             * @instance
+                             */
+                            Object.defineProperty(GetDocumentHistoryResponseV0.prototype, "result", {
+                                get: $util.oneOfGetter($oneOfFields = ["documentHistory", "proof"]),
+                                set: $util.oneOfSetter($oneOfFields)
+                            });
+
+                            /**
+                             * Creates a new GetDocumentHistoryResponseV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDocumentHistoryResponse.IGetDocumentHistoryResponseV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0} GetDocumentHistoryResponseV0 instance
+                             */
+                            GetDocumentHistoryResponseV0.create = function create(properties) {
+                                return new GetDocumentHistoryResponseV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetDocumentHistoryResponseV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDocumentHistoryResponse.IGetDocumentHistoryResponseV0} message GetDocumentHistoryResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetDocumentHistoryResponseV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.documentHistory != null && Object.hasOwnProperty.call(message, "documentHistory"))
+                                    $root.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistory.encode(message.documentHistory, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                if (message.proof != null && Object.hasOwnProperty.call(message, "proof"))
+                                    $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
+                                    $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetDocumentHistoryResponseV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDocumentHistoryResponse.IGetDocumentHistoryResponseV0} message GetDocumentHistoryResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetDocumentHistoryResponseV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetDocumentHistoryResponseV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0} GetDocumentHistoryResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetDocumentHistoryResponseV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.documentHistory = $root.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistory.decode(reader, reader.uint32());
+                                        break;
+                                    case 2:
+                                        message.proof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
+                                        break;
+                                    case 3:
+                                        message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetDocumentHistoryResponseV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0} GetDocumentHistoryResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetDocumentHistoryResponseV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetDocumentHistoryResponseV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetDocumentHistoryResponseV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                var properties = {};
+                                if (message.documentHistory != null && message.hasOwnProperty("documentHistory")) {
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistory.verify(message.documentHistory);
+                                        if (error)
+                                            return "documentHistory." + error;
+                                    }
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    if (properties.result === 1)
+                                        return "result: multiple values";
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
+                                        if (error)
+                                            return "proof." + error;
+                                    }
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata")) {
+                                    var error = $root.org.dash.platform.dapi.v0.ResponseMetadata.verify(message.metadata);
+                                    if (error)
+                                        return "metadata." + error;
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetDocumentHistoryResponseV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0} GetDocumentHistoryResponseV0
+                             */
+                            GetDocumentHistoryResponseV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0();
+                                if (object.documentHistory != null) {
+                                    if (typeof object.documentHistory !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.documentHistory: object expected");
+                                    message.documentHistory = $root.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistory.fromObject(object.documentHistory);
+                                }
+                                if (object.proof != null) {
+                                    if (typeof object.proof !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.proof: object expected");
+                                    message.proof = $root.org.dash.platform.dapi.v0.Proof.fromObject(object.proof);
+                                }
+                                if (object.metadata != null) {
+                                    if (typeof object.metadata !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.metadata: object expected");
+                                    message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.fromObject(object.metadata);
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetDocumentHistoryResponseV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0} message GetDocumentHistoryResponseV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetDocumentHistoryResponseV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults)
+                                    object.metadata = null;
+                                if (message.documentHistory != null && message.hasOwnProperty("documentHistory")) {
+                                    object.documentHistory = $root.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistory.toObject(message.documentHistory, options);
+                                    if (options.oneofs)
+                                        object.result = "documentHistory";
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    object.proof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.proof, options);
+                                    if (options.oneofs)
+                                        object.result = "proof";
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata"))
+                                    object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetDocumentHistoryResponseV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetDocumentHistoryResponseV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            GetDocumentHistoryResponseV0.DocumentHistoryEntry = (function() {
+
+                                /**
+                                 * Properties of a DocumentHistoryEntry.
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0
+                                 * @interface IDocumentHistoryEntry
+                                 * @property {number|Long|null} [date] DocumentHistoryEntry date
+                                 * @property {Uint8Array|null} [value] DocumentHistoryEntry value
+                                 */
+
+                                /**
+                                 * Constructs a new DocumentHistoryEntry.
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0
+                                 * @classdesc Represents a DocumentHistoryEntry.
+                                 * @implements IDocumentHistoryEntry
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.IDocumentHistoryEntry=} [properties] Properties to set
+                                 */
+                                function DocumentHistoryEntry(properties) {
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * DocumentHistoryEntry date.
+                                 * @member {number|Long} date
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry
+                                 * @instance
+                                 */
+                                DocumentHistoryEntry.prototype.date = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                                /**
+                                 * DocumentHistoryEntry value.
+                                 * @member {Uint8Array} value
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry
+                                 * @instance
+                                 */
+                                DocumentHistoryEntry.prototype.value = $util.newBuffer([]);
+
+                                /**
+                                 * Creates a new DocumentHistoryEntry instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.IDocumentHistoryEntry=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry} DocumentHistoryEntry instance
+                                 */
+                                DocumentHistoryEntry.create = function create(properties) {
+                                    return new DocumentHistoryEntry(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified DocumentHistoryEntry message. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.IDocumentHistoryEntry} message DocumentHistoryEntry message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                DocumentHistoryEntry.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.date != null && Object.hasOwnProperty.call(message, "date"))
+                                        writer.uint32(/* id 1, wireType 0 =*/8).uint64(message.date);
+                                    if (message.value != null && Object.hasOwnProperty.call(message, "value"))
+                                        writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.value);
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified DocumentHistoryEntry message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.IDocumentHistoryEntry} message DocumentHistoryEntry message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                DocumentHistoryEntry.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes a DocumentHistoryEntry message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry} DocumentHistoryEntry
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                DocumentHistoryEntry.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            message.date = reader.uint64();
+                                            break;
+                                        case 2:
+                                            message.value = reader.bytes();
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes a DocumentHistoryEntry message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry} DocumentHistoryEntry
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                DocumentHistoryEntry.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies a DocumentHistoryEntry message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                DocumentHistoryEntry.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.date != null && message.hasOwnProperty("date"))
+                                        if (!$util.isInteger(message.date) && !(message.date && $util.isInteger(message.date.low) && $util.isInteger(message.date.high)))
+                                            return "date: integer|Long expected";
+                                    if (message.value != null && message.hasOwnProperty("value"))
+                                        if (!(message.value && typeof message.value.length === "number" || $util.isString(message.value)))
+                                            return "value: buffer expected";
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates a DocumentHistoryEntry message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry} DocumentHistoryEntry
+                                 */
+                                DocumentHistoryEntry.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry();
+                                    if (object.date != null)
+                                        if ($util.Long)
+                                            (message.date = $util.Long.fromValue(object.date)).unsigned = true;
+                                        else if (typeof object.date === "string")
+                                            message.date = parseInt(object.date, 10);
+                                        else if (typeof object.date === "number")
+                                            message.date = object.date;
+                                        else if (typeof object.date === "object")
+                                            message.date = new $util.LongBits(object.date.low >>> 0, object.date.high >>> 0).toNumber(true);
+                                    if (object.value != null)
+                                        if (typeof object.value === "string")
+                                            $util.base64.decode(object.value, message.value = $util.newBuffer($util.base64.length(object.value)), 0);
+                                        else if (object.value.length >= 0)
+                                            message.value = object.value;
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from a DocumentHistoryEntry message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry} message DocumentHistoryEntry
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                DocumentHistoryEntry.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.defaults) {
+                                        if ($util.Long) {
+                                            var long = new $util.Long(0, 0, true);
+                                            object.date = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                        } else
+                                            object.date = options.longs === String ? "0" : 0;
+                                        if (options.bytes === String)
+                                            object.value = "";
+                                        else {
+                                            object.value = [];
+                                            if (options.bytes !== Array)
+                                                object.value = $util.newBuffer(object.value);
+                                        }
+                                    }
+                                    if (message.date != null && message.hasOwnProperty("date"))
+                                        if (typeof message.date === "number")
+                                            object.date = options.longs === String ? String(message.date) : message.date;
+                                        else
+                                            object.date = options.longs === String ? $util.Long.prototype.toString.call(message.date) : options.longs === Number ? new $util.LongBits(message.date.low >>> 0, message.date.high >>> 0).toNumber(true) : message.date;
+                                    if (message.value != null && message.hasOwnProperty("value"))
+                                        object.value = options.bytes === String ? $util.base64.encode(message.value, 0, message.value.length) : options.bytes === Array ? Array.prototype.slice.call(message.value) : message.value;
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this DocumentHistoryEntry to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                DocumentHistoryEntry.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return DocumentHistoryEntry;
+                            })();
+
+                            GetDocumentHistoryResponseV0.DocumentHistory = (function() {
+
+                                /**
+                                 * Properties of a DocumentHistory.
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0
+                                 * @interface IDocumentHistory
+                                 * @property {Array.<org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.IDocumentHistoryEntry>|null} [documentEntries] DocumentHistory documentEntries
+                                 */
+
+                                /**
+                                 * Constructs a new DocumentHistory.
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0
+                                 * @classdesc Represents a DocumentHistory.
+                                 * @implements IDocumentHistory
+                                 * @constructor
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.IDocumentHistory=} [properties] Properties to set
+                                 */
+                                function DocumentHistory(properties) {
+                                    this.documentEntries = [];
+                                    if (properties)
+                                        for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                            if (properties[keys[i]] != null)
+                                                this[keys[i]] = properties[keys[i]];
+                                }
+
+                                /**
+                                 * DocumentHistory documentEntries.
+                                 * @member {Array.<org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.IDocumentHistoryEntry>} documentEntries
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistory
+                                 * @instance
+                                 */
+                                DocumentHistory.prototype.documentEntries = $util.emptyArray;
+
+                                /**
+                                 * Creates a new DocumentHistory instance using the specified properties.
+                                 * @function create
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistory
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.IDocumentHistory=} [properties] Properties to set
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistory} DocumentHistory instance
+                                 */
+                                DocumentHistory.create = function create(properties) {
+                                    return new DocumentHistory(properties);
+                                };
+
+                                /**
+                                 * Encodes the specified DocumentHistory message. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistory.verify|verify} messages.
+                                 * @function encode
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistory
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.IDocumentHistory} message DocumentHistory message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                DocumentHistory.encode = function encode(message, writer) {
+                                    if (!writer)
+                                        writer = $Writer.create();
+                                    if (message.documentEntries != null && message.documentEntries.length)
+                                        for (var i = 0; i < message.documentEntries.length; ++i)
+                                            $root.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry.encode(message.documentEntries[i], writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                    return writer;
+                                };
+
+                                /**
+                                 * Encodes the specified DocumentHistory message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistory.verify|verify} messages.
+                                 * @function encodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistory
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.IDocumentHistory} message DocumentHistory message or plain object to encode
+                                 * @param {$protobuf.Writer} [writer] Writer to encode to
+                                 * @returns {$protobuf.Writer} Writer
+                                 */
+                                DocumentHistory.encodeDelimited = function encodeDelimited(message, writer) {
+                                    return this.encode(message, writer).ldelim();
+                                };
+
+                                /**
+                                 * Decodes a DocumentHistory message from the specified reader or buffer.
+                                 * @function decode
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistory
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @param {number} [length] Message length if known beforehand
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistory} DocumentHistory
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                DocumentHistory.decode = function decode(reader, length) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = $Reader.create(reader);
+                                    var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistory();
+                                    while (reader.pos < end) {
+                                        var tag = reader.uint32();
+                                        switch (tag >>> 3) {
+                                        case 1:
+                                            if (!(message.documentEntries && message.documentEntries.length))
+                                                message.documentEntries = [];
+                                            message.documentEntries.push($root.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry.decode(reader, reader.uint32()));
+                                            break;
+                                        default:
+                                            reader.skipType(tag & 7);
+                                            break;
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Decodes a DocumentHistory message from the specified reader or buffer, length delimited.
+                                 * @function decodeDelimited
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistory
+                                 * @static
+                                 * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistory} DocumentHistory
+                                 * @throws {Error} If the payload is not a reader or valid buffer
+                                 * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                                 */
+                                DocumentHistory.decodeDelimited = function decodeDelimited(reader) {
+                                    if (!(reader instanceof $Reader))
+                                        reader = new $Reader(reader);
+                                    return this.decode(reader, reader.uint32());
+                                };
+
+                                /**
+                                 * Verifies a DocumentHistory message.
+                                 * @function verify
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistory
+                                 * @static
+                                 * @param {Object.<string,*>} message Plain object to verify
+                                 * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                                 */
+                                DocumentHistory.verify = function verify(message) {
+                                    if (typeof message !== "object" || message === null)
+                                        return "object expected";
+                                    if (message.documentEntries != null && message.hasOwnProperty("documentEntries")) {
+                                        if (!Array.isArray(message.documentEntries))
+                                            return "documentEntries: array expected";
+                                        for (var i = 0; i < message.documentEntries.length; ++i) {
+                                            var error = $root.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry.verify(message.documentEntries[i]);
+                                            if (error)
+                                                return "documentEntries." + error;
+                                        }
+                                    }
+                                    return null;
+                                };
+
+                                /**
+                                 * Creates a DocumentHistory message from a plain object. Also converts values to their respective internal types.
+                                 * @function fromObject
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistory
+                                 * @static
+                                 * @param {Object.<string,*>} object Plain object
+                                 * @returns {org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistory} DocumentHistory
+                                 */
+                                DocumentHistory.fromObject = function fromObject(object) {
+                                    if (object instanceof $root.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistory)
+                                        return object;
+                                    var message = new $root.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistory();
+                                    if (object.documentEntries) {
+                                        if (!Array.isArray(object.documentEntries))
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistory.documentEntries: array expected");
+                                        message.documentEntries = [];
+                                        for (var i = 0; i < object.documentEntries.length; ++i) {
+                                            if (typeof object.documentEntries[i] !== "object")
+                                                throw TypeError(".org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistory.documentEntries: object expected");
+                                            message.documentEntries[i] = $root.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry.fromObject(object.documentEntries[i]);
+                                        }
+                                    }
+                                    return message;
+                                };
+
+                                /**
+                                 * Creates a plain object from a DocumentHistory message. Also converts values to other types if specified.
+                                 * @function toObject
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistory
+                                 * @static
+                                 * @param {org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistory} message DocumentHistory
+                                 * @param {$protobuf.IConversionOptions} [options] Conversion options
+                                 * @returns {Object.<string,*>} Plain object
+                                 */
+                                DocumentHistory.toObject = function toObject(message, options) {
+                                    if (!options)
+                                        options = {};
+                                    var object = {};
+                                    if (options.arrays || options.defaults)
+                                        object.documentEntries = [];
+                                    if (message.documentEntries && message.documentEntries.length) {
+                                        object.documentEntries = [];
+                                        for (var j = 0; j < message.documentEntries.length; ++j)
+                                            object.documentEntries[j] = $root.org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistoryEntry.toObject(message.documentEntries[j], options);
+                                    }
+                                    return object;
+                                };
+
+                                /**
+                                 * Converts this DocumentHistory to JSON.
+                                 * @function toJSON
+                                 * @memberof org.dash.platform.dapi.v0.GetDocumentHistoryResponse.GetDocumentHistoryResponseV0.DocumentHistory
+                                 * @instance
+                                 * @returns {Object.<string,*>} JSON object
+                                 */
+                                DocumentHistory.prototype.toJSON = function toJSON() {
+                                    return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                                };
+
+                                return DocumentHistory;
+                            })();
+
+                            return GetDocumentHistoryResponseV0;
+                        })();
+
+                        return GetDocumentHistoryResponse;
                     })();
 
                     v0.GetIdentityByPublicKeyHashRequest = (function() {
@@ -92964,6 +94528,892 @@ $root.org = (function() {
                         })();
 
                         return GetShieldedPoolStateResponse;
+                    })();
+
+                    v0.GetShieldedNotesCountRequest = (function() {
+
+                        /**
+                         * Properties of a GetShieldedNotesCountRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetShieldedNotesCountRequest
+                         * @property {org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.IGetShieldedNotesCountRequestV0|null} [v0] GetShieldedNotesCountRequest v0
+                         */
+
+                        /**
+                         * Constructs a new GetShieldedNotesCountRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetShieldedNotesCountRequest.
+                         * @implements IGetShieldedNotesCountRequest
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetShieldedNotesCountRequest=} [properties] Properties to set
+                         */
+                        function GetShieldedNotesCountRequest(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetShieldedNotesCountRequest v0.
+                         * @member {org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.IGetShieldedNotesCountRequestV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountRequest
+                         * @instance
+                         */
+                        GetShieldedNotesCountRequest.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetShieldedNotesCountRequest version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountRequest
+                         * @instance
+                         */
+                        Object.defineProperty(GetShieldedNotesCountRequest.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetShieldedNotesCountRequest instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetShieldedNotesCountRequest=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetShieldedNotesCountRequest} GetShieldedNotesCountRequest instance
+                         */
+                        GetShieldedNotesCountRequest.create = function create(properties) {
+                            return new GetShieldedNotesCountRequest(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetShieldedNotesCountRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetShieldedNotesCountRequest} message GetShieldedNotesCountRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetShieldedNotesCountRequest.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetShieldedNotesCountRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetShieldedNotesCountRequest} message GetShieldedNotesCountRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetShieldedNotesCountRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetShieldedNotesCountRequest message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetShieldedNotesCountRequest} GetShieldedNotesCountRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetShieldedNotesCountRequest.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetShieldedNotesCountRequest message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetShieldedNotesCountRequest} GetShieldedNotesCountRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetShieldedNotesCountRequest.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetShieldedNotesCountRequest message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountRequest
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetShieldedNotesCountRequest.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetShieldedNotesCountRequest message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountRequest
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetShieldedNotesCountRequest} GetShieldedNotesCountRequest
+                         */
+                        GetShieldedNotesCountRequest.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetShieldedNotesCountRequest message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetShieldedNotesCountRequest} message GetShieldedNotesCountRequest
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetShieldedNotesCountRequest.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetShieldedNotesCountRequest to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountRequest
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetShieldedNotesCountRequest.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0 = (function() {
+
+                            /**
+                             * Properties of a GetShieldedNotesCountRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountRequest
+                             * @interface IGetShieldedNotesCountRequestV0
+                             * @property {boolean|null} [prove] GetShieldedNotesCountRequestV0 prove
+                             */
+
+                            /**
+                             * Constructs a new GetShieldedNotesCountRequestV0.
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountRequest
+                             * @classdesc Represents a GetShieldedNotesCountRequestV0.
+                             * @implements IGetShieldedNotesCountRequestV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.IGetShieldedNotesCountRequestV0=} [properties] Properties to set
+                             */
+                            function GetShieldedNotesCountRequestV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetShieldedNotesCountRequestV0 prove.
+                             * @member {boolean} prove
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0
+                             * @instance
+                             */
+                            GetShieldedNotesCountRequestV0.prototype.prove = false;
+
+                            /**
+                             * Creates a new GetShieldedNotesCountRequestV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.IGetShieldedNotesCountRequestV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0} GetShieldedNotesCountRequestV0 instance
+                             */
+                            GetShieldedNotesCountRequestV0.create = function create(properties) {
+                                return new GetShieldedNotesCountRequestV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetShieldedNotesCountRequestV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.IGetShieldedNotesCountRequestV0} message GetShieldedNotesCountRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetShieldedNotesCountRequestV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
+                                    writer.uint32(/* id 1, wireType 0 =*/8).bool(message.prove);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetShieldedNotesCountRequestV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.IGetShieldedNotesCountRequestV0} message GetShieldedNotesCountRequestV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetShieldedNotesCountRequestV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetShieldedNotesCountRequestV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0} GetShieldedNotesCountRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetShieldedNotesCountRequestV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.prove = reader.bool();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetShieldedNotesCountRequestV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0} GetShieldedNotesCountRequestV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetShieldedNotesCountRequestV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetShieldedNotesCountRequestV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetShieldedNotesCountRequestV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    if (typeof message.prove !== "boolean")
+                                        return "prove: boolean expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetShieldedNotesCountRequestV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0} GetShieldedNotesCountRequestV0
+                             */
+                            GetShieldedNotesCountRequestV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0();
+                                if (object.prove != null)
+                                    message.prove = Boolean(object.prove);
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetShieldedNotesCountRequestV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0} message GetShieldedNotesCountRequestV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetShieldedNotesCountRequestV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults)
+                                    object.prove = false;
+                                if (message.prove != null && message.hasOwnProperty("prove"))
+                                    object.prove = message.prove;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetShieldedNotesCountRequestV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountRequest.GetShieldedNotesCountRequestV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetShieldedNotesCountRequestV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetShieldedNotesCountRequestV0;
+                        })();
+
+                        return GetShieldedNotesCountRequest;
+                    })();
+
+                    v0.GetShieldedNotesCountResponse = (function() {
+
+                        /**
+                         * Properties of a GetShieldedNotesCountResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetShieldedNotesCountResponse
+                         * @property {org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.IGetShieldedNotesCountResponseV0|null} [v0] GetShieldedNotesCountResponse v0
+                         */
+
+                        /**
+                         * Constructs a new GetShieldedNotesCountResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetShieldedNotesCountResponse.
+                         * @implements IGetShieldedNotesCountResponse
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetShieldedNotesCountResponse=} [properties] Properties to set
+                         */
+                        function GetShieldedNotesCountResponse(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetShieldedNotesCountResponse v0.
+                         * @member {org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.IGetShieldedNotesCountResponseV0|null|undefined} v0
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountResponse
+                         * @instance
+                         */
+                        GetShieldedNotesCountResponse.prototype.v0 = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetShieldedNotesCountResponse version.
+                         * @member {"v0"|undefined} version
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountResponse
+                         * @instance
+                         */
+                        Object.defineProperty(GetShieldedNotesCountResponse.prototype, "version", {
+                            get: $util.oneOfGetter($oneOfFields = ["v0"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetShieldedNotesCountResponse instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetShieldedNotesCountResponse=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetShieldedNotesCountResponse} GetShieldedNotesCountResponse instance
+                         */
+                        GetShieldedNotesCountResponse.create = function create(properties) {
+                            return new GetShieldedNotesCountResponse(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetShieldedNotesCountResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetShieldedNotesCountResponse} message GetShieldedNotesCountResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetShieldedNotesCountResponse.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.v0 != null && Object.hasOwnProperty.call(message, "v0"))
+                                $root.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0.encode(message.v0, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetShieldedNotesCountResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetShieldedNotesCountResponse} message GetShieldedNotesCountResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetShieldedNotesCountResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetShieldedNotesCountResponse message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetShieldedNotesCountResponse} GetShieldedNotesCountResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetShieldedNotesCountResponse.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.v0 = $root.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetShieldedNotesCountResponse message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetShieldedNotesCountResponse} GetShieldedNotesCountResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetShieldedNotesCountResponse.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetShieldedNotesCountResponse message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountResponse
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetShieldedNotesCountResponse.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                properties.version = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0.verify(message.v0);
+                                    if (error)
+                                        return "v0." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetShieldedNotesCountResponse message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountResponse
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetShieldedNotesCountResponse} GetShieldedNotesCountResponse
+                         */
+                        GetShieldedNotesCountResponse.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse();
+                            if (object.v0 != null) {
+                                if (typeof object.v0 !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.v0: object expected");
+                                message.v0 = $root.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0.fromObject(object.v0);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetShieldedNotesCountResponse message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetShieldedNotesCountResponse} message GetShieldedNotesCountResponse
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetShieldedNotesCountResponse.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (message.v0 != null && message.hasOwnProperty("v0")) {
+                                object.v0 = $root.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0.toObject(message.v0, options);
+                                if (options.oneofs)
+                                    object.version = "v0";
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetShieldedNotesCountResponse to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountResponse
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetShieldedNotesCountResponse.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0 = (function() {
+
+                            /**
+                             * Properties of a GetShieldedNotesCountResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountResponse
+                             * @interface IGetShieldedNotesCountResponseV0
+                             * @property {number|Long|null} [totalNotesCount] GetShieldedNotesCountResponseV0 totalNotesCount
+                             * @property {org.dash.platform.dapi.v0.IProof|null} [proof] GetShieldedNotesCountResponseV0 proof
+                             * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetShieldedNotesCountResponseV0 metadata
+                             */
+
+                            /**
+                             * Constructs a new GetShieldedNotesCountResponseV0.
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountResponse
+                             * @classdesc Represents a GetShieldedNotesCountResponseV0.
+                             * @implements IGetShieldedNotesCountResponseV0
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.IGetShieldedNotesCountResponseV0=} [properties] Properties to set
+                             */
+                            function GetShieldedNotesCountResponseV0(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * GetShieldedNotesCountResponseV0 totalNotesCount.
+                             * @member {number|Long} totalNotesCount
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0
+                             * @instance
+                             */
+                            GetShieldedNotesCountResponseV0.prototype.totalNotesCount = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
+
+                            /**
+                             * GetShieldedNotesCountResponseV0 proof.
+                             * @member {org.dash.platform.dapi.v0.IProof|null|undefined} proof
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0
+                             * @instance
+                             */
+                            GetShieldedNotesCountResponseV0.prototype.proof = null;
+
+                            /**
+                             * GetShieldedNotesCountResponseV0 metadata.
+                             * @member {org.dash.platform.dapi.v0.IResponseMetadata|null|undefined} metadata
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0
+                             * @instance
+                             */
+                            GetShieldedNotesCountResponseV0.prototype.metadata = null;
+
+                            // OneOf field names bound to virtual getters and setters
+                            var $oneOfFields;
+
+                            /**
+                             * GetShieldedNotesCountResponseV0 result.
+                             * @member {"totalNotesCount"|"proof"|undefined} result
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0
+                             * @instance
+                             */
+                            Object.defineProperty(GetShieldedNotesCountResponseV0.prototype, "result", {
+                                get: $util.oneOfGetter($oneOfFields = ["totalNotesCount", "proof"]),
+                                set: $util.oneOfSetter($oneOfFields)
+                            });
+
+                            /**
+                             * Creates a new GetShieldedNotesCountResponseV0 instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.IGetShieldedNotesCountResponseV0=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0} GetShieldedNotesCountResponseV0 instance
+                             */
+                            GetShieldedNotesCountResponseV0.create = function create(properties) {
+                                return new GetShieldedNotesCountResponseV0(properties);
+                            };
+
+                            /**
+                             * Encodes the specified GetShieldedNotesCountResponseV0 message. Does not implicitly {@link org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.IGetShieldedNotesCountResponseV0} message GetShieldedNotesCountResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetShieldedNotesCountResponseV0.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.totalNotesCount != null && Object.hasOwnProperty.call(message, "totalNotesCount"))
+                                    writer.uint32(/* id 1, wireType 0 =*/8).uint64(message.totalNotesCount);
+                                if (message.proof != null && Object.hasOwnProperty.call(message, "proof"))
+                                    $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
+                                    $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified GetShieldedNotesCountResponseV0 message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.IGetShieldedNotesCountResponseV0} message GetShieldedNotesCountResponseV0 message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            GetShieldedNotesCountResponseV0.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a GetShieldedNotesCountResponseV0 message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0} GetShieldedNotesCountResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetShieldedNotesCountResponseV0.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.totalNotesCount = reader.uint64();
+                                        break;
+                                    case 2:
+                                        message.proof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
+                                        break;
+                                    case 3:
+                                        message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a GetShieldedNotesCountResponseV0 message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0} GetShieldedNotesCountResponseV0
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            GetShieldedNotesCountResponseV0.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a GetShieldedNotesCountResponseV0 message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            GetShieldedNotesCountResponseV0.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                var properties = {};
+                                if (message.totalNotesCount != null && message.hasOwnProperty("totalNotesCount")) {
+                                    properties.result = 1;
+                                    if (!$util.isInteger(message.totalNotesCount) && !(message.totalNotesCount && $util.isInteger(message.totalNotesCount.low) && $util.isInteger(message.totalNotesCount.high)))
+                                        return "totalNotesCount: integer|Long expected";
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    if (properties.result === 1)
+                                        return "result: multiple values";
+                                    properties.result = 1;
+                                    {
+                                        var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
+                                        if (error)
+                                            return "proof." + error;
+                                    }
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata")) {
+                                    var error = $root.org.dash.platform.dapi.v0.ResponseMetadata.verify(message.metadata);
+                                    if (error)
+                                        return "metadata." + error;
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates a GetShieldedNotesCountResponseV0 message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0} GetShieldedNotesCountResponseV0
+                             */
+                            GetShieldedNotesCountResponseV0.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0();
+                                if (object.totalNotesCount != null)
+                                    if ($util.Long)
+                                        (message.totalNotesCount = $util.Long.fromValue(object.totalNotesCount)).unsigned = true;
+                                    else if (typeof object.totalNotesCount === "string")
+                                        message.totalNotesCount = parseInt(object.totalNotesCount, 10);
+                                    else if (typeof object.totalNotesCount === "number")
+                                        message.totalNotesCount = object.totalNotesCount;
+                                    else if (typeof object.totalNotesCount === "object")
+                                        message.totalNotesCount = new $util.LongBits(object.totalNotesCount.low >>> 0, object.totalNotesCount.high >>> 0).toNumber(true);
+                                if (object.proof != null) {
+                                    if (typeof object.proof !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0.proof: object expected");
+                                    message.proof = $root.org.dash.platform.dapi.v0.Proof.fromObject(object.proof);
+                                }
+                                if (object.metadata != null) {
+                                    if (typeof object.metadata !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0.metadata: object expected");
+                                    message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.fromObject(object.metadata);
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a GetShieldedNotesCountResponseV0 message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0} message GetShieldedNotesCountResponseV0
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            GetShieldedNotesCountResponseV0.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults)
+                                    object.metadata = null;
+                                if (message.totalNotesCount != null && message.hasOwnProperty("totalNotesCount")) {
+                                    if (typeof message.totalNotesCount === "number")
+                                        object.totalNotesCount = options.longs === String ? String(message.totalNotesCount) : message.totalNotesCount;
+                                    else
+                                        object.totalNotesCount = options.longs === String ? $util.Long.prototype.toString.call(message.totalNotesCount) : options.longs === Number ? new $util.LongBits(message.totalNotesCount.low >>> 0, message.totalNotesCount.high >>> 0).toNumber(true) : message.totalNotesCount;
+                                    if (options.oneofs)
+                                        object.result = "totalNotesCount";
+                                }
+                                if (message.proof != null && message.hasOwnProperty("proof")) {
+                                    object.proof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.proof, options);
+                                    if (options.oneofs)
+                                        object.result = "proof";
+                                }
+                                if (message.metadata != null && message.hasOwnProperty("metadata"))
+                                    object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
+                                return object;
+                            };
+
+                            /**
+                             * Converts this GetShieldedNotesCountResponseV0 to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetShieldedNotesCountResponse.GetShieldedNotesCountResponseV0
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            GetShieldedNotesCountResponseV0.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return GetShieldedNotesCountResponseV0;
+                        })();
+
+                        return GetShieldedNotesCountResponse;
                     })();
 
                     v0.GetShieldedNullifiersRequest = (function() {

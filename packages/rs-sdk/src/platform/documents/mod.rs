@@ -4,6 +4,7 @@ pub(super) mod count_proof_helpers;
 /// `(count, sum)`; client divides.
 pub mod document_average;
 pub mod document_count;
+pub mod document_history_query;
 pub mod document_query;
 /// `Fetch` impl for the average-side per-entry result. Mirrors
 /// `document_split_sums`.

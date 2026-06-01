@@ -293,6 +293,97 @@ pub struct PersistenceCallbacks {
             removed_incoming_count: usize,
         ) -> i32,
     >,
+    // ── Shielded (Orchard) persistence ─────────────────────────────────
+    //
+    // These four `on_persist_shielded_*` callbacks fire from
+    // `FFIPersister::store` whenever a `ShieldedChangeSet` arrives
+    // from `ShieldedWallet`. The matching `on_load_shielded_*`
+    // callbacks fire once on `FFIPersister::load` to rehydrate the
+    // in-memory `SubwalletState`s before the first sync pass. The
+    // `wallet_id` carried inside each entry scopes the row by
+    // wallet; the outer `wallet_id` argument on the `store`
+    // callback identifies the wallet the changeset originated from
+    // (always identical to every entry's nested `wallet_id`).
+    /// Per-subwallet decrypted notes upserts.
+    #[cfg(feature = "shielded")]
+    pub on_persist_shielded_notes_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            entries: *const crate::shielded_persistence::ShieldedNoteFFI,
+            count: usize,
+        ) -> i32,
+    >,
+    /// Per-subwallet nullifier-spent observations.
+    #[cfg(feature = "shielded")]
+    pub on_persist_shielded_nullifiers_spent_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            entries: *const crate::shielded_persistence::ShieldedNullifierSpentFFI,
+            count: usize,
+        ) -> i32,
+    >,
+    /// Per-subwallet sync watermark advances.
+    #[cfg(feature = "shielded")]
+    pub on_persist_shielded_synced_indices_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            entries: *const crate::shielded_persistence::ShieldedSyncedIndexFFI,
+            count: usize,
+        ) -> i32,
+    >,
+    /// Per-subwallet nullifier-sync checkpoint advances.
+    #[cfg(feature = "shielded")]
+    pub on_persist_shielded_nullifier_checkpoints_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            wallet_id: *const u8,
+            entries: *const crate::shielded_persistence::ShieldedNullifierCheckpointFFI,
+            count: usize,
+        ) -> i32,
+    >,
+    /// Restore-on-load: every persisted shielded note. Host
+    /// allocates the array; Rust calls the matching free
+    /// callback after copying. Same lifetime contract as
+    /// `on_load_wallet_list_fn`. Inlined here (rather than via
+    /// the `OnLoadShieldedNotesFn` type alias) so cbindgen sees
+    /// the full signature and emits the referenced struct
+    /// definitions in the generated header.
+    #[cfg(feature = "shielded")]
+    pub on_load_shielded_notes_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            out_entries: *mut *const crate::shielded_persistence::ShieldedNoteRestoreFFI,
+            out_count: *mut usize,
+        ) -> i32,
+    >,
+    #[cfg(feature = "shielded")]
+    pub on_load_shielded_notes_free_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            entries: *const crate::shielded_persistence::ShieldedNoteRestoreFFI,
+            count: usize,
+        ),
+    >,
+    /// Restore-on-load: every per-subwallet sync state.
+    #[cfg(feature = "shielded")]
+    pub on_load_shielded_sync_states_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            out_entries: *mut *const crate::shielded_persistence::ShieldedSubwalletSyncStateFFI,
+            out_count: *mut usize,
+        ) -> i32,
+    >,
+    #[cfg(feature = "shielded")]
+    pub on_load_shielded_sync_states_free_fn: Option<
+        unsafe extern "C" fn(
+            context: *mut c_void,
+            entries: *const crate::shielded_persistence::ShieldedSubwalletSyncStateFFI,
+            count: usize,
+        ),
+    >,
     /// Look up a single core transaction record by `txid` for the
     /// asset-lock proof flow's persister fallback.
     ///
@@ -412,6 +503,22 @@ impl Default for PersistenceCallbacks {
             on_persist_contacts_fn: None,
             on_get_core_tx_record_fn: None,
             on_get_core_tx_record_free_fn: None,
+            #[cfg(feature = "shielded")]
+            on_persist_shielded_notes_fn: None,
+            #[cfg(feature = "shielded")]
+            on_persist_shielded_nullifiers_spent_fn: None,
+            #[cfg(feature = "shielded")]
+            on_persist_shielded_synced_indices_fn: None,
+            #[cfg(feature = "shielded")]
+            on_persist_shielded_nullifier_checkpoints_fn: None,
+            #[cfg(feature = "shielded")]
+            on_load_shielded_notes_fn: None,
+            #[cfg(feature = "shielded")]
+            on_load_shielded_notes_free_fn: None,
+            #[cfg(feature = "shielded")]
+            on_load_shielded_sync_states_fn: None,
+            #[cfg(feature = "shielded")]
+            on_load_shielded_sync_states_free_fn: None,
         }
     }
 }
@@ -967,6 +1074,152 @@ impl PlatformWalletPersistence for FFIPersister {
             }
         }
 
+        // Shielded changeset (Orchard): four flat callback batches
+        // mirroring the four `ShieldedChangeSet` fields. Notes
+        // first so a follow-up `mark_spent` for the same nullifier
+        // upserts onto an existing row instead of falling on
+        // missing-row floor.
+        #[cfg(feature = "shielded")]
+        if let Some(ref shielded_cs) = changeset.shielded {
+            use crate::shielded_persistence::*;
+
+            // 1) notes_saved
+            if !shielded_cs.notes_saved.is_empty() {
+                if let Some(cb) = self.callbacks.on_persist_shielded_notes_fn {
+                    // Flatten the per-subwallet map into a single
+                    // contiguous Vec so the callback gets one
+                    // `entries: *const ShieldedNoteFFI` slice. The
+                    // host copies `note_data` bytes during the call.
+                    let entries: Vec<ShieldedNoteFFI> = shielded_cs
+                        .notes_saved
+                        .iter()
+                        .flat_map(|(id, notes)| {
+                            notes.iter().map(|n| ShieldedNoteFFI {
+                                wallet_id: id.wallet_id,
+                                account_index: id.account_index,
+                                position: n.position,
+                                cmx: n.cmx,
+                                nullifier: n.nullifier,
+                                block_height: n.block_height,
+                                is_spent: u8::from(n.is_spent),
+                                value: n.value,
+                                note_data_ptr: n.note_data.as_ptr(),
+                                note_data_len: n.note_data.len(),
+                            })
+                        })
+                        .collect();
+                    let result = unsafe {
+                        cb(
+                            self.callbacks.context,
+                            wallet_id.as_ptr(),
+                            entries.as_ptr(),
+                            entries.len(),
+                        )
+                    };
+                    if result != 0 {
+                        eprintln!(
+                            "Shielded notes persistence callback returned error code {}",
+                            result
+                        );
+                        round_success = false;
+                    }
+                }
+            }
+
+            // 2) nullifiers_spent
+            if !shielded_cs.nullifiers_spent.is_empty() {
+                if let Some(cb) = self.callbacks.on_persist_shielded_nullifiers_spent_fn {
+                    let entries: Vec<ShieldedNullifierSpentFFI> = shielded_cs
+                        .nullifiers_spent
+                        .iter()
+                        .flat_map(|(id, nfs)| {
+                            nfs.iter().map(|nf| ShieldedNullifierSpentFFI {
+                                wallet_id: id.wallet_id,
+                                account_index: id.account_index,
+                                nullifier: *nf,
+                            })
+                        })
+                        .collect();
+                    let result = unsafe {
+                        cb(
+                            self.callbacks.context,
+                            wallet_id.as_ptr(),
+                            entries.as_ptr(),
+                            entries.len(),
+                        )
+                    };
+                    if result != 0 {
+                        eprintln!(
+                            "Shielded nullifier-spent persistence callback returned error code {}",
+                            result
+                        );
+                        round_success = false;
+                    }
+                }
+            }
+
+            // 3) synced_indices
+            if !shielded_cs.synced_indices.is_empty() {
+                if let Some(cb) = self.callbacks.on_persist_shielded_synced_indices_fn {
+                    let entries: Vec<ShieldedSyncedIndexFFI> = shielded_cs
+                        .synced_indices
+                        .iter()
+                        .map(|(id, &idx)| ShieldedSyncedIndexFFI {
+                            wallet_id: id.wallet_id,
+                            account_index: id.account_index,
+                            last_synced_index: idx,
+                        })
+                        .collect();
+                    let result = unsafe {
+                        cb(
+                            self.callbacks.context,
+                            wallet_id.as_ptr(),
+                            entries.as_ptr(),
+                            entries.len(),
+                        )
+                    };
+                    if result != 0 {
+                        eprintln!(
+                            "Shielded synced-index persistence callback returned error code {}",
+                            result
+                        );
+                        round_success = false;
+                    }
+                }
+            }
+
+            // 4) nullifier_checkpoints
+            if !shielded_cs.nullifier_checkpoints.is_empty() {
+                if let Some(cb) = self.callbacks.on_persist_shielded_nullifier_checkpoints_fn {
+                    let entries: Vec<ShieldedNullifierCheckpointFFI> = shielded_cs
+                        .nullifier_checkpoints
+                        .iter()
+                        .map(|(id, &(h, t))| ShieldedNullifierCheckpointFFI {
+                            wallet_id: id.wallet_id,
+                            account_index: id.account_index,
+                            height: h,
+                            timestamp: t,
+                        })
+                        .collect();
+                    let result = unsafe {
+                        cb(
+                            self.callbacks.context,
+                            wallet_id.as_ptr(),
+                            entries.as_ptr(),
+                            entries.len(),
+                        )
+                    };
+                    if result != 0 {
+                        eprintln!(
+                            "Shielded nullifier-checkpoint persistence callback returned error code {}",
+                            result
+                        );
+                        round_success = false;
+                    }
+                }
+            }
+        }
+
         // Close the round. Clients use this to commit (if
         // `round_success == true`) or roll back (otherwise) the
         // staged writes accumulated across the per-kind callbacks
@@ -1067,6 +1320,175 @@ impl PlatformWalletPersistence for FFIPersister {
                     .insert(entry.wallet_id, platform_address_state);
             }
         }
+
+        // Restore shielded sub-wallet state if the host has wired
+        // up the optional callbacks. Notes and per-subwallet sync
+        // states travel separately so the host can populate them
+        // from independent SwiftData fetch descriptors. Both arms
+        // walk the same `(wallet_id, account_index)` key space and
+        // funnel into a single `SubwalletId` map on
+        // `ClientStartState.shielded`.
+        #[cfg(feature = "shielded")]
+        {
+            use crate::shielded_persistence::*;
+            use platform_wallet::changeset::{ShieldedSubwalletStartState, ShieldedSyncStartState};
+            use platform_wallet::wallet::shielded::{ShieldedNote, SubwalletId};
+
+            let mut shielded_state = ShieldedSyncStartState::default();
+
+            // Fail fast on a half-wired callback pair: a loader without
+            // its matching free callback leaks the host-allocated buffer
+            // on every successful load (the guard's `Drop` is a no-op
+            // when `free_fn` is `None`).
+            if self.callbacks.on_load_shielded_notes_fn.is_some()
+                != self.callbacks.on_load_shielded_notes_free_fn.is_some()
+            {
+                return Err(
+                    "on_load_shielded_notes_fn and on_load_shielded_notes_free_fn must be \
+                     provided together"
+                        .to_string()
+                        .into(),
+                );
+            }
+            if self.callbacks.on_load_shielded_sync_states_fn.is_some()
+                != self
+                    .callbacks
+                    .on_load_shielded_sync_states_free_fn
+                    .is_some()
+            {
+                return Err(
+                    "on_load_shielded_sync_states_fn and on_load_shielded_sync_states_free_fn \
+                     must be provided together"
+                        .to_string()
+                        .into(),
+                );
+            }
+
+            // 1) notes
+            if let Some(load_notes) = self.callbacks.on_load_shielded_notes_fn {
+                let mut notes_ptr: *const ShieldedNoteRestoreFFI = std::ptr::null();
+                let mut notes_count: usize = 0;
+                let rc =
+                    unsafe { load_notes(self.callbacks.context, &mut notes_ptr, &mut notes_count) };
+                if rc != 0 {
+                    return Err(
+                        format!("on_load_shielded_notes_fn returned error code {}", rc).into(),
+                    );
+                }
+                struct NotesGuard {
+                    context: *mut c_void,
+                    free_fn: Option<
+                        unsafe extern "C" fn(
+                            context: *mut c_void,
+                            entries: *const ShieldedNoteRestoreFFI,
+                            count: usize,
+                        ),
+                    >,
+                    entries: *const ShieldedNoteRestoreFFI,
+                    count: usize,
+                }
+                impl Drop for NotesGuard {
+                    fn drop(&mut self) {
+                        if let Some(free_fn) = self.free_fn {
+                            unsafe { free_fn(self.context, self.entries, self.count) };
+                        }
+                    }
+                }
+                let _notes_guard = NotesGuard {
+                    context: self.callbacks.context,
+                    free_fn: self.callbacks.on_load_shielded_notes_free_fn,
+                    entries: notes_ptr,
+                    count: notes_count,
+                };
+                if !notes_ptr.is_null() && notes_count > 0 {
+                    let slice = unsafe { slice::from_raw_parts(notes_ptr, notes_count) };
+                    for ffi in slice {
+                        if ffi.note_data_ptr.is_null() || ffi.note_data_len == 0 {
+                            continue;
+                        }
+                        let note_data = unsafe {
+                            std::slice::from_raw_parts(ffi.note_data_ptr, ffi.note_data_len)
+                                .to_vec()
+                        };
+                        let id = SubwalletId::new(ffi.wallet_id, ffi.account_index);
+                        let entry = shielded_state
+                            .per_subwallet
+                            .entry(id)
+                            .or_insert_with(ShieldedSubwalletStartState::default);
+                        entry.notes.push(ShieldedNote {
+                            position: ffi.position,
+                            cmx: ffi.cmx,
+                            nullifier: ffi.nullifier,
+                            block_height: ffi.block_height,
+                            is_spent: ffi.is_spent != 0,
+                            value: ffi.value,
+                            note_data,
+                        });
+                    }
+                }
+            }
+
+            // 2) per-subwallet sync states
+            if let Some(load_states) = self.callbacks.on_load_shielded_sync_states_fn {
+                let mut states_ptr: *const ShieldedSubwalletSyncStateFFI = std::ptr::null();
+                let mut states_count: usize = 0;
+                let rc = unsafe {
+                    load_states(self.callbacks.context, &mut states_ptr, &mut states_count)
+                };
+                if rc != 0 {
+                    return Err(format!(
+                        "on_load_shielded_sync_states_fn returned error code {}",
+                        rc
+                    )
+                    .into());
+                }
+                struct StatesGuard {
+                    context: *mut c_void,
+                    free_fn: Option<
+                        unsafe extern "C" fn(
+                            context: *mut c_void,
+                            entries: *const ShieldedSubwalletSyncStateFFI,
+                            count: usize,
+                        ),
+                    >,
+                    entries: *const ShieldedSubwalletSyncStateFFI,
+                    count: usize,
+                }
+                impl Drop for StatesGuard {
+                    fn drop(&mut self) {
+                        if let Some(free_fn) = self.free_fn {
+                            unsafe { free_fn(self.context, self.entries, self.count) };
+                        }
+                    }
+                }
+                let _states_guard = StatesGuard {
+                    context: self.callbacks.context,
+                    free_fn: self.callbacks.on_load_shielded_sync_states_free_fn,
+                    entries: states_ptr,
+                    count: states_count,
+                };
+                if !states_ptr.is_null() && states_count > 0 {
+                    let slice = unsafe { slice::from_raw_parts(states_ptr, states_count) };
+                    for ffi in slice {
+                        let id = SubwalletId::new(ffi.wallet_id, ffi.account_index);
+                        let entry = shielded_state
+                            .per_subwallet
+                            .entry(id)
+                            .or_insert_with(ShieldedSubwalletStartState::default);
+                        entry.last_synced_index = ffi.last_synced_index;
+                        if ffi.has_nullifier_checkpoint != 0 {
+                            entry.nullifier_checkpoint = Some((
+                                ffi.nullifier_checkpoint_height,
+                                ffi.nullifier_checkpoint_timestamp,
+                            ));
+                        }
+                    }
+                }
+            }
+
+            out.shielded = shielded_state;
+        }
+
         Ok(out)
     }
 
@@ -2679,6 +3101,7 @@ fn build_wallet_identity_bucket(
 unsafe fn build_identity_public_keys(
     spec: &IdentityRestoreEntryFFI,
 ) -> BTreeMap<KeyID, IdentityPublicKey> {
+    use dpp::identity::identity_public_key::contract_bounds::ContractBounds;
     let mut map: BTreeMap<KeyID, IdentityPublicKey> = BTreeMap::new();
     if spec.keys.is_null() || spec.keys_count == 0 {
         return map;
@@ -2698,11 +3121,46 @@ unsafe fn build_identity_public_keys(
             continue;
         }
         let bytes: Vec<u8> = slice::from_raw_parts(row.data, row.data_len).to_vec();
+
+        // Reconstruct the ContractBounds variant from the kind tag
+        // + id + optional doc-type C-string trio. Mirrors the
+        // encoding in `IdentityKeyEntryFFI::from_entry`. A kind=2
+        // row with a null doc-type pointer is an FFI-side
+        // inconsistency (the writer is supposed to demote to
+        // kind=1 in that case — see identity_persistence.rs); we
+        // demote it here too rather than fabricating an empty doc-
+        // type name. Invalid kind tags load as unbounded so a
+        // forward-compatible writer doesn't lock us out.
+        let contract_bounds: Option<ContractBounds> = match row.contract_bounds_kind {
+            0 => None,
+            1 => Some(ContractBounds::SingleContract {
+                id: row.contract_bounds_id.into(),
+            }),
+            2 => {
+                if row.contract_bounds_document_type.is_null() {
+                    Some(ContractBounds::SingleContract {
+                        id: row.contract_bounds_id.into(),
+                    })
+                } else {
+                    match CStr::from_ptr(row.contract_bounds_document_type).to_str() {
+                        Ok(name) => Some(ContractBounds::SingleContractDocumentType {
+                            id: row.contract_bounds_id.into(),
+                            document_type_name: name.to_string(),
+                        }),
+                        Err(_) => Some(ContractBounds::SingleContract {
+                            id: row.contract_bounds_id.into(),
+                        }),
+                    }
+                }
+            }
+            _ => None,
+        };
+
         let pk = IdentityPublicKey::V0(IdentityPublicKeyV0 {
             id: row.key_id,
             purpose,
             security_level,
-            contract_bounds: None,
+            contract_bounds,
             key_type,
             read_only: row.read_only,
             data: BinaryData::new(bytes),

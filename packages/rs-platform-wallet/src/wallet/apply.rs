@@ -108,6 +108,12 @@ impl PlatformWalletInfo {
             wallet_metadata: _,
             account_registrations: _,
             account_address_pools: _,
+            // Shielded deltas are owned by `ShieldedWallet` (which
+            // mutates its store directly during sync / spend); the
+            // canonical in-memory state lives there and the
+            // changeset is persistence-side only. Drop here.
+            #[cfg(feature = "shielded")]
+                shielded: _,
         } = cs;
 
         // 1. Core wallet state. In the new event-bus model, a
@@ -322,8 +328,6 @@ impl PlatformWalletInfo {
         drop(token_balances);
 
         // 7. Recompute cached UI balance from the now-restored UTXO set.
-        //    `update_balance` returns its own changeset internally; we
-        //    discard it (apply does not re-emit).
         use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
         self.core_wallet.update_balance();
         // Mirror the recomputed balance into the lock-free Arc that the

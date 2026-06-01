@@ -11,9 +11,31 @@ mod replacement_tests {
 
     #[tokio::test]
     async fn test_document_replace_on_document_type_that_is_mutable() {
-        let platform_version = PlatformVersion::latest();
+        run_document_replace_on_document_type_that_is_mutable_at_protocol_version(
+            PlatformVersion::latest().protocol_version,
+            1411320,
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_11: pre-B7 happy-path fee — transformer's local
+    /// execution context was dropped, so per-transition grovedb reads
+    /// were not billed. Pinned so v11 chain history stays bit-for-bit
+    /// reproducible.
+    #[tokio::test]
+    async fn test_document_replace_on_document_type_that_is_mutable_protocol_version_11() {
+        run_document_replace_on_document_type_that_is_mutable_at_protocol_version(11, 1399260)
+            .await;
+    }
+
+    async fn run_document_replace_on_document_type_that_is_mutable_at_protocol_version(
+        protocol_version: dpp::version::ProtocolVersion,
+        expected_processing_fee: dpp::fee::Credits,
+    ) {
+        let platform_version = PlatformVersion::get(protocol_version)
+            .expect("expected platform version for the requested protocol_version");
         let mut platform = TestPlatformBuilder::new()
-            .with_latest_protocol_version()
+            .with_initial_protocol_version(protocol_version)
             .build_with_mock_rpc()
             .set_genesis_state();
 
@@ -146,7 +168,12 @@ mod replacement_tests {
 
         assert_eq!(processing_result.valid_count(), 1);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 1399260);
+        assert_eq!(
+            processing_result.aggregated_fees().processing_fee,
+            expected_processing_fee,
+            "PROTOCOL_VERSION_{}: happy-path replace processing fee must match the version-specific baseline",
+            protocol_version,
+        );
 
         let issues = platform
             .drive
@@ -671,7 +698,7 @@ mod replacement_tests {
     async fn test_document_replace_on_document_type_that_is_not_mutable() {
         run_document_replace_on_document_type_that_is_not_mutable_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            445700,
+            460920,
         )
         .await;
     }
@@ -917,8 +944,34 @@ mod replacement_tests {
 
     #[tokio::test]
     async fn test_document_replace_on_document_type_that_is_not_mutable_but_is_transferable() {
-        let platform_version = PlatformVersion::latest();
+        run_document_replace_on_document_type_that_is_not_mutable_but_is_transferable_at_protocol_version(
+            PlatformVersion::latest().protocol_version,
+            457660,
+        )
+        .await;
+    }
+
+    /// PROTOCOL_VERSION_11: pre-B7 bump-only fee (transformer's local
+    /// execution context dropped the per-transition reads). Pinned so
+    /// v11 chain history stays bit-for-bit reproducible.
+    #[tokio::test]
+    async fn test_document_replace_on_document_type_that_is_not_mutable_but_is_transferable_protocol_version_11(
+    ) {
+        run_document_replace_on_document_type_that_is_not_mutable_but_is_transferable_at_protocol_version(
+            11,
+            445700,
+        )
+        .await;
+    }
+
+    async fn run_document_replace_on_document_type_that_is_not_mutable_but_is_transferable_at_protocol_version(
+        protocol_version: dpp::version::ProtocolVersion,
+        expected_processing_fee: dpp::fee::Credits,
+    ) {
+        let platform_version = PlatformVersion::get(protocol_version)
+            .expect("expected platform version for the requested protocol_version");
         let (mut platform, contract) = TestPlatformBuilder::new()
+            .with_initial_protocol_version(protocol_version)
             .build_with_mock_rpc()
             .set_initial_state_structure()
             .with_crypto_card_game_transfer_only(Transferable::Always);
@@ -1094,7 +1147,12 @@ mod replacement_tests {
 
         assert_eq!(processing_result.valid_count(), 0);
 
-        assert_eq!(processing_result.aggregated_fees().processing_fee, 445700);
+        assert_eq!(
+            processing_result.aggregated_fees().processing_fee,
+            expected_processing_fee,
+            "PROTOCOL_VERSION_{}: paid-error replace processing fee must match the version-specific baseline",
+            protocol_version,
+        );
 
         let query_sender_results = platform
             .drive
@@ -1224,13 +1282,14 @@ mod replacement_tests {
         );
     }
 
-    /// PROTOCOL_VERSION_12+ — same fee as v11 because the bump emission for
-    /// this specific path is unconditional (pre-existing legacy behavior).
+    /// PROTOCOL_VERSION_12+ — bump emission for this specific path is
+    /// unconditional (pre-existing legacy behavior), but the document
+    /// query now bills its cost on top of v11's bump-only fee.
     #[tokio::test]
     async fn test_document_replace_that_does_not_yet_exist() {
         run_document_replace_that_does_not_yet_exist_at_protocol_version(
             PlatformVersion::latest().protocol_version,
-            516040,
+            520340,
         )
         .await;
     }

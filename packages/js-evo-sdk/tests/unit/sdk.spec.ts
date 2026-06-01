@@ -220,4 +220,85 @@ describe('EvoSDK', () => {
       expect(sdk.isConnected).to.equal(false);
     });
   });
+
+  describe('devnet()', () => {
+    it('should create non-trusted devnet instance with addresses + devnetName', () => {
+      const sdk = EvoSDK.devnet('paloma', { addresses: [TEST_ADDRESS_1] });
+      expect(sdk).to.be.instanceof(EvoSDK);
+      expect(sdk.options.network).to.equal('devnet');
+      expect(sdk.options.devnetName).to.equal('paloma');
+      expect(sdk.options.addresses).to.deep.equal([TEST_ADDRESS_1]);
+      expect(sdk.options.trusted).to.be.false();
+      expect(sdk.isConnected).to.equal(false);
+    });
+
+    it('should accept devnet with only addresses (no devnetName)', () => {
+      const sdk = new EvoSDK({ network: 'devnet', addresses: [TEST_ADDRESS_1] });
+      expect(sdk.options.network).to.equal('devnet');
+      expect(sdk.options.addresses).to.deep.equal([TEST_ADDRESS_1]);
+      expect(sdk.options.devnetName).to.be.undefined();
+    });
+
+    it('should reject non-trusted devnet without addresses', () => {
+      // devnetName alone is not enough — without trusted context, no addresses can be discovered.
+      expect(() => EvoSDK.devnet('paloma')).to.throw(/addresses/);
+    });
+
+    it('should reject network=devnet without devnetName and without addresses', () => {
+      expect(() => new EvoSDK({ network: 'devnet' })).to.throw(/devnet/);
+    });
+  });
+
+  describe('devnetTrusted()', () => {
+    it('should create trusted devnet instance', () => {
+      const sdk = EvoSDK.devnetTrusted('paloma');
+      expect(sdk).to.be.instanceof(EvoSDK);
+      expect(sdk.options.network).to.equal('devnet');
+      expect(sdk.options.devnetName).to.equal('paloma');
+      expect(sdk.options.trusted).to.be.true();
+      expect(sdk.isConnected).to.equal(false);
+    });
+
+    it('should preserve quorumUrl override', () => {
+      const sdk = EvoSDK.devnetTrusted('paloma', { quorumUrl: 'https://custom.example' });
+      expect(sdk.options.quorumUrl).to.equal('https://custom.example');
+      expect(sdk.options.trusted).to.be.true();
+    });
+
+    it('should reject trusted devnet without devnetName', () => {
+      expect(() => new EvoSDK({ network: 'devnet', trusted: true })).to.throw(/devnetName/);
+    });
+
+    it('should reject quorumUrl when trusted is false', () => {
+      expect(() => new EvoSDK({
+        network: 'devnet',
+        devnetName: 'paloma',
+        addresses: [TEST_ADDRESS_1],
+        quorumUrl: 'https://custom',
+      })).to.throw(/quorumUrl/);
+    });
+
+    it('should accept quorumUrl on trusted testnet (override)', () => {
+      const sdk = new EvoSDK({ network: 'testnet', trusted: true, quorumUrl: 'https://x' });
+      expect(sdk.options.quorumUrl).to.equal('https://x');
+      expect(sdk.options.trusted).to.be.true();
+    });
+
+    it('should accept quorumUrl on trusted mainnet (override)', () => {
+      const sdk = new EvoSDK({ network: 'mainnet', trusted: true, quorumUrl: 'https://x' });
+      expect(sdk.options.quorumUrl).to.equal('https://x');
+      expect(sdk.options.network).to.equal('mainnet');
+    });
+
+    it('should reject devnetName on non-devnet networks (typo guard)', () => {
+      expect(() => new EvoSDK({ network: 'testnet', devnetName: 'paloma' }))
+        .to.throw(/devnetName/);
+    });
+
+    it('should accept trusted devnet with only quorumUrl (no devnetName)', () => {
+      const sdk = new EvoSDK({ network: 'devnet', trusted: true, quorumUrl: 'https://x' });
+      expect(sdk.options.quorumUrl).to.equal('https://x');
+      expect(sdk.options.devnetName).to.be.undefined();
+    });
+  });
 });

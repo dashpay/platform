@@ -23,6 +23,18 @@ export class DocumentsFacade {
     return w.getDocumentsWithProofInfo(query);
   }
 
+  async history(query: wasm.DocumentHistoryQuery): Promise<Map<bigint, wasm.Document>> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getDocumentHistory(query);
+  }
+
+  async historyWithProof(
+    query: wasm.DocumentHistoryQuery,
+  ): Promise<wasm.ProofMetadataResponseTyped<Map<bigint, wasm.Document>>> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getDocumentHistoryWithProofInfo(query);
+  }
+
   async get(contractId: wasm.IdentifierLike, type: string, documentId: wasm.IdentifierLike):
     Promise<wasm.Document | undefined> {
     const w = await this.sdk.getWasmSdkConnected();
@@ -66,5 +78,49 @@ export class DocumentsFacade {
   async setPrice(options: wasm.DocumentSetPriceOptions): Promise<void> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.documentSetPrice(options);
+  }
+
+  async count(query: wasm.DocumentsQuery): Promise<Map<string, bigint>> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getDocumentsCount(query);
+  }
+
+  async countWithProof(
+    query: wasm.DocumentsQuery,
+  ): Promise<wasm.ProofMetadataResponseTyped<Map<string, bigint>>> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getDocumentsCountWithProofInfo(query);
+  }
+
+  async sum(
+    query: wasm.DocumentsQuery,
+    sumProperty: string,
+  ): Promise<Map<string, bigint>> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getDocumentsSum(query, sumProperty);
+  }
+
+  async sumWithProof(
+    query: wasm.DocumentsQuery,
+    sumProperty: string,
+  ): Promise<wasm.ProofMetadataResponseTyped<Map<string, bigint>>> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getDocumentsSumWithProofInfo(query, sumProperty);
+  }
+
+  async average(
+    query: wasm.DocumentsQuery,
+    averageProperty: string,
+  ): Promise<Map<string, { count: bigint; sum: bigint }>> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getDocumentsAverage(query, averageProperty);
+  }
+
+  async averageWithProof(
+    query: wasm.DocumentsQuery,
+    averageProperty: string,
+  ): Promise<wasm.ProofMetadataResponseTyped<Map<string, { count: bigint; sum: bigint }>>> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getDocumentsAverageWithProofInfo(query, averageProperty);
   }
 }

@@ -120,7 +120,11 @@ impl PerAccountPlatformAddressState {
     ///
     /// Used by `PlatformAddressWallet::initialize_from_persisted` to
     /// push the persisted balances onto each `ManagedPlatformAccount`
-    /// before the provider takes over.
+    /// before the provider takes over — without this, spend paths
+    /// that enumerate funded addresses (e.g.
+    /// `shielded_shield_from_account`) read `available = 0` after a
+    /// restart until the first BLAST sync repopulates the in-memory
+    /// `address_balances` map.
     pub(crate) fn found(&self) -> &BTreeMap<PlatformP2PKHAddress, AddressFunds> {
         &self.found
     }
@@ -428,6 +432,16 @@ impl PlatformPaymentAddressProvider {
         self.sync_height = result.new_sync_height;
         self.sync_timestamp = result.new_sync_timestamp;
         self.last_known_recent_block = result.last_known_recent_block;
+    }
+
+    /// Current `last_known_recent_block` watermark.
+    ///
+    /// Crate-visible mirror of the field used by the `AddressProvider`
+    /// trait implementation, so wallet-level helpers (notably
+    /// [`super::wallet::PlatformAddressWallet::sync_watermark`]) can
+    /// read the value without going through the trait.
+    pub(crate) fn last_known_recent_block(&self) -> u64 {
+        self.last_known_recent_block
     }
 
     /// Restore incremental-sync watermark from persisted state.

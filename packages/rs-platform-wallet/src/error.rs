@@ -1,4 +1,7 @@
+use dpp::address_funds::PlatformAddress;
+use dpp::fee::Credits;
 use dpp::identifier::Identifier;
+use key_wallet::account::StandardAccountType;
 use key_wallet::Network;
 
 /// Errors that can occur in platform wallet operations
@@ -60,6 +63,13 @@ pub enum PlatformWalletError {
     #[error("Transaction building failed: {0}")]
     TransactionBuild(String),
 
+    #[error("no spendable inputs available on {account_type} account {account_index}: {context}")]
+    NoSpendableInputs {
+        account_type: StandardAccountType,
+        account_index: u32,
+        context: String,
+    },
+
     #[error("Asset lock proof waiting failed: {0}")]
     AssetLockProofWait(String),
 
@@ -71,6 +81,58 @@ pub enum PlatformWalletError {
 
     #[error("Address operation failed: {0}")]
     AddressOperation(String),
+
+    #[error(
+        "no selectable inputs: only funded addresses appear as destinations \
+         (funded_outputs={funded_outputs:?}, sub_min_count={sub_min_count}, \
+         sub_min_aggregate={sub_min_aggregate}, min_input_amount={min_input_amount}); \
+         rotate to a fresh receive address, consolidate funds, or use \
+         InputSelection::Explicit"
+    )]
+    OnlyOutputAddressesFunded {
+        /// Funded addresses dropped by the input-equals-output filter.
+        funded_outputs: Vec<PlatformAddress>,
+        /// Number of additional addresses with a positive balance below
+        /// `min_input_amount`. Preserved even though the output-collision
+        /// signal is the typically-actionable fix, so a UI rotating to a
+        /// fresh receive address has the dust breadcrumb on the next try.
+        sub_min_count: usize,
+        /// Aggregate of the sub-minimum balances counted in `sub_min_count`.
+        sub_min_aggregate: Credits,
+        /// Per-input minimum from the active platform version.
+        min_input_amount: Credits,
+    },
+
+    #[error(
+        "no selectable inputs: every funded address is below the per-input \
+         minimum (sub_min_count={sub_min_count}, sub_min_aggregate={sub_min_aggregate} \
+         credits, min_input_amount={min_input_amount}); consolidate funds or use \
+         InputSelection::Explicit"
+    )]
+    OnlyDustInputs {
+        /// Number of addresses with a positive balance below `min_input_amount`.
+        sub_min_count: usize,
+        /// Aggregate of those sub-minimum balances.
+        sub_min_aggregate: Credits,
+        /// Per-input minimum from the active platform version.
+        min_input_amount: Credits,
+    },
+
+    #[error(
+        "change output amount {change_amount} is below the protocol per-output \
+         minimum {min_output_amount}; raise the input sum or drop the change \
+         address so the residual would exceed the minimum"
+    )]
+    ChangeBelowMinimumOutput {
+        /// `Σ inputs − Σ user_outputs` — the residual that would have been
+        /// routed to the change output.
+        change_amount: Credits,
+        /// Per-output minimum from the active platform version.
+        min_output_amount: Credits,
+    },
+
+    #[error("input sum overflow: caller-supplied input balances exceed u64::MAX")]
+    InputSumOverflow,
 
     #[error("Platform address not found in wallet: {0}")]
     AddressNotFound(String),
@@ -141,6 +203,9 @@ pub enum PlatformWalletError {
 
     #[error("Shielded key derivation failed: {0}")]
     ShieldedKeyDerivation(String),
+
+    #[error("Shielded sub-wallet not bound: call bind_shielded first")]
+    ShieldedNotBound,
 }
 
 /// Check whether an SDK error indicates that an InstantSend lock proof was

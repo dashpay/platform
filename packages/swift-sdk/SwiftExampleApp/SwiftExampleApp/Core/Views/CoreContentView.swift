@@ -8,6 +8,10 @@ struct CoreContentView: View {
     @EnvironmentObject var appUIState: AppUIState
     @EnvironmentObject var platformBalanceSyncService: PlatformBalanceSyncService
     @EnvironmentObject var shieldedService: ShieldedService
+    /// Threaded into `ShieldedService.clearLocalState(modelContext:)`
+    /// so the Clear button can scope its delete-by-predicate to
+    /// the bound wallet's persisted rows.
+    @Environment(\.modelContext) private var modelContext
     @State private var showProofDetail = false
     @State private var masternodesEnabled: Bool = true
     @State private var platformSyncExpanded: Bool = false
@@ -420,34 +424,89 @@ var body: some View {
                         Spacer()
                     }
 
-                    // Shielded balance
-                    HStack {
-                        Text("Shielded Balance")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                        Spacer()
-                        if shieldedService.shieldedBalance > 0 {
-                            Text(formatCredits(shieldedService.shieldedBalance))
-                                .font(.subheadline)
-                                .fontWeight(.medium)
-                        } else {
-                            Text("0")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                        }
-                    }
+                    // Aggregate shielded balance + notes-synced
+                    // watermark across every wallet/account on disk.
+                    // Read straight from SwiftData (network-wide, no
+                    // wallet scoping) so the figures survive restart
+                    // and reflect the whole pool rather than a single
+                    // bound wallet.
+                    ShieldedNetworkSummaryRows(walletIds: walletIdsOnNetwork)
 
-                    // Orchard address
-                    if let address = shieldedService.orchardDisplayAddress {
+                    // Per-pass wall-clock timing. While a sync is
+                    // in-flight, shows the live ticker (driven by a
+                    // 1Hz timer on ShieldedService). After
+                    // completion, shows the most recent non-cooldown
+                    // pass duration. Mono digits keep the number
+                    // readable as it ticks during long initial
+                    // syncs (e.g. 10 min at N=1M). See
+                    // `docs/shielded-sync-timing-spec.md`.
+                    if shieldedService.isSyncing,
+                       let elapsed = shieldedService.currentSyncElapsed {
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Text("Syncing… elapsed")
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                                Spacer()
+                                Text(String(format: "%.1f s", elapsed))
+                                    .font(.caption)
+                                    .fontWeight(.medium)
+                                    .monospacedDigit()
+                            }
+                            // Dual per-pass progress (P1.2). Two bars
+                            // share the same denominator — the on-chain
+                            // MMR total leaf count (total notes == total
+                            // leaves) — carried straight from Rust in the
+                            // tree-progress callback's second arg. The
+                            // "Downloaded" bar tracks notes pulled off the
+                            // wire; the "Checked" bar tracks commitments
+                            // appended to the local Orchard tree. When the
+                            // total is unknown (RPC unavailable, or before
+                            // the first tree batch lands) `currentTreeTotal`
+                            // is nil/0 and each bar falls back to an
+                            // indeterminate spinner with the raw count.
+                            if shieldedService.currentSyncScanned != nil
+                                || shieldedService.currentTreeCommitted != nil {
+                                ShieldedDualProgressRows(
+                                    downloaded: shieldedService.currentSyncScanned,
+                                    checked: shieldedService.currentTreeCommitted,
+                                    total: shieldedService.currentTreeTotal
+                                )
+                            }
+                        }
+                    } else if let duration = shieldedService.lastSyncDuration {
                         HStack {
-                            Text("Orchard Address")
+                            Text("Last sync duration")
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
                             Spacer()
-                            Text(address.prefix(12) + "..." + address.suffix(8))
+                            Text(String(format: "%.2f s", max(0, duration)))
                                 .font(.caption)
                                 .fontWeight(.medium)
-                                .foregroundColor(.purple)
+                                .monospacedDigit()
+                        }
+                    }
+
+                    // "Longest pass" row — survives short steady-state
+                    // re-passes so the cold-sync wall clock (the
+                    // headline number for 1M-note devnet stress) stays
+                    // visible after subsequent fast deltas overwrite
+                    // `lastSyncDuration`. Only rendered when it
+                    // actually exceeds the most recent pass to avoid
+                    // redundant display.
+                    if let longest = shieldedService.longestSyncDuration,
+                       let last = shieldedService.lastSyncDuration,
+                       longest > last + 0.05 {
+                        HStack {
+                            Text("Longest pass")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            Text(String(format: "%.2f s", longest))
+                                .font(.caption)
+                                .fontWeight(.medium)
+                                .monospacedDigit()
+                                .foregroundColor(.secondary)
                         }
                     }
 
@@ -512,10 +571,35 @@ var body: some View {
                         .buttonStyle(.borderedProminent)
                         .tint(.purple)
                         .controlSize(.mini)
-                        .disabled(shieldedService.isSyncing)
+                        // Disabled while a sync is in flight, and
+                        // pre-first-bind when there are no stashed
+                        // credentials to resume from. Post-Clear
+                        // is *not* disabled — `manualSync` rebinds
+                        // on demand from the credentials kept by
+                        // `clearLocalState`, so the user has a
+                        // path back to a synced state without
+                        // having to navigate away.
+                        .disabled(shieldedService.isSyncing || !shieldedService.canResume)
 
                         Button {
-                            shieldedService.reset()
+                            // Stop the manager-wide shielded sync
+                            // loop, then wipe every wallet's
+                            // persisted shielded rows (notes +
+                            // sync state). The Swift mirror zeros
+                            // out and the service goes unbound,
+                            // but the bind credentials are kept
+                            // so the user can tap Sync Now to
+                            // self-rebind from this screen — no
+                            // navigation detour required. The
+                            // on-disk SQLite tree is intentionally
+                            // NOT deleted (Rust still holds its
+                            // handle open via FileBackedShieldedStore;
+                            // see clearLocalState's doc).
+                            Task {
+                                await shieldedService.clearLocalState(
+                                    modelContext: modelContext
+                                )
+                            }
                         } label: {
                             Text("Clear")
                                 .font(.caption)
@@ -524,6 +608,16 @@ var body: some View {
                         .buttonStyle(.borderedProminent)
                         .tint(.red)
                         .controlSize(.mini)
+                        // Gated on `isSyncing` to close the
+                        // double-tap window where the user could
+                        // hit Clear *while* a sync is in flight.
+                        // `clearLocalState` calls
+                        // `stopShieldedSync()` first, but stop is
+                        // best-effort and the persister callback
+                        // can still drain rows into SwiftData
+                        // between our delete and the loop
+                        // actually quiescing.
+                        .disabled(shieldedService.isSyncing)
                     }
                 }
                 .padding(.vertical, 4)
@@ -568,11 +662,23 @@ var body: some View {
             let peers = spvPeerOverride()
             let restrictToConfiguredPeers = !peers.isEmpty
 
+            // Devnet requires a name so `DevnetConfig` can embed
+            // `devnet.devnet-<name>` in the SPV user agent (Dash
+            // Core devnet peers drop inbound handshakes without it).
+            // Read from the same UserDefaults key OptionsView writes.
+            let devnetName: String? = platformState.currentNetwork == .devnet
+                ? UserDefaults.standard.string(forKey: "platformDevnetName").flatMap {
+                    let trimmed = $0.trimmingCharacters(in: .whitespaces)
+                    return trimmed.isEmpty ? nil : trimmed
+                }
+                : nil
+
             let config = PlatformSpvStartConfig(
                 dataDir: dataDirURL.path,
                 network: platformState.currentNetwork,
                 peers: peers,
-                restrictToConfiguredPeers: restrictToConfiguredPeers
+                restrictToConfiguredPeers: restrictToConfiguredPeers,
+                devnetName: devnetName
             )
             try walletManager.startSpv(config: config)
         } catch {
@@ -605,6 +711,21 @@ var body: some View {
         let useDocker = UserDefaults.standard.bool(forKey: "useDockerSetup")
         if platformState.currentNetwork == .regtest && useDocker {
             return ["127.0.0.1:20301"]
+        }
+        // Devnet: auto-discover SPV peers from the quorum-list
+        // service's `/masternodes` endpoint. Each masternode reports
+        // its own `address` field (`ip:CoreP2PPort`) — use the
+        // verbatim values rather than guessing the canonical 29999
+        // port (paloma reports 20001 per masternode, for example).
+        // No manual SPV input on devnet — the quorum URL is the
+        // single source of truth (see `OptionsView`'s devnet branch).
+        if platformState.currentNetwork == .devnet {
+            guard
+                let quorum = UserDefaults.standard.string(forKey: "platformQuorumURL"),
+                !quorum.isEmpty,
+                let active = SDK.discoverActiveMasternodes(quorumBase: quorum)
+            else { return [] }
+            return active.map(\.spvPeer)
         }
         let useLocalCore = UserDefaults.standard.bool(forKey: "useLocalhostCore")
         guard useLocalCore else { return [] }
@@ -783,11 +904,25 @@ struct WalletRowView: View {
     /// addresses (no identities) showed "Empty".
     @Query private var addressBalances: [PersistentPlatformAddress]
 
+    /// Per-wallet unspent shielded notes. Same persisted-truth
+    /// source as the Sync Status diagnostic — sum of `value` over
+    /// unspent rows for this wallet, in credits. Without this the
+    /// wallet row's combined DASH total under-reported the wallet's
+    /// real value by every shielded note: a wallet with funds in
+    /// the shielded pool would show Core + Platform on the list but
+    /// silently exclude Shielded.
+    @Query private var shieldedNotes: [PersistentShieldedNote]
+
     init(wallet: PersistentWallet) {
         self.wallet = wallet
         let walletId = wallet.walletId
         _addressBalances = Query(
             filter: #Predicate<PersistentPlatformAddress> { $0.walletId == walletId }
+        )
+        _shieldedNotes = Query(
+            filter: #Predicate<PersistentShieldedNote> {
+                $0.walletId == walletId && !$0.isSpent
+            }
         )
     }
 
@@ -801,12 +936,22 @@ struct WalletRowView: View {
     /// Platform balance in credits: prefer BLAST address sync, fall
     /// back to summing identity credits when no addresses have been
     /// synced yet.
+    ///
+    /// Skips identities whose `modelContext` is nil — that's
+    /// SwiftData's marker for an invalidated row (e.g. mid-wallet-
+    /// delete, where the relationship array is briefly visible but
+    /// the underlying rows have already been removed from the
+    /// store). Reading any persisted property on an invalidated
+    /// model crashes with `BackingData.swift:866: This model
+    /// instance was invalidated…`.
     private var platformBalance: UInt64 {
         let blastBalance = addressBalances.reduce(UInt64(0)) { $0 + $1.balance }
         if blastBalance > 0 { return blastBalance }
-        return identitiesForWallet.reduce(UInt64(0)) {
-            $0 + UInt64(bitPattern: $1.balance)
-        }
+        return identitiesForWallet
+            .filter { $0.modelContext != nil }
+            .reduce(UInt64(0)) {
+                $0 + UInt64(bitPattern: $1.balance)
+            }
     }
 
     /// One-shot snapshot of the wallet's per-account Core balances.
@@ -836,12 +981,20 @@ struct WalletRowView: View {
         totals.confirmed + totals.unconfirmed + totals.immature + totals.locked
     }
 
+    /// Sum of unspent shielded note values in credits. Same scale
+    /// as `platformBalance` (1e11 credits/DASH), so it folds into
+    /// the same divisor in [`combinedDashAmount(coreTotal:)`].
+    private var shieldedBalance: UInt64 {
+        shieldedNotes.reduce(UInt64(0)) { $0 + $1.value }
+    }
+
     /// Combined wallet balance expressed in DASH for a precomputed
-    /// totals tuple. Core uses 1e8 duffs/DASH; Platform uses 1e11
-    /// credits/DASH.
+    /// totals tuple. Core uses 1e8 duffs/DASH; Platform and Shielded
+    /// both use 1e11 credits/DASH.
     private func combinedDashAmount(coreTotal: UInt64) -> Double {
         Double(coreTotal) / 100_000_000.0
             + Double(platformBalance) / 100_000_000_000.0
+            + Double(shieldedBalance) / 100_000_000_000.0
     }
 
     private var walletIdShort: String {
@@ -921,7 +1074,7 @@ struct WalletRowView: View {
         // re-invoking the accessor.
         let core = coreBalanceTotals()
         let coreTotal = Self.sumCoreBalance(core)
-        let hasAny = coreTotal > 0 || platformBalance > 0
+        let hasAny = coreTotal > 0 || platformBalance > 0 || shieldedBalance > 0
         return VStack(alignment: .leading, spacing: 6) {
             // Header: label (+ status badges) and total Core balance.
             HStack(alignment: .firstTextBaseline) {
@@ -1175,5 +1328,178 @@ extension CoreContentView {
             return "\(formatted) DASH"
         }
         return String(format: "%.8f DASH", dash)
+    }
+}
+
+// MARK: - ShieldedNetworkSummaryRows
+
+/// Network-wide shielded summary: aggregate unspent balance and the
+/// notes-synced watermark across every wallet/account **on the active
+/// network**.
+///
+/// Both figures are read **directly from SwiftData** (scoped to the
+/// active network via `walletIds`) rather than from the
+/// `ShieldedService.shieldedBalance` mirror that's updated
+/// per-bound-wallet from sync events, so they survive restart and
+/// reflect the whole on-network pool:
+///
+///   * **Total Shielded Balance** — sum of `value` over every unspent
+///     `PersistentShieldedNote` whose wallet is on this network.
+///
+///   * **Notes Synced** — the highest `lastSyncedIndex` across this
+///     network's `PersistentShieldedSyncState` rows. The Orchard
+///     commitment tree is chain-wide and shared by every wallet/account
+///     **on a given network**, so each subwallet advances toward the
+///     same tip; the max is the furthest-scanned position and climbs as
+///     sync progresses. Scoping matters: trees are per-chain, so a
+///     `max()` across networks would blend unrelated tip positions.
+private struct ShieldedNetworkSummaryRows: View {
+    /// Wallet ids on the active network. Both queries are filtered
+    /// against this so a multi-network install (e.g. regtest + testnet)
+    /// doesn't blend balances or take a watermark `max()` across
+    /// unrelated per-chain commitment trees — matching the Platform
+    /// Sync Status section's `walletIdsOnNetwork` scoping.
+    let walletIds: Set<Data>
+
+    @Query private var allNotes: [PersistentShieldedNote]
+    @Query private var syncStates: [PersistentShieldedSyncState]
+
+    /// Sum of `value` over this network's unspent notes, in credits.
+    private var totalUnspentCredits: UInt64 {
+        allNotes.lazy
+            .filter { !$0.isSpent && walletIds.contains($0.walletId) }
+            .reduce(UInt64(0)) { $0 &+ $1.value }
+    }
+
+    /// Furthest-scanned commitment-tree index across this network's subwallets.
+    private var notesSynced: UInt64 {
+        syncStates.lazy
+            .filter { walletIds.contains($0.walletId) }
+            .map(\.lastSyncedIndex)
+            .max() ?? 0
+    }
+
+    /// 1 DASH = 100,000,000,000 credits — matches `formatCredits`.
+    private func formatCredits(_ credits: UInt64) -> String {
+        let dash = Double(credits) / 100_000_000_000.0
+        let formatter = NumberFormatter()
+        formatter.minimumFractionDigits = 0
+        formatter.maximumFractionDigits = 8
+        formatter.numberStyle = .decimal
+        formatter.groupingSeparator = ","
+        formatter.decimalSeparator = "."
+        if let formatted = formatter.string(from: NSNumber(value: dash)) {
+            return "\(formatted) DASH"
+        }
+        return String(format: "%.4f DASH", dash)
+    }
+
+    var body: some View {
+        VStack(spacing: 8) {
+            // Aggregate unspent balance across all wallets.
+            HStack {
+                Text("Total Shielded Balance")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                Spacer()
+                if totalUnspentCredits > 0 {
+                    Text(formatCredits(totalUnspentCredits))
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                } else {
+                    Text("0")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            // Notes-synced watermark — climbs as sync progresses.
+            HStack {
+                Text("Notes Synced")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                Spacer()
+                Text(notesSynced, format: .number)
+                    .font(.system(.caption, design: .monospaced))
+                    .fontWeight(.medium)
+            }
+        }
+    }
+}
+
+/// Dual live progress for an in-flight shielded sync pass: a
+/// "Downloaded" bar (notes pulled off the wire) stacked over a
+/// "Checked" bar (commitments appended to the local Orchard tree).
+///
+/// Both bars share the same denominator — `total`, the on-chain MMR
+/// total leaf count carried straight from Rust in the tree-progress
+/// callback (total notes == total leaves). No Swift-side math derives
+/// it. When `total` is nil or 0 the total is indeterminate (the count
+/// RPC was unavailable, or no tree batch has landed yet) and each bar
+/// degrades to an indeterminate spinner alongside its raw count.
+private struct ShieldedDualProgressRows: View {
+    /// Cumulative notes downloaded this pass; nil before the first
+    /// download chunk.
+    let downloaded: UInt64?
+    /// Cumulative commitments appended to the tree this pass; nil
+    /// before the first committed batch.
+    let checked: UInt64?
+    /// Shared denominator (on-chain MMR total). nil/0 ⇒ indeterminate.
+    let total: UInt64?
+
+    /// Determinate only when Rust handed us a positive total.
+    private var hasTotal: Bool {
+        if let total, total > 0 { return true }
+        return false
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            progressRow(label: "Downloaded", value: downloaded)
+            progressRow(label: "Checked", value: checked)
+        }
+    }
+
+    @ViewBuilder
+    private func progressRow(label: String, value: UInt64?) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack {
+                Text(label)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                Spacer()
+                Text(countText(value: value))
+                    .font(.caption2)
+                    .monospacedDigit()
+                    .foregroundColor(.secondary)
+            }
+            if hasTotal, let value, let total {
+                // Clamp so a value that briefly overshoots the cached
+                // total (batch lands before the denominator refreshes)
+                // can't push the bar past 1.0.
+                ProgressView(
+                    value: Double(min(value, total)),
+                    total: Double(total)
+                )
+                .progressViewStyle(.linear)
+                .tint(.purple)
+            } else {
+                // Indeterminate: total unknown ⇒ spinner, not a fake bar.
+                ProgressView()
+                    .progressViewStyle(.linear)
+                    .tint(.purple)
+            }
+        }
+    }
+
+    /// "12,288 / 1,000,000 notes" when the total is known, else
+    /// "12,288 notes" — matches the existing scanned-count presentation.
+    private func countText(value: UInt64?) -> String {
+        let count = value ?? 0
+        let countStr = count.formatted(.number)
+        if hasTotal, let total {
+            return "\(countStr) / \(total.formatted(.number)) notes"
+        }
+        return "\(countStr) notes"
     }
 }
