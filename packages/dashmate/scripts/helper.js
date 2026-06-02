@@ -3,44 +3,38 @@ import { asValue } from 'awilix';
 import graceful from 'node-graceful';
 import createDIContainer from '../src/createDIContainer.js';
 
-// The ephemeral container each SSL provider binds to port 80 during issuance.
-// One can be left orphaned if a previous helper run crashed mid-renewal.
-// Keyed by provider so we only ever touch the container for the active provider
-// (these are live container names, not orphan-only markers).
-const PROVIDER_EPHEMERAL_CONTAINER = {
-  zerossl: 'dashmate-zerossl-validation',
-  letsencrypt: 'dashmate-letsencrypt-lego',
-};
+// The ephemeral containers SSL providers bind to port 80 during issuance.
+// Either can be left orphaned if a previous helper run crashed mid-renewal.
+const EPHEMERAL_SSL_CONTAINERS = [
+  'dashmate-zerossl-validation',
+  'dashmate-letsencrypt-lego',
+];
 
 /**
- * Force-remove the active provider's ephemeral SSL container if it was left
- * orphaned by a previous failed/killed renewal. Scoped to the configured
- * provider and run just before scheduling renewal so it cannot interfere with
- * an unrelated provider's flow.
+ * Force-remove any ephemeral SSL container left orphaned (bound to port 80) by a
+ * previous failed/killed renewal. Cleans the containers for BOTH providers — not
+ * just the configured one — so switching provider (e.g. zerossl -> letsencrypt)
+ * cannot leave the other provider's orphan holding port 80 and blocking the next
+ * renewal. Only called when SSL is enabled, before scheduling begins.
  *
  * @param {Docker} docker
- * @param {string} provider
  * @return {Promise<void>}
  */
-async function removeOrphanedSslContainer(docker, provider) {
-  const name = PROVIDER_EPHEMERAL_CONTAINER[provider];
+async function removeOrphanedSslContainers(docker) {
+  await Promise.all(EPHEMERAL_SSL_CONTAINERS.map(async (name) => {
+    try {
+      await docker.getContainer(name).remove({ force: true });
 
-  if (!name) {
-    return;
-  }
-
-  try {
-    await docker.getContainer(name).remove({ force: true });
-
-    // eslint-disable-next-line no-console
-    console.log(`Removed orphaned container: ${name}`);
-  } catch (e) {
-    // 404 means container doesn't exist — that's the normal case
-    if (e.statusCode !== 404) {
       // eslint-disable-next-line no-console
-      console.error(`Failed to remove orphaned container ${name}: ${e.message}`);
+      console.log(`Removed orphaned container: ${name}`);
+    } catch (e) {
+      // 404 means container doesn't exist — that's the normal case
+      if (e.statusCode !== 404) {
+        // eslint-disable-next-line no-console
+        console.error(`Failed to remove orphaned container ${name}: ${e.message}`);
+      }
     }
-  }
+  }));
 }
 
 (async function main() {
@@ -117,16 +111,18 @@ async function removeOrphanedSslContainer(docker, provider) {
   const provider = config.get('platform.gateway.ssl.provider');
   const isEnabled = config.get('platform.gateway.ssl.enabled');
 
-  if (isEnabled && provider === 'zerossl') {
-    // Clear any container left orphaned (bound to port 80) by a previous
-    // failed/killed renewal before scheduling the next one
-    await removeOrphanedSslContainer(docker, provider);
+  if (isEnabled && (provider === 'zerossl' || provider === 'letsencrypt')) {
+    // Clear any ephemeral SSL container left orphaned (bound to port 80) by a
+    // previous failed/killed renewal before scheduling the next one. Both
+    // providers are cleaned regardless of which is configured, so a provider
+    // switch cannot leave the other's orphan holding port 80.
+    await removeOrphanedSslContainers(docker);
+  }
 
+  if (isEnabled && provider === 'zerossl') {
     const scheduleRenewZeroSslCertificate = container.resolve('scheduleRenewZeroSslCertificate');
     await scheduleRenewZeroSslCertificate(config);
   } else if (isEnabled && provider === 'letsencrypt') {
-    await removeOrphanedSslContainer(docker, provider);
-
     const scheduleRenewLetsEncryptCertificate = container.resolve('scheduleRenewLetsEncryptCertificate');
     await scheduleRenewLetsEncryptCertificate(config);
   } else {
