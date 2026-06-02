@@ -73,10 +73,12 @@ impl IdentityKeyWire {
     }
 }
 
-/// `identity_keys` is keyed by `(identity_id, key_id)`; the parent FK
-/// targets `identities(identity_id)`. The caller-supplied [`WalletId`]
-/// scopes cross-checks against the entry's own `wallet_id` field so
-/// the entry-blob and the typed columns stay aligned.
+/// `identity_keys` is keyed by `(wallet_id, identity_id, key_id)`; the
+/// `wallet_id` FK targets `wallet_metadata(wallet_id)` and the
+/// `identity_id` FK targets `identities(identity_id)`. The typed
+/// `wallet_id` column is always bound from the caller-supplied flush
+/// scope; the entry's own `wallet_id` field (when set) is cross-checked
+/// against it so the typed columns and the serialized blob stay aligned.
 pub fn apply(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
@@ -85,37 +87,30 @@ pub fn apply(
     if !cs.upserts.is_empty() {
         let mut stmt = tx.prepare_cached(
             "INSERT INTO identity_keys \
-                (identity_id, key_id, public_key_blob, public_key_hash) \
-             VALUES (?1, ?2, ?3, ?4) \
-             ON CONFLICT(identity_id, key_id) DO UPDATE SET \
+                (wallet_id, identity_id, key_id, public_key_blob, public_key_hash, derivation_blob) \
+             VALUES (?1, ?2, ?3, ?4, ?5, NULL) \
+             ON CONFLICT(wallet_id, identity_id, key_id) DO UPDATE SET \
                 public_key_blob = excluded.public_key_blob, \
-                public_key_hash = excluded.public_key_hash",
+                public_key_hash = excluded.public_key_hash, \
+                derivation_blob = NULL",
         )?;
         for ((identity_id, key_id), entry) in &cs.upserts {
             // Reject any disagreement between the map key / outer
-            // wallet_id (informational scope) and the entry fields
-            // (what the serialized blob carries) so the two
+            // wallet_id (what the typed columns are bound from) and the
+            // entry fields (what the serialized blob carries) so the two
             // representations of a row can never diverge on disk.
             if entry.identity_id != *identity_id || entry.key_id != *key_id {
                 return Err(WalletStorageError::IdentityKeyEntryMismatch);
             }
-            // Sentinel scope ("no parent wallet known") requires the
-            // entry's wallet_id to also be `None`; a real entry
-            // wallet_id under sentinel scope would silently file the
-            // key under the wrong parenting. Non-sentinel scope
-            // requires the entry's wallet_id (when set) to match
-            // exactly.
-            let scope_is_sentinel = wallet_id.iter().all(|b| *b == 0);
-            match (scope_is_sentinel, entry.wallet_id) {
-                (true, Some(_)) => return Err(WalletStorageError::IdentityKeyEntryMismatch),
-                (false, Some(entry_wallet_id)) if entry_wallet_id != *wallet_id => {
+            if let Some(entry_wallet_id) = entry.wallet_id {
+                if entry_wallet_id != *wallet_id {
                     return Err(WalletStorageError::IdentityKeyEntryMismatch);
                 }
-                _ => {}
             }
             let wire = IdentityKeyWire::from_entry(entry)?;
             let entry_blob = blob::encode(&wire)?;
             stmt.execute(params![
+                wallet_id.as_slice(),
                 identity_id.as_slice(),
                 i64::from(*key_id),
                 entry_blob,
@@ -124,10 +119,16 @@ pub fn apply(
         }
     }
     if !cs.removed.is_empty() {
-        let mut stmt =
-            tx.prepare_cached("DELETE FROM identity_keys WHERE identity_id = ?1 AND key_id = ?2")?;
+        let mut stmt = tx.prepare_cached(
+            "DELETE FROM identity_keys \
+             WHERE wallet_id = ?1 AND identity_id = ?2 AND key_id = ?3",
+        )?;
         for (identity_id, key_id) in &cs.removed {
-            stmt.execute(params![identity_id.as_slice(), i64::from(*key_id)])?;
+            stmt.execute(params![
+                wallet_id.as_slice(),
+                identity_id.as_slice(),
+                i64::from(*key_id),
+            ])?;
         }
     }
     Ok(())

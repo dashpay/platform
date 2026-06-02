@@ -40,8 +40,9 @@ fn native_fk_rejects_orphan_child() {
 }
 
 /// CMT-001: an `identity_keys` row whose `identities` parent does not
-/// exist is rejected by the FK to `identities(identity_id)` (cascade
-/// chain `wallet_metadata → identities → identity_keys`).
+/// exist is rejected by the FK to `identities(identity_id)`. The
+/// `wallet_id` parent exists (via `ensure_wallet_meta`), so the failure
+/// is specifically the missing identity, not the wallet.
 #[test]
 fn native_fk_rejects_identity_keys_without_identity() {
     let (persister, _tmp, _path) = fresh_persister();
@@ -50,9 +51,9 @@ fn native_fk_rejects_identity_keys_without_identity() {
     let conn = persister.lock_conn_for_test();
     let res = conn.execute(
         "INSERT INTO identity_keys \
-            (identity_id, key_id, public_key_blob, public_key_hash) \
-         VALUES (?1, 0, X'00', X'00')",
-        params![[3u8; 32].as_slice()],
+            (wallet_id, identity_id, key_id, public_key_blob, public_key_hash, derivation_blob) \
+         VALUES (?1, ?2, 0, X'00', X'00', NULL)",
+        params![w.as_slice(), [3u8; 32].as_slice()],
     );
     let err = res.unwrap_err().to_string();
     assert!(

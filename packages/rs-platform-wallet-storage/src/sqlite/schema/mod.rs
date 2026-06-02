@@ -27,10 +27,10 @@ pub mod wallet_meta;
 use crate::sqlite::error::WalletStorageError;
 
 /// How a per-wallet table is row-scoped against a `wallet_id`.
-/// Identity-owned tables (`identity_keys`, `token_balances`,
-/// `dashpay_profiles`, `dashpay_payments_overlay`) have no direct
-/// `wallet_id` column; they reach the parent wallet only via the
-/// cascading FK chain `wallet_metadata → identities → …`.
+/// Identity-owned tables (`token_balances`, `dashpay_profiles`,
+/// `dashpay_payments_overlay`) have no direct `wallet_id` column; they
+/// reach the parent wallet only via the cascading FK chain
+/// `wallet_metadata → identities → …`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WalletScope {
     /// The table carries a `wallet_id` column directly; predicates
@@ -59,7 +59,7 @@ pub const PER_WALLET_TABLES: &[(&str, WalletScope)] = &[
     ("core_derived_addresses", WalletScope::DirectColumn),
     ("core_sync_state", WalletScope::DirectColumn),
     ("identities", WalletScope::DirectColumn),
-    ("identity_keys", WalletScope::ViaIdentity),
+    ("identity_keys", WalletScope::DirectColumn),
     ("contacts_sent", WalletScope::DirectColumn),
     ("contacts_recv", WalletScope::DirectColumn),
     ("contacts_established", WalletScope::DirectColumn),

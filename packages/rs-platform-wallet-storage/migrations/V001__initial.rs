@@ -8,14 +8,16 @@
 //! Per-wallet tables carry `wallet_id BLOB` in (or as all of) their
 //! primary key plus a native `FOREIGN KEY (wallet_id) REFERENCES
 //! wallet_metadata(wallet_id) ON DELETE CASCADE`. Identity-owned
-//! tables (`identity_keys`, `dashpay_profiles`,
-//! `dashpay_payments_overlay`, `token_balances`) are keyed by
-//! `identity_id` only; their FK targets `identities(identity_id)` so
-//! cascade flows `wallet_metadata → identities → child` through the
-//! nullable `identities.wallet_id` link. `identities.wallet_id` is
-//! NULL-allowed so identity-only flows (no parent wallet, e.g. the
-//! identity-sync manager populating rows before any wallet is
-//! registered) work without a placeholder.
+//! tables (`dashpay_profiles`, `dashpay_payments_overlay`,
+//! `token_balances`) are keyed by `identity_id` only; their FK targets
+//! `identities(identity_id)` so cascade flows `wallet_metadata →
+//! identities → child` through the nullable `identities.wallet_id`
+//! link. `identity_keys` additionally carries its own `wallet_id`
+//! column (so per-wallet reads stay a direct `WHERE wallet_id = ?`)
+//! and keeps the `identity_id` FK for the identity-delete cascade.
+//! `identities.wallet_id` is NULL-allowed so identity-only flows (no
+//! parent wallet, e.g. the identity-sync manager populating rows
+//! before any wallet is registered) work without a placeholder.
 //!
 //! The one relationship that stays a trigger is
 //! `core_utxos.spent_in_txid` clearing to NULL on transaction delete —
@@ -162,15 +164,18 @@ CREATE TABLE identities (
 CREATE INDEX idx_identities_wallet ON identities(wallet_id);
 
 CREATE TABLE identity_keys (
+    wallet_id BLOB NOT NULL,
     identity_id BLOB NOT NULL,
     key_id INTEGER NOT NULL,
     public_key_blob BLOB NOT NULL,
     public_key_hash BLOB NOT NULL,
-    PRIMARY KEY (identity_id, key_id),
+    derivation_blob BLOB,
+    PRIMARY KEY (wallet_id, identity_id, key_id),
+    FOREIGN KEY (wallet_id) REFERENCES wallet_metadata(wallet_id) ON DELETE CASCADE,
     FOREIGN KEY (identity_id) REFERENCES identities(identity_id) ON DELETE CASCADE
 );
 
-CREATE INDEX idx_identity_keys_identity ON identity_keys(identity_id);
+CREATE INDEX idx_identity_keys_wallet_identity ON identity_keys(wallet_id, identity_id);
 
 CREATE TABLE contacts_sent (
     wallet_id BLOB NOT NULL,

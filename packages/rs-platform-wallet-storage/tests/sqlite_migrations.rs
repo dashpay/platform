@@ -121,10 +121,11 @@ fn tc027_smoke_insert_every_table() {
         ),
         (
             "identity_keys",
-            // identity_keys is keyed by (identity_id, key_id); the FK
-            // targets identities(identity_id).
-            "INSERT INTO identity_keys (identity_id, key_id, public_key_blob, public_key_hash) VALUES (?1, 0, X'00', X'00')",
-            &[&identity_id.as_slice()],
+            // identity_keys is keyed by (wallet_id, identity_id, key_id);
+            // the wallet_id FK targets wallet_metadata and the
+            // identity_id FK targets identities(identity_id).
+            "INSERT INTO identity_keys (wallet_id, identity_id, key_id, public_key_blob, public_key_hash, derivation_blob) VALUES (?1, ?2, 0, X'00', X'00', NULL)",
+            &[&wallet_id.as_slice(), &identity_id.as_slice()],
         ),
         (
             "contacts_sent",
