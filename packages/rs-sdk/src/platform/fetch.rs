@@ -336,6 +336,11 @@ impl Fetch for drive_proof_verifier::types::DataContractHistory {
     type Request = platform_proto::GetDataContractHistoryRequest;
 }
 
+impl Fetch for drive_proof_verifier::types::DocumentHistory {
+    type Query = platform_proto::GetDocumentHistoryRequest;
+    type Request = platform_proto::GetDocumentHistoryRequest;
+}
+
 impl Fetch for ExtendedEpochInfo {
     type Query = platform_proto::GetEpochsInfoRequest;
     type Request = platform_proto::GetEpochsInfoRequest;

@@ -1,5 +1,6 @@
 mod address_funds;
 mod data_contract_based_queries;
+mod document_history;
 mod document_query;
 mod group_queries;
 mod identity_based_queries;
