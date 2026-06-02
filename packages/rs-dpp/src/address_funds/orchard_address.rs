@@ -87,24 +87,30 @@ impl OrchardAddress {
 
     /// Decodes a bech32m-encoded Orchard address string.
     ///
+    /// An `OrchardAddress` is network-agnostic: the network is supplied only at
+    /// [`Self::to_bech32m_string`] encode time. The HRP is validated to be a
+    /// recognized platform HRP (`dash`/`tdash`), but no network is inferred —
+    /// `tdash` is shared by Testnet/Devnet/Regtest, so the HRP cannot identify
+    /// the network. Callers needing a network guard must enforce it themselves.
+    ///
     /// # Returns
-    /// - `Ok((OrchardAddress, Network))` - The decoded address and its network
-    /// - `Err(ProtocolError)` - If the address is invalid
-    pub fn from_bech32m_string(s: &str) -> Result<(Self, Network), ProtocolError> {
+    /// - `Ok(OrchardAddress)` - The decoded address
+    /// - `Err(ProtocolError)` - If the address is invalid or its HRP is not a
+    ///   recognized platform HRP
+    pub fn from_bech32m_string(s: &str) -> Result<Self, ProtocolError> {
         let (hrp, data) =
             bech32::decode(s).map_err(|e| ProtocolError::DecodingError(format!("{}", e)))?;
 
+        // Validate the HRP is a recognized platform HRP (case-insensitive). No
+        // network is derived — the HRP is ambiguous across the tdash-shared
+        // networks.
         let hrp_lower = hrp.as_str().to_ascii_lowercase();
-        let network = match hrp_lower.as_str() {
-            s if s == PLATFORM_HRP_MAINNET => Network::Mainnet,
-            s if s == PLATFORM_HRP_TESTNET => Network::Testnet,
-            _ => {
-                return Err(ProtocolError::DecodingError(format!(
-                    "invalid HRP '{}': expected '{}' or '{}'",
-                    hrp, PLATFORM_HRP_MAINNET, PLATFORM_HRP_TESTNET
-                )))
-            }
-        };
+        if hrp_lower != PLATFORM_HRP_MAINNET && hrp_lower != PLATFORM_HRP_TESTNET {
+            return Err(ProtocolError::DecodingError(format!(
+                "invalid HRP '{}': expected '{}' or '{}'",
+                hrp, PLATFORM_HRP_MAINNET, PLATFORM_HRP_TESTNET
+            )));
+        }
 
         // Validate payload: 1 type byte + 11 diversifier + 32 pk_d = 44 bytes
         if data.len() != 1 + ORCHARD_ADDRESS_SIZE {
@@ -125,7 +131,7 @@ impl OrchardAddress {
 
         let mut raw = [0u8; ORCHARD_ADDRESS_SIZE];
         raw.copy_from_slice(&data[1..]);
-        Self::from_raw_bytes(&raw).map(|addr| (addr, network))
+        Self::from_raw_bytes(&raw)
     }
 }
 
@@ -189,10 +195,9 @@ mod tests {
             encoded
         );
 
-        let (decoded, network) =
+        let decoded =
             OrchardAddress::from_bech32m_string(&encoded).expect("decoding should succeed");
         assert_eq!(decoded, address);
-        assert_eq!(network, Network::Mainnet);
     }
 
     #[test]
@@ -206,10 +211,9 @@ mod tests {
             encoded
         );
 
-        let (decoded, network) =
+        let decoded =
             OrchardAddress::from_bech32m_string(&encoded).expect("decoding should succeed");
         assert_eq!(decoded, address);
-        assert_eq!(network, Network::Testnet);
     }
 
     #[test]

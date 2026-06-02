@@ -605,8 +605,9 @@ impl PlatformWallet {
 
     /// Unshield from `account`'s notes to a transparent platform
     /// address (`"dash1…"` / `"tdash1…"`). Parsed via
-    /// `PlatformAddress::from_bech32m_string` and verified against
-    /// the wallet's network.
+    /// `PlatformAddress::from_bech32m_string`; the recipient's HRP is
+    /// verified against the wallet's network HRP class here, since the
+    /// network-agnostic decoder no longer enforces it.
     #[cfg(feature = "shielded")]
     pub async fn shielded_unshield_to<P: dpp::shielded::builder::OrchardProver>(
         &self,
@@ -625,19 +626,13 @@ impl PlatformWallet {
                 "shielded account {account} not bound"
             ))
         })?;
-        let (to, addr_network) =
-            dpp::address_funds::PlatformAddress::from_bech32m_string(to_platform_addr_bech32m)
-                .map_err(|e| {
-                    PlatformWalletError::ShieldedBuildError(format!(
-                        "invalid platform address: {e}"
-                    ))
-                })?;
-        if addr_network != self.sdk.network {
-            return Err(PlatformWalletError::ShieldedBuildError(format!(
-                "platform address network mismatch: address {addr_network:?}, wallet {:?}",
-                self.sdk.network
-            )));
-        }
+        // The decoder is network-agnostic, so guard the recipient's HRP class
+        // against the wallet's network before decoding.
+        check_recipient_hrp(to_platform_addr_bech32m, self.sdk.network)?;
+        let to = dpp::address_funds::PlatformAddress::from_bech32m_string(to_platform_addr_bech32m)
+            .map_err(|e| {
+                PlatformWalletError::ShieldedBuildError(format!("invalid platform address: {e}"))
+            })?;
         super::shielded::operations::unshield(
             &self.sdk,
             coordinator.store(),
@@ -1124,6 +1119,141 @@ fn select_shield_inputs(
         });
     }
     Ok(chosen)
+}
+
+/// Verify a bech32m recipient's HRP class matches `network` before decoding.
+///
+/// The address decoder is network-agnostic (`tdash` is shared by
+/// Testnet/Devnet/Regtest), so the wrong-network guard lives here. The HRP is
+/// the segment before the final `'1'` separator — bech32's data charset
+/// excludes `'1'`, so the last `'1'` is always the separator (BIP-173). The
+/// compare is case-insensitive since bech32m permits all-uppercase.
+#[cfg(feature = "shielded")]
+fn check_recipient_hrp(
+    recipient: &str,
+    network: dashcore::Network,
+) -> Result<(), PlatformWalletError> {
+    use dpp::address_funds::{PLATFORM_HRP_MAINNET, PLATFORM_HRP_TESTNET};
+
+    let actual_hrp = recipient
+        .rsplit_once('1')
+        .map(|(hrp, _)| hrp)
+        .filter(|hrp| !hrp.is_empty())
+        .ok_or_else(|| {
+            PlatformWalletError::ShieldedBuildError(
+                "invalid platform address: missing bech32 separator".to_string(),
+            )
+        })?;
+
+    let is_platform_hrp = actual_hrp.eq_ignore_ascii_case(PLATFORM_HRP_MAINNET)
+        || actual_hrp.eq_ignore_ascii_case(PLATFORM_HRP_TESTNET);
+    if !is_platform_hrp {
+        return Err(PlatformWalletError::ShieldedBuildError(format!(
+            "not a platform address: HRP '{actual_hrp}' is neither \
+             '{PLATFORM_HRP_MAINNET}' nor '{PLATFORM_HRP_TESTNET}'"
+        )));
+    }
+
+    let expected_hrp = dpp::address_funds::PlatformAddress::hrp_for_network(network);
+    if !actual_hrp.eq_ignore_ascii_case(expected_hrp) {
+        return Err(PlatformWalletError::ShieldedBuildError(format!(
+            "platform address network mismatch: address HRP '{actual_hrp}', \
+             wallet {network:?} expects HRP '{expected_hrp}'"
+        )));
+    }
+    Ok(())
+}
+
+#[cfg(all(test, feature = "shielded"))]
+mod check_recipient_hrp_tests {
+    use super::*;
+    use dpp::address_funds::PlatformAddress;
+
+    fn recipient(network: dashcore::Network) -> String {
+        PlatformAddress::P2pkh([0x11; 20]).to_bech32m_string(network)
+    }
+
+    #[test]
+    fn devnet_address_into_devnet_wallet_is_accepted() {
+        // The paloma regression: a devnet `tdash1…` recipient must be
+        // accepted by a devnet wallet (it was previously mis-rejected as
+        // Testnet).
+        let addr = recipient(dashcore::Network::Devnet);
+        assert!(addr.starts_with("tdash1"));
+        assert!(check_recipient_hrp(&addr, dashcore::Network::Devnet).is_ok());
+    }
+
+    #[test]
+    fn testnet_address_into_testnet_wallet_is_accepted() {
+        let addr = recipient(dashcore::Network::Testnet);
+        assert!(check_recipient_hrp(&addr, dashcore::Network::Testnet).is_ok());
+    }
+
+    #[test]
+    fn tdash_address_crosses_the_tdash_shared_networks() {
+        // `tdash` is shared, so a testnet-encoded address is accepted by a
+        // devnet/regtest wallet and vice versa.
+        let testnet_addr = recipient(dashcore::Network::Testnet);
+        assert!(check_recipient_hrp(&testnet_addr, dashcore::Network::Devnet).is_ok());
+        assert!(check_recipient_hrp(&testnet_addr, dashcore::Network::Regtest).is_ok());
+        let devnet_addr = recipient(dashcore::Network::Devnet);
+        assert!(check_recipient_hrp(&devnet_addr, dashcore::Network::Testnet).is_ok());
+    }
+
+    #[test]
+    fn mainnet_address_into_testnet_wallet_is_rejected() {
+        let addr = recipient(dashcore::Network::Mainnet);
+        assert!(addr.starts_with("dash1"));
+        let err = check_recipient_hrp(&addr, dashcore::Network::Testnet).unwrap_err();
+        assert!(
+            matches!(&err, PlatformWalletError::ShieldedBuildError(m) if m.contains("network mismatch")),
+            "unexpected error: {err:?}"
+        );
+    }
+
+    #[test]
+    fn mainnet_address_into_devnet_wallet_is_rejected() {
+        let addr = recipient(dashcore::Network::Mainnet);
+        let err = check_recipient_hrp(&addr, dashcore::Network::Devnet).unwrap_err();
+        assert!(
+            matches!(&err, PlatformWalletError::ShieldedBuildError(m) if m.contains("network mismatch")),
+            "unexpected error: {err:?}"
+        );
+    }
+
+    #[test]
+    fn uppercase_recipient_is_accepted() {
+        let addr = recipient(dashcore::Network::Testnet).to_uppercase();
+        assert!(check_recipient_hrp(&addr, dashcore::Network::Testnet).is_ok());
+    }
+
+    #[test]
+    fn non_platform_hrp_reports_not_a_platform_address() {
+        // A core/segwit `bc1…` recipient is not a platform address at all.
+        let err = check_recipient_hrp("bc1qexampledata", dashcore::Network::Testnet).unwrap_err();
+        assert!(
+            matches!(&err, PlatformWalletError::ShieldedBuildError(m) if m.contains("not a platform address")),
+            "unexpected error: {err:?}"
+        );
+    }
+
+    #[test]
+    fn missing_separator_errors_without_panic() {
+        let err = check_recipient_hrp("nodelimiterhere", dashcore::Network::Testnet).unwrap_err();
+        assert!(matches!(
+            &err,
+            PlatformWalletError::ShieldedBuildError(m) if m.contains("missing bech32 separator")
+        ));
+    }
+
+    #[test]
+    fn empty_recipient_errors_without_panic() {
+        let err = check_recipient_hrp("", dashcore::Network::Testnet).unwrap_err();
+        assert!(matches!(
+            &err,
+            PlatformWalletError::ShieldedBuildError(m) if m.contains("missing bech32 separator")
+        ));
+    }
 }
 
 #[cfg(all(test, feature = "shielded"))]
