@@ -1121,44 +1121,32 @@ fn select_shield_inputs(
     Ok(chosen)
 }
 
-/// Verify a bech32m recipient's HRP class matches `network` before decoding.
+/// Verify a bech32m recipient's network class matches `network` before decoding.
 ///
 /// The address decoder is network-agnostic (`tdash` is shared by
-/// Testnet/Devnet/Regtest), so the wrong-network guard lives here. The HRP is
-/// the segment before the final `'1'` separator — bech32's data charset
-/// excludes `'1'`, so the last `'1'` is always the separator (BIP-173). The
-/// compare is case-insensitive since bech32m permits all-uppercase.
+/// Testnet/Devnet/Regtest), so the wrong-network guard lives here. Network
+/// classification (mainnet vs non-mainnet, plus malformed/non-platform input
+/// rejection) is delegated to [`PlatformAddress::is_mainnet_bech32m`]. A
+/// mainnet wallet requires a mainnet (`dash`) address; any non-mainnet wallet
+/// requires a non-mainnet (`tdash`) address.
 #[cfg(feature = "shielded")]
 fn check_recipient_hrp(
     recipient: &str,
     network: dashcore::Network,
 ) -> Result<(), PlatformWalletError> {
-    use dpp::address_funds::{PLATFORM_HRP_MAINNET, PLATFORM_HRP_TESTNET};
+    use dpp::address_funds::PlatformAddress;
 
-    let actual_hrp = recipient
-        .rsplit_once('1')
-        .map(|(hrp, _)| hrp)
-        .filter(|hrp| !hrp.is_empty())
-        .ok_or_else(|| {
-            PlatformWalletError::ShieldedBuildError(
-                "invalid platform address: missing bech32 separator".to_string(),
-            )
-        })?;
-
-    let is_platform_hrp = actual_hrp.eq_ignore_ascii_case(PLATFORM_HRP_MAINNET)
-        || actual_hrp.eq_ignore_ascii_case(PLATFORM_HRP_TESTNET);
-    if !is_platform_hrp {
+    let addr_is_mainnet = PlatformAddress::is_mainnet_bech32m(recipient).map_err(|e| {
+        PlatformWalletError::ShieldedBuildError(format!("invalid platform address: {e}"))
+    })?;
+    if addr_is_mainnet != (network == dashcore::Network::Mainnet) {
+        let addr_class = if addr_is_mainnet {
+            "mainnet"
+        } else {
+            "non-mainnet"
+        };
         return Err(PlatformWalletError::ShieldedBuildError(format!(
-            "not a platform address: HRP '{actual_hrp}' is neither \
-             '{PLATFORM_HRP_MAINNET}' nor '{PLATFORM_HRP_TESTNET}'"
-        )));
-    }
-
-    let expected_hrp = dpp::address_funds::PlatformAddress::hrp_for_network(network);
-    if !actual_hrp.eq_ignore_ascii_case(expected_hrp) {
-        return Err(PlatformWalletError::ShieldedBuildError(format!(
-            "platform address network mismatch: address HRP '{actual_hrp}', \
-             wallet {network:?} expects HRP '{expected_hrp}'"
+            "platform address network mismatch: {addr_class} address, wallet {network:?}"
         )));
     }
     Ok(())
