@@ -8,9 +8,8 @@ use drive::grovedb::TransactionArg;
 
 mod addresses;
 // Shielded-pool seeding (incl. snapshot bake/apply tests) is gated separately
-// from the base SDK fixtures — see the comment in `create_sdk_test_data` and
-// `.cargo/config-shielded-test-data.toml`.
-#[cfg(any(create_shielded_test_data, test))]
+// from the base SDK fixtures — see the comment in `create_sdk_test_data`.
+#[cfg(any(feature = "shielded_test_data", test))]
 mod shielded;
 mod tokens;
 
@@ -46,10 +45,9 @@ impl<C> Platform<C> {
         // Shielded-pool seeding is gated separately so SDK_TEST_DATA-only
         // builds get the base fixtures (addresses, tokens) without paying the
         // shielded-seed setup cost or shipping the bake/apply code path. Enable
-        // by building with `--cfg create_shielded_test_data` (the
-        // `.cargo/config-shielded-test-data.toml` profile, selected in the
-        // Dockerfile via the `SHIELDED_TEST_DATA=true` build arg).
-        #[cfg(create_shielded_test_data)]
+        // by building with `--features=shielded_test_data` — the Dockerfile
+        // passes that flag when `SHIELDED_TEST_DATA=true`.
+        #[cfg(feature = "shielded_test_data")]
         self.create_data_for_shielded_pool(block_info, transaction, platform_version)?;
 
         Ok(())

@@ -78,9 +78,9 @@ enum Commands {
     /// Intended for the Dockerfile bake stage, where the snapshot file is
     /// embedded into the runtime image and consumed at boot via
     /// `DRIVE_SHIELDED_SNAPSHOT=<path>`. Requires the binary to be built
-    /// with `--cfg create_shielded_test_data` so that `create_genesis_state`
-    /// invokes the seeder — the command is compiled out otherwise.
-    #[cfg(create_shielded_test_data)]
+    /// with `--features=shielded_test_data` — the command is compiled out
+    /// otherwise.
+    #[cfg(feature = "shielded_test_data")]
     #[command()]
     SnapshotBake {
         /// Where to write the snapshot file. Parent directory must exist.
@@ -185,7 +185,7 @@ impl Cli {
             Commands::Config => dump_config(&config)?,
             Commands::Status => runtime.block_on(check_status(&config))?,
             Commands::Verify => drive_abci::verify::run(&config, true)?,
-            #[cfg(create_shielded_test_data)]
+            #[cfg(feature = "shielded_test_data")]
             Commands::SnapshotBake { out } => snapshot_bake_main::run(&config, &out)?,
             Commands::Version => print_version(),
             #[cfg(feature = "replay")]
@@ -205,14 +205,14 @@ fn main() -> Result<(), ExitCode> {
     // skip `load_config` (which would panic on missing GRPC_BIND_ADDRESS etc.)
     // and use a sensible default. Other subcommands (Start / Status / etc.)
     // still need the full config. The command only exists under
-    // `create_shielded_test_data`, so the branch is compiled out otherwise.
-    #[cfg(create_shielded_test_data)]
+    // `feature = "shielded_test_data"`, so the branch is compiled out otherwise.
+    #[cfg(feature = "shielded_test_data")]
     let config = if matches!(cli.command, Commands::SnapshotBake { .. }) {
         drive_abci::config::PlatformConfig::default_local()
     } else {
         load_config(&cli.config)
     };
-    #[cfg(not(create_shielded_test_data))]
+    #[cfg(not(feature = "shielded_test_data"))]
     let config = load_config(&cli.config);
 
     // Start tokio runtime and thread listening for signals.
@@ -348,9 +348,9 @@ fn dump_config(config: &PlatformConfig) -> Result<(), String> {
 
 /// Everything that exists only to support the `snapshot-bake` subcommand
 /// (used by the Dockerfile bake stage to pre-build a shielded-pool snapshot
-/// for the runtime image to apply at InitChain). Gated as a whole on
-/// `create_shielded_test_data` so production builds carry none of it.
-#[cfg(create_shielded_test_data)]
+/// for the runtime image to apply at InitChain). Gated as a whole on the
+/// `shielded_test_data` Cargo feature so production builds carry none of it.
+#[cfg(feature = "shielded_test_data")]
 mod snapshot_bake_main {
     use dpp::dashcore::ephemerealdata::chain_lock::ChainLock;
     use dpp::dashcore::{Block, BlockHash, Header, InstantLock, QuorumHash, Transaction, Txid};
@@ -455,7 +455,7 @@ mod snapshot_bake_main {
 
     /// Produce a shielded-pool snapshot at `out_path` from a fresh temporary
     /// GroveDB. Runs the full `create_genesis_state` cycle (which, under
-    /// `cfg(create_shielded_test_data)`, invokes the shielded-pool seeder),
+    /// `feature = "shielded_test_data"`, invokes the shielded-pool seeder),
     /// then dumps the resulting subtree. Self-contained — `_config` is
     /// ignored (we use a tempdir + sensible defaults).
     ///
@@ -495,7 +495,7 @@ mod snapshot_bake_main {
         // than seeding a fresh one.
         std::env::remove_var("DRIVE_SHIELDED_SNAPSHOT");
 
-        tracing::info!("snapshot-bake: running create_genesis_state (seeds shielded pool under cfg(create_shielded_test_data))");
+        tracing::info!("snapshot-bake: running create_genesis_state (seeds shielded pool under feature = \"shielded_test_data\")");
         platform
             .create_genesis_state(
                 1, // genesis_core_height (placeholder for bake)

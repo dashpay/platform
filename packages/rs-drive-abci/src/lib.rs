@@ -93,9 +93,10 @@ pub mod server;
 /// Test-data tooling only: the bake reads a pool seeded by
 /// `create_data_for_shielded_pool` and the apply runs from that same seeder's
 /// fast-path, so the module has no purpose in a production build. Gated on
-/// `create_shielded_test_data` (its only callers) plus `test` (the genesis
-/// seeder's test module exercises it under `cargo test`).
-#[cfg(any(create_shielded_test_data, test))]
+/// the `shielded_test_data` Cargo feature (which also enables the underlying
+/// grovedb APIs through the dep chain) plus `test`, so the snapshot
+/// roundtrip test exercises it under `cargo test`.
+#[cfg(any(feature = "shielded_test_data", test))]
 pub mod shielded_snapshot;
 /// Verification helpers
 pub mod verify;

@@ -439,10 +439,12 @@ FROM deps AS build-drive-abci
 # truth is the dashmate config.
 #
 # SHIELDED_TEST_DATA=true ⇒ implies SDK_TEST_DATA=true (the shielded seeder
-# runs inside `create_sdk_test_data`); selects the dual-cfg cargo profile
-# that activates both `create_sdk_test_data` and `create_shielded_test_data`.
-# The bake stage further down only produces a shielded-pool snapshot when
-# this flag is on.
+# runs inside `create_sdk_test_data`); installs the SDK-test-data cargo
+# profile (sets `--cfg create_sdk_test_data` for the outer SDK-fixture gate)
+# AND passes `--features=shielded_test_data` to cargo. The drive-abci
+# `shielded_test_data` feature compiles in the shielded seeder + bake/apply
+# code and forwards through `drive/shielded_test_data` →
+# `grovedb/unsafe-dump-load` to unlock the underlying grovedb primitives.
 ARG SDK_TEST_DATA
 ARG SHIELDED_TEST_DATA
 ARG ADDITIONAL_FEATURES=""
@@ -473,11 +475,11 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     if [[ -n "${ADDITIONAL_FEATURES_TRIMMED}" ]]; then \
     FEATURES_LIST="${ADDITIONAL_FEATURES_TRIMMED}"; \
     fi && \
-    if [ "${SHIELDED_TEST_DATA}" == "true" ]; then \
-    mv .cargo/config-shielded-test-data.toml .cargo/config.toml; \
-    FEATURES_LIST="${FEATURES_LIST:+${FEATURES_LIST},}unsafe-dump-load"; \
-    elif [ "${SDK_TEST_DATA}" == "true" ]; then \
+    if [ "${SHIELDED_TEST_DATA}" == "true" ] || [ "${SDK_TEST_DATA}" == "true" ]; then \
     mv .cargo/config-test-sdk-data.toml .cargo/config.toml; \
+    fi && \
+    if [ "${SHIELDED_TEST_DATA}" == "true" ]; then \
+    FEATURES_LIST="${FEATURES_LIST:+${FEATURES_LIST},}shielded_test_data"; \
     fi && \
     if [[ -n "${FEATURES_LIST}" ]]; then \
     export FEATURES_FLAG="--features=${FEATURES_LIST}"; \
@@ -565,11 +567,11 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     if [[ -n "${ADDITIONAL_FEATURES_TRIMMED}" ]]; then \
     FEATURES_LIST="${ADDITIONAL_FEATURES_TRIMMED}"; \
     fi && \
-    if [ "${SHIELDED_TEST_DATA}" == "true" ]; then \
-    mv .cargo/config-shielded-test-data.toml .cargo/config.toml; \
-    FEATURES_LIST="${FEATURES_LIST:+${FEATURES_LIST},}unsafe-dump-load"; \
-    elif [ "${SDK_TEST_DATA}" == "true" ]; then \
+    if [ "${SHIELDED_TEST_DATA}" == "true" ] || [ "${SDK_TEST_DATA}" == "true" ]; then \
     mv .cargo/config-test-sdk-data.toml .cargo/config.toml; \
+    fi && \
+    if [ "${SHIELDED_TEST_DATA}" == "true" ]; then \
+    FEATURES_LIST="${FEATURES_LIST:+${FEATURES_LIST},}shielded_test_data"; \
     fi && \
     if [[ -n "${FEATURES_LIST}" ]]; then \
     export FEATURES_FLAG="--features=${FEATURES_LIST}"; \

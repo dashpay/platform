@@ -109,7 +109,7 @@ drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
 strategy-tests = { path = "../strategy-tests" }
 grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "a18f7929460ef9c5d814f61ff84d8805b2a1761b", features = ["client"] }
 assert_matches = "1.5.0"
-drive-abci = { path = ".", features = ["testing-config", "mocks", "unsafe-dump-load"] }
+drive-abci = { path = ".", features = ["testing-config", "mocks", "shielded_test_data"] }
 bls-signatures = { git = "https://github.com/dashpay/bls-signatures", rev = "0842b17583888e8f46c252a4ee84cdfd58e0546f" }
 mockall = { version = "0.13" }
 dash-platform-macros = { path = "../rs-dash-platform-macros" }
@@ -129,12 +129,14 @@ default = ["bls-signatures"]
 mocks = ["mockall", "drive/fixtures-and-mocks", "bls-signatures"]
 console = ["console-subscriber", "tokio/tracing"]
 testing-config = []
-# Forwards `drive/unsafe-dump-load` (and through it `grovedb/unsafe-dump-load`).
-# Enable in builds that need the shielded-pool snapshot bake/apply path —
-# Dockerfile turns this on when `SHIELDED_TEST_DATA=true`. The snapshot-test
-# in this crate's own `#[cfg(test)]` module also requires it (dev-dependency
-# below enables it for `cargo test`).
-unsafe-dump-load = ["drive/unsafe-dump-load"]
+# Compiles in the shielded-pool seeder, the `snapshot-bake` subcommand, and
+# the bake/apply API used at devnet InitChain. Pulls `drive/shielded_test_data`
+# (which forwards to `grovedb/unsafe-dump-load`) so the underlying snapshot
+# primitives become available. Dockerfile turns this on when
+# `SHIELDED_TEST_DATA=true`. The snapshot roundtrip test in this crate's own
+# `#[cfg(test)]` module also requires it — the dev-dependency below enables
+# it for `cargo test`.
+shielded_test_data = ["drive/shielded_test_data"]
 grovedbg = ["drive/grovedbg"]
 # `abci-server replay` command
 replay = ["dep:time", "tenderdash-abci/serde"]
@@ -148,6 +150,5 @@ path = "src/main.rs"
 unexpected_cfgs = { level = "warn", check-cfg = [
   'cfg(tokio_unstable)',
   'cfg(create_sdk_test_data)',
-  'cfg(create_shielded_test_data)',
   'cfg(feature, values("__shielded_strategy_tests"))',
 ] }
