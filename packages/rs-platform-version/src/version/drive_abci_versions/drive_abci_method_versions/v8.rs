@@ -12,18 +12,18 @@ use crate::version::drive_abci_versions::drive_abci_method_versions::{
     DriveAbciVotingMethodVersions,
 };
 
-// Introduced in Protocol version 11 (3.0.0) for checkpoints.
+// Introduced in Protocol version 12 for the shielded credit pool.
 //
-// The four shielded-pool block-processing methods
-// (`store_nullifiers_to_recent_block_storage`,
-// `cleanup_recent_block_storage_nullifiers`, `record_shielded_pool_anchor`,
-// `prune_shielded_pool_anchors`) are deliberately `None` here: they read the
-// shielded credit pool subtree `[ShieldedBalances (52), "M"]`, which is only
-// created from protocol v12 onward. Activating them on a v11 state opens a
-// subtree that does not exist and panics consensus with
-// "path parent layer not found: could not get key 4d for parent [52]".
-// The shielded activation lives in DRIVE_ABCI_METHOD_VERSIONS_V8 (protocol v12).
-pub const DRIVE_ABCI_METHOD_VERSIONS_V7: DriveAbciMethodVersions = DriveAbciMethodVersions {
+// Identical to DRIVE_ABCI_METHOD_VERSIONS_V7 (the protocol-v11 method set)
+// except the four shielded-pool block-processing methods are active here.
+// These read/write the shielded credit pool subtree
+// `[RootTree::ShieldedBalances (52), MAIN_SHIELDED_CREDIT_POOL_KEY ("M")]`,
+// which only exists from protocol v12 onward (created by the v12 upgrade
+// migration `transition_to_version_12` or a v12 genesis). They MUST stay
+// inactive on v11 (see DRIVE_ABCI_METHOD_VERSIONS_V7), so the shielded
+// activation lives in this dedicated v12 struct rather than being shared
+// with v11 via V7.
+pub const DRIVE_ABCI_METHOD_VERSIONS_V8: DriveAbciMethodVersions = DriveAbciMethodVersions {
     engine: DriveAbciEngineMethodVersions {
         init_chain: 0,
         check_tx: 0,
@@ -116,12 +116,10 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V7: DriveAbciMethodVersions = DriveAbciMeth
         process_raw_state_transitions: 0,
         decode_raw_state_transitions: 0,
         validate_fees_of_event: 0,
-        store_address_balances_to_recent_block_storage: Some(0), // changed
-        cleanup_recent_block_storage_address_balances: Some(0), // cleanup enabled when store is enabled
-        // Shielded-pool methods gated to v12 (DRIVE_ABCI_METHOD_VERSIONS_V8); the
-        // `[52, "M"]` subtree they touch does not exist on v11.
-        store_nullifiers_to_recent_block_storage: None,
-        cleanup_recent_block_storage_nullifiers: None,
+        store_address_balances_to_recent_block_storage: Some(0),
+        cleanup_recent_block_storage_address_balances: Some(0),
+        store_nullifiers_to_recent_block_storage: Some(0),
+        cleanup_recent_block_storage_nullifiers: Some(0),
     },
     epoch: DriveAbciEpochMethodVersions {
         gather_epoch_info: 0,
@@ -136,10 +134,8 @@ pub const DRIVE_ABCI_METHOD_VERSIONS_V7: DriveAbciMethodVersions = DriveAbciMeth
         validator_set_update: 2,
         should_checkpoint: Some(0),
         update_checkpoints: Some(0),
-        // Shielded-pool anchor methods gated to v12 (DRIVE_ABCI_METHOD_VERSIONS_V8);
-        // the `[52, "M"]` subtree they read does not exist on v11.
-        record_shielded_pool_anchor: None,
-        prune_shielded_pool_anchors: None,
+        record_shielded_pool_anchor: Some(0),
+        prune_shielded_pool_anchors: Some(0),
     },
     platform_state_storage: DriveAbciPlatformStateStorageMethodVersions {
         fetch_platform_state: 0,
