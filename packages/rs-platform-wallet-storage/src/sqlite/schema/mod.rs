@@ -122,8 +122,8 @@ pub fn count_rows_for_wallet_sql(
 /// Defensive check that every `identity_id` in `touched` exists in
 /// `identities` and belongs to `wallet_id` (or has NULL wallet_id when
 /// scope is the all-zero sentinel). Used by identity-owned writers
-/// (`dashpay`, `token_balances`) to catch mis-attributed callers in
-/// debug builds; release builds skip the call entirely.
+/// (`dashpay`, `token_balances`) to reject mis-attributed callers; the
+/// check runs in every build.
 ///
 /// Returns [`WalletStorageError::WalletIdMismatch`] for the first
 /// offending row found. Rows that don't exist in `identities` aren't
