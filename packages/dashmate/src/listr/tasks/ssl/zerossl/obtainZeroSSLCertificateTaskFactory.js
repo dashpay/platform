@@ -322,15 +322,24 @@ and all Dash service ports listed above.`);
       try {
         return await originalRun(context);
       } catch (error) {
+        // Best-effort cleanup — never mask the original error, but do surface a
+        // cleanup failure: a stuck verification container left bound to port 80 is
+        // exactly the condition this wrapper exists to prevent, so it must be visible.
         try {
           await verificationServer.stop();
-        } catch {
-          // Ignore cleanup errors — server may not have been started
+        } catch (stopError) {
+          // stop() is a no-op when no container was started; a real throw here means
+          // the verification container may still be running on port 80.
+          // eslint-disable-next-line no-console
+          console.error(`Failed to stop verification server during cleanup: ${stopError.message}`);
         }
         try {
           await verificationServer.destroy();
-        } catch {
-          // Ignore cleanup errors — server may not have been set up
+        } catch (destroyError) {
+          // destroy() is a no-op when the server was never set up (the pipeline
+          // failed before setup), so any throw here is a genuine cleanup failure.
+          // eslint-disable-next-line no-console
+          console.error(`Failed to destroy verification server during cleanup: ${destroyError.message}`);
         }
         throw error;
       }

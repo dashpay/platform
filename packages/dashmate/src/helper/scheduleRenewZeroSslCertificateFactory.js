@@ -25,13 +25,31 @@ export default function scheduleRenewZeroSslCertificateFactory(
    * @return {Promise<void>}
    */
   async function scheduleRenewZeroSslCertificate(config) {
-    const certificate = await getCertificate(
-      config.get('platform.gateway.ssl.providerConfigs.zerossl.apiKey', false),
-      config.get('platform.gateway.ssl.providerConfigs.zerossl.id', false),
-    );
+    let certificate;
+    try {
+      certificate = await getCertificate(
+        config.get('platform.gateway.ssl.providerConfigs.zerossl.apiKey', false),
+        config.get('platform.gateway.ssl.providerConfigs.zerossl.id', false),
+      );
 
-    if (!certificate) {
-      throw new Error('Invalid ZeroSSL certificate ID: certificate not found');
+      if (!certificate) {
+        throw new Error('Invalid ZeroSSL certificate ID: certificate not found');
+      }
+    } catch (e) {
+      // Reading the current certificate hits the ZeroSSL API. If that API is down
+      // — the exact failure behind the December mass-expiration — this previously
+      // rejected, and because the scheduler re-invokes itself fire-and-forget from
+      // the cron completion callback, the rejection went unhandled and crashed the
+      // helper instead of backing off. Mirror the Let's Encrypt scheduler, which
+      // already wraps its certificate read: log and retry in 1 hour.
+      // eslint-disable-next-line no-console
+      console.error(`Failed to read ZeroSSL certificate, retrying in 1 hour: ${e.message}`);
+
+      setTimeout(() => {
+        scheduleRenewZeroSslCertificate(config);
+      }, 60 * 60 * 1000);
+
+      return;
     }
 
     let expiresAt;

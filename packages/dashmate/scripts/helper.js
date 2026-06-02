@@ -3,11 +3,45 @@ import { asValue } from 'awilix';
 import graceful from 'node-graceful';
 import createDIContainer from '../src/createDIContainer.js';
 
-// Container names that may be left orphaned from failed SSL renewal attempts
-const EPHEMERAL_SSL_CONTAINERS = [
-  'dashmate-zerossl-validation',
-  'dashmate-letsencrypt-lego',
-];
+// The ephemeral container each SSL provider binds to port 80 during issuance.
+// One can be left orphaned if a previous helper run crashed mid-renewal.
+// Keyed by provider so we only ever touch the container for the active provider
+// (these are live container names, not orphan-only markers).
+const PROVIDER_EPHEMERAL_CONTAINER = {
+  zerossl: 'dashmate-zerossl-validation',
+  letsencrypt: 'dashmate-letsencrypt-lego',
+};
+
+/**
+ * Force-remove the active provider's ephemeral SSL container if it was left
+ * orphaned by a previous failed/killed renewal. Scoped to the configured
+ * provider and run just before scheduling renewal so it cannot interfere with
+ * an unrelated provider's flow.
+ *
+ * @param {Docker} docker
+ * @param {string} provider
+ * @return {Promise<void>}
+ */
+async function removeOrphanedSslContainer(docker, provider) {
+  const name = PROVIDER_EPHEMERAL_CONTAINER[provider];
+
+  if (!name) {
+    return;
+  }
+
+  try {
+    await docker.getContainer(name).remove({ force: true });
+
+    // eslint-disable-next-line no-console
+    console.log(`Removed orphaned container: ${name}`);
+  } catch (e) {
+    // 404 means container doesn't exist — that's the normal case
+    if (e.statusCode !== 404) {
+      // eslint-disable-next-line no-console
+      console.error(`Failed to remove orphaned container ${name}: ${e.message}`);
+    }
+  }
+}
 
 (async function main() {
   // Read environment variables from .env file
@@ -36,32 +70,21 @@ const EPHEMERAL_SSL_CONTAINERS = [
     // eslint-disable-next-line no-console
     console.log('Shutting down dashmate helper, cleaning up containers...');
 
-    await stopAllContainers(
-      startedContainers.getContainers(),
-      { remove: true },
-    );
+    try {
+      await stopAllContainers(
+        startedContainers.getContainers(),
+        { remove: true },
+      );
+    } catch (e) {
+      // Never let a cleanup failure escape as an unhandled rejection during
+      // shutdown — that would abort the handler and could leave the port-80
+      // verification container alive, the exact condition we clean up for.
+      // eslint-disable-next-line no-console
+      console.error(`Failed to clean up containers on shutdown: ${e.message}`);
+    }
   });
 
-  // Clean up any orphaned ephemeral SSL containers left from previous
-  // failed renewal attempts (e.g. if the helper crashed or was killed
-  // while a verification server was running on port 80)
   const docker = container.resolve('docker');
-
-  await Promise.all(EPHEMERAL_SSL_CONTAINERS.map(async (name) => {
-    try {
-      const orphanedContainer = docker.getContainer(name);
-      await orphanedContainer.remove({ force: true });
-
-      // eslint-disable-next-line no-console
-      console.log(`Removed orphaned container: ${name}`);
-    } catch (e) {
-      // 404 means container doesn't exist — that's the normal case
-      if (e.statusCode !== 404) {
-        // eslint-disable-next-line no-console
-        console.error(`Failed to remove orphaned container ${name}: ${e.message}`);
-      }
-    }
-  }));
 
   // Load configs
   /**
@@ -95,9 +118,15 @@ const EPHEMERAL_SSL_CONTAINERS = [
   const isEnabled = config.get('platform.gateway.ssl.enabled');
 
   if (isEnabled && provider === 'zerossl') {
+    // Clear any container left orphaned (bound to port 80) by a previous
+    // failed/killed renewal before scheduling the next one
+    await removeOrphanedSslContainer(docker, provider);
+
     const scheduleRenewZeroSslCertificate = container.resolve('scheduleRenewZeroSslCertificate');
     await scheduleRenewZeroSslCertificate(config);
   } else if (isEnabled && provider === 'letsencrypt') {
+    await removeOrphanedSslContainer(docker, provider);
+
     const scheduleRenewLetsEncryptCertificate = container.resolve('scheduleRenewLetsEncryptCertificate');
     await scheduleRenewLetsEncryptCertificate(config);
   } else {
