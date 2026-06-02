@@ -1731,7 +1731,7 @@ struct CreateIdentityView: View {
     /// side would silently address a different outpoint and produce
     /// confusing Platform-side proof-verification failures, so the
     /// round-trip invariant is worth pinning explicitly.
-    static func parseOutPointHex(_ hex: String) -> (Data, UInt32)? {
+    nonisolated static func parseOutPointHex(_ hex: String) -> (Data, UInt32)? {
         let parts = hex.split(
             separator: ":",
             maxSplits: 1,
