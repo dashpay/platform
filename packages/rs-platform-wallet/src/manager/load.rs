@@ -89,6 +89,8 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 core_state,
                 identity_manager,
                 unused_asset_locks,
+                contacts,
+                identity_keys,
             } = wallet_state;
 
             // Build the watch-only wallet from the keyless manifest. A
@@ -142,10 +144,16 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
                 core_balance.immature(),
                 core_balance.locked(),
             );
+            // Build the identity manager from the (id, balance,
+            // revision) skeleton, then layer the persisted PUBLIC
+            // contacts + identity keys onto it — the same routing the
+            // runtime changeset-replay path uses.
+            let mut identity_manager = IdentityManager::from(identity_manager);
+            identity_manager.apply_contacts_and_keys(contacts, identity_keys, network);
             let platform_info = PlatformWalletInfo {
                 core_wallet: wallet_info,
                 balance: Arc::clone(&balance),
-                identity_manager: IdentityManager::from(identity_manager),
+                identity_manager,
                 tracked_asset_locks,
             };
 

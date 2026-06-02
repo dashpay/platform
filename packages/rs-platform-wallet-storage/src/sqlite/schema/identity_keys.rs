@@ -10,7 +10,7 @@
 //! the bincode-serde encoder. The shape is documented on the
 //! `IdentityKeyWire` struct below.
 
-use rusqlite::{params, Transaction};
+use rusqlite::{params, Connection, Transaction};
 use serde::{Deserialize, Serialize};
 
 use dpp::identity::{IdentityPublicKey, KeyID};
@@ -132,6 +132,42 @@ pub fn apply(
 pub fn decode_entry(payload: &[u8]) -> Result<IdentityKeyEntry, WalletStorageError> {
     let wire: IdentityKeyWire = blob::decode(payload)?;
     wire.into_entry()
+}
+
+/// Read every `identity_keys` row for `wallet_id` back into a keyless
+/// [`IdentityKeysChangeSet`] (PUBLIC material only — the blob is an
+/// `IdentityPublicKey`; private keys are NOT stored or read here).
+///
+/// Keyed by `(identity_id, key_id)`; `removed` is always empty (deletes
+/// reach storage as `DELETE`s, never as rows). Any row whose blob fails
+/// to decode is a hard, typed [`WalletStorageError`] — corruption is
+/// never silently dropped.
+pub fn load_state(
+    conn: &Connection,
+    wallet_id: &WalletId,
+) -> Result<IdentityKeysChangeSet, WalletStorageError> {
+    let mut cs = IdentityKeysChangeSet::default();
+    let mut stmt = conn.prepare(
+        "SELECT identity_id, key_id, public_key_blob FROM identity_keys WHERE wallet_id = ?1",
+    )?;
+    let mut rows = stmt.query(params![wallet_id.as_slice()])?;
+    while let Some(row) = rows.next()? {
+        let identity_id_bytes: Vec<u8> = row.get(0)?;
+        let key_id: i64 = row.get(1)?;
+        let payload: Vec<u8> = row.get(2)?;
+        let id32 = <[u8; 32]>::try_from(identity_id_bytes.as_slice()).map_err(|_| {
+            WalletStorageError::blob_decode("identity_keys.identity_id is not 32 bytes")
+        })?;
+        let identity_id = Identifier::from(id32);
+        let key_id = KeyID::try_from(key_id).map_err(|_| WalletStorageError::IntegerOverflow {
+            field: "identity_keys.key_id",
+            value: key_id as u64,
+            target: crate::sqlite::util::safe_cast::SafeCastTarget::U64,
+        })?;
+        let entry = decode_entry(&payload)?;
+        cs.upserts.insert((identity_id, key_id), entry);
+    }
+    Ok(cs)
 }
 
 #[cfg(test)]

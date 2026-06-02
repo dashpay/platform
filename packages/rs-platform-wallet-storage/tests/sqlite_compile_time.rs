@@ -57,6 +57,10 @@ const READ_ONLY_PREPARE_ALLOWED: &[(&str, &str)] = &[
         "core_state.rs",
         "SELECT last_processed_height, synced_height FROM core_sync_state WHERE wallet_id",
     ),
+    (
+        "identity_keys.rs",
+        "SELECT identity_id, key_id, public_key_blob FROM identity_keys WHERE wallet_id",
+    ),
     // P4 readers — `load_state` per area uses one-shot SELECTs.
     (
         "identities.rs",

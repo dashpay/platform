@@ -16,7 +16,9 @@
 use std::collections::BTreeMap;
 
 use crate::changeset::identity_manager_start_state::IdentityManagerStartState;
-use crate::changeset::{AccountRegistrationEntry, CoreChangeSet};
+use crate::changeset::{
+    AccountRegistrationEntry, ContactChangeSet, CoreChangeSet, IdentityKeysChangeSet,
+};
 use crate::wallet::asset_lock::tracked::TrackedAssetLock;
 use dashcore::OutPoint;
 use key_wallet::Network;
@@ -51,4 +53,15 @@ pub struct ClientWalletStartState {
     /// top-up, keyed by account index → outpoint. Terminal `Consumed`
     /// rows are already filtered out by the asset-lock reader.
     pub unused_asset_locks: BTreeMap<u32, BTreeMap<OutPoint, TrackedAssetLock>>,
+    /// Persisted DashPay contact state (sent/received requests +
+    /// established contacts) to layer onto the rehydrated managed
+    /// identities. PUBLIC material — `removed_*` are always empty
+    /// (deletes never reach storage as rows). Routed by the manager
+    /// after `IdentityManager::from`, mirroring the runtime apply path.
+    pub contacts: ContactChangeSet,
+    /// Persisted per-identity PUBLIC key entries (no private key
+    /// material) to layer onto the rehydrated managed identities so
+    /// `Identity.public_keys` is populated at load time instead of
+    /// only after the next sync. `removed` is always empty.
+    pub identity_keys: IdentityKeysChangeSet,
 }
