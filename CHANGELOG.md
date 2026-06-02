@@ -1,3 +1,30 @@
+## [4.0.0-beta.1](///compare/v3.1.0-dev.8...v4.0.0-beta.1) (2026-06-02)
+
+
+### Features
+
+* add register-contract script to rs-scripts ([#3744](undefined/undefined/undefined/issues/3744))
+* **dashmate:** configure docker build args via config ([#3764](undefined/undefined/undefined/issues/3764))
+* **drive-abci:** gate shielded-pool seeding behind `shielded_test_data` feature ([#3774](undefined/undefined/undefined/issues/3774))
+* **drive:** add document history retrieval ([#3725](undefined/undefined/undefined/issues/3725))
+* **platform:** add GetShieldedNotesCount query for sync progress ([#3769](undefined/undefined/undefined/issues/3769))
+* seed Orchard shielded pool at genesis with fast, observable sync ([#3732](undefined/undefined/undefined/issues/3732))
+
+
+### Bug Fixes
+
+* **dashmate:** prevent orphaned verification container blocking SSL renewal ([#3162](undefined/undefined/undefined/issues/3162))
+* **dpp:** block pre-programmed distribution changes on token update ([#3461](undefined/undefined/undefined/issues/3461))
+* **drive:** consolidate historical contract proof verification retry logic ([#3165](undefined/undefined/undefined/issues/3165))
+* **platform-wallet:** fix spv client deadlocking himself when trying to stop ([#3742](undefined/undefined/undefined/issues/3742))
+* **platform-wallet:** satisfy accessors clippy lints ([#3596](undefined/undefined/undefined/issues/3596))
+
+
+### Tests
+
+* **swift-sdk:** swift-sdk test updated and added to CI ([#3479](undefined/undefined/undefined/issues/3479))
+* **wasm-sdk:** fix flaky tokenPaymentInfo document balance assertions ([#3771](undefined/undefined/undefined/issues/3771))
+
 ## [3.1.0-dev.8](https://github.com/dashpay/platform/compare/v3.1.0-dev.7...v3.1.0-dev.8) (2026-05-28)
 
 
