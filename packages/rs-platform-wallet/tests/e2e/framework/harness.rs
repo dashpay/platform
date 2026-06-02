@@ -610,6 +610,7 @@ impl E2eContext {
             &workdir,
             config.bank_identity_id.as_deref(),
             bank.network(),
+            config.disable_spv,
         )
         .await?;
 

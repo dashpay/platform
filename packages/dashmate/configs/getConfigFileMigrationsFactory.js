@@ -1433,8 +1433,9 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
                 .get('platform.drive.tenderdash.docker.image');
             }
 
-            // Backfill docker build `buildArgs` added to the base config.
-            // Pre-3.1.0 configs predate the field, so default it to an empty
+            // Backfill the new `buildArgs: {}` field on each build block —
+            // forwarded into `dynamic-compose.yml` as `build.args` entries.
+            // Pre-3.1.0 configs predate the field; default it to an empty
             // object when missing (idempotent: existing values are preserved).
             if (options.platform?.drive?.abci?.docker?.build
               && typeof options.platform.drive.abci.docker.build.buildArgs === 'undefined') {

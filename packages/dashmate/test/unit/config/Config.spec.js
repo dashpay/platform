@@ -99,6 +99,15 @@ describe('Config', () => {
         // `network` is a string at top level; you cannot index further.
         expect(Config.isSchemaPathAllowed('network.something')).to.be.false();
       });
+
+      it('rejects paths with empty segments', () => {
+        // Leading/trailing/double dots must not slip an empty key through a
+        // map's `additionalProperties` descent.
+        const buildArgs = 'platform.drive.abci.docker.build.buildArgs';
+        expect(Config.isSchemaPathAllowed(`${buildArgs}.`)).to.be.false();
+        expect(Config.isSchemaPathAllowed(`${buildArgs}..SDK_TEST_DATA`)).to.be.false();
+        expect(Config.isSchemaPathAllowed('.network')).to.be.false();
+      });
     });
   });
 

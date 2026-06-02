@@ -24,6 +24,18 @@ pub mod vars {
     pub const BANK_MNEMONIC: &str = "PLATFORM_WALLET_E2E_BANK_MNEMONIC";
     /// Network selector: `testnet` (default) / `mainnet` / `devnet` / `local`.
     pub const NETWORK: &str = "PLATFORM_WALLET_E2E_NETWORK";
+    /// Devnet name (the porter devnet's `devnet=<name>`). Required when
+    /// `network=devnet`: dash-spv mandates a `DevnetConfig` and Dash Core
+    /// devnet peers drop any inbound connection whose user agent lacks the
+    /// `devnet.devnet-<name>` substring.
+    pub const DEVNET_NAME: &str = "PLATFORM_WALLET_E2E_DEVNET_NAME";
+    /// Optional devnet LLMQ size override (escape hatch). `0` / unset = use
+    /// the dash-spv built-in devnet LLMQ params. Must be paired with
+    /// [`DEVNET_LLMQ_THRESHOLD`].
+    pub const DEVNET_LLMQ_SIZE: &str = "PLATFORM_WALLET_E2E_DEVNET_LLMQ_SIZE";
+    /// Optional devnet LLMQ threshold override (escape hatch). See
+    /// [`DEVNET_LLMQ_SIZE`].
+    pub const DEVNET_LLMQ_THRESHOLD: &str = "PLATFORM_WALLET_E2E_DEVNET_LLMQ_THRESHOLD";
     /// Comma-separated list of DAPI addresses overriding the
     /// network default.
     pub const DAPI_ADDRESSES: &str = "PLATFORM_WALLET_E2E_DAPI_ADDRESSES";
@@ -261,6 +273,16 @@ pub struct Config {
     /// harness only applies this on devnet. See the `DEVNET_GENESIS_*`
     /// vars and [`parse_devnet_genesis_override`].
     pub devnet_genesis: DevnetGenesisOverride,
+    /// Devnet name (porter `devnet=<name>`). Empty on non-devnet networks;
+    /// required (non-empty) when `network == Devnet`. Wired into the SPV
+    /// `DevnetConfig` and the `devnet.devnet-<name>` user-agent handshake.
+    pub devnet_name: String,
+    /// Optional devnet LLMQ size override; `0` = use dash-spv built-in
+    /// params. See [`vars::DEVNET_LLMQ_SIZE`].
+    pub devnet_llmq_size: u32,
+    /// Optional devnet LLMQ threshold override; paired with
+    /// [`devnet_llmq_size`](Self::devnet_llmq_size).
+    pub devnet_llmq_threshold: u32,
 }
 
 /// Which [`dash_sdk::platform::ContextProvider`] backend the harness
@@ -357,6 +379,9 @@ impl std::fmt::Debug for Config {
             )
             .field("core_refill_target_duff", &self.core_refill_target_duff)
             .field("devnet_genesis", &self.devnet_genesis)
+            .field("devnet_name", &self.devnet_name)
+            .field("devnet_llmq_size", &self.devnet_llmq_size)
+            .field("devnet_llmq_threshold", &self.devnet_llmq_threshold)
             .finish()
     }
 }
@@ -383,6 +408,9 @@ impl Default for Config {
             core_refill_threshold_duff: super::bank_rebalance::DEFAULT_CORE_REFILL_THRESHOLD_DUFF,
             core_refill_target_duff: super::bank_rebalance::DEFAULT_CORE_REFILL_TARGET_DUFF,
             devnet_genesis: DevnetGenesisOverride::default(),
+            devnet_name: String::new(),
+            devnet_llmq_size: 0,
+            devnet_llmq_threshold: 0,
         }
     }
 }
@@ -548,6 +576,17 @@ impl Config {
 
         let devnet_genesis = parse_devnet_genesis_override()?;
 
+        let devnet_name = opt_trimmed_env(vars::DEVNET_NAME).unwrap_or_default();
+        if network == Network::Devnet && devnet_name.is_empty() {
+            return Err(FrameworkError::Config(format!(
+                "{} is required when network=devnet",
+                vars::DEVNET_NAME
+            )));
+        }
+
+        let devnet_llmq_size = parse_u32_default_0(vars::DEVNET_LLMQ_SIZE);
+        let devnet_llmq_threshold = parse_u32_default_0(vars::DEVNET_LLMQ_THRESHOLD);
+
         Ok(Self {
             bank_mnemonic,
             network,
@@ -567,6 +606,9 @@ impl Config {
             core_refill_threshold_duff,
             core_refill_target_duff,
             devnet_genesis,
+            devnet_name,
+            devnet_llmq_size,
+            devnet_llmq_threshold,
         })
     }
 
@@ -742,6 +784,29 @@ pub(crate) fn parse_u64_duff_var(var: &'static str, default: u64) -> u64 {
             }
         }
         Err(_) => default,
+    }
+}
+
+/// Resolve an optional `u32` override env var, defaulting to `0` (= "no
+/// override") when unset / empty. A non-empty unparseable value warns once
+/// and falls back to `0` so a fat-fingered override isn't silently honoured.
+/// Used by the devnet LLMQ escape hatches.
+fn parse_u32_default_0(var: &'static str) -> u32 {
+    let Some(raw) = opt_trimmed_env(var) else {
+        return 0;
+    };
+    match raw.parse::<u32>() {
+        Ok(value) => value,
+        Err(err) => {
+            tracing::warn!(
+                target: "platform_wallet::e2e::config",
+                var,
+                value = %raw,
+                ?err,
+                "could not parse u32 override env var; ignoring (treating as 0)"
+            );
+            0
+        }
     }
 }
 

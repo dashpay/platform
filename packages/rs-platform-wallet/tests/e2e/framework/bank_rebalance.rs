@@ -45,7 +45,7 @@ use super::bank_identity::BankIdentity;
 use super::config::Config;
 use super::signer::{derive_identity_key, SeedBackedCoreSigner};
 use super::wait::wait_for_identity_balance;
-use super::wallet_factory::{bank_fee_strategy, DEFAULT_ACCOUNT_INDEX_PUB};
+use super::wallet_factory::{default_fee_strategy, DEFAULT_ACCOUNT_INDEX_PUB};
 use super::{FrameworkError, FrameworkResult};
 
 /// Headroom kept on the bank identity after a Platform-side drain so a
@@ -58,6 +58,43 @@ const BANK_IDENTITY_DRAIN_FEE_RESERVE: Credits = 30_000_000;
 /// translate duff thresholds / targets into credit-denominated transition
 /// amounts, and by [`super::bank_plan`] for cross-type surplus math.
 pub const CREDITS_PER_DUFF: u64 = 1_000;
+
+/// Credit headroom kept on Platform beyond the bare deficit when an
+/// asset-lock bootstrap funds it, so the immediately-following transition
+/// fees don't re-underflow Platform. Shared by the planner's E5 sizing
+/// ([`super::bank_plan`]) and the bank-identity bootstrap self-fund.
+pub const PLATFORM_BOOTSTRAP_FEE_RESERVE: Credits = 100_000_000;
+
+/// Credits the asset-lock address-funding transition itself burns, deducted
+/// (`ReduceOutput(0)`) from the locked amount BEFORE it lands on the
+/// recipient. Live paloma runs show this fee is ~93M credits, so the gross
+/// lock must exceed the target by at least this much or the NET underflows
+/// it. Shared by both sizing paths (planner E5 + bootstrap self-fund);
+/// over-locking only leaves the bank more usable Platform balance.
+pub const BOOTSTRAP_ASSET_LOCK_FEE_RESERVE: Credits = 150_000_000;
+
+/// Core duffs to asset-lock so a Platform balance of `current_credits`
+/// reaches `target_credits`. Ceil-divides the credit shortfall by
+/// [`CREDITS_PER_DUFF`] so rounding never undershoots the target; returns
+/// `0` when the balance already covers it. The single sizing rule both
+/// the planner's E5 move and the bank-identity bootstrap use.
+pub fn bootstrap_lock_duff(current_credits: Credits, target_credits: Credits) -> u64 {
+    target_credits
+        .saturating_sub(current_credits)
+        .div_ceil(CREDITS_PER_DUFF)
+}
+
+/// Net Platform credits that land on the recipient after a gross asset-lock
+/// of `lock_duff` duffs, once the funding transition's own
+/// [`BOOTSTRAP_ASSET_LOCK_FEE_RESERVE`] fee is deducted. The single
+/// net-credit model both the planner's E5 sizing and the bootstrap
+/// self-fund use to reason about post-lock balances. Saturates to `0` when
+/// the lock is too small to cover its own fee.
+pub fn bootstrap_lock_net_credits(lock_duff: u64) -> Credits {
+    lock_duff
+        .saturating_mul(CREDITS_PER_DUFF)
+        .saturating_sub(BOOTSTRAP_ASSET_LOCK_FEE_RESERVE)
+}
 
 /// Measured Core spend of one full e2e pass: ~13 tDASH ≈ 1.3e9 duffs
 /// (1 DASH = 1e8 duffs). All refill sizing below is derived from this.
@@ -618,6 +655,9 @@ pub async fn asset_lock_core_to_platform(
     let mut addresses: BTreeMap<PlatformAddress, Option<Credits>> = BTreeMap::new();
     addresses.insert(recipient, None);
 
+    // The asset-lock-funded transition has NO address inputs (the value
+    // source is the lock itself), so `DeductFromInput(0)` is out of bounds.
+    // Take the fee from the single recipient output instead.
     wallet
         .platform()
         .fund_from_asset_lock(
@@ -627,7 +667,7 @@ pub async fn asset_lock_core_to_platform(
             },
             DEFAULT_ACCOUNT_INDEX_PUB,
             addresses,
-            bank_fee_strategy(),
+            default_fee_strategy(),
             bank.address_signer(),
             &core_signer,
             None,
@@ -737,6 +777,40 @@ mod tests {
     #[test]
     fn credits_per_duff_is_one_thousand() {
         assert_eq!(CREDITS_PER_DUFF, 1_000);
+    }
+
+    /// Pin the shared bootstrap fee reserve — both the planner's E5 sizing
+    /// and the bank-identity bootstrap depend on this value.
+    #[test]
+    fn platform_bootstrap_fee_reserve_is_pinned() {
+        assert_eq!(PLATFORM_BOOTSTRAP_FEE_RESERVE, 100_000_000);
+    }
+
+    /// Pin the asset-lock funding-fee reserve — it must stay above the
+    /// live-observed ~93M funding fee or both sizing paths under-net.
+    #[test]
+    fn bootstrap_asset_lock_fee_reserve_is_pinned() {
+        assert_eq!(BOOTSTRAP_ASSET_LOCK_FEE_RESERVE, 150_000_000);
+    }
+
+    #[test]
+    fn bootstrap_lock_duff_ceils_the_shortfall() {
+        // Already covered → 0 duffs.
+        assert_eq!(bootstrap_lock_duff(1_000, 1_000), 0);
+        assert_eq!(bootstrap_lock_duff(2_000, 1_000), 0);
+        // Exact multiple of CREDITS_PER_DUFF.
+        assert_eq!(bootstrap_lock_duff(0, 2_000), 2);
+        // Sub-duff shortfall rounds UP, never down to 0.
+        assert_eq!(bootstrap_lock_duff(0, 1), 1);
+        assert_eq!(bootstrap_lock_duff(0, 1_001), 2);
+    }
+
+    #[test]
+    fn bootstrap_lock_net_credits_subtracts_the_funding_fee() {
+        // Gross 450M − 150M fee reserve = 300M net.
+        assert_eq!(bootstrap_lock_net_credits(450_000), 300_000_000);
+        // A lock too small to cover its own fee nets 0 (saturating).
+        assert_eq!(bootstrap_lock_net_credits(100_000), 0);
     }
 
     /// 1 duff round-trips through the duff→credits cast used by the

@@ -26,7 +26,10 @@ use dpp::fee::Credits;
 
 use super::bank::BankWallet;
 use super::bank_identity::BankIdentity;
-use super::bank_rebalance::{self, CREDITS_PER_DUFF};
+use super::bank_rebalance::{
+    self, bootstrap_lock_duff, bootstrap_lock_net_credits, BOOTSTRAP_ASSET_LOCK_FEE_RESERVE,
+    CREDITS_PER_DUFF, PLATFORM_BOOTSTRAP_FEE_RESERVE,
+};
 use super::config::Config;
 use super::{FrameworkError, FrameworkResult};
 
@@ -144,12 +147,6 @@ pub struct InsufficientFunds {
     pub shortfalls: Vec<TypeShortfall>,
 }
 
-/// Fee reserve (credits) kept on Platform when sizing the E5 bootstrap so
-/// the post-bootstrap Platform balance can still pay the leaf-funding
-/// transition fees. Generous; the bootstrap is a once-per-fresh-network
-/// event.
-const PLATFORM_BOOTSTRAP_FEE_RESERVE: Credits = 100_000_000;
-
 /// Compute the cost-ordered plan from measured balances + minimums.
 ///
 /// Pure and deterministic — no I/O. Returns the ordered [`Move`]s to run
@@ -178,17 +175,29 @@ pub fn plan(balances: Balances, mins: Mins) -> Result<Vec<Move>, InsufficientFun
     let platform_deficit = mins.platform.saturating_sub(platform_spendable);
     if platform_deficit > 0 {
         let core_surplus_credits = balances.core_credits().saturating_sub(mins.core_credits());
-        // Lock enough to clear the Platform deficit plus a fee reserve so
-        // the subsequent leaf-funding transitions don't immediately
-        // re-underflow Platform.
-        let want_credits = platform_deficit.saturating_add(PLATFORM_BOOTSTRAP_FEE_RESERVE);
+        // The lock must fund the FULL downstream Platform outflow, not just
+        // the hub min: Platform fans out to the identity / shielded / core
+        // leaves (Steps 4-6), each drawn from the post-hub surplus. Size the
+        // leaf deficits from the ORIGINAL balances so they match the later
+        // per-step draws exactly.
+        let leaf_outflow = leaf_platform_outflow(&balances, &mins);
+        // Lock enough to NET (after the `ReduceOutput(0)` funding fee) the
+        // hub deficit plus the leaf outflow, plus a reserve so the
+        // transitions don't immediately re-underflow Platform.
+        let want_credits = platform_deficit
+            .saturating_add(leaf_outflow)
+            .saturating_add(PLATFORM_BOOTSTRAP_FEE_RESERVE)
+            .saturating_add(BOOTSTRAP_ASSET_LOCK_FEE_RESERVE);
         let lock_credits = want_credits.min(core_surplus_credits);
-        if lock_credits >= platform_deficit && lock_credits > 0 {
-            let amount_duff = lock_credits / CREDITS_PER_DUFF;
-            if amount_duff > 0 {
+        if lock_credits > 0 {
+            let amount_duff = bootstrap_lock_duff(0, lock_credits);
+            // Credit only the NET (gross − funding fee) so the Step-3 hub
+            // gate and the leaf-draw checks fire when a Core-constrained lock
+            // can't net the full fan-out.
+            let net_credits = bootstrap_lock_net_credits(amount_duff);
+            if net_credits > 0 {
                 moves.push(Move::AssetLockCoreToPlatform { amount_duff });
-                platform_spendable =
-                    platform_spendable.saturating_add(amount_duff.saturating_mul(CREDITS_PER_DUFF));
+                platform_spendable = platform_spendable.saturating_add(net_credits);
             }
         }
     }
@@ -241,6 +250,27 @@ pub fn plan(balances: Balances, mins: Mins) -> Result<Vec<Move>, InsufficientFun
     }
 
     Ok(moves)
+}
+
+/// Total credits Platform must pay out to the leaf types AFTER reaching its
+/// own min — the identity top-up (Step 4), shielded shield (Step 5, opt-in),
+/// and core withdrawal (Step 6). Computed from the original `balances`/`mins`
+/// so the E5 lock target (Step 2) and the later per-step draws agree.
+fn leaf_platform_outflow(balances: &Balances, mins: &Mins) -> Credits {
+    let identity_deficit = mins.identity.saturating_sub(balances.identity);
+    let shielded_deficit = if mins.shielded > 0 {
+        mins.shielded.saturating_sub(balances.shielded)
+    } else {
+        0
+    };
+    let withdraw_credits = if balances.core_duff < mins.core_duff {
+        mins.core_target_duff.saturating_mul(CREDITS_PER_DUFF)
+    } else {
+        0
+    };
+    identity_deficit
+        .saturating_add(shielded_deficit)
+        .saturating_add(withdraw_credits)
 }
 
 /// Build the full per-type shortfall report (native units) for the
@@ -677,5 +707,155 @@ mod tests {
                 .any(|m| matches!(m, Move::AssetLockCoreToPlatform { .. })),
             "reclaimed identity surplus must avoid the slow bootstrap; plan={plan:?}"
         );
+    }
+
+    /// QA-008 regression: a Core-constrained bank whose lockable surplus
+    /// covers the bare Platform deficit GROSS but not after the asset-lock
+    /// funding fee. The planner must NOT false-pass on phantom (un-netted)
+    /// credits — it has to fire `InsufficientFunds` because the NET landing
+    /// on Platform underflows its min.
+    ///
+    /// deficit = 500M; Core surplus = 600M credits — above the 500M deficit
+    /// but below deficit + 150M fee, so the capped lock nets only
+    /// 600M − 150M = 450M < 500M.
+    #[test]
+    fn core_constrained_lock_under_nets_deficit_fails() {
+        let core_surplus_credits = 600_000_000u64;
+        let mins = legacy_mins();
+        let bal = Balances {
+            platform: 0,
+            identity: 0,
+            shielded: 0,
+            core_duff: mins.core_duff + core_surplus_credits / CREDITS_PER_DUFF,
+        };
+        let err = plan(bal, mins).expect_err(
+            "Core-constrained lock that can't NET the Platform deficit must be insufficient",
+        );
+        let platform = err
+            .shortfalls
+            .iter()
+            .find(|s| s.account_type == AccountType::Platform)
+            .expect("platform shortfall present");
+        assert_eq!(platform.need, 500_000_000);
+    }
+
+    /// QA-008: a well-funded bank sizes the E5 lock to NET the deficit after
+    /// the funding fee. With `legacy_mins` (identity min 30M, balances all 0)
+    /// the lock also covers the 30M identity leaf deficit (see
+    /// `e5_lock_covers_leaf_deficits_not_just_platform_min`).
+    #[test]
+    fn well_funded_e5_lock_includes_the_funding_fee() {
+        let bal = Balances {
+            platform: 0,
+            identity: 0,
+            shielded: 0,
+            core_duff: 6_000_000_000,
+        };
+        let plan = plan(bal, legacy_mins()).expect("plan");
+        let asset_lock = plan
+            .iter()
+            .find_map(|m| match m {
+                Move::AssetLockCoreToPlatform { amount_duff } => Some(*amount_duff),
+                _ => None,
+            })
+            .expect("well-funded bank must emit an asset-lock move");
+        // Gross must cover platform deficit (500M) + identity leaf deficit
+        // (30M) + leaf reserve (100M) + funding fee (150M) = 780M.
+        let gross = asset_lock.saturating_mul(CREDITS_PER_DUFF);
+        assert_eq!(
+            gross,
+            500_000_000
+                + 30_000_000
+                + PLATFORM_BOOTSTRAP_FEE_RESERVE
+                + BOOTSTRAP_ASSET_LOCK_FEE_RESERVE
+        );
+        assert!(
+            bootstrap_lock_net_credits(asset_lock) >= 500_000_000,
+            "net after funding fee must clear the Platform min; net={}",
+            bootstrap_lock_net_credits(asset_lock)
+        );
+    }
+
+    /// QA-010 regression (the live pa_002 blocker): an abundant-Core bank
+    /// with BOTH a Platform deficit and a Shielded floor. The E5 lock must
+    /// be sized to fund the full Platform fan-out (hub min + shielded leaf),
+    /// not just the hub min — otherwise the post-hub surplus can't cover the
+    /// shield and `plan()` false-fails with `InsufficientFunds` despite the
+    /// Core being there.
+    ///
+    /// Mirrors the live state: Platform ~162M / need 500M, Shielded 0 / need
+    /// 500M, identity funded, Core huge.
+    #[test]
+    fn e5_lock_covers_leaf_deficits_not_just_platform_min() {
+        let mins = Mins {
+            platform: 500_000_000,
+            identity: 30_000_000,
+            shielded: 500_000_000,
+            core_duff: 2_000_000_000,
+            core_target_duff: 5_000_000_000,
+        };
+        let bal = Balances {
+            platform: 162_146_560,
+            identity: 184_004_720,
+            shielded: 0,
+            // ~102 tDASH — far above the Core min, so the lock isn't capped.
+            core_duff: 102_000_000_000,
+        };
+        let plan = plan(bal, mins).expect("abundant Core must fund platform + shielded leaf");
+
+        // The hub gets topped up AND the shielded floor is funded — no
+        // false InsufficientFunds.
+        assert!(plan.contains(&Move::ShieldFromPlatform {
+            credits: 500_000_000
+        }));
+        let asset_lock = plan
+            .iter()
+            .find_map(|m| match m {
+                Move::AssetLockCoreToPlatform { amount_duff } => Some(*amount_duff),
+                _ => None,
+            })
+            .expect("E5 asset-lock must be emitted");
+
+        // Net-after-fee, on top of the Platform balance + the drained
+        // identity surplus (184M − 30M = 154M reclaimed in Step 1), must
+        // cover the hub min (500M) PLUS the shielded leaf (500M) = 1B.
+        let net = bootstrap_lock_net_credits(asset_lock);
+        let drained_identity_surplus = 184_004_720 - 30_000_000;
+        let platform_after = 162_146_560 + drained_identity_surplus + net;
+        assert!(
+            platform_after >= 500_000_000 + 500_000_000,
+            "platform after E5 ({platform_after}) must cover hub min + shielded leaf"
+        );
+    }
+
+    /// QA-010: when Core IS constrained, folding leaf deficits into the lock
+    /// target must still surface `InsufficientFunds` (no false-pass) if the
+    /// capped net can't cover the full fan-out.
+    #[test]
+    fn e5_leaf_sizing_still_fails_when_core_capped_below_total() {
+        let mins = Mins {
+            platform: 500_000_000,
+            identity: 30_000_000,
+            shielded: 500_000_000,
+            core_duff: 2_000_000_000,
+            core_target_duff: 5_000_000_000,
+        };
+        // Core surplus 700M credits: enough to net the 500M hub min after the
+        // 150M fee (700−150=550 ≥ 500) but NOT the additional 500M shielded
+        // leaf — must fail, not false-pass.
+        let core_surplus_credits = 700_000_000u64;
+        let bal = Balances {
+            platform: 0,
+            identity: 30_000_000,
+            shielded: 0,
+            core_duff: mins.core_duff + core_surplus_credits / CREDITS_PER_DUFF,
+        };
+        let err = plan(bal, mins).expect_err("capped lock can't fund the shielded leaf");
+        let shielded = err
+            .shortfalls
+            .iter()
+            .find(|s| s.account_type == AccountType::Shielded)
+            .expect("shielded shortfall present");
+        assert_eq!(shielded.need, 500_000_000);
     }
 }

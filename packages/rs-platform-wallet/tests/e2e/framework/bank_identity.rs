@@ -44,8 +44,11 @@ use platform_wallet::PlatformWalletManager;
 use serde::{Deserialize, Serialize};
 
 use super::bank::BankWallet;
+use super::bank_rebalance::{
+    self, bootstrap_lock_duff, BOOTSTRAP_ASSET_LOCK_FEE_RESERVE, PLATFORM_BOOTSTRAP_FEE_RESERVE,
+};
 use super::signer::{derive_identity_key, SeedBackedIdentitySigner};
-use super::wait::wait_for_identity_balance;
+use super::wait::{wait_for_identity_balance, wait_for_identity_visible_to_platform};
 use super::{FrameworkError, FrameworkResult};
 
 /// DIP-9 identity index reserved for the bank identity. Tests use
@@ -54,11 +57,37 @@ use super::{FrameworkError, FrameworkResult};
 /// registers a fresh test identity at index 0.
 pub const BANK_IDENTITY_INDEX: u32 = 0xBA77;
 
-/// Funding the bootstrap registration consumes from the bank's
-/// primary receive address. Sized well above the chain-time
-/// registration fee so the new identity carries useful balance for
-/// swept credits to land on top of.
-pub const BANK_IDENTITY_BOOTSTRAP_FUNDING: Credits = 80_000_000;
+/// Minimum credits the bank's primary Platform address must hold before
+/// the bootstrap registers the bank identity. Doubles as the self-fund
+/// trigger floor. Live paloma runs show the registration transition's
+/// chain-time `required_balance` is ~96M credits, so this sits well above
+/// that so a partially-funded address (e.g. ~87M from an interrupted prior
+/// run) still triggers a top-up rather than dead-ending in registration.
+pub const BANK_IDENTITY_BOOTSTRAP_FUNDING: Credits = 200_000_000;
+
+/// Core (duff) headroom required on top of the asset-lock amount for the
+/// L1 lock transaction's own fee. The asset-lock builder picks the exact
+/// fee at broadcast time; this is a conservative pre-check floor so a
+/// self-fund attempt that can't even pay the Core fee fails with an
+/// actionable operator error instead of deep inside the broadcast.
+///
+/// The pre-check is a coarse gate against [`BankWallet::core_balance_confirmed`],
+/// which is not transactionally consistent with the spendable-UTXO set —
+/// it can pass on a confirmed figure the builder can't realise (funds in
+/// in-flight change, reserved UTXOs). The broadcast inside
+/// [`bank_rebalance::asset_lock_core_to_platform`] is the authoritative
+/// check; this only fails the obviously-too-poor bank fast and clearly.
+const BOOTSTRAP_CORE_FEE_RESERVE_DUFF: u64 = 10_000;
+
+/// Funding-type tag (see `PlatformWalletManager::tracked_asset_locks_blocking`'s
+/// `lock_type`) for asset-locks that top up a Platform address — what the
+/// bootstrap self-fund mints. Used to spot a prior run's actionable lock
+/// before minting a second (QA-001 double-spend guard).
+const LOCK_TYPE_ASSET_LOCK_ADDRESS_TOP_UP: u8 = 4;
+
+/// Terminal `lock_type` status (see `tracked_asset_locks_blocking`):
+/// `4 = Consumed`. Anything below is still actionable / unconsumed.
+const LOCK_STATUS_CONSUMED: u8 = 4;
 
 /// Post-registration on-chain visibility timeout for the bootstrap
 /// path. Generous because bootstrap only happens once per bank.
@@ -118,6 +147,7 @@ pub async fn resolve_bank_identity(
     workdir: &Path,
     bank_identity_env: Option<&str>,
     network: Network,
+    disable_spv: bool,
 ) -> FrameworkResult<BankIdentity> {
     // Build the signer up front — it's cheap and used by every
     // resolution branch below for downstream sweeps regardless of
@@ -217,7 +247,8 @@ pub async fn resolve_bank_identity(
         );
         existing_id
     } else {
-        let id = bootstrap_register(manager, bank, network, &master_key, &high_key).await?;
+        let id =
+            bootstrap_register(manager, bank, network, &master_key, &high_key, disable_spv).await?;
         tracing::info!(
             target: "platform_wallet::e2e::bank_identity",
             identity_id = %hex::encode(id),
@@ -275,35 +306,44 @@ async fn try_recover_on_chain(
 /// address. Caller is responsible for persistence and for having
 /// already verified that the on-chain identity does not yet exist
 /// for `master_key`'s public-key hash (see [`try_recover_on_chain`]).
+///
+/// When the primary Platform address is short of
+/// [`BANK_IDENTITY_BOOTSTRAP_FUNDING`] and SPV is enabled, this self-funds
+/// the shortfall (plus [`BOOTSTRAP_FEE_RESERVE`]) via a one-time
+/// Core→Platform asset-lock ([`bank_rebalance::asset_lock_core_to_platform`])
+/// before registering. It hard-errors with an operator-actionable message
+/// only when self-funding genuinely cannot proceed: `disable_spv` is set,
+/// or the bank's confirmed Core balance can't cover the lock plus its L1
+/// fee.
 async fn bootstrap_register(
-    _manager: &Arc<PlatformWalletManager<NoPlatformPersistence>>,
+    manager: &Arc<PlatformWalletManager<NoPlatformPersistence>>,
     bank: &BankWallet,
     network: Network,
     master_key: &IdentityPublicKey,
     high_key: &IdentityPublicKey,
+    disable_spv: bool,
 ) -> FrameworkResult<Identifier> {
     let bank_wallet = bank.platform_wallet();
     let seed = bank.seed_bytes();
     let funding_address = *bank.primary_receive_address();
 
-    // Refuse to bootstrap when the bank's primary address can't
-    // cover the bootstrap funding plus a reasonable fee — the
-    // registration would fail downstream with a less actionable
-    // error.
-    let balances = bank_wallet
-        .platform()
-        .addresses_with_balances()
-        .await
-        .into_iter()
-        .collect::<BTreeMap<PlatformAddress, Credits>>();
-    let primary_balance = balances.get(&funding_address).copied().unwrap_or(0);
-    if primary_balance < BANK_IDENTITY_BOOTSTRAP_FUNDING {
-        return Err(FrameworkError::Bank(format!(
-            "bank primary address {} balance {} below bootstrap funding {}; top up before re-running",
-            funding_address.to_bech32m_string(network),
+    // The bank's primary Platform address must cover the bootstrap
+    // funding before registering. If it's short, self-fund the shortfall
+    // from the bank's Core balance via a one-time asset-lock (SPV-gated) —
+    // only hard-error when self-funding can't proceed. On the Ok path
+    // `fund_from_asset_lock` writes the proof-attested balance
+    // synchronously before returning, so no post-fund re-check is needed.
+    let primary_balance = primary_platform_balance(bank, &funding_address).await;
+    if needs_self_fund(primary_balance) {
+        self_fund_bootstrap(
+            manager,
+            bank,
+            &funding_address,
             primary_balance,
-            BANK_IDENTITY_BOOTSTRAP_FUNDING,
-        )));
+            network,
+            disable_spv,
+        )
+        .await?;
     }
 
     let identity_signer = SeedBackedIdentitySigner::new(seed, network, BANK_IDENTITY_INDEX)?;
@@ -346,7 +386,159 @@ async fn bootstrap_register(
     )
     .await?;
 
+    // The asset-lock-funded path can have a lagging DAPI replica return
+    // `Ok(None)` for the fresh identity even after the balance wait clears
+    // on one node; the very next harness step (`provision_transfer_key_if_missing`)
+    // fetches this identity and silently skips on a miss. Gate on a
+    // 2-success streak so that fetch sees a converged replica (QA-911).
+    wait_for_identity_visible_to_platform(
+        bank_wallet.sdk(),
+        registered.id(),
+        BOOTSTRAP_VISIBILITY_TIMEOUT,
+        2,
+    )
+    .await?;
+
     Ok(registered.id())
+}
+
+/// Confirmed credit balance of the bank's `address` on Platform, read
+/// from the wallet's address-balance map (`0` if absent).
+async fn primary_platform_balance(bank: &BankWallet, address: &PlatformAddress) -> Credits {
+    bank.platform_wallet()
+        .platform()
+        .addresses_with_balances()
+        .await
+        .into_iter()
+        .collect::<BTreeMap<PlatformAddress, Credits>>()
+        .get(address)
+        .copied()
+        .unwrap_or(0)
+}
+
+/// The bootstrap must self-fund when the primary Platform balance is
+/// strictly below [`BANK_IDENTITY_BOOTSTRAP_FUNDING`]. A balance exactly at
+/// the floor is sufficient — no self-fund.
+fn needs_self_fund(primary_credits: Credits) -> bool {
+    primary_credits < BANK_IDENTITY_BOOTSTRAP_FUNDING
+}
+
+/// A tracked asset-lock is unconsumed (still holds committed Core value)
+/// when it tops up a Platform address and has not reached the terminal
+/// `Consumed` status. Minting a fresh lock while one of these exists would
+/// orphan the prior lock's duffs (QA-001 double-spend).
+fn is_unconsumed_address_lock(lock_type: u8, status: u8) -> bool {
+    lock_type == LOCK_TYPE_ASSET_LOCK_ADDRESS_TOP_UP && status != LOCK_STATUS_CONSUMED
+}
+
+/// Top the bank's primary Platform `address` up to at least
+/// [`BANK_IDENTITY_BOOTSTRAP_FUNDING`] (plus
+/// [`PLATFORM_BOOTSTRAP_FEE_RESERVE`]) via a Core→Platform asset-lock,
+/// sizing the lock from the current balance.
+///
+/// Pre-checks that self-funding can actually proceed and returns an
+/// operator-actionable [`FrameworkError::Bank`] otherwise:
+/// - `disable_spv` is set (the asset-lock proof needs SPV);
+/// - a prior run left an unconsumed Platform asset-lock (minting a second
+///   would orphan its Core value — see TODO(QA-001)); or
+/// - the bank's confirmed Core balance can't cover the lock plus its L1
+///   fee — names the Core top-up address and the shortfall.
+async fn self_fund_bootstrap(
+    manager: &Arc<PlatformWalletManager<NoPlatformPersistence>>,
+    bank: &BankWallet,
+    address: &PlatformAddress,
+    current_credits: Credits,
+    network: Network,
+    disable_spv: bool,
+) -> FrameworkResult<()> {
+    if disable_spv {
+        return Err(FrameworkError::Bank(format!(
+            "bank primary address {} balance {} below bootstrap funding {} and \
+             PLATFORM_WALLET_E2E_DISABLE_SPV is set, so the Core→Platform asset-lock \
+             self-fund (which needs SPV for the ChainLocked proof) can't run. Enable SPV \
+             or fund the bank's Platform address directly, then re-run.",
+            address.to_bech32m_string(network),
+            current_credits,
+            BANK_IDENTITY_BOOTSTRAP_FUNDING,
+        )));
+    }
+
+    // QA-001 guard: refuse to mint a fresh lock if a prior run already
+    // broadcast one (process died before the credit write + persistence).
+    // The tracked-lock snapshot does not carry the recipient address, so we
+    // can't yet target a resume to THIS address from here — bail loudly
+    // instead of silently double-spending Core into a second lock.
+    // TODO(QA-001): resume the existing lock via
+    // `AssetLockFunding::FromExistingAssetLock { out_point }` once the
+    // snapshot exposes the recipient (or a per-address lookup lands), so a
+    // crashed mid-bootstrap re-run advances the in-flight lock instead of
+    // erroring.
+    let wallet_id = bank.platform_wallet().wallet_id();
+    let pending: Vec<_> = manager
+        .tracked_asset_locks(&wallet_id)
+        .await
+        .into_iter()
+        .filter(|l| is_unconsumed_address_lock(l.lock_type, l.status))
+        .collect();
+    if !pending.is_empty() {
+        for lock in &pending {
+            tracing::warn!(
+                target: "platform_wallet::e2e::bank_identity",
+                outpoint = %lock.outpoint,
+                status = lock.status,
+                "unconsumed Platform asset-lock from a prior run — NOT minting a fresh lock (QA-001)"
+            );
+        }
+        return Err(FrameworkError::Bank(format!(
+            "bank has {} unconsumed Platform asset-lock(s) from a prior run; a fresh self-fund \
+             would orphan their Core value (double-spend). Resume or consume the existing \
+             lock(s) before re-running the bootstrap (TODO(QA-001): auto-resume here).",
+            pending.len(),
+        )));
+    }
+
+    // Gross lock target: the registration funding floor + post-bootstrap
+    // leaf-funding reserve + the asset-lock funding fee (deducted from the
+    // lock before it lands). The first two set the NET the address must
+    // hold; the third keeps that net intact through the funding fee.
+    let target_credits = BANK_IDENTITY_BOOTSTRAP_FUNDING
+        .saturating_add(PLATFORM_BOOTSTRAP_FEE_RESERVE)
+        .saturating_add(BOOTSTRAP_ASSET_LOCK_FEE_RESERVE);
+    let lock_duff = bootstrap_lock_duff(current_credits, target_credits);
+    let required_core_duff = lock_duff.saturating_add(BOOTSTRAP_CORE_FEE_RESERVE_DUFF);
+    let confirmed_core_duff = bank.core_balance_confirmed();
+    if confirmed_core_duff < required_core_duff {
+        let top_up_addr = match bank.primary_core_receive_address().await {
+            Ok(addr) => addr.to_string(),
+            Err(err) => format!("<unresolved: {err}>"),
+        };
+        return Err(FrameworkError::Bank(format!(
+            "bank Core balance too low to self-fund the bank-identity bootstrap.\n  \
+             Platform address : {addr}\n  \
+             Platform balance : {current_credits} credits (need {need} to register)\n  \
+             Core confirmed   : {confirmed_core_duff} duffs\n  \
+             Core required    : {required_core_duff} duffs (asset-lock {lock_duff} + L1 fee reserve {fee})\n  \
+             Core top-up addr : {top_up_addr}\n\
+             \n\
+             Send testnet Core duffs to the Core address above, then re-run — the framework \
+             will asset-lock them into Platform credits automatically.",
+            addr = address.to_bech32m_string(network),
+            need = BANK_IDENTITY_BOOTSTRAP_FUNDING,
+            fee = BOOTSTRAP_CORE_FEE_RESERVE_DUFF,
+        )));
+    }
+
+    tracing::info!(
+        target: "platform_wallet::e2e::bank_identity",
+        platform_address = %address.to_bech32m_string(network),
+        current_credits,
+        target_credits,
+        lock_duff,
+        confirmed_core_duff,
+        "bank-identity bootstrap: Platform short of funding, self-funding via Core→Platform asset-lock"
+    );
+
+    bank_rebalance::asset_lock_core_to_platform(bank, lock_duff, disable_spv).await
 }
 
 fn parse_identifier_hex(raw: &str) -> Result<Identifier, String> {
@@ -414,4 +606,46 @@ fn write_persisted(path: &Path, record: &PersistedBankIdentity) -> FrameworkResu
 /// Exposed so tests can introspect / reset the file.
 pub fn persisted_path(workdir: &Path) -> PathBuf {
     workdir.join("bank_identity.json")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn self_fund_triggers_only_strictly_below_floor() {
+        assert!(needs_self_fund(BANK_IDENTITY_BOOTSTRAP_FUNDING - 1));
+        // Exactly at the floor is sufficient — no self-fund (the `<` boundary).
+        assert!(!needs_self_fund(BANK_IDENTITY_BOOTSTRAP_FUNDING));
+        assert!(!needs_self_fund(BANK_IDENTITY_BOOTSTRAP_FUNDING + 1));
+    }
+
+    #[test]
+    fn lock_sizing_from_empty_hits_the_exact_duff_count() {
+        // 200M + 100M + 150M = 450M credits / 1000 credits-per-duff == 450_000 duffs.
+        let target = BANK_IDENTITY_BOOTSTRAP_FUNDING
+            .saturating_add(PLATFORM_BOOTSTRAP_FEE_RESERVE)
+            .saturating_add(BOOTSTRAP_ASSET_LOCK_FEE_RESERVE);
+        assert_eq!(bootstrap_lock_duff(0, target), 450_000);
+    }
+
+    #[test]
+    fn only_unconsumed_address_locks_block_minting() {
+        // AssetLockAddressTopUp (4) below Consumed (4) → blocks a fresh mint.
+        assert!(is_unconsumed_address_lock(
+            LOCK_TYPE_ASSET_LOCK_ADDRESS_TOP_UP,
+            0
+        )); // Built
+        assert!(is_unconsumed_address_lock(
+            LOCK_TYPE_ASSET_LOCK_ADDRESS_TOP_UP,
+            1
+        )); // Broadcast
+            // Consumed → no longer holds value, doesn't block.
+        assert!(!is_unconsumed_address_lock(
+            LOCK_TYPE_ASSET_LOCK_ADDRESS_TOP_UP,
+            LOCK_STATUS_CONSUMED
+        ));
+        // A different funding type (e.g. identity registration) isn't ours.
+        assert!(!is_unconsumed_address_lock(0, 1));
+    }
 }
