@@ -17,7 +17,7 @@
 //!
 //! Concurrency is intentionally not supported: a second `open()` against
 //! a path some other store handle (in this or another process) is
-//! already holding fails fast with [`FileStoreError::AlreadyLocked`].
+//! already holding fails fast with [`SecretStoreError::AlreadyLocked`].
 //!
 //! One file, one passphrase, one lock — a multi-wallet store cannot
 //! lock its other wallets out by construction. The lock sidecar
@@ -44,7 +44,6 @@
 //! and writes do not pay the Argon2 cost per op; it is zeroized on Drop.
 
 mod crypto;
-pub(crate) mod error;
 mod format;
 
 use std::any::Any;
@@ -58,8 +57,9 @@ use keyring_core::api::{Credential, CredentialApi, CredentialPersistence, Creden
 use keyring_core::{Entry, Error as KeyringError, Result as KeyringResult};
 
 use crypto::{KdfParams, SALT_LEN};
-use error::FileStoreError;
 use format::{EntryBody, Vault};
+
+use super::error::SecretStoreError;
 
 use super::secret::{SecretBytes, SecretString};
 use super::validate::{validated_label, WalletId};
@@ -77,7 +77,7 @@ const STORE_ID: &str = "encrypted-file-store-v1";
 /// attacker-controllable JSON; a multi-GiB file would force a huge
 /// `fs::read` allocation ahead of any tag check, so refuse to even
 /// allocate beyond this cap and surface
-/// [`FileStoreError::VaultTooLarge`].
+/// [`SecretStoreError::VaultTooLarge`].
 pub const MAX_VAULT_SIZE_BYTES: u64 = 128 * 1024 * 1024;
 
 /// A passphrase-encrypted file-backed credential store.
@@ -149,7 +149,7 @@ impl EncryptedFileStore {
     /// The call acquires an exclusive advisory lock on a sibling
     /// `<path>.lock` sidecar before touching the vault. If the lock is
     /// already held (by another handle in this process or by another
-    /// process) the call returns [`FileStoreError::AlreadyLocked`]
+    /// process) the call returns [`SecretStoreError::AlreadyLocked`]
     /// immediately — there is no retry loop.
     ///
     /// If `path` does not exist yet a fresh vault (random salt, default
@@ -158,7 +158,10 @@ impl EncryptedFileStore {
     /// is verified against the header verify-token, and the plaintext
     /// entry map is loaded into memory. Either way the returned store
     /// is immediately usable.
-    pub fn open(path: impl AsRef<Path>, passphrase: SecretString) -> Result<Self, FileStoreError> {
+    pub fn open(
+        path: impl AsRef<Path>,
+        passphrase: SecretString,
+    ) -> Result<Self, SecretStoreError> {
         let path = path.as_ref().to_path_buf();
 
         // Make sure the parent directory exists so both the lock sidecar
@@ -200,7 +203,7 @@ impl EncryptedFileStore {
     fn load_existing_vault(
         path: &Path,
         passphrase: &SecretString,
-    ) -> Result<Option<(Vault, SecretBytes)>, FileStoreError> {
+    ) -> Result<Option<(Vault, SecretBytes)>, SecretStoreError> {
         let Some(vault) = read_vault_at(path)? else {
             return Ok(None);
         };
@@ -213,7 +216,7 @@ impl EncryptedFileStore {
     fn create_new_vault(
         path: &Path,
         passphrase: &SecretString,
-    ) -> Result<(Vault, SecretBytes), FileStoreError> {
+    ) -> Result<(Vault, SecretBytes), SecretStoreError> {
         let (vault, key) = build_fresh_vault(passphrase)?;
         write_vault_at(path, &vault)?;
         Ok((vault, key))
@@ -231,13 +234,13 @@ impl EncryptedFileStore {
     /// only touches the new passphrase + a fresh salt and never reads
     /// resident state, so paying ~hundreds of ms inside the critical
     /// section would just stall unrelated put/get operations.
-    pub fn rekey(&self, new_passphrase: SecretString) -> Result<(), FileStoreError> {
+    pub fn rekey(&self, new_passphrase: SecretString) -> Result<(), SecretStoreError> {
         let (new_vault, new_key) = build_fresh_vault(&new_passphrase)?;
         lock_inner(&self.inner).rekey(new_vault, new_key, new_passphrase)
     }
 
     /// Store `secret` under `(wallet_id, label)`, returning the typed
-    /// [`FileStoreError`] (lossless — no `keyring_core::Error` seam).
+    /// [`SecretStoreError`] (lossless — no `keyring_core::Error` seam).
     /// The public [`SecretStore`](crate::secrets::SecretStore) file
     /// arm delegates here so the structural error distinction
     /// survives. Symmetric with [`get_bytes`]: the secret stays
@@ -250,12 +253,12 @@ impl EncryptedFileStore {
         wallet_id: &WalletId,
         label: &str,
         secret: &SecretBytes,
-    ) -> Result<(), FileStoreError> {
+    ) -> Result<(), SecretStoreError> {
         lock_inner(&self.inner).put(wallet_id, label, secret)
     }
 
     /// Retrieve the plaintext under `(wallet_id, label)`, or `None` if
-    /// absent, returning the typed [`FileStoreError`]. The plaintext
+    /// absent, returning the typed [`SecretStoreError`]. The plaintext
     /// stays inside a zeroizing [`SecretBytes`] all the way to this
     /// boundary (CMT-008); the single `.expose_secret().to_vec()`
     /// conversion lives at the upstream `CredentialApi::get_secret`
@@ -265,27 +268,27 @@ impl EncryptedFileStore {
         &self,
         wallet_id: &WalletId,
         label: &str,
-    ) -> Result<Option<SecretBytes>, FileStoreError> {
+    ) -> Result<Option<SecretBytes>, SecretStoreError> {
         lock_inner(&self.inner).get(wallet_id, label)
     }
 
     /// Delete the entry under `(wallet_id, label)`; `Ok(false)` if it was
-    /// already absent. Returns the typed [`FileStoreError`].
+    /// already absent. Returns the typed [`SecretStoreError`].
     pub(crate) fn delete_bytes(
         &self,
         wallet_id: &WalletId,
         label: &str,
-    ) -> Result<bool, FileStoreError> {
+    ) -> Result<bool, SecretStoreError> {
         lock_inner(&self.inner).delete(wallet_id, label)
     }
 
     #[cfg(test)]
-    pub(crate) fn test_read_vault_from_disk(&self) -> Result<Option<Vault>, FileStoreError> {
+    pub(crate) fn test_read_vault_from_disk(&self) -> Result<Option<Vault>, SecretStoreError> {
         read_vault_at(&lock_inner(&self.inner).path)
     }
 
     #[cfg(test)]
-    pub(crate) fn test_write_vault_to_disk(&self, vault: &Vault) -> Result<(), FileStoreError> {
+    pub(crate) fn test_write_vault_to_disk(&self, vault: &Vault) -> Result<(), SecretStoreError> {
         write_vault_at(&lock_inner(&self.inner).path, vault)
     }
 
@@ -295,10 +298,10 @@ impl EncryptedFileStore {
     /// to observe the new bytes (the resident-vault model otherwise
     /// caches the loaded state).
     #[cfg(test)]
-    pub(crate) fn test_reload_from_disk(&self) -> Result<(), FileStoreError> {
+    pub(crate) fn test_reload_from_disk(&self) -> Result<(), SecretStoreError> {
         let mut state = lock_inner(&self.inner);
         let Some(vault) = read_vault_at(&state.path)? else {
-            return Err(FileStoreError::MalformedVault);
+            return Err(SecretStoreError::MalformedVault);
         };
         let key = derive_and_verify(&vault, &state.passphrase)?;
         state.vault = vault;
@@ -321,7 +324,7 @@ fn lock_inner(
 impl EncryptedFileStoreInner {
     /// Re-encrypt the resident vault and atomically replace the
     /// on-disk file. Runs inside the state-lock critical section.
-    fn sync_to_disk(&self) -> Result<(), FileStoreError> {
+    fn sync_to_disk(&self) -> Result<(), SecretStoreError> {
         write_vault_at(&self.path, &self.vault)
     }
 
@@ -332,7 +335,7 @@ impl EncryptedFileStoreInner {
         wallet_id: &WalletId,
         label: &str,
         secret: &SecretBytes,
-    ) -> Result<(), FileStoreError> {
+    ) -> Result<(), SecretStoreError> {
         let label = validated_label(label)?.to_string();
         let aad = format::aad(format::FORMAT_VERSION, wallet_id.as_bytes(), &label);
 
@@ -374,7 +377,7 @@ impl EncryptedFileStoreInner {
         &self,
         wallet_id: &WalletId,
         label: &str,
-    ) -> Result<Option<SecretBytes>, FileStoreError> {
+    ) -> Result<Option<SecretBytes>, SecretStoreError> {
         let label = validated_label(label)?;
         let wallet_hex = wallet_id.to_hex();
         let aad = format::aad(format::FORMAT_VERSION, wallet_id.as_bytes(), label);
@@ -396,7 +399,7 @@ impl EncryptedFileStoreInner {
     /// Removal for [`EncryptedFileStore::delete_bytes`]; returns
     /// `Ok(false)` if absent, rolls the in-memory entry back on a
     /// disk-write failure.
-    fn delete(&mut self, wallet_id: &WalletId, label: &str) -> Result<bool, FileStoreError> {
+    fn delete(&mut self, wallet_id: &WalletId, label: &str) -> Result<bool, SecretStoreError> {
         let label = validated_label(label)?;
         let wallet_hex = wallet_id.to_hex();
 
@@ -431,7 +434,7 @@ impl EncryptedFileStoreInner {
         mut new_vault: Vault,
         new_key: SecretBytes,
         new_passphrase: SecretString,
-    ) -> Result<(), FileStoreError> {
+    ) -> Result<(), SecretStoreError> {
         for (wallet_hex, entries) in &self.vault.wallets {
             let wallet_bytes = decode_wallet_id_hex(wallet_hex)?;
             let mut new_entries: std::collections::BTreeMap<String, EntryBody> =
@@ -515,7 +518,7 @@ fn lock_path_for(path: &Path) -> PathBuf {
 /// corruption guard). Returns the (entry-less) vault and the
 /// derived key so the caller can seal entries against it without
 /// re-deriving.
-fn build_fresh_vault(passphrase: &SecretString) -> Result<(Vault, SecretBytes), FileStoreError> {
+fn build_fresh_vault(passphrase: &SecretString) -> Result<(Vault, SecretBytes), SecretStoreError> {
     let mut salt = [0u8; SALT_LEN];
     crypto::random_bytes(&mut salt)?;
     let kdf = KdfParams::default_target();
@@ -542,12 +545,12 @@ fn build_fresh_vault(passphrase: &SecretString) -> Result<(Vault, SecretBytes), 
 fn derive_and_verify(
     vault: &Vault,
     passphrase: &SecretString,
-) -> Result<SecretBytes, FileStoreError> {
+) -> Result<SecretBytes, SecretStoreError> {
     let key = crypto::derive_key(passphrase, &vault.salt, vault.kdf)?;
     let v_aad = format::verify_aad(format::FORMAT_VERSION);
     match crypto::open(&key, &vault.verify_nonce, &v_aad, &vault.verify_ct) {
         Ok(_) => Ok(key),
-        Err(FileStoreError::Decrypt) => Err(FileStoreError::WrongPassphrase),
+        Err(SecretStoreError::Decrypt) => Err(SecretStoreError::WrongPassphrase),
         Err(e) => Err(e),
     }
 }
@@ -560,26 +563,30 @@ fn derive_and_verify(
 /// Eliminates the metadata→read TOCTOU (CMT-004): opens the file
 /// once with `O_NOFOLLOW` on Unix, then derives perms / size from
 /// the open handle's `metadata()` and reads from the same fd.
-fn read_vault_at(path: &Path) -> Result<Option<Vault>, FileStoreError> {
+fn read_vault_at(path: &Path) -> Result<Option<Vault>, SecretStoreError> {
     let file = match open_no_follow(path) {
         Ok(file) => file,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(e) => return Err(e.into()),
+        Err(e) => return Err(SecretStoreError::io_at(path, e)),
     };
-    let meta = file.metadata()?;
+    let meta = file
+        .metadata()
+        .map_err(|e| SecretStoreError::io_at(path, e))?;
     check_perms(&meta)?;
     let len = meta.len();
     if len > MAX_VAULT_SIZE_BYTES {
-        return Err(FileStoreError::VaultTooLarge {
+        return Err(SecretStoreError::VaultTooLarge {
             found: len,
             max: MAX_VAULT_SIZE_BYTES,
         });
     }
     let mut bytes = Vec::with_capacity(len as usize);
     let mut handle = file.take(MAX_VAULT_SIZE_BYTES + 1);
-    handle.read_to_end(&mut bytes)?;
+    handle
+        .read_to_end(&mut bytes)
+        .map_err(|e| SecretStoreError::io_at(path, e))?;
     if bytes.len() as u64 > MAX_VAULT_SIZE_BYTES {
-        return Err(FileStoreError::VaultTooLarge {
+        return Err(SecretStoreError::VaultTooLarge {
             found: bytes.len() as u64,
             max: MAX_VAULT_SIZE_BYTES,
         });
@@ -598,28 +605,35 @@ fn read_vault_at(path: &Path) -> Result<Option<Vault>, FileStoreError> {
 /// never an absent one. On `persist` failure the temp drops and
 /// self-cleans — no manual remove racing it. The temp holds only
 /// ciphertext+header, never plaintext.
-fn write_vault_at(path: &Path, vault: &Vault) -> Result<(), FileStoreError> {
+fn write_vault_at(path: &Path, vault: &Vault) -> Result<(), SecretStoreError> {
     do_write_vault_at(path, vault).inspect_err(|e| {
         tracing::warn!(error = %e, "failed to write vault file");
     })
 }
 
-fn do_write_vault_at(path: &Path, vault: &Vault) -> Result<(), FileStoreError> {
+fn do_write_vault_at(path: &Path, vault: &Vault) -> Result<(), SecretStoreError> {
     let serialized = format::serialize(vault);
     // Normalize an empty / bare-filename parent to "." so neither
     // `NamedTempFile::new_in` nor the Unix parent-dir fsync sees an
     // empty path (CMT-002).
     let parent = normalized_parent(path);
     create_parent_dir(parent)?;
-    let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
+    let mut tmp =
+        tempfile::NamedTempFile::new_in(parent).map_err(|e| SecretStoreError::io_at(parent, e))?;
     set_restrictive_perms(tmp.as_file())?;
-    tmp.as_file_mut().write_all(&serialized)?;
-    tmp.as_file().sync_all()?;
-    tmp.persist(path).map_err(|e| e.error)?;
+    tmp.as_file_mut()
+        .write_all(&serialized)
+        .map_err(|e| SecretStoreError::io_at(path, e))?;
+    tmp.as_file()
+        .sync_all()
+        .map_err(|e| SecretStoreError::io_at(path, e))?;
+    tmp.persist(path)
+        .map_err(|e| SecretStoreError::io_at(path, e.error))?;
     #[cfg(unix)]
     {
-        let d = fs::File::open(parent)?;
-        d.sync_all()?;
+        let d = fs::File::open(parent).map_err(|e| SecretStoreError::io_at(parent, e))?;
+        d.sync_all()
+            .map_err(|e| SecretStoreError::io_at(parent, e))?;
     }
     Ok(())
 }
@@ -640,7 +654,7 @@ fn normalized_parent(path: &Path) -> &Path {
 /// Create the parent directory for a vault file, applying CMT-004's
 /// `0700` mode on Unix so the directory created at first-setup is not
 /// world-readable. Idempotent: a pre-existing directory is left alone.
-fn create_parent_dir(parent: &Path) -> Result<(), FileStoreError> {
+fn create_parent_dir(parent: &Path) -> Result<(), SecretStoreError> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::DirBuilderExt;
@@ -686,9 +700,9 @@ mod vault_lock {
     use std::fs;
     use std::path::Path;
 
-    use super::error::FileStoreError;
     #[cfg(unix)]
     use super::set_restrictive_perms;
+    use crate::secrets::error::SecretStoreError;
 
     pub(super) struct VaultLock {
         rwlock: *mut fd_lock::RwLock<fs::File>,
@@ -703,7 +717,7 @@ mod vault_lock {
     unsafe impl Sync for VaultLock {}
 
     impl VaultLock {
-        pub(super) fn acquire(lock_path: &Path) -> Result<Self, FileStoreError> {
+        pub(super) fn acquire(lock_path: &Path) -> Result<Self, SecretStoreError> {
             // INTENTIONAL(CMT-004): on non-unix platforms the
             // symlink-following hardening is deferred to
             // https://github.com/dashpay/platform/issues/3754 — Windows
@@ -716,7 +730,9 @@ mod vault_lock {
                 use std::os::unix::fs::OpenOptionsExt;
                 opts.custom_flags(libc::O_NOFOLLOW);
             }
-            let lock_file = opts.open(lock_path)?;
+            let lock_file = opts
+                .open(lock_path)
+                .map_err(|e| SecretStoreError::io_at(lock_path, e))?;
             #[cfg(unix)]
             set_restrictive_perms(&lock_file)?;
 
@@ -739,8 +755,8 @@ mod vault_lock {
                     // path.
                     unsafe { drop(Box::from_raw(raw)) };
                     return Err(match e.kind() {
-                        std::io::ErrorKind::WouldBlock => FileStoreError::AlreadyLocked,
-                        _ => FileStoreError::from(e),
+                        std::io::ErrorKind::WouldBlock => SecretStoreError::AlreadyLocked,
+                        _ => SecretStoreError::from(e),
                     });
                 }
             };
@@ -774,12 +790,12 @@ use vault_lock::VaultLock;
 /// constrains entries to JSON object semantics, but the outer key is
 /// a free-form string at the type level, so the bytes-back check is a
 /// defence-in-depth structural guard.
-pub(super) fn decode_wallet_id_hex(s: &str) -> Result<[u8; 32], FileStoreError> {
+pub(super) fn decode_wallet_id_hex(s: &str) -> Result<[u8; 32], SecretStoreError> {
     if s.len() != 64 {
-        return Err(FileStoreError::MalformedVault);
+        return Err(SecretStoreError::MalformedVault);
     }
     let mut out = [0u8; 32];
-    hex::decode_to_slice(s, &mut out).map_err(|_| FileStoreError::MalformedVault)?;
+    hex::decode_to_slice(s, &mut out).map_err(|_| SecretStoreError::MalformedVault)?;
     Ok(out)
 }
 
@@ -840,7 +856,7 @@ impl std::fmt::Debug for EncryptedFileCredential {
 
 impl CredentialApi for EncryptedFileCredential {
     fn set_secret(&self, secret: &[u8]) -> KeyringResult<()> {
-        let _ = validated_label(&self.label).map_err(FileStoreError::from)?;
+        let _ = validated_label(&self.label).map_err(SecretStoreError::from)?;
         self.store
             .put_bytes(
                 &self.wallet_id,
@@ -851,7 +867,7 @@ impl CredentialApi for EncryptedFileCredential {
     }
 
     fn get_secret(&self) -> KeyringResult<Vec<u8>> {
-        let _ = validated_label(&self.label).map_err(FileStoreError::from)?;
+        let _ = validated_label(&self.label).map_err(SecretStoreError::from)?;
         match self.store.get_bytes(&self.wallet_id, &self.label) {
             Ok(Some(v)) => Ok(v.expose_secret().to_vec()),
             Ok(None) => Err(KeyringError::NoEntry),
@@ -860,7 +876,7 @@ impl CredentialApi for EncryptedFileCredential {
     }
 
     fn delete_credential(&self) -> KeyringResult<()> {
-        let _ = validated_label(&self.label).map_err(FileStoreError::from)?;
+        let _ = validated_label(&self.label).map_err(SecretStoreError::from)?;
         match self.store.delete_bytes(&self.wallet_id, &self.label) {
             Ok(true) => Ok(()),
             Ok(false) => Err(KeyringError::NoEntry),
@@ -901,7 +917,7 @@ impl CredentialStoreApi for EncryptedFileStore {
     ) -> KeyringResult<Entry> {
         let wallet_id = parse_service(service)?;
         let label = validated_label(user)
-            .map_err(FileStoreError::from)?
+            .map_err(SecretStoreError::from)?
             .to_string();
         let cred = EncryptedFileCredential {
             store: self.clone(),
@@ -939,35 +955,35 @@ impl std::fmt::Debug for EncryptedFileStore {
 /// Project an entry-level `crypto::open` result into the typed
 /// distinction the secret backend exposes (CMT-020). The verify-token
 /// has already passed at every caller (open / get / rekey), so a
-/// `FileStoreError::Decrypt` here is corruption or tampering of the
+/// `SecretStoreError::Decrypt` here is corruption or tampering of the
 /// individual entry — **not** a wrong passphrase. Logs the non-secret
 /// `(wallet_id, label)` pair at error level (never the secret) and
-/// maps to `FileStoreError::Corruption`. Every other variant rides
+/// maps to `SecretStoreError::Corruption`. Every other variant rides
 /// through unchanged.
 fn entry_decrypt_or_corruption(
     wallet_hex: &str,
     label: &str,
-    result: Result<SecretBytes, FileStoreError>,
-) -> Result<SecretBytes, FileStoreError> {
+    result: Result<SecretBytes, SecretStoreError>,
+) -> Result<SecretBytes, SecretStoreError> {
     result.map_err(|err| match err {
-        FileStoreError::Decrypt => {
+        SecretStoreError::Decrypt => {
             tracing::error!(
                 wallet_id = %wallet_hex,
                 label = %label,
                 "vault entry failed integrity check (corruption or tampering)"
             );
-            FileStoreError::Corruption
+            SecretStoreError::Corruption
         }
         other => other,
     })
 }
 
 #[cfg(unix)]
-fn check_perms(meta: &fs::Metadata) -> Result<(), FileStoreError> {
+fn check_perms(meta: &fs::Metadata) -> Result<(), SecretStoreError> {
     use std::os::unix::fs::MetadataExt;
     let mode = meta.mode() & 0o777;
     if mode & 0o077 != 0 {
-        return Err(FileStoreError::InsecurePermissions { mode });
+        return Err(SecretStoreError::InsecurePermissions { mode });
     }
     Ok(())
 }
@@ -979,12 +995,12 @@ fn check_perms(meta: &fs::Metadata) -> Result<(), FileStoreError> {
 // landing. Operators on Windows MUST set ACLs manually until the
 // follow-up lands.
 #[cfg(not(unix))]
-fn check_perms(_meta: &fs::Metadata) -> Result<(), FileStoreError> {
+fn check_perms(_meta: &fs::Metadata) -> Result<(), SecretStoreError> {
     Ok(())
 }
 
 #[cfg(unix)]
-fn set_restrictive_perms(f: &fs::File) -> Result<(), FileStoreError> {
+fn set_restrictive_perms(f: &fs::File) -> Result<(), SecretStoreError> {
     use std::os::unix::fs::PermissionsExt;
     f.set_permissions(fs::Permissions::from_mode(0o600))?;
     Ok(())
@@ -997,7 +1013,7 @@ fn set_restrictive_perms(f: &fs::File) -> Result<(), FileStoreError> {
 // `winapi`; out of scope for the secrets-feature landing. Operators on
 // Windows MUST set ACLs manually until the follow-up lands.
 #[cfg(not(unix))]
-fn set_restrictive_perms(_f: &fs::File) -> Result<(), FileStoreError> {
+fn set_restrictive_perms(_f: &fs::File) -> Result<(), SecretStoreError> {
     Ok(())
 }
 
@@ -1042,19 +1058,19 @@ mod tests {
 
     /// Whether a projected SPI error came from a wrong passphrase.
     /// `WrongPassphrase` rides in `NoStorageAccess` with the typed
-    /// `FileStoreError` boxed as the source, recoverable losslessly.
+    /// `SecretStoreError` boxed as the source, recoverable losslessly.
     fn is_wrong_passphrase(e: &KeyringError) -> bool {
         matches!(
             e,
             KeyringError::NoStorageAccess(src)
-                if matches!(src.downcast_ref::<FileStoreError>(), Some(FileStoreError::WrongPassphrase))
+                if matches!(src.downcast_ref::<SecretStoreError>(), Some(SecretStoreError::WrongPassphrase))
         )
     }
 
     /// Whether a projected SPI error is the lossy `Corruption`
     /// projection.
     fn is_corruption(e: &KeyringError) -> bool {
-        matches!(e, KeyringError::BadStoreFormat(s) if *s == FileStoreError::Corruption.to_string())
+        matches!(e, KeyringError::BadStoreFormat(s) if *s == SecretStoreError::Corruption.to_string())
     }
 
     #[test]
@@ -1099,7 +1115,7 @@ mod tests {
         }
         let err = EncryptedFileStore::open(&path, SecretString::new("pw-wrong")).unwrap_err();
         assert!(
-            matches!(err, FileStoreError::WrongPassphrase),
+            matches!(err, SecretStoreError::WrongPassphrase),
             "got {err:?}"
         );
         // The error renders without any plaintext.
@@ -1117,7 +1133,10 @@ mod tests {
         let s1 = store_at(&path);
         let err = EncryptedFileStore::open(&path, SecretString::new("pw-correct"))
             .expect_err("second open must contend");
-        assert!(matches!(err, FileStoreError::AlreadyLocked), "got {err:?}");
+        assert!(
+            matches!(err, SecretStoreError::AlreadyLocked),
+            "got {err:?}"
+        );
         drop(s1);
         let _s2 = store_at(&path);
     }
@@ -1228,7 +1247,7 @@ mod tests {
         let err = EncryptedFileStore::open(&path, SecretString::new("pw-correct"))
             .expect_err("loose perms must be refused at open");
         assert!(
-            matches!(err, FileStoreError::InsecurePermissions { mode: 0o644 }),
+            matches!(err, SecretStoreError::InsecurePermissions { mode: 0o644 }),
             "got {err:?}"
         );
     }
@@ -1261,7 +1280,7 @@ mod tests {
         let err = EncryptedFileStore::open(&path, SecretString::new("pw-correct"))
             .expect_err("old passphrase must fail to open");
         assert!(
-            matches!(err, FileStoreError::WrongPassphrase),
+            matches!(err, SecretStoreError::WrongPassphrase),
             "got {err:?}"
         );
         // The new bytes are intact.
@@ -1294,7 +1313,7 @@ mod tests {
         // Reopening with the OLD passphrase fails at open().
         let err = EncryptedFileStore::open(&path, SecretString::new("pw-correct"))
             .expect_err("old passphrase rejected on reopen");
-        assert!(matches!(err, FileStoreError::WrongPassphrase));
+        assert!(matches!(err, SecretStoreError::WrongPassphrase));
 
         // Reopening with the NEW passphrase reads every wallet.
         let new_pp = EncryptedFileStore::open(&path, SecretString::new("pw-rotated")).unwrap();
@@ -1394,7 +1413,7 @@ mod tests {
         // and we project that as Corruption.
         let err = s.rekey(SecretString::new("pw-new")).unwrap_err();
         assert!(
-            matches!(err, FileStoreError::Corruption),
+            matches!(err, SecretStoreError::Corruption),
             "unexpected error: {err:?}"
         );
     }
@@ -1523,7 +1542,7 @@ mod tests {
         write_vault_at(&path, &vault).unwrap();
         let err = EncryptedFileStore::open(&path, SecretString::new("pw-correct"))
             .expect_err("inflated KDF must fail open");
-        assert!(matches!(err, FileStoreError::KdfFailure), "got {err:?}");
+        assert!(matches!(err, SecretStoreError::KdfFailure), "got {err:?}");
     }
 
     #[test]
@@ -1559,7 +1578,7 @@ mod tests {
         assert!(
             matches!(
                 err,
-                FileStoreError::VaultTooLarge { found, max }
+                SecretStoreError::VaultTooLarge { found, max }
                     if found == oversized && max == MAX_VAULT_SIZE_BYTES
             ),
             "unexpected error: {err:?}"
@@ -1696,7 +1715,7 @@ mod tests {
         let err = EncryptedFileStore::open(&path, SecretString::new("pw-correct"))
             .expect_err("open must refuse to follow lock-path symlink");
         assert!(
-            matches!(err, FileStoreError::Io(_)),
+            matches!(err, SecretStoreError::Io(_)),
             "expected an Io error from O_NOFOLLOW refusal, got {err:?}"
         );
     }

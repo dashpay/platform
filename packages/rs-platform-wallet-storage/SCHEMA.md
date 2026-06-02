@@ -4,7 +4,7 @@ The persister stores **public** wallet-state material (UTXOs, transactions, acco
 
 Schema evolution is version-gated by refinery. Every read-write connection turns on `PRAGMA foreign_keys = ON` at open time (`src/sqlite/conn.rs`), so every `ON DELETE CASCADE` clause is active. The `meta_*` soft-cascade `AFTER DELETE` triggers fire even for parent rows removed by an FK cascade (SQLite does this natively), so deleting a wallet transitively cleans all its metadata.
 
-The 25 tables are split into five domain diagrams below. `WALLET_METADATA` is the root anchor and appears in each diagram. For full column listings see the [Tables](#tables) section.
+The 23 tables are split into five domain diagrams below. `WALLET_METADATA` is the root anchor and appears in each diagram. For full column listings see the [Tables](#tables) section.
 
 ## Diagram 1 — Core / L1 (Bitcoin/Dash layer)
 
@@ -144,16 +144,12 @@ erDiagram
 
 ## Diagram 3 — Contacts (DashPay social graph)
 
-Three tables for the three states of a DashPay contact relationship. All three root on `wallet_id`; `IDENTITIES` is repeated here as a minimal placeholder to show that the contact `owner_id` / `sender_id` / `recipient_id` columns are Platform identity identifiers (32-byte blobs), not FK-enforced columns.
+One unified table for all three states of a DashPay contact relationship — the `state` column (`sent` / `received` / `established`) records the lifecycle stage. It roots on `wallet_id`; `IDENTITIES` is repeated here as a minimal placeholder to show that the `owner_id` / `contact_id` columns are Platform identity identifiers (32-byte blobs), not FK-enforced columns.
 
 ```mermaid
 erDiagram
-    WALLET_METADATA ||--o{ CONTACTS_SENT : "has"
-    WALLET_METADATA ||--o{ CONTACTS_RECV : "has"
-    WALLET_METADATA ||--o{ CONTACTS_ESTABLISHED : "has"
-    IDENTITIES ||--o{ CONTACTS_SENT : "sends"
-    IDENTITIES ||--o{ CONTACTS_RECV : "receives"
-    IDENTITIES ||--o{ CONTACTS_ESTABLISHED : "establishes"
+    WALLET_METADATA ||--o{ CONTACTS : "has"
+    IDENTITIES ||--o{ CONTACTS : "relates"
 
     WALLET_METADATA {
         BLOB wallet_id PK "32-byte WalletId"
@@ -165,32 +161,26 @@ erDiagram
         BLOB identity_id PK
     }
 
-    CONTACTS_SENT {
+    CONTACTS {
         BLOB wallet_id PK
-        BLOB owner_id PK "32-byte identity sending the request"
-        BLOB recipient_id PK "32-byte identity receiving the request"
-        BLOB entry_blob "bincode-encoded ContactRequestEntry"
-    }
-
-    CONTACTS_RECV {
-        BLOB wallet_id PK
-        BLOB owner_id PK
-        BLOB sender_id PK
-        BLOB entry_blob "bincode-encoded ContactRequestEntry"
-    }
-
-    CONTACTS_ESTABLISHED {
-        BLOB wallet_id PK
-        BLOB owner_id PK
-        BLOB contact_id PK
-        BLOB entry_blob "bincode-encoded EstablishedContact"
+        BLOB owner_id PK "32-byte identity owned by this wallet"
+        BLOB contact_id PK "32-byte counterparty identity"
+        TEXT state "sent | received | established"
+        BLOB outgoing_request "ContactRequest; set for sent + established"
+        BLOB incoming_request "ContactRequest; set for received + established"
+        TEXT alias "established-only (NULL when pending)"
+        TEXT note "established-only (NULL when pending)"
+        INTEGER is_hidden "established-only (NULL when pending)"
+        BLOB accepted_accounts "bincode-encoded Vec u32; established-only"
+        INTEGER updated_at "unixepoch() default"
     }
 ```
 
-> Note: `owner_id`, `recipient_id`, `sender_id`, and `contact_id` are Platform identity
-> identifiers stored as BLOBs; they are NOT declared `FOREIGN KEY` columns. The
-> relationships to `IDENTITIES` shown above are logical — enforced at the application layer,
-> not by SQLite constraints.
+> Note: `owner_id` and `contact_id` are Platform identity identifiers stored as BLOBs; they
+> are NOT declared `FOREIGN KEY` columns. The relationship to `IDENTITIES` shown above is
+> logical — enforced at the application layer, not by SQLite constraints. A pending row is
+> `sent` XOR `received` and carries only the matching request blob; an `established` row sets
+> both request blobs plus the four metadata columns.
 
 ## Diagram 4 — Platform addresses + Asset locks (Platform L2 funding)
 
@@ -251,7 +241,7 @@ cleanup, not an FK relationship.
 ```mermaid
 erDiagram
     WALLET_METADATA ||..o{ META_WALLET : "trigger cleanup"
-    WALLET_METADATA ||..o{ META_CONTACT : "trigger (via contacts_established)"
+    WALLET_METADATA ||..o{ META_CONTACT : "trigger (via established contacts)"
     WALLET_METADATA ||..o{ META_PLATFORM_ADDRESS : "trigger (via platform_addresses)"
     IDENTITIES ||..o{ META_IDENTITY : "trigger cleanup"
     TOKEN_BALANCES ||..o{ META_TOKEN : "trigger cleanup"
@@ -285,7 +275,7 @@ erDiagram
     }
 
     META_CONTACT {
-        BLOB wallet_id PK "no FK; trigger cleanup on contacts_established delete"
+        BLOB wallet_id PK "no FK; trigger cleanup on established contacts delete"
         BLOB owner_id PK
         BLOB contact_id PK
         TEXT key PK
@@ -407,27 +397,21 @@ to work around a serde-tag incompatibility.
 - FK: `identity_id → identities(identity_id) ON DELETE CASCADE`.
 - Index: `idx_identity_keys_identity(identity_id)`.
 
-### `contacts_sent`
+### `contacts`
 
-Outgoing DashPay contact requests. Owner is the wallet's identity; recipient
-is the contacted party.
-
-- PK: `(wallet_id, owner_id, recipient_id)`.
-- FK: `wallet_id → wallet_metadata(wallet_id) ON DELETE CASCADE`.
-
-### `contacts_recv`
-
-Incoming DashPay contact requests awaiting acceptance.
-
-- PK: `(wallet_id, owner_id, sender_id)`.
-- FK: `wallet_id → wallet_metadata(wallet_id) ON DELETE CASCADE`.
-
-### `contacts_established`
-
-Fully established DashPay contact relationships.
+All DashPay contact relationships in one table, keyed by lifecycle
+`state`. `owner_id` is always the wallet's identity; `contact_id` is the
+counterparty. A pending relationship is `sent` (we sent the request) XOR
+`received` (we received it) and carries only the matching request blob; an
+`established` relationship carries both `outgoing_request` and
+`incoming_request` plus the four metadata columns (`alias`, `note`,
+`is_hidden`, `accepted_accounts`, NULL while pending). The request columns
+hold a bincode-encoded `ContactRequest`; `accepted_accounts` holds a
+bincode-encoded `Vec<u32>`.
 
 - PK: `(wallet_id, owner_id, contact_id)`.
 - FK: `wallet_id → wallet_metadata(wallet_id) ON DELETE CASCADE`.
+- `state` CHECK: sourced from `sqlite::schema::contacts::CONTACT_STATE_LABELS`.
 
 ### `platform_addresses`
 
@@ -537,7 +521,7 @@ Per-token-balance metadata. Writable before the token balance exists.
 Per-established-contact metadata. Writable before the contact exists.
 
 - PK: `(wallet_id, owner_id, contact_id, key)`.
-- No FK. Cleanup: `cascade_meta_contact_on_contact_delete` (AFTER DELETE ON `contacts_established`).
+- No FK. Cleanup: `cascade_meta_contact_on_contact_delete` (AFTER DELETE ON `contacts` WHEN `state = 'established'`).
 
 #### `meta_platform_address`
 
@@ -549,10 +533,11 @@ before the address exists.
 
 ## Enum-domain CHECK constraints
 
-Five TEXT columns hold serialized Rust enum variants and carry a
-`CHECK (col IN (...))` clause whose IN-list is built at migration time
-from `pub(crate) const *_LABELS` arrays declared next to each writer
-function:
+Six TEXT columns carry a `CHECK (col IN (...))` clause whose IN-list is
+built at migration time from `pub(crate) const *_LABELS` arrays declared
+next to each writer function. Five mirror an upstream Rust enum; the
+sixth (`contacts.state`) is a synthetic lifecycle label naming which
+`ContactChangeSet` slot a row came from:
 
 | Table | Column | Source-of-truth const |
 |---|---|---|
@@ -562,10 +547,12 @@ function:
 | `account_address_pools` | `pool_type` | `sqlite::schema::accounts::POOL_TYPE_LABELS` |
 | `core_derived_addresses` | `account_type` | `sqlite::schema::accounts::ACCOUNT_TYPE_LABELS` |
 | `asset_locks` | `status` | `sqlite::schema::asset_locks::ASSET_LOCK_STATUS_LABELS` |
+| `contacts` | `state` | `sqlite::schema::contacts::CONTACT_STATE_LABELS` |
 
 The const arrays are the single source of truth shared by the writer
 mapping functions (`network_to_str`, `account_type_db_label`,
-`pool_type_db_label`, `status_str`) and the migration's CHECK clauses.
+`pool_type_db_label`, `status_str`, `contact_state_db_label`) and the
+migration's CHECK clauses.
 Per-module `*_labels_match_enum` unit tests enforce set-equality
 between each const and the writer's codomain — drift (a renamed/added
 upstream variant) fails the test rather than landing as silent garbage
@@ -624,11 +611,11 @@ having to grep this repo.
 | `cascade_meta_wallet_on_wallet_delete` | AFTER DELETE ON `wallet_metadata` | delete matching `meta_wallet` rows |
 | `cascade_meta_identity_on_identity_delete` | AFTER DELETE ON `identities` | delete matching `meta_identity` rows |
 | `cascade_meta_token_on_token_balance_delete` | AFTER DELETE ON `token_balances` | delete matching `meta_token` rows |
-| `cascade_meta_contact_on_contact_delete` | AFTER DELETE ON `contacts_established` | delete matching `meta_contact` rows |
+| `cascade_meta_contact_on_contact_delete` | AFTER DELETE ON `contacts` WHEN `state = 'established'` | delete matching `meta_contact` rows |
 | `cascade_meta_platform_address_on_address_delete` | AFTER DELETE ON `platform_addresses` | delete matching `meta_platform_address` rows |
 
 ## Migrations
 
 | Version | File | Description |
 |---|---|---|
-| V001 | `V001__initial.rs` | Full schema: all 25 tables (including the six `meta_*` per-object metadata tables), every index, and six triggers (`setnull_core_utxos_on_tx_delete` + the five `meta_*` soft-cascade triggers) |
+| V001 | `V001__initial.rs` | Full schema: all 23 tables (including the six `meta_*` per-object metadata tables), every index, and six triggers (`setnull_core_utxos_on_tx_delete` + the five `meta_*` soft-cascade triggers) |

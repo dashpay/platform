@@ -1,28 +1,34 @@
-//! File-backend error taxonomy and its `keyring_core::Error` projection.
+//! Secret-store error taxonomy and its `keyring_core::Error` projection.
 //!
-//! One concrete `thiserror` enum, no `#[non_exhaustive]`, **no** secret
+//! One concrete `thiserror` enum shared by both
+//! [`SecretStore`](crate::secrets::SecretStore) backends (the encrypted
+//! file vault and the OS keyring), no `#[non_exhaustive]`, **no** secret
 //! byte, passphrase, plaintext, or stringified source that could carry
 //! one in any variant. `#[error]` strings are static + structural; only
-//! non-secret diagnostics (POSIX mode bits, header version int) are
-//! carried as typed fields (SEC-REQ-2.0.1 / 2.2.8, CWE-209/CWE-532).
+//! non-secret diagnostics (POSIX mode bits, header version int, vault
+//! path) are carried as typed fields (SEC-REQ-2.0.1 / 2.2.8,
+//! CWE-209/CWE-532).
 //!
 //! The `EncryptedFileStore` surfaces this enum at its construction /
 //! `rekey` API; its `keyring_core::api::CredentialApi` /
 //! `CredentialStoreApi` impls project it into `keyring_core::Error` via
 //! [`From`] so SPI callers see a uniform error. The `WrongPassphrase` /
-//! `AlreadyLocked` variants box the typed `FileStoreError` as the
+//! `AlreadyLocked` variants box the typed `SecretStoreError` as the
 //! `NoStorageAccess` source, so an SPI consumer can recover them
-//! losslessly via `source().downcast_ref::<FileStoreError>()`; the
+//! losslessly via `source().downcast_ref::<SecretStoreError>()`; the
 //! `BadStoreFormat` group has no box slot and carries only a secret-free
 //! string. Either way, the fully typed path is the public
 //! [`SecretStore`](crate::secrets::SecretStore) API, which returns
-//! `FileStoreError` directly.
+//! `SecretStoreError` directly.
+
+use std::path::Path;
 
 use keyring_core::Error as KeyringError;
 
-/// Errors produced by the `EncryptedFileStore` vault backend.
+/// Errors produced by a [`SecretStore`](crate::secrets::SecretStore) —
+/// both the `EncryptedFileStore` vault backend and the OS keyring arm.
 #[derive(Debug, thiserror::Error)]
-pub enum FileStoreError {
+pub enum SecretStoreError {
     /// AEAD tag failure on the header verify-token: the supplied
     /// passphrase did not unlock the vault. Carries **no** plaintext and
     /// no source (SEC-REQ-2.2.8, CWE-347).
@@ -96,16 +102,17 @@ pub enum FileStoreError {
     /// verify-token context) or [`Corruption`] (in an entry context).
     /// Never escapes to the SPI / public surface.
     ///
-    /// [`WrongPassphrase`]: FileStoreError::WrongPassphrase
-    /// [`Corruption`]: FileStoreError::Corruption
+    /// [`WrongPassphrase`]: SecretStoreError::WrongPassphrase
+    /// [`Corruption`]: SecretStoreError::Corruption
     #[error("decryption/integrity check failed")]
     Decrypt,
 
     /// Filesystem error (open / write / rename / fsync). The inner
-    /// `io::Error` carries an OS code and a path *the caller supplied*,
-    /// never a secret.
-    #[error("io error")]
-    Io(#[from] std::io::Error),
+    /// [`IoError`] carries an OS code and, when the failing operation
+    /// knew it, the *non-secret* path it was operating on (CMT-005) — a
+    /// caller-supplied filesystem path, never a secret byte.
+    #[error("{0}")]
+    Io(#[from] IoError),
 
     /// An OS-keyring backend (the [`SecretStore::Os`] arm) failure,
     /// projected to a non-secret discriminant. Keyring variants that
@@ -119,6 +126,49 @@ pub enum FileStoreError {
         /// The non-secret keyring failure discriminant.
         kind: OsKeyringErrorKind,
     },
+}
+
+impl SecretStoreError {
+    /// Build an [`Io`](SecretStoreError::Io) error that names the
+    /// non-secret filesystem `path` the failing operation touched
+    /// (CMT-005). Use at the vault read / write / lock seams where the
+    /// path is known; the bare `?`/`From<std::io::Error>` conversion
+    /// (path unknown) stays available for the deep helpers.
+    pub(crate) fn io_at(path: &Path, source: std::io::Error) -> Self {
+        Self::Io(IoError {
+            path: Some(path.to_path_buf()),
+            source,
+        })
+    }
+}
+
+/// Filesystem-error payload for [`SecretStoreError::Io`]. Wraps the OS
+/// [`std::io::Error`] and, when the failing operation knew it, the
+/// non-secret path it was operating on. `From<std::io::Error>` is
+/// derived so a bare `?` still works (path defaults to `None`); the
+/// path-aware seams attach it via [`SecretStoreError::io_at`] (CMT-005).
+#[derive(Debug, thiserror::Error)]
+pub struct IoError {
+    /// The non-secret filesystem path, when the failing operation knew
+    /// it. A caller-supplied path, never a secret.
+    pub path: Option<std::path::PathBuf>,
+    /// The underlying OS error.
+    pub source: std::io::Error,
+}
+
+impl std::fmt::Display for IoError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.path {
+            Some(p) => write!(f, "io error at {}: {}", p.display(), self.source),
+            None => write!(f, "io error: {}", self.source),
+        }
+    }
+}
+
+impl From<std::io::Error> for IoError {
+    fn from(source: std::io::Error) -> Self {
+        Self { path: None, source }
+    }
 }
 
 /// Non-secret discriminant for an OS-keyring backend failure, projected
@@ -155,20 +205,29 @@ impl std::fmt::Display for OsKeyringErrorKind {
     }
 }
 
-impl From<super::super::validate::InvalidLabel> for FileStoreError {
-    fn from(_: super::super::validate::InvalidLabel) -> Self {
+impl From<super::validate::InvalidLabel> for SecretStoreError {
+    fn from(_: super::validate::InvalidLabel) -> Self {
         Self::InvalidLabel
     }
 }
 
-/// Project a [`FileStoreError`] into `keyring_core::Error` for the
+/// Bare `?` on a [`std::io::Error`] inside a function returning
+/// [`SecretStoreError`] threads through [`IoError`] (path `None`); the
+/// path-aware seams call [`SecretStoreError::io_at`] instead (CMT-005).
+impl From<std::io::Error> for SecretStoreError {
+    fn from(source: std::io::Error) -> Self {
+        Self::Io(IoError::from(source))
+    }
+}
+
+/// Project a [`SecretStoreError`] into `keyring_core::Error` for the
 /// `CredentialApi` / `CredentialStoreApi` SPI seam.
 ///
 /// - [`WrongPassphrase`] and [`AlreadyLocked`] ride in
 ///   [`KeyringError::NoStorageAccess`] (operator UX: "ask the operator to
-///   unlock / retry") with the typed `FileStoreError` boxed as the
+///   unlock / retry") with the typed `SecretStoreError` boxed as the
 ///   source, so an SPI consumer can losslessly recover the variant via
-///   `err.source().and_then(|s| s.downcast_ref::<FileStoreError>())`.
+///   `err.source().and_then(|s| s.downcast_ref::<SecretStoreError>())`.
 /// - [`Corruption`], [`KdfFailure`], [`VersionUnsupported`],
 ///   [`MalformedVault`], [`InsecurePermissions`], the internal
 ///   [`Decrypt`], and [`OsKeyring`] collapse into
@@ -179,20 +238,20 @@ impl From<super::super::validate::InvalidLabel> for FileStoreError {
 /// - [`InvalidLabel`] becomes `KeyringError::Invalid("user", _)`.
 /// - [`Io`] becomes [`KeyringError::PlatformFailure`].
 ///
-/// [`WrongPassphrase`]: FileStoreError::WrongPassphrase
-/// [`AlreadyLocked`]: FileStoreError::AlreadyLocked
-/// [`Corruption`]: FileStoreError::Corruption
-/// [`KdfFailure`]: FileStoreError::KdfFailure
-/// [`VersionUnsupported`]: FileStoreError::VersionUnsupported
-/// [`MalformedVault`]: FileStoreError::MalformedVault
-/// [`InsecurePermissions`]: FileStoreError::InsecurePermissions
-/// [`Decrypt`]: FileStoreError::Decrypt
-/// [`OsKeyring`]: FileStoreError::OsKeyring
-/// [`InvalidLabel`]: FileStoreError::InvalidLabel
-/// [`Io`]: FileStoreError::Io
-impl From<FileStoreError> for KeyringError {
-    fn from(e: FileStoreError) -> Self {
-        use FileStoreError as E;
+/// [`WrongPassphrase`]: SecretStoreError::WrongPassphrase
+/// [`AlreadyLocked`]: SecretStoreError::AlreadyLocked
+/// [`Corruption`]: SecretStoreError::Corruption
+/// [`KdfFailure`]: SecretStoreError::KdfFailure
+/// [`VersionUnsupported`]: SecretStoreError::VersionUnsupported
+/// [`MalformedVault`]: SecretStoreError::MalformedVault
+/// [`InsecurePermissions`]: SecretStoreError::InsecurePermissions
+/// [`Decrypt`]: SecretStoreError::Decrypt
+/// [`OsKeyring`]: SecretStoreError::OsKeyring
+/// [`InvalidLabel`]: SecretStoreError::InvalidLabel
+/// [`Io`]: SecretStoreError::Io
+impl From<SecretStoreError> for KeyringError {
+    fn from(e: SecretStoreError) -> Self {
+        use SecretStoreError as E;
         match e {
             E::WrongPassphrase | E::AlreadyLocked => KeyringError::NoStorageAccess(Box::new(e)),
             E::Corruption
@@ -206,7 +265,7 @@ impl From<FileStoreError> for KeyringError {
             E::InvalidLabel => {
                 KeyringError::Invalid("user".to_string(), "label allowlist violation".to_string())
             }
-            E::Io(io) => KeyringError::PlatformFailure(Box::new(io)),
+            E::Io(io) => KeyringError::PlatformFailure(Box::new(io.source)),
         }
     }
 }
@@ -218,8 +277,8 @@ mod tests {
     #[test]
     fn wrong_passphrase_and_already_locked_ride_no_storage_access() {
         for e in [
-            FileStoreError::WrongPassphrase,
-            FileStoreError::AlreadyLocked,
+            SecretStoreError::WrongPassphrase,
+            SecretStoreError::AlreadyLocked,
         ] {
             let k: KeyringError = e.into();
             assert!(matches!(k, KeyringError::NoStorageAccess(_)));
@@ -229,12 +288,12 @@ mod tests {
     #[test]
     fn corruption_and_format_errors_ride_bad_store_format() {
         for e in [
-            FileStoreError::Corruption,
-            FileStoreError::Decrypt,
-            FileStoreError::KdfFailure,
-            FileStoreError::VersionUnsupported { found: 999 },
-            FileStoreError::MalformedVault,
-            FileStoreError::InsecurePermissions { mode: 0o644 },
+            SecretStoreError::Corruption,
+            SecretStoreError::Decrypt,
+            SecretStoreError::KdfFailure,
+            SecretStoreError::VersionUnsupported { found: 999 },
+            SecretStoreError::MalformedVault,
+            SecretStoreError::InsecurePermissions { mode: 0o644 },
         ] {
             let k: KeyringError = e.into();
             assert!(matches!(k, KeyringError::BadStoreFormat(_)));
@@ -243,7 +302,7 @@ mod tests {
 
     #[test]
     fn invalid_label_maps_to_invalid_user() {
-        let k: KeyringError = FileStoreError::InvalidLabel.into();
+        let k: KeyringError = SecretStoreError::InvalidLabel.into();
         match k {
             KeyringError::Invalid(attr, _) => assert_eq!(attr, "user"),
             other => panic!("expected Invalid, got {other:?}"),
@@ -252,32 +311,60 @@ mod tests {
 
     #[test]
     fn io_maps_to_platform_failure() {
-        let k: KeyringError = FileStoreError::Io(std::io::Error::other("boom")).into();
+        let k: KeyringError = SecretStoreError::from(std::io::Error::other("boom")).into();
         assert!(matches!(k, KeyringError::PlatformFailure(_)));
+    }
+
+    #[test]
+    fn io_at_names_path_in_display_without_leaking_secret() {
+        // CMT-005: the path-aware Io error renders the offending path so
+        // operators can see which file failed; the source message rides
+        // along, but no secret byte does (the path is caller-supplied).
+        let err = SecretStoreError::io_at(
+            std::path::Path::new("/var/lib/wallet/vault.pwsvault"),
+            std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied"),
+        );
+        let rendered = err.to_string();
+        assert!(
+            rendered.contains("/var/lib/wallet/vault.pwsvault"),
+            "expected the path in the message, got {rendered:?}"
+        );
+        assert!(rendered.contains("denied"));
+    }
+
+    #[test]
+    fn bare_io_conversion_has_no_path() {
+        let err: SecretStoreError = std::io::Error::other("boom").into();
+        let SecretStoreError::Io(io) = err else {
+            panic!("expected Io variant");
+        };
+        assert!(io.path.is_none());
     }
 
     #[test]
     fn projection_carries_no_secret_in_display() {
         // Corruption / wrong-passphrase render static text only.
-        let k: KeyringError = FileStoreError::Corruption.into();
+        let k: KeyringError = SecretStoreError::Corruption.into();
         assert!(!format!("{k}").contains("plaintext"));
-        let k: KeyringError = FileStoreError::WrongPassphrase.into();
+        let k: KeyringError = SecretStoreError::WrongPassphrase.into();
         assert!(format!("{k:?}").contains("NoStorageAccess"));
     }
 
     #[test]
     fn wrong_passphrase_is_recoverable_from_no_storage_access_source() {
-        // WrongPassphrase / AlreadyLocked box the typed FileStoreError as
-        // the NoStorageAccess source, so an SPI consumer recovers the
-        // variant losslessly via `source().downcast_ref::<FileStoreError>()`.
+        // WrongPassphrase / AlreadyLocked box the typed SecretStoreError
+        // as the NoStorageAccess source, so an SPI consumer recovers the
+        // variant losslessly via `source().downcast_ref::<SecretStoreError>()`.
         use std::error::Error as _;
         for original in [
-            FileStoreError::WrongPassphrase,
-            FileStoreError::AlreadyLocked,
+            SecretStoreError::WrongPassphrase,
+            SecretStoreError::AlreadyLocked,
         ] {
             let want = original.to_string();
             let k: KeyringError = original.into();
-            let recovered = k.source().and_then(|s| s.downcast_ref::<FileStoreError>());
+            let recovered = k
+                .source()
+                .and_then(|s| s.downcast_ref::<SecretStoreError>());
             assert!(
                 matches!(recovered, Some(e) if e.to_string() == want),
                 "expected recoverable {want}, got {recovered:?}"
@@ -288,7 +375,7 @@ mod tests {
     #[test]
     fn bad_store_format_group_renders_secret_free_string() {
         use std::error::Error as _;
-        let k: KeyringError = FileStoreError::Corruption.into();
+        let k: KeyringError = SecretStoreError::Corruption.into();
         // No box slot on BadStoreFormat: a static, secret-free message,
         // nothing to downcast.
         assert!(matches!(&k, KeyringError::BadStoreFormat(s) if !s.is_empty()));
@@ -298,7 +385,7 @@ mod tests {
 
     #[test]
     fn os_keyring_projects_to_bad_store_format() {
-        let k: KeyringError = FileStoreError::OsKeyring {
+        let k: KeyringError = SecretStoreError::OsKeyring {
             kind: OsKeyringErrorKind::NoDefaultStore,
         }
         .into();

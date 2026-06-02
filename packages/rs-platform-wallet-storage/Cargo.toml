@@ -97,7 +97,6 @@ tracing-subscriber = { version = "0.3", features = [
 libc = { version = "0.2", optional = true }
 
 [target.'cfg(any(target_os = "linux", target_os = "freebsd"))'.dependencies]
-linux-keyutils-keyring-store = { version = "=1.0.0", optional = true }
 dbus-secret-service-keyring-store = { version = "=1.0.0", features = [
     "crypto-rust",
     "vendored",
@@ -193,7 +192,6 @@ secrets = [
     "dep:keyring-core",
     "dep:fd-lock",
     "dep:libc",
-    "dep:linux-keyutils-keyring-store",
     "dep:dbus-secret-service-keyring-store",
     "dep:apple-native-keyring-store",
     "dep:windows-native-keyring-store",

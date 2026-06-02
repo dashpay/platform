@@ -81,11 +81,11 @@ fn tc040_load_platform_addresses() {
 
 /// TC-043: `token_balances` is still persisted-but-not-rehydrated
 /// (genuinely deferred); contacts now DO rehydrate (PR-3) and surface
-/// in `state.wallets[w].contacts`. Asserts both `contacts_sent` and
-/// `token_balances` rows are durable on disk after a reopen, the
-/// contact round-trips into the keyless payload, and
-/// `state.platform_addresses` stays empty (no platform-address
-/// activity was stored).
+/// in `state.wallets[w].contacts`. Asserts both the unified `contacts`
+/// table (`state = 'sent'` row) and `token_balances` rows are durable on
+/// disk after a reopen (verified by direct SQL probes), the contact
+/// round-trips into the keyless payload, and `state.platform_addresses`
+/// stays empty (no platform-address activity was stored).
 #[test]
 fn tc043_non_wired_up_persisted_but_not_returned() {
     use dpp::prelude::Identifier;
@@ -102,7 +102,7 @@ fn tc043_non_wired_up_persisted_but_not_returned() {
     ensure_wallet_meta(&persister, &w);
     // token_balances FK targets identities(identity_id), so the owner
     // identity must exist before any token-balance row is written.
-    // contacts_* is wallet-scoped, so it doesn't need an identity row.
+    // contacts is wallet-scoped, so it doesn't need an identity row.
     common::ensure_identity(&persister, owner.as_bytes(), Some(&w));
     let mut sent_requests = std::collections::BTreeMap::new();
     sent_requests.insert(
@@ -167,12 +167,13 @@ fn tc043_non_wired_up_persisted_but_not_returned() {
     let conn = common::ro_conn(&path);
     let sent: i64 = conn
         .query_row(
-            "SELECT COUNT(*) FROM contacts_sent WHERE wallet_id = ?1 AND owner_id = ?2 AND recipient_id = ?3",
+            "SELECT COUNT(*) FROM contacts \
+             WHERE wallet_id = ?1 AND owner_id = ?2 AND contact_id = ?3 AND state = 'sent'",
             rusqlite::params![w.as_slice(), owner.as_slice(), recipient.as_slice()],
             |row| row.get(0),
         )
         .unwrap();
-    assert_eq!(sent, 1, "contacts_sent row missing after reopen");
+    assert_eq!(sent, 1, "contacts 'sent' row missing after reopen");
     let tokens: i64 = conn
         .query_row(
             "SELECT COUNT(*) FROM token_balances WHERE identity_id = ?1 AND token_id = ?2",
@@ -190,9 +191,10 @@ fn tc043_non_wired_up_persisted_but_not_returned() {
 
 use dpp::prelude::Identifier;
 use platform_wallet::changeset::{
-    ContactChangeSet, ContactRequestEntry, IdentityChangeSet, IdentityEntry, SentContactRequestKey,
+    ContactChangeSet, ContactRequestEntry, IdentityChangeSet, IdentityEntry,
+    ReceivedContactRequestKey, SentContactRequestKey,
 };
-use platform_wallet::wallet::identity::{ContactRequest, IdentityStatus};
+use platform_wallet::wallet::identity::{ContactRequest, EstablishedContact, IdentityStatus};
 
 fn reopen(path: &std::path::Path) -> platform_wallet_storage::SqlitePersister {
     platform_wallet_storage::SqlitePersister::open(
@@ -359,14 +361,280 @@ fn tc_p4_004_load_contacts_two_wallets() {
     let b_state = platform_wallet_storage::sqlite::schema::contacts::load_state_for_test(&conn, &b)
         .expect("contacts load_state B");
     drop(conn);
-    let got_a = a_state.sent_requests.get(&key_a).expect("a");
-    assert_eq!(got_a.request.sender_id, entry_a.request.sender_id);
-    assert_eq!(
-        got_a.request.core_height_created_at,
-        entry_a.request.core_height_created_at
+    // Exact reconstruction: each wallet sees only its own request, with
+    // the full `ContactRequest` surviving the round-trip.
+    assert_eq!(a_state.sent_requests.len(), 1);
+    assert_eq!(a_state.sent_requests.get(&key_a), Some(&entry_a));
+    assert!(a_state.incoming_requests.is_empty() && a_state.established.is_empty());
+    assert_eq!(b_state.sent_requests.len(), 1);
+    assert_eq!(b_state.sent_requests.get(&key_b), Some(&entry_b));
+    assert!(b_state.incoming_requests.is_empty() && b_state.established.is_empty());
+}
+
+/// Round-trip one changeset through the persister and read the wallet's
+/// `contacts` back via the hardened reader. Shared by the lifecycle-state
+/// tests below.
+fn contacts_round_trip(
+    wallet_byte: u8,
+    cs: ContactChangeSet,
+) -> platform_wallet_storage::sqlite::schema::contacts::ContactsRecords {
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(wallet_byte);
+    ensure_wallet_meta(&persister, &w);
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                contacts: Some(cs),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    drop(persister);
+
+    let p2 = reopen(&path);
+    let conn = p2.lock_conn_for_test();
+    platform_wallet_storage::sqlite::schema::contacts::load_state_for_test(&conn, &w)
+        .expect("contacts load_state")
+}
+
+/// A fully-populated [`EstablishedContact`] so the round-trip exercises
+/// every metadata column (`alias`, `note`, `is_hidden`,
+/// `accepted_accounts`) plus both request blobs.
+fn established_contact(owner: u8, contact: u8) -> EstablishedContact {
+    EstablishedContact {
+        contact_identity_id: Identifier::from([contact; 32]),
+        outgoing_request: contact_request_entry(owner, contact).request,
+        incoming_request: contact_request_entry(contact, owner).request,
+        alias: Some("best friend".to_string()),
+        note: Some("met at conf".to_string()),
+        is_hidden: true,
+        accepted_accounts: vec![1, 7, 42],
+    }
+}
+
+/// CMT-003: a sent-only request round-trips into `sent_requests` and
+/// nowhere else.
+#[test]
+fn tc_p4_004a_sent_only_round_trip() {
+    let key = SentContactRequestKey {
+        owner_id: Identifier::from([0x31; 32]),
+        recipient_id: Identifier::from([0x32; 32]),
+    };
+    let entry = contact_request_entry(0x31, 0x32);
+    let mut sent = std::collections::BTreeMap::new();
+    sent.insert(key, entry.clone());
+    let state = contacts_round_trip(
+        0xA1,
+        ContactChangeSet {
+            sent_requests: sent,
+            ..Default::default()
+        },
     );
-    let got_b = b_state.sent_requests.get(&key_b).expect("b");
-    assert_eq!(got_b.request.sender_id, entry_b.request.sender_id);
+    assert_eq!(state.sent_requests.get(&key), Some(&entry));
+    assert!(state.incoming_requests.is_empty());
+    assert!(state.established.is_empty());
+}
+
+/// CMT-003: a received-only request round-trips into `incoming_requests`
+/// and nowhere else.
+#[test]
+fn tc_p4_004b_received_only_round_trip() {
+    let key = ReceivedContactRequestKey {
+        owner_id: Identifier::from([0x41; 32]),
+        sender_id: Identifier::from([0x42; 32]),
+    };
+    // sender → owner (the request comes FROM the sender TO our owner).
+    let entry = contact_request_entry(0x42, 0x41);
+    let mut incoming = std::collections::BTreeMap::new();
+    incoming.insert(key, entry.clone());
+    let state = contacts_round_trip(
+        0xB2,
+        ContactChangeSet {
+            incoming_requests: incoming,
+            ..Default::default()
+        },
+    );
+    assert_eq!(state.incoming_requests.get(&key), Some(&entry));
+    assert!(state.sent_requests.is_empty());
+    assert!(state.established.is_empty());
+}
+
+/// CMT-003: an established contact round-trips into `established` with
+/// both request blobs and all four metadata columns intact.
+#[test]
+fn tc_p4_004c_established_round_trip() {
+    let key = SentContactRequestKey {
+        owner_id: Identifier::from([0x51; 32]),
+        recipient_id: Identifier::from([0x52; 32]),
+    };
+    let contact = established_contact(0x51, 0x52);
+    let mut est = std::collections::BTreeMap::new();
+    est.insert(key, contact.clone());
+    let state = contacts_round_trip(
+        0xC3,
+        ContactChangeSet {
+            established: est,
+            ..Default::default()
+        },
+    );
+    assert_eq!(state.established.get(&key), Some(&contact));
+    assert!(state.sent_requests.is_empty());
+    assert!(state.incoming_requests.is_empty());
+}
+
+/// CMT-003: `removed_sent` / `removed_incoming` delete the matching
+/// pending row — an explicit cancellation, not an auto-establishment.
+#[test]
+fn tc_p4_004d_removal_deletes_pending_rows() {
+    let sent_key = SentContactRequestKey {
+        owner_id: Identifier::from([0x61; 32]),
+        recipient_id: Identifier::from([0x62; 32]),
+    };
+    let recv_key = ReceivedContactRequestKey {
+        owner_id: Identifier::from([0x61; 32]),
+        sender_id: Identifier::from([0x63; 32]),
+    };
+    let mut sent = std::collections::BTreeMap::new();
+    sent.insert(sent_key, contact_request_entry(0x61, 0x62));
+    let mut incoming = std::collections::BTreeMap::new();
+    incoming.insert(recv_key, contact_request_entry(0x63, 0x61));
+
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0xD4);
+    ensure_wallet_meta(&persister, &w);
+    // First store both pending rows.
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                contacts: Some(ContactChangeSet {
+                    sent_requests: sent,
+                    incoming_requests: incoming,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    // Then cancel both.
+    let mut removed_sent = std::collections::BTreeSet::new();
+    removed_sent.insert(sent_key);
+    let mut removed_incoming = std::collections::BTreeSet::new();
+    removed_incoming.insert(recv_key);
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                contacts: Some(ContactChangeSet {
+                    removed_sent,
+                    removed_incoming,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    drop(persister);
+
+    let p2 = reopen(&path);
+    let conn = p2.lock_conn_for_test();
+    let state = platform_wallet_storage::sqlite::schema::contacts::load_state_for_test(&conn, &w)
+        .expect("contacts load_state");
+    drop(conn);
+    assert!(state.sent_requests.is_empty(), "removed_sent left a row");
+    assert!(
+        state.incoming_requests.is_empty(),
+        "removed_incoming left a row"
+    );
+    assert!(state.established.is_empty());
+}
+
+/// CMT-003: auto-establishment. An `established` upsert over a prior
+/// pending row for the same `(owner, contact)` pair collapses to a
+/// single established row — load returns it under `established`, never
+/// `sent` / `incoming`.
+#[test]
+fn tc_p4_004e_auto_establishment_collapses_pending() {
+    let key = SentContactRequestKey {
+        owner_id: Identifier::from([0x71; 32]),
+        recipient_id: Identifier::from([0x72; 32]),
+    };
+    let recv_key = ReceivedContactRequestKey {
+        owner_id: Identifier::from([0x71; 32]),
+        sender_id: Identifier::from([0x72; 32]),
+    };
+    let contact = established_contact(0x71, 0x72);
+
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0xE5);
+    ensure_wallet_meta(&persister, &w);
+    // Seed both a sent AND a received pending row for the same pair.
+    let mut sent = std::collections::BTreeMap::new();
+    sent.insert(key, contact_request_entry(0x71, 0x72));
+    let mut incoming = std::collections::BTreeMap::new();
+    incoming.insert(recv_key, contact_request_entry(0x72, 0x71));
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                contacts: Some(ContactChangeSet {
+                    sent_requests: sent,
+                    incoming_requests: incoming,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    // Now establish — must collapse the pending row, not add a sibling.
+    let mut est = std::collections::BTreeMap::new();
+    est.insert(key, contact.clone());
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                contacts: Some(ContactChangeSet {
+                    established: est,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    drop(persister);
+
+    // Exactly one row on disk for the pair, in the 'established' state.
+    let p2 = reopen(&path);
+    {
+        let conn = p2.lock_conn_for_test();
+        let n: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM contacts \
+                 WHERE wallet_id = ?1 AND owner_id = ?2 AND contact_id = ?3",
+                rusqlite::params![
+                    w.as_slice(),
+                    key.owner_id.as_slice(),
+                    key.recipient_id.as_slice()
+                ],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(n, 1, "auto-establishment must collapse to a single row");
+    }
+    let conn = p2.lock_conn_for_test();
+    let state = platform_wallet_storage::sqlite::schema::contacts::load_state_for_test(&conn, &w)
+        .expect("contacts load_state");
+    drop(conn);
+    assert_eq!(state.established.get(&key), Some(&contact));
+    assert!(
+        state.sent_requests.is_empty(),
+        "establishment must not leave a 'sent' bucket entry"
+    );
+    assert!(
+        state.incoming_requests.is_empty(),
+        "establishment must not leave an 'incoming' bucket entry"
+    );
 }
 
 /// TC-P4-005: asset locks bucketed by (wallet, account, outpoint).
@@ -556,9 +824,9 @@ fn tc_p4_008_corruption_is_hard_error() {
 }
 
 /// TC-P4-008b: `contacts::load_state` is fail-hard. A garbage
-/// `entry_blob` yields a typed `BincodeDecode`; a non-32-byte id column
-/// yields a typed `BlobDecode`. Neither is silently skipped, and an
-/// intact wallet still decodes cleanly.
+/// `outgoing_request` blob yields a typed `BincodeDecode`; a non-32-byte
+/// id column yields a typed `BlobDecode`. Neither is silently skipped,
+/// and an intact wallet still decodes cleanly.
 #[test]
 fn tc_p4_008b_contacts_corruption_is_hard_error() {
     use platform_wallet_storage::sqlite::schema::contacts;
@@ -571,17 +839,17 @@ fn tc_p4_008b_contacts_corruption_is_hard_error() {
     ensure_wallet_meta(&persister, &good);
     {
         let conn = persister.lock_conn_for_test();
-        // bad_blob: well-formed 32-byte ids, undecodable entry_blob.
+        // bad_blob: well-formed 32-byte ids, undecodable request blob.
         conn.execute(
-            "INSERT INTO contacts_sent (wallet_id, owner_id, recipient_id, entry_blob) \
-             VALUES (?1, ?2, ?3, X'00')",
+            "INSERT INTO contacts (wallet_id, owner_id, contact_id, state, outgoing_request) \
+             VALUES (?1, ?2, ?3, 'sent', X'00')",
             rusqlite::params![bad_blob.as_slice(), &[0x11u8; 32][..], &[0x12u8; 32][..]],
         )
         .unwrap();
         // bad_id: owner_id is only 10 bytes — fails the 32-byte check.
         conn.execute(
-            "INSERT INTO contacts_sent (wallet_id, owner_id, recipient_id, entry_blob) \
-             VALUES (?1, ?2, ?3, X'00')",
+            "INSERT INTO contacts (wallet_id, owner_id, contact_id, state, outgoing_request) \
+             VALUES (?1, ?2, ?3, 'sent', X'00')",
             rusqlite::params![bad_id.as_slice(), &[0xAAu8; 10][..], &[0x12u8; 32][..]],
         )
         .unwrap();

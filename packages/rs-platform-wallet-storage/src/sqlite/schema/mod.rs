@@ -1,8 +1,9 @@
 //! Per-area SQLite writers + readers.
 //!
-//! Each submodule owns one table or a small cluster (e.g. `contacts`
-//! owns three). Writers take a `&rusqlite::Transaction` and an already
-//! resolved sub-changeset; readers take `&rusqlite::Connection`.
+//! Each submodule owns one table or a small cluster (e.g. `accounts`
+//! owns the registration + address-pool tables). Writers take a
+//! `&rusqlite::Transaction` and an already resolved sub-changeset;
+//! readers take `&rusqlite::Connection`.
 //!
 //! Encoding policy: scalars that fan out to per-row indexes go into
 //! typed SQLite columns (heights, hashes, outpoints, flags). The
@@ -60,9 +61,7 @@ pub const PER_WALLET_TABLES: &[(&str, WalletScope)] = &[
     ("core_sync_state", WalletScope::DirectColumn),
     ("identities", WalletScope::DirectColumn),
     ("identity_keys", WalletScope::DirectColumn),
-    ("contacts_sent", WalletScope::DirectColumn),
-    ("contacts_recv", WalletScope::DirectColumn),
-    ("contacts_established", WalletScope::DirectColumn),
+    ("contacts", WalletScope::DirectColumn),
     ("platform_addresses", WalletScope::DirectColumn),
     ("platform_address_sync", WalletScope::DirectColumn),
     ("asset_locks", WalletScope::DirectColumn),
@@ -122,8 +121,8 @@ pub fn count_rows_for_wallet_sql(
 /// Defensive check that every `identity_id` in `touched` exists in
 /// `identities` and belongs to `wallet_id` (or has NULL wallet_id when
 /// scope is the all-zero sentinel). Used by identity-owned writers
-/// (`dashpay`, `token_balances`) to catch mis-attributed callers in
-/// debug builds; release builds skip the call entirely.
+/// (`dashpay`, `token_balances`) to reject mis-attributed callers; the
+/// check runs in every build.
 ///
 /// Returns [`WalletStorageError::WalletIdMismatch`] for the first
 /// offending row found. Rows that don't exist in `identities` aren't

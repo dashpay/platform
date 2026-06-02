@@ -9,8 +9,8 @@ use getrandom::getrandom;
 use serde::{Deserialize, Serialize};
 
 use super::super::secret::{SecretBytes, SecretString};
-use super::error::FileStoreError;
 use super::format::KDF_ID_ARGON2ID;
+use crate::secrets::error::SecretStoreError;
 
 /// Argon2 parameter floors (SEC-REQ-2.2.2) — derivation MUST NOT use
 /// anything weaker; a header declaring less is refused.
@@ -40,8 +40,8 @@ pub(crate) const NONCE_LEN: usize = 24;
 pub(crate) const KEY_LEN: usize = 32;
 
 /// Fill `buf` with CSPRNG bytes (`OsRng` via `getrandom`).
-pub(crate) fn random_bytes(buf: &mut [u8]) -> Result<(), FileStoreError> {
-    getrandom(buf).map_err(|_| FileStoreError::KdfFailure)
+pub(crate) fn random_bytes(buf: &mut [u8]) -> Result<(), SecretStoreError> {
+    getrandom(buf).map_err(|_| SecretStoreError::KdfFailure)
 }
 
 /// Argon2id parameters as stored in / read from the vault. Serializes
@@ -76,7 +76,7 @@ impl KdfParams {
     /// huge allocation / unbounded derivation ahead of any tag check.
     /// An unknown algorithm `id` is also a bounds failure — Argon2id is
     /// the only KDF family this version supports.
-    pub(crate) fn enforce_bounds(&self) -> Result<(), FileStoreError> {
+    pub(crate) fn enforce_bounds(&self) -> Result<(), SecretStoreError> {
         if self.id != KDF_ID_ARGON2ID
             || self.m_kib < ARGON2_MIN_M_KIB
             || self.t < ARGON2_MIN_T
@@ -84,7 +84,7 @@ impl KdfParams {
             || self.m_kib > ARGON2_MAX_M_KIB
             || self.t > ARGON2_MAX_T
         {
-            return Err(FileStoreError::KdfFailure);
+            return Err(SecretStoreError::KdfFailure);
         }
         Ok(())
     }
@@ -101,12 +101,12 @@ pub(crate) fn derive_key(
     passphrase: &SecretString,
     salt: &[u8],
     params: KdfParams,
-) -> Result<SecretBytes, FileStoreError> {
+) -> Result<SecretBytes, SecretStoreError> {
     // Bounds MUST gate before Params::new / hash_password_into so an
     // inflated m_kib never reaches the allocator.
     params.enforce_bounds()?;
     let argon_params = Params::new(params.m_kib, params.t, params.p, Some(KEY_LEN))
-        .map_err(|_| FileStoreError::KdfFailure)?;
+        .map_err(|_| SecretStoreError::KdfFailure)?;
     let argon = Argon2::new(Algorithm::Argon2id, Version::V0x13, argon_params);
     let mut key = SecretBytes::zeroed(KEY_LEN);
     argon
@@ -115,7 +115,7 @@ pub(crate) fn derive_key(
             salt,
             key.expose_secret_mut(),
         )
-        .map_err(|_| FileStoreError::KdfFailure)?;
+        .map_err(|_| SecretStoreError::KdfFailure)?;
     Ok(key)
 }
 
@@ -125,9 +125,9 @@ pub(crate) fn seal(
     key: &SecretBytes,
     aad: &[u8],
     plaintext: &[u8],
-) -> Result<([u8; NONCE_LEN], Vec<u8>), FileStoreError> {
+) -> Result<([u8; NONCE_LEN], Vec<u8>), SecretStoreError> {
     let cipher = XChaCha20Poly1305::new_from_slice(key.expose_secret())
-        .map_err(|_| FileStoreError::KdfFailure)?;
+        .map_err(|_| SecretStoreError::KdfFailure)?;
     let mut nonce_bytes = [0u8; NONCE_LEN];
     random_bytes(&mut nonce_bytes)?;
     let nonce = XNonce::from_slice(&nonce_bytes);
@@ -139,12 +139,12 @@ pub(crate) fn seal(
                 aad,
             },
         )
-        .map_err(|_| FileStoreError::Decrypt)?;
+        .map_err(|_| SecretStoreError::Decrypt)?;
     Ok((nonce_bytes, ct))
 }
 
 /// Decrypt `ciphertext` under `key`/`nonce`/`aad`. On tag failure
-/// returns [`FileStoreError::Decrypt`] and **no** plaintext — the
+/// returns [`SecretStoreError::Decrypt`] and **no** plaintext — the
 /// combined (non-detached) API never materializes unverified bytes at
 /// our boundary (SEC-REQ-2.2.8, CWE-347, RUSTSEC-2023-0096).
 pub(crate) fn open(
@@ -152,9 +152,9 @@ pub(crate) fn open(
     nonce: &[u8; NONCE_LEN],
     aad: &[u8],
     ciphertext: &[u8],
-) -> Result<SecretBytes, FileStoreError> {
+) -> Result<SecretBytes, SecretStoreError> {
     let cipher = XChaCha20Poly1305::new_from_slice(key.expose_secret())
-        .map_err(|_| FileStoreError::KdfFailure)?;
+        .map_err(|_| SecretStoreError::KdfFailure)?;
     let nonce = XNonce::from_slice(nonce);
     let pt = cipher
         .decrypt(
@@ -164,7 +164,7 @@ pub(crate) fn open(
                 aad,
             },
         )
-        .map_err(|_| FileStoreError::Decrypt)?;
+        .map_err(|_| SecretStoreError::Decrypt)?;
     Ok(SecretBytes::new(pt))
 }
 
@@ -240,11 +240,11 @@ mod tests {
         };
         assert!(matches!(
             bad.enforce_bounds(),
-            Err(FileStoreError::KdfFailure)
+            Err(SecretStoreError::KdfFailure)
         ));
         assert!(matches!(
             derive_key(&SecretString::new("pw"), &[0u8; SALT_LEN], bad),
-            Err(FileStoreError::KdfFailure)
+            Err(SecretStoreError::KdfFailure)
         ));
     }
 
@@ -263,7 +263,7 @@ mod tests {
             },
         )
         .unwrap_err();
-        assert!(matches!(err, FileStoreError::KdfFailure));
+        assert!(matches!(err, SecretStoreError::KdfFailure));
     }
 
     #[test]
@@ -282,7 +282,7 @@ mod tests {
         let key = derive_key(&SecretString::new("pw"), &[9u8; SALT_LEN], floor_params()).unwrap();
         let (nonce, ct) = seal(&key, b"slot-A", b"seed").unwrap();
         let err = open(&key, &nonce, b"slot-B", &ct).unwrap_err();
-        assert!(matches!(err, FileStoreError::Decrypt));
+        assert!(matches!(err, SecretStoreError::Decrypt));
     }
 
     #[test]
@@ -293,7 +293,7 @@ mod tests {
         let (nonce, ct) = seal(&k1, b"aad", b"seed").unwrap();
         assert!(matches!(
             open(&k2, &nonce, b"aad", &ct),
-            Err(FileStoreError::Decrypt)
+            Err(SecretStoreError::Decrypt)
         ));
     }
 

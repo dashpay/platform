@@ -128,19 +128,12 @@ fn tc027_smoke_insert_every_table() {
             &[&wallet_id.as_slice(), &identity_id.as_slice()],
         ),
         (
-            "contacts_sent",
-            "INSERT INTO contacts_sent (wallet_id, owner_id, recipient_id, entry_blob) VALUES (?1, ?2, ?3, X'00')",
+            "contacts",
+            // `state` must match the CHECK sourced from CONTACT_STATE_LABELS
+            // in `sqlite::schema::contacts`; request/metadata columns are
+            // nullable so a minimal pending row only needs `state`.
+            "INSERT INTO contacts (wallet_id, owner_id, contact_id, state) VALUES (?1, ?2, ?3, 'sent')",
             &[&wallet_id.as_slice(), &identity_id.as_slice(), &[1u8; 32].as_slice()],
-        ),
-        (
-            "contacts_recv",
-            "INSERT INTO contacts_recv (wallet_id, owner_id, sender_id, entry_blob) VALUES (?1, ?2, ?3, X'00')",
-            &[&wallet_id.as_slice(), &identity_id.as_slice(), &[2u8; 32].as_slice()],
-        ),
-        (
-            "contacts_established",
-            "INSERT INTO contacts_established (wallet_id, owner_id, contact_id, entry_blob) VALUES (?1, ?2, ?3, X'00')",
-            &[&wallet_id.as_slice(), &identity_id.as_slice(), &[3u8; 32].as_slice()],
         ),
         (
             "platform_addresses",
