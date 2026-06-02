@@ -10,10 +10,10 @@ use crate::wallet::platform_wallet::WalletId;
 /// derived later, on demand, via the [`MnemonicResolverHandle`] sign
 /// path. A skip therefore means the persisted row itself was unusable —
 /// a per-row decode/structural failure that fails one wallet without
-/// aborting the batch. A wrong seed cannot surface here: it surfaces
-/// only at first-sign time, as a fail-closed gate inside the sign
-/// entrypoints. Variants carry no key material (SECRETS.md
-/// SEC-REQ-2.0.1).
+/// aborting the batch. The only reason is
+/// [`CorruptPersistedRow`](Self::CorruptPersistedRow): the load path
+/// never touches the seed, so it cannot skip for a wrong or unavailable
+/// seed. Variants carry no key material (SECRETS.md SEC-REQ-2.0.1).
 ///
 /// [`MnemonicResolverHandle`]: rs_sdk_ffi::MnemonicResolverHandle
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -65,8 +65,8 @@ impl std::fmt::Display for CorruptKind {
 /// `Ok(LoadOutcome)` with a non-empty `skipped` is **success** — a
 /// per-row decode failure on one wallet is recorded and the batch
 /// continues. The `Err` arm is reserved for whole-load failures
-/// (persister I/O, programmer error). Wrong-seed never appears here —
-/// the load path is watch-only.
+/// (persister I/O, programmer error). The load path is watch-only and
+/// never touches the seed, so no wrong-seed outcome appears here.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct LoadOutcome {
     /// Wallets fully reconstructed and registered, in load order.

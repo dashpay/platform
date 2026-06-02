@@ -31,16 +31,16 @@ use crate::wallet::platform_wallet::WalletId;
 pub enum PlatformEvent {
     /// A persisted wallet was skipped during
     /// [`load_from_persistor`](crate::PlatformWalletManager::load_from_persistor)
-    /// because its seed material was unavailable. Recoverable: re-run
-    /// the load once the operator provides / unlocks the material.
+    /// because its persisted row was corrupt (a structural decode /
+    /// projection failure). The load path is seedless, so the only
+    /// reason is [`SkipReason::CorruptPersistedRow`].
     ///
     /// Carries the (public, non-secret) wallet id and the structural
     /// [`SkipReason`]; never any secret byte.
     WalletSkippedOnLoad {
         /// The skipped wallet's id.
         wallet_id: WalletId,
-        /// Why it was skipped (seed absent / store locked / store
-        /// error). Never a wrong-seed reason.
+        /// Why it was skipped — always a corrupt persisted row.
         reason: SkipReason,
     },
 }
@@ -71,7 +71,7 @@ pub trait PlatformEventHandler: EventHandler {
 
     /// Fired once per wallet that
     /// [`load_from_persistor`](crate::PlatformWalletManager::load_from_persistor)
-    /// skipped because its seed was unavailable.
+    /// skipped because its persisted row was corrupt.
     ///
     /// Default impl is a no-op so existing handlers don't have to care
     /// (the internal `LockNotifyHandler` / `BalanceUpdateHandler`

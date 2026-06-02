@@ -176,12 +176,8 @@ unsafe fn create_wallet_from_mnemonic_impl(
 
 /// One wallet skipped during `load_from_persistor` because its
 /// persisted row was structurally corrupt (per-row decode failure).
-/// The load path is watch-only — wrong-seed never surfaces here.
-///
-/// **ABI note (rework of #3692):** the reason-code namespace was
-/// reshaped when the load path went seedless. The legacy
-/// seed-availability codes (`0`/`1`/`2`) are gone; the new codes are
-/// per-`CorruptKind` family — see `reason_code` for the table.
+/// The load path is seedless and watch-only, so this is the only skip
+/// reason. `reason_code` is per-`CorruptKind` family — see its table.
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct SkippedWalletFFI {

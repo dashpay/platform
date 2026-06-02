@@ -994,7 +994,7 @@ impl PlatformWalletPersistence for SqlitePersister {
         // state + identities + the Consumed-filtered asset-lock feed.
         // The manager rebuilds each wallet watch-only and applies this;
         // signing-key derivation happens later on demand via the
-        // on-demand sign path, which fail-closed gates the seed.
+        // on-demand sign path.
         let wallet_ids = schema::wallet_meta::list_ids(&conn).map_err(PersistenceError::from)?;
         let wallets_seen = wallet_ids.len();
         for wallet_id in wallet_ids {

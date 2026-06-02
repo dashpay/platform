@@ -25,12 +25,9 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
     /// manifest, the keyless core-state projection is applied, and the
     /// result is registered into the manager.
     ///
-    /// Signing happens later, on demand, via the configured
-    /// [`MnemonicResolverHandle`]. Each sign entrypoint constant-time
-    /// re-derives the root extended public key from the resolver-supplied
-    /// mnemonic, recomputes the `wallet_id`, and fails closed with a
-    /// `WRONG_SEED` tag (`PlatformWalletError::WrongSeedForDatabase` on
-    /// the Rust side) when it does not match the loaded `wallet_id`.
+    /// The load path never touches the seed, so it performs no wrong-seed
+    /// check. Signing happens later, on demand, via the configured
+    /// [`MnemonicResolverHandle`].
     ///
     /// # Skip vs hard-fail
     ///

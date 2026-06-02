@@ -5063,7 +5063,6 @@ dependencies = [
  "serde_json",
  "sha2",
  "static_assertions",
- "subtle",
  "thiserror 1.0.69",
  "tokio",
  "tokio-util",

@@ -5,11 +5,9 @@
 //! `AccountRegistrationEntry` manifest, then apply the keyless
 //! core-state projection on top. No seed, no signing-key derivation.
 //!
-//! The wrong-seed gate has moved to the **first sign** path
-//! (`rs-platform-wallet-ffi::sign_with_mnemonic_resolver` and its
-//! resolver-fed siblings): each sign entrypoint constant-time-compares
-//! the recomputed `wallet_id` against the loaded `wallet_id` and fails
-//! closed on mismatch.
+//! Because load never touches the seed, it performs no wrong-seed check.
+//! A sign-time wrong-seed gate is deferred to separate FFI work and is
+//! not part of this path.
 //!
 //! [`load_from_persistor`]: super::PlatformWalletManager::load_from_persistor
 

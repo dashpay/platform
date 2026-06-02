@@ -47,8 +47,6 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 
 # Security
 zeroize = "1"
-# Constant-time wallet-id / xpub comparison in the wrong-seed gate.
-subtle = "2.6.1"
 
 # Shielded pool (optional, behind `shielded` feature)
 grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "5eb7a5380a6e974513343352acfd6b30a8c1f87c", optional = true }

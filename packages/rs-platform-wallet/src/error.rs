@@ -10,22 +10,6 @@ pub enum PlatformWalletError {
     #[error("Wallet creation failed: {0}")]
     WalletCreation(String),
 
-    /// The runtime-supplied seed/mnemonic does not match the persisted
-    /// database for this wallet. Fail-closed (A07/A08): no persisted
-    /// core/identity/asset-lock state is applied. Carries **only** the
-    /// two 32-byte wallet ids — never any key material (AR-7/R3).
-    #[error(
-        "wrong seed for database: expected wallet id {}, derived {}",
-        hex::encode(expected_wallet_id),
-        hex::encode(derived_wallet_id)
-    )]
-    WrongSeedForDatabase {
-        /// The wallet id persisted in `wallet_metadata`.
-        expected_wallet_id: [u8; 32],
-        /// The wallet id recomputed from the runtime-supplied root key.
-        derived_wallet_id: [u8; 32],
-    },
-
     /// The persisted wallet has UTXOs to restore but no funds-bearing
     /// account in its reconstructed account collection to hold them.
     /// Fail-closed rather than reconstructing a silent zero balance —

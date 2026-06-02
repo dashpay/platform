@@ -8,8 +8,7 @@
 //! [`Wallet::new_watch_only`](key_wallet::wallet::Wallet::new_watch_only)
 //! from the manifest, applies this state, and defers signing-key
 //! derivation to the on-demand sign path
-//! ([`sign_with_mnemonic_resolver`] and its siblings), which fail-closed
-//! gate the resolver-supplied seed against the loaded `wallet_id`.
+//! ([`sign_with_mnemonic_resolver`] and its siblings).
 //!
 //! [`sign_with_mnemonic_resolver`]: https://docs.rs/rs-platform-wallet-ffi/
 
@@ -34,15 +33,15 @@ pub struct ClientWalletStartState {
     /// Best estimate of the chain tip at creation time (`0` = scan
     /// from genesis / unknown).
     pub birth_height: u32,
-    /// Keyless account manifest — the account-set oracle and the
-    /// per-account xpub cross-check source for the wrong-seed gate.
+    /// Keyless account manifest — the account-set oracle for building the
+    /// watch-only wallet (one watch-only account per entry's xpub).
     pub account_manifest: Vec<AccountRegistrationEntry>,
     /// Keyless projection of the persisted core rows (UTXOs, tx
     /// records, IS-locks, sync watermarks, `last_applied_chain_lock`).
     /// The manager applies this onto a fresh
-    /// `ManagedWalletInfo::from_wallet` skeleton **after** the
-    /// seed-derived wallet passes the wrong-seed gate. Rebuilt by the
-    /// `core_state::load_state` reader (item B).
+    /// `ManagedWalletInfo::from_wallet` skeleton built from the
+    /// watch-only wallet. Rebuilt by the `core_state::load_state` reader
+    /// (item B).
     pub core_state: CoreChangeSet,
     /// Lean snapshot of this wallet's
     /// [`IdentityManager`](crate::wallet::identity::IdentityManager).
