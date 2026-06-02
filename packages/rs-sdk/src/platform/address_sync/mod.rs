@@ -787,16 +787,26 @@ async fn apply_block_changes<'a, P, I>(
             let new_balance = apply_op(change, current_balance, current_height);
 
             if new_balance != current_balance {
-                // TODO: incremental RPCs carry only balance deltas, never
-                // nonces — addresses first seen here get nonce=0. Clients
-                // recover via `AddressInvalidNonceError.expected_nonce`;
-                // a proper fix would fetch authoritative `AddressFunds`
-                // or model `nonce` as `Option<u32>`.
+                // Incremental RPCs carry only balance deltas, never nonces,
+                // so an address first seen via catch-up records nonce=0 here.
+                // That synthesized value is cosmetic: it is never broadcast.
+                // Every spend path re-fetches the authoritative nonce at
+                // build time (`fetch_inputs_with_nonce` + `nonce_inc`), so
+                // the on-chain nonce — not this field — is what lands in a
+                // transition. A receive-only address genuinely has nonce 0;
+                // a spent-from address's true nonce is recovered by that
+                // build-time fetch. If this field ever needs to be
+                // authoritative for display, model it as `Option<u32>` and
+                // fetch `AddressFunds` for catch-up-discovered addresses.
                 let nonce = result.found.get(&result_key).map(|f| f.nonce).unwrap_or(0);
                 let funds = AddressFunds {
                     nonce,
                     balance: new_balance,
                 };
+                // Keep `found` and `absent` disjoint: a post-checkpoint
+                // funding can land on an address the branch scan proved
+                // absent, so clear any stale `absent` entry before recording
+                // it as found.
                 result.absent.remove(&result_key);
                 result.found.insert(result_key, funds);
                 local_applied.push((tag, address, funds));
@@ -807,13 +817,14 @@ async fn apply_block_changes<'a, P, I>(
                 BalanceOp::Compacted(op) => OwnedBalanceOp::Compacted(op.clone()),
             };
             pending_unknown.push((addr_bytes, owned, current_height));
-            // NOTE: this buffer is intentionally unbounded — premature optimization here
-            // would couple the catch-up loop to ad-hoc memory heuristics. We log a
-            // one-shot warning above a generous threshold so a future operator can
-            // observe whether this path actually exceeds 1000 buffered foreign-wallet
-            // changes in real workloads; if it does, the right fix is to follow the
-            // reviewer's mitigation (a) — store only Vec<u8> keys and re-derive replay
-            // changes after the refresh resolves them. See PR #3650 @thepastaclaw review.
+            // NOTE: this buffer is intentionally unbounded — premature
+            // optimization here would couple the catch-up loop to ad-hoc
+            // memory heuristics. We log a one-shot warning above a generous
+            // threshold so a future operator can observe whether this path
+            // actually exceeds the threshold of buffered foreign-wallet
+            // changes in real workloads. If it does, the bounded-memory fix
+            // is to buffer only the `Vec<u8>` keys here and re-derive the
+            // replay changes after the refresh resolves them.
             if pending_unknown.len() == PENDING_UNKNOWN_WARN_THRESHOLD {
                 warn!(
                     "Address sync: pending_unknown buffer reached {} entries — \
@@ -928,12 +939,14 @@ async fn refresh_and_replay_unknown<P: AddressProvider>(
             let new_balance = apply_op(borrow_op(change), current_balance, *height);
 
             if new_balance != current_balance {
-                // TODO: same synthesized nonce=0 gap as the forward pass.
+                // Same synthesized nonce=0 as the forward pass — cosmetic,
+                // never broadcast (see the note in `apply_block_changes`).
                 let nonce = result.found.get(&result_key).map(|f| f.nonce).unwrap_or(0);
                 let funds = AddressFunds {
                     nonce,
                     balance: new_balance,
                 };
+                // Keep `found` and `absent` disjoint (see `apply_block_changes`).
                 result.absent.remove(&result_key);
                 result.found.insert(result_key, funds);
                 iteration_applied.push((tag, address, funds));
