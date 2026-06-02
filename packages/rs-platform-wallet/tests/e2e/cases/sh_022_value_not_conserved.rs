@@ -4,9 +4,10 @@
 //! (consensus-critical). CRITICAL-if-it-fails (value forgery / unlimited
 //! shielded-pool inflation).
 //!
-//! Attack: capture a VALID Type-17 unshield (spending a 50M note,
-//! unshielding 20M), then overwrite `unshielding_amount` to exceed the
-//! spent note value — minting value from nothing — and broadcast raw.
+//! Attack: capture a VALID Type-17 unshield (spending the funded note,
+//! unshielding `UNSHIELD_AMOUNT`), then overwrite `unshielding_amount` to
+//! exceed the spent note value — minting value from nothing — and
+//! broadcast raw.
 //! Orchard's value-balance check + Drive's credit accounting must refuse
 //! a bundle where shielded inputs < outputs + fee. The Halo-2 proof binds
 //! `value_balance`, so the mismatch must fail proof verification or the
@@ -28,10 +29,11 @@ use crate::framework::wait::{
     wait_for_address_balance_chain_confirmed_n, CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
 };
 
-const FUNDING_CREDITS: u64 = 1_200_000_000;
-const SHIELD_AMOUNT: u64 = 50_000_000;
+const FUNDING_CREDITS: u64 = 1_400_000_000;
+const SHIELD_AMOUNT: u64 = 200_000_000;
 const UNSHIELD_AMOUNT: u64 = 20_000_000;
-/// Far above the 50M spent note — minting ~950M from nothing.
+/// Far above the spent note's value (`SHIELD_AMOUNT`) — mints value from
+/// nothing.
 const FORGED_AMOUNT: u64 = 1_000_000_000;
 const STEP_TIMEOUT: Duration = Duration::from_secs(60);
 
