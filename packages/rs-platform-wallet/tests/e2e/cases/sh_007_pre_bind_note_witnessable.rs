@@ -154,10 +154,13 @@ async fn sh_007_pre_bind_note_witnessable() {
         .platform_wallet()
         .shielded_unshield_to(&coordinator, 0, &b_dst_bech32m, B_UNSHIELD, prover)
         .await
-        .expect(
-            "Found-029 regression: B's pre-bind note must be witnessable/spendable (#3603). \
-             A failure here means the mark-every-position policy regressed.",
-        );
+        .unwrap_or_else(|e| {
+            panic!(
+                "SH-007: B's pre-bind note unshield failed: {e}. If this is a \
+                 ShieldedMerkleWitnessUnavailable / anchor error, the \
+                 mark-every-position witness policy (#3603, Found-029) regressed."
+            )
+        });
     wait_for_address_balance_chain_confirmed_n(
         b.ctx.sdk(),
         &b_dst,

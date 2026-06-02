@@ -832,6 +832,14 @@ impl SetupGuard {
             self.teardown_called = true;
         }
 
+        // Universal shielded-registry bound: drop this wallet from the
+        // process-shared coordinator so its SubwalletIds don't linger and
+        // tax every later case's per-batch trial-decrypt. Idempotent and a
+        // no-op for non-shielded cases (the shared coordinator was never
+        // built) and for cases that already swept-and-unregistered.
+        #[cfg(feature = "shielded")]
+        super::shielded::unregister_shared_coordinator(self.test_wallet.id()).await;
+
         // Post-sweep Core top-up: the sweep just returned this test's
         // funds to the bank, so this is the cheapest point to refill
         // Layer-1 for the next pass. Below-threshold-guarded inside the

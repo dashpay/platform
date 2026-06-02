@@ -197,6 +197,13 @@ pub async fn bind_shielded(
     })
 }
 
+/// The one process-shared coordinator, lazily built on the first
+/// [`bind_shielded`]. Module-scoped (not a fn-local static) so
+/// [`unregister_shared_coordinator`] can peek it on teardown without
+/// re-deriving it from a wallet.
+static SHARED_COORDINATOR: tokio::sync::OnceCell<Arc<NetworkShieldedCoordinator>> =
+    tokio::sync::OnceCell::const_new();
+
 /// Process-shared coordinator over ONE persisted commitment-tree SQLite
 /// file for the whole suite — the speedup's single most important seam.
 ///
@@ -206,17 +213,21 @@ pub async fn bind_shielded(
 /// the coordinator owns, so there is exactly one SQLite handle (no
 /// cross-handle WAL contention) and one persisted tree whose `tree_size`
 /// carries the full ~1M-leaf scan forward across cases.
+///
+/// Assumes a serial, single-process, single-network sh run
+/// (`--test-threads=1`): the `OnceCell` is keyed only on `<network>` (in
+/// the db filename) and pins the SDK + workdir of whichever case binds
+/// first. A future parallel or multi-network sh run would need to key
+/// per-(network, workdir) instead of relying on this one-shot pin.
 async fn shared_coordinator(
     wallet: &TestWallet,
     workdir: &std::path::Path,
 ) -> FrameworkResult<Arc<NetworkShieldedCoordinator>> {
-    static SHARED: tokio::sync::OnceCell<Arc<NetworkShieldedCoordinator>> =
-        tokio::sync::OnceCell::const_new();
     let pw = wallet.platform_wallet();
     let network = pw.sdk().network;
     let dir = workdir.join("shielded");
     let sdk = pw.sdk_arc();
-    SHARED
+    SHARED_COORDINATOR
         .get_or_try_init(|| async {
             std::fs::create_dir_all(&dir).map_err(|e| {
                 FrameworkError::Io(format!("create shielded dir {}: {e}", dir.display()))
@@ -230,6 +241,22 @@ async fn shared_coordinator(
         })
         .await
         .cloned()
+}
+
+/// Unregister `wallet_id` from the process-shared coordinator, bounding
+/// its registry as cases complete. No-op when the shared coordinator was
+/// never built (e.g. a non-shielded case, or SH-007/SH-013 which use a
+/// private tree). Idempotent: a second call (or a wallet that never bound
+/// on the shared coordinator) is a clean no-op, so it is safe to call
+/// from both [`teardown_sweep_shielded`] and the universal guard teardown.
+///
+/// Purges only the wallet's per-subwallet state (notes, spent marks,
+/// watermarks); the chain-wide commitment tree is left intact for the
+/// next case.
+pub async fn unregister_shared_coordinator(wallet_id: [u8; 32]) {
+    if let Some(coordinator) = SHARED_COORDINATOR.get() {
+        coordinator.unregister_wallet(wallet_id).await;
+    }
 }
 
 /// Construct a PRIVATE per-call FileBacked coordinator over a fresh
