@@ -299,6 +299,45 @@ impl PlatformAddress {
         Ok(address)
     }
 
+    /// Classifies a bech32m platform-address string as mainnet or non-mainnet
+    /// by its HRP alone, without decoding the payload.
+    ///
+    /// This is the only truthful network signal an address string carries: per
+    /// DIP-0018 the prefix `dash` means mainnet and `tdash` means non-mainnet,
+    /// but `tdash` is shared by Testnet, Devnet, and Regtest and the payload
+    /// holds no network byte — so the specific non-mainnet network is NOT
+    /// recoverable from an address string. The HRP is the segment before the
+    /// final `'1'` separator (bech32's data charset excludes `'1'`); the
+    /// comparison is case-insensitive since bech32m permits all-uppercase.
+    ///
+    /// # Returns
+    /// - `Ok(true)` - mainnet (`dash` HRP)
+    /// - `Ok(false)` - non-mainnet (`tdash` HRP: Testnet/Devnet/Regtest)
+    /// - `Err(ProtocolError)` - malformed (no bech32 separator) or a
+    ///   non-platform HRP
+    pub fn is_mainnet_bech32m(s: &str) -> Result<bool, ProtocolError> {
+        let hrp = s
+            .rsplit_once('1')
+            .map(|(hrp, _)| hrp)
+            .filter(|h| !h.is_empty())
+            .ok_or_else(|| {
+                ProtocolError::DecodingError(
+                    "invalid platform address: missing bech32 separator".to_string(),
+                )
+            })?;
+
+        if hrp.eq_ignore_ascii_case(PLATFORM_HRP_MAINNET) {
+            Ok(true)
+        } else if hrp.eq_ignore_ascii_case(PLATFORM_HRP_TESTNET) {
+            Ok(false)
+        } else {
+            Err(ProtocolError::DecodingError(format!(
+                "not a platform address: HRP '{hrp}' is neither \
+                 '{PLATFORM_HRP_MAINNET}' nor '{PLATFORM_HRP_TESTNET}'"
+            )))
+        }
+    }
+
     /// Converts the PlatformAddress to a dashcore Address with the specified network.
     pub fn to_address_with_network(&self, network: Network) -> Address {
         match self {
@@ -1410,5 +1449,69 @@ mod tests {
 
         assert_eq!(p2pkh_decoded, p2pkh);
         assert_eq!(p2sh_decoded, p2sh);
+    }
+
+    #[test]
+    fn test_is_mainnet_bech32m_mainnet_is_true() {
+        let encoded = PlatformAddress::P2pkh([0x11; 20]).to_bech32m_string(Network::Mainnet);
+        assert!(encoded.starts_with("dash1"));
+        assert!(PlatformAddress::is_mainnet_bech32m(&encoded).unwrap());
+    }
+
+    #[test]
+    fn test_is_mainnet_bech32m_all_non_mainnet_networks_are_false() {
+        // Testnet, Devnet, and Regtest all share the `tdash` HRP, so all three
+        // classify as non-mainnet (false) — the only truthful answer DIP-0018
+        // allows from the address string alone.
+        for network in [Network::Testnet, Network::Devnet, Network::Regtest] {
+            let encoded = PlatformAddress::P2pkh([0x22; 20]).to_bech32m_string(network);
+            assert!(encoded.starts_with("tdash1"), "network {network:?}");
+            assert!(
+                !PlatformAddress::is_mainnet_bech32m(&encoded).unwrap(),
+                "network {network:?} must classify as non-mainnet"
+            );
+        }
+    }
+
+    #[test]
+    fn test_is_mainnet_bech32m_is_case_insensitive() {
+        let mainnet = PlatformAddress::P2pkh([0x33; 20])
+            .to_bech32m_string(Network::Mainnet)
+            .to_uppercase();
+        assert!(mainnet.starts_with("DASH1"));
+        assert!(PlatformAddress::is_mainnet_bech32m(&mainnet).unwrap());
+
+        let testnet = PlatformAddress::P2pkh([0x44; 20])
+            .to_bech32m_string(Network::Testnet)
+            .to_uppercase();
+        assert!(testnet.starts_with("TDASH1"));
+        assert!(!PlatformAddress::is_mainnet_bech32m(&testnet).unwrap());
+    }
+
+    #[test]
+    fn test_is_mainnet_bech32m_non_platform_hrp_errors() {
+        let err = PlatformAddress::is_mainnet_bech32m("bc1qexampledata").unwrap_err();
+        assert!(
+            err.to_string().contains("not a platform address"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn test_is_mainnet_bech32m_missing_separator_errors() {
+        let err = PlatformAddress::is_mainnet_bech32m("nodelimiterhere").unwrap_err();
+        assert!(
+            err.to_string().contains("missing bech32 separator"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn test_is_mainnet_bech32m_empty_errors() {
+        let err = PlatformAddress::is_mainnet_bech32m("").unwrap_err();
+        assert!(
+            err.to_string().contains("missing bech32 separator"),
+            "unexpected error: {err}"
+        );
     }
 }
