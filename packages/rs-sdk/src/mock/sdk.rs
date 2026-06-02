@@ -159,6 +159,9 @@ impl MockDashPlatformSdk {
                 "GetDataContractHistoryRequest" => {
                     load_expectation::<proto::GetDataContractHistoryRequest>(&mut dapi, filename)?
                 }
+                "GetDocumentHistoryRequest" => {
+                    load_expectation::<proto::GetDocumentHistoryRequest>(&mut dapi, filename)?
+                }
                 "IdentityRequest" => load_expectation::<IdentityRequest>(&mut dapi, filename)?,
                 "GetIdentityRequest" => {
                     load_expectation::<proto::GetIdentityRequest>(&mut dapi, filename)?

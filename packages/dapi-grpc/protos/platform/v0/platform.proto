@@ -35,6 +35,8 @@ service Platform {
       returns (GetDataContractHistoryResponse);
   rpc getDataContracts(GetDataContractsRequest)
       returns (GetDataContractsResponse);
+  rpc getDocumentHistory(GetDocumentHistoryRequest)
+      returns (GetDocumentHistoryResponse);
   rpc getDocuments(GetDocumentsRequest) returns (GetDocumentsResponse);
   rpc getIdentityByPublicKeyHash(GetIdentityByPublicKeyHashRequest)
       returns (GetIdentityByPublicKeyHashResponse);
@@ -126,6 +128,8 @@ service Platform {
       returns (GetMostRecentShieldedAnchorResponse);
   rpc getShieldedPoolState(GetShieldedPoolStateRequest)
       returns (GetShieldedPoolStateResponse);
+  rpc getShieldedNotesCount(GetShieldedNotesCountRequest)
+      returns (GetShieldedNotesCountResponse);
   rpc getShieldedNullifiers(GetShieldedNullifiersRequest)
       returns (GetShieldedNullifiersResponse);
   rpc getNullifiersTrunkState(GetNullifiersTrunkStateRequest)
@@ -1298,6 +1302,49 @@ message GetDocumentsResponse {
     GetDocumentsResponseV0 v0 = 1;
     GetDocumentsResponseV1 v1 = 2;
   }
+}
+
+message GetDocumentHistoryRequest {
+  message GetDocumentHistoryRequestV0 {
+    bytes data_contract_id = 1; // The ID of the data contract
+    string document_type_name = 2; // The document type name
+    bytes document_id = 3; // The document ID
+    google.protobuf.UInt32Value limit =
+        4; // The maximum number of history entries to return
+    google.protobuf.UInt32Value offset =
+        5; // The offset for pagination through the document history
+    uint64 start_at_ms = 6 [
+      jstype = JS_STRING
+    ];              // Only return results after this time in milliseconds
+    bool prove = 7; // Flag to request a proof as the response
+  }
+  oneof version { GetDocumentHistoryRequestV0 v0 = 1; }
+}
+
+message GetDocumentHistoryResponse {
+  message GetDocumentHistoryResponseV0 {
+    // Represents a single entry in a document's history
+    message DocumentHistoryEntry {
+      uint64 date = 1 [ jstype = JS_STRING ]; // The date of the history entry
+      bytes value = 2; // The value of the document at this point in history
+    }
+
+    // Collection of document history entries
+    message DocumentHistory {
+      repeated DocumentHistoryEntry document_entries =
+          1; // List of history entries
+    }
+
+    oneof result {
+      DocumentHistory document_history =
+          1; // The actual history of the document
+      Proof proof =
+          2; // Cryptographic proof of the document history, if requested
+    }
+
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
+  }
+  oneof version { GetDocumentHistoryResponseV0 v0 = 1; }
 }
 
 message GetIdentityByPublicKeyHashRequest {
@@ -2925,6 +2972,31 @@ message GetShieldedPoolStateResponse {
     ResponseMetadata metadata = 3;
   }
   oneof version { GetShieldedPoolStateResponseV0 v0 = 1; }
+}
+
+// Count of leaves in the shielded notes commitment tree.
+// Used by wallets at the start of a shielded sync to seed a
+// determinate progress-bar denominator. The count IS bound by the
+// Merk value hash: it is the first field (`total_count`) of the
+// serialized `CommitmentTree` element whose bytes are hashed into the
+// app/root hash, so it is provable via a PathQuery proof of that
+// element (set `prove = true`).
+message GetShieldedNotesCountRequest {
+  message GetShieldedNotesCountRequestV0 {
+    bool prove = 1;
+  }
+  oneof version { GetShieldedNotesCountRequestV0 v0 = 1; }
+}
+
+message GetShieldedNotesCountResponse {
+  message GetShieldedNotesCountResponseV0 {
+    oneof result {
+      uint64 total_notes_count = 1 [jstype = JS_STRING];
+      Proof proof = 2;
+    }
+    ResponseMetadata metadata = 3;
+  }
+  oneof version { GetShieldedNotesCountResponseV0 v0 = 1; }
 }
 
 message GetShieldedNullifiersRequest {

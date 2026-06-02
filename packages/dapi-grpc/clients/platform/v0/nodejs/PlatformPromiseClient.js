@@ -34,6 +34,8 @@ const {
             GetDataContractResponse: PBJSGetDataContractResponse,
             GetDataContractHistoryRequest: PBJSGetDataContractHistoryRequest,
             GetDataContractHistoryResponse: PBJSGetDataContractHistoryResponse,
+            GetDocumentHistoryRequest: PBJSGetDocumentHistoryRequest,
+            GetDocumentHistoryResponse: PBJSGetDocumentHistoryResponse,
             GetDocumentsRequest: PBJSGetDocumentsRequest,
             GetDocumentsResponse: PBJSGetDocumentsResponse,
             GetIdentityByPublicKeyHashRequest: PBJSGetIdentityByPublicKeyHashRequest,
@@ -75,6 +77,7 @@ const {
   GetIdentitiesContractKeysResponse: ProtocGetIdentitiesContractKeysResponse,
   GetDataContractResponse: ProtocGetDataContractResponse,
   GetDataContractHistoryResponse: ProtocGetDataContractHistoryResponse,
+  GetDocumentHistoryResponse: ProtocGetDocumentHistoryResponse,
   GetDocumentsResponse: ProtocGetDocumentsResponse,
   GetIdentityByPublicKeyHashResponse: ProtocGetIdentityByPublicKeyHashResponse,
   WaitForStateTransitionResultResponse: ProtocWaitForStateTransitionResultResponse,
@@ -132,6 +135,10 @@ class PlatformPromiseClient {
 
     this.client.getDataContractHistory = promisify(
       this.client.getDataContractHistory.bind(this.client),
+    );
+
+    this.client.getDocumentHistory = promisify(
+      this.client.getDocumentHistory.bind(this.client),
     );
 
     this.client.getDocuments = promisify(
@@ -341,6 +348,38 @@ class PlatformPromiseClient {
             ),
             protobufToJsonFactory(
               PBJSGetDataContractHistoryRequest,
+            ),
+          ),
+        ],
+        ...options,
+      },
+    );
+  }
+
+  /**
+   *
+   * @param {!GetDocumentHistoryRequest} getDocumentHistoryRequest
+   * @param {?Object<string, string>} metadata
+   * @param {CallOptions} [options={}]
+   * @returns {Promise<!GetDocumentHistoryResponse>}
+   */
+  getDocumentHistory(getDocumentHistoryRequest, metadata = {}, options = {}) {
+    if (!isObject(metadata)) {
+      throw new Error('metadata must be an object');
+    }
+
+    return this.client.getDocumentHistory(
+      getDocumentHistoryRequest,
+      convertObjectToMetadata(metadata),
+      {
+        interceptors: [
+          jsonToProtobufInterceptorFactory(
+            jsonToProtobufFactory(
+              ProtocGetDocumentHistoryResponse,
+              PBJSGetDocumentHistoryResponse,
+            ),
+            protobufToJsonFactory(
+              PBJSGetDocumentHistoryRequest,
             ),
           ),
         ],

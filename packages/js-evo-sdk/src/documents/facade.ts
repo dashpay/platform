@@ -23,6 +23,18 @@ export class DocumentsFacade {
     return w.getDocumentsWithProofInfo(query);
   }
 
+  async history(query: wasm.DocumentHistoryQuery): Promise<Map<bigint, wasm.Document>> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getDocumentHistory(query);
+  }
+
+  async historyWithProof(
+    query: wasm.DocumentHistoryQuery,
+  ): Promise<wasm.ProofMetadataResponseTyped<Map<bigint, wasm.Document>>> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getDocumentHistoryWithProofInfo(query);
+  }
+
   async get(contractId: wasm.IdentifierLike, type: string, documentId: wasm.IdentifierLike):
     Promise<wasm.Document | undefined> {
     const w = await this.sdk.getWasmSdkConnected();

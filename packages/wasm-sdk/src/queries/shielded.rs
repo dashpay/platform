@@ -93,7 +93,7 @@ impl WasmSdk {
 
         let array = Array::new();
         if let Some(notes) = result {
-            for note in notes.0 {
+            for note in notes.notes {
                 array.push(&JsValue::from(ShieldedEncryptedNoteWasm {
                     cmx: note.cmx,
                     nullifier: note.nullifier,
@@ -213,7 +213,7 @@ impl WasmSdk {
 
         let array = Array::new();
         if let Some(notes) = result {
-            for note in notes.0 {
+            for note in notes.notes {
                 array.push(&JsValue::from(ShieldedEncryptedNoteWasm {
                     cmx: note.cmx,
                     nullifier: note.nullifier,

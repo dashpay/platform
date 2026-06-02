@@ -1,0 +1,17 @@
+---
+# Docker-compose override that wires a baked shielded-pool snapshot into the
+# drive-abci container. Applied by dashmate when
+# `PLATFORM_DRIVE_ABCI_SHIELDED_SNAPSHOT_HOST_PATH` is set in the env it
+# exports to docker-compose (we plumb that via `setup_local_network.sh` or a
+# shell export before `yarn start`).
+#
+# At apply time the InitChain hook in `create_data_for_shielded_pool` reads
+# `DRIVE_SHIELDED_SNAPSHOT` and takes the snapshot fast-path instead of
+# running the runtime seeder. See packages/rs-drive-abci/src/shielded_snapshot.
+
+services:
+  drive_abci:
+    environment:
+      - DRIVE_SHIELDED_SNAPSHOT=/var/lib/dash/rs-drive-abci/snapshots/shielded-pool.snap
+    volumes:
+      - ${PLATFORM_DRIVE_ABCI_SHIELDED_SNAPSHOT_HOST_PATH}:/var/lib/dash/rs-drive-abci/snapshots/shielded-pool.snap:ro
