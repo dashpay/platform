@@ -1,10 +1,10 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! TC-045..TC-048 — native foreign-key enforcement.
+//! TC-045..TC-049 — native foreign-key enforcement.
 
 mod common;
 
-use common::{ensure_wallet_meta, fresh_persister, wid};
+use common::{ensure_identity, ensure_wallet_meta, fresh_persister, wid};
 
 /// TC-045: PRAGMA foreign_keys is ON on the connection.
 #[test]
@@ -127,4 +127,62 @@ fn tc048_setnull_on_tx_delete() {
         spent_in.is_none(),
         "spent_in_txid should have been set to NULL"
     );
+}
+
+/// TC-049: `identity_keys` rows carry TWO `ON DELETE CASCADE` parents
+/// (`wallet_id -> wallet_metadata`, `identity_id -> identities`).
+/// Deleting the wallet must purge the child via that dual-cascade — both
+/// paths firing on one row is idempotent, not a double-free error — and
+/// the delete report must account for the removed row.
+#[test]
+fn tc049_delete_wallet_cascades_identity_keys() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let w = wid(0xC4);
+    let identity = [0xE4u8; 32];
+    // Seed BOTH FK parents: the wallet_metadata row and a wallet-scoped
+    // identities row, so the child satisfies both cascade chains.
+    ensure_wallet_meta(&persister, &w);
+    ensure_identity(&persister, &identity, Some(&w));
+    {
+        let conn = persister.lock_conn_for_test();
+        conn.execute(
+            "INSERT INTO identity_keys \
+                (wallet_id, identity_id, key_id, public_key_blob, public_key_hash, derivation_blob) \
+             VALUES (?1, ?2, 0, X'01', ?3, NULL)",
+            rusqlite::params![w.as_slice(), &identity[..], &[0u8; 20][..]],
+        )
+        .unwrap();
+    }
+
+    let before: i64 = persister
+        .lock_conn_for_test()
+        .query_row(
+            "SELECT COUNT(*) FROM identity_keys WHERE wallet_id = ?1",
+            rusqlite::params![w.as_slice()],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(before, 1, "seed row must exist before delete");
+
+    let report = persister.delete_wallet(w).expect("delete_wallet");
+    assert_eq!(report.wallet_id, w);
+    assert!(
+        report
+            .rows_removed_per_table
+            .get("identity_keys")
+            .copied()
+            .unwrap_or(0)
+            >= 1,
+        "delete report must count the removed identity_keys row"
+    );
+
+    let after: i64 = persister
+        .lock_conn_for_test()
+        .query_row(
+            "SELECT COUNT(*) FROM identity_keys WHERE wallet_id = ?1",
+            rusqlite::params![w.as_slice()],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(after, 0, "dual cascade must purge the identity_keys row");
 }

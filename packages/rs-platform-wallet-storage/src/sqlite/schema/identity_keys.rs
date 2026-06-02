@@ -85,6 +85,9 @@ pub fn apply(
     cs: &IdentityKeysChangeSet,
 ) -> Result<(), WalletStorageError> {
     if !cs.upserts.is_empty() {
+        // `derivation_blob` is reserved for a future typed projection and
+        // is always written NULL: derivation_indices ride inside
+        // public_key_blob (the IdentityKeyWire blob is the source of truth).
         let mut stmt = tx.prepare_cached(
             "INSERT INTO identity_keys \
                 (wallet_id, identity_id, key_id, public_key_blob, public_key_hash, derivation_blob) \

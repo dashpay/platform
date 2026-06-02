@@ -169,6 +169,9 @@ CREATE TABLE identity_keys (
     key_id INTEGER NOT NULL,
     public_key_blob BLOB NOT NULL,
     public_key_hash BLOB NOT NULL,
+    -- Reserved for a future typed projection; always NULL today.
+    -- derivation_indices lives inside public_key_blob (the
+    -- IdentityKeyWire blob is the single source of truth).
     derivation_blob BLOB,
     PRIMARY KEY (wallet_id, identity_id, key_id),
     FOREIGN KEY (wallet_id) REFERENCES wallet_metadata(wallet_id) ON DELETE CASCADE,
