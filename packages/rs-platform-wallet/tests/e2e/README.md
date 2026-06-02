@@ -236,6 +236,25 @@ cargo test --test e2e --features e2e -- --nocapture transfer_between_two_platfor
 Tracing output (SPV sync events, balance polls, sweep results) is written to stderr.
 `--nocapture` keeps it visible in the terminal.
 
+### Logging on a live devnet
+
+A blanket `RUST_LOG=trace` against a **live devnet** is a footgun. During SPV sync
+the Orchard `shardtree` and the `h2` HTTP/2 crates emit trace at hot-loop volume —
+we measured **~8.4 GB of log output in ~4 minutes** of sync. That can fill the disk
+and stall or kill the run before a single case completes.
+
+Suppress those two crates while keeping trace everywhere else:
+
+```bash
+RUST_LOG=trace,shardtree=warn,h2=warn cargo test --test e2e --features e2e -- --nocapture
+```
+
+Or scope trace narrowly to the code you actually care about:
+
+```bash
+RUST_LOG=warn,platform_wallet=trace,dash_spv=info cargo test --test e2e --features e2e -- --nocapture
+```
+
 ---
 
 ## Parallelism
