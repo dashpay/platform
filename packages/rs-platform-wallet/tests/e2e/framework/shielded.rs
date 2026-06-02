@@ -12,11 +12,26 @@
 //!
 //! The production `PlatformWalletManager` holds ONE coordinator per
 //! network and `configure_shielded` refuses to repoint, so the harness
-//! does NOT route through it. Instead [`bind_shielded`] builds a
-//! per-test [`NetworkShieldedCoordinator`] directly over a fresh SQLite
-//! file under the workdir slot. The commitment tree is network-shared
-//! on-chain, but each test scans it into its own DB so two parallel
-//! tests never share store state.
+//! does NOT route through it. Instead [`bind_shielded`] routes every
+//! case through ONE process-shared [`NetworkShieldedCoordinator`] over a
+//! single persisted SQLite tree (see [`shared_coordinator`]). The
+//! commitment tree is chain-wide — identical for every wallet on the
+//! network — so sharing it is sharing a cache of public chain data, not
+//! wallet state. Per-case isolation is preserved by `SubwalletId =
+//! (wallet_id, account_index)` scoping: each case mints a fresh seed, so
+//! its notes / spent-marks / watermarks never bleed into another case's.
+//!
+//! The first case pays one full ~1M-note Orchard scan into the shared
+//! tree; [`bind_shielded`] then seeds each freshly-bound account's
+//! watermark to the shared `tree_size`, so cases 2..N start their fetch
+//! at the tip-aligned chunk and pull only the handful of notes since —
+//! turning a per-case full re-scan into a per-case tip-delta scan
+//! (~25-30x on the Orchard-scan portion of the suite).
+//!
+//! [`new_file_backed_coordinator`] still mints a private per-call tree
+//! for the two cases that need a controlled, isolated tree (SH-007's
+//! bind-ordering hook and SH-013's empty-accounts error path); they do
+//! not benefit from the shared tree but keep the rest of the suite's win.
 //!
 //! # Adversarial injection hooks (SH-020..SH-035 — follow-up wave)
 //!
@@ -36,7 +51,8 @@ use std::time::Duration;
 use dpp::shielded::builder::OrchardProver;
 use grovedb_commitment_tree::ProvingKey;
 use platform_wallet::wallet::shielded::{
-    CachedOrchardProver, FileBackedShieldedStore, InMemoryShieldedStore, NetworkShieldedCoordinator,
+    CachedOrchardProver, FileBackedShieldedStore, InMemoryShieldedStore,
+    NetworkShieldedCoordinator, ShieldedStore, SubwalletId,
 };
 
 use super::wallet_factory::TestWallet;
@@ -84,7 +100,10 @@ pub fn shielded_prover() -> &'static CachedOrchardProver {
 /// the bound account list, so the test can drive `sync(true)` and read
 /// balances without re-deriving anything.
 pub struct ShieldedHandle {
-    /// Per-test FileBacked coordinator (one SQLite handle).
+    /// Coordinator backing this case. For [`bind_shielded`] this is the
+    /// process-shared coordinator (one persisted tree across the suite);
+    /// SH-007 / SH-013 build a private one via
+    /// [`new_file_backed_coordinator`] and wrap it themselves.
     pub coordinator: Arc<NetworkShieldedCoordinator>,
     /// ZIP-32 account indices bound on the wallet, ascending.
     pub accounts: Vec<u32>,
@@ -110,40 +129,116 @@ impl ShieldedHandle {
     }
 }
 
-/// Build a per-test FileBacked coordinator and bind `accounts` on the
-/// wallet's shielded sub-wallet.
+/// Bind `accounts` on the wallet's shielded sub-wallet, routed through
+/// the process-shared coordinator.
 ///
-/// Constructs a fresh SQLite tree under `<workdir>/shielded/<wallet>-<n>.sqlite`
-/// — a unique path per call so parallel tests never share store state
-/// (the on-chain tree is network-shared, but each test scans it into its
-/// own DB). FileBacked is mandatory: the in-memory store's `witness()`
-/// is a hard `Err` (Found-027), so spends against it cannot build a
-/// proof (see SH-005).
+/// All cases (except SH-007 / SH-013, which use
+/// [`new_file_backed_coordinator`] for a controlled private tree) share
+/// ONE [`NetworkShieldedCoordinator`] over ONE persisted SQLite tree
+/// (see [`shared_coordinator`]). The first case pays the full ~1M-note
+/// Orchard scan into that tree; this function then seeds each
+/// freshly-bound account's watermark to the shared `tree_size`, so
+/// cases 2..N start their fetch at the tip-aligned chunk and pull only
+/// the notes since (including the one this case is about to shield,
+/// which lands at a position `>= tree_size` and so is past the seed).
 ///
-/// Errors: [`FrameworkError::Wallet`] for store-open, coordinator, or
-/// `bind_shielded` failures.
+/// Without the watermark seed a fresh-seed wallet binds at watermark 0,
+/// collapsing the sync's `MIN`-watermark fetch start back to position 0
+/// — a shared tree alone would save only the local append, not the
+/// dominant network re-fetch. Seeding is what converts the shared tree
+/// into a fetch speedup.
+///
+/// Per-case isolation holds because notes / spent-marks / watermarks are
+/// `SubwalletId`-scoped and each case uses a distinct (fresh-seed)
+/// `wallet_id`; `shielded_balances` reads per-subwallet notes, never the
+/// shared tree, so a case's pre-sync "balance is 0" assertion stays
+/// genuine.
+///
+/// Errors: [`FrameworkError::Wallet`] for coordinator, `bind_shielded`,
+/// or watermark-seed failures.
 pub async fn bind_shielded(
     wallet: &TestWallet,
     accounts: &[u32],
     workdir: &std::path::Path,
 ) -> FrameworkResult<ShieldedHandle> {
-    let coordinator = new_file_backed_coordinator(wallet, workdir).await?;
+    let coordinator = shared_coordinator(wallet, workdir).await?;
     let seed = wallet.seed_bytes();
     wallet
         .platform_wallet()
         .bind_shielded(&seed, accounts, &coordinator)
         .await
         .map_err(|e| FrameworkError::Wallet(format!("bind_shielded: {e}")))?;
+
+    // Seed this wallet's per-account watermark to the shared tree's
+    // current leaf count so the next sync fetches only the tip delta.
+    // `bind_shielded` registers the wallet on the coordinator and (for a
+    // fresh seed) leaves every account at watermark 0; overwrite that
+    // with `tree_size` under one write guard. A note at exactly
+    // `tree_size` still passes the sync's strict `position < watermark`
+    // save gate, so nothing this case owns is skipped.
+    {
+        let mut store = coordinator.store().write().await;
+        let tree_size = store
+            .tree_size()
+            .map_err(|e| FrameworkError::Wallet(format!("bind_shielded: tree_size: {e}")))?;
+        for &account in accounts {
+            let id = SubwalletId::new(wallet.id(), account);
+            store
+                .set_last_synced_note_index(id, tree_size)
+                .map_err(|e| {
+                    FrameworkError::Wallet(format!("bind_shielded: seed watermark: {e}"))
+                })?;
+        }
+    }
+
     Ok(ShieldedHandle {
         coordinator,
         accounts: accounts.to_vec(),
     })
 }
 
-/// Construct a per-test FileBacked coordinator over a fresh SQLite path
-/// WITHOUT binding — used by SH-007's controlled bind-ordering hook (the
+/// Process-shared coordinator over ONE persisted commitment-tree SQLite
+/// file for the whole suite — the speedup's single most important seam.
+///
+/// Built lazily on the first [`bind_shielded`] from the shared SDK and a
+/// single deterministic path `<workdir>/shielded/shared_tree_<network>.sqlite`.
+/// Every case routes through the SAME `Arc<RwLock<FileBackedShieldedStore>>`
+/// the coordinator owns, so there is exactly one SQLite handle (no
+/// cross-handle WAL contention) and one persisted tree whose `tree_size`
+/// carries the full ~1M-leaf scan forward across cases.
+async fn shared_coordinator(
+    wallet: &TestWallet,
+    workdir: &std::path::Path,
+) -> FrameworkResult<Arc<NetworkShieldedCoordinator>> {
+    static SHARED: tokio::sync::OnceCell<Arc<NetworkShieldedCoordinator>> =
+        tokio::sync::OnceCell::const_new();
+    let pw = wallet.platform_wallet();
+    let network = pw.sdk().network;
+    let dir = workdir.join("shielded");
+    let sdk = pw.sdk_arc();
+    SHARED
+        .get_or_try_init(|| async {
+            std::fs::create_dir_all(&dir).map_err(|e| {
+                FrameworkError::Io(format!("create shielded dir {}: {e}", dir.display()))
+            })?;
+            let db_path = dir.join(format!("shared_tree_{network}.sqlite"));
+            let store = FileBackedShieldedStore::open_path(&db_path, 100)
+                .map_err(|e| FrameworkError::Wallet(format!("open shared shielded store: {e}")))?;
+            Ok(Arc::new(NetworkShieldedCoordinator::new(
+                sdk, network, db_path, store,
+            )))
+        })
+        .await
+        .cloned()
+}
+
+/// Construct a PRIVATE per-call FileBacked coordinator over a fresh
+/// SQLite path WITHOUT binding — the controlled-tree path for the two
+/// cases that need an isolated tree: SH-007's bind-ordering hook (the
 /// coordinator's tree is advanced via `sync(true)` before the second
-/// wallet binds).
+/// wallet binds, so it must start empty) and SH-013's empty-accounts
+/// error path (which errors before any sync). These two skip the shared
+/// tree of [`bind_shielded`]; the rest of the suite keeps the speedup.
 pub async fn new_file_backed_coordinator(
     wallet: &TestWallet,
     workdir: &std::path::Path,
@@ -264,6 +359,11 @@ pub async fn shielded_default_address_43(
 /// failure must never propagate. Mirrors `cancel_pending` and the PA
 /// identity-sweep floor (best-effort, below-floor balances left for the
 /// next-run orphan sweep).
+///
+/// Finally unregisters the wallet from its coordinator so the shared
+/// coordinator's registry stays bounded across the suite. This purges
+/// only the case's per-subwallet state (notes, spent marks, watermarks);
+/// the chain-wide commitment tree is left intact for the next case.
 pub async fn teardown_sweep_shielded(
     wallet: &TestWallet,
     handle: &ShieldedHandle,
@@ -323,6 +423,11 @@ pub async fn teardown_sweep_shielded(
             ),
         }
     }
+
+    // Bound the shared coordinator's registry: drop this case's
+    // registration and per-subwallet store state. The chain-wide tree
+    // (the speedup's carried-forward cache) is left intact.
+    handle.coordinator.unregister_wallet(wallet.id()).await;
 }
 
 // ---------------------------------------------------------------------------
