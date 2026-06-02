@@ -1,3 +1,10 @@
+## [4.0.0-beta.2](https://github.com/dashpay/platform/compare/v4.0.0-beta.1...v4.0.0-beta.2) (2026-06-02)
+
+
+### Bug Fixes
+
+* **platform-version:** gate shielded-pool block methods to protocol v12 ([#3782](https://github.com/dashpay/platform/issues/3782))
+
 ## [4.0.0-beta.1](///compare/v3.1.0-dev.8...v4.0.0-beta.1) (2026-06-02)
 
 
