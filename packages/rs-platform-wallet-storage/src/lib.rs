@@ -75,7 +75,7 @@ const fn _secrets_send_sync_check<T: Send + Sync>() {}
 #[cfg(feature = "secrets")]
 const _: () = {
     _secrets_send_sync_check::<keyring_core::Error>();
-    _secrets_send_sync_check::<secrets::FileStoreError>();
+    _secrets_send_sync_check::<secrets::SecretStoreError>();
 };
 #[cfg(feature = "secrets")]
 #[allow(dead_code)]

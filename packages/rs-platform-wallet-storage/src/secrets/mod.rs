@@ -7,7 +7,7 @@
 //! path ([`SecretStore::get`]) yields a zeroizing [`SecretBytes`] — a raw
 //! `Vec<u8>` never crosses this boundary — and its write path
 //! ([`SecretStore::set`]) takes `&SecretBytes`, so a caller cannot pass an
-//! unwrapped buffer. Errors surface as the typed [`FileStoreError`],
+//! unwrapped buffer. Errors surface as the typed [`SecretStoreError`],
 //! losslessly for the file arm (`WrongPassphrase` vs `Corruption` vs
 //! `AlreadyLocked` stay distinct).
 //!
@@ -26,8 +26,8 @@
 //! Consumers should prefer `SecretStore`.
 //!
 //! - [`SecretBytes`] / [`SecretString`] — zeroize-on-drop wrappers.
-//! - [`FileStoreError`] — the typed error returned by `SecretStore` and
-//!   the file backend, projected into `keyring_core::Error` for the SPI.
+//! - [`SecretStoreError`] — the typed error returned by `SecretStore`
+//!   and both backends, projected into `keyring_core::Error` for the SPI.
 //!
 //! [`CredentialApi`]: keyring_core::api::CredentialApi
 //! [`CredentialStoreApi`]: keyring_core::api::CredentialStoreApi
@@ -51,13 +51,14 @@
 //! fallback between the file vault and the OS keyring
 //! (SEC-REQ-2.1.3 / AR-4).
 
+mod error;
 mod file;
 mod keyring;
 mod secret;
 mod store;
 mod validate;
 
-pub use file::error::{FileStoreError, OsKeyringErrorKind};
+pub use error::{IoError, OsKeyringErrorKind, SecretStoreError};
 pub use file::{EncryptedFileCredential, EncryptedFileStore, MAX_VAULT_SIZE_BYTES, SERVICE_PREFIX};
 pub use keyring::default_credential_store;
 pub use secret::{SecretBytes, SecretString};

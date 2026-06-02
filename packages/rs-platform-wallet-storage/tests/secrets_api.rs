@@ -12,7 +12,7 @@ use std::sync::Arc;
 use keyring_core::api::CredentialStoreApi;
 use keyring_core::{Error as KeyringError, Result as KeyringResult};
 use platform_wallet_storage::secrets::{
-    EncryptedFileStore, FileStoreError, SecretBytes, SecretStore, SecretString, WalletId,
+    EncryptedFileStore, SecretBytes, SecretStore, SecretStoreError, SecretString, WalletId,
     SERVICE_PREFIX,
 };
 
@@ -129,7 +129,7 @@ fn error_display_is_static_and_secret_free() {
 
     let typed = EncryptedFileStore::open(vault_path(dir.path()), SecretString::new("wrong-pass"))
         .expect_err("wrong pass must fail open");
-    assert!(matches!(typed, FileStoreError::WrongPassphrase));
+    assert!(matches!(typed, SecretStoreError::WrongPassphrase));
     let rendered = format!("{typed}");
     assert!(!rendered.contains("PLAINTEXTNEEDLE"));
     assert!(!rendered.contains("wrong-pass"));
@@ -138,22 +138,22 @@ fn error_display_is_static_and_secret_free() {
     // the typed variant intact.
     let typed = SecretStore::file(vault_path(dir.path()), SecretString::new("wrong-pass"))
         .expect_err("wrong pass must fail open via SecretStore");
-    assert!(matches!(typed, FileStoreError::WrongPassphrase));
+    assert!(matches!(typed, SecretStoreError::WrongPassphrase));
 
-    // The SPI projection: a typed `FileStoreError::WrongPassphrase`
+    // The SPI projection: a typed `SecretStoreError::WrongPassphrase`
     // converted to `KeyringError` rides in `NoStorageAccess` with the
     // typed error boxed as the source, recoverable losslessly. The
     // projection itself never sees the bytes, so a plaintext leak is
     // impossible at this seam.
-    let spi: KeyringError = FileStoreError::WrongPassphrase.into();
+    let spi: KeyringError = SecretStoreError::WrongPassphrase.into();
     let spi_rendered = format!("{spi}");
     assert!(!spi_rendered.contains("PLAINTEXTNEEDLE"));
     assert!(!spi_rendered.contains("wrong-pass"));
     match &spi {
         KeyringError::NoStorageAccess(src) => {
             assert!(matches!(
-                src.downcast_ref::<FileStoreError>(),
-                Some(FileStoreError::WrongPassphrase)
+                src.downcast_ref::<SecretStoreError>(),
+                Some(SecretStoreError::WrongPassphrase)
             ));
         }
         other => panic!("expected NoStorageAccess, got {other:?}"),

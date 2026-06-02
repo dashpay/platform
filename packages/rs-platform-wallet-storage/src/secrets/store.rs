@@ -6,7 +6,7 @@
 //! ([`SecretStore::set`]) takes `&SecretBytes` so a caller cannot pass an
 //! unwrapped buffer (M-STRONG-TYPES).
 //!
-//! Errors surface as the typed [`FileStoreError`] — losslessly for the
+//! Errors surface as the typed [`SecretStoreError`] — losslessly for the
 //! [`SecretStore::File`] arm (so `WrongPassphrase` vs `Corruption` vs
 //! `AlreadyLocked` stay distinct), and as a best-effort projection of
 //! `keyring_core::Error` for the [`SecretStore::Os`] arm. The internal
@@ -18,7 +18,7 @@ use std::sync::Arc;
 use keyring_core::api::CredentialStoreApi;
 use keyring_core::{Entry, Error as KeyringError};
 
-use super::file::error::{FileStoreError, OsKeyringErrorKind};
+use super::error::{OsKeyringErrorKind, SecretStoreError};
 use super::secret::SecretBytes;
 use super::validate::WalletId;
 use super::{default_credential_store, EncryptedFileStore, SERVICE_PREFIX};
@@ -45,13 +45,13 @@ impl SecretStore {
     pub fn file(
         path: impl AsRef<std::path::Path>,
         passphrase: super::SecretString,
-    ) -> Result<Self, FileStoreError> {
+    ) -> Result<Self, SecretStoreError> {
         Ok(Self::File(EncryptedFileStore::open(path, passphrase)?))
     }
 
     /// Open the platform's default OS keyring, failing closed when none
     /// is reachable (headless / no Secret Service).
-    pub fn os() -> Result<Self, FileStoreError> {
+    pub fn os() -> Result<Self, SecretStoreError> {
         Ok(Self::Os(default_credential_store().map_err(map_spi)?))
     }
 
@@ -64,7 +64,7 @@ impl SecretStore {
         service: &WalletId,
         label: &str,
         secret: &SecretBytes,
-    ) -> Result<(), FileStoreError> {
+    ) -> Result<(), SecretStoreError> {
         match self {
             // File arm: the inherent typed path — no lossy SPI seam.
             // `put_bytes` takes `&SecretBytes` directly (CMT-009), so
@@ -85,7 +85,7 @@ impl SecretStore {
         &self,
         service: &WalletId,
         label: &str,
-    ) -> Result<Option<SecretBytes>, FileStoreError> {
+    ) -> Result<Option<SecretBytes>, SecretStoreError> {
         match self {
             // File arm: the inherent typed path keeps `WrongPassphrase`
             // vs `Corruption` distinct (lossless). Plaintext rides as
@@ -104,7 +104,7 @@ impl SecretStore {
 
     /// Delete the secret stored under `(service, label)`. Absent entries
     /// are a no-op (`Ok(())`), so deletion is idempotent.
-    pub fn delete(&self, service: &WalletId, label: &str) -> Result<(), FileStoreError> {
+    pub fn delete(&self, service: &WalletId, label: &str) -> Result<(), SecretStoreError> {
         match self {
             Self::File(s) => {
                 s.delete_bytes(service, label)?;
@@ -133,49 +133,59 @@ fn build_os(
     store: &Arc<dyn CredentialStoreApi + Send + Sync>,
     service: &WalletId,
     label: &str,
-) -> Result<Entry, FileStoreError> {
-    let label = super::validate::validated_label(label).map_err(FileStoreError::from)?;
+) -> Result<Entry, SecretStoreError> {
+    let label = super::validate::validated_label(label).map_err(SecretStoreError::from)?;
     let svc = format!("{SERVICE_PREFIX}{}", service.to_hex());
     store.build(&svc, label, None).map_err(map_spi)
 }
 
 impl std::fmt::Debug for SecretStore {
+    /// Surfaces the backend engine/service identity without exposing any
+    /// secret material (CMT-006). The `Os` arm reports the SPI
+    /// `vendor()`/`id()` — non-secret backend tags (e.g. which OS keyring
+    /// is wired up) — rather than an opaque `Os(..)`. The `File` arm
+    /// delegates to [`EncryptedFileStore`]'s redacting `Debug` (path
+    /// only, no key/passphrase).
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::File(s) => f.debug_tuple("SecretStore::File").field(s).finish(),
-            Self::Os(_) => f.write_str("SecretStore::Os(..)"),
+            Self::Os(store) => f
+                .debug_struct("SecretStore::Os")
+                .field("vendor", &store.vendor())
+                .field("id", &store.id())
+                .finish(),
         }
     }
 }
 
 /// Project an OS-keyring SPI [`KeyringError`] into the typed
-/// [`FileStoreError`] for the [`Os`](SecretStore::Os) arm.
+/// [`SecretStoreError`] for the [`Os`](SecretStore::Os) arm.
 ///
-/// The OS keyring has no typed `FileStoreError` origin, so its variants
-/// map best-effort into [`FileStoreError::OsKeyring`] (carrying only a
+/// The OS keyring has no typed `SecretStoreError` origin, so its variants
+/// map best-effort into [`SecretStoreError::OsKeyring`] (carrying only a
 /// non-secret discriminant) or the closest existing variant. Secret-
 /// bearing keyring variants (`BadEncoding`, `BadDataFormat`) are
 /// collapsed to a discriminant — their raw bytes never enter
-/// `FileStoreError`. (The [`File`](SecretStore::File) arm never reaches
+/// `SecretStoreError`. (The [`File`](SecretStore::File) arm never reaches
 /// this projection: it uses the inherent typed path.)
-fn map_spi(e: KeyringError) -> FileStoreError {
+fn map_spi(e: KeyringError) -> SecretStoreError {
     match e {
-        KeyringError::NoEntry => FileStoreError::OsKeyring {
+        KeyringError::NoEntry => SecretStoreError::OsKeyring {
             kind: OsKeyringErrorKind::NoEntry,
         },
-        KeyringError::NoStorageAccess(_) => FileStoreError::OsKeyring {
+        KeyringError::NoStorageAccess(_) => SecretStoreError::OsKeyring {
             kind: OsKeyringErrorKind::NoStorageAccess,
         },
-        KeyringError::NoDefaultStore => FileStoreError::OsKeyring {
+        KeyringError::NoDefaultStore => SecretStoreError::OsKeyring {
             kind: OsKeyringErrorKind::NoDefaultStore,
         },
-        KeyringError::Invalid(_, _) => FileStoreError::InvalidLabel,
+        KeyringError::Invalid(_, _) => SecretStoreError::InvalidLabel,
         KeyringError::BadStoreFormat(_)
         | KeyringError::BadEncoding(_)
-        | KeyringError::BadDataFormat(_, _) => FileStoreError::OsKeyring {
+        | KeyringError::BadDataFormat(_, _) => SecretStoreError::OsKeyring {
             kind: OsKeyringErrorKind::BadStoreFormat,
         },
-        _ => FileStoreError::OsKeyring {
+        _ => SecretStoreError::OsKeyring {
             kind: OsKeyringErrorKind::Backend,
         },
     }
@@ -245,7 +255,7 @@ mod tests {
         )
         .expect_err("wrong pass must fail open");
         assert!(
-            matches!(err, FileStoreError::WrongPassphrase),
+            matches!(err, SecretStoreError::WrongPassphrase),
             "expected WrongPassphrase, got {err:?}"
         );
     }
@@ -274,7 +284,7 @@ mod tests {
         fs.test_reload_from_disk().unwrap();
         let err = s.get(&wid(1), "seed").unwrap_err();
         assert!(
-            matches!(err, FileStoreError::Corruption),
+            matches!(err, SecretStoreError::Corruption),
             "expected Corruption, got {err:?}"
         );
     }
@@ -288,7 +298,10 @@ mod tests {
         let path = dir.path().join("vault.pwsvault");
         let _s1 = SecretStore::file(&path, SecretString::new("pw")).unwrap();
         let err = SecretStore::file(&path, SecretString::new("pw")).unwrap_err();
-        assert!(matches!(err, FileStoreError::AlreadyLocked), "got {err:?}");
+        assert!(
+            matches!(err, SecretStoreError::AlreadyLocked),
+            "got {err:?}"
+        );
     }
 
     #[test]
@@ -302,13 +315,13 @@ mod tests {
     /// CMT-006 — the OS-keyring shim must enforce the label
     /// allowlist BEFORE handing the value to the OS backend. The
     /// per-backend label policies (macOS Keychain vs Windows
-    /// Credential Manager vs Secret Service vs linux-keyutils) differ
-    /// in what they accept, normalize, or reject; the shim must keep
-    /// the `(service, label)` invariant uniform across every arm.
+    /// Credential Manager vs Secret Service) differ in what they accept,
+    /// normalize, or reject; the shim must keep the `(service, label)`
+    /// invariant uniform across every arm.
     ///
     /// A mock `CredentialStoreApi` that panics if its `build()` is
     /// invoked proves the bad label never crosses the SPI seam — the
-    /// shim rejects with `FileStoreError::InvalidLabel` first.
+    /// shim rejects with `SecretStoreError::InvalidLabel` first.
     #[test]
     fn build_os_rejects_invalid_label_before_spi() {
         use std::any::Any;
@@ -350,17 +363,17 @@ mod tests {
                 .set(&wid(1), bad, &SecretBytes::from_slice(b"x"))
                 .unwrap_err();
             assert!(
-                matches!(err, FileStoreError::InvalidLabel),
+                matches!(err, SecretStoreError::InvalidLabel),
                 "set with label {bad:?} should reject as InvalidLabel, got {err:?}"
             );
             let err = os.get(&wid(1), bad).unwrap_err();
             assert!(
-                matches!(err, FileStoreError::InvalidLabel),
+                matches!(err, SecretStoreError::InvalidLabel),
                 "get with label {bad:?} should reject as InvalidLabel, got {err:?}"
             );
             let err = os.delete(&wid(1), bad).unwrap_err();
             assert!(
-                matches!(err, FileStoreError::InvalidLabel),
+                matches!(err, SecretStoreError::InvalidLabel),
                 "delete with label {bad:?} should reject as InvalidLabel, got {err:?}"
             );
         }

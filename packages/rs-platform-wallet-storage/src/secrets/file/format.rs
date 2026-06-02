@@ -44,7 +44,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 use super::crypto::{KdfParams, NONCE_LEN, SALT_LEN};
-use super::error::FileStoreError;
+use crate::secrets::error::SecretStoreError;
 
 pub(crate) const FORMAT_VERSION: u32 = 1;
 pub(crate) const KDF_ID_ARGON2ID: u8 = 1;
@@ -224,23 +224,23 @@ pub(crate) fn serialize(vault: &Vault) -> Vec<u8> {
 /// algorithm ids and out-of-range Argon2 params are caught later at
 /// `KdfParams::enforce_bounds` (called on every `derive_key`), so they
 /// can't silently slip past. All `serde_json` errors are mapped to a
-/// static [`FileStoreError`] with the source DISCARDED so input bytes
+/// static [`SecretStoreError`] with the source DISCARDED so input bytes
 /// can never leak into an error string or log. Salt and nonce widths
 /// are validated by `hex_array` at the serde seam; the AEAD-tag-length
 /// floor remains a post-parse check.
-pub(crate) fn deserialize(buf: &[u8]) -> Result<Vault, FileStoreError> {
+pub(crate) fn deserialize(buf: &[u8]) -> Result<Vault, SecretStoreError> {
     let probe: VersionProbe =
-        serde_json::from_slice(buf).map_err(|_| FileStoreError::MalformedVault)?;
+        serde_json::from_slice(buf).map_err(|_| SecretStoreError::MalformedVault)?;
     if probe.version != FORMAT_VERSION {
-        return Err(FileStoreError::VersionUnsupported {
+        return Err(SecretStoreError::VersionUnsupported {
             found: probe.version,
         });
     }
 
-    let vault: Vault = serde_json::from_slice(buf).map_err(|_| FileStoreError::MalformedVault)?;
+    let vault: Vault = serde_json::from_slice(buf).map_err(|_| SecretStoreError::MalformedVault)?;
 
     if vault.verify_ct.len() < AEAD_TAG_LEN {
-        return Err(FileStoreError::MalformedVault);
+        return Err(SecretStoreError::MalformedVault);
     }
 
     // CMT-005: validate outer wallet-id keys and inner label keys at
@@ -253,9 +253,9 @@ pub(crate) fn deserialize(buf: &[u8]) -> Result<Vault, FileStoreError> {
         super::decode_wallet_id_hex(wallet_hex)?;
         for (label, body) in entries {
             super::super::validate::validated_label(label)
-                .map_err(|_| FileStoreError::InvalidLabel)?;
+                .map_err(|_| SecretStoreError::InvalidLabel)?;
             if body.ciphertext.len() < AEAD_TAG_LEN {
-                return Err(FileStoreError::MalformedVault);
+                return Err(SecretStoreError::MalformedVault);
             }
         }
     }
@@ -354,14 +354,14 @@ mod tests {
     fn rejects_non_json_and_unknown_version() {
         assert!(matches!(
             deserialize(b"NOPENOPE...."),
-            Err(FileStoreError::MalformedVault)
+            Err(SecretStoreError::MalformedVault)
         ));
         let mut vault = test_vault(BTreeMap::new());
         vault.version = 999;
         let bytes = serialize(&vault);
         assert!(matches!(
             deserialize(&bytes),
-            Err(FileStoreError::VersionUnsupported { found: 999 })
+            Err(SecretStoreError::VersionUnsupported { found: 999 })
         ));
     }
 
@@ -377,7 +377,7 @@ mod tests {
         assert_eq!(parsed.kdf.id, 7);
         assert!(matches!(
             parsed.kdf.enforce_bounds(),
-            Err(FileStoreError::KdfFailure)
+            Err(SecretStoreError::KdfFailure)
         ));
     }
 
@@ -388,7 +388,7 @@ mod tests {
         let bytes = br#"{"version":1,"kdf":{"id":1,"m_kib":65536,"t":3,"p":1},"salt":"00","verify_nonce":"00","verify_ct":"00","wallets":{},"rogue":true}"#;
         assert!(matches!(
             deserialize(bytes),
-            Err(FileStoreError::MalformedVault)
+            Err(SecretStoreError::MalformedVault)
         ));
     }
 
@@ -410,7 +410,7 @@ mod tests {
         let bytes = serde_json::to_vec(&v).unwrap();
         assert!(matches!(
             deserialize(&bytes),
-            Err(FileStoreError::MalformedVault)
+            Err(SecretStoreError::MalformedVault)
         ));
     }
 
@@ -422,7 +422,7 @@ mod tests {
         let bytes = serde_json::to_vec(&v).unwrap();
         assert!(matches!(
             deserialize(&bytes),
-            Err(FileStoreError::MalformedVault)
+            Err(SecretStoreError::MalformedVault)
         ));
     }
 
@@ -444,7 +444,7 @@ mod tests {
         let bytes = serde_json::to_vec(&v).unwrap();
         assert!(matches!(
             deserialize(&bytes),
-            Err(FileStoreError::MalformedVault)
+            Err(SecretStoreError::MalformedVault)
         ));
     }
 
@@ -455,7 +455,7 @@ mod tests {
         let bytes = serialize(&vault);
         assert!(matches!(
             deserialize(&bytes),
-            Err(FileStoreError::MalformedVault)
+            Err(SecretStoreError::MalformedVault)
         ));
     }
 
@@ -542,7 +542,7 @@ mod tests {
         let bytes = serialize(&test_vault(wallets));
         assert!(matches!(
             deserialize(&bytes),
-            Err(FileStoreError::MalformedVault)
+            Err(SecretStoreError::MalformedVault)
         ));
     }
 
@@ -562,7 +562,7 @@ mod tests {
         let bytes = serialize(&test_vault(wallets));
         assert!(matches!(
             deserialize(&bytes),
-            Err(FileStoreError::MalformedVault)
+            Err(SecretStoreError::MalformedVault)
         ));
     }
 
@@ -583,7 +583,7 @@ mod tests {
         let bytes = serialize(&test_vault(wallets));
         assert!(matches!(
             deserialize(&bytes),
-            Err(FileStoreError::InvalidLabel)
+            Err(SecretStoreError::InvalidLabel)
         ));
     }
 
@@ -603,7 +603,7 @@ mod tests {
         let bytes = serialize(&test_vault(wallets));
         assert!(matches!(
             deserialize(&bytes),
-            Err(FileStoreError::InvalidLabel)
+            Err(SecretStoreError::InvalidLabel)
         ));
     }
 
