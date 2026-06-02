@@ -462,10 +462,7 @@ mod snapshot_bake_main {
     /// Intended for the Dockerfile bake stage: produce a snapshot once during
     /// image build, embed in the runtime image, load it at every InitChain
     /// via `DRIVE_SHIELDED_SNAPSHOT`.
-    pub(super) fn run(
-        _config: &PlatformConfig,
-        out_path: &std::path::Path,
-    ) -> Result<(), String> {
+    pub(super) fn run(_config: &PlatformConfig, out_path: &std::path::Path) -> Result<(), String> {
         tracing::info!(
             out = %out_path.display(),
             "snapshot-bake: creating tempdir + bootstrapping fresh GroveDB",
