@@ -280,11 +280,11 @@ fn tc_md_015_cascade_contact() {
     {
         let conn = p.lock_conn_for_test();
         conn.execute(
-            "DELETE FROM contacts_established \
+            "DELETE FROM contacts \
              WHERE wallet_id = ?1 AND owner_id = ?2 AND contact_id = ?3",
             params![w.as_slice(), &owner[..], &contact[..]],
         )
-        .expect("delete contact_established");
+        .expect("delete established contact");
     }
     assert_eq!(p.get(&scope, "k").unwrap(), None);
 }

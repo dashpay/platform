@@ -45,18 +45,7 @@ const READ_ONLY_PREPARE_ALLOWED: &[(&str, &str)] = &[
         "identities.rs",
         "SELECT identity_id, entry_blob, tombstoned",
     ),
-    (
-        "contacts.rs",
-        "SELECT owner_id, recipient_id, entry_blob FROM contacts_sent",
-    ),
-    (
-        "contacts.rs",
-        "SELECT owner_id, sender_id, entry_blob FROM contacts_recv",
-    ),
-    (
-        "contacts.rs",
-        "SELECT owner_id, contact_id, entry_blob FROM contacts_established",
-    ),
+    ("contacts.rs", "SELECT owner_id, contact_id, state"),
 ];
 
 /// TC-P1-003: writer paths in `src/sqlite/schema/*.rs` must not call

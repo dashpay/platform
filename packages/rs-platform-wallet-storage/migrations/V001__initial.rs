@@ -28,12 +28,13 @@
 //! (`src/sqlite/conn.rs`).
 //!
 //! Enum-shaped TEXT columns (`network`, `account_type`, `pool_type`,
-//! `status`) carry a `CHECK (col IN (...))` clause whose IN-list is
-//! built from the `*_LABELS` const arrays in
-//! `crate::sqlite::schema::{wallet_meta, accounts, asset_locks}`. The
-//! consts are the single source of truth shared with the writer
-//! mapping functions; the per-module `*_labels_match_enum` unit tests
-//! enforce set-equality between each const and its writer's codomain.
+//! `status`, `state`) carry a `CHECK (col IN (...))` clause whose
+//! IN-list is built from the `*_LABELS` const arrays in
+//! `crate::sqlite::schema::{wallet_meta, accounts, asset_locks,
+//! contacts}`. The consts are the single source of truth shared with
+//! the writer mapping functions; the per-module `*_labels_match_enum`
+//! unit tests enforce set-equality between each const and its writer's
+//! codomain.
 
 fn build_check_in(labels: &[&str]) -> String {
     let quoted = labels
@@ -51,6 +52,8 @@ pub fn migration() -> String {
     let pool_type_check = build_check_in(crate::sqlite::schema::accounts::POOL_TYPE_LABELS);
     let asset_lock_status_check =
         build_check_in(crate::sqlite::schema::asset_locks::ASSET_LOCK_STATUS_LABELS);
+    let contact_state_check =
+        build_check_in(crate::sqlite::schema::contacts::CONTACT_STATE_LABELS);
 
     format!(
         "\
@@ -172,29 +175,18 @@ CREATE TABLE identity_keys (
 
 CREATE INDEX idx_identity_keys_identity ON identity_keys(identity_id);
 
-CREATE TABLE contacts_sent (
-    wallet_id BLOB NOT NULL,
-    owner_id BLOB NOT NULL,
-    recipient_id BLOB NOT NULL,
-    entry_blob BLOB NOT NULL,
-    PRIMARY KEY (wallet_id, owner_id, recipient_id),
-    FOREIGN KEY (wallet_id) REFERENCES wallet_metadata(wallet_id) ON DELETE CASCADE
-);
-
-CREATE TABLE contacts_recv (
-    wallet_id BLOB NOT NULL,
-    owner_id BLOB NOT NULL,
-    sender_id BLOB NOT NULL,
-    entry_blob BLOB NOT NULL,
-    PRIMARY KEY (wallet_id, owner_id, sender_id),
-    FOREIGN KEY (wallet_id) REFERENCES wallet_metadata(wallet_id) ON DELETE CASCADE
-);
-
-CREATE TABLE contacts_established (
+CREATE TABLE contacts (
     wallet_id BLOB NOT NULL,
     owner_id BLOB NOT NULL,
     contact_id BLOB NOT NULL,
-    entry_blob BLOB NOT NULL,
+    state TEXT NOT NULL CHECK (state IN {contact_state_check}),
+    outgoing_request BLOB,
+    incoming_request BLOB,
+    alias TEXT,
+    note TEXT,
+    is_hidden INTEGER,
+    accepted_accounts BLOB,
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
     PRIMARY KEY (wallet_id, owner_id, contact_id),
     FOREIGN KEY (wallet_id) REFERENCES wallet_metadata(wallet_id) ON DELETE CASCADE
 );
@@ -346,8 +338,9 @@ BEGIN
 END;
 
 CREATE TRIGGER cascade_meta_contact_on_contact_delete
-AFTER DELETE ON contacts_established
+AFTER DELETE ON contacts
 FOR EACH ROW
+WHEN OLD.state = 'established'
 BEGIN
     DELETE FROM meta_contact
         WHERE wallet_id = OLD.wallet_id

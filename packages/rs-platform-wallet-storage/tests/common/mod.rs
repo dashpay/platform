@@ -97,11 +97,11 @@ pub fn ensure_token_balance(
     .expect("ensure token_balance");
 }
 
-/// Insert a stub `contacts_established` row so `meta_contact` writes
-/// pass the composite FK to
-/// `contacts_established(wallet_id, owner_id, contact_id)`. The parent
-/// `wallet_metadata` row must already exist (seed via
-/// [`ensure_wallet_meta`]).
+/// Insert a stub `established` row in the unified `contacts` table so
+/// the `cascade_meta_contact_on_contact_delete` trigger has an
+/// established-contact parent to fire on for `meta_contact` writes keyed
+/// by `(wallet_id, owner_id, contact_id)`. The parent `wallet_metadata`
+/// row must already exist (seed via [`ensure_wallet_meta`]).
 pub fn ensure_contact_established(
     persister: &SqlitePersister,
     wallet_id: &WalletId,
@@ -111,9 +111,9 @@ pub fn ensure_contact_established(
     use rusqlite::params;
     let conn = persister.lock_conn_for_test();
     conn.execute(
-        "INSERT OR IGNORE INTO contacts_established \
-            (wallet_id, owner_id, contact_id, entry_blob) \
-         VALUES (?1, ?2, ?3, X'00')",
+        "INSERT OR IGNORE INTO contacts \
+            (wallet_id, owner_id, contact_id, state) \
+         VALUES (?1, ?2, ?3, 'established')",
         params![wallet_id.as_slice(), &owner_id[..], &contact_id[..]],
     )
     .expect("ensure contact_established");
