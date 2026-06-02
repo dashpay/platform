@@ -10,9 +10,10 @@
 //! (`tc_p4_006`/`tc_p4_007`) and in `sqlite_load_wiring.rs` /
 //! `sqlite_core_state_reader.rs` / `sqlite_asset_locks_filter.rs`; the
 //! end-to-end manager path is covered by `platform-wallet`'s
-//! `rehydration_load.rs`. `persister::LOAD_UNIMPLEMENTED` now lists
-//! only the genuinely-deferred areas (contacts / identity_keys /
-//! `last_applied_chain_lock`).
+//! `rehydration_load.rs`. Contacts + identity-keys now rehydrate too
+//! (PR-3, see `sqlite_contacts_keys_rehydration.rs`), so
+//! `persister::LOAD_UNIMPLEMENTED` lists only the single remaining
+//! deferred area (`core::last_applied_chain_lock`).
 
 mod common;
 
@@ -78,15 +79,13 @@ fn tc040_load_platform_addresses() {
     assert_eq!(state.platform_addresses[&b].sync_height, 20);
 }
 
-/// TC-043: non-wired-up sub-areas are written to disk (verified by
-/// direct SQL probes) but do not surface in the load result.
-///
-/// Constructs non-empty `ContactChangeSet` and `TokenBalanceChangeSet`
-/// payloads — `is_empty()` returns false on either, so the buffer
-/// flushes them — then asserts both `contacts_sent` and
-/// `token_balances` rows are present in SQLite after a reopen, while
-/// `ClientStartState.platform_addresses` stays empty for the wallet
-/// (no platform-address activity was stored).
+/// TC-043: `token_balances` is still persisted-but-not-rehydrated
+/// (genuinely deferred); contacts now DO rehydrate (PR-3) and surface
+/// in `state.wallets[w].contacts`. Asserts both `contacts_sent` and
+/// `token_balances` rows are durable on disk after a reopen, the
+/// contact round-trips into the keyless payload, and
+/// `state.platform_addresses` stays empty (no platform-address
+/// activity was stored).
 #[test]
 fn tc043_non_wired_up_persisted_but_not_returned() {
     use dpp::prelude::Identifier;
@@ -152,6 +151,16 @@ fn tc043_non_wired_up_persisted_but_not_returned() {
     assert!(
         !state.platform_addresses.contains_key(&w),
         "no platform-address activity was stored — wallet must be absent"
+    );
+    // Contacts now rehydrate into the keyless payload (PR-3).
+    let slice = state.wallets.get(&w).expect("wallet rehydrated");
+    let key = SentContactRequestKey {
+        owner_id: owner,
+        recipient_id: recipient,
+    };
+    assert!(
+        slice.contacts.sent_requests.contains_key(&key),
+        "the persisted sent contact request must rehydrate"
     );
     drop(p2);
 

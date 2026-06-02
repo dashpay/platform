@@ -20,13 +20,11 @@ use crate::sqlite::schema::{self, count_rows_for_wallet_sql, PER_WALLET_TABLES};
 use crate::sqlite::util::permissions::apply_secure_permissions;
 use crate::sqlite::util::safe_cast;
 
-/// Sub-areas still deferred after full signing-wallet rehydration
-/// landed. `contacts` + `identity_keys` need a changeset-shape change
-/// (PR-3); `last_applied_chain_lock` re-warms on the first post-load
-/// SPV chainlock (no V001 column). Surfaced via the structured
-/// `tracing::info!` summary on every `load()`.
-pub(crate) const LOAD_UNIMPLEMENTED: &[&str] =
-    &["contacts", "identity_keys", "core::last_applied_chain_lock"];
+/// Sub-areas still deferred after contacts + identity-keys rehydration
+/// landed (PR-3). Only `last_applied_chain_lock` remains — it re-warms
+/// on the first post-load SPV chainlock (no V001 column). Surfaced via
+/// the structured `tracing::info!` summary on every `load()`.
+pub(crate) const LOAD_UNIMPLEMENTED: &[&str] = &["core::last_applied_chain_lock"];
 
 /// Outcome of a `prune_backups` call.
 ///
@@ -1022,6 +1020,10 @@ impl PlatformWalletPersistence for SqlitePersister {
                 .map_err(PersistenceError::from)?;
             let unused_asset_locks = schema::asset_locks::load_unconsumed(&conn, &wallet_id)
                 .map_err(PersistenceError::from)?;
+            let contacts = schema::contacts::load_changeset(&conn, &wallet_id)
+                .map_err(PersistenceError::from)?;
+            let identity_keys = schema::identity_keys::load_state(&conn, &wallet_id)
+                .map_err(PersistenceError::from)?;
 
             state.wallets.insert(
                 wallet_id,
@@ -1032,6 +1034,8 @@ impl PlatformWalletPersistence for SqlitePersister {
                     core_state,
                     identity_manager,
                     unused_asset_locks,
+                    contacts,
+                    identity_keys,
                 },
             );
         }
