@@ -23,12 +23,13 @@ use crate::framework::wait::{
     wait_for_address_balance_chain_confirmed_n, CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
 };
 
-const FUNDING_CREDITS: u64 = 60_000_000;
-const SHIELD_EACH: u64 = 12_000_000;
+const FUNDING_CREDITS: u64 = 1_700_000_000;
+const SHIELD_EACH: u64 = 600_000_000;
 const NUM_NOTES: u64 = 3;
-/// Above any single note, below the sum — forces multi-note selection so
-/// the fee convergence loop iterates (>1 pass).
-const MULTI_NOTE_UNSHIELD: u64 = 25_000_000;
+/// Above any single note (600M) yet `+ fee` below the 3-note sum (1.8e9) —
+/// the raw amount alone forces multi-note selection (fee-independent), so the
+/// convergence loop iterates (>1 pass) regardless of the exact shielded fee.
+const MULTI_NOTE_UNSHIELD: u64 = 650_000_000;
 const STEP_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]

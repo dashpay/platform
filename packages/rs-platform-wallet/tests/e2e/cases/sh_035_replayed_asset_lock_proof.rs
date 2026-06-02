@@ -23,8 +23,11 @@ use crate::framework::prelude::*;
 use crate::framework::shielded::{adversarial_enabled, bind_shielded, shielded_prover};
 use crate::framework::signer::SeedBackedCoreSigner;
 
-const TEST_WALLET_CORE_FUNDING: u64 = 100_000;
-const ASSET_LOCK_DUFFS: u64 = 50_000;
+// 1.2M duffs = 1.2e9 credits — above Drive's 100k-duff asset-lock floor and
+// the ~1e9 shielded fee, so the shield (and its REPLAY leg) reach the backend.
+// Core funding covers the lock plus its L1 tx fee.
+const TEST_WALLET_CORE_FUNDING: u64 = 1_400_000;
+const ASSET_LOCK_DUFFS: u64 = 1_200_000;
 const SHIELDED_ACCOUNT: u32 = 0;
 #[allow(dead_code)]
 const STEP_TIMEOUT: Duration = Duration::from_secs(60);

@@ -30,7 +30,11 @@ use crate::framework::wait::{
     wait_for_address_balance_chain_confirmed_n, CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
 };
 
-const FUNDING_CREDITS: u64 = 90_000_000;
+// The shield funds a single note of `UNSHIELD_AMOUNT + compute_minimum_shielded_fee(1)`
+// (~1e9); funding must cover that note PLUS the shield's own fee, so ~2.3e9.
+// UNSHIELD_AMOUNT stays modest — the boundary note size is derived from the
+// REAL fee at runtime, so this case is already fee-floor-correct by construction.
+const FUNDING_CREDITS: u64 = 2_300_000_000;
 const UNSHIELD_AMOUNT: u64 = 20_000_000;
 const STEP_TIMEOUT: Duration = Duration::from_secs(60);
 

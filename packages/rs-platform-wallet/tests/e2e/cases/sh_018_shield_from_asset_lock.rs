@@ -30,11 +30,14 @@ use crate::framework::shielded::{
 use crate::framework::signer::SeedBackedCoreSigner;
 
 /// Core (Layer-1) duffs to fund the test wallet with (gated behind
-/// `PLATFORM_WALLET_E2E_BANK_CORE_GATE`).
-const TEST_WALLET_CORE_FUNDING: u64 = 100_000;
+/// `PLATFORM_WALLET_E2E_BANK_CORE_GATE`). Must cover the asset lock plus
+/// its L1 tx fee.
+const TEST_WALLET_CORE_FUNDING: u64 = 1_400_000;
 /// Duffs locked into the asset lock (the shielded note value, modulo the
-/// duff→credit conversion the protocol applies).
-const ASSET_LOCK_DUFFS: u64 = 50_000;
+/// duff→credit conversion the protocol applies). 1.2M duffs = 1.2e9 credits
+/// — above Drive's 100k-duff asset-lock floor AND the ~1e9 shielded fee, so
+/// the shield-from-asset-lock reaches the backend instead of bouncing.
+const ASSET_LOCK_DUFFS: u64 = 1_200_000;
 const SHIELDED_ACCOUNT: u32 = 0;
 const STEP_TIMEOUT: Duration = Duration::from_secs(60);
 

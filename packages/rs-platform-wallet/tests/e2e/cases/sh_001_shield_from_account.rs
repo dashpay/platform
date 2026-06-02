@@ -28,7 +28,7 @@ use crate::framework::wait::{
 /// Credits the bank delivers to the funding address. Sized to cover the
 /// shielded amount plus the shield transition's `DeductFromInput(0)` fee
 /// headroom (the wallet reserves 1e9 credits on input 0).
-const FUNDING_CREDITS: u64 = 90_000_000;
+const FUNDING_CREDITS: u64 = 1_200_000_000;
 
 /// Credits shielded into the pool. The note value is exactly this — the
 /// fee comes off the transparent input via `DeductFromInput(0)`.

@@ -27,7 +27,7 @@ use crate::framework::wait::{
     wait_for_address_balance_chain_confirmed_n, CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
 };
 
-const FUNDING_CREDITS: u64 = 90_000_000;
+const FUNDING_CREDITS: u64 = 1_200_000_000;
 const SHIELD_AMOUNT: u64 = 50_000_000;
 const UNSHIELD_AMOUNT: u64 = 20_000_000;
 const STEP_TIMEOUT: Duration = Duration::from_secs(60);

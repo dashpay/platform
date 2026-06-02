@@ -21,8 +21,10 @@ use crate::framework::wait::{
     wait_for_address_balance_chain_confirmed_n, CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
 };
 
-const FUNDING_CREDITS: u64 = 90_000_000;
-const SHIELD_EACH: u64 = 30_000_000;
+// Each note must independently cover one UNSHIELD_EACH plus the shielded
+// fee (~1e9), since the two concurrent unshields take disjoint single notes.
+const FUNDING_CREDITS: u64 = 2_210_000_000;
+const SHIELD_EACH: u64 = 1_110_000_000;
 const UNSHIELD_EACH: u64 = 10_000_000;
 const STEP_TIMEOUT: Duration = Duration::from_secs(60);
 

@@ -23,9 +23,12 @@ use crate::framework::wait::{
     wait_for_address_balance_chain_confirmed_n, CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
 };
 
-const FUNDING_CREDITS: u64 = 60_000_000;
-const SHIELD_AMOUNT: u64 = 10_000_000;
-const OVERDRAW_AMOUNT: u64 = 50_000_000;
+// SHIELD_AMOUNT must cover the SATISFIABLE unshield plus the shielded fee
+// (~1e9, folded into the spend's requirement); the OVERDRAW stays well
+// above the shielded balance so it still trips ShieldedInsufficientBalance.
+const FUNDING_CREDITS: u64 = 2_220_000_000;
+const SHIELD_AMOUNT: u64 = 1_120_000_000;
+const OVERDRAW_AMOUNT: u64 = 2_000_000_000;
 const SATISFIABLE_AMOUNT: u64 = 3_000_000;
 const STEP_TIMEOUT: Duration = Duration::from_secs(60);
 
