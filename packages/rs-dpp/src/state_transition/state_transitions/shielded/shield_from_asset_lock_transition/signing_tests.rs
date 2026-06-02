@@ -13,7 +13,8 @@
 #![cfg(all(
     test,
     feature = "state-transition-signing",
-    feature = "core_key_wallet"
+    feature = "core_key_wallet",
+    feature = "shielded-client"
 ))]
 
 use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
