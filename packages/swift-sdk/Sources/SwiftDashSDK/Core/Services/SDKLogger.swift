@@ -29,7 +29,16 @@ public enum LoggingPreferences {
         let preset = loadPreset()
         let enableSwiftVerbose: Bool
 
+        // File logging is gated to the iOS Simulator
+        #if targetEnvironment(simulator)
+        if let sessionRoot = launchLogPaths(),
+           SDK.enableFileLogging(level: .info, sessionRoot: sessionRoot) {
+        } else {
+            SDK.enableLogging(level: .info)
+        }
+        #else
         SDK.enableLogging(level: .info)
+        #endif
 
         switch preset {
         case .high:
@@ -43,6 +52,26 @@ public enum LoggingPreferences {
         setenv("SPV_SWIFT_LOG", enableSwiftVerbose ? "1" : "0", 1)
 
         return preset
+    }
+
+    private static func launchLogPaths() -> String? {
+        guard
+            let libraryURL = FileManager.default
+                .urls(for: .libraryDirectory, in: .userDomainMask).first
+        else {
+            return nil
+        }
+
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyy-MM-dd'T'HH-mm-ss'Z'"
+
+        return libraryURL
+            .appendingPathComponent("Logs", isDirectory: true)
+            .appendingPathComponent("SwiftDashSDK", isDirectory: true)
+            .appendingPathComponent(formatter.string(from: Date()), isDirectory: true)
+            .path
     }
 
     public static var preset: LoggingPreset { loadPreset() }

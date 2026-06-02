@@ -81,6 +81,21 @@ public final class SDK: @unchecked Sendable {
     print("🔵 SDK: Logging enabled at level: \(level)")
   }
 
+  /// Route the global tracing subscriber to per-bucket files under
+  /// `sessionRoot`. Returns `false` if a subscriber was already
+  /// installed or the path couldn't be written.
+  @discardableResult
+  public static func enableFileLogging(
+    level: LogLevel = .debug,
+    sessionRoot: String
+  ) -> Bool {
+    let installed = sessionRoot.withCString { ptr in
+      platform_wallet_enable_file_logging(level.rawValue, ptr)
+    }
+
+    return installed
+  }
+
   /// Local Platform DAPI addresses; override via UserDefaults key "platformDAPIAddresses"
   private static var platformDAPIAddresses: String {
     if let override = UserDefaults.standard.string(forKey: "platformDAPIAddresses"), !override.isEmpty {
