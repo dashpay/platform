@@ -30,6 +30,7 @@ pub use dapi_grpc::platform::v0 as proto;
 pub use dash_context_provider::ContextProvider;
 #[cfg(feature = "mocks")]
 pub use dash_context_provider::MockContextProvider;
+pub use documents::document_history_query::DocumentHistoryQuery;
 pub use documents::document_query::DocumentQuery;
 pub use dpp::{
     self as dpp,

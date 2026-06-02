@@ -8,5 +8,5 @@ pub use dash_spv::sync::{
     BlockHeadersProgress, FilterHeadersProgress, FiltersProgress, MasternodesProgress,
     ProgressPercentage, SyncProgress, SyncState,
 };
-pub use dash_spv::ClientConfig;
+pub use dash_spv::{ClientConfig, DevnetConfig};
 pub use tokio_util::sync::CancellationToken;

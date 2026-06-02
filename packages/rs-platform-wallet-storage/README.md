@@ -30,16 +30,20 @@ for the secret-storage threat model and design.
 transient SQLite failure (`SQLITE_BUSY` / `SQLITE_LOCKED`) the
 buffered changeset is merged back into the per-wallet buffer (LWW
 with anything `store()`-d during the failed transaction) and the
-call returns a `PersistenceError::Backend(_)` whose payload contains
-the marker `flush failed transiently`. **Retry the call** — do not
-discard state. Fatal failures (integrity check, encode error, mutex
-poison, …) drop the buffer and surface verbatim.
+call returns a `PersistenceError::Backend { kind: Transient, source }`
+whose source carries the marker `flush failed transiently`.
+**Retry the call** — do not discard state. Fatal failures (integrity
+check, encode error, mutex poison, …) return `kind: Fatal` (or
+`kind: Constraint` for SQL constraint violations) and drop the buffer.
 
 The full classification lives on
-[`WalletStorageError::is_transient`](src/sqlite/error.rs); the
-boundary mapping into `PersistenceError::Backend(String)` flattens
-the `Display` chain so operators can grep for variant names + hex
-wallet ids in production logs.
+[`WalletStorageError::is_transient`](src/sqlite/error.rs) and the
+companion [`WalletStorageError::persistence_kind`](src/sqlite/error.rs)
+that selects the trait-side kind. The `source` field is a
+`Box<dyn Error + Send + Sync>` over the original `WalletStorageError`
+— operators can walk `Error::source()` for the full typed chain;
+the outer `Display` carries the variant marker + hex wallet id so
+production-log greps still work.
 
 ## load() reconstruction
 
@@ -94,16 +98,18 @@ synchronous, and an auto-backup dir at `<db_dir>/backups/auto/`.
 platform-wallet-storage --db <path> migrate [--no-auto-backup]
 platform-wallet-storage --db <path> backup --out <dir-or-file>
 platform-wallet-storage --db <path> restore --from <backup.db> --yes
-platform-wallet-storage --db <path> prune --in <dir> [--keep-last N] [--max-age 30d]
+platform-wallet-storage prune --in <dir> [--keep-last N] [--max-age 30d]
 platform-wallet-storage --db <path> inspect [--wallet-id <hex>] [--format text|tsv|json]
-platform-wallet-storage --db <path> delete-wallet --wallet-id <hex> --yes [--no-auto-backup]
 ```
 
-Destructive subcommands (`restore`, `delete-wallet`) REQUIRE `--yes`
-— invoking them without it exits 2 with a usage error. `--no-auto-backup`
-opts out of the pre-migration / pre-delete auto-backup respectively;
-the library API has no equivalent opt-out (it routes to
-[`SqlitePersister::delete_wallet_skip_backup`] internally).
+Destructive subcommands (`restore`) REQUIRE `--yes` — invoking them
+without it exits 2 with a usage error. `--no-auto-backup` opts out of
+the pre-restore (or pre-migration) auto-backup; it is the only
+supported way to disable auto-backup.
+
+Wallet removal is a library-only API
+([`SqlitePersister::delete_wallet`] / `delete_wallet_skip_backup`);
+no CLI subcommand exposes it.
 
 Logging: `-v` / `-vv` / `-vvv` enable `info` / `debug` / `trace`
 respectively on stderr; `-q` suppresses non-error output.
@@ -113,19 +119,16 @@ validation failure (e.g. corrupt backup source).
 
 ## Operational notes
 
-**Restore advisory-lock warning.** `restore` takes an exclusive `flock(2)`
-on the destination DB and holds it across the entire restore body, so a
-concurrent writer can't race the atomic swap. On filesystems where
-advisory locking is unsupported (some NFS / FUSE / network mounts), the
-crate emits a `tracing::warn!` on the
-`platform_wallet_storage` target —
-
-> `advisory lock unsupported on this filesystem; concurrent-writer race possible`
-
-— and proceeds anyway (there's no alternative on such filesystems).
-If you see this warning, ensure no other process opens the destination
-DB during the restore window, or move the DB to a filesystem with flock
-support before restoring.
+**Restore exclusion.** `restore` opens a short-lived writer connection
+on the destination DB and holds a SQLite-native `BEGIN EXCLUSIVE`
+transaction across the entire restore body. This interlocks with every
+other SQLite peer — sibling `SqlitePersister` handles, bare
+`rusqlite::Connection` instances, the CLI — so concurrent writes back
+off via SQLite's `busy_timeout` instead of racing the atomic swap. If a
+peer holds the destination busy for longer than the timeout, `restore`
+returns `WalletStorageError::RestoreDestinationLocked`. The lock conn is
+released BEFORE the rename so SQLite's file handle on the old inode goes
+away before the new DB takes its place.
 
 **Manual-mode drop diagnostic.** `SqlitePersister` configured with
 [`FlushMode::Manual`] emits a `tracing::error!` on drop if the buffer
@@ -154,9 +157,14 @@ See [`migrations/V001__initial.rs`](./migrations/V001__initial.rs) for
 the canonical schema. It is hand-written `CREATE TABLE … PRIMARY KEY …
 FOREIGN KEY …` SQL with native `ON DELETE CASCADE` constraints; INSERT,
 DELETE-cascade, and UPDATE re-parenting are all enforced by SQLite
-itself. Foreign-key enforcement is enabled and read-back-asserted on
-every connection open via the `open_conn` choke-point — if the linked
-SQLite cannot honor `PRAGMA foreign_keys`, open fails hard. The single
-remaining trigger clears `core_utxos.spent_in_txid` to NULL on
-transaction delete (a native composite `SET NULL` would null the
-NOT-NULL `wallet_id` column too).
+itself. Wallet-scoped tables FK directly to `wallet_metadata`;
+identity-owned tables (`identity_keys`, `token_balances`,
+`dashpay_profiles`, `dashpay_payments_overlay`) are keyed by
+`identity_id` only and cascade through `identities` (whose `wallet_id`
+is nullable to support identity-only flows). Foreign-key enforcement is
+enabled and read-back-asserted on every connection open via the
+`open_conn` choke-point — if the linked SQLite cannot honor
+`PRAGMA foreign_keys`, open fails hard. The single remaining trigger
+clears `core_utxos.spent_in_txid` to NULL on transaction delete (a
+native composite `SET NULL` would null the NOT-NULL `wallet_id` column
+too).

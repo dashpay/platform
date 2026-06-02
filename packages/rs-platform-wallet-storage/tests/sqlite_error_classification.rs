@@ -153,6 +153,9 @@ fn samples() -> Vec<WalletStorageError> {
         },
         WalletStorageError::InvalidWalletIdLength { actual: 10 },
         WalletStorageError::ConfigInvalid { reason: "bad knob" },
+        WalletStorageError::SchemaInvariantViolated {
+            detail: "unknown table",
+        },
         // BincodeEncode / BincodeDecode / HashDecode / ConsensusCodec
         // need real upstream errors — synthesise minimal ones via the
         // public constructors / `From` impls.
@@ -229,6 +232,9 @@ fn tc_p2_005_is_transient_table() {
             WalletStorageError::InvalidWalletIdHex { .. } => (false, "invalid_wallet_id_hex"),
             WalletStorageError::InvalidWalletIdLength { .. } => (false, "invalid_wallet_id_length"),
             WalletStorageError::ConfigInvalid { .. } => (false, "config_invalid"),
+            WalletStorageError::SchemaInvariantViolated { .. } => {
+                (false, "schema_invariant_violated")
+            }
             WalletStorageError::BincodeEncode { .. } => (false, "bincode_encode"),
             WalletStorageError::BincodeDecode { .. } => (false, "bincode_decode"),
             WalletStorageError::BlobDecode { .. } => (false, "blob_decode"),
@@ -265,9 +271,10 @@ fn tc_p2_005_is_transient_table() {
 }
 
 /// TC-P2-010: `FlushRetryable` flowing through the `From` impl into
-/// `PersistenceError::Backend(String)` carries the markers ops grep
-/// for: variant name, hex-encoded wallet id prefix, and the inner
-/// rusqlite source text.
+/// `PersistenceError::Backend { kind, source }` (CODE-004): the outer
+/// `Display` carries the variant markers ops grep for, and the typed
+/// source chain still reaches the inner rusqlite payload (consumers
+/// downcast or `Error::source`-walk to get there).
 #[test]
 fn tc_p2_010_boundary_error_mapping() {
     let err = WalletStorageError::FlushRetryable {
@@ -281,21 +288,36 @@ fn tc_p2_010_boundary_error_mapping() {
         ),
     };
     let pe: PersistenceError = err.into();
-    let s = match pe {
-        PersistenceError::Backend(s) => s,
-        other => panic!("expected Backend(_), got {other:?}"),
+    let source = match pe {
+        PersistenceError::Backend { source, .. } => source,
+        other => panic!("expected Backend {{ .. }}, got {other:?}"),
     };
+    let outer = source.to_string();
     assert!(
-        s.contains("FlushRetryable"),
-        "missing FlushRetryable variant marker: {s}"
+        outer.contains("FlushRetryable"),
+        "missing FlushRetryable variant marker: {outer}"
     );
     assert!(
-        s.contains("flush failed transiently"),
-        "missing FlushRetryable display body: {s}"
+        outer.contains("flush failed transiently"),
+        "missing FlushRetryable display body: {outer}"
     );
-    assert!(s.contains("abab"), "missing wallet_id hex prefix: {s}");
     assert!(
-        s.contains("database is locked"),
-        "missing inner source text: {s}"
+        outer.contains("abab"),
+        "missing wallet_id hex prefix: {outer}"
+    );
+
+    // Walk the typed source chain to the inner rusqlite payload —
+    // post-CODE-004 the source is `Box<dyn Error + Send + Sync>` so
+    // the chain is preserved structurally, not just stringified.
+    let mut chain = String::new();
+    let mut cur: Option<&(dyn std::error::Error + 'static)> = source.source();
+    while let Some(e) = cur {
+        chain.push_str(&e.to_string());
+        chain.push('\n');
+        cur = e.source();
+    }
+    assert!(
+        chain.contains("database is locked"),
+        "inner source text missing from chain walk: {chain}"
     );
 }

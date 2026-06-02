@@ -8,6 +8,12 @@ use dpp::version::PlatformVersion;
 
 impl Drive {
     /// Verifies a proof for shielded encrypted notes.
+    ///
+    /// Returns `(root_hash, notes, total_count)`. `total_count` is the
+    /// on-chain total number of notes in the shielded `CommitmentTree`,
+    /// extracted from the SAME proof (the parent CommitmentTree element is
+    /// always present in a note-fetch proof) — wallets get the sync
+    /// progress-bar denominator for free on every chunk fetch.
     #[allow(clippy::type_complexity)]
     pub fn verify_shielded_encrypted_notes(
         proof: &[u8],
@@ -16,7 +22,7 @@ impl Drive {
         max_elements: u32,
         verify_subset_of_proof: bool,
         platform_version: &PlatformVersion,
-    ) -> Result<(RootHash, Vec<(Vec<u8>, Vec<u8>, Vec<u8>)>), Error> {
+    ) -> Result<(RootHash, Vec<(Vec<u8>, Vec<u8>, Vec<u8>)>, u64), Error> {
         match platform_version
             .drive
             .methods

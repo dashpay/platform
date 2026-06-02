@@ -139,6 +139,25 @@ impl TrustedHttpContextProvider {
         base_url: String,
         cache_size: NonZeroUsize,
     ) -> Result<Self, TrustedContextProviderError> {
+        // The base URL is the SDK's root of trust for proof verification
+        // (quorum public keys) and network connectivity (discovered masternode
+        // addresses). For production networks (mainnet/testnet) there is no
+        // legitimate plaintext workflow — HTTPS is deployed — so refuse to
+        // hand a non-TLS quorum URL to the SDK. Devnet/Regtest keep the
+        // plaintext escape hatch (early-stage devnets without a cert yet,
+        // local sidecars on loopback).
+        if matches!(network, Network::Mainnet | Network::Testnet) {
+            let parsed = Url::parse(&base_url).map_err(|e| {
+                TrustedContextProviderError::NetworkError(format!("Invalid URL: {}", e))
+            })?;
+            if !parsed.scheme().eq_ignore_ascii_case("https") {
+                return Err(TrustedContextProviderError::NetworkError(format!(
+                    "Custom quorum URL for {:?} must use https://; got '{}'",
+                    network, base_url
+                )));
+            }
+        }
+
         // Verify the domain resolves before proceeding (skip on WASM and iOS)
         #[cfg(all(not(target_arch = "wasm32"), not(target_os = "ios")))]
         Self::verify_domain_resolves(&base_url)?;
@@ -785,7 +804,7 @@ mod tests {
 
         assert_eq!(
             get_quorum_base_url(Network::Devnet, Some("example")).unwrap(),
-            "https://quorums.devnet.example.networks.dash.org"
+            "https://quorums.example.networks.dash.org"
         );
     }
 
@@ -831,6 +850,115 @@ mod tests {
         assert!(get_quorum_base_url(Network::Devnet, Some("test")).is_ok());
         assert!(get_quorum_base_url(Network::Devnet, Some("test-123")).is_ok());
         assert!(get_quorum_base_url(Network::Devnet, Some("TEST123")).is_ok());
+    }
+
+    #[test]
+    fn test_new_with_url_rejects_plaintext_for_production_networks() {
+        // Mainnet and testnet have HTTPS deployed; reject plaintext URLs to
+        // prevent silently weakening the trust root via a typo or misconfig.
+        // Mixed-case scheme must also be rejected (case-insensitive match).
+        for url in ["http://example.com", "HTTP://example.com"] {
+            for network in [Network::Mainnet, Network::Testnet] {
+                let result = TrustedHttpContextProvider::new_with_url(
+                    network,
+                    url.to_string(),
+                    NonZeroUsize::new(10).unwrap(),
+                );
+                match result {
+                    Ok(_) => panic!("expected {} to be rejected for {:?}", url, network),
+                    Err(e) => {
+                        let msg = e.to_string();
+                        assert!(
+                            msg.contains("must use https://"),
+                            "expected HTTPS-gate error for {:?} + {}, got: {}",
+                            network,
+                            url,
+                            msg
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_new_with_url_does_not_reject_https_on_production_networks() {
+        // Positive path: an HTTPS URL must not trip the new HTTPS gate.
+        // The constructor may still fail downstream (DNS, on non-wasm/non-iOS
+        // builds), but if so the error must NOT be the HTTPS-gate variant.
+        // Mixed-case `HTTPS://` must also be accepted by the gate.
+        for url in [
+            "https://example.com",
+            "HTTPS://example.com",
+            "https://example.com:8443/sub/path",
+        ] {
+            for network in [Network::Mainnet, Network::Testnet] {
+                let result = TrustedHttpContextProvider::new_with_url(
+                    network,
+                    url.to_string(),
+                    NonZeroUsize::new(10).unwrap(),
+                );
+                if let Err(e) = result {
+                    let msg = e.to_string();
+                    assert!(
+                        !msg.contains("must use https://"),
+                        "HTTPS gate incorrectly rejected {} for {:?}: {}",
+                        url,
+                        network,
+                        msg
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_new_with_url_does_not_reject_plaintext_on_devnet_or_regtest() {
+        // Positive path: plaintext stays acceptable for devnet/regtest (early
+        // devnets without certs, loopback sidecars). The HTTPS gate must not
+        // contribute to any failure here.
+        for network in [Network::Devnet, Network::Regtest] {
+            let result = TrustedHttpContextProvider::new_with_url(
+                network,
+                "http://127.0.0.1:22444".to_string(),
+                NonZeroUsize::new(10).unwrap(),
+            );
+            if let Err(e) = result {
+                let msg = e.to_string();
+                assert!(
+                    !msg.contains("must use https://"),
+                    "HTTPS gate incorrectly rejected http:// for {:?}: {}",
+                    network,
+                    msg
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_reserved_devnet_names_rejected() {
+        // Names that would alias non-devnet quorum hostnames must be rejected.
+        for reserved in ["mainnet", "testnet", "devnet", "local", "regtest"] {
+            assert!(
+                matches!(
+                    get_quorum_base_url(Network::Devnet, Some(reserved)),
+                    Err(TrustedContextProviderError::InvalidDevnetName(_))
+                ),
+                "expected '{}' to be rejected as a reserved devnet name",
+                reserved
+            );
+        }
+        // Case-insensitive: uppercase variants must also be rejected.
+        for reserved in ["Mainnet", "TESTNET", "DevNet"] {
+            assert!(
+                matches!(
+                    get_quorum_base_url(Network::Devnet, Some(reserved)),
+                    Err(TrustedContextProviderError::InvalidDevnetName(_))
+                ),
+                "expected '{}' to be rejected as a reserved devnet name (case-insensitive)",
+                reserved
+            );
+        }
     }
 
     #[test]

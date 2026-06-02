@@ -27,6 +27,8 @@
 #![deny(rust_2018_idioms)]
 #![deny(unsafe_code)]
 
+#[cfg(feature = "kv")]
+pub mod kv;
 #[cfg(feature = "sqlite")]
 pub mod sqlite;
 
@@ -37,12 +39,12 @@ pub mod secrets;
 // have to spell out the `::sqlite::` middle segment for the common
 // names. Adding to or trimming from this list does NOT count as a
 // breaking change of the submodule API.
+#[cfg(feature = "kv")]
+pub use kv::{KvError, KvStore, ObjectId};
 #[cfg(feature = "sqlite")]
-#[allow(deprecated)]
 pub use sqlite::{
-    AutoBackupOperation, CommitReport, DeleteWalletReport, FlushMode, JournalMode, PruneReport,
-    RetentionPolicy, SqlitePersister, SqlitePersisterConfig, SqlitePersisterError, Synchronous,
-    WalletStorageError,
+    default_auto_backup_dir, AutoBackupOperation, FlushMode, JournalMode, PruneReport,
+    RetentionPolicy, SqlitePersister, SqlitePersisterConfig, Synchronous, WalletStorageError,
 };
 
 // Compile-time assertions — `Send + Sync`, `PlatformWalletPersistence`

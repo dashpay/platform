@@ -480,7 +480,15 @@ pub unsafe extern "C" fn platform_wallet_manager_destroy(
     handle: Handle,
 ) -> PlatformWalletFFIResult {
     if let Some(manager) = PLATFORM_WALLET_MANAGER_STORAGE.remove(handle) {
-        manager.platform_address_sync().stop();
+        // Run the full lifecycle shutdown to completion, not just the
+        // platform-address sync. Every background task (identity sync,
+        // shielded sync, the wallet-event adapter) can fire callbacks
+        // through the host-owned `context` pointer; once `destroy`
+        // returns the host may free that context, so no task may be
+        // left alive to fire a callback against freed memory.
+        // `shutdown()` is idempotent, so this is safe even if the host
+        // already stopped some sync managers before calling destroy.
+        runtime().block_on(manager.shutdown());
     }
     PlatformWalletFFIResult::ok()
 }

@@ -36,6 +36,8 @@ mod unshield;
 
 pub use self::shield::build_shield_transition;
 pub use shield_from_asset_lock::build_shield_from_asset_lock_transition;
+#[cfg(feature = "core_key_wallet")]
+pub use shield_from_asset_lock::build_shield_from_asset_lock_transition_with_signer;
 pub use shielded_transfer::build_shielded_transfer_transition;
 pub use shielded_withdrawal::build_shielded_withdrawal_transition;
 pub use unshield::build_unshield_transition;

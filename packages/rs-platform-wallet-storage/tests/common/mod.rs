@@ -55,6 +55,85 @@ pub fn ensure_wallet_meta(persister: &SqlitePersister, wallet_id: &WalletId) {
     .expect("ensure wallet_metadata");
 }
 
+/// Insert a stub `identities` row so identity-owned table writes
+/// (`token_balances`, `dashpay_profiles`, `identity_keys`) pass the
+/// FK to `identities(identity_id)`. `parent_wallet_id` is
+/// optional — when `Some`, the row is linked to that wallet so the
+/// cascade chain works; when `None`, the row is an orphan identity
+/// (NULL `wallet_id`), still satisfying the identity-owned FKs.
+pub fn ensure_identity(
+    persister: &SqlitePersister,
+    identity_id: &[u8; 32],
+    parent_wallet_id: Option<&WalletId>,
+) {
+    let conn = persister.lock_conn_for_test();
+    // Delegate to the production stub writer so `entry_blob` holds a
+    // real, decodable `IdentityEntry` (the wired `load()` decodes every
+    // identity row). The all-zero sentinel WalletId maps to a NULL
+    // `wallet_id` column, so `None` lands as an orphan identity.
+    let scope: WalletId = parent_wallet_id.copied().unwrap_or([0u8; 32]);
+    platform_wallet_storage::sqlite::schema::identities::ensure_exists(&conn, &scope, identity_id)
+        .expect("ensure identity");
+}
+
+/// Insert a stub `token_balances` row so `meta_token` writes pass the
+/// composite FK to `token_balances(identity_id, token_id)`. The parent
+/// `identities` row must already exist (seed via [`ensure_identity`]).
+pub fn ensure_token_balance(
+    persister: &SqlitePersister,
+    identity_id: &[u8; 32],
+    token_id: &[u8; 32],
+) {
+    use rusqlite::params;
+    let conn = persister.lock_conn_for_test();
+    conn.execute(
+        "INSERT OR IGNORE INTO token_balances \
+            (identity_id, token_id, balance, updated_at) \
+         VALUES (?1, ?2, 0, 0)",
+        params![&identity_id[..], &token_id[..]],
+    )
+    .expect("ensure token_balance");
+}
+
+/// Insert a stub `contacts_established` row so `meta_contact` writes
+/// pass the composite FK to
+/// `contacts_established(wallet_id, owner_id, contact_id)`. The parent
+/// `wallet_metadata` row must already exist (seed via
+/// [`ensure_wallet_meta`]).
+pub fn ensure_contact_established(
+    persister: &SqlitePersister,
+    wallet_id: &WalletId,
+    owner_id: &[u8; 32],
+    contact_id: &[u8; 32],
+) {
+    use rusqlite::params;
+    let conn = persister.lock_conn_for_test();
+    conn.execute(
+        "INSERT OR IGNORE INTO contacts_established \
+            (wallet_id, owner_id, contact_id, entry_blob) \
+         VALUES (?1, ?2, ?3, X'00')",
+        params![wallet_id.as_slice(), &owner_id[..], &contact_id[..]],
+    )
+    .expect("ensure contact_established");
+}
+
+/// Insert a stub `platform_addresses` row so `meta_platform_address`
+/// writes pass the composite FK to
+/// `platform_addresses(wallet_id, address)`. The parent
+/// `wallet_metadata` row must already exist (seed via
+/// [`ensure_wallet_meta`]). `address` is an opaque BLOB.
+pub fn ensure_platform_address(persister: &SqlitePersister, wallet_id: &WalletId, address: &[u8]) {
+    use rusqlite::params;
+    let conn = persister.lock_conn_for_test();
+    conn.execute(
+        "INSERT OR IGNORE INTO platform_addresses \
+            (wallet_id, account_index, address_index, address, balance, nonce) \
+         VALUES (?1, 0, 0, ?2, 0, 0)",
+        params![wallet_id.as_slice(), address],
+    )
+    .expect("ensure platform_address");
+}
+
 /// Echo a simple `store` + `flush` of an arbitrary changeset.
 pub fn store_and_flush(
     persister: &SqlitePersister,

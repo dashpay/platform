@@ -31,13 +31,15 @@ arm, so `WrongPassphrase` vs `Corruption` vs `Busy` stay distinct.
 ```rust
 use platform_wallet_storage::secrets::{SecretBytes, SecretStore, SecretString, WalletId};
 
-let store = SecretStore::file("/var/lib/wallet/vault", SecretString::new("pw"))?;
+let store = SecretStore::file("/var/lib/wallet/secrets.pwsvault", SecretString::new("pw"))?;
 let wallet = WalletId::from(wallet_id);
 store.set(&wallet, "mnemonic", &SecretBytes::from_slice(b"abandon ability ..."))?;
 let plaintext: Option<SecretBytes> = store.get(&wallet, "mnemonic")?; // never a bare Vec
 store.delete(&wallet, "mnemonic")?; // idempotent
 ```
 
+`SecretStore::file` takes the vault FILE path (operator picks the
+filename); the parent directory is materialized on the first write.
 Use `SecretStore::os()` for the platform OS keyring arm instead of
 `SecretStore::file(..)`.
 
@@ -82,26 +84,45 @@ unwrapped copy is allocated.
   (memory ≥ 19 MiB, t ≥ 2, defaults 64 MiB / t=3) + XChaCha20-Poly1305
   AEAD with a random 24-byte XNonce per entry. AAD binds ciphertext to
   `format_version ‖ wallet_id ‖ label` so a blob moved between slots
-  fails the tag. A header-stored passphrase-verification token is
-  unsealed before any entry is touched (mixed-key-corruption guard).
-  The vault is one `serde_json` document per `wallet_id`, written
-  atomically via `tempfile::NamedTempFile::persist` (cross-platform
-  replace-over-existing) at mode 0600 on Unix; rekey replaces atomically
-  with no `.bak` (SEC-REQ-2.2.x). Errors surface as the typed
-  `FileStoreError` through `SecretStore`.
+  (or across wallets) fails the tag. A header-stored passphrase-
+  verification token is unsealed before any entry is touched
+  (mixed-key-corruption guard). The vault is ONE `serde_json` document
+  covering every wallet in the store — a single passphrase, a single
+  KDF salt, a single cross-process advisory lock (`<path>.lock`
+  sidecar). Inside, entries are nested `BTreeMap<wallet_id_hex,
+  BTreeMap<label, body>>`. The file is written atomically via
+  `tempfile::NamedTempFile::persist` (cross-platform
+  replace-over-existing) at mode 0600 on Unix; rekey rotates the WHOLE
+  store under a fresh passphrase + salt atomically with no `.bak`
+  (SEC-REQ-2.2.x). One file, one passphrase, one lock — a multi-wallet
+  store cannot lock its other wallets out by construction. Errors
+  surface as the typed `FileStoreError` through `SecretStore`.
 - **OS keyring (`SecretStore::os` / `default_credential_store`)** —
   returns an `Arc<dyn CredentialStoreApi + Send + Sync>` over the
-  platform's default credential store (`linux-keyutils-keyring-store` →
-  `dbus-secret-service-keyring-store` on Linux/FreeBSD;
-  `apple-native-keyring-store` on macOS; `windows-native-keyring-store`
-  on Windows). Fail-closed with `keyring_core::Error::NoDefaultStore`
-  on headless / unknown OS (SEC-REQ-2.1.3 / AR-4) — never a silent
-  plaintext fallback. Through `SecretStore`, keyring failures project to
+  platform's default credential store. Probe order on Linux/FreeBSD is
+  `linux-keyutils-keyring-store` first, then
+  `dbus-secret-service-keyring-store`; on macOS
+  `apple-native-keyring-store`; on Windows
+  `windows-native-keyring-store`. Fail-closed with
+  `keyring_core::Error::NoDefaultStore` on headless / unknown OS
+  (SEC-REQ-2.1.3 / AR-4) — never a silent plaintext fallback. Through
+  `SecretStore`, keyring failures project to
   `FileStoreError::OsKeyring { kind }`, a non-secret discriminant.
+
+  **Persistence caveat (Linux/FreeBSD).** The keyutils backend wins
+  whenever the kernel keyring is reachable, which on a typical Linux
+  box means "almost always". The keyring it binds to (session
+  `@s`, user-session `@us`, user `@u`, persistent `@p`) is chosen by
+  the upstream `linux-keyutils-keyring-store` crate; the non-persistent
+  options do **not** survive logout/reboot even though
+  `CredentialPersistence` advertises `UntilDelete`. Callers that need
+  durable cross-reboot storage without re-prompting should pin
+  `SecretStore::file(...)` (encrypted-file vault) instead of relying on
+  the OS keyring on Linux.
 - **Tests** — integration tests construct a tempdir-backed
   `EncryptedFileStore` directly via
-  `EncryptedFileStore::open(tempfile::tempdir()?.path(), SecretString::new("..."))`,
-  or use the public `SecretStore::file(dir.path(), passphrase)` constructor.
+  `EncryptedFileStore::open(tempfile::tempdir()?.path().join("vault.pwsvault"), SecretString::new("..."))`,
+  or use the public `SecretStore::file(path, passphrase)` constructor.
   No special feature flag is required; both are available under the default
   `secrets` feature.
 
@@ -168,7 +189,7 @@ secret-free.
   without pulling in the `secrets` module (D4).
 - **NFR-4 / TC-082** (`tests/sqlite_persist_roundtrip.rs::tc082_no_box_dyn_error_in_src`):
   all public method signatures use concrete error types
-  (`SqlitePersisterError`, `PersistenceError`) — never
+  (`WalletStorageError`, `PersistenceError`) — never
   `Box<dyn Error>` — so a future leak is caught by `grep`.
 
 The CI advisory check runs `rustsec/audit-check` over `Cargo.lock`;
@@ -187,6 +208,15 @@ inherit the same "no secrets in the file" invariant. Operators may
 still want to encrypt backups at rest using a file-system level tool
 (GnuPG, age, encfs); this crate does not do that for them and never
 ships SQLCipher.
+
+## Future work — maintenance CLI
+
+A unified `platform-wallet-storage secrets <subcommand>` CLI is planned as a follow-up to give operators a way to inspect and manage the secret backends without writing custom code. Out of scope for this PR (#3672); tracked separately. Two commands matter:
+
+- **`secrets probe`** — set/get/delete a `__probe__` entry under `SERVICE_PREFIX`. Works uniformly on **all** backends (kernel keyutils, Secret Service, macOS Keychain, Windows Credential Manager) because it only uses single-entry CRUD. Confirms backend liveness + write-path responsiveness — the canary command for "is the keyring actually wired up on this machine?". Cheap to implement (~30 lines).
+- **`secrets list [--filter <prefix>]`** — enumerate `(wallet_id, label)` pairs in the store. Trivial on the file vault (iterate the in-memory `BTreeMap`). On the OS arm: works on Secret Service, macOS Keychain, and Windows Credential Manager via `CredentialStoreApi::search`; **fails closed** with a typed `ListNotSupported` on Linux **kernel keyutils**, which has no native enumeration (the `keyring-core 1.0.0` default `search` impl returns `NotSupportedByStore` and the `linux-keyutils-keyring-store` backend doesn't override it). Operators on headless Linux who need listing must select Secret Service explicitly.
+
+Other planned subcommands: `secrets put <svc> <label> <hex|@file>`, `secrets delete <svc> <label>`, `secrets rekey <new-passphrase>` (file-vault only). `secrets get` is deliberately omitted (printing a secret to stdout defeats `SecretBytes` zeroize); if added, must require an explicit `--unsafe-print-secret` flag.
 
 [`SecretBytes::new(...)`]: ./src/secrets/secret.rs
 [`FileStoreError`]: ./src/secrets/file/error.rs

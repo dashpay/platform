@@ -83,12 +83,15 @@ fn tc027_smoke_insert_every_table() {
     let cases: &[(&str, &str, &[&dyn rusqlite::ToSql])] = &[
         (
             "account_registrations",
-            "INSERT INTO account_registrations (wallet_id, account_type, account_index, account_xpub_bytes) VALUES (?1, 'Standard', 0, X'00')",
+            // Labels must match the writer-side canonical strings — see the
+            // CHECK constraint sourced from `ACCOUNT_TYPE_LABELS` in
+            // `sqlite::schema::accounts`.
+            "INSERT INTO account_registrations (wallet_id, account_type, account_index, account_xpub_bytes) VALUES (?1, 'standard', 0, X'00')",
             &[&wallet_id.as_slice()],
         ),
         (
             "account_address_pools",
-            "INSERT INTO account_address_pools (wallet_id, account_type, account_index, pool_type, snapshot_blob) VALUES (?1, 'Standard', 0, 'External', X'00')",
+            "INSERT INTO account_address_pools (wallet_id, account_type, account_index, pool_type, snapshot_blob) VALUES (?1, 'standard', 0, 'external', X'00')",
             &[&wallet_id.as_slice()],
         ),
         (
@@ -108,7 +111,7 @@ fn tc027_smoke_insert_every_table() {
         ),
         (
             "core_derived_addresses",
-            "INSERT INTO core_derived_addresses (wallet_id, account_type, account_index, address, derivation_path, used) VALUES (?1, 'Standard', 0, 'addr', '', 0)",
+            "INSERT INTO core_derived_addresses (wallet_id, account_type, account_index, address, derivation_path, used) VALUES (?1, 'standard', 0, 'addr', '', 0)",
             &[&wallet_id.as_slice()],
         ),
         (
@@ -118,8 +121,10 @@ fn tc027_smoke_insert_every_table() {
         ),
         (
             "identity_keys",
-            "INSERT INTO identity_keys (wallet_id, identity_id, key_id, public_key_blob, public_key_hash, derivation_blob) VALUES (?1, ?2, 0, X'00', X'00', NULL)",
-            &[&wallet_id.as_slice(), &identity_id.as_slice()],
+            // identity_keys is keyed by (identity_id, key_id); the FK
+            // targets identities(identity_id).
+            "INSERT INTO identity_keys (identity_id, key_id, public_key_blob, public_key_hash) VALUES (?1, 0, X'00', X'00')",
+            &[&identity_id.as_slice()],
         ),
         (
             "contacts_sent",
@@ -153,25 +158,37 @@ fn tc027_smoke_insert_every_table() {
         ),
         (
             "token_balances",
-            "INSERT INTO token_balances (wallet_id, identity_id, token_id, balance, updated_at) VALUES (?1, ?2, ?3, 0, 0)",
-            &[&wallet_id.as_slice(), &identity_id.as_slice(), &[5u8; 32].as_slice()],
+            // token_balances PK is (identity_id, token_id); the FK
+            // cascades through identities.
+            "INSERT INTO token_balances (identity_id, token_id, balance, updated_at) VALUES (?1, ?2, 0, 0)",
+            &[&identity_id.as_slice(), &[5u8; 32].as_slice()],
         ),
         (
             "dashpay_profiles",
-            "INSERT INTO dashpay_profiles (wallet_id, identity_id, profile_blob) VALUES (?1, ?2, X'00')",
-            &[&wallet_id.as_slice(), &identity_id.as_slice()],
+            // dashpay_profiles is keyed by identity_id only.
+            "INSERT INTO dashpay_profiles (identity_id, profile_blob) VALUES (?1, X'00')",
+            &[&identity_id.as_slice()],
         ),
         (
             "dashpay_payments_overlay",
-            "INSERT INTO dashpay_payments_overlay (wallet_id, identity_id, payment_id, overlay_blob) VALUES (?1, ?2, 'pay1', X'00')",
-            &[&wallet_id.as_slice(), &identity_id.as_slice()],
+            // dashpay_payments_overlay is keyed by (identity_id, payment_id).
+            "INSERT INTO dashpay_payments_overlay (identity_id, payment_id, overlay_blob) VALUES (?1, 'pay1', X'00')",
+            &[&identity_id.as_slice()],
         ),
     ];
+    use platform_wallet_storage::sqlite::schema::{count_rows_for_wallet_sql, PER_WALLET_TABLES};
+    let scope_for = |name: &str| {
+        PER_WALLET_TABLES
+            .iter()
+            .find(|(t, _)| *t == name)
+            .map(|(_, s)| *s)
+            .expect("table is in PER_WALLET_TABLES")
+    };
     for (table, sql, params) in cases {
         conn.execute(sql, *params).expect(table);
         let n: i64 = conn
             .query_row(
-                &format!("SELECT COUNT(*) FROM {table} WHERE wallet_id = ?1"),
+                &count_rows_for_wallet_sql(table, scope_for(table)).expect("table is allowlisted"),
                 rusqlite::params![wallet_id.as_slice()],
                 |row| row.get(0),
             )

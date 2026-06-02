@@ -298,6 +298,10 @@ fn tc023_one_flush_is_one_transaction() {
     let (persister, _tmp, _path) = fresh_persister_with_mode(FlushMode::Manual);
     let w = wid(0x90);
     ensure_wallet_meta(&persister, &w);
+    // token_balances FK targets identities(identity_id); seed the
+    // identity so the cross-area flush passes that constraint.
+    let owner = Identifier::from([0xA1u8; 32]);
+    common::ensure_identity(&persister, owner.as_bytes(), Some(&w));
     let mut cs = PlatformWalletChangeSet::default();
     cs.core = Some(core_with_height(7, 7));
     cs.wallet_metadata = Some(WalletMetadataEntry {
@@ -305,7 +309,6 @@ fn tc023_one_flush_is_one_transaction() {
         birth_height: 1,
     });
     let mut balances = BTreeMap::new();
-    let owner = Identifier::from([0xA1u8; 32]);
     let token = Identifier::from([0xA2u8; 32]);
     balances.insert((owner, token), 9u64);
     cs.token_balances = Some(TokenBalanceChangeSet {
@@ -429,8 +432,8 @@ fn tc_p2_002_transient_failure_restores_buffer() {
     persister.force_next_flush_to_fail(make_busy_error());
     let err = persister.flush(w).expect_err("first flush must fail");
     let msg = match err {
-        PersistenceError::Backend(s) => s,
-        other => panic!("expected Backend(_), got {other:?}"),
+        PersistenceError::Backend { source, .. } => source.to_string(),
+        other => panic!("expected Backend {{ .. }}, got {other:?}"),
     };
     assert!(
         msg.contains("flush failed transiently"),
@@ -508,8 +511,8 @@ fn tc_p2_006_immediate_surfaces_flush_retryable() {
         .store(w, changeset(core_with_height(3, 3)))
         .expect_err("immediate store must surface the error");
     let msg = match err {
-        PersistenceError::Backend(s) => s,
-        other => panic!("expected Backend(_), got {other:?}"),
+        PersistenceError::Backend { source, .. } => source.to_string(),
+        other => panic!("expected Backend {{ .. }}, got {other:?}"),
     };
     assert!(
         msg.contains("flush failed transiently"),

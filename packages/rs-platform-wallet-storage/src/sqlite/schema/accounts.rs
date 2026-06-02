@@ -105,6 +105,46 @@ pub fn load_state(
     Ok(out)
 }
 
+/// Single source of truth for the `account_type` TEXT-column domain
+/// across `account_registrations`, `account_address_pools`, and
+/// `core_derived_addresses`.
+///
+/// Mirrors every variant of [`key_wallet::account::AccountType`]
+/// (writer side: [`account_type_db_label`]). The migration in
+/// `migrations/V001__initial.rs` interpolates this array into the
+/// `CHECK (account_type IN (...))` clause on each of those tables, so
+/// an unknown label is rejected at insert time rather than landing as
+/// silent garbage. The `account_type_labels_match_enum` unit test
+/// below enforces set-equality between this array and the writer's
+/// output — drift (a renamed/added variant) becomes a failing test,
+/// not a runtime divergence between Rust and SQLite.
+pub(crate) const ACCOUNT_TYPE_LABELS: &[&str] = &[
+    "standard",
+    "coinjoin",
+    "identity_registration",
+    "identity_topup",
+    "identity_topup_unbound",
+    "identity_invitation",
+    "asset_lock_address_topup",
+    "asset_lock_shielded_topup",
+    "provider_voting",
+    "provider_owner",
+    "provider_operator",
+    "provider_platform",
+    "dashpay_receiving",
+    "dashpay_external",
+    "platform_payment",
+];
+
+/// Single source of truth for the `account_address_pools.pool_type`
+/// TEXT-column domain.
+///
+/// Mirrors every variant of
+/// [`key_wallet::managed_account::address_pool::AddressPoolType`]
+/// (writer side: [`pool_type_db_label`]). See [`ACCOUNT_TYPE_LABELS`]
+/// for the broader rationale and the parity-test contract.
+pub(crate) const POOL_TYPE_LABELS: &[&str] = &["external", "internal", "absent", "absent_hardened"];
+
 /// Stable database label for an `AccountType` variant.
 ///
 /// Used for the `account_type` text column on `account_registrations`,
@@ -173,5 +213,123 @@ pub(crate) fn account_index(at: &key_wallet::account::AccountType) -> u32 {
         AccountType::DashpayReceivingFunds { index, .. } => *index,
         AccountType::DashpayExternalAccount { index, .. } => *index,
         AccountType::PlatformPayment { account, .. } => *account,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    /// Exhaustive sample of every [`key_wallet::account::AccountType`]
+    /// variant. The match arm in the loop below uses no wildcard, so
+    /// an upstream-added variant becomes a compile error here and
+    /// forces the developer to extend the sample list (and the
+    /// matching arm in `account_type_db_label` / [`ACCOUNT_TYPE_LABELS`]).
+    fn all_account_type_variants() -> Vec<key_wallet::account::AccountType> {
+        use key_wallet::account::{AccountType, StandardAccountType};
+        let variants = vec![
+            AccountType::Standard {
+                index: 0,
+                standard_account_type: StandardAccountType::BIP44Account,
+            },
+            AccountType::CoinJoin { index: 0 },
+            AccountType::IdentityRegistration,
+            AccountType::IdentityTopUp {
+                registration_index: 0,
+            },
+            AccountType::IdentityTopUpNotBoundToIdentity,
+            AccountType::IdentityInvitation,
+            AccountType::AssetLockAddressTopUp,
+            AccountType::AssetLockShieldedAddressTopUp,
+            AccountType::ProviderVotingKeys,
+            AccountType::ProviderOwnerKeys,
+            AccountType::ProviderOperatorKeys,
+            AccountType::ProviderPlatformKeys,
+            AccountType::DashpayReceivingFunds {
+                index: 0,
+                user_identity_id: [0u8; 32],
+                friend_identity_id: [0u8; 32],
+            },
+            AccountType::DashpayExternalAccount {
+                index: 0,
+                user_identity_id: [0u8; 32],
+                friend_identity_id: [0u8; 32],
+            },
+            AccountType::PlatformPayment {
+                account: 0,
+                key_class: 0,
+            },
+        ];
+        // Compile-time exhaustiveness gate: an added upstream variant
+        // makes this match fail to compile and forces the sample list
+        // (and `account_type_db_label`) to be updated.
+        for v in &variants {
+            match v {
+                AccountType::Standard { .. }
+                | AccountType::CoinJoin { .. }
+                | AccountType::IdentityRegistration
+                | AccountType::IdentityTopUp { .. }
+                | AccountType::IdentityTopUpNotBoundToIdentity
+                | AccountType::IdentityInvitation
+                | AccountType::AssetLockAddressTopUp
+                | AccountType::AssetLockShieldedAddressTopUp
+                | AccountType::ProviderVotingKeys
+                | AccountType::ProviderOwnerKeys
+                | AccountType::ProviderOperatorKeys
+                | AccountType::ProviderPlatformKeys
+                | AccountType::DashpayReceivingFunds { .. }
+                | AccountType::DashpayExternalAccount { .. }
+                | AccountType::PlatformPayment { .. } => {}
+            }
+        }
+        variants
+    }
+
+    fn all_pool_type_variants() -> Vec<key_wallet::managed_account::address_pool::AddressPoolType> {
+        use key_wallet::managed_account::address_pool::AddressPoolType;
+        let variants = vec![
+            AddressPoolType::External,
+            AddressPoolType::Internal,
+            AddressPoolType::Absent,
+            AddressPoolType::AbsentHardened,
+        ];
+        for v in &variants {
+            match v {
+                AddressPoolType::External
+                | AddressPoolType::Internal
+                | AddressPoolType::Absent
+                | AddressPoolType::AbsentHardened => {}
+            }
+        }
+        variants
+    }
+
+    #[test]
+    fn account_type_labels_match_enum() {
+        let from_writer: HashSet<&'static str> = all_account_type_variants()
+            .iter()
+            .map(account_type_db_label)
+            .collect();
+        let from_const: HashSet<&'static str> = ACCOUNT_TYPE_LABELS.iter().copied().collect();
+        assert_eq!(
+            from_writer, from_const,
+            "ACCOUNT_TYPE_LABELS ({:?}) drifted from account_type_db_label codomain ({:?})",
+            from_const, from_writer
+        );
+    }
+
+    #[test]
+    fn pool_type_labels_match_enum() {
+        let from_writer: HashSet<&'static str> = all_pool_type_variants()
+            .iter()
+            .map(pool_type_db_label)
+            .collect();
+        let from_const: HashSet<&'static str> = POOL_TYPE_LABELS.iter().copied().collect();
+        assert_eq!(
+            from_writer, from_const,
+            "POOL_TYPE_LABELS ({:?}) drifted from pool_type_db_label codomain ({:?})",
+            from_const, from_writer
+        );
     }
 }

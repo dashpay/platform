@@ -108,7 +108,12 @@ impl SqlitePersisterConfig {
 }
 
 /// `<db_dir>/backups/auto/` (or `./backups/auto/` if the DB path has no parent).
-pub(crate) fn default_auto_backup_dir(db_path: &Path) -> PathBuf {
+///
+/// Public so the CLI binary (a separate compilation unit) can share the
+/// same resolution as the library's `SqlitePersisterConfig::new`. The
+/// preferred narrower visibility would be `pub(super)`, but `pub use`
+/// re-exports up to the crate root cannot expose a `pub(super)` item.
+pub fn default_auto_backup_dir(db_path: &Path) -> PathBuf {
     let parent = db_path
         .parent()
         .filter(|p| !p.as_os_str().is_empty())

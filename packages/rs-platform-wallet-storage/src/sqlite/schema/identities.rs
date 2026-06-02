@@ -14,33 +14,77 @@ pub fn apply(
     cs: &IdentityChangeSet,
 ) -> Result<(), WalletStorageError> {
     if !cs.identities.is_empty() {
+        // PK is `identity_id` alone; `wallet_id` is nullable and links
+        // the identity to its parent wallet for cascade. The all-zero
+        // wallet id is treated as "no parent wallet known" and stored
+        // as NULL so the FK to `wallet_metadata` doesn't activate.
+        //
+        // COALESCE order — `COALESCE(identities.wallet_id,
+        // excluded.wallet_id)` — preserves an already-parented row's
+        // wallet_id on re-upsert; the excluded value only fills when
+        // the on-disk row is still NULL. This is the orphan → parented
+        // promotion path; the reverse (mismatched re-parent) is caught
+        // by the per-entry cross-check below.
+        let scope_is_sentinel = wallet_id.iter().all(|b| *b == 0);
         let mut stmt = tx.prepare_cached(
-            "INSERT INTO identities (wallet_id, wallet_index, identity_id, entry_blob, tombstoned) \
+            "INSERT INTO identities (identity_id, wallet_id, wallet_index, entry_blob, tombstoned) \
              VALUES (?1, ?2, ?3, ?4, 0) \
-             ON CONFLICT(wallet_id, identity_id) DO UPDATE SET \
+             ON CONFLICT(identity_id) DO UPDATE SET \
+                wallet_id = COALESCE(identities.wallet_id, excluded.wallet_id), \
                 wallet_index = excluded.wallet_index, \
                 entry_blob = excluded.entry_blob, \
                 tombstoned = 0",
         )?;
+        let wallet_id_param = wallet_id_to_param(wallet_id);
         for (id, entry) in &cs.identities {
+            // Cross-check: the entry's own wallet_id (when set) must
+            // agree with the flush scope so the typed columns and the
+            // serialized blob describe the same parenting. Sentinel
+            // scope ("no parent wallet known") requires the entry's
+            // wallet_id to also be `None` — otherwise a real wallet's
+            // identity would be written under the orphan slot.
+            if let Some(entry_wallet_id) = entry.wallet_id {
+                if scope_is_sentinel {
+                    return Err(WalletStorageError::WalletIdMismatch {
+                        expected: [0u8; 32],
+                        found: entry_wallet_id,
+                    });
+                }
+                if entry_wallet_id != *wallet_id {
+                    return Err(WalletStorageError::WalletIdMismatch {
+                        expected: *wallet_id,
+                        found: entry_wallet_id,
+                    });
+                }
+            }
             let payload = blob::encode(entry)?;
             stmt.execute(params![
-                wallet_id.as_slice(),
-                entry.identity_index.map(i64::from),
                 id.as_slice(),
+                wallet_id_param,
+                entry.identity_index.map(i64::from),
                 payload,
             ])?;
         }
     }
     if !cs.removed.is_empty() {
-        let mut stmt = tx.prepare_cached(
-            "UPDATE identities SET tombstoned = 1 WHERE wallet_id = ?1 AND identity_id = ?2",
-        )?;
+        let mut stmt =
+            tx.prepare_cached("UPDATE identities SET tombstoned = 1 WHERE identity_id = ?1")?;
         for id in &cs.removed {
-            stmt.execute(params![wallet_id.as_slice(), id.as_slice()])?;
+            stmt.execute(params![id.as_slice()])?;
         }
     }
     Ok(())
+}
+
+/// Map the caller-supplied `WalletId` (32 bytes) to the nullable
+/// `identities.wallet_id` column: the all-zero id is treated as "no
+/// parent wallet" and stored as NULL so the FK doesn't activate.
+fn wallet_id_to_param(wallet_id: &WalletId) -> Option<&[u8]> {
+    if wallet_id.iter().all(|b| *b == 0) {
+        None
+    } else {
+        Some(wallet_id.as_slice())
+    }
 }
 
 /// Decode a single `identities` row back to its [`IdentityEntry`].
@@ -56,10 +100,16 @@ pub fn fetch(
     identity_id: &[u8; 32],
 ) -> Result<Option<IdentityEntry>, WalletStorageError> {
     use rusqlite::OptionalExtension;
+    // Scope the lookup to the caller's wallet so a peer wallet that
+    // happens to share the identity-id row can never leak through.
+    // The sentinel WalletId (all zeros) matches orphan rows (NULL
+    // wallet_id); a real WalletId matches only that wallet's rows.
+    // `IS` is NULL-safe equality so the NULL branch works uniformly.
+    let wallet_id_param = wallet_id_to_param(wallet_id);
     let row: Option<Vec<u8>> = conn
         .query_row(
-            "SELECT entry_blob FROM identities WHERE wallet_id = ?1 AND identity_id = ?2",
-            params![wallet_id.as_slice(), &identity_id[..]],
+            "SELECT entry_blob FROM identities WHERE identity_id = ?1 AND wallet_id IS ?2",
+            params![&identity_id[..], wallet_id_param],
             |row| row.get(0),
         )
         .optional()?;
@@ -84,6 +134,10 @@ pub fn load_state(
 ) -> Result<platform_wallet::changeset::IdentityManagerStartState, WalletStorageError> {
     use platform_wallet::changeset::IdentityManagerStartState;
 
+    // `identities.wallet_id` is nullable; this load path wants only the
+    // rows belonging to the wallet the caller asked for, so the WHERE
+    // clause matches by wallet_id (orphan identities — wallet_id NULL —
+    // are out of scope for this per-wallet loader).
     let mut stmt = conn.prepare(
         "SELECT identity_id, entry_blob, tombstoned FROM identities WHERE wallet_id = ?1",
     )?;
@@ -177,11 +231,12 @@ pub fn ensure_exists(
         dashpay_payments: Default::default(),
     };
     let payload = blob::encode(&stub)?;
+    let wallet_id_param = wallet_id_to_param(wallet_id);
     conn.execute(
         "INSERT OR IGNORE INTO identities \
-            (wallet_id, wallet_index, identity_id, entry_blob, tombstoned) \
-         VALUES (?1, NULL, ?2, ?3, 0)",
-        params![wallet_id.as_slice(), &identity_id[..], payload],
+            (identity_id, wallet_id, wallet_index, entry_blob, tombstoned) \
+         VALUES (?1, ?2, NULL, ?3, 0)",
+        params![&identity_id[..], wallet_id_param, payload],
     )?;
     Ok(())
 }

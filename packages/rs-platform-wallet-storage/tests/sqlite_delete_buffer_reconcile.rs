@@ -1,13 +1,16 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! CMT-001 — `delete_wallet` must reconcile the in-memory buffer.
+//! CMT-001 / CODE-006 — `delete_wallet` must reconcile the in-memory
+//! buffer AND fold buffered writes into the pre-delete backup.
 //!
-//! `delete_wallet_inner` drains-and-discards the target wallet's
-//! buffered changeset before the existence gate, and treats "buffered
-//! OR persisted" as existence. These regression tests pin the three
-//! historical failure modes: spurious `WalletNotFound` for a
-//! buffered-only wallet, a pre-delete backup that excludes buffered
-//! writes, and post-delete resurrection on the next flush.
+//! `delete_wallet_inner` drains the target wallet's buffered
+//! changeset, flushes it to disk, snapshots the backup, then runs
+//! the cascade. These regression tests pin the failure modes: a
+//! buffered-only wallet must delete cleanly without spurious
+//! `WalletNotFound`; the pre-delete backup must contain buffered-but-
+//! unflushed rows; a transient pre-flush failure must restore the
+//! buffer and abort the delete without producing a backup; the
+//! flush must not resurrect a deleted wallet.
 
 mod common;
 
@@ -78,10 +81,12 @@ fn buffered_only_delete_is_ok_and_no_resurrection() {
     );
 }
 
-/// The pre-delete backup excludes drained-and-discarded buffered
-/// writes — the backup must not contain the wallet.
+/// TC-CODE-006-1 — the pre-delete backup MUST include buffered
+/// writes flushed during `delete_wallet`'s pre-flush phase. Without
+/// the pre-flush, rollback-from-backup couldn't recover a wallet
+/// whose only state lived in the buffer.
 #[test]
-fn pre_delete_backup_excludes_buffered_writes() {
+fn pre_delete_backup_includes_buffered_writes() {
     let tmp = tempfile::tempdir().unwrap();
     let path = tmp.path().join("w.db");
     let backup_dir = tmp.path().join("backups");
@@ -100,7 +105,7 @@ fn pre_delete_backup_excludes_buffered_writes() {
         rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
     )
     .unwrap();
-    let in_backup: Option<i64> = backup
+    let in_backup_core: Option<i64> = backup
         .query_row(
             "SELECT COUNT(*) FROM core_sync_state WHERE wallet_id = ?1",
             rusqlite::params![w.as_slice()],
@@ -108,10 +113,88 @@ fn pre_delete_backup_excludes_buffered_writes() {
         )
         .optional()
         .unwrap();
+    let in_backup_meta: Option<i64> = backup
+        .query_row(
+            "SELECT COUNT(*) FROM wallet_metadata WHERE wallet_id = ?1",
+            rusqlite::params![w.as_slice()],
+            |row| row.get(0),
+        )
+        .optional()
+        .unwrap();
     assert_eq!(
-        in_backup,
-        Some(0),
-        "pre-delete backup must not contain buffered-but-unflushed rows"
+        in_backup_core,
+        Some(1),
+        "pre-delete backup must contain the flushed buffered core_sync_state row"
+    );
+    assert_eq!(
+        in_backup_meta,
+        Some(1),
+        "pre-delete backup must contain the flushed buffered wallet_metadata row"
+    );
+}
+
+/// TC-CODE-006-2 — when the pre-flush fails, the buffer is restored,
+/// no backup is produced, the wallet stays in the live DB, and
+/// `delete_wallet` surfaces the original error.
+#[test]
+fn pre_flush_failure_preserves_buffer_and_skips_backup() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("w.db");
+    let backup_dir = tmp.path().join("backups");
+    let cfg = SqlitePersisterConfig::new(&path)
+        .with_flush_mode(FlushMode::Manual)
+        .with_auto_backup_dir(Some(backup_dir.clone()));
+    let persister = SqlitePersister::open(cfg).unwrap();
+    let w = wid(0xC1);
+
+    // Seed wallet_metadata so the wallet exists in the live DB.
+    {
+        let conn = persister.lock_conn_for_test();
+        conn.execute(
+            "INSERT INTO wallet_metadata (wallet_id, network, birth_height) \
+             VALUES (?1, 'testnet', 0)",
+            rusqlite::params![w.as_slice()],
+        )
+        .unwrap();
+    }
+
+    // Buffer a changeset so `delete_wallet` enters the pre-flush
+    // branch, then prime the pre-flush injector to fail.
+    persister.store(w, full_changeset(11)).unwrap();
+    persister.force_next_pre_flush_to_fail(busy_error());
+
+    let err = persister
+        .delete_wallet(w)
+        .expect_err("pre-flush failure must propagate as Err");
+    assert!(
+        matches!(err, WalletStorageError::Sqlite(_)),
+        "expected Sqlite error from primed pre-flush failure, got {err:?}"
+    );
+
+    // Backup dir holds no PreDelete file (dir may not even exist if
+    // `run_auto_backup` never ran — both are acceptable).
+    let entries: Vec<_> = std::fs::read_dir(&backup_dir)
+        .map(|it| it.filter_map(Result::ok).collect())
+        .unwrap_or_default();
+    assert!(
+        entries.is_empty(),
+        "pre-flush failure must not leave a backup behind: {entries:?}"
+    );
+
+    // Wallet still in the live DB, buffer still holds the changeset.
+    let meta_rows: i64 = {
+        let conn = persister.lock_conn_for_test();
+        conn.query_row(
+            "SELECT COUNT(*) FROM wallet_metadata WHERE wallet_id = ?1",
+            rusqlite::params![w.as_slice()],
+            |row| row.get(0),
+        )
+        .unwrap()
+    };
+    assert_eq!(meta_rows, 1, "wallet must remain in the live DB");
+    assert!(
+        persister.buffer_has_changeset_for_test(&w),
+        "buffer must still hold the changeset after a failed pre-flush"
     );
 }
 

@@ -15,7 +15,10 @@ services:
         SCCACHE_BUCKET: ${SCCACHE_BUCKET}
         SCCACHE_REGION: ${SCCACHE_REGION}
         SCCACHE_S3_KEY_PREFIX: ${SCCACHE_S3_KEY_PREFIX}
-        SDK_TEST_DATA: ${SDK_TEST_DATA}
+        # Additional build args (SDK_TEST_DATA, CARGO_BUILD_PROFILE, …) are
+        # injected per-config by dashmate from
+        # `platform.drive.abci.docker.build.buildArgs`, rendered into
+        # `dynamic-compose.yml`, and merged with this file at compose time.
       secrets:
         - GITHUB_TOKEN
       cache_from:

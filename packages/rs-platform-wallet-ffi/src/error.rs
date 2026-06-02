@@ -291,6 +291,12 @@ impl From<&str> for PlatformWalletFFIResult {
     }
 }
 
+impl From<String> for PlatformWalletFFIResult {
+    fn from(e: String) -> Self {
+        Self::err(PlatformWalletFFIResultCode::ErrorInvalidParameter, e)
+    }
+}
+
 impl From<key_wallet::bip32::Error> for PlatformWalletFFIResult {
     fn from(e: key_wallet::bip32::Error) -> Self {
         Self::err(
@@ -422,6 +428,8 @@ mod tests {
             },
             PlatformWalletError::OnlyOutputAddressesFunded {
                 funded_outputs: Vec::<PlatformAddress>::new(),
+                sub_min_count: 0,
+                sub_min_aggregate: 0,
                 min_input_amount: 1_000,
             },
             PlatformWalletError::OnlyDustInputs {

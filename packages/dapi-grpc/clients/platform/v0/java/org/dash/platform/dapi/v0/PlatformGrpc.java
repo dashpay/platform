@@ -1782,6 +1782,37 @@ public final class PlatformGrpc {
     return getGetShieldedPoolStateMethod;
   }
 
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedNotesCountRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedNotesCountResponse> getGetShieldedNotesCountMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "getShieldedNotesCount",
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedNotesCountRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedNotesCountResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedNotesCountRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedNotesCountResponse> getGetShieldedNotesCountMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedNotesCountRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedNotesCountResponse> getGetShieldedNotesCountMethod;
+    if ((getGetShieldedNotesCountMethod = PlatformGrpc.getGetShieldedNotesCountMethod) == null) {
+      synchronized (PlatformGrpc.class) {
+        if ((getGetShieldedNotesCountMethod = PlatformGrpc.getGetShieldedNotesCountMethod) == null) {
+          PlatformGrpc.getGetShieldedNotesCountMethod = getGetShieldedNotesCountMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedNotesCountRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedNotesCountResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getShieldedNotesCount"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedNotesCountRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedNotesCountResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getShieldedNotesCount"))
+              .build();
+        }
+      }
+    }
+    return getGetShieldedNotesCountMethod;
+  }
+
   private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedNullifiersRequest,
       org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedNullifiersResponse> getGetShieldedNullifiersMethod;
 
@@ -2407,6 +2438,13 @@ public final class PlatformGrpc {
 
     /**
      */
+    public void getShieldedNotesCount(org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedNotesCountRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedNotesCountResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetShieldedNotesCountMethod(), responseObserver);
+    }
+
+    /**
+     */
     public void getShieldedNullifiers(org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedNullifiersRequest request,
         io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedNullifiersResponse> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetShieldedNullifiersMethod(), responseObserver);
@@ -2841,6 +2879,13 @@ public final class PlatformGrpc {
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedPoolStateRequest,
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedPoolStateResponse>(
                   this, METHODID_GET_SHIELDED_POOL_STATE)))
+          .addMethod(
+            getGetShieldedNotesCountMethod(),
+            io.grpc.stub.ServerCalls.asyncUnaryCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedNotesCountRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedNotesCountResponse>(
+                  this, METHODID_GET_SHIELDED_NOTES_COUNT)))
           .addMethod(
             getGetShieldedNullifiersMethod(),
             io.grpc.stub.ServerCalls.asyncUnaryCall(
@@ -3373,6 +3418,14 @@ public final class PlatformGrpc {
 
     /**
      */
+    public void getShieldedNotesCount(org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedNotesCountRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedNotesCountResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetShieldedNotesCountMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     */
     public void getShieldedNullifiers(org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedNullifiersRequest request,
         io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedNullifiersResponse> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
@@ -3844,6 +3897,13 @@ public final class PlatformGrpc {
     public org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedPoolStateResponse getShieldedPoolState(org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedPoolStateRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getGetShieldedPoolStateMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedNotesCountResponse getShieldedNotesCount(org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedNotesCountRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetShieldedNotesCountMethod(), getCallOptions(), request);
     }
 
     /**
@@ -4375,6 +4435,14 @@ public final class PlatformGrpc {
 
     /**
      */
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedNotesCountResponse> getShieldedNotesCount(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedNotesCountRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetShieldedNotesCountMethod(), getCallOptions()), request);
+    }
+
+    /**
+     */
     public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedNullifiersResponse> getShieldedNullifiers(
         org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedNullifiersRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
@@ -4471,11 +4539,12 @@ public final class PlatformGrpc {
   private static final int METHODID_GET_SHIELDED_ANCHORS = 54;
   private static final int METHODID_GET_MOST_RECENT_SHIELDED_ANCHOR = 55;
   private static final int METHODID_GET_SHIELDED_POOL_STATE = 56;
-  private static final int METHODID_GET_SHIELDED_NULLIFIERS = 57;
-  private static final int METHODID_GET_NULLIFIERS_TRUNK_STATE = 58;
-  private static final int METHODID_GET_NULLIFIERS_BRANCH_STATE = 59;
-  private static final int METHODID_GET_RECENT_NULLIFIER_CHANGES = 60;
-  private static final int METHODID_GET_RECENT_COMPACTED_NULLIFIER_CHANGES = 61;
+  private static final int METHODID_GET_SHIELDED_NOTES_COUNT = 57;
+  private static final int METHODID_GET_SHIELDED_NULLIFIERS = 58;
+  private static final int METHODID_GET_NULLIFIERS_TRUNK_STATE = 59;
+  private static final int METHODID_GET_NULLIFIERS_BRANCH_STATE = 60;
+  private static final int METHODID_GET_RECENT_NULLIFIER_CHANGES = 61;
+  private static final int METHODID_GET_RECENT_COMPACTED_NULLIFIER_CHANGES = 62;
 
   private static final class MethodHandlers<Req, Resp> implements
       io.grpc.stub.ServerCalls.UnaryMethod<Req, Resp>,
@@ -4722,6 +4791,10 @@ public final class PlatformGrpc {
           serviceImpl.getShieldedPoolState((org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedPoolStateRequest) request,
               (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedPoolStateResponse>) responseObserver);
           break;
+        case METHODID_GET_SHIELDED_NOTES_COUNT:
+          serviceImpl.getShieldedNotesCount((org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedNotesCountRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedNotesCountResponse>) responseObserver);
+          break;
         case METHODID_GET_SHIELDED_NULLIFIERS:
           serviceImpl.getShieldedNullifiers((org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedNullifiersRequest) request,
               (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetShieldedNullifiersResponse>) responseObserver);
@@ -4860,6 +4933,7 @@ public final class PlatformGrpc {
               .addMethod(getGetShieldedAnchorsMethod())
               .addMethod(getGetMostRecentShieldedAnchorMethod())
               .addMethod(getGetShieldedPoolStateMethod())
+              .addMethod(getGetShieldedNotesCountMethod())
               .addMethod(getGetShieldedNullifiersMethod())
               .addMethod(getGetNullifiersTrunkStateMethod())
               .addMethod(getGetNullifiersBranchStateMethod())

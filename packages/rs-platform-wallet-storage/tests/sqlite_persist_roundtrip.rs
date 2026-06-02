@@ -21,7 +21,7 @@ use platform_wallet::changeset::{
     CoreChangeSet, PlatformWalletChangeSet, PlatformWalletPersistence, WalletMetadataEntry,
 };
 use platform_wallet_storage::{
-    SqlitePersister, SqlitePersisterConfig, Synchronous, WalletStorageError,
+    JournalMode, SqlitePersister, SqlitePersisterConfig, Synchronous, WalletStorageError,
 };
 
 /// TC-005: sync heights round-trip with monotonic-max merge.
@@ -80,6 +80,65 @@ fn tc013_wallet_metadata_roundtrip() {
         .unwrap();
     assert_eq!(network, "testnet");
     assert_eq!(birth_height, 12345);
+}
+
+/// TC-CODE-029-1: journal_mode=Memory is rejected at open with a typed
+/// `ConfigInvalid` error and the DB is not created.
+#[test]
+fn tc_code_029_1_journal_mode_memory_rejected() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("w.db");
+    let mut cfg = SqlitePersisterConfig::new(&path);
+    cfg.journal_mode = JournalMode::Memory;
+    let err = SqlitePersister::open(cfg);
+    let matched = matches!(err.as_ref(), Err(WalletStorageError::ConfigInvalid { .. }));
+    assert!(
+        matched,
+        "expected ConfigInvalid for journal_mode=Memory, got error = {:?}",
+        err.as_ref().err()
+    );
+    assert!(
+        !path.exists(),
+        "DB should not be created when config is invalid"
+    );
+}
+
+/// TC-CODE-029-2: journal_mode=Off is rejected at open with a typed
+/// `ConfigInvalid` error and the DB is not created.
+#[test]
+fn tc_code_029_2_journal_mode_off_rejected() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("w.db");
+    let mut cfg = SqlitePersisterConfig::new(&path);
+    cfg.journal_mode = JournalMode::Off;
+    let err = SqlitePersister::open(cfg);
+    let matched = matches!(err.as_ref(), Err(WalletStorageError::ConfigInvalid { .. }));
+    assert!(
+        matched,
+        "expected ConfigInvalid for journal_mode=Off, got error = {:?}",
+        err.as_ref().err()
+    );
+    assert!(
+        !path.exists(),
+        "DB should not be created when config is invalid"
+    );
+}
+
+/// TC-CODE-029-3: busy_timeout=0 opens successfully but emits a
+/// tracing::warn so operators can spot the footgun in logs.
+#[test]
+#[tracing_test::traced_test]
+fn tc_code_029_3_busy_timeout_zero_warns() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("w.db");
+    let mut cfg = SqlitePersisterConfig::new(&path);
+    cfg.busy_timeout = std::time::Duration::ZERO;
+    let p = SqlitePersister::open(cfg).expect("open should succeed with busy_timeout=0");
+    drop(p);
+    assert!(
+        logs_contain("busy_timeout=0"),
+        "expected a busy_timeout=0 warning in captured logs"
+    );
 }
 
 /// TC-079: synchronous=Off is rejected at open with a typed error.
@@ -188,10 +247,12 @@ fn tc007_identity_key_entry_roundtrip() {
 
     let p2 = SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap();
     let conn = p2.lock_conn_for_test();
+    // identity_keys is keyed by (identity_id, key_id); the wallet_id
+    // column is not part of the schema.
     let blob_bytes: Vec<u8> = conn
         .query_row(
-            "SELECT public_key_blob FROM identity_keys WHERE wallet_id = ?1 AND identity_id = ?2 AND key_id = ?3",
-            rusqlite::params![w.as_slice(), identity_id.as_slice(), 7i64],
+            "SELECT public_key_blob FROM identity_keys WHERE identity_id = ?1 AND key_id = ?2",
+            rusqlite::params![identity_id.as_slice(), 7i64],
             |row| row.get(0),
         )
         .unwrap();
@@ -439,10 +500,11 @@ fn tc012_dashpay_overlay_roundtrip() {
 
     let p2 = SqlitePersister::open(SqlitePersisterConfig::new(&path)).unwrap();
     let conn = p2.lock_conn_for_test();
+    // dashpay_profiles is keyed by identity_id only.
     let profile_blob: Vec<u8> = conn
         .query_row(
-            "SELECT profile_blob FROM dashpay_profiles WHERE wallet_id = ?1 AND identity_id = ?2",
-            rusqlite::params![w.as_slice(), identity_id.as_slice()],
+            "SELECT profile_blob FROM dashpay_profiles WHERE identity_id = ?1",
+            rusqlite::params![identity_id.as_slice()],
             |row| row.get(0),
         )
         .unwrap();
@@ -452,8 +514,8 @@ fn tc012_dashpay_overlay_roundtrip() {
 
     let payment_blob: Vec<u8> = conn
         .query_row(
-            "SELECT overlay_blob FROM dashpay_payments_overlay WHERE wallet_id = ?1 AND identity_id = ?2 AND payment_id = ?3",
-            rusqlite::params![w.as_slice(), identity_id.as_slice(), "tx-aaaa"],
+            "SELECT overlay_blob FROM dashpay_payments_overlay WHERE identity_id = ?1 AND payment_id = ?2",
+            rusqlite::params![identity_id.as_slice(), "tx-aaaa"],
             |row| row.get(0),
         )
         .unwrap();

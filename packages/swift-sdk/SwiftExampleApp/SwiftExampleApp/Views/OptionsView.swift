@@ -4,6 +4,7 @@ import SwiftDashSDK
 struct OptionsView: View {
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var walletManager: PlatformWalletManager
+    @EnvironmentObject var walletManagerStore: WalletManagerStore
     @EnvironmentObject var platformBalanceSyncService: PlatformBalanceSyncService
     @EnvironmentObject var shieldedService: ShieldedService
     @State private var showingDataManagement = false
@@ -22,6 +23,16 @@ struct OptionsView: View {
     @State private var faucetPassword: String =
         UserDefaults.standard.string(forKey: "faucetRPCPassword") ?? ""
     @State private var faucetValidation: FaucetValidationStatus = .idle
+
+    /// Snapshot of `devnetQuorumURL` / `devnetName` at the moment the
+    /// devnet section appeared. Captured so the `.onDisappear` rebuild
+    /// only fires when the user actually edited a value — without this
+    /// every Options-tab dismissal would tear down and rebuild the SDK,
+    /// even on read-only visits. Set to `nil` outside the devnet branch
+    /// so a mainnet/testnet visit can't accidentally trigger a rebuild
+    /// on dismissal.
+    @State private var devnetQuorumURLSnapshot: String? = nil
+    @State private var devnetNameSnapshot: String? = nil
 
     /// Driven by the 0.5s-debounced `.task(id: faucetPassword)`.
     /// Runs a single cheap `getblockcount` JSON-RPC against the
@@ -74,6 +85,21 @@ struct OptionsView: View {
     @AppStorage("useLocalhostCore") private var customSpvPeersEnabled: Bool = false
     @AppStorage("localCorePeers") private var customSpvPeers: String = ""
 
+    // Devnet endpoint override — Quorum URL only. DAPI nodes are
+    // auto-discovered from `{quorumURL}/masternodes` at SDK build
+    // time (see `SDK.discoverDAPIAddresses`); no manual DAPI input.
+    // Read by `SDK.init` on every network switch / launch; editing
+    // here redirects the next SDK construction.
+    @AppStorage("platformQuorumURL") private var devnetQuorumURL: String = ""
+
+    // Devnet identity (`-devnet=<name>` in Dash Core). Required by
+    // `DevnetConfig` so the SPV client embeds `devnet.devnet-<name>`
+    // in its user agent — Dash Core devnet peers drop inbound
+    // handshakes that don't carry the name. Read by SPV start in
+    // CoreContentView (`startSync`); editing here applies on the
+    // next SPV start.
+    @AppStorage("platformDevnetName") private var devnetName: String = ""
+
     /// Default localhost peer string for a given network. Used to
     /// pre-populate the peers text field when the user enables the
     /// custom-SPV toggle. The FFI drops bare-IP entries (no port),
@@ -108,6 +134,12 @@ struct OptionsView: View {
                                     if newNetwork != .regtest && appState.useDockerSetup {
                                         appState.useDockerSetup = false
                                     }
+
+                                    // Devnet's SPV peers come from
+                                    // `{platformQuorumURL}/masternodes`
+                                    // — no UserDefaults state to seed
+                                    // here. See `CoreContentView.spvPeerOverride`
+                                    // for the devnet branch.
 
                                     // Update platform state (which will trigger SDK switch)
                                     appState.currentNetwork = newNetwork
@@ -195,6 +227,99 @@ struct OptionsView: View {
                                         .font(.caption)
                                         .foregroundColor(faucetValidation.color)
                                     Spacer()
+                                }
+                            }
+                        }
+                    } else if appState.currentNetwork == .devnet {
+                        // Devnet UX: a single user input — the quorum
+                        // list service URL. SPV peers and DAPI nodes
+                        // are both derived from `{quorumURL}/masternodes`
+                        // at SDK build / SPV start time. Each
+                        // masternode entry carries the ip + Core P2P
+                        // port (SPV) and platformHTTPPort (DAPI), so
+                        // we never have to guess. Self-healing on
+                        // node churn — the list re-fetches on every
+                        // network switch / launch.
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Quorum URL")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            TextField(
+                                "http://<host>:8080  (quorum-list-server)",
+                                text: $devnetQuorumURL
+                            )
+                            .font(.system(.body, design: .monospaced))
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .keyboardType(.URL)
+
+                            Text("Required, alongside Devnet Name. SPV Peers + DAPI nodes are auto-discovered from {Quorum URL}/masternodes. The SDK rebuilds automatically when you leave Options.")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+
+                            Text("Devnet Name")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .padding(.top, 8)
+                            TextField(
+                                "e.g. paloma  (matches dashd -devnet=<name>)",
+                                text: $devnetName
+                            )
+                            .font(.system(.body, design: .monospaced))
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+
+                            Text("Required to start SPV on devnet. The name is embedded in the SPV user agent (`devnet.devnet-<name>`) so Dash Core devnet peers accept the handshake. Applies on the next SPV start.")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(.top, 4)
+                        .onAppear {
+                            devnetQuorumURLSnapshot = devnetQuorumURL
+                            devnetNameSnapshot = devnetName
+                        }
+                        .onDisappear {
+                            // Rebuild the SDK once on close if either
+                            // devnet field actually changed. Avoids
+                            // per-keystroke churn (TextField onChange
+                            // would fire every character) while still
+                            // saving the user from having to manually
+                            // bounce to testnet and back to pick up
+                            // edits.
+                            let quorumChanged = devnetQuorumURLSnapshot != devnetQuorumURL
+                            let nameChanged = devnetNameSnapshot != devnetName
+                            devnetQuorumURLSnapshot = nil
+                            devnetNameSnapshot = nil
+                            guard quorumChanged || nameChanged else { return }
+                            guard appState.currentNetwork == .devnet else { return }
+                            try? walletManager.stopSpv()
+                            Task {
+                                await appState.switchNetwork(to: .devnet)
+                                // `switchNetwork` rebuilds `appState.sdk` but
+                                // doesn't refresh per-network managers (the
+                                // app-level `.onChange(of: currentNetwork)`
+                                // observer doesn't fire when the value stays
+                                // `.devnet`). Re-`activate` here so the
+                                // store's stale-handle check fires and the
+                                // cached `PlatformWalletManager` rebuilds
+                                // against the new SDK clone — otherwise
+                                // wallet-manager-routed work keeps talking
+                                // to the old DAPI / quorum endpoints.
+                                await MainActor.run {
+                                    if let sdk = appState.sdk {
+                                        try? walletManagerStore.activate(
+                                            network: .devnet, sdk: sdk
+                                        )
+                                    }
+                                    // Drive `rebindWalletScopedServices`
+                                    // via the App scene's observer.
+                                    // Neither `currentNetwork` nor the
+                                    // wallet ID set changes here, so
+                                    // PlatformBalanceSyncService and
+                                    // ShieldedService would otherwise
+                                    // keep referencing the now-stale
+                                    // manager.
+                                    appState.walletScopedServicesRebindTick &+= 1
                                 }
                             }
                         }

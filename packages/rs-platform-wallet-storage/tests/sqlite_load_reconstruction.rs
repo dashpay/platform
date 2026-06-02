@@ -101,11 +101,10 @@ fn tc043_non_wired_up_persisted_but_not_returned() {
     let recipient = Identifier::from([0x22; 32]);
     let token = Identifier::from([0x33; 32]);
     ensure_wallet_meta(&persister, &w);
-    // Identity row required for the contacts/dashpay FK triggers if
-    // any are wired into contacts_*; the contacts_* tables themselves
-    // only check the wallet_metadata parent today, so we don't need
-    // an identity row for this test — but we'd add one here if the
-    // trigger set grew.
+    // token_balances FK targets identities(identity_id), so the owner
+    // identity must exist before any token-balance row is written.
+    // contacts_* is wallet-scoped, so it doesn't need an identity row.
+    common::ensure_identity(&persister, owner.as_bytes(), Some(&w));
     let mut sent_requests = std::collections::BTreeMap::new();
     sent_requests.insert(
         SentContactRequestKey {
@@ -167,8 +166,8 @@ fn tc043_non_wired_up_persisted_but_not_returned() {
     assert_eq!(sent, 1, "contacts_sent row missing after reopen");
     let tokens: i64 = conn
         .query_row(
-            "SELECT COUNT(*) FROM token_balances WHERE wallet_id = ?1 AND identity_id = ?2 AND token_id = ?3",
-            rusqlite::params![w.as_slice(), owner.as_slice(), token.as_slice()],
+            "SELECT COUNT(*) FROM token_balances WHERE identity_id = ?1 AND token_id = ?2",
+            rusqlite::params![owner.as_slice(), token.as_slice()],
             |row| row.get(0),
         )
         .unwrap();
@@ -620,8 +619,8 @@ fn tc_p4_008b_contacts_corruption_is_hard_error() {
 }
 
 /// TC-P4-008c: `asset_locks::load_state` is fail-hard. A garbage
-/// `lifecycle_blob` yields a typed `BincodeDecode`; a non-36-byte
-/// `outpoint` column yields a typed `BlobDecode`. An intact wallet
+/// `lifecycle_blob` yields a typed `BincodeDecode`; a malformed
+/// `outpoint` column yields a typed decode error. An intact wallet
 /// still decodes cleanly.
 #[test]
 fn tc_p4_008c_asset_locks_corruption_is_hard_error() {
@@ -641,7 +640,7 @@ fn tc_p4_008c_asset_locks_corruption_is_hard_error() {
     ensure_wallet_meta(&persister, &good);
     {
         let conn = persister.lock_conn_for_test();
-        // bad_blob: valid 36-byte outpoint, undecodable lifecycle_blob.
+        // bad_blob: decodable outpoint key, undecodable lifecycle_blob.
         conn.execute(
             "INSERT INTO asset_locks \
                 (wallet_id, outpoint, status, account_index, identity_index, amount_duffs, lifecycle_blob) \
@@ -649,8 +648,8 @@ fn tc_p4_008c_asset_locks_corruption_is_hard_error() {
             rusqlite::params![bad_blob.as_slice(), &[0x01u8; 36][..]],
         )
         .unwrap();
-        // bad_op: outpoint column is only 4 bytes — fails the 36-byte
-        // length check before any blob decode is attempted.
+        // bad_op: outpoint column is 4 bytes — too short to bincode-decode
+        // a full OutPoint, so it fails as a typed decode error.
         conn.execute(
             "INSERT INTO asset_locks \
                 (wallet_id, outpoint, status, account_index, identity_index, amount_duffs, lifecycle_blob) \
@@ -705,9 +704,12 @@ fn tc_p4_008c_asset_locks_corruption_is_hard_error() {
         matches!(blob_result, Err(WalletStorageError::BincodeDecode { .. })),
         "garbage asset_locks lifecycle_blob must be a typed BincodeDecode; got {blob_result:?}"
     );
+    // A 4-byte outpoint is too short for the 32-byte txid prefix, so
+    // bincode fails deterministically with BincodeDecode (UnexpectedEnd)
+    // before the trailing-bytes check.
     assert!(
-        matches!(op_result, Err(WalletStorageError::BlobDecode { .. })),
-        "non-36-byte asset_locks outpoint must be a typed BlobDecode; got {op_result:?}"
+        matches!(op_result, Err(WalletStorageError::BincodeDecode { .. })),
+        "malformed asset_locks outpoint must be a typed BincodeDecode; got {op_result:?}"
     );
     assert_eq!(good_state[&0].len(), 1);
 }

@@ -58,13 +58,76 @@ public struct ShieldedSyncEvent: Sendable {
 }
 
 extension PlatformWalletManager {
-    func handleShieldedSyncCompleted(_ event: ShieldedSyncEvent) {
-        // Drop a trailing event that the Rust drain already dispatched
-        // but the main actor only delivers after stop/clear returned
-        // (see `suppressShieldedCompletionEvents`). Any sync-start clears
-        // the flag, so legitimate events are never suppressed.
-        guard !suppressShieldedCompletionEvents else { return }
+    func handleShieldedSyncCompleted(_ event: ShieldedSyncEvent, generation: UInt64) {
+        // Drop a trailing event that the Rust drain already dispatched but
+        // the main actor only delivers after stop/clear returned. The FFI
+        // callback snapshots `shieldedSyncGeneration` at enqueue time; a
+        // stop/clear bumps the counter, so a stale event's snapshot no
+        // longer matches and is dropped — even if a restart happened in the
+        // same actor turn (the restart does not reset the counter).
+        guard generation == shieldedSyncGeneration.current() else { return }
         lastShieldedSyncEvent = event
+        // A completed pass means the per-chunk progress counter for
+        // this pass is no longer meaningful — clear so the next pass
+        // starts from nil. Also matches the false→true edge UI gating
+        // in ShieldedService's currentSyncElapsed timer.
+        resetCurrentShieldedProgress()
+    }
+
+    /// Clear the four per-pass live-progress mirrors so the next pass
+    /// starts from nil. Routed through by every path that ends a pass:
+    /// the normal completion (`handleShieldedSyncCompleted`) plus the
+    /// `stopShieldedSync()` / `clearShielded()` paths that suppress the
+    /// trailing completion event — without this, a pass stopped/cleared
+    /// mid-flight would leave the last published `currentShielded*`
+    /// values visible (stale UI) between passes. Main-actor-isolated
+    /// like every other member of this `@MainActor` class.
+    private func resetCurrentShieldedProgress() {
+        currentShieldedSyncScanned = nil
+        currentShieldedSyncBlockHeight = nil
+        currentShieldedTreeCommitted = nil
+        currentShieldedTreeTotal = nil
+    }
+
+    /// Per-chunk progress callback. Fires once per ~2048 notes
+    /// processed during a cold sync; bridged here from the C
+    /// trampoline `shieldedSyncProgressCallback`. Cheap publish; UI
+    /// gets it through ShieldedService.
+    ///
+    /// Generation-guarded like `handleShieldedSyncCompleted`: a stale
+    /// progress hop delivered after a stop/clear bumped the generation
+    /// must be dropped so it can't re-publish phantom progress over the
+    /// `resetCurrentShieldedProgress()` mirrors the stop/clear just reset.
+    func handleShieldedSyncProgress(
+        cumulativeScanned: UInt64,
+        blockHeight: UInt64,
+        generation: UInt64
+    ) {
+        guard generation == shieldedSyncGeneration.current() else { return }
+        currentShieldedSyncScanned = cumulativeScanned
+        currentShieldedSyncBlockHeight = blockHeight
+    }
+
+    /// Per-batch tree-progress callback — the "checked /
+    /// committed-to-tree" signal. Fires once per committed batch as
+    /// commitments are appended to the local Orchard tree; bridged
+    /// here from the C trampoline `shieldedTreeProgressCallback`.
+    /// `total == 0` means the on-chain total is indeterminate. Cheap
+    /// publish; UI gets it through ShieldedService.
+    ///
+    /// Generation-guarded like `handleShieldedSyncCompleted`: a stale
+    /// tree-progress hop delivered after a stop/clear bumped the
+    /// generation must be dropped so it can't re-publish phantom progress
+    /// over the `resetCurrentShieldedProgress()` mirrors the stop/clear
+    /// just reset.
+    func handleShieldedTreeProgress(
+        committed: UInt64,
+        total: UInt64,
+        generation: UInt64
+    ) {
+        guard generation == shieldedSyncGeneration.current() else { return }
+        currentShieldedTreeCommitted = committed
+        currentShieldedTreeTotal = total
     }
 
     /// Derive Orchard keys for `walletId` from the host-side mnemonic
@@ -181,8 +244,10 @@ extension PlatformWalletManager {
         if let intervalSeconds {
             try setShieldedSyncInterval(seconds: intervalSeconds)
         }
-        // A new sync run should publish its completion events again.
-        suppressShieldedCompletionEvents = false
+        // No generation reset needed: events emitted by this new run
+        // snapshot the current generation, so they pass the guard. A
+        // trailing event from a prior, stopped run still carries the older
+        // generation and is dropped.
         try platform_wallet_manager_shielded_sync_start(handle).check()
     }
 
@@ -193,9 +258,14 @@ extension PlatformWalletManager {
             )
         }
         try platform_wallet_manager_shielded_sync_stop(handle).check()
-        // The Rust drain returned; suppress any trailing completion
-        // event the main actor delivers after this point.
-        suppressShieldedCompletionEvents = true
+        // The Rust drain returned; bump the generation so any trailing
+        // completion event the main actor delivers after this point is
+        // dropped (its snapshot predates this bump).
+        shieldedSyncGeneration.bump()
+        // The dropped completion would normally clear the per-pass
+        // progress mirrors; do it here so a pass stopped mid-flight
+        // doesn't leave stale `currentShielded*` values on the UI.
+        resetCurrentShieldedProgress()
     }
 
     /// Reset the Rust-side shielded state on this manager:
@@ -219,10 +289,15 @@ extension PlatformWalletManager {
             )
         }
         try platform_wallet_manager_shielded_clear(handle).check()
-        // The Rust drain returned; suppress any trailing completion
-        // event the main actor delivers after Clear (it would otherwise
-        // briefly repopulate the mirror the host is about to wipe).
-        suppressShieldedCompletionEvents = true
+        // The Rust drain returned; bump the generation so any trailing
+        // completion event the main actor delivers after Clear is dropped
+        // (it would otherwise briefly repopulate the mirror the host is
+        // about to wipe).
+        shieldedSyncGeneration.bump()
+        // The dropped completion would normally clear the per-pass
+        // progress mirrors; do it here so a pass cleared mid-flight
+        // doesn't leave stale `currentShielded*` values on the UI.
+        resetCurrentShieldedProgress()
     }
 
     public func isShieldedSyncRunning() throws -> Bool {
@@ -273,9 +348,9 @@ extension PlatformWalletManager {
                 "PlatformWalletManager not configured"
             )
         }
-        // A user-initiated sync should publish its completion event even
-        // if a prior stop/clear had suppressed events.
-        suppressShieldedCompletionEvents = false
+        // No generation reset needed: this run's completion event snapshots
+        // the current generation and passes the guard, while a trailing
+        // event from a prior stopped run still carries the older generation.
         let handle = self.handle
         try await Task.detached(priority: .userInitiated) {
             try platform_wallet_manager_shielded_sync_sync_now(handle).check()
@@ -586,7 +661,70 @@ func shieldedSyncCompletedCallback(
         walletResults: results
     )
 
+    // Snapshot the generation now, on the FFI callback thread, BEFORE the
+    // event is enqueued onto the main actor. A subsequent stop/clear bumps
+    // the counter, so this trailing event is dropped when it finally runs.
+    let generation = handler.manager?.shieldedSyncGeneration.current() ?? 0
+
     Task { @MainActor [weak manager = handler.manager] in
-        manager?.handleShieldedSyncCompleted(event)
+        manager?.handleShieldedSyncCompleted(event, generation: generation)
+    }
+}
+
+/// C trampoline matching `EventHandlerCallbacks.on_shielded_sync_progress_fn`.
+/// Fires once per ~2048 notes processed during a cold sync. Cheap —
+/// just hops to the main actor and publishes the snapshot.
+func shieldedSyncProgressCallback(
+    context: UnsafeMutableRawPointer?,
+    cumulativeScanned: UInt64,
+    blockHeight: UInt64
+) {
+    guard let context else { return }
+
+    let handler = Unmanaged<PlatformWalletEventHandler>
+        .fromOpaque(context)
+        .takeUnretainedValue()
+
+    // Snapshot the generation now, on the FFI callback thread, BEFORE the
+    // event is enqueued onto the main actor. A subsequent stop/clear bumps
+    // the counter, so this trailing event is dropped when it finally runs.
+    let generation = handler.manager?.shieldedSyncGeneration.current() ?? 0
+
+    Task { @MainActor [weak manager = handler.manager] in
+        manager?.handleShieldedSyncProgress(
+            cumulativeScanned: cumulativeScanned,
+            blockHeight: blockHeight,
+            generation: generation
+        )
+    }
+}
+
+/// C trampoline matching `EventHandlerCallbacks.on_shielded_tree_progress_fn`.
+/// The "checked / committed-to-tree" signal — fires once per committed
+/// batch as commitments are appended to the local Orchard tree.
+/// `totalTarget == 0` means the on-chain total is indeterminate. Cheap —
+/// just hops to the main actor and publishes the snapshot.
+func shieldedTreeProgressCallback(
+    context: UnsafeMutableRawPointer?,
+    leavesCommitted: UInt64,
+    totalTarget: UInt64
+) {
+    guard let context else { return }
+
+    let handler = Unmanaged<PlatformWalletEventHandler>
+        .fromOpaque(context)
+        .takeUnretainedValue()
+
+    // Snapshot the generation now, on the FFI callback thread, BEFORE the
+    // event is enqueued onto the main actor. A subsequent stop/clear bumps
+    // the counter, so this trailing event is dropped when it finally runs.
+    let generation = handler.manager?.shieldedSyncGeneration.current() ?? 0
+
+    Task { @MainActor [weak manager = handler.manager] in
+        manager?.handleShieldedTreeProgress(
+            committed: leavesCommitted,
+            total: totalTarget,
+            generation: generation
+        )
     }
 }

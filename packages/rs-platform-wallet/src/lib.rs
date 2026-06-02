@@ -49,6 +49,7 @@ pub use manager::PlatformWalletManager;
 pub use spv::SpvRuntime;
 pub use wallet::asset_lock::manager::AssetLockManager;
 pub use wallet::asset_lock::tracked::{AssetLockStatus, TrackedAssetLock};
+pub use wallet::asset_lock::AssetLockFunding;
 pub use wallet::core::CoreWallet;
 pub use wallet::core::WalletBalance;
 // DashPay types + crypto helpers re-exported through the identity
@@ -60,9 +61,9 @@ pub use wallet::identity::network::{
 pub use wallet::identity::{
     calculate_account_reference, derive_auto_accept_private_key, derive_contact_payment_address,
     derive_contact_payment_addresses, derive_contact_xpub, BlockTime, ContactRequest,
-    ContactXpubData, DashPayProfile, DpnsNameInfo, EstablishedContact, IdentityFunding,
-    IdentityLocation, IdentityManager, IdentityStatus, KeyStorage, ManagedIdentity, PrivateKeyData,
-    ProfileUpdate, RegistrationIndex, DEFAULT_CONTACT_GAP_LIMIT,
+    ContactXpubData, DashPayProfile, DpnsNameInfo, EstablishedContact, IdentityLocation,
+    IdentityManager, IdentityStatus, KeyStorage, ManagedIdentity, PrivateKeyData, ProfileUpdate,
+    RegistrationIndex, DEFAULT_CONTACT_GAP_LIMIT,
 };
 pub use wallet::platform_wallet::PlatformWalletInfo;
 pub use wallet::PlatformAddressTag;

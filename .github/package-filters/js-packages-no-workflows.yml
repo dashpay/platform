@@ -36,7 +36,7 @@
   - packages/rs-dpp/**
   # NOTE: do not add `!packages/rs-dpp/**/tests.rs` style negation
   # patterns here. The dispatcher in `tests.yml` runs these filters
-  # via `dorny/paths-filter@v3` with the default
+  # via `dorny/paths-filter@v4` with the default
   # `predicate-quantifier: some`, under which each pattern (including
   # `!`-prefixed ones) is OR'd independently. A `!` pattern then
   # "matches" every file that doesn't match the negated path — i.e.
@@ -103,7 +103,7 @@ dashmate:
   - packages/rs-dash-platform-macros/**
   - packages/dapi-grpc/**
   # NOTE: do not add `!path` negation patterns here — see the long
-  # explanation on `@dashevo/wasm-dpp` above. Same `dorny/paths-filter@v3`
+  # explanation on `@dashevo/wasm-dpp` above. Same `dorny/paths-filter@v4`
   # + `predicate-quantifier: some` interaction trips this filter on
   # unrelated changes and cascades into every consumer (`*wasm-sdk`).
 

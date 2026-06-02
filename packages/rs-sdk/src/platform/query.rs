@@ -4,6 +4,7 @@
 use super::types::epoch::EpochQuery;
 use super::types::evonode::EvoNode;
 use crate::error::Error;
+use crate::platform::documents::document_history_query::DocumentHistoryQuery;
 use crate::platform::documents::document_query::DocumentQuery;
 use dapi_grpc::mock::Mockable;
 use dapi_grpc::platform::v0::get_contested_resource_identity_votes_request::GetContestedResourceIdentityVotesRequestV0;
@@ -30,10 +31,11 @@ use dapi_grpc::platform::v0::{
 use dapi_grpc::platform::v0::{
     get_most_recent_shielded_anchor_request, get_nullifiers_trunk_state_request,
     get_shielded_anchors_request, get_shielded_encrypted_notes_request,
-    get_shielded_nullifiers_request, get_shielded_pool_state_request, get_status_request,
-    GetContestedResourceIdentityVotesRequest, GetMostRecentShieldedAnchorRequest,
-    GetNullifiersTrunkStateRequest, GetPrefundedSpecializedBalanceRequest,
-    GetShieldedAnchorsRequest, GetShieldedEncryptedNotesRequest, GetShieldedNullifiersRequest,
+    get_shielded_notes_count_request, get_shielded_nullifiers_request,
+    get_shielded_pool_state_request, get_status_request, GetContestedResourceIdentityVotesRequest,
+    GetMostRecentShieldedAnchorRequest, GetNullifiersTrunkStateRequest,
+    GetPrefundedSpecializedBalanceRequest, GetShieldedAnchorsRequest,
+    GetShieldedEncryptedNotesRequest, GetShieldedNotesCountRequest, GetShieldedNullifiersRequest,
     GetShieldedPoolStateRequest, GetStatusRequest, GetTokenDirectPurchasePricesRequest,
     GetTokenPerpetualDistributionLastClaimRequest, GetVotePollsByEndDateRequest, SpecificKeys,
 };
@@ -178,6 +180,32 @@ impl Query<proto::GetDataContractHistoryRequest> for LimitQuery<(Identifier, u64
                     limit: self.limit,
                     offset: None,
                     start_at_ms,
+                    prove,
+                },
+            )),
+        })
+    }
+}
+
+impl Query<proto::GetDocumentHistoryRequest> for DocumentHistoryQuery {
+    fn query(
+        &self,
+        settings: &crate::platform::QuerySettings<'_>,
+    ) -> Result<proto::GetDocumentHistoryRequest, Error> {
+        let prove = settings.prove;
+        if !prove {
+            unimplemented!("queries without proofs are not supported yet");
+        }
+
+        Ok(proto::GetDocumentHistoryRequest {
+            version: Some(proto::get_document_history_request::Version::V0(
+                proto::get_document_history_request::GetDocumentHistoryRequestV0 {
+                    data_contract_id: self.data_contract_id.to_vec(),
+                    document_type_name: self.document_type_name.clone(),
+                    document_id: self.document_id.to_vec(),
+                    limit: self.limit,
+                    offset: self.offset,
+                    start_at_ms: self.start_at_ms,
                     prove,
                 },
             )),
@@ -1174,6 +1202,32 @@ impl Query<GetShieldedPoolStateRequest> for NoParamQuery {
         Ok(GetShieldedPoolStateRequest {
             version: Some(get_shielded_pool_state_request::Version::V0(
                 get_shielded_pool_state_request::GetShieldedPoolStateRequestV0 { prove },
+            )),
+        })
+    }
+}
+
+impl Query<GetShieldedNotesCountRequest> for NoParamQuery {
+    fn query(
+        &self,
+        settings: &crate::platform::QuerySettings<'_>,
+    ) -> Result<GetShieldedNotesCountRequest, Error> {
+        let prove = settings.prove;
+        // GetShieldedNotesCount is proved-only: the count is bound by the
+        // Merk value hash, so it is always returned inside a verifiable
+        // proof. Return a recoverable error (not a process-aborting
+        // `unimplemented!`) if a caller explicitly disables proofs on this
+        // public request type.
+        if !prove {
+            return Err(Error::Generic(
+                "GetShieldedNotesCount requires proofs; unproved queries are not supported"
+                    .to_string(),
+            ));
+        }
+
+        Ok(GetShieldedNotesCountRequest {
+            version: Some(get_shielded_notes_count_request::Version::V0(
+                get_shielded_notes_count_request::GetShieldedNotesCountRequestV0 { prove },
             )),
         })
     }
