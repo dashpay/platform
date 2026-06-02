@@ -1,6 +1,12 @@
 pub mod fields;
 pub mod methods;
 mod proved;
+#[cfg(all(
+    test,
+    feature = "state-transition-signing",
+    feature = "core_key_wallet"
+))]
+mod signing_tests;
 mod state_transition_estimated_fee_validation;
 mod state_transition_like;
 mod state_transition_validation;

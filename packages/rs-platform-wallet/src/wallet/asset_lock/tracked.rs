@@ -5,20 +5,42 @@
 //!
 //! Private keys are NOT stored here — they are re-derived from
 //! `funding_type` + `identity_index` via the key-wallet's `Wallet`.
-/// TODO: Shall we move to state module
+
 use dashcore::{OutPoint, Transaction};
 use dpp::prelude::AssetLockProof;
 use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
 
 use crate::changeset::AssetLockEntry;
 
-/// Asset lock status on Core chain. Tracked until consumed, then removed.
+/// Asset lock status on Core chain.
+///
+/// The wallet tracks asset locks from build through consumption. The
+/// terminal [`Consumed`](Self::Consumed) state is kept (rather than
+/// removed from storage) so historical UI lookups — e.g. the
+/// "Transactions" list mapping a funding tx to its locked amount —
+/// still resolve after the identity registration / top-up succeeded.
+/// The catch-up scanner and any "ready to fund" UI filter on
+/// `< InstantSendLocked` so post-Consumed entries don't generate
+/// noise.
+///
+/// NOT `#[non_exhaustive]` by design: every cross-crate match site
+/// (FFI, accessors) uses exhaustive arms intentionally so the
+/// compiler catches a new variant addition the way `Consumed` was
+/// caught — at every status_to_u8 / status_from_u8 / serializer call.
+/// Marking the enum `#[non_exhaustive]` would force wildcard arms
+/// and silently lose that signal.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub enum AssetLockStatus {
     Built,
     Broadcast,
     InstantSendLocked,
     ChainLocked,
+    /// Successfully consumed by an identity registration / top-up.
+    /// Terminal state. The entry persists for historical lookup
+    /// (amount, identity index, funding tx) but is excluded from any
+    /// "still actionable" predicate.
+    Consumed,
 }
 
 /// A tracked asset lock. Private keys are NOT stored here — they're

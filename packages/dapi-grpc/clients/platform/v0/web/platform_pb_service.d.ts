@@ -130,6 +130,15 @@ type PlatformgetDataContracts = {
   readonly responseType: typeof platform_pb.GetDataContractsResponse;
 };
 
+type PlatformgetDocumentHistory = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetDocumentHistoryRequest;
+  readonly responseType: typeof platform_pb.GetDocumentHistoryResponse;
+};
+
 type PlatformgetDocuments = {
   readonly methodName: string;
   readonly service: typeof Platform;
@@ -517,6 +526,15 @@ type PlatformgetShieldedPoolState = {
   readonly responseType: typeof platform_pb.GetShieldedPoolStateResponse;
 };
 
+type PlatformgetShieldedNotesCount = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetShieldedNotesCountRequest;
+  readonly responseType: typeof platform_pb.GetShieldedNotesCountResponse;
+};
+
 type PlatformgetShieldedNullifiers = {
   readonly methodName: string;
   readonly service: typeof Platform;
@@ -578,6 +596,7 @@ export class Platform {
   static readonly getDataContract: PlatformgetDataContract;
   static readonly getDataContractHistory: PlatformgetDataContractHistory;
   static readonly getDataContracts: PlatformgetDataContracts;
+  static readonly getDocumentHistory: PlatformgetDocumentHistory;
   static readonly getDocuments: PlatformgetDocuments;
   static readonly getIdentityByPublicKeyHash: PlatformgetIdentityByPublicKeyHash;
   static readonly getIdentityByNonUniquePublicKeyHash: PlatformgetIdentityByNonUniquePublicKeyHash;
@@ -621,6 +640,7 @@ export class Platform {
   static readonly getShieldedAnchors: PlatformgetShieldedAnchors;
   static readonly getMostRecentShieldedAnchor: PlatformgetMostRecentShieldedAnchor;
   static readonly getShieldedPoolState: PlatformgetShieldedPoolState;
+  static readonly getShieldedNotesCount: PlatformgetShieldedNotesCount;
   static readonly getShieldedNullifiers: PlatformgetShieldedNullifiers;
   static readonly getNullifiersTrunkState: PlatformgetNullifiersTrunkState;
   static readonly getNullifiersBranchState: PlatformgetNullifiersBranchState;
@@ -786,6 +806,15 @@ export class PlatformClient {
     requestMessage: platform_pb.GetDataContractsRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetDataContractsResponse|null) => void
   ): UnaryResponse;
+  getDocumentHistory(
+    requestMessage: platform_pb.GetDocumentHistoryRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetDocumentHistoryResponse|null) => void
+  ): UnaryResponse;
+  getDocumentHistory(
+    requestMessage: platform_pb.GetDocumentHistoryRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetDocumentHistoryResponse|null) => void
+  ): UnaryResponse;
   getDocuments(
     requestMessage: platform_pb.GetDocumentsRequest,
     metadata: grpc.Metadata,
@@ -1172,6 +1201,15 @@ export class PlatformClient {
   getShieldedPoolState(
     requestMessage: platform_pb.GetShieldedPoolStateRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetShieldedPoolStateResponse|null) => void
+  ): UnaryResponse;
+  getShieldedNotesCount(
+    requestMessage: platform_pb.GetShieldedNotesCountRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetShieldedNotesCountResponse|null) => void
+  ): UnaryResponse;
+  getShieldedNotesCount(
+    requestMessage: platform_pb.GetShieldedNotesCountRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.GetShieldedNotesCountResponse|null) => void
   ): UnaryResponse;
   getShieldedNullifiers(
     requestMessage: platform_pb.GetShieldedNullifiersRequest,

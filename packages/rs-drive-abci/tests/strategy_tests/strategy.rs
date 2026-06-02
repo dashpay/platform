@@ -2217,7 +2217,7 @@ impl NetworkStrategy {
                 .expect("failed to sign transaction for instant lock");
         }
 
-        IdentityTopUpTransition::try_from_identity(
+        IdentityTopUpTransition::try_from_identity_with_private_key(
             identity,
             asset_lock_proof,
             secret_key.as_ref(),
@@ -2609,7 +2609,7 @@ impl NetworkStrategy {
 
         tracing::debug!(?outputs, "Preparing funding transition");
         let funding_transition =
-            AddressFundingFromAssetLockTransitionV0::try_from_asset_lock_with_signer(
+            AddressFundingFromAssetLockTransitionV0::try_from_asset_lock_with_signer_and_private_key(
                 asset_lock_proof,
                 asset_lock_private_key.as_slice(),
                 BTreeMap::new(),

@@ -33,6 +33,10 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
         let ClientStartState {
             mut platform_addresses,
             wallets,
+            // Shielded restore happens lazily on `bind_shielded`,
+            // not here — drop the snapshot at this entry point.
+            #[cfg(feature = "shielded")]
+                shielded: _,
         } = self.persister.load().map_err(|e| {
             PlatformWalletError::WalletCreation(format!(
                 "Failed to load persisted client state: {}",

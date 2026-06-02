@@ -19,6 +19,8 @@ describe('DocumentsFacade', () => {
   // Stub references for type-safe assertions
   let getDocumentsStub: SinonStub;
   let getDocumentsWithProofInfoStub: SinonStub;
+  let getDocumentHistoryStub: SinonStub;
+  let getDocumentHistoryWithProofInfoStub: SinonStub;
   let getDocumentStub: SinonStub;
   let getDocumentWithProofInfoStub: SinonStub;
   let documentCreateStub: SinonStub;
@@ -27,6 +29,12 @@ describe('DocumentsFacade', () => {
   let documentTransferStub: SinonStub;
   let documentPurchaseStub: SinonStub;
   let documentSetPriceStub: SinonStub;
+  let getDocumentsCountStub: SinonStub;
+  let getDocumentsCountWithProofInfoStub: SinonStub;
+  let getDocumentsSumStub: SinonStub;
+  let getDocumentsSumWithProofInfoStub: SinonStub;
+  let getDocumentsAverageStub: SinonStub;
+  let getDocumentsAverageWithProofInfoStub: SinonStub;
 
   beforeEach(async function setup() {
     await init();
@@ -46,6 +54,15 @@ describe('DocumentsFacade', () => {
       proof: {},
       metadata: {},
     });
+    getDocumentHistoryStub = this.sinon.stub(wasmSdk, 'getDocumentHistory').resolves(new Map());
+    getDocumentHistoryWithProofInfoStub = this.sinon.stub(
+      wasmSdk,
+      'getDocumentHistoryWithProofInfo',
+    ).resolves({
+      data: new Map(),
+      proof: {},
+      metadata: {},
+    });
     getDocumentStub = this.sinon.stub(wasmSdk, 'getDocument').resolves(document);
     getDocumentWithProofInfoStub = this.sinon.stub(wasmSdk, 'getDocumentWithProofInfo').resolves({
       data: document,
@@ -60,6 +77,26 @@ describe('DocumentsFacade', () => {
     documentTransferStub = this.sinon.stub(wasmSdk, 'documentTransfer').resolves();
     documentPurchaseStub = this.sinon.stub(wasmSdk, 'documentPurchase').resolves();
     documentSetPriceStub = this.sinon.stub(wasmSdk, 'documentSetPrice').resolves();
+
+    // Stub aggregate query methods
+    getDocumentsCountStub = this.sinon.stub(wasmSdk, 'getDocumentsCount').resolves(new Map());
+    getDocumentsCountWithProofInfoStub = this.sinon.stub(wasmSdk, 'getDocumentsCountWithProofInfo').resolves({
+      data: new Map(),
+      proof: {},
+      metadata: {},
+    });
+    getDocumentsSumStub = this.sinon.stub(wasmSdk, 'getDocumentsSum').resolves(new Map());
+    getDocumentsSumWithProofInfoStub = this.sinon.stub(wasmSdk, 'getDocumentsSumWithProofInfo').resolves({
+      data: new Map(),
+      proof: {},
+      metadata: {},
+    });
+    getDocumentsAverageStub = this.sinon.stub(wasmSdk, 'getDocumentsAverage').resolves(new Map());
+    getDocumentsAverageWithProofInfoStub = this.sinon.stub(wasmSdk, 'getDocumentsAverageWithProofInfo').resolves({
+      data: new Map(),
+      proof: {},
+      metadata: {},
+    });
   });
 
   describe('query()', () => {
@@ -88,6 +125,37 @@ describe('DocumentsFacade', () => {
       await client.documents.queryWithProof(query);
 
       expect(getDocumentsWithProofInfoStub).to.be.calledOnceWithExactly(query);
+    });
+  });
+
+  describe('history()', () => {
+    it('should fetch document history', async () => {
+      const query = {
+        dataContractId: 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec',
+        documentTypeName: 'note',
+        documentId: '4mZmxva49PBb7BE7srw9o3gixvDfj1dAx1K6z4A7P9Ah',
+        startAtMs: 1000,
+        limit: 10,
+        offset: 1,
+      };
+
+      await client.documents.history(query);
+
+      expect(getDocumentHistoryStub).to.be.calledOnceWithExactly(query);
+    });
+  });
+
+  describe('historyWithProof()', () => {
+    it('should fetch document history with proof metadata', async () => {
+      const query = {
+        dataContractId: 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec',
+        documentTypeName: 'note',
+        documentId: '4mZmxva49PBb7BE7srw9o3gixvDfj1dAx1K6z4A7P9Ah',
+      };
+
+      await client.documents.historyWithProof(query);
+
+      expect(getDocumentHistoryWithProofInfoStub).to.be.calledOnceWithExactly(query);
     });
   });
 
@@ -229,6 +297,93 @@ describe('DocumentsFacade', () => {
       await client.documents.setPrice(options);
 
       expect(documentSetPriceStub).to.be.calledOnceWithExactly(options);
+    });
+  });
+
+  describe('count()', () => {
+    it('should count documents matching a query', async () => {
+      const query = {
+        dataContractId: 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec',
+        documentTypeName: 'grade',
+      };
+
+      await client.documents.count(query);
+
+      expect(getDocumentsCountStub).to.be.calledOnceWithExactly(query);
+    });
+  });
+
+  describe('countWithProof()', () => {
+    it('should count documents and return proof metadata', async () => {
+      const query = {
+        dataContractId: 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec',
+        documentTypeName: 'grade',
+        where: [['class', '==', 'CS101']],
+      };
+
+      await client.documents.countWithProof(query);
+
+      expect(getDocumentsCountWithProofInfoStub).to.be.calledOnceWithExactly(query);
+    });
+  });
+
+  describe('sum()', () => {
+    it('should aggregate a summable property across matching documents', async () => {
+      const query = {
+        dataContractId: 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec',
+        documentTypeName: 'grade',
+        where: [['semester', '==', 20251]],
+      };
+      const sumProperty = 'score';
+
+      await client.documents.sum(query, sumProperty);
+
+      expect(getDocumentsSumStub).to.be.calledOnceWithExactly(query, sumProperty);
+    });
+  });
+
+  describe('sumWithProof()', () => {
+    it('should aggregate a summable property with proof metadata', async () => {
+      const query = {
+        dataContractId: 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec',
+        documentTypeName: 'grade',
+      };
+      const sumProperty = 'score';
+
+      await client.documents.sumWithProof(query, sumProperty);
+
+      expect(getDocumentsSumWithProofInfoStub).to.be.calledOnceWithExactly(query, sumProperty);
+    });
+  });
+
+  describe('average()', () => {
+    it('should return the (count, sum) pair for a summable property', async () => {
+      const query = {
+        dataContractId: 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec',
+        documentTypeName: 'grade',
+        groupBy: ['class'],
+      };
+      const averageProperty = 'score';
+
+      await client.documents.average(query, averageProperty);
+
+      expect(getDocumentsAverageStub).to.be.calledOnceWithExactly(query, averageProperty);
+    });
+  });
+
+  describe('averageWithProof()', () => {
+    it('should return the (count, sum) pair with proof metadata', async () => {
+      const query = {
+        dataContractId: 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec',
+        documentTypeName: 'grade',
+        where: [['class', '==', 'CS101']],
+        groupBy: ['semester'],
+      };
+      const averageProperty = 'score';
+
+      await client.documents.averageWithProof(query, averageProperty);
+
+      expect(getDocumentsAverageWithProofInfoStub).to.be.calledOnceWithExactly(query, averageProperty);
     });
   });
 });

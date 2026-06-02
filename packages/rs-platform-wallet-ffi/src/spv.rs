@@ -3,7 +3,10 @@
 use std::ffi::CStr;
 use std::os::raw::c_char;
 
-use platform_wallet::spv::{ClientConfig, ProgressPercentage, SyncProgress, SyncState};
+use dashcore::sml::llmq_type::LlmqDevnetParams;
+use platform_wallet::spv::{
+    ClientConfig, DevnetConfig, ProgressPercentage, SyncProgress, SyncState,
+};
 
 use crate::error::*;
 use crate::handle::*;
@@ -188,6 +191,26 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_tip_unix_seconds(
 }
 
 /// Start SPV sync in the background.
+///
+/// `enable_masternodes` is NOT a caller knob: platform-wallet always
+/// needs `ChainLockManager` + `InstantSendManager` running so
+/// asset-lock proofs can resolve via the `CLSig` / `ISLock` P2P
+/// messages. Disabling masternode sync silently breaks
+/// `AssetLockManager::wait_for_proof`, which is a published feature.
+/// Hardcoded to `true` here; if a future caller has a real reason to
+/// run SPV without masternode sync, it can construct the wallet
+/// manager without the asset-lock path instead.
+///
+/// Devnet support:
+/// - `devnet_name` must be set (non-null) when `network == Devnet` and
+///   must be null on every other network. When set, the SPV user agent
+///   is rewritten to embed the `devnet.devnet-<name>` substring Dash
+///   Core peers gate inbound devnet handshakes on (matches the format
+///   the `dash-spv` binary uses).
+/// - `llmq_devnet_size` / `llmq_devnet_threshold` mirror Dash Core's
+///   `-llmqdevnetparams=<size>:<threshold>`. Both zero means "no
+///   override". Setting one without the other, or setting them on a
+///   non-devnet network, is rejected.
 #[no_mangle]
 #[allow(clippy::field_reassign_with_default)]
 pub unsafe extern "C" fn platform_wallet_manager_spv_start(
@@ -199,17 +222,93 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_start(
     peer_count: usize,
     restrict_to_configured_peers: bool,
     start_from_height: u32,
-    masternode_sync_enabled: bool,
+    devnet_name: *const c_char,
+    llmq_devnet_size: u32,
+    llmq_devnet_threshold: u32,
 ) -> PlatformWalletFFIResult {
     check_ptr!(data_dir);
     let data_dir_str = unwrap_result_or_return!(CStr::from_ptr(data_dir).to_str()).to_string();
-    let user_agent_str = if user_agent.is_null() {
+    let mut user_agent_str = if user_agent.is_null() {
         None
     } else {
         Some(unwrap_result_or_return!(CStr::from_ptr(user_agent).to_str()).to_string())
     };
 
     let net: crate::types::Network = network.into();
+
+    let devnet_name_str = if devnet_name.is_null() {
+        None
+    } else {
+        Some(unwrap_result_or_return!(CStr::from_ptr(devnet_name).to_str()).to_string())
+    };
+
+    if net == crate::types::Network::Devnet && devnet_name_str.is_none() {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            "devnet_name is required when network=Devnet",
+        );
+    }
+    if net != crate::types::Network::Devnet && devnet_name_str.is_some() {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            "devnet_name is only valid on devnet",
+        );
+    }
+    // Reject empty / any-whitespace / `/`-containing names synchronously
+    // here rather than letting `DevnetConfig::validate` surface them
+    // asynchronously from `spawn_in_background`. Mirrors
+    // `DevnetConfig::validate` (which only checks empty + `/`) and
+    // additionally rejects any whitespace — leading, trailing, or
+    // interior — so callers without a pre-filter (other language
+    // bindings, integration tests) can't produce a malformed
+    // `(devnet.devnet- foo )` user agent that Dash Core peers silently
+    // drop. Rejecting (rather than auto-trimming) keeps the rule
+    // deterministic and avoids the Unicode-whitespace asymmetry
+    // between `str::trim` and Swift's `CharacterSet.whitespaces`.
+    if let Some(name) = devnet_name_str.as_deref() {
+        if name.is_empty() {
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                "devnet_name must not be empty",
+            );
+        }
+        if name.chars().any(char::is_whitespace) {
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                "devnet_name must not contain whitespace",
+            );
+        }
+        if name.contains('/') {
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                "devnet_name must not contain '/'",
+            );
+        }
+    }
+    if (llmq_devnet_size > 0) ^ (llmq_devnet_threshold > 0) {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            "llmq_devnet_size and llmq_devnet_threshold must both be set or both zero",
+        );
+    }
+    if llmq_devnet_size > 0 && net != crate::types::Network::Devnet {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            "llmq_devnet_params is only valid on devnet",
+        );
+    }
+
+    // Dash Core devnet peers disconnect any inbound connection whose
+    // user agent doesn't contain `devnet.devnet-<name>`. Rebuild the
+    // user agent to embed the substring while keeping whatever base
+    // the caller (or our default) provided. Mirrors the dash-spv
+    // binary's `/rust-dash-spv:VERSION(devnet.devnet-NAME)/` format.
+    if let Some(name) = devnet_name_str.as_deref() {
+        let base = user_agent_str
+            .clone()
+            .unwrap_or_else(|| format!("platform-wallet-ffi:{}", env!("CARGO_PKG_VERSION")));
+        user_agent_str = Some(format!("/{base}(devnet.devnet-{name})/"));
+    }
 
     let mut peer_list: Vec<String> = Vec::new();
     if !peers.is_null() && peer_count > 0 {
@@ -234,12 +333,29 @@ pub unsafe extern "C" fn platform_wallet_manager_spv_start(
         if start_from_height > 0 {
             config.start_from_height = Some(start_from_height);
         }
-        config.enable_masternodes = masternode_sync_enabled;
+        // Asset-lock proof acquisition (`AssetLockManager::wait_for_proof`)
+        // depends on `CLSig` / `ISLock` P2P messages reaching the wallet,
+        // which only happens when `ChainLockManager` + `InstantSendManager`
+        // are spawned (see dash-spv/src/client/lifecycle.rs). Hardcode
+        // here so trusted-SDK callers (who'd otherwise disable masternode
+        // sync) don't silently break asset-lock-funded identity
+        // registration.
+        config.enable_masternodes = true;
         config.restrict_to_configured_peers = restrict_to_configured_peers;
         for p in &peer_list {
             if let Ok(addr) = p.parse() {
                 config.peers.push(addr);
             }
+        }
+        if let Some(name) = devnet_name_str.as_deref() {
+            let mut devnet = DevnetConfig::new(name);
+            if llmq_devnet_size > 0 {
+                devnet.llmq_params = Some(LlmqDevnetParams {
+                    size: llmq_devnet_size,
+                    threshold: llmq_devnet_threshold,
+                });
+            }
+            config.devnet = Some(devnet);
         }
 
         let _guard = runtime().enter();

@@ -25,7 +25,6 @@ use std::sync::Arc;
 use dashcore::secp256k1::PublicKey;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::{IdentityPublicKey, KeyType};
-use dpp::prelude::AssetLockProof;
 use key_wallet::bip32::{ChildNumber, DerivationPath, ExtendedPrivKey, KeyDerivationType};
 use key_wallet::dip9::{
     IDENTITY_AUTHENTICATION_PATH_MAINNET, IDENTITY_AUTHENTICATION_PATH_TESTNET,
@@ -465,20 +464,5 @@ impl<B: TransactionBroadcaster + ?Sized> IdentityWallet<B> {
                 e
             ))
         })
-    }
-
-    /// Extract the outpoint from an asset lock proof.
-    ///
-    /// For instant proofs, this is the txid of the embedded transaction
-    /// combined with the output index from the proof.
-    /// For chain proofs, this is the out_point directly.
-    pub(super) fn out_point_from_proof(proof: &AssetLockProof) -> Option<dashcore::OutPoint> {
-        match proof {
-            AssetLockProof::Instant(instant) => Some(dashcore::OutPoint::new(
-                instant.transaction().txid(),
-                instant.output_index(),
-            )),
-            AssetLockProof::Chain(chain) => Some(chain.out_point),
-        }
     }
 }

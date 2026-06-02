@@ -85,7 +85,7 @@ Refer to rich comments / help in the forementioned scripts for more details.
 
 ### SDK test data
 
-When starting the local devnet with `SDK_TEST_DATA=true yarn start`, the `create_sdk_test_data` cfg flag
+When starting the local devnet with `yarn start` (the `local` dashmate config has `buildArgs.SDK_TEST_DATA = "true"` set by `yarn setup` — see `scripts/configure_dashmate.sh`), the `create_sdk_test_data` cfg flag
 activates creation of deterministic test data in genesis state. This data is defined in
 `packages/rs-drive-abci/src/execution/platform_events/initialization/create_genesis_state/test/`.
 
@@ -109,7 +109,7 @@ The `.env` file is automatically generated during `yarn setup` or `yarn reset`, 
 
 To generate test vectors:
 
-1. Start local dev environment of Dash Platform using `SDK_TEST_DATA=true yarn start`.
+1. Start local dev environment of Dash Platform using `yarn start` (the `local` dashmate config has `buildArgs.SDK_TEST_DATA = "true"` set by `yarn setup` — see `scripts/configure_dashmate.sh`).
 2. Ensure platform address and credentials in `packages/rs-sdk/tests/.env` are correct.
 3. Run  `packages/rs-sdk/scripts/generate_test_vectors.sh` script.
 4. (Optional) commit generated files with `git commit packages/rs-sdk/tests/vectors/`.
@@ -168,7 +168,7 @@ in `packages/rs-dapi-client/src/transport/grpc.rs`.
 12. [ ] (Optional) If not already configured, run `yarn setup` (fresh checkout) or `yarn reset` (reconfigure existing environment).
     **Warning:** both commands rebuild everything and reset data — do not run if your environment is already working.
     This configures the `.env` file in `packages/rs-sdk/tests/` needed by the tests.
-13. [ ] Start local devnet with `SDK_TEST_DATA=true yarn start`.
+13. [ ] Start local devnet with `yarn start` (the `local` dashmate config has `buildArgs.SDK_TEST_DATA = "true"` set by `yarn setup` — see `scripts/configure_dashmate.sh`).
 14. [ ] Generate test vectors by running `packages/rs-sdk/scripts/generate_test_vectors.sh test_name`
     where `test_name` matches only the new tests (e.g., `test_token_pre_programmed_distributions`).
     Running without arguments regenerates **all** vectors — avoid this unless intentional.

@@ -53,6 +53,11 @@ impl EventHandler for BalanceUpdateHandler {
             } => (wallet_id, balance),
             // No balance on SyncHeightAdvanced — checkpoint advance only.
             WalletEvent::SyncHeightAdvanced { .. } => return,
+            // No balance on ChainLockProcessed — chainlocks only
+            // promote finality (`InBlock` → `InChainLockedBlock`)
+            // and/or advance `last_applied_chain_lock`; neither
+            // changes UTXO state or balances.
+            WalletEvent::ChainLockProcessed { .. } => return,
         };
 
         // try_read on the wallets map (NOT the wallet_manager

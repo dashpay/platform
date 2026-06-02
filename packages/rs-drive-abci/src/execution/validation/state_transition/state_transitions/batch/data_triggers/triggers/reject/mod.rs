@@ -11,7 +11,7 @@ mod v0;
 
 pub fn reject_data_trigger(
     document_transition: &DocumentTransitionAction,
-    _context: &DataTriggerExecutionContext<'_>,
+    _context: &mut DataTriggerExecutionContext<'_>,
     platform_version: &PlatformVersion,
 ) -> Result<DataTriggerExecutionResult, Error> {
     match platform_version
@@ -23,6 +23,7 @@ pub fn reject_data_trigger(
         .triggers
         .reject_data_trigger
     {
+        // Reject performs no drive reads — never bills.
         0 => reject_data_trigger_v0(document_transition),
         version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
             method: "reject_data_trigger".to_string(),

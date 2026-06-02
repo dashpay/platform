@@ -22,7 +22,7 @@ impl Drive {
         &self,
         path_key_info: PathKeyInfo<N>,
         tree_type: TreeType,
-        wrap_in_non_counted: bool,
+        wrap_in_non_aggregated_for_parent_tree_type: Option<TreeType>,
         storage_flags: Option<&StorageFlags>,
         apply_type: BatchInsertTreeApplyType,
         transaction: TransactionArg,
@@ -30,18 +30,21 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
     ) -> Result<bool, Error> {
-        // The index walker uses NonCounted wrapping for sibling continuations
-        // inside `range_countable` value trees — see the helper docs in
-        // `fees/op.rs`. Wrapping is only validated for the small set of
-        // tree variants the walker actually emits (NormalTree / CountTree /
-        // ProvableCountTree); anything else falls through to the helper's
-        // own NotSupported error.
+        // The index walker passes the parent value tree's TreeType when
+        // the parent aggregates count, sum, or both. The
+        // `wrap_in_non_aggregated_for_parent_tree_type` dispatcher
+        // then picks the right wrapper variant
+        // (NonCounted / NotSummed / NotCountedOrSummed) based on what
+        // axes the parent aggregates. For non-aggregating parents
+        // (`wrap_in_non_aggregated_for_parent_tree_type: None`), no wrapping is
+        // needed and we fall through to the plain empty-tree op.
         let build_op =
             |path: Vec<Vec<u8>>, key: Vec<u8>| -> Result<LowLevelDriveOperation, Error> {
-                if wrap_in_non_counted {
-                    LowLevelDriveOperation::for_known_path_key_empty_non_counted_tree(
+                if let Some(parent_tt) = wrap_in_non_aggregated_for_parent_tree_type {
+                    LowLevelDriveOperation::wrap_in_non_aggregated_for_parent_tree_type(
                         path,
                         key,
+                        parent_tt,
                         tree_type,
                         storage_flags,
                     )
@@ -335,7 +338,7 @@ mod tests {
             .batch_insert_empty_tree_if_not_exists_v0(
                 info,
                 TreeType::NormalTree,
-                false,
+                None,
                 None,
                 BatchInsertTreeApplyType::StatefulBatchInsertTree,
                 Some(&tx),
@@ -386,7 +389,7 @@ mod tests {
             .batch_insert_empty_tree_if_not_exists_v0(
                 info,
                 TreeType::NormalTree,
-                false,
+                None,
                 None,
                 BatchInsertTreeApplyType::StatefulBatchInsertTree,
                 Some(&tx),
@@ -427,7 +430,7 @@ mod tests {
             .batch_insert_empty_tree_if_not_exists_v0(
                 info,
                 TreeType::NormalTree,
-                false,
+                None,
                 None,
                 BatchInsertTreeApplyType::StatefulBatchInsertTree,
                 Some(&tx),
@@ -455,7 +458,7 @@ mod tests {
         let result = drive.batch_insert_empty_tree_if_not_exists_v0(
             info,
             TreeType::NormalTree,
-            false,
+            None,
             None,
             BatchInsertTreeApplyType::StatefulBatchInsertTree,
             None,
@@ -493,7 +496,7 @@ mod tests {
             .batch_insert_empty_tree_if_not_exists_v0(
                 info,
                 TreeType::NormalTree,
-                false,
+                None,
                 None,
                 BatchInsertTreeApplyType::StatefulBatchInsertTree,
                 Some(&tx),
@@ -533,7 +536,7 @@ mod tests {
             .batch_insert_empty_tree_if_not_exists_v0(
                 info,
                 TreeType::NormalTree,
-                false,
+                None,
                 None,
                 BatchInsertTreeApplyType::StatefulBatchInsertTree,
                 Some(&tx),
@@ -573,7 +576,7 @@ mod tests {
             .batch_insert_empty_tree_if_not_exists_v0(
                 info,
                 TreeType::NormalTree,
-                false,
+                None,
                 None,
                 BatchInsertTreeApplyType::StatefulBatchInsertTree,
                 Some(&tx),

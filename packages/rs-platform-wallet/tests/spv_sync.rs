@@ -28,7 +28,6 @@ use platform_wallet::changeset::{
 use platform_wallet::events::{EventHandler, PlatformEventHandler};
 use platform_wallet::wallet::platform_wallet::WalletId;
 use platform_wallet::PlatformWalletManager;
-use tokio_util::sync::CancellationToken;
 
 /// Recording persister that captures all store calls for test verification.
 struct RecordingPersister {
@@ -182,7 +181,12 @@ async fn test_spv_sync_and_balance() {
     let seed_bytes = mnemonic.to_seed("");
 
     let platform_wallet = manager
-        .create_wallet_from_seed_bytes(network, seed_bytes, WalletAccountCreationOptions::Default)
+        .create_wallet_from_seed_bytes(
+            network,
+            seed_bytes,
+            WalletAccountCreationOptions::Default,
+            None,
+        )
         .await
         .expect("Failed to create platform wallet");
 
@@ -215,11 +219,9 @@ async fn test_spv_sync_and_balance() {
     }
 
     // --- Start SPV in background ---
-    let cancel = CancellationToken::new();
     let manager_for_spv = Arc::clone(&manager);
-    let cancel_for_spv = cancel.clone();
     let spv_handle = tokio::spawn(async move {
-        if let Err(e) = manager_for_spv.spv().run(config, cancel_for_spv).await {
+        if let Err(e) = manager_for_spv.spv().run(config).await {
             eprintln!("SPV runtime error: {}", e);
         }
     });
@@ -238,7 +240,7 @@ async fn test_spv_sync_and_balance() {
 
     loop {
         if start.elapsed() > timeout {
-            cancel.cancel();
+            let _ = manager.spv().stop().await;
             let _ = spv_handle.await;
             panic!("Timeout waiting for wallet balance after {:?}", timeout);
         }
@@ -263,7 +265,7 @@ async fn test_spv_sync_and_balance() {
 
         if confirmed > 0 {
             println!("SUCCESS: Wallet has confirmed balance: {} duffs", confirmed);
-            cancel.cancel();
+            let _ = manager.spv().stop().await;
             let _ = spv_handle.await;
 
             // --- Verify persistence ---
