@@ -39,13 +39,19 @@ describe('Document State Transitions', function describeDocumentStateTransitions
     expected: bigint,
     { timeoutMs = 30000, intervalMs = 500 } = {},
   ) => {
-    const deadline = Date.now() + timeoutMs;
+    const startedAt = Date.now();
+    const deadline = startedAt + timeoutMs;
     let actual = await getSingleTokenBalance(identityId, tokenId);
     while (actual !== expected && Date.now() < deadline) {
       await new Promise((resolve) => { setTimeout(resolve, intervalMs); });
       actual = await getSingleTokenBalance(identityId, tokenId);
     }
-    expect(actual).to.equal(expected);
+    // A timeout here is the most likely failure mode, so surface the triage data
+    // (which identity/token, what we waited for, how long, and the last read).
+    expect(actual).to.equal(
+      expected,
+      `token ${tokenId} balance for identity ${identityId} did not converge to ${expected} within ${Date.now() - startedAt}ms (last read: ${actual})`,
+    );
   };
   const buildSimpleTokenConfiguration = (baseSupply: bigint, newTokensDestinationIdentity: string) => {
     const contractOwner = sdk.AuthorizedActionTakers.ContractOwner();
