@@ -6,8 +6,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use rusqlite::{Connection, OptionalExtension};
 
 use platform_wallet::changeset::{
-    ClientStartState, CommitReport, DeleteWalletReport, Merge, PersistenceError,
-    PlatformWalletChangeSet, PlatformWalletPersistence,
+    ClientStartState, Merge, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
 };
 use platform_wallet::wallet::platform_wallet::WalletId;
 
@@ -15,6 +14,7 @@ use crate::sqlite::backup::{self, BackupKind};
 use crate::sqlite::buffer::Buffer;
 use crate::sqlite::config::{FlushMode, SqlitePersisterConfig, Synchronous};
 use crate::sqlite::error::{AutoBackupOperation, WalletStorageError};
+use crate::sqlite::reports::{CommitReport, DeleteWalletReport};
 use crate::sqlite::schema;
 use crate::sqlite::util::permissions::apply_secure_permissions;
 use crate::sqlite::util::safe_cast;
@@ -949,22 +949,6 @@ impl PlatformWalletPersistence for SqlitePersister {
     > {
         let conn = self.conn().map_err(PersistenceError::from)?;
         schema::core_state::get_tx_record(&conn, &wallet_id, txid).map_err(PersistenceError::from)
-    }
-
-    /// Trait-dispatch entry into the safe-by-default cascade delete.
-    /// Always takes an auto-backup (`auto_backup_dir` must be set, else
-    /// returns `WalletStorageError::AutoBackupDisabled` mapped into a
-    /// fatal `PersistenceError`). The inherent
-    /// [`SqlitePersister::delete_wallet_skip_backup`] stays available
-    /// for the CLI's `--no-auto-backup` flag and isn't reachable
-    /// through the trait by design.
-    fn delete_wallet(&self, wallet_id: WalletId) -> Result<DeleteWalletReport, PersistenceError> {
-        self.delete_wallet_inner(wallet_id, false)
-            .map_err(PersistenceError::from)
-    }
-
-    fn commit_writes(&self) -> Result<CommitReport, PersistenceError> {
-        self.commit_writes_inner()
     }
 }
 

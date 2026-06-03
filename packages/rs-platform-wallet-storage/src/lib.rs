@@ -43,8 +43,9 @@ pub mod secrets;
 pub use kv::{KvError, KvStore, ObjectId};
 #[cfg(feature = "sqlite")]
 pub use sqlite::{
-    default_auto_backup_dir, AutoBackupOperation, FlushMode, JournalMode, PruneReport,
-    RetentionPolicy, SqlitePersister, SqlitePersisterConfig, Synchronous, WalletStorageError,
+    default_auto_backup_dir, AutoBackupOperation, CommitReport, DeleteWalletReport, FlushMode,
+    JournalMode, PruneReport, RetentionPolicy, SqlitePersister, SqlitePersisterConfig, Synchronous,
+    WalletStorageError,
 };
 
 // Compile-time assertions — `Send + Sync`, `PlatformWalletPersistence`

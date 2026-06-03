@@ -15,6 +15,7 @@ pub mod error;
 pub mod kv;
 pub mod migrations;
 pub mod persister;
+pub mod reports;
 pub mod schema;
 pub mod util;
 
@@ -23,3 +24,4 @@ pub use config::{
 };
 pub use error::{AutoBackupOperation, WalletStorageError};
 pub use persister::{PruneReport, RetentionPolicy, SqlitePersister};
+pub use reports::{CommitReport, DeleteWalletReport};
