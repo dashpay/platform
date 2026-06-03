@@ -15,7 +15,7 @@ use crate::version::dpp_versions::dpp_validation_versions::v3::DPP_VALIDATION_VE
 use crate::version::dpp_versions::dpp_voting_versions::v2::VOTING_VERSION_V2;
 use crate::version::dpp_versions::DPPVersion;
 use crate::version::drive_abci_versions::drive_abci_checkpoint_parameters::v1::DRIVE_ABCI_CHECKPOINT_PARAMETERS_V1;
-use crate::version::drive_abci_versions::drive_abci_method_versions::v7::DRIVE_ABCI_METHOD_VERSIONS_V7;
+use crate::version::drive_abci_versions::drive_abci_method_versions::v8::DRIVE_ABCI_METHOD_VERSIONS_V8;
 use crate::version::drive_abci_versions::drive_abci_query_versions::v1::DRIVE_ABCI_QUERY_VERSIONS_V1;
 use crate::version::drive_abci_versions::drive_abci_structure_versions::v1::DRIVE_ABCI_STRUCTURE_VERSIONS_V1;
 use crate::version::drive_abci_versions::drive_abci_validation_versions::v8::DRIVE_ABCI_VALIDATION_VERSIONS_V8;
@@ -36,7 +36,9 @@ pub const PLATFORM_V12: PlatformVersion = PlatformVersion {
     drive: DRIVE_VERSION_V7, // changed: shielded pool (commitment tree, nullifiers, anchors, address funds, sinsemilla hashing)
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V1,
-        methods: DRIVE_ABCI_METHOD_VERSIONS_V7,
+        // V8 == V7 plus the four shielded-pool block-processing methods, which
+        // are valid only from v12 onward (the `[52, "M"]` subtree exists here).
+        methods: DRIVE_ABCI_METHOD_VERSIONS_V8,
         // enforce minimum config version check for contract create/update transitions
         validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V8,
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V2,
