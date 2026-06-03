@@ -260,7 +260,10 @@ CREATE TABLE dashpay_payments_overlay (
 -- (async sync ordering; a global-config persister whose parent tables
 -- stay empty). Cleanup is the AFTER DELETE triggers below, which SQLite
 -- fires even for parent rows removed by an FK ON DELETE CASCADE — so
--- deleting a wallet transitively cleans all of its metadata.
+-- deleting a wallet transitively cleans every meta_* row carrying that
+-- wallet_id (directly or via its identities), including parentless rows
+-- whose typed parent object never existed. meta_global is the lone
+-- exception: it has no wallet scope and survives wallet deletion.
 CREATE TABLE meta_global (
     key        TEXT NOT NULL PRIMARY KEY CHECK (length(key) BETWEEN 1 AND 128),
     value      BLOB NOT NULL,
@@ -313,22 +316,42 @@ CREATE TABLE meta_platform_address (
 
 -- Soft-cascade cleanup: drop a scope's metadata when its parent object
 -- is deleted. SQLite fires these for parents removed by an FK cascade
--- too (e.g. wallet_metadata delete → identities cascade → meta_identity
+-- too (e.g. wallet_metadata delete → identities cascade → identity
 -- trigger), so deleting a wallet cleans its metadata transitively.
-CREATE TRIGGER cascade_meta_wallet_on_wallet_delete
+--
+-- Two root brooms key on the deleted parent's id alone so they reach
+-- parentless meta_* rows (metadata written before the typed parent ever
+-- existed) just as well as parented ones. The remaining two triggers
+-- fire on direct typed-row deletes (a contact or address removed without
+-- deleting the wallet) and are idempotent overlaps with the root brooms
+-- on the wallet-delete path.
+
+-- Root broom 1: deleting a wallet removes every wallet_id-scoped meta
+-- row, parentless included. Keys on wallet_id only, so contact state and
+-- whether the typed parent ever existed are both irrelevant.
+CREATE TRIGGER cascade_meta_on_wallet_delete
 AFTER DELETE ON wallet_metadata
 FOR EACH ROW
 BEGIN
-    DELETE FROM meta_wallet WHERE wallet_id = OLD.wallet_id;
+    DELETE FROM meta_wallet           WHERE wallet_id = OLD.wallet_id;
+    DELETE FROM meta_contact          WHERE wallet_id = OLD.wallet_id;
+    DELETE FROM meta_platform_address WHERE wallet_id = OLD.wallet_id;
 END;
 
-CREATE TRIGGER cascade_meta_identity_on_identity_delete
+-- Root broom 2: the wallet→identities FK cascade fires this per removed
+-- identity, brooming its identity-scoped meta even when no token_balances
+-- row ever existed (parentless meta_token).
+CREATE TRIGGER cascade_meta_on_identity_delete
 AFTER DELETE ON identities
 FOR EACH ROW
 BEGIN
     DELETE FROM meta_identity WHERE identity_id = OLD.identity_id;
+    DELETE FROM meta_token    WHERE identity_id = OLD.identity_id;
 END;
 
+-- Direct token_balances delete: still wanted when a balance row is
+-- removed without deleting its identity. Redundant on the wallet-delete
+-- path (root broom 2 already covers it); the DELETE is idempotent.
 CREATE TRIGGER cascade_meta_token_on_token_balance_delete
 AFTER DELETE ON token_balances
 FOR EACH ROW
@@ -337,10 +360,12 @@ BEGIN
         WHERE identity_id = OLD.identity_id AND token_id = OLD.token_id;
 END;
 
+-- Direct contacts delete: removing one contact relationship drops its
+-- metadata regardless of lifecycle state. Redundant on the wallet-delete
+-- path (root broom 1 already covers it); the DELETE is idempotent.
 CREATE TRIGGER cascade_meta_contact_on_contact_delete
 AFTER DELETE ON contacts
 FOR EACH ROW
-WHEN OLD.state = 'established'
 BEGIN
     DELETE FROM meta_contact
         WHERE wallet_id = OLD.wallet_id
@@ -348,6 +373,9 @@ BEGIN
           AND contact_id = OLD.contact_id;
 END;
 
+-- Direct platform_addresses delete: removing one address drops its
+-- metadata. Redundant on the wallet-delete path (root broom 1 already
+-- covers it); the DELETE is idempotent.
 CREATE TRIGGER cascade_meta_platform_address_on_address_delete
 AFTER DELETE ON platform_addresses
 FOR EACH ROW
