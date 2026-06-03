@@ -1030,14 +1030,15 @@ fn tc_md_025_scope_isolation() {
     );
 }
 
-/// Cascade-completeness: deleting one wallet leaves ZERO rows in every
-/// per-wallet table AND every wallet/identity-scoped `meta_*` table —
-/// including parentless metadata whose typed parent never existed and
-/// metadata on non-established contacts — while `meta_global` survives.
+/// Cascade-completeness AND scope: deleting one wallet leaves ZERO rows
+/// for that wallet in every per-wallet table AND every
+/// wallet/identity-scoped `meta_*` table — including parentless metadata
+/// whose typed parent never existed and metadata on non-established
+/// contacts — while a SECOND wallet's rows and `meta_global` survive.
 ///
-/// This is the guarantee that replaced the old per-table row-count
-/// fingerprint: instead of counting what was removed, it proves nothing
-/// of the wallet's survives the delete.
+/// Counts are scoped by `wallet_id` / `identity_id` rather than taken
+/// over the whole table, so the test catches both an incomplete cascade
+/// (a's rows linger) and an over-broad one (b's rows get swept too).
 #[test]
 fn delete_wallet_leaves_no_surviving_rows() {
     use rusqlite::params;
@@ -1178,12 +1179,68 @@ fn delete_wallet_leaves_no_surviving_rows() {
     )
     .unwrap();
 
+    // A SECOND wallet `b` with its own per-wallet row, identity-owned
+    // rows, a contact, a platform address, and meta in every scope. None
+    // of this belongs to `a`, so deleting `a` must leave it untouched —
+    // this is what distinguishes a wallet-scoped cascade from an
+    // over-broad one that drops every row.
+    let b = wid(0x80);
+    ensure_wallet_meta(&p, &b);
+    let b_idy = id32(0x81);
+    ensure_identity(&p, &b_idy, Some(&b));
+    let b_token = id32(0x82);
+    ensure_token_balance(&p, &b_idy, &b_token);
+    let b_owner = id32(0x83);
+    let b_contact = id32(0x84);
+    ensure_contact_established(&p, &b, &b_owner, &b_contact);
+    let b_addr = vec![0xBBu8; 20];
+    ensure_platform_address(&p, &b, &b_addr);
+    {
+        let conn = p.lock_conn_for_test();
+        conn.execute(
+            "INSERT INTO core_sync_state (wallet_id, last_processed_height, synced_height) VALUES (?1, 1, 1)",
+            params![b.as_slice()],
+        )
+        .expect("seed b core_sync_state");
+    }
+    p.put(&ObjectId::Wallet(b), "k", b"b").unwrap();
+    p.put(&ObjectId::Identity(b_idy), "k", b"b").unwrap();
+    p.put(
+        &ObjectId::Token {
+            identity_id: b_idy,
+            token_id: b_token,
+        },
+        "k",
+        b"b",
+    )
+    .unwrap();
+    p.put(
+        &ObjectId::Contact {
+            wallet_id: b,
+            owner_id: b_owner,
+            contact_id: b_contact,
+        },
+        "k",
+        b"b",
+    )
+    .unwrap();
+    p.put(
+        &ObjectId::PlatformAddress {
+            wallet_id: b,
+            address: b_addr.clone(),
+        },
+        "k",
+        b"b",
+    )
+    .unwrap();
+
     p.delete_wallet(a).expect("delete_wallet");
 
-    // After the delete, no row in any per-wallet / wallet-scoped table
-    // may survive. Identity-owned tables are checked by joining through
-    // the (now-removed) identities row, which also leaves them empty.
     let conn = p.lock_conn_for_test();
+
+    // `a`'s rows are gone from every wallet-scoped table; `b`'s rows
+    // survive. Scoping each count by `wallet_id` catches an over-broad
+    // cascade that an unscoped whole-table COUNT(*) would miss.
     let wallet_scoped = [
         "wallet_metadata",
         "account_registrations",
@@ -1203,15 +1260,18 @@ fn delete_wallet_leaves_no_surviving_rows() {
         "meta_platform_address",
     ];
     for table in wallet_scoped {
-        let n: i64 = conn
-            .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
-                row.get(0)
-            })
+        let gone: i64 = conn
+            .query_row(
+                &format!("SELECT COUNT(*) FROM {table} WHERE wallet_id = ?1"),
+                params![a.as_slice()],
+                |row| row.get(0),
+            )
             .unwrap();
-        assert_eq!(n, 0, "{table} must be empty after delete_wallet");
+        assert_eq!(gone, 0, "{table} must drop wallet a's rows after delete");
     }
-    // Identity-owned tables (and identity-scoped meta) are emptied by the
-    // FK cascade through `identities`.
+
+    // Identity-owned tables (and identity-scoped meta) are keyed by
+    // `identity_id`, not `wallet_id`; check `a`'s identity is gone.
     let identity_owned = [
         "identity_keys",
         "token_balances",
@@ -1221,13 +1281,57 @@ fn delete_wallet_leaves_no_surviving_rows() {
         "meta_token",
     ];
     for table in identity_owned {
-        let n: i64 = conn
-            .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
-                row.get(0)
-            })
+        let gone: i64 = conn
+            .query_row(
+                &format!("SELECT COUNT(*) FROM {table} WHERE identity_id = ?1"),
+                params![idy.as_slice()],
+                |row| row.get(0),
+            )
             .unwrap();
-        assert_eq!(n, 0, "{table} must be empty after delete_wallet");
+        assert_eq!(gone, 0, "{table} must drop identity a's rows after delete");
     }
+
+    // Wallet b survives — every table we seeded for it still holds its
+    // rows. (b is seeded in a representative subset of the scoped tables,
+    // not all of them, so we check exactly the tables it was given.)
+    let b_wallet_scoped = [
+        "wallet_metadata",
+        "core_sync_state",
+        "identities",
+        "contacts",
+        "platform_addresses",
+        "meta_wallet",
+        "meta_contact",
+        "meta_platform_address",
+    ];
+    for table in b_wallet_scoped {
+        let kept: i64 = conn
+            .query_row(
+                &format!("SELECT COUNT(*) FROM {table} WHERE wallet_id = ?1"),
+                params![b.as_slice()],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(
+            kept >= 1,
+            "{table} must keep wallet b's rows when only a is deleted"
+        );
+    }
+    let b_identity_owned = ["token_balances", "meta_identity", "meta_token"];
+    for table in b_identity_owned {
+        let kept: i64 = conn
+            .query_row(
+                &format!("SELECT COUNT(*) FROM {table} WHERE identity_id = ?1"),
+                params![b_idy.as_slice()],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(
+            kept >= 1,
+            "{table} must keep identity b's rows when only a is deleted"
+        );
+    }
+
     // meta_global is not wallet-scoped and must survive.
     let global: i64 = conn
         .query_row(
