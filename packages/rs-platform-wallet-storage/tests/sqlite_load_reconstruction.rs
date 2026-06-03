@@ -125,10 +125,43 @@ fn load_state_reconstructs_per_account_from_registration_and_addresses() {
         1,
         "exactly one platform_payment account should be reconstructed"
     );
-    assert!(
-        state.per_account.contains_key(&account_index),
-        "per_account must be keyed by the registered account index"
+    let account = state
+        .per_account
+        .get(&account_index)
+        .expect("per_account must be keyed by the registered account index");
+
+    // The xpub round-tripped from the registration row.
+    assert_eq!(
+        account.extended_public_key(),
+        &test_xpub(),
+        "reconstructed account must carry the registered xpub"
     );
+
+    // Both seeded address rows landed in the index<->address bimap.
+    let addr0 = PlatformP2PKHAddress::new([0xB0; 20]);
+    let addr1 = PlatformP2PKHAddress::new([0xB1; 20]);
+    assert_eq!(account.addresses().len(), 2);
+    assert_eq!(account.addresses().get_by_left(&0), Some(&addr0));
+    assert_eq!(account.addresses().get_by_left(&1), Some(&addr1));
+
+    // The funds map mirrors what `entry()` seeded for each address.
+    assert_eq!(
+        account.found().get(&addr0),
+        Some(&AddressFunds {
+            balance: 0,
+            nonce: 0
+        }),
+        "address 0 funds must match the seeded entry"
+    );
+    assert_eq!(
+        account.found().get(&addr1),
+        Some(&AddressFunds {
+            balance: 100,
+            nonce: 1
+        }),
+        "address 1 funds must match the seeded entry"
+    );
+
     assert_eq!(state.sync_height, 5);
 }
 
