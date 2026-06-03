@@ -7,7 +7,14 @@ Schema evolution is version-gated by refinery. Every read-write connection turns
 - **`wallet_id`-scoped meta** (`meta_wallet`, `meta_contact`, `meta_platform_address`) carries a `wallet_id` column, so `cascade_meta_on_wallet_delete` brooms it directly — regardless of the lifecycle state of any typed parent and even for rows written ahead of (or without) a typed parent.
 - **identity-scoped meta** (`meta_identity`, `meta_token`) carries no `wallet_id` — only `identity_id` (+ `token_id`). It is cleaned by `cascade_meta_on_identity_delete` (AFTER DELETE ON `identities`), which fires for the wallet's own identities when the FK cascade removes them on a wallet delete.
 
-**Limitation:** identity-scoped meta written for an `identity_id` that was *never synced* into the `identities` table has no wallet linkage and is **not** reached by a wallet delete — no `identities` row ever existed for it, so `cascade_meta_on_identity_delete` never fires. Hosts that stamp `meta_identity` / `meta_token` for identities they do not also persist into `identities` must prune that metadata themselves. `meta_global` is intentionally not wallet-scoped and always survives.
+### Orphan metadata and future garbage collection
+
+Any `meta_*` row whose parent object does not exist — because it was never created, or because it was removed via a path the cascade does not cover — may persist indefinitely. This is an accepted limitation that applies to all metadata types and scopes. Examples:
+
+- `meta_identity` / `meta_token` rows written for an `identity_id` that is never synced into `identities`: the cascade fires on `AFTER DELETE ON identities`, so if no `identities` row ever existed the trigger never fires and the metadata remains.
+- Any `meta_*` row whose parent object is removed by a mechanism outside the trigger paths (e.g. direct SQL, a future schema path, or a partial-migration edge case).
+
+A future garbage-collection pass is expected to reap orphan metadata — rows with no live parent object older than approximately one week — but no such GC is implemented yet. Callers should not rely on orphan metadata persisting forever, nor assume it will be cleaned up promptly. `meta_global` is intentionally parentless and always survives.
 
 The 23 tables are split into five domain diagrams below. `WALLET_METADATA` is the root anchor and appears in each diagram. For full column listings see the [Tables](#tables) section.
 
@@ -525,14 +532,14 @@ Per-wallet metadata. Writable before the wallet exists.
 Per-identity metadata. Writable before the identity exists.
 
 - PK: `(identity_id, key)`.
-- No FK, no `wallet_id` column. Cleanup: `cascade_meta_on_identity_delete` (AFTER DELETE ON `identities`, by `identity_id`). Reached on a wallet delete only via the wallet's own `identities` rows; meta for an `identity_id` never synced into `identities` is not wallet-reachable (see the intro Limitation).
+- No FK, no `wallet_id` column. Cleanup: `cascade_meta_on_identity_delete` (AFTER DELETE ON `identities`, by `identity_id`). Reached on a wallet delete only via the wallet's own `identities` rows; meta for an `identity_id` never synced into `identities` is not wallet-reachable and may persist as an orphan (see [Orphan metadata and future garbage collection](#orphan-metadata-and-future-garbage-collection)).
 
 #### `meta_token`
 
 Per-token-balance metadata. Writable before the token balance exists.
 
 - PK: `(identity_id, token_id, key)`.
-- No FK, no `wallet_id` column. Cleanup: `cascade_meta_on_identity_delete` (AFTER DELETE ON `identities`, by `identity_id`) on a wallet/identity delete, plus `cascade_meta_token_on_token_balance_delete` (AFTER DELETE ON `token_balances`) for a direct balance delete. As with `meta_identity`, meta for an `identity_id` never synced into `identities` is not wallet-reachable (see the intro Limitation).
+- No FK, no `wallet_id` column. Cleanup: `cascade_meta_on_identity_delete` (AFTER DELETE ON `identities`, by `identity_id`) on a wallet/identity delete, plus `cascade_meta_token_on_token_balance_delete` (AFTER DELETE ON `token_balances`) for a direct balance delete. As with `meta_identity`, meta for an `identity_id` never synced into `identities` is not wallet-reachable and may persist as an orphan (see [Orphan metadata and future garbage collection](#orphan-metadata-and-future-garbage-collection)).
 
 #### `meta_contact`
 

@@ -120,7 +120,8 @@ row keyed to that wallet (by `wallet_id`, or by `identity_id` via the
 identity cascade) — including rows whose typed parent was never written.
 `Global` is the only scope that survives a wallet delete. Values are
 opaque `Vec<u8>` (the app picks its own serialization); keys are 1..=128
-chars and values are capped at 16 MiB.
+chars and values are capped at 16 MiB. For the orphan-metadata limitation
+and future garbage-collection semantics, see [SCHEMA.md](./SCHEMA.md#orphan-metadata-and-future-garbage-collection).
 
 The four `KvStore` methods:
 

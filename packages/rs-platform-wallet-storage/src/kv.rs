@@ -15,9 +15,14 @@
 //! Every other variant names a wallet object, but a write does NOT
 //! require that object to exist yet — metadata may be attached ahead of
 //! sync. When the object is later deleted, an `AFTER DELETE` trigger on
-//! its parent table removes the matching metadata, so metadata never
-//! outlives its object. The same key string under different scopes is
-//! independent — the scopes live in separate tables.
+//! its parent table removes the matching metadata. However, if the
+//! parent object is never created, or is removed via a path the trigger
+//! does not cover, the metadata row may persist as an orphan. This is an
+//! accepted limitation across all scopes; a future garbage-collection pass
+//! is expected to reap such orphans (no live parent, e.g. older than ~1
+//! week) — callers should not rely on orphan metadata persisting forever.
+//! The same key string under different scopes is independent — the scopes
+//! live in separate tables.
 //!
 //! This API is **independent of [`platform_wallet::changeset::PlatformWalletPersistence`]**:
 //! KV is for app metadata, not wallet domain state. Reads and writes go
@@ -32,8 +37,12 @@ use platform_wallet::wallet::platform_wallet::WalletId;
 /// other variants name a wallet object but carry no insert-time
 /// existence requirement: metadata may be written before its parent
 /// object is synced into its typed table. An `AFTER DELETE` trigger on
-/// each parent removes the matching metadata when the object is deleted,
-/// so metadata never outlives its object.
+/// each parent removes the matching metadata when the object is deleted.
+///
+/// **Orphan metadata:** if the parent object is never created, or is
+/// removed via a path the trigger does not cover, the metadata row may
+/// persist as an orphan. A future GC pass is expected to reap such
+/// rows; do not rely on them living forever.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ObjectId {
     /// Global app metadata; no parent (`meta_global`).
