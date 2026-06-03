@@ -144,14 +144,6 @@ pub enum WalletStorageError {
     #[error("invalid configuration: {reason}")]
     ConfigInvalid { reason: &'static str },
 
-    /// An internal schema-helper invariant was violated — e.g. the
-    /// table-name allowlist on `count_rows_for_wallet_sql` (CMT-023)
-    /// caught a caller passing a table not in `PER_WALLET_TABLES`.
-    /// Indicates a code-side bug, not a runtime data issue. Debug
-    /// builds panic on these via `debug_assert!`.
-    #[error("schema invariant violated: {detail}")]
-    SchemaInvariantViolated { detail: &'static str },
-
     /// bincode-serde refused to encode a value (typically because
     /// the value's serde representation needs `deserialize_any`-style
     /// dispatch — see dpp's `IdentityPublicKey` workaround).
@@ -364,7 +356,6 @@ impl WalletStorageError {
             | Self::InvalidWalletIdHex { .. }
             | Self::InvalidWalletIdLength { .. }
             | Self::ConfigInvalid { .. }
-            | Self::SchemaInvariantViolated { .. }
             | Self::BincodeEncode { .. }
             | Self::BincodeDecode { .. }
             | Self::BlobDecode { .. }
@@ -446,7 +437,6 @@ impl WalletStorageError {
             Self::InvalidWalletIdHex { .. } => "invalid_wallet_id_hex",
             Self::InvalidWalletIdLength { .. } => "invalid_wallet_id_length",
             Self::ConfigInvalid { .. } => "config_invalid",
-            Self::SchemaInvariantViolated { .. } => "schema_invariant_violated",
             Self::BincodeEncode { .. } => "bincode_encode",
             Self::BincodeDecode { .. } => "bincode_decode",
             Self::BlobDecode { .. } => "blob_decode",

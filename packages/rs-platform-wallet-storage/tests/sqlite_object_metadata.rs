@@ -485,8 +485,14 @@ fn tc_md_019_delete_wallet_report_counts_meta_tables() {
     )
     .unwrap();
 
-    let report = p.delete_wallet(a).expect("delete_wallet");
-    let counts = &report.rows_removed_per_table;
+    // Also seed a global row that must outlive the delete.
+    p.put(&ObjectId::Global, "g", b"keep").unwrap();
+
+    p.delete_wallet(a).expect("delete_wallet");
+
+    // The cascade brooms every wallet/identity-scoped meta table; assert
+    // directly that no row survives in any of them and meta_global stays.
+    let conn = p.lock_conn_for_test();
     for table in [
         "meta_wallet",
         "meta_identity",
@@ -494,16 +500,15 @@ fn tc_md_019_delete_wallet_report_counts_meta_tables() {
         "meta_contact",
         "meta_platform_address",
     ] {
-        assert_eq!(
-            counts.get(table).copied(),
-            Some(1),
-            "{table} should report one removed meta row"
-        );
+        let n: i64 = conn
+            .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(n, 0, "{table} should hold no rows after delete_wallet");
     }
-    assert!(
-        !counts.contains_key("meta_global"),
-        "meta_global must not appear in the per-wallet delete report"
-    );
+    let global: i64 = conn
+        .query_row("SELECT COUNT(*) FROM meta_global", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(global, 1, "meta_global must survive the per-wallet delete");
 }
 
 // ---------------------------------------------------------------------

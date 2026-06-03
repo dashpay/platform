@@ -153,8 +153,9 @@ fn samples() -> Vec<WalletStorageError> {
         },
         WalletStorageError::InvalidWalletIdLength { actual: 10 },
         WalletStorageError::ConfigInvalid { reason: "bad knob" },
-        WalletStorageError::SchemaInvariantViolated {
-            detail: "unknown table",
+        WalletStorageError::IdentityEntryIdMismatch,
+        WalletStorageError::UtxoAddressNotDerived {
+            address: "yMockAddress".into(),
         },
         // BincodeEncode / BincodeDecode / HashDecode / ConsensusCodec
         // need real upstream errors — synthesise minimal ones via the
@@ -232,9 +233,6 @@ fn tc_p2_005_is_transient_table() {
             WalletStorageError::InvalidWalletIdHex { .. } => (false, "invalid_wallet_id_hex"),
             WalletStorageError::InvalidWalletIdLength { .. } => (false, "invalid_wallet_id_length"),
             WalletStorageError::ConfigInvalid { .. } => (false, "config_invalid"),
-            WalletStorageError::SchemaInvariantViolated { .. } => {
-                (false, "schema_invariant_violated")
-            }
             WalletStorageError::BincodeEncode { .. } => (false, "bincode_encode"),
             WalletStorageError::BincodeDecode { .. } => (false, "bincode_decode"),
             WalletStorageError::BlobDecode { .. } => (false, "blob_decode"),
@@ -244,10 +242,12 @@ fn tc_p2_005_is_transient_table() {
                 (false, "backup_destination_exists")
             }
             WalletStorageError::IdentityKeyEntryMismatch => (false, "identity_key_entry_mismatch"),
+            WalletStorageError::IdentityEntryIdMismatch => (false, "identity_entry_id_mismatch"),
             WalletStorageError::AssetLockEntryMismatch { .. } => {
                 (false, "asset_lock_entry_mismatch")
             }
             WalletStorageError::BlobTooLarge { .. } => (false, "blob_too_large"),
+            WalletStorageError::UtxoAddressNotDerived { .. } => (false, "utxo_address_not_derived"),
             WalletStorageError::ForeignKeysNotEnforced => (false, "foreign_keys_not_enforced"),
             WalletStorageError::IntegerOverflow { .. } => (false, "integer_overflow"),
         }

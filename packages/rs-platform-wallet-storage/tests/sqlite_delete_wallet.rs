@@ -93,7 +93,6 @@ fn delete_wallet_restores_buffer_on_backup_failure() {
 /// per-wallet table holds zero rows for that wallet_id.
 #[test]
 fn concurrent_store_does_not_resurrect_deleted_wallet() {
-    use platform_wallet_storage::sqlite::schema::{count_rows_for_wallet_sql, PER_WALLET_TABLES};
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::thread;
 
@@ -147,12 +146,15 @@ fn concurrent_store_does_not_resurrect_deleted_wallet() {
     // commit (CMT-008 post-commit re-drain).
     let _ = persister.commit_writes();
 
+    // The wallet's parent row and the seeded child must both be gone —
+    // exhaustive per-table coverage lives in the cascade-completeness
+    // test; here we only guard against a racing store resurrecting the
+    // wallet after the delete commit.
     let conn = persister.lock_conn_for_test();
-    for (table, scope) in PER_WALLET_TABLES {
+    for table in ["wallet_metadata", "core_sync_state"] {
         let n: i64 = conn
             .query_row(
-                &count_rows_for_wallet_sql(table, *scope)
-                    .expect("table is in PER_WALLET_TABLES allowlist"),
+                &format!("SELECT COUNT(*) FROM {table} WHERE wallet_id = ?1"),
                 rusqlite::params![w.as_slice()],
                 |row| row.get(0),
             )

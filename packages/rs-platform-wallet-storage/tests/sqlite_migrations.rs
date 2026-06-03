@@ -169,22 +169,23 @@ fn tc027_smoke_insert_every_table() {
             &[&identity_id.as_slice()],
         ),
     ];
-    use platform_wallet_storage::sqlite::schema::{count_rows_for_wallet_sql, PER_WALLET_TABLES};
-    let scope_for = |name: &str| {
-        PER_WALLET_TABLES
-            .iter()
-            .find(|(t, _)| *t == name)
-            .map(|(_, s)| *s)
-            .expect("table is in PER_WALLET_TABLES")
-    };
+    // Identity-owned tables have no `wallet_id` column; count them by
+    // joining through `identities`. Everything else is wallet-scoped.
+    let via_identity = ["identity_keys", "token_balances", "dashpay_profiles", "dashpay_payments_overlay"];
     for (table, sql, params) in cases {
         conn.execute(sql, *params).expect(table);
-        let n: i64 = conn
-            .query_row(
-                &count_rows_for_wallet_sql(table, scope_for(table)).expect("table is allowlisted"),
-                rusqlite::params![wallet_id.as_slice()],
-                |row| row.get(0),
+        let count_sql = if via_identity.contains(table) {
+            format!(
+                "SELECT COUNT(*) FROM {table} \
+                 WHERE identity_id IN (SELECT identity_id FROM identities WHERE wallet_id = ?1)"
             )
+        } else {
+            format!("SELECT COUNT(*) FROM {table} WHERE wallet_id = ?1")
+        };
+        let n: i64 = conn
+            .query_row(&count_sql, rusqlite::params![wallet_id.as_slice()], |row| {
+                row.get(0)
+            })
             .unwrap();
         assert!(n >= 1, "{table} insert did not land");
     }

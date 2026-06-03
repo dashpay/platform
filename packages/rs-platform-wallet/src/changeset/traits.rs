@@ -3,7 +3,6 @@
 //! Implementors choose their own storage engine (SQLite, file, memory, remote).
 //! The traits guarantee that deltas are persisted atomically.
 
-use std::collections::BTreeMap;
 use std::error::Error as StdError;
 use std::path::PathBuf;
 
@@ -316,7 +315,6 @@ pub trait PlatformWalletPersistence: Send + Sync {
         Ok(DeleteWalletReport {
             wallet_id,
             backup_path: None,
-            rows_removed_per_table: BTreeMap::new(),
         })
     }
 
@@ -380,9 +378,9 @@ impl CommitReport {
 /// Outcome of a [`PlatformWalletPersistence::delete_wallet`] call.
 ///
 /// Lives on the trait so consumers can match on the report without
-/// pulling in a backend-specific crate. The SQLite backend builds an
-/// instance with `rows_removed_per_table` populated; backends that
-/// don't track per-table row counts emit an empty map.
+/// pulling in a backend-specific crate. The wallet's rows are removed by
+/// the backend's cascade; the report carries only the deleted id and the
+/// pre-delete backup path.
 #[derive(Debug, Clone)]
 pub struct DeleteWalletReport {
     /// The wallet that was deleted.
@@ -392,7 +390,4 @@ pub struct DeleteWalletReport {
     /// (intentionally — e.g. the SQLite CLI's `--no-auto-backup` — or
     /// because the backend has no backup concept).
     pub backup_path: Option<PathBuf>,
-    /// Per-table row counts the backend deleted. Empty for backends
-    /// that don't expose per-table accounting.
-    pub rows_removed_per_table: BTreeMap<&'static str, usize>,
 }

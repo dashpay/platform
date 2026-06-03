@@ -22,8 +22,8 @@ use platform_wallet_storage::{
 )]
 struct Cli {
     /// Path to the SQLite database file. Required by `migrate`,
-    /// `backup`, `restore`, and `inspect`; ignored by `prune` (which
-    /// operates purely on the backups directory).
+    /// `backup`, and `restore`; ignored by `prune` (which operates
+    /// purely on the backups directory).
     #[arg(long, value_name = "PATH", global = true)]
     db: Option<PathBuf>,
     /// Auto-backup directory. To disable auto-backup, pass the
@@ -52,8 +52,6 @@ enum Cmd {
     Restore(RestoreArgs),
     /// Apply retention to a backup directory.
     Prune(PruneArgs),
-    /// Dump per-table row counts.
-    Inspect(InspectArgs),
 }
 
 #[derive(Debug, Args)]
@@ -92,37 +90,8 @@ struct PruneArgs {
     max_age: Option<Duration>,
 }
 
-#[derive(Debug, Args)]
-struct InspectArgs {
-    #[arg(long)]
-    wallet_id: Option<String>,
-    #[arg(long, default_value = "text")]
-    format: InspectFormat,
-}
-
-#[derive(Debug, Clone, Copy, clap::ValueEnum)]
-enum InspectFormat {
-    Text,
-    Tsv,
-    Json,
-}
-
 fn parse_duration(s: &str) -> Result<Duration, String> {
     humantime::parse_duration(s).map_err(|e| format!("invalid duration `{s}`: {e}"))
-}
-
-fn parse_wallet_id(s: &str) -> Result<[u8; 32], String> {
-    if s.len() != 64 {
-        return Err(format!(
-            "wallet id must be 64 hex characters, got {} (`{}`)",
-            s.len(),
-            s
-        ));
-    }
-    let bytes = hex::decode(s).map_err(|e| format!("wallet id is not valid hex: {e}"))?;
-    let mut out = [0u8; 32];
-    out.copy_from_slice(&bytes);
-    Ok(out)
 }
 
 fn main() -> ExitCode {
@@ -235,10 +204,6 @@ fn run(cli: Cli) -> Result<ExitCode, CliError> {
         Cmd::Backup(args) => {
             let persister = SqlitePersister::open(config).map_err(map_open_err_for_cli)?;
             run_backup(&persister, args)
-        }
-        Cmd::Inspect(args) => {
-            let persister = SqlitePersister::open(config).map_err(map_open_err_for_cli)?;
-            run_inspect(&persister, args)
         }
     }
 }
@@ -380,44 +345,6 @@ fn run_prune(args: &PruneArgs) -> Result<ExitCode, CliError> {
     } else {
         Ok(ExitCode::from(1))
     }
-}
-
-fn run_inspect(persister: &SqlitePersister, args: InspectArgs) -> Result<ExitCode, CliError> {
-    let wallet_id = match args.wallet_id.as_deref() {
-        None => None,
-        Some(s) => Some(parse_wallet_id(s).map_err(|m| CliError {
-            message: m,
-            code: ExitCode::from(2),
-        })?),
-    };
-    let counts = persister
-        .inspect_counts(wallet_id.as_ref())
-        .map_err(|e| CliError::runtime(e.to_string()))?;
-    match args.format {
-        InspectFormat::Text | InspectFormat::Tsv => {
-            for (table, n) in counts {
-                println!("{table}\t{n}");
-            }
-        }
-        InspectFormat::Json => {
-            let entries: Vec<serde_json::Value> = counts
-                .into_iter()
-                .map(|(table, n)| match &wallet_id {
-                    None => serde_json::json!({ "table": table, "count": n }),
-                    Some(id) => serde_json::json!({
-                        "table": table,
-                        "count": n,
-                        "wallet_id": hex::encode(id),
-                    }),
-                })
-                .collect();
-            println!(
-                "{}",
-                serde_json::to_string(&entries).map_err(|e| CliError::runtime(e.to_string()))?
-            );
-        }
-    }
-    Ok(ExitCode::SUCCESS)
 }
 
 #[cfg(test)]

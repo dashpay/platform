@@ -54,14 +54,6 @@ fn tc047_delete_wallet_cascade() {
     let report = persister.delete_wallet(w).expect("delete_wallet");
     assert_eq!(report.wallet_id, w);
     assert!(report.backup_path.is_some());
-    assert!(
-        report
-            .rows_removed_per_table
-            .get("wallet_metadata")
-            .copied()
-            .unwrap_or(0)
-            >= 1
-    );
     let conn = persister.lock_conn_for_test();
     let n: i64 = conn
         .query_row(

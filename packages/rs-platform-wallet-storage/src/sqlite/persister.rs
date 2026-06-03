@@ -1,6 +1,5 @@
 //! [`SqlitePersister`] — the canonical `PlatformWalletPersistence` impl.
 
-use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 
@@ -16,7 +15,7 @@ use crate::sqlite::backup::{self, BackupKind};
 use crate::sqlite::buffer::Buffer;
 use crate::sqlite::config::{FlushMode, SqlitePersisterConfig, Synchronous};
 use crate::sqlite::error::{AutoBackupOperation, WalletStorageError};
-use crate::sqlite::schema::{self, count_rows_for_wallet_sql, PER_WALLET_TABLES};
+use crate::sqlite::schema;
 use crate::sqlite::util::permissions::apply_secure_permissions;
 use crate::sqlite::util::safe_cast;
 
@@ -291,17 +290,13 @@ impl SqlitePersister {
             )?;
             drop(dest_conn);
         }
-        // INTENTIONAL(CMT-001, CMT-002): no per-table row-count
-        // fingerprint guard around the snapshot → EXCLUSIVE window.
-        // `backup::restore_from` acquires SQLite-native `BEGIN
-        // EXCLUSIVE` on the destination for the whole restore body —
-        // peers that race the snapshot are excluded from there on.
-        // A row-count fingerprint would catch only inserts/deletes
-        // (UPDATEs on single-row tables leave counts unchanged) and
-        // give operators false confidence in the rollback contract.
-        // Callers that need a guaranteed-quiesced rollback point must
-        // serialize restore intent at the application layer before
-        // invocation.
+        // No row-count fingerprint guards the snapshot → EXCLUSIVE
+        // window: `backup::restore_from` holds a SQLite-native `BEGIN
+        // EXCLUSIVE` over the whole restore body, so peers that race the
+        // snapshot are excluded from there on. A count fingerprint would
+        // miss in-place UPDATEs on single-row tables and give operators
+        // false confidence; callers needing a quiesced rollback point
+        // must serialize restore intent at the application layer.
         backup::restore_from(dest_db_path, src_backup)
     }
 
@@ -456,17 +451,12 @@ impl SqlitePersister {
                 }
             }
 
-            // INTENTIONAL(CMT-001, CMT-002): no per-table row-count
-            // fingerprint guard around the backup → EXCLUSIVE window.
-            // Concurrent-peer detection relies on (a) the auto-backup
-            // taken before the cascade and (b) the SQLite-native
-            // `BEGIN EXCLUSIVE` below. A row-count fingerprint is easily
-            // evaded by an in-place UPDATE on single-row tables
-            // (`wallet_metadata`, `core_sync_state`, etc.) and would
-            // give operators false confidence in the rollback contract.
-            // CMT-008: pre-flushing before backup ensures the snapshot
-            // captures every buffered write; backup-then-flush would
-            // ship a backup that doesn't include them.
+            // Concurrent-peer detection relies on the auto-backup taken
+            // before the cascade plus the SQLite-native `BEGIN EXCLUSIVE`
+            // below — not a row-count fingerprint, which an in-place
+            // UPDATE on a single-row table would evade. Pre-flushing
+            // before the backup ensures the snapshot captures every
+            // buffered write.
             let backup_path = if skip_backup {
                 None
             } else {
@@ -486,30 +476,19 @@ impl SqlitePersister {
             // the lock back off via SQLite's `busy_timeout`.
             let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Exclusive)?;
 
-            let mut rows_removed_per_table = BTreeMap::new();
-            for (table, scope) in PER_WALLET_TABLES {
-                // SQL injection note: `table` comes from a `&'static
-                // &'static str` constant compiled into the binary. There
-                // is no user input on this path. The SQL flavour
-                // (direct column vs. JOIN via `identities`) is picked
-                // by `count_rows_for_wallet_sql`.
-                let n: i64 = tx
-                    .query_row(
-                        &count_rows_for_wallet_sql(table, *scope)?,
-                        rusqlite::params![wallet_id.as_slice()],
-                        |row| row.get(0),
-                    )
-                    .optional()?
-                    .unwrap_or(0);
-                rows_removed_per_table.insert(*table, usize::try_from(n).unwrap_or(usize::MAX));
-            }
+            // Deleting the parent `wallet_metadata` row drives the whole
+            // cleanup: native `ON DELETE CASCADE` removes every FK-bearing
+            // per-wallet/per-identity table, and the AFTER DELETE triggers
+            // broom every wallet/identity-scoped `meta_*` row (parentless
+            // included). No per-table accounting is needed — the
+            // cascade-completeness test asserts no row survives.
             crate::sqlite::schema::wallet_meta::delete(&tx, &wallet_id)?;
             tx.commit()?;
             // Commit succeeded — drop the original drained changeset.
             drop(drained_slot.take());
-            // CMT-008: re-drain any changeset a Manual-mode store
-            // dropped into the buffer while we held conn. The wallet
-            // is gone — these writes are intentionally void.
+            // Re-drain any changeset a Manual-mode store dropped into the
+            // buffer while we held conn. The wallet is gone — these
+            // writes are intentionally void.
             if let Ok(Some(_late)) = self.buffer.take_for_flush(&wallet_id) {
                 tracing::warn!(
                     wallet_id = %hex::encode(wallet_id),
@@ -519,7 +498,6 @@ impl SqlitePersister {
             Ok(DeleteWalletReport {
                 wallet_id,
                 backup_path,
-                rows_removed_per_table,
             })
         })();
 
@@ -584,40 +562,6 @@ impl SqlitePersister {
             }
         }
         Ok(report)
-    }
-
-    /// `inspect` row-count summary. With `wallet_id = Some(id)`, scoped
-    /// to that wallet; otherwise total counts across all wallets.
-    pub fn inspect_counts(
-        &self,
-        wallet_id: Option<&WalletId>,
-    ) -> Result<Vec<(&'static str, usize)>, WalletStorageError> {
-        let conn = self.conn()?;
-        let mut out = Vec::with_capacity(PER_WALLET_TABLES.len());
-        for (table, scope) in PER_WALLET_TABLES {
-            // `table` is a compile-time constant — no SQL injection
-            // surface despite the `format!`. Per-wallet predicate uses
-            // `count_rows_for_wallet_sql` so identity-scoped tables
-            // join through `identities`.
-            let n: i64 = match wallet_id {
-                Some(id) => conn
-                    .query_row(
-                        &count_rows_for_wallet_sql(table, *scope)?,
-                        rusqlite::params![id.as_slice()],
-                        |row| row.get(0),
-                    )
-                    .optional()?
-                    .unwrap_or(0),
-                None => conn
-                    .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
-                        row.get(0)
-                    })
-                    .optional()?
-                    .unwrap_or(0),
-            };
-            out.push((*table, usize::try_from(n).unwrap_or(usize::MAX)));
-        }
-        Ok(out)
     }
 
     /// Lock the write connection.

@@ -84,27 +84,26 @@ fn tc065_prune_requires_a_rule() {
     assert_eq!(out.status.code(), Some(2));
 }
 
-/// TC-070: invalid wallet-id format exits 2.
+/// The `inspect` subcommand is removed from the CLI; invoking it is an
+/// unknown-subcommand usage error.
 #[test]
-fn tc070_inspect_invalid_wallet_id() {
+fn inspect_subcommand_removed() {
     let tmp = tempfile::tempdir().unwrap();
     let db = tmp.path().join("w.db");
     cli()
         .args(["--db", db.to_str().unwrap(), "migrate"])
         .output()
         .expect("migrate ran");
-    for bad in ["zzzz", "00"] {
-        let out = cli()
-            .args(["--db", db.to_str().unwrap(), "inspect", "--wallet-id", bad])
-            .output()
-            .unwrap();
-        assert_eq!(
-            out.status.code(),
-            Some(2),
-            "expected exit 2 for `{bad}`; got {:?}",
-            out.status.code()
-        );
-    }
+    let out = cli()
+        .args(["--db", db.to_str().unwrap(), "inspect"])
+        .output()
+        .unwrap();
+    assert_eq!(
+        out.status.code(),
+        Some(2),
+        "expected clap usage exit code 2 for removed subcommand; got {:?}",
+        out.status.code()
+    );
 }
 
 /// TC-072: the `delete-wallet` subcommand is removed from the CLI
@@ -140,34 +139,6 @@ fn tc072_delete_wallet_subcommand_removed() {
     );
 }
 
-/// TC-068: inspect TSV format prints `table\tcount` lines.
-#[test]
-fn tc068_inspect_tsv() {
-    let tmp = tempfile::tempdir().unwrap();
-    let db = tmp.path().join("w.db");
-    cli()
-        .args(["--db", db.to_str().unwrap(), "migrate"])
-        .output()
-        .expect("migrate ran");
-    let out = cli()
-        .args(["--db", db.to_str().unwrap(), "inspect", "--format", "tsv"])
-        .output()
-        .unwrap();
-    assert!(out.status.success());
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    let lines: Vec<&str> = stdout.lines().collect();
-    assert!(
-        lines.len() >= 18,
-        "expected ≥18 lines of TSV, got {}",
-        lines.len()
-    );
-    for line in lines {
-        let cols: Vec<&str> = line.split('\t').collect();
-        assert_eq!(cols.len(), 2, "bad TSV line: `{line}`");
-        let n: i64 = cols[1].parse().expect(line);
-        assert!(n >= 0);
-    }
-}
 
 /// TC-059: backup --out <dir> writes a timestamped file.
 #[test]

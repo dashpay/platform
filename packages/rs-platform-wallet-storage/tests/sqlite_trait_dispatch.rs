@@ -78,7 +78,6 @@ fn tc_code_003_default_delete_wallet_returns_empty_report() {
         .expect("default delete_wallet must be infallible");
     assert_eq!(report.wallet_id, wallet_id);
     assert!(report.backup_path.is_none());
-    assert!(report.rows_removed_per_table.is_empty());
 }
 
 /// TC-CODE-003-sqlite — trait-dispatched `delete_wallet` on
