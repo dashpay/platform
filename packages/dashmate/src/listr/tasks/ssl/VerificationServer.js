@@ -199,8 +199,10 @@ export default class VerificationServer {
    * @return {Promise<void>}
    */
   async destroy() {
+    // No-op if the server was never set up (symmetric with stop()), so cleanup
+    // paths can call destroy() unconditionally without guarding for setup.
     if (!this.config) {
-      throw new Error('Setup server first');
+      return;
     }
 
     fs.rmSync(this.configPath, { force: true });

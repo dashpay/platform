@@ -82,7 +82,7 @@ derive_more = { version = "1.0", features = ["from", "deref", "deref_mut"] }
 async-trait = "0.1.77"
 console-subscriber = { version = "0.4", optional = true }
 bls-signatures = { git = "https://github.com/dashpay/bls-signatures", rev = "0842b17583888e8f46c252a4ee84cdfd58e0546f", optional = true }
-grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "5eb7a5380a6e974513343352acfd6b30a8c1f87c" }
+grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "a18f7929460ef9c5d814f61ff84d8805b2a1761b" }
 nonempty = "0.11"
 # Shielded-pool snapshot needs raw RocksDB SstFileWriter + ingest_external_file_cf
 # bindings, and blake3 for the snapshot-file checksum.
@@ -107,9 +107,9 @@ dpp = { path = "../rs-dpp", default-features = false, features = [
 drive = { path = "../rs-drive", features = ["fixtures-and-mocks"] }
 drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
 strategy-tests = { path = "../strategy-tests" }
-grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "5eb7a5380a6e974513343352acfd6b30a8c1f87c", features = ["client"] }
+grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "a18f7929460ef9c5d814f61ff84d8805b2a1761b", features = ["client"] }
 assert_matches = "1.5.0"
-drive-abci = { path = ".", features = ["testing-config", "mocks"] }
+drive-abci = { path = ".", features = ["testing-config", "mocks", "shielded_test_data"] }
 bls-signatures = { git = "https://github.com/dashpay/bls-signatures", rev = "0842b17583888e8f46c252a4ee84cdfd58e0546f" }
 mockall = { version = "0.13" }
 dash-platform-macros = { path = "../rs-dash-platform-macros" }
@@ -121,14 +121,22 @@ integer-encoding = { version = "4.0.0" }
 
 # For dump_only_default_and_aux_cfs_under_shielded_subtree_prefix — same
 # subtree-prefix algorithm grovedb uses internally.
-grovedb-path = { git = "https://github.com/dashpay/grovedb", rev = "5eb7a5380a6e974513343352acfd6b30a8c1f87c" }
-grovedb-storage = { git = "https://github.com/dashpay/grovedb", rev = "5eb7a5380a6e974513343352acfd6b30a8c1f87c" }
+grovedb-path = { git = "https://github.com/dashpay/grovedb", rev = "a18f7929460ef9c5d814f61ff84d8805b2a1761b" }
+grovedb-storage = { git = "https://github.com/dashpay/grovedb", rev = "a18f7929460ef9c5d814f61ff84d8805b2a1761b" }
 
 [features]
 default = ["bls-signatures"]
 mocks = ["mockall", "drive/fixtures-and-mocks", "bls-signatures"]
 console = ["console-subscriber", "tokio/tracing"]
 testing-config = []
+# Compiles in the shielded-pool seeder, the `snapshot-bake` subcommand, and
+# the bake/apply API used at devnet InitChain. Pulls `drive/shielded_test_data`
+# (which forwards to `grovedb/unsafe-dump-load`) so the underlying snapshot
+# primitives become available. Dockerfile turns this on when
+# `SHIELDED_TEST_DATA=true`. The snapshot roundtrip test in this crate's own
+# `#[cfg(test)]` module also requires it — the dev-dependency below enables
+# it for `cargo test`.
+shielded_test_data = ["drive/shielded_test_data"]
 grovedbg = ["drive/grovedbg"]
 # `abci-server replay` command
 replay = ["dep:time", "tenderdash-abci/serde"]

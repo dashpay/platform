@@ -14,7 +14,7 @@
 //!   the underlying RocksDB, cross-validates the reconstructed state against
 //!   the header's `combined_root`, then writes the parent-Merk
 //!   `Element::CommitmentTree` leaf via the new
-//!   `GroveDb::replace_commitment_tree_subtree_root` public API.
+//!   `GroveDb::replace_subtree_root` public API.
 //!
 //! Built on three new public methods we added to grovedb on the
 //! `feat/snapshot-apply-public-api` branch:
@@ -22,7 +22,7 @@
 //! 1. `GroveDb::raw_storage()` — escape hatch to the underlying
 //!    `RocksDbStorage` so we can open a `StorageContext` for raw iteration.
 //! 2. `GroveDb::ingest_subtree_sst(cf, sst_path)` — bulk-ingest an SST file.
-//! 3. `GroveDb::replace_commitment_tree_subtree_root(...)` — patch the
+//! 3. `GroveDb::replace_subtree_root(...)` — patch the
 //!    parent-Merk `Element::CommitmentTree` leaf with a caller-provided
 //!    `combined_root`.
 //!
@@ -559,21 +559,18 @@ pub fn apply_shielded_snapshot(
     let leaf_key = &[SHIELDED_NOTES_KEY];
     let flags = header.flags.map(|b| vec![b]);
 
+    let new_element = Element::new_commitment_tree(header.total_count, header.chunk_power, flags);
     grove
-        .replace_commitment_tree_subtree_root(
+        .replace_subtree_root(
             parent_path,
             leaf_key,
-            header.total_count,
-            header.chunk_power,
-            flags,
+            new_element,
             header.combined_root,
             transaction,
             &platform_version.drive.grove_version,
         )
         .value
-        .map_err(|e| {
-            ShieldedSnapshotError::GroveDb(format!("replace_commitment_tree_subtree_root: {e}"))
-        })?;
+        .map_err(|e| ShieldedSnapshotError::GroveDb(format!("replace_subtree_root: {e}")))?;
 
     Ok(ApplyStats {
         total_count: header.total_count,
