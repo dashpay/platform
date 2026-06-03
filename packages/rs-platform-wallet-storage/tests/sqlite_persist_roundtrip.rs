@@ -82,7 +82,7 @@ fn tc013_wallet_metadata_roundtrip() {
     assert_eq!(birth_height, 12345);
 }
 
-/// TC-CODE-029-1: journal_mode=Memory is rejected at open with a typed
+/// journal_mode=Memory is rejected at open with a typed
 /// `ConfigInvalid` error and the DB is not created.
 #[test]
 fn tc_code_029_1_journal_mode_memory_rejected() {
@@ -103,8 +103,8 @@ fn tc_code_029_1_journal_mode_memory_rejected() {
     );
 }
 
-/// TC-CODE-029-2: journal_mode=Off is rejected at open with a typed
-/// `ConfigInvalid` error and the DB is not created.
+/// journal_mode=Off is rejected at open with a typed `ConfigInvalid`
+/// error and the DB is not created.
 #[test]
 fn tc_code_029_2_journal_mode_off_rejected() {
     let tmp = tempfile::tempdir().unwrap();
@@ -124,8 +124,8 @@ fn tc_code_029_2_journal_mode_off_rejected() {
     );
 }
 
-/// TC-CODE-029-3: busy_timeout=0 opens successfully but emits a
-/// tracing::warn so operators can spot the footgun in logs.
+/// busy_timeout=0 opens successfully but emits a tracing::warn so
+/// operators can spot the footgun in logs.
 #[test]
 #[tracing_test::traced_test]
 fn tc_code_029_3_busy_timeout_zero_warns() {

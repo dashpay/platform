@@ -134,8 +134,8 @@ fn tc037_restore_corrupt_source() {
     );
 }
 
-/// ATOM-004 (A-1): a failure during `backup_to` must NOT leave a
-/// partial/empty `.db` file at the caller-supplied destination. The
+/// A failure during `backup_to` must NOT leave a partial/empty `.db`
+/// file at the caller-supplied destination. The
 /// pre-A-1 code eagerly opened `dest`, so any later failure
 /// (`apply_secure_permissions`, `Backup::new`, `run_to_completion`)
 /// stranded an empty file at `dest`. We exercise the path that
@@ -216,8 +216,8 @@ fn tc038_prune_and_semantics() {
     );
 }
 
-/// ATOM-011 (A-6): a per-file remove failure is collected into
-/// `failed_removals`, not propagated as `Err` aborting the loop.
+/// A per-file remove failure is collected into `failed_removals`, not
+/// propagated as `Err` aborting the loop.
 /// We can't directly simulate a remove failure inside the spec on a
 /// portable filesystem, so we use the simpler approach: confirm the
 /// report shape carries `failed_removals` and a happy-path prune
@@ -259,8 +259,8 @@ fn is_root_via_probe() -> bool {
     can_write
 }
 
-/// TC-CODE-009-a: `backup_to(existing-file)` refuses to overwrite and
-/// leaves the sentinel content intact. With `persist_noclobber` the
+/// `backup_to(existing-file)` refuses to overwrite and leaves the
+/// sentinel content intact. With `persist_noclobber` the
 /// check is atomic against the rename — no TOCTOU window between an
 /// `exists()` probe and the atomic swap.
 #[test]
@@ -283,7 +283,7 @@ fn tc_code_009_a_backup_to_refuses_overwrite_atomically() {
     );
 }
 
-/// TC-CODE-009-b: non-`AlreadyExists` persist failures surface as
+/// Non-`AlreadyExists` persist failures surface as
 /// `WalletStorageError::Io` — the variant taxonomy stays narrow.
 /// Unix-only: emulated via a read-only parent directory (which UID 0
 /// bypasses, so the test is skipped under root).
@@ -323,8 +323,8 @@ fn tc_code_009_b_backup_to_non_already_exists_maps_to_io() {
     }
 }
 
-/// TC-CODE-014-a: `run_to` and `restore_from` call `fsync` on the
-/// destination's parent directory after the atomic rename. Functional
+/// `run_to` and `restore_from` call `fsync` on the destination's
+/// parent directory after the atomic rename. Functional
 /// fsync verification is impractical without a crash harness, so the
 /// regression check is source-level: confirm `fsync_parent_dir` is
 /// invoked in `backup.rs`.
@@ -339,8 +339,8 @@ fn tc_code_014_a_backup_calls_parent_fsync() {
     );
 }
 
-/// TC-CODE-014-b: `# Atomicity` rustdoc mentions the parent-dir fsync
-/// so callers aren't misled about durability guarantees.
+/// The `# Atomicity` rustdoc mentions the parent-dir fsync so callers
+/// aren't misled about durability guarantees.
 #[test]
 fn tc_code_014_b_atomicity_doc_mentions_fsync() {
     let src = include_str!("../src/sqlite/backup.rs");
@@ -351,7 +351,7 @@ fn tc_code_014_b_atomicity_doc_mentions_fsync() {
     );
 }
 
-/// TC-CODE-019-a: a failed `remove_file` is counted in BOTH `kept` and
+/// A failed `remove_file` is counted in BOTH `kept` and
 /// `failed_removals`, preserving `kept + removed == total`.
 ///
 /// Unix-only: emulated by chmodding the prune directory read-only so

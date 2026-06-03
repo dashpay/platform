@@ -1,10 +1,9 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! TC-CODE-005 / TC-CODE-010 / TC-CODE-015 — SQLite-native EXCLUSIVE
-//! replaces the (false-positive) `flock(2)` advisory lock pattern that
-//! pre-T-006 `restore_from` used for cross-process exclusion. The
-//! advisory lock did not exclude rusqlite peers; `BEGIN EXCLUSIVE`
-//! against the destination file does.
+//! Cross-process exclusion for `restore_from` relies on a
+//! SQLite-native EXCLUSIVE transaction against the destination file.
+//! An advisory `flock(2)` would not exclude rusqlite peers;
+//! `BEGIN EXCLUSIVE` does.
 
 mod common;
 
@@ -28,7 +27,7 @@ fn seed_one_row(persister: &SqlitePersister, w: &[u8; 32]) {
     persister.store(*w, cs).unwrap();
 }
 
-/// TC-CODE-005-a — `restore_from` must hold a SQLite-native exclusive
+/// `restore_from` must hold a SQLite-native exclusive
 /// lock for the full restore body. A peer rusqlite Connection (a
 /// different process equivalent) opening the same DB and trying to
 /// `BEGIN EXCLUSIVE` while restore is in flight must conflict.
@@ -39,8 +38,8 @@ fn seed_one_row(persister: &SqlitePersister, w: &[u8; 32]) {
 /// conflict during the body) is implicitly covered: if the persister
 /// failed to take EXCLUSIVE, the peer's EXCLUSIVE held below would
 /// have blocked our restore — and busy-timeouts would surface as
-/// `Err`. Negative path also covered by TC-CODE-005-b: if a peer
-/// HOLDS exclusive across restore, restore returns BUSY.
+/// `Err`. The negative path (a peer that HOLDS exclusive across
+/// restore makes restore return BUSY) is covered separately below.
 #[test]
 fn restore_takes_and_releases_native_exclusive() {
     let (persister, tmp, db_path) = fresh_persister();
@@ -64,11 +63,10 @@ fn restore_takes_and_releases_native_exclusive() {
     drop(backup_dir);
 }
 
-/// TC-CODE-005-b — when a peer holds EXCLUSIVE on the destination,
-/// `restore_from` returns a busy error rather than silently steamrolling
-/// the peer's write tx. With the pre-T-006 flock approach this would
-/// have proceeded (flock doesn't see SQLite peers); with the
-/// SQLite-native EXCLUSIVE it must conflict.
+/// When a peer holds EXCLUSIVE on the destination, `restore_from`
+/// returns a busy error rather than silently steamrolling the peer's
+/// write tx. An advisory flock would not see SQLite peers and would
+/// proceed; the SQLite-native EXCLUSIVE must conflict.
 #[test]
 fn restore_blocks_when_peer_holds_exclusive() {
     let (persister, tmp, db_path) = fresh_persister();
@@ -104,7 +102,6 @@ fn restore_blocks_when_peer_holds_exclusive() {
     drop(backup_dir);
 }
 
-/// TC-CODE-005-b (grep half) + TC-CODE-010-a + TC-CODE-015-a —
 /// flock / fs2 / fs4 must be gone from the persister.
 #[test]
 fn flock_and_fs2_traces_are_gone() {
@@ -136,8 +133,8 @@ fn flock_and_fs2_traces_are_gone() {
     }
 }
 
-/// TC-CODE-005-c — README must describe the SQLite-native exclusion,
-/// not the false advisory-flock claim.
+/// README must describe the SQLite-native exclusion, not a false
+/// advisory-flock claim.
 #[test]
 fn readme_describes_sqlite_native_exclusion() {
     let readme = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("README.md"))

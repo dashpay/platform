@@ -177,7 +177,7 @@ fn leak() {
     assert!(clean_off.is_empty(), "clean call must not be flagged");
 }
 
-/// Smythe EDIT-2 — `keyring_core::Error` embeds raw `Vec<u8>` in
+/// `keyring_core::Error` embeds raw `Vec<u8>` in
 /// `BadEncoding` / `BadDataFormat`; `Display` is safe but `{:?}` is
 /// dangerous. Forbid `{:?}` debug-formatting of any binding the seam
 /// code holds as a `keyring_core::Error` inside `src/secrets/`.
@@ -196,7 +196,7 @@ fn no_debug_format_of_keyring_error_in_secrets_module() {
     visit(&manifest.join("src/secrets"), &mut offenders);
     assert!(
         offenders.is_empty(),
-        "Smythe EDIT-2: `{{:?}}` debug-format paired with `keyring_core::Error` \
+        "`{{:?}}` debug-format paired with `keyring_core::Error` \
          in src/secrets/ (BadEncoding/BadDataFormat embed raw Vec<u8>):\n{}",
         offenders.join("\n")
     );

@@ -296,11 +296,10 @@ pub fn restore_from(dest_db_path: &Path, src_backup: &Path) -> Result<(), Wallet
         crate::sqlite::migrations::assert_schema_version_supported(&staged)?;
     }
 
-    // 5. ATOM-010 (A-5): chmod 600 on the temp BEFORE persist so the
-    //    destination inherits owner-only mode via the atomic rename.
-    //    Pre-A-5 the chmod ran post-persist — a rare chmod failure
-    //    returned Err while leaving the new DB live at the destination
-    //    (caller thought restore rolled back, reality was mixed).
+    // 5. chmod 600 on the temp BEFORE persist so the destination
+    //    inherits owner-only mode via the atomic rename. Chmodding
+    //    post-persist would leave the new DB live at the destination on
+    //    a chmod failure, contradicting the rolled-back error.
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -429,7 +428,7 @@ where
 ///
 /// # Partial failures
 ///
-/// ATOM-011 / A-6: per-file `remove_file` failures are collected into
+/// Per-file `remove_file` failures are collected into
 /// `PruneReport::failed_removals` rather than aborting the loop. The
 /// happy path still removes every eligible file. Only catastrophic
 /// errors (`read_dir` itself fails, an `entry?` returns Err) surface

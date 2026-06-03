@@ -1,5 +1,5 @@
-//! CMT-003 / CMT-004 — owner-only permissions on the live DB AND its
-//! `-wal` / `-shm` sidecars. SQLite's default WAL journal mode keeps
+//! Owner-only permissions on the live DB AND its `-wal` / `-shm`
+//! sidecars. SQLite's default WAL journal mode keeps
 //! recent committed pages in the sidecars, so leaving them at the
 //! process umask leaks wallet state on multi-user hosts.
 
@@ -62,8 +62,8 @@ fn wal_and_shm_sidecars_are_chmodded_0o600() {
     }
 }
 
-/// TC-CODE-011-a: `apply_secure_permissions` survives a non-ASCII DB
-/// filename whose bytes round-trip through `OsString` (the codepath
+/// `apply_secure_permissions` survives a non-ASCII DB filename whose
+/// bytes round-trip through `OsString` (the codepath
 /// builds sidecar names via `OsString::push`, not `format!` over a
 /// lossy `String`). The chosen prefix `ÿþ` (`U+00FF U+00FE`, UTF-8
 /// bytes `c3 bf c3 be`) is multi-byte non-ASCII that both Linux and
@@ -111,8 +111,8 @@ fn tc_code_011_a_non_ascii_db_path_sidecars_chmodded() {
     }
 }
 
-/// TC-CODE-011-b: `apply_secure_permissions` is a no-op (Ok) when the
-/// sidecars don't exist. The `set_permissions` call sees
+/// `apply_secure_permissions` is a no-op (Ok) when the sidecars don't
+/// exist. The `set_permissions` call sees
 /// `ErrorKind::NotFound` and swallows it — no `exists()` gate, no
 /// race window.
 #[test]
@@ -138,8 +138,8 @@ fn tc_code_011_b_no_sidecars_is_ok() {
     );
 }
 
-/// TC-CODE-011-c: the same OsString + NotFound-swallow pattern in
-/// `backup.rs`'s WAL/SHM-unlink loop (DRY motif).
+/// The same OsString + NotFound-swallow pattern in `backup.rs`'s
+/// WAL/SHM-unlink loop (DRY motif).
 #[test]
 fn tc_code_011_c_backup_wal_shm_unlink_no_lossy_no_exists_gate() {
     let src = include_str!("../src/sqlite/backup.rs");

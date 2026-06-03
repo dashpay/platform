@@ -1,7 +1,7 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! CMT-001 / CODE-006 — `delete_wallet` must reconcile the in-memory
-//! buffer AND fold buffered writes into the pre-delete backup.
+//! `delete_wallet` must reconcile the in-memory buffer AND fold
+//! buffered writes into the pre-delete backup.
 //!
 //! `delete_wallet_inner` drains the target wallet's buffered
 //! changeset, flushes it to disk, snapshots the backup, then runs
@@ -81,8 +81,8 @@ fn buffered_only_delete_is_ok_and_no_resurrection() {
     );
 }
 
-/// TC-CODE-006-1 — the pre-delete backup MUST include buffered
-/// writes flushed during `delete_wallet`'s pre-flush phase. Without
+/// The pre-delete backup MUST include buffered writes flushed during
+/// `delete_wallet`'s pre-flush phase. Without
 /// the pre-flush, rollback-from-backup couldn't recover a wallet
 /// whose only state lived in the buffer.
 #[test]
@@ -133,8 +133,8 @@ fn pre_delete_backup_includes_buffered_writes() {
     );
 }
 
-/// TC-CODE-006-2 — when the pre-flush fails, the buffer is restored,
-/// no backup is produced, the wallet stays in the live DB, and
+/// When the pre-flush fails, the buffer is restored, no backup is
+/// produced, the wallet stays in the live DB, and
 /// `delete_wallet` surfaces the original error.
 #[test]
 fn pre_flush_failure_preserves_buffer_and_skips_backup() {

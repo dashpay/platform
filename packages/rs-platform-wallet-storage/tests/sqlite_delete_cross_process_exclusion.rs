@@ -1,7 +1,7 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! TC-CODE-007 — `delete_wallet` must hold a SQLite-native EXCLUSIVE
-//! across the (backup + cascade-delete) window so a peer rusqlite
+//! `delete_wallet` must hold a SQLite-native EXCLUSIVE across the
+//! (backup + cascade-delete) window so a peer rusqlite
 //! Connection (a different process equivalent) can't commit rows
 //! between the backup snapshot and the cascade.
 
@@ -73,8 +73,8 @@ fn delete_wallet_blocks_when_peer_holds_exclusive() {
     drop(peer);
 }
 
-/// Single-process load (regression for CMT-002 / CMT-008 invariants)
-/// must still pass after the EXCLUSIVE refactor.
+/// Single-process load must still pass under the EXCLUSIVE-locked
+/// delete path.
 #[test]
 fn delete_wallet_single_process_still_works() {
     let (persister, _tmp, db_path) = fresh_persister();
