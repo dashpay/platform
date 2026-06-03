@@ -1,12 +1,12 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! TC-040, TC-043, TC-044 — load() reconstructs the wired-up subset.
+//! `load()` reconstructs the wired-up subset of client start-state.
 //!
-//! TC-041 / TC-042 (wallets[*].utxos / .unused_asset_locks) are blocked
-//! on upstream `Wallet::from_persisted` — the persister stores the data
-//! (verified via direct SQL probes) but cannot reconstruct the
-//! `Wallet` + `ManagedWalletInfo` pair that `ClientWalletStartState`
-//! requires. The unwired fields are listed in
+//! The wallet-level fields (`wallets[*].utxos` / `.unused_asset_locks`)
+//! are blocked on upstream `Wallet::from_persisted` — the persister
+//! stores the data (verified via direct SQL probes) but cannot
+//! reconstruct the `Wallet` + `ManagedWalletInfo` pair that
+//! `ClientWalletStartState` requires. The unwired fields are listed in
 //! `persister::LOAD_UNIMPLEMENTED` and surfaced via a `tracing::warn!`
 //! on every `load`.
 
@@ -39,7 +39,7 @@ fn entry(
     }
 }
 
-/// TC-040: load() reconstructs platform_addresses per wallet.
+/// load() reconstructs platform_addresses per wallet.
 #[test]
 fn tc040_load_platform_addresses() {
     let (persister, _tmp, _path) = fresh_persister();
@@ -185,7 +185,7 @@ fn wallet_without_platform_state_is_omitted_from_load() {
     );
 }
 
-/// TC-043: non-wired-up sub-areas are written to disk (verified by
+/// non-wired-up sub-areas are written to disk (verified by
 /// direct SQL probes) but do not surface in the load result.
 ///
 /// Constructs non-empty `ContactChangeSet` and `TokenBalanceChangeSet`
@@ -335,7 +335,7 @@ fn contact_request_entry(sender: u8, recipient: u8) -> ContactRequestEntry {
     }
 }
 
-/// TC-P4-003: identities reader round-trips per wallet, exact equality
+/// identities reader round-trips per wallet, exact equality
 /// on `id`s.
 ///
 /// `persister.load()` no longer surfaces the identities slot (the
@@ -401,7 +401,7 @@ fn tc_p4_003_load_identities_two_wallets() {
     assert_eq!(bucket_b.values().next().unwrap().identity.id(), e_b1.id);
 }
 
-/// TC-P4-004: contacts round-trip per wallet, exact equality on the
+/// contacts round-trip per wallet, exact equality on the
 /// contact-request key + entry.
 #[test]
 fn tc_p4_004_load_contacts_two_wallets() {
@@ -511,7 +511,7 @@ fn established_contact(owner: u8, contact: u8) -> EstablishedContact {
     }
 }
 
-/// CMT-003: a sent-only request round-trips into `sent_requests` and
+/// a sent-only request round-trips into `sent_requests` and
 /// nowhere else.
 #[test]
 fn tc_p4_004a_sent_only_round_trip() {
@@ -534,7 +534,7 @@ fn tc_p4_004a_sent_only_round_trip() {
     assert!(state.established.is_empty());
 }
 
-/// CMT-003: a received-only request round-trips into `incoming_requests`
+/// a received-only request round-trips into `incoming_requests`
 /// and nowhere else.
 #[test]
 fn tc_p4_004b_received_only_round_trip() {
@@ -558,7 +558,7 @@ fn tc_p4_004b_received_only_round_trip() {
     assert!(state.established.is_empty());
 }
 
-/// CMT-003: an established contact round-trips into `established` with
+/// an established contact round-trips into `established` with
 /// both request blobs and all four metadata columns intact.
 #[test]
 fn tc_p4_004c_established_round_trip() {
@@ -581,7 +581,7 @@ fn tc_p4_004c_established_round_trip() {
     assert!(state.incoming_requests.is_empty());
 }
 
-/// CMT-003: `removed_sent` / `removed_incoming` delete the matching
+/// `removed_sent` / `removed_incoming` delete the matching
 /// pending row — an explicit cancellation, not an auto-establishment.
 #[test]
 fn tc_p4_004d_removal_deletes_pending_rows() {
@@ -648,7 +648,7 @@ fn tc_p4_004d_removal_deletes_pending_rows() {
     assert!(state.established.is_empty());
 }
 
-/// CMT-003: auto-establishment. An `established` upsert over a prior
+/// auto-establishment. An `established` upsert over a prior
 /// pending row for the same `(owner, contact)` pair collapses to a
 /// single established row — load returns it under `established`, never
 /// `sent` / `incoming`.
@@ -870,7 +870,7 @@ fn received_then_matching_sent_promotes_to_established() {
     assert!(state.incoming_requests.is_empty());
 }
 
-/// TC-P4-005: asset locks bucketed by (wallet, account, outpoint).
+/// asset locks bucketed by (wallet, account, outpoint).
 #[test]
 fn tc_p4_005_load_asset_locks_bucketed() {
     use dashcore::hashes::Hash;
@@ -955,7 +955,7 @@ fn tc_p4_005_load_asset_locks_bucketed() {
     assert_eq!(b_buckets[&0].len(), 1);
 }
 
-/// TC-P4-006: empty wallets emit `wallets_pending_rehydration = N`
+/// empty wallets emit `wallets_pending_rehydration = N`
 /// and `wallets` slot stays empty.
 #[tracing_test::traced_test]
 #[test]
@@ -972,7 +972,7 @@ fn tc_p4_006_pending_rehydration_count() {
     assert!(logs_contain("wallets_rehydrated=0"));
 }
 
-/// TC-P4-007: load() summary carries every counter, including zeros.
+/// load() summary carries every counter, including zeros.
 #[tracing_test::traced_test]
 #[test]
 fn tc_p4_007_summary_log_counters() {
@@ -992,7 +992,7 @@ fn tc_p4_007_summary_log_counters() {
     }
 }
 
-/// TC-P4-008: a corrupted blob is a HARD failure. The hardened reader
+/// a corrupted blob is a HARD failure. The hardened reader
 /// returns `Err` for the corrupt wallet (no silent skip) while the
 /// second, intact wallet still decodes cleanly.
 #[test]
@@ -1055,7 +1055,7 @@ fn tc_p4_008_corruption_is_hard_error() {
     assert_eq!(b_state.wallet_identities.get(&b).map(|m| m.len()), Some(1));
 }
 
-/// TC-P4-008b: `contacts::load_state` is fail-hard. A garbage
+/// 008b: `contacts::load_state` is fail-hard. A garbage
 /// `outgoing_request` blob yields a typed `BincodeDecode`; a non-32-byte
 /// id column yields a typed `BlobDecode`. Neither is silently skipped,
 /// and an intact wallet still decodes cleanly.
@@ -1127,7 +1127,7 @@ fn tc_p4_008b_contacts_corruption_is_hard_error() {
     assert_eq!(good_state.sent_requests.len(), 1);
 }
 
-/// TC-P4-008c: `asset_locks::load_state` is fail-hard. A garbage
+/// 008c: `asset_locks::load_state` is fail-hard. A garbage
 /// `lifecycle_blob` yields a typed `BincodeDecode`; a malformed
 /// `outpoint` column yields a typed decode error. An intact wallet
 /// still decodes cleanly.
@@ -1223,7 +1223,7 @@ fn tc_p4_008c_asset_locks_corruption_is_hard_error() {
     assert_eq!(good_state[&0].len(), 1);
 }
 
-/// TC-P4-008d: `wallet_meta::list_ids` is fail-hard on a malformed
+/// 008d: `wallet_meta::list_ids` is fail-hard on a malformed
 /// stored `wallet_id`. This is the code path where a non-32-byte id
 /// actually surfaces (the per-area `load_state` readers take a typed
 /// `&WalletId`, so the length check belongs here). A 10-byte
@@ -1257,7 +1257,7 @@ fn tc_p4_008d_list_ids_rejects_non_32_byte_wallet_id() {
     );
 }
 
-/// TC-P4-012: `load()` query cost is bounded per wallet.
+/// `load()` query cost is bounded per wallet.
 ///
 /// `load()` now drives the platform-address reader off
 /// `wallet_meta::list_ids` and issues a fixed, small number of
@@ -1344,7 +1344,7 @@ fn tc_p4_012_load_query_count_bounded() {
     );
 }
 
-/// TC-P4-010: empty database → defaults, ZERO warnings.
+/// empty database → defaults, ZERO warnings.
 #[tracing_test::traced_test]
 #[test]
 fn tc_p4_010_empty_db_default_state() {

@@ -5,8 +5,8 @@
 //! `list_keys`) across all six [`ObjectId`] scopes, the soft-cascade
 //! contract (parentless `put` succeeds; an `AFTER DELETE` trigger cleans
 //! the metadata up when the parent is deleted, including via FK cascade),
-//! the `delete_wallet` report wiring, key/value bounds, prefix escaping,
-//! and scope isolation. (TC-MD-001..025.)
+//! the `delete_wallet` cascade wiring, key/value bounds, prefix
+//! escaping, and scope isolation.
 
 #![cfg(feature = "kv")]
 
@@ -25,7 +25,7 @@ fn id32(byte: u8) -> [u8; 32] {
 }
 
 // ---------------------------------------------------------------------
-// TC-MD-001..006 — per-scope roundtrip (get→None, put, get, overwrite,
+// 001..006 — per-scope roundtrip (get→None, put, get, overwrite,
 // delete, get→None). Parent rows seeded first.
 // ---------------------------------------------------------------------
 
@@ -112,8 +112,8 @@ fn tc_md_006_roundtrip_platform_address() {
 }
 
 // ---------------------------------------------------------------------
-// TC-MD-007..011 — parentless `put` SUCCEEDS for the five typed scopes
-// (no parent row seeded) and the value reads back. TC-MD-012 — Global
+// 007..011 — parentless `put` SUCCEEDS for the five typed scopes
+// (no parent row seeded) and the value reads back. — Global
 // put on empty DB → Ok.
 // ---------------------------------------------------------------------
 
@@ -184,7 +184,7 @@ fn tc_md_012_put_global_on_empty_db_is_ok() {
 }
 
 // ---------------------------------------------------------------------
-// QA-002 — delete of a never-existing key is idempotent (returns Ok),
+// delete of a never-existing key is idempotent (returns Ok),
 // for the Global scope and a typed scope.
 // ---------------------------------------------------------------------
 
@@ -198,7 +198,7 @@ fn delete_missing_key_is_idempotent() {
 }
 
 // ---------------------------------------------------------------------
-// QA-003 — list_keys returns keys in ascending order regardless of
+// list_keys returns keys in ascending order regardless of
 // insertion order.
 // ---------------------------------------------------------------------
 
@@ -215,7 +215,7 @@ fn list_keys_is_ascending_regardless_of_insert_order() {
 }
 
 // ---------------------------------------------------------------------
-// TC-MD-013..016 — soft cascade via AFTER DELETE trigger: seed+put,
+// 013..016 — soft cascade via AFTER DELETE trigger: seed+put,
 // DELETE FROM the direct parent table, assert the meta row is gone.
 // ---------------------------------------------------------------------
 
@@ -314,7 +314,7 @@ fn tc_md_016_cascade_platform_address() {
 }
 
 // ---------------------------------------------------------------------
-// TC-MD-017 / 017b — wallet cascade (direct + transitive via identities).
+// 017 / 017b — wallet cascade (direct + transitive via identities).
 // ---------------------------------------------------------------------
 
 #[test]
@@ -360,7 +360,7 @@ fn tc_md_017b_cascade_identity_via_wallet() {
 }
 
 // ---------------------------------------------------------------------
-// TC-MD-018 / 019 — delete_wallet purges every meta_* for the wallet;
+// 018 / 019 — delete_wallet purges every meta_* for the wallet;
 // Global + other wallet's meta_wallet survive; report wiring.
 // ---------------------------------------------------------------------
 
@@ -773,7 +773,7 @@ fn meta_token_cleanup_fires_on_wallet_cascade_two_hops() {
 }
 
 // ---------------------------------------------------------------------
-// TC-MD-020..022 — key bounds.
+// 020..022 — key bounds.
 // ---------------------------------------------------------------------
 
 #[test]
@@ -819,7 +819,7 @@ fn tc_md_022_max_length_key_accepted() {
 }
 
 // ---------------------------------------------------------------------
-// TC-MD-023 — oversized value planted directly is rejected on `get`
+// oversized value planted directly is rejected on `get`
 // before materialisation, across every meta_* table.
 // ---------------------------------------------------------------------
 
@@ -941,7 +941,7 @@ fn tc_md_023_oversized_value_rejected_before_materialising() {
 }
 
 // ---------------------------------------------------------------------
-// TC-MD-024 — list_keys prefix with literal `%`/`_`/`\` (not wildcards).
+// list_keys prefix with literal `%`/`_`/`\` (not wildcards).
 // ---------------------------------------------------------------------
 
 #[test]
@@ -976,7 +976,7 @@ fn tc_md_024_list_keys_escapes_like_metacharacters() {
 }
 
 // ---------------------------------------------------------------------
-// TC-MD-025 — scope isolation: same key string across Wallet(A)/Wallet(B)
+// scope isolation: same key string across Wallet(A)/Wallet(B)
 // and Global/Wallet(A) stays independent.
 // ---------------------------------------------------------------------
 

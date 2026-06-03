@@ -1,8 +1,8 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! TC-016..TC-024 (subset) — buffer + flush semantics.
+//! .. (subset) — buffer + flush semantics.
 //!
-//! Some adversarial cases (TC-021 partial-failure, TC-024 mid-flush
+//! Some adversarial cases ( partial-failure, mid-flush
 //! failure) require a fault-injection seam that the production code
 //! exposes only behind `#[cfg(test)]`. The seam is documented in
 //! `persister.rs::lock_conn_for_test`; tests that need to inject a
@@ -35,7 +35,7 @@ fn changeset(core: CoreChangeSet) -> PlatformWalletChangeSet {
     }
 }
 
-/// TC-017: Manual mode defers I/O.
+/// Manual mode defers I/O.
 #[test]
 fn tc017_manual_defers_io() {
     let (persister, _tmp, path) = fresh_persister_with_mode(FlushMode::Manual);
@@ -64,7 +64,7 @@ fn tc017_manual_defers_io() {
     assert_eq!(n, 1);
 }
 
-/// TC-018: Immediate mode flushes inline.
+/// Immediate mode flushes inline.
 #[test]
 fn tc018_immediate_flushes_inline() {
     let (persister, _tmp, path) = fresh_persister_with_mode(FlushMode::Immediate);
@@ -83,7 +83,7 @@ fn tc018_immediate_flushes_inline() {
     assert_eq!(n, 1);
 }
 
-/// TC-019: commit_writes flushes every dirty wallet.
+/// commit_writes flushes every dirty wallet.
 #[test]
 fn tc019_commit_writes_flushes_dirty() {
     let (persister, _tmp, path) = fresh_persister_with_mode(FlushMode::Manual);
@@ -116,7 +116,7 @@ fn tc019_commit_writes_flushes_dirty() {
     assert_eq!(count_for(&b), 1);
 }
 
-/// TC-020: commit_writes in Immediate mode is a no-op.
+/// commit_writes in Immediate mode is a no-op.
 #[test]
 fn tc020_commit_writes_noop_in_immediate() {
     let (persister, _tmp, _path) = fresh_persister_with_mode(FlushMode::Immediate);
@@ -124,7 +124,7 @@ fn tc020_commit_writes_noop_in_immediate() {
     assert!(report.succeeded.is_empty() && report.failed.is_empty());
 }
 
-/// TC-022: flush(A) doesn't write or clear B's buffer.
+/// flush(A) doesn't write or clear B's buffer.
 #[test]
 fn tc022_flush_is_scoped() {
     let (persister, _tmp, path) = fresh_persister_with_mode(FlushMode::Manual);
@@ -154,7 +154,7 @@ fn tc022_flush_is_scoped() {
     assert_eq!(count_for(&b), 1);
 }
 
-/// TC-016: property — N buffered stores then one flush == one merged
+/// property — N buffered stores then one flush == one merged
 /// store.
 ///
 /// Manual flush mode so the N stores accumulate in the buffer and the
@@ -190,7 +190,7 @@ fn tc016_buffer_merge_oracle_smoke() {
     });
 }
 
-/// TC-001 (subset) — get_core_tx_record round-trips through `core_transactions`.
+///  (subset) — get_core_tx_record round-trips through `core_transactions`.
 #[test]
 fn tc001_get_core_tx_record_roundtrip() {
     use dashcore::blockdata::transaction::Transaction;
@@ -243,7 +243,7 @@ fn tc001_get_core_tx_record_roundtrip() {
     assert!(persister.get_core_tx_record(w, &unknown).unwrap().is_none());
 }
 
-/// TC-015: two wallets coexist without key collisions.
+/// two wallets coexist without key collisions.
 #[test]
 fn tc015_two_wallets_in_one_db() {
     let (persister, _tmp, _path) = fresh_persister();
@@ -281,7 +281,7 @@ fn tc015_two_wallets_in_one_db() {
     assert_eq!(h_b, 22);
 }
 
-/// TC-023: one `flush(wallet_id)` produces exactly one SQLite
+/// one `flush(wallet_id)` produces exactly one SQLite
 /// transaction.
 ///
 /// `rusqlite::Connection::commit_hook` registers a callback that fires
@@ -404,7 +404,7 @@ fn read_synced_height(path: &std::path::Path, w: &[u8; 32]) -> Option<i64> {
         .unwrap()
 }
 
-/// TC-P2-001 — happy-path flush is one transaction; second flush is a no-op.
+/// happy-path flush is one transaction; second flush is a no-op.
 #[test]
 fn tc_p2_001_happy_path_one_tx_then_noop() {
     use std::sync::atomic::Ordering;
@@ -425,7 +425,7 @@ fn tc_p2_001_happy_path_one_tx_then_noop() {
     assert_eq!(read_synced_height(&path, &w), Some(5));
 }
 
-/// TC-P2-002 — transient failure restores the buffer for retry.
+/// transient failure restores the buffer for retry.
 #[test]
 fn tc_p2_002_transient_failure_restores_buffer() {
     let (persister, _tmp, path) = fresh_persister_with_mode(FlushMode::Manual);
@@ -449,7 +449,7 @@ fn tc_p2_002_transient_failure_restores_buffer() {
     assert_eq!(read_synced_height(&path, &w), Some(7));
 }
 
-/// TC-P2-003 — store-during-failed-flush merges via LWW.
+/// store-during-failed-flush merges via LWW.
 ///
 /// Documented `Merge for CoreChangeSet` semantics (see
 /// `platform_wallet/changeset/changeset.rs:150-220`): `synced_height`
@@ -485,7 +485,7 @@ fn tc_p2_003_store_during_failed_flush_lww() {
     assert_eq!(lp, Some(10), "monotonic-max merge must keep 10");
 }
 
-/// TC-P2-004 — fatal failure WIPES the buffer.
+/// fatal failure WIPES the buffer.
 #[test]
 fn tc_p2_004_fatal_failure_wipes_buffer() {
     let (persister, _tmp, path) = fresh_persister_with_mode(FlushMode::Manual);
@@ -505,7 +505,7 @@ fn tc_p2_004_fatal_failure_wipes_buffer() {
     );
 }
 
-/// TC-P2-006 — `FlushMode::Immediate` surfaces `FlushRetryable`.
+/// `FlushMode::Immediate` surfaces `FlushRetryable`.
 #[test]
 fn tc_p2_006_immediate_surfaces_flush_retryable() {
     let (persister, _tmp, path) = fresh_persister_with_mode(FlushMode::Immediate);
@@ -529,7 +529,7 @@ fn tc_p2_006_immediate_surfaces_flush_retryable() {
     assert_eq!(read_synced_height(&path, &w), Some(3));
 }
 
-/// TC-P2-007 — restore emits a structured `tracing::warn!`.
+/// restore emits a structured `tracing::warn!`.
 #[tracing_test::traced_test]
 #[test]
 fn tc_p2_007_warn_on_restore_with_structured_fields() {
@@ -560,9 +560,8 @@ fn tc_p2_007_warn_on_restore_with_structured_fields() {
     );
 }
 
-/// ATOM-007 (N-2): dropping a Manual-mode persister with uncommitted
-/// dirty wallets logs a structured `tracing::error!`. We do NOT
-/// auto-flush from Drop — the spec is explicit about this.
+/// Dropping a Manual-mode persister with uncommitted dirty wallets logs
+/// a structured `tracing::error!`. We do NOT auto-flush from Drop.
 #[tracing_test::traced_test]
 #[test]
 fn atom_007_drop_logs_uncommitted_manual_buffer() {
@@ -585,9 +584,8 @@ fn atom_007_drop_logs_uncommitted_manual_buffer() {
     );
 }
 
-/// ATOM-007 (N-2): an Immediate-mode persister never trips the
-/// Drop-time log — every `store` is durable, so there is no
-/// uncommitted state by construction.
+/// An Immediate-mode persister never trips the Drop-time log — every
+/// `store` is durable, so there is no uncommitted state by construction.
 #[tracing_test::traced_test]
 #[test]
 fn atom_007_drop_silent_in_immediate_mode() {
@@ -604,9 +602,9 @@ fn atom_007_drop_silent_in_immediate_mode() {
     );
 }
 
-/// ATOM-006 (N-1): `commit_writes` continues past per-wallet failures,
-/// returning a CommitReport with each wallet's outcome. A failed
-/// wallet is recorded in `failed`; the remaining wallets still flush.
+/// `commit_writes` continues past per-wallet failures, returning a
+/// CommitReport with each wallet's outcome. A failed wallet is recorded
+/// in `failed`; the remaining wallets still flush.
 ///
 /// We use `force_next_flush_to_fail` to make the FIRST wallet in
 /// sorted-id order surface a fatal error. The remaining two wallets

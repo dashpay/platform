@@ -1,13 +1,13 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! TC-025..TC-030, TC-028, TC-044 — migration discovery and reach.
+//! .., , — migration discovery and reach.
 
 mod common;
 
 use common::fresh_persister;
 use platform_wallet_storage::sqlite::migrations as mig;
 
-/// TC-025: every embedded migration corresponds to a file in `migrations/`.
+/// every embedded migration corresponds to a file in `migrations/`.
 #[test]
 fn tc025_embedded_migrations_match_files() {
     let embedded = mig::embedded_migrations();
@@ -37,7 +37,7 @@ fn tc025_embedded_migrations_match_files() {
     }
 }
 
-/// TC-026: fresh DB ends at latest schema version.
+/// fresh DB ends at latest schema version.
 #[test]
 fn tc026_fresh_db_at_latest() {
     let (persister, _tmp, _path) = fresh_persister();
@@ -57,7 +57,7 @@ fn tc026_fresh_db_at_latest() {
     assert_eq!(max, Some(highest_embedded));
 }
 
-/// TC-027: every declared table is creatable and accepts a minimal row
+/// every declared table is creatable and accepts a minimal row
 /// (parent first, then children).
 #[test]
 fn tc027_smoke_insert_every_table() {
@@ -191,7 +191,7 @@ fn tc027_smoke_insert_every_table() {
     }
 }
 
-/// TC-028: re-open is idempotent.
+/// re-open is idempotent.
 #[test]
 fn tc028_idempotent_reopen() {
     let (persister, tmp, path) = fresh_persister();
@@ -201,7 +201,7 @@ fn tc028_idempotent_reopen() {
     drop(tmp);
 }
 
-/// TC-029: append-only migration hash.
+/// append-only migration hash.
 ///
 /// The hash is computed at runtime from the embedded list. Because this
 /// test belongs to the migration drift policy, we assert the list is
@@ -215,7 +215,7 @@ fn tc029_migration_fingerprint_stable() {
     assert!(!mig::embedded_migrations().is_empty());
 }
 
-/// TC-044: load() on empty post-migrate DB is empty.
+/// load() on empty post-migrate DB is empty.
 #[test]
 fn tc044_load_empty_is_empty() {
     let (persister, _tmp, _path) = fresh_persister();

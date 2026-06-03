@@ -3,9 +3,9 @@
 //! #3625 structural hardening pass.
 //!
 //! Native FK rejection (orphan child + mixed-wallet platform addr),
-//! multi-account UTXO bucketing (CMT-003/011), identity-key typed-vs-blob
-//! consistency (CMT-004), the truncation guards (CMT-012/014), and the
-//! compaction-marker-only load gate (CMT-002).
+//! multi-account UTXO bucketing (/011), identity-key typed-vs-blob
+//! consistency, the truncation guards (/014), and the
+//! compaction-marker-only load gate.
 
 mod common;
 
@@ -21,7 +21,7 @@ use platform_wallet::wallet::platform_wallet::WalletId;
 use platform_wallet_storage::WalletStorageError;
 use rusqlite::params;
 
-/// CMT-001: a child insert without a `wallet_metadata` parent is
+/// a child insert without a `wallet_metadata` parent is
 /// rejected by the native FK (not a trigger).
 #[test]
 fn native_fk_rejects_orphan_child() {
@@ -39,7 +39,7 @@ fn native_fk_rejects_orphan_child() {
     );
 }
 
-/// CMT-001: an `identity_keys` row whose `identities` parent does not
+/// an `identity_keys` row whose `identities` parent does not
 /// exist is rejected by the FK to `identities(identity_id)` (cascade
 /// chain `wallet_metadata → identities → identity_keys`).
 #[test]
@@ -61,7 +61,7 @@ fn native_fk_rejects_identity_keys_without_identity() {
     );
 }
 
-/// CMT-005: a `platform_addresses` entry naming a different wallet than
+/// a `platform_addresses` entry naming a different wallet than
 /// the flush scope fails fast with the typed `WalletIdMismatch`.
 #[test]
 fn platform_addr_mixed_wallet_rejected() {
@@ -228,7 +228,7 @@ fn spent_only_utxo_on_undeclared_address_uses_zero_fallback() {
     );
 }
 
-/// CMT-014: an out-of-range `birth_height` errors rather than truncating.
+/// an out-of-range `birth_height` errors rather than truncating.
 #[test]
 fn birth_height_overflow_errors_not_truncates() {
     use platform_wallet_storage::sqlite::schema::wallet_meta;
@@ -251,7 +251,7 @@ fn birth_height_overflow_errors_not_truncates() {
     );
 }
 
-/// CMT-012: an out-of-range stored sync height errors rather than
+/// an out-of-range stored sync height errors rather than
 /// truncating during the monotonic-max read.
 #[test]
 fn sync_height_overflow_errors_not_truncates() {
@@ -281,7 +281,7 @@ fn sync_height_overflow_errors_not_truncates() {
     );
 }
 
-/// CMT-004: an `identity_keys` upsert whose entry fields disagree with
+/// an `identity_keys` upsert whose entry fields disagree with
 /// its map key is rejected, so the typed columns and serialized blob
 /// can never describe different rows.
 #[test]
@@ -388,7 +388,7 @@ fn identity_entry_id_mismatch_rejected() {
     );
 }
 
-/// CMT-007: an asset_locks row whose lifecycle blob disagrees with the
+/// an asset_locks row whose lifecycle blob disagrees with the
 /// typed `account_index` column is rejected at decode time with the
 /// typed `AssetLockEntryMismatch` rather than silently mis-bucketing.
 #[test]
@@ -443,7 +443,7 @@ fn asset_lock_typed_vs_blob_mismatch_rejected() {
     );
 }
 
-/// CMT-002: a wallet whose only platform-address state is the
+/// a wallet whose only platform-address state is the
 /// compaction marker (`last_known_recent_block > 0`) is kept by `load`,
 /// not silently dropped.
 #[test]

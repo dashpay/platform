@@ -1,12 +1,12 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! TC-045..TC-048 — native foreign-key enforcement.
+//! .. — native foreign-key enforcement.
 
 mod common;
 
 use common::{ensure_wallet_meta, fresh_persister, wid};
 
-/// TC-045: PRAGMA foreign_keys is ON on the connection.
+/// PRAGMA foreign_keys is ON on the connection.
 #[test]
 fn tc045_foreign_keys_on() {
     let (persister, _tmp, _path) = fresh_persister();
@@ -17,7 +17,7 @@ fn tc045_foreign_keys_on() {
     assert_eq!(fk, 1, "foreign_keys pragma not ON");
 }
 
-/// TC-046: insert into a child table without a wallet_metadata parent fails.
+/// insert into a child table without a wallet_metadata parent fails.
 #[test]
 fn tc046_orphan_child_insert_rejected() {
     let (persister, _tmp, _path) = fresh_persister();
@@ -35,7 +35,7 @@ fn tc046_orphan_child_insert_rejected() {
     );
 }
 
-/// TC-047: deleting wallet_metadata cascades.
+/// deleting wallet_metadata cascades.
 #[test]
 fn tc047_delete_wallet_cascade() {
     let (persister, _tmp, _path) = fresh_persister();
@@ -65,7 +65,7 @@ fn tc047_delete_wallet_cascade() {
     assert_eq!(n, 0);
 }
 
-/// TC-048: deleting a core_transactions row sets `spent_in_txid = NULL` on UTXOs.
+/// deleting a core_transactions row sets `spent_in_txid = NULL` on UTXOs.
 #[test]
 fn tc048_setnull_on_tx_delete() {
     let (persister, _tmp, _path) = fresh_persister();

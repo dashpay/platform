@@ -1,11 +1,11 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! TC-P2-005 — `WalletStorageError::is_transient` and
+//! — `WalletStorageError::is_transient` and
 //! `error_kind_str` exhaustiveness check via wildcard-free `match`.
-//! TC-P2-010 — boundary mapping `FlushRetryable` →
+//! — boundary mapping `FlushRetryable` →
 //! `PersistenceError::Backend`.
 //!
-//! TC-P2-005 is structured as a `match` over `&WalletStorageError`
+//! is structured as a `match` over `&WalletStorageError`
 //! that covers every variant explicitly. There is NO `_` arm — when a
 //! future variant lands on `WalletStorageError`, this file refuses to
 //! compile until the author adds a classification + tag here too.
@@ -184,7 +184,7 @@ fn samples() -> Vec<WalletStorageError> {
     ]
 }
 
-/// TC-P2-005: wildcard-free exhaustiveness gate.
+/// wildcard-free exhaustiveness gate.
 ///
 /// The body is a `match` over `&WalletStorageError` with one arm per
 /// variant — NO `_` arm, NO `..` rest patterns over enum variants.
@@ -270,8 +270,8 @@ fn tc_p2_005_is_transient_table() {
     }
 }
 
-/// TC-P2-010: `FlushRetryable` flowing through the `From` impl into
-/// `PersistenceError::Backend { kind, source }` (CODE-004): the outer
+/// `FlushRetryable` flowing through the `From` impl into
+/// `PersistenceError::Backend { kind, source }`: the outer
 /// `Display` carries the variant markers ops grep for, and the typed
 /// source chain still reaches the inner rusqlite payload (consumers
 /// downcast or `Error::source`-walk to get there).
@@ -307,7 +307,7 @@ fn tc_p2_010_boundary_error_mapping() {
     );
 
     // Walk the typed source chain to the inner rusqlite payload —
-    // post-CODE-004 the source is `Box<dyn Error + Send + Sync>` so
+    // post- the source is `Box<dyn Error + Send + Sync>` so
     // the chain is preserved structurally, not just stringified.
     let mut chain = String::new();
     let mut cur: Option<&(dyn std::error::Error + 'static)> = source.source();

@@ -67,8 +67,8 @@ fn concurrent_store_does_not_resurrect_deleted_wallet() {
     worker.join().unwrap();
 
     // Drain any remaining buffered writes — these MUST also leave the
-    // wallet at zero rows because delete_wallet wiped the buffer post-
-    // commit (CMT-008 post-commit re-drain).
+    // wallet at zero rows because delete_wallet re-drains the buffer
+    // after its commit.
     let _ = persister.commit_writes();
 
     // The wallet's parent row and the seeded child must both be gone —
