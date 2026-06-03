@@ -16,7 +16,7 @@ use crate::sqlite::config::{FlushMode, SqlitePersisterConfig, Synchronous};
 use crate::sqlite::error::{AutoBackupOperation, WalletStorageError};
 use crate::sqlite::reports::{CommitReport, DeleteWalletReport};
 use crate::sqlite::schema;
-use crate::sqlite::util::permissions::apply_secure_permissions;
+use crate::sqlite::util::permissions::{apply_secure_permissions, precreate_secure};
 use crate::sqlite::util::safe_cast;
 
 /// Sub-areas of `ClientStartState` that `load()` does not yet
@@ -140,15 +140,22 @@ impl SqlitePersister {
             }
         }
 
+        // Pre-create the DB file owner-only (0600) with O_EXCL BEFORE
+        // rusqlite opens it: the file is born at 0600 (no umask window)
+        // and an attacker-planted symlink at the path makes the create
+        // fail rather than redirect (no chmod-by-path TOCTOU). A no-op
+        // when the DB already exists. Brings the SQLite path to parity
+        // with the secrets-vault file path.
+        precreate_secure(&config.path)?;
+
         // Open the connection AND apply pragmas before checking for
         // pending migrations so the integrity probe sees the configured
         // journal mode and busy timeout. `open_conn` enables foreign-key
         // enforcement and asserts the read-back before any write lands.
         let mut conn =
             crate::sqlite::conn::open_conn(&config.path, crate::sqlite::conn::Access::ReadWrite)?;
-        // SEC-011: chmod 600 on Unix so a freshly created DB doesn't
-        // inherit a wider mode from the process umask. Idempotent on
-        // re-open.
+        // Re-tighten to 0600 on Unix (idempotent on re-open) and sweep
+        // the WAL/SHM sidecars that SQLite creates after open.
         apply_secure_permissions(&config.path)?;
         apply_pragmas(&mut conn, &config)?;
 
