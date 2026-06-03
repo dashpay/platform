@@ -158,17 +158,31 @@ fn execute_upsert_utxo(
     let address = utxo.address.to_string();
     // `Utxo` carries no account index; recover it from the
     // derived-address map written earlier in this transaction.
-    let account_index: i64 = lookup_stmt
+    let looked_up: Option<i64> = lookup_stmt
         .query_row(params![wallet_id.as_slice(), &address], |row| row.get(0))
-        .optional()?
-        .unwrap_or_else(|| {
-            tracing::warn!(
+        .optional()?;
+    let account_index: i64 = match looked_up {
+        Some(idx) => idx,
+        // An unspent UTXO whose address we never derived would land in
+        // the wallet's funds under account 0 and never re-derive — silent
+        // mis-bucketing of live money. Refuse it. The spent-only
+        // placeholder path tolerates the fallback because spent rows are
+        // excluded from `list_unspent_utxos`, so a wrong index there is
+        // inert.
+        None if !spent => {
+            return Err(WalletStorageError::UtxoAddressNotDerived {
+                address: address.clone(),
+            });
+        }
+        None => {
+            tracing::debug!(
                 wallet_id = %hex::encode(wallet_id),
                 address = %address,
-                "UTXO address not found in core_derived_addresses; defaulting account_index to 0"
+                "spent-only UTXO address not found in core_derived_addresses; using account_index 0 placeholder"
             );
             0
-        });
+        }
+    };
     stmt.execute(params![
         wallet_id.as_slice(),
         &op[..],

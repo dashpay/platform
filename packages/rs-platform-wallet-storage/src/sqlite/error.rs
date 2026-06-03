@@ -200,6 +200,13 @@ pub enum WalletStorageError {
     #[error("identity key entry fields disagree with its map key / wallet scope")]
     IdentityKeyEntryMismatch,
 
+    /// An `identities` upsert entry's `id` disagreed with the map key the
+    /// `identity_id` column is bound from — persisting it would leave the
+    /// typed id column and the serialized blob naming different
+    /// identities.
+    #[error("identity entry id disagrees with its map key")]
+    IdentityEntryIdMismatch,
+
     /// An `asset_locks` row's typed-column `(outpoint, account_index)`
     /// disagreed with the lifecycle blob's `(out_point, account_index)`.
     /// Mirrors `IdentityKeyEntryMismatch` — a torn write, partial
@@ -228,6 +235,15 @@ pub enum WalletStorageError {
         len_bytes: usize,
         limit_bytes: usize,
     },
+
+    /// An unspent UTXO named an address absent from
+    /// `core_derived_addresses`, so its owning account index can't be
+    /// resolved. Persisting it would mis-file live funds under account
+    /// 0 with no path back to the real account, so the write is refused.
+    /// Spent-only placeholder rows tolerate a missing mapping (they're
+    /// excluded from the unspent set) and do not raise this.
+    #[error("unspent utxo address {address} is not in core_derived_addresses")]
+    UtxoAddressNotDerived { address: String },
 
     /// `PRAGMA foreign_keys = ON` was issued on open but the read-back
     /// reported the constraint enforcement is still off — the linked
@@ -357,8 +373,10 @@ impl WalletStorageError {
             | Self::BackupDestinationExists { .. }
             | Self::ForeignKeysNotEnforced
             | Self::IdentityKeyEntryMismatch
+            | Self::IdentityEntryIdMismatch
             | Self::AssetLockEntryMismatch { .. }
             | Self::BlobTooLarge { .. }
+            | Self::UtxoAddressNotDerived { .. }
             | Self::IntegerOverflow { .. } => false,
         }
     }
@@ -437,8 +455,10 @@ impl WalletStorageError {
             Self::BackupDestinationExists { .. } => "backup_destination_exists",
             Self::ForeignKeysNotEnforced => "foreign_keys_not_enforced",
             Self::IdentityKeyEntryMismatch => "identity_key_entry_mismatch",
+            Self::IdentityEntryIdMismatch => "identity_entry_id_mismatch",
             Self::AssetLockEntryMismatch { .. } => "asset_lock_entry_mismatch",
             Self::BlobTooLarge { .. } => "blob_too_large",
+            Self::UtxoAddressNotDerived { .. } => "utxo_address_not_derived",
             Self::IntegerOverflow { .. } => "integer_overflow",
         }
     }

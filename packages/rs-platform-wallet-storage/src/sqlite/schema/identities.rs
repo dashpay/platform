@@ -37,6 +37,14 @@ pub fn apply(
         )?;
         let wallet_id_param = wallet_id_to_param(wallet_id);
         for (id, entry) in &cs.identities {
+            // The map key is bound into the `identity_id` column while
+            // `entry` is what the serialized blob carries; a disagreement
+            // would persist a row whose typed id names a different
+            // identity than its blob. Reject before encoding so the two
+            // representations can never diverge on disk.
+            if entry.id != *id {
+                return Err(WalletStorageError::IdentityEntryIdMismatch);
+            }
             // Cross-check: the entry's own wallet_id (when set) must
             // agree with the flush scope so the typed columns and the
             // serialized blob describe the same parenting. Sentinel

@@ -115,9 +115,9 @@ fn make_utxo(addr: &Address, vout: u32, value: u64) -> Utxo {
     Utxo::new(outpoint, txout, addr.clone(), 10, false)
 }
 
-/// CMT-003/011: UTXOs resolve their real `account_index` from the
-/// derived-address map written earlier in the same transaction, instead
-/// of a hardcoded 0. A UTXO on an undeclared address defaults to 0.
+/// UTXOs resolve their real `account_index` from the derived-address
+/// map written earlier in the same transaction, instead of a hardcoded
+/// 0.
 #[test]
 fn multi_account_utxos_bucket_to_real_account() {
     use platform_wallet_storage::sqlite::schema::core_state;
@@ -128,7 +128,6 @@ fn multi_account_utxos_bucket_to_real_account() {
 
     let addr_acct5 = p2pkh(0x05);
     let addr_acct9 = p2pkh(0x09);
-    let addr_unknown = p2pkh(0xEE);
 
     {
         let mut conn = persister.lock_conn_for_test();
@@ -147,7 +146,6 @@ fn multi_account_utxos_bucket_to_real_account() {
             new_utxos: vec![
                 make_utxo(&addr_acct5, 0, 1000),
                 make_utxo(&addr_acct9, 1, 2000),
-                make_utxo(&addr_unknown, 2, 3000),
             ],
             ..Default::default()
         };
@@ -168,11 +166,65 @@ fn multi_account_utxos_bucket_to_real_account() {
         Some(1),
         "account 9 should hold exactly one UTXO"
     );
-    // The undeclared address falls back to account 0.
-    assert_eq!(
-        by_account.get(&0).map(|v| v.len()),
-        Some(1),
-        "undeclared address should default to account 0"
+}
+
+/// A NEW unspent UTXO whose address is absent from
+/// `core_derived_addresses` cannot resolve an owning account, so the
+/// write is refused with the typed `UtxoAddressNotDerived` instead of
+/// silently mis-filing live funds under account 0.
+#[test]
+fn unspent_utxo_on_undeclared_address_is_rejected() {
+    use platform_wallet_storage::sqlite::schema::core_state;
+
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0xC8);
+    ensure_wallet_meta(&persister, &w);
+
+    let addr_unknown = p2pkh(0xEE);
+    let mut conn = persister.lock_conn_for_test();
+    let cs = CoreChangeSet {
+        new_utxos: vec![make_utxo(&addr_unknown, 0, 3000)],
+        ..Default::default()
+    };
+    let tx = conn.transaction().unwrap();
+    let err = core_state::apply(&tx, &w, &cs)
+        .expect_err("unspent UTXO on an undeclared address must error");
+    assert!(
+        matches!(err, WalletStorageError::UtxoAddressNotDerived { .. }),
+        "expected UtxoAddressNotDerived, got {err:?}"
+    );
+}
+
+/// A spent-only placeholder UTXO whose address was never derived still
+/// persists with the account-0 fallback — spent rows are excluded from
+/// the unspent set, so the placeholder index is inert.
+#[test]
+fn spent_only_utxo_on_undeclared_address_uses_zero_fallback() {
+    use platform_wallet_storage::sqlite::schema::core_state;
+
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0xC9);
+    ensure_wallet_meta(&persister, &w);
+
+    let addr_unknown = p2pkh(0xEF);
+    {
+        let mut conn = persister.lock_conn_for_test();
+        let cs = CoreChangeSet {
+            // A spend of an address we never derived arrives as a
+            // spent-only placeholder (no prior unspent row to mark).
+            spent_utxos: vec![make_utxo(&addr_unknown, 0, 3000)],
+            ..Default::default()
+        };
+        let tx = conn.transaction().unwrap();
+        core_state::apply(&tx, &w, &cs).expect("spent-only placeholder must persist");
+        tx.commit().unwrap();
+    }
+
+    let conn = persister.lock_conn_for_test();
+    let by_account = core_state::list_unspent_utxos(&conn, &w).unwrap();
+    assert!(
+        by_account.is_empty(),
+        "spent-only placeholder must not appear in the unspent set"
     );
 }
 
@@ -280,6 +332,59 @@ fn identity_key_entry_mismatch_rejected() {
     assert!(
         format!("{err}").contains("disagree"),
         "expected identity key entry mismatch, got `{err}`"
+    );
+}
+
+/// An `identities` upsert whose entry `id` disagrees with its map key is
+/// rejected before encoding, so the typed `identity_id` column and the
+/// serialized blob can never name different identities.
+#[test]
+fn identity_entry_id_mismatch_rejected() {
+    use dpp::prelude::Identifier;
+    use platform_wallet::changeset::{IdentityChangeSet, IdentityEntry};
+    use platform_wallet::wallet::identity::IdentityStatus;
+
+    let (persister, _tmp, _path) = fresh_persister();
+    let w = wid(0xF5);
+    ensure_wallet_meta(&persister, &w);
+
+    let key_id = Identifier::from([0xAA; 32]);
+    let entry = IdentityEntry {
+        id: Identifier::from([0xBB; 32]), // deliberately different from the map key
+        balance: 0,
+        revision: 0,
+        identity_index: Some(0),
+        last_updated_balance_block_time: None,
+        last_synced_keys_block_time: None,
+        dpns_names: Vec::new(),
+        contested_dpns_names: Vec::new(),
+        status: IdentityStatus::Unknown,
+        wallet_id: None,
+        dashpay_profile: None,
+        dashpay_payments: Default::default(),
+    };
+    let mut identities = std::collections::BTreeMap::new();
+    identities.insert(key_id, entry);
+
+    let err = persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                identities: Some(IdentityChangeSet {
+                    identities,
+                    removed: Default::default(),
+                }),
+                ..Default::default()
+            },
+        )
+        .expect_err("entry-id mismatch must fail");
+    assert!(
+        matches!(err.kind(), Some(platform_wallet::changeset::PersistenceErrorKind::Fatal)),
+        "expected a fatal backend error for the id mismatch, got {err:?}"
+    );
+    assert!(
+        format!("{err}").contains("disagrees with its map key"),
+        "expected identity entry id mismatch, got `{err}`"
     );
 }
 
