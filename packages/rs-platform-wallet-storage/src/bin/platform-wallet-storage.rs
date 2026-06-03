@@ -149,10 +149,10 @@ impl CliError {
 fn run(cli: Cli) -> Result<ExitCode, CliError> {
     let auto_backup_dir: Option<PathBuf> = cli.auto_backup_dir;
 
-    // CMT-014: `prune` is a pure filesystem op against the backups
-    // directory — `--db` is meaningless for it and must not be
-    // required. Handle the subcommand BEFORE extracting `cli.db` so the
-    // operator can run `prune --backups-dir ... --keep-last N` without
+    // `prune` is a pure filesystem op against the backups directory —
+    // `--db` is meaningless for it and must not be required. Handle the
+    // subcommand BEFORE extracting `cli.db` so the operator can run
+    // `prune --backups-dir ... --keep-last N` without
     // also passing a database path.
     if let Cmd::Prune(args) = &cli.cmd {
         return run_prune(args);
@@ -228,13 +228,12 @@ fn map_open_err_for_cli(err: WalletStorageError) -> CliError {
 /// transient failure for "version 0".
 fn peek_schema_version(db: &Path) -> Result<Option<i64>, rusqlite::Error> {
     use rusqlite::{OpenFlags, OptionalExtension};
-    // CMT-010: open READ-ONLY (no SQLITE_OPEN_CREATE) so a typo'd --db
-    // path errors out at this gate rather than silently materialising a
-    // zero-byte SQLite file that bypasses the crate's 0o600 invariant.
-    // A genuinely fresh `migrate` invocation against a non-existent DB
-    // file is normal — surface that as `Ok(None)` so the migrate path
-    // proceeds and `SqlitePersister::open` creates the file under the
-    // crate's 0o600 invariant.
+    // Open READ-ONLY (no SQLITE_OPEN_CREATE) so a typo'd --db path errors
+    // out at this gate rather than silently materialising a zero-byte
+    // SQLite file that bypasses the crate's 0o600 invariant. A genuinely
+    // fresh `migrate` invocation against a non-existent DB file is normal
+    // — surface that as `Ok(None)` so the migrate path proceeds and
+    // `SqlitePersister::open` creates the file under the 0o600 invariant.
     if !db.exists() {
         return Ok(None);
     }
@@ -338,8 +337,8 @@ fn run_prune(args: &PruneArgs) -> Result<ExitCode, CliError> {
     for (p, e) in &report.failed_removals {
         eprintln!("warning: failed to remove {}: {e}", p.display());
     }
-    // ATOM-011: non-zero exit when any per-file removal failed so
-    // scripts can detect the partial-success case.
+    // Non-zero exit when any per-file removal failed so scripts can
+    // detect the partial-success case.
     if report.failed_removals.is_empty() {
         Ok(ExitCode::SUCCESS)
     } else {
@@ -351,11 +350,10 @@ fn run_prune(args: &PruneArgs) -> Result<ExitCode, CliError> {
 mod tests {
     use super::*;
 
-    /// CMT-010: `peek_schema_version` on a non-existent path must NOT
-    /// materialise a zero-byte SQLite file at that path. Pre-fix used
-    /// `Connection::open` with implicit SQLITE_OPEN_CREATE which would
-    /// silently reward a typo with a stub file lacking the crate's
-    /// 0o600 mode invariant.
+    /// `peek_schema_version` on a non-existent path must NOT materialise
+    /// a zero-byte SQLite file at that path — opening READ-ONLY (no
+    /// SQLITE_OPEN_CREATE) keeps a typo from being rewarded with a stub
+    /// file lacking the crate's 0o600 mode invariant.
     #[test]
     fn peek_schema_version_on_missing_db_does_not_create_stub() {
         let tmp = tempfile::tempdir().expect("tempdir");

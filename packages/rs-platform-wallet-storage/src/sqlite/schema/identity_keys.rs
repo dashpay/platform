@@ -1,4 +1,5 @@
-//! `identity_keys` table writer (PUBLIC material only — see NFR-10).
+//! `identity_keys` table writer (PUBLIC key material only — private keys
+//! never reach this table).
 //!
 //! `IdentityKeyEntry`'s `public_key: dpp::IdentityPublicKey` uses
 //! `#[serde(tag = "$formatVersion")]` on the parent enum, which
@@ -151,9 +152,9 @@ mod tests {
     use dpp::identity::{KeyType, Purpose, SecurityLevel};
     use dpp::platform_value::BinaryData;
 
-    /// CMT-009: a `public_key_bincode` payload whose IdentityPublicKey
-    /// prefix is valid but carries trailing garbage is refused at
-    /// decode time rather than silently dropping the trailing bytes.
+    /// A `public_key_bincode` payload whose IdentityPublicKey prefix is
+    /// valid but carries trailing garbage is refused at decode time
+    /// rather than silently dropping the trailing bytes.
     #[test]
     fn into_entry_rejects_trailing_bytes_in_public_key_bincode() {
         let pk = IdentityPublicKey::V0(IdentityPublicKeyV0 {

@@ -155,10 +155,10 @@ impl KvStore for SqlitePersister {
         // Single-snapshot read: select `length(value)` and `value` in one
         // row. The length (column 0) is checked against `MAX_VALUE_LEN`
         // before `row.get(1)` materialises the BLOB — rusqlite reads the
-        // BLOB lazily on that call, so the cap still gates the allocation,
-        // now without a cross-snapshot TOCTOU window (CMT-001/006). The
-        // inner `Result` carries the over-cap length out of the closure
-        // without ever touching column 1.
+        // BLOB lazily on that call, so the cap gates the allocation with
+        // no cross-snapshot TOCTOU window. The inner `Result` carries the
+        // over-cap length out of the closure without ever touching
+        // column 1.
         let row: Option<Result<Vec<u8>, usize>> = conn
             .query_row(
                 &format!("SELECT length(value), value FROM {} {where_key}", sql.table),
@@ -388,9 +388,9 @@ mod tests {
 
     #[test]
     fn get_rejects_oversized_value_before_materialising() {
-        // CMT-006: a row larger than MAX_VALUE_LEN (planted via direct
-        // SQL — bypassing `put`'s implicit cap) must surface as
-        // ValueTooLarge instead of OOMing the process.
+        // A row larger than MAX_VALUE_LEN (planted via direct SQL —
+        // bypassing `put`'s cap) must surface as ValueTooLarge instead
+        // of OOMing the process.
         let (p, _tmp) = open_persister();
         let oversize = vec![0u8; MAX_VALUE_LEN + 1];
         {

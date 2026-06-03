@@ -301,7 +301,7 @@ impl WalletStorageError {
 
     /// `true` when the underlying failure is safe to retry — the
     /// caller should preserve in-flight state and call again.
-    /// Transient codes (ATOM-008 / A-4):
+    /// Transient codes:
     /// - `DatabaseBusy` / `DatabaseLocked`: contention.
     /// - `DiskFull`: operator clears disk space.
     /// - `SystemIoFailure`: kernel-level I/O blip (NFS, raid rebuild).
@@ -343,9 +343,8 @@ impl WalletStorageError {
             | Self::AutoBackupDirUnwritable { .. }
             | Self::WalletNotFound { .. }
             | Self::WalletIdMismatch { .. }
-            // TODO(qa): TC-P2-008 — `LockPoisoned` is classified as
-            // fatal here, but the end-to-end mutex-poison flow has no
-            // automated test (the spec deferred it as race-prone — a
+            // TODO(qa): `LockPoisoned` is classified as fatal here, but
+            // the end-to-end mutex-poison flow has no automated test (a
             // panicking thread + join is hard to reproduce
             // deterministically). Manual verification only via the
             // table-driven test in `tests/sqlite_error_classification`.
@@ -373,8 +372,7 @@ impl WalletStorageError {
     }
 
     /// Trait-boundary classification for the
-    /// [`PersistenceError::Backend`] kind field (CODE-004). Three
-    /// classes:
+    /// [`PersistenceError::Backend`] kind field. Three classes:
     ///
     /// - [`PersistenceErrorKind::Transient`] — every variant where
     ///   [`Self::is_transient`] is `true`. Caller MAY retry.

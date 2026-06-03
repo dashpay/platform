@@ -39,8 +39,8 @@ pub fn runner() -> refinery::Runner {
 }
 
 /// Highest migration version this binary knows how to apply. Used by
-/// both `SqlitePersister::open` (CMT-005) and `backup::restore_from`
-/// (CMT-001 / CMT-010) to refuse forward-version databases.
+/// both `SqlitePersister::open` and `backup::restore_from` to refuse
+/// forward-version databases.
 pub fn max_supported_version() -> i64 {
     embedded_migrations()
         .iter()
@@ -99,7 +99,7 @@ pub fn assert_schema_version_supported(
 }
 
 /// List `(version, name)` of every embedded migration. Used by tests and
-/// the migration-drift hash check (TC-029).
+/// the migration-drift hash check.
 pub fn embedded_migrations() -> Vec<(i32, String)> {
     migrations::runner()
         .get_migrations()
@@ -131,9 +131,8 @@ mod tests {
     use super::*;
     use rusqlite::Connection;
 
-    /// TC-CODE-027-1: helper returns false on a brand-new in-memory DB
-    /// (no `refinery_schema_history`), and true after the table is
-    /// created.
+    /// The helper returns false on a brand-new in-memory DB (no
+    /// `refinery_schema_history`), and true after the table is created.
     #[test]
     fn has_schema_history_distinguishes_fresh_vs_migrated() {
         let conn = Connection::open_in_memory().unwrap();
