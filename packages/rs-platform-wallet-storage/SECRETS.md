@@ -182,9 +182,16 @@ secret-free.
 - **`tests/secrets_api.rs`**: shape guards — `CredentialApi::get_secret`
   re-wraps through `SecretBytes::new`, redacting `Debug` on
   `SecretBytes`/`SecretString`, no `Box<dyn Error>` in `src/secrets/`.
-- **`tests/secrets_off_state.rs`**: runtime guard that
-  `--no-default-features --features sqlite,cli` builds the persister
-  without pulling in the `secrets` module.
+- **`tests/secrets_default_on_compiles.rs`**: build-time guard
+  (gated `#![cfg(feature = "secrets")]`) that the default feature set
+  exposes the secrets surface as public re-exports. It names
+  `EncryptedFileStore`, `SecretBytes`, `SecretString`,
+  `SecretStoreError`, `WalletId`, `SERVICE_PREFIX`, and
+  `default_credential_store` from the crate root; the body never
+  exercises a backend, so the proof is that it compiles. The negative
+  direction — `--no-default-features --features sqlite,cli` must build
+  the persister without the `secrets` module — is enforced by the
+  feature gate plus the CI off-state build, not by a test file.
 - **`tests/sqlite_persist_roundtrip.rs::tc082_no_box_dyn_error_in_src`**:
   all public method signatures use concrete error types
   (`WalletStorageError`, `PersistenceError`) — never
