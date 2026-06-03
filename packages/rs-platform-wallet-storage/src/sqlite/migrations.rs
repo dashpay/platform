@@ -33,6 +33,7 @@ pub(crate) fn run_for_open(
 /// Return a fresh refinery [`Runner`](refinery::Runner) seeded with the
 /// embedded migration list. Used by tests that need to apply a subset
 /// of migrations via [`refinery::Runner::set_target`].
+#[cfg(any(test, feature = "__test-helpers"))]
 pub fn runner() -> refinery::Runner {
     migrations::runner()
 }
@@ -109,7 +110,8 @@ pub fn embedded_migrations() -> Vec<(i32, String)> {
 
 /// SHA-256 over `(version, name)` of every embedded migration in version
 /// order. Pinning this in tests catches edits to committed migrations
-/// (forbidden by NFR-8 append-only policy).
+/// (forbidden by the append-only migration policy).
+#[cfg(any(test, feature = "__test-helpers"))]
 pub fn embedded_migrations_fingerprint() -> [u8; 32] {
     use sha2::{Digest, Sha256};
     let mut entries = embedded_migrations();

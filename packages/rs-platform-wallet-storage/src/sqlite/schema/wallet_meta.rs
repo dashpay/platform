@@ -30,6 +30,7 @@ pub fn upsert(
 /// Idempotent — silently a no-op when the row already exists. Defaults
 /// `network = "testnet"`, `birth_height = 0` (the same fall-back the
 /// SPV scan uses when the chain tip is unknown).
+#[cfg(any(test, feature = "__test-helpers"))]
 pub fn ensure_exists(conn: &Connection, wallet_id: &WalletId) -> Result<(), WalletStorageError> {
     conn.execute(
         "INSERT OR IGNORE INTO wallet_metadata (wallet_id, network, birth_height) \
@@ -57,6 +58,7 @@ pub fn list_ids(conn: &Connection) -> Result<Vec<WalletId>, WalletStorageError> 
 }
 
 /// Lookup `(network, birth_height)` for a wallet, if known.
+#[cfg(any(test, feature = "__test-helpers"))]
 pub fn fetch(
     conn: &Connection,
     wallet_id: &WalletId,
@@ -110,6 +112,7 @@ fn network_to_str(net: key_wallet::Network) -> &'static str {
 }
 
 /// Inverse of `network_to_str`.
+#[cfg(any(test, feature = "__test-helpers"))]
 pub fn parse_network(s: &str) -> Option<key_wallet::Network> {
     match s {
         "mainnet" => Some(key_wallet::Network::Mainnet),

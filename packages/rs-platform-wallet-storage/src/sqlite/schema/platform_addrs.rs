@@ -108,6 +108,7 @@ pub struct PlatformAddressRow {
     pub funds: AddressFunds,
 }
 
+#[cfg(any(test, feature = "__test-helpers"))]
 pub fn list_per_wallet(
     conn: &Connection,
     wallet_id: &WalletId,
@@ -183,6 +184,10 @@ fn account_state_from_rows(
 /// Build `PlatformAddressSyncStartState` for one wallet: the
 /// network-scoped sync watermark plus the per-account committed state
 /// reconstructed from registrations + address rows.
+///
+/// `load()` uses the grouped [`load_all`] path; this per-wallet form is
+/// retained for this crate's integration tests.
+#[cfg(any(test, feature = "__test-helpers"))]
 pub fn load_state(
     conn: &Connection,
     wallet_id: &WalletId,
@@ -216,6 +221,7 @@ pub fn load_state(
 /// Total `platform_addresses` row count per wallet — used by tests
 /// that want a stable lower-bound check without re-deriving the
 /// address.
+#[cfg(any(test, feature = "__test-helpers"))]
 pub fn count_per_wallet(
     conn: &Connection,
     wallet_id: &WalletId,

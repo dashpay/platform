@@ -1,5 +1,6 @@
 //! Writers + readers for the `core_*` tables.
 
+#[cfg(any(test, feature = "__test-helpers"))]
 use std::collections::BTreeMap;
 
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
@@ -273,6 +274,7 @@ pub fn get_tx_record(
 
 /// Row representing one unspent UTXO. Used by tests that probe the
 /// `core_utxos` table without going through full `Wallet` reconstruction.
+#[cfg(any(test, feature = "__test-helpers"))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UnspentRow {
     pub outpoint: dashcore::OutPoint,
@@ -283,7 +285,8 @@ pub struct UnspentRow {
 }
 
 /// All UTXOs for a wallet that have not been spent yet, bucketed by
-/// account index. Used by `load` and tests.
+/// account index. Retained for this crate's integration tests.
+#[cfg(any(test, feature = "__test-helpers"))]
 pub fn list_unspent_utxos(
     conn: &Connection,
     wallet_id: &WalletId,

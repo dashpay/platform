@@ -36,6 +36,7 @@ fn decode_platform_payment_row(
 /// into `(account_index, xpub)`. The xpub is recovered from the
 /// bincode-serde `AccountRegistrationEntry` `apply_registrations` writes
 /// into `account_xpub_bytes`.
+#[cfg(any(test, feature = "__test-helpers"))]
 pub(crate) fn list_platform_payment_registrations(
     conn: &Connection,
     wallet_id: &WalletId,
