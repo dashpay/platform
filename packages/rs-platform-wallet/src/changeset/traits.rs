@@ -232,6 +232,12 @@ pub trait PlatformWalletPersistence: Send + Sync {
     ///
     /// [`PersistenceError::LockPoisoned`] is fatal but distinguished
     /// at the variant level so callers can pattern-match on it.
+    ///
+    // TODO: wallet-less / global objects (the `WalletId::default()` /
+    // `[0u8; 32]` sentinel scope for parentless or global metadata) are
+    // not yet expressible through `flush`. Hosts that previously called
+    // the now-removed `commit_writes` should call `flush` per wallet
+    // instead; a sentinel-scope flush path is still to be designed.
     fn flush(&self, wallet_id: WalletId) -> Result<(), PersistenceError>;
 
     /// Load the full client state from storage.
@@ -294,4 +300,10 @@ pub trait PlatformWalletPersistence: Send + Sync {
     ) -> Result<Option<TransactionRecord>, PersistenceError> {
         Ok(None)
     }
+
+    // TODO: `list_wallets` and `delete_wallet` are deferred contract
+    // candidates. They live as inherent methods on the SQLite backend
+    // today; they may return to this trait once a cross-backend contract
+    // (consistent error/report semantics across SQLite, file, and FFI
+    // backends) is agreed.
 }
