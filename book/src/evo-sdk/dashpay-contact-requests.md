@@ -25,18 +25,12 @@ type DashpayContactRequestDocument = {
 `encryptedPublicKey` is exactly 96 bytes:
 
 - 16 bytes: AES-CBC initialization vector
-- 80 bytes: AES-CBC ciphertext for the sender's 64-byte abbreviated contact
-  xpub payload
+- 80 bytes: AES-CBC ciphertext for the sender's 78-byte serialized contact xpub
 
 The sender derives the contact xpub from the sender identity, recipient
 identity, account, and address index. The sender then encrypts that xpub with an
 ECDH shared secret from the sender's identity encryption private key and the
-recipient's identity encryption public key. The encrypted payload is the
-DashPay abbreviated xpub form:
-
-- 4 bytes: parent fingerprint
-- 32 bytes: chain code
-- 33 bytes: compressed public key
+recipient's identity encryption public key.
 
 ## Derive the contact payment xpub
 
@@ -94,17 +88,14 @@ function deriveSharedKey({
   return crypto.createHash('sha256').update(Buffer.concat([compressedPrefix, x])).digest();
 }
 
-function abbreviatedXpubPayload(xpub: string): Buffer {
-  const hdPublicKey = new dashcore.HDPublicKey(xpub);
-  const parentFingerprint = hdPublicKey._buffers?.parentFingerPrint;
-  const chainCode = hdPublicKey._buffers?.chainCode;
-  const publicKey = hdPublicKey.publicKey?.toBuffer();
+function serializedXpubPayload(xpub: string): Buffer {
+  const payload = dashcore.encoding.Base58Check.decode(xpub);
 
-  if (parentFingerprint?.length !== 4 || chainCode?.length !== 32 || publicKey?.length !== 33) {
-    throw new Error('Invalid DashPay contact xpub');
+  if (payload.length !== 78) {
+    throw new Error(`Invalid DashPay contact xpub length: ${payload.length}`);
   }
 
-  return Buffer.concat([parentFingerprint, chainCode, publicKey]);
+  return payload;
 }
 
 function encryptContactXpub({
@@ -120,7 +111,7 @@ function encryptContactXpub({
     privateKeyWif: senderEncryptionPrivateKeyWif,
     publicKeyBytes: recipientEncryptionPublicKeyBytes,
   });
-  const payload = abbreviatedXpubPayload(contactXpub);
+  const payload = serializedXpubPayload(contactXpub);
   const iv = crypto.randomBytes(16);
   const cipher = crypto.createCipheriv('aes-256-cbc', aesKey, iv);
   const encrypted = Buffer.concat([
