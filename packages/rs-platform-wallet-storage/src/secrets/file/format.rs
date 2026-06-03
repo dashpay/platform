@@ -1,5 +1,4 @@
-//! Versioned, self-describing vault format + canonical AAD
-//! (SEC-REQ-2.2.7 / 2.2.9).
+//! Versioned, self-describing vault format + canonical AAD.
 //!
 //! The vault is one `serde_json` document covering every wallet in the
 //! store: a single passphrase / salt / KDF block at the top, and a
@@ -55,8 +54,8 @@ pub(crate) const KDF_ID_ARGON2ID: u8 = 1;
 pub(crate) const VERIFY_CONSTANT: &[u8] = b"PWSVAULT-VERIFY-v1";
 
 /// AAD slot label for the verification token. The leading NUL keeps it
-/// disjoint from every allowlisted entry label (SEC-REQ-4.3), so the
-/// token can never alias a real entry's AAD.
+/// disjoint from every allowlisted entry label, so the token can never
+/// alias a real entry's AAD.
 pub(crate) const VERIFY_LABEL: &str = "\0verify";
 
 /// Sentinel wallet id used as the verify-token AAD's wallet slot. The
@@ -115,9 +114,9 @@ pub(crate) struct EntryBody {
     pub ciphertext: Vec<u8>,
 }
 
-/// Canonical length-prefixed AAD binding ciphertext to its slot
-/// (SEC-REQ-2.2.7): `format_version ‖ wallet_id ‖ label`. A blob moved
-/// to another slot, or a rolled-back `format_version`, fails the tag.
+/// Canonical length-prefixed AAD binding ciphertext to its slot:
+/// `format_version ‖ wallet_id ‖ label`. A blob moved to another slot,
+/// or a rolled-back `format_version`, fails the tag.
 ///
 /// AAD-DETERMINISM INVARIANT (C1): AAD is built solely from the typed
 /// `(format_version, wallet_id, label)` triple via this length-prefixed
@@ -220,7 +219,7 @@ pub(crate) fn serialize(vault: &Vault) -> Vec<u8> {
 
 /// Parse a vault. Two-step: probe `version` (lax), then parse the strict
 /// payload for the known version. Refuses unknown versions and any
-/// malformed/short byte field — fail closed (SEC-REQ-2.2.9). Unknown KDF
+/// malformed/short byte field — fail closed. Unknown KDF
 /// algorithm ids and out-of-range Argon2 params are caught later at
 /// `KdfParams::enforce_bounds` (called on every `derive_key`), so they
 /// can't silently slip past. All `serde_json` errors are mapped to a
@@ -243,8 +242,8 @@ pub(crate) fn deserialize(buf: &[u8]) -> Result<Vault, SecretStoreError> {
         return Err(SecretStoreError::MalformedVault);
     }
 
-    // CMT-005: validate outer wallet-id keys and inner label keys at
-    // parse time. The serde shape allows any string for either key, so
+    // Validate outer wallet-id keys and inner label keys at parse time.
+    // The serde shape allows any string for either key, so
     // a malformed file (or a tampered one) could otherwise smuggle a
     // bogus wallet id past parse and surface only at the first `put` /
     // `get` / `delete`. Reject the whole vault on the first offender so
@@ -526,7 +525,7 @@ mod tests {
     }
 
     #[test]
-    fn deserialize_rejects_non_hex_wallet_id_key(/* CMT-005 */) {
+    fn deserialize_rejects_non_hex_wallet_id_key() {
         // A non-hex outer key must be rejected at parse, not surface
         // later at put/get/delete.
         let mut entries = BTreeMap::new();
@@ -547,7 +546,7 @@ mod tests {
     }
 
     #[test]
-    fn deserialize_rejects_short_wallet_id_key(/* CMT-005 */) {
+    fn deserialize_rejects_short_wallet_id_key() {
         // 32-hex chars is half the required width; reject at parse.
         let mut entries = BTreeMap::new();
         entries.insert(
@@ -567,7 +566,7 @@ mod tests {
     }
 
     #[test]
-    fn deserialize_rejects_traversal_label(/* CMT-005 */) {
+    fn deserialize_rejects_traversal_label() {
         // A label that would not survive `validated_label` (path
         // traversal attempt) must fail at parse, not at the first get.
         let mut entries = BTreeMap::new();
@@ -588,7 +587,7 @@ mod tests {
     }
 
     #[test]
-    fn deserialize_rejects_oversize_label(/* CMT-005 */) {
+    fn deserialize_rejects_oversize_label() {
         // 65 chars busts the 1..=64 allowlist bound.
         let mut entries = BTreeMap::new();
         entries.insert(
