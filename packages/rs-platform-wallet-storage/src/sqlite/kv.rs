@@ -185,6 +185,15 @@ impl KvStore for SqlitePersister {
 
     fn put(&self, scope: &ObjectId, key: &str, value: &[u8]) -> Result<(), KvError> {
         validate_key(key)?;
+        // Cap the value before it reaches SQL so a `put` can never plant
+        // a row that a later `get` would refuse to materialise. The read
+        // path gates on the same `MAX_VALUE_LEN`.
+        if value.len() > MAX_VALUE_LEN {
+            return Err(KvError::ValueTooLarge {
+                found: value.len(),
+                max: MAX_VALUE_LEN,
+            });
+        }
         let sql = ScopeSql::resolve(scope);
         let conn = self.conn().map_err(KvError::from)?;
         // Column list / placeholders / conflict target all include the
@@ -399,6 +408,26 @@ mod tests {
             }
             other => panic!("expected ValueTooLarge, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn put_rejects_oversized_value_and_writes_nothing() {
+        // A value over MAX_VALUE_LEN is refused before the INSERT, so no
+        // row lands and a follow-up `get` returns None.
+        let (p, _tmp) = open_persister();
+        let oversize = vec![0u8; MAX_VALUE_LEN + 1];
+        match p.put(&ObjectId::Global, "huge", &oversize) {
+            Err(KvError::ValueTooLarge { found, max }) => {
+                assert_eq!(found, MAX_VALUE_LEN + 1);
+                assert_eq!(max, MAX_VALUE_LEN);
+            }
+            other => panic!("expected ValueTooLarge, got {other:?}"),
+        }
+        assert_eq!(
+            p.get(&ObjectId::Global, "huge").unwrap(),
+            None,
+            "rejected put must not leave a row behind"
+        );
     }
 
     #[test]

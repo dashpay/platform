@@ -69,10 +69,15 @@ pub enum ObjectId {
 /// over-length key reaches SQL.
 pub const MAX_KEY_LEN: usize = 128;
 
-/// Hard cap on the size of a single KV value, in bytes. Mirrors the
-/// `BLOB_SIZE_LIMIT_BYTES` ceiling on bincode-serde blobs in
-/// `sqlite::schema::blob` so a tampered or corrupted backup row cannot
-/// force a multi-gigabyte allocation on the next `get`. CMT-006.
+/// Hard cap on the size of a single KV value, in bytes, so a tampered or
+/// corrupted backup row cannot force a multi-gigabyte allocation on the
+/// next `get`.
+///
+/// Kept in sync MANUALLY with the `BLOB_SIZE_LIMIT_BYTES` ceiling on
+/// bincode-serde blobs in `sqlite::schema::blob`: the `sqlite` and `kv`
+/// features compile independently, so a `const`-level cross-reference
+/// between the two modules can't be relied on. Change both together if
+/// the ceiling moves.
 pub const MAX_VALUE_LEN: usize = 16 * 1024 * 1024;
 
 /// Errors returned by [`KvStore`] operations.
@@ -89,9 +94,10 @@ pub enum KvError {
     #[error("kv key too long: {len} bytes (max {})", MAX_KEY_LEN)]
     KeyTooLong { len: usize },
 
-    /// Stored value exceeded [`MAX_VALUE_LEN`] on read. Surfaced before
-    /// the bytes are materialised so a tampered row cannot OOM the
-    /// process. CMT-006.
+    /// A value exceeded [`MAX_VALUE_LEN`]. Raised by `put` before the
+    /// INSERT and by `get` before the bytes are materialised, so an
+    /// oversize value never lands and a tampered row never OOMs the
+    /// process.
     #[error("kv value too large: {found} bytes (max {max})")]
     ValueTooLarge { found: usize, max: usize },
 
@@ -113,7 +119,7 @@ pub trait KvStore {
     /// Read the value bound to `(scope, key)`. Returns `Ok(None)` when
     /// the key is absent. Backends MUST reject values larger than
     /// [`MAX_VALUE_LEN`] with [`KvError::ValueTooLarge`] before
-    /// materialising the bytes (CMT-006).
+    /// materialising the bytes.
     fn get(&self, scope: &ObjectId, key: &str) -> Result<Option<Vec<u8>>, KvError>;
 
     /// Insert or overwrite the value bound to `(scope, key)`. Upserts
@@ -121,6 +127,10 @@ pub trait KvStore {
     /// key replace the previous value. Succeeds even when the scope's
     /// parent object does not exist yet; an `AFTER DELETE` trigger cleans
     /// the metadata up if that object is later removed.
+    ///
+    /// Backends MUST reject a `value` larger than [`MAX_VALUE_LEN`] with
+    /// [`KvError::ValueTooLarge`] before writing, so a `put` can never
+    /// plant a row a later `get` would refuse to materialise.
     fn put(&self, scope: &ObjectId, key: &str, value: &[u8]) -> Result<(), KvError>;
 
     /// Remove the row bound to `(scope, key)`. Idempotent — a missing
