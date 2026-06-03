@@ -1,9 +1,9 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! .. (subset) — buffer + flush semantics.
+//! Buffer + flush semantics.
 //!
-//! Some adversarial cases ( partial-failure, mid-flush
-//! failure) require a fault-injection seam that the production code
+//! Some adversarial cases (partial-failure, mid-flush failure) require
+//! a fault-injection seam that the production code
 //! exposes only behind `#[cfg(test)]`. The seam is documented in
 //! `persister.rs::lock_conn_for_test`; tests that need to inject a
 //! failure poison the DB through that handle and verify rollback.

@@ -1,11 +1,10 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! #3625 structural hardening pass.
+//! Structural hardening pass.
 //!
 //! Native FK rejection (orphan child + mixed-wallet platform addr),
-//! multi-account UTXO bucketing (/011), identity-key typed-vs-blob
-//! consistency, the truncation guards (/014), and the
-//! compaction-marker-only load gate.
+//! multi-account UTXO bucketing, identity-key typed-vs-blob consistency,
+//! the truncation guards, and the compaction-marker-only load gate.
 
 mod common;
 
@@ -379,7 +378,10 @@ fn identity_entry_id_mismatch_rejected() {
         )
         .expect_err("entry-id mismatch must fail");
     assert!(
-        matches!(err.kind(), Some(platform_wallet::changeset::PersistenceErrorKind::Fatal)),
+        matches!(
+            err.kind(),
+            Some(platform_wallet::changeset::PersistenceErrorKind::Fatal)
+        ),
         "expected a fatal backend error for the id mismatch, got {err:?}"
     );
     assert!(

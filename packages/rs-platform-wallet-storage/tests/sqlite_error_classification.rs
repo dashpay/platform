@@ -1,11 +1,10 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! — `WalletStorageError::is_transient` and
-//! `error_kind_str` exhaustiveness check via wildcard-free `match`.
-//! — boundary mapping `FlushRetryable` →
-//! `PersistenceError::Backend`.
+//! `WalletStorageError::is_transient` + `error_kind_str` exhaustiveness
+//! check via a wildcard-free `match`, plus the boundary mapping of
+//! `FlushRetryable` into `PersistenceError::Backend`.
 //!
-//! is structured as a `match` over `&WalletStorageError`
+//! The check is structured as a `match` over `&WalletStorageError`
 //! that covers every variant explicitly. There is NO `_` arm — when a
 //! future variant lands on `WalletStorageError`, this file refuses to
 //! compile until the author adds a classification + tag here too.

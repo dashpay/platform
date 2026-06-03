@@ -501,7 +501,9 @@ fn tc_md_019_delete_wallet_report_counts_meta_tables() {
         "meta_platform_address",
     ] {
         let n: i64 = conn
-            .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| row.get(0))
+            .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                row.get(0)
+            })
             .unwrap();
         assert_eq!(n, 0, "{table} should hold no rows after delete_wallet");
     }
@@ -1083,7 +1085,8 @@ fn delete_wallet_leaves_no_surviving_rows() {
             ("INSERT INTO dashpay_payments_overlay (identity_id, payment_id, overlay_blob) VALUES (?1, 'pay1', X'00')", &[&idy.as_slice()]),
         ];
         for (sql, prms) in stmts {
-            conn.execute(sql, *prms).unwrap_or_else(|e| panic!("seed `{sql}`: {e}"));
+            conn.execute(sql, *prms)
+                .unwrap_or_else(|e| panic!("seed `{sql}`: {e}"));
         }
     }
 
@@ -1094,18 +1097,86 @@ fn delete_wallet_leaves_no_surviving_rows() {
     p.put(&ObjectId::Wallet(a), "k", b"v").unwrap();
     p.put(&ObjectId::Identity(idy), "k", b"v").unwrap();
     // Parented token metadata.
-    p.put(&ObjectId::Token { identity_id: idy, token_id: token }, "k", b"v").unwrap();
+    p.put(
+        &ObjectId::Token {
+            identity_id: idy,
+            token_id: token,
+        },
+        "k",
+        b"v",
+    )
+    .unwrap();
     // Parentless token metadata — no token_balances row for this pair.
-    p.put(&ObjectId::Token { identity_id: idy, token_id: id32(0x7A) }, "k", b"v").unwrap();
+    p.put(
+        &ObjectId::Token {
+            identity_id: idy,
+            token_id: id32(0x7A),
+        },
+        "k",
+        b"v",
+    )
+    .unwrap();
     // Contact metadata across all three lifecycle states.
-    p.put(&ObjectId::Contact { wallet_id: a, owner_id: owner, contact_id: est_contact }, "k", b"v").unwrap();
-    p.put(&ObjectId::Contact { wallet_id: a, owner_id: owner, contact_id: sent_contact }, "k", b"v").unwrap();
-    p.put(&ObjectId::Contact { wallet_id: a, owner_id: owner, contact_id: recv_contact }, "k", b"v").unwrap();
+    p.put(
+        &ObjectId::Contact {
+            wallet_id: a,
+            owner_id: owner,
+            contact_id: est_contact,
+        },
+        "k",
+        b"v",
+    )
+    .unwrap();
+    p.put(
+        &ObjectId::Contact {
+            wallet_id: a,
+            owner_id: owner,
+            contact_id: sent_contact,
+        },
+        "k",
+        b"v",
+    )
+    .unwrap();
+    p.put(
+        &ObjectId::Contact {
+            wallet_id: a,
+            owner_id: owner,
+            contact_id: recv_contact,
+        },
+        "k",
+        b"v",
+    )
+    .unwrap();
     // Parentless contact metadata — no contacts row for this pair.
-    p.put(&ObjectId::Contact { wallet_id: a, owner_id: owner, contact_id: id32(0x7B) }, "k", b"v").unwrap();
+    p.put(
+        &ObjectId::Contact {
+            wallet_id: a,
+            owner_id: owner,
+            contact_id: id32(0x7B),
+        },
+        "k",
+        b"v",
+    )
+    .unwrap();
     // Parented + parentless platform-address metadata.
-    p.put(&ObjectId::PlatformAddress { wallet_id: a, address: addr.clone() }, "k", b"v").unwrap();
-    p.put(&ObjectId::PlatformAddress { wallet_id: a, address: vec![0xCCu8; 20] }, "k", b"v").unwrap();
+    p.put(
+        &ObjectId::PlatformAddress {
+            wallet_id: a,
+            address: addr.clone(),
+        },
+        "k",
+        b"v",
+    )
+    .unwrap();
+    p.put(
+        &ObjectId::PlatformAddress {
+            wallet_id: a,
+            address: vec![0xCCu8; 20],
+        },
+        "k",
+        b"v",
+    )
+    .unwrap();
 
     p.delete_wallet(a).expect("delete_wallet");
 
@@ -1133,7 +1204,9 @@ fn delete_wallet_leaves_no_surviving_rows() {
     ];
     for table in wallet_scoped {
         let n: i64 = conn
-            .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| row.get(0))
+            .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                row.get(0)
+            })
             .unwrap();
         assert_eq!(n, 0, "{table} must be empty after delete_wallet");
     }
@@ -1149,7 +1222,9 @@ fn delete_wallet_leaves_no_surviving_rows() {
     ];
     for table in identity_owned {
         let n: i64 = conn
-            .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| row.get(0))
+            .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                row.get(0)
+            })
             .unwrap();
         assert_eq!(n, 0, "{table} must be empty after delete_wallet");
     }

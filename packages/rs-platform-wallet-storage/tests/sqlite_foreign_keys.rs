@@ -1,6 +1,6 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! .. — native foreign-key enforcement.
+//! Native foreign-key enforcement and the delete cascade.
 
 mod common;
 

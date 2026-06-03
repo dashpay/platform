@@ -1,6 +1,6 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! .., , — migration discovery and reach.
+//! Migration discovery, application, and idempotency.
 
 mod common;
 
@@ -171,7 +171,12 @@ fn tc027_smoke_insert_every_table() {
     ];
     // Identity-owned tables have no `wallet_id` column; count them by
     // joining through `identities`. Everything else is wallet-scoped.
-    let via_identity = ["identity_keys", "token_balances", "dashpay_profiles", "dashpay_payments_overlay"];
+    let via_identity = [
+        "identity_keys",
+        "token_balances",
+        "dashpay_profiles",
+        "dashpay_payments_overlay",
+    ];
     for (table, sql, params) in cases {
         conn.execute(sql, *params).expect(table);
         let count_sql = if via_identity.contains(table) {

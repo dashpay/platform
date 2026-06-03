@@ -146,7 +146,7 @@ pub fn list_per_wallet(
 /// `platform_addresses` rows (the derived address set + known balances).
 ///
 /// Each registration becomes one [`PerAccountPlatformAddressState`]; the
-/// address rows whose `account_index` matches seed its `addresses`
+/// address rows whose `account_index` matches populate its `addresses`
 /// bijection and `found` balance map via
 /// [`PerAccountPlatformAddressState::insert_persisted_entry`]. Address
 /// rows for an account with no registration are skipped — without the
@@ -173,9 +173,15 @@ fn account_state_from_rows(
     account_index: u32,
     address_rows: &[PlatformAddressRow],
 ) -> PerAccountPlatformAddressState {
-    let mut state =
-        PerAccountPlatformAddressState::from_persisted(xpub, Default::default(), Default::default());
-    for row in address_rows.iter().filter(|r| r.account_index == account_index) {
+    let mut state = PerAccountPlatformAddressState::from_persisted(
+        xpub,
+        Default::default(),
+        Default::default(),
+    );
+    for row in address_rows
+        .iter()
+        .filter(|r| r.account_index == account_index)
+    {
         state.insert_persisted_entry(row.address_index, row.address, row.funds);
     }
     state
@@ -252,9 +258,7 @@ pub type LoadAllEntry = (PlatformAddressSyncStartState, usize);
 /// `wallet_id` is absent from `wallet_metadata` are intentionally NOT
 /// surfaced. Native foreign keys prevent such orphans; a future re-wire
 /// that needs them must restore the id-union over the area tables.
-pub fn load_all(
-    conn: &Connection,
-) -> Result<BTreeMap<WalletId, LoadAllEntry>, WalletStorageError> {
+pub fn load_all(conn: &Connection) -> Result<BTreeMap<WalletId, LoadAllEntry>, WalletStorageError> {
     let sync_by_wallet = all_sync_state(conn)?;
     let addresses_by_wallet = all_address_rows(conn)?;
     let registrations_by_wallet = accounts::all_platform_payment_registrations(conn)?;
@@ -266,7 +270,9 @@ pub fn load_all(
     for wallet_id in crate::sqlite::schema::wallet_meta::list_ids(conn)? {
         let (h, t, r) = sync_by_wallet.get(&wallet_id).copied().unwrap_or((0, 0, 0));
         let address_rows = addresses_by_wallet.get(&wallet_id).unwrap_or(&empty_rows);
-        let registrations = registrations_by_wallet.get(&wallet_id).unwrap_or(&empty_regs);
+        let registrations = registrations_by_wallet
+            .get(&wallet_id)
+            .unwrap_or(&empty_regs);
         let sync = PlatformAddressSyncStartState {
             per_account: build_per_account(registrations, address_rows),
             sync_height: h,

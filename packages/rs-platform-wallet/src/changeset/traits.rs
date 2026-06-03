@@ -213,9 +213,9 @@ pub trait PlatformWalletPersistence: Send + Sync {
     /// off [`PersistenceError::is_transient`]:
     ///
     /// - **[`PersistenceErrorKind::Transient`]** — for the canonical
-    ///   SQLite backend that's `SQLITE_BUSY` / `SQLITE_LOCKED`, and as
-    ///   of ATOM-008 also the I/O-class codes `SQLITE_FULL` /
-    ///   `SQLITE_IOERR` / `SQLITE_NOMEM`: the buffered changeset is
+    ///   SQLite backend that's `SQLITE_BUSY` / `SQLITE_LOCKED` plus the
+    ///   I/O-class codes `SQLITE_FULL` / `SQLITE_IOERR` /
+    ///   `SQLITE_NOMEM`: the buffered changeset is
     ///   preserved (re-merged via the buffer's `restore` path so any
     ///   `store` that landed during the failed flush wins on LWW
     ///   fields), and the caller MAY retry with exponential backoff.

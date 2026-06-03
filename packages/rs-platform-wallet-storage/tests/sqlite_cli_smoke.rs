@@ -1,6 +1,6 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! .. — CLI smoke tests.
+//! CLI smoke tests for the maintenance binary.
 
 use std::process::Command;
 
@@ -138,7 +138,6 @@ fn tc072_delete_wallet_subcommand_removed() {
         "expected clap unknown-subcommand error, got stderr: `{stderr}`"
     );
 }
-
 
 /// backup --out <dir> writes a timestamped file.
 #[test]

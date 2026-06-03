@@ -90,7 +90,9 @@ fn inherent_delete_wallet_cascades_rows() {
     };
     assert_eq!(count_for(&w), 1);
 
-    let report = persister.delete_wallet(w).expect("delete_wallet must succeed");
+    let report = persister
+        .delete_wallet(w)
+        .expect("delete_wallet must succeed");
     assert_eq!(report.wallet_id, w);
     assert!(
         report.backup_path.is_some(),
@@ -112,7 +114,9 @@ fn inherent_commit_writes_flushes_dirty() {
     PlatformWalletPersistence::store(&persister, b, changeset(core_with_height(4, 4)))
         .expect("store B");
 
-    let report = persister.commit_writes().expect("commit_writes must succeed");
+    let report = persister
+        .commit_writes()
+        .expect("commit_writes must succeed");
     assert!(report.is_ok(), "report={report:?}");
     assert_eq!(report.succeeded.len(), 2);
 

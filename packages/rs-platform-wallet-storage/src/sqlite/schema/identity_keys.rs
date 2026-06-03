@@ -1,5 +1,5 @@
-//! `identity_keys` table writer (PUBLIC key material only — private keys
-//! never reach this table).
+//! `identity_keys` table writer. Stores PUBLIC key material only — no
+//! signing-key bytes ever reach this table.
 //!
 //! `IdentityKeyEntry`'s `public_key: dpp::IdentityPublicKey` uses
 //! `#[serde(tag = "$formatVersion")]` on the parent enum, which
