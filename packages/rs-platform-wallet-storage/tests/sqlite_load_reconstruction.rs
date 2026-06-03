@@ -74,6 +74,117 @@ fn tc040_load_platform_addresses() {
     assert_eq!(state.platform_addresses[&b].sync_height, 20);
 }
 
+/// A deterministic test xpub built from a fixed serialized form so the
+/// per-account reconstruction round-trip is reproducible.
+fn test_xpub() -> key_wallet::bip32::ExtendedPubKey {
+    key_wallet::bip32::ExtendedPubKey::decode(&hex::decode(
+        "0488B21E000000000000000000873DFF81C02F525623FD1FE5167EAC3A55A049DE3D314BB42EE227FFED37D5080339A36013301597DAEF41FBE593A02CC513D0B55527EC2DF1050E2E8FF49C85C2",
+    ).unwrap()).unwrap()
+}
+
+/// A `platform_payment` registration + platform_addresses for an account
+/// reconstruct into `load_state().per_account` keyed by the account
+/// index. Addresses for the account seed the per-account state.
+#[test]
+fn load_state_reconstructs_per_account_from_registration_and_addresses() {
+    use platform_wallet::changeset::AccountRegistrationEntry;
+
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0x64);
+    ensure_wallet_meta(&persister, &w);
+
+    let account_index = 7u32;
+    let reg = AccountRegistrationEntry {
+        account_type: key_wallet::account::AccountType::PlatformPayment {
+            account: account_index,
+            key_class: 0,
+        },
+        account_xpub: test_xpub(),
+    };
+    let mut cs = PlatformWalletChangeSet::default();
+    cs.account_registrations = vec![reg];
+    cs.platform_addresses = Some(PlatformAddressChangeSet {
+        addresses: vec![
+            entry(w, account_index, 0, 0xB0),
+            entry(w, account_index, 1, 0xB1),
+        ],
+        sync_height: Some(5),
+        ..Default::default()
+    });
+    persister.store(w, cs).unwrap();
+    drop(persister);
+
+    let p2 = reopen(&path);
+    let conn = p2.lock_conn_for_test();
+    let state = platform_wallet_storage::sqlite::schema::platform_addrs::load_state(&conn, &w)
+        .expect("load_state");
+    drop(conn);
+
+    assert_eq!(
+        state.per_account.len(),
+        1,
+        "exactly one platform_payment account should be reconstructed"
+    );
+    assert!(
+        state.per_account.contains_key(&account_index),
+        "per_account must be keyed by the registered account index"
+    );
+    assert_eq!(state.sync_height, 5);
+}
+
+/// A registration with no addresses still populates `per_account` (the
+/// xpub alone is enough to track the account); the wallet is therefore
+/// surfaced by `load()` even with zero addresses and zero watermarks.
+#[test]
+fn registration_without_addresses_still_surfaces_in_load() {
+    use platform_wallet::changeset::AccountRegistrationEntry;
+
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0x65);
+    ensure_wallet_meta(&persister, &w);
+
+    let reg = AccountRegistrationEntry {
+        account_type: key_wallet::account::AccountType::PlatformPayment {
+            account: 3,
+            key_class: 0,
+        },
+        account_xpub: test_xpub(),
+    };
+    let mut cs = PlatformWalletChangeSet::default();
+    cs.account_registrations = vec![reg];
+    persister.store(w, cs).unwrap();
+    drop(persister);
+
+    let p2 = reopen(&path);
+    let state = p2.load().unwrap();
+    let restored = state
+        .platform_addresses
+        .get(&w)
+        .expect("wallet with a platform_payment registration must surface in load()");
+    assert!(
+        restored.per_account.contains_key(&3),
+        "the registered account must be present in per_account"
+    );
+}
+
+/// A wallet with no platform state at all — no registrations, no
+/// addresses, all watermarks zero — is omitted from `load()`.
+#[test]
+fn wallet_without_platform_state_is_omitted_from_load() {
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0x66);
+    ensure_wallet_meta(&persister, &w);
+    // No platform-payment registration, no addresses, no sync row.
+    drop(persister);
+
+    let p2 = reopen(&path);
+    let state = p2.load().unwrap();
+    assert!(
+        !state.platform_addresses.contains_key(&w),
+        "a wallet with no platform state must be omitted from load()"
+    );
+}
+
 /// TC-043: non-wired-up sub-areas are written to disk (verified by
 /// direct SQL probes) but do not surface in the load result.
 ///
@@ -1215,19 +1326,21 @@ fn tc_p4_012_load_query_count_bounded() {
     seed_wallets(&p10, 10);
     let count_ten = count_load_queries(&p10);
 
-    // Per wallet `load()` issues exactly two statements
-    // (`platform_addrs::load_state` sync header + `count_per_wallet`),
-    // plus one shared `wallet_meta::list_ids`: total = 1 + 2*N. Pinning
-    // the per-wallet delta to 2 catches any unbounded per-row fan-out.
-    let per_wallet = (count_ten - count_one) as f64 / 9.0;
+    // `load()` issues a fixed number of grouped scans regardless of
+    // wallet count: `wallet_meta::list_ids` plus one scan each over
+    // `platform_address_sync`, `platform_addresses`, and the
+    // `platform_payment` `account_registrations`. The count must NOT
+    // grow with the number of wallets — that's the constant-query
+    // contract.
     assert_eq!(
-        per_wallet, 2.0,
-        "load() must issue a fixed 2 statements per wallet \
-         (N=1 → {count_one}, N=10 → {count_ten}, per-wallet → {per_wallet})"
+        count_one, count_ten,
+        "load() query count must not grow with wallet count \
+         (N=1 → {count_one}, N=10 → {count_ten})"
     );
     assert_eq!(
-        count_one, 3,
-        "load() with one wallet must be 1 (list_ids) + 2 (per-wallet) = 3, got {count_one}"
+        count_one, 4,
+        "load() must issue exactly 4 grouped statements \
+         (list_ids + sync + addresses + registrations), got {count_one}"
     );
 }
 

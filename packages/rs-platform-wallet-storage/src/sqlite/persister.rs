@@ -904,12 +904,11 @@ impl PlatformWalletPersistence for SqlitePersister {
     /// # }
     /// ```
     fn load(&self) -> Result<ClientStartState, PersistenceError> {
-        // TODO(CMT-011): repopulate ClientStartState.wallets — currently
-        // empty; identity/contacts/asset-lock readers already exist but
-        // the `Wallet::from_persisted` wiring lives in the rehydration
-        // PR (#3692). Until that lands, `load()` only rebuilds
-        // `platform_addresses` and emits a structured-log warning so
-        // operators see the gap surfaced in dashboards.
+        // TODO: repopulate ClientStartState.wallets. The
+        // identity/contacts/asset-lock readers exist, but the
+        // `Wallet::from_persisted` wiring lands with the rehydration work;
+        // until then `load()` only rebuilds `platform_addresses` and emits
+        // a structured-log summary so operators see the gap.
         let conn = self.conn().map_err(PersistenceError::from)?;
         let mut state = ClientStartState::default();
 
@@ -918,7 +917,12 @@ impl PlatformWalletPersistence for SqlitePersister {
         let mut addresses_loaded: usize = 0;
 
         for (wallet_id, (addrs, count)) in addrs_all {
+            // Omit a wallet that carries no platform state at all: no
+            // per-account registrations, no addresses, and all sync
+            // watermarks zero. Such a wallet contributes nothing to a
+            // restored provider.
             if count > 0
+                || !addrs.per_account.is_empty()
                 || addrs.sync_height > 0
                 || addrs.sync_timestamp > 0
                 || addrs.last_known_recent_block > 0
