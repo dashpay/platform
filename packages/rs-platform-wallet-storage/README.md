@@ -52,7 +52,7 @@ production-log greps still work.
 
 | Slot | Reader | Status |
 |---|---|---|
-| `platform_addresses` | `schema::platform_addrs::load_all` (a `wallet_meta::list_ids` → `load_state` loop) | populated |
+| `platform_addresses` | `schema::platform_addrs::load_all` (a fixed set of grouped scans over `platform_address_sync`, `platform_addresses`, and `account_registrations`, driven by the `wallet_meta::list_ids` wallet universe) | populated |
 | `wallets`            | — | empty pending upstream `Wallet::from_persisted` |
 
 The `identities` / `contacts` / `asset_locks` per-area readers exist
@@ -92,6 +92,55 @@ want to be explicit about the backend.
 `Immediate` flush, 5 s busy timeout, WAL journal, `NORMAL`
 synchronous, and an auto-backup dir at `<db_dir>/backups/auto/`.
 
+## KV metadata
+
+The `kv` feature adds a per-object-type key/value store
+([`KvStore`](src/kv.rs)) for stashing arbitrary application-managed
+metadata (aliases, flags, notes, sync hints, ordering) alongside wallet
+objects. It is implemented on `SqlitePersister` and is **independent of
+`PlatformWalletPersistence`** — reads and writes go straight to the
+store without flowing through the wallet changeset buffer.
+
+Each [`ObjectId`](src/kv.rs) variant addresses a dedicated `meta_*`
+table:
+
+| `ObjectId` | Table | Scope |
+|---|---|---|
+| `Global` | `meta_global` | App-wide; no parent, survives wallet deletion |
+| `Wallet(wid)` | `meta_wallet` | Per wallet |
+| `Identity(id)` | `meta_identity` | Per identity |
+| `Token { identity_id, token_id }` | `meta_token` | Per token balance |
+| `Contact { wallet_id, owner_id, contact_id }` | `meta_contact` | Per contact (any lifecycle state) |
+| `PlatformAddress { wallet_id, address }` | `meta_platform_address` | Per platform address |
+
+**No-FK soft cascade.** Except for `Global`, a `put` does NOT require the
+parent object to exist yet — metadata may be attached ahead of sync.
+When a wallet is deleted, `AFTER DELETE` triggers broom every `meta_*`
+row keyed to that wallet (by `wallet_id`, or by `identity_id` via the
+identity cascade) — including rows whose typed parent was never written.
+`Global` is the only scope that survives a wallet delete. Values are
+opaque `Vec<u8>` (the app picks its own serialization); keys are 1..=128
+chars and values are capped at 16 MiB.
+
+The four `KvStore` methods:
+
+```rust,ignore
+fn get(&self, scope: &ObjectId, key: &str) -> Result<Option<Vec<u8>>, KvError>;
+fn put(&self, scope: &ObjectId, key: &str, value: &[u8]) -> Result<(), KvError>;
+fn delete(&self, scope: &ObjectId, key: &str) -> Result<(), KvError>; // idempotent
+fn list_keys(&self, scope: &ObjectId, prefix: Option<&str>) -> Result<Vec<String>, KvError>;
+```
+
+```rust,no_run
+use platform_wallet_storage::{KvStore, ObjectId, SqlitePersister, SqlitePersisterConfig};
+
+let persister = SqlitePersister::open(SqlitePersisterConfig::new("/tmp/wallets.db"))?;
+persister.put(&ObjectId::Global, "ui.theme", b"dark")?;
+let theme: Option<Vec<u8>> = persister.get(&ObjectId::Global, "ui.theme")?;
+let keys = persister.list_keys(&ObjectId::Global, Some("ui."))?;
+# Ok::<_, Box<dyn std::error::Error>>(())
+```
+
 ## CLI
 
 ```text
@@ -99,7 +148,6 @@ platform-wallet-storage --db <path> migrate [--no-auto-backup]
 platform-wallet-storage --db <path> backup --out <dir-or-file>
 platform-wallet-storage --db <path> restore --from <backup.db> --yes
 platform-wallet-storage prune --in <dir> [--keep-last N] [--max-age 30d]
-platform-wallet-storage --db <path> inspect [--wallet-id <hex>] [--format text|tsv|json]
 ```
 
 Destructive subcommands (`restore`) REQUIRE `--yes` — invoking them
@@ -144,6 +192,7 @@ to make Manual-mode writes durable.
 | `sqlite` | yes | SQLite persister (`platform_wallet_storage::sqlite`) and all of its native deps (`rusqlite`, `refinery`, `dpp`, `dash-sdk`, `key-wallet`, etc.) |
 | `cli` | yes | Maintenance binary `platform-wallet-storage`. Implies `sqlite`. |
 | `secrets` | yes | `platform_wallet_storage::secrets` submodule — zeroizing secret wrappers (`SecretBytes`, `SecretString`), the `EncryptedFileStore` Argon2id + XChaCha20-Poly1305 vault backend, and the `default_credential_store()` OS-keyring constructor. Implements the upstream `keyring_core::api::{CredentialApi, CredentialStoreApi}` SPI. |
+| `kv` | yes | Per-object-type key/value metadata API (`KvStore`, `KvError`, `ObjectId`) plus its SQLite-backed impl on `SqlitePersister`. Implies `sqlite`. The `meta_*` tables are always created by V001 so DB files stay interoperable across feature combos; this gate only controls the Rust API surface. |
 | `__test-helpers` | no | Crate-private `lock_conn_for_test` / `config_for_test` accessors. The double-underscore prefix follows Cargo's "do not enable from downstream" convention; the methods are also `#[doc(hidden)]`. |
 
 `cargo build -p platform-wallet-storage --no-default-features` builds a
@@ -164,7 +213,10 @@ identity-owned tables (`identity_keys`, `token_balances`,
 is nullable to support identity-only flows). Foreign-key enforcement is
 enabled and read-back-asserted on every connection open via the
 `open_conn` choke-point — if the linked SQLite cannot honor
-`PRAGMA foreign_keys`, open fails hard. The single remaining trigger
+`PRAGMA foreign_keys`, open fails hard. `setnull_core_utxos_on_tx_delete`
 clears `core_utxos.spent_in_txid` to NULL on transaction delete (a
 native composite `SET NULL` would null the NOT-NULL `wallet_id` column
-too).
+too). Five additional `AFTER DELETE` triggers provide soft-cascade
+cleanup for the no-FK `meta_*` metadata tables — keyed on `wallet_id` /
+`identity_id` so a wallet delete cleans every metadata row, parentless
+ones included; see the `SCHEMA.md` Triggers section for the full set.
