@@ -14,6 +14,8 @@ The `contactRequest` document requires these fields:
 
 ```typescript
 type DashpayContactRequestDocument = {
+  $createdAt: number;
+  $createdAtCoreBlockHeight: number;
   toUserId: Uint8Array;
   encryptedPublicKey: Uint8Array;
   senderKeyIndex: number;
@@ -21,6 +23,10 @@ type DashpayContactRequestDocument = {
   accountReference: number;
 };
 ```
+
+The current DashPay contract schema requires the system field
+`$createdAtCoreBlockHeight`. Older external references may use
+`coreHeightCreatedAt`; do not submit that name to the current contract.
 
 `encryptedPublicKey` is exactly 96 bytes:
 
@@ -139,6 +145,8 @@ const encryptedPublicKey = encryptContactXpub({
 });
 
 const document = {
+  $createdAt: Date.now(),
+  $createdAtCoreBlockHeight: platformCoreHeight,
   toUserId: recipientIdentityIdBytes,
   encryptedPublicKey,
   senderKeyIndex,
@@ -146,6 +154,10 @@ const document = {
   accountReference: 0,
 };
 ```
+
+`accountReference` above is the current Platform field accepted by the
+`contactRequest` schema. It is not a complete implementation of any
+ASK/HMAC-based account-reference obfuscation described in older DIP text.
 
 When querying received requests through the JavaScript SDK, pass identity IDs in
 the representation expected by the SDK call being used. The contract stores
@@ -160,3 +172,7 @@ currently submit DashPay documents or encrypt/decrypt `encryptedPublicKey`.
 Applications need to combine the wallet helper with identity encryption keys
 until a higher-level DashPay contact request helper is added to the JavaScript
 SDK.
+
+Treat the example as a byte-level reference. A production application should add
+contract validation, decrypt round-trip tests, and checks that the selected
+identity keys are active secp256k1 keys bounded for DashPay contact requests.
