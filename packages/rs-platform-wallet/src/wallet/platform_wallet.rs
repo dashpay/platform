@@ -632,7 +632,17 @@ impl PlatformWallet {
                         "invalid platform address: {e}"
                     ))
                 })?;
-        if addr_network != self.sdk.network {
+        // Interim unblock: the bech32m decoder lossily maps `tdash` → Testnet,
+        // so a devnet recipient decodes as Testnet. Accept a Testnet-decoded
+        // address on a Devnet/Regtest wallet. Superseded by #3781 (a
+        // network-agnostic decoder + HRP-class guard).
+        let networks_match = addr_network == self.sdk.network
+            || (addr_network == dashcore::Network::Testnet
+                && matches!(
+                    self.sdk.network,
+                    dashcore::Network::Devnet | dashcore::Network::Regtest
+                ));
+        if !networks_match {
             return Err(PlatformWalletError::ShieldedBuildError(format!(
                 "platform address network mismatch: address {addr_network:?}, wallet {:?}",
                 self.sdk.network
