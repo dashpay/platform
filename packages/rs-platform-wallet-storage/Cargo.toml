@@ -24,7 +24,7 @@ hex = "0.4"
 # SQLite-backed persister deps (gated by the `sqlite` feature).
 # `platform-wallet` types are reachable through the `sqlite` submodule
 # only; without the feature the bare crate ships no items that mention
-# them, so the wallet/serde graph stays out of the build (CODE-020).
+# them, so the wallet/serde graph stays out of the build.
 # `dpp` types reach the persister via `IdentityPublicKey` (identity_keys
 # writer), `AssetLockProof` (asset_locks writer) and `Identifier`
 # (dashpay writer). `dash-sdk` is here for the `AddressFunds` re-export
@@ -53,8 +53,9 @@ refinery = { version = "0.9", default-features = false, features = [
 ], optional = true }
 # bincode 2 is required directly: we encode `dpp::IdentityPublicKey`
 # (which derives bincode 2 `Encode`/`Decode`) and decode
-# `dpp::AssetLockProof` from the asset-lock blob column.
-bincode = { version = "2", optional = true }
+# `dpp::AssetLockProof` from the asset-lock blob column. Exact-pinned to
+# the lock-resolved version to match the crate's `=`-pin discipline.
+bincode = { version = "=2.0.1", optional = true }
 tempfile = { version = "3", optional = true }
 chrono = { version = "0.4", default-features = false, features = [
     "clock",
@@ -69,14 +70,16 @@ argon2 = { version = "=0.5.3", optional = true }
 chacha20poly1305 = { version = "=0.10.1", optional = true }
 zeroize = { version = "=1.8.2", features = ["derive"], optional = true }
 subtle = { version = "=2.6.1", optional = true }
-getrandom = { version = "0.2", optional = true }
+# CSPRNG for AEAD nonces and the vault salt; exact-pinned like the rest
+# of the crypto stack so the random source is not the loose one.
+getrandom = { version = "=0.2.17", optional = true }
 region = { version = "=3.0.2", optional = true }
 keyring-core = { version = "=1.0.0", optional = true }
-# Cross-process advisory file lock for the vault RMW (CMT-001).
+# Cross-process advisory file lock for the vault read-modify-write.
 # `fd-lock` 4.x is pure-rustix and replaces the `fs2`/`fs4` family that
-# was removed from the sqlite arm in #3743 (CODE-005/007/010/015) — those
-# tests grep for `fs2`/`fs4` literals in this crate's source/manifest and
-# would re-trigger on the older crates. `fd-lock` has no such collision.
+# was removed from the sqlite arm — those tests grep for `fs2`/`fs4`
+# literals in this crate's source/manifest and would re-trigger on the
+# older crates. `fd-lock` has no such collision.
 fd-lock = { version = "4.0.4", optional = true }
 
 # CLI deps (gated by the `cli` feature)
@@ -93,7 +96,7 @@ tracing-subscriber = { version = "0.3", features = [
 # Gated by `secrets` via `dep:`. Target-specific tables MUST follow all
 # `[dependencies]` entries.
 [target.'cfg(unix)'.dependencies]
-# `O_NOFOLLOW` open flag for vault read TOCTOU defence (CMT-004).
+# `O_NOFOLLOW` open flag for vault read TOCTOU defence.
 libc = { version = "0.2", optional = true }
 
 [target.'cfg(any(target_os = "linux", target_os = "freebsd"))'.dependencies]
@@ -172,16 +175,16 @@ cli = [
 # `secrets` submodule (`platform_wallet_storage::secrets`): zeroizing
 # secret wrappers + EncryptedFile backend + OS-keyring construction
 # helper, all built on the upstream `keyring_core::api` SPI. Default-on
-# so `Cargo.lock` unconditionally pins the RustSec-clean crypto stack
-# (SEC-REQ-4.7). Disable explicitly via `--no-default-features` to
-# build the storage crate without the crypto graph.
+# so `Cargo.lock` unconditionally pins the RustSec-clean crypto stack.
+# Disable explicitly via `--no-default-features` to build the storage
+# crate without the crypto graph.
 secrets = [
     "dep:argon2",
     "dep:chacha20poly1305",
-    # CMT-021: secrets uses serde directly (vault format + crypto
-    # envelope derive `Serialize`/`Deserialize`); declare the dep here
-    # so `--no-default-features --features secrets` builds without
-    # leaning on the `sqlite` feature also having `dep:serde`.
+    # secrets uses serde directly (vault format + crypto envelope derive
+    # `Serialize`/`Deserialize`); declare the dep here so
+    # `--no-default-features --features secrets` builds without leaning
+    # on the `sqlite` feature also having `dep:serde`.
     "dep:serde",
     "dep:serde_json",
     "dep:tempfile",
