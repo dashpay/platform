@@ -13,8 +13,8 @@
 mod common;
 
 use common::{
-    ensure_contact_established, ensure_identity, ensure_platform_address, ensure_token_balance,
-    ensure_wallet_meta, fresh_persister, wid,
+    ensure_contact_established, ensure_contact_received, ensure_contact_sent, ensure_identity,
+    ensure_platform_address, ensure_token_balance, ensure_wallet_meta, fresh_persister, wid,
 };
 
 use platform_wallet_storage::kv::{KvError, MAX_KEY_LEN, MAX_VALUE_LEN};
@@ -1026,4 +1026,140 @@ fn tc_md_025_scope_isolation() {
         p.get(&ObjectId::Wallet(b), "shared").unwrap().as_deref(),
         Some(&b"wallet_b"[..])
     );
+}
+
+/// Cascade-completeness: deleting one wallet leaves ZERO rows in every
+/// per-wallet table AND every wallet/identity-scoped `meta_*` table —
+/// including parentless metadata whose typed parent never existed and
+/// metadata on non-established contacts — while `meta_global` survives.
+///
+/// This is the guarantee that replaced the old per-table row-count
+/// fingerprint: instead of counting what was removed, it proves nothing
+/// of the wallet's survives the delete.
+#[test]
+fn delete_wallet_leaves_no_surviving_rows() {
+    use rusqlite::params;
+
+    let (p, _tmp, _path) = fresh_persister();
+    let a = wid(0x70);
+    ensure_wallet_meta(&p, &a);
+
+    let idy = id32(0x71);
+    ensure_identity(&p, &idy, Some(&a));
+
+    let token = id32(0x72);
+    ensure_token_balance(&p, &idy, &token);
+
+    // Three contacts in distinct lifecycle states.
+    let owner = id32(0x73);
+    let est_contact = id32(0x74);
+    let sent_contact = id32(0x75);
+    let recv_contact = id32(0x76);
+    ensure_contact_established(&p, &a, &owner, &est_contact);
+    ensure_contact_sent(&p, &a, &owner, &sent_contact);
+    ensure_contact_received(&p, &a, &owner, &recv_contact);
+
+    let addr = vec![0xAAu8; 20];
+    ensure_platform_address(&p, &a, &addr);
+
+    // One typed row in every remaining FK-bearing per-wallet table so
+    // the cascade has something to remove in each.
+    {
+        let conn = p.lock_conn_for_test();
+        let txid = vec![0x01u8; 32];
+        let outpoint = vec![0x02u8; 36];
+        let stmts: &[(&str, &[&dyn rusqlite::ToSql])] = &[
+            ("INSERT INTO account_registrations (wallet_id, account_type, account_index, account_xpub_bytes) VALUES (?1, 'standard', 0, X'00')", &[&a.as_slice()]),
+            ("INSERT INTO account_address_pools (wallet_id, account_type, account_index, pool_type, snapshot_blob) VALUES (?1, 'standard', 0, 'external', X'00')", &[&a.as_slice()]),
+            ("INSERT INTO core_transactions (wallet_id, txid, finalized, record_blob) VALUES (?1, ?2, 0, X'00')", &[&a.as_slice(), &txid]),
+            ("INSERT INTO core_utxos (wallet_id, outpoint, value, script, account_index, spent) VALUES (?1, ?2, 0, X'00', 0, 0)", &[&a.as_slice(), &outpoint]),
+            ("INSERT INTO core_instant_locks (wallet_id, txid, islock_blob) VALUES (?1, ?2, X'00')", &[&a.as_slice(), &txid]),
+            ("INSERT INTO core_derived_addresses (wallet_id, account_type, account_index, address, derivation_path, used) VALUES (?1, 'standard', 0, 'addr', '', 0)", &[&a.as_slice()]),
+            ("INSERT INTO core_sync_state (wallet_id, last_processed_height, synced_height) VALUES (?1, 1, 1)", &[&a.as_slice()]),
+            ("INSERT INTO identity_keys (identity_id, key_id, public_key_blob, public_key_hash) VALUES (?1, 0, X'00', X'00')", &[&idy.as_slice()]),
+            ("INSERT INTO platform_address_sync (wallet_id, sync_height, sync_timestamp, last_known_recent_block) VALUES (?1, 0, 0, 0)", &[&a.as_slice()]),
+            ("INSERT INTO asset_locks (wallet_id, outpoint, status, account_index, identity_index, amount_duffs, lifecycle_blob) VALUES (?1, ?2, 'built', 0, 0, 0, X'00')", &[&a.as_slice(), &outpoint]),
+            ("INSERT INTO dashpay_profiles (identity_id, profile_blob) VALUES (?1, X'00')", &[&idy.as_slice()]),
+            ("INSERT INTO dashpay_payments_overlay (identity_id, payment_id, overlay_blob) VALUES (?1, 'pay1', X'00')", &[&idy.as_slice()]),
+        ];
+        for (sql, prms) in stmts {
+            conn.execute(sql, *prms).unwrap_or_else(|e| panic!("seed `{sql}`: {e}"));
+        }
+    }
+
+    // Metadata in every scope, including PARENTLESS rows whose typed
+    // parent object was never created, plus a global row that must
+    // survive the wallet delete.
+    p.put(&ObjectId::Global, "k", b"survives").unwrap();
+    p.put(&ObjectId::Wallet(a), "k", b"v").unwrap();
+    p.put(&ObjectId::Identity(idy), "k", b"v").unwrap();
+    // Parented token metadata.
+    p.put(&ObjectId::Token { identity_id: idy, token_id: token }, "k", b"v").unwrap();
+    // Parentless token metadata — no token_balances row for this pair.
+    p.put(&ObjectId::Token { identity_id: idy, token_id: id32(0x7A) }, "k", b"v").unwrap();
+    // Contact metadata across all three lifecycle states.
+    p.put(&ObjectId::Contact { wallet_id: a, owner_id: owner, contact_id: est_contact }, "k", b"v").unwrap();
+    p.put(&ObjectId::Contact { wallet_id: a, owner_id: owner, contact_id: sent_contact }, "k", b"v").unwrap();
+    p.put(&ObjectId::Contact { wallet_id: a, owner_id: owner, contact_id: recv_contact }, "k", b"v").unwrap();
+    // Parentless contact metadata — no contacts row for this pair.
+    p.put(&ObjectId::Contact { wallet_id: a, owner_id: owner, contact_id: id32(0x7B) }, "k", b"v").unwrap();
+    // Parented + parentless platform-address metadata.
+    p.put(&ObjectId::PlatformAddress { wallet_id: a, address: addr.clone() }, "k", b"v").unwrap();
+    p.put(&ObjectId::PlatformAddress { wallet_id: a, address: vec![0xCCu8; 20] }, "k", b"v").unwrap();
+
+    p.delete_wallet(a).expect("delete_wallet");
+
+    // After the delete, no row in any per-wallet / wallet-scoped table
+    // may survive. Identity-owned tables are checked by joining through
+    // the (now-removed) identities row, which also leaves them empty.
+    let conn = p.lock_conn_for_test();
+    let wallet_scoped = [
+        "wallet_metadata",
+        "account_registrations",
+        "account_address_pools",
+        "core_transactions",
+        "core_utxos",
+        "core_instant_locks",
+        "core_derived_addresses",
+        "core_sync_state",
+        "identities",
+        "contacts",
+        "platform_addresses",
+        "platform_address_sync",
+        "asset_locks",
+        "meta_wallet",
+        "meta_contact",
+        "meta_platform_address",
+    ];
+    for table in wallet_scoped {
+        let n: i64 = conn
+            .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(n, 0, "{table} must be empty after delete_wallet");
+    }
+    // Identity-owned tables (and identity-scoped meta) are emptied by the
+    // FK cascade through `identities`.
+    let identity_owned = [
+        "identity_keys",
+        "token_balances",
+        "dashpay_profiles",
+        "dashpay_payments_overlay",
+        "meta_identity",
+        "meta_token",
+    ];
+    for table in identity_owned {
+        let n: i64 = conn
+            .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(n, 0, "{table} must be empty after delete_wallet");
+    }
+    // meta_global is not wallet-scoped and must survive.
+    let global: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM meta_global WHERE key = ?1",
+            params!["k"],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(global, 1, "meta_global must survive a per-wallet delete");
 }

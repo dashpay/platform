@@ -119,6 +119,46 @@ pub fn ensure_contact_established(
     .expect("ensure contact_established");
 }
 
+/// Insert a stub `sent` contact row (pending outgoing request) so a
+/// `meta_contact` write keyed by `(wallet_id, owner_id, contact_id)` has
+/// a non-established parent to exercise. The parent `wallet_metadata`
+/// row must already exist.
+pub fn ensure_contact_sent(
+    persister: &SqlitePersister,
+    wallet_id: &WalletId,
+    owner_id: &[u8; 32],
+    contact_id: &[u8; 32],
+) {
+    use rusqlite::params;
+    let conn = persister.lock_conn_for_test();
+    conn.execute(
+        "INSERT OR IGNORE INTO contacts \
+            (wallet_id, owner_id, contact_id, state) \
+         VALUES (?1, ?2, ?3, 'sent')",
+        params![wallet_id.as_slice(), &owner_id[..], &contact_id[..]],
+    )
+    .expect("ensure contact_sent");
+}
+
+/// Insert a stub `received` contact row (pending incoming request),
+/// symmetric to [`ensure_contact_sent`].
+pub fn ensure_contact_received(
+    persister: &SqlitePersister,
+    wallet_id: &WalletId,
+    owner_id: &[u8; 32],
+    contact_id: &[u8; 32],
+) {
+    use rusqlite::params;
+    let conn = persister.lock_conn_for_test();
+    conn.execute(
+        "INSERT OR IGNORE INTO contacts \
+            (wallet_id, owner_id, contact_id, state) \
+         VALUES (?1, ?2, ?3, 'received')",
+        params![wallet_id.as_slice(), &owner_id[..], &contact_id[..]],
+    )
+    .expect("ensure contact_received");
+}
+
 /// Insert a stub `platform_addresses` row so `meta_platform_address`
 /// writes pass the composite FK to
 /// `platform_addresses(wallet_id, address)`. The parent

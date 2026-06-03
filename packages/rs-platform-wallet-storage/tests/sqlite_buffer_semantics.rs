@@ -154,20 +154,25 @@ fn tc022_flush_is_scoped() {
     assert_eq!(count_for(&b), 1);
 }
 
-/// TC-016: property — N stores then flush == one merged store.
+/// TC-016: property — N buffered stores then one flush == one merged
+/// store.
 ///
-/// We use the monotonic-max merge on sync heights as the oracle.
+/// Manual flush mode so the N stores accumulate in the buffer and the
+/// single `flush` is what writes the merged delta; the monotonic-max
+/// merge on sync heights is the oracle.
 #[test]
 fn tc016_buffer_merge_oracle_smoke() {
     use proptest::prelude::*;
     let strategy = proptest::collection::vec((0u32..1_000_000, 0u32..1_000_000), 1..6);
     proptest!(ProptestConfig::with_cases(64), |(heights in strategy)| {
-        let (persister, _tmp, _path) = fresh_persister();
+        let (persister, _tmp, _path) = fresh_persister_with_mode(FlushMode::Manual);
         let w = wid(0x40);
         ensure_wallet_meta(&persister, &w);
         for &(sp, lp) in &heights {
             persister.store(w, changeset(core_with_height(sp, lp))).unwrap();
         }
+        // One flush writes the merged delta accumulated in the buffer.
+        persister.flush(w).unwrap();
         // Read back the persisted heights.
         let conn = persister.lock_conn_for_test();
         let (synced, lp): (Option<i64>, Option<i64>) = conn
