@@ -36,7 +36,7 @@ The current DashPay contract schema requires the system field
 The sender derives the contact xpub from the sender identity, recipient
 identity, account, and address index. The sender then encrypts that xpub with an
 ECDH shared secret from the sender's identity encryption private key and the
-recipient's identity encryption public key.
+recipient's identity decryption public key.
 
 ## Derive the contact payment xpub
 
@@ -45,6 +45,7 @@ import { wallet } from '@dashevo/evo-sdk';
 
 const senderKeyIndex = 0;
 const recipientKeyIndex = 0;
+const addressIndex = 0;
 
 const contactKey = await wallet.deriveDashpayContactKey({
   mnemonic: senderMnemonic,
@@ -52,11 +53,15 @@ const contactKey = await wallet.deriveDashpayContactKey({
   senderIdentityId,
   receiverIdentityId: recipientIdentityId,
   account: 0,
-  addressIndex: senderKeyIndex,
+  addressIndex,
 });
 
 // contactKey.xpub is encrypted into contactRequest.encryptedPublicKey.
 ```
+
+`senderKeyIndex` and `recipientKeyIndex` identify the identity public keys used
+for ECDH. `addressIndex` is the DIP-15 child index used for contact payment key
+derivation and is independent from those identity key indexes.
 
 ## Build the encrypted public key
 
@@ -107,15 +112,15 @@ function serializedXpubPayload(xpub: string): Buffer {
 function encryptContactXpub({
   contactXpub,
   senderEncryptionPrivateKeyWif,
-  recipientEncryptionPublicKeyBytes,
+  recipientDecryptionPublicKeyBytes,
 }: {
   contactXpub: string;
   senderEncryptionPrivateKeyWif: string;
-  recipientEncryptionPublicKeyBytes: Uint8Array;
+  recipientDecryptionPublicKeyBytes: Uint8Array;
 }): Uint8Array {
   const aesKey = deriveSharedKey({
     privateKeyWif: senderEncryptionPrivateKeyWif,
-    publicKeyBytes: recipientEncryptionPublicKeyBytes,
+    publicKeyBytes: recipientDecryptionPublicKeyBytes,
   });
   const payload = serializedXpubPayload(contactXpub);
   const iv = crypto.randomBytes(16);
@@ -141,8 +146,10 @@ function encryptContactXpub({
 const encryptedPublicKey = encryptContactXpub({
   contactXpub: contactKey.xpub,
   senderEncryptionPrivateKeyWif,
-  recipientEncryptionPublicKeyBytes,
+  recipientDecryptionPublicKeyBytes,
 });
+
+const accountReference = 0;
 
 const document = {
   $createdAt: Date.now(),
@@ -151,13 +158,13 @@ const document = {
   encryptedPublicKey,
   senderKeyIndex,
   recipientKeyIndex,
-  accountReference: 0,
+  accountReference,
 };
 ```
 
-`accountReference` above is the current Platform field accepted by the
-`contactRequest` schema. It is not a complete implementation of any
-ASK/HMAC-based account-reference obfuscation described in older DIP text.
+`accountReference` above is a placeholder for the current Platform field
+accepted by the `contactRequest` schema. It is not a complete implementation of
+any ASK/HMAC-based account-reference obfuscation described in older DIP text.
 
 When querying received requests through the JavaScript SDK, pass identity IDs in
 the representation expected by the SDK call being used. The contract stores
