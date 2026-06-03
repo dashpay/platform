@@ -47,7 +47,7 @@ pub enum ObjectId {
         identity_id: [u8; 32],
         token_id: [u8; 32],
     },
-    /// Per-established-contact metadata (`meta_contact`).
+    /// Per-contact metadata (`meta_contact`) — for a contact in any lifecycle state.
     Contact {
         wallet_id: WalletId,
         owner_id: [u8; 32],

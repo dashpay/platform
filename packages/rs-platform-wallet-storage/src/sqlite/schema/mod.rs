@@ -52,6 +52,11 @@ pub(crate) fn assert_identities_belong_to_wallet(
             // upcoming write with a clearer error than guessing.
             continue;
         };
+        // INTENTIONAL: the `Some(found)` arms below zero-pad a stored
+        // wallet_id whose width is not 32 into the diagnostic `found` field.
+        // This is diagnostic-only and cosmetic — a malformed stored width
+        // already triggers a mismatch error; reporting it zero-padded carries
+        // no security impact, so a typed length error is not warranted.
         match (scope_is_sentinel, found_wallet_id) {
             (true, None) => {} // sentinel scope matches NULL parenting
             (true, Some(found)) => {
