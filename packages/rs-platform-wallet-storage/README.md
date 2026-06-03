@@ -1,77 +1,87 @@
 # platform-wallet-storage
 
-Storage backends for the
-[`platform-wallet`](../rs-platform-wallet) crate. This crate ships a
-SQLite-backed implementation of `PlatformWalletPersistence` under
-[`sqlite`](src/sqlite/), a maintenance CLI, and the
-[`secrets`](src/secrets/) submodule — a `keyring_core` SPI
-implementation pairing the in-house `EncryptedFileStore`
-(Argon2id + XChaCha20-Poly1305 on-disk vault) with the OS keyring
-backends. All three are on by default; see [`SECRETS.md`](./SECRETS.md)
-for the secret-storage threat model and design.
+## Why this crate exists
 
-## At a glance
+A wallet on Dash Platform carries a lot of **public** state — UTXOs,
+transactions, account registrations, address pools, identities and their
+public keys, contacts, asset locks, token balances, DashPay overlays, and
+platform-address sync snapshots. A client needs all of it on disk so it
+can restart and pick up where it left off instead of re-scanning the chain
+from genesis. Until now every integrator built that storage themselves.
 
-- One `.db` file holds many wallets — every per-wallet row carries a
-  `wallet_id BLOB` primary-key component.
-- Schema migrations are append-only Rust files under `migrations/`,
-  applied via [`refinery`](https://github.com/rust-db/refinery) on every
-  `open`.
-- Online backup uses `rusqlite::backup::Backup::run_to_completion` —
-  safe under a concurrent writer.
-- **No private-key material.** See [`SECRETS.md`](./SECRETS.md).
-- `Send + Sync`; usable behind `Arc<dyn PlatformWalletPersistence>`.
-- Writers use `prepare_cached` so each INSERT/UPDATE is parsed once
-  per `Connection` lifetime; subsequent flushes hit the cache.
+`platform-wallet-storage` is the ready-to-use, embeddable answer: a SQLite
+persistence backend for [`platform-wallet`](../rs-platform-wallet), plus a
+small set of operational tools around it. One `.db` file holds many
+wallets, durable across restarts, with online backup, restore, and
+migration handled for you — and a contract you can lean on: **no
+private-key material is ever written to that file.**
 
-## Flush semantics
+## What integrators get
 
-`flush()` and `Immediate`-mode `store()` succeed-or-restore: on a
-transient SQLite failure (`SQLITE_BUSY` / `SQLITE_LOCKED`) the
-buffered changeset is merged back into the per-wallet buffer (LWW
-with anything `store()`-d during the failed transaction) and the
-call returns a `PersistenceError::Backend { kind: Transient, source }`
-whose source carries the marker `flush failed transiently`.
-**Retry the call** — do not discard state. Fatal failures (integrity
-check, encode error, mutex poison, …) return `kind: Fatal` (or
-`kind: Constraint` for SQL constraint violations) and drop the buffer.
+- **Durable multi-wallet storage** in a single SQLite file. Every
+  per-wallet row is keyed by `wallet_id`, so one file is the home for as
+  many wallets as the host app manages. Writers use `prepare_cached` and
+  the database runs WAL journaling by default.
+- **The private-key boundary, in writing.** Mnemonics, seeds, and raw
+  private keys never touch this file. Public-only material goes to SQLite;
+  signing material stays in the OS keyring or the encrypted vault. See
+  [SECRETS.md](./SECRETS.md).
+- **Backup, restore, and migration handled for you.** Backups use
+  SQLite's online backup API (safe under a concurrent writer); restores
+  run under `BEGIN EXCLUSIVE` so peers back off instead of racing the
+  swap; schema migrations apply automatically on every open.
+- **A flush contract you can build retries on.** Transient SQLite
+  failures return a *retryable* error with the buffered changeset intact;
+  fatal and constraint failures are reported distinctly and drop the
+  buffer. A corrupt database surfaces as a typed error on load rather than
+  silently losing rows.
+- **Crypto on by default.** The `secrets` backends ship in the default
+  feature set, so `Cargo.lock` unconditionally pins the reviewed crypto
+  stack.
 
-The full classification lives on
-[`WalletStorageError::is_transient`](src/sqlite/error.rs) and the
-companion [`WalletStorageError::persistence_kind`](src/sqlite/error.rs)
-that selects the trait-side kind. The `source` field is a
-`Box<dyn Error + Send + Sync>` over the original `WalletStorageError`
-— operators can walk `Error::source()` for the full typed chain;
-the outer `Display` carries the variant marker + hex wallet id so
-production-log greps still work.
+## Features
 
-## load() reconstruction
+### SQLite persister
 
-`SqlitePersister::load()` returns the base `ClientStartState`
-(plain struct, two slots — no `#[non_exhaustive]`):
+The flagship: an implementation of `platform-wallet`'s
+`PlatformWalletPersistence` over a single SQLite file. One database, many
+wallets, every per-wallet row carrying a `wallet_id BLOB` primary-key
+component. The persister is `Send + Sync` and usable behind
+`Arc<dyn PlatformWalletPersistence>`. Wallet removal
+([`SqlitePersister::delete_wallet`]) and explicit Manual-mode commit
+([`SqlitePersister::commit_writes`]) are inherent methods on the persister,
+not part of the trait.
 
-| Slot | Reader | Status |
-|---|---|---|
-| `platform_addresses` | `schema::platform_addrs::load_all` (a fixed set of grouped scans over `platform_address_sync`, `platform_addresses`, and `account_registrations`, driven by the `wallet_meta::list_ids` wallet universe) | populated |
-| `wallets`            | — | empty pending upstream `Wallet::from_persisted` |
+### KV / ObjectId metadata
 
-The `identities` / `contacts` / `asset_locks` per-area readers exist
-as hardened dormant helpers (`schema::<area>::load_state`) but are not
-wired into `load()` — `ClientStartState` carries no slot for them.
+The `kv` feature adds a per-object key/value store ([`KvStore`](src/kv.rs))
+for stashing app-managed metadata — aliases, flags, notes, sync hints,
+ordering — alongside wallet objects. It is independent of
+`PlatformWalletPersistence`: reads and writes go straight to the store
+without flowing through the wallet changeset buffer. A no-foreign-key soft
+cascade means metadata can be attached *ahead* of sync and still gets
+cleaned up when its wallet is deleted.
 
-Loading is **fail-hard**: any row that fails to decode, or a stored
-`wallet_id` that is not exactly 32 bytes, aborts the whole call with a
-typed [`WalletStorageError`](src/sqlite/error.rs)
-(`BincodeDecode` / `BlobDecode` / `InvalidWalletIdLength`). There is no
-corruption tolerance, no per-row skip, and no partial `Ok` — a corrupt
-database surfaces as an error rather than silently losing rows.
+### Secrets
 
-The summary `tracing::info!` carries `wallets_seen`,
-`addresses_loaded`, `wallets_rehydrated`, and
-`wallets_pending_rehydration` (the count of wallets that *would* be
-rehydrated once upstream provides `Wallet::from_persisted`).
+The `secrets` module ([SECRETS.md](./SECRETS.md)) is where signing material
+that the persister refuses to touch actually lives. One `SecretStore` front
+door fronts two backends: an in-house encrypted-file vault (Argon2id +
+XChaCha20-Poly1305) and the OS keyring. Wrappers zeroize on drop and the
+error surface is typed and secret-free. It is fully implemented and **on by
+default.**
 
-## Library usage
+### Maintenance CLI
+
+The `cli` feature ships the `platform-wallet-storage` binary with four
+subcommands — `migrate`, `backup`, `restore`, `prune` — for operating the
+database without writing custom code.
+
+---
+
+## Technical details
+
+### Library usage
 
 ```rust,no_run
 use std::sync::Arc;
@@ -85,24 +95,77 @@ let persister: Arc<dyn PlatformWalletPersistence> =
 ```
 
 The same types are also reachable via their canonical submodule path —
-`platform_wallet_storage::sqlite::SqlitePersister` — for callers that
-want to be explicit about the backend.
+`platform_wallet_storage::sqlite::SqlitePersister` — for callers that want
+to be explicit about the backend.
 
-`SqlitePersisterConfig::new(path)` produces sensible defaults:
-`Immediate` flush, 5 s busy timeout, WAL journal, `NORMAL`
-synchronous, and an auto-backup dir at `<db_dir>/backups/auto/`.
+`SqlitePersisterConfig::new(path)` produces sensible defaults: `Immediate`
+flush, 5 s busy timeout, WAL journal, `NORMAL` synchronous, and an
+auto-backup dir at `<db_dir>/backups/auto/`.
 
-## KV metadata
+The trait surface is `store` / `flush` / `load` / `get_core_tx_record`.
+Schema migrations are append-only Rust files under `migrations/`, applied
+via [`refinery`](https://github.com/rust-db/refinery) on every `open`.
 
-The `kv` feature adds a per-object-type key/value store
-([`KvStore`](src/kv.rs)) for stashing arbitrary application-managed
-metadata (aliases, flags, notes, sync hints, ordering) alongside wallet
-objects. It is implemented on `SqlitePersister` and is **independent of
-`PlatformWalletPersistence`** — reads and writes go straight to the
-store without flowing through the wallet changeset buffer.
+#### Flush semantics (store / flush)
 
-Each [`ObjectId`](src/kv.rs) variant addresses a dedicated `meta_*`
-table:
+`flush()` and `Immediate`-mode `store()` succeed-or-restore: on a transient
+SQLite failure (`SQLITE_BUSY` / `SQLITE_LOCKED`) the buffered changeset is
+merged back into the per-wallet buffer (LWW with anything `store()`-d during
+the failed transaction) and the call returns a
+`PersistenceError::Backend { kind: Transient, source }` whose source carries
+the marker `flush failed transiently`. **Retry the call** — do not discard
+state. Fatal failures (integrity check, encode error, mutex poison, …)
+return `kind: Fatal` (or `kind: Constraint` for SQL constraint violations)
+and drop the buffer.
+
+The full classification lives on
+[`WalletStorageError::is_transient`](src/sqlite/error.rs) and the companion
+[`WalletStorageError::persistence_kind`](src/sqlite/error.rs) that selects
+the trait-side kind. The `source` field is a
+`Box<dyn Error + Send + Sync>` over the original `WalletStorageError` —
+operators can walk `Error::source()` for the full typed chain; the outer
+`Display` carries the variant marker + hex wallet id so production-log greps
+still work.
+
+A `SqlitePersister` configured with [`FlushMode::Manual`] does NOT
+auto-flush from `Drop`; it emits a `tracing::error!` on drop if the buffer
+still holds uncommitted writes (with `dirty_wallets` and `total_fields`
+fields). Call [`SqlitePersister::commit_writes`] (or per-wallet `flush`)
+before drop to make Manual-mode writes durable.
+[`SqlitePersister::commit_writes`] returns a `CommitReport` whose
+`succeeded` / `failed` / `still_pending` vectors classify each dirty wallet
+so one failed wallet does not hide its siblings.
+
+#### load() reconstruction
+
+`SqlitePersister::load()` returns the base `ClientStartState` (plain struct,
+two slots — no `#[non_exhaustive]`):
+
+| Slot | Reader | Status |
+|---|---|---|
+| `platform_addresses` | `schema::platform_addrs::load_all` (a fixed set of grouped scans over `platform_address_sync`, `platform_addresses`, and `account_registrations`, driven by the `wallet_meta::list_ids` wallet universe) | populated |
+| `wallets`            | — | empty pending upstream `Wallet::from_persisted` |
+
+The `identities` / `contacts` / `asset_locks` per-area readers exist as
+hardened dormant helpers (`schema::<area>::load_state`) but are not wired
+into `load()` — `ClientStartState` carries no slot for them.
+
+Loading is **fail-hard**: any row that fails to decode, or a stored
+`wallet_id` that is not exactly 32 bytes, aborts the whole call with a typed
+[`WalletStorageError`](src/sqlite/error.rs)
+(`BincodeDecode` / `BlobDecode` / `InvalidWalletIdLength`). There is no
+corruption tolerance, no per-row skip, and no partial `Ok` — a corrupt
+database surfaces as an error rather than silently losing rows.
+
+The summary `tracing::info!` carries `wallets_seen`, `addresses_loaded`,
+`wallets_rehydrated`, and `wallets_pending_rehydration` (the count of
+wallets that *would* be rehydrated once upstream provides
+`Wallet::from_persisted`).
+
+### KV metadata API
+
+Each [`ObjectId`](src/kv.rs) variant addresses a dedicated `meta_*` table
+across six scopes:
 
 | `ObjectId` | Table | Scope |
 |---|---|---|
@@ -114,14 +177,15 @@ table:
 | `PlatformAddress { wallet_id, address }` | `meta_platform_address` | Per platform address |
 
 **No-FK soft cascade.** Except for `Global`, a `put` does NOT require the
-parent object to exist yet — metadata may be attached ahead of sync.
-When a wallet is deleted, `AFTER DELETE` triggers broom every `meta_*`
-row keyed to that wallet (by `wallet_id`, or by `identity_id` via the
-identity cascade) — including rows whose typed parent was never written.
-`Global` is the only scope that survives a wallet delete. Values are
-opaque `Vec<u8>` (the app picks its own serialization); keys are 1..=128
-chars and values are capped at 16 MiB. For the orphan-metadata limitation
-and future garbage-collection semantics, see [SCHEMA.md](./SCHEMA.md#orphan-metadata-and-future-garbage-collection).
+parent object to exist yet — metadata may be attached ahead of sync. When a
+wallet is deleted, `AFTER DELETE` triggers broom every `meta_*` row keyed to
+that wallet (by `wallet_id`, or by `identity_id` via the identity cascade) —
+including rows whose typed parent was never written. `Global` is the only
+scope that survives a wallet delete. Values are opaque `Vec<u8>` (the app
+picks its own serialization); keys are 1..=128 chars and values are capped
+at 16 MiB (`MAX_VALUE_LEN`), enforced by `put` before the write. For the
+orphan-metadata limitation and future garbage-collection semantics, see
+[SCHEMA.md](./SCHEMA.md#orphan-metadata-and-future-garbage-collection).
 
 The four `KvStore` methods:
 
@@ -142,7 +206,7 @@ let keys = persister.list_keys(&ObjectId::Global, Some("ui."))?;
 # Ok::<_, Box<dyn std::error::Error>>(())
 ```
 
-## CLI
+### CLI usage
 
 ```text
 platform-wallet-storage --db <path> migrate [--no-auto-backup]
@@ -151,42 +215,38 @@ platform-wallet-storage --db <path> restore --from <backup.db> --yes
 platform-wallet-storage prune --in <dir> [--keep-last N] [--max-age 30d]
 ```
 
-Destructive subcommands (`restore`) REQUIRE `--yes` — invoking them
-without it exits 2 with a usage error. `--no-auto-backup` opts out of
-the pre-restore (or pre-migration) auto-backup; it is the only
-supported way to disable auto-backup.
+Destructive subcommands (`restore`) REQUIRE `--yes` — invoking them without
+it exits 2 with a usage error. `--no-auto-backup` opts out of the
+pre-restore (or pre-migration) auto-backup; it is the only supported way to
+disable auto-backup.
 
 Wallet removal is a library-only API
-([`SqlitePersister::delete_wallet`] / `delete_wallet_skip_backup`);
-no CLI subcommand exposes it.
+([`SqlitePersister::delete_wallet`] / `delete_wallet_skip_backup`); no CLI
+subcommand exposes it. `delete_wallet` returns a `DeleteWalletReport`
+carrying the deleted `wallet_id` and the pre-delete `backup_path` — the
+rows themselves are removed by the native FK cascade plus the `meta_*`
+soft-cascade triggers, so there is no per-table receipt.
 
 Logging: `-v` / `-vv` / `-vvv` enable `info` / `debug` / `trace`
 respectively on stderr; `-q` suppresses non-error output.
 
-Exit codes: `0` success, `1` runtime error, `2` usage error, `3`
-validation failure (e.g. corrupt backup source).
+Exit codes: `0` success, `1` runtime error, `2` usage error, `3` validation
+failure (e.g. corrupt backup source).
 
-## Operational notes
+**Restore exclusion.** `restore` opens a short-lived writer connection on
+the destination DB and holds a SQLite-native `BEGIN EXCLUSIVE` transaction
+across the entire restore body. This interlocks with every other SQLite
+peer — sibling `SqlitePersister` handles, bare `rusqlite::Connection`
+instances, the CLI — so concurrent writes back off via SQLite's
+`busy_timeout` instead of racing the atomic swap. If a peer holds the
+destination busy for longer than the timeout, `restore` returns
+`WalletStorageError::RestoreDestinationLocked`. The lock conn is released
+BEFORE the rename so SQLite's file handle on the old inode goes away before
+the new DB takes its place.
 
-**Restore exclusion.** `restore` opens a short-lived writer connection
-on the destination DB and holds a SQLite-native `BEGIN EXCLUSIVE`
-transaction across the entire restore body. This interlocks with every
-other SQLite peer — sibling `SqlitePersister` handles, bare
-`rusqlite::Connection` instances, the CLI — so concurrent writes back
-off via SQLite's `busy_timeout` instead of racing the atomic swap. If a
-peer holds the destination busy for longer than the timeout, `restore`
-returns `WalletStorageError::RestoreDestinationLocked`. The lock conn is
-released BEFORE the rename so SQLite's file handle on the old inode goes
-away before the new DB takes its place.
+### Cargo features
 
-**Manual-mode drop diagnostic.** `SqlitePersister` configured with
-[`FlushMode::Manual`] emits a `tracing::error!` on drop if the buffer
-still holds uncommitted writes (with `dirty_wallets` and `total_fields`
-fields). The crate does NOT auto-flush from `Drop` — call
-[`SqlitePersister::commit_writes`] (or per-wallet `flush`) before drop
-to make Manual-mode writes durable.
-
-## Cargo features
+`default = ["sqlite", "cli", "secrets", "kv"]`
 
 | Feature | Default | What it brings |
 |---|---|---|
@@ -201,23 +261,38 @@ minimal core with neither the SQLite backend, the CLI, nor the secrets
 submodule. `--no-default-features --features sqlite,cli` is the
 "persister-only" build mode (no crypto dependencies).
 
-## Schema
+### Persistence error model
 
-See [`migrations/V001__initial.rs`](./migrations/V001__initial.rs) for
-the canonical schema. It is hand-written `CREATE TABLE … PRIMARY KEY …
-FOREIGN KEY …` SQL with native `ON DELETE CASCADE` constraints; INSERT,
-DELETE-cascade, and UPDATE re-parenting are all enforced by SQLite
-itself. Wallet-scoped tables FK directly to `wallet_metadata`;
-identity-owned tables (`identity_keys`, `token_balances`,
-`dashpay_profiles`, `dashpay_payments_overlay`) are keyed by
-`identity_id` only and cascade through `identities` (whose `wallet_id`
-is nullable to support identity-only flows). Foreign-key enforcement is
-enabled and read-back-asserted on every connection open via the
-`open_conn` choke-point — if the linked SQLite cannot honor
-`PRAGMA foreign_keys`, open fails hard. `setnull_core_utxos_on_tx_delete`
-clears `core_utxos.spent_in_txid` to NULL on transaction delete (a
-native composite `SET NULL` would null the NOT-NULL `wallet_id` column
-too). Five additional `AFTER DELETE` triggers provide soft-cascade
-cleanup for the no-FK `meta_*` metadata tables — keyed on `wallet_id` /
-`identity_id` so a wallet delete cleans every metadata row, parentless
-ones included; see the `SCHEMA.md` Triggers section for the full set.
+A failed write tells the caller exactly what to do next via
+`PersistenceErrorKind`:
+
+```rust,ignore
+pub enum PersistenceErrorKind {
+    Transient,   // not committed, buffer preserved — caller MAY retry
+    Fatal,       // unrecoverable — caller MUST NOT retry, buffer dropped
+    Constraint,  // SQL constraint violation — buffer dropped (fatal for retry)
+}
+```
+
+`PersistenceErrorKind` is intentionally **not** `#[non_exhaustive]`: a
+future variant must force every consumer `match` to update explicitly. The
+SQLite side classifies its native errors through
+`WalletStorageError::persistence_kind` and exposes the retry decision
+directly via `WalletStorageError::is_transient`.
+
+### Schema
+
+The canonical schema is [`migrations/V001__initial.rs`](./migrations/V001__initial.rs)
+— 23 tables of hand-written `CREATE TABLE … FOREIGN KEY …` SQL with native
+`ON DELETE CASCADE`. Foreign-key enforcement is enabled and
+read-back-asserted on every connection open. For the full table reference,
+the cascade triggers, the no-FK `meta_*` soft cascade, the orphan-metadata
+limitation, and the enum-domain CHECK constraints, see
+[SCHEMA.md](./SCHEMA.md).
+
+### Secrets
+
+The crate writes no secrets to SQLite. Signing material lives in the
+`secrets` backends instead. For the private-key boundary, the Argon2id +
+XChaCha20-Poly1305 vault, the OS-keyring arm, the `SecretStore` API, the
+error surface, and the threat model, see [SECRETS.md](./SECRETS.md).

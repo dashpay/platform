@@ -1,6 +1,27 @@
 # SQLite schema — `platform-wallet-storage`
 
-The persister stores **public** wallet-state material (UTXOs, transactions, account registrations, address pools, identities, identity public keys, contacts, asset locks, token balances, DashPay overlays, and platform-address sync snapshots) in a SQLite database managed by [refinery](https://crates.io/crates/refinery) migrations. **No secrets are stored here** — see [SECRETS.md](./SECRETS.md) for the secret-bearing backends.
+## Why this schema exists
+
+A wallet's **public** state has to survive a restart. This schema is the
+on-disk shape of that state: one SQLite file holding many wallets, every
+per-wallet row anchored to a `wallet_id`, so a client can reload its UTXOs,
+identities, contacts, balances, and sync watermarks without re-scanning the
+chain.
+
+## What it stores — and the boundary
+
+The persister stores **public** wallet-state material (UTXOs, transactions,
+account registrations, address pools, identities, identity public keys,
+contacts, asset locks, token balances, DashPay overlays, and
+platform-address sync snapshots) in a SQLite database managed by
+[refinery](https://crates.io/crates/refinery) migrations.
+
+**No secrets are stored here.** Mnemonics, seeds, and raw private keys never
+appear in any column of any table — that is a deliberate boundary, not an
+accident of the current row set. The secret-bearing backends live elsewhere;
+see [SECRETS.md](./SECRETS.md).
+
+## How integrity is kept
 
 Schema evolution is version-gated by refinery. Every read-write connection turns on `PRAGMA foreign_keys = ON` at open time (`src/sqlite/conn.rs`), so every `ON DELETE CASCADE` clause is active. Deleting a `wallet_metadata` row cleans that wallet's metadata along two paths:
 

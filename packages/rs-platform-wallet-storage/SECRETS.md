@@ -1,4 +1,18 @@
-# Private-key boundary
+# Secret storage and the private-key boundary
+
+## Why secrets are handled this way
+
+A wallet's public state and its signing material have very different risk
+profiles. The persister's SQLite file is meant to be copied, backed up, and
+restored freely — so the one thing it must never contain is a key that could
+move funds. Keeping signing material out of that file by construction is what
+makes the rest of the crate safe to operate casually: you can back up the
+`.db` without backing up your keys.
+
+So secrets get their own home, their own crypto, and their own typed,
+secret-free error surface — separate from the persister entirely.
+
+## The value: a hard private-key boundary
 
 The SQLite persister in `platform-wallet-storage::sqlite` is the
 canonical persistence backend for the data carried by
@@ -11,6 +25,10 @@ material live exclusively on the client side (iOS Keychain, Android
 Keystore, OS keyring, encrypted file vault). They are re-derived as
 needed via the wallet's BIP-32/BIP-39 plumbing and never touch the
 SQLite file the persister writes.
+
+The rest of this document is the technical detail behind that boundary: the
+`secrets` backends, the `SecretStore` API, the error surface, and the threat
+model.
 
 ## The `secrets` submodule
 
