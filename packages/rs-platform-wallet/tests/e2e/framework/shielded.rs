@@ -518,6 +518,11 @@ impl OrchardProver for &TamperingProver {
 /// backend error so an abuse case can assert the exact rejection variant.
 /// Bypasses the guarded `shielded_*` methods.
 ///
+/// **`Ok(())` means `check_tx` admitted the transition to the mempool —
+/// NOT that it committed at consensus.** A transition can pass `check_tx`
+/// and still be rejected when the block is processed. To learn the
+/// consensus verdict, follow with [`wait_commit_raw`] (SD-002).
+///
 /// Gated: refuses unless [`adversarial_enabled`], so a stray malformed
 /// broadcast can't pollute a normal functional run. Same broadcast path
 /// PA-006 replays through.
@@ -536,6 +541,44 @@ pub async fn broadcast_raw(
         .broadcast(sdk.as_ref(), None)
         .await
         .map_err(|e| FrameworkError::Sdk(format!("broadcast_raw: {e}")))
+}
+
+/// Wait for an already-broadcast [`StateTransition`]'s **consensus**
+/// outcome (commit), the verdict [`broadcast_raw`] cannot observe.
+///
+/// `Ok(_)` means the transition COMMITTED — Drive processed the block,
+/// applied the state change, and returned a verifiable proof. `Err(_)`
+/// carries the consensus rejection reason (e.g. nullifier-already-spent),
+/// the evidence an adversarial probe must surface rather than swallow.
+///
+/// Polls `wait_for_state_transition_result` via the SDK's
+/// `wait_for_response` (proof-verified), capped at `timeout`. Use after
+/// [`broadcast_raw`] to turn a mempool-admission probe into a
+/// consensus-commit probe (SD-002).
+///
+/// Gated like [`broadcast_raw`].
+pub async fn wait_commit_raw(
+    sdk: &Arc<dash_sdk::Sdk>,
+    state_transition: &dpp::state_transition::StateTransition,
+    timeout: Duration,
+) -> FrameworkResult<dpp::state_transition::proof_result::StateTransitionProofResult> {
+    use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
+    use dash_sdk::platform::transition::put_settings::PutSettings;
+    use dpp::state_transition::proof_result::StateTransitionProofResult;
+
+    if !adversarial_enabled() {
+        return Err(FrameworkError::Config(format!(
+            "wait_commit_raw refused: set {ADVERSARIAL_GATE_ENV} to run the abuse pass"
+        )));
+    }
+    let settings = PutSettings {
+        wait_timeout: Some(timeout),
+        ..Default::default()
+    };
+    state_transition
+        .wait_for_response::<StateTransitionProofResult>(sdk.as_ref(), Some(settings))
+        .await
+        .map_err(|e| FrameworkError::Sdk(format!("wait_commit_raw: {e}")))
 }
 
 /// Mutate one `SerializedBundle` field of a built shielded
