@@ -14,7 +14,7 @@
 //! - [`SecretStore::file`] — Argon2id + XChaCha20-Poly1305 vault file.
 //!   Recommended on **headless / server** hosts; fully self-contained.
 //! - [`SecretStore::os`] — the platform OS keyring, fail-closed on
-//!   headless Linux (SEC-REQ-2.1.3 / AR-4). Recommended on **desktop**.
+//!   headless Linux. Recommended on **desktop**.
 //!
 //! # Internal SPI
 //!
@@ -35,7 +35,7 @@
 //! Everything secret-bearing lives under this `src/secrets/` tree by
 //! design: `tests/secrets_scan.rs` scans only `src/sqlite/schema/` +
 //! `migrations/` and exempts this module, so this module owns its own
-//! review discipline (`tests/secrets_guard.rs`, SEC-REQ-4.5/4.5.1).
+//! review discipline (`tests/secrets_guard.rs`).
 //!
 //! # Memory hygiene
 //!
@@ -48,8 +48,7 @@
 //! # Backend selection
 //!
 //! Selection is an explicit operator decision — there is no silent
-//! fallback between the file vault and the OS keyring
-//! (SEC-REQ-2.1.3 / AR-4).
+//! fallback between the file vault and the OS keyring.
 
 mod error;
 mod file;

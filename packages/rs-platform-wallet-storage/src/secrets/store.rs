@@ -28,7 +28,7 @@ use super::{default_credential_store, EncryptedFileStore, SERVICE_PREFIX};
 /// The only public read path is [`get`](SecretStore::get), which yields a
 /// zeroizing [`SecretBytes`] — a raw `Vec<u8>` never crosses this
 /// boundary. Backend selection is an explicit operator decision; there is
-/// no silent fallback between the two arms (SEC-REQ-2.1.3 / AR-4).
+/// no silent fallback between the two arms.
 pub enum SecretStore {
     /// Self-contained Argon2id + XChaCha20-Poly1305 vault file.
     /// Recommended on headless / server hosts.
@@ -67,8 +67,8 @@ impl SecretStore {
     ) -> Result<(), SecretStoreError> {
         match self {
             // File arm: the inherent typed path — no lossy SPI seam.
-            // `put_bytes` takes `&SecretBytes` directly (CMT-009), so
-            // the bare-buffer view never crosses this boundary.
+            // `put_bytes` takes `&SecretBytes` directly, so the
+            // bare-buffer view never crosses this boundary.
             Self::File(s) => s.put_bytes(service, label, secret),
             Self::Os(store) => {
                 let entry = build_os(store, service, label)?;
@@ -89,7 +89,7 @@ impl SecretStore {
         match self {
             // File arm: the inherent typed path keeps `WrongPassphrase`
             // vs `Corruption` distinct (lossless). Plaintext rides as
-            // `SecretBytes` all the way (CMT-008); no rewrap needed.
+            // `SecretBytes` all the way; no rewrap needed.
             Self::File(s) => s.get_bytes(service, label),
             Self::Os(store) => {
                 let entry = build_os(store, service, label)?;
@@ -124,9 +124,9 @@ impl SecretStore {
 /// Build the SPI [`Entry`] for `(service, label)` on the OS-keyring arm.
 ///
 /// The reject-not-sanitize label allowlist (`^[A-Za-z0-9._-]{1,64}$`)
-/// is enforced here before the call crosses into the OS backend
-/// (CMT-006). Different OS keyrings accept, normalize, or reject
-/// non-allowlisted bytes inconsistently; enforcing the allowlist at
+/// is enforced here before the call crosses into the OS backend.
+/// Different OS keyrings accept, normalize, or reject non-allowlisted
+/// bytes inconsistently; enforcing the allowlist at
 /// this shim keeps `(service, label)` invariants identical to the
 /// `File` arm and across every OS backend.
 fn build_os(
@@ -141,7 +141,7 @@ fn build_os(
 
 impl std::fmt::Debug for SecretStore {
     /// Surfaces the backend engine/service identity without exposing any
-    /// secret material (CMT-006). The `Os` arm reports the SPI
+    /// secret material. The `Os` arm reports the SPI
     /// `vendor()`/`id()` — non-secret backend tags (e.g. which OS keyring
     /// is wired up) — rather than an opaque `Os(..)`. The `File` arm
     /// delegates to [`EncryptedFileStore`]'s redacting `Debug` (path
@@ -312,9 +312,9 @@ mod tests {
         assert!(!dbg.contains("pw-correct"));
     }
 
-    /// CMT-006 — the OS-keyring shim must enforce the label
-    /// allowlist BEFORE handing the value to the OS backend. The
-    /// per-backend label policies (macOS Keychain vs Windows
+    /// The OS-keyring shim must enforce the label allowlist BEFORE
+    /// handing the value to the OS backend. The per-backend label
+    /// policies (macOS Keychain vs Windows
     /// Credential Manager vs Secret Service) differ in what they accept,
     /// normalize, or reject; the shim must keep the `(service, label)`
     /// invariant uniform across every arm.
@@ -346,7 +346,7 @@ mod tests {
                 _user: &str,
                 _modifiers: Option<&HashMap<&str, &str>>,
             ) -> KeyringResult<Entry> {
-                panic!("build_os must reject the label before reaching the SPI (CMT-006)");
+                panic!("build_os must reject the label before reaching the SPI");
             }
             fn as_any(&self) -> &dyn Any {
                 self

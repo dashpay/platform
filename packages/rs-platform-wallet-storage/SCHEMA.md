@@ -2,7 +2,7 @@
 
 The persister stores **public** wallet-state material (UTXOs, transactions, account registrations, address pools, identities, identity public keys, contacts, asset locks, token balances, DashPay overlays, and platform-address sync snapshots) in a SQLite database managed by [refinery](https://crates.io/crates/refinery) migrations. **No secrets are stored here** — see [SECRETS.md](./SECRETS.md) for the secret-bearing backends.
 
-Schema evolution is version-gated by refinery. Every read-write connection turns on `PRAGMA foreign_keys = ON` at open time (`src/sqlite/conn.rs`), so every `ON DELETE CASCADE` clause is active. The `meta_*` soft-cascade `AFTER DELETE` triggers fire even for parent rows removed by an FK cascade (SQLite does this natively), so deleting a wallet transitively cleans all its metadata.
+Schema evolution is version-gated by refinery. Every read-write connection turns on `PRAGMA foreign_keys = ON` at open time (`src/sqlite/conn.rs`), so every `ON DELETE CASCADE` clause is active. Deleting a `wallet_metadata` row transitively cleans **all** of that wallet's metadata, regardless of the lifecycle state of any typed parent and even for `meta_*` rows written ahead of (or without) a typed parent: the wallet-rooted soft-cascade triggers broom every `meta_*` row keyed to the deleted `wallet_id`, and the FK cascade through `identities` brooms the identity-scoped `meta_*` rows. The only metadata that survives a wallet delete is `meta_global`, which is intentionally not wallet-scoped.
 
 The 23 tables are split into five domain diagrams below. `WALLET_METADATA` is the root anchor and appears in each diagram. For full column listings see the [Tables](#tables) section.
 
@@ -233,18 +233,23 @@ app wants to stash alongside a wallet object). One dedicated `meta_*`
 table per [`ObjectId`](./src/kv.rs) variant. `meta_global` has no parent
 and survives wallet deletion. The other five carry **no foreign key**:
 metadata may be written before its parent object is synced into its
-typed table. An `AFTER DELETE` trigger on each parent table removes the
-matching metadata when the object is deleted (soft cascade), so metadata
-never outlives its object. The dashed edges below denote trigger-based
-cleanup, not an FK relationship.
+typed table. `AFTER DELETE` triggers provide a soft cascade so metadata
+never outlives its wallet. Deleting a `wallet_metadata` row brooms every
+wallet-scoped `meta_*` row by `wallet_id` directly, and the FK cascade
+through `identities` brooms the identity-scoped `meta_*` rows by
+`identity_id`; both legs key on the id alone, so cleanup is independent
+of whether the typed parent ever existed and of any contact's lifecycle
+state. Direct deletes of a single `token_balances`, `contacts`, or
+`platform_addresses` row also drop the matching metadata. The dashed
+edges below denote trigger-based cleanup, not an FK relationship.
 
 ```mermaid
 erDiagram
-    WALLET_METADATA ||..o{ META_WALLET : "trigger cleanup"
-    WALLET_METADATA ||..o{ META_CONTACT : "trigger (via established contacts)"
-    WALLET_METADATA ||..o{ META_PLATFORM_ADDRESS : "trigger (via platform_addresses)"
-    IDENTITIES ||..o{ META_IDENTITY : "trigger cleanup"
-    TOKEN_BALANCES ||..o{ META_TOKEN : "trigger cleanup"
+    WALLET_METADATA ||..o{ META_WALLET : "trigger cleanup (by wallet_id)"
+    WALLET_METADATA ||..o{ META_CONTACT : "trigger cleanup (by wallet_id)"
+    WALLET_METADATA ||..o{ META_PLATFORM_ADDRESS : "trigger cleanup (by wallet_id)"
+    IDENTITIES ||..o{ META_IDENTITY : "trigger cleanup (by identity_id)"
+    IDENTITIES ||..o{ META_TOKEN : "trigger cleanup (by identity_id)"
 
     META_GLOBAL {
         TEXT key PK "1..=128 chars; no parent (survives wallet delete)"
@@ -267,7 +272,7 @@ erDiagram
     }
 
     META_TOKEN {
-        BLOB identity_id PK "no FK; trigger cleanup on token_balances delete"
+        BLOB identity_id PK "no FK; trigger cleanup on identities delete"
         BLOB token_id PK
         TEXT key PK
         BLOB value
@@ -275,7 +280,7 @@ erDiagram
     }
 
     META_CONTACT {
-        BLOB wallet_id PK "no FK; trigger cleanup on established contacts delete"
+        BLOB wallet_id PK "no FK; trigger cleanup on wallet_metadata delete"
         BLOB owner_id PK
         BLOB contact_id PK
         TEXT key PK
@@ -284,7 +289,7 @@ erDiagram
     }
 
     META_PLATFORM_ADDRESS {
-        BLOB wallet_id PK "no FK; trigger cleanup on platform_addresses delete"
+        BLOB wallet_id PK "no FK; trigger cleanup on wallet_metadata delete"
         BLOB address PK
         TEXT key PK
         BLOB value
@@ -294,10 +299,13 @@ erDiagram
 
 > Note: every `meta_*` table's uniqueness comes straight from its
 > composite `PRIMARY KEY` (id column(s) + `key`) — no partial indexes
-> and no nullable scope column. The five typed tables carry no FK; their
-> `AFTER DELETE` triggers also fire for parents removed by an FK cascade
-> (SQLite does this natively, e.g. `delete_wallet` → `identities` cascade
-> → `meta_identity` trigger), not only for directly-deleted parents.
+> and no nullable scope column. The five typed tables carry no FK. On a
+> wallet delete the wallet-rooted `AFTER DELETE` trigger brooms the
+> wallet-scoped tables (`meta_wallet`, `meta_contact`,
+> `meta_platform_address`) by `wallet_id`, and the FK cascade through
+> `identities` fires the per-identity trigger that brooms `meta_identity`
+> + `meta_token` by `identity_id` — so cleanup reaches every `meta_*`
+> row keyed to the wallet even when no typed parent was ever written.
 
 ## Tables
 
@@ -388,7 +396,7 @@ marks a logical delete; the row is retained for cascade integrity.
 
 ### `identity_keys`
 
-Public identity keys only — no private material (NFR-10). The
+Public identity keys only — no private material. The
 `public_key_blob` is a custom wire format (`IdentityKeyWire`) that
 pre-encodes the `IdentityPublicKey` via bincode 2 native `Encode/Decode`
 to work around a serde-tag incompatibility.
@@ -482,11 +490,16 @@ Unlike every other per-wallet table, the five typed `meta_*` tables carry
 **no foreign key**: a write succeeds before its parent object exists, so
 host apps can attach metadata independently of sync ordering (and a
 global-config persister can write to typed scopes whose parent tables
-stay empty). Cleanup is instead a soft cascade — an `AFTER DELETE`
-trigger on each parent removes the matching metadata when the object is
-deleted, so metadata never outlives its object. SQLite fires these
-triggers for parents removed by an FK cascade too, so deleting a wallet
-cleans its metadata transitively.
+stay empty). Cleanup is instead a soft cascade. Deleting a
+`wallet_metadata` row fires a wallet-rooted `AFTER DELETE` trigger that
+brooms the wallet-scoped tables (`meta_wallet`, `meta_contact`,
+`meta_platform_address`) by `wallet_id`, and the FK cascade through
+`identities` fires a per-identity trigger that brooms `meta_identity` +
+`meta_token` by `identity_id`. Both legs key on the id alone, so a wallet
+delete cleans its metadata transitively whether or not the typed parent
+was ever written and regardless of any contact's lifecycle state.
+Additional triggers handle direct deletes of a single `token_balances`,
+`contacts`, or `platform_addresses` row.
 
 #### `meta_global`
 
@@ -500,28 +513,28 @@ Global metadata with no parent — survives every wallet delete.
 Per-wallet metadata. Writable before the wallet exists.
 
 - PK: `(wallet_id, key)`.
-- No FK. Cleanup: `cascade_meta_wallet_on_wallet_delete` (AFTER DELETE ON `wallet_metadata`).
+- No FK. Cleanup: `cascade_meta_on_wallet_delete` (AFTER DELETE ON `wallet_metadata`, by `wallet_id`).
 
 #### `meta_identity`
 
 Per-identity metadata. Writable before the identity exists.
 
 - PK: `(identity_id, key)`.
-- No FK. Cleanup: `cascade_meta_identity_on_identity_delete` (AFTER DELETE ON `identities`).
+- No FK. Cleanup: `cascade_meta_on_identity_delete` (AFTER DELETE ON `identities`, by `identity_id`).
 
 #### `meta_token`
 
 Per-token-balance metadata. Writable before the token balance exists.
 
 - PK: `(identity_id, token_id, key)`.
-- No FK. Cleanup: `cascade_meta_token_on_token_balance_delete` (AFTER DELETE ON `token_balances`).
+- No FK. Cleanup: `cascade_meta_on_identity_delete` (AFTER DELETE ON `identities`, by `identity_id`) on a wallet/identity delete, plus `cascade_meta_token_on_token_balance_delete` (AFTER DELETE ON `token_balances`) for a direct balance delete.
 
 #### `meta_contact`
 
-Per-established-contact metadata. Writable before the contact exists.
+Per-contact metadata for any lifecycle state. Writable before the contact exists.
 
 - PK: `(wallet_id, owner_id, contact_id, key)`.
-- No FK. Cleanup: `cascade_meta_contact_on_contact_delete` (AFTER DELETE ON `contacts` WHEN `state = 'established'`).
+- No FK. Cleanup: `cascade_meta_on_wallet_delete` (AFTER DELETE ON `wallet_metadata`, by `wallet_id`) on a wallet delete, plus `cascade_meta_contact_on_contact_delete` (AFTER DELETE ON `contacts`, any state) for a direct contact delete.
 
 #### `meta_platform_address`
 
@@ -529,7 +542,7 @@ Per-platform-address metadata. `address` is an opaque `BLOB`. Writable
 before the address exists.
 
 - PK: `(wallet_id, address, key)`.
-- No FK. Cleanup: `cascade_meta_platform_address_on_address_delete` (AFTER DELETE ON `platform_addresses`).
+- No FK. Cleanup: `cascade_meta_on_wallet_delete` (AFTER DELETE ON `wallet_metadata`, by `wallet_id`) on a wallet delete, plus `cascade_meta_platform_address_on_address_delete` (AFTER DELETE ON `platform_addresses`) for a direct address delete.
 
 ## Enum-domain CHECK constraints
 
@@ -599,8 +612,11 @@ having to grep this repo.
   trigger rather than a native `ON DELETE SET NULL` FK, because SQLite would null
   every column of a composite FK on SET NULL — including the NOT NULL `wallet_id`.
 - The five typed `meta_*` tables carry **no FK** (writes may precede the parent);
-  cleanup is a per-parent `AFTER DELETE` trigger (soft cascade) that SQLite fires
-  for FK-cascade-deleted parents too, so it cleans transitively.
+  cleanup is an `AFTER DELETE` soft cascade. A wallet delete fires a wallet-rooted
+  trigger that brooms the wallet-scoped `meta_*` tables by `wallet_id`, and the
+  FK cascade through `identities` fires a per-identity trigger that brooms the
+  identity-scoped ones by `identity_id` — so it cleans transitively and
+  parentless rows included.
 - `PRAGMA foreign_keys = ON` is set and verified on every read-write connection open.
 
 ## Triggers
@@ -608,11 +624,11 @@ having to grep this repo.
 | Trigger | Fires | Action |
 |---|---|---|
 | `setnull_core_utxos_on_tx_delete` | AFTER DELETE ON `core_transactions` | NULL `core_utxos.spent_in_txid` for the deleted tx |
-| `cascade_meta_wallet_on_wallet_delete` | AFTER DELETE ON `wallet_metadata` | delete matching `meta_wallet` rows |
-| `cascade_meta_identity_on_identity_delete` | AFTER DELETE ON `identities` | delete matching `meta_identity` rows |
-| `cascade_meta_token_on_token_balance_delete` | AFTER DELETE ON `token_balances` | delete matching `meta_token` rows |
-| `cascade_meta_contact_on_contact_delete` | AFTER DELETE ON `contacts` WHEN `state = 'established'` | delete matching `meta_contact` rows |
-| `cascade_meta_platform_address_on_address_delete` | AFTER DELETE ON `platform_addresses` | delete matching `meta_platform_address` rows |
+| `cascade_meta_on_wallet_delete` | AFTER DELETE ON `wallet_metadata` | delete `meta_wallet`, `meta_contact`, `meta_platform_address` rows by `wallet_id` |
+| `cascade_meta_on_identity_delete` | AFTER DELETE ON `identities` | delete `meta_identity`, `meta_token` rows by `identity_id` |
+| `cascade_meta_token_on_token_balance_delete` | AFTER DELETE ON `token_balances` | delete matching `meta_token` rows (direct balance delete) |
+| `cascade_meta_contact_on_contact_delete` | AFTER DELETE ON `contacts` | delete matching `meta_contact` rows (any state; direct contact delete) |
+| `cascade_meta_platform_address_on_address_delete` | AFTER DELETE ON `platform_addresses` | delete matching `meta_platform_address` rows (direct address delete) |
 
 ## Migrations
 

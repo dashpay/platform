@@ -1,4 +1,4 @@
-//! Argon2id KDF + XChaCha20-Poly1305 AEAD (SEC-REQ-2.2.1–2.2.8).
+//! Argon2id KDF + XChaCha20-Poly1305 AEAD.
 //!
 //! `pub(crate)` only — no crypto primitive escapes the `secrets` tree.
 
@@ -12,8 +12,8 @@ use super::super::secret::{SecretBytes, SecretString};
 use super::format::KDF_ID_ARGON2ID;
 use crate::secrets::error::SecretStoreError;
 
-/// Argon2 parameter floors (SEC-REQ-2.2.2) — derivation MUST NOT use
-/// anything weaker; a header declaring less is refused.
+/// Argon2 parameter floors — derivation MUST NOT use anything weaker; a
+/// header declaring less is refused.
 pub(crate) const ARGON2_MIN_M_KIB: u32 = 19_456;
 pub(crate) const ARGON2_MIN_T: u32 = 2;
 pub(crate) const ARGON2_P: u32 = 1;
@@ -27,14 +27,13 @@ pub(crate) const ARGON2_P: u32 = 1;
 pub(crate) const ARGON2_MAX_M_KIB: u32 = 1_048_576;
 pub(crate) const ARGON2_MAX_T: u32 = 16;
 
-/// Shipped defaults for new vaults (SEC-REQ-2.2.2 SHOULD target:
-/// 64 MiB, t≥3).
+/// Shipped defaults for new vaults (64 MiB, t≥3).
 pub(crate) const ARGON2_DEFAULT_M_KIB: u32 = 65_536;
 pub(crate) const ARGON2_DEFAULT_T: u32 = 3;
 
-/// CSPRNG salt width (≥16 required; we use 32 — SEC-REQ-2.2.3).
+/// CSPRNG salt width (≥16 required; we use 32).
 pub(crate) const SALT_LEN: usize = 32;
-/// XChaCha20-Poly1305 nonce width (SEC-REQ-2.2.6).
+/// XChaCha20-Poly1305 nonce width.
 pub(crate) const NONCE_LEN: usize = 24;
 /// Derived AEAD key width.
 pub(crate) const KEY_LEN: usize = 32;
@@ -70,9 +69,9 @@ impl KdfParams {
     }
 
     /// Reject params outside the accepted bounds before any derivation
-    /// or allocation runs. The lower bound refuses a downgraded vault
-    /// (SEC-REQ-2.2.2); the upper bound refuses an inflated vault from
-    /// an attacker-controllable JSON file that would otherwise force a
+    /// or allocation runs. The lower bound refuses a downgraded vault;
+    /// the upper bound refuses an inflated vault from an
+    /// attacker-controllable JSON file that would otherwise force a
     /// huge allocation / unbounded derivation ahead of any tag check.
     /// An unknown algorithm `id` is also a bounds failure — Argon2id is
     /// the only KDF family this version supports.
@@ -91,10 +90,10 @@ impl KdfParams {
 }
 
 /// Derive a 32-byte AEAD key from `passphrase` + `salt` with Argon2id.
-/// Output lands directly in a [`SecretBytes`] (SEC-REQ-2.2.4).
+/// Output lands directly in a [`SecretBytes`].
 ///
-/// Takes `&SecretString` directly (CMT-005/006) so the bare-byte view
-/// of the passphrase lives only inside this function — callers can no
+/// Takes `&SecretString` directly so the bare-byte view of the
+/// passphrase lives only inside this function — callers can no
 /// longer accidentally hand a `&[u8]` (e.g. by holding a stray
 /// `expose_secret().as_bytes()` longer than intended) into KDF input.
 pub(crate) fn derive_key(
@@ -120,7 +119,7 @@ pub(crate) fn derive_key(
 }
 
 /// Encrypt `plaintext` under `key` with a fresh random nonce, binding
-/// `aad`. Returns `(nonce, ciphertext_with_tag)` (SEC-REQ-2.2.5/.6/.7).
+/// `aad`. Returns `(nonce, ciphertext_with_tag)`.
 pub(crate) fn seal(
     key: &SecretBytes,
     aad: &[u8],
@@ -139,14 +138,18 @@ pub(crate) fn seal(
                 aad,
             },
         )
-        .map_err(|_| SecretStoreError::Decrypt)?;
+        // Encrypt-path failure (XChaCha20-Poly1305 only fails here when
+        // the plaintext exceeds the construction's length limit), so it is
+        // not a decryption concern; keep it on the same write-oriented
+        // variant the cipher-construction failure above uses.
+        .map_err(|_| SecretStoreError::KdfFailure)?;
     Ok((nonce_bytes, ct))
 }
 
 /// Decrypt `ciphertext` under `key`/`nonce`/`aad`. On tag failure
 /// returns [`SecretStoreError::Decrypt`] and **no** plaintext — the
 /// combined (non-detached) API never materializes unverified bytes at
-/// our boundary (SEC-REQ-2.2.8, CWE-347, RUSTSEC-2023-0096).
+/// our boundary (CWE-347, RUSTSEC-2023-0096).
 pub(crate) fn open(
     key: &SecretBytes,
     nonce: &[u8; NONCE_LEN],

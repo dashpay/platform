@@ -6,8 +6,7 @@
 //! byte, passphrase, plaintext, or stringified source that could carry
 //! one in any variant. `#[error]` strings are static + structural; only
 //! non-secret diagnostics (POSIX mode bits, header version int, vault
-//! path) are carried as typed fields (SEC-REQ-2.0.1 / 2.2.8,
-//! CWE-209/CWE-532).
+//! path) are carried as typed fields (CWE-209/CWE-532).
 //!
 //! The `EncryptedFileStore` surfaces this enum at its construction /
 //! `rekey` API; its `keyring_core::api::CredentialApi` /
@@ -31,7 +30,7 @@ use keyring_core::Error as KeyringError;
 pub enum SecretStoreError {
     /// AEAD tag failure on the header verify-token: the supplied
     /// passphrase did not unlock the vault. Carries **no** plaintext and
-    /// no source (SEC-REQ-2.2.8, CWE-347).
+    /// no source (CWE-347).
     #[error("wrong passphrase")]
     WrongPassphrase,
 
@@ -49,7 +48,7 @@ pub enum SecretStoreError {
     KdfFailure,
 
     /// The vault header declared a `format_version` this build does not
-    /// understand (SEC-REQ-2.2.9).
+    /// understand.
     #[error("unsupported vault format version {found}")]
     VersionUnsupported {
         /// The version byte read from the (authenticated) header.
@@ -62,12 +61,12 @@ pub enum SecretStoreError {
     MalformedVault,
 
     /// `label` failed the `^[A-Za-z0-9._-]{1,64}$` allowlist
-    /// (SEC-REQ-4.3, CWE-22/CWE-20).
+    /// (CWE-22/CWE-20).
     #[error("invalid label")]
     InvalidLabel,
 
     /// A pre-existing vault file had permissions looser than `0600`.
-    /// Refuse rather than tighten-and-trust (SEC-REQ-2.2.10).
+    /// Refuse rather than tighten-and-trust.
     #[error("vault file has insecure permissions")]
     InsecurePermissions {
         /// The offending POSIX mode bits (not secret).
@@ -87,7 +86,7 @@ pub enum SecretStoreError {
     /// The on-disk vault file exceeds the structural ceiling
     /// ([`MAX_VAULT_SIZE_BYTES`](crate::secrets::MAX_VAULT_SIZE_BYTES)).
     /// Refuse to allocate / parse a multi-GiB attacker-controllable JSON
-    /// payload (CMT-003).
+    /// payload.
     #[error("vault file exceeds maximum size of {max} bytes (got {found})")]
     VaultTooLarge {
         /// The on-disk size (bytes) of the offending file.
@@ -109,7 +108,7 @@ pub enum SecretStoreError {
 
     /// Filesystem error (open / write / rename / fsync). The inner
     /// [`IoError`] carries an OS code and, when the failing operation
-    /// knew it, the *non-secret* path it was operating on (CMT-005) — a
+    /// knew it, the *non-secret* path it was operating on — a
     /// caller-supplied filesystem path, never a secret byte.
     #[error("{0}")]
     Io(#[from] IoError),
@@ -130,10 +129,10 @@ pub enum SecretStoreError {
 
 impl SecretStoreError {
     /// Build an [`Io`](SecretStoreError::Io) error that names the
-    /// non-secret filesystem `path` the failing operation touched
-    /// (CMT-005). Use at the vault read / write / lock seams where the
-    /// path is known; the bare `?`/`From<std::io::Error>` conversion
-    /// (path unknown) stays available for the deep helpers.
+    /// non-secret filesystem `path` the failing operation touched.
+    /// Use at the vault read / write / lock seams where the path is
+    /// known; the bare `?`/`From<std::io::Error>` conversion (path
+    /// unknown) stays available for the deep helpers.
     pub(crate) fn io_at(path: &Path, source: std::io::Error) -> Self {
         Self::Io(IoError {
             path: Some(path.to_path_buf()),
@@ -146,7 +145,7 @@ impl SecretStoreError {
 /// [`std::io::Error`] and, when the failing operation knew it, the
 /// non-secret path it was operating on. `From<std::io::Error>` is
 /// derived so a bare `?` still works (path defaults to `None`); the
-/// path-aware seams attach it via [`SecretStoreError::io_at`] (CMT-005).
+/// path-aware seams attach it via [`SecretStoreError::io_at`].
 #[derive(Debug, thiserror::Error)]
 pub struct IoError {
     /// The non-secret filesystem path, when the failing operation knew
@@ -213,7 +212,7 @@ impl From<super::validate::InvalidLabel> for SecretStoreError {
 
 /// Bare `?` on a [`std::io::Error`] inside a function returning
 /// [`SecretStoreError`] threads through [`IoError`] (path `None`); the
-/// path-aware seams call [`SecretStoreError::io_at`] instead (CMT-005).
+/// path-aware seams call [`SecretStoreError::io_at`] instead.
 impl From<std::io::Error> for SecretStoreError {
     fn from(source: std::io::Error) -> Self {
         Self::Io(IoError::from(source))
@@ -317,9 +316,9 @@ mod tests {
 
     #[test]
     fn io_at_names_path_in_display_without_leaking_secret() {
-        // CMT-005: the path-aware Io error renders the offending path so
-        // operators can see which file failed; the source message rides
-        // along, but no secret byte does (the path is caller-supplied).
+        // The path-aware Io error renders the offending path so operators
+        // can see which file failed; the source message rides along, but
+        // no secret byte does (the path is caller-supplied).
         let err = SecretStoreError::io_at(
             std::path::Path::new("/var/lib/wallet/vault.pwsvault"),
             std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied"),

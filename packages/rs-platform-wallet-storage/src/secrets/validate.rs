@@ -1,4 +1,4 @@
-//! Input validation for the `secrets` key space (SEC-REQ-4.3).
+//! Input validation for the `secrets` key space.
 //!
 //! `wallet_id` is fixed-width 32 bytes — enforced by the [`WalletId`]
 //! type, not at runtime. `label` is reject-not-sanitize against a

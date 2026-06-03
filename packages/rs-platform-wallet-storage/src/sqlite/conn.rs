@@ -35,14 +35,14 @@ pub(crate) enum Access {
 /// For [`Access::ReadWrite`], enables `PRAGMA foreign_keys = ON` and
 /// reads it back, returning [`WalletStorageError::ForeignKeysNotEnforced`]
 /// if the result is not `1`. For [`Access::ReadOnly`], opens with
-/// `SQLITE_OPEN_READ_ONLY | SQLITE_OPEN_URI` and performs no pragma.
+/// `SQLITE_OPEN_READ_ONLY` and performs no pragma. URI filename parsing
+/// is deliberately not enabled: the crate never constructs `file:` URIs,
+/// and leaving it off keeps a path from ever smuggling query parameters
+/// (e.g. `?mode=rwc`) that could defeat the read-only intent.
 pub(crate) fn open_conn(path: &Path, access: Access) -> Result<Connection, WalletStorageError> {
     let conn = match access {
         Access::ReadWrite => Connection::open(path)?,
-        Access::ReadOnly => Connection::open_with_flags(
-            path,
-            OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_URI,
-        )?,
+        Access::ReadOnly => Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)?,
     };
     if access == Access::ReadWrite {
         enforce_foreign_keys(&conn)?;
