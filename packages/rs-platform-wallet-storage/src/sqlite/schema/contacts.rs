@@ -112,9 +112,10 @@ pub fn apply(
 ) -> Result<(), WalletStorageError> {
     if !cs.sent_requests.is_empty() {
         // Pending-sent upsert. `outgoing_request` is set; `state` becomes
-        // 'sent' UNLESS the row is already established (don't downgrade) —
-        // the CASE keeps established rows put while still refreshing the
-        // outgoing blob. The inserted label flows through
+        // 'sent' UNLESS the row is already established (don't downgrade)
+        // or an incoming request blob is already stored — in which case
+        // both sides are present and the row promotes to 'established' in
+        // the same statement. The inserted label flows through
         // `contact_state_db_label` so it stays the writer's codomain.
         let sent = contact_state_db_label(ContactState::Sent);
         let mut stmt = tx.prepare_cached(
@@ -122,7 +123,10 @@ pub fn apply(
              VALUES (?1, ?2, ?3, ?4, ?5) \
              ON CONFLICT(wallet_id, owner_id, contact_id) DO UPDATE SET \
                 outgoing_request = excluded.outgoing_request, \
-                state = CASE WHEN contacts.state = 'established' THEN 'established' ELSE excluded.state END",
+                state = CASE \
+                    WHEN contacts.state = 'established' THEN 'established' \
+                    WHEN contacts.incoming_request IS NOT NULL THEN 'established' \
+                    ELSE excluded.state END",
         )?;
         for (key, entry) in &cs.sent_requests {
             let payload = blob::encode(&entry.request)?;
@@ -150,14 +154,19 @@ pub fn apply(
     if !cs.incoming_requests.is_empty() {
         // Pending-received upsert. Symmetric to the sent path:
         // `incoming_request` is set, `state` becomes 'received' unless the
-        // row is already established.
+        // row is already established or an outgoing request blob is already
+        // stored — in which case both sides are present and the row
+        // promotes to 'established' in the same statement.
         let received = contact_state_db_label(ContactState::Received);
         let mut stmt = tx.prepare_cached(
             "INSERT INTO contacts (wallet_id, owner_id, contact_id, state, incoming_request) \
              VALUES (?1, ?2, ?3, ?4, ?5) \
              ON CONFLICT(wallet_id, owner_id, contact_id) DO UPDATE SET \
                 incoming_request = excluded.incoming_request, \
-                state = CASE WHEN contacts.state = 'established' THEN 'established' ELSE excluded.state END",
+                state = CASE \
+                    WHEN contacts.state = 'established' THEN 'established' \
+                    WHEN contacts.outgoing_request IS NOT NULL THEN 'established' \
+                    ELSE excluded.state END",
         )?;
         for (key, entry) in &cs.incoming_requests {
             let payload = blob::encode(&entry.request)?;

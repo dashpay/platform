@@ -624,6 +624,141 @@ fn tc_p4_004e_auto_establishment_collapses_pending() {
     );
 }
 
+/// A pending `sent` followed by the matching `incoming` for the same
+/// pair promotes the row to `established` even without an explicit
+/// `established` upsert — both request blobs are now stored, so the
+/// reader reconstructs it under `established`, never `sent`/`incoming`.
+#[test]
+fn sent_then_matching_incoming_promotes_to_established() {
+    let sent_key = SentContactRequestKey {
+        owner_id: Identifier::from([0x81; 32]),
+        recipient_id: Identifier::from([0x82; 32]),
+    };
+    let recv_key = ReceivedContactRequestKey {
+        owner_id: Identifier::from([0x81; 32]),
+        sender_id: Identifier::from([0x82; 32]),
+    };
+    let est_key = SentContactRequestKey {
+        owner_id: Identifier::from([0x81; 32]),
+        recipient_id: Identifier::from([0x82; 32]),
+    };
+
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0xF6);
+    ensure_wallet_meta(&persister, &w);
+
+    let mut sent = std::collections::BTreeMap::new();
+    sent.insert(sent_key, contact_request_entry(0x81, 0x82));
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                contacts: Some(ContactChangeSet {
+                    sent_requests: sent,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+    let mut incoming = std::collections::BTreeMap::new();
+    incoming.insert(recv_key, contact_request_entry(0x82, 0x81));
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                contacts: Some(ContactChangeSet {
+                    incoming_requests: incoming,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    drop(persister);
+
+    let p2 = reopen(&path);
+    let conn = p2.lock_conn_for_test();
+    let state = platform_wallet_storage::sqlite::schema::contacts::load_state_for_test(&conn, &w)
+        .expect("contacts load_state");
+    drop(conn);
+    assert!(
+        state.established.contains_key(&est_key),
+        "matching opposite request must promote the row to established"
+    );
+    assert!(
+        state.sent_requests.is_empty(),
+        "promotion must clear the 'sent' bucket"
+    );
+    assert!(
+        state.incoming_requests.is_empty(),
+        "promotion must clear the 'incoming' bucket"
+    );
+}
+
+/// Symmetric to [`sent_then_matching_incoming_promotes_to_established`]:
+/// a pending `incoming` followed by the matching `sent` for the same
+/// pair promotes the row to `established`.
+#[test]
+fn received_then_matching_sent_promotes_to_established() {
+    let recv_key = ReceivedContactRequestKey {
+        owner_id: Identifier::from([0x91; 32]),
+        sender_id: Identifier::from([0x92; 32]),
+    };
+    let sent_key = SentContactRequestKey {
+        owner_id: Identifier::from([0x91; 32]),
+        recipient_id: Identifier::from([0x92; 32]),
+    };
+
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0xF7);
+    ensure_wallet_meta(&persister, &w);
+
+    let mut incoming = std::collections::BTreeMap::new();
+    incoming.insert(recv_key, contact_request_entry(0x92, 0x91));
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                contacts: Some(ContactChangeSet {
+                    incoming_requests: incoming,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+    let mut sent = std::collections::BTreeMap::new();
+    sent.insert(sent_key, contact_request_entry(0x91, 0x92));
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                contacts: Some(ContactChangeSet {
+                    sent_requests: sent,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    drop(persister);
+
+    let p2 = reopen(&path);
+    let conn = p2.lock_conn_for_test();
+    let state = platform_wallet_storage::sqlite::schema::contacts::load_state_for_test(&conn, &w)
+        .expect("contacts load_state");
+    drop(conn);
+    assert!(
+        state.established.contains_key(&sent_key),
+        "matching opposite request must promote the row to established"
+    );
+    assert!(state.sent_requests.is_empty());
+    assert!(state.incoming_requests.is_empty());
+}
+
 /// TC-P4-005: asset locks bucketed by (wallet, account, outpoint).
 #[test]
 fn tc_p4_005_load_asset_locks_bucketed() {
