@@ -117,8 +117,13 @@ const contactKey = await wallet.deriveDashpayContactKey({
   mnemonic,
   network: 'testnet',
   senderIdentityId: '...',
-  recipientIdentityId: '...',
+  receiverIdentityId: '...',
   account: 0,
-  index: 0,
+  addressIndex: 0,
 });
 ```
+
+The returned `xpub` is the contact payment public key that can be encrypted into
+a DashPay `contactRequest.encryptedPublicKey` field. See
+[DashPay Contact Requests](dashpay-contact-requests.md) for the end-to-end
+document payload shape.

@@ -80,6 +80,7 @@
 - [Trusted Mode and Proofs](evo-sdk/trusted-mode.md)
 - [State Transitions](evo-sdk/state-transitions.md)
 - [Wallet Utilities](evo-sdk/wallet-utilities.md)
+- [DashPay Contact Requests](evo-sdk/dashpay-contact-requests.md)
 - [Networks and Environments](evo-sdk/networks-and-environments.md)
 - [Tutorials]()
   - [Car Sales Management](evo-sdk/tutorials/car-sales.md)
