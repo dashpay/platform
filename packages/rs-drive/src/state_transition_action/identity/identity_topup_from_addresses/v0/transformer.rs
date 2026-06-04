@@ -1,5 +1,6 @@
 use crate::state_transition_action::identity::identity_topup_from_addresses::v0::IdentityTopUpFromAddressesTransitionActionV0;
 use dpp::address_funds::PlatformAddress;
+use dpp::consensus::basic::overflow_error::OverflowError;
 use dpp::fee::Credits;
 use dpp::prelude::{AddressNonce, ConsensusValidationResult};
 use dpp::state_transition::state_transitions::identity::identity_topup_from_addresses_transition::v0::IdentityTopUpFromAddressesTransitionV0;
@@ -20,12 +21,35 @@ impl IdentityTopUpFromAddressesTransitionActionV0 {
             ..
         } = value;
 
-        // Sum all balances from inputs
-        let total_inputs: Credits = inputs.values().map(|(_, balance)| *balance).sum();
+        // Sum all balances from inputs (checked to prevent overflow)
+        let total_inputs: Credits = match inputs
+            .values()
+            .try_fold(0u64, |acc, (_, balance)| acc.checked_add(*balance))
+        {
+            Some(sum) => sum,
+            None => {
+                return ConsensusValidationResult::new_with_error(
+                    OverflowError::new(
+                        "Input sum overflow in identity topup transformer".to_string(),
+                    )
+                    .into(),
+                )
+            }
+        };
 
         // Subtract the output amount if present to get the topup amount
         let topup_amount = match output {
-            Some((_, output_amount)) => total_inputs - output_amount,
+            Some((_, output_amount)) => match total_inputs.checked_sub(*output_amount) {
+                Some(diff) => diff,
+                None => {
+                    return ConsensusValidationResult::new_with_error(
+                        OverflowError::new(
+                            "Output exceeds input sum in identity topup transformer".to_string(),
+                        )
+                        .into(),
+                    )
+                }
+            },
             None => total_inputs,
         };
 

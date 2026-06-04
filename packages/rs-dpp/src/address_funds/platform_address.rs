@@ -42,9 +42,13 @@ pub const ADDRESS_HASH_SIZE: usize = 20;
 )]
 #[platform_serialize(unversioned)]
 pub enum PlatformAddress {
-    /// Pay to pubkey hash (type byte = 0xb0)
+    /// Pay to pubkey hash
+    /// - bech32m encoding type byte: 0xb0
+    /// - storage key type byte: 0x00
     P2pkh([u8; 20]),
-    /// Pay to script hash (type byte = 0x80)
+    /// Pay to script hash
+    /// - bech32m encoding type byte: 0x80
+    /// - storage key type byte: 0x01
     P2sh([u8; 20]),
 }
 
@@ -82,21 +86,21 @@ impl Default for PlatformAddress {
 }
 
 /// Human-readable part for Platform addresses on mainnet (DIP-0018)
-pub const PLATFORM_HRP_MAINNET: &str = "evo";
+pub const PLATFORM_HRP_MAINNET: &str = "dash";
 /// Human-readable part for Platform addresses on testnet/devnet/regtest (DIP-0018)
-pub const PLATFORM_HRP_TESTNET: &str = "tevo";
+pub const PLATFORM_HRP_TESTNET: &str = "tdash";
 
 impl PlatformAddress {
-    /// Type byte for P2PKH addresses
+    /// Type byte for P2PKH addresses in bech32m encoding (user-facing)
     pub const P2PKH_TYPE: u8 = 0xb0;
-    /// Type byte for P2SH addresses
+    /// Type byte for P2SH addresses in bech32m encoding (user-facing)
     pub const P2SH_TYPE: u8 = 0x80;
 
     /// Returns the appropriate HRP (Human-Readable Part) for the given network.
     ///
     /// Per DIP-0018:
-    /// - Mainnet: "evo"
-    /// - Testnet/Devnet/Regtest: "tevo"
+    /// - Mainnet: "dash"
+    /// - Testnet/Devnet/Regtest: "tdash"
     pub fn hrp_for_network(network: Network) -> &'static str {
         match network {
             Network::Dash => PLATFORM_HRP_MAINNET,
@@ -113,24 +117,41 @@ impl PlatformAddress {
     /// - Data: type_byte (0xb0 for P2PKH, 0x80 for P2SH) || 20-byte hash
     /// - Checksum: bech32m (BIP-350)
     ///
+    /// NOTE: This uses bech32m type bytes (0xb0/0x80) for user-facing addresses,
+    /// NOT the storage type bytes (0x00/0x01) used in GroveDB keys.
+    ///
     /// # Example
     /// ```ignore
     /// let address = PlatformAddress::P2pkh([0xf7, 0xda, ...]);
     /// let encoded = address.to_bech32m_string(Network::Dash);
-    /// // Returns something like "evo1k..."
+    /// // Returns something like "dash1k..."
     /// ```
     pub fn to_bech32m_string(&self, network: Network) -> String {
         let hrp_str = Self::hrp_for_network(network);
         let hrp = Hrp::parse(hrp_str).expect("HRP is valid");
 
         // Build the 21-byte payload: type_byte || hash
-        let payload = self.to_bytes();
+        // Using bech32m type bytes (0xb0/0x80), NOT storage type bytes (0x00/0x01)
+        let mut payload = Vec::with_capacity(1 + ADDRESS_HASH_SIZE);
+        match self {
+            PlatformAddress::P2pkh(hash) => {
+                payload.push(Self::P2PKH_TYPE);
+                payload.extend_from_slice(hash);
+            }
+            PlatformAddress::P2sh(hash) => {
+                payload.push(Self::P2SH_TYPE);
+                payload.extend_from_slice(hash);
+            }
+        }
 
         // Verified that this can not error
         bech32::encode::<Bech32m>(hrp, &payload).expect("encoding should succeed")
     }
 
     /// Decodes a bech32m-encoded Platform address string per DIP-0018.
+    ///
+    /// NOTE: This expects bech32m type bytes (0xb0/0x80) in the encoded string,
+    /// NOT the storage type bytes (0x00/0x01) used in GroveDB keys.
     ///
     /// # Returns
     /// - `Ok((PlatformAddress, Network))` - The decoded address and its network
@@ -162,8 +183,22 @@ impl PlatformAddress {
             )));
         }
 
-        // Parse the address from bytes
-        Self::from_bytes(&data).map(|addr| (addr, network))
+        // Parse using bech32m type bytes (0xb0/0x80), NOT storage type bytes
+        let address_type = data[0];
+        let hash: [u8; 20] = data[1..21]
+            .try_into()
+            .map_err(|_| ProtocolError::DecodingError("invalid hash length".to_string()))?;
+
+        let address = match address_type {
+            Self::P2PKH_TYPE => Ok(PlatformAddress::P2pkh(hash)),
+            Self::P2SH_TYPE => Ok(PlatformAddress::P2sh(hash)),
+            _ => Err(ProtocolError::DecodingError(format!(
+                "invalid address type: 0x{:02x}",
+                address_type
+            ))),
+        }?;
+
+        Ok((address, network))
     }
 
     /// Converts the PlatformAddress to a dashcore Address with the specified network.
@@ -180,21 +215,14 @@ impl PlatformAddress {
         }
     }
 
-    /// Converts the PlatformAddress to bytes.
-    /// Format: [address_type (1 byte)] + [hash (20 bytes)]
+    /// Converts the PlatformAddress to bytes for storage keys.
+    /// Format: [variant_index (1 byte)] + [hash (20 bytes)]
+    ///
+    /// Uses bincode serialization which produces: 0x00 for P2pkh, 0x01 for P2sh.
+    /// These bytes are used as keys in GroveDB.
     pub fn to_bytes(&self) -> Vec<u8> {
-        let mut bytes = Vec::with_capacity(1 + ADDRESS_HASH_SIZE);
-        match self {
-            PlatformAddress::P2pkh(hash) => {
-                bytes.push(Self::P2PKH_TYPE);
-                bytes.extend_from_slice(hash);
-            }
-            PlatformAddress::P2sh(hash) => {
-                bytes.push(Self::P2SH_TYPE);
-                bytes.extend_from_slice(hash);
-            }
-        }
-        bytes
+        bincode::encode_to_vec(self, bincode::config::standard())
+            .expect("PlatformAddress serialization cannot fail")
     }
 
     /// Gets a base64 string of the PlatformAddress concatenated with the nonce.
@@ -209,30 +237,16 @@ impl PlatformAddress {
         STANDARD.encode(bytes)
     }
 
-    /// Creates a PlatformAddress from bytes.
-    /// Format: [address_type (1 byte)] + [hash (20 bytes)]
+    /// Creates a PlatformAddress from storage bytes.
+    /// Format: [variant_index (1 byte)] + [hash (20 bytes)]
+    ///
+    /// Uses bincode deserialization which expects: 0x00 for P2pkh, 0x01 for P2sh.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, ProtocolError> {
-        if bytes.len() < 1 + ADDRESS_HASH_SIZE {
-            return Err(ProtocolError::DecodingError(format!(
-                "cannot decode PlatformAddress: expected {} bytes, got {}",
-                1 + ADDRESS_HASH_SIZE,
-                bytes.len()
-            )));
-        }
-
-        let address_type = bytes[0];
-        let hash: [u8; 20] = bytes[1..21]
-            .try_into()
-            .map_err(|_| ProtocolError::DecodingError("invalid hash length".to_string()))?;
-
-        match address_type {
-            Self::P2PKH_TYPE => Ok(PlatformAddress::P2pkh(hash)),
-            Self::P2SH_TYPE => Ok(PlatformAddress::P2sh(hash)),
-            _ => Err(ProtocolError::DecodingError(format!(
-                "invalid address type: {}",
-                address_type
-            ))),
-        }
+        let (address, _): (Self, usize) =
+            bincode::decode_from_slice(bytes, bincode::config::standard()).map_err(|e| {
+                ProtocolError::DecodingError(format!("cannot decode PlatformAddress: {}", e))
+            })?;
+        Ok(address)
     }
 
     /// Returns the hash portion of the address (20 bytes)
@@ -567,13 +581,13 @@ impl FromStr for PlatformAddress {
 
     /// Parses a bech32m-encoded Platform address string.
     ///
-    /// This accepts addresses with either mainnet ("evo") or testnet ("tevo") HRP.
+    /// This accepts addresses with either mainnet ("dash") or testnet ("tdash") HRP.
     /// The network information is discarded; use `from_bech32m_string` if you need
     /// to preserve the network.
     ///
     /// # Example
     /// ```ignore
-    /// let address: PlatformAddress = "evo1k...".parse()?;
+    /// let address: PlatformAddress = "dash1k...".parse()?;
     /// ```
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Self::from_bech32m_string(s)
@@ -1000,7 +1014,7 @@ mod tests {
 
     #[test]
     fn test_bech32m_p2pkh_mainnet_roundtrip() {
-        // Test P2PKH address roundtrip on mainnet using DIP-0018 Vector 1
+        // Test P2PKH address roundtrip on mainnet
         let hash: [u8; 20] = [
             0xf7, 0xda, 0x0a, 0x2b, 0x5c, 0xbd, 0x4f, 0xf6, 0xbb, 0x2c, 0x4d, 0x89, 0xb6, 0x7d,
             0x2f, 0x3f, 0xfe, 0xec, 0x05, 0x25,
@@ -1010,10 +1024,10 @@ mod tests {
         // Encode to bech32m
         let encoded = address.to_bech32m_string(Network::Dash);
 
-        // Verify exact match against DIP-0018 test vector
+        // Verify exact encoding
         assert_eq!(
-            encoded, "evo1krma5z3ttj75la4m93xcndna9ullamq9y59dj9x7",
-            "Encoded address must match DIP-0018 Vector 1 mainnet"
+            encoded, "dash1krma5z3ttj75la4m93xcndna9ullamq9y5e9n5rs",
+            "P2PKH mainnet encoding mismatch"
         );
 
         // Decode and verify roundtrip
@@ -1025,7 +1039,7 @@ mod tests {
 
     #[test]
     fn test_bech32m_p2pkh_testnet_roundtrip() {
-        // Test P2PKH address roundtrip on testnet using DIP-0018 Vector 1
+        // Test P2PKH address roundtrip on testnet
         let hash: [u8; 20] = [
             0xf7, 0xda, 0x0a, 0x2b, 0x5c, 0xbd, 0x4f, 0xf6, 0xbb, 0x2c, 0x4d, 0x89, 0xb6, 0x7d,
             0x2f, 0x3f, 0xfe, 0xec, 0x05, 0x25,
@@ -1035,10 +1049,10 @@ mod tests {
         // Encode to bech32m
         let encoded = address.to_bech32m_string(Network::Testnet);
 
-        // Verify exact match against DIP-0018 test vector
+        // Verify exact encoding
         assert_eq!(
-            encoded, "tevo1krma5z3ttj75la4m93xcndna9ullamq9y5rky7cg",
-            "Encoded address must match DIP-0018 Vector 1 testnet"
+            encoded, "tdash1krma5z3ttj75la4m93xcndna9ullamq9y5fzq2j7",
+            "P2PKH testnet encoding mismatch"
         );
 
         // Decode and verify roundtrip
@@ -1050,7 +1064,7 @@ mod tests {
 
     #[test]
     fn test_bech32m_p2sh_mainnet_roundtrip() {
-        // Test P2SH address roundtrip on mainnet using DIP-0018 P2SH vector
+        // Test P2SH address roundtrip on mainnet
         let hash: [u8; 20] = [
             0x43, 0xfa, 0x18, 0x3c, 0xf3, 0xfb, 0x6e, 0x9e, 0x7d, 0xc6, 0x2b, 0x69, 0x2a, 0xeb,
             0x4f, 0xc8, 0xd8, 0x04, 0x56, 0x36,
@@ -1060,10 +1074,10 @@ mod tests {
         // Encode to bech32m
         let encoded = address.to_bech32m_string(Network::Dash);
 
-        // Verify exact match against DIP-0018 P2SH test vector
+        // Verify exact encoding
         assert_eq!(
-            encoded, "evo1sppl5xpu70aka8nacc4kj2htflydspzkxctaevg5",
-            "Encoded address must match DIP-0018 P2SH mainnet"
+            encoded, "dash1sppl5xpu70aka8nacc4kj2htflydspzkxch4cad6",
+            "P2SH mainnet encoding mismatch"
         );
 
         // Decode and verify roundtrip
@@ -1075,7 +1089,7 @@ mod tests {
 
     #[test]
     fn test_bech32m_p2sh_testnet_roundtrip() {
-        // Test P2SH address roundtrip on testnet using DIP-0018 P2SH vector
+        // Test P2SH address roundtrip on testnet
         let hash: [u8; 20] = [
             0x43, 0xfa, 0x18, 0x3c, 0xf3, 0xfb, 0x6e, 0x9e, 0x7d, 0xc6, 0x2b, 0x69, 0x2a, 0xeb,
             0x4f, 0xc8, 0xd8, 0x04, 0x56, 0x36,
@@ -1085,10 +1099,10 @@ mod tests {
         // Encode to bech32m
         let encoded = address.to_bech32m_string(Network::Testnet);
 
-        // Verify exact match against DIP-0018 P2SH test vector
+        // Verify exact encoding
         assert_eq!(
-            encoded, "tevo1sppl5xpu70aka8nacc4kj2htflydspzkxcdx0hkz",
-            "Encoded address must match DIP-0018 P2SH testnet"
+            encoded, "tdash1sppl5xpu70aka8nacc4kj2htflydspzkxc8jtru5",
+            "P2SH testnet encoding mismatch"
         );
 
         // Decode and verify roundtrip
@@ -1106,8 +1120,8 @@ mod tests {
         // Devnet should use testnet HRP
         let encoded = address.to_bech32m_string(Network::Devnet);
         assert!(
-            encoded.starts_with("tevo1"),
-            "Devnet address should start with 'tevo1', got: {}",
+            encoded.starts_with("tdash1"),
+            "Devnet address should start with 'tdash1', got: {}",
             encoded
         );
     }
@@ -1120,8 +1134,8 @@ mod tests {
         // Regtest should use testnet HRP
         let encoded = address.to_bech32m_string(Network::Regtest);
         assert!(
-            encoded.starts_with("tevo1"),
-            "Regtest address should start with 'tevo1', got: {}",
+            encoded.starts_with("tdash1"),
+            "Regtest address should start with 'tdash1', got: {}",
             encoded
         );
     }
@@ -1163,7 +1177,7 @@ mod tests {
     fn test_bech32m_invalid_type_byte_fails() {
         // Manually construct an address with invalid type byte (0x02)
         // We need to use the bech32 crate directly for this
-        let hrp = Hrp::parse("evo").unwrap();
+        let hrp = Hrp::parse("dash").unwrap();
         let invalid_payload: [u8; 21] = [0x02; 21]; // type byte 0x02 is invalid
         let encoded = bech32::encode::<Bech32m>(hrp, &invalid_payload).unwrap();
 
@@ -1180,8 +1194,8 @@ mod tests {
     #[test]
     fn test_bech32m_too_short_fails() {
         // Construct an address with too few bytes
-        let hrp = Hrp::parse("evo").unwrap();
-        let short_payload: [u8; 10] = [0x00; 10]; // Only 10 bytes instead of 21
+        let hrp = Hrp::parse("dash").unwrap();
+        let short_payload: [u8; 10] = [0xb0; 10]; // Only 10 bytes instead of 21
         let encoded = bech32::encode::<Bech32m>(hrp, &short_payload).unwrap();
 
         let result = PlatformAddress::from_bech32m_string(&encoded);
@@ -1248,9 +1262,55 @@ mod tests {
 
     #[test]
     fn test_hrp_for_network() {
-        assert_eq!(PlatformAddress::hrp_for_network(Network::Dash), "evo");
-        assert_eq!(PlatformAddress::hrp_for_network(Network::Testnet), "tevo");
-        assert_eq!(PlatformAddress::hrp_for_network(Network::Devnet), "tevo");
-        assert_eq!(PlatformAddress::hrp_for_network(Network::Regtest), "tevo");
+        assert_eq!(PlatformAddress::hrp_for_network(Network::Dash), "dash");
+        assert_eq!(PlatformAddress::hrp_for_network(Network::Testnet), "tdash");
+        assert_eq!(PlatformAddress::hrp_for_network(Network::Devnet), "tdash");
+        assert_eq!(PlatformAddress::hrp_for_network(Network::Regtest), "tdash");
+    }
+
+    #[test]
+    fn test_storage_bytes_format() {
+        // Verify that to_bytes() (using bincode) produces expected format:
+        // [variant_index (1 byte)] + [hash (20 bytes)]
+        // P2pkh = variant 0, P2sh = variant 1
+        let p2pkh = PlatformAddress::P2pkh([0xAB; 20]);
+        let p2sh = PlatformAddress::P2sh([0xCD; 20]);
+
+        let p2pkh_bytes = p2pkh.to_bytes();
+        let p2sh_bytes = p2sh.to_bytes();
+
+        // Verify format: 21 bytes total, first byte is variant index
+        assert_eq!(p2pkh_bytes.len(), 21);
+        assert_eq!(p2sh_bytes.len(), 21);
+        assert_eq!(p2pkh_bytes[0], 0x00, "P2pkh variant index must be 0x00");
+        assert_eq!(p2sh_bytes[0], 0x01, "P2sh variant index must be 0x01");
+
+        // Verify roundtrip through from_bytes
+        let p2pkh_decoded = PlatformAddress::from_bytes(&p2pkh_bytes).unwrap();
+        let p2sh_decoded = PlatformAddress::from_bytes(&p2sh_bytes).unwrap();
+        assert_eq!(p2pkh_decoded, p2pkh);
+        assert_eq!(p2sh_decoded, p2sh);
+    }
+
+    #[test]
+    fn test_bech32m_uses_different_type_bytes_than_storage() {
+        // Verify that bech32m encoding uses type bytes (0xb0/0x80)
+        // while storage (bincode) uses variant indices (0x00/0x01)
+        let p2pkh = PlatformAddress::P2pkh([0xAB; 20]);
+        let p2sh = PlatformAddress::P2sh([0xCD; 20]);
+
+        // Storage bytes (bincode) use variant indices 0x00/0x01
+        assert_eq!(p2pkh.to_bytes()[0], 0x00);
+        assert_eq!(p2sh.to_bytes()[0], 0x01);
+
+        // Bech32m encoding uses 0xb0/0x80 (verified by successful roundtrip)
+        let p2pkh_encoded = p2pkh.to_bech32m_string(Network::Dash);
+        let p2sh_encoded = p2sh.to_bech32m_string(Network::Dash);
+
+        let (p2pkh_decoded, _) = PlatformAddress::from_bech32m_string(&p2pkh_encoded).unwrap();
+        let (p2sh_decoded, _) = PlatformAddress::from_bech32m_string(&p2sh_encoded).unwrap();
+
+        assert_eq!(p2pkh_decoded, p2pkh);
+        assert_eq!(p2sh_decoded, p2sh);
     }
 }

@@ -38,11 +38,16 @@ impl AddressFundingFromAssetLockTransitionActionV0 {
             )
         })?;
 
+        // Compute total credits contributed from address inputs
+        let input_contributions_total: Credits =
+            value.inputs.values().map(|(_, amount)| *amount).sum();
+
         Ok(AddressFundingFromAssetLockTransitionActionV0 {
             signable_bytes_hasher,
             asset_lock_value_to_be_consumed,
             asset_lock_outpoint: Bytes36::new(asset_lock_outpoint.into()),
             inputs_with_remaining_balance,
+            input_contributions_total,
             outputs: outputs.clone(),
             fee_strategy: fee_strategy.clone(),
             user_fee_increase: *user_fee_increase,

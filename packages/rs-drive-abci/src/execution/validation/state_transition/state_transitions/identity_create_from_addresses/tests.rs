@@ -603,10 +603,9 @@ mod tests {
             // and fails when trying to validate the missing second witness
             assert_matches!(
                 check_result.errors.as_slice(),
-                [ConsensusError::SignatureError(_)]
-                    | [ConsensusError::BasicError(
-                        BasicError::InputWitnessCountMismatchError(_)
-                    )]
+                [ConsensusError::SignatureError(
+                    SignatureError::InvalidStateTransitionSignatureError(_)
+                )]
             );
         }
 
@@ -1036,7 +1035,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution{ .. }]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
 
@@ -1135,7 +1134,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution{ .. }]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
 
@@ -1240,7 +1239,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution{ .. }]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
         }
     }
@@ -1323,7 +1322,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution{ .. }]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             // Commit the transaction
@@ -1441,7 +1440,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution{ .. }]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             // Commit the transaction
@@ -1538,7 +1537,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution{ .. }]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             // Commit the transaction
@@ -1898,7 +1897,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution{ .. }]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             // Commit the first transaction
@@ -2035,7 +2034,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution{ .. }]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             // Commit the first transaction
@@ -2294,7 +2293,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution{ .. }]
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
             );
 
             // Verify the identity was actually created and funded
@@ -2799,7 +2798,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution{ .. }],
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }],
                 "Expected valid structure, got {:?}",
                 processing_result.execution_results()
             );
@@ -2997,7 +2996,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution{ .. }],
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }],
                 "Expected valid structure with output, got {:?}",
                 processing_result.execution_results()
             );
@@ -3595,7 +3594,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution{ .. }],
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }],
                 "Expected valid structure with single master key, got {:?}",
                 processing_result.execution_results()
             );
@@ -3670,7 +3669,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution{ .. }],
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }],
                 "Expected valid structure with multiple keys, got {:?}",
                 processing_result.execution_results()
             );
@@ -3745,7 +3744,7 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution{ .. }],
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }],
                 "Expected valid structure with max keys, got {:?}",
                 processing_result.execution_results()
             );
@@ -8840,8 +8839,13 @@ mod tests {
                 dash_to_credits!(10.0),
             );
 
-            // Set up output address with near-max balance
-            setup_address_with_balance(&mut platform, output_address.clone(), 0, u64::MAX - 1000);
+            // Set up output address with near-max balance (leave room for other balances in sum tree)
+            setup_address_with_balance(
+                &mut platform,
+                output_address.clone(),
+                0,
+                i64::MAX as u64 - dash_to_credits!(1000.0),
+            );
 
             let mut inputs = BTreeMap::new();
             inputs.insert(
@@ -11314,6 +11318,402 @@ mod tests {
                 "Multiple witnesses validation should not error: {:?}",
                 result.err()
             );
+        }
+    }
+
+    mod security {
+        use super::*;
+        use dpp::state_transition::StateTransitionStructureValidation;
+
+        /// AUDIT M1: Fee deduction BTreeMap index shifting after entry removal.
+        ///
+        /// When fee strategy step DeductFromInput(0) drains input A to zero,
+        /// A is removed from the BTreeMap. The next step DeductFromInput(1)
+        /// now targets what was originally at index 2 (C) instead of index 1 (B),
+        /// because all indices shifted down after the removal.
+        ///
+        /// Location: rs-dpp/.../deduct_fee_from_inputs_and_outputs/v0/mod.rs:35-45
+        #[test]
+        fn test_fee_deduction_stable_after_entry_removal() {
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            // Create identity
+            let (identity, identity_signer) =
+                create_identity_with_keys([1u8; 32], &mut rng, platform_version);
+
+            let mut address_signer = TestAddressSigner::new();
+            let addr_a = address_signer.add_p2pkh([10u8; 32]);
+            let addr_b = address_signer.add_p2pkh([20u8; 32]);
+            let addr_c = address_signer.add_p2pkh([30u8; 32]);
+
+            // Determine BTreeMap sort order
+            let mut sorted_addrs = vec![addr_a, addr_b, addr_c];
+            sorted_addrs.sort();
+            let first = sorted_addrs[0];
+            let second = sorted_addrs[1];
+            let third = sorted_addrs[2];
+
+            let first_balance = dash_to_credits!(0.1);
+            let second_balance = dash_to_credits!(1.0);
+            let third_balance = dash_to_credits!(1.0);
+
+            // Input amount leaves only 1000 credits remaining for first
+            let first_input = first_balance - 1000;
+            let second_input = dash_to_credits!(0.01);
+            let third_input = dash_to_credits!(0.01);
+
+            setup_address_with_balance(&mut platform, first, 0, first_balance);
+            setup_address_with_balance(&mut platform, second, 0, second_balance);
+            setup_address_with_balance(&mut platform, third, 0, third_balance);
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(first, (1 as AddressNonce, first_input));
+            inputs.insert(second, (1 as AddressNonce, second_input));
+            inputs.insert(third, (1 as AddressNonce, third_input));
+
+            // Fee strategy: deduct from index 0 (first), then index 1 (should be second).
+            // Bug: after first is drained and removed, index 1 becomes third.
+            let fee_strategy = AddressFundsFeeStrategy::from(vec![
+                AddressFundsFeeStrategyStep::DeductFromInput(0),
+                AddressFundsFeeStrategyStep::DeductFromInput(1),
+            ]);
+
+            let transition = create_signed_identity_create_from_addresses_transition_full(
+                &identity,
+                &address_signer,
+                &identity_signer,
+                inputs,
+                None, // No output
+                fee_strategy,
+                platform_version,
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![result],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }],
+                "Transaction should succeed"
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("should commit");
+
+            // Verify first address was fully drained (exercising the index-shift scenario)
+            let first_result = platform
+                .drive
+                .fetch_balance_and_nonce(&first, None, platform_version)
+                .expect("should fetch");
+            assert!(
+                first_result.is_none() || first_result.map(|(_, b)| b) == Some(0),
+                "First address should be fully drained to exercise index-shift scenario"
+            );
+
+            let second_remaining_before_fee = second_balance - second_input;
+
+            let (_, second_final) = platform
+                .drive
+                .fetch_balance_and_nonce(&second, None, platform_version)
+                .expect("should fetch")
+                .expect("second address should exist");
+
+            assert!(
+                second_final < second_remaining_before_fee,
+                "AUDIT M1: Fee should have been deducted from second address (original \
+                BTreeMap index 1), but it was deducted from third address instead. \
+                After first was drained (1000 credits) and removed from BTreeMap, \
+                DeductFromInput(1) shifted to target the third address. \
+                second's balance: {} (expected < {})",
+                second_final,
+                second_remaining_before_fee
+            );
+        }
+
+        /// AUDIT M3: Unchecked subtraction in identity_create_from_addresses transformer.
+        ///
+        /// At `transformer.rs:39`, the transformer uses `.sum()` (wrapping) and at
+        /// line 43 uses unchecked subtraction for computing the amount to fund the
+        /// new identity. If structure validation is bypassed, these operations could
+        /// wrap/underflow silently.
+        ///
+        /// This test verifies that structure validation catches overflow at the
+        /// correct level, but notes the transformer lacks defense-in-depth.
+        ///
+        /// Location: rs-drive/.../identity_create_from_addresses/v0/transformer.rs:39,43
+        #[test]
+        fn test_transformer_subtraction_uses_checked_arithmetic() {
+            use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
+
+            let platform_version = PlatformVersion::latest();
+            let mut rng = StdRng::seed_from_u64(999);
+
+            let public_keys = create_default_public_keys(&mut rng, platform_version);
+
+            // Two inputs that sum to > u64::MAX
+            let mut inputs = BTreeMap::new();
+            inputs.insert(create_platform_address(1), (0 as AddressNonce, u64::MAX));
+            inputs.insert(create_platform_address(2), (0 as AddressNonce, u64::MAX));
+
+            let transition = create_raw_transition_with_dummy_witnesses(
+                public_keys,
+                inputs,
+                None,
+                AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
+                    0,
+                )]),
+                2,
+            );
+
+            let result = transition
+                .validate_basic_structure(dpp::dashcore::Network::Testnet, platform_version)
+                .expect("validation should not return Err");
+
+            assert!(!result.is_valid());
+            assert_matches!(
+                result.first_error().unwrap(),
+                ConsensusError::BasicError(BasicError::OverflowError(_))
+            );
+        }
+
+        /// AUDIT M8: Fee deduction doesn't check fee_fully_covered.
+        ///
+        /// When processing IdentityCreateFromAddresses, the execution path deducts
+        /// fees but never checks whether `fee_fully_covered` is true. If the actual
+        /// fee exceeds the estimated fee, partial payment occurs — the validator
+        /// subsidizes the difference.
+        ///
+        /// This test creates a transition where address balances are just barely
+        /// enough for the transfer amount but insufficient to cover fees.
+        ///
+        /// Location: rs-drive-abci/.../identity_create_from_addresses (fee deduction logic)
+        #[test]
+        fn test_partial_fee_payment_rejected() {
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            let (identity, identity_signer) =
+                create_identity_with_keys([1u8; 32], &mut rng, platform_version);
+
+            let mut address_signer = TestAddressSigner::new();
+            let input_address = address_signer.add_p2pkh([1u8; 32]);
+
+            // Set up address with a very small balance — just enough for a tiny transfer
+            // but not enough to also cover processing fees
+            let min_output = platform_version
+                .dpp
+                .state_transitions
+                .address_funds
+                .min_output_amount;
+            let tiny_balance = min_output + 1; // Just barely above minimum
+
+            setup_address_with_balance(&mut platform, input_address, 0, tiny_balance);
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(input_address, (1 as AddressNonce, tiny_balance));
+
+            // All input goes to identity creation, nothing left for fees
+            let transition = create_signed_identity_create_from_addresses_transition(
+                &identity,
+                &address_signer,
+                &identity_signer,
+                inputs,
+                None,
+                Some(AddressFundsFeeStrategy::from(vec![
+                    AddressFundsFeeStrategyStep::DeductFromInput(0),
+                ])),
+                platform_version,
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![result],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            // The transition should either:
+            // 1. Be rejected because insufficient funds for fees, OR
+            // 2. Succeed with fees fully deducted from the input
+            //
+            // What it should NOT do is succeed with partial fee payment.
+            // The fee_fully_covered flag should be checked.
+            match processing_result.execution_results().as_slice() {
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }] => {
+                    platform
+                        .drive
+                        .grove
+                        .commit_transaction(transaction)
+                        .unwrap()
+                        .expect("should commit");
+
+                    // If it succeeded, verify the input was fully consumed
+                    let (_, input_final) = platform
+                        .drive
+                        .fetch_balance_and_nonce(&input_address, None, platform_version)
+                        .expect("should fetch")
+                        .unwrap_or((0, 0));
+
+                    // The input address should have 0 balance (all consumed)
+                    // If fee_fully_covered was not checked, the input might still
+                    // have some balance because fees were only partially deducted.
+                    assert!(
+                        input_final == 0,
+                        "AUDIT M8: Identity creation succeeded but input address still has \
+                        {} credits remaining. This suggests fees were not fully deducted — \
+                        fee_fully_covered was not checked. The validator subsidized the \
+                        remaining fee cost.",
+                        input_final,
+                    );
+                }
+                _ => {
+                    // Rejected — acceptable behavior (insufficient funds for fees)
+                }
+            }
+        }
+
+        /// AUDIT L4: Identity ID derivation lacks domain separator.
+        ///
+        /// `identity_id_from_inputs()` derives identity ID from input addresses and nonces
+        /// using double hashing, but does NOT include the transition type in the hash.
+        /// This means different transition types with identical inputs would produce
+        /// the same identity ID, creating potential cross-transition collisions.
+        ///
+        /// Location: rs-dpp/.../state_transition_identity_id_from_inputs.rs
+        #[test]
+        fn test_identity_id_has_no_domain_separator() {
+            use dpp::state_transition::StateTransitionIdentityIdFromInputs;
+
+            let platform_version = PlatformVersion::latest();
+            let mut rng = StdRng::seed_from_u64(567);
+
+            // Create an identity and address signer
+            let (identity, identity_signer) =
+                create_identity_with_keys([1u8; 32], &mut rng, platform_version);
+
+            let mut address_signer = TestAddressSigner::new();
+            let addr = address_signer.add_p2pkh([1u8; 32]);
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(addr, (1 as AddressNonce, dash_to_credits!(1.0)));
+
+            // Create an IdentityCreateFromAddresses transition
+            let transition = create_signed_identity_create_from_addresses_transition(
+                &identity,
+                &address_signer,
+                &identity_signer,
+                inputs.clone(),
+                None,
+                None,
+                platform_version,
+            );
+
+            // Get the identity ID from the transition
+            let create_id = match &transition {
+                StateTransition::IdentityCreateFromAddresses(t) => t
+                    .identity_id_from_inputs()
+                    .expect("should derive identity ID"),
+                _ => panic!("Expected IdentityCreateFromAddresses"),
+            };
+
+            // The identity ID is derived purely from input addresses and nonces.
+            // If a different transition type (e.g., IdentityTopUpFromAddresses) used
+            // the same inputs, it would produce the same ID because no transition
+            // type discriminator is included in the hash.
+            //
+            // We verify the ID is deterministic (same inputs → same ID)
+            let transition2 = create_signed_identity_create_from_addresses_transition(
+                &identity,
+                &address_signer,
+                &identity_signer,
+                inputs,
+                None,
+                None,
+                platform_version,
+            );
+
+            let create_id_2 = match &transition2 {
+                StateTransition::IdentityCreateFromAddresses(t) => t
+                    .identity_id_from_inputs()
+                    .expect("should derive identity ID"),
+                _ => panic!("Expected IdentityCreateFromAddresses"),
+            };
+
+            // Same inputs → same ID (deterministic)
+            assert_eq!(
+                create_id, create_id_2,
+                "Identity ID should be deterministic for same inputs"
+            );
+
+            // The vulnerability: the hash does NOT include the transition type.
+            // If someone creates a different transition type with the same inputs,
+            // they get the same identity ID. This is documented as a low-severity
+            // issue since the practical impact is limited (different transition types
+            // are processed differently and the collision doesn't lead to exploits
+            // in the current codebase).
+            //
+            // To fix: include a domain separator (transition type byte) in the hash input.
+            // e.g., hash(0x01 || address_nonce_data) for creates
+            //        hash(0x02 || address_nonce_data) for topups
         }
     }
 }

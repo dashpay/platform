@@ -80,6 +80,7 @@ use crate::consensus::basic::state_transition::{
     OutputsNotGreaterThanInputsError, StateTransitionMaxSizeExceededError,
     StateTransitionNotActiveError, TransitionNoInputsError, TransitionNoOutputsError,
     TransitionOverMaxInputsError, TransitionOverMaxOutputsError, WithdrawalBalanceMismatchError,
+    WithdrawalBelowMinAmountError,
 };
 use crate::consensus::basic::{
     IncompatibleProtocolVersionError, UnsupportedFeatureError, UnsupportedProtocolVersionError,
@@ -644,6 +645,9 @@ pub enum BasicError {
 
     #[error(transparent)]
     WithdrawalBalanceMismatchError(WithdrawalBalanceMismatchError),
+
+    #[error(transparent)]
+    WithdrawalBelowMinAmountError(WithdrawalBelowMinAmountError),
 
     #[error(transparent)]
     InsufficientFundingAmountError(InsufficientFundingAmountError),

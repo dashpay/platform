@@ -47,6 +47,15 @@ impl AddressFundingFromAssetLockTransitionAction {
         }
     }
 
+    /// Get total credits contributed from address inputs
+    pub fn input_contributions_total(&self) -> Credits {
+        match self {
+            AddressFundingFromAssetLockTransitionAction::V0(transition) => {
+                transition.input_contributions_total
+            }
+        }
+    }
+
     /// Get resolved outputs with remainder computed.
     /// Returns outputs where all Option<Credits> are resolved to concrete Credits values.
     pub fn resolved_outputs(&self) -> BTreeMap<PlatformAddress, Credits> {
@@ -57,11 +66,14 @@ impl AddressFundingFromAssetLockTransitionAction {
             .asset_lock_value_to_be_consumed()
             .remaining_credit_value();
 
+        // Total available = asset lock + input contributions
+        let total_available = asset_lock_balance + self.input_contributions_total();
+
         // Calculate the sum of explicit outputs
         let explicit_outputs_sum: Credits = outputs.values().flatten().sum();
 
         // Calculate remainder
-        let remainder_balance = asset_lock_balance.saturating_sub(explicit_outputs_sum);
+        let remainder_balance = total_available.saturating_sub(explicit_outputs_sum);
 
         // Resolve all outputs
         outputs
@@ -76,7 +88,7 @@ impl AddressFundingFromAssetLockTransitionAction {
             .collect()
     }
 
-    /// Returns owned copies of inputs and outputs.
+    /// Returns owned copies of inputs, outputs, asset lock value, and input contributions total.
     #[allow(clippy::type_complexity)]
     pub fn inputs_with_remaining_balance_outputs_and_asset_lock_value_owned(
         self,
@@ -84,12 +96,14 @@ impl AddressFundingFromAssetLockTransitionAction {
         BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
         BTreeMap<PlatformAddress, Option<Credits>>,
         AssetLockValue,
+        Credits,
     ) {
         match self {
             AddressFundingFromAssetLockTransitionAction::V0(transition) => (
                 transition.inputs_with_remaining_balance,
                 transition.outputs,
                 transition.asset_lock_value_to_be_consumed,
+                transition.input_contributions_total,
             ),
         }
     }

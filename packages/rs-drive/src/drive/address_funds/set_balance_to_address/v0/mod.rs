@@ -4,6 +4,7 @@ use crate::fees::op::LowLevelDriveOperation;
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
 use dpp::prelude::AddressNonce;
+use dpp::ProtocolError;
 use grovedb::batch::KeyInfoPath;
 use grovedb::element::SumValue;
 use grovedb::{Element, EstimatedLayerInformation};
@@ -42,6 +43,13 @@ impl Drive {
                 estimated_costs_only_with_layer_info,
                 &platform_version.drive,
             )?;
+        }
+
+        // Guard against u64 values that would overflow when cast to i64 (SumValue)
+        if balance > i64::MAX as u64 {
+            return Err(
+                ProtocolError::Overflow("balance exceeds maximum for sum tree storage").into(),
+            );
         }
 
         // Simply insert/overwrite the balance as an ItemWithSumItem element

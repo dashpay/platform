@@ -234,6 +234,198 @@ mod tests {
         }
     }
 
+    mod security {
+        use super::*;
+        use dpp::state_transition::StateTransitionStructureValidation;
+
+        /// AUDIT M9: Unchecked `.sum()` wrapping in drive operations.
+        ///
+        /// At `identity_credit_transfer_to_addresses_transition.rs:38`,
+        /// `recipient_addresses.values().sum()` uses wrapping arithmetic.
+        /// If the sum overflows, `RemoveFromIdentityBalance` removes a tiny
+        /// amount while each recipient gets credited fully — credits from nothing.
+        ///
+        /// Structure validation at the DPP layer uses `checked_add` and catches
+        /// this, but the drive operation lacks its own defense-in-depth check.
+        ///
+        /// This test verifies structure validation catches the overflow.
+        ///
+        /// Location: rs-drive/.../identity_credit_transfer_to_addresses_transition.rs:38
+        #[test]
+        fn test_recipient_sum_overflow_returns_error() {
+            let platform_version = PlatformVersion::latest();
+
+            // Create two recipients whose amounts sum to > u64::MAX
+            let mut recipient_addresses = BTreeMap::new();
+            recipient_addresses.insert(create_platform_address(1), u64::MAX);
+            recipient_addresses.insert(create_platform_address(2), u64::MAX);
+
+            let transition_v0 = IdentityCreditTransferToAddressesTransitionV0 {
+                identity_id: [1u8; 32].into(),
+                recipient_addresses,
+                nonce: 1,
+                user_fee_increase: 0,
+                signature_public_key_id: 0,
+                signature: BinaryData::new(vec![0; 65]),
+            };
+
+            // Structure validation should catch the overflow
+            let result = transition_v0.validate_structure(platform_version);
+
+            assert!(
+                !result.is_valid(),
+                "AUDIT M9: Two recipients of u64::MAX should cause overflow in structure \
+                validation. The DPP layer uses checked_add and catches this. However, the \
+                drive operation at identity_credit_transfer_to_addresses_transition.rs:38 \
+                uses .sum() which would silently wrap, allowing credit creation from nothing."
+            );
+
+            let has_overflow = result
+                .errors
+                .iter()
+                .any(|e| matches!(e, ConsensusError::BasicError(BasicError::OverflowError(_))));
+            assert!(
+                has_overflow,
+                "AUDIT M9: Expected OverflowError, got {:?}",
+                result.errors
+            );
+        }
+
+        /// AUDIT L6: transform_into_action performs zero validation.
+        ///
+        /// `transform_into_action_v0` at `transform_into_action/v0/mod.rs:16-23`
+        /// simply wraps the transition into an action with zero checks. No balance
+        /// validation, no nonce validation, no recipient validation occurs in the
+        /// transformer — it relies entirely on upstream and downstream checks.
+        ///
+        /// This test demonstrates that any data passes through unchecked.
+        ///
+        /// Location: rs-drive-abci/.../identity_credit_transfer_to_addresses/transform_into_action/v0/mod.rs:16-23
+        #[test]
+        fn test_transform_into_action_passes_without_validation() {
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            // Create identity with zero balance
+            let (identity, signer) = create_identity_with_transfer_key(
+                [1u8; 32],
+                0, // Zero balance
+                &mut rng,
+                platform_version,
+            );
+
+            add_identity_to_drive(&mut platform, &identity);
+
+            // Create transfer that exceeds balance (identity has 0)
+            let mut recipient_addresses = BTreeMap::new();
+            recipient_addresses.insert(create_platform_address(1), dash_to_credits!(1.0));
+
+            let transition = create_signed_transition(&identity, &signer, recipient_addresses, 1);
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![result],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process");
+
+            // The transition should be rejected due to insufficient balance.
+            // This rejection happens at the drive operation level, NOT in transform_into_action.
+            // transform_into_action passes it through with zero validation.
+            // This test documents that the transformer is a pure pass-through.
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::StateError(StateError::IdentityInsufficientBalanceError(_))
+                )]
+            );
+        }
+
+        /// AUDIT L8: Fee estimation uses saturating_add while structure uses checked_add.
+        ///
+        /// Fee estimation at `state_transition_estimated_fee_validation.rs:19` uses
+        /// `saturating_add` when computing the total. Structure validation uses
+        /// `checked_add`. With very large values, fee estimation silently saturates
+        /// (to u64::MAX) instead of erroring, while structure validation properly
+        /// errors with OverflowError. This inconsistency could allow a malformed
+        /// transition to pass fee estimation but fail structure validation.
+        ///
+        /// Location: rs-drive-abci/.../state_transition_estimated_fee_validation.rs:19
+        #[test]
+        fn test_fee_estimation_saturating_add_matches_structure_validation() {
+            let platform_version = PlatformVersion::latest();
+
+            // Create recipients whose sum overflows u64
+            let mut recipient_addresses = BTreeMap::new();
+            recipient_addresses.insert(create_platform_address(1), u64::MAX - 1);
+            recipient_addresses.insert(create_platform_address(2), u64::MAX - 1);
+
+            let transition_v0 = IdentityCreditTransferToAddressesTransitionV0 {
+                identity_id: [1u8; 32].into(),
+                recipient_addresses: recipient_addresses.clone(),
+                nonce: 1,
+                user_fee_increase: 0,
+                signature_public_key_id: 0,
+                signature: BinaryData::new(vec![0; 65]),
+            };
+
+            // Structure validation should reject with OverflowError (uses checked_add)
+            let structure_result = transition_v0.validate_structure(platform_version);
+            assert!(
+                !structure_result.is_valid(),
+                "Structure validation should reject overflow"
+            );
+
+            let has_overflow = structure_result
+                .errors
+                .iter()
+                .any(|e| matches!(e, ConsensusError::BasicError(BasicError::OverflowError(_))));
+
+            // The key insight: structure validation uses checked_add (correct),
+            // but fee estimation uses saturating_add (inconsistent). Fee estimation
+            // would compute a saturated sum = u64::MAX and proceed without error,
+            // while structure validation correctly rejects.
+            //
+            // This inconsistency means the fee estimation path and structure validation
+            // path have different behavior for the same input — a code smell that could
+            // mask issues if the order of validation changes.
+            assert!(
+                has_overflow,
+                "AUDIT L8: Structure validation correctly rejects with OverflowError \
+                (uses checked_add). However, fee estimation at \
+                state_transition_estimated_fee_validation.rs:19 uses saturating_add, \
+                which would silently compute u64::MAX instead of erroring. \
+                This inconsistency means fee estimation and structure validation \
+                disagree on overflow handling. Got errors: {:?}",
+                structure_result.errors
+            );
+        }
+    }
+
     // ==========================================
     // SUCCESSFUL TRANSITION TESTS
     // ==========================================

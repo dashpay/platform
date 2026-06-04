@@ -24,6 +24,11 @@ pub fn deduct_fee_from_outputs_or_remaining_balance_of_inputs_v0(
 ) -> Result<FeeDeductionResult, ProtocolError> {
     let mut remaining_fee = fee;
 
+    // Snapshot addresses before any mutations so indices remain stable.
+    // Without this, removing a drained entry shifts all subsequent indices.
+    let input_addresses: Vec<PlatformAddress> = inputs.keys().copied().collect();
+    let output_addresses: Vec<PlatformAddress> = outputs.keys().copied().collect();
+
     for step in fee_strategy {
         if remaining_fee == 0 {
             break;
@@ -31,30 +36,34 @@ pub fn deduct_fee_from_outputs_or_remaining_balance_of_inputs_v0(
 
         match step {
             AddressFundsFeeStrategyStep::DeductFromInput(index) => {
-                // Reduce the remaining balance of the input at the specified index
-                if let Some((&address, &(nonce, amount))) = inputs.iter().nth(*index as usize) {
-                    let reduction = remaining_fee.min(amount);
-                    let new_amount = amount - reduction;
-                    remaining_fee -= reduction;
+                // Resolve the index via the original snapshot, then look up by key
+                if let Some(&address) = input_addresses.get(*index as usize) {
+                    if let Some(&(nonce, amount)) = inputs.get(&address) {
+                        let reduction = remaining_fee.min(amount);
+                        let new_amount = amount - reduction;
+                        remaining_fee -= reduction;
 
-                    if new_amount == 0 {
-                        inputs.remove(&address);
-                    } else {
-                        inputs.insert(address, (nonce, new_amount));
+                        if new_amount == 0 {
+                            inputs.remove(&address);
+                        } else {
+                            inputs.insert(address, (nonce, new_amount));
+                        }
                     }
                 }
             }
             AddressFundsFeeStrategyStep::ReduceOutput(index) => {
-                // Reduce the output at the specified index
-                if let Some((&address, &amount)) = outputs.iter().nth(*index as usize) {
-                    let reduction = remaining_fee.min(amount);
-                    let new_amount = amount - reduction;
-                    remaining_fee -= reduction;
+                // Resolve the index via the original snapshot, then look up by key
+                if let Some(&address) = output_addresses.get(*index as usize) {
+                    if let Some(&amount) = outputs.get(&address) {
+                        let reduction = remaining_fee.min(amount);
+                        let new_amount = amount - reduction;
+                        remaining_fee -= reduction;
 
-                    if new_amount == 0 {
-                        outputs.remove(&address);
-                    } else {
-                        outputs.insert(address, new_amount);
+                        if new_amount == 0 {
+                            outputs.remove(&address);
+                        } else {
+                            outputs.insert(address, new_amount);
+                        }
                     }
                 }
             }

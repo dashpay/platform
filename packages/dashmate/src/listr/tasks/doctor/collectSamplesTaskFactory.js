@@ -5,6 +5,7 @@ import process from 'process';
 import si from 'systeminformation';
 import obfuscateConfig from '../../../config/obfuscateConfig.js';
 import { DASHMATE_VERSION } from '../../../constants.js';
+import LegoCertificate from '../../../ssl/letsencrypt/LegoCertificate.js';
 import Certificate from '../../../ssl/zerossl/Certificate.js';
 import providers from '../../../status/providers.js';
 import hideString from '../../../util/hideString.js';
@@ -35,6 +36,7 @@ async function fetchTextOrError(url) {
  * @param {getOperatingSystemInfo} getOperatingSystemInfo
  * @param {HomeDir} homeDir
  * @param {validateZeroSslCertificate} validateZeroSslCertificate
+ * @param {validateLetsEncryptCertificate} validateLetsEncryptCertificate
  * @return {collectSamplesTask}
  */
 export default function collectSamplesTaskFactory(
@@ -46,6 +48,7 @@ export default function collectSamplesTaskFactory(
   getOperatingSystemInfo,
   homeDir,
   validateZeroSslCertificate,
+  validateLetsEncryptCertificate,
 ) {
   /**
    * @typedef {function} collectSamplesTask
@@ -103,6 +106,27 @@ export default function collectSamplesTaskFactory(
                         error,
                         data,
                       } = validateZeroSslCertificate(config, Certificate.EXPIRATION_LIMIT_DAYS);
+
+                      obfuscateObjectRecursive(data, (_field, value) => (typeof value === 'string' ? value.replaceAll(
+                        process.env.USER,
+                        hideString(process.env.USER),
+                      ) : value));
+
+                      ctx.samples.setServiceInfo('gateway', 'ssl', {
+                        error,
+                        data,
+                      });
+
+                      return;
+                    }
+                    case 'letsencrypt': {
+                      const {
+                        error,
+                        data,
+                      } = await validateLetsEncryptCertificate(
+                        config,
+                        LegoCertificate.EXPIRATION_LIMIT_DAYS,
+                      );
 
                       obfuscateObjectRecursive(data, (_field, value) => (typeof value === 'string' ? value.replaceAll(
                         process.env.USER,

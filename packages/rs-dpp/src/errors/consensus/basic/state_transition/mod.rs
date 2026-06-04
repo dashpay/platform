@@ -20,6 +20,7 @@ mod transition_no_outputs_error;
 mod transition_over_max_inputs_error;
 mod transition_over_max_outputs_error;
 mod withdrawal_balance_mismatch_error;
+mod withdrawal_below_min_amount_error;
 
 pub use fee_strategy_duplicate_error::*;
 pub use fee_strategy_empty_error::*;
@@ -43,3 +44,4 @@ pub use transition_no_outputs_error::*;
 pub use transition_over_max_inputs_error::*;
 pub use transition_over_max_outputs_error::*;
 pub use withdrawal_balance_mismatch_error::*;
+pub use withdrawal_below_min_amount_error::*;

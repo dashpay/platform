@@ -1,5 +1,6 @@
 use crate::state_transition_action::address_funds::address_credit_withdrawal::v0::AddressCreditWithdrawalTransitionActionV0;
 use dpp::address_funds::PlatformAddress;
+use dpp::consensus::basic::overflow_error::OverflowError;
 use dpp::data_contracts::withdrawals_contract;
 use dpp::data_contracts::withdrawals_contract::v1::document_types::withdrawal;
 use dpp::document::{Document, DocumentV0};
@@ -32,12 +33,33 @@ impl AddressCreditWithdrawalTransitionActionV0 {
             ..
         } = value;
 
-        // Sum all balances from inputs
-        let total_inputs: Credits = inputs.values().map(|(_, balance)| *balance).sum();
+        // Sum all balances from inputs (checked to prevent overflow)
+        let total_inputs: Credits = match inputs
+            .values()
+            .try_fold(0u64, |acc, (_, balance)| acc.checked_add(*balance))
+        {
+            Some(sum) => sum,
+            None => {
+                return ConsensusValidationResult::new_with_error(
+                    OverflowError::new("Input sum overflow in withdrawal transformer".to_string())
+                        .into(),
+                )
+            }
+        };
 
         // Calculate the withdrawal amount: total remaining minus output (if any)
         let amount = match output {
-            Some((_, output_amount)) => total_inputs - output_amount,
+            Some((_, output_amount)) => match total_inputs.checked_sub(*output_amount) {
+                Some(diff) => diff,
+                None => {
+                    return ConsensusValidationResult::new_with_error(
+                        OverflowError::new(
+                            "Output exceeds input sum in withdrawal transformer".to_string(),
+                        )
+                        .into(),
+                    )
+                }
+            },
             None => total_inputs,
         };
 
