@@ -280,12 +280,12 @@ pub unsafe extern "C" fn platform_wallet_preview_identity_registration_keys_free
     }
     unsafe {
         let slice = std::slice::from_raw_parts_mut(previews.items, previews.count);
-        let boxed: Box<[IdentityKeyPreviewFFI]> = Box::from_raw(slice);
+        let mut boxed: Box<[IdentityKeyPreviewFFI]> = Box::from_raw(slice);
         // Reclaim each row's owned allocations before the rows
         // themselves get dropped (which by itself wouldn't free
         // them — they're raw pointers from `into_raw` /
         // `forget(Box::...)`).
-        for row in boxed.iter() {
+        for row in boxed.iter_mut() {
             release_row(row);
         }
         drop(boxed);
@@ -294,20 +294,35 @@ pub unsafe extern "C" fn platform_wallet_preview_identity_registration_keys_free
     previews.count = 0;
 }
 
-/// Reclaim the heap allocations owned by a single preview row.
-/// Used by both the public free function (post-success path) and
-/// the internal cleanup helper that drops successfully-built rows
-/// when a later derivation fails mid-loop.
-unsafe fn release_row(row: &IdentityKeyPreviewFFI) {
+/// Reclaim the heap allocations owned by a single preview row and
+/// zeroize the sensitive private-key material it carried.
+///
+/// Takes `&mut` so it can both scrub the inline `private_key_bytes`
+/// scalar in place and null `private_key_wif`/`derivation_path`/
+/// `public_key` after reclaiming them — preserving double-free
+/// idempotency. Used by both the public free function (post-success
+/// path) and the internal cleanup helper that drops
+/// successfully-built rows when a later derivation fails mid-loop.
+///
+/// Mirrors the zeroization performed by
+/// [`crate::identity_keys_from_mnemonic::dash_sdk_derive_identity_keys_from_mnemonic_free`]:
+/// the WIF string holds the same private key in human-readable form,
+/// so its backing bytes are scrubbed before the allocation is
+/// released, and the raw 32-byte scalar is zeroized in place.
+unsafe fn release_row(row: &mut IdentityKeyPreviewFFI) {
     if !row.derivation_path.is_null() {
         unsafe {
             drop(CString::from_raw(row.derivation_path));
         }
+        row.derivation_path = ptr::null_mut();
     }
     if !row.private_key_wif.is_null() {
-        unsafe {
-            drop(CString::from_raw(row.private_key_wif));
-        }
+        // WIF carries the private key in clear text — scrub the
+        // CString's backing bytes (including the trailing NUL slot)
+        // before the allocation is handed back to the allocator.
+        let mut wif = unsafe { CString::from_raw(row.private_key_wif) }.into_bytes_with_nul();
+        zeroize::Zeroize::zeroize(&mut wif);
+        row.private_key_wif = ptr::null_mut();
     }
     if !row.public_key.is_null() && row.public_key_len > 0 {
         unsafe {
@@ -317,13 +332,17 @@ unsafe fn release_row(row: &IdentityKeyPreviewFFI) {
                 row.public_key_len,
             ));
         }
+        row.public_key = ptr::null_mut();
+        row.public_key_len = 0;
     }
+    // Scrub the raw 32-byte ECDSA scalar held inline in the row.
+    zeroize::Zeroize::zeroize(&mut row.private_key_bytes);
 }
 
 /// Release every row in a partially-built preview list and consume
 /// the vec. Used by the build-loop cleanup branch.
-fn free_rows(rows: Vec<IdentityKeyPreviewFFI>) {
-    for row in &rows {
+fn free_rows(mut rows: Vec<IdentityKeyPreviewFFI>) {
+    for row in &mut rows {
         // SAFETY: each row was just appended by the build loop
         // (CString::into_raw + Vec::into_raw). They have not been
         // exposed across the FFI boundary yet, so this is the
@@ -331,4 +350,108 @@ fn free_rows(rows: Vec<IdentityKeyPreviewFFI>) {
         unsafe { release_row(row) };
     }
     drop(rows);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Build a heap-detached row the same way the production build
+    /// loop does (CString::into_raw + Vec leak), so `release_row` is
+    /// exercised on genuinely-owned allocations rather than borrowed
+    /// stack data.
+    fn make_owned_row(secret: [u8; 32]) -> IdentityKeyPreviewFFI {
+        let path = CString::new("m/9'/1'/5'/0'/0'/0'/0'").unwrap();
+        let wif = CString::new("cQ_fake_wif_for_test_only_not_a_real_key").unwrap();
+        let mut pub_box: Box<[u8]> = vec![0x02u8; 33].into_boxed_slice();
+        let pub_ptr = pub_box.as_mut_ptr();
+        let pub_len = pub_box.len();
+        std::mem::forget(pub_box);
+
+        IdentityKeyPreviewFFI {
+            identity_index: 0,
+            derivation_path: path.into_raw(),
+            public_key: pub_ptr,
+            public_key_len: pub_len,
+            private_key_wif: wif.into_raw(),
+            private_key_bytes: secret,
+        }
+    }
+
+    /// `release_row` scrubs the inline 32-byte scalar in place and
+    /// nulls every owned pointer, leaving the row safe to release a
+    /// second time (double-free idempotency).
+    #[test]
+    fn release_row_zeroizes_secret_and_is_idempotent() {
+        let secret = [0xABu8; 32];
+        let mut row = make_owned_row(secret);
+
+        // Sanity: the row starts out carrying the real secret and
+        // owns its allocations.
+        assert_eq!(row.private_key_bytes, secret);
+        assert!(!row.derivation_path.is_null());
+        assert!(!row.private_key_wif.is_null());
+        assert!(!row.public_key.is_null());
+
+        // SAFETY: `row` owns freshly-detached allocations and has not
+        // crossed the FFI boundary, so this is the sole release.
+        unsafe { release_row(&mut row) };
+
+        // The raw scalar is wiped in place.
+        assert_eq!(
+            row.private_key_bytes, [0u8; 32],
+            "private_key_bytes must be zeroized after release_row"
+        );
+        // Every owned pointer is nulled so a second release no-ops.
+        assert!(row.derivation_path.is_null());
+        assert!(row.private_key_wif.is_null());
+        assert!(row.public_key.is_null());
+        assert_eq!(row.public_key_len, 0);
+
+        // Second release must not double-free or panic.
+        unsafe { release_row(&mut row) };
+        assert_eq!(row.private_key_bytes, [0u8; 32]);
+    }
+
+    /// The public preview → free round-trip wipes secrets and resets
+    /// the outer struct so a second free is a no-op. We build the
+    /// rows directly (the public derive path needs a live wallet
+    /// handle) and drive them through the real `_free` entry point.
+    #[test]
+    fn public_free_zeroizes_and_resets() {
+        let secret = [0x5Au8; 32];
+        let rows = vec![make_owned_row(secret), make_owned_row(secret)];
+        let mut boxed = rows.into_boxed_slice();
+        let items_ptr = boxed.as_mut_ptr();
+        let items_count = boxed.len();
+        std::mem::forget(boxed);
+
+        let mut previews = IdentityKeyPreviewsFFI {
+            items: items_ptr,
+            count: items_count,
+        };
+
+        // SAFETY: `previews.items` was detached above exactly as the
+        // production derive path does; this is the sole free.
+        unsafe { platform_wallet_preview_identity_registration_keys_free(&mut previews) };
+
+        assert!(previews.items.is_null());
+        assert_eq!(previews.count, 0);
+
+        // Idempotent: a second free on the reset struct no-ops.
+        unsafe { platform_wallet_preview_identity_registration_keys_free(&mut previews) };
+        assert!(previews.items.is_null());
+        assert_eq!(previews.count, 0);
+    }
+
+    /// `free_rows` (the mid-loop cleanup path) zeroizes secrets and
+    /// must not panic on a partially-built list.
+    #[test]
+    fn free_rows_zeroizes_partial_list() {
+        let rows = vec![make_owned_row([0x11u8; 32]), make_owned_row([0x22u8; 32])];
+        // No assertion on the scalar after the fact — `free_rows`
+        // consumes the vec — but it must release every owned
+        // allocation without panicking or double-freeing.
+        free_rows(rows);
+    }
 }
