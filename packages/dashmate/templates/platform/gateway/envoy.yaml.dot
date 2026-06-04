@@ -356,7 +356,6 @@ static_resources:
     - name: ratelimit_service
       type: STRICT_DNS
       connect_timeout: 1s
-      protocol_selection: USE_CONFIGURED_PROTOCOL
       typed_extension_protocol_options:
         envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
           "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
@@ -398,7 +397,7 @@ admin:
 
 # Dynamically adjust limits based on memory usage and number of active connections
 # TODO: We can use data provided by drive, tenderdash, or dapi to configure adaptive limits based on load
-# https://www.envoyproxy.io/docs/envoy/v1.30.1/api-v3/extensions/resource_monitors/injected_resource/v3/injected_resource.proto
+# https://www.envoyproxy.io/docs/envoy/v1.35.11/api-v3/extensions/resource_monitors/injected_resource/v3/injected_resource.proto
 overload_manager:
   refresh_interval: 0.25s
   resource_monitors:
