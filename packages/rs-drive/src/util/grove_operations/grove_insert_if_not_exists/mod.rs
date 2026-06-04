@@ -51,3 +51,83 @@ impl Drive {
         }
     }
 }
+
+#[cfg(test)]
+mod v11_consensus_regression_tests {
+    use crate::util::test_helpers::setup::setup_drive;
+    use dpp::version::PlatformVersion;
+    use grovedb::Element;
+    use grovedb_path::SubtreePath;
+
+    /// Protocol-v11 (`GROVE_V2`) consensus regression guard — testnet block 245,344.
+    ///
+    /// `transition_to_version_11` inserts an `empty_provable_count_sum_tree`
+    /// (CLEAR_ADDRESS_POOL) and an `empty_count_sum_tree` (ADDRESS_BALANCES) via
+    /// `grove_insert_if_not_exists`. grovedb must insert these as plain values
+    /// (`Op::Put`), NOT as layered subtrees (`Op::PutLayeredReference`): the latter
+    /// folds the child root into the parent node's `value_hash`, changing the
+    /// grovedb root and breaking consensus on replay (a beta.2 node computed
+    /// `98DD9B…` instead of the canonical `29B639…` and stalled at block 245,344).
+    /// This pins the post-insert root so the dispatch cannot silently regress
+    /// again. `empty_sum_tree` is the unchanged control (layered in all versions).
+    #[test]
+    fn provable_count_sum_tree_insert_preserves_v11_consensus_root() {
+        let platform_version = PlatformVersion::latest();
+        let drive = setup_drive(None);
+
+        // control: empty_sum_tree at root key [56] (AddressBalances).
+        drive
+            .grove_insert_if_not_exists(
+                SubtreePath::empty(),
+                &[56u8],
+                Element::empty_sum_tree(),
+                None,
+                None,
+                &platform_version.drive,
+            )
+            .expect("insert sum_tree at [56]");
+        let root_1 = drive
+            .grove
+            .root_hash(None, &platform_version.drive.grove_version)
+            .unwrap()
+            .unwrap();
+
+        // the regressed op: empty_provable_count_sum_tree at [56, 'c'].
+        let pcs_path: Vec<Vec<u8>> = vec![vec![56u8]];
+        drive
+            .grove_insert_if_not_exists(
+                pcs_path.as_slice().into(),
+                b"c",
+                Element::empty_provable_count_sum_tree(),
+                None,
+                None,
+                &platform_version.drive,
+            )
+            .expect("insert provable_count_sum_tree at [56,'c']");
+        let root_2 = drive
+            .grove
+            .root_hash(None, &platform_version.drive.grove_version)
+            .unwrap()
+            .unwrap();
+
+        eprintln!("root_1 (control sum_tree)            = {root_1:?}");
+        eprintln!("root_2 (provable_count_sum_tree ins) = {root_2:?}");
+
+        // grovedb v4.1.0 (`Op::Put`) golden roots. With the layered-subtree
+        // regression, `root_2` differs and v11 consensus breaks.
+        const GOLDEN_1: [u8; 32] = [
+            193, 62, 168, 151, 156, 164, 202, 8, 147, 137, 134, 209, 196, 32, 2, 85, 18, 100, 97,
+            227, 62, 160, 254, 196, 250, 171, 84, 176, 58, 38, 16, 116,
+        ];
+        const GOLDEN_2: [u8; 32] = [
+            35, 99, 15, 178, 25, 57, 206, 47, 187, 195, 100, 28, 97, 85, 113, 230, 135, 22, 34,
+            126, 72, 125, 158, 90, 116, 94, 214, 136, 96, 195, 235, 46,
+        ];
+        assert_eq!(root_1, GOLDEN_1, "control sum_tree root changed unexpectedly");
+        assert_eq!(
+            root_2, GOLDEN_2,
+            "ProvableCountSumTree insert no longer matches grovedb v4.1.0 (Op::Put) — \
+             protocol-v11 consensus regression (testnet block 245,344)"
+        );
+    }
+}
