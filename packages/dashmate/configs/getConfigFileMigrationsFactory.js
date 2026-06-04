@@ -1398,6 +1398,24 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
         return configFile;
       },
+      '3.0.2': (configFile) => {
+        // Patch the Platform Gateway (Envoy) image for CVE-2026-47774 /
+        // GHSA-22m2-hvr2-xqc8: an unauthenticated HTTP/2 downstream
+        // memory-exhaustion DoS. Only configs still on the EOL,
+        // dashmate-shipped 1.30.x Envoy image are bumped to the patched base
+        // default (Envoy 1.35.11); a deliberately customised image (private
+        // fork, vendor-patched build, `:latest`, etc.) is left untouched.
+        const patchedImage = base.get('platform.gateway.docker.image');
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            const docker = options.platform?.gateway?.docker;
+            if (docker && /^dashpay\/envoy:1\.30\./.test(docker.image)) {
+              docker.image = patchedImage;
+            }
+          });
+
+        return configFile;
+      },
     };
   }
 
