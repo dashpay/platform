@@ -5,6 +5,7 @@ use dpp::balances::credits::BlockAwareCreditOperation;
 use dpp::ProtocolError;
 use grovedb::query_result_type::QueryResultType;
 use grovedb::{Element, PathQuery, Query, SizedQuery, TransactionArg};
+use grovedb_costs::CostContext;
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
@@ -189,11 +190,22 @@ impl Drive {
 
     /// Version 0 implementation for proving compacted address balance changes.
     ///
-    /// Uses a two-step approach:
-    /// 1. First query (non-proving): descending to find any range containing start_block_height
-    /// 2. Second query (proving): ascending from the found start_block or start_block_height
+    /// The proof must let the verifier authenticate **two** things against the
+    /// same root hash (see `verify_compacted_address_balance_changes_v0`):
     ///
-    /// This ensures the proof covers all relevant ranges efficiently.
+    /// 1. A **boundary query** — the single greatest compacted key
+    ///    `<= (start_block_height, u64::MAX)`. This is what protects against the
+    ///    compacted-range absence-proof attack: a range like `(100, 200)` that
+    ///    contains the requested height sorts *before* `(150, 150)`, so the
+    ///    verifier cannot trust a forward-only proof to surface it.
+    /// 2. A **forward query** — `range_from(start_key..)` where `start_key` is
+    ///    the containing range (if any) or `(start_block_height,
+    ///    start_block_height)`.
+    ///
+    /// We discover `start_key` with a non-proving descending query, then emit a
+    /// single merged proof (`prove_query_many`) that covers BOTH the boundary
+    /// key and the forward range so the verifier's chained queries are both
+    /// satisfiable.
     pub(super) fn prove_compacted_address_balance_changes_v0(
         &self,
         start_block_height: u64,
@@ -203,10 +215,9 @@ impl Drive {
     ) -> Result<Vec<u8>, Error> {
         let path = Self::saved_compacted_block_transactions_address_balances_path_vec();
 
-        // Step 1: Non-proving descending query to find any range containing start_block_height
-        let mut desc_end_key = Vec::with_capacity(16);
-        desc_end_key.extend_from_slice(&start_block_height.to_be_bytes());
-        desc_end_key.extend_from_slice(&u64::MAX.to_be_bytes());
+        // Step 1: Non-proving descending query to find the greatest compacted
+        // key <= (start_block_height, u64::MAX).
+        let desc_end_key = compacted_key(start_block_height, u64::MAX);
 
         let mut desc_query = Query::new_with_direction(false); // descending
         desc_query.insert_range_to_inclusive(..=desc_end_key);
@@ -222,49 +233,77 @@ impl Drive {
             &platform_version.drive,
         )?;
 
-        // Determine the actual start key for the proved query
-        // If we found a containing range, use its exact key
-        // Otherwise use (start_block_height, start_block_height) since end_block >= start_block always
-        let start_key = if let Some((key, _)) = desc_results.to_key_elements().into_iter().next() {
-            if key.len() == 16 {
-                let end_block = u64::from_be_bytes(key[8..16].try_into().unwrap());
-                // If this range contains start_block_height, use its exact key
-                if end_block >= start_block_height {
-                    key
-                } else {
-                    // No containing range, use (start_block_height, start_block_height)
-                    let mut key = Vec::with_capacity(16);
-                    key.extend_from_slice(&start_block_height.to_be_bytes());
-                    key.extend_from_slice(&start_block_height.to_be_bytes());
-                    key
+        // `boundary_key` is the authenticated lower-bound anchor the verifier
+        // will re-derive from its boundary query. `forward_start` is the lower
+        // bound of the ascending result scan.
+        let (boundary_key, forward_start) = match desc_results.to_key_elements().into_iter().next()
+        {
+            Some((key, _)) => {
+                if key.len() != 16 {
+                    return Err(Error::Protocol(Box::new(
+                        ProtocolError::CorruptedSerialization(
+                            "invalid compacted block key length, expected 16 bytes".to_string(),
+                        ),
+                    )));
                 }
-            } else {
-                let mut key = Vec::with_capacity(16);
-                key.extend_from_slice(&start_block_height.to_be_bytes());
-                key.extend_from_slice(&start_block_height.to_be_bytes());
-                key
+                let end_block = u64::from_be_bytes(key[8..16].try_into().unwrap());
+                let forward_start = if end_block >= start_block_height {
+                    key.clone()
+                } else {
+                    compacted_key(start_block_height, start_block_height)
+                };
+                (Some(key), forward_start)
             }
-        } else {
-            let mut key = Vec::with_capacity(16);
-            key.extend_from_slice(&start_block_height.to_be_bytes());
-            key.extend_from_slice(&start_block_height.to_be_bytes());
-            key
+            None => (None, compacted_key(start_block_height, start_block_height)),
         };
 
-        // Step 2: Proved ascending query from start_key
+        // Step 2: build the single merged proof. See the nullifier prover and
+        // the verifier docs for the soundness rationale. `PathQuery::merge`
+        // rejects per-query limits, so the merged queries carry no limits; the
+        // forward query's caller limit is applied to the verifier's forward
+        // subset query instead (subset verification accepts a superset proof).
+        match boundary_key {
+            Some(boundary_key) => {
+                let mut boundary_point = Query::new();
+                boundary_point.insert_key(boundary_key);
+                let boundary_point_query =
+                    PathQuery::new(path.clone(), SizedQuery::new(boundary_point, None, None));
 
-        let mut query = Query::new();
-        query.insert_range_from(start_key..);
+                let mut forward_query = Query::new();
+                forward_query.insert_range_from(forward_start..);
+                let forward_path_query =
+                    PathQuery::new(path.clone(), SizedQuery::new(forward_query, None, None));
 
-        let path_query = PathQuery::new(path, SizedQuery::new(query, limit, None));
+                let CostContext { value, .. } = self.grove.prove_query_many(
+                    vec![&boundary_point_query, &forward_path_query],
+                    None,
+                    &platform_version.drive.grove_version,
+                );
+                value.map_err(Error::from)
+            }
+            None => {
+                let mut forward_query = Query::new();
+                forward_query.insert_range_from(forward_start..);
+                let forward_path_query =
+                    PathQuery::new(path.clone(), SizedQuery::new(forward_query, limit, None));
 
-        self.grove_get_proved_path_query(
-            &path_query,
-            transaction,
-            &mut vec![],
-            &platform_version.drive,
-        )
+                self.grove_get_proved_path_query(
+                    &forward_path_query,
+                    transaction,
+                    &mut vec![],
+                    &platform_version.drive,
+                )
+            }
+        }
     }
+}
+
+/// Builds the 16-byte big-endian compacted key `(start_block, end_block)`.
+fn compacted_key(start_block: u64, end_block: u64) -> Vec<u8> {
+    let mut key = Vec::with_capacity(16);
+    key.extend_from_slice(&start_block.to_be_bytes());
+    key.extend_from_slice(&end_block.to_be_bytes());
+    key
 }
 
 #[cfg(test)]

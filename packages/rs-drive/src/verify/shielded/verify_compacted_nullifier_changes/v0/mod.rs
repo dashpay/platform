@@ -1,173 +1,122 @@
-use crate::drive::shielded::nullifiers::queries::{
-    shielded_compacted_nullifiers_path_vec, SHIELDED_COMPACTED_NULLIFIERS_KEY_U8,
-};
+use crate::drive::shielded::nullifiers::queries::shielded_compacted_nullifiers_path_vec;
 use crate::drive::shielded::nullifiers::types::{CompactedNullifierChange, CompactedNullifiers};
-use crate::drive::shielded::paths::MAIN_SHIELDED_CREDIT_POOL_KEY_U8;
 use crate::drive::Drive;
-use crate::drive::RootTree;
 use crate::error::proof::ProofError;
 use crate::error::Error;
 use crate::verify::RootHash;
-use grovedb::operations::proof::{GroveDBProof, ProofBytes};
-use grovedb::{
-    GroveDb, MerkProofDecoder, MerkProofNode, MerkProofOp, PathQuery, Query, SizedQuery,
-};
+use grovedb::query_result_type::PathKeyOptionalElementTrio;
+use grovedb::{GroveDb, PathQuery, Query, SizedQuery};
 use platform_version::version::PlatformVersion;
 
-/// Extract KV entries from merk proof bytes using the proper decoder.
-#[allow(clippy::type_complexity)]
-fn extract_kv_entries_from_merk_proof(merk_proof: &[u8]) -> Result<Vec<(Vec<u8>, Vec<u8>)>, Error> {
-    let mut entries = Vec::new();
-
-    let decoder = MerkProofDecoder::new(merk_proof);
-
-    for op in decoder {
-        match op {
-            Ok(MerkProofOp::Push(MerkProofNode::KV(key, value)))
-            | Ok(MerkProofOp::PushInverted(MerkProofNode::KV(key, value))) => {
-                entries.push((key, value));
-            }
-            Err(e) => {
-                tracing::error!(%e, "merk proof decode error");
-                return Err(Error::Proof(ProofError::CorruptedProof(format!(
-                    "failed to decode merk proof op: {}",
-                    e
-                ))));
-            }
-            _ => {}
-        }
-    }
-
-    Ok(entries)
+/// Builds the 16-byte big-endian compacted key `(start_block, end_block)`.
+fn compacted_key(start_block: u64, end_block: u64) -> Vec<u8> {
+    let mut key = Vec::with_capacity(16);
+    key.extend_from_slice(&start_block.to_be_bytes());
+    key.extend_from_slice(&end_block.to_be_bytes());
+    key
 }
 
 impl Drive {
     /// Verifies compacted nullifier changes proof.
     ///
-    /// This verification works by:
-    /// 1. Decoding the GroveDBProof structure
-    /// 2. Navigating to the compacted nullifiers layer ('o')
-    /// 3. Extracting KV entries from the merk proof
-    /// 4. Filtering entries where the key range contains start_block_height
-    /// 5. Verifying the root hash using a subset query
+    /// # Soundness
+    ///
+    /// Compacted keys are 16 bytes `(start_block_be, end_block_be)`. A range
+    /// such as `(100, 200)` that *contains* a requested height `150` sorts
+    /// lexicographically **before** `(150, 150)`. This means the lower bound of
+    /// the forward range scan (`start_key`) cannot be trusted to come from the
+    /// caller-requested height alone — a malicious prover could prove
+    /// `range_from((150, 150)..)` directly and the containing range `(100, 200)`
+    /// would appear only as a hash-only boundary node, silently hiding a spend.
+    ///
+    /// To close this hole we never derive `start_key` from un-authenticated
+    /// proof bytes. Instead we use GroveDB's chained path query verification:
+    ///
+    /// 1. A **boundary query** (descending `range_to_inclusive(..=(start, MAX))`,
+    ///    limit 1) authenticates, against the real root hash, the single
+    ///    greatest compacted key `<= (start_block_height, u64::MAX)`. A malicious
+    ///    prover cannot substitute or omit this key without breaking the root
+    ///    hash.
+    /// 2. A **generator** inspects that authenticated boundary key. If its
+    ///    `end_block >= start_block_height` the range contains (or starts at) the
+    ///    requested height, so we use that exact key as the forward `start_key`.
+    ///    Otherwise no containing range exists and we fall back to
+    ///    `(start_block_height, start_block_height)`.
+    /// 3. The chained **forward query** (`range_from(start_key..)`, caller limit)
+    ///    is verified against the same root hash, and its authenticated results
+    ///    are decoded into the returned changes.
     pub(super) fn verify_compacted_nullifier_changes_v0(
         proof: &[u8],
         start_block_height: u64,
         limit: Option<u16>,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Vec<CompactedNullifierChange>), Error> {
-        // Decode the GroveDBProof to navigate its structure
-        let grovedb_proof: GroveDBProof = {
-            let config = bincode::config::standard()
-                .with_big_endian()
-                .with_limit::<{ 4 * 1024 * 1024 }>();
-            let (proof_data, bytes_read): (GroveDBProof, usize) =
-                bincode::decode_from_slice(proof, config).map_err(|e| {
-                    Error::Proof(ProofError::CorruptedProof(format!(
-                        "cannot decode GroveDBProof: {}",
-                        e
-                    )))
-                })?;
-            if bytes_read != proof.len() {
-                return Err(Error::Proof(ProofError::CorruptedProof(format!(
-                    "trailing bytes after GroveDBProof decode: read {} of {}",
-                    bytes_read,
-                    proof.len()
-                ))));
-            }
-            proof_data
-        };
-
-        // Navigate to the compacted nullifiers layer
-        // Path: ShieldedBalances -> MAIN_SHIELDED_CREDIT_POOL_KEY -> CompactedNullifiers ('o')
-        let shielded_balances_key = vec![RootTree::ShieldedBalances as u8];
-        let pool_key = vec![MAIN_SHIELDED_CREDIT_POOL_KEY_U8];
-        let compacted_key = vec![SHIELDED_COMPACTED_NULLIFIERS_KEY_U8];
-
-        // Extract KV entries from the compacted layer's merk proof to find
-        // if there's a containing range for start_block_height.
-        // V0 and V1 proofs have different layer types (MerkOnlyLayerProof vs LayerProof),
-        // so we handle them separately.
-        let kv_entries = match &grovedb_proof {
-            GroveDBProof::V0(v0) => {
-                let compacted_layer = v0
-                    .root_layer
-                    .lower_layers
-                    .get(&shielded_balances_key)
-                    .and_then(|layer| layer.lower_layers.get(&pool_key))
-                    .and_then(|layer| layer.lower_layers.get(&compacted_key));
-                compacted_layer
-                    .map(|layer| extract_kv_entries_from_merk_proof(&layer.merk_proof))
-                    .transpose()?
-                    .unwrap_or_default()
-            }
-            GroveDBProof::V1(v1) => {
-                let compacted_layer = v1
-                    .root_layer
-                    .lower_layers
-                    .get(&shielded_balances_key)
-                    .and_then(|layer| layer.lower_layers.get(&pool_key))
-                    .and_then(|layer| layer.lower_layers.get(&compacted_key));
-                compacted_layer
-                    .map(|layer| match &layer.merk_proof {
-                        ProofBytes::Merk(bytes) => extract_kv_entries_from_merk_proof(bytes),
-                        other => Err(Error::Proof(ProofError::CorruptedProof(format!(
-                            "unsupported V1 proof bytes variant for compacted nullifiers: {:?}",
-                            std::mem::discriminant(other)
-                        )))),
-                    })
-                    .transpose()?
-                    .unwrap_or_default()
-            }
-        };
-
-        // Look for a KV entry where the range contains start_block_height
-        // Keys are 16 bytes: (start_block, end_block), both big-endian
-        let containing_key = kv_entries.iter().find_map(|(key, _)| {
-            if key.len() != 16 {
-                return None;
-            }
-            // Safety: length verified to be 16 above
-            let range_start =
-                u64::from_be_bytes(key[0..8].try_into().expect("len checked to be 16"));
-            let range_end =
-                u64::from_be_bytes(key[8..16].try_into().expect("len checked to be 16"));
-
-            // Check if this range contains start_block_height
-            if range_start <= start_block_height && start_block_height <= range_end {
-                Some(key.clone())
-            } else {
-                None
-            }
-        });
-
-        // Determine the start_key for the query
-        // Use the containing range's key if found, otherwise (start_block_height, start_block_height)
-        let start_key = containing_key.unwrap_or_else(|| {
-            let mut key = Vec::with_capacity(16);
-            key.extend_from_slice(&start_block_height.to_be_bytes());
-            key.extend_from_slice(&start_block_height.to_be_bytes());
-            key
-        });
-
-        // Verify the proof and get results using subset query
         let path = shielded_compacted_nullifiers_path_vec();
 
-        let mut query = Query::new();
-        query.insert_range_from(start_key..);
+        // Step 1: boundary query — authenticate the single greatest compacted
+        // key <= (start_block_height, u64::MAX). Descending, limit 1.
+        let boundary_end_key = compacted_key(start_block_height, u64::MAX);
+        let mut boundary_inner = Query::new_with_direction(false); // descending
+        boundary_inner.insert_range_to_inclusive(..=boundary_end_key);
+        let boundary_query =
+            PathQuery::new(path.clone(), SizedQuery::new(boundary_inner, Some(1), None));
 
-        let path_query = PathQuery::new(path, SizedQuery::new(query, limit, None));
+        // Step 2: generator — derive the forward query's lower bound from the
+        // AUTHENTICATED boundary result (not from raw proof bytes).
+        let forward_path = path.clone();
+        let generator =
+            move |boundary_results: Vec<PathKeyOptionalElementTrio>| -> Option<PathQuery> {
+                // The boundary key contains start_block_height when its end_block is
+                // at or beyond it. Use the authenticated key directly in that case;
+                // otherwise there is no containing range and we start at
+                // (start_block_height, start_block_height).
+                let start_key = boundary_results
+                    .iter()
+                    .find_map(|(_path, key, _element)| {
+                        if key.len() != 16 {
+                            return None;
+                        }
+                        let end_block = u64::from_be_bytes(
+                            key[8..16].try_into().expect("len checked to be 16"),
+                        );
+                        if end_block >= start_block_height {
+                            Some(key.clone())
+                        } else {
+                            None
+                        }
+                    })
+                    .unwrap_or_else(|| compacted_key(start_block_height, start_block_height));
 
-        let (root_hash, proved_key_values) = GroveDb::verify_subset_query(
+                let mut forward_inner = Query::new();
+                forward_inner.insert_range_from(start_key..);
+                Some(PathQuery::new(
+                    forward_path.clone(),
+                    SizedQuery::new(forward_inner, limit, None),
+                ))
+            };
+
+        // Step 3: verify the chained queries. GroveDB enforces that every
+        // sub-query binds to the SAME root hash, so the boundary key authenticated
+        // in step 1 and the forward results in step 3 are consistent with one
+        // another and with the real state.
+        let (root_hash, mut results) = GroveDb::verify_query_with_chained_path_queries(
             proof,
-            &path_query,
+            &boundary_query,
+            vec![generator],
             &platform_version.drive.grove_version,
         )?;
 
-        // Process the verified results
+        // results[0] is the boundary query, results[1] is the forward query.
+        let forward_results = results.pop().ok_or_else(|| {
+            Error::Proof(ProofError::CorruptedProof(
+                "chained verification returned no forward results".to_string(),
+            ))
+        })?;
+
+        // Process the verified forward results.
         let mut compacted_changes = Vec::new();
 
-        for (_path, key, maybe_element) in proved_key_values {
+        for (_path, key, maybe_element) in forward_results {
             let Some(element) = maybe_element else {
                 continue;
             };
@@ -197,7 +146,9 @@ impl Drive {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::drive::shielded::nullifiers::queries::shielded_compacted_nullifiers_path_vec;
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+    use grovedb::{PathQuery, Query, SizedQuery};
     use platform_version::version::PlatformVersion;
 
     #[test]
@@ -279,5 +230,158 @@ mod tests {
             compacted_changes.is_empty(),
             "should have no compacted entries when no data stored"
         );
+    }
+
+    /// Stores a single compacted nullifier entry directly under the compacted
+    /// nullifiers path with the given `(start_block, end_block)` key.
+    ///
+    /// This bypasses the normal recent->compacted promotion so that tests can
+    /// construct exact tree shapes (e.g. a containing range) deterministically.
+    fn store_compacted_entry(
+        drive: &Drive,
+        start_block: u64,
+        end_block: u64,
+        nullifiers: Vec<[u8; 32]>,
+        platform_version: &PlatformVersion,
+    ) {
+        use crate::drive::shielded::nullifiers::queries::shielded_compacted_nullifiers_path;
+        use grovedb::Element;
+        use grovedb_costs::CostContext;
+        use grovedb_path::SubtreePath;
+
+        let key = super::compacted_key(start_block, end_block);
+        let value = CompactedNullifiers::new(nullifiers)
+            .encode()
+            .expect("encode nullifiers");
+
+        let path = shielded_compacted_nullifiers_path();
+
+        let CostContext { value: result, .. } = drive.grove.insert(
+            SubtreePath::from(path.as_ref()),
+            key.as_slice(),
+            Element::new_item(value),
+            None,
+            None,
+            &platform_version.drive.grove_version,
+        );
+        result.expect("insert compacted entry");
+    }
+
+    /// Verifies that the honest path returns the containing range `(100, 200)`
+    /// when querying from a height inside it (`150`).
+    #[test]
+    fn should_return_containing_range_for_start_inside_it() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        // A spend recorded inside a compacted range that straddles block 150.
+        let double_spend_nullifier = [0xAB; 32];
+        store_compacted_entry(
+            &drive,
+            100,
+            200,
+            vec![double_spend_nullifier],
+            platform_version,
+        );
+
+        // Honest proof from block 150 (inside the (100, 200) range).
+        let proof = drive
+            .prove_compacted_nullifier_changes(150, None, None, platform_version)
+            .expect("should prove compacted nullifier changes");
+
+        let (_root_hash, compacted_changes) = Drive::verify_compacted_nullifier_changes(
+            proof.as_slice(),
+            150,
+            None,
+            platform_version,
+        )
+        .expect("should verify proof");
+
+        assert_eq!(
+            compacted_changes.len(),
+            1,
+            "the containing range (100, 200) must be surfaced for start=150"
+        );
+        let change = &compacted_changes[0];
+        assert_eq!(change.start_block, 100);
+        assert_eq!(change.end_block, 200);
+        assert_eq!(change.nullifiers.as_slice(), &[double_spend_nullifier]);
+    }
+
+    /// PoC: a malicious prover that skips the descending discovery step and
+    /// proves `range_from((150, 150)..)` directly MUST NOT be able to make the
+    /// verifier silently return zero nullifiers while a containing range
+    /// `(100, 200)` actually holds a spend.
+    ///
+    /// With the chained-boundary verifier, the boundary query authenticates
+    /// `(100, 200)` as the true greatest key `<= (150, MAX)`. The generator then
+    /// requires the forward query to start at `(100, 200)`. The malicious proof,
+    /// which only includes `(100, 200)` as a hash-only boundary node and lacks
+    /// its full value, cannot satisfy that forward query, so verification fails
+    /// (it can never silently return zero).
+    #[test]
+    fn malicious_skip_descending_proof_is_rejected() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        // Containing range (100, 200) holds a double-spend nullifier.
+        let double_spend_nullifier = [0xCD; 32];
+        store_compacted_entry(
+            &drive,
+            100,
+            200,
+            vec![double_spend_nullifier],
+            platform_version,
+        );
+
+        // Craft the MALICIOUS proof the OLD (vulnerable) way: prove
+        // range_from((150, 150)..) directly, skipping descending discovery.
+        // (100, 200) sorts before (150, 150) lexicographically, so it appears
+        // only as a hash-only boundary node in this proof.
+        let path = shielded_compacted_nullifiers_path_vec();
+        let malicious_start_key = super::compacted_key(150, 150);
+        let mut malicious_inner = Query::new();
+        malicious_inner.insert_range_from(malicious_start_key..);
+        let malicious_path_query =
+            PathQuery::new(path, SizedQuery::new(malicious_inner, None, None));
+
+        let grovedb_costs::CostContext {
+            value: malicious_proof_result,
+            ..
+        } = drive.grove.get_proved_path_query(
+            &malicious_path_query,
+            None,
+            None,
+            &platform_version.drive.grove_version,
+        );
+        let malicious_proof = malicious_proof_result
+            .expect("should produce a (malicious) proof for the direct forward query");
+
+        let result = Drive::verify_compacted_nullifier_changes(
+            malicious_proof.as_slice(),
+            150,
+            None,
+            platform_version,
+        );
+
+        // The fix must NOT silently return zero nullifiers. Either verification
+        // fails outright, or it surfaces the (100, 200) double-spend.
+        match result {
+            Err(_) => {
+                // Expected: the boundary query authenticates (100, 200) as the
+                // greatest key <= (150, MAX); the malicious proof cannot satisfy
+                // the resulting forward query, so verification fails.
+            }
+            Ok((_root_hash, changes)) => {
+                assert!(
+                    changes
+                        .iter()
+                        .any(|c| c.start_block == 100 && c.end_block == 200),
+                    "malicious proof must not silently hide the containing range \
+                     (100, 200); got {} changes",
+                    changes.len()
+                );
+            }
+        }
     }
 }
