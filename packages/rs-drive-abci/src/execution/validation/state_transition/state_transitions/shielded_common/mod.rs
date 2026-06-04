@@ -649,6 +649,41 @@ mod tests {
                 err.message()
             );
         }
+
+        /// `Bundle::try_from_parts(.., ProofSizeEnforcement::Strict)` ->
+        /// `BundleError::NonCanonicalProofSize`.
+        ///
+        /// Pins the proof-size policy. The base action is valid, so reconstruction
+        /// clears `Action::from_parts` and reaches `try_from_parts`; the proof
+        /// byte-length (100) is not canonical for a single-action bundle, so
+        /// `Strict` rejects it. This is what distinguishes `Strict` from
+        /// `Unenforced`: under `Unenforced` the bundle would build and this test
+        /// would fail. The positive round-trip tests use canonical proofs and pass
+        /// under either setting, so without this test a refactor could silently flip
+        /// the policy. A 32-byte zero anchor (field element 0) is used so anchor
+        /// decoding succeeds and we reach the proof-size check.
+        #[test]
+        fn test_noncanonical_proof_size_rejected_under_strict() {
+            let action = valid_base_serialized_action();
+            let result = reconstruct_and_verify_bundle(
+                &[action],
+                FLAGS_SPENDS_AND_OUTPUTS,
+                0,
+                &[0u8; 32],
+                &[0u8; 100], // non-canonical proof length for a 1-action bundle
+                &[0u8; 64],
+                &[],
+            );
+
+            assert!(result.is_err());
+            let err = result.unwrap_err();
+            assert!(
+                err.message()
+                    .contains("failed to reconstruct authorized bundle"),
+                "expected NonCanonicalProofSize rejection from try_from_parts(Strict), got: {}",
+                err.message()
+            );
+        }
     }
 
     // ==========================================
