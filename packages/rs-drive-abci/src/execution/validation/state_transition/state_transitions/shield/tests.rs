@@ -5,7 +5,8 @@ mod tests {
     use crate::execution::validation::state_transition::state_transitions::test_helpers::{
         create_dummy_serialized_action, create_dummy_witness, create_platform_address,
         get_proving_key, process_transition, serialize_authorized_bundle_with_flags,
-        setup_address_with_balance, setup_platform, TestAddressSigner,
+        setup_address_with_balance, setup_address_with_balance_and_system_credits, setup_platform,
+        TestAddressSigner,
     };
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
     use assert_matches::assert_matches;
@@ -1351,6 +1352,198 @@ mod tests {
             assert!(
                 balance_after < dash_to_credits!(1.0),
                 "balance should be less than original after shield"
+            );
+        }
+    }
+
+    // ==========================================
+    // CREDIT CONSERVATION TESTS (sum-tree balance)
+    // ==========================================
+
+    /// Regression test for the shield credit-destruction chain-halt bug.
+    ///
+    /// A `Shield` whose inputs declare a per-input `requested` (max contribution)
+    /// larger than the shielded `amount` must NOT destroy the excess credits. The
+    /// shared address-balance validation debits the FULL `requested` per input, but
+    /// the pool is only credited `amount`. Without the reallocation fix in
+    /// `transform_into_action_v0`, the addresses lose `Σrequested + fee` while the
+    /// pool gains only `amount`, destroying `Σrequested - amount` credits and tripping
+    /// the block-end sum-tree conservation check (`CorruptedCreditsNotBalanced`),
+    /// which halts the chain.
+    ///
+    /// This drives a real shield (real Halo2 proof via the shared process-wide
+    /// proving key — no fresh ~30s proof) through the FULL block pipeline via
+    /// `process_state_transitions`, which runs
+    /// `process_block_fees_and_validate_sum_trees`. That block-end routine calls
+    /// `calculate_total_credits_balance(...).ok()` and returns the
+    /// `CorruptedCreditsNotBalanced` error (the chain-halt) if the sum of all credit
+    /// sub-trees no longer equals the platform total. With `verify_sum_trees`
+    /// enabled (the default), the helper's `.expect("expected to process block fees")`
+    /// therefore panics if the shield destroyed credits — so a passing test is a
+    /// genuine block-level proof of conservation.
+    mod credit_conservation {
+        use super::*;
+        use crate::execution::validation::state_transition::tests::process_state_transitions;
+        use dpp::block::block_info::BlockInfo;
+        use grovedb_commitment_tree::{
+            Anchor, Builder, BundleType, DashMemo, Flags as OrchardFlags, FullViewingKey,
+            NoteValue, Scope, SpendingKey,
+        };
+        use rand::rngs::OsRng;
+
+        #[tokio::test]
+        async fn test_shield_with_inputs_greater_than_amount_conserves_credits() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = setup_platform();
+
+            // --- Set up input address with a generous balance ---
+            // Use the system-credits variant so the fixture starts in a *balanced*
+            // state (total_credits_in_platform == sum of sub-trees). The block-end
+            // sum-tree validation inside `process_state_transitions` then asserts the
+            // exact production invariant, faithfully reproducing the chain-halt check.
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([1u8; 32]);
+            setup_address_with_balance_and_system_credits(
+                &mut platform,
+                input_address,
+                0,
+                dash_to_credits!(1.0),
+            );
+
+            // Platform total credits before the shield. A shield only moves credits
+            // between addresses, the shielded pool, and fee pools — it never mints or
+            // burns system credits — so this total must be unchanged afterwards and
+            // the sum-tree conservation invariant must continue to hold.
+            let credits_before = platform
+                .drive
+                .calculate_total_credits_balance(None, &platform_version.drive)
+                .expect("should calculate total credits before shield");
+            assert!(
+                credits_before
+                    .ok()
+                    .expect("credit balance check should not overflow"),
+                "credits must be balanced before the shield: {}",
+                credits_before
+            );
+
+            // --- Build a valid Orchard shield bundle (outputs only) ---
+            let mut rng = OsRng;
+            let pk = get_proving_key();
+
+            let sk = SpendingKey::from_bytes([0u8; 32]).unwrap();
+            let fvk = FullViewingKey::from(&sk);
+            let recipient = fvk.address_at(0u32, Scope::External);
+
+            let anchor = Anchor::empty_tree();
+            let mut builder = Builder::<DashMemo>::new(
+                BundleType::Transactional {
+                    flags: OrchardFlags::SPENDS_DISABLED,
+                    bundle_required: false,
+                },
+                anchor,
+            );
+
+            let shield_value = 5_000u64;
+            builder
+                .add_output(
+                    None,
+                    recipient,
+                    NoteValue::from_raw(shield_value),
+                    [0u8; 36],
+                )
+                .unwrap();
+
+            let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
+            let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
+            let sighash = compute_platform_sighash(&bundle_commitment, &[]);
+            let proven = unauthorized.create_proof(pk, &mut rng).unwrap();
+            let bundle = proven.apply_signatures(rng, sighash, &[]).unwrap();
+
+            let (actions, _flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
+                serialize_authorized_bundle_with_flags(&bundle);
+
+            assert!(value_balance < 0);
+            let shield_amount = (-value_balance) as u64;
+
+            // CRITICAL: requested (max contribution) is MUCH larger than the shielded
+            // amount. This is the routine builder behavior that triggered the bug: the
+            // full `requested` would be debited from the address while the pool only
+            // gains `shield_amount`. With the fix, only `shield_amount` is debited and
+            // the excess stays in the address.
+            let requested = shield_amount + dash_to_credits!(0.2);
+            assert!(
+                requested > shield_amount,
+                "test must exercise Σinputs > amount"
+            );
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(input_address, (1 as AddressNonce, requested));
+
+            let mut st = StateTransition::Shield(ShieldTransition::V0(ShieldTransitionV0 {
+                inputs: inputs.clone(),
+                actions,
+                amount: shield_amount,
+                anchor: anchor_bytes,
+                proof: proof_bytes,
+                binding_signature: binding_sig,
+                fee_strategy: AddressFundsFeeStrategy::from(vec![
+                    AddressFundsFeeStrategyStep::DeductFromInput(0),
+                ]),
+                user_fee_increase: 0,
+                input_witnesses: vec![],
+            }));
+
+            let signable_bytes = st.signable_bytes().expect("should compute signable bytes");
+            let mut witnesses: Vec<AddressWitness> = Vec::with_capacity(inputs.len());
+            for address in inputs.keys() {
+                let witness = signer
+                    .sign_create_witness(address, &signable_bytes)
+                    .await
+                    .expect("should sign");
+                witnesses.push(witness);
+            }
+
+            if let StateTransition::Shield(ShieldTransition::V0(ref mut v0)) = st {
+                v0.input_witnesses = witnesses;
+            }
+
+            // --- Run the FULL block pipeline (execute + distribute fees + validate
+            //     sum trees). With `verify_sum_trees` enabled (the default),
+            //     `process_block_fees_and_validate_sum_trees` would return
+            //     `CorruptedCreditsNotBalanced` and the helper's `.expect(...)` would
+            //     panic here if the shield destroyed credits. This is the block-level
+            //     conservation assertion. ---
+            let platform_state = platform.state.load();
+            let (_fee_results, _processed_block_fees) =
+                process_state_transitions(&platform, &[st], BlockInfo::default(), &platform_state);
+
+            // --- Additionally assert the invariant directly post-block ---
+            let credits_after = platform
+                .drive
+                .calculate_total_credits_balance(None, &platform_version.drive)
+                .expect("should calculate total credits after shield");
+
+            assert!(
+                credits_after
+                    .ok()
+                    .expect("credit balance check should not overflow"),
+                "credits must remain balanced after shield with Σinputs > amount \
+                 (this is the invariant whose failure halts the chain): {}",
+                credits_after
+            );
+
+            // The shield neither mints nor burns system credits.
+            assert_eq!(
+                credits_after.total_credits_in_platform, credits_before.total_credits_in_platform,
+                "shield must not change total platform credits"
+            );
+
+            // The shielded pool gained exactly `shield_amount`.
+            assert_eq!(
+                credits_after.total_in_shielded_balances
+                    - credits_before.total_in_shielded_balances,
+                shield_amount as i64,
+                "shielded pool must gain exactly the shield amount"
             );
         }
     }
