@@ -1,3 +1,15 @@
+### [3.0.2](https://github.com/dashpay/platform/compare/v3.0.1...v3.0.2) (2026-06-04)
+
+
+### Bug Fixes
+
+* **dashmate:** bump Envoy gateway to 1.35.11 for HTTP/2 DoS (CVE-2026-47774) ([#3794](https://github.com/dashpay/platform/issues/3794))
+
+
+### Tests
+
+* regenerate test vectors for v3.0.1 ([#3065](https://github.com/dashpay/platform/issues/3065))
+
 ### [3.0.1](///compare/v3.0.1-hotfix.4...v3.0.1) (2026-02-06)
 
 ### [3.0.1-hotfix.4](///compare/v3.0.1-hotfix.3...v3.0.1-hotfix.4) (2026-02-05)
