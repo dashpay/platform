@@ -82,14 +82,7 @@ derive_more = { version = "1.0", features = ["from", "deref", "deref_mut"] }
 async-trait = "0.1.77"
 console-subscriber = { version = "0.4", optional = true }
 bls-signatures = { git = "https://github.com/dashpay/bls-signatures", rev = "0842b17583888e8f46c252a4ee84cdfd58e0546f", optional = true }
-grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "41786daa51495743fc5d7223065d848c36b481f0" }
-# orchard 0.14 made the only constructor for an `Authorized` bundle
-# (`Bundle::try_from_parts`) require a `ProofSizeEnforcement` argument, which
-# `grovedb-commitment-tree` does not re-export. The shielded verifier needs to
-# name that enum to reconstruct the bundle, so orchard is pinned here to the
-# exact same git tag that `grovedb-commitment-tree` resolves to (cargo unifies
-# this to a single orchard build; no second copy is introduced).
-orchard = { git = "https://github.com/dashpay/orchard.git", tag = "dashified-0.14.0", features = ["circuit"] }
+grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "40521b831ca0792e4d63f4d8949c45f07517641e" }
 nonempty = "0.11"
 # Shielded-pool snapshot needs raw RocksDB SstFileWriter + ingest_external_file_cf
 # bindings, and blake3 for the snapshot-file checksum.
@@ -114,7 +107,7 @@ dpp = { path = "../rs-dpp", default-features = false, features = [
 drive = { path = "../rs-drive", features = ["fixtures-and-mocks"] }
 drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
 strategy-tests = { path = "../strategy-tests" }
-grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "41786daa51495743fc5d7223065d848c36b481f0", features = ["client"] }
+grovedb-commitment-tree = { git = "https://github.com/dashpay/grovedb", rev = "40521b831ca0792e4d63f4d8949c45f07517641e", features = ["client"] }
 assert_matches = "1.5.0"
 drive-abci = { path = ".", features = ["testing-config", "mocks", "shielded_test_data"] }
 bls-signatures = { git = "https://github.com/dashpay/bls-signatures", rev = "0842b17583888e8f46c252a4ee84cdfd58e0546f" }
@@ -128,8 +121,8 @@ integer-encoding = { version = "4.0.0" }
 
 # For dump_only_default_and_aux_cfs_under_shielded_subtree_prefix — same
 # subtree-prefix algorithm grovedb uses internally.
-grovedb-path = { git = "https://github.com/dashpay/grovedb", rev = "41786daa51495743fc5d7223065d848c36b481f0" }
-grovedb-storage = { git = "https://github.com/dashpay/grovedb", rev = "41786daa51495743fc5d7223065d848c36b481f0" }
+grovedb-path = { git = "https://github.com/dashpay/grovedb", rev = "40521b831ca0792e4d63f4d8949c45f07517641e" }
+grovedb-storage = { git = "https://github.com/dashpay/grovedb", rev = "40521b831ca0792e4d63f4d8949c45f07517641e" }
 
 [features]
 default = ["bls-signatures"]

@@ -14,18 +14,10 @@ use drive::fees::op::LowLevelDriveOperation;
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::StateTransitionAction;
 use grovedb_commitment_tree::{
-    redpallas, Action, Anchor, Authorized, BatchValidator, Bundle, DashMemo,
-    ExtractedNoteCommitment, Flags, NoteBytesData, Nullifier, Proof, TransmittedNoteCiphertext,
-    ValueCommitment, VerifyingKey,
+    redpallas, Action, ActionFromPartsError, Anchor, Authorized, BatchValidator, Bundle, DashMemo,
+    ExtractedNoteCommitment, Flags, NoteBytesData, Nullifier, Proof, ProofSizeEnforcement,
+    TransmittedNoteCiphertext, ValueCommitment, VerifyingKey,
 };
-// `ProofSizeEnforcement` is the orchard 0.14 argument to the only public
-// constructor for an authorized bundle (`Bundle::try_from_parts`). It is not
-// re-exported by `grovedb-commitment-tree`, so we name it through the orchard
-// crate directly (pinned to the same git tag in Cargo.toml, so cargo unifies
-// to a single orchard build). `ActionFromPartsError` lets us distinguish the
-// two rejection causes that `Action::from_parts` now reports.
-use orchard::bundle::ProofSizeEnforcement;
-use orchard::ActionFromPartsError;
 use std::sync::OnceLock;
 
 /// Orchard bundle flags byte: only outputs are real (spends are dummy).
