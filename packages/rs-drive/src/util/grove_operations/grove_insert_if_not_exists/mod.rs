@@ -61,14 +61,14 @@ mod v11_consensus_regression_tests {
 
     /// Protocol-v11 (`GROVE_V2`) consensus regression guard — testnet block 245,344.
     ///
-    /// `transition_to_version_11` inserts an `empty_provable_count_sum_tree`
-    /// (CLEAR_ADDRESS_POOL) and an `empty_count_sum_tree` (ADDRESS_BALANCES) via
-    /// `grove_insert_if_not_exists`. Under the v11 grove version (`GROVE_V2`) grovedb
-    /// must insert these as plain values (`Op::Put`), NOT as layered subtrees
-    /// (`Op::PutLayeredReference`): the latter folds the child root into the parent
-    /// node's `value_hash`, changing the grovedb root and breaking consensus on replay
-    /// (a beta.2 node computed `98DD9B…` instead of the canonical `29B639…` and stalled
-    /// at block 245,344).
+    /// This models the v11 AddressBalances tree-set built by `transition_to_version_11`: an
+    /// `empty_sum_tree` root at `[56]` (the control) plus an `empty_provable_count_sum_tree`
+    /// (CLEAR_ADDRESS_POOL, `[56,'c']`) under it, both via `grove_insert_if_not_exists`. Under the
+    /// v11 grove version (`GROVE_V2`) the provable-count-sum tree must be inserted as a plain value
+    /// (`Op::Put`), NOT a layered subtree (`Op::PutLayeredReference`): the latter folds the child
+    /// root into the parent node's `value_hash`, changing the grovedb root and breaking consensus on
+    /// replay (a beta.2 node computed `98DD9B…` instead of the canonical `29B639…` and stalled at
+    /// block 245,344).
     ///
     /// grovedb #759 version-gates this dispatch: `GROVE_V1`/`GROVE_V2` keep `Op::Put`
     /// (slot v0); `GROVE_V3` (protocol v12) adopts the layered subtree (slot v1),
@@ -144,10 +144,18 @@ mod v11_consensus_regression_tests {
         );
 
         // v12 / GROVE_V3 — intentionally layered (grovedb #759 version gate): the
-        // provable_count_sum_tree root MUST differ from the v11 Op::Put golden.
-        let (_v12_root_1, v12_root_2) =
+        // provable_count_sum_tree root MUST differ from the v11 Op::Put golden, while the
+        // empty_sum_tree control MUST stay on GOLDEN_1 — the gate is scoped to
+        // CountSumTree / ProvableCount[Sum]Tree only, never plain sum_tree.
+        let (v12_root_1, v12_root_2) =
             insert_v11_address_trees(PlatformVersion::get(12).expect("protocol v12"));
+        eprintln!("v12 root_1 (control sum_tree)        = {v12_root_1:?}");
         eprintln!("v12 root_2 (provable_count_sum_tree) = {v12_root_2:?}");
+        assert_eq!(
+            v12_root_1, GOLDEN_1,
+            "v12 control sum_tree root changed — grovedb #759's version gate must affect only \
+             CountSumTree / ProvableCount[Sum]Tree, never plain empty_sum_tree"
+        );
         assert_ne!(
             v12_root_2, GOLDEN_2,
             "GROVE_V3 (protocol v12) must use the layered-subtree dispatch (grovedb #759) — \
