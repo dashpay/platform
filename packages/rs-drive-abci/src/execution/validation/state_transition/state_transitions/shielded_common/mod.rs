@@ -183,33 +183,18 @@ pub fn reconstruct_and_verify_bundle(
     let actions_nonempty = nonempty::NonEmpty::from_vec(orchard_actions)
         .ok_or_else(|| InvalidShieldedProofError::new("bundle has no actions".to_string()))?;
 
-    // Reconstruct the authorized bundle.
-    //
-    // orchard 0.14 removed the old generic `Bundle::from_parts` constructor. The
-    // only public constructor for a `Bundle<Authorized>` is now
-    // `Bundle::try_from_parts`, which additionally takes a `ProofSizeEnforcement`.
-    //
-    // We pass `ProofSizeEnforcement::Unenforced` to preserve EXACT consensus
-    // acceptance semantics: the old `Bundle::from_parts` performed NO proof-size
-    // check, and the platform validates proof bytes nowhere else, so a bundle
-    // whose proof length is non-canonical was accepted (and then verified by the
-    // Halo 2 circuit) under 0.13. Choosing `Strict` here would introduce a NEW
-    // rejection (`BundleError::NonCanonicalProofSize`) that did not exist before,
-    // changing consensus behavior for an edge case — which is forbidden. With
-    // `Unenforced`, `try_from_parts` cannot fail, but we still surface any error
-    // defensively rather than unwrapping.
-    //
-    // The actions already carry their per-action `redpallas::Signature<SpendAuth>`
-    // (attached above in `Action::from_parts`), so action↔signature pairing and
-    // ordering are preserved structurally — there is no separate signature list
-    // to reorder.
+    // Reconstruct the `Bundle<Authorized>` (`try_from_parts` is orchard 0.14's only
+    // public constructor for it). `ProofSizeEnforcement::Strict` rejects a proof
+    // whose byte-length is not canonical for the action count — anti-malleability.
+    // Spend-auth signatures were attached per-action in `Action::from_parts` above,
+    // so action↔signature pairing is preserved with no separate list to reorder.
     let bundle = Bundle::try_from_parts(
         actions_nonempty,
         orchard_flags,
         value_balance,
         orchard_anchor,
         authorized,
-        ProofSizeEnforcement::Unenforced,
+        ProofSizeEnforcement::Strict,
     )
     .map_err(|e| {
         InvalidShieldedProofError::new(format!("failed to reconstruct authorized bundle: {e}"))
