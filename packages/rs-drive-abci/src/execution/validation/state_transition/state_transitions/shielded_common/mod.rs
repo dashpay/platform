@@ -18,6 +18,14 @@ use grovedb_commitment_tree::{
     ExtractedNoteCommitment, Flags, NoteBytesData, Nullifier, Proof, TransmittedNoteCiphertext,
     ValueCommitment, VerifyingKey,
 };
+// `ProofSizeEnforcement` is the orchard 0.14 argument to the only public
+// constructor for an authorized bundle (`Bundle::try_from_parts`). It is not
+// re-exported by `grovedb-commitment-tree`, so we name it through the orchard
+// crate directly (pinned to the same git tag in Cargo.toml, so cargo unifies
+// to a single orchard build). `ActionFromPartsError` lets us distinguish the
+// two rejection causes that `Action::from_parts` now reports.
+use orchard::bundle::ProofSizeEnforcement;
+use orchard::ActionFromPartsError;
 use std::sync::OnceLock;
 
 /// Orchard bundle flags byte: only outputs are real (spends are dummy).
@@ -127,9 +135,18 @@ pub fn reconstruct_and_verify_bundle(
                 InvalidShieldedProofError::new("invalid value commitment bytes".to_string())
             })?;
 
-        // `Action::from_parts` returns `None` when `rk` is the identity key
-        // (an Orchard hardening added upstream in 0.13). Reject those as
-        // malformed rather than silently dropping them.
+        // `Action::from_parts` rejects malformed actions instead of silently
+        // dropping them. In orchard 0.14 it returns `Result<_, ActionFromPartsError>`
+        // (was `Option` in 0.13) and now enforces TWO invariants:
+        //   - `IdentityRk`: the randomizer key `rk` must be non-identity (the
+        //     hardening that already existed in 0.13).
+        //   - `InvalidEpk`: the ephemeral public key `epk` must encode a
+        //     non-identity point (a NEW invariant in 0.14 — the circuit
+        //     soundness fix). Rejecting this is REQUIRED to preserve soundness;
+        //     we must not weaken it back to acceptance.
+        // We keep the original "identity randomizer key" message for the
+        // `IdentityRk` case (byte-for-byte compatible with the 0.13 error path)
+        // and surface the new `InvalidEpk` rejection with its own message.
         let action = Action::from_parts(
             nullifier,
             rk,
@@ -142,8 +159,17 @@ pub fn reconstruct_and_verify_bundle(
             cv_net,
             redpallas::Signature::from(a.spend_auth_sig),
         )
-        .ok_or_else(|| {
-            InvalidShieldedProofError::new("action has identity randomizer key".to_string())
+        .map_err(|e| match e {
+            ActionFromPartsError::IdentityRk => {
+                InvalidShieldedProofError::new("action has identity randomizer key".to_string())
+            }
+            ActionFromPartsError::InvalidEpk => InvalidShieldedProofError::new(
+                "action has invalid ephemeral public key (identity or undecodable epk)".to_string(),
+            ),
+            // `ActionFromPartsError` is `#[non_exhaustive]`. Any future
+            // rejection variant added upstream MUST also be rejected here —
+            // defaulting to acceptance would weaken consensus soundness.
+            other => InvalidShieldedProofError::new(format!("malformed orchard action: {other}")),
         })?;
         orchard_actions.push(action);
     }
@@ -165,13 +191,37 @@ pub fn reconstruct_and_verify_bundle(
     let actions_nonempty = nonempty::NonEmpty::from_vec(orchard_actions)
         .ok_or_else(|| InvalidShieldedProofError::new("bundle has no actions".to_string()))?;
 
-    let bundle = Bundle::from_parts(
+    // Reconstruct the authorized bundle.
+    //
+    // orchard 0.14 removed the old generic `Bundle::from_parts` constructor. The
+    // only public constructor for a `Bundle<Authorized>` is now
+    // `Bundle::try_from_parts`, which additionally takes a `ProofSizeEnforcement`.
+    //
+    // We pass `ProofSizeEnforcement::Unenforced` to preserve EXACT consensus
+    // acceptance semantics: the old `Bundle::from_parts` performed NO proof-size
+    // check, and the platform validates proof bytes nowhere else, so a bundle
+    // whose proof length is non-canonical was accepted (and then verified by the
+    // Halo 2 circuit) under 0.13. Choosing `Strict` here would introduce a NEW
+    // rejection (`BundleError::NonCanonicalProofSize`) that did not exist before,
+    // changing consensus behavior for an edge case — which is forbidden. With
+    // `Unenforced`, `try_from_parts` cannot fail, but we still surface any error
+    // defensively rather than unwrapping.
+    //
+    // The actions already carry their per-action `redpallas::Signature<SpendAuth>`
+    // (attached above in `Action::from_parts`), so action↔signature pairing and
+    // ordering are preserved structurally — there is no separate signature list
+    // to reorder.
+    let bundle = Bundle::try_from_parts(
         actions_nonempty,
         orchard_flags,
         value_balance,
         orchard_anchor,
         authorized,
-    );
+        ProofSizeEnforcement::Unenforced,
+    )
+    .map_err(|e| {
+        InvalidShieldedProofError::new(format!("failed to reconstruct authorized bundle: {e}"))
+    })?;
 
     // Compute the platform sighash: SHA-256(domain || bundle_commitment || extra_data).
     // The bundle commitment is the Orchard BundleCommitment (BLAKE2b-256 per ZIP-244),
