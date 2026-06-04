@@ -165,8 +165,17 @@ fn original_removed_credits_multiplier_from(
     start_epoch_index: EpochIndex,
     start_repayment_from_epoch_index: EpochIndex,
     epochs_per_era: u16,
-) -> Decimal {
-    let paid_epochs = start_repayment_from_epoch_index - start_epoch_index;
+) -> Result<Decimal, ProtocolError> {
+    // `start_repayment_from_epoch_index` is `current_epoch_index + 1` and
+    // `start_epoch_index` is the (earlier) epoch the storage was originally
+    // paid in, so this subtraction normally cannot underflow. Guard it anyway
+    // so corrupted/unexpected inputs return an error rather than panicking
+    // (debug) or wrapping (release) on the consensus path.
+    let paid_epochs = start_repayment_from_epoch_index
+        .checked_sub(start_epoch_index)
+        .ok_or(ProtocolError::Overflow(
+            "start repayment epoch is before the original storage epoch",
+        ))?;
 
     let current_era = (paid_epochs / epochs_per_era) as usize;
 
@@ -186,7 +195,21 @@ fn original_removed_credits_multiplier_from(
             })
             .sum();
 
-    dec!(1) / ratio_used
+    // `FEE_DISTRIBUTION_TABLE` has exactly `PERPETUAL_STORAGE_ERAS` entries.
+    // Once the refund's original storage epoch is at least that whole window
+    // behind the repayment epoch (`current_era >= PERPETUAL_STORAGE_ERAS`),
+    // every table era compares `Ordering::Less`, the iterator yields nothing,
+    // and `ratio_used` sums to zero. `rust_decimal::Decimal`'s `/` operator
+    // PANICS on a zero divisor (unlike integer/`f64` division and unlike its
+    // own `checked_div`), which on the consensus path would abort every node
+    // simultaneously and halt the chain. Return a propagable error instead.
+    if ratio_used.is_zero() {
+        return Err(ProtocolError::DivideByZero(
+            "storage fee refund is older than the entire perpetual storage window",
+        ));
+    }
+
+    Ok(dec!(1) / ratio_used)
 }
 
 /// Let's imagine that we are refunding something from epoch 5
@@ -203,7 +226,7 @@ fn restore_original_removed_credits_amount(
         start_epoch_index,
         start_repayment_from_epoch_index,
         epochs_per_era,
-    );
+    )?;
 
     refund_amount
         .checked_mul(multiplier)
@@ -347,7 +370,8 @@ mod tests {
             let epoch_0_cost = dec!(0.05000) / dec!(20.0);
             let multiplier_should_be = dec!(1.0) / (dec!(1.0) - epoch_0_cost);
 
-            let multiplier = original_removed_credits_multiplier_from(0, 1, 20);
+            let multiplier = original_removed_credits_multiplier_from(0, 1, 20)
+                .expect("multiplier within perpetual storage window");
 
             assert_eq!(multiplier_should_be, multiplier);
         }
@@ -359,7 +383,8 @@ mod tests {
 
             let multiplier_should_be = dec!(1.0) / (dec!(1.0) - epoch_0_cost);
 
-            let multiplier = original_removed_credits_multiplier_from(24, 43, 20);
+            let multiplier = original_removed_credits_multiplier_from(24, 43, 20)
+                .expect("multiplier within perpetual storage window");
 
             assert_eq!(multiplier_should_be, multiplier);
         }
@@ -733,7 +758,8 @@ mod tests {
                     start_epoch_index,
                     current_epoch_index_where_refund_occurred + 1,
                     20,
-                );
+                )
+                .expect("multiplier within perpetual storage window");
 
                 // it's not going to be completely perfect but it's good enough
                 // there were 24 epochs, on average we would be 12 off
@@ -927,7 +953,8 @@ mod tests {
                 SECOND_START_EPOCH_INDEX,
                 CURRENT_EPOCH_INDEX_WHERE_REFUND_OCCURRED + 1,
                 20,
-            );
+            )
+            .expect("multiplier within perpetual storage window");
 
             // it's not going to be completely perfect but it's good enough
             // there were 24 epochs, on average we would be 12 off
@@ -1154,15 +1181,19 @@ mod tests {
         fn should_create_multiplier_of_one_when_no_epochs_have_passed() {
             // When start_repayment == start, paid_epochs = 0, ratio_used = full table sum = 1.0
             // So multiplier = 1/1 = 1
-            let multiplier = original_removed_credits_multiplier_from(0, 0, 20);
+            let multiplier = original_removed_credits_multiplier_from(0, 0, 20)
+                .expect("multiplier within perpetual storage window");
             assert_eq!(multiplier, dec!(1));
         }
 
         #[test]
         fn should_increase_multiplier_as_more_epochs_pass() {
-            let m1 = original_removed_credits_multiplier_from(0, 5, 20);
-            let m2 = original_removed_credits_multiplier_from(0, 10, 20);
-            let m3 = original_removed_credits_multiplier_from(0, 19, 20);
+            let m1 = original_removed_credits_multiplier_from(0, 5, 20)
+                .expect("multiplier within perpetual storage window");
+            let m2 = original_removed_credits_multiplier_from(0, 10, 20)
+                .expect("multiplier within perpetual storage window");
+            let m3 = original_removed_credits_multiplier_from(0, 19, 20)
+                .expect("multiplier within perpetual storage window");
 
             // More paid epochs means less ratio remaining, so multiplier increases
             assert!(m1 < m2);
@@ -1172,9 +1203,12 @@ mod tests {
         #[test]
         fn should_handle_era_boundary_crossing() {
             // paid_epochs = 20 means we enter the second era exactly
-            let m_at_boundary = original_removed_credits_multiplier_from(0, 20, 20);
-            let m_before_boundary = original_removed_credits_multiplier_from(0, 19, 20);
-            let m_after_boundary = original_removed_credits_multiplier_from(0, 21, 20);
+            let m_at_boundary = original_removed_credits_multiplier_from(0, 20, 20)
+                .expect("multiplier within perpetual storage window");
+            let m_before_boundary = original_removed_credits_multiplier_from(0, 19, 20)
+                .expect("multiplier within perpetual storage window");
+            let m_after_boundary = original_removed_credits_multiplier_from(0, 21, 20)
+                .expect("multiplier within perpetual storage window");
 
             // At the boundary, the entire first era (0.05) is consumed
             assert!(m_at_boundary > m_before_boundary);
@@ -1184,9 +1218,11 @@ mod tests {
         #[test]
         fn should_handle_different_epochs_per_era() {
             // With 40 epochs per era (the default), 40 paid epochs = 1 full era
-            let m_40 = original_removed_credits_multiplier_from(0, 40, 40);
+            let m_40 = original_removed_credits_multiplier_from(0, 40, 40)
+                .expect("multiplier within perpetual storage window");
             // With 20 epochs per era, 20 paid epochs = 1 full era
-            let m_20 = original_removed_credits_multiplier_from(0, 20, 20);
+            let m_20 = original_removed_credits_multiplier_from(0, 20, 20)
+                .expect("multiplier within perpetual storage window");
 
             // Both consume exactly one full era of 0.05, so multipliers should be equal
             assert_eq!(m_40, m_20);
@@ -1195,12 +1231,51 @@ mod tests {
         #[test]
         fn should_produce_same_multiplier_regardless_of_absolute_epoch_offset() {
             // The multiplier depends only on the difference, not absolute indices
-            let m1 = original_removed_credits_multiplier_from(0, 15, 20);
-            let m2 = original_removed_credits_multiplier_from(100, 115, 20);
-            let m3 = original_removed_credits_multiplier_from(5000, 5015, 20);
+            let m1 = original_removed_credits_multiplier_from(0, 15, 20)
+                .expect("multiplier within perpetual storage window");
+            let m2 = original_removed_credits_multiplier_from(100, 115, 20)
+                .expect("multiplier within perpetual storage window");
+            let m3 = original_removed_credits_multiplier_from(5000, 5015, 20)
+                .expect("multiplier within perpetual storage window");
 
             assert_eq!(m1, m2);
             assert_eq!(m2, m3);
+        }
+
+        #[test]
+        fn should_return_error_instead_of_panicking_when_window_fully_elapsed() {
+            // PERPETUAL_STORAGE_ERAS == 50 and the distribution table has 50
+            // entries. With epochs_per_era = 20, `current_era` reaches 50 (the
+            // full window) at paid_epochs = 50 * 20 = 1000, at which point every
+            // table era compares `Less`, `ratio_used` sums to zero, and the old
+            // code panicked on `dec!(1) / 0`. It must now return a DivideByZero
+            // error so the consensus path can propagate it instead of aborting.
+            let result = original_removed_credits_multiplier_from(0, 1000, 20);
+            assert!(
+                matches!(result, Err(ProtocolError::DivideByZero(_))),
+                "expected DivideByZero error once the window is fully elapsed, got {:?}",
+                result
+            );
+
+            // The caller propagates the error rather than panicking.
+            let restored = restore_original_removed_credits_amount(dec!(1_000_000), 0, 1000, 20);
+            assert!(
+                matches!(restored, Err(ProtocolError::DivideByZero(_))),
+                "restore_original_removed_credits_amount must propagate the error, got {:?}",
+                restored
+            );
+        }
+
+        #[test]
+        fn should_return_error_when_repayment_epoch_precedes_start() {
+            // Defensive guard: a repayment epoch before the original storage
+            // epoch must not underflow the `paid_epochs` subtraction.
+            let result = original_removed_credits_multiplier_from(10, 5, 20);
+            assert!(
+                matches!(result, Err(ProtocolError::Overflow(_))),
+                "expected Overflow error on underflowing epoch difference, got {:?}",
+                result
+            );
         }
     }
 
