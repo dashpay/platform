@@ -35,6 +35,7 @@ use platform_wallet::{derive_identity_auth_keypair, IDENTITY_GAP_LIMIT, MASTER_K
 
 use crate::error::*;
 use crate::handle::*;
+use crate::identity_keys_from_mnemonic::zeroize_and_free_row;
 use crate::{check_ptr, unwrap_option_or_return, unwrap_result_or_return};
 
 /// One identity-registration-key preview row.
@@ -294,49 +295,19 @@ pub unsafe extern "C" fn platform_wallet_preview_identity_registration_keys_free
     previews.count = 0;
 }
 
-/// Reclaim the heap allocations owned by a single preview row and
-/// zeroize the sensitive private-key material it carried.
+/// Reclaim the heap allocations owned by a single preview row and zeroize the
+/// sensitive private-key material it carried.
 ///
-/// Takes `&mut` so it can both scrub the inline `private_key_bytes`
-/// scalar in place and null `private_key_wif`/`derivation_path`/
-/// `public_key` after reclaiming them — preserving double-free
-/// idempotency. Used by both the public free function (post-success
-/// path) and the internal cleanup helper that drops
-/// successfully-built rows when a later derivation fails mid-loop.
-///
-/// Mirrors the zeroization performed by
-/// [`crate::identity_keys_from_mnemonic::dash_sdk_derive_identity_keys_from_mnemonic_free`]:
-/// the WIF string holds the same private key in human-readable form,
-/// so its backing bytes are scrubbed before the allocation is
-/// released, and the raw 32-byte scalar is zeroized in place.
+/// This is a thin delegation to [`zeroize_and_free_row`], the single canonical
+/// zeroize-and-free implementation for [`IdentityKeyPreviewFFI`]. Keeping the
+/// logic in exactly one place is the whole point of this change: a future change
+/// to the row (a new sensitive `*mut c_char` field, moving `private_key_bytes`
+/// behind a `Zeroizing` wrapper, etc.) then cannot silently leave one free path
+/// scrubbing while another leaks. The longer-term endpoint noted at the
+/// build-loop `TODO` is a `Drop` impl on the struct itself, which would make the
+/// single zeroization site enforced by construction.
 unsafe fn release_row(row: &mut IdentityKeyPreviewFFI) {
-    if !row.derivation_path.is_null() {
-        unsafe {
-            drop(CString::from_raw(row.derivation_path));
-        }
-        row.derivation_path = ptr::null_mut();
-    }
-    if !row.private_key_wif.is_null() {
-        // WIF carries the private key in clear text — scrub the
-        // CString's backing bytes (including the trailing NUL slot)
-        // before the allocation is handed back to the allocator.
-        let mut wif = unsafe { CString::from_raw(row.private_key_wif) }.into_bytes_with_nul();
-        zeroize::Zeroize::zeroize(&mut wif);
-        row.private_key_wif = ptr::null_mut();
-    }
-    if !row.public_key.is_null() && row.public_key_len > 0 {
-        unsafe {
-            drop(Vec::from_raw_parts(
-                row.public_key,
-                row.public_key_len,
-                row.public_key_len,
-            ));
-        }
-        row.public_key = ptr::null_mut();
-        row.public_key_len = 0;
-    }
-    // Scrub the raw 32-byte ECDSA scalar held inline in the row.
-    zeroize::Zeroize::zeroize(&mut row.private_key_bytes);
+    unsafe { zeroize_and_free_row(row) }
 }
 
 /// Release every row in a partially-built preview list and consume
