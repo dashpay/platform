@@ -45,6 +45,20 @@ impl Drive {
     /// 3. The chained **forward query** (`range_from(start_key..)`, caller limit)
     ///    is verified against the same root hash, and its authenticated results
     ///    are decoded into the returned changes.
+    ///
+    /// # KNOWN LIVENESS BUG (tracked in PR #3792 — fix deferred)
+    ///
+    /// The boundary query is **descending** (greatest key `<= bound`) while the
+    /// forward query is **ascending** (paginated `range_from`). A single GroveDB
+    /// proof is one-directional, so when **two or more** compacted ranges sort
+    /// at/below `start_block_height` the honest proof fails verification with
+    /// "Cannot verify upper bound of queried range" (see the two `#[ignore]`d
+    /// `*_below_query_height*` regression tests). The single-range and empty
+    /// cases work, which is why this slipped the original tests. The planned fix
+    /// is to re-key compacted entries by `(end_block, start_block)` so retrieval
+    /// becomes a single ascending `range_from((H, 0)..)` — which also closes the
+    /// original absence-proof soundness hole structurally (the containing range
+    /// becomes an ordinary in-range result that cannot be omitted).
     pub(super) fn verify_compacted_nullifier_changes_v0(
         proof: &[u8],
         start_block_height: u64,
@@ -306,6 +320,101 @@ mod tests {
         assert_eq!(change.start_block, 100);
         assert_eq!(change.end_block, 200);
         assert_eq!(change.nullifiers.as_slice(), &[double_spend_nullifier]);
+    }
+
+    /// ADVERSARIAL: multiple compacted ranges all sort at/below the query
+    /// height — the realistic light-client sync case. A reviewer flagged a
+    /// possible direction-mismatch liveness break (ascending merged proof vs
+    /// descending limit-1 boundary verify query) that the single-range tests
+    /// would not catch. This proves the honest prove->verify roundtrip succeeds
+    /// and returns the containing range when >=2 ranges are <= (start, MAX).
+    ///
+    /// KNOWN-FAILING (see PR #3792 description): the chained
+    /// boundary(descending) + forward(ascending) scheme cannot be satisfied by a
+    /// single one-directional GroveDB proof. With >=2 compacted ranges at/below
+    /// the query height the honest proof fails with "Cannot verify upper bound of
+    /// queried range". Planned fix: re-key compacted entries by
+    /// (end_block, start_block) so the query is a single ascending
+    /// `range_from((H,0)..)`. Un-ignore once fixed.
+    #[ignore = "known liveness bug: chained descending-boundary + ascending-forward \
+                cannot share one GroveDB proof; fix = re-key by end_block (see PR #3792)"]
+    #[test]
+    fn multiple_ranges_below_query_height_verify() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        // Three contiguous compacted ranges, ALL with start_block <= 150.
+        store_compacted_entry(&drive, 1, 64, vec![[0x01; 32]], platform_version);
+        store_compacted_entry(&drive, 65, 128, vec![[0x02; 32]], platform_version);
+        store_compacted_entry(&drive, 129, 192, vec![[0x03; 32]], platform_version);
+
+        // Query from 150: bound = (150, MAX). Keys <= bound: (1,64), (65,128),
+        // (129,192) — THREE keys. (129,192) contains 150 (129 <= 150 <= 192).
+        let proof = drive
+            .prove_compacted_nullifier_changes(150, None, None, platform_version)
+            .expect("should prove with multiple ranges below the query height");
+
+        let (_root, changes) = Drive::verify_compacted_nullifier_changes(
+            proof.as_slice(),
+            150,
+            None,
+            platform_version,
+        )
+        .expect("VERIFY MUST NOT FAIL with multiple ranges <= bound");
+
+        assert!(
+            changes
+                .iter()
+                .any(|c| c.start_block == 129 && c.end_block == 192),
+            "containing range (129,192) must be surfaced; got {:?}",
+            changes
+                .iter()
+                .map(|c| (c.start_block, c.end_block))
+                .collect::<Vec<_>>()
+        );
+    }
+
+    /// ADVERSARIAL variant: a non-zero gap below the containing range, querying
+    /// from a height strictly inside the third range with two full ranges below.
+    ///
+    /// KNOWN-FAILING (see PR #3792 description): same direction-mismatch bug as
+    /// `multiple_ranges_below_query_height_verify`. Un-ignore once the compacted
+    /// tree is re-keyed by (end_block, start_block).
+    #[ignore = "known liveness bug: chained descending-boundary + ascending-forward \
+                cannot share one GroveDB proof; fix = re-key by end_block (see PR #3792)"]
+    #[test]
+    fn containing_range_with_two_lower_ranges_verifies() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        store_compacted_entry(&drive, 100, 200, vec![[0xA1; 32]], platform_version);
+        store_compacted_entry(&drive, 300, 400, vec![[0xA2; 32]], platform_version);
+        store_compacted_entry(&drive, 500, 600, vec![[0xA3; 32]], platform_version);
+
+        // Query from 550: (500,600) contains it; (100,200) and (300,400) are
+        // both <= (550, MAX) and sort below the containing range.
+        let proof = drive
+            .prove_compacted_nullifier_changes(550, None, None, platform_version)
+            .expect("should prove");
+
+        let (_root, changes) = Drive::verify_compacted_nullifier_changes(
+            proof.as_slice(),
+            550,
+            None,
+            platform_version,
+        )
+        .expect("VERIFY MUST NOT FAIL");
+
+        assert!(
+            changes
+                .iter()
+                .any(|c| c.start_block == 500 && c.end_block == 600),
+            "containing range (500,600) must be surfaced; got {:?}",
+            changes
+                .iter()
+                .map(|c| (c.start_block, c.end_block))
+                .collect::<Vec<_>>()
+        );
     }
 
     /// PoC: a malicious prover that skips the descending discovery step and
