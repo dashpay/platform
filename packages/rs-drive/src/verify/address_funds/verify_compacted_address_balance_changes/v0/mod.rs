@@ -2,7 +2,7 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::proof::ProofError;
 use crate::error::Error;
-use crate::util::common::compacted_key;
+use crate::util::common::{compacted_address_balances_path, compacted_key};
 use crate::verify::RootHash;
 use dpp::address_funds::PlatformAddress;
 
@@ -66,7 +66,7 @@ impl Drive {
             .with_big_endian()
             .with_no_limit();
 
-        let path = Drive::saved_compacted_block_transactions_address_balances_path_vec();
+        let path = compacted_address_balances_path();
 
         // Step 1: boundary query — authenticate the single greatest compacted
         // key <= (start_block_height, u64::MAX). Descending, limit 1.
@@ -366,7 +366,7 @@ mod tests {
         // Craft the MALICIOUS proof the OLD (vulnerable) way: prove
         // range_from((150, 150)..) directly. (100, 200) sorts before (150, 150)
         // and so appears only as a hash-only boundary node.
-        let path = Drive::saved_compacted_block_transactions_address_balances_path_vec();
+        let path = compacted_address_balances_path();
         let malicious_start_key = compacted_key(150, 150);
         let mut malicious_inner = Query::new();
         malicious_inner.insert_range_from(malicious_start_key..);

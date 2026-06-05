@@ -42,11 +42,13 @@ impl Drive {
     }
 
     /// Path to compacted address balances under saved block transactions.
+    ///
+    /// Delegates to the `verify`-available canonical
+    /// [`crate::util::common::compacted_address_balances_path`] so the
+    /// storage/fetch (server) path and the proof verifier (verify) path share a
+    /// single definition and cannot drift.
     pub fn saved_compacted_block_transactions_address_balances_path_vec() -> Vec<Vec<u8>> {
-        vec![
-            vec![RootTree::SavedBlockTransactions as u8],
-            vec![COMPACTED_ADDRESS_BALANCES_KEY_U8],
-        ]
+        crate::util::common::compacted_address_balances_path()
     }
 
     /// Path to compacted address balances under saved block transactions.
