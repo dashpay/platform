@@ -7,8 +7,12 @@ pub const ADDRESS_BALANCES_KEY: &[u8; 1] = b"m";
 /// The subtree key for address balances storage as u8
 pub const ADDRESS_BALANCES_KEY_U8: u8 = b'm';
 
-/// The subtree key for address balances storage
-pub const COMPACTED_ADDRESS_BALANCES_KEY: &[u8; 1] = b"c";
+/// The subtree key for compacted address balances storage.
+///
+/// Derived from [`COMPACTED_ADDRESS_BALANCES_KEY_U8`] so the `b'c'` byte is
+/// written in exactly one place (the `verify`-available `crate::util::common`)
+/// and the slice form cannot drift from the u8.
+pub const COMPACTED_ADDRESS_BALANCES_KEY: &[u8; 1] = &[COMPACTED_ADDRESS_BALANCES_KEY_U8];
 
 /// The subtree key for compacted address balances storage as u8.
 ///
