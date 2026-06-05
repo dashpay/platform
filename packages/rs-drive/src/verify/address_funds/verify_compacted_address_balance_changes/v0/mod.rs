@@ -1,5 +1,6 @@
 use crate::drive::Drive;
 use crate::drive::RootTree;
+use crate::error::drive::DriveError;
 use crate::error::proof::ProofError;
 use crate::error::Error;
 use crate::verify::RootHash;
@@ -126,19 +127,24 @@ impl Drive {
 
         // Step 3: verify the chained queries. GroveDB enforces that every
         // sub-query binds to the SAME root hash.
-        let (root_hash, mut results) = GroveDb::verify_query_with_chained_path_queries(
+        let (root_hash, results) = GroveDb::verify_query_with_chained_path_queries(
             proof,
             &boundary_query,
             vec![generator],
             &platform_version.drive.grove_version,
         )?;
 
-        // results[0] is the boundary query, results[1] is the forward query.
-        let forward_results = results.pop().ok_or_else(|| {
-            Error::Proof(ProofError::CorruptedProof(
-                "chained verification returned no forward results".to_string(),
-            ))
-        })?;
+        // We pass exactly one chained (forward) generator that always returns
+        // `Some`, so GroveDB returns exactly two result sets: [boundary, forward].
+        // A different cardinality can only be a GroveDB-internal invariant break
+        // (never caller-supplied proof corruption), so classify it as an internal
+        // code-execution error rather than `CorruptedProof`.
+        let [_boundary_results, forward_results]: [Vec<PathKeyOptionalElementTrio>; 2] =
+            results.try_into().map_err(|_| {
+                Error::Drive(DriveError::CorruptedCodeExecution(
+                    "chained verification invariant: expected [boundary, forward] result sets",
+                ))
+            })?;
 
         // Process the verified forward results.
         let mut compacted_changes = Vec::new();
