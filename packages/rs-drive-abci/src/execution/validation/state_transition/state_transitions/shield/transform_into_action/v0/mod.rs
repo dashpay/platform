@@ -5,7 +5,7 @@ use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
 use crate::execution::validation::state_transition::state_transitions::shielded_common::read_pool_total_balance;
-use dpp::address_funds::PlatformAddress;
+use dpp::address_funds::{AddressFundsFeeStrategyStep, PlatformAddress};
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::Credits;
 use dpp::prelude::{AddressNonce, ConsensusValidationResult};
@@ -15,7 +15,7 @@ use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::shielded::shield::ShieldTransitionAction;
 use drive::state_transition_action::StateTransitionAction;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Reallocates the per-input remaining balances so that the TOTAL amount debited
 /// from the source addresses equals exactly `shield_amount` (the value entering the
@@ -42,14 +42,22 @@ use std::collections::BTreeMap;
 ///
 /// # The allocation
 ///
-/// We greedily consume `shield_amount` across the inputs in their natural
-/// `BTreeMap` (address) order — deterministic across all nodes, since `BTreeMap`
-/// iteration order is fully determined by the keys. For each input we recover its
-/// `actual` balance (`remaining_after_full_debit + requested`) and debit at most its
-/// own `requested` (so no input is over-spent beyond what its witness authorized).
-/// The structure validation has already enforced `Σrequested >= shield_amount`, so
-/// the loop always consumes the full `shield_amount`; the trailing assertion is a
-/// defensive, should-be-unreachable guard.
+/// We consume `shield_amount` across the inputs deterministically (so all nodes
+/// agree), in two ordered passes:
+///   1. inputs **not** referenced by the fee strategy, then
+///   2. inputs the fee strategy will deduct the fee from,
+/// each pass in `BTreeMap` (address) order. Consuming the fee-payer input(s) last
+/// leaves them with the maximum residue to cover the fee, so a client that did not
+/// pre-reserve fee headroom on its fee-strategy input is far less likely to be
+/// spuriously rejected for insufficient funds. This ordering does **not** affect
+/// conservation — the total consumed is still exactly `shield_amount`; it only
+/// changes *which* addresses are debited.
+///
+/// For each input we recover its `actual` balance (`remaining_after_full_debit +
+/// requested`) and debit at most its own `requested` (so no input is over-spent
+/// beyond what its witness authorized). The structure validation has already
+/// enforced `Σrequested >= shield_amount`, so the passes always consume the full
+/// `shield_amount`; the trailing check is a defensive, should-be-unreachable guard.
 ///
 /// The remaining `requested - consumed` per input is simply left in the source
 /// address. The existing `PaidFromAddressInputs` fee machinery then deducts the fee
@@ -61,50 +69,75 @@ fn reallocate_inputs_for_shield_amount(
     inputs_with_remaining_balance: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
     shield_amount: Credits,
 ) -> Result<BTreeMap<PlatformAddress, (AddressNonce, Credits)>, Error> {
-    let requested_inputs = match transition {
-        ShieldTransition::V0(v0) => &v0.inputs,
+    let (requested_inputs, fee_strategy) = match transition {
+        ShieldTransition::V0(v0) => (&v0.inputs, &v0.fee_strategy),
     };
+
+    // Identify which input addresses the fee strategy deducts the fee from. A
+    // `DeductFromInput(index)` step refers to the address at that position in the
+    // input set's `BTreeMap` (address) order — the SAME order the fee machinery
+    // (`deduct_fee_from_outputs_or_remaining_balance_of_inputs`) resolves the index
+    // in, because this reallocation never adds or removes addresses. (`ReduceOutput`
+    // is not applicable to shields, which have no outputs.)
+    let input_addresses: Vec<PlatformAddress> =
+        inputs_with_remaining_balance.keys().copied().collect();
+    let mut fee_input_addresses: BTreeSet<PlatformAddress> = BTreeSet::new();
+    for step in fee_strategy {
+        if let AddressFundsFeeStrategyStep::DeductFromInput(index) = step {
+            if let Some(addr) = input_addresses.get(*index as usize) {
+                fee_input_addresses.insert(*addr);
+            }
+        }
+    }
 
     let mut adjusted = BTreeMap::new();
     let mut remaining_to_consume = shield_amount;
 
-    for (addr, (nonce, remaining_after_full_debit)) in inputs_with_remaining_balance {
-        // Look up the per-input max contribution (`requested`) from the transition.
-        let (_input_nonce, requested) = requested_inputs.get(&addr).ok_or_else(|| {
-            Error::Execution(ExecutionError::CorruptedCodeExecution(
-                "shield input address present in remaining balances is missing from transition inputs",
-            ))
-        })?;
-        let requested = *requested;
+    // Pass 1: non-fee-strategy inputs; Pass 2: fee-strategy inputs. Both in
+    // BTreeMap (address) order — fully deterministic.
+    for consume_fee_inputs in [false, true] {
+        for (addr, (nonce, remaining_after_full_debit)) in &inputs_with_remaining_balance {
+            if fee_input_addresses.contains(addr) != consume_fee_inputs {
+                continue;
+            }
 
-        // Recover the address's actual on-chain balance before this shield.
-        // `remaining_after_full_debit == actual - requested`, so `actual` is the sum.
-        let actual = remaining_after_full_debit
-            .checked_add(requested)
-            .ok_or_else(|| {
+            // Look up the per-input max contribution (`requested`) from the transition.
+            let (_input_nonce, requested) = requested_inputs.get(addr).ok_or_else(|| {
+                Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "shield input address present in remaining balances is missing from transition inputs",
+                ))
+            })?;
+            let requested = *requested;
+
+            // Recover the address's actual on-chain balance before this shield.
+            // `remaining_after_full_debit == actual - requested`, so `actual` is the sum.
+            let actual = remaining_after_full_debit
+                .checked_add(requested)
+                .ok_or_else(|| {
+                    Error::Execution(ExecutionError::Overflow(
+                        "overflow recovering actual address balance from shield remaining balance",
+                    ))
+                })?;
+
+            // Consume up to this input's max contribution.
+            let consumed = remaining_to_consume.min(requested);
+            remaining_to_consume -= consumed;
+
+            // `consumed <= requested <= actual`, so this cannot underflow; use checked
+            // arithmetic defensively in case of corrupted state.
+            let new_remaining = actual.checked_sub(consumed).ok_or_else(|| {
                 Error::Execution(ExecutionError::Overflow(
-                    "overflow recovering actual address balance from shield remaining balance",
+                    "underflow computing adjusted shield remaining balance",
                 ))
             })?;
 
-        // Greedily consume up to this input's max contribution.
-        let consumed = remaining_to_consume.min(requested);
-        remaining_to_consume -= consumed;
-
-        // `consumed <= requested <= actual`, so this cannot underflow; use checked
-        // arithmetic defensively in case of corrupted state.
-        let new_remaining = actual.checked_sub(consumed).ok_or_else(|| {
-            Error::Execution(ExecutionError::Overflow(
-                "underflow computing adjusted shield remaining balance",
-            ))
-        })?;
-
-        adjusted.insert(addr, (nonce, new_remaining));
+            adjusted.insert(*addr, (*nonce, new_remaining));
+        }
     }
 
     // Structure validation already enforces `Σrequested >= shield_amount`, so the
-    // greedy loop must have consumed the entire amount. A non-zero remainder would
-    // mean the pool is credited more than the addresses are debited (minting credits),
+    // passes must have consumed the entire amount. A non-zero remainder would mean
+    // the pool is credited more than the addresses are debited (minting credits),
     // so reject defensively. This branch should be unreachable.
     if remaining_to_consume != 0 {
         return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
@@ -241,6 +274,76 @@ mod tests {
         // Total debited across inputs equals exactly shield_amount.
         let total_debited = actual - new_remaining;
         assert_eq!(total_debited, shield_amount);
+    }
+
+    /// Builds a `ShieldTransition` with an explicit fee strategy (the default
+    /// fixture uses an empty strategy).
+    fn shield_transition_with_fee_strategy(
+        inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+        amount: Credits,
+        fee_strategy: Vec<AddressFundsFeeStrategyStep>,
+    ) -> ShieldTransition {
+        ShieldTransition::V0(ShieldTransitionV0 {
+            inputs,
+            actions: vec![],
+            amount,
+            anchor: [0u8; 32],
+            proof: vec![],
+            binding_signature: [0u8; 64],
+            fee_strategy,
+            user_fee_increase: 0,
+            input_witnesses: vec![],
+        })
+    }
+
+    /// The reallocation consumes the shield amount from NON-fee-strategy inputs
+    /// first, so the fee-payer input keeps maximum residue to cover the fee. Here
+    /// input 0 (the fee-strategy input) has `actual == requested == shield_amount`:
+    /// the naive "lowest address first" greedy would drain it to 0 (leaving nothing
+    /// for the fee), but the fee-aware ordering funds the whole amount from input 1
+    /// and leaves input 0 fully intact. Conservation is preserved.
+    #[test]
+    fn test_reallocation_consumes_non_fee_inputs_first() {
+        let addr_a = PlatformAddress::P2pkh([0x01; 20]); // index 0 = fee input
+        let addr_b = PlatformAddress::P2pkh([0x02; 20]); // index 1 = non-fee
+
+        let shield_amount: Credits = 500_000;
+
+        // A: actual == requested == shield_amount (the naive greedy would drain it).
+        let (req_a, actual_a): (Credits, Credits) = (500_000, 500_000);
+        // B: plenty of headroom.
+        let (req_b, actual_b): (Credits, Credits) = (500_000, 1_000_000);
+
+        let mut transition_inputs = BTreeMap::new();
+        transition_inputs.insert(addr_a, (1u32, req_a));
+        transition_inputs.insert(addr_b, (1u32, req_b));
+        // Fee strategy deducts from input 0 (addr_a, the lowest address).
+        let transition = shield_transition_with_fee_strategy(
+            transition_inputs,
+            shield_amount,
+            vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+        );
+
+        let mut remaining = BTreeMap::new();
+        remaining.insert(addr_a, (1u32, actual_a - req_a)); // 0
+        remaining.insert(addr_b, (1u32, actual_b - req_b)); // 500_000
+
+        let adjusted =
+            reallocate_inputs_for_shield_amount(&transition, remaining, shield_amount).unwrap();
+
+        let (_n_a, adj_a) = adjusted.get(&addr_a).copied().unwrap();
+        let (_n_b, adj_b) = adjusted.get(&addr_b).copied().unwrap();
+
+        // The fee-payer input (A) is left fully intact — the amount came from B.
+        assert_eq!(
+            adj_a, actual_a,
+            "fee-strategy input must NOT be drained when a non-fee input can cover the amount"
+        );
+        // Input B funded the whole shield amount.
+        assert_eq!(adj_b, actual_b - shield_amount);
+
+        // Conservation: total debited == shield_amount.
+        assert_eq!((actual_a - adj_a) + (actual_b - adj_b), shield_amount);
     }
 
     /// For multiple inputs, the SUM of (actual - adjusted) across inputs must equal

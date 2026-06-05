@@ -1546,5 +1546,146 @@ mod tests {
                 "shielded pool must gain exactly the shield amount"
             );
         }
+
+        /// Multi-input variant: two funded addresses with Σrequested > amount and a
+        /// fee strategy pointing at input 0. The shield amount is chosen to exceed a
+        /// single input's `requested`, so the reallocation must spill across BOTH
+        /// inputs. Runs the full block pipeline (execute + fee distribution + sum-tree
+        /// validation) and asserts conservation holds with more than one input — the
+        /// path the single-input test cannot exercise.
+        #[tokio::test]
+        async fn test_multi_input_shield_conserves_credits() {
+            let platform_version = PlatformVersion::latest();
+            let mut platform = setup_platform();
+
+            let mut signer = TestAddressSigner::new();
+            let addr_a = signer.add_p2pkh([1u8; 32]);
+            let addr_b = signer.add_p2pkh([2u8; 32]);
+            setup_address_with_balance_and_system_credits(
+                &mut platform,
+                addr_a,
+                0,
+                dash_to_credits!(1.0),
+            );
+            setup_address_with_balance_and_system_credits(
+                &mut platform,
+                addr_b,
+                0,
+                dash_to_credits!(1.0),
+            );
+
+            let credits_before = platform
+                .drive
+                .calculate_total_credits_balance(None, &platform_version.drive)
+                .expect("should calculate total credits before shield");
+            assert!(
+                credits_before
+                    .ok()
+                    .expect("credit balance check should not overflow"),
+                "credits must be balanced before the shield: {}",
+                credits_before
+            );
+
+            // Orchard bundle whose value is large enough that the shield amount spans
+            // both inputs (forces cross-input consumption / spillover).
+            let mut rng = OsRng;
+            let pk = get_proving_key();
+            let sk = SpendingKey::from_bytes([0u8; 32]).unwrap();
+            let fvk = FullViewingKey::from(&sk);
+            let recipient = fvk.address_at(0u32, Scope::External);
+            let anchor = Anchor::empty_tree();
+            let mut builder = Builder::<DashMemo>::new(
+                BundleType::Transactional {
+                    flags: OrchardFlags::SPENDS_DISABLED,
+                    bundle_required: false,
+                },
+                anchor,
+            );
+            let shield_value = 15_000_000_000u64; // 0.15 DASH
+            builder
+                .add_output(
+                    None,
+                    recipient,
+                    NoteValue::from_raw(shield_value),
+                    [0u8; 36],
+                )
+                .unwrap();
+            let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
+            let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
+            let sighash = compute_platform_sighash(&bundle_commitment, &[]);
+            let proven = unauthorized.create_proof(pk, &mut rng).unwrap();
+            let bundle = proven.apply_signatures(rng, sighash, &[]).unwrap();
+            let (actions, _flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
+                serialize_authorized_bundle_with_flags(&bundle);
+            assert!(value_balance < 0);
+            let shield_amount = (-value_balance) as u64;
+
+            // Each input contributes up to 0.1 DASH. Σrequested = 0.2 DASH > amount,
+            // and amount (0.15) exceeds a single input's requested (0.1), so the
+            // reallocation must consume from both inputs.
+            let requested = dash_to_credits!(0.1);
+            assert!(
+                requested < shield_amount,
+                "amount must span more than one input"
+            );
+            assert!(requested * 2 > shield_amount, "Σinputs must exceed amount");
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(addr_a, (1 as AddressNonce, requested));
+            inputs.insert(addr_b, (1 as AddressNonce, requested));
+
+            let mut st = StateTransition::Shield(ShieldTransition::V0(ShieldTransitionV0 {
+                inputs: inputs.clone(),
+                actions,
+                amount: shield_amount,
+                anchor: anchor_bytes,
+                proof: proof_bytes,
+                binding_signature: binding_sig,
+                fee_strategy: AddressFundsFeeStrategy::from(vec![
+                    AddressFundsFeeStrategyStep::DeductFromInput(0),
+                ]),
+                user_fee_increase: 0,
+                input_witnesses: vec![],
+            }));
+
+            let signable_bytes = st.signable_bytes().expect("should compute signable bytes");
+            let mut witnesses: Vec<AddressWitness> = Vec::with_capacity(inputs.len());
+            for address in inputs.keys() {
+                let witness = signer
+                    .sign_create_witness(address, &signable_bytes)
+                    .await
+                    .expect("should sign");
+                witnesses.push(witness);
+            }
+            if let StateTransition::Shield(ShieldTransition::V0(ref mut v0)) = st {
+                v0.input_witnesses = witnesses;
+            }
+
+            let platform_state = platform.state.load();
+            let (_fee_results, _processed_block_fees) =
+                process_state_transitions(&platform, &[st], BlockInfo::default(), &platform_state);
+
+            let credits_after = platform
+                .drive
+                .calculate_total_credits_balance(None, &platform_version.drive)
+                .expect("should calculate total credits after shield");
+            assert!(
+                credits_after
+                    .ok()
+                    .expect("credit balance check should not overflow"),
+                "credits must remain balanced after a multi-input shield: {}",
+                credits_after
+            );
+            assert_eq!(
+                credits_after.total_credits_in_platform, credits_before.total_credits_in_platform,
+                "shield must not change total platform credits"
+            );
+            assert_eq!(
+                credits_after.total_in_shielded_balances
+                    - credits_before.total_in_shielded_balances,
+                shield_amount as i64,
+                "shielded pool must gain exactly the shield amount"
+            );
+        }
     }
 }
