@@ -162,8 +162,8 @@ public class ManagedCoreWallet {
         return Data(bytes: ptr, count: Int(txLen))
     }
 
-    /// Sweep the entire spendable balance of the wallet's CoinJoin account
-    /// into a single output to `destination`, leaving no change so the
+    /// Sweep the entire spendable balance of the wallet's CoinJoin account to
+    /// `destination` across one or more transactions, leaving no change so the
     /// account is fully emptied.
     ///
     /// CoinJoin "mixed coins" live on a dedicated account (BIP44 purpose 4')
@@ -171,14 +171,17 @@ public class ManagedCoreWallet {
     /// reach. Used by the DashSync → SwiftDashSDK migration to move a user's
     /// mixed coins (no longer supported) into their spendable balance.
     ///
-    /// Returns the serialized signed transaction (already broadcast by the
-    /// FFI), mirroring `sendToAddresses`.
+    /// A heavy mixer's UTXO set can exceed a single transaction's relay-size
+    /// limit, so the sweep is split into balanced chunks. Returns the
+    /// **wire-order** txids of the broadcast transactions (already broadcast by
+    /// the FFI), in chunk order — the caller records them to group the
+    /// resulting withdrawals.
     public func sweepCoinJoinAccount(
         accountIndex: UInt32 = 0,
         destination: String
-    ) throws -> Data {
-        var txBytesPtr: UnsafeMutablePointer<UInt8>? = nil
-        var txLen: UInt = 0
+    ) throws -> [Data] {
+        var txidsPtr: UnsafeMutablePointer<UInt8>? = nil
+        var count: UInt = 0
 
         // Single owned recipient string; the resolver-backed signer owns
         // mnemonic access for the lifetime of the call (same model as
@@ -192,18 +195,24 @@ public class ManagedCoreWallet {
                     accountIndex,
                     destPtr,
                     resolver.handle,
-                    &txBytesPtr,
-                    &txLen
+                    &txidsPtr,
+                    &count
                 ).check()
             }
         }
 
-        guard let ptr = txBytesPtr, txLen > 0 else {
-            throw PlatformWalletError.unknown("FFI returned success but tx buffer was empty")
+        guard let ptr = txidsPtr, count > 0 else {
+            throw PlatformWalletError.unknown("FFI returned success but txid buffer was empty")
         }
-        defer { core_wallet_free_tx_bytes(ptr, txLen) }
+        // One contiguous `count * 32` byte buffer; free it as a single block.
+        let byteCount = Int(count) * 32
+        defer { core_wallet_free_tx_bytes(ptr, UInt(byteCount)) }
 
-        return Data(bytes: ptr, count: Int(txLen))
+        // Split into individual 32-byte wire-order txids (chunk order).
+        let allBytes = Data(bytes: ptr, count: byteCount)
+        return (0..<Int(count)).map { i in
+            allBytes.subdata(in: (i * 32)..<((i + 1) * 32))
+        }
     }
 
     /// Widen the wallet's CoinJoin account address gap limit to `gapLimit` and

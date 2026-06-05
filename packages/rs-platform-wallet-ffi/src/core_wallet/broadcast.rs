@@ -128,8 +128,8 @@ pub unsafe extern "C" fn core_wallet_send_to_addresses(
 }
 
 /// Sweep the entire spendable balance of the wallet's CoinJoin account
-/// (BIP44 purpose 4') into a single output to `dest_address`, leaving no
-/// change so the account is fully emptied.
+/// (BIP44 purpose 4') to `dest_address` across one or more transactions,
+/// leaving no change so the account is fully emptied.
 ///
 /// CoinJoin "mixed coins" live on a dedicated account that
 /// [`core_wallet_send_to_addresses`] cannot reach (it only handles
@@ -138,8 +138,14 @@ pub unsafe extern "C" fn core_wallet_send_to_addresses(
 /// their spendable balance. Uses the same external mnemonic-resolver
 /// signer model as [`core_wallet_send_to_addresses`].
 ///
-/// On success, `out_tx_bytes`/`out_tx_len` receive the serialized signed
-/// transaction; free it with [`core_wallet_free_tx_bytes`].
+/// The sweep is split into one or more transactions because a heavy mixer's
+/// UTXO set can exceed a single transaction's relay-size limit. On success,
+/// `out_txids` receives a heap buffer of `*out_count` consecutive 32-byte
+/// transaction ids in **wire order** (Dash Core's internal orientation — the
+/// reverse of the hex shown in block explorers), in chunk order. Free the
+/// buffer with [`core_wallet_free_tx_bytes`], passing `*out_count * 32` as the
+/// length. The serialized transactions themselves are not returned — the
+/// caller only needs the ids (to group the resulting withdrawals).
 ///
 /// # Safety
 /// - `dest_address` must be a valid NUL-terminated C string.
@@ -151,13 +157,13 @@ pub unsafe extern "C" fn core_wallet_sweep_coinjoin(
     account_index: u32,
     dest_address: *const c_char,
     core_signer_handle: *mut MnemonicResolverHandle,
-    out_tx_bytes: *mut *mut u8,
-    out_tx_len: *mut usize,
+    out_txids: *mut *mut u8,
+    out_count: *mut usize,
 ) -> PlatformWalletFFIResult {
     check_ptr!(dest_address);
     check_ptr!(core_signer_handle);
-    check_ptr!(out_tx_bytes);
-    check_ptr!(out_tx_len);
+    check_ptr!(out_txids);
+    check_ptr!(out_count);
 
     let dest_str = unwrap_result_or_return!(std::ffi::CStr::from_ptr(dest_address).to_str());
     let dest = unwrap_result_or_return!(dashcore::Address::from_str(dest_str)).assume_checked();
@@ -181,12 +187,23 @@ pub unsafe extern "C" fn core_wallet_sweep_coinjoin(
         runtime().block_on(wallet.sweep_coinjoin_to_address(account_index, dest, &signer))
     });
     let result = unwrap_option_or_return!(option);
-    let tx = unwrap_result_or_return!(result);
-    let serialized = dashcore::consensus::serialize(&tx);
-    let len = serialized.len();
-    let boxed = serialized.into_boxed_slice();
-    *out_tx_bytes = Box::into_raw(boxed) as *mut u8;
-    *out_tx_len = len;
+    let txs = unwrap_result_or_return!(result);
+
+    // Emit the chunks' txids as a contiguous `count * 32` byte buffer in wire
+    // order (`Txid::as_byte_array`) — the orientation the app records and
+    // groups withdrawals by. Free with `core_wallet_free_tx_bytes(ptr,
+    // count * 32)`. `txs` is never empty here (the core sweep errors if no
+    // transaction broadcast), so `out_count >= 1` on success.
+    use dashcore::hashes::Hash; // brings `Txid::as_byte_array` into scope
+    let count = txs.len();
+    let mut buf: Vec<u8> = Vec::with_capacity(count * 32);
+    for tx in &txs {
+        let txid = tx.txid();
+        buf.extend_from_slice(txid.as_byte_array());
+    }
+    let boxed = buf.into_boxed_slice();
+    *out_txids = Box::into_raw(boxed) as *mut u8;
+    *out_count = count;
     PlatformWalletFFIResult::ok()
 }
 
