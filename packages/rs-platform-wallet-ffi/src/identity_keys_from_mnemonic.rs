@@ -17,6 +17,42 @@ use crate::identity_registration_with_signer::IdentityRegistrationKeyDerivations
 use crate::types::{FFINetwork, Network};
 use crate::{check_ptr, unwrap_result_or_return};
 
+/// Reclaim a single derived row's heap allocations and scrub the
+/// sensitive private-key material it carried.
+///
+/// Shared by both the mid-loop cleanup closure (when a later
+/// derivation fails and the partially-built rows must be released)
+/// and the public
+/// [`dash_sdk_derive_identity_keys_from_mnemonic_free`] entry point,
+/// so neither path can drift from the other. The WIF string holds
+/// the private key in human-readable form, so its backing bytes are
+/// zeroized before the allocation is released; the inline 32-byte
+/// ECDSA scalar is zeroized in place. Owned pointers are nulled so a
+/// second release no-ops (double-free idempotency).
+///
+/// # Safety
+/// `row`'s `derivation_path` / `private_key_wif` (if non-null) must
+/// have come from `CString::into_raw`, and `public_key` (if non-null,
+/// with `public_key_len > 0`) from a leaked `Box<[u8]>`/`Vec<u8>`.
+/// Must be the sole release of these allocations.
+pub(crate) unsafe fn zeroize_and_free_row(row: &mut IdentityKeyPreviewFFI) {
+    if !row.derivation_path.is_null() {
+        let _ = CString::from_raw(row.derivation_path);
+        row.derivation_path = std::ptr::null_mut();
+    }
+    if !row.public_key.is_null() && row.public_key_len > 0 {
+        let _ = Vec::from_raw_parts(row.public_key, row.public_key_len, row.public_key_len);
+        row.public_key = std::ptr::null_mut();
+        row.public_key_len = 0;
+    }
+    if !row.private_key_wif.is_null() {
+        let mut wif = CString::from_raw(row.private_key_wif).into_bytes_with_nul();
+        zeroize::Zeroize::zeroize(&mut wif);
+        row.private_key_wif = std::ptr::null_mut();
+    }
+    zeroize::Zeroize::zeroize(&mut row.private_key_bytes);
+}
+
 /// Parse a BIP-39 mnemonic against every supported wordlist.
 pub(crate) fn parse_mnemonic_any_language(phrase: &str) -> Result<Mnemonic, &'static str> {
     const LANGUAGES: [Language; 10] = [
@@ -104,17 +140,12 @@ pub unsafe extern "C" fn dash_sdk_derive_identity_keys_from_mnemonic(
 
     let mut rows: Vec<IdentityKeyPreviewFFI> = Vec::with_capacity(key_count as usize);
 
-    let cleanup = |rows: Vec<IdentityKeyPreviewFFI>| {
-        for row in rows {
-            if !row.derivation_path.is_null() {
-                let _ = CString::from_raw(row.derivation_path);
-            }
-            if !row.public_key.is_null() && row.public_key_len > 0 {
-                let _ = Vec::from_raw_parts(row.public_key, row.public_key_len, row.public_key_len);
-            }
-            if !row.private_key_wif.is_null() {
-                let _ = CString::from_raw(row.private_key_wif);
-            }
+    let cleanup = |mut rows: Vec<IdentityKeyPreviewFFI>| {
+        for row in &mut rows {
+            // Route through the shared helper so the cleanup path
+            // scrubs the WIF + raw scalar exactly like the public
+            // `_free` entry point does — no divergence.
+            zeroize_and_free_row(row);
         }
     };
 
@@ -227,18 +258,7 @@ pub unsafe extern "C" fn dash_sdk_derive_identity_keys_from_mnemonic_free(
     }
     let slice = std::slice::from_raw_parts_mut(owned.items, owned.count);
     for row in slice.iter_mut() {
-        if !row.derivation_path.is_null() {
-            let _ = CString::from_raw(row.derivation_path);
-        }
-        if !row.public_key.is_null() && row.public_key_len > 0 {
-            let _ = Vec::from_raw_parts(row.public_key, row.public_key_len, row.public_key_len);
-        }
-        if !row.private_key_wif.is_null() {
-            let mut wif = CString::from_raw(row.private_key_wif).into_bytes_with_nul();
-            zeroize::Zeroize::zeroize(&mut wif);
-            row.private_key_wif = std::ptr::null_mut();
-        }
-        zeroize::Zeroize::zeroize(&mut row.private_key_bytes);
+        zeroize_and_free_row(row);
     }
     let _ = Box::from_raw(slice as *mut [IdentityKeyPreviewFFI]);
 }
