@@ -70,16 +70,12 @@ describe('WasmSdkBuilder', () => {
     });
 
     describe('network validation', () => {
-      it('should reject devnet', async () => {
-        try {
-          sdk.WasmSdkBuilder.withAddresses(
-            [TEST_ADDRESS_1],
-            'devnet',
-          );
-          expect.fail('Should have thrown error for devnet');
-        } catch (error) {
-          expect(error.message).to.include('mainnet, testnet or local');
-        }
+      it('should accept devnet', () => {
+        const builder = sdk.WasmSdkBuilder.withAddresses(
+          [TEST_ADDRESS_1],
+          'devnet',
+        );
+        expect(builder).to.be.an.instanceof(sdk.WasmSdkBuilder);
       });
 
       it('should reject invalid network name', async () => {
@@ -90,7 +86,7 @@ describe('WasmSdkBuilder', () => {
           );
           expect.fail('Should have thrown error for invalid network');
         } catch (error) {
-          expect(error.message).to.include('mainnet, testnet or local');
+          expect(error.message).to.include('mainnet, testnet, devnet, or local');
         }
       });
 

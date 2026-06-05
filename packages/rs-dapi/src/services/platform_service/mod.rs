@@ -344,6 +344,12 @@ impl Platform for PlatformServiceImpl {
         dapi_grpc::platform::v0::GetDocumentsResponse
     );
 
+    drive_method!(
+        get_document_history,
+        dapi_grpc::platform::v0::GetDocumentHistoryRequest,
+        dapi_grpc::platform::v0::GetDocumentHistoryResponse
+    );
+
     // System methods
     drive_method!(
         get_consensus_params,
@@ -579,6 +585,12 @@ impl Platform for PlatformServiceImpl {
         get_shielded_pool_state,
         dapi_grpc::platform::v0::GetShieldedPoolStateRequest,
         dapi_grpc::platform::v0::GetShieldedPoolStateResponse
+    );
+
+    drive_method!(
+        get_shielded_notes_count,
+        dapi_grpc::platform::v0::GetShieldedNotesCountRequest,
+        dapi_grpc::platform::v0::GetShieldedNotesCountResponse
     );
 
     drive_method!(

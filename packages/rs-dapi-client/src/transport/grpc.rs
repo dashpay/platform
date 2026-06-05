@@ -230,6 +230,14 @@ impl_transport_request_grpc!(
 );
 
 impl_transport_request_grpc!(
+    platform_proto::GetDocumentHistoryRequest,
+    platform_proto::GetDocumentHistoryResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_document_history
+);
+
+impl_transport_request_grpc!(
     platform_proto::BroadcastStateTransitionRequest,
     platform_proto::BroadcastStateTransitionResponse,
     PlatformGrpcClient,
@@ -486,6 +494,15 @@ impl_transport_request_grpc!(
     PlatformGrpcClient,
     RequestSettings::default(),
     get_shielded_pool_state
+);
+
+// rpc getShieldedNotesCount(GetShieldedNotesCountRequest) returns (GetShieldedNotesCountResponse);
+impl_transport_request_grpc!(
+    platform_proto::GetShieldedNotesCountRequest,
+    platform_proto::GetShieldedNotesCountResponse,
+    PlatformGrpcClient,
+    RequestSettings::default(),
+    get_shielded_notes_count
 );
 
 // rpc getShieldedNullifiers(GetShieldedNullifiersRequest) returns (GetShieldedNullifiersResponse);

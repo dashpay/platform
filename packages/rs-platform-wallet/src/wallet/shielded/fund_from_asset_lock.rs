@@ -1,0 +1,550 @@
+//! Orchestrated shielded funding from a Core asset lock.
+//!
+//! Mirrors `wallet/platform_addresses/fund_from_asset_lock.rs` but
+//! credits the *shielded* pool (Type 18 `ShieldFromAssetLock`) instead
+//! of platform addresses (Type 14 `AddressFundingFromAssetLock`).
+//!
+//! ## Pipeline
+//!
+//! 1. **Pre-flight** — exactly-one recipient today (the multi-shape
+//!    `Vec<(OrchardAddress, Credits)>` API is in place so the caller
+//!    signature doesn't change when DPP grows multi-output Orchard
+//!    bundles for Type 18; see [`validate_shielded_recipients`]).
+//! 2. **Resolve funding** — delegate to the shared
+//!    [`AssetLockManager::resolve_funding_with_is_timeout_fallback`].
+//! 3. **Submit** — wrap the build-and-broadcast in
+//!    `submit_with_cl_height_retry`; the build uses the new
+//!    [`build_shield_from_asset_lock_transition_with_signer`] so the
+//!    asset-lock-proof signature is routed through the external
+//!    `key_wallet::signer::Signer` (the host never sees the raw key).
+//!    IS→CL fallback fires on Platform-side IS rejection
+//!    (`is_instant_lock_proof_invalid`).
+//! 4. **Consume lock** — terminal `consume_asset_lock` on the tracked
+//!    outpoint. Notes themselves arrive via the next shielded sync;
+//!    the shielded changeset doesn't materialise post-submit the way
+//!    the address-funding `AddressInfos` does.
+
+use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
+use dash_sdk::platform::transition::put_settings::PutSettings;
+use dpp::address_funds::OrchardAddress;
+use dpp::balances::credits::CREDITS_PER_DUFF;
+use dpp::fee::Credits;
+use dpp::prelude::AssetLockProof;
+use dpp::shielded::builder::{build_shield_from_asset_lock_transition_with_signer, OrchardProver};
+use dpp::state_transition::proof_result::StateTransitionProofResult;
+use key_wallet::wallet::managed_wallet_info::asset_lock_builder::AssetLockFundingType;
+
+use crate::wallet::asset_lock::tracked::TrackedAssetLock;
+
+use crate::error::is_instant_lock_proof_invalid;
+use crate::wallet::asset_lock::orchestration::{
+    out_point_from_proof, submit_with_cl_height_retry, AssetLockFunding, FundingResolution,
+    ResolvedFunding, CL_FALLBACK_TIMEOUT,
+};
+use crate::wallet::PlatformWallet;
+use crate::PlatformWalletError;
+
+impl PlatformWallet {
+    /// Fund the shielded pool from a Core L1 asset lock, with the
+    /// asset-lock proof signed by an external
+    /// `key_wallet::signer::Signer` (atomic derive + sign + zeroise
+    /// inside the signer's trust boundary).
+    ///
+    /// # Arguments
+    ///
+    /// * `funding` — How to source the asset lock. `FromWalletBalance`
+    ///   builds a fresh asset lock from Core UTXOs; `FromExistingAssetLock`
+    ///   resumes from a tracked outpoint (after relaunch or a stuck
+    ///   broadcast).
+    /// * `recipients` — Recipient list, shape
+    ///   `Vec<(OrchardAddress, Option<Credits>)>` mirroring the
+    ///   platform-address Type 14 API. Today the pre-flight enforces
+    ///   exactly one recipient with `None` credits — that recipient
+    ///   receives the lock value minus the protocol minimum fee
+    ///   (`required_asset_lock_duff_balance_for_processing_start_for_address_funding`).
+    ///
+    ///   When DPP grows multi-output Orchard bundles for Type 18,
+    ///   `Some(_)` values will be honored (explicit credit amounts
+    ///   pass through; the single `None` bucket — if any — receives
+    ///   the residual). Keeping the multi-shape signature now means
+    ///   no caller migration is needed at that point.
+    ///
+    ///   Unlike Type 14, Type 18 has no protocol-side
+    ///   `AddressFundsFeeStrategy` — the Orchard `value_balance`
+    ///   (= recipient credits) is baked into the Halo 2 proof at
+    ///   build time. The wallet handles the math here so callers
+    ///   don't have to know about protocol-level fee constants.
+    /// * `asset_lock_signer` — External signer for the outer ECDSA
+    ///   signature on the state transition. The raw key never crosses
+    ///   the FFI boundary.
+    /// * `prover` — Orchard prover (holds the Halo 2 proving key).
+    /// * `settings` — Optional `PutSettings`; `user_fee_increase` is
+    ///   bumped by the CL-height retry wrapper on consensus 10506.
+    #[cfg(feature = "shielded")]
+    pub async fn shielded_fund_from_asset_lock<AS, P>(
+        &self,
+        funding: AssetLockFunding,
+        recipients: Vec<(OrchardAddress, Option<Credits>)>,
+        asset_lock_signer: &AS,
+        prover: P,
+        settings: Option<PutSettings>,
+    ) -> Result<(), PlatformWalletError>
+    where
+        AS: ::key_wallet::signer::Signer + Send + Sync,
+        P: OrchardProver,
+    {
+        // Step 1: pre-flight. Failing fast here avoids broadcasting
+        // an unfundable asset-lock tx (or paying for an Orchard proof
+        // build, ~30s, only to reject downstream).
+        validate_shielded_recipients(&recipients)?;
+
+        // Pre-broadcast sizing guard for the `FromWalletBalance` path:
+        // refuse to build an L1 asset-lock that can't even cover the
+        // protocol min-fee for Type 18. Without this check the lock
+        // gets broadcast in Step 2, then Step 3's `checked_sub`
+        // underflows and we return an error with the L1 outpoint
+        // already on-chain — a Resume on the orphaned lock
+        // deterministically hits the same underflow, so the funds
+        // can't be recovered through this code path.
+        //
+        // The Step 3 check (after `resolve_funding_*`) is still the
+        // authoritative safety net for the `FromExistingAssetLock`
+        // resume path, where the lock is already on-chain and the
+        // sizing decision was made by a prior caller. Here we only
+        // protect the fresh-build path.
+        if let AssetLockFunding::FromWalletBalance { amount_duffs, .. } = &funding {
+            let lock_credits = (*amount_duffs)
+                .checked_mul(CREDITS_PER_DUFF)
+                .ok_or_else(|| {
+                    PlatformWalletError::ShieldedBuildError(format!(
+                        "asset lock amount overflows credits conversion ({amount_duffs} duffs * \
+                     {CREDITS_PER_DUFF} credits/duff > u64::MAX)"
+                    ))
+                })?;
+            let min_fee_credits = self.shield_from_asset_lock_min_fee()?;
+            if lock_credits <= min_fee_credits {
+                return Err(PlatformWalletError::ShieldedBuildError(format!(
+                    "asset lock ({lock_credits} credits, from {amount_duffs} duffs) is at or \
+                     below the protocol min fee ({min_fee_credits} credits) — refusing to \
+                     broadcast a single-use L1 outpoint that would be unrecoverable on resume"
+                )));
+            }
+        }
+
+        // Single-flight: serialise shield-class operations on this
+        // wallet so two concurrent calls can't race the asset-lock
+        // tracker into a half-consumed state.
+        let _shield_guard = self.shield_guard.lock().await;
+
+        // Step 2: resolve funding. `AssetLockShieldedAddressTopUp`
+        // selects the BIP44 funding family dedicated to shielded
+        // top-ups (`accounts.asset_lock_shielded_address_topup` —
+        // distinct from the platform-address bucket Type 14 uses);
+        // see `wallet/asset_lock/build.rs` for the source-account
+        // selection, `sync/recovery.rs` for resume-time key re-
+        // derivation, and `manager/accessors.rs` for the
+        // persistence/UI tag (`fundingTypeRaw == 5`).
+        // `destination_index = 0` is unused for this funding type.
+        let ResolvedFunding {
+            proof,
+            path,
+            tracked_out_point,
+        } = match self
+            .asset_locks
+            .resolve_funding_with_is_timeout_fallback(
+                funding,
+                AssetLockFundingType::AssetLockShieldedAddressTopUp,
+                /* destination_index */ 0,
+                asset_lock_signer,
+            )
+            .await?
+        {
+            FundingResolution::Resolved(rf) => rf,
+            FundingResolution::IsTimeout { out_point } => {
+                tracing::warn!(
+                    "IS-lock did not propagate within 300s for shielded fund-from-asset-lock \
+                     (tx {}), falling back to ChainLock proof",
+                    out_point.txid
+                );
+                let chain_proof = self
+                    .asset_locks
+                    .upgrade_to_chain_lock_proof(&out_point, CL_FALLBACK_TIMEOUT)
+                    .await?;
+                let (_, path) = self
+                    .asset_locks
+                    .resume_asset_lock(&out_point, CL_FALLBACK_TIMEOUT)
+                    .await?;
+                ResolvedFunding {
+                    proof: chain_proof,
+                    path,
+                    tracked_out_point: Some(out_point),
+                }
+            }
+        };
+
+        // Step 3: derive `shield_amount` from the asset-lock value.
+        //
+        // Unlike Type 14 (where Platform deducts the fee inside the
+        // transition via `AddressFundsFeeStrategy`), Type 18 bakes
+        // the Orchard `value_balance` into the Halo 2 proof at build
+        // time — someone *has* to know the precise number before
+        // signing. The wallet is the right place: it already has the
+        // lock value (from the IS proof's TxOut, or from the asset-
+        // lock manager's tracked row for CL-only paths) and the
+        // protocol min-fee constant (from `PlatformVersion`).
+        //
+        // Single-recipient + `None` semantics today: the recipient
+        // receives `lock_value - min_fee`. Future multi-recipient
+        // would honor `Some(_)` values explicitly and route the
+        // residual to the (sole) `None` bucket; the preflight will
+        // change in lockstep with the DPP-side multi-output bundle
+        // builder.
+        let asset_lock_value_credits =
+            lookup_asset_lock_value_credits(self, &proof, tracked_out_point.as_ref()).await?;
+        let min_fee_credits = self.shield_from_asset_lock_min_fee()?;
+        let shield_amount = asset_lock_value_credits
+            .checked_sub(min_fee_credits)
+            .ok_or_else(|| {
+                PlatformWalletError::ShieldedBuildError(format!(
+                    "asset lock value ({asset_lock_value_credits} credits) is below the \
+                     minimum required fee ({min_fee_credits} credits) for ShieldFromAssetLock"
+                ))
+            })?;
+        if shield_amount == 0 {
+            return Err(PlatformWalletError::ShieldedBuildError(
+                "shield amount after fee is zero".to_string(),
+            ));
+        }
+        let (recipient, _) = *recipients.first().expect("preflight enforces len() == 1");
+
+        // Step 4: submit. Two Platform-side fallback layers — matching
+        // the address-funding sibling: CL-height-too-low retries bump
+        // `user_fee_increase` (bypasses Tenderdash's invalid-tx hash
+        // cache) and IS-lock rejection triggers an IS→CL upgrade on
+        // the same outpoint.
+        //
+        // Subtle: `ShieldFromAssetLockTransition::set_user_fee_increase`
+        // is a no-op (pinned at `state_transition::mod`'s
+        // `test_shield_from_asset_lock_user_fee_increase_is_zero_and_setter_noop`),
+        // so the wrapper's bump cannot directly diversify the ST hash
+        // here the way it does for address-funding. Retries still avoid
+        // Tenderdash's invalid-tx cache because `build_output_only_bundle`
+        // draws fresh randomness from `OsRng` on every call
+        // (`packages/rs-dpp/src/shielded/builder/mod.rs`), so a re-built
+        // bundle has a different Halo 2 proof and therefore a different
+        // signable hash. If the prover is ever made deterministic for
+        // reproducibility, this orchestration would need an explicit
+        // diversifier (e.g. a memo-derived bump) to keep CL-height
+        // retries from silently degrading into duplicate-hash submits.
+        let proof_out_point = out_point_from_proof(&proof);
+        let sdk = self.sdk.clone();
+        match submit_with_cl_height_retry(settings, |s| {
+            build_and_broadcast_shielded(
+                sdk.clone(),
+                recipient,
+                shield_amount,
+                proof.clone(),
+                path.clone(),
+                asset_lock_signer,
+                &prover,
+                s,
+            )
+        })
+        .await
+        {
+            Ok(()) => {}
+            Err(e) if is_instant_lock_proof_invalid(&e) => {
+                let out_point = proof_out_point;
+                tracing::warn!(
+                    "IS-lock proof rejected by Platform for shielded fund-from-asset-lock \
+                     (tx {}), retrying with ChainLock proof",
+                    out_point.txid
+                );
+                let chain_proof = self
+                    .asset_locks
+                    .upgrade_to_chain_lock_proof(&out_point, CL_FALLBACK_TIMEOUT)
+                    .await?;
+                let cs = self
+                    .asset_locks
+                    .advance_asset_lock_status(
+                        &out_point,
+                        crate::wallet::asset_lock::tracked::AssetLockStatus::ChainLocked,
+                        Some(chain_proof.clone()),
+                    )
+                    .await?;
+                self.asset_locks.queue_asset_lock_changeset(cs);
+                submit_with_cl_height_retry(settings, |s| {
+                    build_and_broadcast_shielded(
+                        sdk.clone(),
+                        recipient,
+                        shield_amount,
+                        chain_proof.clone(),
+                        path.clone(),
+                        asset_lock_signer,
+                        &prover,
+                        s,
+                    )
+                })
+                .await
+                .map_err(PlatformWalletError::Sdk)?;
+            }
+            Err(e) => return Err(PlatformWalletError::Sdk(e)),
+        }
+
+        // Step 5: cleanup. Consume the tracked asset lock. The
+        // shielded note itself arrives via the next sync — there's
+        // no immediate balance changeset to persist (unlike
+        // address-funding, which writes proof-attested balances back
+        // into `ManagedPlatformAccount`).
+        if let Some(out_point) = tracked_out_point {
+            // Platform DID accept the shield ST — propagating an Err
+            // here would misreport the protocol outcome. The lock row
+            // stays non-Consumed and surfaces in the Resumable
+            // Funding list; a user Resume on it would be
+            // deterministically rejected by Platform with "lock
+            // already consumed". Log so it's visible.
+            if let Err(e) = self.asset_locks.consume_asset_lock(&out_point).await {
+                match &e {
+                    PlatformWalletError::WalletNotFound(_) => {
+                        tracing::warn!(
+                            outpoint = %out_point,
+                            error = %e,
+                            "consume_asset_lock: wallet handle vanished after successful shielded submit"
+                        );
+                    }
+                    _ => {
+                        tracing::error!(
+                            outpoint = %out_point,
+                            error = %e,
+                            "consume_asset_lock failed unexpectedly after successful shielded submit; \
+                             the lock row stays non-Consumed and will surface as Resumable. \
+                             A user Resume on it will be rejected by Platform with 'lock already consumed'."
+                        );
+                    }
+                }
+            }
+        }
+
+        tracing::info!(
+            shield_amount,
+            asset_lock_value_credits,
+            min_fee_credits,
+            "Shielded fund-from-asset-lock succeeded"
+        );
+
+        Ok(())
+    }
+
+    /// Minimum fee for a `ShieldFromAssetLock` (Type 18) state
+    /// transition, in credits. Read from
+    /// `dpp.state_transitions.identities.asset_locks` — the same
+    /// constant Type 14 (address funding) and Platform's
+    /// `StateTransitionEstimatedFeeValidation` use for Type 18.
+    fn shield_from_asset_lock_min_fee(&self) -> Result<Credits, PlatformWalletError> {
+        let pv = self.sdk.version();
+        let min_fee_duffs = pv
+            .dpp
+            .state_transitions
+            .identities
+            .asset_locks
+            .required_asset_lock_duff_balance_for_processing_start_for_address_funding;
+        min_fee_duffs.checked_mul(CREDITS_PER_DUFF).ok_or_else(|| {
+            PlatformWalletError::ShieldedBuildError(format!(
+                "protocol min-fee constant overflowed credits conversion \
+                 ({min_fee_duffs} duffs * {CREDITS_PER_DUFF} credits/duff > u64::MAX)"
+            ))
+        })
+    }
+}
+
+/// Look up the asset-lock value in credits.
+///
+/// Preference order:
+/// 1. If the proof is `Instant`, read directly from
+///    `InstantAssetLockProof::output().value` — no manager lookup
+///    needed.
+/// 2. Otherwise (the IS-timeout-fallback path produced a CL proof
+///    that doesn't carry the tx output), look up the tracked
+///    asset-lock row by outpoint.
+async fn lookup_asset_lock_value_credits(
+    wallet: &PlatformWallet,
+    proof: &AssetLockProof,
+    tracked_out_point: Option<&dashcore::OutPoint>,
+) -> Result<Credits, PlatformWalletError> {
+    let duffs = match proof {
+        AssetLockProof::Instant(is) => {
+            let out = is.output().ok_or_else(|| {
+                PlatformWalletError::AddressSync(
+                    "InstantAssetLockProof has no output at the indicated index".to_string(),
+                )
+            })?;
+            out.value
+        }
+        AssetLockProof::Chain(_) => {
+            let op = tracked_out_point.ok_or_else(|| {
+                PlatformWalletError::AddressSync(
+                    "ChainAssetLockProof but no tracked outpoint to look up value".to_string(),
+                )
+            })?;
+            let locks: Vec<TrackedAssetLock> = wallet.asset_locks.list_tracked_locks().await;
+            locks
+                .iter()
+                .find(|l| l.out_point == *op)
+                .map(|l| l.amount)
+                .ok_or_else(|| {
+                    PlatformWalletError::AddressSync(format!(
+                        "tracked asset lock {} not found in manager",
+                        op
+                    ))
+                })?
+        }
+    };
+    duffs.checked_mul(CREDITS_PER_DUFF).ok_or_else(|| {
+        PlatformWalletError::ShieldedBuildError(format!(
+            "asset lock value ({duffs} duffs * {CREDITS_PER_DUFF} credits/duff > u64::MAX)"
+        ))
+    })
+}
+
+/// Build the Type 18 transition and broadcast-and-wait.
+///
+/// Extracted so `submit_with_cl_height_retry`'s closure stays compact
+/// and the IS→CL fallback path can re-call it with the upgraded proof.
+#[allow(clippy::too_many_arguments)]
+async fn build_and_broadcast_shielded<AS, P>(
+    sdk: std::sync::Arc<dash_sdk::Sdk>,
+    recipient: OrchardAddress,
+    shield_amount: Credits,
+    proof: AssetLockProof,
+    path: ::key_wallet::bip32::DerivationPath,
+    asset_lock_signer: &AS,
+    prover: &P,
+    settings: Option<PutSettings>,
+) -> Result<(), dash_sdk::Error>
+where
+    AS: ::key_wallet::signer::Signer,
+    P: OrchardProver,
+{
+    let st = build_shield_from_asset_lock_transition_with_signer(
+        &recipient,
+        shield_amount,
+        proof,
+        &path,
+        asset_lock_signer,
+        prover,
+        [0u8; 36],
+        sdk.version(),
+    )
+    .await?;
+
+    // Wait for proven execution rather than relay-ACK. Single-use
+    // asset-lock proof: a false-positive on a transition Platform
+    // later rejects would strand the L1 outpoint with no in-app
+    // signal. The proven result is discarded; we only need the
+    // confirmation that drive-abci committed.
+    st.broadcast_and_wait::<StateTransitionProofResult>(&sdk, settings)
+        .await?;
+    Ok(())
+}
+
+/// Pre-flight check for the recipient list.
+///
+/// Today: non-empty, exactly one recipient whose `Credits` value is
+/// `None` (= "remainder" semantics — receives `lock_value − min_fee`
+/// after Step 2 resolves the asset lock). The multi-shape
+/// `Vec<(OrchardAddress, Option<Credits>)>` API is exposed so the
+/// caller signature is future-compatible — when DPP grows
+/// multi-output Orchard bundles for Type 18, `Some(_)` values will
+/// be honored (explicit credit amounts pass through; the single
+/// `None` bucket receives the residual). Same shape as Type 14.
+///
+/// Generic over `T` so unit tests can pass `(u8, Option<Credits>)`
+/// instead of constructing a curve-valid `OrchardAddress` for what
+/// is really a length / cardinality check.
+pub(super) fn validate_shielded_recipients<T>(
+    recipients: &[(T, Option<Credits>)],
+) -> Result<(), PlatformWalletError> {
+    if recipients.is_empty() {
+        return Err(PlatformWalletError::AddressOperation(
+            "shielded_fund_from_asset_lock requires at least one recipient".to_string(),
+        ));
+    }
+    // TODO(multi-output): when DPP grows multi-output Orchard bundles
+    // for Type 18 (`build_output_only_bundle` currently builds a
+    // single-output bundle; extending would also affect the Shield
+    // Type 15 path that shares it), drop this restriction. The
+    // semantics will become: explicit `Some(credits)` flows into
+    // its Orchard output; the (exactly one) `None` bucket receives
+    // the residual `asset_lock_value − sum(explicit) − fee`.
+    if recipients.len() != 1 {
+        return Err(PlatformWalletError::AddressOperation(format!(
+            "shielded_fund_from_asset_lock currently supports exactly one recipient \
+             (multi-output Orchard bundles for Type 18 not yet wired through DPP); got {}",
+            recipients.len()
+        )));
+    }
+    if recipients[0].1.is_some() {
+        // TODO(multi-output): drop this when the bundle builder honors
+        // explicit `Some(_)` values per recipient.
+        return Err(PlatformWalletError::AddressOperation(
+            "shielded_fund_from_asset_lock currently ignores explicit recipient credits \
+             (the single recipient receives lock_value - min_fee). Pass `None` for the \
+             remainder semantics; explicit amounts will be honored once DPP grows \
+             multi-output Orchard bundles for Type 18."
+                .to_string(),
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // The preflight is a pure length/cardinality check; the
+    // recipient type is irrelevant for what we're testing. Using
+    // `u8` as the placeholder type avoids needing to construct a
+    // curve-valid `OrchardAddress` (which requires the Orchard
+    // crate's spend-key plumbing) inside this crate.
+
+    #[test]
+    fn validate_rejects_empty_recipients() {
+        let v: Vec<(u8, Option<Credits>)> = Vec::new();
+        let err = validate_shielded_recipients(&v).expect_err("empty must reject");
+        assert!(format!("{err}").contains("at least one recipient"));
+    }
+
+    #[test]
+    fn validate_rejects_multi_recipient_for_now() {
+        let v: Vec<(u8, Option<Credits>)> = vec![(1, None), (2, Some(100))];
+        let err = validate_shielded_recipients(&v).expect_err("multi-recipient must reject (TODO)");
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("exactly one recipient"),
+            "unexpected error: {msg}"
+        );
+    }
+
+    #[test]
+    fn validate_rejects_explicit_some_for_now() {
+        // Until DPP grows multi-output Orchard bundles for Type 18,
+        // we ignore explicit amounts (the single recipient receives
+        // lock_value - min_fee). Reject explicit `Some(_)` so the
+        // caller's expectation matches the wallet's behaviour
+        // instead of silently dropping the value.
+        let v: Vec<(u8, Option<Credits>)> = vec![(0, Some(500_000))];
+        let err = validate_shielded_recipients(&v)
+            .expect_err("explicit Some must reject until multi-output is wired");
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("currently ignores explicit recipient credits"),
+            "unexpected error: {msg}"
+        );
+    }
+
+    #[test]
+    fn validate_accepts_single_none_recipient() {
+        let v: Vec<(u8, Option<Credits>)> = vec![(0, None)];
+        validate_shielded_recipients(&v).expect("single recipient with None must pass");
+    }
+}

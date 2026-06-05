@@ -336,6 +336,11 @@ impl Fetch for drive_proof_verifier::types::DataContractHistory {
     type Request = platform_proto::GetDataContractHistoryRequest;
 }
 
+impl Fetch for drive_proof_verifier::types::DocumentHistory {
+    type Query = platform_proto::GetDocumentHistoryRequest;
+    type Request = platform_proto::GetDocumentHistoryRequest;
+}
+
 impl Fetch for ExtendedEpochInfo {
     type Query = platform_proto::GetEpochsInfoRequest;
     type Request = platform_proto::GetEpochsInfoRequest;
@@ -385,6 +390,11 @@ impl Fetch for drive_proof_verifier::types::PlatformAddressTrunkState {
 impl Fetch for drive_proof_verifier::types::ShieldedPoolState {
     type Query = platform_proto::GetShieldedPoolStateRequest;
     type Request = platform_proto::GetShieldedPoolStateRequest;
+}
+
+impl Fetch for drive_proof_verifier::types::ShieldedNotesCount {
+    type Query = platform_proto::GetShieldedNotesCountRequest;
+    type Request = platform_proto::GetShieldedNotesCountRequest;
 }
 
 impl Fetch for drive_proof_verifier::types::ShieldedAnchors {

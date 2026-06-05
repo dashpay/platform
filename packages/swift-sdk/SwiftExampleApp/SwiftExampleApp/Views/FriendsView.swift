@@ -12,7 +12,6 @@ struct FriendsView: View {
     @EnvironmentObject var appState: AppState
     @EnvironmentObject var walletManager: PlatformWalletManager
     @Environment(\.modelContext) private var modelContext
-    @StateObject private var dashPayService = ObservableDashPayService()
     @State private var contacts: [DashPayContact] = []
     @State private var incomingRequests: [DashPayContactRequest] = []
     @State private var sentRequests: [DashPayContactRequest] = []
@@ -279,6 +278,64 @@ struct FriendsView: View {
         }
     }
 
+}
+
+// MARK: - UI value types
+
+/// Lightweight UI model for an established DashPay contact row.
+/// Built each time FriendsView reads local state off a fresh
+/// ManagedIdentity snapshot — see `loadFriends()`. The cached
+/// DashPay profile fields are resolved separately via
+/// `wallet.getDashPayProfile(identityId:)`.
+struct DashPayContact: Identifiable {
+    let id: Data
+    let displayName: String
+    let identityId: Data
+    let dpnsName: String?
+    let note: String?
+    let isHidden: Bool
+
+    init(
+        id: Data,
+        displayName: String,
+        identityId: Data,
+        dpnsName: String? = nil,
+        note: String? = nil,
+        isHidden: Bool = false
+    ) {
+        self.id = id
+        self.displayName = displayName
+        self.identityId = identityId
+        self.dpnsName = dpnsName
+        self.note = note
+        self.isHidden = isHidden
+    }
+}
+
+/// Lightweight UI model for an incoming or outgoing contact request
+/// row. `id` is a `"incoming-<hex>"` / `"sent-<hex>"` discriminator
+/// so the same identity pair can appear in both lists without `ForEach`
+/// collisions.
+struct DashPayContactRequest: Identifiable {
+    let id: String
+    let senderId: Data
+    let recipientId: Data
+    let createdAt: Date
+    let senderDisplayName: String?
+
+    init(
+        id: String,
+        senderId: Data,
+        recipientId: Data,
+        createdAt: Date = Date(),
+        senderDisplayName: String? = nil
+    ) {
+        self.id = id
+        self.senderId = senderId
+        self.recipientId = recipientId
+        self.createdAt = createdAt
+        self.senderDisplayName = senderDisplayName
+    }
 }
 
 // MARK: - Contact Row View

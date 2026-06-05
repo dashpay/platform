@@ -15,9 +15,12 @@
 //! Per-input nonces are fetched from Platform inside
 //! [`ShieldedWallet::shield`] before building.
 //!
-//! Type 18 (`shield_from_asset_lock` — Core L1→Shielded) lives on
-//! [`ShieldedWallet`] but isn't wired here yet — it needs the
-//! asset-lock proof + private key threaded through.
+//! Type 18 (`shield_from_asset_lock` — Core L1→Shielded) is wired
+//! through [`platform_wallet_manager_shielded_fund_from_asset_lock`]
+//! and its resume sibling further down. Both follow the
+//! address-funding signer pattern: the asset-lock-proof signature
+//! is produced by a `MnemonicResolverHandle` so the raw key never
+//! crosses the FFI boundary.
 //!
 //! Feature-gated behind `shielded`. The accompanying
 //! [`platform_wallet_shielded_warm_up_prover`] entry-point is
@@ -30,10 +33,14 @@
 use std::ffi::CStr;
 use std::os::raw::c_char;
 
+use dashcore::hashes::Hash;
+use dpp::address_funds::OrchardAddress;
+use platform_wallet::wallet::asset_lock::AssetLockFunding;
 use platform_wallet::wallet::shielded::CachedOrchardProver;
-use rs_sdk_ffi::{SignerHandle, VTableSigner};
+use rs_sdk_ffi::{MnemonicResolverCoreSigner, MnemonicResolverHandle, SignerHandle, VTableSigner};
 
 use crate::check_ptr;
+use crate::core_wallet_types::OutPointFFI;
 use crate::error::*;
 use crate::handle::*;
 use crate::runtime::{block_on_worker, runtime};
@@ -317,6 +324,202 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_shield(
         return PlatformWalletFFIResult::err(
             PlatformWalletFFIResultCode::ErrorWalletOperation,
             format!("shielded shield failed: {e}"),
+        );
+    }
+    PlatformWalletFFIResult::ok()
+}
+
+/// Fund the shielded pool from a Core L1 asset lock, orchestrated
+/// through the wallet's `AssetLockManager` (build → IS-or-CL →
+/// submit → consume). The asset-lock-proof signature is produced
+/// by a `MnemonicResolverHandle` — the raw key never crosses the
+/// FFI boundary.
+///
+/// `account_index` selects the BIP44 Core account whose UTXOs
+/// fund the asset lock. `amount_duffs` is the L1 amount to lock.
+/// The wallet derives the shielded credit amount internally
+/// (`lock_value − protocol_min_fee`) — callers don't need to know
+/// about Type 18's Halo 2 fee math.
+///
+/// `recipient_raw_43` is the single Orchard recipient (same shape
+/// `platform_wallet_manager_shielded_default_address` returns); it
+/// receives the full `lock_value − min_fee` credits.
+///
+/// Multi-recipient with explicit per-recipient amounts is reserved
+/// for a future DPP-side Orchard multi-output bundle change; today
+/// the orchestration rejects anything but a single recipient.
+///
+/// # Safety
+/// - `wallet_id_bytes` must point to 32 readable bytes.
+/// - `recipient_raw_43` must point to 43 readable bytes (raw
+///   Orchard payment address: 11-byte diversifier + 32-byte pk_d).
+/// - `core_signer_handle` must be a valid, non-destroyed
+///   `*mut MnemonicResolverHandle` produced by
+///   `dash_sdk_mnemonic_resolver_create`. The caller retains
+///   ownership.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn platform_wallet_manager_shielded_fund_from_asset_lock(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    account_index: u32,
+    amount_duffs: u64,
+    recipient_raw_43: *const u8,
+    core_signer_handle: *mut MnemonicResolverHandle,
+) -> PlatformWalletFFIResult {
+    check_ptr!(wallet_id_bytes);
+    check_ptr!(recipient_raw_43);
+    check_ptr!(core_signer_handle);
+
+    let mut wallet_id = [0u8; 32];
+    std::ptr::copy_nonoverlapping(wallet_id_bytes, wallet_id.as_mut_ptr(), 32);
+
+    let mut recipient_bytes = [0u8; 43];
+    std::ptr::copy_nonoverlapping(recipient_raw_43, recipient_bytes.as_mut_ptr(), 43);
+    let recipient = match OrchardAddress::from_raw_bytes(&recipient_bytes) {
+        Ok(a) => a,
+        Err(e) => {
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                format!("invalid Orchard recipient address: {e}"),
+            );
+        }
+    };
+
+    let wallet = match resolve_wallet(handle, &wallet_id) {
+        Ok(w) => w,
+        Err(result) => return result,
+    };
+    let network = wallet.network();
+
+    // Round-trip the resolver handle through `usize` so the worker
+    // future's capture is `Send + 'static`.
+    let core_signer_addr = core_signer_handle as usize;
+
+    // Run the proof on a worker thread (8 MB stack). Halo 2 circuit
+    // synthesis recurses past the ~512 KB iOS dispatch-thread stack
+    // and crashes with EXC_BAD_ACCESS at the first
+    // `synthesize(... measure(pass))` call when polled on the
+    // calling thread.
+    let result = block_on_worker(async move {
+        // SAFETY: see the fn-level safety doc — the resolver handle
+        // is pinned alive for the duration of this FFI call.
+        let asset_lock_signer = unsafe {
+            MnemonicResolverCoreSigner::new(
+                core_signer_addr as *mut MnemonicResolverHandle,
+                wallet_id,
+                network,
+            )
+        };
+        let prover = CachedOrchardProver::new();
+        wallet
+            .shielded_fund_from_asset_lock(
+                AssetLockFunding::FromWalletBalance {
+                    amount_duffs,
+                    account_index,
+                },
+                vec![(recipient, None)],
+                &asset_lock_signer,
+                &prover,
+                None,
+            )
+            .await
+    });
+    if let Err(e) = result {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorWalletOperation,
+            format!("shielded fund-from-asset-lock failed: {e}"),
+        );
+    }
+    PlatformWalletFFIResult::ok()
+}
+
+/// Resume a shielded fund-from-asset-lock by outpoint.
+///
+/// Sister to [`platform_wallet_manager_shielded_fund_from_asset_lock`]:
+/// instead of building a fresh asset-lock transaction, pick up an
+/// existing tracked lock at `out_point` and drive whatever stages
+/// remain (broadcast, IS/CL wait, Platform submit, consume). Use
+/// case mirrors the platform-address resume path — a prior attempt
+/// left the lock in storage at `Broadcast` / `InstantSendLocked` /
+/// `ChainLocked` but the shield ST never completed.
+///
+/// # Safety
+/// - `wallet_id_bytes` must point to 32 readable bytes.
+/// - `out_point` must be a valid, non-null pointer to an
+///   `OutPointFFI` for the duration of the call.
+/// - `recipient_raw_43` / `core_signer_handle` — see
+///   [`platform_wallet_manager_shielded_fund_from_asset_lock`].
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn platform_wallet_manager_shielded_resume_fund_from_asset_lock(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    out_point: *const OutPointFFI,
+    recipient_raw_43: *const u8,
+    core_signer_handle: *mut MnemonicResolverHandle,
+) -> PlatformWalletFFIResult {
+    check_ptr!(wallet_id_bytes);
+    check_ptr!(out_point);
+    check_ptr!(recipient_raw_43);
+    check_ptr!(core_signer_handle);
+
+    let mut wallet_id = [0u8; 32];
+    std::ptr::copy_nonoverlapping(wallet_id_bytes, wallet_id.as_mut_ptr(), 32);
+
+    let mut recipient_bytes = [0u8; 43];
+    std::ptr::copy_nonoverlapping(recipient_raw_43, recipient_bytes.as_mut_ptr(), 43);
+    let recipient = match OrchardAddress::from_raw_bytes(&recipient_bytes) {
+        Ok(a) => a,
+        Err(e) => {
+            return PlatformWalletFFIResult::err(
+                PlatformWalletFFIResultCode::ErrorInvalidParameter,
+                format!("invalid Orchard recipient address: {e}"),
+            );
+        }
+    };
+
+    let out_point_ffi = *out_point;
+    let resume_outpoint = dashcore::OutPoint {
+        txid: dashcore::Txid::from_byte_array(out_point_ffi.txid),
+        vout: out_point_ffi.vout,
+    };
+
+    let wallet = match resolve_wallet(handle, &wallet_id) {
+        Ok(w) => w,
+        Err(result) => return result,
+    };
+    let network = wallet.network();
+
+    let core_signer_addr = core_signer_handle as usize;
+
+    let result = block_on_worker(async move {
+        // SAFETY: see the fn-level safety doc — the resolver handle
+        // is pinned alive for the duration of this FFI call.
+        let asset_lock_signer = unsafe {
+            MnemonicResolverCoreSigner::new(
+                core_signer_addr as *mut MnemonicResolverHandle,
+                wallet_id,
+                network,
+            )
+        };
+        let prover = CachedOrchardProver::new();
+        wallet
+            .shielded_fund_from_asset_lock(
+                AssetLockFunding::FromExistingAssetLock {
+                    out_point: resume_outpoint,
+                },
+                vec![(recipient, None)],
+                &asset_lock_signer,
+                &prover,
+                None,
+            )
+            .await
+    });
+    if let Err(e) = result {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorWalletOperation,
+            format!("shielded resume fund-from-asset-lock failed: {e}"),
         );
     }
     PlatformWalletFFIResult::ok()
