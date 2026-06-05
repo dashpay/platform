@@ -11,7 +11,9 @@ use crate::data_contract::DataContractWasm;
 use crate::identifier::IdentifierWrapper;
 
 use crate::utils::WithJsError;
-use crate::utils::{with_serde_to_json_value, ToSerdeJSONExt};
+use crate::utils::{
+    json_value_to_platform_value_lenient, with_serde_to_json_value, ToSerdeJSONExt,
+};
 
 use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::DocumentV0Getters;
@@ -70,7 +72,8 @@ impl DocumentWasm {
         js_data_contract: &DataContractWasm,
         js_document_type_name: JsValue,
     ) -> Result<DocumentWasm, JsValue> {
-        let mut raw_document: Value = with_serde_to_json_value(&js_raw_document)?.into();
+        let mut raw_document: Value =
+            json_value_to_platform_value_lenient(with_serde_to_json_value(&js_raw_document)?);
 
         let document_type_name = js_document_type_name
             .as_string()
