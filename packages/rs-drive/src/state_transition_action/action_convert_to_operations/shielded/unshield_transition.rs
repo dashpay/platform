@@ -41,12 +41,20 @@ impl DriveHighLevelOperationConverter for UnshieldTransitionAction {
                                 "unshield fee exceeds unshielding amount".to_string(),
                             ))
                         })?;
-                    ops.push(DriveOperation::AddressFundsOperation(
-                        AddressFundsOperationType::AddBalanceToAddress {
-                            address: v0.output_address,
-                            balance_to_add: net_recipient_amount,
-                        },
-                    ));
+                    // Only credit the output address when the net is positive. A
+                    // net-zero unshield (the whole `unshielding_amount` was consumed by
+                    // the fee) would otherwise insert a spurious zero-balance address
+                    // entry. Skipping it is conservation-neutral (adding 0 changes
+                    // nothing): the pool still decreases by `amount` and the fee still
+                    // flows to the fee pools.
+                    if net_recipient_amount > 0 {
+                        ops.push(DriveOperation::AddressFundsOperation(
+                            AddressFundsOperationType::AddBalanceToAddress {
+                                address: v0.output_address,
+                                balance_to_add: net_recipient_amount,
+                            },
+                        ));
+                    }
 
                     // 3. Insert notes into CommitmentTree (change outputs)
                     insert_notes(&mut ops, &v0.notes);
@@ -247,5 +255,45 @@ mod tests {
 
         let result = action.into_high_level_drive_operations(&epoch, platform_version);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_net_zero_unshield_skips_address_credit() {
+        // When the whole `unshielding_amount` is consumed by the fee (net == 0),
+        // the conversion must NOT emit a zero-credit AddBalanceToAddress (which
+        // would create a spurious dust address entry). The pool still decrements
+        // by `amount` and the fee still flows to the fee pools.
+        let action = UnshieldTransitionAction::V0(UnshieldTransitionActionV0 {
+            output_address: PlatformAddress::P2pkh([0xBB; 20]),
+            amount: 500,
+            notes: vec![make_note()],
+            anchor: [0xAA; 32],
+            fee_amount: 500, // net = amount - fee = 0
+            current_total_balance: 10000,
+        });
+        let epoch = Epoch::new(0).unwrap();
+        let platform_version = PlatformVersion::latest();
+
+        let ops = action
+            .into_high_level_drive_operations(&epoch, platform_version)
+            .expect("expected operations");
+
+        assert!(
+            !ops.iter().any(|op| matches!(
+                op,
+                DriveOperation::AddressFundsOperation(
+                    AddressFundsOperationType::AddBalanceToAddress { .. }
+                )
+            )),
+            "net-zero unshield must not emit a zero-credit AddBalanceToAddress"
+        );
+
+        // The pool is still decremented by exactly `amount` (10000 - 500 = 9500).
+        match ops.last().unwrap() {
+            DriveOperation::ShieldedPoolOperation(
+                ShieldedPoolOperationType::UpdateTotalBalance { new_total_balance },
+            ) => assert_eq!(*new_total_balance, 9500),
+            other => panic!("expected UpdateTotalBalance, got {:?}", other),
+        }
     }
 }

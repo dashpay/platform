@@ -107,14 +107,14 @@ impl StateTransitionShieldedMinimumFeeValidationV0 for StateTransition {
                             (v0.value_balance as i64, v0.actions.len())
                         }
                     },
-                    // Unshield: fee = value_balance - amount.
+                    // Unshield: `unshielding_amount` is the TOTAL leaving the pool
+                    // (recipient/net + fee). We check it against `min_fee` so the net
+                    // (`unshielding_amount - compute_minimum_shielded_fee`) credited to
+                    // the recipient at execution time is non-negative.
                     StateTransition::Unshield(st) => match st {
                         dpp::state_transition::unshield_transition::UnshieldTransition::V0(
                             v0,
-                        ) => {
-                            // unshielding_amount is the total leaving the pool (fee is validated separately)
-                            (v0.unshielding_amount as i64, v0.actions.len())
-                        }
+                        ) => (v0.unshielding_amount as i64, v0.actions.len()),
                     },
                     StateTransition::ShieldedWithdrawal(st) => match st {
                         dpp::state_transition::shielded_withdrawal_transition::ShieldedWithdrawalTransition::V0(v0) => {

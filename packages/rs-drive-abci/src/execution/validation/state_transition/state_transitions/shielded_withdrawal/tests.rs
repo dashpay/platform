@@ -1056,4 +1056,143 @@ mod tests {
             );
         }
     }
+
+    mod credit_conservation {
+        use super::*;
+        use crate::execution::validation::state_transition::tests::process_state_transitions;
+        use dpp::block::block_info::BlockInfo;
+        use grovedb_commitment_tree::{
+            Builder, BundleType, ClientMemoryCommitmentTree, DashMemo, ExtractedNoteCommitment,
+            FullViewingKey, Note, NoteValue, Position, RandomSeed, Retention, Rho, Scope,
+            SpendAuthorizingKey, SpendingKey,
+        };
+        use rand::rngs::OsRng;
+
+        /// Block-level conservation test for shielded withdrawal. Spends a 500M note
+        /// and withdraws `value_balance` worth from the pool. Runs the FULL block
+        /// pipeline (execute + fee distribution + sum-tree validation) and asserts:
+        ///   - total platform credits stay conserved (the invariant whose failure
+        ///     halts the chain),
+        ///   - the shielded pool drops by exactly `unshielding_amount`, and
+        ///   - the system-credit counter drops by the NET (`unshielding_amount - fee`)
+        ///     — only the net leaves the platform to Core; the fee stays in the fee
+        ///     pools. This exercises the `RemoveFromSystemCredits(net)` accounting the
+        ///     conversion-level tests cannot fully validate end-to-end.
+        #[test]
+        fn test_shielded_withdrawal_conserves_credits() {
+            let platform_version = PlatformVersion::latest();
+            let platform = setup_platform();
+            insert_dummy_encrypted_notes(&platform, 250);
+            let mut rng = OsRng;
+            let pk = get_proving_key();
+
+            let sk = SpendingKey::from_bytes([0u8; 32]).unwrap();
+            let fvk = FullViewingKey::from(&sk);
+            let recipient = fvk.address_at(0u32, Scope::External);
+            let ask = SpendAuthorizingKey::from(&sk);
+
+            let rho_bytes: [u8; 32] = {
+                let mut b = [0u8; 32];
+                b[0] = 1;
+                b
+            };
+            let rho = Rho::from_bytes(&rho_bytes).unwrap();
+            let rseed = RandomSeed::from_bytes([42u8; 32], &rho).unwrap();
+            let note =
+                Note::from_parts(recipient, NoteValue::from_raw(500_000_000), rho, rseed).unwrap();
+
+            let cmx = ExtractedNoteCommitment::from(note.commitment());
+            let mut tree = ClientMemoryCommitmentTree::new(100);
+            tree.append(cmx.to_bytes(), Retention::Marked).unwrap();
+            tree.checkpoint(0u32).unwrap();
+            let anchor = tree.anchor().unwrap();
+            let merkle_path = tree.witness(Position::from(0u64), 0).unwrap().unwrap();
+
+            let mut builder = Builder::<DashMemo>::new(BundleType::DEFAULT, anchor);
+            builder.add_spend(fvk.clone(), note, merkle_path).unwrap();
+            builder
+                .add_output(None, recipient, NoteValue::from_raw(5_000), [0u8; 36])
+                .unwrap();
+            let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
+
+            let output_script = create_output_script();
+            let unshielding_amount = 499_995_000u64;
+            let mut extra_sighash_data = output_script.as_bytes().to_vec();
+            extra_sighash_data.extend_from_slice(&unshielding_amount.to_le_bytes());
+            let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
+            let sighash = compute_platform_sighash(&bundle_commitment, &extra_sighash_data);
+            let proven = unauthorized.create_proof(pk, &mut rng).unwrap();
+            let bundle = proven.apply_signatures(rng, sighash, &[ask]).unwrap();
+
+            let (actions, value_balance, anchor_bytes, proof_bytes, binding_sig) =
+                serialize_authorized_bundle_i64(&bundle);
+            assert_eq!(value_balance, 499_995_000);
+            let num_actions = actions.len();
+
+            insert_anchor_into_state(&platform, &anchor_bytes);
+            set_pool_total_balance(&platform, 500_000_000);
+
+            // Capture a balanced starting state (set_pool_total_balance adds matching
+            // system credits, so the counter and the sum trees agree).
+            let credits_before = platform
+                .drive
+                .calculate_total_credits_balance(None, &platform_version.drive)
+                .expect("should calculate total credits before withdrawal");
+            assert!(
+                credits_before
+                    .ok()
+                    .expect("credit balance check should not overflow"),
+                "credits must be balanced before the withdrawal: {}",
+                credits_before
+            );
+
+            let transition = create_shielded_withdrawal_transition(
+                actions,
+                unshielding_amount,
+                anchor_bytes,
+                proof_bytes,
+                binding_sig,
+                1,
+                Pooling::Never,
+                output_script,
+            );
+
+            let platform_state = platform.state.load();
+            let (_fee_results, _processed_block_fees) = process_state_transitions(
+                &platform,
+                &[transition],
+                BlockInfo::default(),
+                &platform_state,
+            );
+
+            let credits_after = platform
+                .drive
+                .calculate_total_credits_balance(None, &platform_version.drive)
+                .expect("should calculate total credits after withdrawal");
+            assert!(
+                credits_after
+                    .ok()
+                    .expect("credit balance check should not overflow"),
+                "credits must remain balanced after a shielded withdrawal: {}",
+                credits_after
+            );
+
+            // The shielded pool dropped by exactly the full unshielding_amount.
+            assert_eq!(
+                credits_before.total_in_shielded_balances
+                    - credits_after.total_in_shielded_balances,
+                unshielding_amount as i64,
+                "shielded pool must drop by the full unshielding amount"
+            );
+
+            // The system-credit counter dropped by the NET (unshielding_amount - fee):
+            // only the net leaves the platform to Core; the fee stays in the fee pools.
+            let fee = dpp::shielded::compute_minimum_shielded_fee(num_actions, platform_version);
+            assert_eq!(
+                credits_before.total_credits_in_platform - credits_after.total_credits_in_platform,
+                unshielding_amount - fee,
+                "system credits must drop by exactly the net withdrawn to Core (amount - fee)"
+            );
+        }
+    }
 }
