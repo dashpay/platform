@@ -27,15 +27,6 @@ use drive::drive::saved_block_transactions::{
     ADDRESS_BALANCES_KEY_U8, COMPACTED_ADDRESSES_EXPIRATION_TIME_KEY_U8,
     COMPACTED_ADDRESS_BALANCES_KEY_U8,
 };
-use drive::drive::shielded::nullifiers::queries::{
-    SHIELDED_COMPACTED_NULLIFIERS_KEY_U8, SHIELDED_NULLIFIERS_EXPIRATION_TIME_KEY_U8,
-    SHIELDED_RECENT_NULLIFIERS_KEY_U8,
-};
-use drive::drive::shielded::paths::{
-    shielded_credit_pool_path, MAIN_SHIELDED_CREDIT_POOL_KEY_U8, SHIELDED_ANCHORS_BY_HEIGHT_KEY,
-    SHIELDED_ANCHORS_IN_POOL_KEY, SHIELDED_NOTES_CHUNK_POWER, SHIELDED_NOTES_KEY,
-    SHIELDED_NULLIFIERS_KEY, SHIELDED_TOTAL_BALANCE_KEY,
-};
 use drive::drive::system::misc_path;
 use drive::drive::tokens::paths::{
     token_distributions_root_path, token_timed_distributions_path, tokens_root_path,
@@ -614,12 +605,14 @@ impl<C> Platform<C> {
 
     /// We introduced in version 12 Shielded Pools.
     ///
-    /// Mirrors the layout produced by `Drive::create_initial_state_structure_v3`
-    /// for a fresh genesis-12 chain: a top-level `ShieldedBalances` SumTree
-    /// containing the main shielded credit pool at `MAIN_SHIELDED_CREDIT_POOL_KEY`,
-    /// and all eight pool subtrees inserted breadth-first. The recent-nullifiers
-    /// `CountSumTree` is wrapped in `Element::NotSummed` so its sum side does
-    /// not propagate into the pool's "credits" aggregate.
+    /// Builds the same `[ShieldedBalances]` subtree as a fresh genesis-12 chain
+    /// (`Drive::create_initial_state_structure_v3`): a top-level
+    /// `ShieldedBalances` SumTree containing the main shielded credit pool at
+    /// `MAIN_SHIELDED_CREDIT_POOL_KEY`, and all eight pool subtrees. The pool and
+    /// its children are built by the shared, sequential
+    /// `Drive::insert_shielded_pool_structure` helper that the genesis path also
+    /// calls — this is what guarantees a state-synced genesis-v12 node and an
+    /// in-place-upgraded v12 node produce a byte-identical subtree root hash.
     fn transition_to_version_12(
         &self,
         transaction: &Transaction,
@@ -627,7 +620,9 @@ impl<C> Platform<C> {
     ) -> Result<(), Error> {
         // Top-level ShieldedBalances SumTree — separate from AddressBalances so
         // per-pool internal trees cannot contaminate the address-credit
-        // aggregate via sum propagation.
+        // aggregate via sum propagation. Inserted here (not in the shared
+        // helper) so it matches the genesis path, which creates this top-level
+        // tree as a standalone non-batch insert before filling in the pool.
         self.drive.grove_insert_if_not_exists(
             SubtreePath::empty(),
             &[RootTree::ShieldedBalances as u8],
@@ -637,115 +632,14 @@ impl<C> Platform<C> {
             &platform_version.drive,
         )?;
 
-        // Main shielded credit pool SumTree: [ShieldedBalances] / "M"
-        self.drive.grove_insert_if_not_exists(
-            SubtreePath::from(&[&[RootTree::ShieldedBalances as u8] as &[u8]]),
-            &[MAIN_SHIELDED_CREDIT_POOL_KEY_U8],
-            Element::empty_sum_tree(),
-            Some(transaction),
-            None,
-            &platform_version.drive,
-        )?;
-
-        // The eight child inserts below are ordered breadth-first to match the
-        // intended balanced shape of the parent Merk tree (see the layout
-        // diagram in `drive::drive::shielded::paths`). AVL rebalancing is
-        // order-sensitive, so this ordering is what actually places
-        // `SHIELDED_NOTES_KEY` at the root and the spend-path keys at depth 1.
-
-        // Level 0 (root): notes tree (CommitmentTree = CountTree items + Sinsemilla Frontier)
-        // [ShieldedBalances, "M"] / [128]
-        let shielded_pool_path = shielded_credit_pool_path();
-        self.drive.grove_insert_if_not_exists(
-            (&shielded_pool_path).into(),
-            &[SHIELDED_NOTES_KEY],
-            Element::empty_commitment_tree(SHIELDED_NOTES_CHUNK_POWER)
-                .expect("SHIELDED_NOTES_CHUNK_POWER is valid"),
-            Some(transaction),
-            None,
-            &platform_version.drive,
-        )?;
-
-        // Level 1 (left): nullifiers tree (ProvableCountTree)
-        // [ShieldedBalances, "M"] / [64]
-        self.drive.grove_insert_if_not_exists(
-            (&shielded_pool_path).into(),
-            &[SHIELDED_NULLIFIERS_KEY],
-            Element::empty_provable_count_tree(),
-            Some(transaction),
-            None,
-            &platform_version.drive,
-        )?;
-
-        // Level 1 (right): anchors tree (NormalTree) — anchor_bytes → block_height_be
-        // [ShieldedBalances, "M"] / [192]
-        self.drive.grove_insert_if_not_exists(
-            (&shielded_pool_path).into(),
-            &[SHIELDED_ANCHORS_IN_POOL_KEY],
-            Element::empty_tree(),
-            Some(transaction),
-            None,
-            &platform_version.drive,
-        )?;
-
-        // Level 2: total balance SumItem(0)
-        // [ShieldedBalances, "M"] / [32]
-        self.drive.grove_insert_if_not_exists(
-            (&shielded_pool_path).into(),
-            &[SHIELDED_TOTAL_BALANCE_KEY],
-            Element::new_sum_item(0),
-            Some(transaction),
-            None,
-            &platform_version.drive,
-        )?;
-
-        // Level 2: anchors-by-height tree (NormalTree) — block_height_be → anchor_bytes.
-        // [ShieldedBalances, "M"] / [96]
-        self.drive.grove_insert_if_not_exists(
-            (&shielded_pool_path).into(),
-            &[SHIELDED_ANCHORS_BY_HEIGHT_KEY],
-            Element::empty_tree(),
-            Some(transaction),
-            None,
-            &platform_version.drive,
-        )?;
-
-        // Level 2: per-block recent-nullifiers CountSumTree wrapped in
-        // NotSummed — the sum side (per-block nullifier count) is suppressed
-        // so it does NOT propagate into the enclosing shielded pool SumTree.
-        // [ShieldedBalances, "M"] / [160]
-        self.drive.grove_insert_if_not_exists(
-            (&shielded_pool_path).into(),
-            &[SHIELDED_RECENT_NULLIFIERS_KEY_U8],
-            Element::new_not_summed(Element::empty_count_sum_tree())
-                .expect("count sum tree is a valid NotSummed inner"),
-            Some(transaction),
-            None,
-            &platform_version.drive,
-        )?;
-
-        // Level 2: compacted nullifiers NormalTree —
-        // (start_block, end_block) → serialized Vec<[u8;32]>.
-        // [ShieldedBalances, "M"] / [224]
-        self.drive.grove_insert_if_not_exists(
-            (&shielded_pool_path).into(),
-            &[SHIELDED_COMPACTED_NULLIFIERS_KEY_U8],
-            Element::empty_tree(),
-            Some(transaction),
-            None,
-            &platform_version.drive,
-        )?;
-
-        // Level 3: nullifiers-expiration-time NormalTree (deepest leaf).
-        // [ShieldedBalances, "M"] / [240]
-        self.drive.grove_insert_if_not_exists(
-            (&shielded_pool_path).into(),
-            &[SHIELDED_NULLIFIERS_EXPIRATION_TIME_KEY_U8],
-            Element::empty_tree(),
-            Some(transaction),
-            None,
-            &platform_version.drive,
-        )?;
+        // Main shielded credit pool + its eight child subtrees, built by the
+        // SHARED sequential builder. CONSENSUS-CRITICAL: the genesis-v12 path
+        // (`Drive::create_initial_state_structure_v3`) calls this exact same
+        // helper, so both paths root the pool's parent Merk at
+        // `SHIELDED_NOTES_KEY` (`[128]`) and produce a byte-identical
+        // `[ShieldedBalances]` subtree.
+        self.drive
+            .insert_shielded_pool_structure(Some(transaction), platform_version)?;
 
         // Strip unknown top-level properties from all contract document type schemas.
         // The v1 document meta-schema enforces additionalProperties: false at the
@@ -767,6 +661,143 @@ mod tests {
     use dpp::block::block_info::BlockInfo;
     use dpp::block::epoch::Epoch;
     use dpp::version::PlatformVersion;
+    use drive::drive::shielded::paths::{
+        shielded_credit_pool_path, MAIN_SHIELDED_CREDIT_POOL_KEY_U8, SHIELDED_ANCHORS_IN_POOL_KEY,
+        SHIELDED_NOTES_KEY, SHIELDED_NULLIFIERS_KEY,
+    };
+
+    /// Recursively compares the GroveDB subtree rooted at `root_path` between
+    /// two platforms and returns a list of human-readable differences (empty ⇒
+    /// the two subtrees are byte-identical at every node, including every
+    /// element's carried `root_key`, sum/count, value bytes, and the full set of
+    /// child keys at every depth).
+    ///
+    /// This is the rigorous subtree-equality used by the boundary equivalence
+    /// tests. We deliberately compare a *named subtree* rather than the whole-DB
+    /// root hash: the whole DB also carries the genesis epoch's recorded
+    /// protocol-version field (`[Pools, epoch_0, "v"]`), which legitimately
+    /// differs between a chain *born* at vN and a chain born at v(N-1) then
+    /// upgraded — that field is unrelated to how the boundary subtrees are
+    /// constructed and must not pollute the equivalence check.
+    fn collect_subtree_diffs(
+        platform_genesis: &crate::platform_types::platform::Platform<
+            crate::rpc::core::MockCoreRPCLike,
+        >,
+        platform_upgraded: &crate::platform_types::platform::Platform<
+            crate::rpc::core::MockCoreRPCLike,
+        >,
+        upgraded_txn: &drive::grovedb::Transaction,
+        root_path: Vec<Vec<u8>>,
+    ) -> Vec<String> {
+        use drive::grovedb::{PathQuery, Query, SizedQuery};
+        use drive::query::QueryResultType;
+
+        fn read_level(
+            platform: &crate::platform_types::platform::Platform<crate::rpc::core::MockCoreRPCLike>,
+            txn: drive::grovedb::TransactionArg,
+            path: &[Vec<u8>],
+        ) -> std::collections::BTreeMap<Vec<u8>, Element> {
+            let mut q = Query::new();
+            q.insert_all();
+            let pq = PathQuery::new(path.to_vec(), SizedQuery::new(q, None, None));
+            platform
+                .drive
+                .grove_get_raw_path_query(
+                    &pq,
+                    txn,
+                    QueryResultType::QueryKeyElementPairResultType,
+                    &mut vec![],
+                    &platform
+                        .state
+                        .load()
+                        .current_platform_version()
+                        .expect("platform version")
+                        .drive,
+                )
+                .map(|(r, _)| r.to_key_elements().into_iter().collect())
+                .unwrap_or_default()
+        }
+
+        fn walk(
+            platform_genesis: &crate::platform_types::platform::Platform<
+                crate::rpc::core::MockCoreRPCLike,
+            >,
+            platform_upgraded: &crate::platform_types::platform::Platform<
+                crate::rpc::core::MockCoreRPCLike,
+            >,
+            upgraded_txn: &drive::grovedb::Transaction,
+            path: Vec<Vec<u8>>,
+            depth: usize,
+            diffs: &mut Vec<String>,
+        ) {
+            // Shielded/address subtrees are shallow; 16 is a safe recursion cap
+            // that still covers the deepest commitment-tree internals.
+            if depth > 16 {
+                return;
+            }
+            let a_map = read_level(platform_genesis, None, &path);
+            let b_map = read_level(platform_upgraded, Some(upgraded_txn), &path);
+
+            let path_hex: Vec<String> = path.iter().map(hex::encode).collect();
+            for (k, ea) in &a_map {
+                match b_map.get(k) {
+                    Some(eb) if eb == ea => {}
+                    other => diffs.push(format!(
+                        "path={:?} key={}\n  genesis={:?}\n  upgrade={:?}",
+                        path_hex,
+                        hex::encode(k),
+                        ea,
+                        other
+                    )),
+                }
+            }
+            for k in b_map.keys() {
+                if !a_map.contains_key(k) {
+                    diffs.push(format!(
+                        "ONLY IN upgraded: path={:?} key={}",
+                        path_hex,
+                        hex::encode(k)
+                    ));
+                }
+            }
+            // Recurse only into subtrees present in both with a matching element.
+            for (k, ea) in &a_map {
+                let is_tree = matches!(
+                    ea,
+                    Element::Tree(..)
+                        | Element::SumTree(..)
+                        | Element::BigSumTree(..)
+                        | Element::CountTree(..)
+                        | Element::CountSumTree(..)
+                        | Element::ProvableCountTree(..)
+                        | Element::ProvableCountSumTree(..)
+                );
+                if is_tree && b_map.get(k) == Some(ea) {
+                    let mut child = path.clone();
+                    child.push(k.clone());
+                    walk(
+                        platform_genesis,
+                        platform_upgraded,
+                        upgraded_txn,
+                        child,
+                        depth + 1,
+                        diffs,
+                    );
+                }
+            }
+        }
+
+        let mut diffs = Vec::new();
+        walk(
+            platform_genesis,
+            platform_upgraded,
+            upgraded_txn,
+            root_path,
+            0,
+            &mut diffs,
+        );
+        diffs
+    }
 
     #[test]
     fn test_same_version_transition_is_noop() {
@@ -1807,6 +1838,229 @@ mod tests {
         assert!(
             matches!(ref_element, Element::Reference(..)),
             "reference element should still be a Reference after migration"
+        );
+    }
+
+    /// CONSENSUS-CRITICAL equivalence guard for the v11→v12 boundary.
+    ///
+    /// The `[ShieldedBalances]` subtree is built two ways that MUST be
+    /// byte-identical:
+    ///
+    ///  * GENESIS path — a node that state-syncs a fresh v12 chain runs the real
+    ///    `Drive::create_initial_state_structure_v3` (protocol-v12 genesis).
+    ///  * UPGRADE path — a node already on v11 runs the real
+    ///    `Platform::transition_to_version_12` at the activation block.
+    ///
+    /// Before the fix these diverged: genesis built the pool via a sorted
+    /// `GroveDbOpBatch`, which roots the parent Merk at the batch's median key
+    /// `[160]`; the upgrade built it with sequential breadth-first inserts, which
+    /// root it at `[128]` (the intended NOTES-at-root layout). Two different
+    /// subtree shapes ⇒ a state-synced v12 node and an in-place-upgraded v12 node
+    /// would compute different app hashes at the boundary block and fork.
+    ///
+    /// This test drives the REAL production functions (not a hand-rebuilt batch)
+    /// — Platform A is a genuine genesis-v12, Platform B is a genuine genesis-v11
+    /// then the real `transition_to_version_12`. It asserts that the ENTIRE
+    /// `[ShieldedBalances]` subtree (the main pool element with its carried
+    /// `root_key`, all eight children, and every node below them) is byte-
+    /// identical via `collect_subtree_diffs`.
+    ///
+    /// We compare the named subtree rather than the whole-DB root hash on
+    /// purpose: the whole DB also carries the genesis epoch's recorded protocol-
+    /// version field (`[Pools, epoch_0, "v"]` = 12 for Platform A, 11 for
+    /// Platform B), which legitimately differs between a chain *born* at v12 and
+    /// a chain born at v11 then upgraded. That field has nothing to do with how
+    /// the shielded pool is constructed and would pollute a whole-DB comparison.
+    /// The diagnostic that localized the original bug confirmed the shielded
+    /// subtree was the ONLY construction-driven divergence.
+    ///
+    /// RED before the fix (genesis pool root `[160]` ≠ upgrade pool root `[128]`,
+    /// plus a cascade of differing child hashes), GREEN after (both `[128]`,
+    /// because both paths now call the shared
+    /// `Drive::insert_shielded_pool_structure`).
+    #[test]
+    fn test_genesis_v12_and_upgrade_to_v12_build_identical_shielded_pool() {
+        let platform_version_12 = PlatformVersion::get(12).expect("expected v12");
+
+        // ---- Platform A: REAL fresh genesis at protocol v12. -----------------
+        // Runs the production create_initial_state_structure_v3 (the genesis /
+        // batch path). Genesis is already committed (no open transaction).
+        let platform_a = TestPlatformBuilder::new()
+            .with_initial_protocol_version(12)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        // ---- Platform B: REAL v11 genesis, then REAL transition_to_version_12.
+        let platform_b = TestPlatformBuilder::new()
+            .with_initial_protocol_version(11)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        // Sanity: a genuine v11 genesis must NOT contain ShieldedBalances yet.
+        {
+            let txn = platform_b.drive.grove.start_transaction();
+            let shielded_root_pre = platform_b.drive.grove.get(
+                SubtreePath::empty(),
+                &[RootTree::ShieldedBalances as u8],
+                Some(&txn),
+                &platform_version_12.drive.grove_version,
+            );
+            assert!(
+                shielded_root_pre.value.is_err(),
+                "v11 genesis must not contain ShieldedBalances before the upgrade; got {:?}",
+                shielded_root_pre.value
+            );
+        }
+
+        let txn_b = platform_b.drive.grove.start_transaction();
+        platform_b
+            .transition_to_version_12(&txn_b, platform_version_12)
+            .expect("upgrade: transition_to_version_12 should succeed");
+
+        // Localizing diagnostic: the main pool element's carried root_key is the
+        // [128] (fixed) vs [160] (buggy) AVL-shape discriminator.
+        let sb_path: [&[u8]; 1] = [&[RootTree::ShieldedBalances as u8]];
+        let gv = &platform_version_12.drive.grove_version;
+        let m_a = platform_a
+            .drive
+            .grove
+            .get(
+                SubtreePath::from(&sb_path[..]),
+                &[MAIN_SHIELDED_CREDIT_POOL_KEY_U8],
+                None,
+                gv,
+            )
+            .unwrap()
+            .expect("genesis: [ShieldedBalances, M] element");
+        let m_b = platform_b
+            .drive
+            .grove
+            .get(
+                SubtreePath::from(&sb_path[..]),
+                &[MAIN_SHIELDED_CREDIT_POOL_KEY_U8],
+                Some(&txn_b),
+                gv,
+            )
+            .unwrap()
+            .expect("upgrade: [ShieldedBalances, M] element");
+        println!("[ShieldedBalances, M] GENESIS(v12): {:?}", m_a);
+        println!("[ShieldedBalances, M] UPGRADE(v12): {:?}", m_b);
+
+        // Rigorous assertion: the ENTIRE [ShieldedBalances] subtree must be
+        // byte-identical between the two paths, at every depth.
+        let diffs = collect_subtree_diffs(
+            &platform_a,
+            &platform_b,
+            &txn_b,
+            vec![vec![RootTree::ShieldedBalances as u8]],
+        );
+        assert!(
+            diffs.is_empty(),
+            "CONSENSUS FORK: the [ShieldedBalances] subtree differs between a fresh genesis-v12 \
+             node and an in-place-upgraded v12 node. A state-synced v12 node and an upgraded v12 \
+             node would disagree on the app hash at the v11→v12 boundary block.\n{}",
+            diffs.join("\n"),
+        );
+    }
+
+    /// READ-ONLY v11 boundary equivalence check — DO NOT use this to justify
+    /// changing v11 construction.
+    ///
+    /// The same batch-vs-sequential pattern exists at the v10→v11 boundary:
+    ///
+    ///  * GENESIS path — `Drive::create_initial_state_structure_v2` builds the
+    ///    AddressBalances + SavedBlockTransactions subtrees via a `GroveDbOpBatch`.
+    ///  * UPGRADE path — `Platform::transition_to_version_11` builds the same
+    ///    subtrees with sequential `grove_insert_if_not_exists` inserts.
+    ///
+    /// Protocol v11 is ALREADY ACTIVATED on mainnet and testnet, so changing how
+    /// v11 builds these trees would itself fork the live network. This test only
+    /// CONFIRMS that the two v11 paths coincidentally produce the same state
+    /// (expected GREEN as-is) — it is a tripwire. If it ever comes out RED, STOP:
+    /// the live v11 network is already committed to whatever the genesis/batch
+    /// path produced, and the discrepancy must be analyzed, not "fixed" by
+    /// editing v11 code.
+    #[test]
+    fn test_genesis_v11_and_upgrade_to_v11_build_identical_address_trees() {
+        let platform_version_11 = PlatformVersion::get(11).expect("expected v11");
+
+        // ---- Platform A: REAL fresh genesis at protocol v11 (batch path). ----
+        let platform_a = TestPlatformBuilder::new()
+            .with_initial_protocol_version(11)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        // ---- Platform B: REAL v10 genesis, then REAL transition_to_version_11.
+        let platform_b = TestPlatformBuilder::new()
+            .with_initial_protocol_version(10)
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        // Sanity: a genuine v10 genesis must NOT contain AddressBalances /
+        // SavedBlockTransactions yet (structure v1 predates them).
+        {
+            let txn = platform_b.drive.grove.start_transaction();
+            let addr_pre = platform_b.drive.grove.get(
+                SubtreePath::empty(),
+                &[RootTree::AddressBalances as u8],
+                Some(&txn),
+                &platform_version_11.drive.grove_version,
+            );
+            assert!(
+                addr_pre.value.is_err(),
+                "v10 genesis must not contain AddressBalances before the v11 upgrade; got {:?}",
+                addr_pre.value
+            );
+            let sbt_pre = platform_b.drive.grove.get(
+                SubtreePath::empty(),
+                &[RootTree::SavedBlockTransactions as u8],
+                Some(&txn),
+                &platform_version_11.drive.grove_version,
+            );
+            assert!(
+                sbt_pre.value.is_err(),
+                "v10 genesis must not contain SavedBlockTransactions before the v11 upgrade; got {:?}",
+                sbt_pre.value
+            );
+        }
+
+        let txn_b = platform_b.drive.grove.start_transaction();
+        platform_b
+            .transition_to_version_11(&txn_b, platform_version_11)
+            .expect("upgrade: transition_to_version_11 should succeed");
+
+        // Rigorous assertion: the ENTIRE SavedBlockTransactions and
+        // AddressBalances subtrees (the trees the v11 transition adds) must be
+        // byte-identical between the batch (genesis) and sequential (upgrade)
+        // paths, at every depth. SavedBlockTransactions has three children, so
+        // it is exactly where a batch-vs-sequential AVL-shape divergence could
+        // surface — the same failure mode that affected v12.
+        //
+        // As with the v12 test we compare the named subtrees, NOT the whole-DB
+        // root hash: the whole DB also carries the genesis epoch's recorded
+        // protocol-version field (`[Pools, epoch_0, "v"]` = 11 for the
+        // genesis-v11 node, 10 for the v10→v11 upgraded node), a legitimate
+        // genesis-baseline difference unrelated to address-tree construction.
+        let mut diffs = collect_subtree_diffs(
+            &platform_a,
+            &platform_b,
+            &txn_b,
+            vec![vec![RootTree::SavedBlockTransactions as u8]],
+        );
+        diffs.extend(collect_subtree_diffs(
+            &platform_a,
+            &platform_b,
+            &txn_b,
+            vec![vec![RootTree::AddressBalances as u8]],
+        ));
+
+        assert!(
+            diffs.is_empty(),
+            "v11 TRIPWIRE (RED is a STOP signal): the SavedBlockTransactions / AddressBalances \
+             subtrees differ between a fresh genesis-v11 node (batch path) and a v10→v11 upgraded \
+             node (sequential path). v11 is ALREADY ACTIVATED on the live network — do NOT change \
+             v11 construction to make this pass; surface and analyze the discrepancy.\n{}",
+            diffs.join("\n"),
         );
     }
 }
