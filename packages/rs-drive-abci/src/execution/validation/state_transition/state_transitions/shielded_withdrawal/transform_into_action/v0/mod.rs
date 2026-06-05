@@ -141,6 +141,7 @@ impl ShieldedWithdrawalStateTransitionTransformIntoActionValidationV0
             current_total_balance,
             creation_time_ms,
             fee_amount,
+            platform_version,
         );
 
         Ok(result.map(|action| action.into()))

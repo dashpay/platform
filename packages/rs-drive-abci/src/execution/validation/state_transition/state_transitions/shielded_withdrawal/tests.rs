@@ -1066,7 +1066,8 @@ mod tests {
             FullViewingKey, Note, NoteValue, Position, RandomSeed, Retention, Rho, Scope,
             SpendAuthorizingKey, SpendingKey,
         };
-        use rand::rngs::OsRng;
+        use rand::rngs::StdRng;
+        use rand::SeedableRng;
 
         /// Block-level conservation test for shielded withdrawal. Spends a 500M note
         /// and withdraws `value_balance` worth from the pool. Runs the FULL block
@@ -1083,7 +1084,8 @@ mod tests {
             let platform_version = PlatformVersion::latest();
             let platform = setup_platform();
             insert_dummy_encrypted_notes(&platform, 250);
-            let mut rng = OsRng;
+            // Seeded RNG for deterministic, bisectable test randomness (repo convention).
+            let mut rng = StdRng::seed_from_u64(0);
             let pk = get_proving_key();
 
             let sk = SpendingKey::from_bytes([0u8; 32]).unwrap();

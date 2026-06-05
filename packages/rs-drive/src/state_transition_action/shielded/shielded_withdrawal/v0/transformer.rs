@@ -1,12 +1,16 @@
 use crate::state_transition_action::shielded::shielded_withdrawal::v0::ShieldedWithdrawalTransitionActionV0;
 use crate::state_transition_action::shielded::ShieldedActionNote;
+use dpp::consensus::basic::state_transition::WithdrawalBelowMinAmountError;
+use dpp::consensus::basic::BasicError;
 use dpp::data_contracts::withdrawals_contract;
 use dpp::data_contracts::withdrawals_contract::v1::document_types::withdrawal;
 use dpp::document::{Document, DocumentV0};
 use dpp::fee::Credits;
 use dpp::platform_value::platform_value;
 use dpp::prelude::ConsensusValidationResult;
+use dpp::state_transition::state_transitions::address_funds::address_credit_withdrawal_transition::MIN_WITHDRAWAL_AMOUNT;
 use dpp::state_transition::state_transitions::shielded::shielded_withdrawal_transition::v0::ShieldedWithdrawalTransitionV0;
+use dpp::version::PlatformVersion;
 
 impl ShieldedWithdrawalTransitionActionV0 {
     /// Transforms the shielded withdrawal transition into an action
@@ -15,17 +19,35 @@ impl ShieldedWithdrawalTransitionActionV0 {
         current_total_balance: Credits,
         creation_time_ms: u64,
         fee_amount: Credits,
+        platform_version: &PlatformVersion,
     ) -> ConsensusValidationResult<Self> {
         let notes: Vec<ShieldedActionNote> =
             value.actions.iter().map(ShieldedActionNote::from).collect();
 
         // The withdrawal document records the NET amount actually leaving the platform
         // to Core, i.e. `unshielding_amount - fee_amount`. The fee is carved out of the
-        // unshielding amount and stays in-platform (routed to the fee pools). Validation
-        // (validate_minimum_shielded_fee) guarantees `unshielding_amount >= fee_amount`,
-        // so this subtraction never saturates in practice; the conversion layer's
-        // checked_sub is the authoritative guard.
-        let net_withdrawal_amount = value.unshielding_amount.saturating_sub(fee_amount);
+        // unshielding amount and stays in-platform (routed to the fee pools).
+        //
+        // That net amount becomes a Core `TxOut`, so it must clear the same dust floor
+        // (`MIN_WITHDRAWAL_AMOUNT`) the transparent withdrawal path enforces. Consensus
+        // validation (`validate_minimum_shielded_fee`) already rejects any transition whose
+        // net would fall below that floor, so for validated input this `checked_sub` is
+        // always `Some(net)` with `net >= MIN_WITHDRAWAL_AMOUNT`. We re-check here (rather
+        // than `saturating_sub`) so a direct or future caller that bypasses validation fails
+        // loudly instead of silently constructing a zero/dust withdrawal document.
+        let net_withdrawal_amount = match value.unshielding_amount.checked_sub(fee_amount) {
+            Some(net) if net >= MIN_WITHDRAWAL_AMOUNT => net,
+            net => {
+                return ConsensusValidationResult::new_with_error(
+                    BasicError::WithdrawalBelowMinAmountError(WithdrawalBelowMinAmountError::new(
+                        net.unwrap_or(0),
+                        MIN_WITHDRAWAL_AMOUNT,
+                        platform_version.system_limits.max_withdrawal_amount,
+                    ))
+                    .into(),
+                );
+            }
+        };
 
         // Generate entropy from first nullifier + output_script for document ID
         let mut entropy = Vec::new();

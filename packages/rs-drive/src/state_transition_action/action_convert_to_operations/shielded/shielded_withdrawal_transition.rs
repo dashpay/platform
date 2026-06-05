@@ -102,6 +102,9 @@ mod tests {
     use dpp::document::{Document, DocumentV0, DocumentV0Getters};
     use dpp::identity::core_script::CoreScript;
     use dpp::platform_value::Identifier;
+    use dpp::shielded::{compute_minimum_shielded_fee, SerializedAction};
+    use dpp::state_transition::shielded_withdrawal_transition::ShieldedWithdrawalTransition;
+    use dpp::state_transition::state_transitions::shielded::shielded_withdrawal_transition::v0::ShieldedWithdrawalTransitionV0;
     use dpp::version::PlatformVersion;
     use dpp::withdrawal::Pooling;
 
@@ -311,13 +314,88 @@ mod tests {
         }
     }
 
+    /// A minimal serialized Orchard action (dummy bytes; the transformer only copies
+    /// these fields into the action's notes — no proof verification happens here).
+    fn make_serialized_action() -> SerializedAction {
+        SerializedAction {
+            nullifier: [0x11; 32],
+            rk: [0x33; 32],
+            cmx: [0x22; 32],
+            encrypted_note: vec![1, 2, 3],
+            cv_net: [0x44; 32],
+            spend_auth_sig: [0x55; 64],
+        }
+    }
+
+    /// Build a real single-action `ShieldedWithdrawalTransition` with the given gross amount.
+    fn make_transition(unshielding_amount: u64) -> ShieldedWithdrawalTransition {
+        ShieldedWithdrawalTransition::V0(ShieldedWithdrawalTransitionV0 {
+            actions: vec![make_serialized_action()],
+            unshielding_amount,
+            anchor: [0xAA; 32],
+            proof: vec![],
+            binding_signature: [0u8; 64],
+            core_fee_per_byte: 1,
+            pooling: Pooling::Never,
+            output_script: CoreScript::from_bytes(vec![0x76, 0xA9]),
+        })
+    }
+
     #[test]
     fn test_fee_amount_is_non_zero() {
-        // Regression guard for the fee-bypass bug: withdrawal must charge a non-zero fee.
-        let action = make_action();
+        // Regression guard for the fee-bypass bug. Drive the action through the REAL
+        // transformer (`try_from_transition`) using the REAL fee function — not a hardcoded
+        // fixture — so the test fails if the fee is computed as zero or dropped on the way
+        // into the action.
+        let platform_version = PlatformVersion::latest();
+        let fee = compute_minimum_shielded_fee(1, platform_version);
+        assert!(fee > 0, "computed minimum shielded fee must be non-zero");
+
+        // Net (= unshielding_amount - fee) must clear the dust floor for the transform to
+        // succeed; pad comfortably above it.
+        let transition = make_transition(fee + 1_000_000);
+
+        let result = ShieldedWithdrawalTransitionAction::try_from_transition(
+            &transition,
+            10_000_000,
+            0,
+            fee,
+            platform_version,
+        );
+        assert!(result.is_valid(), "errors: {:?}", result.errors);
+        let action = result.into_data().expect("action");
         match action {
-            ShieldedWithdrawalTransitionAction::V0(v0) => assert!(v0.fee_amount > 0),
+            ShieldedWithdrawalTransitionAction::V0(v0) => {
+                assert_eq!(
+                    v0.fee_amount, fee,
+                    "the action must carry the computed fee, not drop it to zero"
+                );
+            }
         }
+    }
+
+    #[test]
+    fn test_transform_rejects_net_below_min_withdrawal_amount() {
+        use dpp::state_transition::state_transitions::address_funds::address_credit_withdrawal_transition::MIN_WITHDRAWAL_AMOUNT;
+        // A gross amount that covers the fee but leaves a net below the Core dust floor must
+        // be rejected by the transformer, not turned into a zero/dust withdrawal document.
+        let platform_version = PlatformVersion::latest();
+        let fee = compute_minimum_shielded_fee(1, platform_version);
+
+        // net = MIN_WITHDRAWAL_AMOUNT - 1 (just under the floor)
+        let transition = make_transition(fee + MIN_WITHDRAWAL_AMOUNT - 1);
+
+        let result = ShieldedWithdrawalTransitionAction::try_from_transition(
+            &transition,
+            10_000_000,
+            0,
+            fee,
+            platform_version,
+        );
+        assert!(
+            !result.is_valid(),
+            "transform must reject a sub-dust net withdrawal amount"
+        );
     }
 
     #[test]
