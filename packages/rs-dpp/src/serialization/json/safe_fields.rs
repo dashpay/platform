@@ -61,6 +61,9 @@ impl<T: JsonSafeFields> JsonSafeFields for std::collections::HashSet<T> {}
 
 impl JsonSafeFields for platform_value::Identifier {}
 impl JsonSafeFields for platform_value::BinaryData {}
+impl JsonSafeFields for platform_value::Bytes20 {}
+impl JsonSafeFields for platform_value::Bytes32 {}
+impl JsonSafeFields for platform_value::Bytes36 {}
 impl JsonSafeFields for platform_value::Value {}
 impl JsonSafeFields for platform_value::string_encoding::Encoding {}
 

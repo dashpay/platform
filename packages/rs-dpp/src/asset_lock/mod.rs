@@ -76,15 +76,15 @@ mod json_convertible_tests {
         let original = partially_consumed_fixture();
         let json = original.to_json().expect("to_json");
         // Inner `AssetLockValue` is `tag = "$formatVersion"`. `Bytes32` is
-        // base64 in JSON HR. `tx_out_script` (`Vec<u8>` with no `serde(with)`)
-        // serializes as an array of numbers, not base64.
+        // base64 in JSON HR, and `tx_out_script` (`Vec<u8>`) is base64 too via
+        // `#[json_safe_fields]`'s `serde_bytes_var` annotation.
         assert_eq!(
             json,
             json!({
                 "PartiallyConsumed": {
                     "$formatVersion": "0",
                     "initial_credit_value": 1_000_000,
-                    "tx_out_script": [0xaa, 0xbb, 0xcc, 0xdd],
+                    "tx_out_script": "qrvM3Q==",
                     "remaining_credit_value": 500_000,
                     "used_tags": ["QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI="],
                 }
@@ -120,14 +120,15 @@ mod json_convertible_tests {
         let original = partially_consumed_fixture();
         let value = original.to_object().expect("to_object");
         // `Credits` (u64) → `Value::U64`. `tx_out_script` (`Vec<u8>`) →
-        // `Array(Vec<Value::U8>)`. `used_tags` → `Array(Vec<Value::Bytes32>)`.
+        // `Value::Bytes` via `#[json_safe_fields]`. `used_tags` →
+        // `Array(Vec<Value::Bytes32>)`.
         assert_eq!(
             value,
             platform_value!({
                 "PartiallyConsumed": {
                     "$formatVersion": "0",
                     "initial_credit_value": 1_000_000u64,
-                    "tx_out_script": [0xaau8, 0xbbu8, 0xccu8, 0xddu8],
+                    "tx_out_script": Value::Bytes(vec![0xaa, 0xbb, 0xcc, 0xdd]),
                     "remaining_credit_value": 500_000u64,
                     "used_tags": [Value::Bytes32([0x42; 32])],
                 }

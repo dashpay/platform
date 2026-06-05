@@ -158,15 +158,15 @@ mod json_convertible_tests {
         let original = fixture();
         let json = original.to_json().expect("to_json");
         // `AssetLockValue` uses the standard `tag = "$formatVersion"`
-        // convention. `Bytes32` is base64 in JSON HR. `Vec<u8>` for
-        // `tx_out_script` is serialized as an array of numbers (NOT base64),
-        // because plain `Vec<u8>` has no `#[serde(with = ...)]`.
+        // convention. `Bytes32` is base64 in JSON HR, and `tx_out_script`
+        // (`Vec<u8>`) is base64 too: `#[json_safe_fields]` annotates it with
+        // `serde_bytes_var` (raw bytes in binary, base64 string in JSON).
         assert_eq!(
             json,
             json!({
                 "$formatVersion": "0",
                 "initial_credit_value": 1_000_000,
-                "tx_out_script": [0xaa, 0xbb, 0xcc, 0xdd],
+                "tx_out_script": "qrvM3Q==",
                 "remaining_credit_value": 500_000,
                 "used_tags": ["QkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkI="],
             })
@@ -181,21 +181,47 @@ mod json_convertible_tests {
         use platform_value::Value;
         let original = fixture();
         let value = original.to_object().expect("to_object");
-        // `tx_out_script` is `Vec<u8>` and is encoded as `Array(Vec<Value::U8>)`
-        // (each element retains its `u8` size), `used_tags` becomes
-        // `Array(Vec<Value::Bytes32>)`. `initial_credit_value` /
-        // `remaining_credit_value` are `Credits` (u64) → `Value::U64`.
+        // `#[json_safe_fields]` annotates `tx_out_script` (`Vec<u8>`) with
+        // `serde_bytes_var`, so it encodes as `Value::Bytes` (raw bytes, not an
+        // array of `U8`). `used_tags` is `Array(Vec<Value::Bytes32>)`.
+        // `initial_credit_value` / `remaining_credit_value` are `Credits` (u64);
+        // in non-human-readable `Value` they stay `Value::U64`.
         assert_eq!(
             value,
             platform_value!({
                 "$formatVersion": "0",
                 "initial_credit_value": 1_000_000u64,
-                "tx_out_script": [0xaau8, 0xbbu8, 0xccu8, 0xddu8],
+                "tx_out_script": Value::Bytes(vec![0xaa, 0xbb, 0xcc, 0xdd]),
                 "remaining_credit_value": 500_000u64,
                 "used_tags": [Value::Bytes32([0x42; 32])],
             })
         );
         let recovered = AssetLockValue::from_object(value).expect("from_object");
+        assert_eq!(original, recovered);
+    }
+
+    #[test]
+    fn json_large_credits_serialize_as_strings_for_js_safety() {
+        use crate::serialization::JsonConvertible;
+        // `initial_credit_value` exceeds JS `Number.MAX_SAFE_INTEGER` (2^53 - 1),
+        // so `#[json_safe_fields]` must emit it as a string in human-readable JSON
+        // to avoid silent precision loss when the value crosses into JavaScript.
+        // Without the attribute this serializes as a bare number and the
+        // assertion below fails.
+        let original = AssetLockValue::new(
+            9_007_199_254_740_993, // 2^53 + 1, above MAX_SAFE_INTEGER
+            vec![0xaa, 0xbb, 0xcc, 0xdd],
+            500_000,
+            vec![Bytes32::new([0x42; 32])],
+            PlatformVersion::latest(),
+        )
+        .expect("fixture");
+        let json = original.to_json().expect("to_json");
+        assert_eq!(json["initial_credit_value"], json!("9007199254740993"));
+        // Values within the safe range stay numbers.
+        assert_eq!(json["remaining_credit_value"], json!(500_000));
+        // And the string form round-trips back to the exact u64.
+        let recovered = AssetLockValue::from_json(json).expect("from_json");
         assert_eq!(original, recovered);
     }
 }

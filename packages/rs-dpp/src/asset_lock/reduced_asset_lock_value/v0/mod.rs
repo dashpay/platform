@@ -1,7 +1,13 @@
 use crate::fee::Credits;
+#[cfg(feature = "json-conversion")]
+use crate::serialization::json_safe_fields;
 use bincode::{Decode, Encode};
 use platform_value::Bytes32;
 
+// `initial_credit_value` / `remaining_credit_value` are `Credits` (u64) and can
+// exceed JS's `MAX_SAFE_INTEGER`; `#[json_safe_fields]` serializes them as
+// strings in human-readable JSON to avoid precision loss when crossing to JS.
+#[cfg_attr(feature = "json-conversion", json_safe_fields)]
 #[derive(Debug, Clone, Encode, Decode, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct AssetLockValueV0 {
     pub(super) initial_credit_value: Credits,
