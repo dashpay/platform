@@ -646,7 +646,10 @@ mod tests {
         }
 
         #[test]
-        fn test_fee_above_minimum_for_2_actions_succeeds() {
+        fn test_fee_above_minimum_for_2_actions_is_rejected() {
+            // A shielded transfer's `value_balance` IS the fee (no recipient amount), so it
+            // must equal the minimum exactly. Paying even 1 credit above the minimum is
+            // rejected — overpayment buys nothing and would leak a fee fingerprint.
             let platform_version = PlatformVersion::latest();
             let platform = setup_platform();
 
@@ -672,7 +675,9 @@ mod tests {
 
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::BasicError(BasicError::ShieldedInvalidValueBalanceError(_))
+                )]
             );
         }
     }
@@ -751,13 +756,14 @@ mod tests {
             serialize_authorized_bundle_u64(&bundle)
         }
 
-        /// AUDIT REGRESSION: Mutating value_balance is now caught by BatchValidator.
+        /// AUDIT REGRESSION: Mutating value_balance is rejected.
         ///
-        /// Previously, the code only called `bundle.verify_proof(vk)` which did not
-        /// check the binding signature. Now `BatchValidator` verifies the Halo 2 proof
-        /// AND the binding signature, which cryptographically binds value_balance to
-        /// the value commitments (cv_net). Mutating value_balance changes the bundle
-        /// commitment (sighash), causing signature verification to fail.
+        /// The binding signature cryptographically binds value_balance to the value
+        /// commitments (cv_net), so `BatchValidator` rejects any mutation. With the
+        /// exact-fee rule for shielded transfers (`value_balance == min_fee`), a mutation
+        /// that bumps value_balance off the minimum *also* fails the fee check — which runs
+        /// before proof verification — so the mutation is now caught there first. Either way
+        /// the attack is rejected; this asserts the earlier (fee-check) rejection.
         ///
         /// Original severity: CRITICAL — now FIXED.
         #[test]
@@ -784,12 +790,12 @@ mod tests {
 
             let processing_result = process_transition(&platform, transition, platform_version);
 
-            // FIXED: BatchValidator detects the binding signature mismatch
-            // because mutating value_balance changes the bundle commitment (sighash).
+            // The exact-fee rule rejects this before proof verification: the mutation bumps
+            // value_balance above the minimum, and a transfer must pay exactly the minimum.
             assert_matches!(
                 processing_result.execution_results().as_slice(),
                 [StateTransitionExecutionResult::UnpaidConsensusError(
-                    ConsensusError::StateError(StateError::InvalidShieldedProofError(_))
+                    ConsensusError::BasicError(BasicError::ShieldedInvalidValueBalanceError(_))
                 )]
             );
         }

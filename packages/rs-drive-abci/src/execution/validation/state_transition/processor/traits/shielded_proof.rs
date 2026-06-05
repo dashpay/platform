@@ -3,7 +3,9 @@ use crate::error::Error;
 use crate::execution::validation::state_transition::state_transitions::shielded_common::{
     reconstruct_and_verify_bundle, FLAGS_OUTPUTS_ONLY, FLAGS_SPENDS_AND_OUTPUTS,
 };
-use dpp::consensus::basic::state_transition::WithdrawalBelowMinAmountError;
+use dpp::consensus::basic::state_transition::{
+    ShieldedInvalidValueBalanceError, WithdrawalBelowMinAmountError,
+};
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::state::shielded::insufficient_shielded_fee_error::InsufficientShieldedFeeError;
 use dpp::consensus::state::state_error::StateError;
@@ -73,7 +75,11 @@ impl StateTransitionHasShieldedProofValidationV0 for StateTransition {
 ///
 /// The amount checked against `min_fee` is derived from public fields (no ZK proof
 /// execution needed):
-/// - ShieldedTransfer: the whole `value_balance` is the fee, so we check `value_balance >= min_fee`.
+/// - ShieldedTransfer: the whole `value_balance` is the fee, so we require
+///   `value_balance == min_fee` *exactly*. There is no recipient to absorb an excess, so a
+///   variable fee would only burn credits and leak a distinguishing fee fingerprint that
+///   breaks shielded uniformity — overpayment is rejected. (Unshield/Withdrawal use `>=`
+///   because their excess is the recipient/net amount.)
 /// - Unshield / ShieldedWithdrawal: `unshielding_amount` is the TOTAL value leaving the
 ///   shielded pool (recipient/net amount + fee). The fee actually charged at execution time
 ///   is `compute_minimum_shielded_fee` (carved out of `unshielding_amount`), and the
@@ -109,7 +115,9 @@ impl StateTransitionShieldedMinimumFeeValidationV0 for StateTransition {
                 // floor is `MIN_WITHDRAWAL_AMOUNT` only for ShieldedWithdrawal (whose net
                 // becomes a Core `TxOut`); for the others a non-negative net suffices, so
                 // the floor is 0.
-                let (fee, num_actions, min_net_amount): (i64, usize, u64) = match self {
+                // `requires_exact_fee` is true only for ShieldedTransfer, whose
+                // `value_balance` IS the entire fee and must equal the minimum exactly.
+                let (fee, num_actions, min_net_amount, requires_exact_fee): (i64, usize, u64, bool) = match self {
                     // Shield: fee is paid from transparent address inputs, not from value_balance.
                     StateTransition::Shield(_) => {
                         return Ok(SimpleConsensusValidationResult::new())
@@ -117,7 +125,7 @@ impl StateTransitionShieldedMinimumFeeValidationV0 for StateTransition {
                     // ShieldedTransfer: value_balance (u64) IS the fee.
                     StateTransition::ShieldedTransfer(st) => match st {
                         dpp::state_transition::shielded_transfer_transition::ShieldedTransferTransition::V0(v0) => {
-                            (v0.value_balance as i64, v0.actions.len(), 0)
+                            (v0.value_balance as i64, v0.actions.len(), 0, true)
                         }
                     },
                     // Unshield: `unshielding_amount` is the TOTAL leaving the pool
@@ -128,14 +136,14 @@ impl StateTransitionShieldedMinimumFeeValidationV0 for StateTransition {
                     StateTransition::Unshield(st) => match st {
                         dpp::state_transition::unshield_transition::UnshieldTransition::V0(
                             v0,
-                        ) => (v0.unshielding_amount as i64, v0.actions.len(), 0),
+                        ) => (v0.unshielding_amount as i64, v0.actions.len(), 0, false),
                     },
                     // ShieldedWithdrawal: the net (`unshielding_amount - min_fee`) becomes a
                     // Core `TxOut`, so it must clear the same `MIN_WITHDRAWAL_AMOUNT` dust
                     // floor the transparent withdrawal path enforces.
                     StateTransition::ShieldedWithdrawal(st) => match st {
                         dpp::state_transition::shielded_withdrawal_transition::ShieldedWithdrawalTransition::V0(v0) => {
-                            (v0.unshielding_amount as i64, v0.actions.len(), MIN_WITHDRAWAL_AMOUNT)
+                            (v0.unshielding_amount as i64, v0.actions.len(), MIN_WITHDRAWAL_AMOUNT, false)
                         }
                     },
                     // Other transitions don't go through shielded fee validation.
@@ -182,6 +190,29 @@ impl StateTransitionShieldedMinimumFeeValidationV0 for StateTransition {
                             InsufficientShieldedFeeError::new(format!(
                                 "shielded transition fee {} is below minimum required fee {} \
                                  ({} proof + {} actions × {} per-action)",
+                                fee,
+                                minimum_shielded_fee,
+                                constants.shielded_proof_verification_fee,
+                                num_actions,
+                                per_action_fee,
+                            )),
+                        )
+                        .into(),
+                    ));
+                }
+
+                // ShieldedTransfer: `value_balance` IS the entire fee (there is no recipient
+                // amount), so it must equal the minimum exactly. Allowing `value_balance >
+                // min_fee` would let a transfer overpay for no benefit and leak a fee
+                // fingerprint that breaks shielded uniformity — reject it. Unshield/Withdrawal
+                // are exempt: their excess over `min_fee` is the recipient/net amount.
+                if requires_exact_fee && (fee as u64) > minimum_shielded_fee {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        BasicError::ShieldedInvalidValueBalanceError(
+                            ShieldedInvalidValueBalanceError::new(format!(
+                                "shielded transfer value_balance {} must equal the minimum \
+                                 shielded fee {} exactly ({} proof + {} actions × {} per-action); \
+                                 overpayment is not allowed",
                                 fee,
                                 minimum_shielded_fee,
                                 constants.shielded_proof_verification_fee,
