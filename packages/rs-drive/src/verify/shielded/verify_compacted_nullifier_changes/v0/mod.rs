@@ -4,18 +4,11 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::proof::ProofError;
 use crate::error::Error;
+use crate::util::common::compacted_key;
 use crate::verify::RootHash;
 use grovedb::query_result_type::PathKeyOptionalElementTrio;
 use grovedb::{GroveDb, PathQuery, Query, SizedQuery};
 use platform_version::version::PlatformVersion;
-
-/// Builds the 16-byte big-endian compacted key `(start_block, end_block)`.
-fn compacted_key(start_block: u64, end_block: u64) -> Vec<u8> {
-    let mut key = Vec::with_capacity(16);
-    key.extend_from_slice(&start_block.to_be_bytes());
-    key.extend_from_slice(&end_block.to_be_bytes());
-    key
-}
 
 impl Drive {
     /// Verifies compacted nullifier changes proof.

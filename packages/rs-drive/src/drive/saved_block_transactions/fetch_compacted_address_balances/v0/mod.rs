@@ -1,5 +1,6 @@
 use crate::drive::Drive;
 use crate::error::Error;
+use crate::util::common::compacted_key;
 use dpp::address_funds::PlatformAddress;
 use dpp::balances::credits::BlockAwareCreditOperation;
 use dpp::ProtocolError;
@@ -302,14 +303,6 @@ impl Drive {
             }
         }
     }
-}
-
-/// Builds the 16-byte big-endian compacted key `(start_block, end_block)`.
-fn compacted_key(start_block: u64, end_block: u64) -> Vec<u8> {
-    let mut key = Vec::with_capacity(16);
-    key.extend_from_slice(&start_block.to_be_bytes());
-    key.extend_from_slice(&end_block.to_be_bytes());
-    key
 }
 
 #[cfg(test)]

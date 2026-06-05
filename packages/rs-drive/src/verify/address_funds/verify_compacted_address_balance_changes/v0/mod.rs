@@ -3,6 +3,7 @@ use crate::drive::RootTree;
 use crate::error::drive::DriveError;
 use crate::error::proof::ProofError;
 use crate::error::Error;
+use crate::util::common::compacted_key;
 use crate::verify::RootHash;
 use dpp::address_funds::PlatformAddress;
 
@@ -15,14 +16,6 @@ use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
 use super::VerifiedCompactedAddressBalanceChanges;
-
-/// Builds the 16-byte big-endian compacted key `(start_block, end_block)`.
-fn compacted_key(start_block: u64, end_block: u64) -> Vec<u8> {
-    let mut key = Vec::with_capacity(16);
-    key.extend_from_slice(&start_block.to_be_bytes());
-    key.extend_from_slice(&end_block.to_be_bytes());
-    key
-}
 
 /// Path to the compacted address balances subtree:
 /// `[SavedBlockTransactions, COMPACTED_ADDRESS_BALANCES_KEY]`.

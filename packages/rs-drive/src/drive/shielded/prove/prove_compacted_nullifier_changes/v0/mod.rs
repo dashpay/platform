@@ -1,18 +1,11 @@
 use crate::drive::shielded::nullifiers::queries::shielded_compacted_nullifiers_path_vec;
 use crate::drive::Drive;
 use crate::error::Error;
+use crate::util::common::compacted_key;
 use dpp::ProtocolError;
 use grovedb::query_result_type::QueryResultType;
 use grovedb::{PathQuery, Query, SizedQuery, TransactionArg};
 use platform_version::version::PlatformVersion;
-
-/// Builds the 16-byte big-endian compacted key `(start_block, end_block)`.
-fn compacted_key(start_block: u64, end_block: u64) -> Vec<u8> {
-    let mut key = Vec::with_capacity(16);
-    key.extend_from_slice(&start_block.to_be_bytes());
-    key.extend_from_slice(&end_block.to_be_bytes());
-    key
-}
 
 impl Drive {
     /// Version 0 implementation for proving compacted nullifier changes.
