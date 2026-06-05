@@ -493,4 +493,38 @@ mod tests {
             }
         }
     }
+
+    /// Querying past the last compacted range: the boundary key `(100, 200)` has
+    /// `end_block < start_block_height`, so there is no containing range and the
+    /// forward scan finds nothing. Exercises the `find_map` fallback to
+    /// `(start, start)` on both prover and verifier (a single key `<= bound`, so
+    /// unaffected by the known multi-range liveness bug).
+    #[test]
+    fn query_past_last_range_returns_empty() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        store_compacted_entry(&drive, 100, 200, vec![[0xAB; 32]], platform_version);
+
+        // Query at 300, strictly past the only range (100, 200).
+        let proof = drive
+            .prove_compacted_nullifier_changes(300, None, None, platform_version)
+            .expect("should prove");
+        let (_root, changes) = Drive::verify_compacted_nullifier_changes(
+            proof.as_slice(),
+            300,
+            None,
+            platform_version,
+        )
+        .expect("should verify");
+
+        assert!(
+            changes.is_empty(),
+            "querying past the last range must return zero changes, got {:?}",
+            changes
+                .iter()
+                .map(|c| (c.start_block, c.end_block))
+                .collect::<Vec<_>>()
+        );
+    }
 }

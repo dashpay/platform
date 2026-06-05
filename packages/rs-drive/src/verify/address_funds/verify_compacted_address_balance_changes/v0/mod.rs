@@ -61,6 +61,19 @@ impl Drive {
     /// 3. The chained **forward query** (`range_from(start_key..)`, caller limit)
     ///    is verified against the same root hash, and its authenticated results
     ///    are decoded into the returned changes.
+    ///
+    /// # KNOWN LIVENESS BUG (tracked in PR #3792 — fix deferred)
+    ///
+    /// Identical to the shielded-nullifier verifier: the boundary query is
+    /// **descending** while the forward query is **ascending**, and a single
+    /// GroveDB proof is one-directional, so when **two or more** compacted
+    /// address-balance ranges sort at/below `start_block_height` the honest proof
+    /// fails verification with "Cannot verify upper bound of queried range" (see
+    /// the `#[ignore]`d `multiple_ranges_below_query_height_verify` regression
+    /// test). The single-range and empty cases work. The planned fix is to re-key
+    /// compacted entries by `(end_block, start_block)` so retrieval becomes a
+    /// single ascending `range_from((H, 0)..)` — which also closes the original
+    /// absence-proof soundness hole structurally.
     pub(super) fn verify_compacted_address_balance_changes_v0(
         proof: &[u8],
         start_block_height: u64,
@@ -404,5 +417,87 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// Querying past the last compacted range: the boundary key `(100, 200)` has
+    /// `end_block < start_block_height`, so there is no containing range and the
+    /// forward scan finds nothing. This exercises the `find_map` fallback to
+    /// `(start, start)` on both prover and verifier — a single key `<= bound`, so
+    /// it is unaffected by the known multi-range liveness bug.
+    #[test]
+    fn query_past_last_range_returns_empty() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let address = PlatformAddress::P2pkh([7; 20]);
+        let mut changes = BTreeMap::new();
+        changes.insert(
+            address,
+            BlockAwareCreditOperation::from_operation(150, &CreditOperation::AddToCredits(12_345)),
+        );
+        store_compacted_entry(&drive, 100, 200, changes, platform_version);
+
+        // Query at 300, strictly past the only range (100, 200).
+        let proof = drive
+            .prove_compacted_address_balance_changes(300, None, None, platform_version)
+            .expect("should prove");
+        let (_root, compacted_changes) = Drive::verify_compacted_address_balance_changes(
+            proof.as_slice(),
+            300,
+            None,
+            platform_version,
+        )
+        .expect("should verify");
+
+        assert!(
+            compacted_changes.is_empty(),
+            "querying past the last range must return zero changes, got {:?}",
+            compacted_changes
+                .iter()
+                .map(|(s, e, _)| (*s, *e))
+                .collect::<Vec<_>>()
+        );
+    }
+
+    /// ADVERSARIAL (mirror of the nullifier verifier): >=2 compacted ranges
+    /// at/below the query height. KNOWN-FAILING per PR #3792 — the chained
+    /// descending-boundary + ascending-forward scheme cannot be satisfied by one
+    /// one-directional GroveDB proof; fails with "Cannot verify upper bound of
+    /// queried range". Un-ignore once the compacted tree is re-keyed by
+    /// `(end_block, start_block)`.
+    #[ignore = "known liveness bug: chained descending-boundary + ascending-forward \
+                cannot share one GroveDB proof; fix = re-key by end_block (see PR #3792)"]
+    #[test]
+    fn multiple_ranges_below_query_height_verify() {
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+
+        let address = PlatformAddress::P2pkh([7; 20]);
+        for (s, e) in [(1u64, 64u64), (65, 128), (129, 192)] {
+            let mut changes = BTreeMap::new();
+            changes.insert(
+                address,
+                BlockAwareCreditOperation::from_operation(e, &CreditOperation::AddToCredits(e)),
+            );
+            store_compacted_entry(&drive, s, e, changes, platform_version);
+        }
+
+        // Query from 150: (1,64),(65,128),(129,192) all sort <= (150, MAX).
+        let proof = drive
+            .prove_compacted_address_balance_changes(150, None, None, platform_version)
+            .expect("should prove with multiple ranges below the query height");
+        let (_root, changes) = Drive::verify_compacted_address_balance_changes(
+            proof.as_slice(),
+            150,
+            None,
+            platform_version,
+        )
+        .expect("VERIFY MUST NOT FAIL with multiple ranges <= bound");
+
+        assert!(
+            changes.iter().any(|(s, e, _)| *s == 129 && *e == 192),
+            "containing range (129,192) must be surfaced; got {:?}",
+            changes.iter().map(|(s, e, _)| (*s, *e)).collect::<Vec<_>>()
+        );
     }
 }

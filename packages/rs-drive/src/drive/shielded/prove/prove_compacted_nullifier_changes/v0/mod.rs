@@ -4,7 +4,6 @@ use crate::error::Error;
 use dpp::ProtocolError;
 use grovedb::query_result_type::QueryResultType;
 use grovedb::{PathQuery, Query, SizedQuery, TransactionArg};
-use grovedb_costs::CostContext;
 use platform_version::version::PlatformVersion;
 
 /// Builds the 16-byte big-endian compacted key `(start_block, end_block)`.
@@ -92,37 +91,39 @@ impl Drive {
             None => (None, compacted_key(start_block_height, start_block_height)),
         };
 
-        // Step 2: build the single merged proof.
+        // Step 2: build the proof.
         //
         // The verifier's chained boundary query is a descending
         // `range_to_inclusive(..=(start, MAX))` limit-1 subset query. For it to
         // authenticate `boundary_key` as the true greatest key, the proof must
         // include `boundary_key` as a full node together with the contiguity
-        // information around it. We therefore include the boundary key as an
-        // explicit point query merged with the forward range.
-        //
-        // `PathQuery::merge` rejects per-query limits, so the merged queries
-        // carry no limits; the forward query's caller limit is applied to the
-        // verifier's forward subset query instead (the proof is a superset,
-        // which subset verification accepts).
+        // information around it. We therefore prove a single query that unions the
+        // boundary key (as an explicit point) with the forward range.
         match boundary_key {
             Some(boundary_key) => {
-                let mut boundary_point = Query::new();
-                boundary_point.insert_key(boundary_key);
-                let boundary_point_query =
-                    PathQuery::new(path.clone(), SizedQuery::new(boundary_point, None, None));
+                // Cap the proof at the caller's `limit` (+1 for the authenticated
+                // boundary point) so a client requesting `prove=true` from an early
+                // height cannot force a proof spanning the entire compacted history
+                // — the public handler passes `limit = Some(25)` "to stay within
+                // proof size limits", and dropping it here was a remote
+                // CPU/memory/bandwidth amplification vector. The verifier re-applies
+                // `limit` to its forward subset query, so this cap is
+                // soundness-neutral. Routed through the transaction-aware proof path
+                // (not `prove_query_many`, which ignores the transaction) so an
+                // active transaction's snapshot is used consistently.
+                let capped_limit = limit.map(|l| l.saturating_add(1));
+                let mut query = Query::new();
+                query.insert_key(boundary_key);
+                query.insert_range_from(forward_start..);
+                let path_query =
+                    PathQuery::new(path.clone(), SizedQuery::new(query, capped_limit, None));
 
-                let mut forward_query = Query::new();
-                forward_query.insert_range_from(forward_start..);
-                let forward_path_query =
-                    PathQuery::new(path.clone(), SizedQuery::new(forward_query, None, None));
-
-                let CostContext { value, .. } = self.grove.prove_query_many(
-                    vec![&boundary_point_query, &forward_path_query],
-                    None,
-                    &platform_version.drive.grove_version,
-                );
-                value.map_err(Error::from)
+                self.grove_get_proved_path_query(
+                    &path_query,
+                    transaction,
+                    &mut vec![],
+                    &platform_version.drive,
+                )
             }
             None => {
                 // No compacted key <= (start, MAX) exists at all (empty /

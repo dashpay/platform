@@ -5,7 +5,6 @@ use dpp::balances::credits::BlockAwareCreditOperation;
 use dpp::ProtocolError;
 use grovedb::query_result_type::QueryResultType;
 use grovedb::{Element, PathQuery, Query, SizedQuery, TransactionArg};
-use grovedb_costs::CostContext;
 use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
@@ -246,7 +245,11 @@ impl Drive {
                         ),
                     )));
                 }
-                let end_block = u64::from_be_bytes(key[8..16].try_into().unwrap());
+                let end_block = u64::from_be_bytes(key[8..16].try_into().map_err(|_| {
+                    Error::Protocol(Box::new(ProtocolError::CorruptedSerialization(
+                        "invalid compacted key slice".to_string(),
+                    )))
+                })?);
                 let forward_start = if end_block >= start_block_height {
                     key.clone()
                 } else {
@@ -257,29 +260,31 @@ impl Drive {
             None => (None, compacted_key(start_block_height, start_block_height)),
         };
 
-        // Step 2: build the single merged proof. See the nullifier prover and
-        // the verifier docs for the soundness rationale. `PathQuery::merge`
-        // rejects per-query limits, so the merged queries carry no limits; the
-        // forward query's caller limit is applied to the verifier's forward
-        // subset query instead (subset verification accepts a superset proof).
+        // Step 2: build the proof. See the nullifier prover and the verifier docs
+        // for the soundness rationale.
         match boundary_key {
             Some(boundary_key) => {
-                let mut boundary_point = Query::new();
-                boundary_point.insert_key(boundary_key);
-                let boundary_point_query =
-                    PathQuery::new(path.clone(), SizedQuery::new(boundary_point, None, None));
+                // Cap the proof at the caller's `limit` (+1 for the authenticated
+                // boundary point) so a client requesting `prove=true` from an early
+                // height cannot force a proof spanning the entire compacted history
+                // (the public handler passes `limit = Some(25)` "to stay within proof
+                // size limits"). The verifier re-applies `limit` to its forward subset
+                // query, so this cap is soundness-neutral. Routed through the
+                // transaction-aware proof path (not `prove_query_many`, which ignores
+                // the transaction) for snapshot consistency.
+                let capped_limit = limit.map(|l| l.saturating_add(1));
+                let mut query = Query::new();
+                query.insert_key(boundary_key);
+                query.insert_range_from(forward_start..);
+                let path_query =
+                    PathQuery::new(path.clone(), SizedQuery::new(query, capped_limit, None));
 
-                let mut forward_query = Query::new();
-                forward_query.insert_range_from(forward_start..);
-                let forward_path_query =
-                    PathQuery::new(path.clone(), SizedQuery::new(forward_query, None, None));
-
-                let CostContext { value, .. } = self.grove.prove_query_many(
-                    vec![&boundary_point_query, &forward_path_query],
-                    None,
-                    &platform_version.drive.grove_version,
-                );
-                value.map_err(Error::from)
+                self.grove_get_proved_path_query(
+                    &path_query,
+                    transaction,
+                    &mut vec![],
+                    &platform_version.drive,
+                )
             }
             None => {
                 let mut forward_query = Query::new();
