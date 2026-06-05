@@ -10,6 +10,7 @@ impl ShieldedWithdrawalTransitionAction {
         value: &ShieldedWithdrawalTransition,
         current_total_balance: Credits,
         creation_time_ms: u64,
+        fee_amount: Credits,
     ) -> ConsensusValidationResult<Self> {
         match value {
             ShieldedWithdrawalTransition::V0(v0) => {
@@ -17,6 +18,7 @@ impl ShieldedWithdrawalTransitionAction {
                     v0,
                     current_total_balance,
                     creation_time_ms,
+                    fee_amount,
                 );
                 result.map(|action| action.into())
             }

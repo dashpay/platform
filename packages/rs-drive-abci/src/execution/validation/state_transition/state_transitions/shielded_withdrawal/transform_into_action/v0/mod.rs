@@ -75,8 +75,8 @@ impl ShieldedWithdrawalStateTransitionTransformIntoActionValidationV0
         }
 
         // Verify the pool has sufficient balance for the withdrawal.
-        let unshielding_amount = match self {
-            ShieldedWithdrawalTransition::V0(v0) => v0.unshielding_amount,
+        let (unshielding_amount, num_actions) = match self {
+            ShieldedWithdrawalTransition::V0(v0) => (v0.unshielding_amount, v0.actions.len()),
         };
 
         if current_total_balance < unshielding_amount {
@@ -126,6 +126,13 @@ impl ShieldedWithdrawalStateTransitionTransformIntoActionValidationV0
         )?;
         execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
 
+        // The fee charged to the shielded pool is the minimum shielded fee computed
+        // from the same `num_actions` that `validate_minimum_shielded_fee` enforced
+        // `unshielding_amount >=` against. Because that check passed, the net amount
+        // withdrawn to Core (`unshielding_amount - fee_amount`) is guaranteed to be
+        // non-negative.
+        let fee_amount = dpp::shielded::compute_minimum_shielded_fee(num_actions, platform_version);
+
         // Build the action, which includes creating the withdrawal document
         let creation_time_ms = block_info.time_ms;
 
@@ -133,6 +140,7 @@ impl ShieldedWithdrawalStateTransitionTransformIntoActionValidationV0
             self,
             current_total_balance,
             creation_time_ms,
+            fee_amount,
         );
 
         Ok(result.map(|action| action.into()))

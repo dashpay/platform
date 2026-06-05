@@ -68,11 +68,15 @@ impl StateTransitionHasShieldedProofValidationV0 for StateTransition {
 /// The minimum fee is computed dynamically based on the number of actions:
 ///   min_fee = proof_verification_fee + num_actions × (processing_fee + storage_fee)
 ///
-/// The fee is derived from the public `value_balance` field (no ZK proof execution needed):
-/// - ShieldedTransfer: fee = value_balance
-/// - Unshield: fee = value_balance - amount
-/// - ShieldedWithdrawal: fee = value_balance - amount
-/// - Shield: fee paid by transparent address inputs (skipped here)
+/// The amount checked against `min_fee` is derived from public fields (no ZK proof
+/// execution needed):
+/// - ShieldedTransfer: the whole `value_balance` is the fee, so we check `value_balance >= min_fee`.
+/// - Unshield / ShieldedWithdrawal: `unshielding_amount` is the TOTAL value leaving the
+///   shielded pool (recipient/net amount + fee). The fee actually charged at execution time
+///   is `compute_minimum_shielded_fee` (carved out of `unshielding_amount`), and the
+///   recipient/net receives `unshielding_amount - fee`. Requiring `unshielding_amount >= min_fee`
+///   here guarantees that net amount is non-negative.
+/// - Shield: fee paid by transparent address inputs (skipped here).
 pub(crate) trait StateTransitionShieldedMinimumFeeValidationV0 {
     fn validate_minimum_shielded_fee(
         &self,

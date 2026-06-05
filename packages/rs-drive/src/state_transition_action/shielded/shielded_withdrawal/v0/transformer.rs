@@ -14,9 +14,18 @@ impl ShieldedWithdrawalTransitionActionV0 {
         value: &ShieldedWithdrawalTransitionV0,
         current_total_balance: Credits,
         creation_time_ms: u64,
+        fee_amount: Credits,
     ) -> ConsensusValidationResult<Self> {
         let notes: Vec<ShieldedActionNote> =
             value.actions.iter().map(ShieldedActionNote::from).collect();
+
+        // The withdrawal document records the NET amount actually leaving the platform
+        // to Core, i.e. `unshielding_amount - fee_amount`. The fee is carved out of the
+        // unshielding amount and stays in-platform (routed to the fee pools). Validation
+        // (validate_minimum_shielded_fee) guarantees `unshielding_amount >= fee_amount`,
+        // so this subtraction never saturates in practice; the conversion layer's
+        // checked_sub is the authoritative guard.
+        let net_withdrawal_amount = value.unshielding_amount.saturating_sub(fee_amount);
 
         // Generate entropy from first nullifier + output_script for document ID
         let mut entropy = Vec::new();
@@ -36,7 +45,7 @@ impl ShieldedWithdrawalTransitionActionV0 {
         );
 
         let document_data = platform_value!({
-            withdrawal::properties::AMOUNT: value.unshielding_amount,
+            withdrawal::properties::AMOUNT: net_withdrawal_amount,
             withdrawal::properties::CORE_FEE_PER_BYTE: value.core_fee_per_byte,
             withdrawal::properties::POOLING: value.pooling,
             withdrawal::properties::OUTPUT_SCRIPT: value.output_script.as_bytes(),
@@ -70,7 +79,7 @@ impl ShieldedWithdrawalTransitionActionV0 {
             core_fee_per_byte: value.core_fee_per_byte,
             pooling: value.pooling,
             output_script: value.output_script.clone(),
-            fee_amount: 0, // TODO: fee calculation for shielded withdrawals
+            fee_amount,
             current_total_balance,
             prepared_withdrawal_document: withdrawal_document,
         })

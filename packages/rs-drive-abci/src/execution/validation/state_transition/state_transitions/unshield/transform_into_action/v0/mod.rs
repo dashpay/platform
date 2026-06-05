@@ -103,8 +103,8 @@ impl UnshieldStateTransitionTransformIntoActionValidationV0 for UnshieldTransiti
         execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
 
         // Verify the pool has sufficient balance for the unshield amount
-        let amount = match self {
-            UnshieldTransition::V0(v0) => v0.unshielding_amount,
+        let (amount, num_actions) = match self {
+            UnshieldTransition::V0(v0) => (v0.unshielding_amount, v0.actions.len()),
         };
 
         if current_total_balance < amount {
@@ -121,7 +121,14 @@ impl UnshieldStateTransitionTransformIntoActionValidationV0 for UnshieldTransiti
             ));
         }
 
-        let result = UnshieldTransitionAction::try_from_transition(self, current_total_balance);
+        // The fee charged to the shielded pool is the minimum shielded fee computed
+        // from the same `num_actions` that `validate_minimum_shielded_fee` enforced
+        // `unshielding_amount >=` against. Because that check passed, the net recipient
+        // amount (`unshielding_amount - fee_amount`) is guaranteed to be non-negative.
+        let fee_amount = dpp::shielded::compute_minimum_shielded_fee(num_actions, platform_version);
+
+        let result =
+            UnshieldTransitionAction::try_from_transition(self, current_total_balance, fee_amount);
 
         Ok(result.map(|action| action.into()))
     }
