@@ -78,12 +78,18 @@ impl Drive {
                 // at or beyond it. Use the authenticated key directly in that case;
                 // otherwise there is no containing range and we start at
                 // (start_block_height, start_block_height).
+                //
+                // The boundary query is limit-1, so there is at most one
+                // authenticated key. A non-16-byte key is tree/proof corruption —
+                // reject (return None, which fails the chained verification) rather
+                // than silently degrading to the (start, start) forward-only lower
+                // bound and accepting an incomplete result set.
+                if boundary_results.iter().any(|(_p, key, _e)| key.len() != 16) {
+                    return None;
+                }
                 let start_key = boundary_results
                     .iter()
                     .find_map(|(_path, key, _element)| {
-                        if key.len() != 16 {
-                            return None;
-                        }
                         let end_block = u64::from_be_bytes(
                             key[8..16].try_into().expect("len checked to be 16"),
                         );

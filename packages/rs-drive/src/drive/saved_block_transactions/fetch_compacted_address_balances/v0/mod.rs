@@ -52,11 +52,15 @@ impl Drive {
         let mut compacted_changes = Vec::new();
         let limit_usize = limit.map(|l| l as usize);
 
+        // A zero limit can never include any entry — return empty before the
+        // boundary probe, which would otherwise still surface a containing range.
+        if limit_usize == Some(0) {
+            return Ok(compacted_changes);
+        }
+
         // Query 1: Find if there's a range containing start_block_height
         // Query descending from (start_block_height, u64::MAX) with limit 1
-        let mut desc_end_key = Vec::with_capacity(16);
-        desc_end_key.extend_from_slice(&start_block_height.to_be_bytes());
-        desc_end_key.extend_from_slice(&u64::MAX.to_be_bytes());
+        let desc_end_key = compacted_key(start_block_height, u64::MAX);
 
         let mut desc_query = Query::new_with_direction(false); // descending
         desc_query.insert_range_to_inclusive(..=desc_end_key);
@@ -120,9 +124,7 @@ impl Drive {
         // Always use (start_block_height, 0) for consistent proof verification
         // The result may overlap with descending query if descending found a range
         // starting exactly at start_block_height - we dedupe below
-        let mut asc_start_key = Vec::with_capacity(16);
-        asc_start_key.extend_from_slice(&start_block_height.to_be_bytes());
-        asc_start_key.extend_from_slice(&0u64.to_be_bytes());
+        let asc_start_key = compacted_key(start_block_height, 0);
 
         let mut asc_query = Query::new();
         asc_query.insert_range_from(asc_start_key..);

@@ -1,5 +1,4 @@
 use crate::drive::Drive;
-use crate::drive::RootTree;
 use crate::error::drive::DriveError;
 use crate::error::proof::ProofError;
 use crate::error::Error;
@@ -7,8 +6,6 @@ use crate::util::common::compacted_key;
 use crate::verify::RootHash;
 use dpp::address_funds::PlatformAddress;
 
-/// The subtree key for compacted address balances storage as u8
-const COMPACTED_ADDRESS_BALANCES_KEY_U8: u8 = b'c';
 use dpp::balances::credits::BlockAwareCreditOperation;
 use grovedb::query_result_type::PathKeyOptionalElementTrio;
 use grovedb::{GroveDb, PathQuery, Query, SizedQuery};
@@ -16,15 +13,6 @@ use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
 use super::VerifiedCompactedAddressBalanceChanges;
-
-/// Path to the compacted address balances subtree:
-/// `[SavedBlockTransactions, COMPACTED_ADDRESS_BALANCES_KEY]`.
-fn compacted_address_balances_path() -> Vec<Vec<u8>> {
-    vec![
-        vec![RootTree::SavedBlockTransactions as u8],
-        vec![COMPACTED_ADDRESS_BALANCES_KEY_U8],
-    ]
-}
 
 impl Drive {
     /// Verifies compacted address balance changes proof.
@@ -78,7 +66,7 @@ impl Drive {
             .with_big_endian()
             .with_no_limit();
 
-        let path = compacted_address_balances_path();
+        let path = Drive::saved_compacted_block_transactions_address_balances_path_vec();
 
         // Step 1: boundary query — authenticate the single greatest compacted
         // key <= (start_block_height, u64::MAX). Descending, limit 1.
@@ -93,12 +81,17 @@ impl Drive {
         let forward_path = path.clone();
         let generator =
             move |boundary_results: Vec<PathKeyOptionalElementTrio>| -> Option<PathQuery> {
+                // The boundary query is limit-1, so there is at most one
+                // authenticated key. A non-16-byte key is tree/proof corruption —
+                // reject (return None, which fails the chained verification) rather
+                // than silently degrading to the (start, start) forward-only lower
+                // bound and accepting an incomplete result set.
+                if boundary_results.iter().any(|(_p, key, _e)| key.len() != 16) {
+                    return None;
+                }
                 let start_key = boundary_results
                     .iter()
                     .find_map(|(_path, key, _element)| {
-                        if key.len() != 16 {
-                            return None;
-                        }
                         let end_block = u64::from_be_bytes(
                             key[8..16].try_into().expect("len checked to be 16"),
                         );
@@ -373,7 +366,7 @@ mod tests {
         // Craft the MALICIOUS proof the OLD (vulnerable) way: prove
         // range_from((150, 150)..) directly. (100, 200) sorts before (150, 150)
         // and so appears only as a hash-only boundary node.
-        let path = compacted_address_balances_path();
+        let path = Drive::saved_compacted_block_transactions_address_balances_path_vec();
         let malicious_start_key = compacted_key(150, 150);
         let mut malicious_inner = Query::new();
         malicious_inner.insert_range_from(malicious_start_key..);
