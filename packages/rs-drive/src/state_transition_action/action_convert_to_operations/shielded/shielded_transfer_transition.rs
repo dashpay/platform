@@ -150,4 +150,73 @@ mod tests {
         let result = action.into_high_level_drive_operations(&epoch, platform_version);
         assert!(result.is_err());
     }
+
+    /// Audit: the flat `compute_minimum_shielded_fee` must cover the *actual* GroveDB write
+    /// cost (`Drive::calculate_fee`) of a shielded transition's operations.
+    ///
+    /// A shielded transfer is the cleanest per-action case — insert nullifiers + notes +
+    /// pool-balance update, with no contract document — so it isolates the dominant variable
+    /// cost (note storage). We use production-sized notes (216-byte encrypted note → 280-byte
+    /// commitment-tree item) and measure the real cost in estimation mode (`apply = false`).
+    ///
+    /// The flat fee covers it with large margin because it also bundles a flat 100M
+    /// proof-verification fee that `calculate_fee` never charges (Halo 2 verification is CPU,
+    /// not a GroveDB op). 16 is the max actions per bundle.
+    #[test]
+    fn test_minimum_shielded_fee_covers_actual_grovedb_write_cost() {
+        use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+        use dpp::block::block_info::BlockInfo;
+        use dpp::shielded::compute_minimum_shielded_fee;
+
+        let drive = setup_drive_with_initial_state_structure(None);
+        let platform_version = PlatformVersion::latest();
+        let epoch = Epoch::new(0).unwrap();
+
+        // Production-sized note: 216-byte encrypted note, distinct nullifier/cmx per action.
+        let realistic_note = |i: u8| ShieldedActionNote {
+            nullifier: [i.wrapping_add(1); 32],
+            cmx: [i.wrapping_add(101); 32],
+            encrypted_note: vec![0x77; 216],
+        };
+
+        for num_actions in [1usize, 8, 16] {
+            let fee_amount = compute_minimum_shielded_fee(num_actions, platform_version);
+            let notes: Vec<_> = (0..num_actions as u8).map(realistic_note).collect();
+            let action = ShieldedTransferTransitionAction::V0(ShieldedTransferTransitionActionV0 {
+                notes,
+                anchor: [0xAA; 32],
+                fee_amount,
+                current_total_balance: fee_amount + 1_000_000,
+            });
+
+            let ops = action
+                .into_high_level_drive_operations(&epoch, platform_version)
+                .expect("operations");
+
+            // apply = false → estimation mode: no DB mutation, returns the real cost.
+            let fee_result = drive
+                .apply_drive_operations(
+                    ops,
+                    false,
+                    &BlockInfo::default(),
+                    None,
+                    platform_version,
+                    None,
+                )
+                .expect("estimate write cost");
+            let actual_cost = fee_result.total_base_fee();
+
+            // The flat fee must cover the real write cost. Measured margins (estimation
+            // mode, production-sized notes): ~9.3x at 1 action down to ~2.8x at the 16-action
+            // max — the margin shrinks with action count because the 100M proof fee is fixed
+            // while per-action GroveDB cost grows, but it stays well above 1x at the cap.
+            assert!(
+                fee_amount >= actual_cost,
+                "compute_minimum_shielded_fee({num_actions}) = {fee_amount} must cover the actual \
+                 GroveDB write cost {actual_cost} (storage {} + processing {})",
+                fee_result.storage_fee,
+                fee_result.processing_fee
+            );
+        }
+    }
 }
