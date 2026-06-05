@@ -16,17 +16,25 @@ pub(crate) fn compacted_key(start_block: u64, end_block: u64) -> Vec<u8> {
     key
 }
 
+/// Canonical subtree key for the compacted address-balance tree under
+/// `SavedBlockTransactions`.
+///
+/// Defined here (a `verify`-available module) rather than in the `server`-gated
+/// `saved_block_transactions::queries` so the **verify-side** proof verifier and
+/// the **server-side** storage/fetch path reference one definition — the subtree
+/// location is part of the proof contract and must not drift between them.
+/// `saved_block_transactions::queries` re-exports this constant for its
+/// server-side callers, so the `b'c'` byte is written in exactly one place.
+pub const COMPACTED_ADDRESS_BALANCES_KEY_U8: u8 = b'c';
+
 /// Path to the compacted address-balance subtree under `SavedBlockTransactions`.
 ///
-/// Lives here (a `verify`-available module) so the **server-side** storage/fetch
-/// path and the **verify-side** proof verifier share one definition — the
-/// subtree location is part of the proof contract and must not drift between
-/// them. The byte must stay identical to
-/// `saved_block_transactions::queries::COMPACTED_ADDRESS_BALANCES_KEY_U8`
-/// (which is `server`-gated and so not referenceable from the verifier).
+/// Shared by the server-side storage/fetch path and the verify-side proof
+/// verifier; both sides reach it through this one helper. See
+/// [`COMPACTED_ADDRESS_BALANCES_KEY_U8`] for why the byte lives in this module.
 pub(crate) fn compacted_address_balances_path() -> Vec<Vec<u8>> {
     vec![
         vec![crate::drive::RootTree::SavedBlockTransactions as u8],
-        vec![b'c'], // COMPACTED_ADDRESS_BALANCES_KEY_U8
+        vec![COMPACTED_ADDRESS_BALANCES_KEY_U8],
     ]
 }

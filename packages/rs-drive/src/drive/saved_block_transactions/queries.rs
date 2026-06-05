@@ -10,8 +10,14 @@ pub const ADDRESS_BALANCES_KEY_U8: u8 = b'm';
 /// The subtree key for address balances storage
 pub const COMPACTED_ADDRESS_BALANCES_KEY: &[u8; 1] = b"c";
 
-/// The subtree key for compacted address balances storage as u8
-pub const COMPACTED_ADDRESS_BALANCES_KEY_U8: u8 = b'c';
+/// The subtree key for compacted address balances storage as u8.
+///
+/// Re-exported from the `verify`-available [`crate::util::common`] so the proof
+/// verifier and this server-side storage path share a single definition of the
+/// byte (it is part of the proof contract and must not drift). The downstream
+/// import path (`saved_block_transactions::COMPACTED_ADDRESS_BALANCES_KEY_U8`,
+/// via `pub use queries::*`) is unchanged.
+pub use crate::util::common::COMPACTED_ADDRESS_BALANCES_KEY_U8;
 
 /// The subtree key for compacted addresses expiration time storage
 pub const COMPACTED_ADDRESSES_EXPIRATION_TIME_KEY: &[u8; 1] = b"e";
