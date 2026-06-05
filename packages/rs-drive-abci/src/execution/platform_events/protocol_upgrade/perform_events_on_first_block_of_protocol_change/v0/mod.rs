@@ -700,7 +700,12 @@ mod tests {
             let mut q = Query::new();
             q.insert_all();
             let pq = PathQuery::new(path.to_vec(), SizedQuery::new(q, None, None));
-            platform
+            // A *query error* (as opposed to a legitimately empty subtree, which
+            // returns Ok with no items) must fail the equivalence guard loudly —
+            // swallowing it into an empty map could let `collect_subtree_diffs`
+            // report "no diffs" when one side was actually unreadable, producing
+            // a false GREEN. An empty Ok result correctly yields an empty map.
+            let (results, _) = platform
                 .drive
                 .grove_get_raw_path_query(
                     &pq,
@@ -714,8 +719,13 @@ mod tests {
                         .expect("platform version")
                         .drive,
                 )
-                .map(|(r, _)| r.to_key_elements().into_iter().collect())
-                .unwrap_or_default()
+                .unwrap_or_else(|e| {
+                    panic!(
+                        "equivalence guard: subtree read at path {:?} must succeed, got: {e}",
+                        path.iter().map(hex::encode).collect::<Vec<_>>()
+                    )
+                });
+            results.to_key_elements().into_iter().collect()
         }
 
         fn walk(
