@@ -129,8 +129,10 @@ impl ShieldedWithdrawalStateTransitionTransformIntoActionValidationV0
         // The fee charged to the shielded pool is the minimum shielded fee computed
         // from the same `num_actions` that `validate_minimum_shielded_fee` enforced
         // `unshielding_amount >=` against. Because that check passed, the net amount
-        // withdrawn to Core (`unshielding_amount - fee_amount`) is guaranteed to be
-        // non-negative.
+        // withdrawn to Core (`unshielding_amount - fee_amount`) is guaranteed to be at
+        // least `MIN_WITHDRAWAL_AMOUNT` (the Core dust floor) for ShieldedWithdrawal; the
+        // action transformer re-checks the same floor with `checked_sub` as defense in
+        // depth, so that path is unreachable for validated input.
         let fee_amount = dpp::shielded::compute_minimum_shielded_fee(num_actions, platform_version);
 
         // Build the action, which includes creating the withdrawal document
