@@ -9,9 +9,31 @@ use sha2::{Digest, Sha256};
 use crate::fee::Credits;
 use platform_version::version::PlatformVersion;
 
-/// Permanent storage bytes per shielded action:
-/// 280 bytes in BulkAppendTree (32 cmx + 32 rho + 216 encrypted note)
-/// + 32 bytes in nullifier tree = 312 bytes total.
+/// Permanent storage bytes per shielded action: 312 bytes total.
+///
+/// - 280 bytes in the BulkAppendTree: 32 (`cmx`, the note commitment) + 32
+///   (`rho`) + 216 (the encrypted note ciphertext).
+/// - 32 bytes in the nullifier tree.
+///
+/// The 216-byte encrypted note is Orchard's `TransmittedNoteCiphertext`, laid
+/// out as `epk(32) || enc_ciphertext(104) || out_ciphertext(80)`:
+///
+/// - `epk` (32): the note's ephemeral public key, published in the clear. The
+///   recipient combines it with their incoming viewing key (Diffie–Hellman) to
+///   derive the AEAD key.
+/// - `enc_ciphertext` (104): the note encrypted to the recipient (opened with
+///   the incoming viewing key) — ChaCha20-Poly1305 over the note plaintext:
+///   compact note (52 = version 1 + diversifier `d` 11 + value 8 + `rseed` 32)
+///   + memo (36) + AEAD tag (16). The 52-byte compact prefix is what wallets
+///   trial-decrypt during sync to detect their own notes.
+/// - `out_ciphertext` (80): the note encrypted to the sender for wallet
+///   recovery (opened with the outgoing viewing key): out plaintext
+///   (64 = `pk_d` 32 + `esk` 32) + AEAD tag (16).
+///
+/// This is the standard Orchard layout except the memo is 36 bytes (`DashMemo`)
+/// instead of Zcash's 512 — the dashpay `orchard` fork makes the memo size a
+/// type parameter (`MemoSize`) — which is why each note is 216 bytes
+/// (`ENCRYPTED_NOTE_SIZE`) rather than Zcash Orchard's ~692.
 pub const SHIELDED_STORAGE_BYTES_PER_ACTION: u64 = 312;
 
 /// Domain separator for Platform sighash computation.
