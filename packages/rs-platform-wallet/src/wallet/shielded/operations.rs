@@ -406,7 +406,10 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
             anchor,
             prover,
             [0u8; 36],
-            Some(exact_fee),
+            // Transfers pay exactly the minimum fee; let the builder compute it
+            // authoritatively. `exact_fee` (== the minimum) is still used above for
+            // note reservation.
+            None,
             sdk.version(),
         )
         .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;

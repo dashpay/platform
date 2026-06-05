@@ -30,8 +30,9 @@ use super::{prove_and_sign_bundle, serialize_authorized_bundle, OrchardProver, S
 /// - `anchor` - Sinsemilla root of the note commitment tree (Orchard Anchor)
 /// - `prover` - Orchard prover (holds the Halo 2 proving key)
 /// - `memo` - 36-byte structured memo for the recipient (4-byte type tag + 32-byte payload)
-/// - `fee` - Optional fee override; if `None`, the minimum fee is computed automatically.
-///   If `Some`, must be >= the minimum fee.
+/// - `fee` - Optional fee. A shielded transfer's `value_balance` IS the entire fee, and
+///   consensus requires it to equal the minimum exactly (transfers cannot overpay), so this
+///   must be `None` (use the minimum) or `Some(min_fee)`; any other value is rejected.
 /// - `platform_version` - Protocol version
 #[allow(clippy::too_many_arguments)]
 pub fn build_shielded_transfer_transition<P: OrchardProver>(
@@ -53,21 +54,22 @@ pub fn build_shielded_transfer_transition<P: OrchardProver>(
     // a recipient output and likely a change output.
     let num_actions = spends.len().max(2);
     let min_fee = compute_minimum_shielded_fee(num_actions, platform_version);
+    // A shielded transfer's `value_balance` IS the entire fee, and consensus requires it to
+    // equal the minimum exactly: overpayment buys nothing (Platform has no fee-priority
+    // market) and would leak a distinguishing fee fingerprint that breaks shielded
+    // uniformity. The fee is therefore fixed — accept `None` (use the minimum) or
+    // `Some(min_fee)`, and reject anything else so the caller fails fast here instead of
+    // building a transition the network will reject.
     let effective_fee = match fee {
-        Some(f) if f < min_fee => {
-            return Err(ProtocolError::ShieldedBuildError(format!(
-                "fee {} is below minimum required fee {}",
-                f, min_fee
-            )));
-        }
-        Some(f) if f > min_fee.saturating_mul(1000) => {
-            return Err(ProtocolError::ShieldedBuildError(format!(
-                "fee {} exceeds 1000x the minimum fee {}",
-                f, min_fee
-            )));
-        }
-        Some(f) => f,
         None => min_fee,
+        Some(f) if f == min_fee => min_fee,
+        Some(f) => {
+            return Err(ProtocolError::ShieldedBuildError(format!(
+                "shielded transfer fee must equal the minimum fee {} exactly \
+                 (transfers cannot overpay); got {}",
+                min_fee, f
+            )));
+        }
     };
 
     let required = transfer_amount.checked_add(effective_fee).ok_or_else(|| {
@@ -172,7 +174,7 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(
-            err.contains("below minimum required fee"),
+            err.contains("must equal the minimum fee"),
             "unexpected error: {}",
             err
         );
@@ -221,8 +223,9 @@ mod tests {
     // --------------------------------------------------------------
 
     #[test]
-    fn test_shielded_transfer_fee_above_upper_bound() {
-        // Fee > 1000x the minimum fee should be rejected.
+    fn test_shielded_transfer_fee_above_minimum_rejected() {
+        // A transfer's fee is fixed at the minimum; even 1 credit above it is rejected
+        // (overpayment is not allowed).
         let platform_version = PlatformVersion::latest();
         let recipient = test_orchard_address();
         let change_address = test_orchard_address();
@@ -237,7 +240,6 @@ mod tests {
 
         // num_actions is max(spends.len(), 2) = 2.
         let min_fee = crate::shielded::compute_minimum_shielded_fee(2, platform_version);
-        let excessive_fee = min_fee.saturating_mul(1000) + 1;
 
         let result = build_shielded_transfer_transition(
             spends,
@@ -249,14 +251,14 @@ mod tests {
             Anchor::empty_tree(),
             &TestProver,
             [0u8; 36],
-            Some(excessive_fee),
+            Some(min_fee + 1),
             platform_version,
         );
 
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(
-            err.contains("exceeds 1000x the minimum fee"),
+            err.contains("must equal the minimum fee"),
             "unexpected error: {}",
             err
         );
