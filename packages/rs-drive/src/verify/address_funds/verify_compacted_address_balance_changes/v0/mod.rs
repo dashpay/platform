@@ -81,17 +81,16 @@ impl Drive {
         let forward_path = path.clone();
         let generator =
             move |boundary_results: Vec<PathKeyOptionalElementTrio>| -> Option<PathQuery> {
-                // The boundary query is limit-1, so there is at most one
-                // authenticated key. A non-16-byte key is tree/proof corruption —
-                // reject (return None, which fails the chained verification) rather
-                // than silently degrading to the (start, start) forward-only lower
-                // bound and accepting an incomplete result set.
-                if boundary_results.iter().any(|(_p, key, _e)| key.len() != 16) {
-                    return None;
-                }
+                // A non-16-byte authenticated key can't be parsed, so it is skipped
+                // here; the post-verification check below then rejects it as proof
+                // corruption rather than letting it silently degrade the forward
+                // lower bound to (start, start).
                 let start_key = boundary_results
                     .iter()
                     .find_map(|(_path, key, _element)| {
+                        if key.len() != 16 {
+                            return None;
+                        }
                         let end_block = u64::from_be_bytes(
                             key[8..16].try_into().expect("len checked to be 16"),
                         );
@@ -120,17 +119,27 @@ impl Drive {
             &platform_version.drive.grove_version,
         )?;
 
-        // We pass exactly one chained (forward) generator that always returns
-        // `Some`, so GroveDB returns exactly two result sets: [boundary, forward].
-        // A different cardinality can only be a GroveDB-internal invariant break
-        // (never caller-supplied proof corruption), so classify it as an internal
-        // code-execution error rather than `CorruptedProof`.
-        let [_boundary_results, forward_results]: [Vec<PathKeyOptionalElementTrio>; 2] =
+        // The generator always returns `Some`, so on success GroveDB returns
+        // exactly two result sets: [boundary, forward]. A different cardinality
+        // here can only be a GroveDB-internal invariant break (the generator
+        // never declines), so classify it as an internal code-execution error
+        // rather than `CorruptedProof`.
+        let [boundary_results, forward_results]: [Vec<PathKeyOptionalElementTrio>; 2] =
             results.try_into().map_err(|_| {
                 Error::Drive(DriveError::CorruptedCodeExecution(
                     "chained verification invariant: expected [boundary, forward] result sets",
                 ))
             })?;
+
+        // The authenticated boundary key must be a 16-byte `(start, end)` compacted
+        // key. A non-16-byte key never occurs for honest state, so a proof
+        // presenting one is corrupt — reject it (the generator above skipped it and
+        // would otherwise have silently degraded the forward lower bound).
+        if boundary_results.iter().any(|(_p, key, _e)| key.len() != 16) {
+            return Err(Error::Proof(ProofError::CorruptedProof(
+                "authenticated compacted boundary key is not 16 bytes".to_string(),
+            )));
+        }
 
         // Process the verified forward results.
         let mut compacted_changes = Vec::new();
