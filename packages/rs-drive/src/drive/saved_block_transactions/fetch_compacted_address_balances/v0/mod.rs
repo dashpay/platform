@@ -201,10 +201,11 @@ impl Drive {
     ///    the containing range (if any) or `(start_block_height,
     ///    start_block_height)`.
     ///
-    /// We discover `start_key` with a non-proving descending query, then emit a
-    /// single merged proof (`prove_query_many`) that covers BOTH the boundary
-    /// key and the forward range so the verifier's chained queries are both
-    /// satisfiable.
+    /// We discover `start_key` with a non-proving descending query, then prove a
+    /// single combined `PathQuery` (boundary key via `insert_key` + the forward
+    /// `range_from`, capped at the caller's limit) through
+    /// `grove_get_proved_path_query`, so the verifier's chained boundary and
+    /// forward queries are both satisfiable.
     pub(super) fn prove_compacted_address_balance_changes_v0(
         &self,
         start_block_height: u64,
