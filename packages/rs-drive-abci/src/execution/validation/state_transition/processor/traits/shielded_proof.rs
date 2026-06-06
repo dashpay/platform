@@ -110,15 +110,20 @@ impl StateTransitionShieldedMinimumFeeValidationV0 for StateTransition {
             .validate_minimum_shielded_fee
         {
             0 => {
-                // Extract the checked amount, action count, and the NET amount bounds
-                // (value left after the fee) the transition must leave behind. For
-                // ShieldedWithdrawal the net becomes a Core `TxOut`, so it must clear the
-                // same `[MIN_WITHDRAWAL_AMOUNT, max_withdrawal_amount]` range the transparent
-                // withdrawal paths enforce; for the others any non-negative net suffices, so
-                // the range is `[0, u64::MAX]` (effectively unbounded).
-                // `requires_exact_fee` is true only for ShieldedTransfer, whose
-                // `value_balance` IS the entire fee and must equal the minimum exactly.
-                let (fee, num_actions, min_net_amount, max_net_amount, requires_exact_fee): (i64, usize, u64, u64, bool) = match self {
+                // Destructure per shielded transition type:
+                // - `validated_amount`: the amount field this type carries. For ShieldedTransfer
+                //   it IS the fee (`value_balance`); for Unshield/ShieldedWithdrawal it is the
+                //   GROSS leaving the pool (`unshielding_amount` = recipient/net + fee).
+                // - `amount_is_pure_fee`: true only when `validated_amount` is the fee itself
+                //   (ShieldedTransfer), so it must equal the minimum exactly — there is no
+                //   recipient amount and overpaying is disallowed. False for the gross-carrying
+                //   types, where the excess over the fee IS the recipient/net amount.
+                // - `min_net_amount`/`max_net_amount`: the allowed range for the derived net
+                //   (`validated_amount - min_fee`). `[0, u64::MAX]` (a no-op) for every type
+                //   except ShieldedWithdrawal, whose net becomes a Core `TxOut` and must clear
+                //   the same `[MIN_WITHDRAWAL_AMOUNT, max_withdrawal_amount]` range the
+                //   transparent withdrawal paths enforce.
+                let (validated_amount, num_actions, min_net_amount, max_net_amount, amount_is_pure_fee): (i64, usize, u64, u64, bool) = match self {
                     // Shield: fee is paid from transparent address inputs, not from value_balance.
                     StateTransition::Shield(_) => {
                         return Ok(SimpleConsensusValidationResult::new())
@@ -164,7 +169,7 @@ impl StateTransitionShieldedMinimumFeeValidationV0 for StateTransition {
                 // for validated input. Re-check here so a future reordering or a direct caller
                 // cannot slip a value `> i64::MAX` past as a wrapped-negative `i64` (which would
                 // then wrap back to a huge `u64` and sail past the min-fee check below).
-                if fee < 0 {
+                if validated_amount < 0 {
                     return Ok(SimpleConsensusValidationResult::new_with_error(
                         BasicError::ShieldedInvalidValueBalanceError(
                             ShieldedInvalidValueBalanceError::new(
@@ -189,13 +194,13 @@ impl StateTransitionShieldedMinimumFeeValidationV0 for StateTransition {
                 let minimum_shielded_fee =
                     dpp::shielded::compute_minimum_shielded_fee(num_actions, platform_version)?;
 
-                if (fee as u64) < minimum_shielded_fee {
+                if (validated_amount as u64) < minimum_shielded_fee {
                     return Ok(SimpleConsensusValidationResult::new_with_error(
                         StateError::InsufficientShieldedFeeError(
                             InsufficientShieldedFeeError::new(format!(
-                                "shielded transition fee {} is below minimum required fee {} \
-                                 ({} proof-verification + {} actions)",
-                                fee,
+                                "shielded transition amount {} is below the minimum required fee \
+                                 {} ({} proof-verification + {} actions)",
+                                validated_amount,
                                 minimum_shielded_fee,
                                 constants.shielded_proof_verification_fee,
                                 num_actions,
@@ -210,14 +215,14 @@ impl StateTransitionShieldedMinimumFeeValidationV0 for StateTransition {
                 // min_fee` would let a transfer overpay for no benefit and leak a fee
                 // fingerprint that breaks shielded uniformity — reject it. Unshield/Withdrawal
                 // are exempt: their excess over `min_fee` is the recipient/net amount.
-                if requires_exact_fee && (fee as u64) > minimum_shielded_fee {
+                if amount_is_pure_fee && (validated_amount as u64) > minimum_shielded_fee {
                     return Ok(SimpleConsensusValidationResult::new_with_error(
                         BasicError::ShieldedInvalidValueBalanceError(
                             ShieldedInvalidValueBalanceError::new(format!(
                                 "shielded transfer value_balance {} must equal the minimum \
                                  shielded fee {} exactly ({} proof-verification + {} actions); \
                                  overpayment is not allowed",
-                                fee,
+                                validated_amount,
                                 minimum_shielded_fee,
                                 constants.shielded_proof_verification_fee,
                                 num_actions,
@@ -233,8 +238,8 @@ impl StateTransitionShieldedMinimumFeeValidationV0 for StateTransition {
                 // withdrawal paths enforce — the dust floor AND the per-transition policy
                 // cap. For the other shielded paths the range is `[0, u64::MAX]`, so both
                 // checks are no-ops.
-                // Safe: `fee as u64 >= minimum_shielded_fee` was just checked above.
-                let net_amount = (fee as u64) - minimum_shielded_fee;
+                // Safe: `validated_amount as u64 >= minimum_shielded_fee` was just checked above.
+                let net_amount = (validated_amount as u64) - minimum_shielded_fee;
                 if net_amount < min_net_amount {
                     return Ok(SimpleConsensusValidationResult::new_with_error(
                         BasicError::WithdrawalBelowMinAmountError(
