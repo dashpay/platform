@@ -516,7 +516,8 @@ where
                 ..
             } => {
                 if consensus_errors.is_empty() {
-                    self.drive
+                    let applied_fees = self
+                        .drive
                         .apply_drive_operations(
                             operations,
                             true,
@@ -527,9 +528,19 @@ where
                         )
                         .map_err(Error::Drive)?;
 
+                    // Split the carved fee like every other transition: the real storage
+                    // cost of the (permanent) shielded writes goes to the storage pool, so it
+                    // is amortised to the validators that store it over time and picks up the
+                    // epoch fee multiplier at payout; the remainder (proof verification +
+                    // per-action processing) is the processing fee paid to the current
+                    // proposer. Conservation: storage + processing == fees_to_add_to_pool
+                    // (what was carved from the shielded pool).
+                    let storage_fee = applied_fees.storage_fee.min(fees_to_add_to_pool);
+                    let processing_fee = fees_to_add_to_pool - storage_fee;
+
                     Ok(SuccessfulPaidExecution(
                         None,
-                        FeeResult::default_with_fees(0, fees_to_add_to_pool),
+                        FeeResult::default_with_fees(storage_fee, processing_fee),
                     ))
                 } else {
                     Ok(UnpaidConsensusExecutionError(consensus_errors))
@@ -546,7 +557,8 @@ where
                 all_errors.extend(consensus_errors);
 
                 if all_errors.is_empty() {
-                    self.drive
+                    let applied_fees = self
+                        .drive
                         .apply_drive_operations(
                             operations,
                             true,
@@ -557,9 +569,16 @@ where
                         )
                         .map_err(Error::Drive)?;
 
+                    // Route the real storage cost of the shielded writes to the storage pool
+                    // (amortised over time, epoch fee multiplier applied at payout); the
+                    // remainder (the asset-lock excess over the shield amount) is the
+                    // processing fee. Conservation: storage + processing == fees_to_add_to_pool.
+                    let storage_fee = applied_fees.storage_fee.min(fees_to_add_to_pool);
+                    let processing_fee = fees_to_add_to_pool - storage_fee;
+
                     Ok(SuccessfulPaidExecution(
                         None,
-                        FeeResult::default_with_fees(0, fees_to_add_to_pool),
+                        FeeResult::default_with_fees(storage_fee, processing_fee),
                     ))
                 } else {
                     Ok(UnpaidConsensusExecutionError(all_errors))

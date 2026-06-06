@@ -1160,11 +1160,35 @@ mod tests {
             );
 
             let platform_state = platform.state.load();
-            let (_fee_results, _processed_block_fees) = process_state_transitions(
+            let (fee_results, _processed_block_fees) = process_state_transitions(
                 &platform,
                 &[transition],
                 BlockInfo::default(),
                 &platform_state,
+            );
+
+            // The shielded fee is split like every other transition: the (permanent) storage
+            // cost is routed to `storage_fee` (storage pool, epoch fee multiplier applied at
+            // payout), not booked entirely as processing. So a successful shielded withdrawal
+            // reports a non-zero storage_fee and a non-zero processing fee that together equal
+            // the carved minimum shielded fee.
+            let fee = &fee_results[0];
+            let expected_total =
+                dpp::shielded::compute_minimum_shielded_fee(num_actions, platform_version);
+            assert!(
+                fee.storage_fee > 0,
+                "shielded storage must be charged as storage_fee, got {}",
+                fee.storage_fee
+            );
+            assert!(
+                fee.processing_fee > 0,
+                "proof + processing must be charged as processing_fee, got {}",
+                fee.processing_fee
+            );
+            assert_eq!(
+                fee.storage_fee + fee.processing_fee,
+                expected_total,
+                "storage + processing must equal the carved minimum shielded fee"
             );
 
             let credits_after = platform
