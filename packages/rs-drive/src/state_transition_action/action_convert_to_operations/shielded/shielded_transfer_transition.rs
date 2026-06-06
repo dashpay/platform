@@ -180,7 +180,8 @@ mod tests {
         };
 
         for num_actions in [1usize, 8, 16] {
-            let fee_amount = compute_minimum_shielded_fee(num_actions, platform_version);
+            let fee_amount = compute_minimum_shielded_fee(num_actions, platform_version)
+                .expect("fee computation should not overflow");
             let notes: Vec<_> = (0..num_actions as u8).map(realistic_note).collect();
             let action = ShieldedTransferTransitionAction::V0(ShieldedTransferTransitionActionV0 {
                 notes,

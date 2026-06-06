@@ -119,7 +119,8 @@ impl UnshieldStateTransitionTransformIntoActionValidationV0 for UnshieldTransiti
         // from the same `num_actions` that `validate_minimum_shielded_fee` enforced
         // `unshielding_amount >=` against. Because that check passed, the net recipient
         // amount (`unshielding_amount - fee_amount`) is guaranteed to be non-negative.
-        let fee_amount = dpp::shielded::compute_minimum_shielded_fee(num_actions, platform_version);
+        let fee_amount =
+            dpp::shielded::compute_minimum_shielded_fee(num_actions, platform_version)?;
 
         let result =
             UnshieldTransitionAction::try_from_transition(self, current_total_balance, fee_amount);

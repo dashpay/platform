@@ -54,9 +54,13 @@ pub fn build_unshield_transition<P: OrchardProver>(
 
     let total_spent: u64 = spends.iter().map(|s| s.note.value().inner()).sum();
 
-    // Conservative action count: at least (spends, 1) since we have a change output.
-    let num_actions = spends.len().max(1);
-    let min_fee = compute_minimum_shielded_fee(num_actions, platform_version);
+    // Orchard's BundleType::DEFAULT pads every bundle to a 2-action minimum
+    // (MIN_ACTIONS), so even a single-spend unshield is serialized and proven with 2
+    // actions. Price the fee against that same floor (matching shielded_transfer);
+    // otherwise consensus recomputes min_fee from the on-wire actions.len() == 2 and
+    // rejects an honest single-spend unshield with InsufficientShieldedFeeError.
+    let num_actions = spends.len().max(2);
+    let min_fee = compute_minimum_shielded_fee(num_actions, platform_version)?;
     let effective_fee = match fee {
         Some(f) if f < min_fee => {
             return Err(ProtocolError::ShieldedBuildError(format!(
@@ -176,8 +180,10 @@ mod tests {
         let ask = SpendAuthorizingKey::from(&sk);
 
         // Compute the minimum fee so we can exceed the 1000x bound
-        let num_actions = 1usize;
-        let min_fee = crate::shielded::compute_minimum_shielded_fee(num_actions, platform_version);
+        // Builder pads to max(spends, 2), so the threshold must be priced for 2 actions.
+        let num_actions = 2usize;
+        let min_fee = crate::shielded::compute_minimum_shielded_fee(num_actions, platform_version)
+            .expect("fee computation should not overflow");
         let excessive_fee = min_fee.saturating_mul(1000) + 1;
 
         let result = build_unshield_transition(
@@ -293,7 +299,8 @@ mod tests {
         let fvk = FullViewingKey::from(&sk);
         let ask = SpendAuthorizingKey::from(&sk);
 
-        let min_fee = crate::shielded::compute_minimum_shielded_fee(1, platform_version);
+        let min_fee = crate::shielded::compute_minimum_shielded_fee(2, platform_version)
+            .expect("fee computation should not overflow");
         let boundary = min_fee.saturating_mul(1000);
 
         let result = build_unshield_transition(
@@ -399,7 +406,8 @@ mod tests {
         let change_address = test_orchard_address();
         let output_address = PlatformAddress::P2pkh([1u8; 20]);
 
-        let min_fee = crate::shielded::compute_minimum_shielded_fee(1, platform_version);
+        let min_fee = crate::shielded::compute_minimum_shielded_fee(2, platform_version)
+            .expect("fee computation should not overflow");
         let unshield_amount = 42u64;
         let note = test_spendable_note(unshield_amount + min_fee);
         let spends = vec![note];

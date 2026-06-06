@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::fee::Credits;
+use crate::ProtocolError;
 use platform_version::version::PlatformVersion;
 
 /// Permanent storage bytes per shielded action: 312 bytes total.
@@ -63,10 +64,17 @@ pub fn compute_platform_sighash(bundle_commitment: &[u8; 32], extra_data: &[u8])
 
 /// Computes the minimum fee (in credits) for a shielded state transition.
 ///
-/// The fee formula mirrors the on-chain validation in `validate_minimum_shielded_fee`:
+/// The fee formula is:
 ///   `min_fee = proof_verification_fee + num_actions × (processing_fee + storage_fee)`
 ///
 /// where `storage_fee = SHIELDED_STORAGE_BYTES_PER_ACTION × (disk + processing) credits/byte`.
+///
+/// This is the **single source of truth** for the shielded fee formula. The SDK
+/// builders, the unshield/withdrawal transformers (for the fee actually carved from
+/// the pool), and the consensus gate `validate_minimum_shielded_fee` all call it, so
+/// the carved fee and the validation threshold can never drift. All arithmetic is
+/// checked: an overflow (only reachable via pathological fee constants) surfaces as
+/// `ProtocolError::Overflow` instead of silently wrapping.
 ///
 /// # Parameters
 /// - `num_actions` — number of Orchard actions in the bundle
@@ -74,16 +82,35 @@ pub fn compute_platform_sighash(bundle_commitment: &[u8; 32], extra_data: &[u8])
 pub fn compute_minimum_shielded_fee(
     num_actions: usize,
     platform_version: &PlatformVersion,
-) -> Credits {
+) -> Result<Credits, ProtocolError> {
     let constants = &platform_version
         .drive_abci
         .validation_and_processing
         .event_constants;
     let storage = &platform_version.fee_version.storage;
+
+    let per_byte_rate = storage
+        .storage_disk_usage_credit_per_byte
+        .checked_add(storage.storage_processing_credit_per_byte)
+        .ok_or(ProtocolError::Overflow(
+            "shielded storage per-byte rate overflow",
+        ))?;
     let storage_fee = SHIELDED_STORAGE_BYTES_PER_ACTION
-        * (storage.storage_disk_usage_credit_per_byte + storage.storage_processing_credit_per_byte);
-    let per_action = constants.shielded_per_action_processing_fee + storage_fee;
-    constants.shielded_proof_verification_fee + num_actions as u64 * per_action
+        .checked_mul(per_byte_rate)
+        .ok_or(ProtocolError::Overflow(
+            "shielded per-action storage fee overflow",
+        ))?;
+    let per_action = constants
+        .shielded_per_action_processing_fee
+        .checked_add(storage_fee)
+        .ok_or(ProtocolError::Overflow("shielded per-action fee overflow"))?;
+    let actions_fee = (num_actions as u64)
+        .checked_mul(per_action)
+        .ok_or(ProtocolError::Overflow("shielded actions fee overflow"))?;
+    constants
+        .shielded_proof_verification_fee
+        .checked_add(actions_fee)
+        .ok_or(ProtocolError::Overflow("shielded minimum fee overflow"))
 }
 
 /// Common Orchard bundle parameters shared across all shielded transition types.

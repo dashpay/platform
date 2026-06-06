@@ -127,7 +127,8 @@ impl ShieldedWithdrawalStateTransitionTransformIntoActionValidationV0
         // least `MIN_WITHDRAWAL_AMOUNT` (the Core dust floor) for ShieldedWithdrawal; the
         // action transformer re-checks the same floor with `checked_sub` as defense in
         // depth, so that path is unreachable for validated input.
-        let fee_amount = dpp::shielded::compute_minimum_shielded_fee(num_actions, platform_version);
+        let fee_amount =
+            dpp::shielded::compute_minimum_shielded_fee(num_actions, platform_version)?;
 
         // Build the action, which includes creating the withdrawal document
         let creation_time_ms = block_info.time_ms;

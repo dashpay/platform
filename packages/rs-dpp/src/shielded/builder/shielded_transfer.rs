@@ -53,7 +53,7 @@ pub fn build_shielded_transfer_transition<P: OrchardProver>(
     // Conservative action count: at least (spends, 2) since we always have
     // a recipient output and likely a change output.
     let num_actions = spends.len().max(2);
-    let min_fee = compute_minimum_shielded_fee(num_actions, platform_version);
+    let min_fee = compute_minimum_shielded_fee(num_actions, platform_version)?;
     // A shielded transfer's `value_balance` IS the entire fee, and consensus requires it to
     // equal the minimum exactly: overpayment buys nothing (Platform has no fee-priority
     // market) and would leak a distinguishing fee fingerprint that breaks shielded
@@ -239,7 +239,8 @@ mod tests {
         let ask = SpendAuthorizingKey::from(&sk);
 
         // num_actions is max(spends.len(), 2) = 2.
-        let min_fee = crate::shielded::compute_minimum_shielded_fee(2, platform_version);
+        let min_fee = crate::shielded::compute_minimum_shielded_fee(2, platform_version)
+            .expect("fee computation should not overflow");
 
         let result = build_shielded_transfer_transition(
             spends,
@@ -282,7 +283,8 @@ mod tests {
         // Compute min fee, then craft a fee that lies in [min_fee, 1000*min_fee]
         // so we bypass the boundary checks, then pick transfer_amount = u64::MAX
         // so amount + fee overflows.
-        let min_fee = crate::shielded::compute_minimum_shielded_fee(2, platform_version);
+        let min_fee = crate::shielded::compute_minimum_shielded_fee(2, platform_version)
+            .expect("fee computation should not overflow");
 
         let result = build_shielded_transfer_transition(
             spends,
@@ -352,7 +354,8 @@ mod tests {
         let recipient = test_orchard_address();
         let change_address = test_orchard_address();
 
-        let min_fee = crate::shielded::compute_minimum_shielded_fee(2, platform_version);
+        let min_fee = crate::shielded::compute_minimum_shielded_fee(2, platform_version)
+            .expect("fee computation should not overflow");
         let transfer_amount = 10u64;
         let note = test_spendable_note(transfer_amount + min_fee);
         let spends = vec![note];

@@ -348,7 +348,8 @@ mod tests {
         // fixture — so the test fails if the fee is computed as zero or dropped on the way
         // into the action.
         let platform_version = PlatformVersion::latest();
-        let fee = compute_minimum_shielded_fee(1, platform_version);
+        let fee = compute_minimum_shielded_fee(1, platform_version)
+            .expect("fee computation should not overflow");
         assert!(fee > 0, "computed minimum shielded fee must be non-zero");
 
         // Net (= unshielding_amount - fee) must clear the dust floor for the transform to
@@ -380,7 +381,8 @@ mod tests {
         // A gross amount that covers the fee but leaves a net below the Core dust floor must
         // be rejected by the transformer, not turned into a zero/dust withdrawal document.
         let platform_version = PlatformVersion::latest();
-        let fee = compute_minimum_shielded_fee(1, platform_version);
+        let fee = compute_minimum_shielded_fee(1, platform_version)
+            .expect("fee computation should not overflow");
 
         // net = MIN_WITHDRAWAL_AMOUNT - 1 (just under the floor)
         let transition = make_transition(fee + MIN_WITHDRAWAL_AMOUNT - 1);

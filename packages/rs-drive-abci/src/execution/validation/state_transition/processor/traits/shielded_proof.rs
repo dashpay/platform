@@ -9,7 +9,6 @@ use dpp::consensus::basic::state_transition::{
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::state::shielded::insufficient_shielded_fee_error::InsufficientShieldedFeeError;
 use dpp::consensus::state::state_error::StateError;
-use dpp::shielded::SHIELDED_STORAGE_BYTES_PER_ACTION;
 use dpp::state_transition::state_transitions::address_funds::address_credit_withdrawal_transition::MIN_WITHDRAWAL_AMOUNT;
 use dpp::state_transition::StateTransition;
 use dpp::validation::SimpleConsensusValidationResult;
@@ -155,46 +154,23 @@ impl StateTransitionShieldedMinimumFeeValidationV0 for StateTransition {
                     .validation_and_processing
                     .event_constants;
 
-                // Storage fee per action: 312 bytes (280 BulkAppendTree + 32 nullifier)
-                // × (storage_disk_usage_credit_per_byte + storage_processing_credit_per_byte)
-                let storage_costs = &platform_version.fee_version.storage;
-                let storage_fee_per_action = storage_costs
-                    .storage_disk_usage_credit_per_byte
-                    .checked_add(storage_costs.storage_processing_credit_per_byte)
-                    .and_then(|sum| SHIELDED_STORAGE_BYTES_PER_ACTION.checked_mul(sum))
-                    .ok_or(Error::Execution(ExecutionError::Overflow(
-                        "storage fee per action overflow in shielded fee calculation",
-                    )))?;
-
-                // min_fee = proof_verification_fee + num_actions × (processing_fee + storage_fee)
-                let per_action_fee = constants
-                    .shielded_per_action_processing_fee
-                    .checked_add(storage_fee_per_action)
-                    .ok_or(Error::Execution(ExecutionError::Overflow(
-                        "per-action fee overflow in shielded fee calculation",
-                    )))?;
-                let minimum_shielded_fee = (num_actions as u64)
-                    .checked_mul(per_action_fee)
-                    .and_then(|actions_fee| {
-                        constants
-                            .shielded_proof_verification_fee
-                            .checked_add(actions_fee)
-                    })
-                    .ok_or(Error::Execution(ExecutionError::Overflow(
-                        "minimum shielded fee overflow in shielded fee calculation",
-                    )))?;
+                // Single source of truth for the consensus fee formula. The SDK builders
+                // and the unshield/withdrawal transformers carve the fee with this exact
+                // checked computation, so the validation threshold here can never drift from
+                // the fee that is actually charged. See `dpp::shielded::compute_minimum_shielded_fee`.
+                let minimum_shielded_fee =
+                    dpp::shielded::compute_minimum_shielded_fee(num_actions, platform_version)?;
 
                 if (fee as u64) < minimum_shielded_fee {
                     return Ok(SimpleConsensusValidationResult::new_with_error(
                         StateError::InsufficientShieldedFeeError(
                             InsufficientShieldedFeeError::new(format!(
                                 "shielded transition fee {} is below minimum required fee {} \
-                                 ({} proof + {} actions × {} per-action)",
+                                 ({} proof-verification + {} actions)",
                                 fee,
                                 minimum_shielded_fee,
                                 constants.shielded_proof_verification_fee,
                                 num_actions,
-                                per_action_fee,
                             )),
                         )
                         .into(),
@@ -211,13 +187,12 @@ impl StateTransitionShieldedMinimumFeeValidationV0 for StateTransition {
                         BasicError::ShieldedInvalidValueBalanceError(
                             ShieldedInvalidValueBalanceError::new(format!(
                                 "shielded transfer value_balance {} must equal the minimum \
-                                 shielded fee {} exactly ({} proof + {} actions × {} per-action); \
+                                 shielded fee {} exactly ({} proof-verification + {} actions); \
                                  overpayment is not allowed",
                                 fee,
                                 minimum_shielded_fee,
                                 constants.shielded_proof_verification_fee,
                                 num_actions,
-                                per_action_fee,
                             )),
                         )
                         .into(),
@@ -551,7 +526,8 @@ mod tests {
         #[test]
         fn should_reject_shielded_withdrawal_with_net_below_min_withdrawal_amount() {
             let platform_version = PlatformVersion::latest();
-            let min_fee = dpp::shielded::compute_minimum_shielded_fee(0, platform_version);
+            let min_fee = dpp::shielded::compute_minimum_shielded_fee(0, platform_version)
+                .expect("fee computation should not overflow");
             // net = MIN_WITHDRAWAL_AMOUNT - 1 → just below the Core dust floor.
             let st = shielded_withdrawal_with_amount(min_fee + MIN_WITHDRAWAL_AMOUNT - 1);
             let result = st
@@ -566,7 +542,8 @@ mod tests {
         #[test]
         fn should_accept_shielded_withdrawal_with_net_at_min_withdrawal_amount() {
             let platform_version = PlatformVersion::latest();
-            let min_fee = dpp::shielded::compute_minimum_shielded_fee(0, platform_version);
+            let min_fee = dpp::shielded::compute_minimum_shielded_fee(0, platform_version)
+                .expect("fee computation should not overflow");
             // net = MIN_WITHDRAWAL_AMOUNT exactly → at the floor, accepted.
             let st = shielded_withdrawal_with_amount(min_fee + MIN_WITHDRAWAL_AMOUNT);
             let result = st

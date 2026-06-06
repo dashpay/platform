@@ -1174,7 +1174,8 @@ mod tests {
             // the carved minimum shielded fee.
             let fee = &fee_results[0];
             let expected_total =
-                dpp::shielded::compute_minimum_shielded_fee(num_actions, platform_version);
+                dpp::shielded::compute_minimum_shielded_fee(num_actions, platform_version)
+                    .expect("fee computation should not overflow");
             assert!(
                 fee.storage_fee > 0,
                 "shielded storage must be charged as storage_fee, got {}",
@@ -1213,7 +1214,8 @@ mod tests {
 
             // The system-credit counter dropped by the NET (unshielding_amount - fee):
             // only the net leaves the platform to Core; the fee stays in the fee pools.
-            let fee = dpp::shielded::compute_minimum_shielded_fee(num_actions, platform_version);
+            let fee = dpp::shielded::compute_minimum_shielded_fee(num_actions, platform_version)
+                .expect("fee computation should not overflow");
             assert_eq!(
                 credits_before.total_credits_in_platform - credits_after.total_credits_in_platform,
                 unshielding_amount - fee,

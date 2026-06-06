@@ -73,10 +73,13 @@ Each action in the bundle requires:
 - Nullifier duplicate check (hash + tree lookup)
 - Note commitment insertion into the Sinsemilla-based Merkle tree
 
-The processing cost per action was calibrated at a 33:1 ratio against the proof
-verification cost, based on benchmarks of signature verification and tree operations.
+The per-action processing fee prices the marginal Halo 2 verification work that
+each additional action adds to the bundle (≈1.1 ms/action measured against a
+≈5 ms bundle base), so it is calibrated at roughly a 4.5:1 ratio against the
+fixed proof-verification fee (100M : 22M) rather than the looser ratio used
+before the recalibration.
 
-**Current value:** `3,000,000` credits (3M)
+**Current value:** `22,000,000` credits (22M)
 
 ### 3. Per-Action Storage Fee
 
@@ -108,9 +111,9 @@ Combining all three components:
 
 | Actions | Proof Fee | Processing | Storage | Total Minimum Fee |
 |---|---|---|---|---|
-| 2 | 100,000,000 | 6,000,000 | 17,097,600 | **123,097,600** |
-| 3 | 100,000,000 | 9,000,000 | 25,646,400 | **134,646,400** |
-| 4 | 100,000,000 | 12,000,000 | 34,195,200 | **146,195,200** |
+| 2 | 100,000,000 | 44,000,000 | 17,097,600 | **161,097,600** |
+| 3 | 100,000,000 | 66,000,000 | 25,646,400 | **191,646,400** |
+| 4 | 100,000,000 | 88,000,000 | 34,195,200 | **222,195,200** |
 
 Note: The Orchard protocol requires a minimum of 2 actions per bundle for privacy
 (even a single-input single-output transfer produces 2 actions with a dummy padding
@@ -159,7 +162,7 @@ pub struct DriveAbciValidationConstants {
     pub maximum_contenders_to_consider: u16,
     pub minimum_pool_notes_for_outgoing: u64,
     pub shielded_proof_verification_fee: u64,      // 100_000_000
-    pub shielded_per_action_processing_fee: u64,    // 3_000_000
+    pub shielded_per_action_processing_fee: u64,    // 22_000_000
 }
 ```
 

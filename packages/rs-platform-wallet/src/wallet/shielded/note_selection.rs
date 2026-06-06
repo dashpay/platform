@@ -78,13 +78,15 @@ pub fn select_notes_with_fee<'a>(
     min_actions: usize,
     platform_version: &PlatformVersion,
 ) -> Result<(Vec<&'a ShieldedNote>, u64, u64), PlatformWalletError> {
-    let mut fee_estimate = compute_minimum_shielded_fee(min_actions, platform_version);
+    let mut fee_estimate = compute_minimum_shielded_fee(min_actions, platform_version)
+        .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
 
     for _ in 0..5 {
         let selected = select_notes(unspent, amount, fee_estimate)?;
         let total: u64 = selected.iter().map(|n| n.value).sum();
         let num_actions = selected.len().max(min_actions);
-        let exact_fee = compute_minimum_shielded_fee(num_actions, platform_version);
+        let exact_fee = compute_minimum_shielded_fee(num_actions, platform_version)
+            .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
 
         if total >= amount.saturating_add(exact_fee) {
             return Ok((selected, total, exact_fee));
@@ -97,7 +99,8 @@ pub fn select_notes_with_fee<'a>(
     let selected = select_notes(unspent, amount, fee_estimate)?;
     let total: u64 = selected.iter().map(|n| n.value).sum();
     let num_actions = selected.len().max(min_actions);
-    let exact_fee = compute_minimum_shielded_fee(num_actions, platform_version);
+    let exact_fee = compute_minimum_shielded_fee(num_actions, platform_version)
+        .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
 
     if total < amount.saturating_add(exact_fee) {
         return Err(PlatformWalletError::ShieldedInsufficientBalance {
