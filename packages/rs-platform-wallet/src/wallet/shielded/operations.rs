@@ -305,7 +305,7 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
 
         // The builder computes and returns the fee authoritatively; `exact_fee` (== the
         // minimum) was already used above for note reservation.
-        let (state_transition, _fee_used) = build_unshield_transition(
+        let (state_transition, fee_used) = build_unshield_transition(
             spends,
             *to_address,
             amount,
@@ -318,6 +318,12 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
             sdk.version(),
         )
         .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
+        // The builder's fee and the wallet's reserved `exact_fee` both come from
+        // compute_minimum_shielded_fee with the same action count; lock that they agree.
+        debug_assert_eq!(
+            fee_used, exact_fee,
+            "builder fee must match the reserved minimum fee"
+        );
 
         trace!("Unshield: state transition built, broadcasting...");
         state_transition
@@ -402,7 +408,7 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
 
         // The builder computes and returns the fee authoritatively; `exact_fee` (== the
         // minimum) was already used above for note reservation.
-        let (state_transition, _fee_used) = build_shielded_transfer_transition(
+        let (state_transition, fee_used) = build_shielded_transfer_transition(
             spends,
             &recipient_addr,
             amount,
@@ -415,6 +421,12 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
             sdk.version(),
         )
         .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
+        // The builder's fee and the wallet's reserved `exact_fee` both come from
+        // compute_minimum_shielded_fee with the same action count; lock that they agree.
+        debug_assert_eq!(
+            fee_used, exact_fee,
+            "builder fee must match the reserved minimum fee"
+        );
 
         trace!("Shielded transfer: state transition built, broadcasting...");
         state_transition
@@ -493,7 +505,7 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
 
         // The builder computes and returns the fee authoritatively; `exact_fee` (== the
         // minimum) was already used above for note reservation.
-        let (state_transition, _fee_used) = build_shielded_withdrawal_transition(
+        let (state_transition, fee_used) = build_shielded_withdrawal_transition(
             spends,
             amount,
             output_script,
@@ -509,6 +521,12 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
             sdk.version(),
         )
         .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
+        // The builder's fee and the wallet's reserved `exact_fee` both come from
+        // compute_minimum_shielded_fee with the same action count; lock that they agree.
+        debug_assert_eq!(
+            fee_used, exact_fee,
+            "builder fee must match the reserved minimum fee"
+        );
 
         trace!("Shielded withdrawal: state transition built, broadcasting...");
         state_transition
