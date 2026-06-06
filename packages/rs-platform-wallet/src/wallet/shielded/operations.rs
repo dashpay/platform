@@ -303,7 +303,9 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
     let result = async {
         let (spends, anchor) = extract_spends_and_anchor(store, &selected_notes).await?;
 
-        let state_transition = build_unshield_transition(
+        // The builder computes and returns the fee authoritatively; `exact_fee` (== the
+        // minimum) was already used above for note reservation.
+        let (state_transition, _fee_used) = build_unshield_transition(
             spends,
             *to_address,
             amount,
@@ -313,7 +315,6 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
             anchor,
             prover,
             [0u8; 36],
-            Some(exact_fee),
             sdk.version(),
         )
         .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
@@ -399,7 +400,9 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
     let result = async {
         let (spends, anchor) = extract_spends_and_anchor(store, &selected_notes).await?;
 
-        let state_transition = build_shielded_transfer_transition(
+        // The builder computes and returns the fee authoritatively; `exact_fee` (== the
+        // minimum) was already used above for note reservation.
+        let (state_transition, _fee_used) = build_shielded_transfer_transition(
             spends,
             &recipient_addr,
             amount,
@@ -409,10 +412,6 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
             anchor,
             prover,
             [0u8; 36],
-            // Transfers pay exactly the minimum fee; let the builder compute it
-            // authoritatively. `exact_fee` (== the minimum) is still used above for
-            // note reservation.
-            None,
             sdk.version(),
         )
         .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
@@ -492,7 +491,9 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
     let result = async {
         let (spends, anchor) = extract_spends_and_anchor(store, &selected_notes).await?;
 
-        let state_transition = build_shielded_withdrawal_transition(
+        // The builder computes and returns the fee authoritatively; `exact_fee` (== the
+        // minimum) was already used above for note reservation.
+        let (state_transition, _fee_used) = build_shielded_withdrawal_transition(
             spends,
             amount,
             output_script,
@@ -505,7 +506,6 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
             anchor,
             prover,
             [0u8; 36],
-            Some(exact_fee),
             sdk.version(),
         )
         .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;

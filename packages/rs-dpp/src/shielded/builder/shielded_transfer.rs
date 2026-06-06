@@ -30,10 +30,11 @@ use super::{prove_and_sign_bundle, serialize_authorized_bundle, OrchardProver, S
 /// - `anchor` - Sinsemilla root of the note commitment tree (Orchard Anchor)
 /// - `prover` - Orchard prover (holds the Halo 2 proving key)
 /// - `memo` - 36-byte structured memo for the recipient (4-byte type tag + 32-byte payload)
-/// - `fee` - Optional fee. A shielded transfer's `value_balance` IS the entire fee, and
-///   consensus requires it to equal the minimum exactly (transfers cannot overpay), so this
-///   must be `None` (use the minimum) or `Some(min_fee)`; any other value is rejected.
 /// - `platform_version` - Protocol version
+///
+/// The fee is not a parameter: a shielded transfer's `value_balance` IS the fee and consensus
+/// pins it to exactly `compute_minimum_shielded_fee`, so there is nothing for the caller to
+/// choose. Returns the built transition together with the fee (in credits) that was applied.
 #[allow(clippy::too_many_arguments)]
 pub fn build_shielded_transfer_transition<P: OrchardProver>(
     spends: Vec<SpendableNote>,
@@ -45,40 +46,25 @@ pub fn build_shielded_transfer_transition<P: OrchardProver>(
     anchor: Anchor,
     prover: &P,
     memo: [u8; 36],
-    fee: Option<Credits>,
     platform_version: &PlatformVersion,
-) -> Result<StateTransition, ProtocolError> {
+) -> Result<(StateTransition, Credits), ProtocolError> {
     let total_spent: u64 = spends.iter().map(|s| s.note.value().inner()).sum();
 
     // Conservative action count: at least (spends, 2) since we always have
     // a recipient output and likely a change output.
     let num_actions = spends.len().max(2);
-    let min_fee = compute_minimum_shielded_fee(num_actions, platform_version)?;
-    // A shielded transfer's `value_balance` IS the entire fee, and consensus requires it to
-    // equal the minimum exactly: overpayment buys nothing (Platform has no fee-priority
-    // market) and would leak a distinguishing fee fingerprint that breaks shielded
-    // uniformity. The fee is therefore fixed — accept `None` (use the minimum) or
-    // `Some(min_fee)`, and reject anything else so the caller fails fast here instead of
-    // building a transition the network will reject.
-    let effective_fee = match fee {
-        None => min_fee,
-        Some(f) if f == min_fee => min_fee,
-        Some(f) => {
-            return Err(ProtocolError::ShieldedBuildError(format!(
-                "shielded transfer fee must equal the minimum fee {} exactly \
-                 (transfers cannot overpay); got {}",
-                min_fee, f
-            )));
-        }
-    };
+    // The fee is fixed at the minimum: a transfer's `value_balance` IS the fee and consensus
+    // pins it to exactly this amount (overpayment buys nothing and would leak a distinguishing
+    // fee fingerprint that breaks shielded uniformity).
+    let fee = compute_minimum_shielded_fee(num_actions, platform_version)?;
 
-    let required = transfer_amount.checked_add(effective_fee).ok_or_else(|| {
+    let required = transfer_amount.checked_add(fee).ok_or_else(|| {
         ProtocolError::ShieldedBuildError("fee + transfer_amount overflows u64".to_string())
     })?;
     if required > total_spent {
         return Err(ProtocolError::ShieldedBuildError(format!(
             "transfer amount {} + fee {} = {} exceeds total spendable value {}",
-            transfer_amount, effective_fee, required, total_spent
+            transfer_amount, fee, required, total_spent
         )));
     }
 
@@ -125,15 +111,16 @@ pub fn build_shielded_transfer_transition<P: OrchardProver>(
     let bundle = prove_and_sign_bundle(builder, prover, std::slice::from_ref(ask), &[])?;
     let sb = serialize_authorized_bundle(&bundle);
 
-    // value_balance = effective_fee (the amount leaving the shielded pool as fee)
-    ShieldedTransferTransition::try_from_bundle(
+    // value_balance = fee (the amount leaving the shielded pool as fee)
+    let state_transition = ShieldedTransferTransition::try_from_bundle(
         sb.actions,
         sb.value_balance as u64,
         sb.anchor,
         sb.proof,
         sb.binding_signature,
         platform_version,
-    )
+    )?;
+    Ok((state_transition, fee))
 }
 
 #[cfg(test)]
@@ -142,43 +129,6 @@ mod tests {
     use crate::shielded::builder::test_helpers::{
         test_orchard_address, test_spendable_note, TestProver,
     };
-
-    #[test]
-    fn test_shielded_transfer_fee_below_minimum() {
-        let platform_version = PlatformVersion::latest();
-        let recipient = test_orchard_address();
-        let change_address = test_orchard_address();
-
-        let note = test_spendable_note(1_000_000);
-        let spends = vec![note];
-
-        let sk = grovedb_commitment_tree::SpendingKey::from_bytes([42u8; 32])
-            .expect("valid spending key bytes");
-        let fvk = FullViewingKey::from(&sk);
-        let ask = SpendAuthorizingKey::from(&sk);
-
-        let result = build_shielded_transfer_transition(
-            spends,
-            &recipient,
-            100,
-            &change_address,
-            &fvk,
-            &ask,
-            Anchor::empty_tree(),
-            &TestProver,
-            [0u8; 36],
-            Some(1), // fee = 1, should be below minimum
-            platform_version,
-        );
-
-        assert!(result.is_err());
-        let err = result.unwrap_err().to_string();
-        assert!(
-            err.contains("must equal the minimum fee"),
-            "unexpected error: {}",
-            err
-        );
-    }
 
     #[test]
     fn test_shielded_transfer_insufficient_funds() {
@@ -205,7 +155,6 @@ mod tests {
             Anchor::empty_tree(),
             &TestProver,
             [0u8; 36],
-            None,
             platform_version,
         );
 
@@ -223,49 +172,6 @@ mod tests {
     // --------------------------------------------------------------
 
     #[test]
-    fn test_shielded_transfer_fee_above_minimum_rejected() {
-        // A transfer's fee is fixed at the minimum; even 1 credit above it is rejected
-        // (overpayment is not allowed).
-        let platform_version = PlatformVersion::latest();
-        let recipient = test_orchard_address();
-        let change_address = test_orchard_address();
-
-        let note = test_spendable_note(u64::MAX);
-        let spends = vec![note];
-
-        let sk = grovedb_commitment_tree::SpendingKey::from_bytes([42u8; 32])
-            .expect("valid spending key bytes");
-        let fvk = FullViewingKey::from(&sk);
-        let ask = SpendAuthorizingKey::from(&sk);
-
-        // num_actions is max(spends.len(), 2) = 2.
-        let min_fee = crate::shielded::compute_minimum_shielded_fee(2, platform_version)
-            .expect("fee computation should not overflow");
-
-        let result = build_shielded_transfer_transition(
-            spends,
-            &recipient,
-            10,
-            &change_address,
-            &fvk,
-            &ask,
-            Anchor::empty_tree(),
-            &TestProver,
-            [0u8; 36],
-            Some(min_fee + 1),
-            platform_version,
-        );
-
-        assert!(result.is_err());
-        let err = result.unwrap_err().to_string();
-        assert!(
-            err.contains("must equal the minimum fee"),
-            "unexpected error: {}",
-            err
-        );
-    }
-
-    #[test]
     fn test_shielded_transfer_fee_plus_amount_overflow_errors() {
         // transfer_amount + fee overflows u64 → dedicated error branch.
         let platform_version = PlatformVersion::latest();
@@ -280,12 +186,8 @@ mod tests {
         let fvk = FullViewingKey::from(&sk);
         let ask = SpendAuthorizingKey::from(&sk);
 
-        // Compute min fee, then craft a fee that lies in [min_fee, 1000*min_fee]
-        // so we bypass the boundary checks, then pick transfer_amount = u64::MAX
-        // so amount + fee overflows.
-        let min_fee = crate::shielded::compute_minimum_shielded_fee(2, platform_version)
-            .expect("fee computation should not overflow");
-
+        // transfer_amount = u64::MAX so amount + the (internally-computed) minimum fee
+        // overflows u64, hitting the checked_add error branch.
         let result = build_shielded_transfer_transition(
             spends,
             &recipient,
@@ -296,7 +198,6 @@ mod tests {
             Anchor::empty_tree(),
             &TestProver,
             [0u8; 36],
-            Some(min_fee), // within [min, 1000*min]
             platform_version,
         );
 
@@ -332,7 +233,6 @@ mod tests {
             Anchor::empty_tree(),
             &TestProver,
             [0u8; 36],
-            None,
             platform_version,
         );
         assert!(result.is_err());
@@ -345,10 +245,9 @@ mod tests {
     }
 
     #[test]
-    fn test_shielded_transfer_fee_default_is_min_fee() {
-        // When fee is None, the default min fee is computed — verify that a
-        // note *exactly* equal to `transfer_amount + min_fee` on the default
-        // branch does not spuriously fail the "exceeds total" check (it
+    fn test_shielded_transfer_uses_min_fee() {
+        // The fee is always the minimum. Verify that a note *exactly* equal to
+        // `transfer_amount + min_fee` proceeds past the "exceeds total" check (it then
         // fails later in add_spend due to anchor mismatch).
         let platform_version = PlatformVersion::latest();
         let recipient = test_orchard_address();
@@ -374,7 +273,6 @@ mod tests {
             Anchor::empty_tree(),
             &TestProver,
             [0u8; 36],
-            None,
             platform_version,
         );
 
