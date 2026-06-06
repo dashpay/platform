@@ -261,7 +261,8 @@ mod tests {
             ExtractedNoteCommitment, FullViewingKey, MerklePath, Note, NoteValue, Position,
             RandomSeed, Retention, Rho, Scope, SpendAuthorizingKey, SpendingKey,
         };
-        use rand::rngs::OsRng;
+        use rand::rngs::StdRng;
+        use rand::SeedableRng;
 
         #[test]
         fn test_invalid_proof_returns_shielded_proof_error() {
@@ -295,7 +296,7 @@ mod tests {
         fn test_valid_shielded_transfer_proof_succeeds() {
             let platform_version = PlatformVersion::latest();
             let platform = setup_platform();
-            let mut rng = OsRng;
+            let mut rng = StdRng::seed_from_u64(0);
             let pk = get_proving_key();
 
             let spend_amount = 200_000_000u64;
@@ -432,7 +433,8 @@ mod tests {
             ExtractedNoteCommitment, FullViewingKey, MerklePath, Note, NoteValue, Position,
             RandomSeed, Retention, Rho, Scope, SpendAuthorizingKey, SpendingKey,
         };
-        use rand::rngs::OsRng;
+        use rand::rngs::StdRng;
+        use rand::SeedableRng;
 
         const MINIMUM_FEE_2_ACTIONS: u64 = 161_097_600;
         const MINIMUM_FEE_3_ACTIONS: u64 = 191_646_400;
@@ -565,7 +567,7 @@ mod tests {
         fn build_bundle_with_fee(
             fee: u64,
         ) -> (Vec<SerializedAction>, u64, [u8; 32], Vec<u8>, [u8; 64]) {
-            let mut rng = OsRng;
+            let mut rng = StdRng::seed_from_u64(0);
             let pk = get_proving_key();
 
             let sk = SpendingKey::from_bytes([0u8; 32]).unwrap();
@@ -698,7 +700,8 @@ mod tests {
             FullViewingKey, MerklePath, Note, NoteValue, Position, RandomSeed, Retention, Rho,
             Scope, SpendAuthorizingKey, SpendingKey,
         };
-        use rand::rngs::OsRng;
+        use rand::rngs::StdRng;
+        use rand::SeedableRng;
 
         /// Minimum fee for 2 actions (Orchard builder always produces ≥2).
         const MINIMUM_FEE_2_ACTIONS: u64 = 161_097_600;
@@ -708,7 +711,7 @@ mod tests {
         /// Returns (actions, value_balance, anchor_bytes, proof_bytes, binding_sig).
         fn build_valid_shielded_transfer_bundle(
         ) -> (Vec<SerializedAction>, u64, [u8; 32], Vec<u8>, [u8; 64]) {
-            let mut rng = OsRng;
+            let mut rng = StdRng::seed_from_u64(0);
             let pk = get_proving_key();
 
             let spend_amount = 200_000_000u64;
@@ -929,7 +932,8 @@ mod tests {
             FullViewingKey, Note, NoteValue, Position, RandomSeed, Retention, Rho, Scope,
             SpendAuthorizingKey, SpendingKey,
         };
-        use rand::rngs::OsRng;
+        use rand::rngs::StdRng;
+        use rand::SeedableRng;
 
         const MINIMUM_FEE_2_ACTIONS: u64 = 161_097_600;
 
@@ -937,7 +941,7 @@ mod tests {
         fn test_shielded_transfer_prove_and_verify_nullifiers() {
             let platform_version = PlatformVersion::latest();
             let platform = setup_platform();
-            let mut rng = OsRng;
+            let mut rng = StdRng::seed_from_u64(0);
             let pk = get_proving_key();
 
             let spend_amount = 200_000_000u64;

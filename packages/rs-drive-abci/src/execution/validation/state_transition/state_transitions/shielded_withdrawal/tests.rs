@@ -352,7 +352,8 @@ mod tests {
             FullViewingKey, Note, NoteValue, Position, RandomSeed, Retention, Rho, Scope,
             SpendAuthorizingKey, SpendingKey,
         };
-        use rand::rngs::OsRng;
+        use rand::rngs::StdRng;
+        use rand::SeedableRng;
 
         #[test]
         fn test_invalid_proof_returns_shielded_proof_error() {
@@ -388,7 +389,7 @@ mod tests {
             let platform_version = PlatformVersion::latest();
             let platform = setup_platform();
             insert_dummy_encrypted_notes(&platform, 250);
-            let mut rng = OsRng;
+            let mut rng = StdRng::seed_from_u64(0);
             let pk = get_proving_key();
 
             // --- Create keys ---
@@ -533,7 +534,8 @@ mod tests {
             FullViewingKey, Note, NoteValue, Position, RandomSeed, Retention, Rho, Scope,
             SpendAuthorizingKey, SpendingKey,
         };
-        use rand::rngs::OsRng;
+        use rand::rngs::StdRng;
+        use rand::SeedableRng;
 
         /// Build a valid Orchard bundle for shielded withdrawal tests (spend > output).
         /// The `output_script` and `unshielding_amount` are bound to the sighash so that
@@ -543,7 +545,7 @@ mod tests {
             output_script: &CoreScript,
             unshielding_amount: u64,
         ) -> (Vec<SerializedAction>, i64, [u8; 32], Vec<u8>, [u8; 64]) {
-            let mut rng = OsRng;
+            let mut rng = StdRng::seed_from_u64(0);
             let pk = get_proving_key();
 
             let sk = SpendingKey::from_bytes([0u8; 32]).unwrap();
@@ -897,7 +899,8 @@ mod tests {
             FullViewingKey, Note, NoteValue, Position, RandomSeed, Retention, Rho, Scope,
             SpendAuthorizingKey, SpendingKey,
         };
-        use rand::rngs::OsRng;
+        use rand::rngs::StdRng;
+        use rand::SeedableRng;
         use std::collections::BTreeMap;
         use std::sync::Arc;
 
@@ -906,7 +909,7 @@ mod tests {
             let platform_version = PlatformVersion::latest();
             let platform = setup_platform();
             insert_dummy_encrypted_notes(&platform, 250);
-            let mut rng = OsRng;
+            let mut rng = StdRng::seed_from_u64(0);
             let pk = get_proving_key();
 
             // --- Create keys ---
