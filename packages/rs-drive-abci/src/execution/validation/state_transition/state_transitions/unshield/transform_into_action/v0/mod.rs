@@ -1,8 +1,5 @@
 use crate::error::Error;
-use crate::execution::types::execution_operation::ValidationOperation;
-use crate::execution::types::state_transition_execution_context::{
-    StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
-};
+use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::state_transitions::shielded_common::{
     read_pool_total_balance, validate_anchor_exists, validate_minimum_pool_notes,
     validate_nullifiers,
@@ -33,8 +30,8 @@ impl UnshieldStateTransitionTransformIntoActionValidationV0 for UnshieldTransiti
         &self,
         drive: &Drive,
         transaction: TransactionArg,
-        block_info: &BlockInfo,
-        execution_context: &mut StateTransitionExecutionContext,
+        _block_info: &BlockInfo,
+        _execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         // The anchor from the transition (Merkle root of commitment tree)
@@ -91,16 +88,13 @@ impl UnshieldStateTransitionTransformIntoActionValidationV0 for UnshieldTransiti
             return Ok(consensus_error);
         }
 
-        // Calculate fees from the GroveDB operations
-        let fee = Drive::calculate_fee(
-            None,
-            Some(drive_operations),
-            &block_info.epoch,
-            drive.config.epochs_per_era,
-            platform_version,
-            None,
-        )?;
-        execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
+        // Shielded transitions do NOT meter the GroveDB operation cost as a fee. They
+        // pay a flat, client-predictable fee (`compute_minimum_shielded_fee`, computed
+        // below): the client must know the exact fee offline to build its proof and
+        // cannot run `Drive::calculate_fee` (which needs server-side state). The flat fee
+        // subsumes these validation reads, so the cost accumulated in `drive_operations`
+        // is intentionally not charged — `PaidFromShieldedPool` carves the fee straight
+        // from the pool and never consumes the execution context.
 
         // Verify the pool has sufficient balance for the unshield amount
         let (amount, num_actions) = match self {

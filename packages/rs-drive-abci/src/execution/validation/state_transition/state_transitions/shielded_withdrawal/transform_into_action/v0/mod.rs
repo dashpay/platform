@@ -1,8 +1,5 @@
 use crate::error::Error;
-use crate::execution::types::execution_operation::ValidationOperation;
-use crate::execution::types::state_transition_execution_context::{
-    StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
-};
+use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::state_transitions::shielded_common::{
     read_pool_total_balance, validate_anchor_exists, validate_minimum_pool_notes,
     validate_nullifiers,
@@ -36,7 +33,7 @@ impl ShieldedWithdrawalStateTransitionTransformIntoActionValidationV0
         &self,
         drive: &Drive,
         block_info: &BlockInfo,
-        execution_context: &mut StateTransitionExecutionContext,
+        _execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
@@ -115,16 +112,13 @@ impl ShieldedWithdrawalStateTransitionTransformIntoActionValidationV0
             return Ok(consensus_error);
         }
 
-        // Calculate fees from the GroveDB operations
-        let fee = Drive::calculate_fee(
-            None,
-            Some(drive_operations),
-            &block_info.epoch,
-            drive.config.epochs_per_era,
-            platform_version,
-            None,
-        )?;
-        execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
+        // Shielded transitions do NOT meter the GroveDB operation cost as a fee. They
+        // pay a flat, client-predictable fee (`compute_minimum_shielded_fee`, computed
+        // below): the client must know the exact fee offline to build its proof and
+        // cannot run `Drive::calculate_fee` (which needs server-side state). The flat fee
+        // subsumes these validation reads, so the cost accumulated in `drive_operations`
+        // is intentionally not charged — `PaidFromShieldedPool` carves the fee straight
+        // from the pool and never consumes the execution context.
 
         // The fee charged to the shielded pool is the minimum shielded fee computed
         // from the same `num_actions` that `validate_minimum_shielded_fee` enforced
