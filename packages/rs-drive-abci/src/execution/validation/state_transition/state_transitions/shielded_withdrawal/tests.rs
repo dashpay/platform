@@ -428,8 +428,12 @@ mod tests {
             // Compute platform sighash binding transparent fields (output_script, unshielding_amount)
             let output_script = create_output_script();
             let unshielding_amount = 499_995_000u64; // value_balance as u64
-            let mut extra_sighash_data = output_script.as_bytes().to_vec();
-            extra_sighash_data.extend_from_slice(&unshielding_amount.to_le_bytes());
+            let extra_sighash_data = dpp::shielded::shielded_withdrawal_extra_sighash_data(
+                output_script.as_bytes(),
+                unshielding_amount,
+                1,
+                Pooling::Never,
+            );
             let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
             let sighash = compute_platform_sighash(&bundle_commitment, &extra_sighash_data);
 
@@ -574,8 +578,12 @@ mod tests {
             let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
 
             // Bind transparent fields (output_script, unshielding_amount) to the sighash
-            let mut extra_sighash_data = output_script.as_bytes().to_vec();
-            extra_sighash_data.extend_from_slice(&unshielding_amount.to_le_bytes());
+            let extra_sighash_data = dpp::shielded::shielded_withdrawal_extra_sighash_data(
+                output_script.as_bytes(),
+                unshielding_amount,
+                1,
+                Pooling::Never,
+            );
             let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
             let sighash = compute_platform_sighash(&bundle_commitment, &extra_sighash_data);
 
@@ -722,6 +730,57 @@ mod tests {
             // FIXED: Platform sighash includes output_script, so changing it
             // causes the sighash to differ from the one used during signing,
             // and signature verification fails.
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::StateError(StateError::InvalidShieldedProofError(_))
+                )]
+            );
+        }
+
+        /// AUDIT REGRESSION: core_fee_per_byte is bound to the platform sighash.
+        ///
+        /// `core_fee_per_byte` is written verbatim by the transformer into the queued
+        /// Core withdrawal document (the asset-unlock TxOut fee rate). Structure
+        /// validation constrains it to the non-zero Fibonacci set, but that set spans
+        /// 1..=2,971,215,073 — so without sighash binding a relay or block proposer could
+        /// flip a user's `core_fee_per_byte = 1` to a much larger Fibonacci value,
+        /// redirecting the withdrawn amount into L1 miner fees while keeping the Orchard
+        /// proof valid (ShieldedWithdrawal has no identity-key signature). Binding it into
+        /// the sighash makes the binding signature authorize it, so any change is rejected.
+        #[test]
+        fn test_different_core_fee_per_byte_with_same_valid_bundle_is_rejected() {
+            let platform_version = PlatformVersion::latest();
+            let platform = setup_platform();
+            insert_dummy_encrypted_notes(&platform, 250);
+
+            // Bundle is signed for core_fee_per_byte = 1 (build_valid_shielded_withdrawal_bundle).
+            let output_script = create_output_script();
+            let unshielding_amount = 499_995_000u64;
+            let (actions, value_balance, anchor_bytes, proof_bytes, binding_sig) =
+                build_valid_shielded_withdrawal_bundle(&output_script, unshielding_amount);
+            assert_eq!(value_balance, 499_995_000);
+
+            set_pool_total_balance(&platform, 500_000_000);
+            insert_anchor_into_state(&platform, &anchor_bytes);
+
+            // ATTACK: bump core_fee_per_byte to a *different* Fibonacci value (2), so it still
+            // passes structure validation but no longer matches the signed sighash.
+            let transition = create_shielded_withdrawal_transition(
+                actions,
+                unshielding_amount,
+                anchor_bytes,
+                proof_bytes,
+                binding_sig,
+                2, // mutated core_fee_per_byte (bundle was signed with 1)
+                Pooling::Never,
+                output_script,
+            );
+
+            let processing_result = process_transition(&platform, transition, platform_version);
+
+            // FIXED: core_fee_per_byte is in the platform sighash, so the mutated value
+            // yields a different sighash than was signed and signature verification fails.
             assert_matches!(
                 processing_result.execution_results().as_slice(),
                 [StateTransitionExecutionResult::UnpaidConsensusError(
@@ -887,8 +946,12 @@ mod tests {
             // Compute platform sighash binding transparent fields (output_script, unshielding_amount)
             let output_script = create_output_script();
             let unshielding_amount = 499_995_000u64; // value_balance as u64
-            let mut extra_sighash_data = output_script.as_bytes().to_vec();
-            extra_sighash_data.extend_from_slice(&unshielding_amount.to_le_bytes());
+            let extra_sighash_data = dpp::shielded::shielded_withdrawal_extra_sighash_data(
+                output_script.as_bytes(),
+                unshielding_amount,
+                1,
+                Pooling::Never,
+            );
             let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
             let sighash = compute_platform_sighash(&bundle_commitment, &extra_sighash_data);
 
@@ -1119,8 +1182,12 @@ mod tests {
 
             let output_script = create_output_script();
             let unshielding_amount = 499_995_000u64;
-            let mut extra_sighash_data = output_script.as_bytes().to_vec();
-            extra_sighash_data.extend_from_slice(&unshielding_amount.to_le_bytes());
+            let extra_sighash_data = dpp::shielded::shielded_withdrawal_extra_sighash_data(
+                output_script.as_bytes(),
+                unshielding_amount,
+                1,
+                Pooling::Never,
+            );
             let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
             let sighash = compute_platform_sighash(&bundle_commitment, &extra_sighash_data);
             let proven = unauthorized.create_proof(pk, &mut rng).unwrap();

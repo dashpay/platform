@@ -284,10 +284,13 @@ impl StateTransitionShieldedProofValidationV0 for StateTransition {
                     },
                     StateTransition::ShieldedWithdrawal(st) => match st {
                         dpp::state_transition::shielded_withdrawal_transition::ShieldedWithdrawalTransition::V0(v0) => {
-                            let mut extra_sighash_data =
-                                v0.output_script.as_bytes().to_vec();
-                            extra_sighash_data
-                                .extend_from_slice(&v0.unshielding_amount.to_le_bytes());
+                            let extra_sighash_data =
+                                dpp::shielded::shielded_withdrawal_extra_sighash_data(
+                                    v0.output_script.as_bytes(),
+                                    v0.unshielding_amount,
+                                    v0.core_fee_per_byte,
+                                    v0.pooling,
+                                );
                             reconstruct_and_verify_bundle(
                                 &v0.actions,
                                 FLAGS_SPENDS_AND_OUTPUTS,

@@ -99,11 +99,15 @@ pub fn build_shielded_withdrawal_transition<P: OrchardProver>(
 
     let change_amount = total_spent - required;
 
-    // ShieldedWithdrawal extra_data = output_script || value_balance (le bytes)
-    // value_balance = withdrawal_amount + fee, becomes v0.unshielding_amount in the state transition
-    // Must match server-side sighash in shielded_proof.rs
-    let mut extra_sighash_data = output_script.as_bytes().to_vec();
-    extra_sighash_data.extend_from_slice(&required.to_le_bytes());
+    // Bind every Core-facing withdrawal field into the Orchard sighash (output_script,
+    // unshielding_amount == required, core_fee_per_byte, pooling) so the binding signature
+    // authorizes them. Shared with the consensus verifier in shielded_proof.rs.
+    let extra_sighash_data = crate::shielded::shielded_withdrawal_extra_sighash_data(
+        output_script.as_bytes(),
+        required,
+        core_fee_per_byte,
+        pooling,
+    );
 
     let bundle = build_spend_bundle(
         spends,

@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::fee::Credits;
+use crate::withdrawal::Pooling;
 use crate::ProtocolError;
 use platform_version::version::PlatformVersion;
 
@@ -60,6 +61,35 @@ pub fn compute_platform_sighash(bundle_commitment: &[u8; 32], extra_data: &[u8])
     hasher.update(bundle_commitment);
     hasher.update(extra_data);
     hasher.finalize().into()
+}
+
+/// Builds the transparent `extra_data` bound into a ShieldedWithdrawal's platform
+/// sighash, with the byte layout
+/// `output_script || unshielding_amount (u64 LE) || core_fee_per_byte (u32 LE) || pooling (u8)`.
+///
+/// Every field here is written verbatim by the transformer into the queued withdrawal
+/// document that constructs the Core asset-unlock TxOut. Binding all of them into the
+/// Orchard sighash means the binding signature authorizes them: since ShieldedWithdrawal
+/// has no identity-key signature and no address-witness check, the Orchard signature is
+/// the only authorization boundary, so a relay or block proposer cannot malleate
+/// `core_fee_per_byte` (or `pooling`, were it ever unpinned from `Never`) — e.g. flip a
+/// user's `core_fee_per_byte = 1` to a much larger Fibonacci value to redirect the
+/// withdrawn amount into L1 miner fees — without invalidating the proof.
+///
+/// The signing (client/builder) and verifying (consensus) sides MUST produce identical
+/// bytes, so both call this single function.
+pub fn shielded_withdrawal_extra_sighash_data(
+    output_script: &[u8],
+    unshielding_amount: u64,
+    core_fee_per_byte: u32,
+    pooling: Pooling,
+) -> Vec<u8> {
+    let mut data = Vec::with_capacity(output_script.len() + 8 + 4 + 1);
+    data.extend_from_slice(output_script);
+    data.extend_from_slice(&unshielding_amount.to_le_bytes());
+    data.extend_from_slice(&core_fee_per_byte.to_le_bytes());
+    data.push(pooling as u8);
+    data
 }
 
 /// Computes the minimum fee (in credits) for a shielded state transition.
