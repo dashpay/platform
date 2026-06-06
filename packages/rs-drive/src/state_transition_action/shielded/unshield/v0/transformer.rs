@@ -9,6 +9,7 @@ impl UnshieldTransitionActionV0 {
     pub fn try_from_transition(
         value: &UnshieldTransitionV0,
         current_total_balance: Credits,
+        fee_amount: Credits,
     ) -> ConsensusValidationResult<Self> {
         let notes: Vec<ShieldedActionNote> =
             value.actions.iter().map(ShieldedActionNote::from).collect();
@@ -18,7 +19,7 @@ impl UnshieldTransitionActionV0 {
             amount: value.unshielding_amount,
             notes,
             anchor: value.anchor,
-            fee_amount: 0, // TODO: fee calculation for unshield
+            fee_amount,
             current_total_balance,
         })
     }

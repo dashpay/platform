@@ -3,9 +3,13 @@ use crate::error::Error;
 use crate::execution::validation::state_transition::state_transitions::shielded_common::{
     reconstruct_and_verify_bundle, FLAGS_OUTPUTS_ONLY, FLAGS_SPENDS_AND_OUTPUTS,
 };
+use dpp::consensus::basic::identity::InvalidIdentityCreditWithdrawalTransitionAmountError;
+use dpp::consensus::basic::state_transition::{
+    ShieldedInvalidValueBalanceError, WithdrawalBelowMinAmountError,
+};
+use dpp::consensus::basic::BasicError;
 use dpp::consensus::state::shielded::insufficient_shielded_fee_error::InsufficientShieldedFeeError;
 use dpp::consensus::state::state_error::StateError;
-use dpp::shielded::SHIELDED_STORAGE_BYTES_PER_ACTION;
 use dpp::state_transition::StateTransition;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
@@ -68,11 +72,25 @@ impl StateTransitionHasShieldedProofValidationV0 for StateTransition {
 /// The minimum fee is computed dynamically based on the number of actions:
 ///   min_fee = proof_verification_fee + num_actions × (processing_fee + storage_fee)
 ///
-/// The fee is derived from the public `value_balance` field (no ZK proof execution needed):
-/// - ShieldedTransfer: fee = value_balance
-/// - Unshield: fee = value_balance - amount
-/// - ShieldedWithdrawal: fee = value_balance - amount
-/// - Shield: fee paid by transparent address inputs (skipped here)
+/// The amount checked against `min_fee` is derived from public fields (no ZK proof
+/// execution needed):
+/// - ShieldedTransfer: the whole `value_balance` is the fee, so we require
+///   `value_balance == min_fee` *exactly*. There is no recipient to absorb an excess, so a
+///   variable fee would only burn credits and leak a distinguishing fee fingerprint that
+///   breaks shielded uniformity — overpayment is rejected. (Unshield/Withdrawal use `>=`
+///   because their excess is the recipient/net amount.)
+/// - Unshield / ShieldedWithdrawal: `unshielding_amount` is the TOTAL value leaving the
+///   shielded pool (recipient/net amount + fee). The fee actually charged at execution time
+///   is `compute_minimum_shielded_fee` (carved out of `unshielding_amount`), and the
+///   recipient/net receives `unshielding_amount - fee`. Requiring `unshielding_amount >= min_fee`
+///   guarantees that net amount is non-negative.
+/// - ShieldedWithdrawal additionally requires the net (`unshielding_amount - min_fee`) to
+///   fall within `[min_withdrawal_amount, max_withdrawal_amount]` — the same two-sided range
+///   the transparent withdrawal paths enforce — because that net becomes a Core `TxOut`: the
+///   dust floor stops a zero/sub-dust queue entry, and the per-transition policy cap stops a
+///   single withdrawal from exceeding the protocol's maximum. Unshield has no such range: its
+///   net is credited to a platform address, not Core.
+/// - Shield: fee paid by transparent address inputs (skipped here).
 pub(crate) trait StateTransitionShieldedMinimumFeeValidationV0 {
     fn validate_minimum_shielded_fee(
         &self,
@@ -91,8 +109,20 @@ impl StateTransitionShieldedMinimumFeeValidationV0 for StateTransition {
             .validate_minimum_shielded_fee
         {
             0 => {
-                // Extract the fee and action count from the transition.
-                let (fee, num_actions): (i64, usize) = match self {
+                // Destructure per shielded transition type:
+                // - `validated_amount`: the amount field this type carries. For ShieldedTransfer
+                //   it IS the fee (`value_balance`); for Unshield/ShieldedWithdrawal it is the
+                //   GROSS leaving the pool (`unshielding_amount` = recipient/net + fee).
+                // - `amount_is_pure_fee`: true only when `validated_amount` is the fee itself
+                //   (ShieldedTransfer), so it must equal the minimum exactly — there is no
+                //   recipient amount and overpaying is disallowed. False for the gross-carrying
+                //   types, where the excess over the fee IS the recipient/net amount.
+                // - `min_net_amount`/`max_net_amount`: the allowed range for the derived net
+                //   (`validated_amount - min_fee`). `[0, u64::MAX]` (a no-op) for every type
+                //   except ShieldedWithdrawal, whose net becomes a Core `TxOut` and must clear
+                //   the same `[min_withdrawal_amount, max_withdrawal_amount]` range the
+                //   transparent withdrawal paths enforce.
+                let (validated_amount, num_actions, min_net_amount, max_net_amount, amount_is_pure_fee): (i64, usize, u64, u64, bool) = match self {
                     // Shield: fee is paid from transparent address inputs, not from value_balance.
                     StateTransition::Shield(_) => {
                         return Ok(SimpleConsensusValidationResult::new())
@@ -100,79 +130,142 @@ impl StateTransitionShieldedMinimumFeeValidationV0 for StateTransition {
                     // ShieldedTransfer: value_balance (u64) IS the fee.
                     StateTransition::ShieldedTransfer(st) => match st {
                         dpp::state_transition::shielded_transfer_transition::ShieldedTransferTransition::V0(v0) => {
-                            (v0.value_balance as i64, v0.actions.len())
+                            (v0.value_balance as i64, v0.actions.len(), 0, u64::MAX, true)
                         }
                     },
-                    // Unshield: fee = value_balance - amount.
+                    // Unshield: `unshielding_amount` is the TOTAL leaving the pool
+                    // (recipient/net + fee). We check it against `min_fee` so the net
+                    // (`unshielding_amount - compute_minimum_shielded_fee`) credited to
+                    // the recipient at execution time is non-negative. The net is credited
+                    // to a platform address (not Core), so no withdrawal range applies.
                     StateTransition::Unshield(st) => match st {
                         dpp::state_transition::unshield_transition::UnshieldTransition::V0(
                             v0,
-                        ) => {
-                            // unshielding_amount is the total leaving the pool (fee is validated separately)
-                            (v0.unshielding_amount as i64, v0.actions.len())
-                        }
+                        ) => (v0.unshielding_amount as i64, v0.actions.len(), 0, u64::MAX, false),
                     },
+                    // ShieldedWithdrawal: the net (`unshielding_amount - min_fee`) becomes a
+                    // Core `TxOut`, so it must fall within the same
+                    // `[min_withdrawal_amount, max_withdrawal_amount]` range the transparent
+                    // withdrawal paths enforce (dust floor and the per-transition policy cap).
                     StateTransition::ShieldedWithdrawal(st) => match st {
                         dpp::state_transition::shielded_withdrawal_transition::ShieldedWithdrawalTransition::V0(v0) => {
-                            (v0.unshielding_amount as i64, v0.actions.len())
+                            (
+                                v0.unshielding_amount as i64,
+                                v0.actions.len(),
+                                platform_version.system_limits.min_withdrawal_amount,
+                                platform_version.system_limits.max_withdrawal_amount,
+                                false,
+                            )
                         }
                     },
                     // Other transitions don't go through shielded fee validation.
                     _ => return Ok(SimpleConsensusValidationResult::new()),
                 };
 
+                // Defensive overflow guard. `value_balance`/`unshielding_amount` are bounded to
+                // `<= i64::MAX` by basic structure validation, which runs (with a hard
+                // early-return) before this stage, so the `as i64` casts above are non-negative
+                // for validated input. Re-check here so a future reordering or a direct caller
+                // cannot slip a value `> i64::MAX` past as a wrapped-negative `i64` (which would
+                // then wrap back to a huge `u64` and sail past the min-fee check below).
+                if validated_amount < 0 {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        BasicError::ShieldedInvalidValueBalanceError(
+                            ShieldedInvalidValueBalanceError::new(
+                                "shielded value_balance/unshielding_amount exceeds the maximum \
+                                 allowed value (i64::MAX)"
+                                    .to_string(),
+                            ),
+                        )
+                        .into(),
+                    ));
+                }
+
                 let constants = &platform_version
                     .drive_abci
                     .validation_and_processing
                     .event_constants;
 
-                // Storage fee per action: 312 bytes (280 BulkAppendTree + 32 nullifier)
-                // × (storage_disk_usage_credit_per_byte + storage_processing_credit_per_byte)
-                let storage_costs = &platform_version.fee_version.storage;
-                let storage_fee_per_action = storage_costs
-                    .storage_disk_usage_credit_per_byte
-                    .checked_add(storage_costs.storage_processing_credit_per_byte)
-                    .and_then(|sum| SHIELDED_STORAGE_BYTES_PER_ACTION.checked_mul(sum))
-                    .ok_or(Error::Execution(ExecutionError::Overflow(
-                        "storage fee per action overflow in shielded fee calculation",
-                    )))?;
+                // Single source of truth for the consensus fee formula. The SDK builders
+                // and the unshield/withdrawal transformers carve the fee with this exact
+                // checked computation, so the validation threshold here can never drift from
+                // the fee that is actually charged. See `dpp::shielded::compute_minimum_shielded_fee`.
+                let minimum_shielded_fee =
+                    dpp::shielded::compute_minimum_shielded_fee(num_actions, platform_version)?;
 
-                // min_fee = proof_verification_fee + num_actions × (processing_fee + storage_fee)
-                let per_action_fee = constants
-                    .shielded_per_action_processing_fee
-                    .checked_add(storage_fee_per_action)
-                    .ok_or(Error::Execution(ExecutionError::Overflow(
-                        "per-action fee overflow in shielded fee calculation",
-                    )))?;
-                let minimum_shielded_fee = (num_actions as u64)
-                    .checked_mul(per_action_fee)
-                    .and_then(|actions_fee| {
-                        constants
-                            .shielded_proof_verification_fee
-                            .checked_add(actions_fee)
-                    })
-                    .ok_or(Error::Execution(ExecutionError::Overflow(
-                        "minimum shielded fee overflow in shielded fee calculation",
-                    )))?;
-
-                if (fee as u64) < minimum_shielded_fee {
-                    Ok(SimpleConsensusValidationResult::new_with_error(
+                if (validated_amount as u64) < minimum_shielded_fee {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
                         StateError::InsufficientShieldedFeeError(
                             InsufficientShieldedFeeError::new(format!(
-                                "shielded transition fee {} is below minimum required fee {} \
-                                 ({} proof + {} actions × {} per-action)",
-                                fee,
+                                "shielded transition amount {} is below the minimum required fee \
+                                 {} ({} proof-verification + {} actions)",
+                                validated_amount,
                                 minimum_shielded_fee,
                                 constants.shielded_proof_verification_fee,
                                 num_actions,
-                                per_action_fee,
                             )),
                         )
                         .into(),
-                    ))
-                } else {
-                    Ok(SimpleConsensusValidationResult::new())
+                    ));
                 }
+
+                // ShieldedTransfer: `value_balance` IS the entire fee (there is no recipient
+                // amount), so it must equal the minimum exactly. Allowing `value_balance >
+                // min_fee` would let a transfer overpay for no benefit and leak a fee
+                // fingerprint that breaks shielded uniformity — reject it. Unshield/Withdrawal
+                // are exempt: their excess over `min_fee` is the recipient/net amount.
+                if amount_is_pure_fee && (validated_amount as u64) > minimum_shielded_fee {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        BasicError::ShieldedInvalidValueBalanceError(
+                            ShieldedInvalidValueBalanceError::new(format!(
+                                "shielded transfer value_balance {} must equal the minimum \
+                                 shielded fee {} exactly ({} proof-verification + {} actions); \
+                                 overpayment is not allowed",
+                                validated_amount,
+                                minimum_shielded_fee,
+                                constants.shielded_proof_verification_fee,
+                                num_actions,
+                            )),
+                        )
+                        .into(),
+                    ));
+                }
+
+                // For ShieldedWithdrawal, the net value leaving to Core
+                // (`unshielding_amount - min_fee`) must fall within the same
+                // `[min_withdrawal_amount, max_withdrawal_amount]` range the transparent
+                // withdrawal paths enforce — the dust floor AND the per-transition policy
+                // cap. For the other shielded paths the range is `[0, u64::MAX]`, so both
+                // checks are no-ops.
+                // Safe: `validated_amount as u64 >= minimum_shielded_fee` was just checked above.
+                let net_amount = (validated_amount as u64) - minimum_shielded_fee;
+                if net_amount < min_net_amount {
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        BasicError::WithdrawalBelowMinAmountError(
+                            WithdrawalBelowMinAmountError::new(
+                                net_amount,
+                                min_net_amount,
+                                max_net_amount,
+                            ),
+                        )
+                        .into(),
+                    ));
+                }
+                if net_amount > max_net_amount {
+                    // Over the per-transition withdrawal cap. Use the same range error the
+                    // transparent withdrawal path uses so the rejection reason is accurate
+                    // (an over-max amount is not "below min").
+                    return Ok(SimpleConsensusValidationResult::new_with_error(
+                        InvalidIdentityCreditWithdrawalTransitionAmountError::new(
+                            net_amount,
+                            min_net_amount,
+                            max_net_amount,
+                        )
+                        .into(),
+                    ));
+                }
+
+                Ok(SimpleConsensusValidationResult::new())
             }
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "StateTransition::validate_minimum_shielded_fee".to_string(),
@@ -223,9 +316,10 @@ impl StateTransitionShieldedProofValidationV0 for StateTransition {
                     },
                     StateTransition::Unshield(st) => match st {
                         dpp::state_transition::unshield_transition::UnshieldTransition::V0(v0) => {
-                            let mut extra_sighash_data = v0.output_address.to_bytes();
-                            extra_sighash_data
-                                .extend_from_slice(&v0.unshielding_amount.to_le_bytes());
+                            let extra_sighash_data = dpp::shielded::unshield_extra_sighash_data(
+                                &v0.output_address.to_bytes(),
+                                v0.unshielding_amount,
+                            );
                             reconstruct_and_verify_bundle(
                                 &v0.actions,
                                 FLAGS_SPENDS_AND_OUTPUTS,
@@ -239,10 +333,13 @@ impl StateTransitionShieldedProofValidationV0 for StateTransition {
                     },
                     StateTransition::ShieldedWithdrawal(st) => match st {
                         dpp::state_transition::shielded_withdrawal_transition::ShieldedWithdrawalTransition::V0(v0) => {
-                            let mut extra_sighash_data =
-                                v0.output_script.as_bytes().to_vec();
-                            extra_sighash_data
-                                .extend_from_slice(&v0.unshielding_amount.to_le_bytes());
+                            let extra_sighash_data =
+                                dpp::shielded::shielded_withdrawal_extra_sighash_data(
+                                    v0.output_script.as_bytes(),
+                                    v0.unshielding_amount,
+                                    v0.core_fee_per_byte,
+                                    v0.pooling,
+                                );
                             reconstruct_and_verify_bundle(
                                 &v0.actions,
                                 FLAGS_SPENDS_AND_OUTPUTS,
@@ -451,6 +548,23 @@ mod tests {
 
     mod validate_minimum_shielded_fee {
         use super::*;
+        use dpp::consensus::ConsensusError;
+
+        /// A ShieldedWithdrawal transition (no actions) with the given gross amount.
+        fn shielded_withdrawal_with_amount(unshielding_amount: u64) -> StateTransition {
+            StateTransition::ShieldedWithdrawal(ShieldedWithdrawalTransition::V0(
+                ShieldedWithdrawalTransitionV0 {
+                    actions: vec![],
+                    unshielding_amount,
+                    anchor: [0u8; 32],
+                    proof: vec![],
+                    binding_signature: [0u8; 64],
+                    core_fee_per_byte: 0,
+                    pooling: Default::default(),
+                    output_script: Default::default(),
+                },
+            ))
+        }
 
         #[test]
         fn should_pass_for_non_shielded_transition() {
@@ -460,6 +574,113 @@ mod tests {
                 .validate_minimum_shielded_fee(platform_version)
                 .expect("should not error");
             assert!(result.is_valid());
+        }
+
+        #[test]
+        fn should_reject_shielded_withdrawal_with_net_below_min_withdrawal_amount() {
+            let platform_version = PlatformVersion::latest();
+            let min_fee = dpp::shielded::compute_minimum_shielded_fee(0, platform_version)
+                .expect("fee computation should not overflow");
+            let min_withdrawal = platform_version.system_limits.min_withdrawal_amount;
+            // net = min_withdrawal_amount - 1 → just below the Core dust floor.
+            let st = shielded_withdrawal_with_amount(min_fee + min_withdrawal - 1);
+            let result = st
+                .validate_minimum_shielded_fee(platform_version)
+                .expect("should not error");
+            assert!(!result.is_valid());
+            assert!(
+                matches!(
+                    result.errors.first(),
+                    Some(ConsensusError::BasicError(
+                        BasicError::WithdrawalBelowMinAmountError(_)
+                    ))
+                ),
+                "below-min must reject with WithdrawalBelowMinAmountError; got {:?}",
+                result.errors
+            );
+        }
+
+        #[test]
+        fn should_accept_shielded_withdrawal_with_net_at_min_withdrawal_amount() {
+            let platform_version = PlatformVersion::latest();
+            let min_fee = dpp::shielded::compute_minimum_shielded_fee(0, platform_version)
+                .expect("fee computation should not overflow");
+            let min_withdrawal = platform_version.system_limits.min_withdrawal_amount;
+            // net = min_withdrawal_amount exactly → at the floor, accepted.
+            let st = shielded_withdrawal_with_amount(min_fee + min_withdrawal);
+            let result = st
+                .validate_minimum_shielded_fee(platform_version)
+                .expect("should not error");
+            assert!(
+                result.is_valid(),
+                "a withdrawal whose net equals min_withdrawal_amount must be accepted"
+            );
+        }
+
+        #[test]
+        fn should_reject_shielded_withdrawal_with_net_above_max_withdrawal_amount() {
+            let platform_version = PlatformVersion::latest();
+            let min_fee = dpp::shielded::compute_minimum_shielded_fee(0, platform_version)
+                .expect("fee computation should not overflow");
+            let max = platform_version.system_limits.max_withdrawal_amount;
+            // net = max_withdrawal_amount + 1 → just over the per-transition policy cap.
+            let st = shielded_withdrawal_with_amount(min_fee + max + 1);
+            let result = st
+                .validate_minimum_shielded_fee(platform_version)
+                .expect("should not error");
+            assert!(!result.is_valid());
+            // Must reject with the amount-RANGE error, not the below-min error — locks in the
+            // "over-max is not below-min" reason accuracy the cap introduced.
+            assert!(
+                matches!(
+                    result.errors.first(),
+                    Some(ConsensusError::BasicError(
+                        BasicError::InvalidIdentityCreditWithdrawalTransitionAmountError(_)
+                    ))
+                ),
+                "over-max must reject with InvalidIdentityCreditWithdrawalTransitionAmountError; got {:?}",
+                result.errors
+            );
+        }
+
+        #[test]
+        fn should_accept_shielded_withdrawal_with_net_at_max_withdrawal_amount() {
+            let platform_version = PlatformVersion::latest();
+            let min_fee = dpp::shielded::compute_minimum_shielded_fee(0, platform_version)
+                .expect("fee computation should not overflow");
+            let max = platform_version.system_limits.max_withdrawal_amount;
+            // net = max_withdrawal_amount exactly → at the cap, accepted.
+            let st = shielded_withdrawal_with_amount(min_fee + max);
+            let result = st
+                .validate_minimum_shielded_fee(platform_version)
+                .expect("should not error");
+            assert!(
+                result.is_valid(),
+                "a withdrawal whose net equals max_withdrawal_amount must be accepted"
+            );
+        }
+
+        #[test]
+        fn should_reject_amount_exceeding_i64_max_via_guard() {
+            let platform_version = PlatformVersion::latest();
+            // `unshielding_amount > i64::MAX` wraps to a negative i64 in the validator's cast;
+            // the defensive `fee < 0` guard must reject it (rather than wrapping back to a huge
+            // u64 and sailing past the min-fee check).
+            let st = shielded_withdrawal_with_amount((i64::MAX as u64) + 1);
+            let result = st
+                .validate_minimum_shielded_fee(platform_version)
+                .expect("should not error");
+            assert!(!result.is_valid());
+            assert!(
+                matches!(
+                    result.errors.first(),
+                    Some(ConsensusError::BasicError(
+                        BasicError::ShieldedInvalidValueBalanceError(_)
+                    ))
+                ),
+                "amount > i64::MAX must be rejected by the fee<0 guard; got {:?}",
+                result.errors
+            );
         }
     }
 

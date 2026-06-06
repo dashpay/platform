@@ -38,9 +38,9 @@ The fee is derived differently depending on the shielded transition type:
 | Transition | Fee Formula | Explanation |
 |---|---|---|
 | **Shield** | Paid from transparent address inputs | Fee comes from the transparent side, not from `value_balance`. Skipped by shielded fee validation. |
-| **ShieldedTransfer** | `fee = value_balance` | The entire `value_balance` is fee — nothing leaves the pool except the fee going to proposers. |
-| **Unshield** | `fee = value_balance − amount` | `amount` goes to the output address; the remainder is fee. |
-| **ShieldedWithdrawal** | `fee = value_balance − amount` | `amount` goes to the withdrawal document; the remainder is fee. |
+| **ShieldedTransfer** | `fee = value_balance` (pinned to the minimum) | The entire `value_balance` is the fee and must equal `compute_minimum_shielded_fee(num_actions)` exactly (overpayment is rejected). Nothing leaves the pool except the fee. |
+| **Unshield** | `fee = compute_minimum_shielded_fee(num_actions)` | `value_balance` (the transition's `unshielding_amount`) is the **gross** amount leaving the pool. The output address receives `unshielding_amount − fee`; the `fee` is the flat minimum. Validation requires `unshielding_amount ≥ fee`. |
+| **ShieldedWithdrawal** | `fee = compute_minimum_shielded_fee(num_actions)` | `value_balance` (`unshielding_amount`) is the **gross** amount leaving the pool. The Core withdrawal document receives `unshielding_amount − fee` (which must also clear `MIN_WITHDRAWAL_AMOUNT`); the `fee` is the flat minimum. |
 | **ShieldFromAssetLock** | Paid from asset lock | Fee comes from the asset lock mechanism, not from `value_balance`. |
 
 For `ShieldedTransfer`, the client constructs the bundle so that `total_spent −
@@ -73,10 +73,16 @@ Each action in the bundle requires:
 - Nullifier duplicate check (hash + tree lookup)
 - Note commitment insertion into the Sinsemilla-based Merkle tree
 
-The processing cost per action was calibrated at a 33:1 ratio against the proof
-verification cost, based on benchmarks of signature verification and tree operations.
+The per-action processing fee prices the marginal Halo 2 verification work that
+each additional action adds to the bundle (≈1.1 ms/action measured against a
+≈5 ms bundle base), so it is calibrated at roughly a 4.5:1 ratio against the
+fixed proof-verification fee (100M : 22M) rather than the looser ratio used
+before the recalibration. (Note the two ratios on this page use different
+baselines: the “30×” in §1 is the proof fee relative to a single RedPallas
+signature verification, whereas this 4.5:1 is the proof fee relative to the
+per-action processing fee.)
 
-**Current value:** `3,000,000` credits (3M)
+**Current value:** `22,000,000` credits (22M)
 
 ### 3. Per-Action Storage Fee
 
@@ -84,7 +90,7 @@ Each action permanently stores data in two places:
 
 | Storage | Bytes | Contents |
 |---|---|---|
-| BulkAppendTree (commitment tree) | 280 | 32 cmx + 32 nullifier + 216 encrypted note |
+| BulkAppendTree (commitment tree) | 280 | 32 cmx + 32 rho + 216 encrypted note |
 | Nullifier tree | 32 | nullifier key (value is empty) |
 | **Total** | **312** | |
 
@@ -108,9 +114,9 @@ Combining all three components:
 
 | Actions | Proof Fee | Processing | Storage | Total Minimum Fee |
 |---|---|---|---|---|
-| 2 | 100,000,000 | 6,000,000 | 17,097,600 | **123,097,600** |
-| 3 | 100,000,000 | 9,000,000 | 25,646,400 | **134,646,400** |
-| 4 | 100,000,000 | 12,000,000 | 34,195,200 | **146,195,200** |
+| 2 | 100,000,000 | 44,000,000 | 17,097,600 | **161,097,600** |
+| 3 | 100,000,000 | 66,000,000 | 25,646,400 | **191,646,400** |
+| 4 | 100,000,000 | 88,000,000 | 34,195,200 | **222,195,200** |
 
 Note: The Orchard protocol requires a minimum of 2 actions per bundle for privacy
 (even a single-input single-output transfer produces 2 actions with a dummy padding
@@ -158,8 +164,10 @@ pub struct DriveAbciValidationConstants {
     pub maximum_vote_polls_to_process: u16,
     pub maximum_contenders_to_consider: u16,
     pub minimum_pool_notes_for_outgoing: u64,
+    pub shielded_anchor_retention_blocks: u64,
+    pub shielded_anchor_pruning_interval: u64,
     pub shielded_proof_verification_fee: u64,      // 100_000_000
-    pub shielded_per_action_processing_fee: u64,    // 3_000_000
+    pub shielded_per_action_processing_fee: u64,    // 22_000_000
 }
 ```
 
@@ -176,23 +184,32 @@ This design means:
 ## How Fees Flow After Validation
 
 Once the fee check passes and the transition is fully validated and executed, the
-fee amount is deducted from the shielded pool's total balance and routed to block
-proposers via the `PaidFromShieldedPool` execution event:
+shielded pool's total balance is decremented and the fee is booked via the
+`PaidFromShieldedPool` execution event:
 
 ```
-ShieldedTransfer:    pool_balance -= fee_amount
-Unshield:           pool_balance -= (amount + fee_amount)
-ShieldedWithdrawal: pool_balance -= (amount + fee_amount)
+ShieldedTransfer:    pool_balance -= fee_amount          // fee == value_balance
+Unshield:            pool_balance -= unshielding_amount   // gross
+ShieldedWithdrawal:  pool_balance -= unshielding_amount   // gross
 ```
 
-For `Unshield`, the `amount` goes to the output platform address. For
-`ShieldedWithdrawal`, the `amount` goes to a Core withdrawal document. In both
-cases, the `fee_amount` goes to proposers.
+For `Unshield` and `ShieldedWithdrawal`, `unshielding_amount` is the **gross** amount
+leaving the pool. Of that, `unshielding_amount − fee_amount` is credited to the output
+platform address (`Unshield`) or written into the Core withdrawal document
+(`ShieldedWithdrawal`), and `fee_amount` — the flat `compute_minimum_shielded_fee` — is
+booked as the transition fee. Validation guarantees `unshielding_amount ≥ fee_amount`
+(and, for `ShieldedWithdrawal`, that the net also clears `MIN_WITHDRAWAL_AMOUNT`), so the
+subtraction never underflows.
 
-For `ShieldedTransfer`, the total pool value decreases by exactly the fee amount.
-The rest of the value stays inside the pool (the sender's notes are spent and the
-recipient's notes are created, but the pool's aggregate balance only drops by the
-fee).
+For `ShieldedTransfer`, the pool decreases by exactly the fee (the sender's notes are
+spent and the recipient's notes are created, but the pool's aggregate balance only drops
+by the fee).
+
+In all cases the booked `fee_amount` is split the same way as every other transition's
+fee: the storage cost of the permanent shielded writes is routed to the storage pool
+(amortized across epochs and subject to the per-epoch fee multiplier at payout), and the
+remainder — proof verification plus per-action processing — is the processing fee paid to
+the current block proposer.
 
 ## Cryptographic Binding
 

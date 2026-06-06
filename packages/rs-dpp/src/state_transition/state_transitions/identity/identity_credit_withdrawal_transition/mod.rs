@@ -40,7 +40,11 @@ use serde::{Deserialize, Serialize};
 /// Minimal core per byte. Must be a fibonacci number
 pub const MIN_CORE_FEE_PER_BYTE: u32 = 1;
 
-/// Minimal amount in credits (x1000) to avoid "dust" error in Core
+/// Minimal amount in credits (x1000) to avoid "dust" error in Core.
+///
+/// NOTE: This is the protocol-v11-and-below floor (190 duffs). Consensus reads the
+/// *versioned* `platform_version.system_limits.min_withdrawal_amount` (raised to 1000 duffs
+/// in v12); keep `SYSTEM_LIMITS_V1.min_withdrawal_amount` in sync with this value.
 pub const MIN_WITHDRAWAL_AMOUNT: u64 =
     (ASSET_UNLOCK_TX_SIZE as u64) * (MIN_CORE_FEE_PER_BYTE as u64) * CREDITS_PER_DUFF;
 

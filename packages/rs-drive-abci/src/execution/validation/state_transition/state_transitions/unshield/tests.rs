@@ -57,7 +57,7 @@ mod tests {
         create_unshield_transition(
             create_output_address(),
             vec![create_dummy_serialized_action()],
-            111_549_800, // unshielding_amount: recipient amount + minimum fee for 1 action
+            130_549_800, // unshielding_amount: recipient amount + minimum fee for 1 action
             [42u8; 32],  // non-zero anchor
             vec![0u8; 100], // dummy proof bytes
             [0u8; 64],   // dummy binding signature
@@ -111,7 +111,7 @@ mod tests {
             let transition = UnshieldTransitionV0 {
                 output_address: create_output_address(),
                 actions,
-                unshielding_amount: 111_549_800,
+                unshielding_amount: 130_549_800,
                 anchor: [42u8; 32],
                 proof: vec![0u8; 100],
                 binding_signature: [0u8; 64],
@@ -324,7 +324,8 @@ mod tests {
             ExtractedNoteCommitment, FullViewingKey, MerklePath, Note, NoteValue, Position,
             RandomSeed, Retention, Rho, Scope, SpendAuthorizingKey, SpendingKey,
         };
-        use rand::rngs::OsRng;
+        use rand::rngs::StdRng;
+        use rand::SeedableRng;
 
         #[test]
         fn test_invalid_proof_returns_shielded_proof_error() {
@@ -357,7 +358,7 @@ mod tests {
             let platform_version = PlatformVersion::latest();
             let platform = setup_platform();
             insert_dummy_encrypted_notes(&platform, 250);
-            let mut rng = OsRng;
+            let mut rng = StdRng::seed_from_u64(0);
             let pk = get_proving_key();
 
             // --- Create keys ---
@@ -397,8 +398,10 @@ mod tests {
             // Compute platform sighash binding transparent fields (output_address, unshielding_amount)
             let output_address = create_output_address();
             let unshielding_amount = 499_995_000u64; // value_balance as u64
-            let mut extra_sighash_data = output_address.to_bytes();
-            extra_sighash_data.extend_from_slice(&unshielding_amount.to_le_bytes());
+            let extra_sighash_data = dpp::shielded::unshield_extra_sighash_data(
+                &output_address.to_bytes(),
+                unshielding_amount,
+            );
             let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
             let sighash = compute_platform_sighash(&bundle_commitment, &extra_sighash_data);
 
@@ -455,7 +458,7 @@ mod tests {
             let transition = create_unshield_transition(
                 create_output_address(),
                 vec![bad_action],
-                111_549_800, // unshielding_amount: recipient amount + minimum fee for 1 action
+                130_549_800, // unshielding_amount: recipient amount + minimum fee for 1 action
                 anchor,
                 vec![0u8; 100],
                 [0u8; 64],
@@ -486,7 +489,8 @@ mod tests {
             ExtractedNoteCommitment, FullViewingKey, MerklePath, Note, NoteValue, Position,
             RandomSeed, Retention, Rho, Scope, SpendAuthorizingKey, SpendingKey,
         };
-        use rand::rngs::OsRng;
+        use rand::rngs::StdRng;
+        use rand::SeedableRng;
 
         /// Build a valid Orchard bundle for unshield tests (spend > output).
         /// The `output_address` and `unshielding_amount` are bound to the sighash so that
@@ -496,7 +500,7 @@ mod tests {
             output_address: &PlatformAddress,
             unshielding_amount: u64,
         ) -> (Vec<SerializedAction>, i64, [u8; 32], Vec<u8>, [u8; 64]) {
-            let mut rng = OsRng;
+            let mut rng = StdRng::seed_from_u64(0);
             let pk = get_proving_key();
 
             let sk = SpendingKey::from_bytes([0u8; 32]).unwrap();
@@ -531,8 +535,10 @@ mod tests {
             let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
 
             // Bind transparent fields (output_address, unshielding_amount) to the sighash
-            let mut extra_sighash_data = output_address.to_bytes();
-            extra_sighash_data.extend_from_slice(&unshielding_amount.to_le_bytes());
+            let extra_sighash_data = dpp::shielded::unshield_extra_sighash_data(
+                &output_address.to_bytes(),
+                unshielding_amount,
+            );
             let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
             let sighash = compute_platform_sighash(&bundle_commitment, &extra_sighash_data);
 
@@ -661,7 +667,7 @@ mod tests {
             let transition = create_unshield_transition(
                 create_output_address(),
                 vec![action1, action2], // Both have nullifier [1u8; 32]
-                123_098_600, // unshielding_amount: recipient amount + minimum fee for 2 actions
+                161_098_600, // unshielding_amount: recipient amount + minimum fee for 2 actions
                 anchor,
                 vec![0u8; 100],
                 [0u8; 64],
@@ -696,14 +702,15 @@ mod tests {
             FullViewingKey, Note, NoteValue, Position, RandomSeed, Retention, Rho, Scope,
             SpendAuthorizingKey, SpendingKey,
         };
-        use rand::rngs::OsRng;
+        use rand::rngs::StdRng;
+        use rand::SeedableRng;
 
         #[test]
         fn test_unshield_prove_and_verify_nullifiers_and_address() {
             let platform_version = PlatformVersion::latest();
             let platform = setup_platform();
             insert_dummy_encrypted_notes(&platform, 250);
-            let mut rng = OsRng;
+            let mut rng = StdRng::seed_from_u64(0);
             let pk = get_proving_key();
 
             let spend_amount = 500_000_000u64;
@@ -751,8 +758,10 @@ mod tests {
             // Compute platform sighash binding transparent fields (output_address, unshielding_amount)
             let output_address = create_output_address();
             let unshielding_amount = 499_995_000u64; // value_balance as u64
-            let mut extra_sighash_data = output_address.to_bytes();
-            extra_sighash_data.extend_from_slice(&unshielding_amount.to_le_bytes());
+            let extra_sighash_data = dpp::shielded::unshield_extra_sighash_data(
+                &output_address.to_bytes(),
+                unshielding_amount,
+            );
             let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
             let sighash = compute_platform_sighash(&bundle_commitment, &extra_sighash_data);
 

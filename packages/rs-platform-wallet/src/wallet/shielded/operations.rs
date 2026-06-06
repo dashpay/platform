@@ -283,8 +283,11 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
     let change_addr = default_orchard_address(keys)?;
     let id = SubwalletId::new(wallet_id, account);
 
+    // Reserve against the 2-action floor: Orchard's BundleType::DEFAULT pads single-spend
+    // bundles to 2 actions, and the builder prices the fee at spends.len().max(2). Reserving
+    // for 1 would under-fee a single-note transition and the builder would reject it locally.
     let (selected_notes, total_input, exact_fee) =
-        reserve_unspent_notes(sdk, store, id, amount, 1).await?;
+        reserve_unspent_notes(sdk, store, id, amount, 2).await?;
 
     info!(
         account,
@@ -300,7 +303,9 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
     let result = async {
         let (spends, anchor) = extract_spends_and_anchor(store, &selected_notes).await?;
 
-        let state_transition = build_unshield_transition(
+        // The builder computes and returns the fee authoritatively; `exact_fee` (== the
+        // minimum) was already used above for note reservation.
+        let (state_transition, _fee_used) = build_unshield_transition(
             spends,
             *to_address,
             amount,
@@ -310,7 +315,6 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
             anchor,
             prover,
             [0u8; 36],
-            Some(exact_fee),
             sdk.version(),
         )
         .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
@@ -396,7 +400,9 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
     let result = async {
         let (spends, anchor) = extract_spends_and_anchor(store, &selected_notes).await?;
 
-        let state_transition = build_shielded_transfer_transition(
+        // The builder computes and returns the fee authoritatively; `exact_fee` (== the
+        // minimum) was already used above for note reservation.
+        let (state_transition, _fee_used) = build_shielded_transfer_transition(
             spends,
             &recipient_addr,
             amount,
@@ -406,7 +412,6 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
             anchor,
             prover,
             [0u8; 36],
-            Some(exact_fee),
             sdk.version(),
         )
         .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
@@ -468,8 +473,11 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
     let id = SubwalletId::new(wallet_id, account);
     let output_script = CoreScript::from_bytes(to_address.script_pubkey().to_bytes());
 
+    // Reserve against the 2-action floor: Orchard's BundleType::DEFAULT pads single-spend
+    // bundles to 2 actions, and the builder prices the fee at spends.len().max(2). Reserving
+    // for 1 would under-fee a single-note transition and the builder would reject it locally.
     let (selected_notes, total_input, exact_fee) =
-        reserve_unspent_notes(sdk, store, id, amount, 1).await?;
+        reserve_unspent_notes(sdk, store, id, amount, 2).await?;
 
     info!(
         account,
@@ -483,19 +491,21 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
     let result = async {
         let (spends, anchor) = extract_spends_and_anchor(store, &selected_notes).await?;
 
-        let state_transition = build_shielded_withdrawal_transition(
+        // The builder computes and returns the fee authoritatively; `exact_fee` (== the
+        // minimum) was already used above for note reservation.
+        let (state_transition, _fee_used) = build_shielded_withdrawal_transition(
             spends,
             amount,
             output_script,
             core_fee_per_byte,
-            Pooling::Standard,
+            // Consensus pins shielded-withdrawal pooling to Never (validate_structure).
+            Pooling::Never,
             &change_addr,
             &keys.full_viewing_key,
             &keys.spend_auth_key,
             anchor,
             prover,
             [0u8; 36],
-            Some(exact_fee),
             sdk.version(),
         )
         .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
