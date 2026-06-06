@@ -377,15 +377,15 @@ mod tests {
 
     #[test]
     fn test_transform_rejects_net_below_min_withdrawal_amount() {
-        use dpp::state_transition::state_transitions::address_funds::address_credit_withdrawal_transition::MIN_WITHDRAWAL_AMOUNT;
         // A gross amount that covers the fee but leaves a net below the Core dust floor must
         // be rejected by the transformer, not turned into a zero/dust withdrawal document.
         let platform_version = PlatformVersion::latest();
         let fee = compute_minimum_shielded_fee(1, platform_version)
             .expect("fee computation should not overflow");
+        let min_withdrawal = platform_version.system_limits.min_withdrawal_amount;
 
-        // net = MIN_WITHDRAWAL_AMOUNT - 1 (just under the floor)
-        let transition = make_transition(fee + MIN_WITHDRAWAL_AMOUNT - 1);
+        // net = min_withdrawal_amount - 1 (just under the floor)
+        let transition = make_transition(fee + min_withdrawal - 1);
 
         let result = ShieldedWithdrawalTransitionAction::try_from_transition(
             &transition,

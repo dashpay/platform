@@ -9,7 +9,6 @@ use dpp::document::{Document, DocumentV0};
 use dpp::fee::Credits;
 use dpp::platform_value::platform_value;
 use dpp::prelude::ConsensusValidationResult;
-use dpp::state_transition::state_transitions::address_funds::address_credit_withdrawal_transition::MIN_WITHDRAWAL_AMOUNT;
 use dpp::state_transition::state_transitions::shielded::shielded_withdrawal_transition::v0::ShieldedWithdrawalTransitionV0;
 use dpp::version::PlatformVersion;
 
@@ -30,22 +29,23 @@ impl ShieldedWithdrawalTransitionActionV0 {
         // unshielding amount and stays in-platform (routed to the fee pools).
         //
         // That net amount becomes a Core `TxOut`, so it must fall within the same
-        // `[MIN_WITHDRAWAL_AMOUNT, max_withdrawal_amount]` range the transparent withdrawal
+        // `[min_withdrawal_amount, max_withdrawal_amount]` range the transparent withdrawal
         // paths enforce (dust floor and per-transition policy cap). Consensus validation
         // (`validate_minimum_shielded_fee`) already rejects any transition whose net falls
         // outside that range, so for validated input this `checked_sub` is always
         // `Some(net)` in range. We re-check here (rather than `saturating_sub`) so a direct
         // or future caller that bypasses validation fails loudly instead of silently
         // constructing an out-of-range withdrawal document.
+        let min_withdrawal_amount = platform_version.system_limits.min_withdrawal_amount;
         let max_withdrawal_amount = platform_version.system_limits.max_withdrawal_amount;
         let net_withdrawal_amount = match value.unshielding_amount.checked_sub(fee_amount) {
-            Some(net) if net >= MIN_WITHDRAWAL_AMOUNT && net <= max_withdrawal_amount => net,
+            Some(net) if net >= min_withdrawal_amount && net <= max_withdrawal_amount => net,
             Some(net) if net > max_withdrawal_amount => {
                 // Over the per-transition withdrawal cap.
                 return ConsensusValidationResult::new_with_error(
                     InvalidIdentityCreditWithdrawalTransitionAmountError::new(
                         net,
-                        MIN_WITHDRAWAL_AMOUNT,
+                        min_withdrawal_amount,
                         max_withdrawal_amount,
                     )
                     .into(),
@@ -56,7 +56,7 @@ impl ShieldedWithdrawalTransitionActionV0 {
                 return ConsensusValidationResult::new_with_error(
                     BasicError::WithdrawalBelowMinAmountError(WithdrawalBelowMinAmountError::new(
                         net.unwrap_or(0),
-                        MIN_WITHDRAWAL_AMOUNT,
+                        min_withdrawal_amount,
                         max_withdrawal_amount,
                     ))
                     .into(),

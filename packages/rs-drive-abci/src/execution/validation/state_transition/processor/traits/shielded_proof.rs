@@ -10,7 +10,6 @@ use dpp::consensus::basic::state_transition::{
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::state::shielded::insufficient_shielded_fee_error::InsufficientShieldedFeeError;
 use dpp::consensus::state::state_error::StateError;
-use dpp::state_transition::state_transitions::address_funds::address_credit_withdrawal_transition::MIN_WITHDRAWAL_AMOUNT;
 use dpp::state_transition::StateTransition;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
@@ -86,7 +85,7 @@ impl StateTransitionHasShieldedProofValidationV0 for StateTransition {
 ///   recipient/net receives `unshielding_amount - fee`. Requiring `unshielding_amount >= min_fee`
 ///   guarantees that net amount is non-negative.
 /// - ShieldedWithdrawal additionally requires the net (`unshielding_amount - min_fee`) to
-///   fall within `[MIN_WITHDRAWAL_AMOUNT, max_withdrawal_amount]` — the same two-sided range
+///   fall within `[min_withdrawal_amount, max_withdrawal_amount]` — the same two-sided range
 ///   the transparent withdrawal paths enforce — because that net becomes a Core `TxOut`: the
 ///   dust floor stops a zero/sub-dust queue entry, and the per-transition policy cap stops a
 ///   single withdrawal from exceeding the protocol's maximum. Unshield has no such range: its
@@ -121,7 +120,7 @@ impl StateTransitionShieldedMinimumFeeValidationV0 for StateTransition {
                 // - `min_net_amount`/`max_net_amount`: the allowed range for the derived net
                 //   (`validated_amount - min_fee`). `[0, u64::MAX]` (a no-op) for every type
                 //   except ShieldedWithdrawal, whose net becomes a Core `TxOut` and must clear
-                //   the same `[MIN_WITHDRAWAL_AMOUNT, max_withdrawal_amount]` range the
+                //   the same `[min_withdrawal_amount, max_withdrawal_amount]` range the
                 //   transparent withdrawal paths enforce.
                 let (validated_amount, num_actions, min_net_amount, max_net_amount, amount_is_pure_fee): (i64, usize, u64, u64, bool) = match self {
                     // Shield: fee is paid from transparent address inputs, not from value_balance.
@@ -146,14 +145,14 @@ impl StateTransitionShieldedMinimumFeeValidationV0 for StateTransition {
                     },
                     // ShieldedWithdrawal: the net (`unshielding_amount - min_fee`) becomes a
                     // Core `TxOut`, so it must fall within the same
-                    // `[MIN_WITHDRAWAL_AMOUNT, max_withdrawal_amount]` range the transparent
+                    // `[min_withdrawal_amount, max_withdrawal_amount]` range the transparent
                     // withdrawal paths enforce (dust floor and the per-transition policy cap).
                     StateTransition::ShieldedWithdrawal(st) => match st {
                         dpp::state_transition::shielded_withdrawal_transition::ShieldedWithdrawalTransition::V0(v0) => {
                             (
                                 v0.unshielding_amount as i64,
                                 v0.actions.len(),
-                                MIN_WITHDRAWAL_AMOUNT,
+                                platform_version.system_limits.min_withdrawal_amount,
                                 platform_version.system_limits.max_withdrawal_amount,
                                 false,
                             )
@@ -234,7 +233,7 @@ impl StateTransitionShieldedMinimumFeeValidationV0 for StateTransition {
 
                 // For ShieldedWithdrawal, the net value leaving to Core
                 // (`unshielding_amount - min_fee`) must fall within the same
-                // `[MIN_WITHDRAWAL_AMOUNT, max_withdrawal_amount]` range the transparent
+                // `[min_withdrawal_amount, max_withdrawal_amount]` range the transparent
                 // withdrawal paths enforce — the dust floor AND the per-transition policy
                 // cap. For the other shielded paths the range is `[0, u64::MAX]`, so both
                 // checks are no-ops.
@@ -582,8 +581,9 @@ mod tests {
             let platform_version = PlatformVersion::latest();
             let min_fee = dpp::shielded::compute_minimum_shielded_fee(0, platform_version)
                 .expect("fee computation should not overflow");
-            // net = MIN_WITHDRAWAL_AMOUNT - 1 → just below the Core dust floor.
-            let st = shielded_withdrawal_with_amount(min_fee + MIN_WITHDRAWAL_AMOUNT - 1);
+            let min_withdrawal = platform_version.system_limits.min_withdrawal_amount;
+            // net = min_withdrawal_amount - 1 → just below the Core dust floor.
+            let st = shielded_withdrawal_with_amount(min_fee + min_withdrawal - 1);
             let result = st
                 .validate_minimum_shielded_fee(platform_version)
                 .expect("should not error");
@@ -605,14 +605,15 @@ mod tests {
             let platform_version = PlatformVersion::latest();
             let min_fee = dpp::shielded::compute_minimum_shielded_fee(0, platform_version)
                 .expect("fee computation should not overflow");
-            // net = MIN_WITHDRAWAL_AMOUNT exactly → at the floor, accepted.
-            let st = shielded_withdrawal_with_amount(min_fee + MIN_WITHDRAWAL_AMOUNT);
+            let min_withdrawal = platform_version.system_limits.min_withdrawal_amount;
+            // net = min_withdrawal_amount exactly → at the floor, accepted.
+            let st = shielded_withdrawal_with_amount(min_fee + min_withdrawal);
             let result = st
                 .validate_minimum_shielded_fee(platform_version)
                 .expect("should not error");
             assert!(
                 result.is_valid(),
-                "a withdrawal whose net equals MIN_WITHDRAWAL_AMOUNT must be accepted"
+                "a withdrawal whose net equals min_withdrawal_amount must be accepted"
             );
         }
 
