@@ -745,4 +745,97 @@ mod tests {
             assert!(FLAGS_OUTPUTS_ONLY != FLAGS_SPENDS_AND_OUTPUTS);
         }
     }
+
+    /// Benchmark: how shielded verification scales with the number of actions.
+    ///
+    /// Run with:
+    ///   `cargo test -p drive-abci --lib bench_shielded_proof_verification_scaling -- \
+    ///       --ignored --nocapture`
+    ///
+    /// Halo 2 proof verification is one per-bundle check whose cost grows with the action
+    /// count (one circuit instance per action); RedPallas spend-auth signatures are
+    /// per-action; the binding signature is per-bundle. So the full consensus verification
+    /// cost is roughly `proof_verify(n) + n × spend_auth + binding`. This informs whether the
+    /// flat `shielded_proof_verification_fee` should gain a per-action component.
+    #[test]
+    #[ignore = "benchmark; run manually with --ignored --nocapture"]
+    fn bench_shielded_proof_verification_scaling() {
+        use grovedb_commitment_tree::{
+            Builder, BundleType, FullViewingKey, NoteValue, ProvingKey, Scope, SpendingKey,
+        };
+        use rand::rngs::OsRng;
+        use std::time::Instant;
+
+        let pk = ProvingKey::build();
+        let vk = get_verifying_key();
+
+        // Build & prove an n-action (outputs-only) bundle.
+        let build = |n: usize| {
+            let mut rng = OsRng;
+            let sk = SpendingKey::from_bytes([7u8; 32]).unwrap();
+            let fvk = FullViewingKey::from(&sk);
+            let recipient = fvk.address_at(0u32, Scope::External);
+            let anchor: Anchor = Anchor::empty_tree();
+            let mut builder = Builder::<DashMemo>::new(
+                BundleType::Transactional {
+                    flags: Flags::SPENDS_DISABLED,
+                    bundle_required: false,
+                },
+                anchor,
+            );
+            for _ in 0..n {
+                builder
+                    .add_output(None, recipient, NoteValue::from_raw(5000), [0u8; 36])
+                    .unwrap();
+            }
+            let (unauth, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
+            let sighash: [u8; 32] = unauth.commitment().into();
+            let proven = unauth.create_proof(&pk, &mut rng).unwrap();
+            (proven.apply_signatures(rng, sighash, &[]).unwrap(), sighash)
+        };
+
+        let k = 30u32;
+        eprintln!("\n=== Halo 2 proof verification vs action count ===");
+        for n in [1usize, 2, 4, 8, 16] {
+            let (bundle, _) = build(n);
+            let instances: Vec<_> = bundle
+                .actions()
+                .iter()
+                .map(|a| a.to_instance(*bundle.flags(), *bundle.anchor()))
+                .collect();
+            let _ = bundle.authorization().proof().verify(vk, &instances); // warm
+            let start = Instant::now();
+            for _ in 0..k {
+                let _ = bundle.authorization().proof().verify(vk, &instances);
+            }
+            eprintln!(
+                "  actions={:2}  proof_verify = {:>7} us",
+                n,
+                start.elapsed().as_micros() / k as u128
+            );
+        }
+
+        // Per-action spend-auth sig and per-bundle binding sig (≈ constant each).
+        let (bundle, sighash) = build(1);
+        let action = &bundle.actions()[0];
+        let (rk, sig) = (action.rk(), action.authorization());
+        let start = Instant::now();
+        for _ in 0..k {
+            let _ = rk.verify(&sighash, sig);
+        }
+        eprintln!(
+            "  spend_auth_sig (per action) = {} us",
+            start.elapsed().as_micros() / k as u128
+        );
+        let bvk = bundle.binding_validating_key();
+        let bsig = bundle.authorization().binding_signature();
+        let start = Instant::now();
+        for _ in 0..k {
+            let _ = bvk.verify(&sighash, bsig);
+        }
+        eprintln!(
+            "  binding_sig (per bundle) = {} us",
+            start.elapsed().as_micros() / k as u128
+        );
+    }
 }
