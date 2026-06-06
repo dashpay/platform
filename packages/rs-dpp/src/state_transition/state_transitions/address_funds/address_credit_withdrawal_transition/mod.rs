@@ -40,6 +40,14 @@ pub const MIN_CORE_FEE_PER_BYTE: u32 = 1;
 pub const MIN_WITHDRAWAL_AMOUNT: u64 =
     (ASSET_UNLOCK_TX_SIZE as u64) * (MIN_CORE_FEE_PER_BYTE as u64) * CREDITS_PER_DUFF;
 
+// Compile-time lock: if a dashcore `ASSET_UNLOCK_TX_SIZE` (or fee-rate) change moves this
+// value, the build breaks here — a prompt to re-sync `SYSTEM_LIMITS_V1.min_withdrawal_amount`
+// (the consensus source of truth) with the new figure.
+const _: () = assert!(
+    MIN_WITHDRAWAL_AMOUNT == 190_000,
+    "MIN_WITHDRAWAL_AMOUNT changed; re-sync SYSTEM_LIMITS_V1.min_withdrawal_amount"
+);
+
 #[derive(
     Debug,
     Clone,
