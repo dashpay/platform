@@ -78,6 +78,12 @@ pub fn compute_platform_sighash(bundle_commitment: &[u8; 32], extra_data: &[u8])
 ///
 /// The signing (client/builder) and verifying (consensus) sides MUST produce identical
 /// bytes, so both call this single function.
+///
+/// The layout places the variable-length `output_script` first with no length prefix. This
+/// is unambiguous only because `validate_structure` runs before proof verification and pins
+/// `output_script` to a canonical, fixed-length P2PKH (25 bytes) or P2SH (23 bytes); the
+/// remaining fields are fixed-width, so the preimage is well-defined for every accepted
+/// transition. If that script-shape restriction is ever relaxed, add a length prefix here.
 pub fn shielded_withdrawal_extra_sighash_data(
     output_script: &[u8],
     unshielding_amount: u64,
@@ -89,6 +95,20 @@ pub fn shielded_withdrawal_extra_sighash_data(
     data.extend_from_slice(&unshielding_amount.to_le_bytes());
     data.extend_from_slice(&core_fee_per_byte.to_le_bytes());
     data.push(pooling as u8);
+    data
+}
+
+/// Builds the transparent `extra_data` bound into an Unshield's platform sighash, with the
+/// byte layout `output_address || unshielding_amount (u64 LE)`.
+///
+/// As with [`shielded_withdrawal_extra_sighash_data`], the signing (client/builder) and
+/// verifying (consensus) sides MUST produce identical bytes, so both call this single
+/// function. Unshield credits a transparent platform address (not a Core asset-unlock
+/// `TxOut`), so it carries no `core_fee_per_byte`/`pooling` to bind.
+pub fn unshield_extra_sighash_data(output_address: &[u8], unshielding_amount: u64) -> Vec<u8> {
+    let mut data = Vec::with_capacity(output_address.len() + 8);
+    data.extend_from_slice(output_address);
+    data.extend_from_slice(&unshielding_amount.to_le_bytes());
     data
 }
 
@@ -233,4 +253,58 @@ pub struct SerializedAction {
     /// `rk` during batch validation. This prevents replay attacks — a valid
     /// signature from one transition cannot be reused in another.
     pub spend_auth_sig: [u8; 64],
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::identity::core_script::CoreScript;
+    use crate::withdrawal::Pooling;
+
+    #[test]
+    fn withdrawal_sighash_data_binds_core_fee_per_byte() {
+        let script = CoreScript::new_p2pkh([1u8; 20]);
+        let a = shielded_withdrawal_extra_sighash_data(script.as_bytes(), 1000, 1, Pooling::Never);
+        let b = shielded_withdrawal_extra_sighash_data(script.as_bytes(), 1000, 2, Pooling::Never);
+        assert_ne!(
+            a, b,
+            "changing core_fee_per_byte must change the sighash preimage"
+        );
+    }
+
+    #[test]
+    fn withdrawal_sighash_data_binds_pooling() {
+        // `pooling` is pinned to `Never` by `validate_structure`, so this binding is currently
+        // dead defense-in-depth; assert it is nonetheless mixed into the preimage so a future
+        // unpinning would still be authorized by the Orchard binding signature.
+        let script = CoreScript::new_p2pkh([1u8; 20]);
+        let a = shielded_withdrawal_extra_sighash_data(script.as_bytes(), 1000, 1, Pooling::Never);
+        let b = shielded_withdrawal_extra_sighash_data(
+            script.as_bytes(),
+            1000,
+            1,
+            Pooling::IfAvailable,
+        );
+        assert_ne!(a, b, "changing pooling must change the sighash preimage");
+    }
+
+    #[test]
+    fn withdrawal_sighash_data_layout() {
+        // output_script(2) || unshielding_amount(8) || core_fee_per_byte(4) || pooling(1)
+        let d = shielded_withdrawal_extra_sighash_data(&[0xAA, 0xBB], 1, 2, Pooling::Never);
+        assert_eq!(d.len(), 2 + 8 + 4 + 1);
+        assert_eq!(&d[0..2], &[0xAA, 0xBB]);
+        assert_eq!(&d[2..10], &1u64.to_le_bytes());
+        assert_eq!(&d[10..14], &2u32.to_le_bytes());
+        assert_eq!(d[14], Pooling::Never as u8);
+    }
+
+    #[test]
+    fn unshield_sighash_data_layout() {
+        // output_address || unshielding_amount(8)
+        let d = unshield_extra_sighash_data(&[0xAA, 0xBB, 0xCC], 5);
+        assert_eq!(d.len(), 3 + 8);
+        assert_eq!(&d[0..3], &[0xAA, 0xBB, 0xCC]);
+        assert_eq!(&d[3..11], &5u64.to_le_bytes());
+    }
 }

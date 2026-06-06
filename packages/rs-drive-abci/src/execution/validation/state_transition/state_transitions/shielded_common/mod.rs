@@ -70,10 +70,13 @@ const _: () = assert!(
 /// Orchard bundle commitment together with `extra_sighash_data` (transparent fields).
 /// The same computation must be used when signing the bundle on the client side.
 ///
-/// `extra_sighash_data` binds transparent fields to the Orchard signatures:
+/// `extra_sighash_data` binds transparent fields to the Orchard signatures (built by the
+/// shared `dpp::shielded::*_extra_sighash_data` helpers so the signer and verifier agree):
 /// - Shield: empty (no transparent outputs)
 /// - Shielded transfer: empty (no transparent fields)
-/// - Unshield: `output_address.to_bytes() || amount.to_le_bytes()`
+/// - Unshield: `output_address || unshielding_amount (u64 LE)`
+/// - Shielded withdrawal: `output_script || unshielding_amount (u64 LE) || core_fee_per_byte
+///   (u32 LE) || pooling (u8)` — every Core-facing field the withdrawal document commits to.
 ///
 /// Returns `Ok(())` if all verification passes, or an `InvalidShieldedProofError`
 /// if reconstruction or any verification step fails.

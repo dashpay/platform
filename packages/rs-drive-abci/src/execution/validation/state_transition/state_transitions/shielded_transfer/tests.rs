@@ -485,7 +485,7 @@ mod tests {
             // 2 actions with fee one credit below minimum
             let transition = create_shielded_transfer_transition(
                 vec![create_dummy_action(1), create_dummy_action(2)],
-                MINIMUM_FEE_2_ACTIONS - 1, // 121,343,999
+                MINIMUM_FEE_2_ACTIONS - 1, // one credit below the 2-action minimum
                 [42u8; 32],
                 vec![0u8; 100],
                 [0u8; 64],
@@ -513,7 +513,7 @@ mod tests {
                     create_dummy_action(2),
                     create_dummy_action(3),
                 ],
-                MINIMUM_FEE_3_ACTIONS - 1, // 134,646,399
+                MINIMUM_FEE_3_ACTIONS - 1, // one credit below the 3-action minimum
                 [42u8; 32],
                 vec![0u8; 100],
                 [0u8; 64],
@@ -542,7 +542,7 @@ mod tests {
                     create_dummy_action(3),
                     create_dummy_action(4),
                 ],
-                MINIMUM_FEE_4_ACTIONS - 1, // 146,195,199
+                MINIMUM_FEE_4_ACTIONS - 1, // one credit below the 4-action minimum
                 [42u8; 32],
                 vec![0u8; 100],
                 [0u8; 64],

@@ -42,6 +42,12 @@ impl IdentityCreditWithdrawalStateTransitionStructureValidationV1
             ));
         }
 
+        // NOTE: the shielded-withdrawal path (v12) re-validates these same three Core-facing
+        // fields — `pooling`, `core_fee_per_byte`, `output_script` — in
+        // `dpp .../shielded/shielded_withdrawal_transition/v0/state_transition_validation.rs`,
+        // reusing the same error types and `MIN_CORE_FEE_PER_BYTE`. Keep the two in sync (or, if
+        // touching both, factor a shared helper).
+
         // currently we do not support pooling, so we must validate that pooling is `Never`
 
         if self.pooling() != Pooling::Never {

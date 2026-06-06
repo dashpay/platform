@@ -31,8 +31,9 @@ use super::{build_spend_bundle, serialize_authorized_bundle, OrchardProver, Spen
 /// - `anchor` - Sinsemilla root of the note commitment tree (Orchard Anchor)
 /// - `prover` - Orchard prover (holds the Halo 2 proving key)
 /// - `memo` - 36-byte structured memo for the change output (4-byte type tag + 32-byte payload)
-/// - `fee` - Optional fee override; if `None`, the minimum fee is computed automatically.
-///   If `Some`, must be >= the minimum fee.
+/// - `fee` - Optional fee. Consensus always charges exactly `compute_minimum_shielded_fee`
+///   and ignores any surplus, so this must be `None` (use the minimum) or `Some(min_fee)`;
+///   any other value is rejected.
 /// - `platform_version` - Protocol version
 #[allow(clippy::too_many_arguments)]
 pub fn build_shielded_withdrawal_transition<P: OrchardProver>(
@@ -68,21 +69,21 @@ pub fn build_shielded_withdrawal_transition<P: OrchardProver>(
     // post-fee, WithdrawalBelowMinAmountError).
     let num_actions = spends.len().max(2);
     let min_fee = compute_minimum_shielded_fee(num_actions, platform_version)?;
+    // Consensus always carves exactly `compute_minimum_shielded_fee` from the pool and never
+    // reads the embedded value_balance surplus, so any `fee > min_fee` is NOT charged as fee —
+    // it would silently inflate the Core withdrawal amount instead. Pin the fee to the minimum
+    // (matching `build_shielded_transfer_transition`) so the builder fails fast rather than
+    // producing a transition whose effective payout differs from `withdrawal_amount`.
     let effective_fee = match fee {
-        Some(f) if f < min_fee => {
-            return Err(ProtocolError::ShieldedBuildError(format!(
-                "fee {} is below minimum required fee {}",
-                f, min_fee
-            )));
-        }
-        Some(f) if f > min_fee.saturating_mul(1000) => {
-            return Err(ProtocolError::ShieldedBuildError(format!(
-                "fee {} exceeds 1000x the minimum fee {}",
-                f, min_fee
-            )));
-        }
-        Some(f) => f,
         None => min_fee,
+        Some(f) if f == min_fee => min_fee,
+        Some(f) => {
+            return Err(ProtocolError::ShieldedBuildError(format!(
+                "withdrawal fee must equal the minimum fee {} exactly (consensus charges the \
+                 minimum; any surplus would inflate the withdrawal amount, not the fee); got {}",
+                min_fee, f
+            )));
+        }
     };
 
     let required = withdrawal_amount
@@ -168,21 +169,21 @@ mod tests {
             Anchor::empty_tree(),
             &TestProver,
             [0u8; 36],
-            Some(1), // fee = 1, should be below minimum
+            Some(1), // fee = 1 != min_fee → rejected (fee is pinned to the minimum)
             platform_version,
         );
 
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(
-            err.contains("below minimum required fee"),
+            err.contains("must equal the minimum fee"),
             "unexpected error: {}",
             err
         );
     }
 
     #[test]
-    fn test_shielded_withdrawal_fee_above_upper_bound() {
+    fn test_shielded_withdrawal_fee_above_min_rejected() {
         let platform_version = PlatformVersion::latest();
         let change_address = test_orchard_address();
 
@@ -194,12 +195,12 @@ mod tests {
         let fvk = FullViewingKey::from(&sk);
         let ask = SpendAuthorizingKey::from(&sk);
 
-        // Compute the minimum fee so we can exceed the 1000x bound
-        // Builder pads to max(spends, 2), so the threshold must be priced for 2 actions.
+        // The fee is pinned to the minimum; any value above it is rejected (the surplus would
+        // inflate the withdrawal amount, not the fee). Builder pads to max(spends, 2).
         let num_actions = 2usize;
         let min_fee = crate::shielded::compute_minimum_shielded_fee(num_actions, platform_version)
             .expect("fee computation should not overflow");
-        let excessive_fee = min_fee.saturating_mul(1000) + 1;
+        let above_min = min_fee + 1;
 
         let result = build_shielded_withdrawal_transition(
             spends,
@@ -213,14 +214,14 @@ mod tests {
             Anchor::empty_tree(),
             &TestProver,
             [0u8; 36],
-            Some(excessive_fee),
+            Some(above_min),
             platform_version,
         );
 
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(
-            err.contains("exceeds 1000x the minimum fee"),
+            err.contains("must equal the minimum fee"),
             "unexpected error: {}",
             err
         );
@@ -307,10 +308,8 @@ mod tests {
     }
 
     #[test]
-    fn test_shielded_withdrawal_fee_at_exact_upper_bound_accepted() {
-        // Boundary test: fee == 1000x the minimum is the *accepted* upper
-        // limit (strictly > is rejected). The builder should proceed past
-        // the fee validation and only fail later at add_spend.
+    fn test_shielded_withdrawal_fee_far_above_min_rejected() {
+        // A fee far above the minimum is rejected like any other value != min_fee.
         let platform_version = PlatformVersion::latest();
         let change_address = test_orchard_address();
 
@@ -323,7 +322,7 @@ mod tests {
 
         let min_fee = crate::shielded::compute_minimum_shielded_fee(2, platform_version)
             .expect("fee computation should not overflow");
-        let fee_at_boundary = min_fee.saturating_mul(1000);
+        let far_above_min = min_fee.saturating_mul(1000);
 
         let result = build_shielded_withdrawal_transition(
             spends,
@@ -337,21 +336,17 @@ mod tests {
             Anchor::empty_tree(),
             &TestProver,
             [0u8; 36],
-            Some(fee_at_boundary),
+            Some(far_above_min),
             platform_version,
         );
-        // Boundary value passes the validation, so it must NOT fail with
-        // "exceeds 1000x". A successful build is also acceptable; only a
-        // later-stage failure (anchor/add_spend) should surface — and never
-        // as the upper-bound error.
-        if let Err(err) = result {
-            let err = err.to_string();
-            assert!(
-                !err.contains("exceeds 1000x"),
-                "boundary value should not trigger upper-bound error: {}",
-                err
-            );
-        }
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("must equal the minimum fee"),
+            "unexpected error: {}",
+            err
+        );
     }
 
     #[test]
@@ -386,14 +381,13 @@ mod tests {
             Some(min_fee),
             platform_version,
         );
-        // Fee == min_fee is accepted by validation; a successful build is
-        // fine. Only a later-stage failure should surface — and never with
-        // the "below minimum required fee" message.
+        // Fee == min_fee is accepted by the pin; a successful build is fine. Only a
+        // later-stage failure should surface — never the fee-mismatch error.
         if let Err(err) = result {
             let err = err.to_string();
             assert!(
-                !err.contains("below minimum required fee"),
-                "fee at min must not trip the lower bound: {}",
+                !err.contains("must equal the minimum fee"),
+                "fee == min must not be rejected as a fee mismatch: {}",
                 err
             );
         }

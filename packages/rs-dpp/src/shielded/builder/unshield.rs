@@ -27,8 +27,9 @@ use super::{build_spend_bundle, serialize_authorized_bundle, OrchardProver, Spen
 /// - `anchor` - Sinsemilla root of the note commitment tree (Orchard Anchor)
 /// - `prover` - Orchard prover (holds the Halo 2 proving key)
 /// - `memo` - 36-byte structured memo for the change output (4-byte type tag + 32-byte payload)
-/// - `fee` - Optional fee override; if `None`, the minimum fee is computed automatically.
-///   If `Some`, must be >= the minimum fee.
+/// - `fee` - Optional fee. Consensus always charges exactly `compute_minimum_shielded_fee`
+///   and ignores any surplus, so this must be `None` (use the minimum) or `Some(min_fee)`;
+///   any other value is rejected.
 /// - `platform_version` - Protocol version
 #[allow(clippy::too_many_arguments)]
 pub fn build_unshield_transition<P: OrchardProver>(
@@ -61,21 +62,21 @@ pub fn build_unshield_transition<P: OrchardProver>(
     // rejects an honest single-spend unshield with InsufficientShieldedFeeError.
     let num_actions = spends.len().max(2);
     let min_fee = compute_minimum_shielded_fee(num_actions, platform_version)?;
+    // Consensus always carves exactly `compute_minimum_shielded_fee` from the pool and never
+    // reads the embedded value_balance surplus, so any `fee > min_fee` is NOT charged as fee —
+    // it would silently inflate the recipient/net amount instead. Pin the fee to the minimum
+    // (matching `build_shielded_transfer_transition`) so the builder fails fast rather than
+    // producing a transition whose effective payout differs from `unshield_amount`.
     let effective_fee = match fee {
-        Some(f) if f < min_fee => {
-            return Err(ProtocolError::ShieldedBuildError(format!(
-                "fee {} is below minimum required fee {}",
-                f, min_fee
-            )));
-        }
-        Some(f) if f > min_fee.saturating_mul(1000) => {
-            return Err(ProtocolError::ShieldedBuildError(format!(
-                "fee {} exceeds 1000x the minimum fee {}",
-                f, min_fee
-            )));
-        }
-        Some(f) => f,
         None => min_fee,
+        Some(f) if f == min_fee => min_fee,
+        Some(f) => {
+            return Err(ProtocolError::ShieldedBuildError(format!(
+                "unshield fee must equal the minimum fee {} exactly (consensus charges the \
+                 minimum; any surplus would inflate the recipient amount, not the fee); got {}",
+                min_fee, f
+            )));
+        }
     };
 
     let required = unshield_amount.checked_add(effective_fee).ok_or_else(|| {
@@ -90,11 +91,11 @@ pub fn build_unshield_transition<P: OrchardProver>(
 
     let change_amount = total_spent - required;
 
-    // Unshield extra_data = output_address || value_balance (le bytes)
-    // value_balance = unshield_amount + fee, becomes v0.unshielding_amount in the state transition
-    // Must match server-side sighash in shielded_proof.rs
-    let mut extra_sighash_data = output_address.to_bytes();
-    extra_sighash_data.extend_from_slice(&required.to_le_bytes());
+    // Bind the transparent fields (output_address, unshielding_amount == required) into the
+    // Orchard sighash. Shared with the consensus verifier in shielded_proof.rs so the signed
+    // and verified bytes cannot diverge.
+    let extra_sighash_data =
+        crate::shielded::unshield_extra_sighash_data(&output_address.to_bytes(), required);
 
     let bundle = build_spend_bundle(
         spends,
@@ -152,21 +153,21 @@ mod tests {
             Anchor::empty_tree(),
             &TestProver,
             [0u8; 36],
-            Some(1), // fee = 1, should be below minimum
+            Some(1), // fee = 1 != min_fee → rejected (fee is pinned to the minimum)
             platform_version,
         );
 
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(
-            err.contains("below minimum required fee"),
+            err.contains("must equal the minimum fee"),
             "unexpected error: {}",
             err
         );
     }
 
     #[test]
-    fn test_unshield_fee_above_upper_bound() {
+    fn test_unshield_fee_above_min_rejected() {
         let platform_version = PlatformVersion::latest();
         let change_address = test_orchard_address();
         let output_address = PlatformAddress::P2pkh([1u8; 20]);
@@ -179,12 +180,12 @@ mod tests {
         let fvk = FullViewingKey::from(&sk);
         let ask = SpendAuthorizingKey::from(&sk);
 
-        // Compute the minimum fee so we can exceed the 1000x bound
-        // Builder pads to max(spends, 2), so the threshold must be priced for 2 actions.
+        // The fee is pinned to the minimum; any value above it is rejected (the surplus
+        // would inflate the recipient amount, not the fee). Builder pads to max(spends, 2).
         let num_actions = 2usize;
         let min_fee = crate::shielded::compute_minimum_shielded_fee(num_actions, platform_version)
             .expect("fee computation should not overflow");
-        let excessive_fee = min_fee.saturating_mul(1000) + 1;
+        let above_min = min_fee + 1;
 
         let result = build_unshield_transition(
             spends,
@@ -196,14 +197,14 @@ mod tests {
             Anchor::empty_tree(),
             &TestProver,
             [0u8; 36],
-            Some(excessive_fee),
+            Some(above_min),
             platform_version,
         );
 
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(
-            err.contains("exceeds 1000x the minimum fee"),
+            err.contains("must equal the minimum fee"),
             "unexpected error: {}",
             err
         );
@@ -286,8 +287,9 @@ mod tests {
     }
 
     #[test]
-    fn test_unshield_fee_at_exact_upper_bound_passes_validation() {
-        // Boundary: fee == 1000x min is accepted (strictly > fails).
+    fn test_unshield_fee_at_exact_min_accepted() {
+        // fee == min_fee is accepted by the pin; only a later-stage failure (anchor/add_spend)
+        // may surface — never the fee-mismatch error.
         let platform_version = PlatformVersion::latest();
         let change_address = test_orchard_address();
         let output_address = PlatformAddress::P2pkh([1u8; 20]);
@@ -301,7 +303,6 @@ mod tests {
 
         let min_fee = crate::shielded::compute_minimum_shielded_fee(2, platform_version)
             .expect("fee computation should not overflow");
-        let boundary = min_fee.saturating_mul(1000);
 
         let result = build_unshield_transition(
             spends,
@@ -313,17 +314,14 @@ mod tests {
             Anchor::empty_tree(),
             &TestProver,
             [0u8; 36],
-            Some(boundary),
+            Some(min_fee),
             platform_version,
         );
-        // Boundary value passes validation; a successful build is fine. If a
-        // later-stage failure (anchor/add_spend) surfaces, it must NOT be the
-        // upper-bound error.
         if let Err(err) = result {
             let err = err.to_string();
             assert!(
-                !err.contains("exceeds 1000x"),
-                "boundary fee should be accepted: {}",
+                !err.contains("must equal the minimum fee"),
+                "fee == min must not be rejected as a fee mismatch: {}",
                 err
             );
         }

@@ -397,8 +397,10 @@ mod tests {
             // Compute platform sighash binding transparent fields (output_address, unshielding_amount)
             let output_address = create_output_address();
             let unshielding_amount = 499_995_000u64; // value_balance as u64
-            let mut extra_sighash_data = output_address.to_bytes();
-            extra_sighash_data.extend_from_slice(&unshielding_amount.to_le_bytes());
+            let extra_sighash_data = dpp::shielded::unshield_extra_sighash_data(
+                &output_address.to_bytes(),
+                unshielding_amount,
+            );
             let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
             let sighash = compute_platform_sighash(&bundle_commitment, &extra_sighash_data);
 
@@ -531,8 +533,10 @@ mod tests {
             let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
 
             // Bind transparent fields (output_address, unshielding_amount) to the sighash
-            let mut extra_sighash_data = output_address.to_bytes();
-            extra_sighash_data.extend_from_slice(&unshielding_amount.to_le_bytes());
+            let extra_sighash_data = dpp::shielded::unshield_extra_sighash_data(
+                &output_address.to_bytes(),
+                unshielding_amount,
+            );
             let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
             let sighash = compute_platform_sighash(&bundle_commitment, &extra_sighash_data);
 
@@ -751,8 +755,10 @@ mod tests {
             // Compute platform sighash binding transparent fields (output_address, unshielding_amount)
             let output_address = create_output_address();
             let unshielding_amount = 499_995_000u64; // value_balance as u64
-            let mut extra_sighash_data = output_address.to_bytes();
-            extra_sighash_data.extend_from_slice(&unshielding_amount.to_le_bytes());
+            let extra_sighash_data = dpp::shielded::unshield_extra_sighash_data(
+                &output_address.to_bytes(),
+                unshielding_amount,
+            );
             let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
             let sighash = compute_platform_sighash(&bundle_commitment, &extra_sighash_data);
 

@@ -1,5 +1,6 @@
 use crate::state_transition_action::shielded::shielded_withdrawal::v0::ShieldedWithdrawalTransitionActionV0;
 use crate::state_transition_action::shielded::ShieldedActionNote;
+use dpp::consensus::basic::identity::InvalidIdentityCreditWithdrawalTransitionAmountError;
 use dpp::consensus::basic::state_transition::WithdrawalBelowMinAmountError;
 use dpp::consensus::basic::BasicError;
 use dpp::data_contracts::withdrawals_contract;
@@ -28,21 +29,35 @@ impl ShieldedWithdrawalTransitionActionV0 {
         // to Core, i.e. `unshielding_amount - fee_amount`. The fee is carved out of the
         // unshielding amount and stays in-platform (routed to the fee pools).
         //
-        // That net amount becomes a Core `TxOut`, so it must clear the same dust floor
-        // (`MIN_WITHDRAWAL_AMOUNT`) the transparent withdrawal path enforces. Consensus
-        // validation (`validate_minimum_shielded_fee`) already rejects any transition whose
-        // net would fall below that floor, so for validated input this `checked_sub` is
-        // always `Some(net)` with `net >= MIN_WITHDRAWAL_AMOUNT`. We re-check here (rather
-        // than `saturating_sub`) so a direct or future caller that bypasses validation fails
-        // loudly instead of silently constructing a zero/dust withdrawal document.
+        // That net amount becomes a Core `TxOut`, so it must fall within the same
+        // `[MIN_WITHDRAWAL_AMOUNT, max_withdrawal_amount]` range the transparent withdrawal
+        // paths enforce (dust floor and per-transition policy cap). Consensus validation
+        // (`validate_minimum_shielded_fee`) already rejects any transition whose net falls
+        // outside that range, so for validated input this `checked_sub` is always
+        // `Some(net)` in range. We re-check here (rather than `saturating_sub`) so a direct
+        // or future caller that bypasses validation fails loudly instead of silently
+        // constructing an out-of-range withdrawal document.
+        let max_withdrawal_amount = platform_version.system_limits.max_withdrawal_amount;
         let net_withdrawal_amount = match value.unshielding_amount.checked_sub(fee_amount) {
-            Some(net) if net >= MIN_WITHDRAWAL_AMOUNT => net,
+            Some(net) if net >= MIN_WITHDRAWAL_AMOUNT && net <= max_withdrawal_amount => net,
+            Some(net) if net > max_withdrawal_amount => {
+                // Over the per-transition withdrawal cap.
+                return ConsensusValidationResult::new_with_error(
+                    InvalidIdentityCreditWithdrawalTransitionAmountError::new(
+                        net,
+                        MIN_WITHDRAWAL_AMOUNT,
+                        max_withdrawal_amount,
+                    )
+                    .into(),
+                );
+            }
             net => {
+                // Below the dust floor (or fee exceeds the gross — underflow).
                 return ConsensusValidationResult::new_with_error(
                     BasicError::WithdrawalBelowMinAmountError(WithdrawalBelowMinAmountError::new(
                         net.unwrap_or(0),
                         MIN_WITHDRAWAL_AMOUNT,
-                        platform_version.system_limits.max_withdrawal_amount,
+                        max_withdrawal_amount,
                     ))
                     .into(),
                 );

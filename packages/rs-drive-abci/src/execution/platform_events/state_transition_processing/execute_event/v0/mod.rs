@@ -573,6 +573,17 @@ where
                     // (amortised over time, epoch fee multiplier applied at payout); the
                     // remainder (the asset-lock excess over the shield amount) is the
                     // processing fee. Conservation: storage + processing == fees_to_add_to_pool.
+                    //
+                    // EDGE CASE: `fees_to_add_to_pool` here is the asset-lock excess the shield
+                    // declares (gated by a flat min-fee that does NOT scale with action count),
+                    // not `compute_minimum_shielded_fee`. If that excess is smaller than the real
+                    // storage cost of the writes (≈ SHIELDED_STORAGE_BYTES_PER_ACTION per action),
+                    // `storage_fee` saturates via `min(..)` and `processing_fee` becomes 0 — the
+                    // proposer earns nothing for the proof verification it ran. This has no
+                    // soundness/conservation impact (the pool is never over- or under-credited),
+                    // but a high-action shield funded at exactly the minimum is a proposer-incentive
+                    // edge; the flat shield min-fee should be revisited if it ceases to cover the
+                    // per-action write cost.
                     let storage_fee = applied_fees.storage_fee.min(fees_to_add_to_pool);
                     let processing_fee = fees_to_add_to_pool - storage_fee;
 

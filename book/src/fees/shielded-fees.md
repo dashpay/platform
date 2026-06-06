@@ -77,7 +77,10 @@ The per-action processing fee prices the marginal Halo 2 verification work that
 each additional action adds to the bundle (≈1.1 ms/action measured against a
 ≈5 ms bundle base), so it is calibrated at roughly a 4.5:1 ratio against the
 fixed proof-verification fee (100M : 22M) rather than the looser ratio used
-before the recalibration.
+before the recalibration. (Note the two ratios on this page use different
+baselines: the “30×” in §1 is the proof fee relative to a single RedPallas
+signature verification, whereas this 4.5:1 is the proof fee relative to the
+per-action processing fee.)
 
 **Current value:** `22,000,000` credits (22M)
 
@@ -87,7 +90,7 @@ Each action permanently stores data in two places:
 
 | Storage | Bytes | Contents |
 |---|---|---|
-| BulkAppendTree (commitment tree) | 280 | 32 cmx + 32 nullifier + 216 encrypted note |
+| BulkAppendTree (commitment tree) | 280 | 32 cmx + 32 rho + 216 encrypted note |
 | Nullifier tree | 32 | nullifier key (value is empty) |
 | **Total** | **312** | |
 
@@ -161,6 +164,8 @@ pub struct DriveAbciValidationConstants {
     pub maximum_vote_polls_to_process: u16,
     pub maximum_contenders_to_consider: u16,
     pub minimum_pool_notes_for_outgoing: u64,
+    pub shielded_anchor_retention_blocks: u64,
+    pub shielded_anchor_pruning_interval: u64,
     pub shielded_proof_verification_fee: u64,      // 100_000_000
     pub shielded_per_action_processing_fee: u64,    // 22_000_000
 }
