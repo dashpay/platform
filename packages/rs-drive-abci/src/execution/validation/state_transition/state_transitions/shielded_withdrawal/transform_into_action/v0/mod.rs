@@ -1,5 +1,4 @@
 use crate::error::Error;
-use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::state_transitions::shielded_common::{
     read_pool_total_balance, validate_anchor_exists, validate_minimum_pool_notes,
     validate_nullifiers,
@@ -20,7 +19,6 @@ pub(in crate::execution::validation::state_transition::state_transitions::shield
         &self,
         drive: &Drive,
         block_info: &BlockInfo,
-        execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
@@ -33,7 +31,6 @@ impl ShieldedWithdrawalStateTransitionTransformIntoActionValidationV0
         &self,
         drive: &Drive,
         block_info: &BlockInfo,
-        _execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {

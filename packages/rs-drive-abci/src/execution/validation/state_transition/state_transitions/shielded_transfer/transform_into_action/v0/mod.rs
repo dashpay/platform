@@ -1,9 +1,7 @@
 use crate::error::Error;
-use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::state_transitions::shielded_common::{
     read_pool_total_balance, validate_anchor_exists, validate_nullifiers,
 };
-use dpp::block::block_info::BlockInfo;
 use dpp::consensus::state::state_error::StateError;
 use dpp::fee::Credits;
 use dpp::prelude::ConsensusValidationResult;
@@ -20,8 +18,6 @@ pub(in crate::execution::validation::state_transition::state_transitions::shield
         &self,
         drive: &Drive,
         transaction: TransactionArg,
-        block_info: &BlockInfo,
-        execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 }
@@ -31,8 +27,6 @@ impl ShieldedTransferStateTransitionTransformIntoActionValidationV0 for Shielded
         &self,
         drive: &Drive,
         transaction: TransactionArg,
-        _block_info: &BlockInfo,
-        _execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         // The value_balance is the fee amount extracted from the shielded pool

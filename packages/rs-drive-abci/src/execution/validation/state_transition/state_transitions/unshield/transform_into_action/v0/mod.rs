@@ -1,10 +1,8 @@
 use crate::error::Error;
-use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::state_transitions::shielded_common::{
     read_pool_total_balance, validate_anchor_exists, validate_minimum_pool_notes,
     validate_nullifiers,
 };
-use dpp::block::block_info::BlockInfo;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::unshield_transition::UnshieldTransition;
 use dpp::version::PlatformVersion;
@@ -19,8 +17,6 @@ pub(in crate::execution::validation::state_transition::state_transitions::unshie
         &self,
         drive: &Drive,
         transaction: TransactionArg,
-        block_info: &BlockInfo,
-        execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 }
@@ -30,8 +26,6 @@ impl UnshieldStateTransitionTransformIntoActionValidationV0 for UnshieldTransiti
         &self,
         drive: &Drive,
         transaction: TransactionArg,
-        _block_info: &BlockInfo,
-        _execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         // The anchor from the transition (Merkle root of commitment tree)
