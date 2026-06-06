@@ -22,10 +22,10 @@ use platform_version::version::PlatformVersion;
 ///   recipient combines it with their incoming viewing key (Diffie–Hellman) to
 ///   derive the AEAD key.
 /// - `enc_ciphertext` (104): the note encrypted to the recipient (opened with
-///   the incoming viewing key) — ChaCha20-Poly1305 over the note plaintext:
-///   compact note (52 = version 1 + diversifier `d` 11 + value 8 + `rseed` 32)
-///   + memo (36) + AEAD tag (16). The 52-byte compact prefix is what wallets
-///   trial-decrypt during sync to detect their own notes.
+///   the incoming viewing key) — ChaCha20-Poly1305 over the note plaintext. It
+///   holds the compact note (52 = version 1 + diversifier `d` 11 + value 8 +
+///   `rseed` 32), the memo (36), and the AEAD tag (16); the 52-byte compact
+///   prefix is what wallets trial-decrypt during sync to detect their own notes.
 /// - `out_ciphertext` (80): the note encrypted to the sender for wallet
 ///   recovery (opened with the outgoing viewing key): out plaintext
 ///   (64 = `pk_d` 32 + `esk` 32) + AEAD tag (16).
