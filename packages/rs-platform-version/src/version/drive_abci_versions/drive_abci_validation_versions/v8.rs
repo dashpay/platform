@@ -321,6 +321,9 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V8: DriveAbciValidationVersions =
             shielded_anchor_retention_blocks: 1000,
             shielded_anchor_pruning_interval: 100,
             shielded_proof_verification_fee: 100_000_000,
-            shielded_per_action_processing_fee: 3_000_000,
+            // Per-action processing prices the ~1.1 ms/action Halo 2 verification CPU at the
+            // same rate the flat fee prices the ~5 ms base (100M ≈ 4.5× this), so the fee
+            // tracks the per-action cost and the margin stays uniform as actions grow.
+            shielded_per_action_processing_fee: 22_000_000,
         },
     };

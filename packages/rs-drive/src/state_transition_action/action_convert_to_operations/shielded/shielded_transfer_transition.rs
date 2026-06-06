@@ -206,10 +206,12 @@ mod tests {
                 .expect("estimate write cost");
             let actual_cost = fee_result.total_base_fee();
 
-            // The flat fee must cover the real write cost. Measured margins (estimation
-            // mode, production-sized notes): ~9.3x at 1 action down to ~2.8x at the 16-action
-            // max — the margin shrinks with action count because the 100M proof fee is fixed
-            // while per-action GroveDB cost grows, but it stays well above 1x at the cap.
+            // The fee must cover the real write cost. Measured margins over GroveDB cost
+            // (estimation mode, production-sized notes): ~10.9x at 1 action down to ~5.8x at
+            // the 16-action max. The margin is large and stays well above 1x because the
+            // per-action fee also prices the per-action Halo 2 verification CPU (which
+            // calculate_fee does not charge), so it exceeds the per-action GroveDB cost by
+            // design; see `shielded_per_action_processing_fee`.
             assert!(
                 fee_amount >= actual_cost,
                 "compute_minimum_shielded_fee({num_actions}) = {fee_amount} must cover the actual \

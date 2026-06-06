@@ -61,7 +61,7 @@ mod tests {
     fn create_default_shielded_withdrawal_transition() -> StateTransition {
         create_shielded_withdrawal_transition(
             vec![create_dummy_serialized_action()],
-            112_548_800, // unshielding_amount: recipient (1_000_000, above MIN_WITHDRAWAL_AMOUNT) + min fee for 1 action
+            131_548_800, // unshielding_amount: recipient (1_000_000, above MIN_WITHDRAWAL_AMOUNT) + min fee for 1 action
             [42u8; 32],  // non-zero anchor
             vec![0u8; 100], // dummy proof bytes
             [0u8; 64],   // dummy binding signature
@@ -119,7 +119,7 @@ mod tests {
 
             let transition = ShieldedWithdrawalTransitionV0 {
                 actions,
-                unshielding_amount: 111_549_800,
+                unshielding_amount: 130_549_800,
                 anchor: [42u8; 32],
                 proof: vec![0u8; 100],
                 binding_signature: [0u8; 64],
@@ -490,7 +490,7 @@ mod tests {
 
             let transition = create_shielded_withdrawal_transition(
                 vec![bad_action],
-                111_549_800, // unshielding_amount: recipient amount + minimum fee for 1 action
+                130_549_800, // unshielding_amount: recipient amount + minimum fee for 1 action
                 anchor,
                 vec![0u8; 100],
                 [0u8; 64],
@@ -796,7 +796,7 @@ mod tests {
 
             let transition = create_shielded_withdrawal_transition(
                 vec![action1, action2], // Both have nullifier [1u8; 32]
-                124_097_600, // unshielding_amount: recipient (1_000_000, above MIN_WITHDRAWAL_AMOUNT) + min fee for 2 actions
+                162_097_600, // unshielding_amount: recipient (1_000_000, above MIN_WITHDRAWAL_AMOUNT) + min fee for 2 actions
                 anchor,
                 vec![0u8; 100],
                 [0u8; 64],

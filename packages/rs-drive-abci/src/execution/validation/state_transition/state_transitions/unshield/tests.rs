@@ -57,7 +57,7 @@ mod tests {
         create_unshield_transition(
             create_output_address(),
             vec![create_dummy_serialized_action()],
-            111_549_800, // unshielding_amount: recipient amount + minimum fee for 1 action
+            130_549_800, // unshielding_amount: recipient amount + minimum fee for 1 action
             [42u8; 32],  // non-zero anchor
             vec![0u8; 100], // dummy proof bytes
             [0u8; 64],   // dummy binding signature
@@ -111,7 +111,7 @@ mod tests {
             let transition = UnshieldTransitionV0 {
                 output_address: create_output_address(),
                 actions,
-                unshielding_amount: 111_549_800,
+                unshielding_amount: 130_549_800,
                 anchor: [42u8; 32],
                 proof: vec![0u8; 100],
                 binding_signature: [0u8; 64],
@@ -455,7 +455,7 @@ mod tests {
             let transition = create_unshield_transition(
                 create_output_address(),
                 vec![bad_action],
-                111_549_800, // unshielding_amount: recipient amount + minimum fee for 1 action
+                130_549_800, // unshielding_amount: recipient amount + minimum fee for 1 action
                 anchor,
                 vec![0u8; 100],
                 [0u8; 64],
@@ -661,7 +661,7 @@ mod tests {
             let transition = create_unshield_transition(
                 create_output_address(),
                 vec![action1, action2], // Both have nullifier [1u8; 32]
-                123_098_600, // unshielding_amount: recipient amount + minimum fee for 2 actions
+                161_098_600, // unshielding_amount: recipient amount + minimum fee for 2 actions
                 anchor,
                 vec![0u8; 100],
                 [0u8; 64],
