@@ -9,11 +9,15 @@ impl UnshieldTransitionAction {
     pub fn try_from_transition(
         value: &UnshieldTransition,
         current_total_balance: Credits,
+        fee_amount: Credits,
     ) -> ConsensusValidationResult<Self> {
         match value {
             UnshieldTransition::V0(v0) => {
-                let result =
-                    UnshieldTransitionActionV0::try_from_transition(v0, current_total_balance);
+                let result = UnshieldTransitionActionV0::try_from_transition(
+                    v0,
+                    current_total_balance,
+                    fee_amount,
+                );
                 result.map(|action| action.into())
             }
         }

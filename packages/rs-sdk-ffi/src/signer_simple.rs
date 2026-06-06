@@ -111,6 +111,31 @@ pub struct DashSDKSignature {
     pub signature_len: usize,
 }
 
+/// Leak `bytes` into a raw `(ptr, len)` pair suitable for handing across
+/// the FFI boundary inside [`DashSDKSignature`], to be reclaimed by
+/// [`dash_sdk_signature_free`].
+///
+/// This mirrors the fix applied to [`crate::types::DashSDKResult::success_binary`]:
+/// the source `Vec` may have `capacity > len` (e.g. it came from a
+/// `BinaryData` whose inner buffer was over-allocated), but the free path
+/// reconstructs with `Vec::from_raw_parts(ptr, len, len)`. Reconstructing
+/// with `cap == len` is only sound when the *original* allocation also had
+/// `cap == len`; otherwise the global allocator receives a `Layout` that
+/// does not match the real allocation on dealloc — undefined behavior /
+/// heap corruption.
+///
+/// `into_boxed_slice()` shrinks the allocation so that its capacity equals
+/// its length before we leak it, making the `cap == len` free path sound.
+/// A `Box<[u8]>` of length `len` owns an allocation of exactly `len` bytes
+/// with the same layout `Vec<u8>` would use, so `Vec::from_raw_parts(ptr,
+/// len, len)` reclaims it correctly.
+fn leak_binary_to_ptr(bytes: Vec<u8>) -> (*mut u8, usize) {
+    let boxed: Box<[u8]> = bytes.into_boxed_slice();
+    let len = boxed.len();
+    let ptr = Box::into_raw(boxed) as *mut u8;
+    (ptr, len)
+}
+
 /// Sign data with a signer.
 ///
 /// # Safety
@@ -170,9 +195,11 @@ pub unsafe extern "C" fn dash_sdk_signer_sign(
 
     match result {
         Ok(Ok(signature)) => {
-            let sig_vec = signature.to_vec();
-            let sig_len = sig_vec.len();
-            let sig_ptr = sig_vec.leak().as_mut_ptr();
+            // Shrink the allocation so capacity == len before leaking, so
+            // that `dash_sdk_signature_free`'s `Vec::from_raw_parts(ptr, len,
+            // len)` reconstruction matches the real allocation layout. See
+            // `leak_binary_to_ptr` for why this is required for soundness.
+            let (sig_ptr, sig_len) = leak_binary_to_ptr(signature.to_vec());
 
             let boxed = Box::new(DashSDKSignature {
                 signature: sig_ptr,
@@ -459,5 +486,87 @@ mod tests {
         // attempt in the loop must fail and the helper must surface
         // the catch-all error.
         assert!(parse_mnemonic_any_language("not a real bip39 phrase at all here").is_err());
+    }
+
+    /// Regression test for the signature alloc/free round-trip.
+    ///
+    /// Mirrors `types::tests::test_success_binary_preserves_capacity_via_shrink`.
+    /// The signing path used to do `signature.to_vec().leak()`, which keeps
+    /// the source `Vec`'s *actual capacity*, while `dash_sdk_signature_free`
+    /// reconstructs with `Vec::from_raw_parts(ptr, len, len)`. When the
+    /// source capacity exceeded its length (as `BinaryData`'s inner `Vec`
+    /// can), the allocator received a wrong `Layout` on dealloc — undefined
+    /// behavior / heap corruption.
+    ///
+    /// `leak_binary_to_ptr` now shrinks capacity to len via
+    /// `into_boxed_slice()` before leaking, so the `cap == len` free path is
+    /// sound. This test drives a `capacity > len` buffer through the exact
+    /// alloc + free code the FFI uses and asserts the bytes survive the
+    /// round-trip and the free does not corrupt the heap.
+    #[test]
+    fn test_leak_binary_to_ptr_preserves_capacity_via_shrink() {
+        // A 65-byte compact-recoverable ECDSA signature living in a buffer
+        // with far more capacity than length — the exact mismatch the old
+        // `.leak()` path mishandled.
+        let signature_bytes: Vec<u8> = (0u8..65).collect();
+        let mut over_allocated: Vec<u8> = Vec::with_capacity(128);
+        over_allocated.extend_from_slice(&signature_bytes);
+
+        assert_eq!(over_allocated.len(), 65);
+        assert!(
+            over_allocated.capacity() > over_allocated.len(),
+            "capacity ({}) must exceed len ({}) for this test to exercise the bug",
+            over_allocated.capacity(),
+            over_allocated.len(),
+        );
+
+        // Alloc side: exactly what the `Ok(Ok(signature))` arm now does.
+        let (sig_ptr, sig_len) = leak_binary_to_ptr(over_allocated);
+        assert!(!sig_ptr.is_null());
+        assert_eq!(sig_len, 65);
+
+        // The bytes must survive the leak unchanged.
+        let round_tripped = unsafe { std::slice::from_raw_parts(sig_ptr, sig_len) };
+        assert_eq!(round_tripped, &signature_bytes[..]);
+
+        // Wrap exactly as the sign arm does, then free via the real FFI
+        // free function. Under the previous code this `Vec::from_raw_parts(
+        // ptr, len, len)` would hit the global allocator with a `Layout`
+        // whose size (len) disagreed with the real allocation (cap == 128),
+        // which is UB and would trip the allocator's debug checks / a
+        // sanitizer. With the `into_boxed_slice()` shrink it is sound.
+        let signature = Box::new(DashSDKSignature {
+            signature: sig_ptr,
+            signature_len: sig_len,
+        });
+        unsafe {
+            dash_sdk_signature_free(Box::into_raw(signature));
+        }
+    }
+
+    /// Empty-signature edge case: a zero-length leak must produce a
+    /// non-dangling, freeable allocation (the free path guards on
+    /// `signature_len`/null, and `into_boxed_slice` on an empty `Vec`
+    /// yields a dangling-but-valid `Box<[u8]>`).
+    #[test]
+    fn test_leak_binary_to_ptr_empty() {
+        let (sig_ptr, sig_len) = leak_binary_to_ptr(Vec::new());
+        assert_eq!(sig_len, 0);
+
+        let signature = Box::new(DashSDKSignature {
+            signature: sig_ptr,
+            signature_len: sig_len,
+        });
+        unsafe {
+            dash_sdk_signature_free(Box::into_raw(signature));
+        }
+    }
+
+    /// `dash_sdk_signature_free(null)` must be a no-op, not a crash.
+    #[test]
+    fn test_dash_sdk_signature_free_null() {
+        unsafe {
+            dash_sdk_signature_free(std::ptr::null_mut());
+        }
     }
 }

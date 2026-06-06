@@ -21,7 +21,8 @@ pub struct ShieldedWithdrawalTransitionActionV0 {
     pub pooling: Pooling,
     /// Core address receiving funds
     pub output_script: CoreScript,
-    /// Fee amount (value_balance - amount), paid to proposers
+    /// Shielded fee paid to proposers, carved out of `amount` (the net amount
+    /// withdrawn to Core is `amount - fee_amount`). Equals `compute_minimum_shielded_fee`.
     pub fee_amount: Credits,
     /// Current total balance of the shielded pool
     pub current_total_balance: Credits,

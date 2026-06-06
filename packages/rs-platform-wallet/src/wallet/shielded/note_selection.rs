@@ -78,13 +78,15 @@ pub fn select_notes_with_fee<'a>(
     min_actions: usize,
     platform_version: &PlatformVersion,
 ) -> Result<(Vec<&'a ShieldedNote>, u64, u64), PlatformWalletError> {
-    let mut fee_estimate = compute_minimum_shielded_fee(min_actions, platform_version);
+    let mut fee_estimate = compute_minimum_shielded_fee(min_actions, platform_version)
+        .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
 
     for _ in 0..5 {
         let selected = select_notes(unspent, amount, fee_estimate)?;
         let total: u64 = selected.iter().map(|n| n.value).sum();
         let num_actions = selected.len().max(min_actions);
-        let exact_fee = compute_minimum_shielded_fee(num_actions, platform_version);
+        let exact_fee = compute_minimum_shielded_fee(num_actions, platform_version)
+            .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
 
         if total >= amount.saturating_add(exact_fee) {
             return Ok((selected, total, exact_fee));
@@ -97,7 +99,8 @@ pub fn select_notes_with_fee<'a>(
     let selected = select_notes(unspent, amount, fee_estimate)?;
     let total: u64 = selected.iter().map(|n| n.value).sum();
     let num_actions = selected.len().max(min_actions);
-    let exact_fee = compute_minimum_shielded_fee(num_actions, platform_version);
+    let exact_fee = compute_minimum_shielded_fee(num_actions, platform_version)
+        .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
 
     if total < amount.saturating_add(exact_fee) {
         return Err(PlatformWalletError::ShieldedInsufficientBalance {
@@ -188,5 +191,49 @@ mod tests {
         let notes = vec![test_note(100, 0)];
         let result = select_notes(&notes, u64::MAX, 1);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_select_notes_with_fee_floors_to_min_actions() {
+        let platform_version = PlatformVersion::latest();
+        let min_fee_2 = compute_minimum_shielded_fee(2, platform_version)
+            .expect("fee computation should not overflow");
+        let amount = 1_000_000u64;
+        // A single note covering amount + the 2-action fee.
+        let notes = vec![test_note(amount + min_fee_2 + 5, 0)];
+
+        let (selected, total, exact_fee) =
+            select_notes_with_fee(&notes, amount, 2, platform_version).expect("selection ok");
+
+        assert_eq!(selected.len(), 1);
+        assert_eq!(total, amount + min_fee_2 + 5);
+        // One selected note → num_actions = max(1, min_actions=2) = 2, so the fee is the
+        // 2-action minimum even though only one note is spent (the Orchard bundle pads to 2).
+        assert_eq!(exact_fee, min_fee_2);
+    }
+
+    #[test]
+    fn test_select_notes_with_fee_uses_actual_action_count() {
+        let platform_version = PlatformVersion::latest();
+        let amount = 1_000_000u64;
+        // Many equal mid-size notes so several are needed; the convergence loop must settle on
+        // a fee that matches the actual selected-note (action) count, not the min_actions floor.
+        let note_val = 60_000_000u64;
+        let notes: Vec<ShieldedNote> = (0..20).map(|i| test_note(note_val, i)).collect();
+
+        let (selected, total, exact_fee) =
+            select_notes_with_fee(&notes, amount, 2, platform_version).expect("selection ok");
+
+        let expected_fee =
+            compute_minimum_shielded_fee(selected.len().max(2), platform_version).unwrap();
+        assert_eq!(
+            exact_fee, expected_fee,
+            "fee must match the selected action count"
+        );
+        assert!(
+            total >= amount.saturating_add(exact_fee),
+            "selection must cover amount + fee"
+        );
+        assert!(selected.len() >= 2, "expected multiple notes selected");
     }
 }
