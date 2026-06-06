@@ -17,6 +17,7 @@ pub const DRIVE_VERIFY_METHOD_VERSIONS_V1: DriveVerifyMethodVersions = DriveVeri
     document: DriveVerifyDocumentMethodVersions {
         verify_proof: 0,
         verify_proof_keep_serialized: 0,
+        verify_document_history: 0,
         verify_start_at_document_in_proof: 0,
     },
     document_count: DriveVerifyDocumentCountMethodVersions {

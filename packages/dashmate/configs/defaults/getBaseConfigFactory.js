@@ -179,7 +179,7 @@ export default function getBaseConfigFactory() {
         },
         gateway: {
           docker: {
-            image: 'dashpay/envoy:1.30.2-impr.1',
+            image: 'dashpay/envoy:1.35.11-impr.1',
           },
           maxConnections: 1000,
           maxHeapSizeInBytes: 125000000, // 1 Gb
@@ -294,9 +294,8 @@ export default function getBaseConfigFactory() {
                 context: path.join(PACKAGE_ROOT_DIR, '..', '..'),
                 dockerFile: path.join(PACKAGE_ROOT_DIR, '..', '..', 'Dockerfile'),
                 target: 'drive-abci',
-                // Extra docker build args (see `dockerBuild` schema). Common
-                // override: `CARGO_BUILD_PROFILE: "release"` for SDK_TEST_DATA
-                // shielded seeding at N > a few thousand.
+                // Extra Docker build args — see the `buildArgs` field on
+                // `dockerBuild` in the config schema.
                 buildArgs: {},
               },
             },

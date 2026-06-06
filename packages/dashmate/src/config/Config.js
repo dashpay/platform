@@ -70,6 +70,12 @@ export default class Config {
   static isSchemaPathAllowed(path) {
     if (typeof path !== 'string' || path.length === 0) return false;
 
+    // Reject empty segments (leading/trailing/double dots, e.g. `a..b` or
+    // `…buildArgs.`) — an empty key must not slip through a map's
+    // `additionalProperties` descent.
+    const pathSegments = path.split('.');
+    if (pathSegments.some((segment) => segment.length === 0)) return false;
+
     const resolveRef = (node) => {
       if (!node || typeof node !== 'object') return node;
       if (typeof node.$ref !== 'string') return node;
@@ -87,7 +93,7 @@ export default class Config {
     let node = resolveRef(configJsonSchema);
     if (!node) return false;
 
-    for (const segment of path.split('.')) {
+    for (const segment of pathSegments) {
       node = resolveRef(node);
       if (!node || typeof node !== 'object') return false;
 

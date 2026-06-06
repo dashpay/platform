@@ -71,6 +71,16 @@ pub(in crate::execution) enum ExecutionEvent<'a> {
     /// The fee is embedded in the ZK-proven value_balance and validated
     /// at the processor level (validate_minimum_shielded_fee).
     /// Nullifiers are stored to recent block storage as part of the drive operations.
+    ///
+    /// This variant deliberately carries no `user_fee_increase`. Shielded transitions
+    /// have no fee-bidding or priority market: the fee is pinned to the flat,
+    /// client-predictable `compute_minimum_shielded_fee` (transfers must set
+    /// `value_balance` to exactly that minimum, while unshields and withdrawals derive it
+    /// from the action count), so every shielded transition of a given size pays an
+    /// identical fee and no fee fingerprint can distinguish senders. It likewise carries
+    /// no `execution_operations`: shielded transitions are not charged the per-operation
+    /// GroveDB cost (the flat fee subsumes it), so the execution context is intentionally
+    /// not threaded through here.
     PaidFromShieldedPool {
         /// the operations that should be performed
         operations: Vec<DriveOperation<'a>>,

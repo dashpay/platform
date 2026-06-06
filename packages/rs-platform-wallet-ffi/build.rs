@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::process::Command;
 use std::{env, fs};
 
 fn main() {
@@ -8,6 +9,23 @@ fn main() {
 
     println!("cargo:rerun-if-changed=cbindgen.toml");
     println!("cargo:rerun-if-changed=src/");
+
+    let commit = run_git(&["rev-parse", "HEAD"]).unwrap_or_else(|| "unknown".to_string());
+    println!("cargo:rustc-env=PLATFORM_WALLET_GIT_COMMIT={commit}");
+
+    let dirty = match run_git(&["status", "--porcelain"]) {
+        Some(out) if !out.is_empty() => "1",
+        Some(_) => "0",
+        None => "unknown",
+    };
+    println!("cargo:rustc-env=PLATFORM_WALLET_GIT_DIRTY={dirty}");
+
+    if let Some(head) = run_git(&["rev-parse", "--git-path", "HEAD"]) {
+        println!("cargo:rerun-if-changed={head}");
+    }
+    if let Some(index) = run_git(&["rev-parse", "--git-path", "index"]) {
+        println!("cargo:rerun-if-changed={index}");
+    }
 
     let target_dir = Path::new(&out_dir)
         .ancestors()
@@ -29,4 +47,16 @@ fn main() {
         .generate()
         .expect("Unable to generate bindings")
         .write_to_file(&output_path);
+}
+
+fn run_git(args: &[&str]) -> Option<String> {
+    let output = Command::new("git").args(args).output().ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    String::from_utf8(output.stdout)
+        .ok()
+        .map(|s| s.trim().to_string())
 }
