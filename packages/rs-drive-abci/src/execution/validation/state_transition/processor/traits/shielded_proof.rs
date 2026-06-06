@@ -544,6 +544,7 @@ mod tests {
 
     mod validate_minimum_shielded_fee {
         use super::*;
+        use dpp::consensus::ConsensusError;
 
         /// A ShieldedWithdrawal transition (no actions) with the given gross amount.
         fn shielded_withdrawal_with_amount(unshielding_amount: u64) -> StateTransition {
@@ -581,9 +582,16 @@ mod tests {
             let result = st
                 .validate_minimum_shielded_fee(platform_version)
                 .expect("should not error");
+            assert!(!result.is_valid());
             assert!(
-                !result.is_valid(),
-                "a withdrawal whose net is below MIN_WITHDRAWAL_AMOUNT must be rejected at validation"
+                matches!(
+                    result.errors.first(),
+                    Some(ConsensusError::BasicError(
+                        BasicError::WithdrawalBelowMinAmountError(_)
+                    ))
+                ),
+                "below-min must reject with WithdrawalBelowMinAmountError; got {:?}",
+                result.errors
             );
         }
 
@@ -614,9 +622,18 @@ mod tests {
             let result = st
                 .validate_minimum_shielded_fee(platform_version)
                 .expect("should not error");
+            assert!(!result.is_valid());
+            // Must reject with the amount-RANGE error, not the below-min error — locks in the
+            // "over-max is not below-min" reason accuracy the cap introduced.
             assert!(
-                !result.is_valid(),
-                "a withdrawal whose net exceeds max_withdrawal_amount must be rejected at validation"
+                matches!(
+                    result.errors.first(),
+                    Some(ConsensusError::BasicError(
+                        BasicError::InvalidIdentityCreditWithdrawalTransitionAmountError(_)
+                    ))
+                ),
+                "over-max must reject with InvalidIdentityCreditWithdrawalTransitionAmountError; got {:?}",
+                result.errors
             );
         }
 
@@ -634,6 +651,29 @@ mod tests {
             assert!(
                 result.is_valid(),
                 "a withdrawal whose net equals max_withdrawal_amount must be accepted"
+            );
+        }
+
+        #[test]
+        fn should_reject_amount_exceeding_i64_max_via_guard() {
+            let platform_version = PlatformVersion::latest();
+            // `unshielding_amount > i64::MAX` wraps to a negative i64 in the validator's cast;
+            // the defensive `fee < 0` guard must reject it (rather than wrapping back to a huge
+            // u64 and sailing past the min-fee check).
+            let st = shielded_withdrawal_with_amount((i64::MAX as u64) + 1);
+            let result = st
+                .validate_minimum_shielded_fee(platform_version)
+                .expect("should not error");
+            assert!(!result.is_valid());
+            assert!(
+                matches!(
+                    result.errors.first(),
+                    Some(ConsensusError::BasicError(
+                        BasicError::ShieldedInvalidValueBalanceError(_)
+                    ))
+                ),
+                "amount > i64::MAX must be rejected by the fee<0 guard; got {:?}",
+                result.errors
             );
         }
     }
