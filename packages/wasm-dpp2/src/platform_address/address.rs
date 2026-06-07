@@ -334,6 +334,15 @@ impl PlatformAddressWasm {
     /// Creates a PlatformAddress from raw bytes (21 bytes: type byte + 20-byte hash).
     #[wasm_bindgen(js_name = "fromBytes")]
     pub fn from_bytes(bytes: Vec<u8>) -> WasmDppResult<PlatformAddressWasm> {
+        // Exactly 21 bytes; reject over-length input that bincode would silently truncate. Since
+        // surplus_output is part of the signed transition body, a truncated address would route
+        // funds to a different destination than submitted (see the TryFrom impls / the C FFI).
+        if bytes.len() != 21 {
+            return Err(WasmDppError::invalid_argument(format!(
+                "PlatformAddress must be exactly 21 bytes, got {}",
+                bytes.len()
+            )));
+        }
         PlatformAddress::from_bytes(&bytes)
             .map(PlatformAddressWasm)
             .map_err(|e| WasmDppError::invalid_argument(e.to_string()))
@@ -346,6 +355,14 @@ impl PlatformAddressWasm {
     ) -> WasmDppResult<PlatformAddressWasm> {
         let bytes = hex::decode(hex_string)
             .map_err(|e| WasmDppError::invalid_argument(format!("Invalid hex: {}", e)))?;
+        // Exactly 21 bytes; reject over-length input that bincode would silently truncate (same
+        // truncated-surplus_output signing hazard as fromBytes).
+        if bytes.len() != 21 {
+            return Err(WasmDppError::invalid_argument(format!(
+                "PlatformAddress must be exactly 21 bytes, got {}",
+                bytes.len()
+            )));
+        }
         PlatformAddress::from_bytes(&bytes)
             .map(PlatformAddressWasm)
             .map_err(|e| WasmDppError::invalid_argument(e.to_string()))
