@@ -169,7 +169,6 @@ where
                 operations,
                 execution_operations,
                 additional_fixed_fee_cost,
-                shielded_flat_fee,
                 user_fee_increase,
             } => {
                 let mut estimated_fee_result = self
@@ -192,20 +191,15 @@ where
 
                 estimated_fee_result.apply_user_fee_increase(*user_fee_increase);
 
-                // The transparent `Shield` pays the flat shielded fee `F` (set outside GroveDB),
-                // not the metered estimate, so the authoritative funding gate requires exactly
-                // `amount + F` against the post-reallocation input balances. All other
-                // address-funded events use the metered estimate plus any additional fixed cost.
-                let required_balance = if let Some(flat_fee) = shielded_flat_fee {
-                    *flat_fee
-                } else {
-                    let mut required_balance = estimated_fee_result.total_base_fee();
-                    if let Some(additional_fixed_fee_cost) = additional_fixed_fee_cost {
-                        required_balance =
-                            required_balance.saturating_add(*additional_fixed_fee_cost);
-                    }
-                    required_balance
-                };
+                // The required balance is the metered base fee plus any additional fixed cost (for
+                // the transparent `Shield` that fixed cost is the shielded COMPUTE fee
+                // `compute_shielded_compute_fee`, added on top of the metered storage/processing of
+                // the note/nullifier writes). This is the generic metered + `additional_fixed_fee_cost`
+                // path shared by every address-funded event (e.g. `IdentityCreateFromAddresses`).
+                let mut required_balance = estimated_fee_result.total_base_fee();
+                if let Some(additional_fixed_fee_cost) = additional_fixed_fee_cost {
+                    required_balance = required_balance.saturating_add(*additional_fixed_fee_cost);
+                }
 
                 let fee_deduction_result = deduct_fee_from_outputs_or_remaining_balance_of_inputs(
                     input_current_balances.clone(),
@@ -215,23 +209,7 @@ where
                     platform_version,
                 )?;
 
-                // Advertise the AUTHORITATIVE fee (the flat `F` for shields), not the metered GroveDB
-                // estimate, so CheckTx populates `gas_wanted` from the fee that is actually deducted
-                // at execution (mempool gas-admission). The booking re-derives and deducts the fee
-                // independently, so this only affects the advertised/observed fee. Mirror the booking
-                // split: storage = min(metered_storage, F), processing = F - storage.
-                let result_fee_result = match shielded_flat_fee {
-                    Some(flat_fee) => {
-                        let storage_fee = estimated_fee_result.storage_fee.min(*flat_fee);
-                        FeeResult {
-                            storage_fee,
-                            processing_fee: *flat_fee - storage_fee,
-                            fee_refunds: Default::default(),
-                            removed_bytes_from_system: 0,
-                        }
-                    }
-                    None => estimated_fee_result,
-                };
+                let result_fee_result = estimated_fee_result;
 
                 if fee_deduction_result.fee_fully_covered {
                     Ok(ConsensusValidationResult::new_with_data(result_fee_result))

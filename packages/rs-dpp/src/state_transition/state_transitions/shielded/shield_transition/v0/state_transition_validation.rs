@@ -96,19 +96,24 @@ impl StateTransitionStructureValidation for ShieldTransitionV0 {
             );
         }
 
-        // Total input amounts must cover the shield amount PLUS the flat shielded fee `F`
-        // (`compute_minimum_shielded_fee`: proof verification + per-action). Without this an
-        // attacker could provide inputs covering only `amount`, leaving the fee unfunded, or
-        // (pre-fee) credit the pool more than the inputs debited.
+        // Total input amounts must cover the shield amount PLUS the shielded COMPUTE fee
+        // (`compute_shielded_compute_fee`: proof verification + per-action processing, NO storage
+        // term). This is a stateless lower bound: the real per-action storage cost is metered by
+        // GroveDB at execution and is unknowable here, so we deliberately do NOT add the 312-byte
+        // storage ESTIMATE — doing so would falsely reject otherwise-valid transitions whose actual
+        // metered storage is below the estimate.
         //
         // This is a cheap early reject. The AUTHORITATIVE funding gate is `validate_fees_of_event`
-        // (drive-abci), which re-checks `amount + F` against the per-input balances AFTER the
-        // shield-amount reallocation — `input_sum` here only bounds the sum of max contributions.
+        // (drive-abci), which re-checks `metered_storage + metered_processing + compute_fee` against
+        // the per-input balances AFTER the shield-amount reallocation. Anti-mint safety does NOT
+        // depend on this `+fee` term: it depends on `Σrequested >= amount` enforced by the
+        // reallocation plus that authoritative gate. `input_sum` here only bounds the sum of max
+        // contributions.
         //
-        // `compute_minimum_shielded_fee` returns a `Result`, but this validator returns a
+        // `compute_shielded_compute_fee` returns a `Result`, but this validator returns a
         // `SimpleConsensusValidationResult`, so we cannot `?`-propagate; we map an overflow to a
         // consensus error (reachable only via pathological fee constants).
-        let minimum_fee = match crate::shielded::compute_minimum_shielded_fee(
+        let minimum_fee = match crate::shielded::compute_shielded_compute_fee(
             self.actions.len(),
             platform_version,
         ) {
@@ -233,9 +238,9 @@ mod tests {
 
     /// Creates a valid ShieldTransitionV0 that passes all validation checks.
     ///
-    /// The input must cover `amount + compute_minimum_shielded_fee(num_actions)`. The shielded
-    /// fee is dominated by the ~100M-credit proof-verification fee, so the input is set well
-    /// above the amount to clear the fee floor.
+    /// The input must cover `amount + compute_shielded_compute_fee(num_actions)`. The shielded
+    /// compute fee is dominated by the ~100M-credit proof-verification fee, so the input is set
+    /// well above the amount to clear the fee floor.
     fn valid_shield_transition() -> ShieldTransitionV0 {
         let mut inputs = BTreeMap::new();
         inputs.insert(PlatformAddress::P2pkh([1u8; 20]), (0u32, 1_000_000_000u64));
@@ -404,8 +409,8 @@ mod tests {
     fn should_reject_input_sum_less_than_shield_amount_plus_fee() {
         let platform_version = PlatformVersion::latest();
         let mut transition = valid_shield_transition();
-        // The input covers the shield amount but NOT the amount + the flat shielded fee
-        // (`compute_minimum_shielded_fee`, ~100M credits). It must be rejected.
+        // The input covers the shield amount but NOT the amount + the shielded compute fee
+        // (`compute_shielded_compute_fee`, ~100M credits). It must be rejected.
         transition.amount = 2_000_000;
         transition.inputs.clear();
         transition
@@ -558,12 +563,12 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let mut transition = valid_shield_transition();
         let amount = 500_000u64;
-        let fee = crate::shielded::compute_minimum_shielded_fee(
+        let fee = crate::shielded::compute_shielded_compute_fee(
             transition.actions.len(),
             platform_version,
         )
-        .expect("minimum shielded fee");
-        // Input exactly equal to amount + the flat shielded fee (the boundary): must be accepted.
+        .expect("shielded compute fee");
+        // Input exactly equal to amount + the shielded compute fee (the boundary): must be accepted.
         transition.inputs.clear();
         transition
             .inputs
@@ -583,11 +588,11 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let mut transition = valid_shield_transition();
         let amount = 500_000u64;
-        let fee = crate::shielded::compute_minimum_shielded_fee(
+        let fee = crate::shielded::compute_shielded_compute_fee(
             transition.actions.len(),
             platform_version,
         )
-        .expect("minimum shielded fee");
+        .expect("shielded compute fee");
         // One credit below the amount + fee boundary: must be rejected.
         transition.inputs.clear();
         transition

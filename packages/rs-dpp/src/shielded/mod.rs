@@ -12,7 +12,9 @@ use crate::withdrawal::Pooling;
 
 // Re-exported so the public path stays `dpp::shielded::compute_minimum_shielded_fee` (the
 // module and the function share a name but live in different namespaces).
-pub use compute_minimum_shielded_fee::compute_minimum_shielded_fee;
+pub use compute_minimum_shielded_fee::{
+    compute_minimum_shielded_fee, compute_shielded_compute_fee, compute_shielded_withdrawal_fee,
+};
 
 /// Permanent storage bytes per shielded action: 312 bytes total.
 ///
@@ -40,6 +42,27 @@ pub use compute_minimum_shielded_fee::compute_minimum_shielded_fee;
 /// type parameter (`MemoSize`) — which is why each note is 216 bytes
 /// (`ENCRYPTED_NOTE_SIZE`) rather than Zcash Orchard's ~692.
 pub const SHIELDED_STORAGE_BYTES_PER_ACTION: u64 = 312;
+
+/// Calibrated effective storage-byte cost of the Core withdrawal document a
+/// `ShieldedWithdrawal` creates.
+///
+/// A `ShieldedWithdrawal` does not only write notes/nullifiers like the other pool-paid
+/// transitions — it ALSO inserts a Core withdrawal document into the withdrawals contract
+/// (`AddWithdrawalDocument`), which writes the document plus its withdrawals-contract index
+/// entries. That insert has a real, GroveDB-metered cost of ≈110,085,900 credits, which is
+/// ~98% storage and is FLAT regardless of the bundle's action count (the document and its
+/// indexes are the same size whether the withdrawal spends one note or sixteen).
+///
+/// `compute_minimum_shielded_fee` prices only the per-action note/nullifier storage and the
+/// per-bundle ZK compute, so it does NOT cover this document insert. We therefore add the
+/// document cost to the ShieldedWithdrawal fee as a flat BYTE-BASED component, sized at
+/// `SHIELDED_WITHDRAWAL_DOCUMENT_STORAGE_BYTES` effective bytes priced at the SAME per-byte
+/// storage rate the per-action note storage uses (`disk + processing` credits/byte). The
+/// measured ≈110M cost corresponds to ≈4017 effective bytes at that rate; 4100 covers it with
+/// a small (~2%) margin, and — because it is priced off the same rate — it tracks the storage
+/// rate as it evolves, exactly like the per-action note storage does. See
+/// [`compute_minimum_shielded_fee::compute_shielded_withdrawal_fee`].
+pub const SHIELDED_WITHDRAWAL_DOCUMENT_STORAGE_BYTES: u64 = 4100;
 
 /// Domain separator for Platform sighash computation.
 const SIGHASH_DOMAIN: &[u8] = b"DashPlatformSighash";

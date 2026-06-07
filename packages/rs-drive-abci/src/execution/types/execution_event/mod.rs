@@ -55,14 +55,14 @@ pub(in crate::execution) enum ExecutionEvent<'a> {
         operations: Vec<DriveOperation<'a>>,
         /// the execution operations that we must also pay for
         execution_operations: Vec<ValidationOperation>,
-        /// Additional fee cost, these are processing fees where the user fee increase does not apply
+        /// Additional fee cost, these are processing fees where the user fee increase does not apply.
+        ///
+        /// `Shield` (transparent shield) sets this to the shielded COMPUTE fee
+        /// (`compute_shielded_compute_fee`: proof verification + per-action processing), which is
+        /// added to the metered processing fee on top of the metered GroveDB storage of the
+        /// note/nullifier writes — exactly like `IdentityCreateFromAddresses` adds its registration
+        /// cost. No storage term is added here; storage comes entirely from metering.
         additional_fixed_fee_cost: Option<Credits>,
-        /// When `Some(F)`, the event pays the flat shielded fee `F` instead of the metered
-        /// GroveDB/base fee: exactly `F` credits are deducted from the address inputs and exactly
-        /// `F` credits are booked to the fee pools (storage = min(metered_storage, F), processing
-        /// = F − storage). Used by `Shield` (transparent shield), whose proof-verification cost is
-        /// not captured by GroveDB metering. `None` for all other address-funded events.
-        shielded_flat_fee: Option<Credits>,
         /// the fee multiplier that the user agreed to, 0 means 100% of the base fee, 1 means 101%
         user_fee_increase: UserFeeIncrease,
     },
@@ -322,7 +322,6 @@ impl ExecutionEvent<'_> {
                     operations,
                     execution_operations: execution_context.operations_consume(),
                     additional_fixed_fee_cost: None,
-                    shielded_flat_fee: None,
                     user_fee_increase,
                 })
             }
@@ -348,7 +347,6 @@ impl ExecutionEvent<'_> {
                     operations,
                     execution_operations: execution_context.operations_consume(),
                     additional_fixed_fee_cost: None,
-                    shielded_flat_fee: None,
                     user_fee_increase,
                 })
             }
@@ -373,7 +371,6 @@ impl ExecutionEvent<'_> {
                     operations,
                     execution_operations: execution_context.operations_consume(),
                     additional_fixed_fee_cost: None,
-                    shielded_flat_fee: None,
                     user_fee_increase,
                 })
             }
@@ -400,7 +397,6 @@ impl ExecutionEvent<'_> {
                     operations,
                     execution_operations: execution_context.operations_consume(),
                     additional_fixed_fee_cost: None,
-                    shielded_flat_fee: None,
                     user_fee_increase,
                 })
             }
@@ -427,7 +423,6 @@ impl ExecutionEvent<'_> {
                     operations,
                     execution_operations: execution_context.operations_consume(),
                     additional_fixed_fee_cost: None,
-                    shielded_flat_fee: None,
                     user_fee_increase,
                 })
             }
@@ -450,7 +445,6 @@ impl ExecutionEvent<'_> {
                     operations,
                     execution_operations: execution_context.operations_consume(),
                     additional_fixed_fee_cost: None,
-                    shielded_flat_fee: None,
                     user_fee_increase,
                 })
             }
@@ -488,13 +482,17 @@ impl ExecutionEvent<'_> {
                 let input_current_balances = shield_action.inputs_with_remaining_balance().clone();
                 let added_to_balance_outputs = BTreeMap::new();
                 let fee_strategy = shield_action.fee_strategy().clone();
-                // Transparent shield pays the flat shielded fee
-                // `F = compute_minimum_shielded_fee(num_actions)` (proof verification + per-action),
-                // deducted from the address inputs on top of the reallocated `shield_amount` and
-                // booked to the fee pools. `notes` are built 1:1 from the on-wire Orchard `actions`
+                // Transparent shield is metered + compute: GroveDB meters the real storage and
+                // processing of the note/nullifier writes (via `into_high_level_drive_operations`),
+                // and we add ONLY the shielded COMPUTE fee
+                // `compute_shielded_compute_fee(num_actions)` (Halo 2 proof verification +
+                // per-action processing) that GroveDB cannot see, as `additional_fixed_fee_cost`.
+                // This is exactly the `IdentityCreateFromAddresses` model: a fixed cost added to
+                // processing on top of the metered fee. No storage term is added here, so storage is
+                // never double-counted. `notes` are built 1:1 from the on-wire Orchard `actions`
                 // (see the shield action transformer), so `notes().len()` is the on-wire action
-                // count that the structure-validation floor also prices `F` against.
-                let shielded_fee = dpp::shielded::compute_minimum_shielded_fee(
+                // count that the structure-validation floor also prices the compute fee against.
+                let shielded_compute_fee = dpp::shielded::compute_shielded_compute_fee(
                     shield_action.notes().len(),
                     platform_version,
                 )?;
@@ -506,8 +504,7 @@ impl ExecutionEvent<'_> {
                     fee_strategy,
                     operations,
                     execution_operations: execution_context.operations_consume(),
-                    additional_fixed_fee_cost: None,
-                    shielded_flat_fee: Some(shielded_fee),
+                    additional_fixed_fee_cost: Some(shielded_compute_fee),
                     user_fee_increase,
                 })
             }

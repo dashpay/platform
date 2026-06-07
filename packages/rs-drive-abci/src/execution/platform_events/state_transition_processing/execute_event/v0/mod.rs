@@ -1,4 +1,3 @@
-use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::execution_event::ExecutionEvent;
 use crate::execution::types::execution_operation::ValidationOperation;
@@ -110,7 +109,6 @@ where
         execution_operations: Vec<ValidationOperation>,
         user_fee_increase: UserFeeIncrease,
         additional_fixed_fee_cost: Option<Credits>,
-        shielded_flat_fee: Option<Credits>,
         block_info: &BlockInfo,
         mut consensus_errors: Vec<ConsensusError>,
         transaction: &Transaction,
@@ -146,44 +144,16 @@ where
                     .saturating_add(additional_fixed_fee_cost);
             }
 
-            // Get the total fee to deduct.
-            //
-            // For the transparent `Shield`, the fee is the flat shielded fee `F`
-            // (`compute_minimum_shielded_fee`: proof verification + per-action), set OUTSIDE GroveDB
-            // metering and not subject to user fee bidding. We override BOTH sides atomically so that
-            // exactly `F` is deducted from the address inputs AND exactly `F` is booked to the fee
-            // pools, split `storage = min(metered_storage, F)`, `processing = F − storage`. Overriding
-            // only one side would mint or burn credits → `CorruptedCreditsNotBalanced` → chain halt.
-            //
-            // The override below discards `fee_refunds`; that is only sound because the
-            // transparent-shield op set frees no identity-attributed storage, so refunds are always
-            // empty here. Enforce that invariant explicitly (no release-build behavior change).
-            debug_assert!(
-                shielded_flat_fee.is_none() || individual_fee_result.fee_refunds.0.is_empty(),
-                "transparent shield ops must not free identity-attributed storage; the flat-fee override must not discard non-empty fee_refunds"
-            );
-            let total_fee = if let Some(flat_fee) = shielded_flat_fee {
-                let storage_fee = individual_fee_result.storage_fee.min(flat_fee);
-                let processing_fee = flat_fee - storage_fee;
-                individual_fee_result = FeeResult {
-                    storage_fee,
-                    processing_fee,
-                    fee_refunds: Default::default(),
-                    removed_bytes_from_system: 0,
-                };
-                debug_assert_eq!(
-                    storage_fee.saturating_add(processing_fee),
-                    flat_fee,
-                    "shielded flat fee must be booked as exactly F (storage + processing == F)"
-                );
-                flat_fee
-            } else {
-                individual_fee_result.total_base_fee()
-            };
-            debug_assert!(
-                shielded_flat_fee.is_none_or(|f| total_fee == f),
-                "shielded flat fee must be deducted as exactly F"
-            );
+            // The total fee to deduct is the metered base fee (storage + processing), where
+            // processing already includes any `additional_fixed_fee_cost` added just above. For the
+            // transparent `Shield` that fixed cost is the shielded COMPUTE fee
+            // (`compute_shielded_compute_fee`), so the fee is `metered_storage + metered_processing +
+            // compute_fee` — storage comes entirely from GroveDB metering of the note/nullifier
+            // writes, never double-counted. This is identical to every other `PaidFromAddressInputs`
+            // event (e.g. `IdentityCreateFromAddresses`), so conservation (deduct == book) holds by
+            // the standard machinery: the same `total_fee` is deducted from inputs and booked to the
+            // pools. `validate_fees_of_event` rejects an under-funded transition before execution.
+            let total_fee = individual_fee_result.total_base_fee();
 
             // Deduct fee from outputs or remaining balance of inputs according to strategy
             let fee_deduction_result = deduct_fee_from_outputs_or_remaining_balance_of_inputs(
@@ -193,18 +163,6 @@ where
                 total_fee,
                 platform_version,
             )?;
-
-            // Defense in depth for the flat shielded fee: the per-step deduction is min-capped, so a
-            // shortfall would remove < F from inputs while the booking posts exactly F → net mint →
-            // `CorruptedCreditsNotBalanced` → chain halt. `validate_fees_of_event` already rejects an
-            // under-funded shield against the same balance snapshot, so this cannot trigger today;
-            // guard locally so any future divergence of the two snapshots fails cleanly per-transition
-            // instead of halting the chain.
-            if shielded_flat_fee.is_some() && !fee_deduction_result.fee_fully_covered {
-                return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                    "shielded flat fee not fully covered at execution; inputs cannot cover F (validation should have rejected)",
-                )));
-            }
 
             let adjusted_inputs = fee_deduction_result.remaining_input_balances;
             let adjusted_outputs = fee_deduction_result.adjusted_outputs;
@@ -484,7 +442,6 @@ where
                 operations,
                 execution_operations,
                 additional_fixed_fee_cost,
-                shielded_flat_fee,
                 user_fee_increase,
             } => {
                 // We can unwrap here because we have the match right above
@@ -498,7 +455,6 @@ where
                     execution_operations,
                     user_fee_increase,
                     additional_fixed_fee_cost,
-                    shielded_flat_fee,
                     block_info,
                     consensus_errors,
                     transaction,

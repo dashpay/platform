@@ -1462,6 +1462,8 @@ mod tests {
 
             assert!(value_balance < 0);
             let shield_amount = (-value_balance) as u64;
+            // Action count used to price the shielded compute fee (asserted on the booked fee below).
+            let num_actions_in_shield = actions.len();
 
             // CRITICAL: requested (max contribution) is MUCH larger than the shielded
             // amount. This is the routine builder behavior that triggered the bug: the
@@ -1512,8 +1514,32 @@ mod tests {
             //     panic here if the shield destroyed credits. This is the block-level
             //     conservation assertion. ---
             let platform_state = platform.state.load();
-            let (_fee_results, _processed_block_fees) =
+            let (fee_results, _processed_block_fees) =
                 process_state_transitions(&platform, &[st], BlockInfo::default(), &platform_state);
+
+            // --- Assert the new metered + compute fee model directly on the booked fee. ---
+            // The fee is `metered_storage + metered_processing + shielded_compute_fee`. A positive
+            // `storage_fee` proves the metered GroveDB storage of the note/nullifier writes IS
+            // captured (this directly addresses the reviewer's concern that the old flat-fee
+            // override discarded metered storage), and `processing_fee >= shielded_compute_fee`
+            // proves the ZK compute fee is added on top of the metered processing.
+            let shielded_compute_fee = dpp::shielded::compute_shielded_compute_fee(
+                num_actions_in_shield,
+                platform_version,
+            )
+            .expect("shielded compute fee");
+            let booked = &fee_results[0];
+            assert!(
+                booked.storage_fee > 0,
+                "metered storage of the note/nullifier writes must be captured (storage_fee > 0), got {}",
+                booked.storage_fee
+            );
+            assert!(
+                booked.processing_fee >= shielded_compute_fee,
+                "processing fee ({}) must include the shielded compute fee ({}) on top of metered processing",
+                booked.processing_fee,
+                shielded_compute_fee
+            );
 
             // --- Additionally assert the invariant directly post-block ---
             let credits_after = platform

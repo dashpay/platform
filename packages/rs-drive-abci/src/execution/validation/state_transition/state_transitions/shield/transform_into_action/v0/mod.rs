@@ -215,10 +215,11 @@ impl ShieldStateTransitionTransformIntoActionValidationV0 for ShieldTransition {
 
         // Read current shielded pool state from GroveDB.
         //
-        // Shield pays the flat shielded fee `F = compute_minimum_shielded_fee(num_actions)`
-        // (proof verification + per-action), charged at the execution-event layer where the
-        // event is built (see `ExecutionEvent` construction). We deliberately do NOT derive a
-        // GroveDB fee from these read operations here — the flat fee subsumes them.
+        // Shield is metered + compute: GroveDB meters the real storage and processing of the
+        // note/nullifier writes, and the execution-event layer adds the shielded COMPUTE fee
+        // `compute_shielded_compute_fee(num_actions)` (proof verification + per-action processing)
+        // on top as `additional_fixed_fee_cost` (see `ExecutionEvent` construction). These pool
+        // reads flow through the standard metering with the rest of the operations.
         let mut drive_operations = vec![];
         let current_total_balance =
             read_pool_total_balance(drive, transaction, &mut drive_operations, platform_version)?;
