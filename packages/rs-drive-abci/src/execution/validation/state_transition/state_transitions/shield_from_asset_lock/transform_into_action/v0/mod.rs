@@ -15,7 +15,6 @@ use crate::platform_types::platform::PlatformRef;
 use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
 use dpp::asset_lock::reduced_asset_lock_value::{AssetLockValue, AssetLockValueGettersV0};
-use dpp::block::block_info::BlockInfo;
 use dpp::balances::credits::CREDITS_PER_DUFF;
 use dpp::consensus::basic::identity::IdentityAssetLockTransactionOutPointNotEnoughBalanceError;
 use dpp::consensus::basic::state_transition::ShieldedImplicitFeeCapExceededError;
@@ -45,7 +44,6 @@ pub(in crate::execution::validation::state_transition::state_transitions::shield
         platform: &PlatformRef<C>,
         signable_bytes: Vec<u8>,
         validation_mode: ValidationMode,
-        block_info: &BlockInfo,
         execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
@@ -59,7 +57,6 @@ impl ShieldFromAssetLockStateTransitionTransformIntoActionValidationV0
         platform: &PlatformRef<C>,
         signable_bytes: Vec<u8>,
         validation_mode: ValidationMode,
-        _block_info: &BlockInfo,
         execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
