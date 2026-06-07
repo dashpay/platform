@@ -59,7 +59,7 @@ use std::collections::{BTreeMap, BTreeSet};
 /// requested`) and debit at most its own `requested` (so no input is over-spent
 /// beyond what its witness authorized). The structure validation has already
 /// enforced `Σrequested >= shield_amount`, so the passes always consume the full
-/// `shield_amount`; the trailing check is a defensive, should-be-unreachable guard.
+/// `shield_amount`; the trailing check is a fail-closed backstop (see `# Invariant` below).
 ///
 /// The remaining `requested - consumed` per input is simply left in the source
 /// address. The existing `PaidFromAddressInputs` fee machinery then deducts the fee
@@ -107,15 +107,14 @@ fn reallocate_inputs_for_shield_amount(
     // Pass 1: non-fee-strategy inputs; Pass 2: fee-strategy inputs. Both in
     // BTreeMap (address) order — fully deterministic.
     //
-    // NOTE: Pass 2 drains the fee inputs in BTreeMap (address/index) order, which does NOT honor
-    // the fee strategy's own priority order (a client may write
-    // `[DeductFromInput(2), DeductFromInput(0)]` to prefer index 2). So when `shield_amount` spills
-    // into the fee set, the lowest-indexed fee input is consumed first — the client's
-    // highest-priority fee input. This is not a conservation issue (fee deduction iterates the
-    // strategy and falls back to lower-priority fee inputs that still have residue), but a client
-    // that reserved headroom only on a non-first fee input could see a spurious
-    // `AddressesNotEnoughFundsError`; clients should keep fee headroom on the BTreeMap-first fee
-    // input.
+    // NOTE: Pass 2 drains the fee inputs in BTreeMap (address) order, which does not follow the fee
+    // strategy's own priority order. This only changes WHICH fee input keeps the leftover residue,
+    // never whether the fee is covered: pass 1 consumes all non-fee inputs first, so the amount
+    // drawn from the fee set is fixed at `shield_amount - Σ(non-fee requested)`, and the total
+    // residue left across the fee inputs (`Σ(fee-input actual) - that amount`) is identical for any
+    // intra-pass order. The fee machinery then deducts the fee from that residue in the strategy's
+    // own priority order. So fee coverage is order-invariant — this ordering has no conservation and
+    // no fee-coverage (spurious-rejection) effect.
     for consume_fee_inputs in [false, true] {
         for (addr, (nonce, remaining_after_full_debit)) in &inputs_with_remaining_balance {
             if fee_input_addresses.contains(addr) != consume_fee_inputs {
@@ -152,11 +151,12 @@ fn reallocate_inputs_for_shield_amount(
             let consumed = remaining_to_consume.min(requested);
             remaining_to_consume -= consumed;
 
-            // `consumed <= requested <= actual`, so this cannot underflow; use checked
-            // arithmetic defensively in case of corrupted state.
+            // `consumed <= requested <= actual`, so this cannot underflow; guard defensively in case
+            // of corrupted state. (Uses CorruptedCodeExecution, not Overflow — an under-debit, if it
+            // ever occurred, is a logic/state-corruption bug, not an arithmetic overflow.)
             let new_remaining = actual.checked_sub(consumed).ok_or_else(|| {
-                Error::Execution(ExecutionError::Overflow(
-                    "underflow computing adjusted shield remaining balance",
+                Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "consumed exceeds actual address balance computing adjusted shield remaining balance",
                 ))
             })?;
 
@@ -164,10 +164,12 @@ fn reallocate_inputs_for_shield_amount(
         }
     }
 
-    // Structure validation already enforces `Σrequested >= shield_amount`, so the
-    // passes must have consumed the entire amount. A non-zero remainder would mean
-    // the pool is credited more than the addresses are debited (minting credits),
-    // so reject defensively. This branch should be unreachable.
+    // Structure validation enforces `Σrequested >= shield_amount` before this runs on the block and
+    // FirstTimeCheck paths, so the passes consume the entire amount there. This is the fail-closed
+    // backstop: a non-zero remainder would mean the pool is credited more than the addresses are
+    // debited (minting), so we reject rather than mint. It is load-bearing on any path that reaches
+    // this transform without basic-structure validation (e.g. the check_tx Recheck path, which is
+    // mempool-only with no state commit).
     if remaining_to_consume != 0 {
         return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
             "shield amount exceeds the sum of input contributions after reallocation",
@@ -503,5 +505,53 @@ mod tests {
 
         let result = reallocate_inputs_for_shield_amount(&transition, remaining, 1000);
         assert!(result.is_err(), "missing transition input must error");
+    }
+
+    /// The anti-mint backstop: if `shield_amount` exceeds the sum of input contributions
+    /// (`Σrequested`) — only possible if the structure-validation invariant is bypassed — the
+    /// reallocation rejects rather than minting credits (it would otherwise credit the pool more
+    /// than the addresses are debited). Directly covers the trailing `remaining_to_consume != 0`
+    /// guard, which the end-to-end tests never reach (structure validation rejects first).
+    #[test]
+    fn test_reallocation_rejects_when_shield_amount_exceeds_input_sum() {
+        let addr = PlatformAddress::P2pkh([0xAA; 20]);
+        let requested: Credits = 1_000;
+        let shield_amount: Credits = 5_000; // > Σrequested = 1_000
+
+        let mut transition_inputs = BTreeMap::new();
+        transition_inputs.insert(addr, (1u32, requested));
+        let transition = shield_transition_with_inputs(transition_inputs, shield_amount);
+
+        let mut remaining = BTreeMap::new();
+        remaining.insert(addr, (1u32, 0)); // actual - requested
+
+        let err = reallocate_inputs_for_shield_amount(&transition, remaining, shield_amount)
+            .expect_err("shield_amount > Σrequested must be rejected, not minted");
+        match err {
+            Error::Execution(ExecutionError::CorruptedCodeExecution(msg)) => assert!(
+                msg.contains("exceeds the sum of input contributions"),
+                "unexpected error message: {msg}"
+            ),
+            other => panic!("expected the CorruptedCodeExecution anti-mint guard, got {other:?}"),
+        }
+    }
+
+    /// In debug builds, a nonce mismatch between the transition inputs and the remaining-balance
+    /// map trips the lock-step `debug_assert_eq!`. Free in release (the assert compiles out and the
+    /// remaining-balance nonce is used); this exercises the failing direction so the contract is
+    /// guarded in CI.
+    #[cfg(debug_assertions)]
+    #[test]
+    #[should_panic(expected = "shield input nonce mismatch")]
+    fn test_reallocation_diverging_nonce_trips_debug_assert() {
+        let addr = PlatformAddress::P2pkh([0xAA; 20]);
+        let mut transition_inputs = BTreeMap::new();
+        transition_inputs.insert(addr, (1u32, 1_000)); // transition-side nonce = 1
+        let transition = shield_transition_with_inputs(transition_inputs, 500);
+
+        let mut remaining = BTreeMap::new();
+        remaining.insert(addr, (2u32, 0)); // remaining-balance nonce = 2 (diverges)
+
+        let _ = reallocate_inputs_for_shield_amount(&transition, remaining, 500);
     }
 }
