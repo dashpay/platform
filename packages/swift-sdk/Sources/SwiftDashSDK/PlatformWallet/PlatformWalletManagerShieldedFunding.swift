@@ -301,7 +301,12 @@ extension PlatformWalletManager {
     /// (1-byte variant tag + 20-byte hash); it validates the encoding
     /// and returns an error for malformed input, so no length check is
     /// duplicated here.
-    private static func withOptionalSurplusOutput<R>(
+    ///
+    /// `nonisolated` because `PlatformWalletManager` is
+    /// `@MainActor`-isolated by default and the call sites run inside
+    /// the synchronous, off-main-actor `Task.detached` bodies — this is
+    /// pure byte marshalling that reads no `PlatformWalletManager` state.
+    nonisolated private static func withOptionalSurplusOutput<R>(
         _ surplusOutput: Data?,
         _ body: (UnsafePointer<UInt8>?, UInt) throws -> R
     ) throws -> R {
