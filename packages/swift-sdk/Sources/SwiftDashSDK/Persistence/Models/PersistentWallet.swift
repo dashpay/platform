@@ -173,14 +173,4 @@ extension PersistentWallet {
     ) -> Predicate<PersistentWallet> {
         #Predicate<PersistentWallet> { $0.walletGroupId == walletGroupId }
     }
-
-    public static func predicate(
-        walletId: Data,
-        network: Network
-    ) -> Predicate<PersistentWallet> {
-        let networkRaw = network.rawValue
-        return #Predicate<PersistentWallet> {
-            $0.walletId == walletId && $0.networkRaw == networkRaw
-        }
-    }
 }
