@@ -1385,11 +1385,9 @@ mod tests {
         use super::*;
         use crate::execution::validation::state_transition::tests::process_state_transitions;
         use dpp::block::block_info::BlockInfo;
-        use grovedb_commitment_tree::{
-            Anchor, Builder, BundleType, DashMemo, Flags as OrchardFlags, FullViewingKey,
-            NoteValue, Scope, SpendingKey,
-        };
-        use rand::rngs::OsRng;
+        // `Anchor`, `Builder`, `BundleType`, `DashMemo`, `OrchardFlags`, `FullViewingKey`,
+        // `NoteValue`, `Scope`, `SpendingKey` and `OsRng` are already in scope via `use super::*`
+        // (the parent module's imports), so they are intentionally not re-imported here.
 
         #[tokio::test]
         async fn test_shield_with_inputs_greater_than_amount_conserves_credits() {

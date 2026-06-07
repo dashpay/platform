@@ -9,6 +9,7 @@ use dpp::address_funds::{AddressFundsFeeStrategyStep, PlatformAddress};
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::Credits;
 use dpp::prelude::{AddressNonce, ConsensusValidationResult};
+use dpp::state_transition::shield_transition::v0::ShieldTransitionV0;
 use dpp::state_transition::shield_transition::ShieldTransition;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
@@ -65,14 +66,23 @@ use std::collections::{BTreeMap, BTreeSet};
 /// on top of these adjusted balances, so addresses lose exactly
 /// `shield_amount + fee`, the pool gains `shield_amount`, and the fee pools gain
 /// `fee` — credits are conserved.
+///
+/// # Invariant
+///
+/// Correctness depends on `Σrequested >= shield_amount`, enforced by the structure
+/// validation in
+/// `rs-dpp/src/state_transition/state_transitions/shielded/shield_transition/v0/state_transition_validation.rs`
+/// (`ShieldTransitionV0::validate_structure`). The trailing `remaining_to_consume != 0` guard
+/// below is the load-bearing defense if a future path ever reaches this transform without that
+/// invariant — it would otherwise mint credits (pool credited `shield_amount`, addresses debited
+/// less).
 fn reallocate_inputs_for_shield_amount(
-    transition: &ShieldTransition,
+    transition: &ShieldTransitionV0,
     inputs_with_remaining_balance: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
     shield_amount: Credits,
 ) -> Result<BTreeMap<PlatformAddress, (AddressNonce, Credits)>, Error> {
-    let (requested_inputs, fee_strategy) = match transition {
-        ShieldTransition::V0(v0) => (&v0.inputs, &v0.fee_strategy),
-    };
+    let requested_inputs = &transition.inputs;
+    let fee_strategy = &transition.fee_strategy;
 
     // Identify which input addresses the fee strategy deducts the fee from. A
     // `DeductFromInput(index)` step refers to the address at that position in the
@@ -96,6 +106,16 @@ fn reallocate_inputs_for_shield_amount(
 
     // Pass 1: non-fee-strategy inputs; Pass 2: fee-strategy inputs. Both in
     // BTreeMap (address) order — fully deterministic.
+    //
+    // NOTE: Pass 2 drains the fee inputs in BTreeMap (address/index) order, which does NOT honor
+    // the fee strategy's own priority order (a client may write
+    // `[DeductFromInput(2), DeductFromInput(0)]` to prefer index 2). So when `shield_amount` spills
+    // into the fee set, the lowest-indexed fee input is consumed first — the client's
+    // highest-priority fee input. This is not a conservation issue (fee deduction iterates the
+    // strategy and falls back to lower-priority fee inputs that still have residue), but a client
+    // that reserved headroom only on a non-first fee input could see a spurious
+    // `AddressesNotEnoughFundsError`; clients should keep fee headroom on the BTreeMap-first fee
+    // input.
     for consume_fee_inputs in [false, true] {
         for (addr, (nonce, remaining_after_full_debit)) in &inputs_with_remaining_balance {
             if fee_input_addresses.contains(addr) != consume_fee_inputs {
@@ -103,11 +123,19 @@ fn reallocate_inputs_for_shield_amount(
             }
 
             // Look up the per-input max contribution (`requested`) from the transition.
-            let (_input_nonce, requested) = requested_inputs.get(addr).ok_or_else(|| {
+            let (input_nonce, requested) = requested_inputs.get(addr).ok_or_else(|| {
                 Error::Execution(ExecutionError::CorruptedCodeExecution(
                     "shield input address present in remaining balances is missing from transition inputs",
                 ))
             })?;
+            // The shared address-balance validation keeps the transition-side nonce and the
+            // remaining-balance nonce in lock-step; assert it so any future divergence (an upstream
+            // bug or a new version dispatcher) surfaces in debug/test builds. Free in release, where
+            // we proceed with the remaining-balance nonce as before.
+            debug_assert_eq!(
+                *input_nonce, *nonce,
+                "shield input nonce mismatch between transition inputs and remaining balances"
+            );
             let requested = *requested;
 
             // Recover the address's actual on-chain balance before this shield.
@@ -172,9 +200,8 @@ impl ShieldStateTransitionTransformIntoActionValidationV0 for ShieldTransition {
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        let shield_amount: Credits = match self {
-            ShieldTransition::V0(v0) => v0.amount,
-        };
+        let ShieldTransition::V0(transition_v0) = self;
+        let shield_amount: Credits = transition_v0.amount;
 
         // The shared address-balance validation debits the FULL per-input `requested`
         // (a max contribution), but the shielded pool only receives `shield_amount`.
@@ -182,7 +209,7 @@ impl ShieldStateTransitionTransformIntoActionValidationV0 for ShieldTransition {
         // leaving the excess in the source addresses. This keeps credits conserved
         // (addresses lose `shield_amount` + fee, pool gains `shield_amount`).
         let inputs_with_remaining_balance = reallocate_inputs_for_shield_amount(
-            self,
+            transition_v0,
             inputs_with_remaining_balance,
             shield_amount,
         )?;
@@ -221,14 +248,14 @@ mod tests {
     use dpp::state_transition::shield_transition::v0::ShieldTransitionV0;
     use std::collections::BTreeMap;
 
-    /// Builds a minimal `ShieldTransition` whose `inputs` map carries the per-input
+    /// Builds a minimal `ShieldTransitionV0` whose `inputs` map carries the per-input
     /// `(nonce, requested)` pairs the reallocation needs. All cryptographic/structural
     /// fields are dummy values — they are irrelevant to the reallocation logic.
     fn shield_transition_with_inputs(
         inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
         amount: Credits,
-    ) -> ShieldTransition {
-        ShieldTransition::V0(ShieldTransitionV0 {
+    ) -> ShieldTransitionV0 {
+        ShieldTransitionV0 {
             inputs,
             actions: vec![],
             amount,
@@ -238,7 +265,7 @@ mod tests {
             fee_strategy: vec![],
             user_fee_increase: 0,
             input_witnesses: vec![],
-        })
+        }
     }
 
     /// For a single input where `actual == requested`, exactly `shield_amount` should be
@@ -277,14 +304,14 @@ mod tests {
         assert_eq!(total_debited, shield_amount);
     }
 
-    /// Builds a `ShieldTransition` with an explicit fee strategy (the default
+    /// Builds a `ShieldTransitionV0` with an explicit fee strategy (the default
     /// fixture uses an empty strategy).
     fn shield_transition_with_fee_strategy(
         inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
         amount: Credits,
         fee_strategy: Vec<AddressFundsFeeStrategyStep>,
-    ) -> ShieldTransition {
-        ShieldTransition::V0(ShieldTransitionV0 {
+    ) -> ShieldTransitionV0 {
+        ShieldTransitionV0 {
             inputs,
             actions: vec![],
             amount,
@@ -294,7 +321,7 @@ mod tests {
             fee_strategy,
             user_fee_increase: 0,
             input_witnesses: vec![],
-        })
+        }
     }
 
     /// The reallocation consumes the shield amount from NON-fee-strategy inputs
