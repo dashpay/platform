@@ -46,8 +46,6 @@ export default function obtainZeroSSLCertificateTaskFactory(
     const tasks = new Listr([
       {
         title: 'Check if certificate already exists and not expiring soon',
-        // Skips the check if force flag is set
-        skip: (ctx) => ctx.force,
         task: async (ctx, task) => {
           const { error, data } = await validateZeroSslCertificate(config, ctx.expirationDays);
 
@@ -55,6 +53,28 @@ export default function obtainZeroSSLCertificateTaskFactory(
 
           // Ensure we have config dir created
           fs.mkdirSync(ctx.sslConfigDir, { recursive: true });
+
+          // With --force we always (re)create the certificate. We must still run
+          // validateZeroSslCertificate above so the context (externalIp, apiKey, file
+          // paths) is populated for the keypair/CSR/creation steps below — otherwise
+          // generateCsr() is called with an undefined externalIp and fails with
+          // "Attribute value not specified". Only genuine prerequisite configuration
+          // errors should still abort under --force.
+          if (ctx.force) {
+            if (error === ERRORS.API_KEY_IS_NOT_SET) {
+              throw new Error('ZeroSSL API key is not set. Please set it in the config file');
+            }
+
+            if (error === ERRORS.EXTERNAL_IP_IS_NOT_SET) {
+              throw new Error('External IP is not set. Please set it in the config file');
+            }
+
+            // Force full regeneration of keypair, CSR and certificate
+            ctx.isCsrFilePresent = false;
+            ctx.certificate = null;
+
+            return;
+          }
 
           switch (error) {
             case undefined:
