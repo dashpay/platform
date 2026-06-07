@@ -37,10 +37,10 @@ The fee is derived differently depending on the shielded transition type:
 
 | Transition | Fee Formula | Explanation |
 |---|---|---|
-| **Shield** | `fee = compute_minimum_shielded_fee(num_actions)`, paid from transparent address inputs | The flat shielded minimum is charged on the transparent side (not from `value_balance`), on top of the shielded amount. Skipped by the `value_balance`-based shielded fee validation; enforced instead through the address-input fee path. See [Entry-Transition Fees](#entry-transition-fees-shield-and-shieldfromassetlock). |
+| **Shield** | `fee = metered(storage + processing) + shielded_compute_fee`, paid from transparent address inputs | Charged on the transparent side (not from `value_balance`), on top of the shielded amount. The storage and processing of the note/nullifier writes are **metered** by GroveDB; only the ZK compute fee (`proof + num_actions × per_action_processing`) is added on top. Skipped by the `value_balance`-based shielded fee validation; enforced through the address-input fee path. See [Entry-Transition Fees](#entry-transition-fees-shield-and-shieldfromassetlock). |
 | **ShieldedTransfer** | `fee = value_balance` (pinned to the minimum) | The entire `value_balance` is the fee and must equal `compute_minimum_shielded_fee(num_actions)` exactly (overpayment is rejected). Nothing leaves the pool except the fee. |
 | **Unshield** | `fee = compute_minimum_shielded_fee(num_actions)` | `value_balance` (the transition's `unshielding_amount`) is the **gross** amount leaving the pool. The output address receives `unshielding_amount − fee`; the `fee` is the flat minimum. Validation requires `unshielding_amount ≥ fee`. |
-| **ShieldedWithdrawal** | `fee = compute_minimum_shielded_fee(num_actions)` | `value_balance` (`unshielding_amount`) is the **gross** amount leaving the pool. The Core withdrawal document receives `unshielding_amount − fee` (which must also clear `MIN_WITHDRAWAL_AMOUNT`); the `fee` is the flat minimum. |
+| **ShieldedWithdrawal** | `fee = compute_minimum_shielded_fee(num_actions) + withdrawal_document_storage_fee` | `value_balance` (`unshielding_amount`) is the **gross** amount leaving the pool. The Core withdrawal document receives `unshielding_amount − fee` (which must also clear `MIN_WITHDRAWAL_AMOUNT`). Unlike the other pool-paid transitions, ShieldedWithdrawal also **writes a Core withdrawal document** — a real document insert into the withdrawals contract plus its index entries (`AddWithdrawalDocument`), with a real metered cost of ≈110M credits that is **flat regardless of action count**. That cost is priced on top of the base shielded minimum as a flat ~4,100-byte storage component (`withdrawal_document_storage_fee = 4100 × per_byte_rate`), so the document write is covered and the proof-verification fee isn't diverted from the proposer to pay for it. See [Per-Action Storage Fee](#3-per-action-storage-fee). |
 | **ShieldFromAssetLock** | `pool_fee = compute_minimum_shielded_fee(num_actions) + asset_lock_base_cost`, paid from the asset lock | The flat shielded minimum plus the asset-lock processing base cost is routed to the fee pools. Any remaining asset-lock value (the *surplus*) goes to an optional signed `surplus_output` platform address, or — if none is set — folds into the fee pools up to `shielded_implicit_fee_cap`. See [Entry-Transition Fees](#entry-transition-fees-shield-and-shieldfromassetlock). |
 
 For `ShieldedTransfer`, the client constructs the bundle so that `total_spent −
@@ -54,25 +54,41 @@ the binding signature to fail verification.
 The two *entry* transitions — `Shield` (transparent → shielded) and
 `ShieldFromAssetLock` (Core asset lock → shielded) — move value **into** the pool, so
 there is no spent note from which `value_balance` could carry a fee. Their fees are
-therefore charged from the funding side, but they still pay the same flat
-`compute_minimum_shielded_fee(num_actions)` that priced the Halo 2 proof verification
-and per-action work for the other shielded transitions. `num_actions` is the on-wire
-action count of the bundle (a single-output, spends-disabled Orchard bundle pads to 2
-actions, so the minimum is the 2-action fee).
+therefore charged from the funding side, and both cover the same Halo 2 proof
+verification and per-action work the other shielded transitions pay for — but they
+account for it differently. **`Shield`** debits a state-queryable transparent address
+balance, so GroveDB *meters* its real storage/processing and only the compute portion
+(`compute_shielded_compute_fee`, no storage term) is added on top. **`ShieldFromAssetLock`**
+is funded by a consumed asset lock with no metering anchor, so it pays the flat
+`compute_minimum_shielded_fee(num_actions)` (plus the asset-lock base cost). `num_actions`
+is the on-wire action count of the bundle (a single-output, spends-disabled Orchard bundle
+pads to 2 actions, so the minimum is the 2-action fee).
 
 ### Shield
 
-The fee is `F = compute_minimum_shielded_fee(num_actions)`, deducted from the
-transparent `PlatformAddress` inputs **on top of** the shielded amount. The address
-inputs must therefore cover `shield_amount + F`. Internally the booking is a
-two-sided override: the deducted amount equals the booked amount (`F`), and `F` is
-split into `storage_fee = min(metered_storage, F)` and `processing_fee = F −
-storage_fee`. This replaces the pre-version-12 behaviour where `Shield` paid only the
-metered GroveDB storage cost — the proof-verification cost is now always covered.
+`Shield` is charged like any other address-funded transition: GroveDB **meters** the
+real storage and processing cost of applying it (the note-commitment and nullifier
+writes plus the address-balance updates), and the **shielded compute fee** is added on
+top:
+
+```
+fee = metered_storage + metered_processing + shielded_compute_fee
+shielded_compute_fee = proof_verification_fee + num_actions × per_action_processing_fee
+```
+
+`shielded_compute_fee` is the ZK-verification cost (Halo 2 proof + per-action spend-auth
+verification) that GroveDB metering cannot see. It is added as the transition's
+`additional_fixed_fee_cost` — exactly the mechanism `IdentityCreateFromAddresses` uses
+for its registration cost. It carries **no storage term**: storage comes entirely from
+metering, so it is never double-counted. The address inputs must cover `shield_amount +
+fee`, and the booked storage/processing equals the deducted amount, so credits are
+conserved by the standard machinery (no special-case override).
 
 `Shield` is skipped by the `value_balance`-based minimum-fee validation (its
-`value_balance` is the amount entering the pool, not a fee); the flat `F` is enforced
-through the address-balance fee path instead.
+`value_balance` is the amount entering the pool, not a fee). The stateless structure
+floor requires only `shield_amount + shielded_compute_fee` (a conservative lower bound,
+since metered storage is unknowable without state); the authoritative `metered +
+compute` funding gate is `validate_fees_of_event`.
 
 ### ShieldFromAssetLock
 
@@ -138,19 +154,25 @@ bundle.
 
 ### 2. Per-Action Processing Fee
 
-Each action in the bundle requires:
+The per-action processing fee prices the marginal Halo 2 verification work that
+each additional action adds to the bundle (≈1.1 ms/action measured against a
+≈5 ms bundle base): a bundle with more actions is a larger circuit and a longer
+batch verification. For a spend-bearing action that marginal work includes:
 - RedPallas spend authorization signature verification
 - Nullifier duplicate check (hash + tree lookup)
 - Note commitment insertion into the Sinsemilla-based Merkle tree
 
-The per-action processing fee prices the marginal Halo 2 verification work that
-each additional action adds to the bundle (≈1.1 ms/action measured against a
-≈5 ms bundle base), so it is calibrated at roughly a 4.5:1 ratio against the
-fixed proof-verification fee (100M : 22M) rather than the looser ratio used
-before the recalibration. (Note the two ratios on this page use different
-baselines: the “30×” in §1 is the proof fee relative to a single RedPallas
-signature verification, whereas this 4.5:1 is the proof fee relative to the
-per-action processing fee.)
+Output-only entry transitions (Shield / ShieldFromAssetLock) do no spends or
+nullifier checks, but each output action still enlarges the proof and so carries
+the same per-action processing charge — this fee tracks the marginal verification
+work, not a fixed per-action checklist.
+
+The fee is calibrated at roughly a 4.5:1 ratio against the fixed
+proof-verification fee (100M : 22M) rather than the looser ratio used before the
+recalibration. (Note the two ratios on this page use different baselines: the
+“30×” in §1 is the proof fee relative to a single RedPallas signature
+verification, whereas this 4.5:1 is the proof fee relative to the per-action
+processing fee.)
 
 **Current value:** `22,000,000` credits (22M)
 
@@ -191,6 +213,14 @@ Combining all three components:
 Note: The Orchard protocol requires a minimum of 2 actions per bundle for privacy
 (even a single-input single-output transfer produces 2 actions with a dummy padding
 action). Bundles with 1 action are structurally invalid.
+
+The totals above are the **base** `compute_minimum_shielded_fee` and apply directly to
+`ShieldedTransfer` and `Unshield`. **`ShieldedWithdrawal` adds the Core withdrawal-document
+storage cost on top**: a flat `withdrawal_document_storage_fee = 4100 × per_byte_rate = 4100 ×
+27,400 = 112,340,000` credits, independent of action count. So the 2-action ShieldedWithdrawal
+fee is `161,097,600 + 112,340,000 = 273,437,600` credits (and likewise `+112,340,000` at every
+action count). See the [Fee Extraction](#fee-extraction-by-transition-type) ShieldedWithdrawal
+row for why this component exists.
 
 ## Where Fee Validation Runs
 
@@ -271,10 +301,16 @@ ShieldedWithdrawal:  pool_balance -= unshielding_amount   // gross
 For `Unshield` and `ShieldedWithdrawal`, `unshielding_amount` is the **gross** amount
 leaving the pool. Of that, `unshielding_amount − fee_amount` is credited to the output
 platform address (`Unshield`) or written into the Core withdrawal document
-(`ShieldedWithdrawal`), and `fee_amount` — the flat `compute_minimum_shielded_fee` — is
-booked as the transition fee. Validation guarantees `unshielding_amount ≥ fee_amount`
-(and, for `ShieldedWithdrawal`, that the net also clears `MIN_WITHDRAWAL_AMOUNT`), so the
-subtraction never underflows.
+(`ShieldedWithdrawal`), and `fee_amount` is booked as the transition fee. For `Unshield`
+that fee is the flat `compute_minimum_shielded_fee`; for `ShieldedWithdrawal` it is
+`compute_shielded_withdrawal_fee` — the same base fee **plus** the flat Core
+withdrawal-document storage cost (`+112,340,000` credits), since ShieldedWithdrawal also
+writes a real document into the withdrawals contract. Validation guarantees
+`unshielding_amount ≥ fee_amount` (and, for `ShieldedWithdrawal`, that the net also clears
+`MIN_WITHDRAWAL_AMOUNT`), so the subtraction never underflows. Because the withdrawal fee
+prices the document write, the booking split (storage routed to the storage pool, the
+remainder paid to the proposer) covers that write instead of zeroing the proposer's
+processing reward to cover it.
 
 For `ShieldedTransfer`, the pool decreases by exactly the fee (the sender's notes are
 spent and the recipient's notes are created, but the pool's aggregate balance only drops
@@ -290,12 +326,13 @@ The two entry transitions do not decrement the pool (they add to it), so their f
 booked from the funding side instead:
 
 ```
-Shield:              fee_amount = F                         // from transparent address inputs
-ShieldFromAssetLock: fee_amount = pool_fee (+ unclaimed surplus)   // from the consumed asset lock
+Shield:              fee_amount = metered + shielded_compute_fee     // from transparent address inputs
+ShieldFromAssetLock: fee_amount = pool_fee (+ unclaimed surplus)     // from the consumed asset lock
 ```
 
-For `Shield`, `F` is deducted from the transparent address inputs and booked through the
-`PaidFromAddressInputs` event (two-sided override: deducted == booked == `F`). For
+For `Shield`, the fee is deducted from the transparent address inputs and booked through
+the standard `PaidFromAddressInputs` event (deducted == booked, no override): metered
+storage and processing, plus the `shielded_compute_fee` folded into processing. For
 `ShieldFromAssetLock`, the consumed asset-lock value is partitioned into `shield_amount`
 (into the pool), `surplus_amount` (to `surplus_output`, or `0`), and `fee_amount` (to the
 fee pools); see [Entry-Transition Fees](#entry-transition-fees-shield-and-shieldfromassetlock).

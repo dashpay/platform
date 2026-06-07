@@ -167,7 +167,7 @@ for each state transition. There are seven variants:
 | `PaidFromAssetLock` | Asset lock transaction value | IdentityCreate, IdentityTopUp |
 | `PaidFromAssetLockWithoutIdentity` | Asset lock (fixed amount) | PartiallyUseAssetLock |
 | `PaidFromAssetLockToPool` | Asset lock value; fee routed to the fee pools | ShieldFromAssetLock |
-| `PaidFromAddressInputs` | Platform address balances | All address-based transitions; `Shield` (carries a `shielded_flat_fee`) |
+| `PaidFromAddressInputs` | Platform address balances | All address-based transitions; `Shield` (metered + a ZK compute fee via `additional_fixed_fee_cost`) |
 | `PaidFixedCost` | Fixed fee to pool | MasternodeVote |
 | `PaidFromShieldedPool` | Shielded pool value_balance | ShieldedTransfer, Unshield, ShieldedWithdrawal |
 
