@@ -191,15 +191,22 @@ where
 
                 estimated_fee_result.apply_user_fee_increase(*user_fee_increase);
 
-                // The required balance is the metered base fee plus any additional fixed cost (for
-                // the transparent `Shield` that fixed cost is the shielded COMPUTE fee
-                // `compute_shielded_verification_fee`, added on top of the metered storage/processing of
-                // the note/nullifier writes). This is the generic metered + `additional_fixed_fee_cost`
-                // path shared by every address-funded event (e.g. `IdentityCreateFromAddresses`).
-                let mut required_balance = estimated_fee_result.total_base_fee();
+                // Advertise the fee that block execution will actually charge: the metered base fee
+                // PLUS any `additional_fixed_fee_cost`. For the transparent `Shield` that fixed cost is
+                // the ZK compute fee `compute_shielded_verification_fee` (added on top of the metered
+                // storage/processing of the note/nullifier writes); for `IdentityCreateFromAddresses`
+                // it is the registration cost. Execution folds this fixed cost into `processing_fee`
+                // (see `paid_from_address_inputs_and_outputs`), so we fold it into the advertised
+                // `FeeResult` here too — otherwise CheckTx `gas_wanted` would under-report the fee
+                // relative to what is booked. The required funding balance is exactly this fee
+                // (storage + processing), unchanged by the fold.
+                let mut result_fee_result = estimated_fee_result;
                 if let Some(additional_fixed_fee_cost) = additional_fixed_fee_cost {
-                    required_balance = required_balance.saturating_add(*additional_fixed_fee_cost);
+                    result_fee_result.processing_fee = result_fee_result
+                        .processing_fee
+                        .saturating_add(*additional_fixed_fee_cost);
                 }
+                let required_balance = result_fee_result.total_base_fee();
 
                 let fee_deduction_result = deduct_fee_from_outputs_or_remaining_balance_of_inputs(
                     input_current_balances.clone(),
@@ -208,8 +215,6 @@ where
                     required_balance,
                     platform_version,
                 )?;
-
-                let result_fee_result = estimated_fee_result;
 
                 if fee_deduction_result.fee_fully_covered {
                     Ok(ConsensusValidationResult::new_with_data(result_fee_result))
@@ -481,6 +486,73 @@ mod tests {
             result.errors.is_empty(),
             "sufficient fees_to_add_to_pool must not produce consensus errors"
         );
+    }
+
+    /// `ExecutionEvent::PaidFromAddressInputs` (the transparent `Shield` /
+    /// `IdentityCreateFromAddresses` path) must ADVERTISE the same fee block execution charges:
+    /// the metered base fee PLUS any `additional_fixed_fee_cost`. CheckTx turns the advertised
+    /// `FeeResult` into `gas_wanted`, and execution folds the fixed cost into `processing_fee`, so
+    /// the advertised fee must include it too — otherwise `gas_wanted` under-reports the fee. With
+    /// empty operations the metered fee is 0, so the advertised fee must equal exactly the fixed
+    /// cost (for a `Shield` this is the shielded compute fee).
+    #[test]
+    fn validate_fees_of_event_v0_paid_from_address_inputs_advertises_additional_fixed_fee_cost() {
+        use dpp::address_funds::fee_strategy::AddressFundsFeeStrategyStep;
+        use dpp::address_funds::PlatformAddress;
+        use std::collections::BTreeMap;
+
+        let platform = TestPlatformBuilder::new()
+            .with_latest_protocol_version()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+
+        let platform_version = PlatformVersion::latest();
+        let block_info = dpp::block::block_info::BlockInfo::default();
+        let previous_fee_versions = Default::default();
+
+        let fixed_cost = 100_000_000u64;
+        let address = PlatformAddress::P2pkh([0x11; 20]);
+        let mut input_current_balances = BTreeMap::new();
+        // Balance comfortably covers the fixed cost so the deduction fully succeeds.
+        input_current_balances.insert(address, (1u32, fixed_cost + 1_000_000));
+
+        let event = ExecutionEvent::PaidFromAddressInputs {
+            input_current_balances,
+            added_to_balance_outputs: BTreeMap::new(),
+            fee_strategy: vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+            operations: vec![],
+            execution_operations: vec![],
+            additional_fixed_fee_cost: Some(fixed_cost),
+            user_fee_increase: 0,
+        };
+
+        let result = platform
+            .platform
+            .validate_fees_of_event_v0(
+                &event,
+                &block_info,
+                None,
+                platform_version,
+                &previous_fee_versions,
+            )
+            .expect("validation must be Ok");
+
+        assert!(
+            result.errors.is_empty(),
+            "sufficient balance must not produce consensus errors"
+        );
+        let fee = result.into_data().expect("fee result present");
+        // Empty operations => metered storage/processing are 0, so the advertised fee is exactly the
+        // fixed cost. Before the gas_wanted fix, processing_fee was 0 here and CheckTx under-reported.
+        assert_eq!(
+            fee.storage_fee, 0,
+            "no metered storage with empty operations"
+        );
+        assert_eq!(
+            fee.processing_fee, fixed_cost,
+            "advertised processing fee must include additional_fixed_fee_cost (gas_wanted parity)"
+        );
+        assert_eq!(fee.total_base_fee(), fixed_cost);
     }
 
     /// `ExecutionEvent::Paid` where the identity balance is smaller than
