@@ -325,5 +325,6 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V8: DriveAbciValidationVersions =
             // same rate the flat fee prices the ~5 ms base (100M ≈ 4.5× this), so the fee
             // tracks the per-action cost and the margin stays uniform as actions grow.
             shielded_per_action_processing_fee: 22_000_000,
+            shielded_implicit_fee_cap: 20_000_000_000,
         },
     };

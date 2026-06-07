@@ -74,6 +74,12 @@ mod tests {
             anchor,
             proof: proof.clone(),
             binding_signature,
+            // Route the asset-lock surplus to a platform address. The fixture lock is ~1 Dash
+            // while the shield amount is small, so the surplus exceeds the 0.2-Dash implicit-fee
+            // cap; a surplus_output is required for the transition to be accepted (and it
+            // exercises the surplus-to-address path end-to-end). Must match the signed literal
+            // below so the ECDSA signature commits to the same destination.
+            surplus_output: Some(dpp::address_funds::PlatformAddress::P2pkh([0x33; 20])),
             signature: Default::default(),
         };
 
@@ -94,6 +100,7 @@ mod tests {
                 anchor,
                 proof,
                 binding_signature,
+                surplus_output: Some(dpp::address_funds::PlatformAddress::P2pkh([0x33; 20])),
                 signature: BinaryData::new(signature.to_vec()),
             },
         ))
@@ -117,6 +124,7 @@ mod tests {
                 anchor,
                 proof,
                 binding_signature,
+                surplus_output: None,
                 signature: BinaryData::new(vec![0u8; 65]), // dummy signature
             },
         ))
@@ -179,6 +187,7 @@ mod tests {
                 anchor: [42u8; 32],
                 proof: vec![0u8; 100],
                 binding_signature: [0u8; 64],
+                surplus_output: None,
                 signature: Default::default(),
             };
 
@@ -344,6 +353,7 @@ mod tests {
                     anchor: [42u8; 32],
                     proof: vec![0u8; 100],
                     binding_signature: [0u8; 64],
+                    surplus_output: None,
                     signature: BinaryData::new(vec![0u8; 65]), // zeroed invalid signature
                 }),
             );

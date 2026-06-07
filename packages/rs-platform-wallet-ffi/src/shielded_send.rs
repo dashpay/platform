@@ -34,7 +34,7 @@ use std::ffi::CStr;
 use std::os::raw::c_char;
 
 use dashcore::hashes::Hash;
-use dpp::address_funds::OrchardAddress;
+use dpp::address_funds::{OrchardAddress, PlatformAddress};
 use platform_wallet::wallet::asset_lock::AssetLockFunding;
 use platform_wallet::wallet::shielded::CachedOrchardProver;
 use rs_sdk_ffi::{MnemonicResolverCoreSigner, MnemonicResolverHandle, SignerHandle, VTableSigner};
@@ -44,6 +44,50 @@ use crate::core_wallet_types::OutPointFFI;
 use crate::error::*;
 use crate::handle::*;
 use crate::runtime::{block_on_worker, runtime};
+
+/// Parse an optional surplus-output platform address supplied as raw
+/// `PlatformAddress` storage bytes (21 bytes: 1-byte variant tag +
+/// 20-byte hash — the encoding `PlatformAddress::to_bytes()` produces
+/// and `PlatformAddressWasm`/the Swift wrapper expose).
+///
+/// `ptr == null` (or `len == 0`) means "no surplus output" → `Ok(None)`.
+/// A non-null pointer is read for `len` bytes and decoded; a malformed
+/// address is surfaced as an `Err(PlatformWalletFFIResult)` so the
+/// caller fails fast rather than building a transition the wallet would
+/// reject.
+///
+/// # Safety
+/// When `ptr` is non-null it must point to at least `len` readable
+/// bytes for the duration of this call.
+unsafe fn parse_optional_surplus_output(
+    ptr: *const u8,
+    len: usize,
+) -> Result<Option<PlatformAddress>, PlatformWalletFFIResult> {
+    // A serialized PlatformAddress is exactly 21 bytes (1-byte variant tag + 20-byte hash).
+    const PLATFORM_ADDRESS_LEN: usize = 21;
+    if ptr.is_null() || len == 0 {
+        return Ok(None);
+    }
+    // A serialized PlatformAddress is exactly 21 bytes (1-byte variant tag + 20-byte hash).
+    // `from_bytes` decodes via bincode, which does NOT require full-slice consumption, so an
+    // over-length buffer with a valid 21-byte prefix would otherwise be silently accepted (and the
+    // trailing bytes dropped). Reject any non-21-byte input so a malformed/padded address fails fast
+    // here rather than being silently truncated before signing.
+    if len != PLATFORM_ADDRESS_LEN {
+        return Err(PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            format!("surplus_output must be exactly {PLATFORM_ADDRESS_LEN} bytes, got {len}"),
+        ));
+    }
+    let bytes = std::slice::from_raw_parts(ptr, len);
+    match PlatformAddress::from_bytes(bytes) {
+        Ok(addr) => Ok(Some(addr)),
+        Err(e) => Err(PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            format!("invalid surplus_output platform address: {e}"),
+        )),
+    }
+}
 
 /// Kick off the Halo 2 proving-key build on a background tokio
 /// worker if it hasn't been built yet. Returns immediately —
@@ -338,12 +382,23 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_shield(
 /// `account_index` selects the BIP44 Core account whose UTXOs
 /// fund the asset lock. `amount_duffs` is the L1 amount to lock.
 /// The wallet derives the shielded credit amount internally
-/// (`lock_value − protocol_min_fee`) — callers don't need to know
-/// about Type 18's Halo 2 fee math.
+/// (`lock_value − pool_fee`, where `pool_fee = shielded fee +
+/// asset_lock_base_cost`) — callers don't need to know about
+/// Type 18's Halo 2 fee math.
 ///
 /// `recipient_raw_43` is the single Orchard recipient (same shape
 /// `platform_wallet_manager_shielded_default_address` returns); it
-/// receives the full `lock_value − min_fee` credits.
+/// receives the full `lock_value − pool_fee` credits.
+///
+/// `surplus_output_ptr` / `surplus_output_len` optionally supply a
+/// platform address (raw `PlatformAddress` bytes: 1-byte variant tag +
+/// 20-byte hash) to receive the asset-lock surplus
+/// (`lock_value − shield_amount − pool_fee`). Pass `null` / `0` for
+/// none. In this single-recipient "remainder" flow the wallet derives
+/// `shield_amount = lock_value − pool_fee`, so the surplus is always
+/// **zero** and a `null` surplus output is always valid; the parameter
+/// is plumbed for API completeness and forward-compatibility with
+/// multi-output / explicit-amount bundles.
 ///
 /// Multi-recipient with explicit per-recipient amounts is reserved
 /// for a future DPP-side Orchard multi-output bundle change; today
@@ -353,6 +408,8 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_shield(
 /// - `wallet_id_bytes` must point to 32 readable bytes.
 /// - `recipient_raw_43` must point to 43 readable bytes (raw
 ///   Orchard payment address: 11-byte diversifier + 32-byte pk_d).
+/// - `surplus_output_ptr`, when non-null, must point to
+///   `surplus_output_len` readable bytes for the duration of the call.
 /// - `core_signer_handle` must be a valid, non-destroyed
 ///   `*mut MnemonicResolverHandle` produced by
 ///   `dash_sdk_mnemonic_resolver_create`. The caller retains
@@ -365,6 +422,8 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_fund_from_asset_lock(
     account_index: u32,
     amount_duffs: u64,
     recipient_raw_43: *const u8,
+    surplus_output_ptr: *const u8,
+    surplus_output_len: usize,
     core_signer_handle: *mut MnemonicResolverHandle,
 ) -> PlatformWalletFFIResult {
     check_ptr!(wallet_id_bytes);
@@ -384,6 +443,12 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_fund_from_asset_lock(
                 format!("invalid Orchard recipient address: {e}"),
             );
         }
+    };
+
+    let surplus_output = match parse_optional_surplus_output(surplus_output_ptr, surplus_output_len)
+    {
+        Ok(s) => s,
+        Err(result) => return result,
     };
 
     let wallet = match resolve_wallet(handle, &wallet_id) {
@@ -421,6 +486,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_fund_from_asset_lock(
                 vec![(recipient, None)],
                 &asset_lock_signer,
                 &prover,
+                surplus_output,
                 None,
             )
             .await
@@ -444,10 +510,44 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_fund_from_asset_lock(
 /// left the lock in storage at `Broadcast` / `InstantSendLocked` /
 /// `ChainLocked` but the shield ST never completed.
 ///
+/// ## Resume / surplus-output desync — why no extra persistence is needed
+///
+/// The surplus destination is **signed over** on-chain (it sits before
+/// the ECDSA `signature` in the signable bytes), so two resume attempts
+/// that disagreed on the surplus would produce two different
+/// transitions. We avoid that desync by construction rather than by
+/// persisting the address with the in-flight lock:
+///
+/// - The orchestrated single-recipient flow always sets
+///   `shield_amount = lock_value − pool_fee`, which pins the consensus
+///   surplus (`lock_value − shield_amount − pool_fee`) to exactly
+///   **zero** on every attempt — fresh build or resume.
+/// - `shield_amount` is re-derived deterministically from the on-chain
+///   lock value (read back from the tracked lock / IS proof) and the
+///   versioned fee constants, so it is identical across restarts and
+///   independent of any per-call input.
+/// - With a zero surplus the `surplus_output` has no on-chain effect
+///   (the action routes 0 credits to it), and `null` is always
+///   consensus-valid (`0 ≤ shielded_implicit_fee_cap`). Each resume
+///   re-signs a freshly-randomized bundle anyway (the Halo 2 proof draws
+///   `OsRng` per build), so there is no "original signed transition" to
+///   replay — only a stream of consensus-equivalent ones.
+///
+/// Net: a resume cannot strand or misdirect a surplus regardless of the
+/// `surplus_output` passed here, so the surplus address is *not*
+/// persisted on the `TrackedAssetLock`. The parameter is accepted for
+/// signature parity with the fresh-build entry point; pass the same
+/// value (typically `null`) on resume. If a future change introduces a
+/// non-zero residual (e.g. explicit recipient amounts), the surplus
+/// address would have to be persisted on the tracked lock and read back
+/// here instead of trusted from the resume call.
+///
 /// # Safety
 /// - `wallet_id_bytes` must point to 32 readable bytes.
 /// - `out_point` must be a valid, non-null pointer to an
 ///   `OutPointFFI` for the duration of the call.
+/// - `surplus_output_ptr`, when non-null, must point to
+///   `surplus_output_len` readable bytes for the duration of the call.
 /// - `recipient_raw_43` / `core_signer_handle` — see
 ///   [`platform_wallet_manager_shielded_fund_from_asset_lock`].
 #[no_mangle]
@@ -457,6 +557,8 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_resume_fund_from_asset
     wallet_id_bytes: *const u8,
     out_point: *const OutPointFFI,
     recipient_raw_43: *const u8,
+    surplus_output_ptr: *const u8,
+    surplus_output_len: usize,
     core_signer_handle: *mut MnemonicResolverHandle,
 ) -> PlatformWalletFFIResult {
     check_ptr!(wallet_id_bytes);
@@ -477,6 +579,12 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_resume_fund_from_asset
                 format!("invalid Orchard recipient address: {e}"),
             );
         }
+    };
+
+    let surplus_output = match parse_optional_surplus_output(surplus_output_ptr, surplus_output_len)
+    {
+        Ok(s) => s,
+        Err(result) => return result,
     };
 
     let out_point_ffi = *out_point;
@@ -512,6 +620,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_resume_fund_from_asset
                 vec![(recipient, None)],
                 &asset_lock_signer,
                 &prover,
+                surplus_output,
                 None,
             )
             .await

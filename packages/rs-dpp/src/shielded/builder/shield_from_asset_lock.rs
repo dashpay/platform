@@ -1,4 +1,4 @@
-use crate::address_funds::OrchardAddress;
+use crate::address_funds::{OrchardAddress, PlatformAddress};
 use crate::prelude::AssetLockProof;
 use crate::state_transition::shield_from_asset_lock_transition::methods::ShieldFromAssetLockTransitionMethodsV0;
 use crate::state_transition::shield_from_asset_lock_transition::ShieldFromAssetLockTransition;
@@ -20,6 +20,9 @@ use super::{build_output_only_bundle, serialize_authorized_bundle, OrchardProver
 /// - `asset_lock_private_key` - Private key for the asset lock (signs the transition)
 /// - `prover` - Orchard prover (holds the Halo 2 proving key)
 /// - `memo` - 36-byte structured memo for the recipient (4-byte type tag + 32-byte payload)
+/// - `surplus_output` - Optional platform address that receives the asset-lock surplus
+///   (`asset_lock_value − shield_amount − fee`); when `None`, the surplus is added to the fee
+///   pools, capped at `shielded_implicit_fee_cap`
 /// - `platform_version` - Protocol version
 #[allow(clippy::too_many_arguments)]
 pub fn build_shield_from_asset_lock_transition<P: OrchardProver>(
@@ -29,6 +32,7 @@ pub fn build_shield_from_asset_lock_transition<P: OrchardProver>(
     asset_lock_private_key: &[u8],
     prover: &P,
     memo: [u8; 36],
+    surplus_output: Option<PlatformAddress>,
     platform_version: &PlatformVersion,
 ) -> Result<StateTransition, ProtocolError> {
     let bundle = build_output_only_bundle(recipient, shield_amount, memo, prover)?;
@@ -54,6 +58,7 @@ pub fn build_shield_from_asset_lock_transition<P: OrchardProver>(
         sb.anchor,
         sb.proof,
         sb.binding_signature,
+        surplus_output,
         platform_version,
     )
 }
@@ -72,6 +77,9 @@ pub fn build_shield_from_asset_lock_transition<P: OrchardProver>(
 /// - `asset_lock_signer` - External signer that produces the outer ECDSA signature
 /// - `prover` - Orchard prover (holds the Halo 2 proving key)
 /// - `memo` - 36-byte structured memo for the recipient (4-byte type tag + 32-byte payload)
+/// - `surplus_output` - Optional platform address that receives the asset-lock surplus
+///   (`asset_lock_value − shield_amount − fee`); when `None`, the surplus is added to the fee
+///   pools, capped at `shielded_implicit_fee_cap`
 /// - `platform_version` - Protocol version
 #[cfg(feature = "core_key_wallet")]
 #[allow(clippy::too_many_arguments)]
@@ -83,6 +91,7 @@ pub async fn build_shield_from_asset_lock_transition_with_signer<P, AS>(
     asset_lock_signer: &AS,
     prover: &P,
     memo: [u8; 36],
+    surplus_output: Option<PlatformAddress>,
     platform_version: &PlatformVersion,
 ) -> Result<StateTransition, ProtocolError>
 where
@@ -113,6 +122,7 @@ where
         sb.anchor,
         sb.proof,
         sb.binding_signature,
+        surplus_output,
         platform_version,
     )
     .await
@@ -149,6 +159,24 @@ mod tests {
             .and_then(|v| u64::try_from(v).ok())
             .expect("value_balance should be safely negatable");
         assert_eq!(abs_balance, amount);
+    }
+
+    /// Consensus prices the shielded fee from the on-wire `actions.len()`, and the wallet reserves
+    /// the fee for exactly 2 actions (Orchard's `MIN_ACTIONS`). A single-output, spends-disabled
+    /// bundle must therefore serialize to exactly 2 on-wire actions. If a future Orchard or builder
+    /// change alters that padding, the hardcoded wallet reservation would diverge from what consensus
+    /// charges (a valid client tx would be rejected); this test fails loudly if that invariant breaks.
+    #[test]
+    fn test_output_only_bundle_serializes_to_min_actions() {
+        let recipient = test_orchard_address();
+        let bundle = build_output_only_bundle(&recipient, 50_000u64, [0u8; 36], &TestProver)
+            .expect("bundle should build");
+        let sb = serialize_authorized_bundle(&bundle);
+        assert_eq!(
+            sb.actions.len(),
+            2,
+            "single-output shield bundle must pad to exactly 2 on-wire actions"
+        );
     }
 
     // -------------------------------------------------------------

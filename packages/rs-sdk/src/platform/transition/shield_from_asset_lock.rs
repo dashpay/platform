@@ -48,6 +48,7 @@ impl ShieldFromAssetLock for Sdk {
             anchor,
             proof,
             binding_signature,
+            None,
             self.version(),
         )?;
         ensure_valid_state_transition_structure(&state_transition, self.version())?;

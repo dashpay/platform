@@ -39,11 +39,24 @@ use dpp::shielded::builder::{
     build_shield_transition, build_shielded_transfer_transition,
     build_shielded_withdrawal_transition, build_unshield_transition, OrchardProver, SpendableNote,
 };
+use dpp::shielded::compute_minimum_shielded_fee;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::withdrawal::Pooling;
 use grovedb_commitment_tree::{Anchor, PaymentAddress};
 use tokio::sync::RwLock;
 use tracing::{info, trace, warn};
+
+/// Number of Orchard actions in a `Shield` (Type 15) bundle.
+///
+/// `build_shield_transition` builds an *output-only* bundle with a single
+/// output (`build_output_only_bundle`), configured as Orchard's
+/// `BundleType::Transactional { flags: SPENDS_DISABLED, bundle_required: false }`.
+/// For one output and zero spends, Orchard's `num_actions` is
+/// `max(max(0, 1), MIN_ACTIONS) == max(1, 2) == 2`, so the serialized bundle
+/// always carries exactly two actions. Consensus prices the flat shielded fee
+/// `F = compute_minimum_shielded_fee(actions.len())` from the on-wire action
+/// count, so the wallet's fee reservation must use the same count.
+const SHIELD_NUM_ACTIONS: usize = 2;
 
 /// Try to extract a structured `AddressesNotEnoughFundsError` from
 /// a broadcast error so the shield path can format a diagnostic
@@ -143,6 +156,37 @@ fn queue_shielded_changeset(
 // Shield: platform addresses -> shielded pool (Type 15)
 // -------------------------------------------------------------------------
 
+/// Add the flat shielded fee `fee` to the smallest-key input's claim.
+///
+/// The Shield fee strategy is `DeductFromInput(0)`, where "input 0" is the
+/// BTreeMap-smallest address. Consensus requires the input claims to sum to at
+/// least `amount + fee`; the caller's selection claims exactly `amount` and
+/// reserves the fee headroom as *unclaimed* balance on input 0, so loading the
+/// fee onto that same input both satisfies the `Σ inputs >= amount + fee`
+/// structure check and keeps the fee-payer aligned with the fee strategy.
+///
+/// Errors if `inputs` is empty (no input to carry the fee) or the addition
+/// overflows.
+fn reserve_shield_fee_on_input_0(
+    mut inputs: BTreeMap<PlatformAddress, Credits>,
+    fee: Credits,
+) -> Result<BTreeMap<PlatformAddress, Credits>, PlatformWalletError> {
+    let Some((&input_0_addr, _)) = inputs.iter().next() else {
+        return Err(PlatformWalletError::ShieldedBuildError(
+            "shield has no inputs to carry the shielded fee".to_string(),
+        ));
+    };
+    let claim = inputs
+        .get_mut(&input_0_addr)
+        .expect("input_0_addr was just read from the map");
+    *claim = claim.checked_add(fee).ok_or_else(|| {
+        PlatformWalletError::ShieldedBuildError(
+            "input 0 claim + shielded fee overflows u64".to_string(),
+        )
+    })?;
+    Ok(inputs)
+}
+
 /// Shield credits from transparent platform addresses into the
 /// shielded pool, with the resulting note assigned to `account`'s
 /// default Orchard payment address derived from `keys`.
@@ -157,6 +201,27 @@ pub async fn shield<Sig: Signer<PlatformAddress>, P: OrchardProver>(
     prover: &P,
 ) -> Result<(), PlatformWalletError> {
     let recipient_addr = default_orchard_address(keys)?;
+
+    // Reserve the flat shielded fee `F` on top of `amount` in the input
+    // claims. Consensus `validate_structure` (rs-dpp) now rejects a Shield
+    // unless `Σ inputs >= amount + F`, where
+    // `F = compute_minimum_shielded_fee(num_actions)` and `num_actions` is
+    // the serialized output-only bundle's action count. That bundle has a
+    // single output and spends disabled, so Orchard pads it to exactly
+    // SHIELD_NUM_ACTIONS == 2 actions (see the constant doc below). We
+    // mirror `note_selection.rs`'s spend-side fee math.
+    //
+    // The fee is loaded onto the smallest-key input — the `DeductFromInput(0)`
+    // fee-strategy payer (input 0 == BTreeMap-smallest address). The caller
+    // (`shielded_shield_from_account`) reserves ~1e9 credits of unclaimed
+    // headroom on input 0 specifically for this, and `F` (~1.2e8 credits)
+    // fits well within it. Inflating the claim BEFORE the fetch lets the
+    // single hard balance check below validate the fee-inclusive claim
+    // against the on-chain balance in one shot — no second round-trip and
+    // no claim that outruns its balance check.
+    let fee = compute_minimum_shielded_fee(SHIELD_NUM_ACTIONS, sdk.version())
+        .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
+    let inputs = reserve_shield_fee_on_input_0(inputs, fee)?;
 
     // Reuse rs-sdk's canonical fetch + hard balance check rather than
     // re-implementing the fetch-and-validate dance. Unlike the old
@@ -806,4 +871,49 @@ fn deserialize_note(data: &[u8]) -> Option<grovedb_commitment_tree::Note> {
     let rseed = RandomSeed::from_bytes(rseed_bytes, &rho).into_option()?;
 
     Note::from_parts(recipient, value, rho, rseed).into_option()
+}
+
+#[cfg(test)]
+mod reserve_shield_fee_tests {
+    use super::*;
+
+    fn addr(b: u8) -> PlatformAddress {
+        PlatformAddress::P2pkh([b; 20])
+    }
+
+    #[test]
+    fn loads_fee_onto_smallest_key_input() {
+        // Input 0 is the BTreeMap-smallest address (addr(1)); the fee must
+        // land there, matching the `DeductFromInput(0)` fee strategy.
+        let mut inputs = BTreeMap::new();
+        inputs.insert(addr(2), 5_000_000u64);
+        inputs.insert(addr(1), 1_000_000u64);
+
+        let fee = 123_097_600u64;
+        let out = reserve_shield_fee_on_input_0(inputs, fee).expect("non-empty inputs");
+
+        assert_eq!(out.get(&addr(1)), Some(&(1_000_000 + fee)));
+        assert_eq!(
+            out.get(&addr(2)),
+            Some(&5_000_000),
+            "other inputs untouched"
+        );
+        // Σ claims grew by exactly `fee`, satisfying `Σ inputs >= amount + F`.
+        assert_eq!(out.values().sum::<u64>(), 6_000_000 + fee);
+    }
+
+    #[test]
+    fn errors_on_empty_inputs() {
+        let inputs: BTreeMap<PlatformAddress, Credits> = BTreeMap::new();
+        let err = reserve_shield_fee_on_input_0(inputs, 1).expect_err("empty must reject");
+        assert!(matches!(err, PlatformWalletError::ShieldedBuildError(_)));
+    }
+
+    #[test]
+    fn errors_on_claim_plus_fee_overflow() {
+        let mut inputs = BTreeMap::new();
+        inputs.insert(addr(1), u64::MAX);
+        let err = reserve_shield_fee_on_input_0(inputs, 1).expect_err("overflow must reject");
+        assert!(matches!(err, PlatformWalletError::ShieldedBuildError(_)));
+    }
 }

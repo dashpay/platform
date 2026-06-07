@@ -57,6 +57,12 @@ pub(in crate::execution) enum ExecutionEvent<'a> {
         execution_operations: Vec<ValidationOperation>,
         /// Additional fee cost, these are processing fees where the user fee increase does not apply
         additional_fixed_fee_cost: Option<Credits>,
+        /// When `Some(F)`, the event pays the flat shielded fee `F` instead of the metered
+        /// GroveDB/base fee: exactly `F` credits are deducted from the address inputs and exactly
+        /// `F` credits are booked to the fee pools (storage = min(metered_storage, F), processing
+        /// = F − storage). Used by `Shield` (transparent shield), whose proof-verification cost is
+        /// not captured by GroveDB metering. `None` for all other address-funded events.
+        shielded_flat_fee: Option<Credits>,
         /// the fee multiplier that the user agreed to, 0 means 100% of the base fee, 1 means 101%
         user_fee_increase: UserFeeIncrease,
     },
@@ -316,6 +322,7 @@ impl ExecutionEvent<'_> {
                     operations,
                     execution_operations: execution_context.operations_consume(),
                     additional_fixed_fee_cost: None,
+                    shielded_flat_fee: None,
                     user_fee_increase,
                 })
             }
@@ -341,6 +348,7 @@ impl ExecutionEvent<'_> {
                     operations,
                     execution_operations: execution_context.operations_consume(),
                     additional_fixed_fee_cost: None,
+                    shielded_flat_fee: None,
                     user_fee_increase,
                 })
             }
@@ -365,6 +373,7 @@ impl ExecutionEvent<'_> {
                     operations,
                     execution_operations: execution_context.operations_consume(),
                     additional_fixed_fee_cost: None,
+                    shielded_flat_fee: None,
                     user_fee_increase,
                 })
             }
@@ -391,6 +400,7 @@ impl ExecutionEvent<'_> {
                     operations,
                     execution_operations: execution_context.operations_consume(),
                     additional_fixed_fee_cost: None,
+                    shielded_flat_fee: None,
                     user_fee_increase,
                 })
             }
@@ -417,6 +427,7 @@ impl ExecutionEvent<'_> {
                     operations,
                     execution_operations: execution_context.operations_consume(),
                     additional_fixed_fee_cost: None,
+                    shielded_flat_fee: None,
                     user_fee_increase,
                 })
             }
@@ -439,6 +450,7 @@ impl ExecutionEvent<'_> {
                     operations,
                     execution_operations: execution_context.operations_consume(),
                     additional_fixed_fee_cost: None,
+                    shielded_flat_fee: None,
                     user_fee_increase,
                 })
             }
@@ -476,6 +488,16 @@ impl ExecutionEvent<'_> {
                 let input_current_balances = shield_action.inputs_with_remaining_balance().clone();
                 let added_to_balance_outputs = BTreeMap::new();
                 let fee_strategy = shield_action.fee_strategy().clone();
+                // Transparent shield pays the flat shielded fee
+                // `F = compute_minimum_shielded_fee(num_actions)` (proof verification + per-action),
+                // deducted from the address inputs on top of the reallocated `shield_amount` and
+                // booked to the fee pools. `notes` are built 1:1 from the on-wire Orchard `actions`
+                // (see the shield action transformer), so `notes().len()` is the on-wire action
+                // count that the structure-validation floor also prices `F` against.
+                let shielded_fee = dpp::shielded::compute_minimum_shielded_fee(
+                    shield_action.notes().len(),
+                    platform_version,
+                )?;
                 let operations =
                     action.into_high_level_drive_operations(epoch, platform_version)?;
                 Ok(ExecutionEvent::PaidFromAddressInputs {
@@ -485,6 +507,7 @@ impl ExecutionEvent<'_> {
                     operations,
                     execution_operations: execution_context.operations_consume(),
                     additional_fixed_fee_cost: None,
+                    shielded_flat_fee: Some(shielded_fee),
                     user_fee_increase,
                 })
             }
@@ -507,13 +530,21 @@ impl ExecutionEvent<'_> {
                 })
             }
             StateTransitionAction::ShieldFromAssetLockAction(ref shield_from_asset_lock_action) => {
-                // Fee = asset_lock_value - shield_amount (excess from asset lock)
+                // The fully-consumed asset lock (added to system credits by the converter) is
+                // distributed three ways: `shield_amount` -> shielded pool, `surplus_amount` ->
+                // the `surplus_output` address (via the converter, when set), and the remainder ->
+                // the fee pools (this value). Computing the fee by subtraction from the single
+                // source of truth (the action) keeps conservation by construction:
+                //   AddToSystemCredits(consumed) == shield_amount + surplus_amount + fee_amount.
+                // When `surplus_output` is unset, `surplus_amount == 0` and the surplus folds into
+                // the fee here (bounded by the implicit-fee cap enforced in the transform).
                 let fee_amount = shield_from_asset_lock_action
                     .asset_lock_value_to_be_consumed()
                     .checked_sub(shield_from_asset_lock_action.shield_amount())
+                    .and_then(|v| v.checked_sub(shield_from_asset_lock_action.surplus_amount()))
                     .ok_or(Error::Execution(
                         ExecutionError::CorruptedCodeExecution(
-                            "shield amount exceeds asset lock value to be consumed in ShieldFromAssetLock fee computation",
+                            "shield amount + surplus exceeds asset lock value to be consumed in ShieldFromAssetLock fee computation",
                         ),
                     ))?;
                 let operations =

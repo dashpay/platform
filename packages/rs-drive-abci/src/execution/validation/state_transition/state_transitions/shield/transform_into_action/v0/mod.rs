@@ -1,9 +1,6 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::execution::types::execution_operation::ValidationOperation;
-use crate::execution::types::state_transition_execution_context::{
-    StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
-};
+use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::state_transitions::shielded_common::read_pool_total_balance;
 use dpp::address_funds::{AddressFundsFeeStrategyStep, PlatformAddress};
 use dpp::block::block_info::BlockInfo;
@@ -198,8 +195,8 @@ impl ShieldStateTransitionTransformIntoActionValidationV0 for ShieldTransition {
         drive: &Drive,
         transaction: TransactionArg,
         inputs_with_remaining_balance: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
-        block_info: &BlockInfo,
-        execution_context: &mut StateTransitionExecutionContext,
+        _block_info: &BlockInfo,
+        _execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let ShieldTransition::V0(transition_v0) = self;
@@ -216,21 +213,15 @@ impl ShieldStateTransitionTransformIntoActionValidationV0 for ShieldTransition {
             shield_amount,
         )?;
 
-        // Read current shielded pool state from GroveDB
+        // Read current shielded pool state from GroveDB.
+        //
+        // Shield pays the flat shielded fee `F = compute_minimum_shielded_fee(num_actions)`
+        // (proof verification + per-action), charged at the execution-event layer where the
+        // event is built (see `ExecutionEvent` construction). We deliberately do NOT derive a
+        // GroveDB fee from these read operations here — the flat fee subsumes them.
         let mut drive_operations = vec![];
         let current_total_balance =
             read_pool_total_balance(drive, transaction, &mut drive_operations, platform_version)?;
-
-        // Calculate fees from the GroveDB operations
-        let fee = Drive::calculate_fee(
-            None,
-            Some(drive_operations),
-            &block_info.epoch,
-            drive.config.epochs_per_era,
-            platform_version,
-            None,
-        )?;
-        execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
 
         let result = ShieldTransitionAction::try_from_transition(
             self,

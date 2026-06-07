@@ -5,6 +5,7 @@ mod types;
 pub(super) mod v0_methods;
 mod version;
 
+use crate::address_funds::PlatformAddress;
 use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
 use crate::shielded::SerializedAction;
 use crate::ProtocolError;
@@ -45,6 +46,14 @@ pub struct ShieldFromAssetLockTransitionV0 {
     pub proof: Vec<u8>,
     /// RedPallas binding signature
     pub binding_signature: [u8; 64],
+    /// Optional platform-address output that receives the asset-lock surplus
+    /// (`asset_lock_value − value_balance − fee`, where `fee = compute_minimum_shielded_fee
+    /// + asset_lock_base_cost`). When `None`, the surplus is instead added to the fee pools,
+    /// but only up to `shielded_implicit_fee_cap` (otherwise the transition is rejected so a
+    /// client cannot accidentally forfeit a large remainder). Placed before `signature` so it
+    /// is covered by the signable bytes — the ECDSA signature commits to the surplus
+    /// destination, which therefore cannot be redirected without invalidating the transition.
+    pub surplus_output: Option<PlatformAddress>,
     /// ECDSA signature over the signable bytes (excluded from sig hash)
     #[platform_signable(exclude_from_sig_hash)]
     pub signature: BinaryData,
@@ -90,6 +99,7 @@ mod tests {
             anchor: [7u8; 32],
             proof: vec![8u8; 100],
             binding_signature: [9u8; 64],
+            surplus_output: None,
             signature: BinaryData::new(vec![10u8; 65]),
         };
 
@@ -114,6 +124,7 @@ mod tests {
             anchor: [7u8; 32],
             proof: vec![8u8; 100],
             binding_signature: [9u8; 64],
+            surplus_output: None,
             signature: BinaryData::new(vec![10u8; 65]),
         }
     }
@@ -187,5 +198,15 @@ mod tests {
     fn test_feature_versioned() {
         use crate::state_transition::FeatureVersioned;
         assert_eq!(make_v0().feature_version(), 0);
+    }
+
+    #[test]
+    fn test_round_trip_with_surplus_output() {
+        // The optional surplus_output field must serialize/deserialize identically. It sits before
+        // the sig-excluded `signature` field, so it is part of the signable bytes (the asset-lock
+        // ECDSA signature commits to it — a missing/desynced field would change the wire layout).
+        let mut transition = make_v0();
+        transition.surplus_output = Some(crate::address_funds::PlatformAddress::P2pkh([0x44; 20]));
+        test_round_trip(transition);
     }
 }

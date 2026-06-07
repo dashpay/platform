@@ -169,8 +169,8 @@ where
                 operations,
                 execution_operations,
                 additional_fixed_fee_cost,
+                shielded_flat_fee,
                 user_fee_increase,
-                ..
             } => {
                 let mut estimated_fee_result = self
                     .drive
@@ -192,11 +192,20 @@ where
 
                 estimated_fee_result.apply_user_fee_increase(*user_fee_increase);
 
-                let mut required_balance = estimated_fee_result.total_base_fee();
-
-                if let Some(additional_fixed_fee_cost) = additional_fixed_fee_cost {
-                    required_balance = required_balance.saturating_add(*additional_fixed_fee_cost);
-                }
+                // The transparent `Shield` pays the flat shielded fee `F` (set outside GroveDB),
+                // not the metered estimate, so the authoritative funding gate requires exactly
+                // `amount + F` against the post-reallocation input balances. All other
+                // address-funded events use the metered estimate plus any additional fixed cost.
+                let required_balance = if let Some(flat_fee) = shielded_flat_fee {
+                    *flat_fee
+                } else {
+                    let mut required_balance = estimated_fee_result.total_base_fee();
+                    if let Some(additional_fixed_fee_cost) = additional_fixed_fee_cost {
+                        required_balance =
+                            required_balance.saturating_add(*additional_fixed_fee_cost);
+                    }
+                    required_balance
+                };
 
                 let fee_deduction_result = deduct_fee_from_outputs_or_remaining_balance_of_inputs(
                     input_current_balances.clone(),
