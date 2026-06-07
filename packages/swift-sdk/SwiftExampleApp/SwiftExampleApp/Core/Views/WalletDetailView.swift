@@ -777,11 +777,25 @@ struct WalletInfoView: View {
                 )
             }
             do {
+                // Birth height is a chain-block number, so it must come
+                // from the TARGET network's freshly-created row — NOT the
+                // source `wallet`, whose `birthHeight` belongs to the
+                // network this detail screen was opened on. The persister
+                // stamps the right value on the new row synchronously
+                // during `createWallet`; read it back (same shape
+                // `CreateWalletView` uses) so orphan-recovery rescans the
+                // target chain from the correct height.
+                let createdId = created.walletId
+                let createdRow = try? modelContext.fetch(
+                    FetchDescriptor<PersistentWallet>(
+                        predicate: PersistentWallet.predicate(walletId: createdId)
+                    )
+                ).first
                 let metadata = WalletKeychainMetadata(
                     name: wallet.name ?? wallet.label,
                     walletDescription: wallet.walletDescription,
                     networks: [network.networkName],
-                    birthHeight: wallet.birthHeight
+                    birthHeight: createdRow?.birthHeight
                 )
                 try storage.setMetadata(metadata, for: created.walletId)
             } catch {
