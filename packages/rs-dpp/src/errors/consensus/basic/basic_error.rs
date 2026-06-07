@@ -677,13 +677,17 @@ pub enum BasicError {
     ShieldedInvalidValueBalanceError(ShieldedInvalidValueBalanceError),
 
     #[error(transparent)]
-    ShieldedImplicitFeeCapExceededError(ShieldedImplicitFeeCapExceededError),
-
-    #[error(transparent)]
     ShieldedEncryptedNoteSizeMismatchError(ShieldedEncryptedNoteSizeMismatchError),
 
     #[error(transparent)]
     IdentityAssetLockTransactionTooManyInputsError(IdentityAssetLockTransactionTooManyInputsError),
+
+    // NOTE: `BasicError` is bincode-encoded positionally (no explicit discriminants), so new
+    // variants MUST be appended at the tail — inserting mid-enum would shift the wire discriminants
+    // of every following variant and mis-decode previously-encoded errors. The error-code integer
+    // (codes.rs) is independent of variant order.
+    #[error(transparent)]
+    ShieldedImplicitFeeCapExceededError(ShieldedImplicitFeeCapExceededError),
 }
 
 impl From<BasicError> for ConsensusError {

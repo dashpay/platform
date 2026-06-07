@@ -113,6 +113,20 @@ impl TryFrom<JsValue> for PlatformAddressWasm {
             let uint8_array = Uint8Array::from(value.clone());
             let bytes = uint8_array.to_vec();
 
+            // A serialized PlatformAddress is exactly 21 bytes (1-byte variant tag + 20-byte hash).
+            // `from_bytes` decodes via bincode, which does NOT require full-slice consumption, so an
+            // over-length buffer with a valid 21-byte prefix would otherwise be silently truncated.
+            // Since `surplus_output` is part of the signed `ShieldFromAssetLock` transition body, a
+            // caller passing 22+ bytes would sign over the truncated 21-byte prefix — routing funds
+            // to a different destination with a still-valid signature. Reject any non-21-byte input
+            // (matching the C FFI's `parse_optional_surplus_output`).
+            if bytes.len() != 21 {
+                return Err(WasmDppError::invalid_argument(format!(
+                    "PlatformAddress must be exactly 21 bytes, got {}",
+                    bytes.len()
+                )));
+            }
+
             return PlatformAddress::from_bytes(&bytes)
                 .map(PlatformAddressWasm)
                 .map_err(|e| WasmDppError::invalid_argument(e.to_string()));
@@ -148,6 +162,14 @@ impl TryFrom<&str> for PlatformAddressWasm {
                 e
             ))
         })?;
+        // Exactly 21 bytes (1-byte variant tag + 20-byte hash); reject over-length input that
+        // bincode would silently truncate (see the Uint8Array branch for the full rationale).
+        if bytes.len() != 21 {
+            return Err(WasmDppError::invalid_argument(format!(
+                "PlatformAddress must be exactly 21 bytes, got {}",
+                bytes.len()
+            )));
+        }
         PlatformAddress::from_bytes(&bytes)
             .map(PlatformAddressWasm)
             .map_err(|e| WasmDppError::invalid_argument(e.to_string()))

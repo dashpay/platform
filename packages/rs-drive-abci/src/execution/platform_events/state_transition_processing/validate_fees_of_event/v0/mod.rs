@@ -215,13 +215,29 @@ where
                     platform_version,
                 )?;
 
+                // Advertise the AUTHORITATIVE fee (the flat `F` for shields), not the metered GroveDB
+                // estimate, so CheckTx populates `gas_wanted` from the fee that is actually deducted
+                // at execution (mempool gas-admission). The booking re-derives and deducts the fee
+                // independently, so this only affects the advertised/observed fee. Mirror the booking
+                // split: storage = min(metered_storage, F), processing = F - storage.
+                let result_fee_result = match shielded_flat_fee {
+                    Some(flat_fee) => {
+                        let storage_fee = estimated_fee_result.storage_fee.min(*flat_fee);
+                        FeeResult {
+                            storage_fee,
+                            processing_fee: *flat_fee - storage_fee,
+                            fee_refunds: Default::default(),
+                            removed_bytes_from_system: 0,
+                        }
+                    }
+                    None => estimated_fee_result,
+                };
+
                 if fee_deduction_result.fee_fully_covered {
-                    Ok(ConsensusValidationResult::new_with_data(
-                        estimated_fee_result,
-                    ))
+                    Ok(ConsensusValidationResult::new_with_data(result_fee_result))
                 } else {
                     Ok(ConsensusValidationResult::new_with_data_and_errors(
-                        estimated_fee_result,
+                        result_fee_result,
                         vec![StateError::AddressesNotEnoughFundsError(
                             AddressesNotEnoughFundsError::new(
                                 input_current_balances.clone(),
@@ -256,13 +272,22 @@ where
                 )?;
 
                 let required_fee = estimated_fee_result.total_base_fee();
+                // Advertise the authoritative pool fee for `gas_wanted`, not the metered estimate
+                // (the executor books `fees_to_add_to_pool` regardless).
+                let storage_fee = estimated_fee_result.storage_fee.min(*fees_to_add_to_pool);
+                let authoritative_fee_result = FeeResult {
+                    storage_fee,
+                    processing_fee: *fees_to_add_to_pool - storage_fee,
+                    fee_refunds: Default::default(),
+                    removed_bytes_from_system: 0,
+                };
                 if *fees_to_add_to_pool >= required_fee {
                     Ok(ConsensusValidationResult::new_with_data(
-                        estimated_fee_result,
+                        authoritative_fee_result,
                     ))
                 } else {
                     Ok(ConsensusValidationResult::new_with_data_and_errors(
-                        estimated_fee_result,
+                        authoritative_fee_result,
                         vec![StateError::InvalidShieldedProofError(
                             InvalidShieldedProofError::new(format!(
                                 "shield_from_asset_lock fee insufficient: provided {} but minimum required {}",
