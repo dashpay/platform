@@ -52,11 +52,12 @@ use std::collections::{BTreeMap, BTreeSet};
 /// conservation — the total consumed is still exactly `shield_amount`; it only
 /// changes *which* addresses are debited.
 ///
-/// For each input we recover its `actual` balance (`remaining_after_full_debit +
-/// requested`) and debit at most its own `requested` (so no input is over-spent
-/// beyond what its witness authorized). The structure validation has already
-/// enforced `Σrequested >= shield_amount`, so the passes always consume the full
-/// `shield_amount`; the trailing check is a fail-closed backstop (see `# Invariant` below).
+/// Each input is debited at most its own `requested` (so no input is over-spent beyond
+/// what its witness authorized): we consume `consumed = min(remaining_to_consume,
+/// requested)` from it and leave the unconsumed `requested - consumed` in the address.
+/// The structure validation has already enforced `Σrequested >= shield_amount`, so the
+/// passes always consume the full `shield_amount`; the trailing check is a fail-closed
+/// backstop (see `# Invariant` below).
 ///
 /// The remaining `requested - consumed` per input is simply left in the source
 /// address. The existing `PaidFromAddressInputs` fee machinery then deducts the fee
@@ -134,28 +135,29 @@ fn reallocate_inputs_for_shield_amount(
             );
             let requested = *requested;
 
-            // Recover the address's actual on-chain balance before this shield.
-            // `remaining_after_full_debit == actual - requested`, so `actual` is the sum.
-            let actual = remaining_after_full_debit
-                .checked_add(requested)
-                .ok_or_else(|| {
-                    Error::Execution(ExecutionError::Overflow(
-                        "overflow recovering actual address balance from shield remaining balance",
-                    ))
-                })?;
-
             // Consume up to this input's max contribution.
             let consumed = remaining_to_consume.min(requested);
             remaining_to_consume -= consumed;
 
-            // `consumed <= requested <= actual`, so this cannot underflow; guard defensively in case
-            // of corrupted state. (Uses CorruptedCodeExecution, not Overflow — an under-debit, if it
-            // ever occurred, is a logic/state-corruption bug, not an arithmetic overflow.)
-            let new_remaining = actual.checked_sub(consumed).ok_or_else(|| {
+            // Leave the unconsumed portion of this input's authorized contribution in the address.
+            // `remaining_after_full_debit` already had the *full* `requested` debited, so add back the
+            // part we did NOT consume: `new_remaining = remaining_after_full_debit + (requested -
+            // consumed)`. Since `consumed = min(remaining_to_consume, requested) <= requested`, the
+            // inner subtraction never underflows, and the result equals the pre-shield balance minus
+            // `consumed` (<= the original balance), so the add cannot overflow. Both are checked
+            // defensively in case of corrupted state.
+            let unconsumed = requested.checked_sub(consumed).ok_or_else(|| {
                 Error::Execution(ExecutionError::CorruptedCodeExecution(
-                    "consumed exceeds actual address balance computing adjusted shield remaining balance",
+                    "consumed exceeds requested computing unconsumed shield contribution",
                 ))
             })?;
+            let new_remaining = remaining_after_full_debit
+                .checked_add(unconsumed)
+                .ok_or_else(|| {
+                    Error::Execution(ExecutionError::Overflow(
+                        "overflow leaving unconsumed shield contribution in remaining balance",
+                    ))
+                })?;
 
             adjusted.insert(*addr, (*nonce, new_remaining));
         }
