@@ -51,13 +51,7 @@ pub const DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V2: DriveStateTransitionMethodV
                 address_credit_withdrawal_transition: 0,
                 address_funding_from_asset_lock_transition: 0,
                 shield_transition: 0,
-                // Bumped to 1: routes the asset-lock surplus to the optional `surplus_output`
-                // platform address (the v0 converter folds all excess into the fee pools).
-                // Safe to bump in the shared method-versions v2 (used by drive v6/protocol v11 AND
-                // drive v7/protocol v12): protocol v11 (DRIVE_VERSION_V6) has no shielded pool tree
-                // (`create_initial_state_structure: 2`), so a ShieldFromAssetLock fails at
-                // state-read before reaching this converter; only v12 exercises it.
-                shield_from_asset_lock_transition: 1,
+                shield_from_asset_lock_transition: 0,
                 shielded_transfer_transition: 0,
                 unshield_transition: 0,
                 shielded_withdrawal_transition: 0,
