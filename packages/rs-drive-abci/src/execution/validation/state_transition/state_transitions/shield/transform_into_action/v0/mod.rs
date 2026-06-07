@@ -46,6 +46,7 @@ use std::collections::{BTreeMap, BTreeSet};
 /// agree), in two ordered passes:
 ///   1. inputs **not** referenced by the fee strategy, then
 ///   2. inputs the fee strategy will deduct the fee from,
+///
 /// each pass in `BTreeMap` (address) order. Consuming the fee-payer input(s) last
 /// leaves them with the maximum residue to cover the fee, so a client that did not
 /// pre-reserve fee headroom on its fee-strategy input is far less likely to be
