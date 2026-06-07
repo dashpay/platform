@@ -682,6 +682,146 @@ mod tests {
                 )]
             );
         }
+
+        /// Builds a REAL spend+output Orchard bundle whose output policy mirrors the dpp SDK
+        /// builder `build_shielded_transfer_transition`: `num_spends` spends, then 1 recipient
+        /// output and (when there is change left over) 1 change output — i.e. at most 2 outputs.
+        /// Returns the serialized on-wire actions plus the fee that bundle's `value_balance`
+        /// encodes.
+        ///
+        /// The total spent is sized so `value_balance == compute_minimum_shielded_fee(num_spends
+        /// .max(2))` exactly, and a positive change output is emitted for `num_spends >= 2` (so the
+        /// `> 2 spends` case exercises the change-output branch too) — the same shape the SDK
+        /// builder produces.
+        fn build_transfer_like_bundle(num_spends: usize) -> (Vec<SerializedAction>, u64) {
+            assert!(num_spends >= 1, "need at least one spend");
+            let platform_version = PlatformVersion::latest();
+
+            // The SDK builder carves the fee from spends.len().max(2), BEFORE Orchard padding.
+            let carved_actions = num_spends.max(2);
+            let fee = dpp::shielded::compute_minimum_shielded_fee(carved_actions, platform_version)
+                .expect("fee computation");
+
+            let mut rng = StdRng::seed_from_u64(0);
+            let pk = get_proving_key();
+
+            let sk = SpendingKey::from_bytes([0u8; 32]).unwrap();
+            let fvk = FullViewingKey::from(&sk);
+            let recipient = fvk.address_at(0u32, Scope::External);
+            let ask = SpendAuthorizingKey::from(&sk);
+
+            // Each note holds a generous, equal value so the bundle is value-balanced.
+            let value_each = 200_000_000u64;
+            let total_spent = value_each * num_spends as u64;
+
+            // Build every note, append every commitment into ONE tree (single shared anchor —
+            // the builder uses exactly one anchor), then witness each note at its position.
+            let notes: Vec<Note> = (0..num_spends)
+                .map(|i| {
+                    let mut rho_bytes = [0u8; 32];
+                    rho_bytes[0] = (i as u8).wrapping_add(1); // distinct, non-zero, valid pallas
+                    let rho = Rho::from_bytes(&rho_bytes).unwrap();
+                    let rseed = RandomSeed::from_bytes([42u8; 32], &rho).unwrap();
+                    Note::from_parts(recipient, NoteValue::from_raw(value_each), rho, rseed)
+                        .unwrap()
+                })
+                .collect();
+
+            let mut tree = ClientMemoryCommitmentTree::new(100);
+            for note in &notes {
+                let cmx = ExtractedNoteCommitment::from(note.commitment());
+                tree.append(cmx.to_bytes(), Retention::Marked).unwrap();
+            }
+            tree.checkpoint(0u32).unwrap();
+            let anchor = tree.anchor().unwrap();
+
+            let mut builder = Builder::<DashMemo>::new(BundleType::DEFAULT, anchor);
+            for (i, note) in notes.into_iter().enumerate() {
+                let merkle_path: MerklePath =
+                    tree.witness(Position::from(i as u64), 0).unwrap().unwrap();
+                builder.add_spend(fvk.clone(), note, merkle_path).unwrap();
+            }
+
+            // Mirror the SDK builder's output policy: 1 recipient output + optional 1 change.
+            // recipient_amount + fee + change == total_spent. Send a small recipient amount and
+            // route the rest to change (positive whenever num_spends >= 2 with these values).
+            let recipient_amount = 1_000u64;
+            let change_amount = total_spent - recipient_amount - fee;
+            builder
+                .add_output(
+                    None,
+                    recipient,
+                    NoteValue::from_raw(recipient_amount),
+                    [0u8; 36],
+                )
+                .unwrap();
+            if change_amount > 0 {
+                builder
+                    .add_output(
+                        None,
+                        recipient,
+                        NoteValue::from_raw(change_amount),
+                        [0u8; 36],
+                    )
+                    .unwrap();
+            }
+
+            let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
+            let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
+            let sighash = compute_platform_sighash(&bundle_commitment, &[]);
+            let proven = unauthorized.create_proof(pk, &mut rng).unwrap();
+            let bundle = proven.apply_signatures(rng, sighash, &[ask]).unwrap();
+
+            let (actions, value_balance, _anchor, _proof, _binding) =
+                serialize_authorized_bundle_u64(&bundle);
+            (actions, value_balance)
+        }
+
+        /// Pins the dpp SDK builder's fee-vs-actions coupling end-to-end.
+        ///
+        /// The SDK builder `build_shielded_transfer_transition` carves the fee from
+        /// `num_actions = spends.len().max(2)` BEFORE Orchard padding, then emits 1 recipient
+        /// output + (optionally) 1 change output. Consensus prices the shielded fee from the
+        /// on-wire `actions.len()` and pins `value_balance == compute_minimum_shielded_fee(actions
+        /// .len())` EXACTLY. The carved-fee count and the on-wire count agree ONLY because the
+        /// builder emits at most 2 outputs, so `max(spends, outputs, 2) == max(spends, 2)`.
+        ///
+        /// We build REAL bundles whose output policy mirrors the SDK builder (1 recipient + optional
+        /// 1 change) for spend counts {1, 3} and assert the serialized `actions.len()` equals
+        /// `spends.len().max(2)`, and that the bundle's `value_balance` equals
+        /// `compute_minimum_shielded_fee(actions.len())`. If a future change makes the carved-fee
+        /// action count diverge from the on-wire action count (e.g. a 3rd output added with <=2
+        /// spends), this fails loudly — without it, every such transfer would be silently rejected by
+        /// consensus. This is the spend-side analogue of the output-only Shield invariant pinned by
+        /// `dpp`'s `test_output_only_bundle_serializes_to_min_actions`.
+        #[test]
+        fn test_builder_output_policy_actions_match_carved_fee_count() {
+            let platform_version = PlatformVersion::latest();
+
+            // 1 spend  -> on-wire actions padded to 2 (Orchard MIN_ACTIONS), fee carved for 2.
+            // 3 spends -> on-wire actions = 3, fee carved for 3.
+            for (num_spends, expected_actions) in [(1usize, 2usize), (3, 3)] {
+                let (actions, value_balance) = build_transfer_like_bundle(num_spends);
+
+                assert_eq!(
+                    actions.len(),
+                    expected_actions,
+                    "on-wire actions.len() ({}) must equal spends.len().max(2) = {expected_actions} \
+                     for {num_spends} spends; the SDK builder carves the fee for {expected_actions} \
+                     actions and consensus pins value_balance to exactly \
+                     compute_minimum_shielded_fee(actions.len())",
+                    actions.len()
+                );
+
+                let expected_fee =
+                    dpp::shielded::compute_minimum_shielded_fee(expected_actions, platform_version)
+                        .expect("fee computation");
+                assert_eq!(
+                    value_balance, expected_fee,
+                    "value_balance must equal compute_minimum_shielded_fee(on-wire actions.len())"
+                );
+            }
+        }
     }
 
     // ==========================================

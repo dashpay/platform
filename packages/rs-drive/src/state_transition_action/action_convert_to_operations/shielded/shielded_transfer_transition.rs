@@ -220,6 +220,24 @@ mod tests {
                 fee_result.storage_fee,
                 fee_result.processing_fee
             );
+
+            // Pin the booking-split invariant directly. The pool-paid booking in
+            // `execute_event/v0` splits the flat carved fee as
+            //   storage_fee = min(real_metered_storage, flat_fee)
+            //   processing_fee = flat_fee - storage_fee
+            // The `min()` only ever binds — zeroing the proposer's processing reward and
+            // undercharging storage — if the real metered storage EXCEEDS the flat fee. Asserting
+            // `flat_fee > real_metered_storage` here is exactly the condition that guarantees the
+            // `min()` is a no-op, so the proposer is always paid the processing remainder and
+            // storage is never undercharged. (Strict `>` because the flat fee also bundles the 100M
+            // proof-verification fee that GroveDB never meters.)
+            assert!(
+                fee_amount > fee_result.storage_fee,
+                "compute_minimum_shielded_fee({num_actions}) = {fee_amount} must strictly exceed the \
+                 real metered storage {} so the booking split's min(real_storage, flat_fee) never \
+                 binds (proposer processing reward never zeroed, storage never undercharged)",
+                fee_result.storage_fee
+            );
         }
     }
 }
