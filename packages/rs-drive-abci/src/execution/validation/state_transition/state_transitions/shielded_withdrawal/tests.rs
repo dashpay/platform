@@ -59,14 +59,23 @@ mod tests {
     /// Shorthand for creating a structurally valid (but cryptographically invalid) shielded
     /// withdrawal transition. Has a non-zero anchor, valid field sizes, positive unshielding_amount.
     fn create_default_shielded_withdrawal_transition() -> StateTransition {
+        // unshielding_amount = the 1-action ShieldedWithdrawal fee (base + flat withdrawal-document
+        // storage cost) + the min_withdrawal_amount floor for the net. Sizing it from the live fee
+        // function keeps the gross above the fee gate's minimum so these state-validation tests
+        // (anchor/nullifier/proof) reach the stage they intend to exercise instead of short-circuiting
+        // on InsufficientShieldedFeeError, and stays correct if the fee constants change.
+        let platform_version = PlatformVersion::latest();
+        let fee = dpp::shielded::compute_shielded_withdrawal_fee(1, platform_version)
+            .expect("fee computation should not overflow");
+        let unshielding_amount = fee + platform_version.system_limits.min_withdrawal_amount;
         create_shielded_withdrawal_transition(
             vec![create_dummy_serialized_action()],
-            131_548_800, // unshielding_amount: recipient (1_000_000, at the v12 min_withdrawal_amount floor) + min fee for 1 action
-            [42u8; 32],  // non-zero anchor
-            vec![0u8; 100], // dummy proof bytes
-            [0u8; 64],   // dummy binding signature
-            1,           // core_fee_per_byte
-            Pooling::Never, // pooling strategy
+            unshielding_amount,
+            [42u8; 32],             // non-zero anchor
+            vec![0u8; 100],         // dummy proof bytes
+            [0u8; 64],              // dummy binding signature
+            1,                      // core_fee_per_byte
+            Pooling::Never,         // pooling strategy
             create_output_script(), // P2PKH output script
         )
     }
@@ -855,9 +864,17 @@ mod tests {
             let mut action2 = create_dummy_serialized_action();
             action2.cmx = [99u8; 32]; // Different commitment but same nullifier
 
+            // unshielding_amount = the 2-action ShieldedWithdrawal fee (base + flat
+            // withdrawal-document storage cost) + the min_withdrawal_amount floor for the net, so the
+            // gross clears the fee gate and the flow reaches the (earlier) proof-verification stage
+            // this test exercises rather than short-circuiting on InsufficientShieldedFeeError.
+            let fee = dpp::shielded::compute_shielded_withdrawal_fee(2, platform_version)
+                .expect("fee computation should not overflow");
+            let unshielding_amount = fee + platform_version.system_limits.min_withdrawal_amount;
+
             let transition = create_shielded_withdrawal_transition(
                 vec![action1, action2], // Both have nullifier [1u8; 32]
-                162_097_600, // unshielding_amount: recipient (1_000_000, at the v12 min_withdrawal_amount floor) + min fee for 2 actions
+                unshielding_amount,
                 anchor,
                 vec![0u8; 100],
                 [0u8; 64],
@@ -1244,7 +1261,7 @@ mod tests {
             // the carved minimum shielded fee.
             let fee = &fee_results[0];
             let expected_total =
-                dpp::shielded::compute_minimum_shielded_fee(num_actions, platform_version)
+                dpp::shielded::compute_shielded_withdrawal_fee(num_actions, platform_version)
                     .expect("fee computation should not overflow");
             assert!(
                 fee.storage_fee > 0,
@@ -1284,7 +1301,7 @@ mod tests {
 
             // The system-credit counter dropped by the NET (unshielding_amount - fee):
             // only the net leaves the platform to Core; the fee stays in the fee pools.
-            let fee = dpp::shielded::compute_minimum_shielded_fee(num_actions, platform_version)
+            let fee = dpp::shielded::compute_shielded_withdrawal_fee(num_actions, platform_version)
                 .expect("fee computation should not overflow");
             assert_eq!(
                 credits_before.total_credits_in_platform - credits_after.total_credits_in_platform,

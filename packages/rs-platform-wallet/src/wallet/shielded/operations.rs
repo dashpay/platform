@@ -18,7 +18,7 @@
 //! - **Withdraw** (Type 19): shielded pool → Core L1 address
 
 use super::keys::OrchardKeySet;
-use super::note_selection::select_notes_with_fee;
+use super::note_selection::{select_notes_with_fee, ShieldedFeeKind};
 use super::store::{ShieldedNote, ShieldedStore, SubwalletId};
 use crate::changeset::{PlatformWalletChangeSet, ShieldedChangeSet};
 use crate::error::PlatformWalletError;
@@ -351,8 +351,10 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
     // Reserve against the 2-action floor: Orchard's BundleType::DEFAULT pads single-spend
     // bundles to 2 actions, and the builder prices the fee at spends.len().max(2). Reserving
     // for 1 would under-fee a single-note transition and the builder would reject it locally.
+    // Unshield is carved with the base `compute_minimum_shielded_fee` (it writes no Core
+    // withdrawal document), so reserve against `ShieldedFeeKind::Base`.
     let (selected_notes, total_input, exact_fee) =
-        reserve_unspent_notes(sdk, store, id, amount, 2).await?;
+        reserve_unspent_notes(sdk, store, id, amount, 2, ShieldedFeeKind::Base).await?;
 
     info!(
         account,
@@ -456,8 +458,10 @@ pub async fn transfer<S: ShieldedStore, P: OrchardProver>(
     let change_addr = default_orchard_address(keys)?;
     let id = SubwalletId::new(wallet_id, account);
 
+    // ShieldedTransfer is carved with the base `compute_minimum_shielded_fee`, so reserve
+    // against `ShieldedFeeKind::Base`.
     let (selected_notes, total_input, exact_fee) =
-        reserve_unspent_notes(sdk, store, id, amount, 2).await?;
+        reserve_unspent_notes(sdk, store, id, amount, 2, ShieldedFeeKind::Base).await?;
 
     info!(
         account,
@@ -553,8 +557,13 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
     // Reserve against the 2-action floor: Orchard's BundleType::DEFAULT pads single-spend
     // bundles to 2 actions, and the builder prices the fee at spends.len().max(2). Reserving
     // for 1 would under-fee a single-note transition and the builder would reject it locally.
+    // ShieldedWithdrawal is carved with `compute_shielded_withdrawal_fee` (the base fee PLUS the
+    // flat Core withdrawal-document storage cost), so reserve against
+    // `ShieldedFeeKind::Withdrawal` — reserving the base fee here would under-fund the document
+    // cost and the builder would reject the spend (and the `fee_used == exact_fee` debug assert
+    // below would fire).
     let (selected_notes, total_input, exact_fee) =
-        reserve_unspent_notes(sdk, store, id, amount, 2).await?;
+        reserve_unspent_notes(sdk, store, id, amount, 2, ShieldedFeeKind::Withdrawal).await?;
 
     info!(
         account,
@@ -587,10 +596,10 @@ pub async fn withdraw<S: ShieldedStore, P: OrchardProver>(
         )
         .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
         // The builder's fee and the wallet's reserved `exact_fee` both come from
-        // compute_minimum_shielded_fee with the same action count; lock that they agree.
+        // compute_shielded_withdrawal_fee with the same action count; lock that they agree.
         debug_assert_eq!(
             fee_used, exact_fee,
-            "builder fee must match the reserved minimum fee"
+            "builder fee must match the reserved withdrawal fee"
         );
 
         trace!("Shielded withdrawal: state transition built, broadcasting...");
@@ -772,13 +781,14 @@ async fn reserve_unspent_notes<S: ShieldedStore>(
     id: SubwalletId,
     amount: u64,
     outputs: usize,
+    fee_kind: ShieldedFeeKind,
 ) -> Result<(Vec<ShieldedNote>, u64, u64), PlatformWalletError> {
     let mut store = store.write().await;
     let unspent = store
         .get_unspent_notes(id)
         .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
     let (selected, total_input, exact_fee) =
-        select_notes_with_fee(&unspent, amount, outputs, sdk.version())?.into_owned();
+        select_notes_with_fee(&unspent, amount, outputs, fee_kind, sdk.version())?.into_owned();
     for note in &selected {
         store
             .mark_pending(id, &note.nullifier)
