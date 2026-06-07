@@ -1518,12 +1518,12 @@ mod tests {
                 process_state_transitions(&platform, &[st], BlockInfo::default(), &platform_state);
 
             // --- Assert the new metered + compute fee model directly on the booked fee. ---
-            // The fee is `metered_storage + metered_processing + shielded_compute_fee`. A positive
+            // The fee is `metered_storage + metered_processing + shielded_verification_fee`. A positive
             // `storage_fee` proves the metered GroveDB storage of the note/nullifier writes IS
             // captured (this directly addresses the reviewer's concern that the old flat-fee
-            // override discarded metered storage), and `processing_fee >= shielded_compute_fee`
+            // override discarded metered storage), and `processing_fee >= shielded_verification_fee`
             // proves the ZK compute fee is added on top of the metered processing.
-            let shielded_compute_fee = dpp::shielded::compute_shielded_compute_fee(
+            let shielded_verification_fee = dpp::shielded::compute_shielded_verification_fee(
                 num_actions_in_shield,
                 platform_version,
             )
@@ -1535,10 +1535,10 @@ mod tests {
                 booked.storage_fee
             );
             assert!(
-                booked.processing_fee >= shielded_compute_fee,
+                booked.processing_fee >= shielded_verification_fee,
                 "processing fee ({}) must include the shielded compute fee ({}) on top of metered processing",
                 booked.processing_fee,
-                shielded_compute_fee
+                shielded_verification_fee
             );
 
             // --- Additionally assert the invariant directly post-block ---

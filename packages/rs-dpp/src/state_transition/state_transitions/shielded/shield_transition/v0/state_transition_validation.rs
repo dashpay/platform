@@ -97,7 +97,7 @@ impl StateTransitionStructureValidation for ShieldTransitionV0 {
         }
 
         // Total input amounts must cover the shield amount PLUS the shielded COMPUTE fee
-        // (`compute_shielded_compute_fee`: proof verification + per-action processing, NO storage
+        // (`compute_shielded_verification_fee`: proof verification + per-action processing, NO storage
         // term). This is a stateless lower bound: the real per-action storage cost is metered by
         // GroveDB at execution and is unknowable here, so we deliberately do NOT add the 312-byte
         // storage ESTIMATE — doing so would falsely reject otherwise-valid transitions whose actual
@@ -110,10 +110,10 @@ impl StateTransitionStructureValidation for ShieldTransitionV0 {
         // reallocation plus that authoritative gate. `input_sum` here only bounds the sum of max
         // contributions.
         //
-        // `compute_shielded_compute_fee` returns a `Result`, but this validator returns a
+        // `compute_shielded_verification_fee` returns a `Result`, but this validator returns a
         // `SimpleConsensusValidationResult`, so we cannot `?`-propagate; we map an overflow to a
         // consensus error (reachable only via pathological fee constants).
-        let minimum_fee = match crate::shielded::compute_shielded_compute_fee(
+        let minimum_fee = match crate::shielded::compute_shielded_verification_fee(
             self.actions.len(),
             platform_version,
         ) {
@@ -238,7 +238,7 @@ mod tests {
 
     /// Creates a valid ShieldTransitionV0 that passes all validation checks.
     ///
-    /// The input must cover `amount + compute_shielded_compute_fee(num_actions)`. The shielded
+    /// The input must cover `amount + compute_shielded_verification_fee(num_actions)`. The shielded
     /// compute fee is dominated by the ~100M-credit proof-verification fee, so the input is set
     /// well above the amount to clear the fee floor.
     fn valid_shield_transition() -> ShieldTransitionV0 {
@@ -410,7 +410,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let mut transition = valid_shield_transition();
         // The input covers the shield amount but NOT the amount + the shielded compute fee
-        // (`compute_shielded_compute_fee`, ~100M credits). It must be rejected.
+        // (`compute_shielded_verification_fee`, ~100M credits). It must be rejected.
         transition.amount = 2_000_000;
         transition.inputs.clear();
         transition
@@ -563,7 +563,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let mut transition = valid_shield_transition();
         let amount = 500_000u64;
-        let fee = crate::shielded::compute_shielded_compute_fee(
+        let fee = crate::shielded::compute_shielded_verification_fee(
             transition.actions.len(),
             platform_version,
         )
@@ -588,7 +588,7 @@ mod tests {
         let platform_version = PlatformVersion::latest();
         let mut transition = valid_shield_transition();
         let amount = 500_000u64;
-        let fee = crate::shielded::compute_shielded_compute_fee(
+        let fee = crate::shielded::compute_shielded_verification_fee(
             transition.actions.len(),
             platform_version,
         )

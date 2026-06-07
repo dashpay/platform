@@ -13,7 +13,8 @@ use crate::withdrawal::Pooling;
 // Re-exported so the public path stays `dpp::shielded::compute_minimum_shielded_fee` (the
 // module and the function share a name but live in different namespaces).
 pub use compute_minimum_shielded_fee::{
-    compute_minimum_shielded_fee, compute_shielded_compute_fee, compute_shielded_withdrawal_fee,
+    compute_minimum_shielded_fee, compute_shielded_verification_fee,
+    compute_shielded_withdrawal_fee,
 };
 
 /// Permanent storage bytes per shielded action: 312 bytes total.

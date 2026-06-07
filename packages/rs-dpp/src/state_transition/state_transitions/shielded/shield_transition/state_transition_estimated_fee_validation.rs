@@ -1,5 +1,5 @@
 use crate::fee::Credits;
-use crate::shielded::compute_shielded_compute_fee;
+use crate::shielded::compute_shielded_verification_fee;
 use crate::state_transition::shield_transition::ShieldTransition;
 use crate::state_transition::StateTransitionEstimatedFeeValidation;
 use crate::ProtocolError;
@@ -7,7 +7,7 @@ use platform_version::version::PlatformVersion;
 
 impl StateTransitionEstimatedFeeValidation for ShieldTransition {
     /// Returns an **advisory** lower bound on a transparent `Shield`'s fee: the predictable
-    /// COMPUTE portion `compute_shielded_compute_fee(num_actions)` (the per-bundle Halo 2
+    /// COMPUTE portion `compute_shielded_verification_fee(num_actions)` (the per-bundle Halo 2
     /// proof-verification fee + the per-action processing fee).
     ///
     /// This is NOT the funding floor and is NOT the full fee. Unlike the asset-lock transitions,
@@ -30,6 +30,6 @@ impl StateTransitionEstimatedFeeValidation for ShieldTransition {
         // The on-wire Orchard `actions` count is what the compute fee is priced against (matching
         // the consensus structure-validation floor and the execution-event compute charge).
         let ShieldTransition::V0(v0) = self;
-        compute_shielded_compute_fee(v0.actions.len(), platform_version)
+        compute_shielded_verification_fee(v0.actions.len(), platform_version)
     }
 }

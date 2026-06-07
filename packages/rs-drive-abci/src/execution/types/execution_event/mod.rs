@@ -58,7 +58,7 @@ pub(in crate::execution) enum ExecutionEvent<'a> {
         /// Additional fee cost, these are processing fees where the user fee increase does not apply.
         ///
         /// `Shield` (transparent shield) sets this to the shielded COMPUTE fee
-        /// (`compute_shielded_compute_fee`: proof verification + per-action processing), which is
+        /// (`compute_shielded_verification_fee`: proof verification + per-action processing), which is
         /// added to the metered processing fee on top of the metered GroveDB storage of the
         /// note/nullifier writes — exactly like `IdentityCreateFromAddresses` adds its registration
         /// cost. No storage term is added here; storage comes entirely from metering.
@@ -485,14 +485,14 @@ impl ExecutionEvent<'_> {
                 // Transparent shield is metered + compute: GroveDB meters the real storage and
                 // processing of the note/nullifier writes (via `into_high_level_drive_operations`),
                 // and we add ONLY the shielded COMPUTE fee
-                // `compute_shielded_compute_fee(num_actions)` (Halo 2 proof verification +
+                // `compute_shielded_verification_fee(num_actions)` (Halo 2 proof verification +
                 // per-action processing) that GroveDB cannot see, as `additional_fixed_fee_cost`.
                 // This is exactly the `IdentityCreateFromAddresses` model: a fixed cost added to
                 // processing on top of the metered fee. No storage term is added here, so storage is
                 // never double-counted. `notes` are built 1:1 from the on-wire Orchard `actions`
                 // (see the shield action transformer), so `notes().len()` is the on-wire action
                 // count that the structure-validation floor also prices the compute fee against.
-                let shielded_compute_fee = dpp::shielded::compute_shielded_compute_fee(
+                let shielded_verification_fee = dpp::shielded::compute_shielded_verification_fee(
                     shield_action.notes().len(),
                     platform_version,
                 )?;
@@ -504,7 +504,7 @@ impl ExecutionEvent<'_> {
                     fee_strategy,
                     operations,
                     execution_operations: execution_context.operations_consume(),
-                    additional_fixed_fee_cost: Some(shielded_compute_fee),
+                    additional_fixed_fee_cost: Some(shielded_verification_fee),
                     user_fee_increase,
                 })
             }

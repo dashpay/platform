@@ -193,7 +193,7 @@ where
 
                 // The required balance is the metered base fee plus any additional fixed cost (for
                 // the transparent `Shield` that fixed cost is the shielded COMPUTE fee
-                // `compute_shielded_compute_fee`, added on top of the metered storage/processing of
+                // `compute_shielded_verification_fee`, added on top of the metered storage/processing of
                 // the note/nullifier writes). This is the generic metered + `additional_fixed_fee_cost`
                 // path shared by every address-funded event (e.g. `IdentityCreateFromAddresses`).
                 let mut required_balance = estimated_fee_result.total_base_fee();

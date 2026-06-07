@@ -147,7 +147,7 @@ where
             // The total fee to deduct is the metered base fee (storage + processing), where
             // processing already includes any `additional_fixed_fee_cost` added just above. For the
             // transparent `Shield` that fixed cost is the shielded COMPUTE fee
-            // (`compute_shielded_compute_fee`), so the fee is `metered_storage + metered_processing +
+            // (`compute_shielded_verification_fee`), so the fee is `metered_storage + metered_processing +
             // compute_fee` — storage comes entirely from GroveDB metering of the note/nullifier
             // writes, never double-counted. This is identical to every other `PaidFromAddressInputs`
             // event (e.g. `IdentityCreateFromAddresses`), so conservation (deduct == book) holds by

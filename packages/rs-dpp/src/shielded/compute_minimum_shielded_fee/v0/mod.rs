@@ -23,7 +23,7 @@ use platform_version::version::PlatformVersion;
 ///
 /// All arithmetic is checked: an overflow (only reachable via pathological fee constants)
 /// surfaces as `ProtocolError::Overflow` instead of silently wrapping.
-pub fn compute_shielded_compute_fee_v0(
+pub fn compute_shielded_verification_fee_v0(
     num_actions: usize,
     platform_version: &PlatformVersion,
 ) -> Result<Credits, ProtocolError> {
@@ -48,7 +48,7 @@ pub fn compute_shielded_compute_fee_v0(
 ///   `min_fee = compute_fee + num_actions × storage_fee_per_action`
 ///
 /// where `compute_fee = proof_verification_fee + num_actions × processing_fee`
-/// (see [`compute_shielded_compute_fee_v0`]) and
+/// (see [`compute_shielded_verification_fee_v0`]) and
 /// `storage_fee_per_action = SHIELDED_STORAGE_BYTES_PER_ACTION × (disk + processing) credits/byte`.
 ///
 /// Expanding, this equals the historical formula
@@ -59,7 +59,7 @@ pub fn compute_shielded_compute_fee_v0(
 /// This is the fee carved from the shielded **pool** by the pool-paid transitions
 /// (ShieldedTransfer / Unshield / ShieldedWithdrawal), which cannot meter their writes against an
 /// address balance and so must price a flat storage estimate into the carved fee. The transparent
-/// `Shield` instead meters storage via GroveDB and only adds [`compute_shielded_compute_fee_v0`].
+/// `Shield` instead meters storage via GroveDB and only adds [`compute_shielded_verification_fee_v0`].
 ///
 /// All arithmetic is checked: an overflow (only reachable via pathological fee constants)
 /// surfaces as `ProtocolError::Overflow` instead of silently wrapping.
@@ -69,7 +69,7 @@ pub fn compute_minimum_shielded_fee_v0(
 ) -> Result<Credits, ProtocolError> {
     let storage = &platform_version.fee_version.storage;
 
-    let compute_fee = compute_shielded_compute_fee_v0(num_actions, platform_version)?;
+    let compute_fee = compute_shielded_verification_fee_v0(num_actions, platform_version)?;
 
     let per_byte_rate = storage
         .storage_disk_usage_credit_per_byte
@@ -110,7 +110,7 @@ pub fn compute_minimum_shielded_fee_v0(
 ///
 /// This fee is used ONLY by `ShieldedWithdrawal`. The other pool-paid transitions
 /// (ShieldedTransfer / Unshield) and the entry transitions keep using
-/// [`compute_minimum_shielded_fee_v0`] / [`compute_shielded_compute_fee_v0`].
+/// [`compute_minimum_shielded_fee_v0`] / [`compute_shielded_verification_fee_v0`].
 ///
 /// All arithmetic is checked: an overflow (only reachable via pathological fee constants)
 /// surfaces as `ProtocolError::Overflow` instead of silently wrapping. The `per_byte_rate` is
@@ -173,7 +173,7 @@ mod tests {
             );
 
             // And min_fee == compute_fee + num_actions × storage_estimate.
-            let compute_fee = compute_shielded_compute_fee_v0(num_actions, platform_version)
+            let compute_fee = compute_shielded_verification_fee_v0(num_actions, platform_version)
                 .expect("compute fee");
             assert_eq!(
                 refactored,

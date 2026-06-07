@@ -217,7 +217,7 @@ impl ShieldStateTransitionTransformIntoActionValidationV0 for ShieldTransition {
         //
         // Shield is metered + compute: GroveDB meters the real storage and processing of the
         // note/nullifier writes, and the execution-event layer adds the shielded COMPUTE fee
-        // `compute_shielded_compute_fee(num_actions)` (proof verification + per-action processing)
+        // `compute_shielded_verification_fee(num_actions)` (proof verification + per-action processing)
         // on top as `additional_fixed_fee_cost` (see `ExecutionEvent` construction). These pool
         // reads flow through the standard metering with the rest of the operations.
         let mut drive_operations = vec![];

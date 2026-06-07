@@ -37,7 +37,7 @@ The fee is derived differently depending on the shielded transition type:
 
 | Transition | Fee Formula | Explanation |
 |---|---|---|
-| **Shield** | `fee = metered(storage + processing) + shielded_compute_fee`, paid from transparent address inputs | Charged on the transparent side (not from `value_balance`), on top of the shielded amount. The storage and processing of the note/nullifier writes are **metered** by GroveDB; only the ZK compute fee (`proof + num_actions × per_action_processing`) is added on top. Skipped by the `value_balance`-based shielded fee validation; enforced through the address-input fee path. See [Entry-Transition Fees](#entry-transition-fees-shield-and-shieldfromassetlock). |
+| **Shield** | `fee = metered(storage + processing) + shielded_verification_fee`, paid from transparent address inputs | Charged on the transparent side (not from `value_balance`), on top of the shielded amount. The storage and processing of the note/nullifier writes are **metered** by GroveDB; only the ZK compute fee (`proof + num_actions × per_action_processing`) is added on top. Skipped by the `value_balance`-based shielded fee validation; enforced through the address-input fee path. See [Entry-Transition Fees](#entry-transition-fees-shield-and-shieldfromassetlock). |
 | **ShieldedTransfer** | `fee = value_balance` (pinned to the minimum) | The entire `value_balance` is the fee and must equal `compute_minimum_shielded_fee(num_actions)` exactly (overpayment is rejected). Nothing leaves the pool except the fee. |
 | **Unshield** | `fee = compute_minimum_shielded_fee(num_actions)` | `value_balance` (the transition's `unshielding_amount`) is the **gross** amount leaving the pool. The output address receives `unshielding_amount − fee`; the `fee` is the flat minimum. Validation requires `unshielding_amount ≥ fee`. |
 | **ShieldedWithdrawal** | `fee = compute_minimum_shielded_fee(num_actions) + withdrawal_document_storage_fee` | `value_balance` (`unshielding_amount`) is the **gross** amount leaving the pool. The Core withdrawal document receives `unshielding_amount − fee` (which must also clear `MIN_WITHDRAWAL_AMOUNT`). Unlike the other pool-paid transitions, ShieldedWithdrawal also **writes a Core withdrawal document** — a real document insert into the withdrawals contract plus its index entries (`AddWithdrawalDocument`), with a real metered cost of ≈110M credits that is **flat regardless of action count**. That cost is priced on top of the base shielded minimum as a flat ~4,100-byte storage component (`withdrawal_document_storage_fee = 4100 × per_byte_rate`), so the document write is covered and the proof-verification fee isn't diverted from the proposer to pay for it. See [Per-Action Storage Fee](#3-per-action-storage-fee). |
@@ -58,7 +58,7 @@ therefore charged from the funding side, and both cover the same Halo 2 proof
 verification and per-action work the other shielded transitions pay for — but they
 account for it differently. **`Shield`** debits a state-queryable transparent address
 balance, so GroveDB *meters* its real storage/processing and only the compute portion
-(`compute_shielded_compute_fee`, no storage term) is added on top. **`ShieldFromAssetLock`**
+(`compute_shielded_verification_fee`, no storage term) is added on top. **`ShieldFromAssetLock`**
 is funded by a consumed asset lock with no metering anchor, so it pays the flat
 `compute_minimum_shielded_fee(num_actions)` (plus the asset-lock base cost). `num_actions`
 is the on-wire action count of the bundle (a single-output, spends-disabled Orchard bundle
@@ -72,11 +72,11 @@ writes plus the address-balance updates), and the **shielded compute fee** is ad
 top:
 
 ```
-fee = metered_storage + metered_processing + shielded_compute_fee
-shielded_compute_fee = proof_verification_fee + num_actions × per_action_processing_fee
+fee = metered_storage + metered_processing + shielded_verification_fee
+shielded_verification_fee = proof_verification_fee + num_actions × per_action_processing_fee
 ```
 
-`shielded_compute_fee` is the ZK-verification cost (Halo 2 proof + per-action spend-auth
+`shielded_verification_fee` is the ZK-verification cost (Halo 2 proof + per-action spend-auth
 verification) that GroveDB metering cannot see. It is added as the transition's
 `additional_fixed_fee_cost` — exactly the mechanism `IdentityCreateFromAddresses` uses
 for its registration cost. It carries **no storage term**: storage comes entirely from
@@ -86,7 +86,7 @@ conserved by the standard machinery (no special-case override).
 
 `Shield` is skipped by the `value_balance`-based minimum-fee validation (its
 `value_balance` is the amount entering the pool, not a fee). The stateless structure
-floor requires only `shield_amount + shielded_compute_fee` (a conservative lower bound,
+floor requires only `shield_amount + shielded_verification_fee` (a conservative lower bound,
 since metered storage is unknowable without state); the authoritative `metered +
 compute` funding gate is `validate_fees_of_event`.
 
@@ -326,13 +326,13 @@ The two entry transitions do not decrement the pool (they add to it), so their f
 booked from the funding side instead:
 
 ```
-Shield:              fee_amount = metered + shielded_compute_fee     // from transparent address inputs
+Shield:              fee_amount = metered + shielded_verification_fee     // from transparent address inputs
 ShieldFromAssetLock: fee_amount = pool_fee (+ unclaimed surplus)     // from the consumed asset lock
 ```
 
 For `Shield`, the fee is deducted from the transparent address inputs and booked through
 the standard `PaidFromAddressInputs` event (deducted == booked, no override): metered
-storage and processing, plus the `shielded_compute_fee` folded into processing. For
+storage and processing, plus the `shielded_verification_fee` folded into processing. For
 `ShieldFromAssetLock`, the consumed asset-lock value is partitioned into `shield_amount`
 (into the pool), `surplus_amount` (to `surplus_output`, or `0`), and `fee_amount` (to the
 fee pools); see [Entry-Transition Fees](#entry-transition-fees-shield-and-shieldfromassetlock).

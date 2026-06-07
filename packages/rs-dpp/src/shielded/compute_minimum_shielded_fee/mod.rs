@@ -4,7 +4,7 @@ use crate::fee::Credits;
 use crate::ProtocolError;
 use platform_version::version::PlatformVersion;
 use v0::compute_minimum_shielded_fee_v0;
-use v0::compute_shielded_compute_fee_v0;
+use v0::compute_shielded_verification_fee_v0;
 use v0::compute_shielded_withdrawal_fee_v0;
 
 /// Computes the minimum **flat** fee (in credits) for a pool-paid / asset-lock shielded
@@ -21,7 +21,7 @@ use v0::compute_shielded_withdrawal_fee_v0;
 /// threshold can never drift.
 ///
 /// The transparent `Shield` is the exception: it meters its note/nullifier storage via GroveDB and
-/// adds only the COMPUTE portion via the sibling [`compute_shielded_compute_fee`] (which carries no
+/// adds only the COMPUTE portion via the sibling [`compute_shielded_verification_fee`] (which carries no
 /// storage term). Both functions dispatch on the SAME version key, so the flat fee and the compute
 /// fee always evolve together and cannot drift.
 ///
@@ -56,7 +56,7 @@ pub fn compute_minimum_shielded_fee(
 /// carved from the pool), and the consensus gate `validate_minimum_shielded_fee` all call this
 /// function, so the carved fee and the validation threshold can never drift. ShieldedTransfer,
 /// Unshield, and the entry transitions keep using [`compute_minimum_shielded_fee`] /
-/// [`compute_shielded_compute_fee`].
+/// [`compute_shielded_verification_fee`].
 ///
 /// Dispatches on the SAME version key (`dpp.methods.compute_minimum_shielded_fee`) as
 /// [`compute_minimum_shielded_fee`] so the two formulas evolve together across protocol versions.
@@ -92,14 +92,14 @@ pub fn compute_shielded_withdrawal_fee(
 /// # Parameters
 /// - `num_actions` — number of Orchard actions in the bundle
 /// - `platform_version` — protocol version (determines the formula version and fee constants)
-pub fn compute_shielded_compute_fee(
+pub fn compute_shielded_verification_fee(
     num_actions: usize,
     platform_version: &PlatformVersion,
 ) -> Result<Credits, ProtocolError> {
     match platform_version.dpp.methods.compute_minimum_shielded_fee {
-        0 => compute_shielded_compute_fee_v0(num_actions, platform_version),
+        0 => compute_shielded_verification_fee_v0(num_actions, platform_version),
         version => Err(ProtocolError::UnknownVersionMismatch {
-            method: "compute_shielded_compute_fee".to_string(),
+            method: "compute_shielded_verification_fee".to_string(),
             known_versions: vec![0],
             received: version,
         }),
