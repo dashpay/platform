@@ -164,7 +164,7 @@ where
             );
             let total_fee = if let Some(flat_fee) = shielded_flat_fee {
                 let storage_fee = individual_fee_result.storage_fee.min(flat_fee);
-                let processing_fee = flat_fee.saturating_sub(storage_fee);
+                let processing_fee = flat_fee - storage_fee;
                 individual_fee_result = FeeResult {
                     storage_fee,
                     processing_fee,

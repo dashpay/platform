@@ -18,7 +18,7 @@ use dpp::asset_lock::reduced_asset_lock_value::{AssetLockValue, AssetLockValueGe
 use dpp::block::block_info::BlockInfo;
 use dpp::balances::credits::CREDITS_PER_DUFF;
 use dpp::consensus::basic::identity::IdentityAssetLockTransactionOutPointNotEnoughBalanceError;
-use dpp::consensus::basic::state_transition::ShieldedInvalidValueBalanceError;
+use dpp::consensus::basic::state_transition::ShieldedImplicitFeeCapExceededError;
 use dpp::consensus::signature::{BasicECDSAError, SignatureError};
 use dpp::consensus::state::state_error::StateError;
 use dpp::dashcore::hashes::Hash;
@@ -348,7 +348,6 @@ impl ShieldFromAssetLockStateTransitionTransformIntoActionValidationV0
 
         // When no surplus_output is set, the surplus is donated to the fee pools — but only up to
         // `shielded_implicit_fee_cap`, so a client cannot accidentally forfeit a large remainder.
-        // (Reuses ShieldedInvalidValueBalanceError; a dedicated error type could be added in review.)
         if surplus_output.is_none() {
             let implicit_fee_cap = platform_version
                 .drive_abci
@@ -357,11 +356,7 @@ impl ShieldFromAssetLockStateTransitionTransformIntoActionValidationV0
                 .shielded_implicit_fee_cap;
             if surplus > implicit_fee_cap {
                 return Ok(ConsensusValidationResult::new_with_error(
-                    ShieldedInvalidValueBalanceError::new(format!(
-                        "asset-lock surplus ({}) exceeds the implicit fee cap ({}); set a surplus_output address to receive the remainder",
-                        surplus, implicit_fee_cap
-                    ))
-                    .into(),
+                    ShieldedImplicitFeeCapExceededError::new(surplus, implicit_fee_cap).into(),
                 ));
             }
         }

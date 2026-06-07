@@ -79,11 +79,11 @@ use crate::consensus::basic::state_transition::{
     InvalidRemainderOutputCountError, InvalidStateTransitionTypeError,
     MissingStateTransitionTypeError, OutputAddressAlsoInputError, OutputBelowMinimumError,
     OutputsNotGreaterThanInputsError, ShieldedEmptyProofError,
-    ShieldedEncryptedNoteSizeMismatchError, ShieldedInvalidValueBalanceError,
-    ShieldedNoActionsError, ShieldedTooManyActionsError, ShieldedZeroAnchorError,
-    StateTransitionMaxSizeExceededError, StateTransitionNotActiveError, TransitionNoInputsError,
-    TransitionNoOutputsError, TransitionOverMaxInputsError, TransitionOverMaxOutputsError,
-    WithdrawalBalanceMismatchError, WithdrawalBelowMinAmountError,
+    ShieldedEncryptedNoteSizeMismatchError, ShieldedImplicitFeeCapExceededError,
+    ShieldedInvalidValueBalanceError, ShieldedNoActionsError, ShieldedTooManyActionsError,
+    ShieldedZeroAnchorError, StateTransitionMaxSizeExceededError, StateTransitionNotActiveError,
+    TransitionNoInputsError, TransitionNoOutputsError, TransitionOverMaxInputsError,
+    TransitionOverMaxOutputsError, WithdrawalBalanceMismatchError, WithdrawalBelowMinAmountError,
 };
 use crate::consensus::basic::{
     IncompatibleProtocolVersionError, UnsupportedFeatureError, UnsupportedProtocolVersionError,
@@ -675,6 +675,9 @@ pub enum BasicError {
 
     #[error(transparent)]
     ShieldedInvalidValueBalanceError(ShieldedInvalidValueBalanceError),
+
+    #[error(transparent)]
+    ShieldedImplicitFeeCapExceededError(ShieldedImplicitFeeCapExceededError),
 
     #[error(transparent)]
     ShieldedEncryptedNoteSizeMismatchError(ShieldedEncryptedNoteSizeMismatchError),
