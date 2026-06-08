@@ -73,6 +73,30 @@ pub enum SecretStoreError {
         mode: u32,
     },
 
+    /// The vault file's parent directory had permissions looser than
+    /// `0700` (group/other access bits set). A writable parent lets
+    /// another local user rename/replace the vault despite the file's
+    /// own `0600`, so refuse rather than trust it.
+    #[error("vault parent directory has insecure permissions")]
+    InsecureParentDir {
+        /// The offending POSIX mode bits on the parent directory (not
+        /// secret).
+        mode: u32,
+    },
+
+    /// A secret offered for storage exceeded the per-secret write cap
+    /// ([`MAX_SECRET_LEN`](crate::secrets::MAX_SECRET_LEN)). Rejected at
+    /// the write boundary so an oversized entry never inflates the shared
+    /// vault past the read-side ceiling and bricks every wallet on the
+    /// next open.
+    #[error("secret exceeds maximum size of {max} bytes (got {found})")]
+    SecretTooLarge {
+        /// The offered secret length (bytes).
+        found: usize,
+        /// The compiled-in per-secret ceiling (bytes).
+        max: usize,
+    },
+
     /// The vault sidecar (`<vault-path>.lock`) is already held by
     /// another `EncryptedFileStore` handle — in this process or in
     /// another process. The resident-vault model requires exclusive
@@ -105,6 +129,19 @@ pub enum SecretStoreError {
     /// [`Corruption`]: SecretStoreError::Corruption
     #[error("decryption/integrity check failed")]
     Decrypt,
+
+    /// AEAD encrypt-side failure: cipher construction (`new_from_slice`)
+    /// or `encrypt` itself failed on the write path. Distinct from
+    /// [`KdfFailure`] (genuine key derivation) and from [`Decrypt`] (tag
+    /// failure on read). Effectively unreachable in practice — the key is
+    /// always 32 bytes and the plaintext never approaches XChaCha20's
+    /// ~256 GiB limit — but kept typed so a write failure is never
+    /// mislabeled a key-derivation error. Carries no plaintext.
+    ///
+    /// [`KdfFailure`]: SecretStoreError::KdfFailure
+    /// [`Decrypt`]: SecretStoreError::Decrypt
+    #[error("encryption failed")]
+    Encrypt,
 
     /// Filesystem error (open / write / rename / fsync). The inner
     /// [`IoError`] carries an OS code and, when the failing operation
@@ -228,8 +265,9 @@ impl From<std::io::Error> for SecretStoreError {
 ///   source, so an SPI consumer can losslessly recover the variant via
 ///   `err.source().and_then(|s| s.downcast_ref::<SecretStoreError>())`.
 /// - [`Corruption`], [`KdfFailure`], [`VersionUnsupported`],
-///   [`MalformedVault`], [`InsecurePermissions`], the internal
-///   [`Decrypt`], and [`OsKeyring`] collapse into
+///   [`MalformedVault`], [`InsecurePermissions`], [`InsecureParentDir`],
+///   [`SecretTooLarge`], [`VaultTooLarge`], the internal [`Decrypt`] /
+///   [`Encrypt`], and [`OsKeyring`] collapse into
 ///   [`KeyringError::BadStoreFormat`], whose `String` payload has no box
 ///   slot, so they carry only a static secret-free string (never secret
 ///   data in a format error). They remain losslessly typed on the
@@ -244,7 +282,11 @@ impl From<std::io::Error> for SecretStoreError {
 /// [`VersionUnsupported`]: SecretStoreError::VersionUnsupported
 /// [`MalformedVault`]: SecretStoreError::MalformedVault
 /// [`InsecurePermissions`]: SecretStoreError::InsecurePermissions
+/// [`InsecureParentDir`]: SecretStoreError::InsecureParentDir
+/// [`SecretTooLarge`]: SecretStoreError::SecretTooLarge
+/// [`VaultTooLarge`]: SecretStoreError::VaultTooLarge
 /// [`Decrypt`]: SecretStoreError::Decrypt
+/// [`Encrypt`]: SecretStoreError::Encrypt
 /// [`OsKeyring`]: SecretStoreError::OsKeyring
 /// [`InvalidLabel`]: SecretStoreError::InvalidLabel
 /// [`Io`]: SecretStoreError::Io
@@ -258,8 +300,11 @@ impl From<SecretStoreError> for KeyringError {
             | E::VersionUnsupported { .. }
             | E::MalformedVault
             | E::InsecurePermissions { .. }
+            | E::InsecureParentDir { .. }
+            | E::SecretTooLarge { .. }
             | E::VaultTooLarge { .. }
             | E::Decrypt
+            | E::Encrypt
             | E::OsKeyring { .. } => KeyringError::BadStoreFormat(e.to_string()),
             E::InvalidLabel => {
                 KeyringError::Invalid("user".to_string(), "label allowlist violation".to_string())
@@ -289,10 +334,20 @@ mod tests {
         for e in [
             SecretStoreError::Corruption,
             SecretStoreError::Decrypt,
+            SecretStoreError::Encrypt,
             SecretStoreError::KdfFailure,
             SecretStoreError::VersionUnsupported { found: 999 },
             SecretStoreError::MalformedVault,
             SecretStoreError::InsecurePermissions { mode: 0o644 },
+            SecretStoreError::InsecureParentDir { mode: 0o777 },
+            SecretStoreError::SecretTooLarge {
+                found: 100,
+                max: 10,
+            },
+            SecretStoreError::VaultTooLarge {
+                found: 100,
+                max: 10,
+            },
         ] {
             let k: KeyringError = e.into();
             assert!(matches!(k, KeyringError::BadStoreFormat(_)));

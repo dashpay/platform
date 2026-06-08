@@ -107,7 +107,7 @@ impl KdfParams {
 /// different KDF crate.
 pub(crate) fn derive_key(
     passphrase: &SecretString,
-    salt: &[u8],
+    salt: &[u8; SALT_LEN],
     params: KdfParams,
 ) -> Result<SecretBytes, SecretStoreError> {
     // Bounds MUST gate before Params::new / hash_password_into so an
@@ -135,7 +135,7 @@ pub(crate) fn seal(
     plaintext: &[u8],
 ) -> Result<([u8; NONCE_LEN], Vec<u8>), SecretStoreError> {
     let cipher = XChaCha20Poly1305::new_from_slice(key.expose_secret())
-        .map_err(|_| SecretStoreError::KdfFailure)?;
+        .map_err(|_| SecretStoreError::Encrypt)?;
     let mut nonce_bytes = [0u8; NONCE_LEN];
     random_bytes(&mut nonce_bytes)?;
     let nonce = XNonce::from_slice(&nonce_bytes);
@@ -148,10 +148,9 @@ pub(crate) fn seal(
             },
         )
         // Encrypt-path failure (XChaCha20-Poly1305 only fails here when
-        // the plaintext exceeds the construction's length limit), so it is
-        // not a decryption concern; keep it on the same write-oriented
-        // variant the cipher-construction failure above uses.
-        .map_err(|_| SecretStoreError::KdfFailure)?;
+        // the plaintext exceeds the construction's length limit) — an AEAD
+        // write-side failure, not a key-derivation one.
+        .map_err(|_| SecretStoreError::Encrypt)?;
     Ok((nonce_bytes, ct))
 }
 
@@ -166,7 +165,7 @@ pub(crate) fn open(
     ciphertext: &[u8],
 ) -> Result<SecretBytes, SecretStoreError> {
     let cipher = XChaCha20Poly1305::new_from_slice(key.expose_secret())
-        .map_err(|_| SecretStoreError::KdfFailure)?;
+        .map_err(|_| SecretStoreError::Encrypt)?;
     let nonce = XNonce::from_slice(nonce);
     let pt = cipher
         .decrypt(
