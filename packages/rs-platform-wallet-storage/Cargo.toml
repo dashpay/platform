@@ -80,7 +80,11 @@ keyring-core = { version = "=1.0.0", optional = true }
 # was removed from the sqlite arm — those tests grep for `fs2`/`fs4`
 # literals in this crate's source/manifest and would re-trigger on the
 # older crates. `fd-lock` has no such collision.
-fd-lock = { version = "4.0.4", optional = true }
+# Exact-pinned (`=`) like the rest of the soundness-critical stack: the
+# `VaultLock` unsafe drop-order argument in `secrets/file/mod.rs` is
+# calibrated to fd-lock 4.0.4's guard internals; any bump must re-verify
+# that the guard releases the OS lock before the backing `RwLock` frees.
+fd-lock = { version = "=4.0.4", optional = true }
 
 # CLI deps (gated by the `cli` feature)
 clap = { version = "4", features = ["derive"], optional = true }
@@ -180,6 +184,13 @@ cli = [
 # crate without the crypto graph.
 secrets = [
     "dep:argon2",
+    # Enable argon2's `zeroize` feature so the KDF wipes its sensitive
+    # intermediate state (`initial_hash`/`blockhash`) on drop. In argon2
+    # 0.5.3 this does NOT cover the bulk `Block` matrix — that residual is
+    # documented at `derive_key` in `secrets/file/crypto.rs`. Keep it in
+    # the feature list (not a `default-features = false` rewrite) so
+    # argon2's own default features stay intact.
+    "argon2/zeroize",
     "dep:chacha20poly1305",
     # secrets uses serde directly (vault format + crypto envelope derive
     # `Serialize`/`Deserialize`); declare the dep here so

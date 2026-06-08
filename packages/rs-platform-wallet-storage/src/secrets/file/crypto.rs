@@ -96,6 +96,15 @@ impl KdfParams {
 /// passphrase lives only inside this function — callers can no
 /// longer accidentally hand a `&[u8]` (e.g. by holding a stray
 /// `expose_secret().as_bytes()` longer than intended) into KDF input.
+///
+/// Zeroization residual: the `secrets` feature enables argon2's
+/// `zeroize` feature, which wipes argon2 0.5.3's `initial_hash` and
+/// `blockhash` on drop. It does NOT wipe the bulk `Block` memory matrix
+/// (up to `m_kib` KiB of passphrase-derived state) — argon2 0.5.3 has no
+/// `Zeroize` over that allocation. This is an accepted residual against
+/// A5 (swap / core-dump while unlocked), which already presupposes a
+/// memory-read primitive; closing it needs an upstream fix or a
+/// different KDF crate.
 pub(crate) fn derive_key(
     passphrase: &SecretString,
     salt: &[u8],
@@ -174,6 +183,12 @@ pub(crate) fn open(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Regression guard for the `secrets` feature enabling `argon2/zeroize`:
+    // argon2 0.5.3's `impl Zeroize for Block` is `#[cfg(feature =
+    // "zeroize")]`-gated, so if the feature is ever dropped from the
+    // `secrets` set this assertion fails to compile.
+    static_assertions::assert_impl_all!(argon2::Block: zeroize::Zeroize);
 
     /// Argon2id floor params — fast enough for unit tests; production
     /// runs at the default target (64 MiB).

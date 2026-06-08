@@ -1,3 +1,5 @@
 [advisories]
-# TODO Remove it from here
-ignore = [ "RUSTSEC-2020-0071"] # advisory IDs to ignore e.g. ["RUSTSEC-2019-0001", ...]
+# Advisory IDs to ignore, e.g. ["RUSTSEC-2019-0001", ...]. Each entry
+# must point at a live advisory in the resolved graph and carry a dated
+# rationale; an entry matching nothing trains reviewers to skim the list.
+ignore = []

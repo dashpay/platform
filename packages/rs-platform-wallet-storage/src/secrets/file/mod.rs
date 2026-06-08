@@ -690,6 +690,10 @@ fn create_parent_dir(parent: &Path) -> Result<(), SecretStoreError> {
 ///    `Drop` impl takes the guard out (running its Drop) *before*
 ///    reclaiming the box.
 /// 3. The raw pointer never escapes this module.
+///
+/// The drop-order argument is calibrated to `fd-lock = "=4.0.4"`'s guard
+/// internals (exact-pinned in `Cargo.toml`); any bump must re-verify that
+/// dropping the guard releases the OS lock before the box is reclaimed.
 mod vault_lock {
     #![allow(unsafe_code)]
 
