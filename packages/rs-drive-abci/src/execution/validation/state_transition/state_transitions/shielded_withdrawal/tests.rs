@@ -1370,6 +1370,35 @@ mod tests {
                 strict_result
             );
 
+            // And the PRODUCTION entry point — the dispatch site this change actually
+            // rewrote — MUST reject the padded proof too. Asserting only against the GroveDB
+            // primitive above would stay green if the ShieldedWithdrawal arm regressed to
+            // rebuild a different merged query or fall back to the subset verifier; routing the
+            // padded proof through `Drive::verify_state_transition_was_executed_with_proof`
+            // locks the real code path into the test.
+            let withdrawals_data_contract = Arc::new(
+                load_system_data_contract(SystemDataContract::Withdrawals, platform_version)
+                    .expect("should load withdrawals contract"),
+            );
+            let production_result = Drive::verify_state_transition_was_executed_with_proof(
+                &transition,
+                &BlockInfo::default(),
+                &padded_proof,
+                &|id| {
+                    if *id == withdrawals_contract::ID {
+                        Ok(Some(Arc::clone(&withdrawals_data_contract)))
+                    } else {
+                        Ok(None)
+                    }
+                },
+                platform_version,
+            );
+            assert!(
+                production_result.is_err(),
+                "production shielded withdrawal verifier must reject a padded proof, got {:?}",
+                production_result
+            );
+
             // Contrast: the SUBSET verifier (the looser primitive this change replaced) tolerates
             // the extra layer and ACCEPTS the same padded proof — the exact hole now closed.
             let subset_result = GroveDb::verify_subset_query_with_absence_proof(
