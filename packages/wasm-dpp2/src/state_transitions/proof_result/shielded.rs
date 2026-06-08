@@ -174,14 +174,25 @@ impl VerifiedAssetLockConsumedWithAddressInfosWasm {
             .ok()
             .and_then(|v| v.as_string())
             .ok_or_else(|| WasmDppError::generic("Missing property: status".to_string()))?;
+        // A credit value may arrive as a BigInt (`toObject`), a base-10 string (`toJSON`
+        // normalizes BigInt to a string so it survives `JSON.stringify`), or a plain number
+        // (a hand-built object). Accept all three so `fromJSON(JSON.parse(JSON.stringify(...)))`
+        // round-trips instead of dropping the value to `None`.
         let read_opt_u64 = |name: &str| -> Option<u64> {
             js_sys::Reflect::get(&value, &name.into())
                 .ok()
                 .and_then(|v| {
                     if v.is_undefined() || v.is_null() {
                         None
+                    } else if let Ok(b) = u64::try_from(v.clone()) {
+                        Some(b)
+                    } else if let Some(s) = v.as_string() {
+                        s.parse::<u64>().ok()
                     } else {
-                        v.try_into().ok()
+                        v.as_f64().and_then(|n| {
+                            (n >= 0.0 && n.fract() == 0.0 && n <= u64::MAX as f64)
+                                .then_some(n as u64)
+                        })
                     }
                 })
         };
