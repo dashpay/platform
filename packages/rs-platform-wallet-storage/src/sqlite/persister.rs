@@ -1,7 +1,8 @@
 //! [`SqlitePersister`] — the canonical `PlatformWalletPersistence` impl.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
 use rusqlite::{Connection, OptionalExtension};
 
@@ -19,11 +20,21 @@ use crate::sqlite::schema;
 use crate::sqlite::util::permissions::{apply_secure_permissions, precreate_secure};
 use crate::sqlite::util::safe_cast;
 
-/// Sub-areas still deferred after contacts + identity-keys rehydration
-/// landed (PR-3). Only `last_applied_chain_lock` remains — it re-warms
-/// on the first post-load SPV chainlock (no V001 column). Surfaced via
-/// the structured `tracing::info!` summary on every `load()`.
-pub(crate) const LOAD_UNIMPLEMENTED: &[&str] = &["core::last_applied_chain_lock"];
+/// Persisted-but-not-rehydrated areas, surfaced in the structured
+/// `tracing::info!` summary on every `load()`.
+///
+/// - `core::last_applied_chain_lock`: no V001 column; re-warms on the
+///   first post-load SPV chainlock.
+/// - `token_balances`: written by the `token_balances` slot but not read
+///   back by `load()` (no reader wired in yet).
+/// - `dashpay::overlay`: the `dashpay_profiles` /
+///   `dashpay_payments_overlay` tables are a write-only indexed overlay;
+///   DashPay state rehydrates from the identities blob, not these tables.
+pub(crate) const LOAD_UNIMPLEMENTED: &[&str] = &[
+    "core::last_applied_chain_lock",
+    "token_balances",
+    "dashpay::overlay",
+];
 
 /// Outcome of a `prune_backups` call.
 ///
@@ -51,10 +62,13 @@ pub struct PruneReport {
 
 /// Retention policy for `prune_backups`.
 ///
-/// **AND-semantics**: a file is kept iff it satisfies BOTH rules. A
-/// policy with `keep_last_n = Some(3)` and `max_age = Some(30d)` keeps
-/// at most the three newest backups AND only those younger than 30
-/// days — a four-day-old backup that's the fifth-newest is removed.
+/// `keep_last_n` is a **floor**: the N newest backups are always kept,
+/// even if `max_age` would evict them — so a policy that sets both can
+/// never delete every backup. Beyond the floor, `max_age` prunes older
+/// files. With `keep_last_n = Some(3)` and `max_age = Some(30d)`, the
+/// three newest are always retained and any 4th+ backup older than 30
+/// days is removed. `keep_last_n = None` provides no floor (an age-only
+/// policy may prune everything older than `max_age`).
 /// `RetentionPolicy::default()` (both `None`) keeps every file.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct RetentionPolicy {
@@ -77,9 +91,47 @@ impl RetentionPolicy {
     }
 }
 
+/// Canonicalized paths held by a live [`SqlitePersister`] in THIS
+/// process. Two in-process handles on the same file each own an
+/// independent `Mutex<Connection>` and write buffer, so a `Manual`-mode
+/// buffered write on one would be invisible to the other's `load()`. The
+/// registry refuses a second open ([`WalletStorageError::AlreadyOpen`]);
+/// cross-process peers are still excluded by SQLite's own EXCLUSIVE
+/// locking, which this in-process guard complements rather than replaces.
+fn open_path_registry() -> &'static Mutex<HashSet<PathBuf>> {
+    static REGISTRY: OnceLock<Mutex<HashSet<PathBuf>>> = OnceLock::new();
+    REGISTRY.get_or_init(|| Mutex::new(HashSet::new()))
+}
+
+/// Insert `path` into the open-path registry, returning
+/// [`WalletStorageError::AlreadyOpen`] if a live persister already holds
+/// it. A poisoned registry mutex means a prior persister panicked
+/// mid-open; recover the guard rather than wedging every future open.
+fn register_open_path(path: PathBuf) -> Result<(), WalletStorageError> {
+    let mut set = open_path_registry()
+        .lock()
+        .unwrap_or_else(|p| p.into_inner());
+    if set.contains(&path) {
+        return Err(WalletStorageError::AlreadyOpen { path });
+    }
+    set.insert(path);
+    Ok(())
+}
+
+/// Remove `path` from the open-path registry on persister drop.
+fn release_open_path(path: &Path) {
+    let mut set = open_path_registry()
+        .lock()
+        .unwrap_or_else(|p| p.into_inner());
+    set.remove(path);
+}
+
 /// SQLite-backed `PlatformWalletPersistence`.
 pub struct SqlitePersister {
     config: SqlitePersisterConfig,
+    /// Canonicalized DB path held in the process-wide open-path registry.
+    /// Removed from the registry when this persister drops.
+    registered_path: PathBuf,
     // Single connection serializes reads through the write lock.
     // Acceptable for the current workload (per-wallet operations, small
     // read footprint); a read-only pool over the same WAL-mode file is
@@ -179,6 +231,14 @@ impl SqlitePersister {
         // max-version gate (both call the same helper).
         if had_schema_history {
             crate::sqlite::migrations::assert_schema_version_supported(&conn)?;
+            // A refinery-versioned DB must carry the wallet-storage
+            // application_id and a well-formed schema_history. Run BEFORE
+            // refinery so a foreign or corrupted-but-integrity-valid DB
+            // returns a typed error instead of being migrated in place
+            // (NotAWalletDb) or panicking inside the runner on a bad
+            // applied_on/checksum (SchemaHistoryMalformed).
+            crate::sqlite::conn::assert_wallet_application_id(&conn)?;
+            crate::sqlite::migrations::assert_schema_history_well_formed(&conn)?;
         }
         let pending = crate::sqlite::migrations::embedded_migrations();
         let pending_count = if had_schema_history {
@@ -201,8 +261,19 @@ impl SqlitePersister {
         // Apply migrations through the typed-error chokepoint.
         let _report = crate::sqlite::migrations::run_for_open(&mut conn)?;
 
+        // Claim the path in the process-wide registry LAST — after every
+        // fallible setup step — so a failed open never leaves a stale
+        // claim. Canonicalize now that the file exists so symlinks /
+        // `.`-segments resolve to the same key a sibling open would use.
+        let registered_path = config
+            .path
+            .canonicalize()
+            .unwrap_or_else(|_| config.path.clone());
+        register_open_path(registered_path.clone())?;
+
         Ok(Self {
             config,
+            registered_path,
             conn: Arc::new(Mutex::new(conn)),
             buffer: Buffer::new(),
             #[cfg(any(test, feature = "__test-helpers"))]
@@ -525,6 +596,12 @@ impl SqlitePersister {
     /// leaves the changeset in the buffer — `commit_writes` is the
     /// retry path that drains those leftovers.
     ///
+    /// "Durable" here means **durable across application crash**: with
+    /// the default WAL + `synchronous=NORMAL` a committed write survives a
+    /// process crash but not a power loss / OS crash mid-checkpoint.
+    /// Configure [`Synchronous::Full`](crate::Synchronous) for power-loss
+    /// durability.
+    ///
     /// Continues past per-wallet failures instead of fails-fast.
     /// Each wallet's flush outcome lands on the returned
     /// [`CommitReport`]: `succeeded` for durable writes, `failed` for
@@ -777,6 +854,10 @@ impl SqlitePersister {
 /// persisters are durable on every `store` so they never trip this.
 impl Drop for SqlitePersister {
     fn drop(&mut self) {
+        // Release the open-path claim FIRST so it happens regardless of
+        // flush mode (the dirty-buffer warning below early-returns for
+        // Immediate mode). A later open() on the same path then succeeds.
+        release_open_path(&self.registered_path);
         if self.config.flush_mode != FlushMode::Manual {
             return;
         }
@@ -825,10 +906,14 @@ impl PlatformWalletPersistence for SqlitePersister {
     /// Merge `changeset` into the per-wallet buffer.
     ///
     /// Durability matrix:
-    /// - In [`FlushMode::Immediate`] the call is **durable on `Ok`** —
-    ///   one SQLite transaction wraps every populated per-table apply,
-    ///   so either all sub-changesets land or none do. A transient
-    ///   failure restores the buffer and surfaces
+    /// - In [`FlushMode::Immediate`] the call is **durable across
+    ///   application crash on `Ok`** — one SQLite transaction wraps every
+    ///   populated per-table apply, so either all sub-changesets land or
+    ///   none do. With the default WAL + `synchronous=NORMAL` the commit
+    ///   survives a process crash but NOT a power loss / OS crash mid-
+    ///   checkpoint; configure
+    ///   [`Synchronous::Full`](crate::Synchronous) for power-loss
+    ///   durability. A transient failure restores the buffer and surfaces
     ///   [`WalletStorageError::FlushRetryable`] wrapped in
     ///   `PersistenceError::Backend`.
     /// - In [`FlushMode::Manual`] the call only merges into the
@@ -1096,6 +1181,20 @@ fn apply_pragmas(
     // `foreign_keys` is enabled + read-back-asserted in
     // `crate::sqlite::conn::open_conn`, the single open choke-point.
     conn.pragma_update(None, "journal_mode", config.journal_mode.pragma_value())?;
+    // Read `journal_mode` back: `pragma_update` does NOT error when
+    // SQLite silently falls back to a different mode (e.g. WAL→DELETE on
+    // some network/FUSE mounts). A silent fallback combined with
+    // synchronous=NORMAL is a corruption-on-power-loss exposure, so
+    // verify the requested mode took — mirroring the `foreign_keys`
+    // read-back discipline in `open_conn`.
+    let applied_journal: String =
+        conn.pragma_query_value(None, "journal_mode", |row| row.get(0))?;
+    if !applied_journal.eq_ignore_ascii_case(config.journal_mode.pragma_value()) {
+        return Err(WalletStorageError::JournalModeNotApplied {
+            requested: config.journal_mode.pragma_value(),
+            actual: applied_journal,
+        });
+    }
     conn.pragma_update(None, "synchronous", config.synchronous.pragma_value())?;
     let ms = safe_cast::u64_to_i64(
         "busy_timeout_ms",
