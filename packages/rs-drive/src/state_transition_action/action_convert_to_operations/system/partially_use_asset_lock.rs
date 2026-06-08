@@ -32,14 +32,15 @@ impl DriveHighLevelOperationConverter for PartiallyUseAssetLockAction {
                 let used_credits = self.used_credits();
                 let asset_lock_outpoint = self.asset_lock_outpoint();
 
-                let previous_transaction_hashes = if self.previous_transaction_hashes_ref().len()
+                let max_usage_attempts_reached = self.previous_transaction_hashes_ref().len()
                     as u16
                     >= platform_version
                         .drive_abci
                         .validation_and_processing
                         .state_transitions
-                        .max_asset_lock_usage_attempts
-                {
+                        .max_asset_lock_usage_attempts;
+
+                let previous_transaction_hashes = if max_usage_attempts_reached {
                     // There have been 16 failed attempts at using the asset lock
                     // In this case the remaining credit value is burned and there is no need to keep around previous
                     // transaction hashes
@@ -113,6 +114,13 @@ impl DriveHighLevelOperationConverter for PartiallyUseAssetLockAction {
                     // asset lock. Restore the portion that was covered by inputs.
                     remaining_credit_value =
                         remaining_credit_value.saturating_add(total_deducted_from_inputs);
+                }
+
+                // The input-fee restoration above must not revive a burned remainder: once the max
+                // usage attempts are reached the asset lock is fully consumed regardless of who paid
+                // the fee, so keep the remainder at 0.
+                if max_usage_attempts_reached {
+                    remaining_credit_value = 0;
                 }
 
                 // Only the portion of the fee sourced from the asset lock is new money entering the
@@ -378,6 +386,69 @@ mod tests {
             }) => {
                 // Still burned even when well above max
                 assert_eq!(asset_lock_value.remaining_credit_value(), 0);
+                assert!(asset_lock_value.used_tags_ref().is_empty());
+            }
+            other => panic!("expected AddUsedAssetLock, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_action_max_usage_attempts_with_inputs_still_burns_remainder() {
+        // When the max usage attempts have been reached, the asset-lock remainder must be burned to
+        // 0 (fully consumed) even if the fee is paid from address inputs. The input-fee restoration
+        // must not revive the burned remainder.
+        let platform_version = PlatformVersion::latest();
+        let max_attempts = platform_version
+            .drive_abci
+            .validation_and_processing
+            .state_transitions
+            .max_asset_lock_usage_attempts;
+
+        let previous_hashes: Vec<Bytes32> =
+            (0..max_attempts).map(|i| Bytes32([i as u8; 32])).collect();
+
+        let mut inputs = BTreeMap::new();
+        // Input fully covers the fee (used_credits).
+        inputs.insert(PlatformAddress::P2pkh([0xBB; 20]), (7_u32, 10000_u64));
+
+        let action = PartiallyUseAssetLockAction::V0(PartiallyUseAssetLockActionV0 {
+            asset_lock_outpoint: Bytes36::new([0xCC; 36]),
+            initial_credit_value: 50000,
+            previous_transaction_hashes: previous_hashes,
+            asset_lock_script: vec![0x76, 0xA9, 0x14],
+            remaining_credit_value: 40000,
+            used_credits: 10000,
+            user_fee_increase: 0,
+            inputs_with_remaining_balance: Some(inputs),
+            fee_strategy: Some(vec![AddressFundsFeeStrategyStep::DeductFromInput(0)]),
+        });
+        let epoch = Epoch::new(0).unwrap();
+
+        let ops = action
+            .into_high_level_drive_operations(&epoch, platform_version)
+            .expect("expected operations");
+
+        // SetBalanceToAddress, AddToSystemCredits, AddUsedAssetLock
+        assert_eq!(ops.len(), 3);
+
+        // The whole fee was covered by the input, so no new system credits are added.
+        match &ops[1] {
+            SystemOperation(SystemOperationType::AddToSystemCredits { amount }) => {
+                assert_eq!(*amount, 0);
+            }
+            other => panic!("expected AddToSystemCredits, got {:?}", other),
+        }
+
+        // The remainder must stay burned (0) -> fully consumed, despite the input paying the fee.
+        match &ops[2] {
+            SystemOperation(SystemOperationType::AddUsedAssetLock {
+                asset_lock_value, ..
+            }) => {
+                assert_eq!(
+                    asset_lock_value.remaining_credit_value(),
+                    0,
+                    "max-attempt burn must not be revived by the input-fee restoration"
+                );
                 assert!(asset_lock_value.used_tags_ref().is_empty());
             }
             other => panic!("expected AddUsedAssetLock, got {:?}", other),
