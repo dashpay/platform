@@ -68,11 +68,7 @@ pub fn fetch(
     if let Some(row) = rows.next()? {
         let network: String = row.get(0)?;
         let height: i64 = row.get(1)?;
-        let height = u32::try_from(height).map_err(|_| WalletStorageError::IntegerOverflow {
-            field: "wallets.birth_height",
-            value: height as u64,
-            target: crate::sqlite::util::safe_cast::SafeCastTarget::U64,
-        })?;
+        let height = crate::sqlite::util::safe_cast::i64_to_u32("wallets.birth_height", height)?;
         Ok(Some((network, height)))
     } else {
         Ok(None)

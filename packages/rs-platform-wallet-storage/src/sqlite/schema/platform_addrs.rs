@@ -387,23 +387,9 @@ fn decode_address_row(
     let mut hash160 = [0u8; 20];
     hash160.copy_from_slice(address_bytes);
     let balance = safe_cast::i64_to_u64("platform_addresses.balance", balance)?;
-    let nonce = u32::try_from(nonce).map_err(|_| WalletStorageError::IntegerOverflow {
-        field: "platform_addresses.nonce",
-        value: nonce as u64,
-        target: safe_cast::SafeCastTarget::U64,
-    })?;
-    let account_index =
-        u32::try_from(account_index).map_err(|_| WalletStorageError::IntegerOverflow {
-            field: "platform_addresses.account_index",
-            value: account_index as u64,
-            target: safe_cast::SafeCastTarget::U64,
-        })?;
-    let address_index =
-        u32::try_from(address_index).map_err(|_| WalletStorageError::IntegerOverflow {
-            field: "platform_addresses.address_index",
-            value: address_index as u64,
-            target: safe_cast::SafeCastTarget::U64,
-        })?;
+    let nonce = safe_cast::i64_to_u32("platform_addresses.nonce", nonce)?;
+    let account_index = safe_cast::i64_to_u32("platform_addresses.account_index", account_index)?;
+    let address_index = safe_cast::i64_to_u32("platform_addresses.address_index", address_index)?;
     Ok(PlatformAddressRow {
         account_index,
         address_index,

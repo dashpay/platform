@@ -29,12 +29,10 @@ fn decode_platform_payment_row(
     account_index: i64,
     xpub_bytes: &[u8],
 ) -> Result<PlatformPaymentRegistration, WalletStorageError> {
-    let account_index =
-        u32::try_from(account_index).map_err(|_| WalletStorageError::IntegerOverflow {
-            field: "account_registrations.account_index",
-            value: account_index as u64,
-            target: crate::sqlite::util::safe_cast::SafeCastTarget::U64,
-        })?;
+    let account_index = crate::sqlite::util::safe_cast::i64_to_u32(
+        "account_registrations.account_index",
+        account_index,
+    )?;
     let entry: AccountRegistrationEntry = blob::decode(xpub_bytes)?;
     Ok((account_index, entry.account_xpub))
 }

@@ -23,6 +23,8 @@ pub enum SafeCastTarget {
     I64,
     #[error("u64")]
     U64,
+    #[error("u32")]
+    U32,
 }
 
 /// Cast `value: u64` to `i64`, surfacing
@@ -54,9 +56,50 @@ pub fn i64_to_u64(field: &'static str, value: i64) -> Result<u64, WalletStorageE
     })
 }
 
+/// Cast a stored `i64` column to `u32`, surfacing
+/// [`WalletStorageError::IntegerOverflow`] when the value is negative or
+/// exceeds `u32::MAX`. The single boundary helper for the readers that
+/// map `INTEGER` columns (heights, account/address indices, nonces) back
+/// to their `u32` Rust types.
+///
+/// `field` is a compile-time identifier (e.g.
+/// `"core_sync_state.synced_height"`) naming the column so the resulting
+/// error is actionable.
+pub fn i64_to_u32(field: &'static str, value: i64) -> Result<u32, WalletStorageError> {
+    u32::try_from(value).map_err(|_| WalletStorageError::IntegerOverflow {
+        field,
+        value: value as u64,
+        target: SafeCastTarget::U32,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn i64_to_u32_happy_path() {
+        assert_eq!(i64_to_u32("x", 0).unwrap(), 0);
+        assert_eq!(i64_to_u32("x", u32::MAX as i64).unwrap(), u32::MAX);
+    }
+
+    #[test]
+    fn i64_to_u32_overflow_high_and_negative() {
+        assert!(matches!(
+            i64_to_u32("h", i64::from(u32::MAX) + 1).unwrap_err(),
+            WalletStorageError::IntegerOverflow {
+                target: SafeCastTarget::U32,
+                ..
+            }
+        ));
+        assert!(matches!(
+            i64_to_u32("h", -1).unwrap_err(),
+            WalletStorageError::IntegerOverflow {
+                target: SafeCastTarget::U32,
+                ..
+            }
+        ));
+    }
 
     #[test]
     fn u64_to_i64_happy_path() {
