@@ -63,6 +63,34 @@ fn wallet_and_utxo(seed: [u8; 64], value: u64, height: u32, vout: u32) -> (Walle
     (w, utxo)
 }
 
+/// The `core_derived_addresses` row a real scan records before a UTXO on
+/// `address` lands. The strict UTXO writer refuses an unspent UTXO whose
+/// address was never derived (it would silent-misbucket live money), so
+/// every test paying a wallet address must seed the matching derivation.
+/// The writer's lookup keys on `(wallet_id, address)` only and the read
+/// side re-attributes by wallet topology, so the account_type/index here
+/// are inert placeholders — the address is the load-bearing field.
+fn derived_for(address: &dashcore::Address) -> platform_wallet::DerivedAddress {
+    // Compressed secp256k1 generator point — a valid placeholder pubkey.
+    // The writer keys its lookup on `(wallet_id, address)` only, so the
+    // key value is inert; it just has to parse.
+    const PUBKEY_G: [u8; 33] = [
+        0x02, 0x79, 0xbe, 0x66, 0x7e, 0xf9, 0xdc, 0xbb, 0xac, 0x55, 0xa0, 0x62, 0x95, 0xce, 0x87,
+        0x0b, 0x07, 0x02, 0x9b, 0xfc, 0xdb, 0x2d, 0xce, 0x28, 0xd9, 0x59, 0xf2, 0x81, 0x5b, 0x16,
+        0xf8, 0x17, 0x98,
+    ];
+    platform_wallet::DerivedAddress {
+        account_type: key_wallet::account::AccountType::Standard {
+            index: 0,
+            standard_account_type: key_wallet::account::StandardAccountType::BIP44Account,
+        },
+        pool_type: key_wallet::managed_account::address_pool::AddressPoolType::External,
+        derivation_index: 0,
+        address: address.clone(),
+        public_key: dashcore::PublicKey::from_slice(&PUBKEY_G).expect("valid compressed pubkey"),
+    }
+}
+
 /// RT-2: a non-zero balance survives store → drop → reopen → load.
 /// Guards the silent-zero-balance FAIL.
 #[test]
@@ -76,6 +104,7 @@ fn rt2_nonzero_balance_survives_reopen() {
 
     let cs = PlatformWalletChangeSet {
         core: Some(CoreChangeSet {
+            addresses_derived: vec![derived_for(&utxo.address)],
             new_utxos: vec![utxo.clone()],
             last_processed_height: Some(200),
             synced_height: Some(200),
@@ -130,6 +159,7 @@ fn b2_spent_utxo_excluded() {
             w,
             PlatformWalletChangeSet {
                 core: Some(CoreChangeSet {
+                    addresses_derived: vec![derived_for(&u_unspent.address)],
                     new_utxos: vec![u_unspent.clone()],
                     spent_utxos: vec![u_spent.clone()],
                     ..Default::default()
@@ -240,6 +270,7 @@ fn f2_no_bip44_wallet_nonzero_balance_survives_reopen() {
             w,
             PlatformWalletChangeSet {
                 core: Some(CoreChangeSet {
+                    addresses_derived: vec![derived_for(&utxo.address)],
                     new_utxos: vec![utxo],
                     last_processed_height: Some(60),
                     synced_height: Some(60),

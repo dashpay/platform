@@ -1073,7 +1073,7 @@ fn delete_wallet_leaves_no_surviving_rows() {
             ("INSERT INTO core_instant_locks (wallet_id, txid, islock_blob) VALUES (?1, ?2, X'00')", &[&a.as_slice(), &txid]),
             ("INSERT INTO core_derived_addresses (wallet_id, account_type, account_index, address, derivation_path, used) VALUES (?1, 'standard', 0, 'addr', '', 0)", &[&a.as_slice()]),
             ("INSERT INTO core_sync_state (wallet_id, last_processed_height, synced_height) VALUES (?1, 1, 1)", &[&a.as_slice()]),
-            ("INSERT INTO identity_keys (identity_id, key_id, public_key_blob, public_key_hash) VALUES (?1, 0, X'00', X'00')", &[&idy.as_slice()]),
+            ("INSERT INTO identity_keys (wallet_id, identity_id, key_id, public_key_blob, public_key_hash, derivation_blob) VALUES (?1, ?2, 0, X'00', X'00', NULL)", &[&a.as_slice(), &idy.as_slice()]),
             ("INSERT INTO platform_address_sync (wallet_id, sync_height, sync_timestamp, last_known_recent_block) VALUES (?1, 0, 0, 0)", &[&a.as_slice()]),
             ("INSERT INTO asset_locks (wallet_id, outpoint, status, account_index, identity_index, amount_duffs, lifecycle_blob) VALUES (?1, ?2, 'built', 0, 0, 0, X'00')", &[&a.as_slice(), &outpoint]),
             ("INSERT INTO dashpay_profiles (identity_id, profile_blob) VALUES (?1, X'00')", &[&idy.as_slice()]),
