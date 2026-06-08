@@ -1,11 +1,10 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! #3625 structural hardening pass.
+//! Structural hardening pass.
 //!
 //! Native FK rejection (orphan child + mixed-wallet platform addr),
-//! multi-account UTXO bucketing (CMT-003/011), identity-key typed-vs-blob
-//! consistency (CMT-004), the truncation guards (CMT-012/014), and the
-//! compaction-marker-only load gate (CMT-002).
+//! multi-account UTXO bucketing, identity-key typed-vs-blob consistency,
+//! the truncation guards, and the compaction-marker-only load gate.
 
 mod common;
 
@@ -21,14 +20,14 @@ use platform_wallet::wallet::platform_wallet::WalletId;
 use platform_wallet_storage::WalletStorageError;
 use rusqlite::params;
 
-/// CMT-001: a child insert without a `wallet_metadata` parent is
+/// a child insert without a `wallets` parent is
 /// rejected by the native FK (not a trigger).
 #[test]
 fn native_fk_rejects_orphan_child() {
     let (persister, _tmp, _path) = fresh_persister();
     let conn = persister.lock_conn_for_test();
     let res = conn.execute(
-        "INSERT INTO identities (wallet_id, wallet_index, identity_id, entry_blob, tombstoned) \
+        "INSERT INTO identities (wallet_id, identity_index, identity_id, entry_blob, tombstoned) \
          VALUES (?1, NULL, ?2, X'00', 0)",
         params![[7u8; 32].as_slice(), [9u8; 32].as_slice()],
     );
@@ -39,10 +38,11 @@ fn native_fk_rejects_orphan_child() {
     );
 }
 
-/// CMT-001: an `identity_keys` row whose `identities` parent does not
-/// exist is rejected by the FK to `identities(identity_id)`. The
-/// `wallet_id` parent exists (via `ensure_wallet_meta`), so the failure
-/// is specifically the missing identity, not the wallet.
+/// An `identity_keys` row whose `identities` parent does not exist is
+/// rejected by the FK to `identities(identity_id)`. The `wallet_id`
+/// parent exists (via `ensure_wallet_meta`), so the failure is
+/// specifically the missing identity, not the wallet (cascade chain
+/// `wallets → identities → identity_keys`).
 #[test]
 fn native_fk_rejects_identity_keys_without_identity() {
     let (persister, _tmp, _path) = fresh_persister();
@@ -62,7 +62,7 @@ fn native_fk_rejects_identity_keys_without_identity() {
     );
 }
 
-/// CMT-005: a `platform_addresses` entry naming a different wallet than
+/// a `platform_addresses` entry naming a different wallet than
 /// the flush scope fails fast with the typed `WalletIdMismatch`.
 #[test]
 fn platform_addr_mixed_wallet_rejected() {
@@ -116,9 +116,9 @@ fn make_utxo(addr: &Address, vout: u32, value: u64) -> Utxo {
     Utxo::new(outpoint, txout, addr.clone(), 10, false)
 }
 
-/// CMT-003/011: UTXOs resolve their real `account_index` from the
-/// derived-address map written earlier in the same transaction, instead
-/// of a hardcoded 0. A UTXO on an undeclared address defaults to 0.
+/// UTXOs resolve their real `account_index` from the derived-address
+/// map written earlier in the same transaction, instead of a hardcoded
+/// 0.
 #[test]
 fn multi_account_utxos_bucket_to_real_account() {
     use platform_wallet_storage::sqlite::schema::core_state;
@@ -129,7 +129,6 @@ fn multi_account_utxos_bucket_to_real_account() {
 
     let addr_acct5 = p2pkh(0x05);
     let addr_acct9 = p2pkh(0x09);
-    let addr_unknown = p2pkh(0xEE);
 
     {
         let mut conn = persister.lock_conn_for_test();
@@ -148,7 +147,6 @@ fn multi_account_utxos_bucket_to_real_account() {
             new_utxos: vec![
                 make_utxo(&addr_acct5, 0, 1000),
                 make_utxo(&addr_acct9, 1, 2000),
-                make_utxo(&addr_unknown, 2, 3000),
             ],
             ..Default::default()
         };
@@ -169,38 +167,92 @@ fn multi_account_utxos_bucket_to_real_account() {
         Some(1),
         "account 9 should hold exactly one UTXO"
     );
-    // The undeclared address falls back to account 0.
-    assert_eq!(
-        by_account.get(&0).map(|v| v.len()),
-        Some(1),
-        "undeclared address should default to account 0"
+}
+
+/// A NEW unspent UTXO whose address is absent from
+/// `core_derived_addresses` cannot resolve an owning account, so the
+/// write is refused with the typed `UtxoAddressNotDerived` instead of
+/// silently mis-filing live funds under account 0.
+#[test]
+fn unspent_utxo_on_undeclared_address_is_rejected() {
+    use platform_wallet_storage::sqlite::schema::core_state;
+
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0xC8);
+    ensure_wallet_meta(&persister, &w);
+
+    let addr_unknown = p2pkh(0xEE);
+    let mut conn = persister.lock_conn_for_test();
+    let cs = CoreChangeSet {
+        new_utxos: vec![make_utxo(&addr_unknown, 0, 3000)],
+        ..Default::default()
+    };
+    let tx = conn.transaction().unwrap();
+    let err = core_state::apply(&tx, &w, &cs)
+        .expect_err("unspent UTXO on an undeclared address must error");
+    assert!(
+        matches!(err, WalletStorageError::UtxoAddressNotDerived { .. }),
+        "expected UtxoAddressNotDerived, got {err:?}"
     );
 }
 
-/// CMT-014: an out-of-range `birth_height` errors rather than truncating.
+/// A spent-only placeholder UTXO whose address was never derived still
+/// persists with the account-0 fallback — spent rows are excluded from
+/// the unspent set, so the placeholder index is inert.
+#[test]
+fn spent_only_utxo_on_undeclared_address_uses_zero_fallback() {
+    use platform_wallet_storage::sqlite::schema::core_state;
+
+    let (persister, _tmp, _path) = fresh_persister();
+    let w: WalletId = wid(0xC9);
+    ensure_wallet_meta(&persister, &w);
+
+    let addr_unknown = p2pkh(0xEF);
+    {
+        let mut conn = persister.lock_conn_for_test();
+        let cs = CoreChangeSet {
+            // A spend of an address we never derived arrives as a
+            // spent-only placeholder (no prior unspent row to mark).
+            spent_utxos: vec![make_utxo(&addr_unknown, 0, 3000)],
+            ..Default::default()
+        };
+        let tx = conn.transaction().unwrap();
+        core_state::apply(&tx, &w, &cs).expect("spent-only placeholder must persist");
+        tx.commit().unwrap();
+    }
+
+    let conn = persister.lock_conn_for_test();
+    let by_account = core_state::list_unspent_utxos(&conn, &w).unwrap();
+    assert!(
+        by_account.is_empty(),
+        "spent-only placeholder must not appear in the unspent set"
+    );
+}
+
+/// an out-of-range `birth_height` errors rather than truncating.
 #[test]
 fn birth_height_overflow_errors_not_truncates() {
-    use platform_wallet_storage::sqlite::schema::wallet_meta;
+    use platform_wallet_storage::sqlite::schema::wallets;
     let (persister, _tmp, _path) = fresh_persister();
     let w = wid(0xD1);
     {
         let conn = persister.lock_conn_for_test();
         // 1<<40 overflows u32 but fits the i64 column.
         conn.execute(
-            "INSERT INTO wallet_metadata (wallet_id, network, birth_height) VALUES (?1, 'testnet', ?2)",
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', ?2)",
             params![w.as_slice(), 1_099_511_627_776i64],
         )
         .unwrap();
     }
     let conn = persister.lock_conn_for_test();
-    let err = wallet_meta::fetch(&conn, &w).expect_err("overflow must error");
+    let err = wallets::fetch(&conn, &w).expect_err("overflow must error");
     assert!(
         matches!(err, WalletStorageError::IntegerOverflow { .. }),
         "expected IntegerOverflow, got {err:?}"
     );
 }
 
-/// CMT-012: an out-of-range stored sync height errors rather than
+/// an out-of-range stored sync height errors rather than
 /// truncating during the monotonic-max read.
 #[test]
 fn sync_height_overflow_errors_not_truncates() {
@@ -230,7 +282,7 @@ fn sync_height_overflow_errors_not_truncates() {
     );
 }
 
-/// CMT-004: an `identity_keys` upsert whose entry fields disagree with
+/// an `identity_keys` upsert whose entry fields disagree with
 /// its map key is rejected, so the typed columns and serialized blob
 /// can never describe different rows.
 #[test]
@@ -284,7 +336,63 @@ fn identity_key_entry_mismatch_rejected() {
     );
 }
 
-/// CMT-007: an asset_locks row whose lifecycle blob disagrees with the
+/// An `identities` upsert whose entry `id` disagrees with its map key is
+/// rejected before encoding, so the typed `identity_id` column and the
+/// serialized blob can never name different identities.
+#[test]
+fn identity_entry_id_mismatch_rejected() {
+    use dpp::prelude::Identifier;
+    use platform_wallet::changeset::{IdentityChangeSet, IdentityEntry};
+    use platform_wallet::wallet::identity::IdentityStatus;
+
+    let (persister, _tmp, _path) = fresh_persister();
+    let w = wid(0xF5);
+    ensure_wallet_meta(&persister, &w);
+
+    let key_id = Identifier::from([0xAA; 32]);
+    let entry = IdentityEntry {
+        id: Identifier::from([0xBB; 32]), // deliberately different from the map key
+        balance: 0,
+        revision: 0,
+        identity_index: Some(0),
+        last_updated_balance_block_time: None,
+        last_synced_keys_block_time: None,
+        dpns_names: Vec::new(),
+        contested_dpns_names: Vec::new(),
+        status: IdentityStatus::Unknown,
+        wallet_id: None,
+        dashpay_profile: None,
+        dashpay_payments: Default::default(),
+    };
+    let mut identities = std::collections::BTreeMap::new();
+    identities.insert(key_id, entry);
+
+    let err = persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                identities: Some(IdentityChangeSet {
+                    identities,
+                    removed: Default::default(),
+                }),
+                ..Default::default()
+            },
+        )
+        .expect_err("entry-id mismatch must fail");
+    assert!(
+        matches!(
+            err.kind(),
+            Some(platform_wallet::changeset::PersistenceErrorKind::Fatal)
+        ),
+        "expected a fatal backend error for the id mismatch, got {err:?}"
+    );
+    assert!(
+        format!("{err}").contains("disagrees with its map key"),
+        "expected identity entry id mismatch, got `{err}`"
+    );
+}
+
+/// an asset_locks row whose lifecycle blob disagrees with the
 /// typed `account_index` column is rejected at decode time with the
 /// typed `AssetLockEntryMismatch` rather than silently mis-bucketing.
 #[test]
@@ -339,7 +447,7 @@ fn asset_lock_typed_vs_blob_mismatch_rejected() {
     );
 }
 
-/// CMT-002: a wallet whose only platform-address state is the
+/// a wallet whose only platform-address state is the
 /// compaction marker (`last_known_recent_block > 0`) is kept by `load`,
 /// not silently dropped.
 #[test]

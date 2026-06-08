@@ -49,10 +49,10 @@ fn line_is_allowlisted(line: &str) -> bool {
 }
 
 fn scan_dir(dir: &Path, offenders: &mut Vec<String>) {
-    // CMT-016: fail loudly on a missing/unreadable scan root — a
-    // directory rename or build-script bug that points the scanner at
-    // a non-existent path must NOT degrade this security guardrail
-    // into a silent no-op.
+    // Fail loudly on a missing/unreadable scan root — a directory
+    // rename or build-script bug that points the scanner at a
+    // non-existent path must NOT degrade this security guardrail into a
+    // silent no-op.
     let entries = std::fs::read_dir(dir).unwrap_or_else(|e| {
         panic!(
             "secrets-scan: scan root `{}` is unreadable ({e}); this guardrail \

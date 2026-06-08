@@ -3,9 +3,7 @@
 //! Implementors choose their own storage engine (SQLite, file, memory, remote).
 //! The traits guarantee that deltas are persisted atomically.
 
-use std::collections::BTreeMap;
 use std::error::Error as StdError;
-use std::path::PathBuf;
 
 use crate::changeset::changeset::PlatformWalletChangeSet;
 use crate::changeset::client_start_state::ClientStartState;
@@ -215,9 +213,9 @@ pub trait PlatformWalletPersistence: Send + Sync {
     /// off [`PersistenceError::is_transient`]:
     ///
     /// - **[`PersistenceErrorKind::Transient`]** — for the canonical
-    ///   SQLite backend that's `SQLITE_BUSY` / `SQLITE_LOCKED`, and as
-    ///   of ATOM-008 also the I/O-class codes `SQLITE_FULL` /
-    ///   `SQLITE_IOERR` / `SQLITE_NOMEM`: the buffered changeset is
+    ///   SQLite backend that's `SQLITE_BUSY` / `SQLITE_LOCKED` plus the
+    ///   I/O-class codes `SQLITE_FULL` / `SQLITE_IOERR` /
+    ///   `SQLITE_NOMEM`: the buffered changeset is
     ///   preserved (re-merged via the buffer's `restore` path so any
     ///   `store` that landed during the failed flush wins on LWW
     ///   fields), and the caller MAY retry with exponential backoff.
@@ -234,6 +232,12 @@ pub trait PlatformWalletPersistence: Send + Sync {
     ///
     /// [`PersistenceError::LockPoisoned`] is fatal but distinguished
     /// at the variant level so callers can pattern-match on it.
+    ///
+    // TODO: wallet-less / global objects (the `WalletId::default()` /
+    // `[0u8; 32]` sentinel scope for parentless or global metadata) are
+    // not yet expressible through `flush`. Hosts that previously called
+    // the now-removed `commit_writes` should call `flush` per wallet
+    // instead; a sentinel-scope flush path is still to be designed.
     fn flush(&self, wallet_id: WalletId) -> Result<(), PersistenceError>;
 
     /// Load the full client state from storage.
@@ -297,102 +301,9 @@ pub trait PlatformWalletPersistence: Send + Sync {
         Ok(None)
     }
 
-    /// Cascade-delete every persisted row owned by `wallet_id`.
-    ///
-    /// The default impl is a no-op that returns an empty
-    /// [`DeleteWalletReport`]. Backends with no per-wallet state
-    /// on disk (e.g. [`NoPlatformPersistence`](crate::wallet::persister::NoPlatformPersistence))
-    /// inherit it.
-    ///
-    /// # Errors
-    ///
-    /// - [`PersistenceErrorKind::Transient`] (e.g. `SQLITE_BUSY`):
-    ///   callers MAY retry with backoff.
-    /// - [`PersistenceErrorKind::Constraint`] / [`PersistenceErrorKind::Fatal`]
-    ///   / [`PersistenceError::LockPoisoned`]: callers MUST NOT retry;
-    ///   the disk state may carry orphan rows that an admin tool has
-    ///   to clean up out-of-band.
-    fn delete_wallet(&self, wallet_id: WalletId) -> Result<DeleteWalletReport, PersistenceError> {
-        Ok(DeleteWalletReport {
-            wallet_id,
-            backup_path: None,
-            rows_removed_per_table: BTreeMap::new(),
-        })
-    }
-
-    /// Flush every dirty wallet's buffered changeset to durable storage.
-    ///
-    /// The default impl is a no-op that returns an empty
-    /// [`CommitReport`]. Backends that flush inline (e.g. SQLite in
-    /// [`FlushMode::Immediate`](https://docs.rs/platform-wallet-storage))
-    /// or that have nothing to flush ([`NoPlatformPersistence`](crate::wallet::persister::NoPlatformPersistence))
-    /// inherit it.
-    ///
-    /// # Errors
-    ///
-    /// Returns `Err` ONLY when even enumerating the dirty set fails
-    /// (e.g. the buffer mutex is poisoned). Per-wallet flush failures
-    /// land on `report.failed` with the classified `PersistenceError`
-    /// per wallet so a single bad wallet does not hide its siblings'
-    /// success. `report.still_pending` lists wallets that were never
-    /// attempted because an earlier per-flush call short-circuited
-    /// the loop (today: `LockPoisoned`).
-    ///
-    /// Atomicity is per-wallet, not cross-wallet: there is no
-    /// transaction spanning multiple wallets.
-    fn commit_writes(&self) -> Result<CommitReport, PersistenceError> {
-        Ok(CommitReport {
-            succeeded: Vec::new(),
-            failed: Vec::new(),
-            still_pending: Vec::new(),
-        })
-    }
-}
-
-/// Outcome of a [`PlatformWalletPersistence::commit_writes`] call.
-///
-/// Each dirty wallet's per-flush result lands in exactly one of the
-/// three vectors so a single failed wallet doesn't hide its siblings'
-/// success (or vice-versa). Callers can retry `still_pending` directly;
-/// `failed` carries the classified `PersistenceError` per wallet so
-/// transient-vs-fatal decisions stay local.
-#[derive(Debug)]
-pub struct CommitReport {
-    /// Wallets that flushed successfully (durable on disk).
-    pub succeeded: Vec<WalletId>,
-    /// Wallets whose flush returned an error. The `PersistenceError`
-    /// carries the classification and source per
-    /// [`PersistenceErrorKind`].
-    pub failed: Vec<(WalletId, PersistenceError)>,
-    /// Wallets we never attempted because an earlier per-flush call
-    /// short-circuited the loop (today: a `LockPoisoned` — the
-    /// connection mutex is gone).
-    pub still_pending: Vec<WalletId>,
-}
-
-impl CommitReport {
-    /// `true` when every dirty wallet flushed cleanly.
-    pub fn is_ok(&self) -> bool {
-        self.failed.is_empty() && self.still_pending.is_empty()
-    }
-}
-
-/// Outcome of a [`PlatformWalletPersistence::delete_wallet`] call.
-///
-/// Lives on the trait so consumers can match on the report without
-/// pulling in a backend-specific crate. The SQLite backend builds an
-/// instance with `rows_removed_per_table` populated; backends that
-/// don't track per-table row counts emit an empty map.
-#[derive(Debug, Clone)]
-pub struct DeleteWalletReport {
-    /// The wallet that was deleted.
-    pub wallet_id: WalletId,
-    /// Absolute path of the pre-delete auto-backup taken before the
-    /// cascade. `None` when the backend skipped the backup
-    /// (intentionally — e.g. the SQLite CLI's `--no-auto-backup` — or
-    /// because the backend has no backup concept).
-    pub backup_path: Option<PathBuf>,
-    /// Per-table row counts the backend deleted. Empty for backends
-    /// that don't expose per-table accounting.
-    pub rows_removed_per_table: BTreeMap<&'static str, usize>,
+    // TODO: `list_wallets` and `delete_wallet` are deferred contract
+    // candidates. They live as inherent methods on the SQLite backend
+    // today; they may return to this trait once a cross-backend contract
+    // (consistent error/report semantics across SQLite, file, and FFI
+    // backends) is agreed.
 }

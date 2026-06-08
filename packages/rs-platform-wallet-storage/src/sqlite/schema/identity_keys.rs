@@ -1,4 +1,5 @@
-//! `identity_keys` table writer (PUBLIC material only — see NFR-10).
+//! `identity_keys` table writer. Stores PUBLIC key material only — no
+//! signing-key bytes ever reach this table.
 //!
 //! `IdentityKeyEntry`'s `public_key: dpp::IdentityPublicKey` uses
 //! `#[serde(tag = "$formatVersion")]` on the parent enum, which
@@ -13,7 +14,10 @@
 use rusqlite::{params, Connection, Transaction};
 use serde::{Deserialize, Serialize};
 
-use dpp::identity::{IdentityPublicKey, KeyID};
+use dpp::identity::KeyID;
+// Used only by the test-gated `into_entry` and the unit tests below.
+#[cfg(any(test, feature = "__test-helpers"))]
+use dpp::identity::IdentityPublicKey;
 use dpp::prelude::Identifier;
 use platform_wallet::changeset::{
     IdentityKeyDerivationIndices, IdentityKeyEntry, IdentityKeysChangeSet,
@@ -50,13 +54,14 @@ impl IdentityKeyWire {
         })
     }
 
+    #[cfg(any(test, feature = "__test-helpers"))]
     fn into_entry(self) -> Result<IdentityKeyEntry, WalletStorageError> {
         let (public_key, consumed): (IdentityPublicKey, usize) =
             bincode::decode_from_slice(&self.public_key_bincode, bincode::config::standard())?;
-        // CMT-009: consistent with the outer blob::decode trailing-byte
-        // guard. A valid-prefix + trailing-garbage payload that
-        // bincode's decoder happily accepts (it stops after the typed
-        // length) is corruption / forward-schema drift — refuse it.
+        // Consistent with the outer blob::decode trailing-byte guard: a
+        // valid-prefix + trailing-garbage payload that bincode's decoder
+        // happily accepts (it stops after the typed length) is corruption
+        // or forward-schema drift — refuse it.
         if consumed != self.public_key_bincode.len() {
             return Err(WalletStorageError::blob_decode(
                 "unexpected trailing bytes in identity_keys.public_key_bincode",
@@ -74,7 +79,7 @@ impl IdentityKeyWire {
 }
 
 /// `identity_keys` is keyed by `(wallet_id, identity_id, key_id)`; the
-/// `wallet_id` FK targets `wallet_metadata(wallet_id)` and the
+/// `wallet_id` FK targets `wallets(wallet_id)` and the
 /// `identity_id` FK targets `identities(identity_id)`. The typed
 /// `wallet_id` column is always bound from the caller-supplied flush
 /// scope; the entry's own `wallet_id` field (when set) is cross-checked
@@ -138,6 +143,7 @@ pub fn apply(
 }
 
 /// Decode an `identity_keys.public_key_blob` cell back to the entry.
+#[cfg(any(test, feature = "__test-helpers"))]
 pub fn decode_entry(payload: &[u8]) -> Result<IdentityKeyEntry, WalletStorageError> {
     let wire: IdentityKeyWire = blob::decode(payload)?;
     wire.into_entry()
@@ -186,9 +192,9 @@ mod tests {
     use dpp::identity::{KeyType, Purpose, SecurityLevel};
     use dpp::platform_value::BinaryData;
 
-    /// CMT-009: a `public_key_bincode` payload whose IdentityPublicKey
-    /// prefix is valid but carries trailing garbage is refused at
-    /// decode time rather than silently dropping the trailing bytes.
+    /// A `public_key_bincode` payload whose IdentityPublicKey prefix is
+    /// valid but carries trailing garbage is refused at decode time
+    /// rather than silently dropping the trailing bytes.
     #[test]
     fn into_entry_rejects_trailing_bytes_in_public_key_bincode() {
         let pk = IdentityPublicKey::V0(IdentityPublicKeyV0 {

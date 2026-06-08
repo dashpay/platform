@@ -32,7 +32,7 @@
 //!   a headless host should pin
 //!   [`EncryptedFileStore`](super::EncryptedFileStore) instead.
 //! - **macOS:** Keychain ACL — a re-signed binary with the same
-//!   code-signing identity is A3 (accepted, AR-5). Items persist
+//!   code-signing identity is an accepted residual risk. Items persist
 //!   `UntilDelete`.
 //! - **Windows:** Credential Manager / DPAPI is user-profile scoped; a
 //!   same-user process can unprotect it. DPAPI is **not** a defense
@@ -47,7 +47,7 @@ use keyring_core::Error as KeyringError;
 /// Open the platform's default credential store, failing closed
 /// (typed [`KeyringError::NoDefaultStore`]) when none is reachable
 /// (headless / no Secret Service / no D-Bus). Never panics, never
-/// falls back to a weaker store (SEC-REQ-2.1.3 / D2).
+/// falls back to a weaker store.
 ///
 /// The returned `Arc` may be passed straight to
 /// [`keyring_core::set_default_store`] or used directly to build
@@ -61,8 +61,8 @@ pub fn default_credential_store() -> Result<Arc<dyn CredentialStoreApi + Send + 
 fn platform_default_store() -> Result<Arc<dyn CredentialStoreApi + Send + Sync>, KeyringError> {
     // Secret Service (gnome-keyring / KWallet) is the only OS backend.
     // No reachable D-Bus session / unlocked collection (headless, SSH,
-    // CI) is fail-closed by design (SEC-REQ-2.1.3 / AR-4) — the operator
-    // selects EncryptedFileStore explicitly instead.
+    // CI) is fail-closed by design — the operator selects
+    // EncryptedFileStore explicitly instead.
     match dbus_secret_service_keyring_store::Store::new() {
         Ok(s) => Ok(s),
         Err(_) => Err(KeyringError::NoDefaultStore),
@@ -108,7 +108,7 @@ mod tests {
     fn headless_fails_closed_not_panic() {
         // On headless CI the constructor returns `NoDefaultStore`;
         // where a keyring exists it succeeds. Either way: typed, no
-        // panic, no plaintext fallback (SEC-REQ-2.1.3 / D2).
+        // panic, no plaintext fallback.
         match default_credential_store() {
             Ok(_) | Err(KeyringError::NoDefaultStore) => {}
             Err(other) => panic!("unexpected: {other}"),

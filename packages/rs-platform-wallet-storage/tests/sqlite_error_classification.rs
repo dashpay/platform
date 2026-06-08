@@ -1,11 +1,10 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! TC-P2-005 — `WalletStorageError::is_transient` and
-//! `error_kind_str` exhaustiveness check via wildcard-free `match`.
-//! TC-P2-010 — boundary mapping `FlushRetryable` →
-//! `PersistenceError::Backend`.
+//! `WalletStorageError::is_transient` + `error_kind_str` exhaustiveness
+//! check via a wildcard-free `match`, plus the boundary mapping of
+//! `FlushRetryable` into `PersistenceError::Backend`.
 //!
-//! TC-P2-005 is structured as a `match` over `&WalletStorageError`
+//! The check is structured as a `match` over `&WalletStorageError`
 //! that covers every variant explicitly. There is NO `_` arm — when a
 //! future variant lands on `WalletStorageError`, this file refuses to
 //! compile until the author adds a classification + tag here too.
@@ -153,8 +152,9 @@ fn samples() -> Vec<WalletStorageError> {
         },
         WalletStorageError::InvalidWalletIdLength { actual: 10 },
         WalletStorageError::ConfigInvalid { reason: "bad knob" },
-        WalletStorageError::SchemaInvariantViolated {
-            detail: "unknown table",
+        WalletStorageError::IdentityEntryIdMismatch,
+        WalletStorageError::UtxoAddressNotDerived {
+            address: "yMockAddress".into(),
         },
         // BincodeEncode / BincodeDecode / HashDecode / ConsensusCodec
         // need real upstream errors — synthesise minimal ones via the
@@ -183,7 +183,7 @@ fn samples() -> Vec<WalletStorageError> {
     ]
 }
 
-/// TC-P2-005: wildcard-free exhaustiveness gate.
+/// wildcard-free exhaustiveness gate.
 ///
 /// The body is a `match` over `&WalletStorageError` with one arm per
 /// variant — NO `_` arm, NO `..` rest patterns over enum variants.
@@ -232,9 +232,6 @@ fn tc_p2_005_is_transient_table() {
             WalletStorageError::InvalidWalletIdHex { .. } => (false, "invalid_wallet_id_hex"),
             WalletStorageError::InvalidWalletIdLength { .. } => (false, "invalid_wallet_id_length"),
             WalletStorageError::ConfigInvalid { .. } => (false, "config_invalid"),
-            WalletStorageError::SchemaInvariantViolated { .. } => {
-                (false, "schema_invariant_violated")
-            }
             WalletStorageError::BincodeEncode { .. } => (false, "bincode_encode"),
             WalletStorageError::BincodeDecode { .. } => (false, "bincode_decode"),
             WalletStorageError::BlobDecode { .. } => (false, "blob_decode"),
@@ -244,10 +241,12 @@ fn tc_p2_005_is_transient_table() {
                 (false, "backup_destination_exists")
             }
             WalletStorageError::IdentityKeyEntryMismatch => (false, "identity_key_entry_mismatch"),
+            WalletStorageError::IdentityEntryIdMismatch => (false, "identity_entry_id_mismatch"),
             WalletStorageError::AssetLockEntryMismatch { .. } => {
                 (false, "asset_lock_entry_mismatch")
             }
             WalletStorageError::BlobTooLarge { .. } => (false, "blob_too_large"),
+            WalletStorageError::UtxoAddressNotDerived { .. } => (false, "utxo_address_not_derived"),
             WalletStorageError::ForeignKeysNotEnforced => (false, "foreign_keys_not_enforced"),
             WalletStorageError::IntegerOverflow { .. } => (false, "integer_overflow"),
         }
@@ -270,8 +269,8 @@ fn tc_p2_005_is_transient_table() {
     }
 }
 
-/// TC-P2-010: `FlushRetryable` flowing through the `From` impl into
-/// `PersistenceError::Backend { kind, source }` (CODE-004): the outer
+/// `FlushRetryable` flowing through the `From` impl into
+/// `PersistenceError::Backend { kind, source }`: the outer
 /// `Display` carries the variant markers ops grep for, and the typed
 /// source chain still reaches the inner rusqlite payload (consumers
 /// downcast or `Error::source`-walk to get there).
@@ -307,7 +306,7 @@ fn tc_p2_010_boundary_error_mapping() {
     );
 
     // Walk the typed source chain to the inner rusqlite payload —
-    // post-CODE-004 the source is `Box<dyn Error + Send + Sync>` so
+    // post- the source is `Box<dyn Error + Send + Sync>` so
     // the chain is preserved structurally, not just stringified.
     let mut chain = String::new();
     let mut cur: Option<&(dyn std::error::Error + 'static)> = source.source();

@@ -70,7 +70,7 @@ fn tc052_delete_wallet_auto_backup_disabled() {
     let conn = persister.lock_conn_for_test();
     let n: i64 = conn
         .query_row(
-            "SELECT COUNT(*) FROM wallet_metadata WHERE wallet_id = ?1",
+            "SELECT COUNT(*) FROM wallets WHERE wallet_id = ?1",
             rusqlite::params![w.as_slice()],
             |row| row.get(0),
         )
@@ -106,7 +106,7 @@ fn tc054_unwritable_auto_backup_dir() {
     let conn = persister.lock_conn_for_test();
     let n: i64 = conn
         .query_row(
-            "SELECT COUNT(*) FROM wallet_metadata WHERE wallet_id = ?1",
+            "SELECT COUNT(*) FROM wallets WHERE wallet_id = ?1",
             rusqlite::params![w.as_slice()],
             |row| row.get(0),
         )

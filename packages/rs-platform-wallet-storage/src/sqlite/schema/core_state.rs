@@ -1,5 +1,6 @@
 //! Writers + readers for the `core_*` tables.
 
+#[cfg(any(test, feature = "__test-helpers"))]
 use std::collections::BTreeMap;
 
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
@@ -158,17 +159,31 @@ fn execute_upsert_utxo(
     let address = utxo.address.to_string();
     // `Utxo` carries no account index; recover it from the
     // derived-address map written earlier in this transaction.
-    let account_index: i64 = lookup_stmt
+    let looked_up: Option<i64> = lookup_stmt
         .query_row(params![wallet_id.as_slice(), &address], |row| row.get(0))
-        .optional()?
-        .unwrap_or_else(|| {
-            tracing::warn!(
+        .optional()?;
+    let account_index: i64 = match looked_up {
+        Some(idx) => idx,
+        // An unspent UTXO whose address we never derived would land in
+        // the wallet's funds under account 0 and never re-derive — silent
+        // mis-bucketing of live money. Refuse it. The spent-only
+        // placeholder path tolerates the fallback because spent rows are
+        // excluded from `list_unspent_utxos`, so a wrong index there is
+        // inert.
+        None if !spent => {
+            return Err(WalletStorageError::UtxoAddressNotDerived {
+                address: address.clone(),
+            });
+        }
+        None => {
+            tracing::debug!(
                 wallet_id = %hex::encode(wallet_id),
                 address = %address,
-                "UTXO address not found in core_derived_addresses; defaulting account_index to 0"
+                "spent-only UTXO address not found in core_derived_addresses; using account_index 0 placeholder"
             );
             0
-        });
+        }
+    };
     stmt.execute(params![
         wallet_id.as_slice(),
         &op[..],
@@ -257,7 +272,7 @@ fn upsert_sync_state(
 /// - **`core_derived_addresses` `used` flags**: not part of the
 ///   balance projection; the gap-limit re-warms on the next scan.
 ///
-/// `network` is the wallet's network (from `wallet_metadata`), needed
+/// `network` is the wallet's network (from `wallets`), needed
 /// to turn a persisted `script` back into an `Address`.
 pub fn load_state(
     conn: &Connection,
@@ -407,6 +422,7 @@ pub fn get_tx_record(
 
 /// Row representing one unspent UTXO. Used by tests that probe the
 /// `core_utxos` table without going through full `Wallet` reconstruction.
+#[cfg(any(test, feature = "__test-helpers"))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UnspentRow {
     pub outpoint: dashcore::OutPoint,
@@ -417,7 +433,8 @@ pub struct UnspentRow {
 }
 
 /// All UTXOs for a wallet that have not been spent yet, bucketed by
-/// account index. Used by `load` and tests.
+/// account index. Retained for this crate's integration tests.
+#[cfg(any(test, feature = "__test-helpers"))]
 pub fn list_unspent_utxos(
     conn: &Connection,
     wallet_id: &WalletId,

@@ -1,4 +1,4 @@
-//! CMT-005 — `SqlitePersister::open` must refuse a database whose
+//! `SqlitePersister::open` must refuse a database whose
 //! `refinery_schema_history` MAX(version) exceeds the embedded max.
 //! Symmetric with `restore_from`: a forged forward-version row that
 //! older binary would otherwise migration::run() no-op past gets

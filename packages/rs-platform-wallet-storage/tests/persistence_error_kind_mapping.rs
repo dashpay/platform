@@ -1,13 +1,12 @@
-//! `WalletStorageError -> PersistenceError` kind-classification table
-//! (CODE-004).
+//! `WalletStorageError -> PersistenceError` kind-classification table.
 //!
-//! TC-CODE-004-b — every `WalletStorageError` variant carries through
-//! the boundary with the right `PersistenceErrorKind` (`Transient` /
-//! `Fatal` / `Constraint`). The `From` impl in
-//! `sqlite/error.rs` is the single source of truth; this test pins
-//! the mapping so changes to it are deliberate.
+//! Every `WalletStorageError` variant carries through the boundary
+//! with the right `PersistenceErrorKind` (`Transient` / `Fatal` /
+//! `Constraint`). The `From` impl in `sqlite/error.rs` is the single
+//! source of truth; this test pins the mapping so changes to it are
+//! deliberate.
 //!
-//! TC-CODE-004-e — `WalletStorageError::is_transient()` and
+//! `WalletStorageError::is_transient()` and
 //! `WalletStorageError::error_kind_str()` must remain wildcard-free so
 //! adding a new variant forces an explicit classification update. This
 //! test parses the source file and refuses to compile around a `_ =>`
@@ -42,14 +41,14 @@ fn sqlite_failure(code: ErrorCode, extended: i32) -> WalletStorageError {
     ))
 }
 
-/// TC-CODE-004-b — `LockPoisoned` keeps its dedicated variant.
+/// `LockPoisoned` keeps its dedicated variant.
 #[test]
 fn tc_code_004_b_lock_poisoned_maps_to_lock_poisoned() {
     let pe: PersistenceError = WalletStorageError::LockPoisoned.into();
     assert!(matches!(pe, PersistenceError::LockPoisoned));
 }
 
-/// TC-CODE-004-b — every `is_transient() == true` variant maps to
+/// Every `is_transient() == true` variant maps to
 /// `PersistenceErrorKind::Transient` at the trait boundary.
 #[test]
 fn tc_code_004_b_transient_variants_map_to_transient_kind() {
@@ -93,7 +92,7 @@ fn tc_code_004_b_transient_variants_map_to_transient_kind() {
     }
 }
 
-/// TC-CODE-004-b — SQLite constraint failures map to
+/// SQLite constraint failures map to
 /// `PersistenceErrorKind::Constraint` so consumers can distinguish
 /// "your data is wrong" from "the storage engine is unhappy".
 #[test]
@@ -117,8 +116,8 @@ fn tc_code_004_b_constraint_variants_map_to_constraint_kind() {
     }
 }
 
-/// TC-CODE-004-b — every remaining fatal-but-not-constraint variant
-/// maps to `Fatal`. Spot-check enough variants to lock the table; the
+/// Every remaining fatal-but-not-constraint variant maps to `Fatal`.
+/// Spot-check enough variants to lock the table; the
 /// exhaustiveness is guarded by the wildcard-free invariant test.
 #[test]
 fn tc_code_004_b_fatal_variants_map_to_fatal_kind() {
@@ -230,8 +229,8 @@ fn tc_code_004_b_fatal_variants_map_to_fatal_kind() {
     }
 }
 
-/// TC-CODE-004-b — the boxed source preserves the typed `Error`
-/// chain so consumers can walk it (the trait was the right boundary
+/// The boxed source preserves the typed `Error` chain so consumers can
+/// walk it (the trait was the right boundary
 /// for `Box<dyn Error + Send + Sync>` precisely so the rusqlite
 /// source is recoverable). The outer `Display` carries the variant
 /// marker ops grep for; `.source()` walks to the inner `rusqlite`
@@ -278,8 +277,8 @@ fn tc_code_004_b_source_preserves_inner_display_chain() {
     }
 }
 
-/// TC-CODE-004-e — `is_transient()` source must not regress to a
-/// wildcard arm on its outer `match self`. The inner match on
+/// `is_transient()` source must not regress to a wildcard arm on its
+/// outer `match self`. The inner match on
 /// `rusqlite::ErrorCode` is allowed to use a wildcard since
 /// `ErrorCode` is `#[non_exhaustive]` upstream — we only guard the
 /// outer `WalletStorageError` match.
@@ -291,8 +290,8 @@ fn tc_code_004_e_is_transient_outer_match_is_wildcard_free() {
     assert_no_wildcard(&outer, "is_transient");
 }
 
-/// TC-CODE-004-e — same guard for `error_kind_str()`. The outer match
-/// over `WalletStorageError` MUST remain wildcard-free; the inner
+/// Same guard for `error_kind_str()`. The outer match over
+/// `WalletStorageError` MUST remain wildcard-free; the inner
 /// match over `ErrorCode` may have its own wildcard.
 #[test]
 fn tc_code_004_e_error_kind_str_is_wildcard_free() {

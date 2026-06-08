@@ -29,9 +29,9 @@ fn service(w: WalletId) -> String {
 }
 
 /// `CredentialApi::get_secret` returns `Vec<u8>` per upstream — we
-/// re-wrap it via `SecretBytes::new` at the consumer seam (no named
-/// intermediate `Vec` binding, Smythe EDIT-1). This binding only
-/// compiles when the re-wrap type is exactly `SecretBytes`.
+/// re-wrap it via `SecretBytes::new` at the consumer seam with no named
+/// intermediate `Vec` binding. This binding only compiles when the
+/// re-wrap type is exactly `SecretBytes`.
 #[test]
 fn get_secret_rewraps_into_zeroizing_at_consumer_seam() {
     let dir = tempfile::tempdir().unwrap();
@@ -101,8 +101,8 @@ fn no_box_dyn_error_in_secrets_src() {
 }
 
 /// The bridged `keyring_core::Error` carries no secret in `Display`
-/// (SEC-REQ-2.0.1 / 3.3 / CWE-209). Per Smythe EDIT-2, `{:?}` is the
-/// dangerous shape (it can echo `BadEncoding(Vec<u8>)` /
+/// (SEC-REQ-2.0.1 / 3.3 / CWE-209). `{:?}` is the dangerous shape
+/// (it can echo `BadEncoding(Vec<u8>)` /
 /// `BadDataFormat(Vec<u8>, _)`); the file backend never constructs
 /// those variants with secret bytes, and our consumers must not
 /// `{:?}`-print `keyring_core::Error` either (see `secrets_guard`).

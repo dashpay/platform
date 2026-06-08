@@ -23,100 +23,7 @@ pub mod identities;
 pub mod identity_keys;
 pub mod platform_addrs;
 pub mod token_balances;
-pub mod wallet_meta;
-
-use crate::sqlite::error::WalletStorageError;
-
-/// How a per-wallet table is row-scoped against a `wallet_id`.
-/// Identity-owned tables (`token_balances`, `dashpay_profiles`,
-/// `dashpay_payments_overlay`) have no direct `wallet_id` column; they
-/// reach the parent wallet only via the cascading FK chain
-/// `wallet_metadata → identities → …`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum WalletScope {
-    /// The table carries a `wallet_id` column directly; predicates
-    /// like `WHERE wallet_id = ?` work as-is.
-    DirectColumn,
-    /// The table is keyed by `identity_id`; lookups by wallet must
-    /// JOIN through `identities` (`SELECT … WHERE identity_id IN
-    /// (SELECT identity_id FROM identities WHERE wallet_id = ?)`).
-    ViaIdentity,
-}
-
-/// Every per-wallet table — used by `delete_wallet` to count + cascade
-/// row removal and by `inspect` for the table summary. `wallet_metadata`
-/// is the parent and listed first; everything after it depends on the
-/// parent row via the native `ON DELETE CASCADE` foreign keys declared
-/// in `V001__initial.rs`. Identity-owned children cascade through
-/// `identities` (nullable `wallet_id` link) rather than directly off
-/// `wallet_metadata`.
-pub const PER_WALLET_TABLES: &[(&str, WalletScope)] = &[
-    ("wallet_metadata", WalletScope::DirectColumn),
-    ("account_registrations", WalletScope::DirectColumn),
-    ("account_address_pools", WalletScope::DirectColumn),
-    ("core_transactions", WalletScope::DirectColumn),
-    ("core_utxos", WalletScope::DirectColumn),
-    ("core_instant_locks", WalletScope::DirectColumn),
-    ("core_derived_addresses", WalletScope::DirectColumn),
-    ("core_sync_state", WalletScope::DirectColumn),
-    ("identities", WalletScope::DirectColumn),
-    ("identity_keys", WalletScope::DirectColumn),
-    ("contacts", WalletScope::DirectColumn),
-    ("platform_addresses", WalletScope::DirectColumn),
-    ("platform_address_sync", WalletScope::DirectColumn),
-    ("asset_locks", WalletScope::DirectColumn),
-    ("token_balances", WalletScope::ViaIdentity),
-    ("dashpay_profiles", WalletScope::ViaIdentity),
-    ("dashpay_payments_overlay", WalletScope::ViaIdentity),
-    // Per-object metadata tables (`src/kv.rs`). Registered so
-    // `delete_wallet`/`inspect` purge and count them even when the `kv`
-    // API is compiled out. `meta_global` has no wallet scope and is
-    // intentionally absent — it survives wallet delete.
-    ("meta_wallet", WalletScope::DirectColumn),
-    ("meta_identity", WalletScope::ViaIdentity),
-    ("meta_token", WalletScope::ViaIdentity),
-    ("meta_contact", WalletScope::DirectColumn),
-    ("meta_platform_address", WalletScope::DirectColumn),
-];
-
-/// SQL fragment for counting rows of `table` belonging to a single
-/// wallet. `scope` selects the predicate flavour. The fragment includes
-/// the leading `SELECT COUNT(*) FROM` so the call site can format it
-/// directly and bind a single `?1` parameter (the wallet id bytes).
-///
-/// CMT-023: `table` is validated against [`PER_WALLET_TABLES`] before
-/// interpolation. SQLite cannot bind identifiers as parameters, so the
-/// table name is `format!`-spliced into the SQL by design — the
-/// allowlist closes the latent injection footgun should this helper
-/// ever be reached from caller input. Debug builds panic on an unknown
-/// name; release builds return the typed
-/// [`WalletStorageError::SchemaInvariantViolated`] so the failure can
-/// be inspected up the stack instead of silently producing wrong SQL.
-pub fn count_rows_for_wallet_sql(
-    table: &str,
-    scope: WalletScope,
-) -> Result<String, WalletStorageError> {
-    let allowed = PER_WALLET_TABLES.iter().any(|(t, _)| *t == table);
-    debug_assert!(
-        allowed,
-        "count_rows_for_wallet_sql: `{table}` is not in PER_WALLET_TABLES; \
-         add it to the allowlist or fix the caller",
-    );
-    if !allowed {
-        return Err(WalletStorageError::SchemaInvariantViolated {
-            detail: "count_rows_for_wallet_sql called with table outside PER_WALLET_TABLES",
-        });
-    }
-    Ok(match scope {
-        WalletScope::DirectColumn => {
-            format!("SELECT COUNT(*) FROM {table} WHERE wallet_id = ?1")
-        }
-        WalletScope::ViaIdentity => format!(
-            "SELECT COUNT(*) FROM {table} \
-             WHERE identity_id IN (SELECT identity_id FROM identities WHERE wallet_id = ?1)"
-        ),
-    })
-}
+pub mod wallets;
 
 /// Defensive check that every `identity_id` in `touched` exists in
 /// `identities` and belongs to `wallet_id` (or has NULL wallet_id when
@@ -145,6 +52,11 @@ pub(crate) fn assert_identities_belong_to_wallet(
             // upcoming write with a clearer error than guessing.
             continue;
         };
+        // INTENTIONAL: the `Some(found)` arms below zero-pad a stored
+        // wallet_id whose width is not 32 into the diagnostic `found` field.
+        // This is diagnostic-only and cosmetic — a malformed stored width
+        // already triggers a mismatch error; reporting it zero-padded carries
+        // no security impact, so a typed length error is not warranted.
         match (scope_is_sentinel, found_wallet_id) {
             (true, None) => {} // sentinel scope matches NULL parenting
             (true, Some(found)) => {
@@ -178,35 +90,4 @@ pub(crate) fn assert_identities_belong_to_wallet(
         }
     }
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// CMT-023: every known per-wallet table compiles into a SQL
-    /// fragment without tripping the allowlist guard.
-    #[test]
-    fn allowlist_accepts_every_known_table() {
-        for (table, scope) in PER_WALLET_TABLES {
-            count_rows_for_wallet_sql(table, *scope)
-                .unwrap_or_else(|e| panic!("allowlisted table `{table}` rejected: {e}"));
-        }
-    }
-
-    /// CMT-023: a table name outside `PER_WALLET_TABLES` must be
-    /// rejected with the typed `SchemaInvariantViolated` error in
-    /// release builds. Debug builds panic via `debug_assert!` (not
-    /// exercised here — we only assert the typed-error path that
-    /// survives `--release`).
-    #[cfg(not(debug_assertions))]
-    #[test]
-    fn allowlist_rejects_unknown_table() {
-        let err = count_rows_for_wallet_sql("attacker_injected", WalletScope::DirectColumn)
-            .expect_err("must reject unknown table");
-        assert!(
-            matches!(err, WalletStorageError::SchemaInvariantViolated { .. }),
-            "expected SchemaInvariantViolated, got {err:?}"
-        );
-    }
 }

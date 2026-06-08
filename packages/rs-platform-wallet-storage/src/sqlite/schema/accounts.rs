@@ -1,6 +1,10 @@
-//! `account_registrations` + `account_address_pools` writers and the
-//! keyless account-manifest reader.
+//! `account_registrations` + `account_address_pools` writers + readers
+//! (platform-payment registrations and the keyless account-manifest
+//! reader).
 
+use std::collections::BTreeMap;
+
+use key_wallet::bip32::ExtendedPubKey;
 use rusqlite::{params, Connection, Transaction};
 
 use platform_wallet::changeset::{AccountAddressPoolEntry, AccountRegistrationEntry};
@@ -8,6 +12,86 @@ use platform_wallet::wallet::platform_wallet::WalletId;
 
 use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::schema::blob;
+
+/// Decoded `platform_payment` account registration: the DIP-17 account
+/// index and its extended public key, recovered from the bincode-serde
+/// `AccountRegistrationEntry` stored in `account_xpub_bytes`.
+pub(crate) type PlatformPaymentRegistration = (u32, ExtendedPubKey);
+
+/// One `platform_payment` registration row decoded into
+/// `(account_index, xpub)`.
+fn decode_platform_payment_row(
+    account_index: i64,
+    xpub_bytes: &[u8],
+) -> Result<PlatformPaymentRegistration, WalletStorageError> {
+    let account_index =
+        u32::try_from(account_index).map_err(|_| WalletStorageError::IntegerOverflow {
+            field: "account_registrations.account_index",
+            value: account_index as u64,
+            target: crate::sqlite::util::safe_cast::SafeCastTarget::U64,
+        })?;
+    let entry: AccountRegistrationEntry = blob::decode(xpub_bytes)?;
+    Ok((account_index, entry.account_xpub))
+}
+
+/// Every `platform_payment` account registration for one wallet, decoded
+/// into `(account_index, xpub)`. The xpub is recovered from the
+/// bincode-serde `AccountRegistrationEntry` `apply_registrations` writes
+/// into `account_xpub_bytes`.
+#[cfg(any(test, feature = "__test-helpers"))]
+pub(crate) fn list_platform_payment_registrations(
+    conn: &Connection,
+    wallet_id: &WalletId,
+) -> Result<Vec<PlatformPaymentRegistration>, WalletStorageError> {
+    let mut stmt = conn.prepare(
+        "SELECT account_index, account_xpub_bytes FROM account_registrations \
+         WHERE wallet_id = ?1 AND account_type = 'platform_payment' \
+         ORDER BY account_index",
+    )?;
+    let rows = stmt.query_map(params![wallet_id.as_slice()], |row| {
+        Ok((row.get::<_, i64>(0)?, row.get::<_, Vec<u8>>(1)?))
+    })?;
+    let mut out = Vec::new();
+    for r in rows {
+        let (idx, bytes) = r?;
+        out.push(decode_platform_payment_row(idx, &bytes)?);
+    }
+    Ok(out)
+}
+
+/// Bulk variant of [`list_platform_payment_registrations`]: every
+/// wallet's `platform_payment` registrations in one scan, grouped by
+/// `wallet_id`. Used by `load()` to avoid a per-wallet registrations
+/// query.
+pub(crate) fn all_platform_payment_registrations(
+    conn: &Connection,
+) -> Result<BTreeMap<WalletId, Vec<PlatformPaymentRegistration>>, WalletStorageError> {
+    let mut stmt = conn.prepare(
+        "SELECT wallet_id, account_index, account_xpub_bytes FROM account_registrations \
+         WHERE account_type = 'platform_payment' \
+         ORDER BY wallet_id, account_index",
+    )?;
+    let rows = stmt.query_map([], |row| {
+        Ok((
+            row.get::<_, Vec<u8>>(0)?,
+            row.get::<_, i64>(1)?,
+            row.get::<_, Vec<u8>>(2)?,
+        ))
+    })?;
+    let mut out: BTreeMap<WalletId, Vec<PlatformPaymentRegistration>> = BTreeMap::new();
+    for r in rows {
+        let (wid_bytes, idx, bytes) = r?;
+        let wallet_id = <[u8; 32]>::try_from(wid_bytes.as_slice()).map_err(|_| {
+            WalletStorageError::InvalidWalletIdLength {
+                actual: wid_bytes.len(),
+            }
+        })?;
+        out.entry(wallet_id)
+            .or_default()
+            .push(decode_platform_payment_row(idx, &bytes)?);
+    }
+    Ok(out)
+}
 
 pub fn apply_registrations(
     tx: &Transaction<'_>,

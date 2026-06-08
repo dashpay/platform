@@ -1,14 +1,19 @@
-//! `platform_addresses` + `platform_address_sync` writers.
+//! `platform_addresses` + `platform_address_sync` writers + readers.
+
+use std::collections::BTreeMap;
 
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 
 use dash_sdk::platform::address_sync::AddressFunds;
+use key_wallet::bip32::ExtendedPubKey;
 use key_wallet::PlatformP2PKHAddress;
 use platform_wallet::changeset::PlatformAddressChangeSet;
 use platform_wallet::changeset::PlatformAddressSyncStartState;
 use platform_wallet::wallet::platform_wallet::WalletId;
+use platform_wallet::wallet::{PerAccountPlatformAddressState, PerWalletPlatformAddressState};
 
 use crate::sqlite::error::WalletStorageError;
+use crate::sqlite::schema::accounts;
 use crate::sqlite::util::safe_cast;
 
 pub fn apply(
@@ -103,6 +108,7 @@ pub struct PlatformAddressRow {
     pub funds: AddressFunds,
 }
 
+#[cfg(any(test, feature = "__test-helpers"))]
 pub fn list_per_wallet(
     conn: &Connection,
     wallet_id: &WalletId,
@@ -113,56 +119,81 @@ pub fn list_per_wallet(
          ORDER BY account_index, address_index, address",
     )?;
     let rows = stmt.query_map(params![wallet_id.as_slice()], |row| {
-        let account_index: i64 = row.get(0)?;
-        let address_index: i64 = row.get(1)?;
-        let address_bytes: Vec<u8> = row.get(2)?;
-        let balance: i64 = row.get(3)?;
-        let nonce: i64 = row.get(4)?;
-        Ok((account_index, address_index, address_bytes, balance, nonce))
+        Ok((
+            row.get::<_, i64>(0)?,
+            row.get::<_, i64>(1)?,
+            row.get::<_, Vec<u8>>(2)?,
+            row.get::<_, i64>(3)?,
+            row.get::<_, i64>(4)?,
+        ))
     })?;
     let mut out = Vec::new();
     for r in rows {
         let (account_index, address_index, address_bytes, balance, nonce) = r?;
-        if address_bytes.len() != 20 {
-            return Err(WalletStorageError::blob_decode(
-                "platform_addresses.address column is not 20 bytes",
-            ));
-        }
-        let mut hash160 = [0u8; 20];
-        hash160.copy_from_slice(&address_bytes);
-        let balance = safe_cast::i64_to_u64("platform_addresses.balance", balance)?;
-        let nonce = u32::try_from(nonce).map_err(|_| WalletStorageError::IntegerOverflow {
-            field: "platform_addresses.nonce",
-            value: nonce as u64,
-            target: crate::sqlite::util::safe_cast::SafeCastTarget::U64,
-        })?;
-        let account_index =
-            u32::try_from(account_index).map_err(|_| WalletStorageError::IntegerOverflow {
-                field: "platform_addresses.account_index",
-                value: account_index as u64,
-                target: crate::sqlite::util::safe_cast::SafeCastTarget::U64,
-            })?;
-        let address_index =
-            u32::try_from(address_index).map_err(|_| WalletStorageError::IntegerOverflow {
-                field: "platform_addresses.address_index",
-                value: address_index as u64,
-                target: crate::sqlite::util::safe_cast::SafeCastTarget::U64,
-            })?;
-        out.push(PlatformAddressRow {
+        out.push(decode_address_row(
             account_index,
             address_index,
-            address: PlatformP2PKHAddress::new(hash160),
-            funds: AddressFunds { balance, nonce },
-        });
+            &address_bytes,
+            balance,
+            nonce,
+        )?);
     }
     Ok(out)
 }
 
-/// Build `PlatformAddressSyncStartState` for a wallet. The
-/// `per_account` portion is left at its `Default` value because
-/// reconstructing `PerWalletPlatformAddressState` requires xpubs the
-/// persister doesn't currently round-trip into the live provider — the
-/// load-side wiring upstream is the consumer of this struct.
+/// Reassemble the per-account committed state for one wallet from its
+/// `platform_payment` registrations (xpub per account index) and its
+/// `platform_addresses` rows (the derived address set + known balances).
+///
+/// Each registration becomes one [`PerAccountPlatformAddressState`]; the
+/// address rows whose `account_index` matches populate its `addresses`
+/// bijection and `found` balance map via
+/// [`PerAccountPlatformAddressState::insert_persisted_entry`]. Address
+/// rows for an account with no registration are skipped — without the
+/// xpub the provider can't extend that account's gap window, so there's
+/// nothing to restore.
+fn build_per_account(
+    registrations: &[accounts::PlatformPaymentRegistration],
+    address_rows: &[PlatformAddressRow],
+) -> PerWalletPlatformAddressState {
+    let mut per_account = PerWalletPlatformAddressState::new();
+    for (account_index, xpub) in registrations {
+        per_account.insert(
+            *account_index,
+            account_state_from_rows(*xpub, *account_index, address_rows),
+        );
+    }
+    per_account
+}
+
+/// Build one account's state from its xpub and the address rows that
+/// belong to it.
+fn account_state_from_rows(
+    xpub: ExtendedPubKey,
+    account_index: u32,
+    address_rows: &[PlatformAddressRow],
+) -> PerAccountPlatformAddressState {
+    let mut state = PerAccountPlatformAddressState::from_persisted(
+        xpub,
+        Default::default(),
+        Default::default(),
+    );
+    for row in address_rows
+        .iter()
+        .filter(|r| r.account_index == account_index)
+    {
+        state.insert_persisted_entry(row.address_index, row.address, row.funds);
+    }
+    state
+}
+
+/// Build `PlatformAddressSyncStartState` for one wallet: the
+/// network-scoped sync watermark plus the per-account committed state
+/// reconstructed from registrations + address rows.
+///
+/// `load()` uses the grouped [`load_all`] path; this per-wallet form is
+/// retained for this crate's integration tests.
+#[cfg(any(test, feature = "__test-helpers"))]
 pub fn load_state(
     conn: &Connection,
     wallet_id: &WalletId,
@@ -183,8 +214,10 @@ pub fn load_state(
         ),
         None => (0u64, 0u64, 0u64),
     };
+    let registrations = accounts::list_platform_payment_registrations(conn, wallet_id)?;
+    let address_rows = list_per_wallet(conn, wallet_id)?;
     Ok(PlatformAddressSyncStartState {
-        per_account: Default::default(),
+        per_account: build_per_account(&registrations, &address_rows),
         sync_height: h,
         sync_timestamp: t,
         last_known_recent_block: r,
@@ -194,6 +227,7 @@ pub fn load_state(
 /// Total `platform_addresses` row count per wallet — used by tests
 /// that want a stable lower-bound check without re-deriving the
 /// address.
+#[cfg(any(test, feature = "__test-helpers"))]
 pub fn count_per_wallet(
     conn: &Connection,
     wallet_id: &WalletId,
@@ -207,31 +241,179 @@ pub fn count_per_wallet(
 }
 
 /// One row of [`load_all`] aggregated state per wallet:
-/// `(sync_state, address_row_count)`.
+/// `(sync_state, reconstructed_address_count)`.
 ///
-/// `address_row_count` mirrors what [`count_per_wallet`] would return —
-/// folding the count into the bulk scan saves a per-wallet query.
+/// `reconstructed_address_count` counts only the `platform_addresses`
+/// rows that were actually rebuilt into `sync_state.per_account` — i.e.
+/// rows whose `account_index` has a matching `platform_payment`
+/// registration. Rows for an unregistered account are skipped during
+/// reconstruction (no xpub, nothing to restore) and are excluded here so
+/// the count never claims state that `load()` did not surface.
 pub type LoadAllEntry = (PlatformAddressSyncStartState, usize);
 
-/// Bulk reader for `load()`: one [`load_state`] + [`count_per_wallet`]
-/// pair per wallet id listed in `wallet_metadata`. Constant-query
-/// w.r.t. the number of wallets per call site (FR-P4-6).
+/// Bulk reader for `load()`. Cost is a fixed number of grouped scans —
+/// one over `platform_address_sync`, one over `platform_addresses`, and
+/// one over the `platform_payment` `account_registrations` — regardless
+/// of wallet count, rather than a per-wallet fan-out.
 ///
-/// Driven by [`wallet_meta::list_ids`](crate::sqlite::schema::wallet_meta::list_ids):
+/// Driven by [`wallets::list_ids`](crate::sqlite::schema::wallets::list_ids):
 /// orphaned `platform_addresses` / `platform_address_sync` rows whose
-/// `wallet_id` is absent from `wallet_metadata` are intentionally NOT
+/// `wallet_id` is absent from `wallets` are intentionally NOT
 /// surfaced. Native foreign keys prevent such orphans; a future re-wire
 /// that needs them must restore the id-union over the area tables.
-pub fn load_all(
-    conn: &Connection,
-) -> Result<std::collections::BTreeMap<WalletId, LoadAllEntry>, WalletStorageError> {
-    use std::collections::BTreeMap;
+pub fn load_all(conn: &Connection) -> Result<BTreeMap<WalletId, LoadAllEntry>, WalletStorageError> {
+    let sync_by_wallet = all_sync_state(conn)?;
+    let addresses_by_wallet = all_address_rows(conn)?;
+    let registrations_by_wallet = accounts::all_platform_payment_registrations(conn)?;
+
+    let empty_rows: Vec<PlatformAddressRow> = Vec::new();
+    let empty_regs: Vec<accounts::PlatformPaymentRegistration> = Vec::new();
 
     let mut out: BTreeMap<WalletId, LoadAllEntry> = BTreeMap::new();
-    for wallet_id in crate::sqlite::schema::wallet_meta::list_ids(conn)? {
-        let sync = load_state(conn, &wallet_id)?;
-        let count = count_per_wallet(conn, &wallet_id)?;
-        out.insert(wallet_id, (sync, count));
+    for wallet_id in crate::sqlite::schema::wallets::list_ids(conn)? {
+        let (h, t, r) = sync_by_wallet.get(&wallet_id).copied().unwrap_or((0, 0, 0));
+        let address_rows = addresses_by_wallet.get(&wallet_id).unwrap_or(&empty_rows);
+        let registrations = registrations_by_wallet
+            .get(&wallet_id)
+            .unwrap_or(&empty_regs);
+        let sync = PlatformAddressSyncStartState {
+            per_account: build_per_account(registrations, address_rows),
+            sync_height: h,
+            sync_timestamp: t,
+            last_known_recent_block: r,
+        };
+        let reconstructed = reconstructed_address_count(registrations, address_rows);
+        out.insert(wallet_id, (sync, reconstructed));
     }
     Ok(out)
+}
+
+/// Count the `platform_addresses` rows that [`build_per_account`] rebuilds
+/// for one wallet: rows whose `account_index` has a matching registration.
+/// Rows for an unregistered account are skipped during reconstruction, so
+/// excluding them keeps the surfaced count aligned with `per_account`.
+fn reconstructed_address_count(
+    registrations: &[accounts::PlatformPaymentRegistration],
+    address_rows: &[PlatformAddressRow],
+) -> usize {
+    let registered: std::collections::BTreeSet<u32> =
+        registrations.iter().map(|(idx, _)| *idx).collect();
+    address_rows
+        .iter()
+        .filter(|r| registered.contains(&r.account_index))
+        .count()
+}
+
+/// One grouped scan of `platform_address_sync` → `(sync_height,
+/// sync_timestamp, last_known_recent_block)` per wallet.
+fn all_sync_state(
+    conn: &Connection,
+) -> Result<BTreeMap<WalletId, (u64, u64, u64)>, WalletStorageError> {
+    let mut stmt = conn.prepare(
+        "SELECT wallet_id, sync_height, sync_timestamp, last_known_recent_block \
+         FROM platform_address_sync",
+    )?;
+    let rows = stmt.query_map([], |row| {
+        Ok((
+            row.get::<_, Vec<u8>>(0)?,
+            row.get::<_, i64>(1)?,
+            row.get::<_, i64>(2)?,
+            row.get::<_, i64>(3)?,
+        ))
+    })?;
+    let mut out: BTreeMap<WalletId, (u64, u64, u64)> = BTreeMap::new();
+    for r in rows {
+        let (wid_bytes, h, t, recent) = r?;
+        let wallet_id = wallet_id_from_bytes(&wid_bytes)?;
+        out.insert(
+            wallet_id,
+            (
+                safe_cast::i64_to_u64("platform_address_sync.sync_height", h)?,
+                safe_cast::i64_to_u64("platform_address_sync.sync_timestamp", t)?,
+                safe_cast::i64_to_u64("platform_address_sync.last_known_recent_block", recent)?,
+            ),
+        );
+    }
+    Ok(out)
+}
+
+/// One grouped scan of `platform_addresses` → the decoded rows per
+/// wallet, ordered for stable per-account grouping.
+fn all_address_rows(
+    conn: &Connection,
+) -> Result<BTreeMap<WalletId, Vec<PlatformAddressRow>>, WalletStorageError> {
+    let mut stmt = conn.prepare(
+        "SELECT wallet_id, account_index, address_index, address, balance, nonce \
+         FROM platform_addresses ORDER BY wallet_id, account_index, address_index, address",
+    )?;
+    let rows = stmt.query_map([], |row| {
+        Ok((
+            row.get::<_, Vec<u8>>(0)?,
+            row.get::<_, i64>(1)?,
+            row.get::<_, i64>(2)?,
+            row.get::<_, Vec<u8>>(3)?,
+            row.get::<_, i64>(4)?,
+            row.get::<_, i64>(5)?,
+        ))
+    })?;
+    let mut out: BTreeMap<WalletId, Vec<PlatformAddressRow>> = BTreeMap::new();
+    for r in rows {
+        let (wid_bytes, account_index, address_index, address_bytes, balance, nonce) = r?;
+        let wallet_id = wallet_id_from_bytes(&wid_bytes)?;
+        out.entry(wallet_id).or_default().push(decode_address_row(
+            account_index,
+            address_index,
+            &address_bytes,
+            balance,
+            nonce,
+        )?);
+    }
+    Ok(out)
+}
+
+/// Decode one `platform_addresses` row into a [`PlatformAddressRow`].
+fn decode_address_row(
+    account_index: i64,
+    address_index: i64,
+    address_bytes: &[u8],
+    balance: i64,
+    nonce: i64,
+) -> Result<PlatformAddressRow, WalletStorageError> {
+    if address_bytes.len() != 20 {
+        return Err(WalletStorageError::blob_decode(
+            "platform_addresses.address column is not 20 bytes",
+        ));
+    }
+    let mut hash160 = [0u8; 20];
+    hash160.copy_from_slice(address_bytes);
+    let balance = safe_cast::i64_to_u64("platform_addresses.balance", balance)?;
+    let nonce = u32::try_from(nonce).map_err(|_| WalletStorageError::IntegerOverflow {
+        field: "platform_addresses.nonce",
+        value: nonce as u64,
+        target: safe_cast::SafeCastTarget::U64,
+    })?;
+    let account_index =
+        u32::try_from(account_index).map_err(|_| WalletStorageError::IntegerOverflow {
+            field: "platform_addresses.account_index",
+            value: account_index as u64,
+            target: safe_cast::SafeCastTarget::U64,
+        })?;
+    let address_index =
+        u32::try_from(address_index).map_err(|_| WalletStorageError::IntegerOverflow {
+            field: "platform_addresses.address_index",
+            value: address_index as u64,
+            target: safe_cast::SafeCastTarget::U64,
+        })?;
+    Ok(PlatformAddressRow {
+        account_index,
+        address_index,
+        address: PlatformP2PKHAddress::new(hash160),
+        funds: AddressFunds { balance, nonce },
+    })
+}
+
+fn wallet_id_from_bytes(bytes: &[u8]) -> Result<WalletId, WalletStorageError> {
+    <[u8; 32]>::try_from(bytes).map_err(|_| WalletStorageError::InvalidWalletIdLength {
+        actual: bytes.len(),
+    })
 }

@@ -1260,6 +1260,11 @@ impl PlatformWalletPersistence for FFIPersister {
     }
 
     fn flush(&self, wallet_id: WalletId) -> Result<(), PersistenceError> {
+        // TODO: deferred — FFI callback failures are classified as
+        // `Fatal` (no transient-retry signal across the C ABI), and
+        // trailing-byte validation on decoded FFI payloads is not yet
+        // applied here. Both are tracked for a follow-up; no behavior
+        // change in this change.
         // Notify caller.
         if let Some(cb) = self.callbacks.on_flush_fn {
             let result = unsafe { cb(self.callbacks.context, wallet_id.as_ptr()) };
@@ -2727,6 +2732,10 @@ fn build_wallet_start_state(
         }
     }
 
+    // TODO: this per-account reconstruction mirrors the SQLite backend's
+    // `platform_addrs::build_per_account`. Deferred dedup — once a shared
+    // helper crate hosts the reconstruction, both backends should call it
+    // instead of keeping parallel copies.
     let mut per_account = PerWalletPlatformAddressState::new();
     for (&account_key, account) in &wallet.accounts.platform_payment_accounts {
         per_account.entry(account_key.account).or_insert_with(|| {

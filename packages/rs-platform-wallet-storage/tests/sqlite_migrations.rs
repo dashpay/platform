@@ -1,13 +1,13 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! TC-025..TC-030, TC-028, TC-044 — migration discovery and reach.
+//! Migration discovery, application, and idempotency.
 
 mod common;
 
 use common::fresh_persister;
 use platform_wallet_storage::sqlite::migrations as mig;
 
-/// TC-025: every embedded migration corresponds to a file in `migrations/`.
+/// every embedded migration corresponds to a file in `migrations/`.
 #[test]
 fn tc025_embedded_migrations_match_files() {
     let embedded = mig::embedded_migrations();
@@ -37,7 +37,7 @@ fn tc025_embedded_migrations_match_files() {
     }
 }
 
-/// TC-026: fresh DB ends at latest schema version.
+/// fresh DB ends at latest schema version.
 #[test]
 fn tc026_fresh_db_at_latest() {
     let (persister, _tmp, _path) = fresh_persister();
@@ -57,7 +57,7 @@ fn tc026_fresh_db_at_latest() {
     assert_eq!(max, Some(highest_embedded));
 }
 
-/// TC-027: every declared table is creatable and accepts a minimal row
+/// every declared table is creatable and accepts a minimal row
 /// (parent first, then children).
 #[test]
 fn tc027_smoke_insert_every_table() {
@@ -67,13 +67,13 @@ fn tc027_smoke_insert_every_table() {
     let wallet_id = [42u8; 32];
 
     conn.execute(
-        "INSERT INTO wallet_metadata (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+        "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
         params![wallet_id.as_slice()],
     )
     .unwrap();
     let identity_id = [7u8; 32];
     conn.execute(
-        "INSERT INTO identities (wallet_id, wallet_index, identity_id, entry_blob, tombstoned) \
+        "INSERT INTO identities (wallet_id, identity_index, identity_id, entry_blob, tombstoned) \
          VALUES (?1, NULL, ?2, X'01', 0)",
         params![wallet_id.as_slice(), identity_id.as_slice()],
     )
@@ -122,7 +122,7 @@ fn tc027_smoke_insert_every_table() {
         (
             "identity_keys",
             // identity_keys is keyed by (wallet_id, identity_id, key_id);
-            // the wallet_id FK targets wallet_metadata and the
+            // the wallet_id FK targets wallets and the
             // identity_id FK targets identities(identity_id).
             "INSERT INTO identity_keys (wallet_id, identity_id, key_id, public_key_blob, public_key_hash, derivation_blob) VALUES (?1, ?2, 0, X'00', X'00', NULL)",
             &[&wallet_id.as_slice(), &identity_id.as_slice()],
@@ -170,28 +170,34 @@ fn tc027_smoke_insert_every_table() {
             &[&identity_id.as_slice()],
         ),
     ];
-    use platform_wallet_storage::sqlite::schema::{count_rows_for_wallet_sql, PER_WALLET_TABLES};
-    let scope_for = |name: &str| {
-        PER_WALLET_TABLES
-            .iter()
-            .find(|(t, _)| *t == name)
-            .map(|(_, s)| *s)
-            .expect("table is in PER_WALLET_TABLES")
-    };
+    // Identity-owned tables have no `wallet_id` column; count them by
+    // joining through `identities`. Everything else is wallet-scoped.
+    let via_identity = [
+        "identity_keys",
+        "token_balances",
+        "dashpay_profiles",
+        "dashpay_payments_overlay",
+    ];
     for (table, sql, params) in cases {
         conn.execute(sql, *params).expect(table);
-        let n: i64 = conn
-            .query_row(
-                &count_rows_for_wallet_sql(table, scope_for(table)).expect("table is allowlisted"),
-                rusqlite::params![wallet_id.as_slice()],
-                |row| row.get(0),
+        let count_sql = if via_identity.contains(table) {
+            format!(
+                "SELECT COUNT(*) FROM {table} \
+                 WHERE identity_id IN (SELECT identity_id FROM identities WHERE wallet_id = ?1)"
             )
+        } else {
+            format!("SELECT COUNT(*) FROM {table} WHERE wallet_id = ?1")
+        };
+        let n: i64 = conn
+            .query_row(&count_sql, rusqlite::params![wallet_id.as_slice()], |row| {
+                row.get(0)
+            })
             .unwrap();
         assert!(n >= 1, "{table} insert did not land");
     }
 }
 
-/// TC-028: re-open is idempotent.
+/// re-open is idempotent.
 #[test]
 fn tc028_idempotent_reopen() {
     let (persister, tmp, path) = fresh_persister();
@@ -201,12 +207,11 @@ fn tc028_idempotent_reopen() {
     drop(tmp);
 }
 
-/// TC-029: append-only migration hash.
+/// append-only migration hash.
 ///
-/// The hash is computed at runtime from the embedded list. Because this
-/// test belongs to the migration drift policy, we assert the list is
-/// non-empty and the hash is stable across successive calls — not a
-/// pinned value (which would force a churn on every committed migration).
+/// Asserts intra-run stability and a non-empty list — not content
+/// pinning. The fingerprint is content-blind (hashes `(version, name)`
+/// only), so this guards the migration set's identity, not its DDL.
 #[test]
 fn tc029_migration_fingerprint_stable() {
     let a = mig::embedded_migrations_fingerprint();
@@ -215,7 +220,7 @@ fn tc029_migration_fingerprint_stable() {
     assert!(!mig::embedded_migrations().is_empty());
 }
 
-/// TC-044: load() on empty post-migrate DB is empty.
+/// load() on empty post-migrate DB is empty.
 #[test]
 fn tc044_load_empty_is_empty() {
     let (persister, _tmp, _path) = fresh_persister();

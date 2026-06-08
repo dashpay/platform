@@ -4,17 +4,22 @@
 //! SQL queries, plus a bincode-serde encoded `AssetLockEntry` in the
 //! `lifecycle_blob` column.
 
-use std::collections::BTreeMap;
+use rusqlite::{params, Transaction};
 
-use dashcore::OutPoint;
-use rusqlite::{params, Connection, Transaction};
-
-use platform_wallet::changeset::{AssetLockChangeSet, AssetLockEntry};
-use platform_wallet::wallet::asset_lock::tracked::{AssetLockStatus, TrackedAssetLock};
+use platform_wallet::changeset::AssetLockChangeSet;
+use platform_wallet::wallet::asset_lock::tracked::AssetLockStatus;
 use platform_wallet::wallet::platform_wallet::WalletId;
 
 use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::schema::blob;
+
+// Imports used only by the test-gated readers below.
+#[cfg(any(test, feature = "__test-helpers"))]
+use {
+    dashcore::OutPoint, platform_wallet::changeset::AssetLockEntry,
+    platform_wallet::wallet::asset_lock::tracked::TrackedAssetLock, rusqlite::Connection,
+    std::collections::BTreeMap,
+};
 
 pub fn apply(
     tx: &Transaction<'_>,
@@ -94,6 +99,7 @@ fn status_str(s: &AssetLockStatus) -> &'static str {
 
 /// Per-wallet asset-lock slice as returned by the readers — outer-keyed
 /// by `account_index`, inner-keyed by outpoint.
+#[cfg(any(test, feature = "__test-helpers"))]
 pub type AssetLocksByAccount = BTreeMap<u32, BTreeMap<OutPoint, TrackedAssetLock>>;
 
 /// Decode one raw `(outpoint_bytes, account_index, lifecycle_blob)`
@@ -103,6 +109,7 @@ pub type AssetLocksByAccount = BTreeMap<u32, BTreeMap<OutPoint, TrackedAssetLock
 /// Hard-fail behaviour: a malformed outpoint, blob, or out-of-range
 /// account index returns a typed [`WalletStorageError`]. Every caller
 /// propagates that error — corruption is never silently skipped.
+#[cfg(any(test, feature = "__test-helpers"))]
 fn decode_row(
     op_bytes: &[u8],
     account_index: i64,
@@ -116,7 +123,7 @@ fn decode_row(
             value: account_index as u64,
             target: crate::sqlite::util::safe_cast::SafeCastTarget::U64,
         })?;
-    // CMT-007: typed-column vs blob cross-check, symmetric with
+    // Typed-column vs blob cross-check, symmetric with
     // IdentityKeyEntryMismatch. A torn write / partial migration /
     // restored corruption that passes PRAGMA integrity_check would
     // otherwise silently mis-bucket the lock into the wrong account or
@@ -149,7 +156,9 @@ fn decode_row(
 /// locks leave the table via [`AssetLockChangeSet::removed`], so a
 /// row present here is by definition still in play. Any row that
 /// fails to read or decode is a hard error — corruption is never
-/// silently dropped.
+/// silently dropped. Retained for this crate's integration tests until
+/// the rehydration path consumes it in `load()`.
+#[cfg(any(test, feature = "__test-helpers"))]
 pub fn load_state(
     conn: &Connection,
     wallet_id: &WalletId,

@@ -22,8 +22,8 @@ use platform_wallet_storage::{
 )]
 struct Cli {
     /// Path to the SQLite database file. Required by `migrate`,
-    /// `backup`, `restore`, and `inspect`; ignored by `prune` (which
-    /// operates purely on the backups directory).
+    /// `backup`, and `restore`; ignored by `prune` (which operates
+    /// purely on the backups directory).
     #[arg(long, value_name = "PATH", global = true)]
     db: Option<PathBuf>,
     /// Auto-backup directory. To disable auto-backup, pass the
@@ -52,8 +52,6 @@ enum Cmd {
     Restore(RestoreArgs),
     /// Apply retention to a backup directory.
     Prune(PruneArgs),
-    /// Dump per-table row counts.
-    Inspect(InspectArgs),
 }
 
 #[derive(Debug, Args)]
@@ -92,37 +90,8 @@ struct PruneArgs {
     max_age: Option<Duration>,
 }
 
-#[derive(Debug, Args)]
-struct InspectArgs {
-    #[arg(long)]
-    wallet_id: Option<String>,
-    #[arg(long, default_value = "text")]
-    format: InspectFormat,
-}
-
-#[derive(Debug, Clone, Copy, clap::ValueEnum)]
-enum InspectFormat {
-    Text,
-    Tsv,
-    Json,
-}
-
 fn parse_duration(s: &str) -> Result<Duration, String> {
     humantime::parse_duration(s).map_err(|e| format!("invalid duration `{s}`: {e}"))
-}
-
-fn parse_wallet_id(s: &str) -> Result<[u8; 32], String> {
-    if s.len() != 64 {
-        return Err(format!(
-            "wallet id must be 64 hex characters, got {} (`{}`)",
-            s.len(),
-            s
-        ));
-    }
-    let bytes = hex::decode(s).map_err(|e| format!("wallet id is not valid hex: {e}"))?;
-    let mut out = [0u8; 32];
-    out.copy_from_slice(&bytes);
-    Ok(out)
 }
 
 fn main() -> ExitCode {
@@ -180,10 +149,10 @@ impl CliError {
 fn run(cli: Cli) -> Result<ExitCode, CliError> {
     let auto_backup_dir: Option<PathBuf> = cli.auto_backup_dir;
 
-    // CMT-014: `prune` is a pure filesystem op against the backups
-    // directory — `--db` is meaningless for it and must not be
-    // required. Handle the subcommand BEFORE extracting `cli.db` so the
-    // operator can run `prune --backups-dir ... --keep-last N` without
+    // `prune` is a pure filesystem op against the backups directory —
+    // `--db` is meaningless for it and must not be required. Handle the
+    // subcommand BEFORE extracting `cli.db` so the operator can run
+    // `prune --backups-dir ... --keep-last N` without
     // also passing a database path.
     if let Cmd::Prune(args) = &cli.cmd {
         return run_prune(args);
@@ -236,10 +205,6 @@ fn run(cli: Cli) -> Result<ExitCode, CliError> {
             let persister = SqlitePersister::open(config).map_err(map_open_err_for_cli)?;
             run_backup(&persister, args)
         }
-        Cmd::Inspect(args) => {
-            let persister = SqlitePersister::open(config).map_err(map_open_err_for_cli)?;
-            run_inspect(&persister, args)
-        }
     }
 }
 
@@ -263,13 +228,12 @@ fn map_open_err_for_cli(err: WalletStorageError) -> CliError {
 /// transient failure for "version 0".
 fn peek_schema_version(db: &Path) -> Result<Option<i64>, rusqlite::Error> {
     use rusqlite::{OpenFlags, OptionalExtension};
-    // CMT-010: open READ-ONLY (no SQLITE_OPEN_CREATE) so a typo'd --db
-    // path errors out at this gate rather than silently materialising a
-    // zero-byte SQLite file that bypasses the crate's 0o600 invariant.
-    // A genuinely fresh `migrate` invocation against a non-existent DB
-    // file is normal — surface that as `Ok(None)` so the migrate path
-    // proceeds and `SqlitePersister::open` creates the file under the
-    // crate's 0o600 invariant.
+    // Open READ-ONLY (no SQLITE_OPEN_CREATE) so a typo'd --db path errors
+    // out at this gate rather than silently materialising a zero-byte
+    // SQLite file that bypasses the crate's 0o600 invariant. A genuinely
+    // fresh `migrate` invocation against a non-existent DB file is normal
+    // — surface that as `Ok(None)` so the migrate path proceeds and
+    // `SqlitePersister::open` creates the file under the 0o600 invariant.
     if !db.exists() {
         return Ok(None);
     }
@@ -373,8 +337,8 @@ fn run_prune(args: &PruneArgs) -> Result<ExitCode, CliError> {
     for (p, e) in &report.failed_removals {
         eprintln!("warning: failed to remove {}: {e}", p.display());
     }
-    // ATOM-011: non-zero exit when any per-file removal failed so
-    // scripts can detect the partial-success case.
+    // Non-zero exit when any per-file removal failed so scripts can
+    // detect the partial-success case.
     if report.failed_removals.is_empty() {
         Ok(ExitCode::SUCCESS)
     } else {
@@ -382,53 +346,14 @@ fn run_prune(args: &PruneArgs) -> Result<ExitCode, CliError> {
     }
 }
 
-fn run_inspect(persister: &SqlitePersister, args: InspectArgs) -> Result<ExitCode, CliError> {
-    let wallet_id = match args.wallet_id.as_deref() {
-        None => None,
-        Some(s) => Some(parse_wallet_id(s).map_err(|m| CliError {
-            message: m,
-            code: ExitCode::from(2),
-        })?),
-    };
-    let counts = persister
-        .inspect_counts(wallet_id.as_ref())
-        .map_err(|e| CliError::runtime(e.to_string()))?;
-    match args.format {
-        InspectFormat::Text | InspectFormat::Tsv => {
-            for (table, n) in counts {
-                println!("{table}\t{n}");
-            }
-        }
-        InspectFormat::Json => {
-            let entries: Vec<serde_json::Value> = counts
-                .into_iter()
-                .map(|(table, n)| match &wallet_id {
-                    None => serde_json::json!({ "table": table, "count": n }),
-                    Some(id) => serde_json::json!({
-                        "table": table,
-                        "count": n,
-                        "wallet_id": hex::encode(id),
-                    }),
-                })
-                .collect();
-            println!(
-                "{}",
-                serde_json::to_string(&entries).map_err(|e| CliError::runtime(e.to_string()))?
-            );
-        }
-    }
-    Ok(ExitCode::SUCCESS)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// CMT-010: `peek_schema_version` on a non-existent path must NOT
-    /// materialise a zero-byte SQLite file at that path. Pre-fix used
-    /// `Connection::open` with implicit SQLITE_OPEN_CREATE which would
-    /// silently reward a typo with a stub file lacking the crate's
-    /// 0o600 mode invariant.
+    /// `peek_schema_version` on a non-existent path must NOT materialise
+    /// a zero-byte SQLite file at that path — opening READ-ONLY (no
+    /// SQLITE_OPEN_CREATE) keeps a typo from being rewarded with a stub
+    /// file lacking the crate's 0o600 mode invariant.
     #[test]
     fn peek_schema_version_on_missing_db_does_not_create_stub() {
         let tmp = tempfile::tempdir().expect("tempdir");

@@ -44,7 +44,7 @@ fn entry(
     }
 }
 
-/// TC-040: load() reconstructs platform_addresses per wallet.
+/// load() reconstructs platform_addresses per wallet.
 #[test]
 fn tc040_load_platform_addresses() {
     let (persister, _tmp, _path) = fresh_persister();
@@ -77,6 +77,244 @@ fn tc040_load_platform_addresses() {
     assert_eq!(state.platform_addresses.len(), 2);
     assert_eq!(state.platform_addresses[&a].sync_height, 10);
     assert_eq!(state.platform_addresses[&b].sync_height, 20);
+}
+
+/// A deterministic test xpub built from a fixed serialized form so the
+/// per-account reconstruction round-trip is reproducible.
+fn test_xpub() -> key_wallet::bip32::ExtendedPubKey {
+    key_wallet::bip32::ExtendedPubKey::decode(&hex::decode(
+        "0488B21E000000000000000000873DFF81C02F525623FD1FE5167EAC3A55A049DE3D314BB42EE227FFED37D5080339A36013301597DAEF41FBE593A02CC513D0B55527EC2DF1050E2E8FF49C85C2",
+    ).unwrap()).unwrap()
+}
+
+/// A `platform_payment` registration + platform_addresses for an account
+/// reconstruct into `load_state().per_account` keyed by the account
+/// index. Addresses for the account seed the per-account state.
+#[test]
+fn load_state_reconstructs_per_account_from_registration_and_addresses() {
+    use platform_wallet::changeset::AccountRegistrationEntry;
+
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0x64);
+    ensure_wallet_meta(&persister, &w);
+
+    let account_index = 7u32;
+    let reg = AccountRegistrationEntry {
+        account_type: key_wallet::account::AccountType::PlatformPayment {
+            account: account_index,
+            key_class: 0,
+        },
+        account_xpub: test_xpub(),
+    };
+    let mut cs = PlatformWalletChangeSet::default();
+    cs.account_registrations = vec![reg];
+    cs.platform_addresses = Some(PlatformAddressChangeSet {
+        addresses: vec![
+            entry(w, account_index, 0, 0xB0),
+            entry(w, account_index, 1, 0xB1),
+        ],
+        sync_height: Some(5),
+        ..Default::default()
+    });
+    persister.store(w, cs).unwrap();
+    drop(persister);
+
+    let p2 = reopen(&path);
+    let conn = p2.lock_conn_for_test();
+    let state = platform_wallet_storage::sqlite::schema::platform_addrs::load_state(&conn, &w)
+        .expect("load_state");
+    drop(conn);
+
+    assert_eq!(
+        state.per_account.len(),
+        1,
+        "exactly one platform_payment account should be reconstructed"
+    );
+    let account = state
+        .per_account
+        .get(&account_index)
+        .expect("per_account must be keyed by the registered account index");
+
+    // The xpub round-tripped from the registration row.
+    assert_eq!(
+        account.extended_public_key(),
+        &test_xpub(),
+        "reconstructed account must carry the registered xpub"
+    );
+
+    // Both seeded address rows landed in the index<->address bimap.
+    let addr0 = PlatformP2PKHAddress::new([0xB0; 20]);
+    let addr1 = PlatformP2PKHAddress::new([0xB1; 20]);
+    assert_eq!(account.addresses().len(), 2);
+    assert_eq!(account.addresses().get_by_left(&0), Some(&addr0));
+    assert_eq!(account.addresses().get_by_left(&1), Some(&addr1));
+
+    // The funds map mirrors what `entry()` seeded for each address.
+    assert_eq!(
+        account.found().get(&addr0),
+        Some(&AddressFunds {
+            balance: 0,
+            nonce: 0
+        }),
+        "address 0 funds must match the seeded entry"
+    );
+    assert_eq!(
+        account.found().get(&addr1),
+        Some(&AddressFunds {
+            balance: 100,
+            nonce: 1
+        }),
+        "address 1 funds must match the seeded entry"
+    );
+
+    assert_eq!(state.sync_height, 5);
+}
+
+/// A registration with no addresses still populates `per_account` (the
+/// xpub alone is enough to track the account); the wallet is therefore
+/// surfaced by `load()` even with zero addresses and zero watermarks.
+#[test]
+fn registration_without_addresses_still_surfaces_in_load() {
+    use platform_wallet::changeset::AccountRegistrationEntry;
+
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0x65);
+    ensure_wallet_meta(&persister, &w);
+
+    let reg = AccountRegistrationEntry {
+        account_type: key_wallet::account::AccountType::PlatformPayment {
+            account: 3,
+            key_class: 0,
+        },
+        account_xpub: test_xpub(),
+    };
+    let mut cs = PlatformWalletChangeSet::default();
+    cs.account_registrations = vec![reg];
+    persister.store(w, cs).unwrap();
+    drop(persister);
+
+    let p2 = reopen(&path);
+    let state = p2.load().unwrap();
+    let restored = state
+        .platform_addresses
+        .get(&w)
+        .expect("wallet with a platform_payment registration must surface in load()");
+    assert!(
+        restored.per_account.contains_key(&3),
+        "the registered account must be present in per_account"
+    );
+}
+
+/// A wallet with no platform state at all — no registrations, no
+/// addresses, all watermarks zero — is omitted from `load()`.
+#[test]
+fn wallet_without_platform_state_is_omitted_from_load() {
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0x66);
+    ensure_wallet_meta(&persister, &w);
+    // No platform-payment registration, no addresses, no sync row.
+    drop(persister);
+
+    let p2 = reopen(&path);
+    let state = p2.load().unwrap();
+    assert!(
+        !state.platform_addresses.contains_key(&w),
+        "a wallet with no platform state must be omitted from load()"
+    );
+}
+
+/// `load_all`'s reported count excludes address rows for an account with
+/// no registration. Such rows are skipped during `per_account`
+/// reconstruction (no xpub, nothing to restore), so counting them would
+/// claim platform state that `load()` never surfaces.
+#[test]
+fn load_all_count_excludes_unregistered_account_addresses() {
+    use platform_wallet::changeset::AccountRegistrationEntry;
+
+    let (persister, _tmp, path) = fresh_persister();
+
+    // Wallet A: one registered account (2 addresses) plus an orphan
+    // account_index with no registration (1 address). Only the 2
+    // registered-account rows reconstruct, so the count must be 2.
+    let a = wid(0x70);
+    ensure_wallet_meta(&persister, &a);
+    let registered = 4u32;
+    let unregistered = 9u32;
+    let mut cs_a = PlatformWalletChangeSet::default();
+    cs_a.account_registrations = vec![AccountRegistrationEntry {
+        account_type: key_wallet::account::AccountType::PlatformPayment {
+            account: registered,
+            key_class: 0,
+        },
+        account_xpub: test_xpub(),
+    }];
+    cs_a.platform_addresses = Some(PlatformAddressChangeSet {
+        addresses: vec![
+            entry(a, registered, 0, 0xC0),
+            entry(a, registered, 1, 0xC1),
+            entry(a, unregistered, 0, 0xC2),
+        ],
+        ..Default::default()
+    });
+    persister.store(a, cs_a).unwrap();
+
+    // Wallet B: only orphan-account rows, no registration and no
+    // watermark — nothing reconstructs, so the count must be 0 and the
+    // wallet must be omitted from `load()`.
+    let b = wid(0x71);
+    ensure_wallet_meta(&persister, &b);
+    let mut cs_b = PlatformWalletChangeSet::default();
+    cs_b.platform_addresses = Some(PlatformAddressChangeSet {
+        addresses: vec![entry(b, unregistered, 0, 0xD0)],
+        ..Default::default()
+    });
+    persister.store(b, cs_b).unwrap();
+    drop(persister);
+
+    let p2 = reopen(&path);
+    let conn = p2.lock_conn_for_test();
+    let all =
+        platform_wallet_storage::sqlite::schema::platform_addrs::load_all(&conn).expect("load_all");
+    let total_rows_a =
+        platform_wallet_storage::sqlite::schema::platform_addrs::count_per_wallet(&conn, &a)
+            .expect("count_per_wallet");
+    drop(conn);
+
+    // Sanity: wallet A really does carry the orphan row on disk.
+    assert_eq!(total_rows_a, 3, "wallet A has 3 platform_addresses rows");
+
+    let (sync_a, count_a) = all.get(&a).expect("wallet A present in load_all");
+    assert_eq!(
+        *count_a, 2,
+        "only the 2 registered-account rows are reconstructed; the orphan row is excluded"
+    );
+    assert_eq!(
+        sync_a.per_account.len(),
+        1,
+        "exactly the registered account reconstructs"
+    );
+    assert!(
+        sync_a.per_account.contains_key(&registered),
+        "the registered account is present in per_account"
+    );
+
+    let (_, count_b) = all.get(&b).expect("wallet B present in load_all");
+    assert_eq!(
+        *count_b, 0,
+        "an orphan-only wallet reconstructs no addresses, so its count is 0"
+    );
+
+    // The count drives `load()`'s surfacing gate: wallet B carries no
+    // reconstructable state, so it must not appear in the load result.
+    let state = p2.load().unwrap();
+    assert!(
+        state.platform_addresses.contains_key(&a),
+        "wallet A reconstructs the registered account and must surface"
+    );
+    assert!(
+        !state.platform_addresses.contains_key(&b),
+        "wallet B has only an unregistered-account row and must be omitted"
+    );
 }
 
 /// TC-043: `token_balances` is still persisted-but-not-rehydrated
@@ -237,7 +475,7 @@ fn contact_request_entry(sender: u8, recipient: u8) -> ContactRequestEntry {
     }
 }
 
-/// TC-P4-003: identities reader round-trips per wallet, exact equality
+/// identities reader round-trips per wallet, exact equality
 /// on `id`s.
 ///
 /// `persister.load()` no longer surfaces the identities slot (the
@@ -303,7 +541,7 @@ fn tc_p4_003_load_identities_two_wallets() {
     assert_eq!(bucket_b.values().next().unwrap().identity.id(), e_b1.id);
 }
 
-/// TC-P4-004: contacts round-trip per wallet, exact equality on the
+/// contacts round-trip per wallet, exact equality on the
 /// contact-request key + entry.
 #[test]
 fn tc_p4_004_load_contacts_two_wallets() {
@@ -413,7 +651,7 @@ fn established_contact(owner: u8, contact: u8) -> EstablishedContact {
     }
 }
 
-/// CMT-003: a sent-only request round-trips into `sent_requests` and
+/// a sent-only request round-trips into `sent_requests` and
 /// nowhere else.
 #[test]
 fn tc_p4_004a_sent_only_round_trip() {
@@ -436,7 +674,7 @@ fn tc_p4_004a_sent_only_round_trip() {
     assert!(state.established.is_empty());
 }
 
-/// CMT-003: a received-only request round-trips into `incoming_requests`
+/// a received-only request round-trips into `incoming_requests`
 /// and nowhere else.
 #[test]
 fn tc_p4_004b_received_only_round_trip() {
@@ -460,7 +698,7 @@ fn tc_p4_004b_received_only_round_trip() {
     assert!(state.established.is_empty());
 }
 
-/// CMT-003: an established contact round-trips into `established` with
+/// an established contact round-trips into `established` with
 /// both request blobs and all four metadata columns intact.
 #[test]
 fn tc_p4_004c_established_round_trip() {
@@ -483,7 +721,7 @@ fn tc_p4_004c_established_round_trip() {
     assert!(state.incoming_requests.is_empty());
 }
 
-/// CMT-003: `removed_sent` / `removed_incoming` delete the matching
+/// `removed_sent` / `removed_incoming` delete the matching
 /// pending row — an explicit cancellation, not an auto-establishment.
 #[test]
 fn tc_p4_004d_removal_deletes_pending_rows() {
@@ -550,7 +788,7 @@ fn tc_p4_004d_removal_deletes_pending_rows() {
     assert!(state.established.is_empty());
 }
 
-/// CMT-003: auto-establishment. An `established` upsert over a prior
+/// auto-establishment. An `established` upsert over a prior
 /// pending row for the same `(owner, contact)` pair collapses to a
 /// single established row — load returns it under `established`, never
 /// `sent` / `incoming`.
@@ -637,7 +875,142 @@ fn tc_p4_004e_auto_establishment_collapses_pending() {
     );
 }
 
-/// TC-P4-005: asset locks bucketed by (wallet, account, outpoint).
+/// A pending `sent` followed by the matching `incoming` for the same
+/// pair promotes the row to `established` even without an explicit
+/// `established` upsert — both request blobs are now stored, so the
+/// reader reconstructs it under `established`, never `sent`/`incoming`.
+#[test]
+fn sent_then_matching_incoming_promotes_to_established() {
+    let sent_key = SentContactRequestKey {
+        owner_id: Identifier::from([0x81; 32]),
+        recipient_id: Identifier::from([0x82; 32]),
+    };
+    let recv_key = ReceivedContactRequestKey {
+        owner_id: Identifier::from([0x81; 32]),
+        sender_id: Identifier::from([0x82; 32]),
+    };
+    let est_key = SentContactRequestKey {
+        owner_id: Identifier::from([0x81; 32]),
+        recipient_id: Identifier::from([0x82; 32]),
+    };
+
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0xF6);
+    ensure_wallet_meta(&persister, &w);
+
+    let mut sent = std::collections::BTreeMap::new();
+    sent.insert(sent_key, contact_request_entry(0x81, 0x82));
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                contacts: Some(ContactChangeSet {
+                    sent_requests: sent,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+    let mut incoming = std::collections::BTreeMap::new();
+    incoming.insert(recv_key, contact_request_entry(0x82, 0x81));
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                contacts: Some(ContactChangeSet {
+                    incoming_requests: incoming,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    drop(persister);
+
+    let p2 = reopen(&path);
+    let conn = p2.lock_conn_for_test();
+    let state = platform_wallet_storage::sqlite::schema::contacts::load_state_for_test(&conn, &w)
+        .expect("contacts load_state");
+    drop(conn);
+    assert!(
+        state.established.contains_key(&est_key),
+        "matching opposite request must promote the row to established"
+    );
+    assert!(
+        state.sent_requests.is_empty(),
+        "promotion must clear the 'sent' bucket"
+    );
+    assert!(
+        state.incoming_requests.is_empty(),
+        "promotion must clear the 'incoming' bucket"
+    );
+}
+
+/// Symmetric to [`sent_then_matching_incoming_promotes_to_established`]:
+/// a pending `incoming` followed by the matching `sent` for the same
+/// pair promotes the row to `established`.
+#[test]
+fn received_then_matching_sent_promotes_to_established() {
+    let recv_key = ReceivedContactRequestKey {
+        owner_id: Identifier::from([0x91; 32]),
+        sender_id: Identifier::from([0x92; 32]),
+    };
+    let sent_key = SentContactRequestKey {
+        owner_id: Identifier::from([0x91; 32]),
+        recipient_id: Identifier::from([0x92; 32]),
+    };
+
+    let (persister, _tmp, path) = fresh_persister();
+    let w = wid(0xF7);
+    ensure_wallet_meta(&persister, &w);
+
+    let mut incoming = std::collections::BTreeMap::new();
+    incoming.insert(recv_key, contact_request_entry(0x92, 0x91));
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                contacts: Some(ContactChangeSet {
+                    incoming_requests: incoming,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+    let mut sent = std::collections::BTreeMap::new();
+    sent.insert(sent_key, contact_request_entry(0x91, 0x92));
+    persister
+        .store(
+            w,
+            PlatformWalletChangeSet {
+                contacts: Some(ContactChangeSet {
+                    sent_requests: sent,
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    drop(persister);
+
+    let p2 = reopen(&path);
+    let conn = p2.lock_conn_for_test();
+    let state = platform_wallet_storage::sqlite::schema::contacts::load_state_for_test(&conn, &w)
+        .expect("contacts load_state");
+    drop(conn);
+    assert!(
+        state.established.contains_key(&sent_key),
+        "matching opposite request must promote the row to established"
+    );
+    assert!(state.sent_requests.is_empty());
+    assert!(state.incoming_requests.is_empty());
+}
+
+/// asset locks bucketed by (wallet, account, outpoint).
 #[test]
 fn tc_p4_005_load_asset_locks_bucketed() {
     use dashcore::hashes::Hash;
@@ -760,7 +1133,7 @@ fn tc_p4_007_summary_log_counters() {
     }
 }
 
-/// TC-P4-008: a corrupted blob is a HARD failure. The hardened reader
+/// a corrupted blob is a HARD failure. The hardened reader
 /// returns `Err` for the corrupt wallet (no silent skip) while the
 /// second, intact wallet still decodes cleanly.
 #[test]
@@ -823,7 +1196,7 @@ fn tc_p4_008_corruption_is_hard_error() {
     assert_eq!(b_state.wallet_identities.get(&b).map(|m| m.len()), Some(1));
 }
 
-/// TC-P4-008b: `contacts::load_state` is fail-hard. A garbage
+/// 008b: `contacts::load_state` is fail-hard. A garbage
 /// `outgoing_request` blob yields a typed `BincodeDecode`; a non-32-byte
 /// id column yields a typed `BlobDecode`. Neither is silently skipped,
 /// and an intact wallet still decodes cleanly.
@@ -895,7 +1268,7 @@ fn tc_p4_008b_contacts_corruption_is_hard_error() {
     assert_eq!(good_state.sent_requests.len(), 1);
 }
 
-/// TC-P4-008c: `asset_locks::load_state` is fail-hard. A garbage
+/// 008c: `asset_locks::load_state` is fail-hard. A garbage
 /// `lifecycle_blob` yields a typed `BincodeDecode`; a malformed
 /// `outpoint` column yields a typed decode error. An intact wallet
 /// still decodes cleanly.
@@ -991,19 +1364,19 @@ fn tc_p4_008c_asset_locks_corruption_is_hard_error() {
     assert_eq!(good_state[&0].len(), 1);
 }
 
-/// TC-P4-008d: `wallet_meta::list_ids` is fail-hard on a malformed
+/// 008d: `wallets::list_ids` is fail-hard on a malformed
 /// stored `wallet_id`. This is the code path where a non-32-byte id
 /// actually surfaces (the per-area `load_state` readers take a typed
 /// `&WalletId`, so the length check belongs here). A 10-byte
-/// `wallet_metadata.wallet_id` yields a typed `InvalidWalletIdLength`.
+/// `wallets.wallet_id` yields a typed `InvalidWalletIdLength`.
 #[test]
 fn tc_p4_008d_list_ids_rejects_non_32_byte_wallet_id() {
-    use platform_wallet_storage::sqlite::schema::wallet_meta;
+    use platform_wallet_storage::sqlite::schema::wallets;
     let (persister, _tmp, path) = fresh_persister();
     {
         let conn = persister.lock_conn_for_test();
         conn.execute(
-            "INSERT INTO wallet_metadata (wallet_id, network, birth_height) \
+            "INSERT INTO wallets (wallet_id, network, birth_height) \
              VALUES (?1, 'testnet', 0)",
             rusqlite::params![&[0xAAu8; 10][..]],
         )
@@ -1013,7 +1386,7 @@ fn tc_p4_008d_list_ids_rejects_non_32_byte_wallet_id() {
 
     let p2 = reopen(&path);
     let conn = p2.lock_conn_for_test();
-    let result = wallet_meta::list_ids(&conn);
+    let result = wallets::list_ids(&conn);
     drop(conn);
     assert!(
         matches!(
@@ -1096,7 +1469,7 @@ fn tc_p4_012_load_query_count_bounded() {
     let count_ten = count_load_queries(&p10);
 
     // The per-wallet delta must be a constant (10×N readers minus the
-    // one shared `wallet_meta::list_ids` divides evenly by 9), i.e.
+    // one shared `wallets::list_ids` divides evenly by 9), i.e.
     // load() is O(1) statements per wallet — no unbounded per-row
     // fan-out. The exact constant is not pinned (brittle as readers
     // evolve) but it must be small and bounded.
@@ -1129,7 +1502,7 @@ fn tc_p4_012_load_query_count_bounded() {
     );
 }
 
-/// TC-P4-010: empty database → defaults, ZERO warnings.
+/// empty database → defaults, ZERO warnings.
 #[tracing_test::traced_test]
 #[test]
 fn tc_p4_010_empty_db_default_state() {

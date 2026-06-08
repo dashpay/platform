@@ -2,7 +2,7 @@
 //! [`SecretBytes`] for byte secrets (seeds, xprivs, KDF output, AEAD
 //! keys, decrypted plaintext). Both have a redacting `Debug`, no
 //! `Display`/`Deref`/`Serialize`, a full buffer wipe on drop, and a
-//! best-effort `region` mlock (SEC-REQ-3.8.1 / 3.8.2 / 4.1, CWE-316).
+//! best-effort `region` mlock (CWE-316).
 
 use std::fmt;
 
@@ -122,8 +122,7 @@ impl fmt::Debug for SecretString {
 impl ConstantTimeEq for SecretString {
     /// Constant-time compare over the equal-length region. Unequal
     /// lengths return `0` without revealing where they differ; the
-    /// only observable is the (non-secret) length difference
-    /// (SEC-REQ-3.8.2).
+    /// only observable is the (non-secret) length difference.
     fn ct_eq(&self, other: &Self) -> subtle::Choice {
         self.expose_secret()
             .as_bytes()
@@ -145,10 +144,10 @@ impl From<&str> for SecretString {
 
 /// Zeroize-on-drop wrapper for secret **bytes**: BIP-32 seed
 /// (`[u8; 64]`), xpriv, Argon2 output, AEAD key, decrypted plaintext,
-/// ciphertext-in-flight (SEC-REQ-3.8.1 / 4.1).
+/// ciphertext-in-flight.
 ///
 /// Not `Copy`; `Clone` is intentionally absent to enforce copy
-/// minimization (SEC-REQ-3.5) — move it, or `expose_secret()` and copy
+/// minimization — move it, or `expose_secret()` and copy
 /// deliberately into another wrapper. `Display`, `Deref`, `Serialize`,
 /// `PartialEq`, `Eq` are intentionally **not** implemented; equality
 /// goes through [`subtle::ConstantTimeEq`] only (`==` on secret bytes is
@@ -204,7 +203,7 @@ impl SecretBytes {
     }
 
     /// Copy a borrowed slice into a fresh wrapper. Deliberate, explicit
-    /// copy (SEC-REQ-3.5) — the only way to duplicate secret bytes.
+    /// copy — the only way to duplicate secret bytes.
     pub fn from_slice(bytes: &[u8]) -> Self {
         Self::new(bytes.to_vec())
     }
@@ -232,7 +231,7 @@ impl SecretBytes {
 
 impl ConstantTimeEq for SecretBytes {
     /// Fixed-width constant-time compare over the byte region — no
-    /// length early-return (SEC-REQ-3.6). `subtle::ConstantTimeEq` on
+    /// length early-return. `subtle::ConstantTimeEq` on
     /// unequal-length slices yields `0` without leaking *where* they
     /// differ; the only observable is the (non-secret) length.
     fn ct_eq(&self, other: &Self) -> subtle::Choice {

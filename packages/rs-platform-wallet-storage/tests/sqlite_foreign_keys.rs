@@ -1,12 +1,12 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! TC-045..TC-049 — native foreign-key enforcement.
+//! TC-045..TC-049 — native foreign-key enforcement and the delete cascade.
 
 mod common;
 
 use common::{ensure_identity, ensure_wallet_meta, fresh_persister, wid};
 
-/// TC-045: PRAGMA foreign_keys is ON on the connection.
+/// PRAGMA foreign_keys is ON on the connection.
 #[test]
 fn tc045_foreign_keys_on() {
     let (persister, _tmp, _path) = fresh_persister();
@@ -17,7 +17,7 @@ fn tc045_foreign_keys_on() {
     assert_eq!(fk, 1, "foreign_keys pragma not ON");
 }
 
-/// TC-046: insert into a child table without a wallet_metadata parent fails.
+/// insert into a child table without a wallets parent fails.
 #[test]
 fn tc046_orphan_child_insert_rejected() {
     let (persister, _tmp, _path) = fresh_persister();
@@ -35,7 +35,7 @@ fn tc046_orphan_child_insert_rejected() {
     );
 }
 
-/// TC-047: deleting wallet_metadata cascades.
+/// deleting wallets cascades.
 #[test]
 fn tc047_delete_wallet_cascade() {
     let (persister, _tmp, _path) = fresh_persister();
@@ -54,14 +54,6 @@ fn tc047_delete_wallet_cascade() {
     let report = persister.delete_wallet(w).expect("delete_wallet");
     assert_eq!(report.wallet_id, w);
     assert!(report.backup_path.is_some());
-    assert!(
-        report
-            .rows_removed_per_table
-            .get("wallet_metadata")
-            .copied()
-            .unwrap_or(0)
-            >= 1
-    );
     let conn = persister.lock_conn_for_test();
     let n: i64 = conn
         .query_row(
@@ -73,7 +65,7 @@ fn tc047_delete_wallet_cascade() {
     assert_eq!(n, 0);
 }
 
-/// TC-048: deleting a core_transactions row sets `spent_in_txid = NULL` on UTXOs.
+/// deleting a core_transactions row sets `spent_in_txid = NULL` on UTXOs.
 #[test]
 fn tc048_setnull_on_tx_delete() {
     let (persister, _tmp, _path) = fresh_persister();
@@ -130,16 +122,15 @@ fn tc048_setnull_on_tx_delete() {
 }
 
 /// TC-049: `identity_keys` rows carry TWO `ON DELETE CASCADE` parents
-/// (`wallet_id -> wallet_metadata`, `identity_id -> identities`).
+/// (`wallet_id -> wallets`, `identity_id -> identities`).
 /// Deleting the wallet must purge the child via that dual-cascade — both
-/// paths firing on one row is idempotent, not a double-free error — and
-/// the delete report must account for the removed row.
+/// paths firing on one row is idempotent, not a double-free error.
 #[test]
 fn tc049_delete_wallet_cascades_identity_keys() {
     let (persister, _tmp, _path) = fresh_persister();
     let w = wid(0xC4);
     let identity = [0xE4u8; 32];
-    // Seed BOTH FK parents: the wallet_metadata row and a wallet-scoped
+    // Seed BOTH FK parents: the wallets row and a wallet-scoped
     // identities row, so the child satisfies both cascade chains.
     ensure_wallet_meta(&persister, &w);
     ensure_identity(&persister, &identity, Some(&w));
@@ -166,15 +157,6 @@ fn tc049_delete_wallet_cascades_identity_keys() {
 
     let report = persister.delete_wallet(w).expect("delete_wallet");
     assert_eq!(report.wallet_id, w);
-    assert!(
-        report
-            .rows_removed_per_table
-            .get("identity_keys")
-            .copied()
-            .unwrap_or(0)
-            >= 1,
-        "delete report must count the removed identity_keys row"
-    );
 
     let after: i64 = persister
         .lock_conn_for_test()

@@ -1,4 +1,4 @@
-//! `wallet_metadata` writer + helpers.
+//! `wallets` writer + helpers.
 
 use rusqlite::{params, Connection, Transaction};
 
@@ -7,7 +7,7 @@ use platform_wallet::wallet::platform_wallet::WalletId;
 
 use crate::sqlite::error::WalletStorageError;
 
-/// Insert / replace a `wallet_metadata` row.
+/// Insert / replace a `wallets` row.
 pub fn upsert(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
@@ -15,7 +15,7 @@ pub fn upsert(
 ) -> Result<(), WalletStorageError> {
     let network = network_to_str(entry.network);
     let mut stmt = tx.prepare_cached(
-        "INSERT INTO wallet_metadata (wallet_id, network, birth_height) \
+        "INSERT INTO wallets (wallet_id, network, birth_height) \
          VALUES (?1, ?2, ?3) \
          ON CONFLICT(wallet_id) DO UPDATE SET network = excluded.network, \
                                               birth_height = excluded.birth_height",
@@ -24,15 +24,16 @@ pub fn upsert(
     Ok(())
 }
 
-/// Ensure a `wallet_metadata` parent row exists for the given id. Used
+/// Ensure a `wallets` parent row exists for the given id. Used
 /// by tests that exercise persistence without going through registration.
 ///
 /// Idempotent — silently a no-op when the row already exists. Defaults
 /// `network = "testnet"`, `birth_height = 0` (the same fall-back the
 /// SPV scan uses when the chain tip is unknown).
+#[cfg(any(test, feature = "__test-helpers"))]
 pub fn ensure_exists(conn: &Connection, wallet_id: &WalletId) -> Result<(), WalletStorageError> {
     conn.execute(
-        "INSERT OR IGNORE INTO wallet_metadata (wallet_id, network, birth_height) \
+        "INSERT OR IGNORE INTO wallets (wallet_id, network, birth_height) \
          VALUES (?1, ?2, ?3)",
         params![wallet_id.as_slice(), "testnet", 0i64],
     )?;
@@ -41,7 +42,7 @@ pub fn ensure_exists(conn: &Connection, wallet_id: &WalletId) -> Result<(), Wall
 
 /// All known wallet ids (used by `delete_wallet`, `load`, `inspect`).
 pub fn list_ids(conn: &Connection) -> Result<Vec<WalletId>, WalletStorageError> {
-    let mut stmt = conn.prepare("SELECT wallet_id FROM wallet_metadata ORDER BY wallet_id")?;
+    let mut stmt = conn.prepare("SELECT wallet_id FROM wallets ORDER BY wallet_id")?;
     let rows = stmt.query_map([], |row| row.get::<_, Vec<u8>>(0))?;
     let mut out = Vec::new();
     for r in rows {
@@ -57,18 +58,19 @@ pub fn list_ids(conn: &Connection) -> Result<Vec<WalletId>, WalletStorageError> 
 }
 
 /// Lookup `(network, birth_height)` for a wallet, if known.
+#[cfg(any(test, feature = "__test-helpers"))]
 pub fn fetch(
     conn: &Connection,
     wallet_id: &WalletId,
 ) -> Result<Option<(String, u32)>, WalletStorageError> {
     let mut stmt =
-        conn.prepare("SELECT network, birth_height FROM wallet_metadata WHERE wallet_id = ?1")?;
+        conn.prepare("SELECT network, birth_height FROM wallets WHERE wallet_id = ?1")?;
     let mut rows = stmt.query(params![wallet_id.as_slice()])?;
     if let Some(row) = rows.next()? {
         let network: String = row.get(0)?;
         let height: i64 = row.get(1)?;
         let height = u32::try_from(height).map_err(|_| WalletStorageError::IntegerOverflow {
-            field: "wallet_metadata.birth_height",
+            field: "wallets.birth_height",
             value: height as u64,
             target: crate::sqlite::util::safe_cast::SafeCastTarget::U64,
         })?;
@@ -78,16 +80,16 @@ pub fn fetch(
     }
 }
 
-/// Delete a wallet_metadata row (native `ON DELETE CASCADE` fires).
+/// Delete a wallets row (native `ON DELETE CASCADE` fires).
 pub fn delete(tx: &Transaction<'_>, wallet_id: &WalletId) -> Result<usize, WalletStorageError> {
     let n = tx.execute(
-        "DELETE FROM wallet_metadata WHERE wallet_id = ?1",
+        "DELETE FROM wallets WHERE wallet_id = ?1",
         params![wallet_id.as_slice()],
     )?;
     Ok(n)
 }
 
-/// Single source of truth for the `wallet_metadata.network` TEXT-column
+/// Single source of truth for the `wallets.network` TEXT-column
 /// domain.
 ///
 /// Mirrors every variant of [`key_wallet::Network`] (writer side:
@@ -110,6 +112,7 @@ fn network_to_str(net: key_wallet::Network) -> &'static str {
 }
 
 /// Inverse of `network_to_str`.
+#[cfg(any(test, feature = "__test-helpers"))]
 pub fn parse_network(s: &str) -> Option<key_wallet::Network> {
     match s {
         "mainnet" => Some(key_wallet::Network::Mainnet),

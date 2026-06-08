@@ -155,10 +155,10 @@ impl KvStore for SqlitePersister {
         // Single-snapshot read: select `length(value)` and `value` in one
         // row. The length (column 0) is checked against `MAX_VALUE_LEN`
         // before `row.get(1)` materialises the BLOB — rusqlite reads the
-        // BLOB lazily on that call, so the cap still gates the allocation,
-        // now without a cross-snapshot TOCTOU window (CMT-001/006). The
-        // inner `Result` carries the over-cap length out of the closure
-        // without ever touching column 1.
+        // BLOB lazily on that call, so the cap gates the allocation with
+        // no cross-snapshot TOCTOU window. The inner `Result` carries the
+        // over-cap length out of the closure without ever touching
+        // column 1.
         let row: Option<Result<Vec<u8>, usize>> = conn
             .query_row(
                 &format!("SELECT length(value), value FROM {} {where_key}", sql.table),
@@ -185,6 +185,15 @@ impl KvStore for SqlitePersister {
 
     fn put(&self, scope: &ObjectId, key: &str, value: &[u8]) -> Result<(), KvError> {
         validate_key(key)?;
+        // Cap the value before it reaches SQL so a `put` can never plant
+        // a row that a later `get` would refuse to materialise. The read
+        // path gates on the same `MAX_VALUE_LEN`.
+        if value.len() > MAX_VALUE_LEN {
+            return Err(KvError::ValueTooLarge {
+                found: value.len(),
+                max: MAX_VALUE_LEN,
+            });
+        }
         let sql = ScopeSql::resolve(scope);
         let conn = self.conn().map_err(KvError::from)?;
         // Column list / placeholders / conflict target all include the
@@ -280,11 +289,11 @@ mod tests {
         let wid: WalletId = [id; 32];
         let conn = p.lock_conn_for_test();
         conn.execute(
-            "INSERT OR IGNORE INTO wallet_metadata (wallet_id, network, birth_height) \
+            "INSERT OR IGNORE INTO wallets (wallet_id, network, birth_height) \
              VALUES (?1, 'testnet', 0)",
             params![wid.as_slice()],
         )
-        .expect("seed wallet_metadata");
+        .expect("seed wallets");
         wid
     }
 
@@ -379,9 +388,9 @@ mod tests {
 
     #[test]
     fn get_rejects_oversized_value_before_materialising() {
-        // CMT-006: a row larger than MAX_VALUE_LEN (planted via direct
-        // SQL — bypassing `put`'s implicit cap) must surface as
-        // ValueTooLarge instead of OOMing the process.
+        // A row larger than MAX_VALUE_LEN (planted via direct SQL —
+        // bypassing `put`'s cap) must surface as ValueTooLarge instead
+        // of OOMing the process.
         let (p, _tmp) = open_persister();
         let oversize = vec![0u8; MAX_VALUE_LEN + 1];
         {
@@ -402,6 +411,26 @@ mod tests {
     }
 
     #[test]
+    fn put_rejects_oversized_value_and_writes_nothing() {
+        // A value over MAX_VALUE_LEN is refused before the INSERT, so no
+        // row lands and a follow-up `get` returns None.
+        let (p, _tmp) = open_persister();
+        let oversize = vec![0u8; MAX_VALUE_LEN + 1];
+        match p.put(&ObjectId::Global, "huge", &oversize) {
+            Err(KvError::ValueTooLarge { found, max }) => {
+                assert_eq!(found, MAX_VALUE_LEN + 1);
+                assert_eq!(max, MAX_VALUE_LEN);
+            }
+            other => panic!("expected ValueTooLarge, got {other:?}"),
+        }
+        assert_eq!(
+            p.get(&ObjectId::Global, "huge").unwrap(),
+            None,
+            "rejected put must not leave a row behind"
+        );
+    }
+
+    #[test]
     fn cascade_on_wallet_delete() {
         let (p, _tmp) = open_persister();
         let scope = ObjectId::Wallet(seed_wallet(&p, 5));
@@ -413,7 +442,7 @@ mod tests {
                 unreachable!()
             };
             conn.execute(
-                "DELETE FROM wallet_metadata WHERE wallet_id = ?1",
+                "DELETE FROM wallets WHERE wallet_id = ?1",
                 params![wid.as_slice()],
             )
             .expect("delete wallet");

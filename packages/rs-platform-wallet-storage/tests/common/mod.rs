@@ -41,18 +41,18 @@ pub fn ro_conn(path: &std::path::Path) -> Connection {
     .expect("open ro conn")
 }
 
-/// Insert a stub `wallet_metadata` row so child writes pass the native
+/// Insert a stub `wallets` row so child writes pass the native
 /// FK. Bypasses the buffer/flush layer — tests use this when they
 /// want to exercise a single sub-changeset writer in isolation.
 pub fn ensure_wallet_meta(persister: &SqlitePersister, wallet_id: &WalletId) {
     use rusqlite::params;
     let conn = persister.lock_conn_for_test();
     conn.execute(
-        "INSERT OR IGNORE INTO wallet_metadata (wallet_id, network, birth_height) \
+        "INSERT OR IGNORE INTO wallets (wallet_id, network, birth_height) \
          VALUES (?1, 'testnet', 0)",
         params![wallet_id.as_slice()],
     )
-    .expect("ensure wallet_metadata");
+    .expect("ensure wallets");
 }
 
 /// Insert a stub `identities` row so identity-owned table writes
@@ -98,7 +98,7 @@ pub fn ensure_token_balance(
 /// Insert a stub `established` row in the unified `contacts` table so
 /// the `cascade_meta_contact_on_contact_delete` trigger has an
 /// established-contact parent to fire on for `meta_contact` writes keyed
-/// by `(wallet_id, owner_id, contact_id)`. The parent `wallet_metadata`
+/// by `(wallet_id, owner_id, contact_id)`. The parent `wallets`
 /// row must already exist (seed via [`ensure_wallet_meta`]).
 pub fn ensure_contact_established(
     persister: &SqlitePersister,
@@ -117,10 +117,50 @@ pub fn ensure_contact_established(
     .expect("ensure contact_established");
 }
 
+/// Insert a stub `sent` contact row (pending outgoing request) so a
+/// `meta_contact` write keyed by `(wallet_id, owner_id, contact_id)` has
+/// a non-established parent to exercise. The parent `wallets`
+/// row must already exist.
+pub fn ensure_contact_sent(
+    persister: &SqlitePersister,
+    wallet_id: &WalletId,
+    owner_id: &[u8; 32],
+    contact_id: &[u8; 32],
+) {
+    use rusqlite::params;
+    let conn = persister.lock_conn_for_test();
+    conn.execute(
+        "INSERT OR IGNORE INTO contacts \
+            (wallet_id, owner_id, contact_id, state) \
+         VALUES (?1, ?2, ?3, 'sent')",
+        params![wallet_id.as_slice(), &owner_id[..], &contact_id[..]],
+    )
+    .expect("ensure contact_sent");
+}
+
+/// Insert a stub `received` contact row (pending incoming request),
+/// symmetric to [`ensure_contact_sent`].
+pub fn ensure_contact_received(
+    persister: &SqlitePersister,
+    wallet_id: &WalletId,
+    owner_id: &[u8; 32],
+    contact_id: &[u8; 32],
+) {
+    use rusqlite::params;
+    let conn = persister.lock_conn_for_test();
+    conn.execute(
+        "INSERT OR IGNORE INTO contacts \
+            (wallet_id, owner_id, contact_id, state) \
+         VALUES (?1, ?2, ?3, 'received')",
+        params![wallet_id.as_slice(), &owner_id[..], &contact_id[..]],
+    )
+    .expect("ensure contact_received");
+}
+
 /// Insert a stub `platform_addresses` row so `meta_platform_address`
 /// writes pass the composite FK to
 /// `platform_addresses(wallet_id, address)`. The parent
-/// `wallet_metadata` row must already exist (seed via
+/// `wallets` row must already exist (seed via
 /// [`ensure_wallet_meta`]). `address` is an opaque BLOB.
 pub fn ensure_platform_address(persister: &SqlitePersister, wallet_id: &WalletId, address: &[u8]) {
     use rusqlite::params;

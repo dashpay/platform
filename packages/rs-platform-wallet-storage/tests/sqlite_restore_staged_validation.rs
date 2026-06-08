@@ -1,7 +1,7 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! CMT-002 — schema-history-presence and max-version gates must bind
-//! to the STAGED copy, not the first source handle.
+//! Schema-history-presence and max-version gates must bind to the
+//! STAGED copy, not the first source handle.
 //!
 //! These regression tests pin that a forward-version or
 //! schema-history-missing source is rejected AND the live destination
@@ -91,7 +91,7 @@ fn missing_schema_history_rejected_destination_unchanged() {
     );
 }
 
-/// CMT-001: if the staged copy fails its forward-version gate, the
+/// If the staged copy fails its forward-version gate, the
 /// destination's `<dest>-wal` / `<dest>-shm` siblings must NOT be
 /// unlinked. Deleting them before validation succeeds = un-checkpointed
 /// committed pages lost on rollback.
@@ -142,8 +142,8 @@ fn rejected_restore_leaves_wal_shm_siblings_intact() {
     assert_eq!(fs::read(&shm).unwrap(), b"shm-sentinel");
 }
 
-/// CMT-010: a forward-version source must fail BEFORE the full file
-/// is streamed into the destination's parent dir. We assert no
+/// A forward-version source must fail BEFORE the full file is streamed
+/// into the destination's parent dir. We assert no
 /// NamedTempFile from the staging copy survives in the parent dir
 /// after the rejection — the cheap source-side sniff fails fast.
 #[test]

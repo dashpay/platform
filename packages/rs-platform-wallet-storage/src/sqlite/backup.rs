@@ -12,8 +12,8 @@ use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::persister::{PruneReport, RetentionPolicy};
 use crate::sqlite::util::permissions::apply_secure_permissions;
 
-/// CODE-014: fsync the parent directory of `path` on Unix so the
-/// rename entry that materialised `path` is durable across power loss.
+/// Fsync the parent directory of `path` on Unix so the rename entry
+/// that materialised `path` is durable across power loss.
 /// `persist` only fsyncs the file inode; on most Unix filesystems the
 /// dentry update is journalled separately and can be lost on crash
 /// without this step. No-op on non-Unix platforms.
@@ -89,7 +89,7 @@ pub fn run_to(src: &Connection, dest: &Path) -> Result<(), WalletStorageError> {
             std::fs::create_dir_all(parent)?;
         }
     }
-    // CODE-009: pre-existing-destination rejection happens at the
+    // Pre-existing-destination rejection happens at the
     // `persist_noclobber` site below — that's atomic against the rename
     // (no TOCTOU window between `dest.exists()` and persist). The
     // CLI's `backup_to(file_path)` still gets the typed
@@ -100,7 +100,7 @@ pub fn run_to(src: &Connection, dest: &Path) -> Result<(), WalletStorageError> {
     // directory. Same-FS guarantee makes `persist` an atomic rename.
     let parent = dest.parent().unwrap_or(Path::new("."));
     let tmp = tempfile::NamedTempFile::new_in(parent)?;
-    // SEC-011: tighten the temp's mode to 0o600 BEFORE persist so the
+    // Tighten the temp's mode to 0o600 BEFORE persist so the
     // destination inherits owner-only permissions via the atomic
     // rename. Running chmod after persist would leave a brief
     // umask-default window where the destination is observable.
@@ -125,10 +125,10 @@ pub fn run_to(src: &Connection, dest: &Path) -> Result<(), WalletStorageError> {
     // with the rename since `persist` atomically renames the temp file.
     drop(backup_conn);
 
-    // CODE-009: `persist_noclobber` is the atomic check-and-rename —
-    // SQLite-free, no TOCTOU window between an `exists()` probe and the
-    // rename. `AlreadyExists` maps to the typed
-    // `BackupDestinationExists` for the CLI's overwrite-refusal contract.
+    // `persist_noclobber` is the atomic check-and-rename — SQLite-free,
+    // no TOCTOU window between an `exists()` probe and the rename.
+    // `AlreadyExists` maps to the typed `BackupDestinationExists` for
+    // the CLI's overwrite-refusal contract.
     tmp.persist_noclobber(dest).map_err(|e| {
         if e.error.kind() == std::io::ErrorKind::AlreadyExists {
             WalletStorageError::BackupDestinationExists {
@@ -138,14 +138,12 @@ pub fn run_to(src: &Connection, dest: &Path) -> Result<(), WalletStorageError> {
             WalletStorageError::Io(e.error)
         }
     })?;
-    // CODE-014: fsync the parent directory so the atomic rename's
-    // dentry update is durable across power loss. On non-Unix this is
-    // a no-op.
+    // Fsync the parent directory so the atomic rename's dentry update is
+    // durable across power loss. On non-Unix this is a no-op.
     fsync_parent_dir(dest)?;
-    // SEC-011: re-tighten in case a non-Unix build (or a future
-    // platform-specific tweak) needs to refresh sibling perms after
-    // SQLite materialised them. No-op on Unix where the temp already
-    // landed at 0o600.
+    // Re-tighten in case a non-Unix build (or a future platform-specific
+    // tweak) needs to refresh sibling perms after SQLite materialised
+    // them. No-op on Unix where the temp already landed at 0o600.
     apply_secure_permissions(dest)?;
     Ok(())
 }
@@ -277,7 +275,7 @@ pub fn restore_from(dest_db_path: &Path, src_backup: &Path) -> Result<(), Wallet
     std::io::copy(&mut src_file, tmp.as_file_mut())?;
     tmp.as_file().sync_all()?;
 
-    // 4. SEC-004: re-run integrity_check on the STAGED file before
+    // 4. Re-run integrity_check on the STAGED file before
     //    persisting. A torn `std::io::copy` or transient FS error
     //    that escaped `sync_all`'s notice would otherwise persist a
     //    corrupted database. If the recheck fails, the temp file
@@ -298,11 +296,10 @@ pub fn restore_from(dest_db_path: &Path, src_backup: &Path) -> Result<(), Wallet
         crate::sqlite::migrations::assert_schema_version_supported(&staged)?;
     }
 
-    // 5. ATOM-010 (A-5): chmod 600 on the temp BEFORE persist so the
-    //    destination inherits owner-only mode via the atomic rename.
-    //    Pre-A-5 the chmod ran post-persist — a rare chmod failure
-    //    returned Err while leaving the new DB live at the destination
-    //    (caller thought restore rolled back, reality was mixed).
+    // 5. chmod 600 on the temp BEFORE persist so the destination
+    //    inherits owner-only mode via the atomic rename. Chmodding
+    //    post-persist would leave the new DB live at the destination on
+    //    a chmod failure, contradicting the rolled-back error.
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -332,11 +329,11 @@ pub fn restore_from(dest_db_path: &Path, src_backup: &Path) -> Result<(), Wallet
     //    siblings get replaced/cleared, or — if any earlier check
     //    failed — none of them are touched.
     //
-    // CODE-011: build sibling paths via `OsString::push` so non-UTF-8
-    // bytes round-trip intact; `remove_file` runs unconditionally and
+    // Build sibling paths via `OsString::push` so non-UTF-8 bytes
+    // round-trip intact; `remove_file` runs unconditionally and
     // `ErrorKind::NotFound` is a silent no-op (closes the `exists()`
-    // TOCTOU gate). CMT-009: ordering requires the dest lock conn to be
-    // dropped first so cross-platform unlink semantics hold.
+    // TOCTOU gate). Ordering requires the dest lock conn to be dropped
+    // first so cross-platform unlink semantics hold.
     if let Some(file_name) = dest_db_path.file_name() {
         for ext in ["-wal", "-shm"] {
             let mut sibling_name = file_name.to_os_string();
@@ -354,9 +351,8 @@ pub fn restore_from(dest_db_path: &Path, src_backup: &Path) -> Result<(), Wallet
     tmp.persist(dest_db_path)
         .map_err(|e| WalletStorageError::Io(e.error))?;
 
-    // 9. CODE-014: fsync the destination's parent directory so the
-    //    atomic rename's dentry update is durable across power loss
-    //    (no-op on non-Unix).
+    // 9. Fsync the destination's parent directory so the atomic rename's
+    //    dentry update is durable across power loss (no-op on non-Unix).
     fsync_parent_dir(dest_db_path)?;
 
     // 10. Re-tighten siblings (SQLite may materialise -wal/-shm on next
@@ -370,7 +366,7 @@ pub fn restore_from(dest_db_path: &Path, src_backup: &Path) -> Result<(), Wallet
 /// `IntegrityCheckFailed` via the caller-supplied builder; an
 /// underlying rusqlite error surfaces as `IntegrityCheckRunFailed`.
 ///
-/// CODE-016: SQLite returns one row per detected problem (capped at
+/// SQLite returns one row per detected problem (capped at
 /// `PRAGMA integrity_check(N)`; default 100). All rows are collected
 /// and joined with `\n` so the typed report carries every diagnostic
 /// instead of just the first line.
@@ -432,7 +428,7 @@ where
 ///
 /// # Partial failures
 ///
-/// ATOM-011 / A-6: per-file `remove_file` failures are collected into
+/// Per-file `remove_file` failures are collected into
 /// `PruneReport::failed_removals` rather than aborting the loop. The
 /// happy path still removes every eligible file. Only catastrophic
 /// errors (`read_dir` itself fails, an `entry?` returns Err) surface
@@ -476,11 +472,10 @@ pub fn prune(dir: &Path, policy: RetentionPolicy) -> Result<PruneReport, WalletS
             match std::fs::remove_file(&path) {
                 Ok(()) => removed.push(path),
                 Err(e) => {
-                    // CODE-019: a failed `remove_file` leaves the file
-                    // on disk, so it MUST be counted in `kept`. The
-                    // invariant `kept + removed.len() == total` then
-                    // holds and `failed_removals` is a subset of
-                    // `kept`.
+                    // A failed `remove_file` leaves the file on disk, so
+                    // it MUST be counted in `kept`. The invariant
+                    // `kept + removed.len() == total` then holds and
+                    // `failed_removals` is a subset of `kept`.
                     failed_removals.push((path, e));
                     kept += 1;
                 }

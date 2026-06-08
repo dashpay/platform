@@ -39,8 +39,8 @@ pub fn encode<T: Serialize>(value: &T) -> Result<Vec<u8>, WalletStorageError> {
 /// Decode a `BLOB` payload back into a serde-derived value. Rejects
 /// trailing bytes so a corrupt or forward-incompatible payload fails
 /// loudly instead of decoding a stale prefix. Also caps in-decode
-/// allocations at [`BLOB_SIZE_LIMIT_BYTES`] so a crafted length
-/// prefix can't OOM the host (CMT-006).
+/// allocations at [`BLOB_SIZE_LIMIT_BYTES`] so a crafted length prefix
+/// can't OOM the host.
 pub fn decode<T: DeserializeOwned>(blob: &[u8]) -> Result<T, WalletStorageError> {
     if blob.len() > BLOB_SIZE_LIMIT_BYTES {
         return Err(WalletStorageError::BlobTooLarge {
@@ -76,6 +76,7 @@ pub fn encode_outpoint(op: &dashcore::OutPoint) -> Result<Vec<u8>, WalletStorage
 /// Decode an outpoint key produced by [`encode_outpoint`]. Rejects
 /// malformed or trailing bytes with a typed [`WalletStorageError`] via
 /// the shared [`decode`] path.
+#[cfg(any(test, feature = "__test-helpers"))]
 pub fn decode_outpoint(bytes: &[u8]) -> Result<dashcore::OutPoint, WalletStorageError> {
     decode(bytes)
 }
@@ -116,10 +117,10 @@ mod tests {
         );
     }
 
-    /// CMT-006: a blob larger than the per-row cap is rejected with a
-    /// typed `BlobTooLarge`, not generic `BlobDecode` and not an OOM.
-    /// We synthesize the oversize payload directly (the in-band limit
-    /// would prevent encoding it through the helper).
+    /// A blob larger than the per-row cap is rejected with a typed
+    /// `BlobTooLarge`, not generic `BlobDecode` and not an OOM. We
+    /// synthesize the oversize payload directly (the in-band limit would
+    /// prevent encoding it through the helper).
     #[test]
     fn decode_rejects_oversize_blob_with_blob_too_large() {
         let oversize = vec![0u8; BLOB_SIZE_LIMIT_BYTES + 1];

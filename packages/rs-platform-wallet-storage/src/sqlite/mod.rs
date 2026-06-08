@@ -7,19 +7,32 @@
 //! root instead.
 
 pub mod backup;
-pub mod buffer;
+pub(crate) mod buffer;
 pub mod config;
 pub(crate) mod conn;
 pub mod error;
 #[cfg(feature = "kv")]
 pub mod kv;
-pub mod migrations;
 pub mod persister;
-pub mod schema;
+pub mod reports;
 pub mod util;
+
+// `schema` and `migrations` exist only to support the persister. They are
+// `pub(crate)` in production builds; the `__test-helpers` feature widens
+// them to `pub` so this crate's integration tests can drive the
+// per-area readers/writers directly.
+#[cfg(any(test, feature = "__test-helpers"))]
+pub mod migrations;
+#[cfg(not(any(test, feature = "__test-helpers")))]
+pub(crate) mod migrations;
+#[cfg(any(test, feature = "__test-helpers"))]
+pub mod schema;
+#[cfg(not(any(test, feature = "__test-helpers")))]
+pub(crate) mod schema;
 
 pub use config::{
     default_auto_backup_dir, FlushMode, JournalMode, SqlitePersisterConfig, Synchronous,
 };
 pub use error::{AutoBackupOperation, WalletStorageError};
 pub use persister::{PruneReport, RetentionPolicy, SqlitePersister};
+pub use reports::{CommitReport, DeleteWalletReport};

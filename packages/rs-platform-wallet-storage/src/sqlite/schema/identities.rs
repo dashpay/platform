@@ -1,9 +1,13 @@
 //! `identities` table writer.
 
-use rusqlite::{params, Connection, Transaction};
+use rusqlite::{params, Transaction};
 
-use platform_wallet::changeset::{IdentityChangeSet, IdentityEntry};
+use platform_wallet::changeset::IdentityChangeSet;
 use platform_wallet::wallet::platform_wallet::WalletId;
+
+// Imports used only by the test-gated readers below.
+#[cfg(any(test, feature = "__test-helpers"))]
+use {platform_wallet::changeset::IdentityEntry, rusqlite::Connection};
 
 use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::schema::blob;
@@ -17,7 +21,7 @@ pub fn apply(
         // PK is `identity_id` alone; `wallet_id` is nullable and links
         // the identity to its parent wallet for cascade. The all-zero
         // wallet id is treated as "no parent wallet known" and stored
-        // as NULL so the FK to `wallet_metadata` doesn't activate.
+        // as NULL so the FK to `wallets` doesn't activate.
         //
         // COALESCE order — `COALESCE(identities.wallet_id,
         // excluded.wallet_id)` — preserves an already-parented row's
@@ -27,16 +31,24 @@ pub fn apply(
         // by the per-entry cross-check below.
         let scope_is_sentinel = wallet_id.iter().all(|b| *b == 0);
         let mut stmt = tx.prepare_cached(
-            "INSERT INTO identities (identity_id, wallet_id, wallet_index, entry_blob, tombstoned) \
+            "INSERT INTO identities (identity_id, wallet_id, identity_index, entry_blob, tombstoned) \
              VALUES (?1, ?2, ?3, ?4, 0) \
              ON CONFLICT(identity_id) DO UPDATE SET \
                 wallet_id = COALESCE(identities.wallet_id, excluded.wallet_id), \
-                wallet_index = excluded.wallet_index, \
+                identity_index = excluded.identity_index, \
                 entry_blob = excluded.entry_blob, \
                 tombstoned = 0",
         )?;
         let wallet_id_param = wallet_id_to_param(wallet_id);
         for (id, entry) in &cs.identities {
+            // The map key is bound into the `identity_id` column while
+            // `entry` is what the serialized blob carries; a disagreement
+            // would persist a row whose typed id names a different
+            // identity than its blob. Reject before encoding so the two
+            // representations can never diverge on disk.
+            if entry.id != *id {
+                return Err(WalletStorageError::IdentityEntryIdMismatch);
+            }
             // Cross-check: the entry's own wallet_id (when set) must
             // agree with the flush scope so the typed columns and the
             // serialized blob describe the same parenting. Sentinel
@@ -87,18 +99,18 @@ fn wallet_id_to_param(wallet_id: &WalletId) -> Option<&[u8]> {
     }
 }
 
-/// Decode a single `identities` row back to its [`IdentityEntry`].
+/// Decode a single `identities` row into `(entry, tombstoned)`.
 ///
-/// Returns `Ok(None)` if no row matches. This reads only `entry_blob`
-/// and does NOT expose the `tombstoned` column — a tombstoned row still
-/// decodes to `Some(entry)` here. Callers that must skip logically
-/// deleted identities should use [`load_state`], which filters
-/// tombstoned rows.
+/// Returns `Ok(None)` if no row matches. The `tombstoned` flag is
+/// returned alongside the entry so the caller can decide whether to skip
+/// a logically deleted identity rather than having to consult
+/// [`load_state`] separately.
+#[cfg(any(test, feature = "__test-helpers"))]
 pub fn fetch(
     conn: &Connection,
     wallet_id: &WalletId,
     identity_id: &[u8; 32],
-) -> Result<Option<IdentityEntry>, WalletStorageError> {
+) -> Result<Option<(IdentityEntry, bool)>, WalletStorageError> {
     use rusqlite::OptionalExtension;
     // Scope the lookup to the caller's wallet so a peer wallet that
     // happens to share the identity-id row can never leak through.
@@ -106,16 +118,17 @@ pub fn fetch(
     // wallet_id); a real WalletId matches only that wallet's rows.
     // `IS` is NULL-safe equality so the NULL branch works uniformly.
     let wallet_id_param = wallet_id_to_param(wallet_id);
-    let row: Option<Vec<u8>> = conn
+    let row: Option<(Vec<u8>, i64)> = conn
         .query_row(
-            "SELECT entry_blob FROM identities WHERE identity_id = ?1 AND wallet_id IS ?2",
+            "SELECT entry_blob, tombstoned FROM identities \
+             WHERE identity_id = ?1 AND wallet_id IS ?2",
             params![&identity_id[..], wallet_id_param],
-            |row| row.get(0),
+            |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .optional()?;
     match row {
         None => Ok(None),
-        Some(payload) => Ok(Some(blob::decode(&payload)?)),
+        Some((payload, tombstoned)) => Ok(Some((blob::decode(&payload)?, tombstoned != 0))),
     }
 }
 
@@ -128,6 +141,10 @@ pub fn fetch(
 /// rows with `IdentityEntry.identity_index = Some(_)` go into
 /// `wallet_identities[wallet_id]`; rows with `None` go into
 /// `out_of_wallet_identities`.
+///
+/// Retained for this crate's integration tests until the
+/// `Wallet::from_persisted` rehydration path consumes it in `load()`.
+#[cfg(any(test, feature = "__test-helpers"))]
 pub fn load_state(
     conn: &Connection,
     wallet_id: &WalletId,
@@ -172,6 +189,7 @@ pub fn load_state(
 /// using a freshly minted V0 [`Identity`] for `(id, balance, revision)`.
 /// Live runtime fields (contacts maps, public-key derivations) are
 /// recovered separately via the contacts / identity_keys readers.
+#[cfg(any(test, feature = "__test-helpers"))]
 fn managed_identity_from_entry(
     entry: &IdentityEntry,
     wallet_id: &WalletId,
@@ -208,6 +226,7 @@ fn managed_identity_from_entry(
 /// flow. The stub row carries a `null`-encoded `IdentityEntry` so the
 /// `entry_blob` column always decodes — callers wanting real data
 /// overwrite via [`apply`].
+#[cfg(any(test, feature = "__test-helpers"))]
 pub fn ensure_exists(
     conn: &Connection,
     wallet_id: &WalletId,
@@ -234,7 +253,7 @@ pub fn ensure_exists(
     let wallet_id_param = wallet_id_to_param(wallet_id);
     conn.execute(
         "INSERT OR IGNORE INTO identities \
-            (identity_id, wallet_id, wallet_index, entry_blob, tombstoned) \
+            (identity_id, wallet_id, identity_index, entry_blob, tombstoned) \
          VALUES (?1, ?2, NULL, ?3, 0)",
         params![&identity_id[..], wallet_id_param, payload],
     )?;

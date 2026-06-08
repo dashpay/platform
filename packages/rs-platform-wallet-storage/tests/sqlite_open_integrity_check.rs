@@ -1,10 +1,10 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! ATOM-013 (A-8) — `open()` runs `PRAGMA integrity_check` on a
-//! pre-existing DB BEFORE migrations alter it, so bit-rot / escaped-
-//! WAL corruption surfaces as the typed `IntegrityCheckFailed` instead
-//! of being silently migrated (and snapshotted into the pre-migration
-//! auto-backup, defeating rollback).
+//! `open()` runs `PRAGMA integrity_check` on a pre-existing DB BEFORE
+//! migrations alter it, so bit-rot / escaped-WAL corruption surfaces
+//! as the typed `IntegrityCheckFailed` instead of being silently
+//! migrated (and snapshotted into the pre-migration auto-backup,
+//! defeating rollback).
 
 mod common;
 
@@ -41,8 +41,8 @@ fn corrupt_btree_pages(path: &std::path::Path) {
     f.sync_all().unwrap();
 }
 
-/// ATOM-013: opening a corrupt DB returns `IntegrityCheckFailed`
-/// instead of running migrations against it.
+/// Opening a corrupt DB returns `IntegrityCheckFailed` instead of
+/// running migrations against it.
 #[test]
 fn atom_013_open_rejects_corrupt_db() {
     let (persister, tmp, path) = fresh_persister();
@@ -53,7 +53,7 @@ fn atom_013_open_rejects_corrupt_db() {
         // Push the DB past a few pages with a chunky meta row.
         for i in 0..20u32 {
             conn.execute(
-                "INSERT INTO wallet_metadata (wallet_id, network, birth_height) VALUES (?1, 'testnet', ?2)",
+                "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', ?2)",
                 params![vec![i as u8; 32].as_slice(), i as i64],
             )
             .unwrap();
@@ -86,11 +86,9 @@ fn corrupt_multiple_pages(path: &std::path::Path) {
         .open(path)
         .expect("open db for multi-page corruption");
     let len = f.metadata().unwrap().len();
-    // CMT-018: we corrupt two full 4096-byte pages starting at offsets
-    // 4096 and 8192; `read_exact` at offset 8192 panics unless the file
-    // is at least THREE full pages long. The old `> 8192` guard
-    // accepted file lengths in `(8192, 12288)` that would panic the
-    // read.
+    // We corrupt two full 4096-byte pages starting at offsets 4096 and
+    // 8192; `read_exact` at offset 8192 needs the file to be at least
+    // THREE full pages long, so require >= 12_288 bytes.
     assert!(
         len >= 12_288,
         "expected at least three full pages ({} bytes); got {len}",
@@ -109,12 +107,11 @@ fn corrupt_multiple_pages(path: &std::path::Path) {
     f.sync_all().unwrap();
 }
 
-/// TC-CODE-016-a: a multi-problem DB surfaces every diagnostic line in
-/// `IntegrityCheckFailed::report`. Pre-fix the helper used `query_row`
-/// and silently dropped every row past the first. We assert the report
-/// is non-empty and not the truncated single-row "ok" sentinel; we
-/// don't bind to a fixed line count because SQLite's exact diagnostic
-/// shape isn't stable across builds.
+/// A multi-problem DB surfaces every diagnostic line in
+/// `IntegrityCheckFailed::report` — the collection must not stop at the
+/// first row. We assert the report is non-empty and not the truncated
+/// single-row "ok" sentinel; we don't bind to a fixed line count
+/// because SQLite's exact diagnostic shape isn't stable across builds.
 #[test]
 fn tc_code_016_a_integrity_report_collects_all_rows() {
     let (persister, tmp, path) = fresh_persister();
@@ -123,7 +120,7 @@ fn tc_code_016_a_integrity_report_collects_all_rows() {
         let conn = persister.lock_conn_for_test();
         for i in 0..40u32 {
             conn.execute(
-                "INSERT INTO wallet_metadata (wallet_id, network, birth_height) VALUES (?1, 'testnet', ?2)",
+                "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', ?2)",
                 params![vec![i as u8; 32].as_slice(), i as i64],
             )
             .unwrap();

@@ -15,9 +15,14 @@
 //! Every other variant names a wallet object, but a write does NOT
 //! require that object to exist yet — metadata may be attached ahead of
 //! sync. When the object is later deleted, an `AFTER DELETE` trigger on
-//! its parent table removes the matching metadata, so metadata never
-//! outlives its object. The same key string under different scopes is
-//! independent — the scopes live in separate tables.
+//! its parent table removes the matching metadata. However, if the
+//! parent object is never created, or is removed via a path the trigger
+//! does not cover, the metadata row may persist as an orphan. This is an
+//! accepted limitation across all scopes; a future garbage-collection pass
+//! is expected to reap such orphans (no live parent, e.g. older than ~1
+//! week) — callers should not rely on orphan metadata persisting forever.
+//! The same key string under different scopes is independent — the scopes
+//! live in separate tables.
 //!
 //! This API is **independent of [`platform_wallet::changeset::PlatformWalletPersistence`]**:
 //! KV is for app metadata, not wallet domain state. Reads and writes go
@@ -32,8 +37,12 @@ use platform_wallet::wallet::platform_wallet::WalletId;
 /// other variants name a wallet object but carry no insert-time
 /// existence requirement: metadata may be written before its parent
 /// object is synced into its typed table. An `AFTER DELETE` trigger on
-/// each parent removes the matching metadata when the object is deleted,
-/// so metadata never outlives its object.
+/// each parent removes the matching metadata when the object is deleted.
+///
+/// **Orphan metadata:** if the parent object is never created, or is
+/// removed via a path the trigger does not cover, the metadata row may
+/// persist as an orphan. A future GC pass is expected to reap such
+/// rows; do not rely on them living forever.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ObjectId {
     /// Global app metadata; no parent (`meta_global`).
@@ -47,7 +56,7 @@ pub enum ObjectId {
         identity_id: [u8; 32],
         token_id: [u8; 32],
     },
-    /// Per-established-contact metadata (`meta_contact`).
+    /// Per-contact metadata (`meta_contact`) — for a contact in any lifecycle state.
     Contact {
         wallet_id: WalletId,
         owner_id: [u8; 32],
@@ -69,10 +78,15 @@ pub enum ObjectId {
 /// over-length key reaches SQL.
 pub const MAX_KEY_LEN: usize = 128;
 
-/// Hard cap on the size of a single KV value, in bytes. Mirrors the
-/// `BLOB_SIZE_LIMIT_BYTES` ceiling on bincode-serde blobs in
-/// `sqlite::schema::blob` so a tampered or corrupted backup row cannot
-/// force a multi-gigabyte allocation on the next `get`. CMT-006.
+/// Hard cap on the size of a single KV value, in bytes, so a tampered or
+/// corrupted backup row cannot force a multi-gigabyte allocation on the
+/// next `get`.
+///
+/// Kept in sync MANUALLY with the `BLOB_SIZE_LIMIT_BYTES` ceiling on
+/// bincode-serde blobs in `sqlite::schema::blob`: the `sqlite` and `kv`
+/// features compile independently, so a `const`-level cross-reference
+/// between the two modules can't be relied on. Change both together if
+/// the ceiling moves.
 pub const MAX_VALUE_LEN: usize = 16 * 1024 * 1024;
 
 /// Errors returned by [`KvStore`] operations.
@@ -89,9 +103,10 @@ pub enum KvError {
     #[error("kv key too long: {len} bytes (max {})", MAX_KEY_LEN)]
     KeyTooLong { len: usize },
 
-    /// Stored value exceeded [`MAX_VALUE_LEN`] on read. Surfaced before
-    /// the bytes are materialised so a tampered row cannot OOM the
-    /// process. CMT-006.
+    /// A value exceeded [`MAX_VALUE_LEN`]. Raised by `put` before the
+    /// INSERT and by `get` before the bytes are materialised, so an
+    /// oversize value never lands and a tampered row never OOMs the
+    /// process.
     #[error("kv value too large: {found} bytes (max {max})")]
     ValueTooLarge { found: usize, max: usize },
 
@@ -113,7 +128,7 @@ pub trait KvStore {
     /// Read the value bound to `(scope, key)`. Returns `Ok(None)` when
     /// the key is absent. Backends MUST reject values larger than
     /// [`MAX_VALUE_LEN`] with [`KvError::ValueTooLarge`] before
-    /// materialising the bytes (CMT-006).
+    /// materialising the bytes.
     fn get(&self, scope: &ObjectId, key: &str) -> Result<Option<Vec<u8>>, KvError>;
 
     /// Insert or overwrite the value bound to `(scope, key)`. Upserts
@@ -121,6 +136,10 @@ pub trait KvStore {
     /// key replace the previous value. Succeeds even when the scope's
     /// parent object does not exist yet; an `AFTER DELETE` trigger cleans
     /// the metadata up if that object is later removed.
+    ///
+    /// Backends MUST reject a `value` larger than [`MAX_VALUE_LEN`] with
+    /// [`KvError::ValueTooLarge`] before writing, so a `put` can never
+    /// plant a row a later `get` would refuse to materialise.
     fn put(&self, scope: &ObjectId, key: &str, value: &[u8]) -> Result<(), KvError>;
 
     /// Remove the row bound to `(scope, key)`. Idempotent — a missing

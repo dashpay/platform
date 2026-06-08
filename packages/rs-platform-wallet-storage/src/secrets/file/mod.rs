@@ -37,7 +37,7 @@
 //! is Argon2id + AEAD, useless without the passphrase. Does **not**
 //! cover **A3** (passphrase / derived key resident while unlocked), a
 //! weak operator passphrase (KDF raises cost, does not eliminate the
-//! risk — accepted, AR-2), or **A5** if the derived key / plaintext is
+//! risk — an accepted residual), or **A5** if the derived key / plaintext is
 //! swapped or core-dumped while unlocked (best-effort mitigated by
 //! zeroize + mlock, not eliminated). The derived AEAD key is held
 //! resident inside a [`SecretBytes`] for the store's lifetime so reads
@@ -73,7 +73,7 @@ pub const SERVICE_PREFIX: &str = "dash.platform-wallet-storage/";
 const VENDOR: &str = "dash.platform-wallet-storage";
 const STORE_ID: &str = "encrypted-file-store-v1";
 
-/// Structural ceiling on the on-disk vault file (CMT-003). The vault is
+/// Structural ceiling on the on-disk vault file. The vault is
 /// attacker-controllable JSON; a multi-GiB file would force a huge
 /// `fs::read` allocation ahead of any tag check, so refuse to even
 /// allocate beyond this cap and surface
@@ -84,8 +84,8 @@ pub const MAX_VAULT_SIZE_BYTES: u64 = 128 * 1024 * 1024;
 ///
 /// One file, one passphrase, one lock — the whole store rotates
 /// together via [`rekey`](Self::rekey). Every [`SecretString`] and the
-/// resident derived AEAD key are zeroized when the store drops
-/// (SEC-REQ-2.2.13). The plaintext entry map is held in
+/// resident derived AEAD key are zeroized when the store drops.
+/// The plaintext entry map is held in
 /// [`EntryBody`]-shaped form: the bytes inside `ciphertext` are
 /// ciphertext, but the structure is fully populated so reads do not
 /// re-touch disk.
@@ -106,7 +106,7 @@ pub struct EncryptedFileStore {
 ///
 /// A single lock keeps put/get/delete/rekey serialized against each
 /// other so a concurrent put cannot seal under an old key while rekey
-/// is swapping in a new one (CMT-001). The disk write happens while
+/// is swapping in a new one. The disk write happens while
 /// the lock is held; the file-lock sidecar already serializes
 /// cross-process so this does not introduce a new I/O contention
 /// point.
@@ -169,7 +169,7 @@ impl EncryptedFileStore {
         // dir (canonical for first-setup operators). `Path::parent()`
         // returns `Some("")` for a bare relative filename, which neither
         // `create_dir_all` nor the cross-platform persist path can
-        // consume — normalize the empty-string parent to "." (CMT-002).
+        // consume — normalize the empty-string parent to ".".
         let parent = normalized_parent(&path);
         create_parent_dir(parent)?;
 
@@ -225,7 +225,7 @@ impl EncryptedFileStore {
     /// Re-encrypt the whole store under `new_passphrase`: fresh salt +
     /// fresh per-entry nonces for every wallet's entries, then
     /// atomically replace the vault file. No `.bak` retains old key
-    /// material (SEC-REQ-2.2.12). The swap is whole-store: every
+    /// material. The swap is whole-store: every
     /// wallet's entries are re-keyed in one shot, so the store cannot
     /// end up half-rotated. The in-memory vault, derived key, and
     /// passphrase advance together under the resident-state mutex.
@@ -244,8 +244,8 @@ impl EncryptedFileStore {
     /// The public [`SecretStore`](crate::secrets::SecretStore) file
     /// arm delegates here so the structural error distinction
     /// survives. Symmetric with [`get_bytes`]: the secret stays
-    /// wrapped in [`SecretBytes`] across this seam (CMT-009); the lone
-    /// bare-buffer exposure lives one layer down at the AEAD seal call.
+    /// wrapped in [`SecretBytes`] across this seam; the lone bare-buffer
+    /// exposure lives one layer down at the AEAD seal call.
     ///
     /// [`get_bytes`]: Self::get_bytes
     pub(crate) fn put_bytes(
@@ -260,8 +260,8 @@ impl EncryptedFileStore {
     /// Retrieve the plaintext under `(wallet_id, label)`, or `None` if
     /// absent, returning the typed [`SecretStoreError`]. The plaintext
     /// stays inside a zeroizing [`SecretBytes`] all the way to this
-    /// boundary (CMT-008); the single `.expose_secret().to_vec()`
-    /// conversion lives at the upstream `CredentialApi::get_secret`
+    /// boundary; the single `.expose_secret().to_vec()` conversion lives
+    /// at the upstream `CredentialApi::get_secret`
     /// SPI seam, the only point where the SPI contract demands a bare
     /// `Vec<u8>`.
     pub(crate) fn get_bytes(
@@ -427,8 +427,7 @@ impl EncryptedFileStoreInner {
 
     /// Swap-in for [`EncryptedFileStore::rekey`]: re-seals every
     /// resident entry under `new_key` and atomically replaces the
-    /// vault file, restoring the old triple on a disk-write failure
-    /// (CMT-001).
+    /// vault file, restoring the old triple on a disk-write failure.
     fn rekey(
         &mut self,
         mut new_vault: Vault,
@@ -514,8 +513,8 @@ fn lock_path_for(path: &Path) -> PathBuf {
 
 /// Build a fresh vault skeleton: random salt, default Argon2
 /// params, and a passphrase-verification token sealed under the
-/// freshly derived key (SEC-REQ-2.2.x; the token is the mixed-key-
-/// corruption guard). Returns the (entry-less) vault and the
+/// freshly derived key (the token is the mixed-key-corruption guard).
+/// Returns the (entry-less) vault and the
 /// derived key so the caller can seal entries against it without
 /// re-deriving.
 fn build_fresh_vault(passphrase: &SecretString) -> Result<(Vault, SecretBytes), SecretStoreError> {
@@ -541,7 +540,7 @@ fn build_fresh_vault(passphrase: &SecretString) -> Result<(Vault, SecretBytes), 
 /// Derive the key from `passphrase` and verify it against the vault's
 /// token *before* any entry is touched. A wrong passphrase fails the
 /// token's AEAD tag (constant-time) and yields `WrongPassphrase` with
-/// no plaintext (SEC-REQ-2.2.x).
+/// no plaintext.
 fn derive_and_verify(
     vault: &Vault,
     passphrase: &SecretString,
@@ -556,12 +555,11 @@ fn derive_and_verify(
 }
 
 /// Read + parse the vault at `path`, or `None` if it does not exist.
-/// Refuses a pre-existing file with looser-than-0600 perms
-/// (SEC-REQ-2.2.10) and a file exceeding [`MAX_VAULT_SIZE_BYTES`]
-/// (CMT-003).
+/// Refuses a pre-existing file with looser-than-0600 perms and a file
+/// exceeding [`MAX_VAULT_SIZE_BYTES`].
 ///
-/// Eliminates the metadata→read TOCTOU (CMT-004): opens the file
-/// once with `O_NOFOLLOW` on Unix, then derives perms / size from
+/// Eliminates the metadata→read TOCTOU: opens the file once with
+/// `O_NOFOLLOW` on Unix, then derives perms / size from
 /// the open handle's `metadata()` and reads from the same fd.
 fn read_vault_at(path: &Path) -> Result<Option<Vault>, SecretStoreError> {
     let file = match open_no_follow(path) {
@@ -594,8 +592,7 @@ fn read_vault_at(path: &Path) -> Result<Option<Vault>, SecretStoreError> {
     Ok(Some(format::deserialize(&bytes)?))
 }
 
-/// Atomically replace the vault at `path`, cross-platform
-/// (SEC-REQ-2.2.10/.11).
+/// Atomically replace the vault at `path`, cross-platform.
 ///
 /// Stages into a `NamedTempFile` in the SAME directory (so `persist`
 /// cannot fail cross-volume), tightens perms to 0600 on Unix before
@@ -615,7 +612,7 @@ fn do_write_vault_at(path: &Path, vault: &Vault) -> Result<(), SecretStoreError>
     let serialized = format::serialize(vault);
     // Normalize an empty / bare-filename parent to "." so neither
     // `NamedTempFile::new_in` nor the Unix parent-dir fsync sees an
-    // empty path (CMT-002).
+    // empty path.
     let parent = normalized_parent(path);
     create_parent_dir(parent)?;
     let mut tmp =
@@ -643,16 +640,15 @@ fn do_write_vault_at(path: &Path, vault: &Vault) -> Result<(), SecretStoreError>
 /// the Unix parent-dir fsync. `Path::parent()` returns `Some("")` for a
 /// bare relative filename like `"vault.pwsvault"`, and the empty path
 /// errors out at every one of those calls — normalize to "." so a
-/// caller that supplies a bare filename in their cwd just works
-/// (CMT-002).
+/// caller that supplies a bare filename in their cwd just works.
 fn normalized_parent(path: &Path) -> &Path {
     path.parent()
         .filter(|p| !p.as_os_str().is_empty())
         .unwrap_or_else(|| Path::new("."))
 }
 
-/// Create the parent directory for a vault file, applying CMT-004's
-/// `0700` mode on Unix so the directory created at first-setup is not
+/// Create the parent directory for a vault file, applying a `0700` mode
+/// on Unix so the directory created at first-setup is not
 /// world-readable. Idempotent: a pre-existing directory is left alone.
 fn create_parent_dir(parent: &Path) -> Result<(), SecretStoreError> {
     #[cfg(unix)]
@@ -663,10 +659,10 @@ fn create_parent_dir(parent: &Path) -> Result<(), SecretStoreError> {
             .recursive(true)
             .create(parent)?;
     }
-    // INTENTIONAL(CMT-004): Windows ACL hardening on the parent dir is
-    // deferred to https://github.com/dashpay/platform/issues/3754. The
-    // recursive create still runs so the path materializes; operators
-    // on Windows MUST tighten ACLs manually until the follow-up lands.
+    // INTENTIONAL: Windows ACL hardening on the parent dir is deferred
+    // to https://github.com/dashpay/platform/issues/3754. The recursive
+    // create still runs so the path materializes; operators on Windows
+    // MUST tighten ACLs manually until the follow-up lands.
     #[cfg(not(unix))]
     {
         fs::create_dir_all(parent)?;
@@ -718,8 +714,8 @@ mod vault_lock {
 
     impl VaultLock {
         pub(super) fn acquire(lock_path: &Path) -> Result<Self, SecretStoreError> {
-            // INTENTIONAL(CMT-004): on non-unix platforms the
-            // symlink-following hardening is deferred to
+            // INTENTIONAL: on non-unix platforms the symlink-following
+            // hardening is deferred to
             // https://github.com/dashpay/platform/issues/3754 — Windows
             // requires `FILE_FLAG_OPEN_REPARSE_POINT` via the raw API
             // and is out of scope for the secrets-feature landing.
@@ -784,19 +780,46 @@ mod vault_lock {
 
 use vault_lock::VaultLock;
 
+/// Why a wallet-id hex string failed the canonical-form check.
+///
+/// `WalletId::to_hex` only ever emits 64 lowercase hex chars, so every
+/// seam that parses a wallet id back enforces exactly that shape in one
+/// place via [`wallet_id_hex_to_bytes`]; this enum lets each caller map
+/// the reason onto its own error type with the right message.
+enum WalletIdHexError {
+    /// Not exactly 64 characters.
+    WrongLength,
+    /// Contains uppercase hex digits — off-canonical.
+    Uppercase,
+    /// Not valid hexadecimal.
+    NotHex,
+}
+
+/// Decode a 64-lowercase-hex-char wallet id into its 32 bytes, enforcing
+/// the canonical form `WalletId::to_hex` writes (64 chars, lowercase).
+/// The single seam both the on-disk outer-key check and the SPI
+/// service-string parse go through so the contract lives in one place.
+fn wallet_id_hex_to_bytes(s: &str) -> Result<[u8; 32], WalletIdHexError> {
+    if s.len() != 64 {
+        return Err(WalletIdHexError::WrongLength);
+    }
+    if s.bytes().any(|b| b.is_ascii_uppercase()) {
+        return Err(WalletIdHexError::Uppercase);
+    }
+    let mut out = [0u8; 32];
+    hex::decode_to_slice(s, &mut out).map_err(|_| WalletIdHexError::NotHex)?;
+    Ok(out)
+}
+
 /// Decode a wallet-id hex string (the on-disk outer key) into the
 /// 32-byte form the AAD construction expects. A malformed key here is
 /// an on-disk integrity failure — the format-layer parse already
 /// constrains entries to JSON object semantics, but the outer key is
 /// a free-form string at the type level, so the bytes-back check is a
-/// defence-in-depth structural guard.
+/// defence-in-depth structural guard. Off-canonical (uppercase / wrong
+/// length / non-hex) keys are all rejected as corruption.
 pub(super) fn decode_wallet_id_hex(s: &str) -> Result<[u8; 32], SecretStoreError> {
-    if s.len() != 64 {
-        return Err(SecretStoreError::MalformedVault);
-    }
-    let mut out = [0u8; 32];
-    hex::decode_to_slice(s, &mut out).map_err(|_| SecretStoreError::MalformedVault)?;
-    Ok(out)
+    wallet_id_hex_to_bytes(s).map_err(|_| SecretStoreError::MalformedVault)
 }
 
 /// Parse a `service` string into a [`WalletId`]. The slash-prefixed
@@ -809,24 +832,13 @@ fn parse_service(service: &str) -> Result<WalletId, KeyringError> {
             "expected dash.platform-wallet-storage/<wallet-id-hex>".to_string(),
         ));
     };
-    if hex.len() != 64 {
-        return Err(KeyringError::Invalid(
-            "service".to_string(),
-            "wallet id hex must be 64 chars".to_string(),
-        ));
-    }
-    if hex.bytes().any(|b| b.is_ascii_uppercase()) {
-        return Err(KeyringError::Invalid(
-            "service".to_string(),
-            "wallet id hex must be lowercase".to_string(),
-        ));
-    }
-    let mut bytes = [0u8; 32];
-    hex::decode_to_slice(hex, &mut bytes).map_err(|_| {
-        KeyringError::Invalid(
-            "service".to_string(),
-            "wallet id hex is not valid hex".to_string(),
-        )
+    let bytes = wallet_id_hex_to_bytes(hex).map_err(|reason| {
+        let msg = match reason {
+            WalletIdHexError::WrongLength => "wallet id hex must be 64 chars",
+            WalletIdHexError::Uppercase => "wallet id hex must be lowercase",
+            WalletIdHexError::NotHex => "wallet id hex is not valid hex",
+        };
+        KeyringError::Invalid("service".to_string(), msg.to_string())
     })?;
     Ok(WalletId::from(bytes))
 }
@@ -953,8 +965,8 @@ impl std::fmt::Debug for EncryptedFileStore {
 }
 
 /// Project an entry-level `crypto::open` result into the typed
-/// distinction the secret backend exposes (CMT-020). The verify-token
-/// has already passed at every caller (open / get / rekey), so a
+/// distinction the secret backend exposes. The verify-token has already
+/// passed at every caller (open / get / rekey), so a
 /// `SecretStoreError::Decrypt` here is corruption or tampering of the
 /// individual entry — **not** a wrong passphrase. Logs the non-secret
 /// `(wallet_id, label)` pair at error level (never the secret) and
@@ -988,8 +1000,8 @@ fn check_perms(meta: &fs::Metadata) -> Result<(), SecretStoreError> {
     Ok(())
 }
 
-// INTENTIONAL(CMT-007): Windows ACL read-check deferred to a follow-up
-// PR — tracked at https://github.com/dashpay/platform/issues/3754. Vault
+// INTENTIONAL: Windows ACL read-check deferred to a follow-up PR —
+// tracked at https://github.com/dashpay/platform/issues/3754. Vault
 // file mode hardening on Windows requires GetSecurityInfo via
 // `windows-acl` or `winapi`; out of scope for the secrets-feature
 // landing. Operators on Windows MUST set ACLs manually until the
@@ -1006,8 +1018,8 @@ fn set_restrictive_perms(f: &fs::File) -> Result<(), SecretStoreError> {
     Ok(())
 }
 
-// INTENTIONAL(CMT-008): Windows ACL tightening deferred to the same
-// follow-up as `check_perms` above — tracked at
+// INTENTIONAL: Windows ACL tightening deferred to the same follow-up
+// as `check_perms` above — tracked at
 // https://github.com/dashpay/platform/issues/3754. Vault file mode
 // hardening on Windows requires SetSecurityInfo via `windows-acl` or
 // `winapi`; out of scope for the secrets-feature landing. Operators on
@@ -1019,8 +1031,7 @@ fn set_restrictive_perms(_f: &fs::File) -> Result<(), SecretStoreError> {
 
 /// Open a vault file for reading. On Unix the open refuses to traverse
 /// a final-component symlink (`O_NOFOLLOW`) so a symlink swap between
-/// the open and the read cannot redirect us to a different inode
-/// (CMT-004).
+/// the open and the read cannot redirect us to a different inode.
 #[cfg(unix)]
 fn open_no_follow(path: &Path) -> std::io::Result<fs::File> {
     use std::os::unix::fs::OpenOptionsExt;
@@ -1478,6 +1489,23 @@ mod tests {
     }
 
     #[test]
+    fn decode_wallet_id_hex_enforces_canonical_form() {
+        // The on-disk outer-key check matches the SPI parse: only 64
+        // lowercase hex chars round-trip; uppercase, wrong length and
+        // non-hex all surface as corruption.
+        decode_wallet_id_hex(&"aa".repeat(32)).expect("lowercase hex accepted");
+        for bad in [&"A".repeat(64), &"aa".repeat(16), &"zz".repeat(32)] {
+            assert!(
+                matches!(
+                    decode_wallet_id_hex(bad),
+                    Err(SecretStoreError::MalformedVault)
+                ),
+                "expected MalformedVault for off-canonical key {bad:?}"
+            );
+        }
+    }
+
+    #[test]
     fn build_rejects_invalid_label() {
         let dir = tempfile::tempdir().unwrap();
         let s = store_at(&vault_path(dir.path()));
@@ -1585,17 +1613,14 @@ mod tests {
         );
     }
 
-    /// CMT-001 regression. Two threads share a cloned
-    /// [`EncryptedFileStore`] handle (same shape
-    /// [`EncryptedFileCredential`] uses internally): one hammers
-    /// `put_bytes` + `get_bytes`, the other calls `rekey`. Under the
-    /// pre-fix three-mutex layout a put could capture the OLD key,
-    /// then insert under the NEW vault, so the body would be
-    /// undecryptable. With the single state lock every put/get/rekey
-    /// is serialized — every `get` returns either the right
-    /// plaintext, `Ok(None)`, or a clean typed error, NEVER garbled
-    /// bytes from a mis-keyed seal (which would surface as
-    /// `Corruption`).
+    /// Two threads share a cloned [`EncryptedFileStore`] handle (same
+    /// shape [`EncryptedFileCredential`] uses internally): one hammers
+    /// `put_bytes` + `get_bytes`, the other calls `rekey`. The single
+    /// state lock serializes every put/get/rekey, so a put can never
+    /// capture an old key and insert under a newly-swapped vault — every
+    /// `get` returns either the right plaintext, `Ok(None)`, or a clean
+    /// typed error, NEVER garbled bytes from a mis-keyed seal (which
+    /// would surface as `Corruption`).
     #[test]
     fn rekey_does_not_race_put_into_corruption() {
         let dir = tempfile::tempdir().unwrap();
@@ -1659,14 +1684,14 @@ mod tests {
         rekeyer.join().expect("rekeyer thread");
     }
 
-    /// CMT-002 regression. A bare relative filename (`Path::parent()`
-    /// returns `Some("")`) used to break both `NamedTempFile::new_in("")`
-    /// and the Unix parent-dir fsync. The `normalized_parent` helper
-    /// rewrites the empty parent to ".". Switch cwd to a temp dir for
-    /// the test scope so we exercise the bare-filename path without
-    /// scribbling in the workspace.
+    /// A bare relative filename makes `Path::parent()` return `Some("")`,
+    /// which `NamedTempFile::new_in("")` and the Unix parent-dir fsync
+    /// both reject; the `normalized_parent` helper rewrites the empty
+    /// parent to ".". Switch cwd to a temp dir for the test scope so we
+    /// exercise the bare-filename path without scribbling in the
+    /// workspace.
     #[test]
-    fn open_and_put_with_bare_filename_uses_cwd(/* CMT-002 */) {
+    fn open_and_put_with_bare_filename_uses_cwd() {
         // A static mutex serializes cwd-changing tests so they cannot
         // race each other across the suite.
         static CWD_GUARD: std::sync::Mutex<()> = std::sync::Mutex::new(());
@@ -1695,13 +1720,12 @@ mod tests {
         assert!(dir.path().join("vault.pwsvault").exists());
     }
 
-    /// CMT-004 regression. The lock sidecar must refuse to traverse a
-    /// pre-existing symlink at the lock path on Unix. Without
-    /// `O_NOFOLLOW` an attacker could redirect the lock file's open to
-    /// an unrelated inode.
+    /// The lock sidecar must refuse to traverse a pre-existing symlink
+    /// at the lock path on Unix. Without `O_NOFOLLOW` an attacker could
+    /// redirect the lock file's open to an unrelated inode.
     #[cfg(unix)]
     #[test]
-    fn vault_lock_rejects_symlink_at_lock_path(/* CMT-004 */) {
+    fn vault_lock_rejects_symlink_at_lock_path() {
         use std::os::unix::fs::symlink;
 
         let dir = tempfile::tempdir().unwrap();

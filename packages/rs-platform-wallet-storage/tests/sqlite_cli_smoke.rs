@@ -1,6 +1,6 @@
 #![allow(clippy::field_reassign_with_default)]
 
-//! TC-056..TC-075 — CLI smoke tests.
+//! CLI smoke tests for the maintenance binary.
 
 use std::process::Command;
 
@@ -10,7 +10,7 @@ fn cli() -> Command {
     Command::cargo_bin("platform-wallet-storage").expect("bin built")
 }
 
-/// TC-056: migrate on a fresh DB prints `applied: <N>` then `applied: 0`.
+/// migrate on a fresh DB prints `applied: <N>` then `applied: 0`.
 #[test]
 fn tc056_migrate_idempotent() {
     let tmp = tempfile::tempdir().unwrap();
@@ -34,7 +34,7 @@ fn tc056_migrate_idempotent() {
     assert_eq!(stdout2.trim(), "applied: 0");
 }
 
-/// TC-062: restore without --yes refuses (exit 2).
+/// restore without --yes refuses (exit 2).
 #[test]
 fn tc062_restore_without_yes_refuses() {
     let tmp = tempfile::tempdir().unwrap();
@@ -64,7 +64,7 @@ fn tc062_restore_without_yes_refuses() {
     );
 }
 
-/// TC-065: prune without --keep-last or --max-age is a usage error.
+/// prune without --keep-last or --max-age is a usage error.
 #[test]
 fn tc065_prune_requires_a_rule() {
     let tmp = tempfile::tempdir().unwrap();
@@ -84,31 +84,30 @@ fn tc065_prune_requires_a_rule() {
     assert_eq!(out.status.code(), Some(2));
 }
 
-/// TC-070: invalid wallet-id format exits 2.
+/// The `inspect` subcommand is removed from the CLI; invoking it is an
+/// unknown-subcommand usage error.
 #[test]
-fn tc070_inspect_invalid_wallet_id() {
+fn inspect_subcommand_removed() {
     let tmp = tempfile::tempdir().unwrap();
     let db = tmp.path().join("w.db");
     cli()
         .args(["--db", db.to_str().unwrap(), "migrate"])
         .output()
         .expect("migrate ran");
-    for bad in ["zzzz", "00"] {
-        let out = cli()
-            .args(["--db", db.to_str().unwrap(), "inspect", "--wallet-id", bad])
-            .output()
-            .unwrap();
-        assert_eq!(
-            out.status.code(),
-            Some(2),
-            "expected exit 2 for `{bad}`; got {:?}",
-            out.status.code()
-        );
-    }
+    let out = cli()
+        .args(["--db", db.to_str().unwrap(), "inspect"])
+        .output()
+        .unwrap();
+    assert_eq!(
+        out.status.code(),
+        Some(2),
+        "expected clap usage exit code 2 for removed subcommand; got {:?}",
+        out.status.code()
+    );
 }
 
-/// TC-072: the `delete-wallet` subcommand is removed from the CLI
-/// (CMT-007). Invoking it is an unknown-subcommand usage error.
+/// The `delete-wallet` subcommand is not part of the CLI; invoking it is
+/// an unknown-subcommand usage error.
 #[test]
 fn tc072_delete_wallet_subcommand_removed() {
     let tmp = tempfile::tempdir().unwrap();
@@ -140,36 +139,7 @@ fn tc072_delete_wallet_subcommand_removed() {
     );
 }
 
-/// TC-068: inspect TSV format prints `table\tcount` lines.
-#[test]
-fn tc068_inspect_tsv() {
-    let tmp = tempfile::tempdir().unwrap();
-    let db = tmp.path().join("w.db");
-    cli()
-        .args(["--db", db.to_str().unwrap(), "migrate"])
-        .output()
-        .expect("migrate ran");
-    let out = cli()
-        .args(["--db", db.to_str().unwrap(), "inspect", "--format", "tsv"])
-        .output()
-        .unwrap();
-    assert!(out.status.success());
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    let lines: Vec<&str> = stdout.lines().collect();
-    assert!(
-        lines.len() >= 18,
-        "expected ≥18 lines of TSV, got {}",
-        lines.len()
-    );
-    for line in lines {
-        let cols: Vec<&str> = line.split('\t').collect();
-        assert_eq!(cols.len(), 2, "bad TSV line: `{line}`");
-        let n: i64 = cols[1].parse().expect(line);
-        assert!(n >= 0);
-    }
-}
-
-/// TC-059: backup --out <dir> writes a timestamped file.
+/// backup --out <dir> writes a timestamped file.
 #[test]
 fn tc059_backup_dir() {
     let tmp = tempfile::tempdir().unwrap();
@@ -197,7 +167,7 @@ fn tc059_backup_dir() {
     assert!(std::path::Path::new(path).exists());
 }
 
-/// TC-CODE-030-1a: the supported `--no-auto-backup` flag disables the
+/// 1a: the supported `--no-auto-backup` flag disables the
 /// pre-migration auto-backup. `migrate --no-auto-backup` succeeds on a
 /// fresh DB without writing the `backups/auto/` sentinel snapshot.
 #[test]
