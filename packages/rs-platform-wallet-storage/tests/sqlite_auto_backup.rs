@@ -144,3 +144,87 @@ fn tc055_auto_backups_subject_to_retention() {
     assert_eq!(report.kept, 2);
     assert_eq!(report.removed.len(), 3);
 }
+
+/// TC-056: prune is content-blind and orders by the EMBEDDED filename
+/// timestamp, not mtime — proven by giving the older files NEWER mtimes.
+/// With `keep_last_n = 1`, an aggressive prune over the auto dir
+/// silently EVICTS a pre-delete safety backup when it is not the
+/// newest-by-embedded-timestamp file. This is the documented
+/// retention contract: the auto dir is not a protected vault, so
+/// operators must NOT prune it down to a count smaller than the
+/// destructive ops they still want to roll back. The test pins that
+/// behavior so a future "protect safety backups" change is a conscious
+/// decision, not an accident.
+#[test]
+fn tc056_aggressive_prune_evicts_safety_backup_and_orders_by_embedded_ts() {
+    let (persister, _tmp, _path) = fresh_persister();
+    let dir = persister.config_for_test().auto_backup_dir.clone().unwrap();
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let stamp = |hours_ago: i64| {
+        chrono::Utc::now()
+            .checked_sub_signed(chrono::Duration::hours(hours_ago))
+            .unwrap()
+            .format("%Y%m%dT%H%M%SZ")
+            .to_string()
+    };
+
+    // Newest by embedded timestamp: a manual backup taken AFTER the
+    // delete. The pre-delete safety backup is older by embedded ts.
+    let manual = dir.join(format!("wallet-{}.db", stamp(0)));
+    let safety = dir.join(format!(
+        "pre-delete-{}-{}.db",
+        hex::encode([0x11u8; 32]),
+        stamp(1)
+    ));
+    let old_manual = dir.join(format!("wallet-{}.db", stamp(48)));
+    std::fs::write(&manual, b"m").unwrap();
+    std::fs::write(&safety, b"s").unwrap();
+    std::fs::write(&old_manual, b"o").unwrap();
+
+    // Invert mtime vs embedded order: give the OLDEST-by-embedded-ts
+    // file the NEWEST mtime. If prune (wrongly) sorted by mtime, it
+    // would keep `old_manual`; sorting by the embedded token keeps
+    // `manual`. This deterministically exercises the embedded-timestamp
+    // path rather than the mtime fallback.
+    let now = std::time::SystemTime::now();
+    let hour = std::time::Duration::from_secs(3600);
+    filetime::set_file_mtime(&old_manual, filetime::FileTime::from_system_time(now)).unwrap();
+    filetime::set_file_mtime(&safety, filetime::FileTime::from_system_time(now - hour)).unwrap();
+    filetime::set_file_mtime(
+        &manual,
+        filetime::FileTime::from_system_time(now - hour * 2),
+    )
+    .unwrap();
+
+    let report = persister
+        .prune_backups(
+            &dir,
+            platform_wallet_storage::RetentionPolicy {
+                keep_last_n: Some(1),
+                max_age: None,
+            },
+        )
+        .unwrap();
+
+    assert_eq!(report.kept, 1, "keep_last_n = 1 keeps exactly one file");
+    assert_eq!(report.removed.len(), 2);
+    // Embedded-ts ordering kept the newest-by-token file (`manual`),
+    // NOT the newest-by-mtime file (`old_manual`).
+    assert!(
+        manual.exists(),
+        "newest-by-embedded-timestamp file must survive keep_last_n = 1"
+    );
+    assert!(
+        !old_manual.exists(),
+        "an old file with a fresh mtime must NOT be treated as newest"
+    );
+    // The safety backup is NOT special-cased: aggressive retention
+    // evicts it. Operators must size retention above the rollback
+    // horizon they care about.
+    assert!(
+        !safety.exists(),
+        "pre-delete safety backup is evicted by keep_last_n = 1 when not newest \
+         (auto dir is not a protected vault)"
+    );
+}

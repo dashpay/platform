@@ -559,6 +559,51 @@ mod tests {
         assert_eq!(secs, 1767225600);
     }
 
+    /// `backup_timestamp` must extract the embedded `YYYYMMDDTHHMMSSZ`
+    /// token (NOT fall back to mtime) for every `BackupKind` filename
+    /// shape — including the variable segments that themselves contain
+    /// `-` (`pre-migration-<from>-to-<to>-` and the 64-hex `pre-delete-`
+    /// wallet id). `rsplit('-').next()` is hand-coupled to those shapes;
+    /// this guards against a future label whose trailing variable
+    /// segment shifts which token the parser sees.
+    #[test]
+    fn backup_timestamp_extracts_embedded_token_for_all_kinds() {
+        let want = parse_compact_timestamp("20260101T000000Z").unwrap();
+        let real_wallet_id = hex::encode([0xABu8; 32]);
+        let names = [
+            "wallet-20260101T000000Z.db".to_string(),
+            // Multiple `-` from the from/to version segments.
+            "pre-migration-1-to-2-20260101T000000Z.db".to_string(),
+            // 64 lowercase hex chars: hex::encode never emits `-`, so the
+            // timestamp stays the last `-`-delimited token.
+            format!("pre-delete-{real_wallet_id}-20260101T000000Z.db"),
+            "pre-restore-20260101T000000Z.db".to_string(),
+        ];
+        for name in names {
+            let got = backup_timestamp(Path::new(&name));
+            assert_eq!(
+                got,
+                Some(want),
+                "backup_timestamp must parse the embedded token, not fall back to mtime, for {name}"
+            );
+        }
+    }
+
+    /// A label whose trailing variable segment is NOT the timestamp must
+    /// fail to parse rather than silently misread a non-timestamp token
+    /// as a valid time. Documents the `rsplit('-')` coupling: were a
+    /// future `BackupKind` to append a `-`-bearing suffix AFTER the
+    /// timestamp, parsing would return `None` and prune would fall back
+    /// to mtime — a detectable regression, not a silent wrong-token read.
+    #[test]
+    fn backup_timestamp_rejects_trailing_non_timestamp_segment() {
+        assert_eq!(
+            backup_timestamp(Path::new("pre-delete-20260101T000000Z-label.db")),
+            None,
+            "a trailing non-timestamp segment must not parse as a timestamp"
+        );
+    }
+
     #[test]
     fn is_backup_file_recognises_prefixes() {
         assert!(is_backup_file(Path::new("/tmp/wallet-20260101T000000Z.db")));
