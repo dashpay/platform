@@ -405,6 +405,15 @@ impl NetworkShieldedCoordinator {
                     })?;
                 }
             }
+            // Rehydrate recovered outgoing (sent) notes so send history
+            // survives a cold start without re-OVK-recovering. Idempotent
+            // by `cmx`, so a later re-scan that re-recovers the same note
+            // is a no-op.
+            for out in &sub.outgoing_notes {
+                store.record_outgoing_note(*id, out).map_err(|e| {
+                    crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
+                })?;
+            }
             store
                 .set_last_synced_note_index(*id, sub.last_synced_index)
                 .map_err(|e| {

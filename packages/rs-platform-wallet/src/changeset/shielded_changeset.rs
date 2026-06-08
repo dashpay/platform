@@ -18,7 +18,7 @@
 use std::collections::BTreeMap;
 
 use crate::changeset::merge::Merge;
-use crate::wallet::shielded::{ShieldedNote, SubwalletId};
+use crate::wallet::shielded::{ShieldedNote, ShieldedOutgoingNote, SubwalletId};
 
 /// Aggregated delta of shielded state for one persister flush.
 #[derive(Debug, Clone, Default)]
@@ -33,6 +33,11 @@ pub struct ShieldedChangeSet {
     /// the subwallet that owns the corresponding note. The
     /// persister flips that note's `is_spent` row to true.
     pub nullifiers_spent: BTreeMap<SubwalletId, Vec<[u8; 32]>>,
+    /// Outgoing (sent) notes recovered via OVK during the scan, per
+    /// subwallet. Keyed by `(wallet_id, account_index)`; the persister
+    /// upserts by `(SubwalletId, cmx)` (append-only send history, no
+    /// mutation).
+    pub outgoing_notes: BTreeMap<SubwalletId, Vec<ShieldedOutgoingNote>>,
     /// Latest per-subwallet `last_synced_note_index`. Last write
     /// wins on merge (sync only ever advances this monotonically).
     pub synced_indices: BTreeMap<SubwalletId, u64>,
@@ -43,6 +48,7 @@ impl ShieldedChangeSet {
     pub fn is_empty(&self) -> bool {
         self.notes_saved.is_empty()
             && self.nullifiers_spent.is_empty()
+            && self.outgoing_notes.is_empty()
             && self.synced_indices.is_empty()
     }
 
@@ -54,6 +60,11 @@ impl ShieldedChangeSet {
     /// Accumulator helper: record a nullifier seen as spent on `id`.
     pub fn record_nullifier_spent(&mut self, id: SubwalletId, nullifier: [u8; 32]) {
         self.nullifiers_spent.entry(id).or_default().push(nullifier);
+    }
+
+    /// Accumulator helper: record an outgoing (sent) note for `id`.
+    pub fn record_outgoing_note(&mut self, id: SubwalletId, note: ShieldedOutgoingNote) {
+        self.outgoing_notes.entry(id).or_default().push(note);
     }
 
     /// Accumulator helper: advance the per-subwallet sync watermark.
@@ -79,6 +90,7 @@ impl ShieldedChangeSet {
         let ShieldedChangeSet {
             notes_saved,
             nullifiers_spent,
+            outgoing_notes,
             synced_indices,
         } = self;
         let mut out: BTreeMap<crate::wallet::platform_wallet::WalletId, ShieldedChangeSet> =
@@ -94,6 +106,12 @@ impl ShieldedChangeSet {
                 .or_default()
                 .nullifiers_spent
                 .insert(id, nfs);
+        }
+        for (id, outs) in outgoing_notes {
+            out.entry(id.wallet_id)
+                .or_default()
+                .outgoing_notes
+                .insert(id, outs);
         }
         for (id, idx) in synced_indices {
             out.entry(id.wallet_id)
@@ -119,6 +137,9 @@ impl Merge for ShieldedChangeSet {
         }
         for (id, nfs) in other.nullifiers_spent {
             self.nullifiers_spent.entry(id).or_default().extend(nfs);
+        }
+        for (id, outs) in other.outgoing_notes {
+            self.outgoing_notes.entry(id).or_default().extend(outs);
         }
         for (id, idx) in other.synced_indices {
             let entry = self.synced_indices.entry(id).or_insert(idx);

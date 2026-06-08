@@ -13,7 +13,7 @@
 //! [`ShieldedWallet`]: crate::wallet::shielded::ShieldedWallet
 //! [`SubwalletId`]: crate::wallet::shielded::SubwalletId
 
-use crate::wallet::shielded::{ShieldedNote, SubwalletId};
+use crate::wallet::shielded::{ShieldedNote, ShieldedOutgoingNote, SubwalletId};
 use std::collections::BTreeMap;
 
 /// Per-subwallet snapshot — every note (spent + unspent) the
@@ -25,6 +25,10 @@ pub struct ShieldedSubwalletStartState {
     /// in-memory store reflects what scan-based spend detection has
     /// already established.
     pub notes: Vec<ShieldedNote>,
+    /// Outgoing (sent) notes recovered via OVK on prior scans, so the
+    /// in-memory store's send history survives a cold start without
+    /// re-recovering every note. Idempotent on re-record by `cmx`.
+    pub outgoing_notes: Vec<ShieldedOutgoingNote>,
     /// Sync watermark: count of note positions scanned = the next
     /// global index to scan (exclusive). `0` = nothing scanned yet.
     pub last_synced_index: u64,

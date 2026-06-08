@@ -19,7 +19,9 @@ use std::sync::Mutex;
 
 use grovedb_commitment_tree::{ClientPersistentCommitmentTree, Position, Retention};
 
-use super::store::{ShieldedNote, ShieldedStore, SubwalletId, SubwalletState};
+use super::store::{
+    ShieldedNote, ShieldedOutgoingNote, ShieldedStore, SubwalletId, SubwalletState,
+};
 use crate::wallet::platform_wallet::WalletId;
 
 /// Error type for [`FileBackedShieldedStore`].
@@ -178,6 +180,29 @@ impl ShieldedStore for FileBackedShieldedStore {
             .get_mut(&id)
             .map(|sw| sw.clear_pending(nullifier))
             .unwrap_or(false))
+    }
+
+    fn record_outgoing_note(
+        &mut self,
+        id: SubwalletId,
+        note: &ShieldedOutgoingNote,
+    ) -> Result<bool, Self::Error> {
+        Ok(self
+            .subwallets
+            .entry(id)
+            .or_default()
+            .record_outgoing_note(note))
+    }
+
+    fn get_outgoing_notes(
+        &self,
+        id: SubwalletId,
+    ) -> Result<Vec<ShieldedOutgoingNote>, Self::Error> {
+        Ok(self
+            .subwallets
+            .get(&id)
+            .map(SubwalletState::outgoing_notes)
+            .unwrap_or_default())
     }
 
     fn append_commitment(&mut self, cmx: &[u8; 32], marked: bool) -> Result<(), Self::Error> {

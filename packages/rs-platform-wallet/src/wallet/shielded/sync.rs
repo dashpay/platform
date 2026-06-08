@@ -29,9 +29,11 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use dash_sdk::platform::shielded::{sync_shielded_notes_stream, try_decrypt_note};
+use dash_sdk::platform::shielded::{
+    sync_shielded_notes_stream, try_decrypt_note, try_recover_outgoing_note,
+};
 use futures::StreamExt;
-use grovedb_commitment_tree::{Note as OrchardNote, PaymentAddress};
+use grovedb_commitment_tree::{ExtractedNoteCommitment, Note as OrchardNote, PaymentAddress};
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
@@ -309,6 +311,17 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
     // across every batch.
     let mut decrypted_by_subwallet: BTreeMap<SubwalletId, Vec<DiscoveredNote>> = BTreeMap::new();
 
+    // Route OVK-recovered outgoing (SENT) notes to the subwallet whose
+    // OVK opened `out_ciphertext`, accumulated across every batch.
+    // A note only recovers under the OVK of the wallet that SENT it, so
+    // this captures exactly the wallet's own send history. Recorded into
+    // the store + changeset after this pass's incoming receipts persist,
+    // mirroring the spend-detection ordering. `cmx`-idempotent at the
+    // store, so collecting across re-fetched (gate-skipped) positions is
+    // harmless.
+    let mut recovered_outgoing_by_subwallet: BTreeMap<SubwalletId, Vec<RecoveredOutgoing>> =
+        BTreeMap::new();
+
     // Cumulative tree-append bookkeeping, interleaved with the fetch.
     //
     // Append every commitment to the shared tree exactly once per
@@ -465,6 +478,34 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
                 }
             }
         }
+
+        // 4. OVK recovery (outgoing/SENT notes). Attempt to open each
+        //    scanned note's `out_ciphertext` with EVERY subwallet's OVK
+        //    (driver included — unlike IVK trial-decrypt, the driver's
+        //    sent notes are NOT pre-recovered by the SDK). A note only
+        //    recovers under the OVK of the wallet that sent it, so this
+        //    is precisely each subwallet's own send history; a received
+        //    note (or another wallet's send, or a dummy output) yields
+        //    `None` and is skipped. Recovered notes are accumulated and
+        //    recorded after this pass's incoming receipts persist (the
+        //    record is `cmx`-idempotent at the store).
+        for (id, views) in subwallets.iter() {
+            for raw_note in batch.notes.iter() {
+                if let Some((note, recipient, memo)) =
+                    try_recover_outgoing_note(&views.outgoing_viewing_key, raw_note)
+                {
+                    recovered_outgoing_by_subwallet
+                        .entry(*id)
+                        .or_default()
+                        .push(RecoveredOutgoing {
+                            note,
+                            recipient,
+                            memo,
+                            block_height: batch.block_height,
+                        });
+                }
+            }
+        }
     }
 
     // Preserve the one-shot `next_start_index` warning: if the resume
@@ -570,6 +611,44 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
             changeset.record_note(*id, shielded_note);
             *per_subwallet_new_notes.entry(*id).or_default() += 1;
         }
+    }
+
+    // Record OVK-recovered outgoing (sent) notes. `record_outgoing_note`
+    // is idempotent by `cmx` (returns `false` for a note already on
+    // file), so only genuinely new recoveries are pushed onto the
+    // changeset — a re-scan that re-recovers the same sent note adds
+    // nothing. Unlike incoming receipts there is no nullifier / spend
+    // bookkeeping: a sent note is send history, not a spendable note.
+    let mut per_subwallet_new_outgoing: BTreeMap<SubwalletId, usize> = BTreeMap::new();
+    for (id, recovered) in &recovered_outgoing_by_subwallet {
+        for r in recovered {
+            let outgoing_note = super::store::ShieldedOutgoingNote {
+                cmx: ExtractedNoteCommitment::from(r.note.commitment()).to_bytes(),
+                recipient: r.recipient.to_raw_address_bytes().to_vec(),
+                value: r.note.value().inner(),
+                memo: r.memo.to_vec(),
+                block_height: r.block_height,
+            };
+            let newly = store
+                .record_outgoing_note(*id, &outgoing_note)
+                .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
+            if newly {
+                debug!(
+                    wallet_id = %hex::encode(id.wallet_id),
+                    account = id.account_index,
+                    value = outgoing_note.value,
+                    "Outgoing note RECOVERED via OVK"
+                );
+                changeset.record_outgoing_note(*id, outgoing_note);
+                *per_subwallet_new_outgoing.entry(*id).or_default() += 1;
+            }
+        }
+    }
+    if !per_subwallet_new_outgoing.is_empty() {
+        info!(
+            new_outgoing_total = per_subwallet_new_outgoing.values().sum::<usize>(),
+            "OVK-recovered outgoing notes this pass"
+        );
     }
 
     // Scan-based spend detection. Now that THIS pass's receipts are
@@ -712,6 +791,20 @@ struct DiscoveredNote {
     position: u64,
     cmx: [u8; 32],
     note: OrchardNote,
+}
+
+/// One outgoing (sent) note recovered via OVK during a sync pass.
+///
+/// Holds the recovered `(note, recipient, memo)` plus the block height
+/// the output appeared at; converted into a
+/// [`super::store::ShieldedOutgoingNote`] when recorded (the `cmx`
+/// primary key is derived from `note.commitment()` at record time).
+#[derive(Clone)]
+struct RecoveredOutgoing {
+    note: OrchardNote,
+    recipient: PaymentAddress,
+    memo: [u8; dash_sdk::platform::shielded::DASH_MEMO_SIZE],
+    block_height: u64,
 }
 
 // Suppress dead_code on `address` field — kept for future use
@@ -885,5 +978,259 @@ mod tests {
         assert!(newly_spent.get(&b).is_none());
         assert!(store.get_unspent_notes(a).unwrap().is_empty());
         assert_eq!(store.get_unspent_notes(b).unwrap().len(), 1);
+    }
+}
+
+/// OVK outgoing-note recovery: round-trip a real Orchard output
+/// encrypted with the wallet's OVK back into a `ShieldedOutgoingNote`.
+///
+/// These tests exercise the exact client-side recovery primitive the
+/// scan calls (`dash_sdk::platform::shielded::try_recover_outgoing_note`)
+/// plus the store record path (`record_outgoing_note`) that
+/// `sync_notes_across` drives — without standing up a live SDK / network
+/// stream (the same way the Part-A tests exercise the extracted
+/// `apply_scanned_nullifier_spends` helper rather than the full async
+/// `sync_notes_across`).
+#[cfg(test)]
+mod ovk_recovery_tests {
+    use dash_sdk::platform::shielded::try_recover_outgoing_note;
+    use dashcore::Network;
+    use drive_proof_verifier::types::ShieldedEncryptedNote;
+    use orchard::keys::OutgoingViewingKey;
+    use orchard::note::{ExtractedNoteCommitment, Nullifier, RandomSeed, Rho};
+    use orchard::note_encryption::OrchardDomain;
+    use orchard::value::{NoteValue, ValueCommitTrapdoor, ValueCommitment};
+    use orchard::Address;
+    use orchard::Note;
+    use rand::rngs::OsRng;
+    use rand::RngCore;
+    // `orchard` re-exports the upstream `zcash_note_encryption`, so the
+    // generic `NoteEncryption` encryptor + the `Domain` trait (for
+    // `epk_bytes`) are reachable without a separate dev-dependency.
+    use orchard::zcash_note_encryption::{Domain, NoteEncryption};
+
+    use crate::changeset::ShieldedChangeSet;
+    use crate::wallet::shielded::keys::OrchardKeySet;
+    use crate::wallet::shielded::store::{InMemoryShieldedStore, ShieldedStore, SubwalletId};
+
+    type DashMemo = orchard::memo::DashMemo;
+    /// `orchard::note_encryption::OrchardNoteEncryption<DashMemo>` —
+    /// spelled out here since the public alias defaults its memo param
+    /// to `ZcashMemo`.
+    type OrchardNoteEncryption = NoteEncryption<OrchardDomain<DashMemo>>;
+
+    const RECIPIENT_SEED: [u8; 32] = [0x42; 32];
+    const OTHER_SEED: [u8; 32] = [0x99; 32];
+
+    fn keyset(seed: &[u8; 32]) -> OrchardKeySet {
+        OrchardKeySet::from_seed(seed, Network::Testnet, 0)
+            .expect("ZIP-32 derivation from a fixed seed should succeed")
+    }
+
+    /// Build a real Orchard output encrypted to `recipient` with `ovk`
+    /// set, returning the on-chain `ShieldedEncryptedNote` wire form plus
+    /// the ground-truth `(recipient_raw, value, memo)` it encodes.
+    ///
+    /// Mirrors orchard's own `note_encryption::tests::test_vectors`
+    /// construction (epk + `encrypt_note_plaintext` + `encrypt_outgoing_
+    /// plaintext` over a `cv` that is used identically on the recovery
+    /// side via `derive_ock`).
+    fn make_outgoing_wire_note(
+        recipient: Address,
+        ovk: OutgoingViewingKey,
+        value_credits: u64,
+        memo: [u8; 36],
+    ) -> ShieldedEncryptedNote {
+        let mut rng = OsRng;
+
+        // In Orchard the output note's rho == the spent note's
+        // nullifier, i.e. the same 32-byte Pallas-base element. So draw
+        // one valid element and use it for BOTH the wire `nullifier`
+        // field and the note's `rho` (`Rho::from_bytes` and
+        // `Nullifier::from_bytes` over identical bytes are equivalent to
+        // the private `Rho::from_nf_old`).
+        let (nf, rho) = loop {
+            let mut b = [0u8; 32];
+            rng.fill_bytes(&mut b);
+            if let (Some(nf), Some(rho)) = (
+                Nullifier::from_bytes(&b).into_option(),
+                Rho::from_bytes(&b).into_option(),
+            ) {
+                break (nf, rho);
+            }
+        };
+        let rseed = loop {
+            let mut b = [0u8; 32];
+            rng.fill_bytes(&mut b);
+            if let Some(rseed) = RandomSeed::from_bytes(b, &rho).into_option() {
+                break rseed;
+            }
+        };
+        let value = NoteValue::from_raw(value_credits);
+        let note = Note::from_parts(recipient, value, rho, rseed)
+            .into_option()
+            .expect("valid note parts");
+        let cmx = ExtractedNoteCommitment::from(note.commitment());
+
+        // A valid value commitment. The SAME `cv` feeds both the
+        // outgoing-ciphertext encryption and (stored as `cv_net`) the
+        // recovery's `derive_ock`, so it only needs to be a consistent
+        // point — its correctness as a commitment to `value` is
+        // irrelevant to OVK recovery. Draw a canonical trapdoor scalar
+        // via the public `from_bytes` (the `random` ctor is crate-private).
+        let rcv = loop {
+            let mut b = [0u8; 32];
+            rng.fill_bytes(&mut b);
+            if let Some(rcv) = ValueCommitTrapdoor::from_bytes(b).into_option() {
+                break rcv;
+            }
+        };
+        let cv = ValueCommitment::derive(value - NoteValue::from_raw(0), rcv);
+
+        let ne = OrchardNoteEncryption::new(Some(ovk), note, memo);
+        let epk = OrchardDomain::<DashMemo>::epk_bytes(ne.epk());
+        let enc = ne.encrypt_note_plaintext();
+        let out = ne.encrypt_outgoing_plaintext(&cv, &cmx, &mut rng);
+
+        // Assemble the 216-byte wire `encrypted_note`:
+        //   epk(32) || enc_ciphertext(104) || out_ciphertext(80)
+        let mut encrypted_note = Vec::with_capacity(216);
+        encrypted_note.extend_from_slice(&epk.0);
+        encrypted_note.extend_from_slice(enc.as_ref());
+        encrypted_note.extend_from_slice(&out);
+        assert_eq!(encrypted_note.len(), 216, "wire note must be 216 bytes");
+
+        ShieldedEncryptedNote {
+            cmx: cmx.to_bytes().to_vec(),
+            nullifier: nf.to_bytes().to_vec(),
+            cv_net: cv.to_bytes().to_vec(),
+            encrypted_note,
+        }
+    }
+
+    /// THE core stage-3 guarantee: a note the wallet SENT (encrypted with
+    /// the wallet's own OVK) is recovered — recipient, value, memo — by
+    /// the scan's OVK-recovery primitive, and lands in the outgoing-note
+    /// store with the correct fields.
+    #[test]
+    fn sent_note_round_trips_through_ovk_recovery() {
+        let sender = keyset(&RECIPIENT_SEED);
+        let recipient_addr = sender.address_at(7);
+        let value = 123_456u64;
+        let mut memo = [0u8; 36];
+        memo[..5].copy_from_slice(b"hello");
+
+        let wire = make_outgoing_wire_note(
+            recipient_addr,
+            sender.outgoing_viewing_key.clone(),
+            value,
+            memo,
+        );
+
+        // 1) The SDK recovery primitive (exactly what the scan calls)
+        //    opens it under the sender's OVK.
+        let (note, recovered_recipient, recovered_memo) =
+            try_recover_outgoing_note(&sender.outgoing_viewing_key, &wire)
+                .expect("the wallet's own OVK must recover the note it sent");
+        assert_eq!(note.value().inner(), value, "recovered value mismatch");
+        assert_eq!(
+            recovered_recipient.to_raw_address_bytes(),
+            recipient_addr.to_raw_address_bytes(),
+            "recovered recipient mismatch"
+        );
+        assert_eq!(&recovered_memo[..], &memo[..], "recovered memo mismatch");
+
+        // 2) The store record path (exactly what `sync_notes_across`
+        //    drives) persists it as a `ShieldedOutgoingNote`.
+        let mut store = InMemoryShieldedStore::new();
+        let id = SubwalletId::new([0x01; 32], 0);
+        let mut changeset = ShieldedChangeSet::default();
+        let outgoing = super::super::store::ShieldedOutgoingNote {
+            cmx: ExtractedNoteCommitment::from(note.commitment()).to_bytes(),
+            recipient: recovered_recipient.to_raw_address_bytes().to_vec(),
+            value: note.value().inner(),
+            memo: recovered_memo.to_vec(),
+            block_height: 42,
+        };
+        assert!(
+            store.record_outgoing_note(id, &outgoing).unwrap(),
+            "first record of a sent note must be newly stored"
+        );
+        changeset.record_outgoing_note(id, outgoing);
+
+        let stored = store.get_outgoing_notes(id).unwrap();
+        assert_eq!(stored.len(), 1, "one outgoing note must be stored");
+        assert_eq!(stored[0].value, value);
+        assert_eq!(
+            stored[0].recipient.as_slice(),
+            &recipient_addr.to_raw_address_bytes()[..]
+        );
+        assert_eq!(stored[0].memo.as_slice(), &memo[..]);
+        assert_eq!(stored[0].block_height, 42);
+        // The changeset carries the same single outgoing note for the
+        // persister.
+        assert_eq!(changeset.outgoing_notes.get(&id).map(Vec::len), Some(1));
+    }
+
+    /// No false positives: a note encrypted with a DIFFERENT wallet's OVK
+    /// does NOT recover under our OVK. (A note the wallet merely received
+    /// — its `out_ciphertext` keyed to the *sender's* OVK — is exactly
+    /// this case, so it stays out of our send history.)
+    #[test]
+    fn note_sent_with_a_different_ovk_does_not_recover() {
+        let us = keyset(&RECIPIENT_SEED);
+        let them = keyset(&OTHER_SEED);
+
+        // Someone else sent a note (encrypted with THEIR ovk) to us.
+        let wire = make_outgoing_wire_note(
+            us.address_at(0),
+            them.outgoing_viewing_key.clone(),
+            10_000,
+            [0u8; 36],
+        );
+
+        assert!(
+            try_recover_outgoing_note(&us.outgoing_viewing_key, &wire).is_none(),
+            "a note sent under a different OVK must not OVK-recover under ours"
+        );
+    }
+
+    /// Idempotency: re-recording the same recovered note (a re-scan of
+    /// the same chunk) is a no-op keyed by `cmx`.
+    #[test]
+    fn re_recording_a_sent_note_is_idempotent() {
+        let sender = keyset(&RECIPIENT_SEED);
+        let wire = make_outgoing_wire_note(
+            sender.address_at(1),
+            sender.outgoing_viewing_key.clone(),
+            777,
+            [0u8; 36],
+        );
+        let (note, recipient, memo) =
+            try_recover_outgoing_note(&sender.outgoing_viewing_key, &wire).unwrap();
+
+        let mut store = InMemoryShieldedStore::new();
+        let id = SubwalletId::new([0x02; 32], 3);
+        let outgoing = super::super::store::ShieldedOutgoingNote {
+            cmx: ExtractedNoteCommitment::from(note.commitment()).to_bytes(),
+            recipient: recipient.to_raw_address_bytes().to_vec(),
+            value: note.value().inner(),
+            memo: memo.to_vec(),
+            block_height: 1,
+        };
+
+        assert!(
+            store.record_outgoing_note(id, &outgoing).unwrap(),
+            "first record is new"
+        );
+        assert!(
+            !store.record_outgoing_note(id, &outgoing).unwrap(),
+            "re-recording the same cmx must be a no-op"
+        );
+        assert_eq!(
+            store.get_outgoing_notes(id).unwrap().len(),
+            1,
+            "idempotent re-record must not duplicate the row"
+        );
     }
 }

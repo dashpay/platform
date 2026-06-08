@@ -85,6 +85,16 @@ required-features = ["shielded"]
 # fixtures and decode the `ShieldedEncryptedNote` wire type.
 drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
 rand = "0.8"
+# Test-only direct dependency on the same dashpay `orchard` fork the
+# `shielded` feature pulls in transitively (matched git tag / feature set
+# so Cargo unifies onto a single instance). The OVK-recovery round-trip
+# test needs `note_encryption::OrchardNoteEncryption` +
+# `value::{ValueCommitment, ValueCommitTrapdoor, NoteValue}` to construct
+# a real encrypted Orchard output, none of which `grovedb-commitment-tree`
+# re-exports.
+orchard = { git = "https://github.com/dashpay/orchard.git", tag = "dashified-0.14.0", features = [
+  "circuit",
+] }
 # Drives the parallel decrypt benchmark in `shielded_decrypt_bench.rs`.
 rayon = "1.10"
 # Used by `shielded_tree_append_bench.rs` to open SQLite with tuned PRAGMAs

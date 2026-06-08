@@ -59,6 +59,36 @@ pub struct ShieldedNullifierSpentFFI {
     pub nullifier: [u8; 32],
 }
 
+/// One outgoing (sent) note recovered via OVK for the host to persist.
+///
+/// Distinct from [`ShieldedNoteFFI`] (a received, spendable note):
+/// this is append-only send history with no nullifier / position /
+/// spend state. The host writes one row keyed by
+/// `(wallet_id, account_index, cmx)`; re-persisting the same `cmx`
+/// (a re-scan) is an idempotent upsert. The `recipient` is the 43-byte
+/// raw Orchard address; `memo_ptr` points at the raw Dash memo bytes
+/// (36 bytes), valid only for the callback window — the host must copy.
+#[repr(C)]
+pub struct ShieldedOutgoingNoteFFI {
+    /// 32-byte wallet identifier.
+    pub wallet_id: [u8; 32],
+    /// ZIP-32 account index.
+    pub account_index: u32,
+    /// Note commitment (cmx) of the sent note (32 bytes). Primary key.
+    pub cmx: [u8; 32],
+    /// Recipient's raw Orchard address (43 bytes).
+    pub recipient: [u8; 43],
+    /// Value sent, in credits.
+    pub value: u64,
+    /// Block height the sent note appeared at.
+    pub block_height: u64,
+    /// Pointer to the raw Dash memo bytes (36 bytes). Valid only for
+    /// the callback window — the host must copy.
+    pub memo_ptr: *const u8,
+    /// Length of `memo_ptr` in bytes (always 36 for a recovered note).
+    pub memo_len: usize,
+}
+
 /// One per-subwallet sync-watermark advance.
 #[repr(C)]
 pub struct ShieldedSyncedIndexFFI {
@@ -88,6 +118,22 @@ pub struct ShieldedNoteRestoreFFI {
     pub value: u64,
     pub note_data_ptr: *const u8,
     pub note_data_len: usize,
+}
+
+/// One persisted outgoing (sent) note as the host hands it back at
+/// boot. Mirrors [`ShieldedOutgoingNoteFFI`] but lives in a
+/// Swift-allocated array, so the buffer ownership / free contract
+/// differs (see the matching `on_load_shielded_outgoing_notes_free_fn`).
+#[repr(C)]
+pub struct ShieldedOutgoingNoteRestoreFFI {
+    pub wallet_id: [u8; 32],
+    pub account_index: u32,
+    pub cmx: [u8; 32],
+    pub recipient: [u8; 43],
+    pub value: u64,
+    pub block_height: u64,
+    pub memo_ptr: *const u8,
+    pub memo_len: usize,
 }
 
 /// One per-subwallet sync-watermark snapshot. Restored alongside
