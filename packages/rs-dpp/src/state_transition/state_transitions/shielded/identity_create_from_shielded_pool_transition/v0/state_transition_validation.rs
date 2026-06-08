@@ -1,8 +1,10 @@
 use crate::consensus::basic::identity::MissingMasterPublicKeyError;
+use crate::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
 use crate::consensus::basic::state_transition::ShieldedInvalidDenominationError;
 use crate::consensus::basic::BasicError;
 use crate::consensus::state::identity::max_identity_public_key_limit_reached_error::MaxIdentityPublicKeyLimitReachedError;
 use crate::consensus::state::state_error::StateError;
+use crate::state_transition::identity_create_from_shielded_pool_transition::derive_identity_id_from_actions;
 use crate::state_transition::identity_create_from_shielded_pool_transition::v0::IdentityCreateFromShieldedPoolTransitionV0;
 use crate::state_transition::state_transitions::shielded::common_validation::{
     validate_actions_count, validate_anchor_not_zero, validate_encrypted_note_sizes,
@@ -32,6 +34,25 @@ impl StateTransitionStructureValidation for IdentityCreateFromShieldedPoolTransi
         let result = validate_encrypted_note_sizes(&self.actions);
         if !result.is_valid() {
             return result;
+        }
+
+        // The wire `identity_id` MUST equal the value derived from the spend nullifiers. It is
+        // excluded from the platform sighash and is NOT what the Orchard bundle binds (the bundle's
+        // `extra_sighash_data` commits to the *derived* id). Without this check a relayer/proposer
+        // could overwrite the field with arbitrary bytes: consensus would still create the identity
+        // at the derived id, but every downstream consumer that trusts the wire field —
+        // `modified_data_ids` (block events / indexers) and the SDK prove/verify path (which build
+        // their merged path-query from `identity_id`) — would desync from the canonical state.
+        // Rejecting a mismatch here makes the wire id authoritative consensus-wide, exactly as
+        // `IdentityCreate` re-derives and checks the id from its asset-lock outpoint.
+        if self.identity_id != derive_identity_id_from_actions(&self.actions) {
+            return SimpleConsensusValidationResult::new_with_error(
+                BasicError::InvalidIdentifierError(InvalidIdentifierError::new(
+                    "identity_id".to_string(),
+                    "does not match the value derived from the spend nullifiers".to_string(),
+                ))
+                .into(),
+            );
         }
 
         // The denomination MUST be a member of the versioned exit-denomination set. Restricting the
@@ -150,6 +171,22 @@ mod tests {
             result.is_valid(),
             "expected valid result, got: {:?}",
             result.errors
+        );
+    }
+
+    #[test]
+    fn should_reject_mismatched_wire_identity_id() {
+        // A relayer-mutated `identity_id` (not matching the value derived from the spend nullifiers)
+        // must be rejected so the wire field stays authoritative for prove/verify/modified_data_ids.
+        let platform_version = PlatformVersion::latest();
+        let mut t = valid_transition();
+        t.identity_id = platform_value::Identifier::new([0xFF; 32]);
+        let result = t.validate_structure(platform_version);
+        assert_matches!(
+            result.errors.as_slice(),
+            [ConsensusError::BasicError(
+                BasicError::InvalidIdentifierError(_)
+            )]
         );
     }
 

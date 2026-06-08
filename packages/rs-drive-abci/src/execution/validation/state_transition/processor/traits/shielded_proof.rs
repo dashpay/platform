@@ -10,6 +10,10 @@ use dpp::consensus::basic::state_transition::{
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::state::shielded::insufficient_shielded_fee_error::InsufficientShieldedFeeError;
 use dpp::consensus::state::state_error::StateError;
+use dpp::serialization::{PlatformMessageSignable, Signable};
+use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
+use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+use dpp::state_transition::state_transitions::shielded::identity_create_from_shielded_pool_transition::IdentityCreateFromShieldedPoolTransition;
 use dpp::state_transition::StateTransition;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
@@ -371,6 +375,39 @@ impl StateTransitionShieldedProofValidationV0 for StateTransition {
             .validate_shielded_proof
         {
             0 => {
+                // `IdentityCreateFromShieldedPool` is the only shielded transition carrying separate
+                // per-key proof-of-possession signatures that are NOT covered by the Orchard proof
+                // (they sign the platform signable bytes, and only id+denomination+keys — not the PoP
+                // sigs — are bound into `extra_sighash_data`). Validate the CHEAP key structure +
+                // per-key PoP here, BEFORE the expensive Halo 2 bundle verification, so a relayer
+                // who flips a PoP byte on an observed transition is rejected without the node paying
+                // for proof verification (DoS hardening). Same `signable_bytes` the transformer uses.
+                if let StateTransition::IdentityCreateFromShieldedPool(st) = self {
+                    let IdentityCreateFromShieldedPoolTransition::V0(v0) = st;
+
+                    let key_structure_result =
+                        IdentityPublicKeyInCreation::validate_identity_public_keys_structure(
+                            &v0.public_keys,
+                            true,
+                            platform_version,
+                        )?;
+                    if !key_structure_result.is_valid() {
+                        return Ok(key_structure_result);
+                    }
+
+                    let signable_bytes = self.signable_bytes()?;
+                    for key in v0.public_keys.iter() {
+                        let pop_result = signable_bytes.as_slice().verify_signature(
+                            key.key_type(),
+                            key.data().as_slice(),
+                            key.signature().as_slice(),
+                        );
+                        if !pop_result.is_valid() {
+                            return Ok(pop_result);
+                        }
+                    }
+                }
+
                 let result = match self {
                     StateTransition::Shield(st) => match st {
                         dpp::state_transition::shield_transition::ShieldTransition::V0(v0) => {

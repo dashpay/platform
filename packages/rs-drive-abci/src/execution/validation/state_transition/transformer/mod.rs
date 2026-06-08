@@ -270,14 +270,11 @@ impl StateTransitionActionTransformer for StateTransition {
             StateTransition::ShieldedWithdrawal(st) => st
                 .transform_into_action_for_shielded_withdrawal_transition(platform, block_info, tx),
             StateTransition::IdentityCreateFromShieldedPool(st) => {
-                // Bind the per-key proofs-of-possession to the full transition by passing its
-                // signable bytes (the per-key signatures are validated in transform_into_action).
-                let signable_bytes = self.signable_bytes()?;
+                // Key structure + per-key proof-of-possession are validated earlier (in
+                // `validate_shielded_proof`, ahead of Halo 2), so the transformer only needs the
+                // stateful pool checks.
                 st.transform_into_action_for_identity_create_from_shielded_pool_transition(
-                    platform,
-                    signable_bytes,
-                    execution_context,
-                    tx,
+                    platform, tx,
                 )
             }
         }
