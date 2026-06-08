@@ -59,8 +59,8 @@ mod tests {
             vec![create_dummy_serialized_action()],
             // unshielding_amount: recipient amount + unshield fee for 1 action. The fee gate runs
             // before proof verification, so this must clear `compute_shielded_unshield_fee(1)`
-            // (136,768,600) for these tests to reach the proof-verification stage they assert on.
-            136_769_600,
+            // (136,631,600) for these tests to reach the proof-verification stage they assert on.
+            136_632_600,
             [42u8; 32],     // non-zero anchor
             vec![0u8; 100], // dummy proof bytes
             [0u8; 64],      // dummy binding signature
@@ -463,7 +463,7 @@ mod tests {
                 vec![bad_action],
                 // unshielding_amount is not load-bearing here: the bad 100-byte encrypted note
                 // fails basic structure validation, which runs before the fee gate.
-                136_769_600,
+                136_632_600,
                 anchor,
                 vec![0u8; 100],
                 [0u8; 64],
@@ -674,9 +674,9 @@ mod tests {
                 vec![action1, action2], // Both have nullifier [1u8; 32]
                 // unshielding_amount: recipient amount + unshield fee for 2 actions. The fee gate
                 // runs before proof verification, so this must clear
-                // `compute_shielded_unshield_fee(2)` (167,317,400) for this test to reach the
+                // `compute_shielded_unshield_fee(2)` (167,180,400) for this test to reach the
                 // proof-verification stage it asserts on.
-                167_318_400,
+                167_181_400,
                 anchor,
                 vec![0u8; 100],
                 [0u8; 64],

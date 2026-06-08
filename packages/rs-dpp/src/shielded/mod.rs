@@ -79,12 +79,17 @@ pub const SHIELDED_WITHDRAWAL_DOCUMENT_STORAGE_BYTES: u64 = 4100;
 /// per-bundle ZK compute, so it does NOT cover this address write. We therefore add the address
 /// cost to the Unshield fee as a flat BYTE-BASED component, sized at
 /// `SHIELDED_UNSHIELD_ADDRESS_STORAGE_BYTES` effective bytes priced at the SAME per-byte storage
-/// rate the per-action note storage uses (`disk + processing` credits/byte). The measured
-/// ≈6,239,100 cost corresponds to ≈227 effective bytes at that rate (≈228 at the live mainnet
-/// rate); 227 covers it and — because it is priced off the same rate — it tracks the storage rate
-/// as it evolves, exactly like the per-action note storage does. See
+/// rate the per-action note storage uses (`disk + processing` credits/byte).
+///
+/// The constant is the **storage** portion of the address write: the metered `AddBalanceToAddress`
+/// op costs ≈6,239,100 credits total, of which the *storage* part is ≈6,075,000 ≈ **222 effective
+/// bytes** at the storage rate. We size the component to that storage figure — because it is a
+/// `bytes × per_byte_rate` term it is booked as storage, so it should match the address write's
+/// storage cost, not its total. The small remaining op-processing (~164K) is already covered by the
+/// per-action processing fee. Pricing it off the same rate means it tracks the storage rate as it
+/// evolves, exactly like the per-action note storage does. See
 /// [`compute_minimum_shielded_fee::compute_shielded_unshield_fee`].
-pub const SHIELDED_UNSHIELD_ADDRESS_STORAGE_BYTES: u64 = 227;
+pub const SHIELDED_UNSHIELD_ADDRESS_STORAGE_BYTES: u64 = 222;
 
 /// Domain separator for Platform sighash computation.
 const SIGHASH_DOMAIN: &[u8] = b"DashPlatformSighash";

@@ -39,7 +39,7 @@ The fee is derived differently depending on the shielded transition type:
 |---|---|---|
 | **Shield** | `fee = metered(storage + processing) + shielded_verification_fee`, paid from transparent address inputs | Charged on the transparent side (not from `value_balance`), on top of the shielded amount. The storage and processing of the note/nullifier writes are **metered** by GroveDB; only the ZK compute fee (`proof + num_actions × per_action_processing`) is added on top. Skipped by the `value_balance`-based shielded fee validation; enforced through the address-input fee path. See [Entry-Transition Fees](#entry-transition-fees-shield-and-shieldfromassetlock). |
 | **ShieldedTransfer** | `fee = value_balance` (pinned to the minimum) | The entire `value_balance` is the fee and must equal `compute_minimum_shielded_fee(num_actions)` exactly (overpayment is rejected). Nothing leaves the pool except the fee. |
-| **Unshield** | `fee = compute_minimum_shielded_fee(num_actions) + unshield_address_storage_fee` | `value_balance` (the transition's `unshielding_amount`) is the **gross** amount leaving the pool. The output address receives `unshielding_amount − fee`; validation requires `unshielding_amount ≥ fee`. Unshield also writes the net to the output platform address (`AddBalanceToAddress`), a real ~227-byte storage write priced on top of the base shielded minimum (`unshield_address_storage_fee = 227 × per_byte_rate`, ≈6.24M credits, flat regardless of action count) so the address write is covered and the proof fee isn't diverted to pay for it. See [Per-Action Storage Fee](#3-per-action-storage-fee). |
+| **Unshield** | `fee = compute_minimum_shielded_fee(num_actions) + unshield_address_storage_fee` | `value_balance` (the transition's `unshielding_amount`) is the **gross** amount leaving the pool. The output address receives `unshielding_amount − fee`; validation requires `unshielding_amount ≥ fee`. Unshield also writes the net to the output platform address (`AddBalanceToAddress`), a real storage write priced on top of the base shielded minimum (`unshield_address_storage_fee = 222 × per_byte_rate`, ≈6.08M credits, flat regardless of action count — 222 bytes is the *storage* portion of the ≈6.24M metered address write) so the address write is covered and the proof fee isn't diverted to pay for it. See [Per-Action Storage Fee](#3-per-action-storage-fee). |
 | **ShieldedWithdrawal** | `fee = compute_minimum_shielded_fee(num_actions) + withdrawal_document_storage_fee` | `value_balance` (`unshielding_amount`) is the **gross** amount leaving the pool. The Core withdrawal document receives `unshielding_amount − fee` (which must also clear `MIN_WITHDRAWAL_AMOUNT`). Unlike the other pool-paid transitions, ShieldedWithdrawal also **writes a Core withdrawal document** — a real document insert into the withdrawals contract plus its index entries (`AddWithdrawalDocument`), with a real metered cost of ≈110M credits that is **flat regardless of action count**. That cost is priced on top of the base shielded minimum as a flat ~4,100-byte storage component (`withdrawal_document_storage_fee = 4100 × per_byte_rate`), so the document write is covered and the proof-verification fee isn't diverted from the proposer to pay for it. See [Per-Action Storage Fee](#3-per-action-storage-fee). |
 | **ShieldFromAssetLock** | `pool_fee = compute_minimum_shielded_fee(num_actions) + asset_lock_base_cost`, paid from the asset lock | The flat shielded minimum plus the asset-lock processing base cost is routed to the fee pools. Any remaining asset-lock value (the *surplus*) goes to an optional signed `surplus_output` platform address, or — if none is set — folds into the fee pools up to `shielded_implicit_fee_cap`. See [Entry-Transition Fees](#entry-transition-fees-shield-and-shieldfromassetlock). |
 
@@ -219,9 +219,9 @@ The totals above are the **base** `compute_minimum_shielded_fee` and apply direc
 flat storage component on top of this base:
 
 - **`Unshield` adds the output-address write cost**: a flat
-  `unshield_address_storage_fee = 227 × per_byte_rate = 227 × 27,400 = 6,219,800` credits,
+  `unshield_address_storage_fee = 222 × per_byte_rate = 222 × 27,400 = 6,082,800` credits,
   independent of action count. So the 2-action Unshield fee is
-  `161,097,600 + 6,219,800 = 167,317,400` credits (and likewise `+6,219,800` at every action
+  `161,097,600 + 6,082,800 = 167,180,400` credits (and likewise `+6,082,800` at every action
   count). See the [Fee Extraction](#fee-extraction-by-transition-type) Unshield row for why this
   component exists.
 - **`ShieldedWithdrawal` adds the Core withdrawal-document storage cost**: a flat
@@ -312,7 +312,7 @@ leaving the pool. Of that, `unshielding_amount − fee_amount` is credited to th
 platform address (`Unshield`) or written into the Core withdrawal document
 (`ShieldedWithdrawal`), and `fee_amount` is booked as the transition fee. For `Unshield`
 that fee is `compute_shielded_unshield_fee` — the base fee **plus** the flat
-`AddBalanceToAddress` output-write storage cost (`+6,219,800` credits), since `Unshield`
+`AddBalanceToAddress` output-write storage cost (`+6,082,800` credits), since `Unshield`
 also writes the net to a transparent platform address. For `ShieldedWithdrawal` it is
 `compute_shielded_withdrawal_fee` — the same base fee **plus** the flat Core
 withdrawal-document storage cost (`+112,340,000` credits), since ShieldedWithdrawal also
