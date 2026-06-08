@@ -14,6 +14,8 @@ pub mod put_document;
 pub mod put_identity;
 pub mod put_settings;
 #[cfg(feature = "shielded")]
+pub mod identity_create_from_shielded_pool;
+#[cfg(feature = "shielded")]
 pub mod shield;
 #[cfg(feature = "shielded")]
 pub mod shield_from_asset_lock;
