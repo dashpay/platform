@@ -140,8 +140,14 @@ pub fn apply(
 /// Resolve the owning account index for a UTXO by its rendered address,
 /// joining against the `core_derived_addresses` map written earlier in
 /// the same transaction.
-const ACCOUNT_INDEX_BY_ADDRESS_SQL: &str =
-    "SELECT account_index FROM core_derived_addresses WHERE wallet_id = ?1 AND address = ?2";
+///
+/// An address can be derived under multiple `account_type`s (the PK is
+/// `(wallet_id, account_type, address)`), so order deterministically and
+/// take the first — without `ORDER BY` SQLite would pick an arbitrary
+/// matching row, making the bucketed account_index unstable across runs.
+const ACCOUNT_INDEX_BY_ADDRESS_SQL: &str = "SELECT account_index FROM core_derived_addresses \
+     WHERE wallet_id = ?1 AND address = ?2 \
+     ORDER BY account_type, account_index LIMIT 1";
 
 const UPSERT_UTXO_SQL: &str = "INSERT INTO core_utxos \
         (wallet_id, outpoint, value, script, height, account_index, spent, spent_in_txid) \
@@ -305,11 +311,7 @@ pub fn load_state(
             let value = crate::sqlite::util::safe_cast::i64_to_u64("core_utxos.value", value)?;
             let height_u32 = match height {
                 None => 0u32,
-                Some(h) => u32::try_from(h).map_err(|_| WalletStorageError::IntegerOverflow {
-                    field: "core_utxos.height",
-                    value: h as u64,
-                    target: crate::sqlite::util::safe_cast::SafeCastTarget::U64,
-                })?,
+                Some(h) => crate::sqlite::util::safe_cast::i64_to_u32("core_utxos.height", h)?,
             };
             let script = dashcore::ScriptBuf::from_bytes(script_bytes);
             let address = dashcore::Address::from_script(&script, network)
@@ -380,8 +382,11 @@ pub fn load_state(
         )
         .optional()?
     {
-        cs.last_processed_height = lp.and_then(|v| u32::try_from(v).ok());
-        cs.synced_height = sy.and_then(|v| u32::try_from(v).ok());
+        // Fail-hard on an out-of-range watermark rather than silently
+        // discarding it — honors the load() corruption-is-never-skipped
+        // invariant (the upsert path uses the same helper).
+        cs.last_processed_height = sync_height_u32("core_sync_state.last_processed_height", lp)?;
+        cs.synced_height = sync_height_u32("core_sync_state.synced_height", sy)?;
     }
 
     Ok(cs)
@@ -393,16 +398,9 @@ fn sync_height_u32(
     field: &'static str,
     value: Option<i64>,
 ) -> Result<Option<u32>, WalletStorageError> {
-    match value {
-        None => Ok(None),
-        Some(v) => Ok(Some(u32::try_from(v).map_err(|_| {
-            WalletStorageError::IntegerOverflow {
-                field,
-                value: v as u64,
-                target: crate::sqlite::util::safe_cast::SafeCastTarget::U64,
-            }
-        })?)),
-    }
+    value
+        .map(|v| crate::sqlite::util::safe_cast::i64_to_u32(field, v))
+        .transpose()
 }
 
 /// Fetch a single transaction record by txid. Returns `Ok(None)` if
@@ -463,20 +461,13 @@ pub fn list_unspent_utxos(
         let value = crate::sqlite::util::safe_cast::i64_to_u64("core_utxos.value", value)?;
         let height = match height {
             None => None,
-            Some(h) => Some(
-                u32::try_from(h).map_err(|_| WalletStorageError::IntegerOverflow {
-                    field: "core_utxos.height",
-                    value: h as u64,
-                    target: crate::sqlite::util::safe_cast::SafeCastTarget::U64,
-                })?,
-            ),
+            Some(h) => Some(crate::sqlite::util::safe_cast::i64_to_u32(
+                "core_utxos.height",
+                h,
+            )?),
         };
         let account_index =
-            u32::try_from(account_index).map_err(|_| WalletStorageError::IntegerOverflow {
-                field: "core_utxos.account_index",
-                value: account_index as u64,
-                target: crate::sqlite::util::safe_cast::SafeCastTarget::U64,
-            })?;
+            crate::sqlite::util::safe_cast::i64_to_u32("core_utxos.account_index", account_index)?;
         let row = UnspentRow {
             outpoint,
             value,

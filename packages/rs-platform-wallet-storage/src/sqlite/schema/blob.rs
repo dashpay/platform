@@ -54,8 +54,10 @@ pub(crate) use impl_persistable_blob;
 /// of magnitude above any legitimate per-row payload we ship — a
 /// hostile or corrupted backup with an inflated length prefix is
 /// rejected before the allocator wakes up. Applied symmetrically to
-/// encode + decode so we can't write a payload we'd then refuse.
-pub const BLOB_SIZE_LIMIT_BYTES: usize = 16 * 1024 * 1024;
+/// encode + decode so we can't write a payload we'd then refuse. Shares
+/// the crate-root [`SIZE_LIMIT_BYTES`](crate::SIZE_LIMIT_BYTES) ceiling
+/// with the KV value cap.
+pub const BLOB_SIZE_LIMIT_BYTES: usize = crate::SIZE_LIMIT_BYTES;
 
 fn bounded_config() -> bincode::config::Configuration<
     bincode::config::LittleEndian,

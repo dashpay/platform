@@ -40,11 +40,19 @@ impl JournalMode {
 }
 
 /// SQLite synchronous mode.
+///
+/// `Normal` (the default, paired with WAL) is **app-crash durable**: a
+/// committed write survives a process crash but NOT a power loss / OS
+/// crash mid-checkpoint, where the last transactions in the WAL can be
+/// lost. Choose `Full` for power-loss durability at the cost of an fsync
+/// per commit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Synchronous {
     Off,
+    /// WAL default: durable across application crash, not power loss.
     #[default]
     Normal,
+    /// fsync on every commit: durable across power loss / OS crash.
     Full,
     Extra,
 }

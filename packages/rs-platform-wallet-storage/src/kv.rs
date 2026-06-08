@@ -69,25 +69,21 @@ pub enum ObjectId {
     },
 }
 
-/// Maximum allowed key length. Enforced in Rust as a **byte**-length
-/// bound (`validate_key` rejects with `KeyTooLong`/`KeyEmpty` on
-/// `key.len()`) and in SQL as a **code-point** bound
-/// (`CHECK (length(key) BETWEEN 1 AND 128)`, where SQLite's `length()`
-/// counts UTF-8 code points). For ASCII keys the two coincide; for
-/// non-ASCII keys the Rust byte bound is the stricter of the two, so no
-/// over-length key reaches SQL.
+/// Maximum allowed key length, in **code points** (Unicode scalar
+/// values). Enforced identically on both sides: `validate_key` rejects on
+/// `key.chars().count()`, and the SQL CHECK on every `meta_*` table is
+/// `CHECK (length(key) BETWEEN 1 AND 128)`, where SQLite's `length()`
+/// counts code points. The two bounds use the SAME unit, so the set of
+/// keys the API accepts is exactly the set SQL accepts — no key the API
+/// writes can be hidden from it, and no validate_key-passing key can
+/// trip the CHECK.
 pub const MAX_KEY_LEN: usize = 128;
 
 /// Hard cap on the size of a single KV value, in bytes, so a tampered or
 /// corrupted backup row cannot force a multi-gigabyte allocation on the
-/// next `get`.
-///
-/// Kept in sync MANUALLY with the `BLOB_SIZE_LIMIT_BYTES` ceiling on
-/// bincode-serde blobs in `sqlite::schema::blob`: the `sqlite` and `kv`
-/// features compile independently, so a `const`-level cross-reference
-/// between the two modules can't be relied on. Change both together if
-/// the ceiling moves.
-pub const MAX_VALUE_LEN: usize = 16 * 1024 * 1024;
+/// next `get`. Shares the crate-root [`SIZE_LIMIT_BYTES`](crate::SIZE_LIMIT_BYTES)
+/// ceiling with the bincode-serde BLOB decode cap.
+pub const MAX_VALUE_LEN: usize = crate::SIZE_LIMIT_BYTES;
 
 /// Errors returned by [`KvStore`] operations.
 ///
@@ -99,8 +95,9 @@ pub enum KvError {
     #[error("kv key is empty")]
     KeyEmpty,
 
-    /// Key exceeded [`MAX_KEY_LEN`].
-    #[error("kv key too long: {len} bytes (max {})", MAX_KEY_LEN)]
+    /// Key exceeded [`MAX_KEY_LEN`]. `len` is the key's code-point count
+    /// (the same unit the SQL `length()` CHECK uses).
+    #[error("kv key too long: {len} code points (max {})", MAX_KEY_LEN)]
     KeyTooLong { len: usize },
 
     /// A value exceeded [`MAX_VALUE_LEN`]. Raised by `put` before the
@@ -173,12 +170,17 @@ pub trait KvStore {
 
 /// Validate a key against the length bounds. Used by [`KvStore`]
 /// implementations as a typed-error pre-check before reaching SQL.
+///
+/// Counts code points (`chars().count()`) to match the SQL
+/// `CHECK (length(key) BETWEEN 1 AND 128)` unit exactly, so the Rust
+/// pre-check and the column constraint accept the identical key set.
 pub(crate) fn validate_key(key: &str) -> Result<(), KvError> {
     if key.is_empty() {
         return Err(KvError::KeyEmpty);
     }
-    if key.len() > MAX_KEY_LEN {
-        return Err(KvError::KeyTooLong { len: key.len() });
+    let code_points = key.chars().count();
+    if code_points > MAX_KEY_LEN {
+        return Err(KvError::KeyTooLong { len: code_points });
     }
     Ok(())
 }

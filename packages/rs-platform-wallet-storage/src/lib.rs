@@ -27,6 +27,14 @@
 #![deny(rust_2018_idioms)]
 #![deny(unsafe_code)]
 
+/// Shared 16 MiB ceiling for the two independent size caps in this crate:
+/// the KV value cap ([`kv::MAX_VALUE_LEN`]) and the bincode-serde BLOB
+/// decode cap (`sqlite::schema::blob::BLOB_SIZE_LIMIT_BYTES`). Defined at
+/// the crate root — always compiled — so the `kv` and `sqlite` features
+/// (which compile independently) share one source of truth instead of a
+/// hand-maintained "keep these in sync" comment.
+pub const SIZE_LIMIT_BYTES: usize = 16 * 1024 * 1024;
+
 #[cfg(feature = "kv")]
 pub mod kv;
 #[cfg(feature = "sqlite")]
