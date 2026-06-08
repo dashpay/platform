@@ -118,6 +118,14 @@ unwrapped copy is allocated.
   One file, one passphrase, one lock — a multi-wallet
   store cannot lock its other wallets out by construction. Errors
   surface as the typed `SecretStoreError` through `SecretStore`.
+  On Unix the vault's parent directory must be owned by the operator at
+  `0700` or tighter: directory write access governs rename/replace of the
+  vault, so a group/other-accessible parent is refused at `open` with
+  `SecretStoreError::InsecureParentDir` (the A1 guarantee depends on it).
+  Each secret is capped at `MAX_SECRET_LEN` (64 KiB) at the write
+  boundary — generously above any mnemonic/seed/xpriv — so a single
+  oversized entry cannot inflate the shared document past the read-side
+  128 MiB ceiling and brick every wallet on the next open.
 - **OS keyring (`SecretStore::os` / `default_credential_store`)** —
   returns an `Arc<dyn CredentialStoreApi + Send + Sync>` over the
   platform's default credential store. The backend on Linux/FreeBSD is

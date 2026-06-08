@@ -80,6 +80,18 @@ const STORE_ID: &str = "encrypted-file-store-v1";
 /// [`SecretStoreError::VaultTooLarge`].
 pub const MAX_VAULT_SIZE_BYTES: u64 = 128 * 1024 * 1024;
 
+/// Per-secret write-side ceiling. The vault is ONE shared `serde_json`
+/// document spanning every wallet; without a write cap a single oversized
+/// entry inflates the whole file past [`MAX_VAULT_SIZE_BYTES`] and bricks
+/// every wallet on the next `open` (the read path then refuses it). 64 KiB
+/// is generously above any legitimate mnemonic / seed / xpriv, so a real
+/// secret never trips it. Enforced at the write boundary
+/// ([`SecretStore::set`](crate::secrets::SecretStore::set) /
+/// `CredentialApi::set_secret`) with [`SecretStoreError::SecretTooLarge`]
+/// before the secret is sealed or inserted — mirroring the SQLite
+/// sibling's `MAX_VALUE_LEN` / `BlobTooLarge` reject-before-materialize.
+pub const MAX_SECRET_LEN: usize = 64 * 1024;
+
 /// A passphrase-encrypted file-backed credential store.
 ///
 /// One file, one passphrase, one lock — the whole store rotates
@@ -172,6 +184,12 @@ impl EncryptedFileStore {
         // consume — normalize the empty-string parent to ".".
         let parent = normalized_parent(&path);
         create_parent_dir(parent)?;
+        // Refuse a group/other-accessible parent: directory write access
+        // governs rename/unlink/create, so a loose parent lets another
+        // local user replace the vault despite its own 0600 + O_NOFOLLOW
+        // (the A1 guarantee this backend claims). The operator must own
+        // the parent directory at 0700 or tighter.
+        check_parent_perms(parent)?;
 
         // Acquire the lock first — every subsequent step assumes
         // exclusive ownership of the vault file.
@@ -337,6 +355,15 @@ impl EncryptedFileStoreInner {
         secret: &SecretBytes,
     ) -> Result<(), SecretStoreError> {
         let label = validated_label(label)?.to_string();
+        // Reject before sealing or inserting: the vault is one shared
+        // document, so an oversized entry would inflate the whole file
+        // past the read-side ceiling and brick every wallet on reopen.
+        if secret.len() > MAX_SECRET_LEN {
+            return Err(SecretStoreError::SecretTooLarge {
+                found: secret.len(),
+                max: MAX_SECRET_LEN,
+            });
+        }
         let aad = format::aad(format::FORMAT_VERSION, wallet_id.as_bytes(), &label);
 
         let (nonce, ciphertext) = crypto::seal(&self.derived_key, &aad, secret.expose_secret())?;
@@ -491,9 +518,17 @@ impl Drop for EncryptedFileStoreInner {
         // loosened them through some other path while we held the
         // lock. Best-effort: any failure is non-fatal at Drop.
         #[cfg(unix)]
-        if let Ok(file) = open_no_follow(&self.path) {
-            if let Err(e) = set_restrictive_perms(&file) {
-                tracing::warn!(error = %e, "drop-time perm re-assert failed");
+        match open_no_follow(&self.path) {
+            Ok(file) => {
+                if let Err(e) = set_restrictive_perms(&file) {
+                    tracing::warn!(error = %e, "drop-time perm re-assert failed");
+                }
+            }
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    "drop-time perm re-assert skipped: vault re-open refused"
+                );
             }
         }
         // The `VaultLock` field drops naturally after this method
@@ -610,6 +645,16 @@ fn write_vault_at(path: &Path, vault: &Vault) -> Result<(), SecretStoreError> {
 
 fn do_write_vault_at(path: &Path, vault: &Vault) -> Result<(), SecretStoreError> {
     let serialized = format::serialize(vault);
+    // Defence in depth alongside the per-secret cap: never write a vault
+    // the read path would later refuse. A serialized size above the
+    // ceiling fails here, before any byte lands, so the on-disk vault is
+    // never put into an unopenable state.
+    if serialized.len() as u64 > MAX_VAULT_SIZE_BYTES {
+        return Err(SecretStoreError::VaultTooLarge {
+            found: serialized.len() as u64,
+            max: MAX_VAULT_SIZE_BYTES,
+        });
+    }
     // Normalize an empty / bare-filename parent to "." so neither
     // `NamedTempFile::new_in` nor the Unix parent-dir fsync sees an
     // empty path.
@@ -729,10 +774,15 @@ mod vault_lock {
             {
                 use std::os::unix::fs::OpenOptionsExt;
                 opts.custom_flags(libc::O_NOFOLLOW);
+                // Create the sidecar restrictive from the first byte so a
+                // freshly created lock file never has a loose-perm window.
+                opts.mode(0o600);
             }
             let lock_file = opts
                 .open(lock_path)
                 .map_err(|e| SecretStoreError::io_at(lock_path, e))?;
+            // Belt-and-suspenders: `mode()` only applies to a file this
+            // call creates, so re-assert 0600 on a pre-existing sidecar.
             #[cfg(unix)]
             set_restrictive_perms(&lock_file)?;
 
@@ -873,6 +923,14 @@ impl std::fmt::Debug for EncryptedFileCredential {
 impl CredentialApi for EncryptedFileCredential {
     fn set_secret(&self, secret: &[u8]) -> KeyringResult<()> {
         let _ = validated_label(&self.label).map_err(SecretStoreError::from)?;
+        // Cap before copying into a SecretBytes so an oversized secret is
+        // refused without first materializing a wrapped copy.
+        if secret.len() > MAX_SECRET_LEN {
+            return Err(KeyringError::from(SecretStoreError::SecretTooLarge {
+                found: secret.len(),
+                max: MAX_SECRET_LEN,
+            }));
+        }
         self.store
             .put_bytes(
                 &self.wallet_id,
@@ -1012,6 +1070,29 @@ fn check_perms(meta: &fs::Metadata) -> Result<(), SecretStoreError> {
 // follow-up lands.
 #[cfg(not(unix))]
 fn check_perms(_meta: &fs::Metadata) -> Result<(), SecretStoreError> {
+    Ok(())
+}
+
+/// Refuse a vault parent directory that any group/other principal can
+/// access. `DirBuilder::mode(0o700)` only hardens a directory this call
+/// creates — a pre-existing loose directory (e.g. a deploy script's
+/// 0775) is left untouched, so stat it and reject `mode & 0o077 != 0`
+/// with the same rigor as the vault file's [`check_perms`].
+#[cfg(unix)]
+fn check_parent_perms(parent: &Path) -> Result<(), SecretStoreError> {
+    use std::os::unix::fs::MetadataExt;
+    let meta = fs::metadata(parent).map_err(|e| SecretStoreError::io_at(parent, e))?;
+    let mode = meta.mode() & 0o777;
+    if mode & 0o077 != 0 {
+        return Err(SecretStoreError::InsecureParentDir { mode });
+    }
+    Ok(())
+}
+
+// INTENTIONAL: Windows parent-dir ACL check deferred to the same
+// follow-up as `check_perms` — https://github.com/dashpay/platform/issues/3754.
+#[cfg(not(unix))]
+fn check_parent_perms(_parent: &Path) -> Result<(), SecretStoreError> {
     Ok(())
 }
 
@@ -1745,6 +1826,77 @@ mod tests {
         assert!(
             matches!(err, SecretStoreError::Io(_)),
             "expected an Io error from O_NOFOLLOW refusal, got {err:?}"
+        );
+    }
+
+    /// A group/other-accessible parent directory must be refused at open:
+    /// directory write access governs rename/replace of the vault despite
+    /// its own 0600, so a loose parent undermines the A1 guarantee.
+    #[cfg(unix)]
+    #[test]
+    fn loose_parent_dir_is_refused() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let sub = dir.path().join("vaultdir");
+        fs::create_dir(&sub).unwrap();
+        fs::set_permissions(&sub, fs::Permissions::from_mode(0o755)).unwrap();
+        let path = vault_path(&sub);
+        let err = EncryptedFileStore::open(&path, SecretString::new("pw-correct"))
+            .expect_err("loose parent dir must be refused");
+        assert!(
+            matches!(err, SecretStoreError::InsecureParentDir { mode } if mode & 0o077 != 0),
+            "got {err:?}"
+        );
+        // Tightening the parent lets the open succeed.
+        fs::set_permissions(&sub, fs::Permissions::from_mode(0o700)).unwrap();
+        let _s = store_at(&path);
+    }
+
+    /// An oversized secret is rejected at the write boundary with
+    /// `SecretTooLarge`, and the vault stays openable — the per-secret
+    /// cap prevents the shared document from being inflated past the
+    /// read-side ceiling.
+    #[test]
+    fn oversized_secret_rejected_and_vault_stays_openable() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = vault_path(dir.path());
+        {
+            let s = store_at(&path);
+            entry(&s, wid(1), "ok").set_secret(b"small").unwrap();
+            let too_big = vec![0xABu8; MAX_SECRET_LEN + 1];
+            let err = entry(&s, wid(1), "huge").set_secret(&too_big).unwrap_err();
+            // Surfaces through the SPI as BadStoreFormat carrying the
+            // secret-free SecretTooLarge message.
+            assert!(
+                matches!(&err, KeyringError::BadStoreFormat(m)
+                    if *m == SecretStoreError::SecretTooLarge {
+                        found: MAX_SECRET_LEN + 1,
+                        max: MAX_SECRET_LEN,
+                    }.to_string()),
+                "got {err:?}"
+            );
+            // The earlier good entry is still readable on this handle.
+            assert_eq!(entry(&s, wid(1), "ok").get_secret().unwrap(), b"small");
+        }
+        // The vault reopens cleanly — the oversized put never landed.
+        let s2 = store_at(&path);
+        assert_eq!(entry(&s2, wid(1), "ok").get_secret().unwrap(), b"small");
+        assert!(matches!(
+            entry(&s2, wid(1), "huge").get_secret(),
+            Err(KeyringError::NoEntry)
+        ));
+    }
+
+    /// A secret exactly at the cap is accepted (boundary is inclusive).
+    #[test]
+    fn secret_exactly_at_cap_is_accepted() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = store_at(&vault_path(dir.path()));
+        let at_cap = vec![0x5Au8; MAX_SECRET_LEN];
+        entry(&s, wid(1), "atcap").set_secret(&at_cap).unwrap();
+        assert_eq!(
+            entry(&s, wid(1), "atcap").get_secret().unwrap().len(),
+            MAX_SECRET_LEN
         );
     }
 }
