@@ -58,7 +58,7 @@ pub const DEFAULT_QUORUM_PUBLIC_KEYS_CACHE_SIZE: usize = 100;
 /// (`maybe_update_protocol_version`) converges upward to the network's real version,
 /// and starting low keeps requests compatible with not-yet-upgraded nodes during an
 /// upgrade window. Bump this constant when the network's supported floor advances.
-pub const DEFAULT_INITIAL_PROTOCOL_VERSION: u32 = 10;
+pub const DEFAULT_INITIAL_PROTOCOL_VERSION: u32 = dpp::version::v10::PROTOCOL_VERSION_10;
 /// The default metadata time tolerance for checkpoint queries in milliseconds
 const ADDRESS_STATE_TIME_TOLERANCE_MS: u64 = 31 * 60 * 1000;
 
