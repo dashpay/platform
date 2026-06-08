@@ -59,13 +59,17 @@ impl DriveHighLevelOperationConverter for PartiallyUseAssetLockAction {
 
                 let mut drive_operations = Vec::new();
 
+                // Tracks how much of `used_credits` was paid from existing address balances. Those
+                // credits already count toward total_credits_in_platform, so they must NOT be added
+                // again via AddToSystemCredits (only asset-lock-sourced credits are new money).
+                let mut total_deducted_from_inputs = 0u64;
+
                 // If we have inputs and a fee strategy, deduct fees from inputs first
                 // Note: remaining_credit_value was already pre-computed to deduct ALL used_credits
                 // from the asset lock. Here we restore the portion that's covered by inputs.
                 if let Some((inputs, fee_strategy)) = inputs_and_strategy {
                     let inputs_ordered: Vec<_> = inputs.iter().collect();
                     let mut remaining_fee = used_credits;
-                    let mut total_deducted_from_inputs = 0u64;
 
                     // Process fee strategy steps in order
                     for step in &fee_strategy {
@@ -111,9 +115,14 @@ impl DriveHighLevelOperationConverter for PartiallyUseAssetLockAction {
                         remaining_credit_value.saturating_add(total_deducted_from_inputs);
                 }
 
+                // Only the portion of the fee sourced from the asset lock is new money entering the
+                // platform. The portion paid from existing address balances is already counted in
+                // the system credit total, so adding the full `used_credits` would count it twice.
+                let new_system_credits = used_credits.saturating_sub(total_deducted_from_inputs);
+
                 // Add system credits operation
                 drive_operations.push(SystemOperation(SystemOperationType::AddToSystemCredits {
-                    amount: used_credits,
+                    amount: new_system_credits,
                 }));
 
                 // Add used asset lock operation
@@ -242,10 +251,12 @@ mod tests {
             other => panic!("expected SetBalanceToAddress, got {:?}", other),
         }
 
-        // Second should be AddToSystemCredits
+        // Second should be AddToSystemCredits. The entire fee (3000) was covered by the input
+        // address (existing credits already counted in total_credits_in_platform), so NO new money
+        // entered from the asset lock -> AddToSystemCredits must be 0 (credit-conservation fix).
         match &ops[1] {
             SystemOperation(SystemOperationType::AddToSystemCredits { amount }) => {
-                assert_eq!(*amount, 3000);
+                assert_eq!(*amount, 0);
             }
             other => panic!("expected AddToSystemCredits, got {:?}", other),
         }
