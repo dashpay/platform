@@ -3941,9 +3941,25 @@ public class PlatformWalletPersistenceHandler {
     /// `PlatformWalletManager.loadFromPersistor` after the FFI call
     /// succeeds so it can fetch a Swift-side handle for each wallet
     /// Rust just reconstructed.
+    ///
+    /// Network-scoped to match `loadWalletList()`: when `network` is
+    /// non-nil the fetch is filtered to the handler's bound network so
+    /// `loadFromPersistor` only requests handles for the wallets the FFI
+    /// just reconstructed on this network — not sibling-network rows,
+    /// whose handle lookups would miss and pollute `lastError`. When
+    /// `network` is nil (legacy callers) we fall back to the unfiltered
+    /// cross-network fetch, matching `loadWalletList()`.
     public func restorableWalletIds() -> [Data] {
         onQueue {
-            let descriptor = FetchDescriptor<PersistentWallet>()
+            let descriptor: FetchDescriptor<PersistentWallet>
+            if let network = self.network {
+                let raw = network.rawValue
+                descriptor = FetchDescriptor<PersistentWallet>(
+                    predicate: #Predicate { $0.networkRaw == raw }
+                )
+            } else {
+                descriptor = FetchDescriptor<PersistentWallet>()
+            }
             guard let wallets = try? backgroundContext.fetch(descriptor) else {
                 return []
             }

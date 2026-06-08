@@ -241,14 +241,23 @@ impl<P: PlatformWalletPersistence + 'static> PlatformWalletManager<P> {
             tracked_asset_locks: std::collections::BTreeMap::new(),
         };
 
-        // Insert into WalletManager.
+        // Insert into WalletManager. A duplicate (same network-scoped
+        // wallet id already registered) surfaces as the typed
+        // `WalletAlreadyExists` so the create FFI / Swift call sites can
+        // treat re-registering an existing wallet as a benign no-op
+        // instead of substring-matching the error text. Everything else
+        // stays `WalletCreation`.
         let wallet_id = {
             let mut wm = self.wallet_manager.write().await;
             wm.insert_wallet(wallet, platform_info).map_err(|e| {
-                PlatformWalletError::WalletCreation(format!(
-                    "Failed to register wallet in WalletManager: {}",
-                    e
-                ))
+                if matches!(e, key_wallet_manager::WalletError::WalletExists(_)) {
+                    PlatformWalletError::WalletAlreadyExists(e.to_string())
+                } else {
+                    PlatformWalletError::WalletCreation(format!(
+                        "Failed to register wallet in WalletManager: {}",
+                        e
+                    ))
+                }
             })?
         };
 
@@ -574,6 +583,112 @@ mod scoped_wallet_id_tests {
             g_main,
             wallet_id_for(Network::Mainnet),
             "group id must differ from the network-scoped id"
+        );
+    }
+}
+
+#[cfg(test)]
+mod register_wallet_duplicate_tests {
+    use std::sync::Arc;
+
+    use key_wallet::mnemonic::{Language, Mnemonic};
+    use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+    use key_wallet::Network;
+
+    use crate::changeset::{
+        ClientStartState, PersistenceError, PlatformWalletChangeSet, PlatformWalletPersistence,
+    };
+    use crate::error::PlatformWalletError;
+    use crate::events::{EventHandler, PlatformEventHandler};
+    use crate::wallet::platform_wallet::WalletId;
+    use crate::PlatformWalletManager;
+
+    // Canonical all-`abandon` BIP-39 test vector.
+    const TEST_MNEMONIC: &str = "abandon abandon abandon abandon abandon abandon \
+         abandon abandon abandon abandon abandon about";
+
+    /// No-op persister: lifecycle tests don't need the real persistence
+    /// pipeline, just a handle satisfying the constructor.
+    struct NoopPersister;
+
+    impl PlatformWalletPersistence for NoopPersister {
+        fn store(
+            &self,
+            _wallet_id: WalletId,
+            _changeset: PlatformWalletChangeSet,
+        ) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn flush(&self, _wallet_id: WalletId) -> Result<(), PersistenceError> {
+            Ok(())
+        }
+
+        fn load(&self) -> Result<ClientStartState, PersistenceError> {
+            Ok(ClientStartState::default())
+        }
+    }
+
+    struct NoopEventHandler;
+    impl EventHandler for NoopEventHandler {}
+    impl PlatformEventHandler for NoopEventHandler {}
+
+    /// Build a manager wired to a no-op persister over a mock SDK. The
+    /// duplicate-create path under test never reaches the network: the
+    /// first `create` returns `Ok` (its only network touch — best-effort
+    /// `identity().sync()` — is logged-and-ignored), and the second
+    /// fails at `WalletManager::insert_wallet` before any query.
+    fn make_manager() -> Arc<PlatformWalletManager<NoopPersister>> {
+        let sdk = Arc::new(dash_sdk::SdkBuilder::new_mock().build().expect("mock sdk"));
+        let persister = Arc::new(NoopPersister);
+        let event_handler: Arc<dyn PlatformEventHandler> = Arc::new(NoopEventHandler);
+        Arc::new(PlatformWalletManager::new(sdk, persister, event_handler))
+    }
+
+    /// Registering the SAME wallet (same mnemonic/seed + network) twice
+    /// must surface the typed `WalletAlreadyExists` on the second call —
+    /// NOT `WalletCreation`. This exercises the real producer path
+    /// (`register_wallet` → `WalletManager::insert_wallet` →
+    /// `WalletError::WalletExists` mapping) end-to-end; the prior
+    /// isolated FFI-mapper test missed that nothing ever constructed
+    /// `WalletAlreadyExists` on the create path.
+    #[tokio::test]
+    async fn duplicate_register_wallet_returns_wallet_already_exists() {
+        let manager = make_manager();
+
+        let network = Network::Testnet;
+        let mnemonic =
+            Mnemonic::from_phrase(TEST_MNEMONIC, Language::English).expect("valid test mnemonic");
+        let seed_bytes = mnemonic.to_seed("");
+
+        // First registration succeeds. `Some(0)` skips the SPV-tip
+        // birth-height lookup so the test never consults SPV.
+        manager
+            .create_wallet_from_seed_bytes(
+                network,
+                seed_bytes,
+                WalletAccountCreationOptions::Default,
+                Some(0),
+            )
+            .await
+            .expect("first create should succeed");
+
+        // Second registration of the identical (seed, network) wallet
+        // collides on the network-scoped wallet id inside
+        // `WalletManager::insert_wallet`.
+        let err = manager
+            .create_wallet_from_seed_bytes(
+                network,
+                seed_bytes,
+                WalletAccountCreationOptions::Default,
+                Some(0),
+            )
+            .await
+            .expect_err("second create of the same wallet must fail");
+
+        assert!(
+            matches!(err, PlatformWalletError::WalletAlreadyExists(_)),
+            "duplicate create must map to WalletAlreadyExists, got: {err:?}"
         );
     }
 }
