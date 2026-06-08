@@ -80,6 +80,9 @@ keyring-core = { version = "=1.0.0", optional = true }
 # was removed from the sqlite arm — those tests grep for `fs2`/`fs4`
 # literals in this crate's source/manifest and would re-trigger on the
 # older crates. `fd-lock` has no such collision.
+# LOCAL-FS ONLY: flock/LockFileEx interlock processes only on local
+# filesystems; over NFS/CIFS the lock does not interlock, so a vault file
+# must not be shared across hosts — steer multi-host to the OS-keyring arm.
 # Exact-pinned (`=`) like the rest of the soundness-critical stack: the
 # `VaultLock` unsafe drop-order argument in `secrets/file/mod.rs` is
 # calibrated to fd-lock 4.0.4's guard internals; any bump must re-verify

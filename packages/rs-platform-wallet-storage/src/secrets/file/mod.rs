@@ -19,10 +19,23 @@
 //! a path some other store handle (in this or another process) is
 //! already holding fails fast with [`SecretStoreError::AlreadyLocked`].
 //!
+//! **Cross-process exclusion is LOCAL-filesystem only.** The
+//! `AlreadyLocked` guarantee rests on `fd-lock` (`flock` on Unix,
+//! `LockFileEx` on Windows), whose advisory locks interlock only between
+//! processes on the same host backed by a local POSIX/Windows filesystem.
+//! `flock` does **not** interlock over NFS/CIFS/SMB and similar network
+//! shares — two hosts can each acquire the "exclusive" lock and the
+//! resident-vault model then silently last-writer-wins, losing secrets. A
+//! single vault file therefore MUST NOT be shared across hosts. For
+//! genuine multi-host secret access, use the OS-keyring backend
+//! ([`SecretStore::Os`]) instead of the file vault.
+//!
 //! One file, one passphrase, one lock — a multi-wallet store cannot
 //! lock its other wallets out by construction. The lock sidecar
 //! (`<path>.lock`) is distinct from the vault file itself so the atomic
 //! `persist` rename never touches the inode an open lock fd points at.
+//!
+//! [`SecretStore::Os`]: crate::secrets::SecretStore::Os
 //!
 //! [`open`]: EncryptedFileStore::open
 //! [`put`]: EncryptedFileStore::put_bytes
