@@ -328,10 +328,10 @@ fn tc_md_017_cascade_wallet() {
     {
         let conn = p.lock_conn_for_test();
         conn.execute(
-            "DELETE FROM wallet_metadata WHERE wallet_id = ?1",
+            "DELETE FROM wallets WHERE wallet_id = ?1",
             params![w.as_slice()],
         )
-        .expect("delete wallet_metadata");
+        .expect("delete wallets");
     }
     assert_eq!(p.get(&scope, "k").unwrap(), None);
 }
@@ -349,12 +349,12 @@ fn tc_md_017b_cascade_identity_via_wallet() {
     {
         let conn = p.lock_conn_for_test();
         conn.execute(
-            "DELETE FROM wallet_metadata WHERE wallet_id = ?1",
+            "DELETE FROM wallets WHERE wallet_id = ?1",
             params![w.as_slice()],
         )
-        .expect("delete wallet_metadata");
+        .expect("delete wallets");
     }
-    // wallet_metadata delete → identities FK cascade → meta_identity
+    // wallets delete → identities FK cascade → meta_identity
     // trigger (SQLite fires it for FK-cascade-deleted rows natively).
     assert_eq!(p.get(&scope, "k").unwrap(), None);
 }
@@ -616,7 +616,7 @@ fn delete_wallet_with_core_tx_and_utxo_stays_consistent() {
 // Trigger-on-FK-cascade proof at SQLite defaults. SQLite fires an AFTER
 // DELETE trigger for a row removed by an FK ON DELETE CASCADE natively —
 // `recursive_triggers` (off by default) does not gate this. On a RAW
-// connection at defaults, the one-hop chain wallet_metadata delete →
+// connection at defaults, the one-hop chain wallets delete →
 // identities FK cascade → meta_identity trigger cleans up.
 // ---------------------------------------------------------------------
 
@@ -642,13 +642,13 @@ fn meta_identity_cleanup_fires_on_wallet_cascade() {
     let w = [0x90u8; 32];
     let idy = [0x91u8; 32];
     conn.execute(
-        "INSERT INTO wallet_metadata (wallet_id, network, birth_height) \
+        "INSERT INTO wallets (wallet_id, network, birth_height) \
          VALUES (?1, 'testnet', 0)",
         params![&w[..]],
     )
     .unwrap();
     conn.execute(
-        "INSERT INTO identities (identity_id, wallet_id, wallet_index, entry_blob, tombstoned) \
+        "INSERT INTO identities (identity_id, wallet_id, identity_index, entry_blob, tombstoned) \
          VALUES (?1, ?2, NULL, X'00', 0)",
         params![&idy[..], &w[..]],
     )
@@ -659,12 +659,9 @@ fn meta_identity_cleanup_fires_on_wallet_cascade() {
     )
     .unwrap();
 
-    // wallet_metadata delete → identities FK cascade → meta_identity trigger.
-    conn.execute(
-        "DELETE FROM wallet_metadata WHERE wallet_id = ?1",
-        params![&w[..]],
-    )
-    .unwrap();
+    // wallets delete → identities FK cascade → meta_identity trigger.
+    conn.execute("DELETE FROM wallets WHERE wallet_id = ?1", params![&w[..]])
+        .unwrap();
 
     let identity_rows: i64 = conn
         .query_row(
@@ -690,7 +687,7 @@ fn meta_identity_cleanup_fires_on_wallet_cascade() {
 
 // ---------------------------------------------------------------------
 // Two-hop trigger-on-FK-cascade proof at SQLite defaults. The meta_token
-// chain spans two FK cascades: wallet_metadata delete → identities (FK
+// chain spans two FK cascades: wallets delete → identities (FK
 // cascade) → token_balances (FK cascade) → meta_token trigger. This
 // fires natively without recursive_triggers.
 // ---------------------------------------------------------------------
@@ -718,13 +715,13 @@ fn meta_token_cleanup_fires_on_wallet_cascade_two_hops() {
     let idy = [0xA1u8; 32];
     let token = [0xA2u8; 32];
     conn.execute(
-        "INSERT INTO wallet_metadata (wallet_id, network, birth_height) \
+        "INSERT INTO wallets (wallet_id, network, birth_height) \
          VALUES (?1, 'testnet', 0)",
         params![&w[..]],
     )
     .unwrap();
     conn.execute(
-        "INSERT INTO identities (identity_id, wallet_id, wallet_index, entry_blob, tombstoned) \
+        "INSERT INTO identities (identity_id, wallet_id, identity_index, entry_blob, tombstoned) \
          VALUES (?1, ?2, NULL, X'00', 0)",
         params![&idy[..], &w[..]],
     )
@@ -743,11 +740,8 @@ fn meta_token_cleanup_fires_on_wallet_cascade_two_hops() {
     .unwrap();
 
     // Two-hop cascade: wallet → identities → token_balances → trigger.
-    conn.execute(
-        "DELETE FROM wallet_metadata WHERE wallet_id = ?1",
-        params![&w[..]],
-    )
-    .unwrap();
+    conn.execute("DELETE FROM wallets WHERE wallet_id = ?1", params![&w[..]])
+        .unwrap();
 
     let token_rows: i64 = conn
         .query_row(
@@ -1242,7 +1236,7 @@ fn delete_wallet_leaves_no_surviving_rows() {
     // survive. Scoping each count by `wallet_id` catches an over-broad
     // cascade that an unscoped whole-table COUNT(*) would miss.
     let wallet_scoped = [
-        "wallet_metadata",
+        "wallets",
         "account_registrations",
         "account_address_pools",
         "core_transactions",
@@ -1295,7 +1289,7 @@ fn delete_wallet_leaves_no_surviving_rows() {
     // rows. (b is seeded in a representative subset of the scoped tables,
     // not all of them, so we check exactly the tables it was given.)
     let b_wallet_scoped = [
-        "wallet_metadata",
+        "wallets",
         "core_sync_state",
         "identities",
         "contacts",

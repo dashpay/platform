@@ -109,8 +109,12 @@ pub fn embedded_migrations() -> Vec<(i32, String)> {
 }
 
 /// SHA-256 over `(version, name)` of every embedded migration in version
-/// order. Pinning this in tests catches edits to committed migrations
-/// (forbidden by the append-only migration policy).
+/// order — deliberately content-blind: it hashes the migration set's
+/// identity, NOT the SQL bodies. So it detects an added, removed, or
+/// renamed migration file but, by design, ignores in-place edits to a
+/// migration's DDL. That keeps V001 freely editable while the crate is
+/// unreleased; a content-pinning guard belongs with the schema freeze at
+/// release.
 #[cfg(any(test, feature = "__test-helpers"))]
 pub fn embedded_migrations_fingerprint() -> [u8; 32] {
     use sha2::{Digest, Sha256};

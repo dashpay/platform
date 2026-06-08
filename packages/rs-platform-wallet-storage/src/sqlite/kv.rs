@@ -289,11 +289,11 @@ mod tests {
         let wid: WalletId = [id; 32];
         let conn = p.lock_conn_for_test();
         conn.execute(
-            "INSERT OR IGNORE INTO wallet_metadata (wallet_id, network, birth_height) \
+            "INSERT OR IGNORE INTO wallets (wallet_id, network, birth_height) \
              VALUES (?1, 'testnet', 0)",
             params![wid.as_slice()],
         )
-        .expect("seed wallet_metadata");
+        .expect("seed wallets");
         wid
     }
 
@@ -442,7 +442,7 @@ mod tests {
                 unreachable!()
             };
             conn.execute(
-                "DELETE FROM wallet_metadata WHERE wallet_id = ?1",
+                "DELETE FROM wallets WHERE wallet_id = ?1",
                 params![wid.as_slice()],
             )
             .expect("delete wallet");

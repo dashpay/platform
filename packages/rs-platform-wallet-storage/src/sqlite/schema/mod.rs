@@ -23,7 +23,7 @@ pub mod identities;
 pub mod identity_keys;
 pub mod platform_addrs;
 pub mod token_balances;
-pub mod wallet_meta;
+pub mod wallets;
 
 /// Defensive check that every `identity_id` in `touched` exists in
 /// `identities` and belongs to `wallet_id` (or has NULL wallet_id when

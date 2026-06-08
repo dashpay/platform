@@ -241,11 +241,14 @@ pub fn count_per_wallet(
 }
 
 /// One row of [`load_all`] aggregated state per wallet:
-/// `(sync_state, address_row_count)`.
+/// `(sync_state, reconstructed_address_count)`.
 ///
-/// `address_row_count` is the number of `platform_addresses` rows for the
-/// wallet — `load()` uses it (with the watermark and per_account) to
-/// decide whether the wallet carries any platform state worth surfacing.
+/// `reconstructed_address_count` counts only the `platform_addresses`
+/// rows that were actually rebuilt into `sync_state.per_account` — i.e.
+/// rows whose `account_index` has a matching `platform_payment`
+/// registration. Rows for an unregistered account are skipped during
+/// reconstruction (no xpub, nothing to restore) and are excluded here so
+/// the count never claims state that `load()` did not surface.
 pub type LoadAllEntry = (PlatformAddressSyncStartState, usize);
 
 /// Bulk reader for `load()`. Cost is a fixed number of grouped scans —
@@ -253,9 +256,9 @@ pub type LoadAllEntry = (PlatformAddressSyncStartState, usize);
 /// one over the `platform_payment` `account_registrations` — regardless
 /// of wallet count, rather than a per-wallet fan-out.
 ///
-/// Driven by [`wallet_meta::list_ids`](crate::sqlite::schema::wallet_meta::list_ids):
+/// Driven by [`wallets::list_ids`](crate::sqlite::schema::wallets::list_ids):
 /// orphaned `platform_addresses` / `platform_address_sync` rows whose
-/// `wallet_id` is absent from `wallet_metadata` are intentionally NOT
+/// `wallet_id` is absent from `wallets` are intentionally NOT
 /// surfaced. Native foreign keys prevent such orphans; a future re-wire
 /// that needs them must restore the id-union over the area tables.
 pub fn load_all(conn: &Connection) -> Result<BTreeMap<WalletId, LoadAllEntry>, WalletStorageError> {
@@ -267,7 +270,7 @@ pub fn load_all(conn: &Connection) -> Result<BTreeMap<WalletId, LoadAllEntry>, W
     let empty_regs: Vec<accounts::PlatformPaymentRegistration> = Vec::new();
 
     let mut out: BTreeMap<WalletId, LoadAllEntry> = BTreeMap::new();
-    for wallet_id in crate::sqlite::schema::wallet_meta::list_ids(conn)? {
+    for wallet_id in crate::sqlite::schema::wallets::list_ids(conn)? {
         let (h, t, r) = sync_by_wallet.get(&wallet_id).copied().unwrap_or((0, 0, 0));
         let address_rows = addresses_by_wallet.get(&wallet_id).unwrap_or(&empty_rows);
         let registrations = registrations_by_wallet
@@ -279,9 +282,26 @@ pub fn load_all(conn: &Connection) -> Result<BTreeMap<WalletId, LoadAllEntry>, W
             sync_timestamp: t,
             last_known_recent_block: r,
         };
-        out.insert(wallet_id, (sync, address_rows.len()));
+        let reconstructed = reconstructed_address_count(registrations, address_rows);
+        out.insert(wallet_id, (sync, reconstructed));
     }
     Ok(out)
+}
+
+/// Count the `platform_addresses` rows that [`build_per_account`] rebuilds
+/// for one wallet: rows whose `account_index` has a matching registration.
+/// Rows for an unregistered account are skipped during reconstruction, so
+/// excluding them keeps the surfaced count aligned with `per_account`.
+fn reconstructed_address_count(
+    registrations: &[accounts::PlatformPaymentRegistration],
+    address_rows: &[PlatformAddressRow],
+) -> usize {
+    let registered: std::collections::BTreeSet<u32> =
+        registrations.iter().map(|(idx, _)| *idx).collect();
+    address_rows
+        .iter()
+        .filter(|r| registered.contains(&r.account_index))
+        .count()
 }
 
 /// One grouped scan of `platform_address_sync` → `(sync_height,

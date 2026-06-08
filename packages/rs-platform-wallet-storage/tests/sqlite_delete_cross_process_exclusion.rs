@@ -89,14 +89,14 @@ fn delete_wallet_single_process_still_works() {
 
     let report = persister.delete_wallet(w).expect("delete succeeds");
     assert!(report.backup_path.is_some(), "auto-backup should fire");
-    // wallet_metadata row should be gone.
+    // wallets row should be gone.
     let conn = persister.lock_conn_for_test();
     let row: Option<i64> = conn
         .query_row(
-            "SELECT 1 FROM wallet_metadata WHERE wallet_id = ?1",
+            "SELECT 1 FROM wallets WHERE wallet_id = ?1",
             rusqlite::params![w.as_slice()],
             |r| r.get(0),
         )
         .ok();
-    assert!(row.is_none(), "wallet_metadata row must be gone");
+    assert!(row.is_none(), "wallets row must be gone");
 }

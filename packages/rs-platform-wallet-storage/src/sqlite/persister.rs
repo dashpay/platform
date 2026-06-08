@@ -404,7 +404,7 @@ impl SqlitePersister {
             // we don't waste a backup file on an unknown wallet.
             let exists_pre_flush = conn
                 .query_row(
-                    "SELECT 1 FROM wallet_metadata WHERE wallet_id = ?1",
+                    "SELECT 1 FROM wallets WHERE wallet_id = ?1",
                     rusqlite::params![wallet_id.as_slice()],
                     |_| Ok(()),
                 )
@@ -480,13 +480,13 @@ impl SqlitePersister {
             // the lock back off via SQLite's `busy_timeout`.
             let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Exclusive)?;
 
-            // Deleting the parent `wallet_metadata` row drives the whole
+            // Deleting the parent `wallets` row drives the whole
             // cleanup: native `ON DELETE CASCADE` removes every FK-bearing
             // per-wallet/per-identity table, and the AFTER DELETE triggers
             // broom every wallet/identity-scoped `meta_*` row (parentless
             // included). No per-table accounting is needed — the
             // cascade-completeness test asserts no row survives.
-            crate::sqlite::schema::wallet_meta::delete(&tx, &wallet_id)?;
+            crate::sqlite::schema::wallets::delete(&tx, &wallet_id)?;
             tx.commit()?;
             // Commit succeeded — drop the original drained changeset.
             drop(drained_slot.take());
@@ -582,7 +582,7 @@ impl SqlitePersister {
     // up on docs.rs even when the feature is on.
     /// Test-only: borrow the write connection.
     ///
-    /// Tests use this to seed `wallet_metadata` rows directly, run
+    /// Tests use this to seed `wallets` rows directly, run
     /// SELECTs against tables that aren't part of the public surface,
     /// or probe `PRAGMA foreign_keys` / `PRAGMA journal_mode`. Gated
     /// behind `cfg(test)` and the `__test-helpers` feature —
@@ -860,7 +860,7 @@ impl PlatformWalletPersistence for SqlitePersister {
     /// [`WalletStorageError`]. Corruption is never silently skipped.
     ///
     /// **Query budget.** Constant w.r.t. wallet count: one `SELECT` over
-    /// `wallet_metadata` for the wallet-id list plus a fixed set of
+    /// `wallets` for the wallet-id list plus a fixed set of
     /// grouped scans (sync state, addresses, platform-payment
     /// registrations), not a per-wallet fan-out.
     ///
@@ -1052,7 +1052,7 @@ fn apply_changeset_to_tx(
     cs: &PlatformWalletChangeSet,
 ) -> Result<(), WalletStorageError> {
     if let Some(meta) = cs.wallet_metadata.as_ref() {
-        schema::wallet_meta::upsert(tx, wallet_id, meta)?;
+        schema::wallets::upsert(tx, wallet_id, meta)?;
     }
     if !cs.account_registrations.is_empty() {
         schema::accounts::apply_registrations(tx, wallet_id, &cs.account_registrations)?;

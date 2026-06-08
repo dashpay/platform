@@ -1,8 +1,11 @@
-//! Smoke tests for the enum-domain `CHECK` constraints on the five
-//! enum-shaped TEXT columns (`wallet_metadata.network`,
-//! `account_registrations.account_type`,
-//! `account_address_pools.account_type`/`pool_type`,
-//! `core_derived_addresses.account_type`, and `asset_locks.status`).
+//! Smoke tests for the enum-domain `CHECK` constraints. The schema has
+//! seven such TEXT columns across five domains (`account_type` is reused
+//! by `account_registrations`, `account_address_pools`, and
+//! `core_derived_addresses`). These tests exercise one column per
+//! upstream-enum domain: `wallets.network`,
+//! `account_registrations.account_type`, `account_address_pools.pool_type`,
+//! and `asset_locks.status`. The synthetic `contacts.state` domain is not
+//! exercised here.
 //!
 //! The per-module parity unit tests in `src/sqlite/schema/*` cover the
 //! Rust↔const-array equality. These tests cover the runtime half: a
@@ -43,10 +46,10 @@ fn check_rejects_bad_network_label() {
     let (persister, _tmp, _path) = fresh_persister();
     let conn = persister.lock_conn_for_test();
     let res = conn.execute(
-        "INSERT INTO wallet_metadata (wallet_id, network, birth_height) VALUES (?1, ?2, ?3)",
+        "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, ?2, ?3)",
         params![wid(1).as_slice(), "not-a-network", 0i64],
     );
-    assert_constraint_check(res, "wallet_metadata.network");
+    assert_constraint_check(res, "wallets.network");
 }
 
 #[test]
@@ -55,10 +58,10 @@ fn check_rejects_bad_account_type_on_registrations() {
     let conn = persister.lock_conn_for_test();
     // First seed a valid parent row so we don't trip the FK.
     conn.execute(
-        "INSERT INTO wallet_metadata (wallet_id, network, birth_height) VALUES (?1, ?2, ?3)",
+        "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, ?2, ?3)",
         params![wid(2).as_slice(), "testnet", 0i64],
     )
-    .expect("seed wallet_metadata");
+    .expect("seed wallets");
     let res = conn.execute(
         "INSERT INTO account_registrations \
             (wallet_id, account_type, account_index, account_xpub_bytes) \
@@ -73,10 +76,10 @@ fn check_rejects_bad_pool_type() {
     let (persister, _tmp, _path) = fresh_persister();
     let conn = persister.lock_conn_for_test();
     conn.execute(
-        "INSERT INTO wallet_metadata (wallet_id, network, birth_height) VALUES (?1, ?2, ?3)",
+        "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, ?2, ?3)",
         params![wid(3).as_slice(), "testnet", 0i64],
     )
-    .expect("seed wallet_metadata");
+    .expect("seed wallets");
     let res = conn.execute(
         "INSERT INTO account_address_pools \
             (wallet_id, account_type, account_index, pool_type, snapshot_blob) \
@@ -97,10 +100,10 @@ fn check_rejects_bad_asset_lock_status() {
     let (persister, _tmp, _path) = fresh_persister();
     let conn = persister.lock_conn_for_test();
     conn.execute(
-        "INSERT INTO wallet_metadata (wallet_id, network, birth_height) VALUES (?1, ?2, ?3)",
+        "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, ?2, ?3)",
         params![wid(4).as_slice(), "testnet", 0i64],
     )
-    .expect("seed wallet_metadata");
+    .expect("seed wallets");
     let res = conn.execute(
         "INSERT INTO asset_locks \
             (wallet_id, outpoint, status, account_index, identity_index, amount_duffs, lifecycle_blob) \
@@ -128,7 +131,7 @@ fn check_accepts_every_known_label_network() {
     {
         let wid_bytes = [i as u8 + 10; 32];
         conn.execute(
-            "INSERT INTO wallet_metadata (wallet_id, network, birth_height) VALUES (?1, ?2, ?3)",
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, ?2, ?3)",
             params![wid_bytes.as_slice(), *label, 0i64],
         )
         .unwrap_or_else(|e| panic!("network={label} should be accepted: {e}"));

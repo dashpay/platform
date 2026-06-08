@@ -20,14 +20,14 @@ use platform_wallet::wallet::platform_wallet::WalletId;
 use platform_wallet_storage::WalletStorageError;
 use rusqlite::params;
 
-/// a child insert without a `wallet_metadata` parent is
+/// a child insert without a `wallets` parent is
 /// rejected by the native FK (not a trigger).
 #[test]
 fn native_fk_rejects_orphan_child() {
     let (persister, _tmp, _path) = fresh_persister();
     let conn = persister.lock_conn_for_test();
     let res = conn.execute(
-        "INSERT INTO identities (wallet_id, wallet_index, identity_id, entry_blob, tombstoned) \
+        "INSERT INTO identities (wallet_id, identity_index, identity_id, entry_blob, tombstoned) \
          VALUES (?1, NULL, ?2, X'00', 0)",
         params![[7u8; 32].as_slice(), [9u8; 32].as_slice()],
     );
@@ -40,7 +40,7 @@ fn native_fk_rejects_orphan_child() {
 
 /// an `identity_keys` row whose `identities` parent does not
 /// exist is rejected by the FK to `identities(identity_id)` (cascade
-/// chain `wallet_metadata → identities → identity_keys`).
+/// chain `wallets → identities → identity_keys`).
 #[test]
 fn native_fk_rejects_identity_keys_without_identity() {
     let (persister, _tmp, _path) = fresh_persister();
@@ -230,20 +230,20 @@ fn spent_only_utxo_on_undeclared_address_uses_zero_fallback() {
 /// an out-of-range `birth_height` errors rather than truncating.
 #[test]
 fn birth_height_overflow_errors_not_truncates() {
-    use platform_wallet_storage::sqlite::schema::wallet_meta;
+    use platform_wallet_storage::sqlite::schema::wallets;
     let (persister, _tmp, _path) = fresh_persister();
     let w = wid(0xD1);
     {
         let conn = persister.lock_conn_for_test();
         // 1<<40 overflows u32 but fits the i64 column.
         conn.execute(
-            "INSERT INTO wallet_metadata (wallet_id, network, birth_height) VALUES (?1, 'testnet', ?2)",
+            "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', ?2)",
             params![w.as_slice(), 1_099_511_627_776i64],
         )
         .unwrap();
     }
     let conn = persister.lock_conn_for_test();
-    let err = wallet_meta::fetch(&conn, &w).expect_err("overflow must error");
+    let err = wallets::fetch(&conn, &w).expect_err("overflow must error");
     assert!(
         matches!(err, WalletStorageError::IntegerOverflow { .. }),
         "expected IntegerOverflow, got {err:?}"

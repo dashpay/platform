@@ -73,7 +73,7 @@ fn tc013_wallet_metadata_roundtrip() {
     let conn = persister.lock_conn_for_test();
     let (network, birth_height): (String, i64) = conn
         .query_row(
-            "SELECT network, birth_height FROM wallet_metadata WHERE wallet_id = ?1",
+            "SELECT network, birth_height FROM wallets WHERE wallet_id = ?1",
             rusqlite::params![w.as_slice()],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )

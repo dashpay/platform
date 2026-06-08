@@ -24,7 +24,7 @@ use crate::sqlite::util::safe_cast;
 /// supplies a [`WalletId`] for symmetry with sibling writers and to
 /// feed the precondition check; it does not feed any column, because
 /// cascade flows
-/// `wallet_metadata → identities → token_balances` through the
+/// `wallets → identities → token_balances` through the
 /// nullable `identities.wallet_id` FK.
 //
 // Orphan-row policy: there is no automatic prune API. Cascade flows

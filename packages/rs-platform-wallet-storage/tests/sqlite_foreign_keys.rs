@@ -17,7 +17,7 @@ fn tc045_foreign_keys_on() {
     assert_eq!(fk, 1, "foreign_keys pragma not ON");
 }
 
-/// insert into a child table without a wallet_metadata parent fails.
+/// insert into a child table without a wallets parent fails.
 #[test]
 fn tc046_orphan_child_insert_rejected() {
     let (persister, _tmp, _path) = fresh_persister();
@@ -35,7 +35,7 @@ fn tc046_orphan_child_insert_rejected() {
     );
 }
 
-/// deleting wallet_metadata cascades.
+/// deleting wallets cascades.
 #[test]
 fn tc047_delete_wallet_cascade() {
     let (persister, _tmp, _path) = fresh_persister();

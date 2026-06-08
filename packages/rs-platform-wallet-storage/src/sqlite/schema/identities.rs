@@ -21,7 +21,7 @@ pub fn apply(
         // PK is `identity_id` alone; `wallet_id` is nullable and links
         // the identity to its parent wallet for cascade. The all-zero
         // wallet id is treated as "no parent wallet known" and stored
-        // as NULL so the FK to `wallet_metadata` doesn't activate.
+        // as NULL so the FK to `wallets` doesn't activate.
         //
         // COALESCE order — `COALESCE(identities.wallet_id,
         // excluded.wallet_id)` — preserves an already-parented row's
@@ -31,11 +31,11 @@ pub fn apply(
         // by the per-entry cross-check below.
         let scope_is_sentinel = wallet_id.iter().all(|b| *b == 0);
         let mut stmt = tx.prepare_cached(
-            "INSERT INTO identities (identity_id, wallet_id, wallet_index, entry_blob, tombstoned) \
+            "INSERT INTO identities (identity_id, wallet_id, identity_index, entry_blob, tombstoned) \
              VALUES (?1, ?2, ?3, ?4, 0) \
              ON CONFLICT(identity_id) DO UPDATE SET \
                 wallet_id = COALESCE(identities.wallet_id, excluded.wallet_id), \
-                wallet_index = excluded.wallet_index, \
+                identity_index = excluded.identity_index, \
                 entry_blob = excluded.entry_blob, \
                 tombstoned = 0",
         )?;
@@ -253,7 +253,7 @@ pub fn ensure_exists(
     let wallet_id_param = wallet_id_to_param(wallet_id);
     conn.execute(
         "INSERT OR IGNORE INTO identities \
-            (identity_id, wallet_id, wallet_index, entry_blob, tombstoned) \
+            (identity_id, wallet_id, identity_index, entry_blob, tombstoned) \
          VALUES (?1, ?2, NULL, ?3, 0)",
         params![&identity_id[..], wallet_id_param, payload],
     )?;

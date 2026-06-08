@@ -30,12 +30,12 @@ fn tc078_object_safety() {
 /// rarely do.
 const READ_ONLY_PREPARE_ALLOWED: &[(&str, &str)] = &[
     (
-        "wallet_meta.rs",
-        "SELECT wallet_id FROM wallet_metadata ORDER BY wallet_id",
+        "wallets.rs",
+        "SELECT wallet_id FROM wallets ORDER BY wallet_id",
     ),
     (
-        "wallet_meta.rs",
-        "SELECT network, birth_height FROM wallet_metadata WHERE wallet_id",
+        "wallets.rs",
+        "SELECT network, birth_height FROM wallets WHERE wallet_id",
     ),
     ("asset_locks.rs", "SELECT outpoint, account_index"),
     ("platform_addrs.rs", "SELECT account_index, address_index"),

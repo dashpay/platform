@@ -99,7 +99,7 @@ pub enum WalletStorageError {
     },
 
     /// `delete_wallet` (or another wallet-id-keyed operation) was
-    /// called with an id that has no matching `wallet_metadata` row.
+    /// called with an id that has no matching `wallets` row.
     #[error("wallet not found: {}", hex::encode(wallet_id))]
     WalletNotFound { wallet_id: [u8; 32] },
 

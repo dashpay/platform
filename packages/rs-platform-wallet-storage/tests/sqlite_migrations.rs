@@ -67,13 +67,13 @@ fn tc027_smoke_insert_every_table() {
     let wallet_id = [42u8; 32];
 
     conn.execute(
-        "INSERT INTO wallet_metadata (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
+        "INSERT INTO wallets (wallet_id, network, birth_height) VALUES (?1, 'testnet', 0)",
         params![wallet_id.as_slice()],
     )
     .unwrap();
     let identity_id = [7u8; 32];
     conn.execute(
-        "INSERT INTO identities (wallet_id, wallet_index, identity_id, entry_blob, tombstoned) \
+        "INSERT INTO identities (wallet_id, identity_index, identity_id, entry_blob, tombstoned) \
          VALUES (?1, NULL, ?2, X'01', 0)",
         params![wallet_id.as_slice(), identity_id.as_slice()],
     )
@@ -208,10 +208,9 @@ fn tc028_idempotent_reopen() {
 
 /// append-only migration hash.
 ///
-/// The hash is computed at runtime from the embedded list. Because this
-/// test belongs to the migration drift policy, we assert the list is
-/// non-empty and the hash is stable across successive calls — not a
-/// pinned value (which would force a churn on every committed migration).
+/// Asserts intra-run stability and a non-empty list — not content
+/// pinning. The fingerprint is content-blind (hashes `(version, name)`
+/// only), so this guards the migration set's identity, not its DDL.
 #[test]
 fn tc029_migration_fingerprint_stable() {
     let a = mig::embedded_migrations_fingerprint();

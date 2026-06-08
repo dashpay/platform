@@ -218,6 +218,100 @@ fn wallet_without_platform_state_is_omitted_from_load() {
     );
 }
 
+/// `load_all`'s reported count excludes address rows for an account with
+/// no registration. Such rows are skipped during `per_account`
+/// reconstruction (no xpub, nothing to restore), so counting them would
+/// claim platform state that `load()` never surfaces.
+#[test]
+fn load_all_count_excludes_unregistered_account_addresses() {
+    use platform_wallet::changeset::AccountRegistrationEntry;
+
+    let (persister, _tmp, path) = fresh_persister();
+
+    // Wallet A: one registered account (2 addresses) plus an orphan
+    // account_index with no registration (1 address). Only the 2
+    // registered-account rows reconstruct, so the count must be 2.
+    let a = wid(0x70);
+    ensure_wallet_meta(&persister, &a);
+    let registered = 4u32;
+    let unregistered = 9u32;
+    let mut cs_a = PlatformWalletChangeSet::default();
+    cs_a.account_registrations = vec![AccountRegistrationEntry {
+        account_type: key_wallet::account::AccountType::PlatformPayment {
+            account: registered,
+            key_class: 0,
+        },
+        account_xpub: test_xpub(),
+    }];
+    cs_a.platform_addresses = Some(PlatformAddressChangeSet {
+        addresses: vec![
+            entry(a, registered, 0, 0xC0),
+            entry(a, registered, 1, 0xC1),
+            entry(a, unregistered, 0, 0xC2),
+        ],
+        ..Default::default()
+    });
+    persister.store(a, cs_a).unwrap();
+
+    // Wallet B: only orphan-account rows, no registration and no
+    // watermark — nothing reconstructs, so the count must be 0 and the
+    // wallet must be omitted from `load()`.
+    let b = wid(0x71);
+    ensure_wallet_meta(&persister, &b);
+    let mut cs_b = PlatformWalletChangeSet::default();
+    cs_b.platform_addresses = Some(PlatformAddressChangeSet {
+        addresses: vec![entry(b, unregistered, 0, 0xD0)],
+        ..Default::default()
+    });
+    persister.store(b, cs_b).unwrap();
+    drop(persister);
+
+    let p2 = reopen(&path);
+    let conn = p2.lock_conn_for_test();
+    let all =
+        platform_wallet_storage::sqlite::schema::platform_addrs::load_all(&conn).expect("load_all");
+    let total_rows_a =
+        platform_wallet_storage::sqlite::schema::platform_addrs::count_per_wallet(&conn, &a)
+            .expect("count_per_wallet");
+    drop(conn);
+
+    // Sanity: wallet A really does carry the orphan row on disk.
+    assert_eq!(total_rows_a, 3, "wallet A has 3 platform_addresses rows");
+
+    let (sync_a, count_a) = all.get(&a).expect("wallet A present in load_all");
+    assert_eq!(
+        *count_a, 2,
+        "only the 2 registered-account rows are reconstructed; the orphan row is excluded"
+    );
+    assert_eq!(
+        sync_a.per_account.len(),
+        1,
+        "exactly the registered account reconstructs"
+    );
+    assert!(
+        sync_a.per_account.contains_key(&registered),
+        "the registered account is present in per_account"
+    );
+
+    let (_, count_b) = all.get(&b).expect("wallet B present in load_all");
+    assert_eq!(
+        *count_b, 0,
+        "an orphan-only wallet reconstructs no addresses, so its count is 0"
+    );
+
+    // The count drives `load()`'s surfacing gate: wallet B carries no
+    // reconstructable state, so it must not appear in the load result.
+    let state = p2.load().unwrap();
+    assert!(
+        state.platform_addresses.contains_key(&a),
+        "wallet A reconstructs the registered account and must surface"
+    );
+    assert!(
+        !state.platform_addresses.contains_key(&b),
+        "wallet B has only an unregistered-account row and must be omitted"
+    );
+}
+
 /// non-wired-up sub-areas are written to disk (verified by
 /// direct SQL probes) but do not surface in the load result.
 ///
@@ -1256,19 +1350,19 @@ fn tc_p4_008c_asset_locks_corruption_is_hard_error() {
     assert_eq!(good_state[&0].len(), 1);
 }
 
-/// 008d: `wallet_meta::list_ids` is fail-hard on a malformed
+/// 008d: `wallets::list_ids` is fail-hard on a malformed
 /// stored `wallet_id`. This is the code path where a non-32-byte id
 /// actually surfaces (the per-area `load_state` readers take a typed
 /// `&WalletId`, so the length check belongs here). A 10-byte
-/// `wallet_metadata.wallet_id` yields a typed `InvalidWalletIdLength`.
+/// `wallets.wallet_id` yields a typed `InvalidWalletIdLength`.
 #[test]
 fn tc_p4_008d_list_ids_rejects_non_32_byte_wallet_id() {
-    use platform_wallet_storage::sqlite::schema::wallet_meta;
+    use platform_wallet_storage::sqlite::schema::wallets;
     let (persister, _tmp, path) = fresh_persister();
     {
         let conn = persister.lock_conn_for_test();
         conn.execute(
-            "INSERT INTO wallet_metadata (wallet_id, network, birth_height) \
+            "INSERT INTO wallets (wallet_id, network, birth_height) \
              VALUES (?1, 'testnet', 0)",
             rusqlite::params![&[0xAAu8; 10][..]],
         )
@@ -1278,7 +1372,7 @@ fn tc_p4_008d_list_ids_rejects_non_32_byte_wallet_id() {
 
     let p2 = reopen(&path);
     let conn = p2.lock_conn_for_test();
-    let result = wallet_meta::list_ids(&conn);
+    let result = wallets::list_ids(&conn);
     drop(conn);
     assert!(
         matches!(
@@ -1293,7 +1387,7 @@ fn tc_p4_008d_list_ids_rejects_non_32_byte_wallet_id() {
 /// `load()` query cost is bounded per wallet.
 ///
 /// `load()` now drives the platform-address reader off
-/// `wallet_meta::list_ids` and issues a fixed, small number of
+/// `wallets::list_ids` and issues a fixed, small number of
 /// statements per listed wallet (the dedup collapse traded the old
 /// constant-query bulk scans for the fail-hard per-wallet readers).
 /// This pins the per-wallet statement count so a future regression
@@ -1360,7 +1454,7 @@ fn tc_p4_012_load_query_count_bounded() {
     let count_ten = count_load_queries(&p10);
 
     // `load()` issues a fixed number of grouped scans regardless of
-    // wallet count: `wallet_meta::list_ids` plus one scan each over
+    // wallet count: `wallets::list_ids` plus one scan each over
     // `platform_address_sync`, `platform_addresses`, and the
     // `platform_payment` `account_registrations`. The count must NOT
     // grow with the number of wallets — that's the constant-query

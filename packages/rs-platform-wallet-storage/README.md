@@ -103,8 +103,11 @@ flush, 5 s busy timeout, WAL journal, `NORMAL` synchronous, and an
 auto-backup dir at `<db_dir>/backups/auto/`.
 
 The trait surface is `store` / `flush` / `load` / `get_core_tx_record`.
-Schema migrations are append-only Rust files under `migrations/`, applied
-via [`refinery`](https://github.com/rust-db/refinery) on every `open`.
+Schema migrations are versioned Rust files under `migrations/`, applied via
+[`refinery`](https://github.com/rust-db/refinery) on every `open`. While the
+crate is unreleased, in-place edits to the sole shipped `V001` are allowed;
+the append-only guarantee (add a new versioned file, never edit a prior one)
+takes effect once the schema is frozen at release.
 
 #### Flush semantics (store / flush)
 
@@ -143,7 +146,7 @@ two slots — no `#[non_exhaustive]`):
 
 | Slot | Reader | Status |
 |---|---|---|
-| `platform_addresses` | `schema::platform_addrs::load_all` (a fixed set of grouped scans over `platform_address_sync`, `platform_addresses`, and `account_registrations`, driven by the `wallet_meta::list_ids` wallet universe) | populated |
+| `platform_addresses` | `schema::platform_addrs::load_all` (a fixed set of grouped scans over `platform_address_sync`, `platform_addresses`, and `account_registrations`, driven by the `wallets::list_ids` wallet universe) | populated |
 | `wallets`            | — | empty pending upstream `Wallet::from_persisted` |
 
 The `identities` / `contacts` / `asset_locks` per-area readers exist as
