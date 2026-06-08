@@ -70,17 +70,6 @@ pub struct ShieldedSyncedIndexFFI {
     pub last_synced_index: u64,
 }
 
-/// One per-subwallet nullifier-sync checkpoint.
-#[repr(C)]
-pub struct ShieldedNullifierCheckpointFFI {
-    pub wallet_id: [u8; 32],
-    pub account_index: u32,
-    /// Block height of the most recent nullifier sync pass.
-    pub height: u64,
-    /// Block timestamp (Unix seconds) of the most recent pass.
-    pub timestamp: u64,
-}
-
 // ── Restore (load) ──────────────────────────────────────────────────────
 
 /// One persisted note as the host hands it back at boot. Mirrors
@@ -101,18 +90,14 @@ pub struct ShieldedNoteRestoreFFI {
     pub note_data_len: usize,
 }
 
-/// One per-subwallet sync-watermark + nullifier-checkpoint snapshot.
-/// Restored alongside notes so the rehydrated `SubwalletState`
-/// resumes incremental sync from the right place.
+/// One per-subwallet sync-watermark snapshot. Restored alongside
+/// notes so the rehydrated `SubwalletState` resumes incremental
+/// sync from the right place.
 #[repr(C)]
 pub struct ShieldedSubwalletSyncStateFFI {
     pub wallet_id: [u8; 32],
     pub account_index: u32,
     pub last_synced_index: u64,
-    /// `1` iff the optional `nullifier_checkpoint` is populated.
-    pub has_nullifier_checkpoint: u8,
-    pub nullifier_checkpoint_height: u64,
-    pub nullifier_checkpoint_timestamp: u64,
 }
 
 // The `on_load_shielded_*_fn` callback types are inlined inside

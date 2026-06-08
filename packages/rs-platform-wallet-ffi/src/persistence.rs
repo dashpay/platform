@@ -295,7 +295,7 @@ pub struct PersistenceCallbacks {
     >,
     // ── Shielded (Orchard) persistence ─────────────────────────────────
     //
-    // These four `on_persist_shielded_*` callbacks fire from
+    // These three `on_persist_shielded_*` callbacks fire from
     // `FFIPersister::store` whenever a `ShieldedChangeSet` arrives
     // from `ShieldedWallet`. The matching `on_load_shielded_*`
     // callbacks fire once on `FFIPersister::load` to rehydrate the
@@ -331,16 +331,6 @@ pub struct PersistenceCallbacks {
             context: *mut c_void,
             wallet_id: *const u8,
             entries: *const crate::shielded_persistence::ShieldedSyncedIndexFFI,
-            count: usize,
-        ) -> i32,
-    >,
-    /// Per-subwallet nullifier-sync checkpoint advances.
-    #[cfg(feature = "shielded")]
-    pub on_persist_shielded_nullifier_checkpoints_fn: Option<
-        unsafe extern "C" fn(
-            context: *mut c_void,
-            wallet_id: *const u8,
-            entries: *const crate::shielded_persistence::ShieldedNullifierCheckpointFFI,
             count: usize,
         ) -> i32,
     >,
@@ -509,8 +499,6 @@ impl Default for PersistenceCallbacks {
             on_persist_shielded_nullifiers_spent_fn: None,
             #[cfg(feature = "shielded")]
             on_persist_shielded_synced_indices_fn: None,
-            #[cfg(feature = "shielded")]
-            on_persist_shielded_nullifier_checkpoints_fn: None,
             #[cfg(feature = "shielded")]
             on_load_shielded_notes_fn: None,
             #[cfg(feature = "shielded")]
@@ -1187,37 +1175,6 @@ impl PlatformWalletPersistence for FFIPersister {
                     }
                 }
             }
-
-            // 4) nullifier_checkpoints
-            if !shielded_cs.nullifier_checkpoints.is_empty() {
-                if let Some(cb) = self.callbacks.on_persist_shielded_nullifier_checkpoints_fn {
-                    let entries: Vec<ShieldedNullifierCheckpointFFI> = shielded_cs
-                        .nullifier_checkpoints
-                        .iter()
-                        .map(|(id, &(h, t))| ShieldedNullifierCheckpointFFI {
-                            wallet_id: id.wallet_id,
-                            account_index: id.account_index,
-                            height: h,
-                            timestamp: t,
-                        })
-                        .collect();
-                    let result = unsafe {
-                        cb(
-                            self.callbacks.context,
-                            wallet_id.as_ptr(),
-                            entries.as_ptr(),
-                            entries.len(),
-                        )
-                    };
-                    if result != 0 {
-                        eprintln!(
-                            "Shielded nullifier-checkpoint persistence callback returned error code {}",
-                            result
-                        );
-                        round_success = false;
-                    }
-                }
-            }
         }
 
         // Close the round. Clients use this to commit (if
@@ -1476,12 +1433,6 @@ impl PlatformWalletPersistence for FFIPersister {
                             .entry(id)
                             .or_insert_with(ShieldedSubwalletStartState::default);
                         entry.last_synced_index = ffi.last_synced_index;
-                        if ffi.has_nullifier_checkpoint != 0 {
-                            entry.nullifier_checkpoint = Some((
-                                ffi.nullifier_checkpoint_height,
-                                ffi.nullifier_checkpoint_timestamp,
-                            ));
-                        }
                     }
                 }
             }

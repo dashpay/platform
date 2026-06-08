@@ -259,23 +259,6 @@ impl ShieldedStore for FileBackedShieldedStore {
         Ok(())
     }
 
-    fn nullifier_checkpoint(&self, id: SubwalletId) -> Result<Option<(u64, u64)>, Self::Error> {
-        Ok(self
-            .subwallets
-            .get(&id)
-            .and_then(|sw| sw.nullifier_checkpoint))
-    }
-
-    fn set_nullifier_checkpoint(
-        &mut self,
-        id: SubwalletId,
-        height: u64,
-        timestamp: u64,
-    ) -> Result<(), Self::Error> {
-        self.subwallets.entry(id).or_default().nullifier_checkpoint = Some((height, timestamp));
-        Ok(())
-    }
-
     fn purge_wallet(&mut self, wallet_id: WalletId) -> Result<(), Self::Error> {
         // Per-subwallet note / watermark / checkpoint state is
         // in-memory only (`subwallets`); the commitment tree in

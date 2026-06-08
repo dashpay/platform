@@ -1,4 +1,4 @@
-//! Shielded note + nullifier synchronization.
+//! Shielded note synchronization with scan-based spend detection.
 //!
 //! The heavy lifting lives in three free functions that take a
 //! flat `&[(SubwalletId, AccountViewingKeys)]` slice and drive a
@@ -6,15 +6,17 @@
 //! - [`sync_notes_across`] — fetches encrypted notes once,
 //!   trial-decrypts against the union of every subwallet's IVK,
 //!   appends commitments to the shared tree exactly once per
-//!   position with `marked = any subwallet decrypted it`, and
-//!   saves decrypted notes scoped per-`SubwalletId`.
-//! - [`check_nullifiers_across`] — privacy-preserving nullifier
-//!   scan per subwallet (the SDK's nullifier-scan API is
-//!   per-checkpoint, so it stays per-subwallet).
+//!   position with `marked = any subwallet decrypted it`, saves
+//!   decrypted notes scoped per-`SubwalletId`, AND performs
+//!   scan-based spend detection: every scanned action's
+//!   `nullifier` (the nullifier of the note that action spent) is
+//!   replayed against each subwallet's store via `mark_spent`, so
+//!   spends ride the same note-scan watermark with no separate
+//!   nullifier-sync round-trip.
 //! - [`balances_across`] — pure unspent-balance read against
 //!   the shared store.
 //!
-//! [`NetworkShieldedCoordinator::sync`] drives all three in
+//! [`NetworkShieldedCoordinator::sync`] drives both in
 //! sequence against the union of every registered subwallet.
 //! Per-wallet `PlatformWallet` shielded methods read from the
 //! same store via the coordinator handle they're handed at
@@ -27,7 +29,6 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use dash_sdk::platform::shielded::nullifier_sync::{NullifierSyncCheckpoint, NullifierSyncConfig};
 use dash_sdk::platform::shielded::{sync_shielded_notes_stream, try_decrypt_note};
 use futures::StreamExt;
 use grovedb_commitment_tree::{Note as OrchardNote, PaymentAddress};
@@ -121,6 +122,11 @@ impl ShieldedSyncSummary {
 pub struct MultiSyncNotesResult {
     /// Per-subwallet count of new notes discovered in this pass.
     pub per_subwallet_new_notes: BTreeMap<SubwalletId, usize>,
+    /// Per-subwallet count of notes newly detected as spent in this
+    /// pass via scan-based nullifier matching (each scanned action's
+    /// `nullifier` replayed against the per-subwallet store). Replaces
+    /// the count the removed dedicated nullifier-sync pass produced.
+    pub per_subwallet_newly_spent: BTreeMap<SubwalletId, usize>,
     /// Wire-level scan volume this pass — encrypted notes pulled from
     /// Platform (decrypted + skipped), computed as `(aligned_start +
     /// total_notes_scanned).saturating_sub(already_have)`. This is the
@@ -358,6 +364,23 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
     // rewind-to-zero just like before.
     let mut last_nonempty: Option<(u64, bool)> = None;
 
+    // Scan-based spend detection (replaces the dedicated
+    // nullifier-sync pass). EVERY scanned action carries the
+    // `nullifier` of the note it SPENT (in Orchard the output note's
+    // rho == the input note's nullifier), so the union of every
+    // batch's note nullifiers is exactly the set of nullifiers that
+    // went on-chain across the scanned range. We accumulate them
+    // here and, after this pass's freshly-decrypted receipts are
+    // persisted below, replay them against each subwallet via
+    // `store.mark_spent` (a no-op for nullifiers the wallet doesn't
+    // own). Receipt-before-spend ordering holds: a note must be
+    // received (and stored, with its nullifier indexed) before its
+    // spend can match, and tree/block order always places receipt
+    // ahead of spend — within this pass the receipt save runs first,
+    // and across passes the receipt was persisted on an earlier pass,
+    // so `mark_spent`'s by-nullifier lookup still resolves.
+    let mut scanned_nullifiers: Vec<[u8; 32]> = Vec::new();
+
     while let Some(item) = stream.next().await {
         let batch = item.map_err(|e| PlatformWalletError::ShieldedSyncFailed(e.to_string()))?;
         max_block_height = max_block_height.max(batch.block_height);
@@ -374,8 +397,18 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
         // 1. Append commitments for THIS batch, applying the same
         //    idempotency gate against the pre-stream `tree_size`
         //    snapshot. `batch.start_index + i` is the global tree
-        //    position.
+        //    position. Each action's `nullifier` is the nullifier of
+        //    the note that action SPENT — collect every one across the
+        //    whole scan for the spend-match replay after receipts are
+        //    persisted. These are collected for ALL positions (even
+        //    those gate-skipped for tree append: a re-fetched chunk can
+        //    still surface a spend whose receipt only persisted on a
+        //    later pass), since `mark_spent` is an idempotent no-op for
+        //    nullifiers the wallet doesn't own or already marked spent.
         for (i, raw_note) in batch.notes.iter().enumerate() {
+            if let Ok(nf_bytes) = <[u8; 32]>::try_from(raw_note.nullifier.as_slice()) {
+                scanned_nullifiers.push(nf_bytes);
+            }
             let global_pos = batch.start_index + i as u64;
             if global_pos < tree_size {
                 continue;
@@ -539,6 +572,19 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
         }
     }
 
+    // Scan-based spend detection. Now that THIS pass's receipts are
+    // persisted (above), replay every scanned action's nullifier
+    // against each subwallet — see [`apply_scanned_nullifier_spends`]
+    // for the ordering rationale.
+    let subwallet_ids: Vec<SubwalletId> = subwallets.iter().map(|(id, _)| *id).collect();
+    let newly_spent_per_subwallet = apply_scanned_nullifier_spends(
+        &mut *store,
+        &subwallet_ids,
+        &scanned_nullifiers,
+        &mut changeset,
+    )
+    .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
+
     // Advance every subwallet's watermark to the same global
     // tree position so the next sync resumes coherently across
     // the union. `total_notes_scanned` is accumulated from every
@@ -572,106 +618,75 @@ pub(super) async fn sync_notes_across<S: ShieldedStore>(
     let scanned_volume = (aligned_start + total_notes_scanned).saturating_sub(already_have);
     Ok(MultiSyncNotesResult {
         per_subwallet_new_notes,
+        per_subwallet_newly_spent: newly_spent_per_subwallet,
         total_scanned: scanned_volume,
         changeset,
     })
 }
 
-/// Multi-subwallet nullifier sync. One SDK call per subwallet
-/// that has unspent notes — the SDK's nullifier-scan API is
-/// keyed by a checkpoint per subwallet and can't be coalesced
-/// the same way `sync_shielded_notes` can. Still drops the
-/// per-wallet `last_caught_up_at` and persister hop, leaving
-/// the caller in charge of changeset queueing.
-pub(super) async fn check_nullifiers_across<S: ShieldedStore>(
-    sdk: &Arc<dash_sdk::Sdk>,
-    store: &Arc<RwLock<S>>,
-    subwallets: &[(SubwalletId, AccountViewingKeys)],
-) -> Result<(BTreeMap<SubwalletId, usize>, ShieldedChangeSet), PlatformWalletError> {
-    if subwallets.is_empty() {
-        return Ok((BTreeMap::new(), ShieldedChangeSet::default()));
+/// Scan-based spend detection: replay the set of nullifiers seen on
+/// scanned actions against each subwallet's note store, marking any
+/// owned note whose nullifier appears as spent.
+///
+/// This is the whole spend-detection mechanism — it replaces the
+/// removed dedicated nullifier-sync pass. In Orchard each action
+/// reveals the nullifier of the note it SPENT (the output note's rho
+/// equals the input note's nullifier), so `scanned_nullifiers` —
+/// gathered from every action across the note scan — is exactly the
+/// set of nullifiers that went on-chain over the scanned range.
+/// [`ShieldedStore::mark_spent`] looks each one up in the
+/// per-subwallet nullifier index and flips the matching note's
+/// `is_spent`; it returns `false` (a no-op) when the wallet doesn't
+/// own that nullifier or already marked the note spent, so
+/// dummy/padding actions and other wallets' spends pass through
+/// harmlessly.
+///
+/// # Ordering
+///
+/// The caller MUST persist this scan's freshly-decrypted receipts
+/// *before* invoking this function. A note has to be received (stored,
+/// with its nullifier indexed) before its spend can match, and
+/// tree/block order always places the receipt ahead of the spend:
+/// - **Same-scan** spend (note received and spent within one pass):
+///   the receipt was `save_note`d earlier in the same pass, so the
+///   index lookup here resolves.
+/// - **Cross-scan** spend (note received on an earlier pass, spent in
+///   a later action): the receipt was persisted on that earlier pass,
+///   so the lookup against the persisted store still resolves even
+///   though the note isn't in this pass's decrypted set.
+///
+/// Returns the per-subwallet count of notes newly flipped to spent and
+/// records each match on `changeset` via
+/// [`ShieldedChangeSet::record_nullifier_spent`].
+fn apply_scanned_nullifier_spends<S: ShieldedStore>(
+    store: &mut S,
+    subwallet_ids: &[SubwalletId],
+    scanned_nullifiers: &[[u8; 32]],
+    changeset: &mut ShieldedChangeSet,
+) -> Result<BTreeMap<SubwalletId, usize>, S::Error> {
+    let mut newly_spent_per_subwallet: BTreeMap<SubwalletId, usize> = BTreeMap::new();
+    if scanned_nullifiers.is_empty() {
+        return Ok(newly_spent_per_subwallet);
     }
-
-    // Aggregate unspent nullifiers per subwallet so we hit the
-    // SDK once per subwallet, then route the `found` results
-    // back via a position lookup.
-    struct PerSub {
-        nullifiers: Vec<[u8; 32]>,
-        checkpoint: Option<NullifierSyncCheckpoint>,
-    }
-
-    let per_sub: Vec<(SubwalletId, PerSub)> = {
-        let store = store.read().await;
-        let mut out = Vec::with_capacity(subwallets.len());
-        for (id, _) in subwallets {
-            let unspent = store
-                .get_unspent_notes(*id)
-                .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
-            let nullifiers: Vec<[u8; 32]> = unspent.iter().map(|n| n.nullifier).collect();
-            let checkpoint = store
-                .nullifier_checkpoint(*id)
-                .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?
-                .map(|(height, timestamp)| NullifierSyncCheckpoint { height, timestamp });
-            out.push((
-                *id,
-                PerSub {
-                    nullifiers,
-                    checkpoint,
-                },
-            ));
-        }
-        out
-    };
-
-    let mut newly_spent: BTreeMap<SubwalletId, usize> = BTreeMap::new();
-    let mut changeset = ShieldedChangeSet::default();
-    for (id, sub) in per_sub {
-        if sub.nullifiers.is_empty() {
-            continue;
-        }
-        debug!(
-            wallet_id = %hex::encode(id.wallet_id),
-            account = id.account_index,
-            checking = sub.nullifiers.len(),
-            ?sub.checkpoint,
-            "Checking nullifiers"
-        );
-        let result = sdk
-            .sync_nullifiers(&sub.nullifiers, None::<NullifierSyncConfig>, sub.checkpoint)
-            .await
-            .map_err(|e| PlatformWalletError::ShieldedNullifierSyncFailed(e.to_string()))?;
-
-        let mut store = store.write().await;
+    for id in subwallet_ids {
         let mut spent_count = 0usize;
-        for nf_bytes in &result.found {
-            if store
-                .mark_spent(id, nf_bytes)
-                .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?
-            {
-                changeset.record_nullifier_spent(id, *nf_bytes);
+        for nf in scanned_nullifiers {
+            if store.mark_spent(*id, nf)? {
+                changeset.record_nullifier_spent(*id, *nf);
                 spent_count += 1;
             }
         }
-        store
-            .set_nullifier_checkpoint(id, result.new_sync_height, result.new_sync_timestamp)
-            .map_err(|e| PlatformWalletError::ShieldedStoreError(e.to_string()))?;
-        changeset.record_nullifier_checkpoint(
-            id,
-            result.new_sync_height,
-            result.new_sync_timestamp,
-        );
-
         if spent_count > 0 {
-            newly_spent.insert(id, spent_count);
+            newly_spent_per_subwallet.insert(*id, spent_count);
             info!(
                 wallet_id = %hex::encode(id.wallet_id),
                 account = id.account_index,
                 spent_count,
-                "Notes newly detected as spent"
+                "Notes newly detected as spent (scan-based)"
             );
         }
     }
-    Ok((newly_spent, changeset))
+    Ok(newly_spent_per_subwallet)
 }
 
 /// Multi-subwallet unspent-balance snapshot. Pure read against
@@ -715,4 +730,160 @@ fn serialize_note(note: &grovedb_commitment_tree::Note) -> Vec<u8> {
     data.extend_from_slice(&note.rho().to_bytes());
     data.extend_from_slice(note.rseed().as_bytes());
     data
+}
+
+#[cfg(test)]
+mod tests {
+    use super::apply_scanned_nullifier_spends;
+    use crate::changeset::ShieldedChangeSet;
+    use crate::wallet::shielded::store::{
+        InMemoryShieldedStore, ShieldedNote, ShieldedStore, SubwalletId,
+    };
+
+    fn sub(account: u32) -> SubwalletId {
+        SubwalletId::new([0xCC; 32], account)
+    }
+
+    /// Build a received (unspent) note carrying `nullifier` at `position`.
+    fn received_note(nullifier: [u8; 32], position: u64) -> ShieldedNote {
+        ShieldedNote {
+            position,
+            cmx: [0x11; 32],
+            nullifier,
+            block_height: 10,
+            is_spent: false,
+            value: 1_000,
+            note_data: vec![0u8; 115],
+        }
+    }
+
+    /// THE core Part-A guarantee: a note that was RECEIVED (persisted to
+    /// the store) and is later SPENT — its nullifier surfacing on a
+    /// scanned action in a *subsequent* chunk/pass — is marked
+    /// `is_spent` purely through the note-scan spend-detection path
+    /// (`apply_scanned_nullifier_spends`). No nullifier-sync, no SDK
+    /// call, no checkpoint: just the persisted note's nullifier matched
+    /// against the scanned-action nullifier set.
+    #[test]
+    fn received_then_later_spent_note_is_marked_spent_via_scan() {
+        let mut store = InMemoryShieldedStore::new();
+        let id = sub(0);
+        let owned_nf = [0xAB; 32];
+
+        // Earlier chunk/pass: the note is received and persisted. (In the
+        // real loop this is the `save_note` of a trial-decrypted note,
+        // which must run before any nullifier replay.)
+        store.save_note(id, &received_note(owned_nf, 5)).unwrap();
+        assert_eq!(store.get_unspent_notes(id).unwrap().len(), 1);
+
+        // A LATER scanned chunk surfaces a batch of action nullifiers.
+        // One of them is `owned_nf` (this note's spend); the rest belong
+        // to dummy/padding actions or other wallets and must be no-ops.
+        let scanned_nullifiers = vec![[0x01; 32], owned_nf, [0x02; 32]];
+        let mut changeset = ShieldedChangeSet::default();
+
+        let newly_spent =
+            apply_scanned_nullifier_spends(&mut store, &[id], &scanned_nullifiers, &mut changeset)
+                .expect("scan-based spend detection should not error");
+
+        // The note is now spent — detected entirely via the scan path.
+        assert_eq!(newly_spent.get(&id).copied(), Some(1));
+        assert!(
+            store.get_unspent_notes(id).unwrap().is_empty(),
+            "received-then-spent note must no longer be unspent"
+        );
+        let all = store.get_all_notes(id).unwrap();
+        assert_eq!(all.len(), 1);
+        assert!(all[0].is_spent, "note must be flagged is_spent");
+
+        // The spend is recorded on the changeset for the persister, and
+        // ONLY the owned nullifier (the dummies did not match).
+        let recorded = changeset.nullifiers_spent.get(&id).expect("spend recorded");
+        assert_eq!(recorded.as_slice(), &[owned_nf]);
+
+        // A re-scan that surfaces the same nullifier again is idempotent:
+        // `mark_spent` returns false for the already-spent note, so no new
+        // spend is reported.
+        let mut changeset2 = ShieldedChangeSet::default();
+        let again =
+            apply_scanned_nullifier_spends(&mut store, &[id], &scanned_nullifiers, &mut changeset2)
+                .unwrap();
+        assert!(
+            again.is_empty(),
+            "re-detecting an already-spent note must be a no-op"
+        );
+        assert!(changeset2.nullifiers_spent.is_empty());
+    }
+
+    /// Same-scan case: a note received earlier in the SAME pass (already
+    /// persisted by the time the nullifier replay runs) and spent by an
+    /// action in that same scan is still caught — the replay looks the
+    /// nullifier up in the persisted store, not just this pass's
+    /// freshly-decrypted set.
+    #[test]
+    fn note_received_and_spent_in_same_scan_is_marked_spent() {
+        let mut store = InMemoryShieldedStore::new();
+        let id = sub(0);
+        let owned_nf = [0xCD; 32];
+
+        // Receipt persisted first (mirrors the save-loop running before
+        // the replay within one `sync_notes_across` pass).
+        store.save_note(id, &received_note(owned_nf, 0)).unwrap();
+
+        // The same pass's scanned actions include this note's spend.
+        let scanned = vec![owned_nf];
+        let mut changeset = ShieldedChangeSet::default();
+        let newly_spent =
+            apply_scanned_nullifier_spends(&mut store, &[id], &scanned, &mut changeset).unwrap();
+
+        assert_eq!(newly_spent.get(&id).copied(), Some(1));
+        assert!(store.get_unspent_notes(id).unwrap().is_empty());
+    }
+
+    /// Scanned nullifiers the wallet does not own (every action belongs to
+    /// other wallets / dummies) never touch this subwallet's notes.
+    #[test]
+    fn unowned_scanned_nullifiers_are_noops() {
+        let mut store = InMemoryShieldedStore::new();
+        let id = sub(0);
+        store.save_note(id, &received_note([0x55; 32], 0)).unwrap();
+
+        let scanned = vec![[0x01; 32], [0x02; 32], [0x03; 32]];
+        let mut changeset = ShieldedChangeSet::default();
+        let newly_spent =
+            apply_scanned_nullifier_spends(&mut store, &[id], &scanned, &mut changeset).unwrap();
+
+        assert!(newly_spent.is_empty());
+        assert_eq!(
+            store.get_unspent_notes(id).unwrap().len(),
+            1,
+            "an unowned scanned nullifier must not spend our note"
+        );
+        assert!(changeset.nullifiers_spent.is_empty());
+    }
+
+    /// Spend detection is scoped per subwallet: two subwallets each own a
+    /// note, and only the one whose nullifier appears in the scan is
+    /// marked spent.
+    #[test]
+    fn scan_spend_detection_is_per_subwallet() {
+        let mut store = InMemoryShieldedStore::new();
+        let a = sub(0);
+        let b = sub(1);
+        let nf_a = [0xA0; 32];
+        let nf_b = [0xB0; 32];
+        store.save_note(a, &received_note(nf_a, 0)).unwrap();
+        store.save_note(b, &received_note(nf_b, 1)).unwrap();
+
+        // Only subwallet A's nullifier is on-chain this scan.
+        let scanned = vec![nf_a];
+        let mut changeset = ShieldedChangeSet::default();
+        let newly_spent =
+            apply_scanned_nullifier_spends(&mut store, &[a, b], &scanned, &mut changeset).unwrap();
+
+        assert_eq!(newly_spent.get(&a).copied(), Some(1));
+        assert!(newly_spent.get(&b).is_none());
+        assert!(store.get_unspent_notes(a).unwrap().is_empty());
+        assert_eq!(store.get_unspent_notes(b).unwrap().len(), 1);
+    }
 }

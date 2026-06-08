@@ -409,13 +409,14 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
             // Broadcast already succeeded; spent-state bookkeeping is
             // best-effort. Surfacing a local write failure as a send
             // failure here would invite duplicate retries — the next
-            // nullifier sync reconciles any drift.
+            // note scan reconciles any drift (scan-based spend
+            // detection re-marks the note from its on-chain nullifier).
             //
             // No double-spend follows from this downgrade: the
             // authoritative no-reuse guarantee is the on-chain nullifier
-            // set, not this local mark. Worst case, before the next
-            // nullifier sync runs the note is re-selected and a second
-            // spend is built + proven, then rejected at broadcast with a
+            // set, not this local mark. Worst case, before the next note
+            // scan runs the note is re-selected and a second spend is
+            // built + proven, then rejected at broadcast with a
             // nullifier-already-used error — wasted ~30 s proof, never
             // fund loss. (`pending_nullifiers` is in-memory only, so it
             // does not protect across a process restart in this window;
@@ -736,9 +737,10 @@ async fn extract_spends_and_anchor<S: ShieldedStore>(
 /// Mark the selected notes as spent for `id`. Also queues a
 /// shielded changeset on the persister so the spent flag reaches
 /// durable storage immediately rather than waiting for the next
-/// nullifier-sync pass to rediscover the spend. Also drops any
-/// matching pending reservation so the confirmed-spent state
-/// and the in-flight-spend state can't disagree.
+/// note scan to rediscover the spend (scan-based spend detection).
+/// Also drops any matching pending reservation so the
+/// confirmed-spent state and the in-flight-spend state can't
+/// disagree.
 async fn mark_notes_spent<S: ShieldedStore>(
     store: &Arc<RwLock<S>>,
     persister: Option<&WalletPersister>,
@@ -827,7 +829,7 @@ async fn cancel_pending<S: ShieldedStore>(
         if let Err(e) = store.clear_pending(id, &note.nullifier) {
             tracing::warn!(
                 error = %e,
-                "cancel_pending: clear_pending failed; the next nullifier sync will reconcile"
+                "cancel_pending: clear_pending failed; the next note scan will reconcile"
             );
         }
     }

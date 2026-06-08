@@ -1844,13 +1844,6 @@ struct ShieldedSyncStateStorageDetailView: View {
             Section("Sync") {
                 FieldRow(label: "Last Synced Index", value: "\(record.lastSyncedIndex)")
             }
-            Section("Nullifier Checkpoint") {
-                FieldRow(label: "Present", value: record.hasNullifierCheckpoint ? "Yes" : "No")
-                if record.hasNullifierCheckpoint {
-                    FieldRow(label: "Height", value: "\(record.nullifierCheckpointHeight)")
-                    FieldRow(label: "Timestamp", value: "\(record.nullifierCheckpointTimestamp)")
-                }
-            }
             Section("Timestamps") {
                 FieldRow(label: "Updated", value: dateString(record.lastUpdated))
             }

@@ -96,9 +96,9 @@ use crate::wallet::platform_wallet::WalletId;
 /// subwallet, with the consolidated changeset split per-`WalletId`
 /// and queued through each registered persister.
 pub struct NetworkShieldedCoordinator {
-    /// Dash Platform SDK handle. The coordinator runs sync /
-    /// nullifier-scan / broadcast against this SDK on behalf of
-    /// every bound wallet.
+    /// Dash Platform SDK handle. The coordinator runs the note
+    /// scan (which also detects spends) and broadcast against this
+    /// SDK on behalf of every bound wallet.
     sdk: Arc<dash_sdk::Sdk>,
 
     /// Network this coordinator operates on. Pinned at
@@ -410,11 +410,6 @@ impl NetworkShieldedCoordinator {
                 .map_err(|e| {
                     crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
                 })?;
-            if let Some((h, t)) = sub.nullifier_checkpoint {
-                store.set_nullifier_checkpoint(*id, h, t).map_err(|e| {
-                    crate::error::PlatformWalletError::ShieldedStoreError(e.to_string())
-                })?;
-            }
         }
         Ok(())
     }
@@ -602,23 +597,23 @@ impl NetworkShieldedCoordinator {
             Ok(r) => r,
             Err(e) => return self.fail_all_wallets(&subwallets, &e),
         };
-        let (newly_spent_per_sub, nf_changeset) =
-            match super::sync::check_nullifiers_across(&self.sdk, &self.store, &subwallets).await {
-                Ok(r) => r,
-                Err(e) => return self.fail_all_wallets(&subwallets, &e),
-            };
+        // Scan-based spend detection now happens INSIDE
+        // `sync_notes_across`: every scanned action's nullifier is
+        // replayed against each subwallet's store as part of the note
+        // scan (no separate nullifier-sync round-trip). The per-subwallet
+        // newly-spent counts and the spend records ride the same
+        // `notes` result and `notes.changeset` the receipts do.
+        let newly_spent_per_sub = notes.per_subwallet_newly_spent.clone();
         let balances_per_sub = match super::sync::balances_across(&self.store, &subwallets).await {
             Ok(r) => r,
             Err(e) => return self.fail_all_wallets(&subwallets, &e),
         };
 
-        // Merge the note-side changeset (saves + synced_index)
-        // with the nullifier-side changeset (spends +
-        // checkpoints) into one consolidated stream, then split
-        // per WalletId so each per-wallet `WalletPersister.store`
+        // The note-side changeset already carries saves, synced
+        // indices, AND the scan-detected spends, so split it per
+        // WalletId directly — each per-wallet `WalletPersister.store`
         // only sees its own wallet's deltas.
-        let mut consolidated = notes.changeset.clone();
-        crate::changeset::merge::Merge::merge(&mut consolidated, nf_changeset);
+        let consolidated = notes.changeset.clone();
         if !crate::changeset::merge::Merge::is_empty(&consolidated) {
             let per_wallet = consolidated.split_by_wallet_id();
             let persisters = self.persisters.read().await;
@@ -669,9 +664,8 @@ impl NetworkShieldedCoordinator {
 
     /// Build a `ShieldedSyncPassSummary` where every registered
     /// wallet's outcome is the supplied error string. Used when
-    /// a network-wide SDK call (sync_notes_across /
-    /// check_nullifiers_across) errors before any per-wallet
-    /// result can be produced.
+    /// the network-wide SDK note scan (sync_notes_across) errors
+    /// before any per-wallet result can be produced.
     fn fail_all_wallets(
         &self,
         subwallets: &[(SubwalletId, AccountViewingKeys)],

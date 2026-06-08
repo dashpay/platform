@@ -22,14 +22,12 @@ use std::collections::BTreeMap;
 pub struct ShieldedSubwalletStartState {
     /// All known notes for this subwallet, including spent ones.
     /// `is_spent` is preserved from the persisted row so the
-    /// in-memory store reflects what nullifier sync has already
-    /// established.
+    /// in-memory store reflects what scan-based spend detection has
+    /// already established.
     pub notes: Vec<ShieldedNote>,
     /// Sync watermark: count of note positions scanned = the next
     /// global index to scan (exclusive). `0` = nothing scanned yet.
     pub last_synced_index: u64,
-    /// Last `(height, timestamp)` nullifier sync checkpoint.
-    pub nullifier_checkpoint: Option<(u64, u64)>,
 }
 
 /// Whole-client shielded restore state, keyed by `SubwalletId`.

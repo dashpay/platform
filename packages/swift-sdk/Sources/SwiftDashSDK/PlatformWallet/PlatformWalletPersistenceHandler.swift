@@ -946,8 +946,6 @@ public class PlatformWalletPersistenceHandler {
         cb.on_persist_shielded_notes_fn = persistShieldedNotesCallback
         cb.on_persist_shielded_nullifiers_spent_fn = persistShieldedNullifiersSpentCallback
         cb.on_persist_shielded_synced_indices_fn = persistShieldedSyncedIndicesCallback
-        cb.on_persist_shielded_nullifier_checkpoints_fn =
-            persistShieldedNullifierCheckpointsCallback
         cb.on_load_shielded_notes_fn = loadShieldedNotesCallback
         cb.on_load_shielded_notes_free_fn = loadShieldedNotesFreeCallback
         cb.on_load_shielded_sync_states_fn = loadShieldedSyncStatesCallback
@@ -2315,26 +2313,6 @@ public class PlatformWalletPersistenceHandler {
         }
     }
 
-    /// Upsert per-subwallet nullifier-sync checkpoints.
-    func persistShieldedNullifierCheckpoints(
-        walletId: Data,
-        entries: [(walletId: Data, accountIndex: UInt32, height: UInt64, timestamp: UInt64)]
-    ) {
-        onQueue {
-            for entry in entries {
-                let row = ensureShieldedSyncStateRow(
-                    walletId: entry.walletId,
-                    accountIndex: entry.accountIndex
-                )
-                row.hasNullifierCheckpoint = true
-                row.nullifierCheckpointHeight = entry.height
-                row.nullifierCheckpointTimestamp = entry.timestamp
-                row.lastUpdated = Date()
-            }
-            if !self.inChangeset { try? backgroundContext.save() }
-        }
-    }
-
     /// Fetch-or-create a `PersistentShieldedSyncState` row for
     /// `(walletId, accountIndex)`. Caller must be on `onQueue`.
     private func ensureShieldedSyncStateRow(
@@ -2533,10 +2511,7 @@ public class PlatformWalletPersistenceHandler {
                 buf[written] = ShieldedSubwalletSyncStateFFI(
                     wallet_id: walletIdTuple,
                     account_index: row.accountIndex,
-                    last_synced_index: row.lastSyncedIndex,
-                    has_nullifier_checkpoint: row.hasNullifierCheckpoint ? 1 : 0,
-                    nullifier_checkpoint_height: row.nullifierCheckpointHeight,
-                    nullifier_checkpoint_timestamp: row.nullifierCheckpointTimestamp
+                    last_synced_index: row.lastSyncedIndex
                 )
                 written += 1
                 allocation.entriesInitialized = written
@@ -5083,35 +5058,6 @@ private func persistShieldedSyncedIndicesCallback(
         }
     }
     handler.persistShieldedSyncedIndices(walletId: walletId, entries: entries)
-    return 0
-}
-
-private func persistShieldedNullifierCheckpointsCallback(
-    context: UnsafeMutableRawPointer?,
-    walletIdPtr: UnsafePointer<UInt8>?,
-    entriesPtr: UnsafePointer<ShieldedNullifierCheckpointFFI>?,
-    count: UInt
-) -> Int32 {
-    guard let context = context, let walletIdPtr = walletIdPtr else { return 0 }
-    let handler = Unmanaged<PlatformWalletPersistenceHandler>
-        .fromOpaque(context)
-        .takeUnretainedValue()
-    let walletId = Data(bytes: walletIdPtr, count: 32)
-
-    var entries: [(walletId: Data, accountIndex: UInt32, height: UInt64, timestamp: UInt64)] = []
-    if count > 0, let entriesPtr = entriesPtr {
-        entries.reserveCapacity(Int(count))
-        for i in 0..<Int(count) {
-            let e = entriesPtr[i]
-            entries.append((
-                walletId: dataFromTuple32(e.wallet_id),
-                accountIndex: e.account_index,
-                height: e.height,
-                timestamp: e.timestamp
-            ))
-        }
-    }
-    handler.persistShieldedNullifierCheckpoints(walletId: walletId, entries: entries)
     return 0
 }
 

@@ -111,9 +111,10 @@ pub trait ShieldedStore: Send + Sync {
     ///
     /// Pending state is **in-memory only** — it does not survive
     /// a process restart. The crash-during-broadcast case is
-    /// reconciled by the next nullifier-sync pass after the
-    /// transition lands (or, on rejection, leaves the notes
-    /// observable as unspent again on the next launch).
+    /// reconciled by the next note-scan pass after the transition
+    /// lands (scan-based spend detection marks the spent note via
+    /// its nullifier), or, on rejection, leaves the notes
+    /// observable as unspent again on the next launch.
     ///
     /// `unspent_notes` skips notes whose nullifier is in the
     /// pending set, so a successful `mark_pending` immediately
@@ -190,17 +191,6 @@ pub trait ShieldedStore: Send + Sync {
         index: u64,
     ) -> Result<(), Self::Error>;
 
-    /// The last `(height, timestamp)` nullifier sync checkpoint for `id`, if any.
-    fn nullifier_checkpoint(&self, id: SubwalletId) -> Result<Option<(u64, u64)>, Self::Error>;
-
-    /// Persist the nullifier sync checkpoint for `id`.
-    fn set_nullifier_checkpoint(
-        &mut self,
-        id: SubwalletId,
-        height: u64,
-        timestamp: u64,
-    ) -> Result<(), Self::Error>;
-
     // ── Per-subwallet lifecycle ────────────────────────────────────────
 
     /// Drop ALL in-memory per-subwallet state (decrypted notes,
@@ -252,8 +242,6 @@ pub(super) struct SubwalletState {
     /// Sync watermark: count of note positions scanned = the next
     /// global index to scan (exclusive). `0` = nothing scanned yet.
     pub last_synced_index: u64,
-    /// `(height, timestamp)` from the most recent nullifier sync.
-    pub nullifier_checkpoint: Option<(u64, u64)>,
     /// Nullifiers of notes currently being spent in an in-flight
     /// transition. Excluded from `unspent_notes()` so concurrent
     /// callers can't double-select. In-memory only — never
@@ -456,23 +444,6 @@ impl ShieldedStore for InMemoryShieldedStore {
         Ok(())
     }
 
-    fn nullifier_checkpoint(&self, id: SubwalletId) -> Result<Option<(u64, u64)>, Self::Error> {
-        Ok(self
-            .subwallets
-            .get(&id)
-            .and_then(|sw| sw.nullifier_checkpoint))
-    }
-
-    fn set_nullifier_checkpoint(
-        &mut self,
-        id: SubwalletId,
-        height: u64,
-        timestamp: u64,
-    ) -> Result<(), Self::Error> {
-        self.subwallets.entry(id).or_default().nullifier_checkpoint = Some((height, timestamp));
-        Ok(())
-    }
-
     fn purge_wallet(&mut self, wallet_id: WalletId) -> Result<(), Self::Error> {
         self.subwallets.retain(|id, _| id.wallet_id != wallet_id);
         Ok(())
@@ -565,13 +536,6 @@ mod tests {
         assert_eq!(store.last_synced_note_index(a).unwrap(), 100);
         // Different subwallet still at 0.
         assert_eq!(store.last_synced_note_index(b).unwrap(), 0);
-
-        store.set_nullifier_checkpoint(a, 200, 1234567890).unwrap();
-        assert_eq!(
-            store.nullifier_checkpoint(a).unwrap(),
-            Some((200, 1234567890))
-        );
-        assert!(store.nullifier_checkpoint(b).unwrap().is_none());
     }
 
     #[test]

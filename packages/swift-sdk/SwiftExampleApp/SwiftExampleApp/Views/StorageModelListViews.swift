@@ -1869,11 +1869,6 @@ struct ShieldedSyncStateStorageListView: View {
                         }
                         Text("synced index: \(record.lastSyncedIndex)")
                             .font(.caption)
-                        if record.hasNullifierCheckpoint {
-                            Text("nf: h \(record.nullifierCheckpointHeight) · ts \(record.nullifierCheckpointTimestamp)")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                        }
                     }
                 }
             }
