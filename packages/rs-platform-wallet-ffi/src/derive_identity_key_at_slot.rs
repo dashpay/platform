@@ -11,7 +11,7 @@ use zeroize::Zeroizing;
 
 use crate::error::*;
 use crate::identity_key_preview::IdentityKeyPreviewFFI;
-use crate::identity_keys_from_mnemonic::parse_mnemonic_any_language;
+use crate::identity_keys_from_mnemonic::{parse_mnemonic_any_language, zeroize_and_free_row};
 use crate::{check_ptr, unwrap_result_or_return};
 use rs_sdk_ffi::{
     mnemonic_resolver_result, MnemonicResolverHandle, MNEMONIC_RESOLVER_BUFFER_CAPACITY,
@@ -193,6 +193,15 @@ pub unsafe extern "C" fn dash_sdk_derive_identity_key_at_slot_with_resolver(
 }
 
 /// Free a row populated by [`dash_sdk_derive_identity_key_at_slot`].
+///
+/// Routes through the shared
+/// [`crate::identity_keys_from_mnemonic::zeroize_and_free_row`] helper
+/// so the WIF backing bytes and the inline 32-byte ECDSA scalar are
+/// scrubbed with `zeroize::Zeroize::zeroize` (a volatile write the
+/// optimizer cannot elide). The previous hand-rolled
+/// `std::ptr::write_bytes` / `*byte = 0` scrubs were *non-volatile* and
+/// could be dropped as dead stores. Owned pointers are nulled so a
+/// second free no-ops (double-free idempotency).
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_derive_identity_key_at_slot_free(
     out_row: *mut IdentityKeyPreviewFFI,
@@ -200,29 +209,73 @@ pub unsafe extern "C" fn dash_sdk_derive_identity_key_at_slot_free(
     if out_row.is_null() {
         return;
     }
-    let row = &mut *out_row;
+    zeroize_and_free_row(&mut *out_row);
+}
 
-    if !row.derivation_path.is_null() {
-        let _ = CString::from_raw(row.derivation_path);
-        row.derivation_path = std::ptr::null_mut();
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Build a single heap-detached row the way `derive_at_slot_inner`
+    /// does (CString::into_raw for path + WIF, a leaked `Box<[u8]>`
+    /// pubkey via `into_boxed_slice`, a real secret scalar inline) so
+    /// `_free` is exercised on genuinely-owned allocations.
+    fn make_owned_row(secret: [u8; 32]) -> IdentityKeyPreviewFFI {
+        let path = CString::new("m/9'/1'/5'/0'/0'/0'/0'").unwrap();
+        let wif = CString::new("cQ_fake_wif_for_test_only_not_a_real_key").unwrap();
+        // Mirror the producer: `Vec` -> `into_boxed_slice()` (so the
+        // backing allocation has capacity == len, matching the
+        // `Vec::from_raw_parts(ptr, len, len)` reclaim in the shared
+        // helper).
+        let mut pub_box: Box<[u8]> = vec![0x02u8; 33].into_boxed_slice();
+        let pub_ptr = pub_box.as_mut_ptr();
+        let pub_len = pub_box.len();
+        std::mem::forget(pub_box);
+
+        IdentityKeyPreviewFFI {
+            identity_index: 9,
+            derivation_path: path.into_raw(),
+            public_key: pub_ptr,
+            public_key_len: pub_len,
+            private_key_wif: wif.into_raw(),
+            private_key_bytes: secret,
+        }
     }
-    if !row.public_key.is_null() && row.public_key_len > 0 {
-        let _ = Box::from_raw(std::ptr::slice_from_raw_parts_mut(
-            row.public_key,
-            row.public_key_len,
-        ));
-        row.public_key = std::ptr::null_mut();
-        row.public_key_len = 0;
+
+    /// `dash_sdk_derive_identity_key_at_slot_free` now routes through
+    /// the shared `zeroize_and_free_row` helper, replacing the
+    /// non-volatile `write_bytes` / `*byte = 0` scrubs (which the
+    /// optimizer may elide as dead stores). This asserts the inline
+    /// 32-byte scalar is wiped, every owned pointer is nulled, and a
+    /// second free no-ops (double-free idempotency).
+    #[test]
+    fn free_zeroizes_secret_and_is_idempotent() {
+        let secret = [0xC7u8; 32];
+        let mut row = make_owned_row(secret);
+
+        assert_eq!(row.private_key_bytes, secret);
+        assert!(!row.derivation_path.is_null());
+        assert!(!row.private_key_wif.is_null());
+        assert!(!row.public_key.is_null());
+
+        // SAFETY: `row` owns freshly-detached allocations and has not
+        // crossed the FFI boundary, so this is the sole release.
+        unsafe { dash_sdk_derive_identity_key_at_slot_free(&mut row) };
+
+        assert_eq!(
+            row.private_key_bytes, [0u8; 32],
+            "private_key_bytes must be zeroized after _free"
+        );
+        assert!(row.derivation_path.is_null());
+        assert!(row.private_key_wif.is_null());
+        assert!(row.public_key.is_null());
+        assert_eq!(row.public_key_len, 0);
+
+        // Second free on the reset row must not double-free or panic.
+        unsafe { dash_sdk_derive_identity_key_at_slot_free(&mut row) };
+        assert_eq!(row.private_key_bytes, [0u8; 32]);
+
+        // Null outer pointer is a safe no-op.
+        unsafe { dash_sdk_derive_identity_key_at_slot_free(std::ptr::null_mut()) };
     }
-    if !row.private_key_wif.is_null() {
-        let cstring = CString::from_raw(row.private_key_wif);
-        let bytes_len = cstring.as_bytes().len();
-        std::ptr::write_bytes(cstring.as_ptr() as *mut u8, 0, bytes_len);
-        drop(cstring);
-        row.private_key_wif = std::ptr::null_mut();
-    }
-    for byte in row.private_key_bytes.iter_mut() {
-        *byte = 0;
-    }
-    row.identity_index = 0;
 }

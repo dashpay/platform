@@ -1,3 +1,12 @@
+## [4.0.0-beta.3](https://github.com/dashpay/platform/compare/v4.0.0-beta.2...v4.0.0-beta.3) (2026-06-04)
+
+
+### Bug Fixes
+
+* **dashmate:** bump Envoy gateway to 1.35.11 for HTTP/2 DoS (CVE-2026-47774) ([#3794](https://github.com/dashpay/platform/issues/3794))
+* grovedb incompatibilty issues ([#3789](https://github.com/dashpay/platform/issues/3789))
+
+
 ## [4.0.0-beta.2](https://github.com/dashpay/platform/compare/v4.0.0-beta.1...v4.0.0-beta.2) (2026-06-02)
 
 
