@@ -50,6 +50,15 @@ pub const DEFAULT_CONTRACT_CACHE_SIZE: usize = 100;
 pub const DEFAULT_TOKEN_CONFIG_CACHE_SIZE: usize = 100;
 /// How many quorum public keys fit in the cache.
 pub const DEFAULT_QUORUM_PUBLIC_KEYS_CACHE_SIZE: usize = 100;
+/// Default initial protocol version used when the caller pins neither an explicit
+/// [`PlatformVersion`] (via [`SdkBuilder::with_version`]) nor an explicit initial
+/// protocol version (via [`SdkBuilder::with_initial_version`]).
+///
+/// Deliberately set BELOW the latest known version: ratchet-up autodetection
+/// (`maybe_update_protocol_version`) converges upward to the network's real version,
+/// and starting low keeps requests compatible with not-yet-upgraded nodes during an
+/// upgrade window. Bump this constant when the network's supported floor advances.
+pub const DEFAULT_INITIAL_PROTOCOL_VERSION: u32 = 10;
 /// The default metadata time tolerance for checkpoint queries in milliseconds
 const ADDRESS_STATE_TIME_TOLERANCE_MS: u64 = 31 * 60 * 1000;
 
@@ -351,8 +360,8 @@ impl Sdk {
     /// ## Protocol version bootstrapping
     ///
     /// On a fresh auto-detect SDK (i.e. one built without [`SdkBuilder::with_version()`]), the
-    /// first call to this method uses [`PlatformVersion::latest()`] as a fallback because no
-    /// network response has been received yet to teach the SDK the real network version.
+    /// first call to this method uses [`DEFAULT_INITIAL_PROTOCOL_VERSION`] as a fallback because
+    /// no network response has been received yet to teach the SDK the real network version.
     ///
     /// The actual network version is learned only *after* proof parsing succeeds, when
     /// [`Self::verify_response_metadata()`] processes `metadata.protocol_version`.  If the
@@ -483,7 +492,7 @@ impl Sdk {
 
     /// Return [Dash Platform version](PlatformVersion) information used by this SDK.
     ///
-    /// When auto-detection is enabled (default), returns [`PlatformVersion::latest()`]
+    /// When auto-detection is enabled (default), returns [`DEFAULT_INITIAL_PROTOCOL_VERSION`]
     /// until the first network response is received, then tracks the network's version.
     /// When pinned via [`SdkBuilder::with_version()`], always returns the pinned version.
     pub fn version<'v>(&self) -> &'v PlatformVersion {
@@ -759,7 +768,8 @@ impl Default for SdkBuilder {
 
             cancel_token: CancellationToken::new(),
 
-            version: PlatformVersion::latest(),
+            version: PlatformVersion::get(DEFAULT_INITIAL_PROTOCOL_VERSION)
+                .expect("DEFAULT_INITIAL_PROTOCOL_VERSION must be a known PlatformVersion"),
             version_explicit: false,
             #[cfg(not(target_arch = "wasm32"))]
             ca_certificate: None,
@@ -879,9 +889,11 @@ impl SdkBuilder {
 
     /// Configure platform version.
     ///
-    /// Select specific version of Dash Platform to use.
+    /// Select specific version of Dash Platform to use. This pins the version and
+    /// disables auto-detection.
     ///
-    /// Defaults to [PlatformVersion::latest()].
+    /// When unset, the SDK starts at [`DEFAULT_INITIAL_PROTOCOL_VERSION`] and
+    /// ratchets upward via auto-detection.
     pub fn with_version(mut self, version: &'static PlatformVersion) -> Self {
         self.version = version;
         self.version_explicit = true;
@@ -1661,6 +1673,75 @@ mod test {
             v_new.protocol_version,
             "mock version must follow outer ratchet (CMT-001 regression)"
         );
+    }
+
+    #[test]
+    fn test_default_builder_seeds_initial_protocol_version_floor() {
+        // A default builder (no with_version / with_initial_version) must seed the
+        // SDK at DEFAULT_INITIAL_PROTOCOL_VERSION, not at PlatformVersion::latest().
+        let sdk = SdkBuilder::new_mock()
+            .build()
+            .expect("mock Sdk should be created");
+
+        assert_eq!(
+            sdk.protocol_version_number(),
+            super::DEFAULT_INITIAL_PROTOCOL_VERSION,
+            "unpinned SDK must boot at the upgrade-safe floor, not latest()"
+        );
+        assert_eq!(
+            sdk.version().protocol_version,
+            super::DEFAULT_INITIAL_PROTOCOL_VERSION
+        );
+        assert!(
+            sdk.auto_detect_protocol_version,
+            "default SDK must keep auto-detect enabled"
+        );
+    }
+
+    #[test]
+    fn test_default_floor_ratchets_up_but_never_down() {
+        let sdk = SdkBuilder::new_mock()
+            .build()
+            .expect("mock Sdk should be created");
+        let floor = super::DEFAULT_INITIAL_PROTOCOL_VERSION;
+        assert_eq!(sdk.protocol_version_number(), floor);
+
+        // Ratchet up: a newer network version raises the floor.
+        sdk.maybe_update_protocol_version(floor + 2);
+        assert_eq!(
+            sdk.protocol_version_number(),
+            floor + 2,
+            "auto-detect must ratchet upward from the floor"
+        );
+
+        // Never down: an older network version is ignored.
+        sdk.maybe_update_protocol_version(floor - 1);
+        assert_eq!(
+            sdk.protocol_version_number(),
+            floor + 2,
+            "ratchet must never downgrade below the highest observed version"
+        );
+    }
+
+    #[test]
+    fn test_explicit_pin_overrides_default_floor() {
+        use dpp::version::PlatformVersion;
+
+        // Pin to a version that is deliberately different from the default floor so
+        // the override is observable regardless of where the floor is set.
+        let pinned_number = super::DEFAULT_INITIAL_PROTOCOL_VERSION - 1;
+        let pinned = PlatformVersion::get(pinned_number).expect("pinned PV exists");
+        let sdk = SdkBuilder::new_mock()
+            .with_version(pinned)
+            .build()
+            .expect("mock Sdk should be created");
+
+        assert_eq!(
+            sdk.protocol_version_number(),
+            pinned_number,
+            "explicit with_version must win over the default floor"
+        );
+        assert!(!sdk.auto_detect_protocol_version);
     }
 
     #[test_matrix([90,91,100,109,110], 100, 10, false; "valid time")]
