@@ -413,8 +413,10 @@ impl Drive {
                         // Mirror the Unshield arm: also prove the balance of the signed
                         // surplus-output address so a light client can confirm the surplus
                         // credit landed there. `PathQuery::merge` rejects sub-queries that carry
-                        // limits, so clear both before merging (the verifier reconstructs the
-                        // outpoint sub-query with its `Some(1)` limit independently).
+                        // limits, so clear both before merging. The verifier rebuilds this exact
+                        // merged query (same sub-queries, same cleared limits, same merge) and
+                        // verifies it STRICTLY, so the proof cannot carry any extra data beyond
+                        // {outpoint, surplus-address}.
                         let mut outpoint_pq = outpoint_pq;
                         outpoint_pq.query.limit = None;
 

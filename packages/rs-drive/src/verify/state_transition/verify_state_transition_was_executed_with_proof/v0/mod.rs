@@ -1291,6 +1291,7 @@ impl Drive {
                 ))
             }
             StateTransition::ShieldFromAssetLock(st) => {
+                use crate::drive::RootTree;
                 use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
                 use dpp::asset_lock::StoredAssetLockInfo;
                 use dpp::identity::state_transition::AssetLockProved;
@@ -1312,95 +1313,196 @@ impl Drive {
                 let ShieldFromAssetLockTransition::V0(v0) = st;
                 let surplus_output = &v0.surplus_output;
 
-                // Build the same PathQuery as the prove side
-                let mut query = grovedb::Query::new();
-                query.insert_key(outpoint_bytes.to_vec());
-                let path_query = grovedb::PathQuery::new(
-                    vec![vec![72u8]], // RootTree::SpentAssetLockTransactions
-                    grovedb::SizedQuery::new(query, Some(1), None),
+                // Build the outpoint sub-query exactly as the prove side does (same path, same key).
+                let mut outpoint_query = grovedb::Query::new();
+                outpoint_query.insert_key(outpoint_bytes.to_vec());
+                let outpoint_pq = grovedb::PathQuery::new(
+                    vec![vec![RootTree::SpentAssetLockTransactions as u8]],
+                    grovedb::SizedQuery::new(outpoint_query, Some(1), None),
                 );
-
-                // When a `surplus_output` is set the prove side merges the outpoint sub-query with
-                // the surplus-address balance sub-query into one multi-root proof, so the outpoint
-                // must be verified as a SUBSET of that proof (the strict verifier rejects the extra
-                // address layer). With no `surplus_output` the proof covers only the outpoint, so
-                // the strict verifier is used exactly as before — keeping that path unchanged.
-                let (root_hash, mut proved_key_values) = if surplus_output.is_some() {
-                    grovedb::GroveDb::verify_subset_query_with_absence_proof(
-                        proof,
-                        &path_query,
-                        &platform_version.drive.grove_version,
-                    )?
-                } else {
-                    grovedb::GroveDb::verify_query_with_absence_proof(
-                        proof,
-                        &path_query,
-                        &platform_version.drive.grove_version,
-                    )?
-                };
-
-                if proved_key_values.len() > 1 {
-                    return Err(Error::Proof(ProofError::TooManyElements(
-                        "expected at most 1 element for asset lock outpoint",
-                    )));
-                }
-
-                let info = if let Some(proved) = proved_key_values.pop() {
-                    match proved.2 {
-                        Some(Element::Item(bytes, _)) => {
-                            if bytes.is_empty() {
-                                StoredAssetLockInfo::FullyConsumed
-                            } else {
-                                StoredAssetLockInfo::PartiallyConsumed(
-                                    AssetLockValue::deserialize_from_bytes(&bytes)?,
-                                )
-                            }
-                        }
-                        Some(_) => {
-                            return Err(Error::Proof(ProofError::CorruptedProof(
-                                "expected an item element for asset lock outpoint".to_string(),
-                            )));
-                        }
-                        None => {
-                            return Err(Error::Proof(ProofError::CorruptedProof(
-                                "shield from asset lock was executed but asset lock outpoint is absent from proof".to_string(),
-                            )));
-                        }
-                    }
-                } else {
-                    return Err(Error::Proof(ProofError::CorruptedProof(
-                        "shield from asset lock was executed but no proved key values returned"
-                            .to_string(),
-                    )));
-                };
 
                 match surplus_output {
                     Some(surplus_address) => {
-                        // Mirror the Unshield arm: also verify the surplus-output address balance
-                        // from the same proof and bind the two sub-proofs by their shared root.
-                        let (root_hash_addr, balances): (
-                            RootHash,
-                            BTreeMap<PlatformAddress, Option<(AddressNonce, Credits)>>,
-                        ) = Drive::verify_addresses_infos(
-                            proof,
+                        // The prove side merged the outpoint sub-query with the surplus-address
+                        // balance sub-query into a SINGLE multi-root proof (clearing each sub-query
+                        // limit before the merge, because `PathQuery::merge` rejects limited
+                        // sub-queries). Reconstruct the byte-identical merged query here and verify
+                        // it STRICTLY: the strict verifier accepts a proof that matches the merged
+                        // query exactly and REJECTS any proof carrying extra branches, so a
+                        // malicious/buggy prover cannot pad the proof with unrelated data.
+                        let mut outpoint_pq = outpoint_pq;
+                        outpoint_pq.query.limit = None;
+
+                        let mut address_pq = Drive::balances_for_clear_addresses_query(
                             std::iter::once(surplus_address),
-                            true,
-                            platform_version,
+                        );
+                        address_pq.query.limit = None;
+
+                        let mut merged_pq = grovedb::PathQuery::merge(
+                            vec![&outpoint_pq, &address_pq],
+                            &platform_version.drive.grove_version,
                         )?;
 
-                        if root_hash != root_hash_addr {
-                            return Err(Error::Proof(ProofError::CorruptedProof(
-                                "shield from asset lock proof root hashes do not match between outpoint and surplus address"
-                                    .to_string(),
-                            )));
+                        // `verify_query_with_absence_proof` (the STRICT verifier) requires a limit
+                        // to be set, but `PathQuery::merge` leaves the merged limit at `None`. The
+                        // merged query targets a fixed, tiny set of explicit keys ({outpoint} ∪
+                        // {surplus address}), so we set a limit that can never be exhausted by the
+                        // legitimate result set. This is load-bearing for soundness: the succinctness
+                        // check that rejects extra proof layers runs per-layer AFTER that layer's
+                        // result loop, and the result loop only breaks early once the limit hits 0.
+                        // A limit smaller than the real result count could break before every layer's
+                        // succinctness check runs (falsely rejecting honest proofs); an unreachable
+                        // limit guarantees every layer is fully traversed and every extra branch is
+                        // caught. The limit does NOT relax the extra-data rejection — that is the
+                        // succinctness check, which is independent of the limit value.
+                        merged_pq.query.limit = Some(u16::MAX);
+
+                        let (root_hash, proved_key_values) =
+                            grovedb::GroveDb::verify_query_with_absence_proof(
+                                proof,
+                                &merged_pq,
+                                &platform_version.drive.grove_version,
+                            )?;
+
+                        // Partition the proved key/values: exactly one entry is the asset-lock
+                        // outpoint (36-byte key), every other entry is a surplus-address balance
+                        // (21-byte key). Anything else is a corrupted proof.
+                        let outpoint_key = outpoint_bytes.to_vec();
+                        let mut outpoint_element: Option<Option<Element>> = None;
+                        let mut balances: BTreeMap<
+                            PlatformAddress,
+                            Option<(AddressNonce, Credits)>,
+                        > = BTreeMap::new();
+
+                        for (_path, key, element) in proved_key_values {
+                            if key == outpoint_key {
+                                outpoint_element = Some(element);
+                                continue;
+                            }
+
+                            // Mirror `verify_addresses_infos_v0`: reconstruct the address from the
+                            // key and decode the `ItemWithSumItem` (nonce, balance) element.
+                            let address = PlatformAddress::from_bytes(&key).map_err(|e| {
+                                Error::Proof(ProofError::CorruptedProof(format!(
+                                    "failed to deserialize surplus PlatformAddress: {}",
+                                    e
+                                )))
+                            })?;
+
+                            let balance_info = element
+                                .map(|element| {
+                                    let Element::ItemWithSumItem(nonce_vec, balance_i64, _) =
+                                        element
+                                    else {
+                                        return Err(Error::Proof(ProofError::CorruptedProof(
+                                            "expected an item with sum item element".to_string(),
+                                        )));
+                                    };
+
+                                    let nonce_bytes: [u8; 4] =
+                                        nonce_vec.try_into().map_err(|_| {
+                                            Error::Proof(ProofError::IncorrectValueSize(
+                                                "nonce should be 4 bytes",
+                                            ))
+                                        })?;
+                                    let nonce = AddressNonce::from_be_bytes(nonce_bytes);
+
+                                    if balance_i64 < 0 {
+                                        return Err(Error::Proof(ProofError::CorruptedProof(
+                                            "balance cannot be negative".to_string(),
+                                        )));
+                                    }
+                                    let balance = balance_i64 as Credits;
+
+                                    Ok((nonce, balance))
+                                })
+                                .transpose()?;
+
+                            balances.insert(address, balance_info);
                         }
+
+                        // The asset-lock outpoint MUST be present in the merged proof.
+                        let outpoint_element = outpoint_element.ok_or_else(|| {
+                            Error::Proof(ProofError::CorruptedProof(
+                                "shield from asset lock was executed but asset lock outpoint is absent from proof".to_string(),
+                            ))
+                        })?;
+
+                        let info = match outpoint_element {
+                            Some(Element::Item(bytes, _)) => {
+                                if bytes.is_empty() {
+                                    StoredAssetLockInfo::FullyConsumed
+                                } else {
+                                    StoredAssetLockInfo::PartiallyConsumed(
+                                        AssetLockValue::deserialize_from_bytes(&bytes)?,
+                                    )
+                                }
+                            }
+                            Some(_) => {
+                                return Err(Error::Proof(ProofError::CorruptedProof(
+                                    "expected an item element for asset lock outpoint".to_string(),
+                                )));
+                            }
+                            None => {
+                                return Err(Error::Proof(ProofError::CorruptedProof(
+                                    "shield from asset lock was executed but asset lock outpoint is absent from proof".to_string(),
+                                )));
+                            }
+                        };
 
                         Ok((
                             root_hash,
                             VerifiedAssetLockConsumedWithAddressInfos(info, balances),
                         ))
                     }
-                    None => Ok((root_hash, VerifiedAssetLockConsumed(info))),
+                    None => {
+                        // No surplus output: the proof covers only the outpoint, verified strictly
+                        // with the `Some(1)` limit exactly as before (unchanged behavior).
+                        let (root_hash, mut proved_key_values) =
+                            grovedb::GroveDb::verify_query_with_absence_proof(
+                                proof,
+                                &outpoint_pq,
+                                &platform_version.drive.grove_version,
+                            )?;
+
+                        if proved_key_values.len() > 1 {
+                            return Err(Error::Proof(ProofError::TooManyElements(
+                                "expected at most 1 element for asset lock outpoint",
+                            )));
+                        }
+
+                        let info = if let Some(proved) = proved_key_values.pop() {
+                            match proved.2 {
+                                Some(Element::Item(bytes, _)) => {
+                                    if bytes.is_empty() {
+                                        StoredAssetLockInfo::FullyConsumed
+                                    } else {
+                                        StoredAssetLockInfo::PartiallyConsumed(
+                                            AssetLockValue::deserialize_from_bytes(&bytes)?,
+                                        )
+                                    }
+                                }
+                                Some(_) => {
+                                    return Err(Error::Proof(ProofError::CorruptedProof(
+                                        "expected an item element for asset lock outpoint"
+                                            .to_string(),
+                                    )));
+                                }
+                                None => {
+                                    return Err(Error::Proof(ProofError::CorruptedProof(
+                                        "shield from asset lock was executed but asset lock outpoint is absent from proof".to_string(),
+                                    )));
+                                }
+                            }
+                        } else {
+                            return Err(Error::Proof(ProofError::CorruptedProof(
+                                "shield from asset lock was executed but no proved key values returned"
+                                    .to_string(),
+                            )));
+                        };
+
+                        Ok((root_hash, VerifiedAssetLockConsumed(info)))
+                    }
                 }
             }
         }

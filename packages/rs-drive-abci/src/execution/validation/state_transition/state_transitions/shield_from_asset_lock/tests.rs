@@ -939,6 +939,226 @@ mod tests {
             );
         }
 
+        /// NEGATIVE test for the strict-merged tightening: a proof that carries EXTRA data
+        /// beyond `{outpoint, surplus-address}` MUST be rejected by the production verifier.
+        ///
+        /// The production verify path rebuilds the merged `{outpoint, single surplus address}`
+        /// query and verifies it with the STRICT `verify_query_with_absence_proof`, whose
+        /// succinctness check rejects any proof that descends into a subtree (a lower layer) the
+        /// query did not require. Here we commit the same surplus state, then have the (honest, but
+        /// over-broad) prover generate a SUPERSET proof for `{outpoint, surplus-address, + the
+        /// genesis-populated Pools subtree}` and verify it against the production single-address
+        /// merged query. The strict verifier must reject it because the proof carries an extra
+        /// root-level lower layer (`Pools`) the production query never touches.
+        ///
+        /// For contrast we also confirm the SUBSET verifier (the looser primitive this change
+        /// replaced) would have ACCEPTED the same padded proof — demonstrating exactly the hole
+        /// the strict merged verification closes.
+        ///
+        /// (Note: padding with an extra *leaf key* in an already-descended subtree — e.g. a second
+        /// address under the same clear-address pool — is NOT what the succinctness check guards
+        /// against; such a key is either filtered by the per-layer merk query or surfaced as a
+        /// proven absence, and is rejected/ignored regardless of strict-vs-subset. The tightening
+        /// specifically removes the tolerance for extra *subtree branches*.)
+        #[test]
+        fn test_shield_from_asset_lock_padded_proof_is_rejected_by_strict_verify() {
+            use drive::drive::RootTree;
+            use drive::grovedb::{GroveDb, PathQuery, Query, SizedQuery};
+
+            let platform_version = PlatformVersion::latest();
+            let platform = setup_platform();
+
+            let mut rng = StdRng::seed_from_u64(567);
+            let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
+
+            // --- Build a valid Orchard bundle (shield = outputs only) ---
+            let mut orchard_rng = OsRng;
+            let pk = get_proving_key();
+
+            let sk = SpendingKey::from_bytes([0u8; 32]).unwrap();
+            let fvk = FullViewingKey::from(&sk);
+            let recipient = fvk.address_at(0u32, Scope::External);
+
+            let anchor = Anchor::empty_tree();
+            let mut builder = Builder::<DashMemo>::new(
+                BundleType::Transactional {
+                    flags: OrchardFlags::SPENDS_DISABLED,
+                    bundle_required: false,
+                },
+                anchor,
+            );
+
+            let shield_value = 5_000u64;
+            builder
+                .add_output(
+                    None,
+                    recipient,
+                    NoteValue::from_raw(shield_value),
+                    [0u8; 36],
+                )
+                .unwrap();
+
+            let (unauthorized, _) = builder.build::<i64>(&mut orchard_rng).unwrap().unwrap();
+            let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
+            let sighash = compute_platform_sighash(&bundle_commitment, &[]);
+            let proven = unauthorized.create_proof(pk, &mut orchard_rng).unwrap();
+            let bundle = proven.apply_signatures(orchard_rng, sighash, &[]).unwrap();
+
+            let (actions, _flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
+                serialize_authorized_bundle_with_flags(&bundle);
+
+            assert!(value_balance < 0);
+            let shield_amount = (-value_balance) as u64;
+
+            // This helper sets `surplus_output: Some(P2pkh([0x33; 20]))`.
+            let transition = create_signed_shield_from_asset_lock_transition(
+                asset_lock_proof,
+                &asset_lock_pk,
+                actions,
+                shield_amount,
+                anchor_bytes,
+                proof_bytes,
+                binding_sig,
+            );
+
+            let outpoint = {
+                use dpp::identity::state_transition::OptionallyAssetLockProved;
+                let op = transition
+                    .optional_asset_lock_proof()
+                    .expect("transition must carry an asset lock proof")
+                    .out_point()
+                    .expect("transition must carry an outpoint");
+                let bytes: [u8; 36] = op.into();
+                bytes
+            };
+
+            let transition_bytes = transition
+                .serialize_to_bytes()
+                .expect("should serialize transition");
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![transition_bytes],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            // --- Reconstruct the PRODUCTION merged query exactly as the verifier does ---
+            // {outpoint} ∪ {real surplus address [0x33; 20]}, both with cleared limits, then a
+            // limit that can never truncate the legitimate result set.
+            let real_surplus = dpp::address_funds::PlatformAddress::P2pkh([0x33; 20]);
+
+            let mut outpoint_query = Query::new();
+            outpoint_query.insert_key(outpoint.to_vec());
+            let mut outpoint_pq = PathQuery::new(
+                vec![vec![RootTree::SpentAssetLockTransactions as u8]],
+                SizedQuery::new(outpoint_query, None, None),
+            );
+            outpoint_pq.query.limit = None;
+
+            let mut real_address_pq =
+                Drive::balances_for_clear_addresses_query(std::iter::once(&real_surplus));
+            real_address_pq.query.limit = None;
+
+            let mut production_pq = PathQuery::merge(
+                vec![&outpoint_pq, &real_address_pq],
+                &platform_version.drive.grove_version,
+            )
+            .expect("merge production query");
+            production_pq.query.limit = Some(u16::MAX);
+
+            // Sanity: an HONEST proof for the production query verifies strictly (liveness).
+            let honest_proof = platform
+                .drive
+                .grove_get_proved_path_query(
+                    &production_pq,
+                    None,
+                    &mut vec![],
+                    &platform_version.drive,
+                )
+                .expect("honest production proof");
+            GroveDb::verify_query_with_absence_proof(
+                &honest_proof,
+                &production_pq,
+                &platform_version.drive.grove_version,
+            )
+            .expect("strict verify of honest production proof must succeed");
+
+            // --- Build a SUPERSET (padded) proof: {outpoint, real address, + an extra subtree} ---
+            // The succinctness check the strict verifier runs rejects a proof that descends into a
+            // subtree (a lower layer) the query did not require. So we pad by ALSO descending the
+            // genesis-populated `Pools` root subtree, which the production query never touches. The
+            // padded proof therefore carries an extra root-level lower layer.
+            let mut pools_top = Query::new();
+            pools_top.insert_key(vec![RootTree::Pools as u8]);
+            pools_top.set_subquery(Query::new_range_full());
+            let pools_pq = PathQuery::new(vec![], SizedQuery::new(pools_top, None, None));
+
+            let mut superset_pq = PathQuery::merge(
+                vec![&outpoint_pq, &real_address_pq, &pools_pq],
+                &platform_version.drive.grove_version,
+            )
+            .expect("merge superset query");
+            superset_pq.query.limit = Some(u16::MAX);
+
+            let padded_proof = platform
+                .drive
+                .grove_get_proved_path_query(
+                    &superset_pq,
+                    None,
+                    &mut vec![],
+                    &platform_version.drive,
+                )
+                .expect("padded superset proof");
+
+            // The STRICT verifier (production behavior) MUST reject the padded proof: it carries
+            // an extra address layer the production query did not request.
+            let strict_result = GroveDb::verify_query_with_absence_proof(
+                &padded_proof,
+                &production_pq,
+                &platform_version.drive.grove_version,
+            );
+            assert!(
+                strict_result.is_err(),
+                "strict verifier must reject a proof padded with an extra address layer, got {:?}",
+                strict_result
+            );
+
+            // Contrast: the SUBSET verifier (the looser primitive this change replaced) tolerates
+            // the extra layer and ACCEPTS the same padded proof — the exact hole now closed.
+            let subset_result = GroveDb::verify_subset_query_with_absence_proof(
+                &padded_proof,
+                &production_pq,
+                &platform_version.drive.grove_version,
+            );
+            assert!(
+                subset_result.is_ok(),
+                "subset verifier was expected to tolerate the padded proof, got {:?}",
+                subset_result
+            );
+        }
+
         /// Round-trip prove/verify for the `surplus_output: None` path. The surplus is implicitly
         /// donated to the fee pools (sized to land exactly on the cap so it is accepted), so the
         /// verifier proves ONLY the consumed asset-lock outpoint and returns the plain
