@@ -23,11 +23,18 @@ use crate::framework::prelude::*;
 use crate::framework::shielded::{adversarial_enabled, bind_shielded, shielded_prover};
 use crate::framework::signer::SeedBackedCoreSigner;
 
-// 1.2M duffs = 1.2e9 credits — above Drive's 100k-duff asset-lock floor and
-// the ~1e9 shielded fee, so the shield (and its REPLAY leg) reach the backend.
-// Core funding covers the lock plus its L1 tx fee.
-const TEST_WALLET_CORE_FUNDING: u64 = 1_400_000;
-const ASSET_LOCK_DUFFS: u64 = 1_200_000;
+// The lock is funded for the FULL `ASSET_LOCK_DUFFS`, but the shield asks
+// for only `SHIELD_DUFFS` (< lock). Type 18 requires the lock to hold
+// `shield_amount + asset-lock processing fee`; the production fund path
+// derives `shield = lock_value - min_fee` for exactly this reason. The
+// 100_000-duff (1e8-credit) gap is the fee headroom — shielding the full
+// lock value is rejected before the shield commits, so the REPLAY leg would
+// never reach Drive's single-use outpoint check. Core funding covers the
+// lock plus its L1 tx fee (+200_000 duffs headroom; an asset-lock tx fee is
+// a few hundred duffs).
+const TEST_WALLET_CORE_FUNDING: u64 = 1_700_000;
+const ASSET_LOCK_DUFFS: u64 = 1_500_000;
+const SHIELD_DUFFS: u64 = 1_400_000;
 const SHIELDED_ACCOUNT: u32 = 0;
 #[allow(dead_code)]
 const STEP_TIMEOUT: Duration = Duration::from_secs(60);
@@ -79,7 +86,9 @@ async fn sh_035_replayed_asset_lock_proof() {
 
     let one_time_key = derive_asset_lock_private_key(&seed_bytes, network, &path)
         .expect("derive one-time asset-lock private key");
-    let credits = dpp::balances::credits::CREDITS_PER_DUFF * ASSET_LOCK_DUFFS;
+    // Shield strictly less than the lock so the remainder covers Type 18's
+    // asset-lock processing fee. The replay reuses this same `credits`/proof.
+    let credits = dpp::balances::credits::CREDITS_PER_DUFF * SHIELD_DUFFS;
 
     // First shield must succeed (consumes the single-use proof).
     s.test_wallet
@@ -101,6 +110,20 @@ async fn sh_035_replayed_asset_lock_proof() {
         .platform_wallet()
         .shielded_shield_from_asset_lock(SHIELDED_ACCOUNT, proof, &one_time_key, credits, prover)
         .await;
+    // The production wrapper broadcasts AND waits for the consensus result, so
+    // `replay` already reflects the TRUE verdict (not just mempool). Emit the
+    // greppable tag for Marvin: Ok = the same proof committed twice (potential
+    // P0); Err = the single-use check rejected the replay (the GOOD outcome).
+    match &replay {
+        Ok(_) => tracing::warn!(
+            target: "platform_wallet::e2e::cases::sh_035",
+            "ADV-VERDICT probe=SH-035 stage=consensus result=accepted detail=\"asset-lock proof consumed twice\""
+        ),
+        Err(e) => tracing::info!(
+            target: "platform_wallet::e2e::cases::sh_035",
+            "ADV-VERDICT probe=SH-035 stage=consensus result=rejected detail=\"{e}\""
+        ),
+    }
     assert!(
         replay.is_err(),
         "SH-035 FINDING (CRITICAL): the SAME asset-lock proof was consumed TWICE — \

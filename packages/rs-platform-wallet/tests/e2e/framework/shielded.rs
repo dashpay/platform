@@ -581,6 +581,57 @@ pub async fn wait_commit_raw(
         .map_err(|e| FrameworkError::Sdk(format!("wait_commit_raw: {e}")))
 }
 
+/// Emit the greppable `ADV-VERDICT` line for a malformed-transition probe,
+/// reading the TRUE verdict (not just mempool admission, SD-002).
+///
+/// Pass the result of [`broadcast_raw`] as `broadcast`:
+/// - `Err` → the malformation was caught at `check_tx` (stateless /
+///   structure): `stage=check_tx result=rejected`.
+/// - `Ok` → drive it to consensus via [`wait_commit_raw`]:
+///   - committed → `stage=consensus result=accepted` (**potential P0**: a
+///     malformed tx that committed),
+///   - consensus error → `stage=consensus result=rejected` (the GOOD
+///     outcome — carries the consensus error / code),
+///   - the readback itself times out → `stage=consensus result=unobserved`
+///     (the rust-dashcore quorum-by-hash gap can stall the proof-verified
+///     readback; this is NOT a probe failure).
+///
+/// Observation only — never asserts, so a quorum-gap timeout can't false-RED.
+pub async fn observe_adv_verdict(
+    sdk: &Arc<dash_sdk::Sdk>,
+    probe: &str,
+    broadcast: &FrameworkResult<()>,
+    state_transition: &dpp::state_transition::StateTransition,
+    timeout: Duration,
+) {
+    match broadcast {
+        Err(e) => tracing::info!(
+            target: "platform_wallet::e2e::shielded",
+            "ADV-VERDICT probe={probe} stage=check_tx result=rejected detail=\"{e}\""
+        ),
+        Ok(()) => match wait_commit_raw(sdk, state_transition, timeout).await {
+            Ok(r) => tracing::warn!(
+                target: "platform_wallet::e2e::shielded",
+                "ADV-VERDICT probe={probe} stage=consensus result=accepted detail=\"committed: {r}\""
+            ),
+            Err(e) => {
+                let es = e.to_string().to_lowercase();
+                if es.contains("timeout") || es.contains("timed out") {
+                    tracing::info!(
+                        target: "platform_wallet::e2e::shielded",
+                        "ADV-VERDICT probe={probe} stage=consensus result=unobserved detail=\"{e}\""
+                    );
+                } else {
+                    tracing::info!(
+                        target: "platform_wallet::e2e::shielded",
+                        "ADV-VERDICT probe={probe} stage=consensus result=rejected detail=\"{e}\""
+                    );
+                }
+            }
+        },
+    }
+}
+
 /// Mutate one `SerializedBundle` field of a built shielded
 /// [`StateTransition`] in place, before broadcast (SH-022/024/025/026/034).
 ///

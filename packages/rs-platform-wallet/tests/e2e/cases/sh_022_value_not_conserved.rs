@@ -22,8 +22,8 @@ use std::time::Duration;
 use crate::framework::prelude::*;
 use crate::framework::shielded::{
     adversarial_enabled, bind_shielded, broadcast_raw, capture_unshield_st,
-    mutate_serialized_bundle, shielded_prover, teardown_sweep_shielded, wait_for_shielded_balance,
-    BundleField, BundleMutation,
+    mutate_serialized_bundle, observe_adv_verdict, shielded_prover, teardown_sweep_shielded,
+    wait_for_shielded_balance, BundleField, BundleMutation,
 };
 use crate::framework::wait::{
     wait_for_address_balance_chain_confirmed_n, CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
@@ -36,6 +36,8 @@ const UNSHIELD_AMOUNT: u64 = 20_000_000;
 /// nothing.
 const FORGED_AMOUNT: u64 = 1_000_000_000;
 const STEP_TIMEOUT: Duration = Duration::from_secs(60);
+/// Consensus commit needs block production + proof — longer than a per-step gate.
+const COMMIT_TIMEOUT: Duration = Duration::from_secs(120);
 
 #[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
 async fn sh_022_value_not_conserved() {
@@ -106,6 +108,8 @@ async fn sh_022_value_not_conserved() {
     )
     .expect("forge unshielding_amount");
     let result = broadcast_raw(s.ctx.sdk(), &st).await;
+    // Observe the TRUE verdict (consensus, not just check_tx) for Marvin.
+    observe_adv_verdict(s.ctx.sdk(), "SH-022", &result, &st, COMMIT_TIMEOUT).await;
     assert!(
         result.is_err(),
         "SH-022 FINDING (CRITICAL): backend ACCEPTED outputs > inputs (declared {FORGED_AMOUNT} \

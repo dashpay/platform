@@ -248,38 +248,24 @@ async fn sh_020_double_spend_two_transitions() {
          did not leave the pool — investigate)"
     );
 
-    // Secondary corroboration (BEST-EFFORT, NOT a hard assert): ideally the
-    // spend that did NOT materialise was rejected nullifier-already-spent
-    // (code 40901). But on devnet the rejected ST never commits, so its
-    // proof-verified `wait_commit_raw` readback times out — and under the
-    // rust-dashcore quorum-by-hash (retirement-edge) gap that timeout/error
-    // masks the real 40901 reason. Asserting on the error string there would
-    // false-RED even though the double-spend was correctly rejected (the
-    // authoritative `credited_count == 1` verdict above already proves that).
-    // So we only LOG the rejected leg's reason as evidence; the STATE delta
-    // is the verdict.
+    // Secondary corroboration: the spend that did NOT materialise must have
+    // been rejected nullifier-already-spent (code 40901), not by a generic
+    // failure — evidence the backend caught the replay for the right reason.
+    // Skipped if the chain surfaced no consensus error (e.g. check_tx
+    // dropped the duplicate silently); the STATE delta above is the verdict.
     let rejected_err = if !credited_a {
         format!("{commit_a:?}")
     } else {
         format!("{commit_b:?}")
     };
     let err_s = rejected_err.to_lowercase();
-    let nullifier_reason = err_s.contains("nullifier")
-        || err_s.contains("alreadyspent")
-        || err_s.contains("already spent");
-    if nullifier_reason {
-        tracing::info!(
-            target: "platform_wallet::e2e::cases::sh_020",
-            "SH-020: rejected leg failed nullifier-already-spent (code 40901) as expected"
-        );
-    } else {
-        tracing::warn!(
-            target: "platform_wallet::e2e::cases::sh_020",
-            rejected_err = %rejected_err,
-            "SH-020: rejected leg's reason is not recognizably nullifier-already-spent \
-             (expected on devnet — the rejected ST never commits, and the rust-dashcore \
-             quorum-by-hash gap can mask the 40901 reason behind a readback timeout). \
-             The credited_count==1 STATE verdict above is authoritative."
+    if err_s.contains("error") || err_s.contains("err(") {
+        assert!(
+            err_s.contains("nullifier")
+                || err_s.contains("alreadyspent")
+                || err_s.contains("already spent"),
+            "SH-020: the rejected spend's consensus error should be nullifier-already-spent \
+             (code 40901); observed {rejected_err}"
         );
     }
 

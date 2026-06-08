@@ -21,7 +21,8 @@ use dpp::version::PlatformVersion;
 use crate::framework::prelude::*;
 use crate::framework::shielded::{
     adversarial_enabled, bind_shielded, broadcast_raw, build_unshield_st_against_notes,
-    shielded_prover, teardown_sweep_shielded, unspent_notes, wait_for_shielded_balance,
+    observe_adv_verdict, shielded_prover, teardown_sweep_shielded, unspent_notes,
+    wait_for_shielded_balance,
 };
 use crate::framework::wait::{
     wait_for_address_balance_chain_confirmed_n, CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
@@ -31,6 +32,8 @@ const FUNDING_CREDITS: u64 = 2_220_000_000;
 const SHIELD_AMOUNT: u64 = 1_120_000_000;
 const UNSHIELD_AMOUNT: u64 = 20_000_000;
 const STEP_TIMEOUT: Duration = Duration::from_secs(60);
+/// Consensus commit needs block production + proof — longer than a per-step gate.
+const COMMIT_TIMEOUT: Duration = Duration::from_secs(120);
 
 #[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
 async fn sh_021_nullifier_replay_after_restart() {
@@ -131,6 +134,8 @@ async fn sh_021_nullifier_replay_after_restart() {
     .await
     .expect("rebuild replay against spent note");
     let replay = broadcast_raw(s.ctx.sdk(), &replay_st).await;
+    // Observe the TRUE verdict (consensus, not just check_tx) for Marvin.
+    observe_adv_verdict(s.ctx.sdk(), "SH-021", &replay, &replay_st, COMMIT_TIMEOUT).await;
     assert!(
         replay.is_err(),
         "SH-021 FINDING (CRITICAL): replay of a confirmed-spent note was ACCEPTED — \

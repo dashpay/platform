@@ -24,7 +24,8 @@ use dpp::version::PlatformVersion;
 use crate::framework::prelude::*;
 use crate::framework::shielded::{
     adversarial_enabled, bind_shielded, broadcast_raw, build_unshield_st_against_notes,
-    shielded_prover, teardown_sweep_shielded, unspent_notes, wait_for_shielded_balance,
+    observe_adv_verdict, shielded_prover, teardown_sweep_shielded, unspent_notes,
+    wait_for_shielded_balance,
 };
 use crate::framework::wait::{
     wait_for_address_balance_chain_confirmed_n, CHAIN_CONFIRMED_CONSECUTIVE_SUCCESSES,
@@ -37,6 +38,8 @@ const SHIELD_AMOUNT: u64 = 200_000_000;
 // insufficient value.
 const UNSHIELD_AMOUNT: u64 = 60_000_000;
 const STEP_TIMEOUT: Duration = Duration::from_secs(60);
+/// Consensus commit needs block production + proof — longer than a per-step gate.
+const COMMIT_TIMEOUT: Duration = Duration::from_secs(120);
 
 #[tokio_shared_rt::test(shared, flavor = "multi_thread", worker_threads = 12)]
 async fn sh_033_duplicate_nullifier_in_bundle() {
@@ -118,6 +121,8 @@ async fn sh_033_duplicate_nullifier_in_bundle() {
     match built {
         Ok(st) => {
             let result = broadcast_raw(s.ctx.sdk(), &st).await;
+            // Observe the TRUE verdict (consensus, not just check_tx) for Marvin.
+            observe_adv_verdict(s.ctx.sdk(), "SH-033", &result, &st, COMMIT_TIMEOUT).await;
             assert!(
                 result.is_err(),
                 "SH-033 FINDING (CRITICAL): backend ACCEPTED a bundle with a duplicate nullifier \
@@ -132,10 +137,11 @@ async fn sh_033_duplicate_nullifier_in_bundle() {
             // The build rejected the duplicate before it could reach Drive;
             // no state write occurs. Acceptable (the dup is stopped early),
             // but log it so a reviewer knows the backend arm wasn't exercised.
+            // Emit the greppable tag with a build stage so Marvin's one grep
+            // still captures SH-033's verdict.
             tracing::info!(
                 target: "platform_wallet::e2e::cases::sh_033",
-                error = %e,
-                "duplicate-nullifier bundle rejected at build time (never reached the backend)"
+                "ADV-VERDICT probe=SH-033 stage=build result=rejected detail=\"{e}\""
             );
         }
     }
