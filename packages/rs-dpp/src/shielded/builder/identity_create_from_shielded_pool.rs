@@ -116,7 +116,15 @@ where
         ));
     }
 
-    let total_spent: u64 = spends.iter().map(|s| s.note.value().inner()).sum();
+    // Checked: a large spend set could otherwise overflow u64 (release builds wrap silently).
+    let total_spent = spends
+        .iter()
+        .try_fold(0u64, |acc, s| acc.checked_add(s.note.value().inner()))
+        .ok_or_else(|| {
+            ProtocolError::ShieldedBuildError(
+                "identity-create-from-shielded-pool total spent value overflows u64".to_string(),
+            )
+        })?;
     if denomination > total_spent {
         return Err(ProtocolError::ShieldedBuildError(format!(
             "denomination {} exceeds total spendable value {}",
@@ -126,6 +134,7 @@ where
 
     // The whole denomination leaves the pool; the excess re-enters as a single change note. There
     // is NO shielded recipient — the value funds the (transparent) new identity, not another note.
+    // Cannot underflow: the `denomination > total_spent` guard above already rejected that case.
     let change_amount = total_spent - denomination;
 
     // Orchard's BundleType::DEFAULT pads single-spend bundles to a 2-action minimum, matching the

@@ -7,6 +7,7 @@ use crate::util::batch::DriveOperation;
 use crate::util::batch::DriveOperation::{IdentityOperation, SystemOperation};
 use crate::util::batch::{IdentityOperationType, SystemOperationType};
 use dpp::block::epoch::Epoch;
+use dpp::identity::accessors::IdentityGettersV0;
 use dpp::version::PlatformVersion;
 
 impl DriveHighLevelOperationConverter for IdentityCreateFromShieldedPoolTransitionAction {
@@ -25,6 +26,20 @@ impl DriveHighLevelOperationConverter for IdentityCreateFromShieldedPoolTransiti
             0 => match self {
                 IdentityCreateFromShieldedPoolTransitionAction::V0(v0) => {
                     let mut ops: Vec<DriveOperation<'a>> = Vec::new();
+
+                    // Defense in depth: the new identity is created holding the full denomination
+                    // (`AddNewIdentity{ balance }`) AND the system-credits / pool accounting is keyed
+                    // off `denomination`. If those two ever diverged, the emitted ops would mint or
+                    // burn credits. The transformer builds the identity with `balance = denomination`,
+                    // so this can't happen — but assert it before emitting any op rather than trust
+                    // two separate sources of truth.
+                    if v0.identity.balance() != v0.denomination {
+                        return Err(Error::Drive(DriveError::CorruptedDriveState(format!(
+                            "identity balance {} must equal the shielded exit denomination {}",
+                            v0.identity.balance(),
+                            v0.denomination
+                        ))));
+                    }
 
                     // 1. Insert each nullifier (validated to not already exist) — double-spend
                     //    prevention. These also serve as the id-derivation preimage.

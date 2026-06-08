@@ -1515,9 +1515,23 @@ impl Drive {
                 use dpp::prelude::Revision;
                 use dpp::serialization::PlatformDeserializable;
                 use dpp::state_transition::identity_create_from_shielded_pool_transition::accessors::IdentityCreateFromShieldedPoolTransitionAccessorsV0;
+                use dpp::state_transition::identity_create_from_shielded_pool_transition::derive_identity_id_from_actions;
                 use dpp::state_transition::proof_result::StateTransitionProofResult::VerifiedIdentityWithShieldedNullifiers;
+                use std::collections::BTreeMap;
 
-                let identity_id = st.identity_id().to_buffer();
+                // Recompute the id from the actions (the canonical value) instead of trusting the
+                // wire field, and reject a tampered transition whose wire id doesn't match — so a
+                // client verifying a proof cannot be fed a transition that reuses these nullifiers
+                // while pointing `identity_id` at a different identity. (Consensus enforces the same
+                // equality in `validate_structure`; this independently re-checks it here so the
+                // SDK proof path is sound even on a hand-constructed transition object.)
+                let derived_id = derive_identity_id_from_actions(st.actions());
+                if st.identity_id() != derived_id {
+                    return Err(Error::Proof(ProofError::IncorrectProof(
+                        "identity create from shielded pool: identity_id does not match the value derived from the spend nullifiers".to_string(),
+                    )));
+                }
+                let identity_id = derived_id.to_buffer();
                 let nullifier_keys: Vec<Vec<u8>> = st.nullifiers();
 
                 // Rebuild the BYTE-IDENTICAL merged query the prove side built: the nullifier
@@ -1637,6 +1651,30 @@ impl Drive {
                         )))
                     }
                 };
+
+                // Bind the proof to the transition's declared key set: the proven identity must hold
+                // EXACTLY the keys the transition created (the same conversion the action transformer
+                // used to build the identity). This stops a tampered transition from swapping in a
+                // different key set while reusing a valid {nullifiers, identity} proof.
+                //
+                // The balance is deliberately NOT checked against `denomination`: the identity holds
+                // `denomination - total_fee`, and `total_fee` is metered at execution and not
+                // recoverable here, so a balance/denomination equality check would reject every
+                // honest proof. (`denomination` is bound into the Orchard `extra_sighash_data` at
+                // consensus, which is where that binding is enforced.)
+                let expected_keys: BTreeMap<KeyID, IdentityPublicKey> = st
+                    .public_keys()
+                    .iter()
+                    .map(|key| {
+                        let public_key: IdentityPublicKey = key.into();
+                        (public_key.id(), public_key)
+                    })
+                    .collect();
+                if keys != expected_keys {
+                    return Err(Error::Proof(ProofError::IncorrectProof(
+                        "identity create from shielded pool: the proven identity's keys do not match the transition's declared public keys".to_string(),
+                    )));
+                }
 
                 let identity: dpp::prelude::Identity = IdentityV0 {
                     id: Identifier::from(identity_id),

@@ -234,6 +234,24 @@ mod tests {
         ))
     }
 
+    fn make_identity_create_from_shielded_pool_transition() -> StateTransition {
+        use dpp::state_transition::state_transitions::shielded::identity_create_from_shielded_pool_transition::v0::IdentityCreateFromShieldedPoolTransitionV0;
+        use dpp::state_transition::state_transitions::shielded::identity_create_from_shielded_pool_transition::IdentityCreateFromShieldedPoolTransition;
+        StateTransition::IdentityCreateFromShieldedPool(
+            IdentityCreateFromShieldedPoolTransition::V0(
+                IdentityCreateFromShieldedPoolTransitionV0 {
+                    public_keys: vec![],
+                    denomination: 0,
+                    actions: vec![],
+                    anchor: [0u8; 32],
+                    proof: vec![],
+                    binding_signature: [0u8; 64],
+                    identity_id: Default::default(),
+                },
+            ),
+        )
+    }
+
     /// Returns all state transitions grouped by expected `has_is_allowed_validation` result.
     fn transitions_requiring_allowed_validation() -> Vec<StateTransition> {
         vec![
@@ -267,6 +285,7 @@ mod tests {
             make_unshield_transition(),
             make_shield_from_asset_lock_transition(),
             make_shielded_withdrawal_transition(),
+            make_identity_create_from_shielded_pool_transition(),
         ]
     }
 

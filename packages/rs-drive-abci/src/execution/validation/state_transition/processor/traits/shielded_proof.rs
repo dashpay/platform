@@ -875,6 +875,138 @@ mod tests {
                 result.errors
             );
         }
+
+        /// Build an `IdentityCreateFromShieldedPool` with `num_actions` actions, `num_keys` keys, and
+        /// the given `denomination` (the min-fee gate only reads those three).
+        fn identity_create_from_shielded_pool(
+            denomination: u64,
+            num_actions: usize,
+            num_keys: usize,
+        ) -> StateTransition {
+            use dpp::identity::{KeyType, Purpose, SecurityLevel};
+            use dpp::platform_value::BinaryData;
+            use dpp::shielded::SerializedAction;
+            use dpp::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
+            use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+            use dpp::state_transition::state_transitions::shielded::identity_create_from_shielded_pool_transition::v0::IdentityCreateFromShieldedPoolTransitionV0;
+            use dpp::state_transition::state_transitions::shielded::identity_create_from_shielded_pool_transition::IdentityCreateFromShieldedPoolTransition;
+            let actions = (0..num_actions as u8)
+                .map(|i| SerializedAction {
+                    nullifier: [i; 32],
+                    rk: [0u8; 32],
+                    cmx: [0u8; 32],
+                    encrypted_note: vec![0u8; 216],
+                    cv_net: [0u8; 32],
+                    spend_auth_sig: [0u8; 64],
+                })
+                .collect();
+            let public_keys = (0..num_keys as u32)
+                .map(|i| {
+                    IdentityPublicKeyInCreation::V0(IdentityPublicKeyInCreationV0 {
+                        id: i,
+                        key_type: KeyType::ECDSA_SECP256K1,
+                        purpose: Purpose::AUTHENTICATION,
+                        security_level: SecurityLevel::MASTER,
+                        contract_bounds: None,
+                        read_only: false,
+                        data: BinaryData::new(vec![i as u8; 33]),
+                        signature: BinaryData::new(vec![]),
+                    })
+                })
+                .collect();
+            StateTransition::IdentityCreateFromShieldedPool(
+                IdentityCreateFromShieldedPoolTransition::V0(
+                    IdentityCreateFromShieldedPoolTransitionV0 {
+                        public_keys,
+                        denomination,
+                        actions,
+                        anchor: [0u8; 32],
+                        proof: vec![],
+                        binding_signature: [0u8; 64],
+                        identity_id: Default::default(),
+                    },
+                ),
+            )
+        }
+
+        #[test]
+        fn should_reject_identity_create_denomination_below_min_fee() {
+            let platform_version = PlatformVersion::latest();
+            let (num_actions, num_keys) = (2usize, 1usize);
+            let min_fee = dpp::shielded::compute_shielded_identity_create_fee(
+                num_actions,
+                num_keys,
+                platform_version,
+            )
+            .expect("fee");
+            let st = identity_create_from_shielded_pool(min_fee - 1, num_actions, num_keys);
+            let result = st
+                .validate_minimum_shielded_fee(platform_version)
+                .expect("no error");
+            assert!(!result.is_valid());
+            assert!(
+                matches!(
+                    result.errors.first(),
+                    Some(ConsensusError::StateError(
+                        StateError::InsufficientShieldedFeeError(_)
+                    ))
+                ),
+                "a denomination below the min fee must reject with InsufficientShieldedFeeError; got {:?}",
+                result.errors
+            );
+        }
+
+        #[test]
+        fn should_accept_identity_create_denomination_at_min_fee() {
+            let platform_version = PlatformVersion::latest();
+            let (num_actions, num_keys) = (2usize, 1usize);
+            let min_fee = dpp::shielded::compute_shielded_identity_create_fee(
+                num_actions,
+                num_keys,
+                platform_version,
+            )
+            .expect("fee");
+            let st = identity_create_from_shielded_pool(min_fee, num_actions, num_keys);
+            assert!(
+                st.validate_minimum_shielded_fee(platform_version)
+                    .expect("no error")
+                    .is_valid(),
+                "a denomination equal to the min fee must be accepted"
+            );
+        }
+
+        #[test]
+        fn should_scale_identity_create_min_fee_with_key_count() {
+            let platform_version = PlatformVersion::latest();
+            let num_actions = 2usize;
+            let one_key_fee = dpp::shielded::compute_shielded_identity_create_fee(
+                num_actions,
+                1,
+                platform_version,
+            )
+            .expect("fee");
+            let five_key_fee = dpp::shielded::compute_shielded_identity_create_fee(
+                num_actions,
+                5,
+                platform_version,
+            )
+            .expect("fee");
+            assert!(five_key_fee > one_key_fee, "more keys must cost more");
+            // A 1-key-sized denomination must be REJECTED for a 5-key identity (the fee scaled up).
+            let st = identity_create_from_shielded_pool(one_key_fee, num_actions, 5);
+            assert!(
+                !st.validate_minimum_shielded_fee(platform_version)
+                    .expect("no error")
+                    .is_valid(),
+                "a 1-key-sized denomination must be rejected once the identity has 5 keys"
+            );
+            // ...and accepted once the denomination covers the scaled fee.
+            let st_ok = identity_create_from_shielded_pool(five_key_fee, num_actions, 5);
+            assert!(st_ok
+                .validate_minimum_shielded_fee(platform_version)
+                .expect("no error")
+                .is_valid());
+        }
     }
 
     mod validate_shielded_proof {

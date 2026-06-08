@@ -654,12 +654,6 @@ extension PlatformWalletManager {
         let identitySignerHandle = identitySigner.handle
 
         return try await Task.detached(priority: .userInitiated) { () -> Data in
-            // Keepalive — KeychainSigner uses `passUnretained`, so the
-            // Rust ctx pointer dangles unless the Swift owner stays
-            // alive across this detached work (see
-            // `registerIdentityFromAddresses`).
-            _ = identitySigner
-
             var outIdentityId: (
                 UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
                 UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
@@ -678,25 +672,31 @@ extension PlatformWalletManager {
             // Reuses the same marshalling helper the address-funded
             // registration path uses so the two can't drift.
             let pubkeyBuffers: [Data] = identityPubkeys.map { $0.pubkeyBytes }
-            let result = try walletId.withUnsafeBytes { widRaw -> PlatformWalletFFIResult in
-                guard let widPtr = widRaw.baseAddress?.assumingMemoryBound(to: UInt8.self)
-                else {
-                    throw PlatformWalletError.invalidParameter("walletId baseAddress is nil")
-                }
-                return ManagedPlatformWallet.withPubkeyFFIArray(
-                    identityPubkeys,
-                    buffers: pubkeyBuffers
-                ) { ffiRowsPtr, ffiRowsCount in
-                    platform_wallet_manager_shielded_identity_create_from_pool(
-                        handle,
-                        widPtr,
-                        account,
-                        ffiRowsPtr,
-                        UInt(ffiRowsCount),
-                        denomination,
-                        identitySignerHandle,
-                        &outIdentityId
-                    )
+            // KeychainSigner is passed to Rust via `passUnretained`, so the Rust ctx pointer dangles
+            // unless the Swift owner is kept alive across the FFI call. `_ = identitySigner` is
+            // folklore that the optimizer may elide in -O builds; `withExtendedLifetime` is the
+            // guaranteed keepalive (matches this module's signer-lifetime guidance).
+            let result = try withExtendedLifetime(identitySigner) {
+                try walletId.withUnsafeBytes { widRaw -> PlatformWalletFFIResult in
+                    guard let widPtr = widRaw.baseAddress?.assumingMemoryBound(to: UInt8.self)
+                    else {
+                        throw PlatformWalletError.invalidParameter("walletId baseAddress is nil")
+                    }
+                    return ManagedPlatformWallet.withPubkeyFFIArray(
+                        identityPubkeys,
+                        buffers: pubkeyBuffers
+                    ) { ffiRowsPtr, ffiRowsCount in
+                        platform_wallet_manager_shielded_identity_create_from_pool(
+                            handle,
+                            widPtr,
+                            account,
+                            ffiRowsPtr,
+                            UInt(ffiRowsCount),
+                            denomination,
+                            identitySignerHandle,
+                            &outIdentityId
+                        )
+                    }
                 }
             }
 

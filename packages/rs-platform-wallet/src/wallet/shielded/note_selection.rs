@@ -220,6 +220,20 @@ pub fn select_notes_for_denomination<'a>(
     num_keys: usize,
     platform_version: &PlatformVersion,
 ) -> Result<(Vec<&'a ShieldedNote>, u64, u64), PlatformWalletError> {
+    // Reject a non-member denomination up-front: consensus only accepts the versioned exit set, so
+    // an unsupported value is rejected at `validate_structure` — but that happens AFTER the
+    // (expensive) Orchard build/prove in the current flow, so gating here avoids burning that work.
+    let allowed = platform_version
+        .drive_abci
+        .validation_and_processing
+        .event_constants
+        .shielded_identity_create_denominations;
+    if !allowed.contains(&denomination) {
+        return Err(PlatformWalletError::ShieldedBuildError(format!(
+            "denomination {denomination} is not a member of the allowed exit-denomination set {allowed:?}"
+        )));
+    }
+
     // Target the denomination exactly — no fee added on top (exact-equality model).
     let selected = select_notes(unspent, denomination, 0)?;
     let total: u64 = selected.iter().map(|n| n.value).sum();
@@ -266,6 +280,34 @@ mod tests {
         // Largest-first: should pick 300 alone
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].value, 300);
+    }
+
+    #[test]
+    fn test_select_for_denomination_rejects_non_member_before_proof() {
+        // A non-member denomination must fail fast (before any note selection / Orchard prove),
+        // even when the wallet holds more than enough value — consensus would reject it anyway at
+        // validate_structure, so burning the prove path on it is pure waste.
+        let platform_version = PlatformVersion::latest();
+        let notes = vec![test_note(u64::MAX / 2, 0)];
+        let err = select_notes_for_denomination(&notes, 12_345, 2, 1, platform_version)
+            .expect_err("a non-member denomination must be rejected");
+        assert!(
+            matches!(err, PlatformWalletError::ShieldedBuildError(ref m) if m.contains("not a member")),
+            "expected a not-a-member ShieldedBuildError, got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn test_select_for_denomination_accepts_member() {
+        // A member denomination with enough value selects successfully.
+        let platform_version = PlatformVersion::latest();
+        let denomination = 10_000_000_000u64; // 0.1 DASH — a member of the v12 set.
+        let notes = vec![test_note(denomination + 1, 0)];
+        let (selected, total, _fee) =
+            select_notes_for_denomination(&notes, denomination, 2, 1, platform_version)
+                .expect("a member denomination with enough value must select");
+        assert_eq!(selected.len(), 1);
+        assert!(total >= denomination);
     }
 
     #[test]
