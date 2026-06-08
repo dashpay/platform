@@ -1,7 +1,9 @@
 use dashcore::{Address as DashAddress, Transaction};
 use key_wallet::account::account_type::StandardAccountType;
+use key_wallet::managed_account::address_pool::KeySource;
 use key_wallet::managed_account::managed_account_trait::ManagedAccountTrait;
 use key_wallet::signer::Signer;
+use key_wallet::{DerivationPath, Network};
 
 use crate::broadcaster::TransactionBroadcaster;
 use crate::{CoreWallet, PlatformWalletError};
@@ -211,11 +213,33 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
         // lock is released.
         let signed_txs: Vec<Transaction> = {
             let mut wm = self.wallet_manager.write().await;
-            let (_wallet, info) = wm.get_wallet_and_info_mut(&self.wallet_id).ok_or_else(|| {
+            let (wallet, info) = wm.get_wallet_and_info_mut(&self.wallet_id).ok_or_else(|| {
                 PlatformWalletError::WalletNotFound(
                     "Wallet not found in wallet manager".to_string(),
                 )
             })?;
+
+            // CoinJoin account key material for deriving signing paths across
+            // BOTH chains. DashSync CoinJoin puts mixing *change* on the internal
+            // chain (.../1/i), but the SDK's CoinJoin account derives only the
+            // external pool (.../0/i) — so internal-chain inputs are owned and
+            // spendable yet have no derivation path. `coinjoin_sweep_path_map`
+            // (below) re-derives both chains from the account xpub. Copied/cloned
+            // out so the `wallet` borrow ends before the `info` borrow
+            // (`account_xpub` is `Copy`).
+            let (account_xpub, account_type, network) = {
+                let acct = wallet
+                    .accounts
+                    .coinjoin_accounts
+                    .get(&account_index)
+                    .ok_or_else(|| {
+                        PlatformWalletError::WalletNotFound(format!(
+                            "CoinJoin account {} not found",
+                            account_index
+                        ))
+                    })?;
+                (acct.account_xpub, acct.account_type.clone(), acct.network)
+            };
 
             let current_height = info.core_wallet.synced_height();
 
@@ -243,6 +267,24 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                     "no spendable CoinJoin UTXOs to sweep".to_string(),
                 ));
             }
+
+            // Resolve an absolute derivation path for every input address across
+            // BOTH CoinJoin chains (external /0/ and internal /1/), so the signer
+            // can sign internal-chain ("change") mixed coins too. Errors if any
+            // input can't be resolved on either chain rather than failing mid-sign.
+            let account_path = account_type
+                .derivation_path(network)
+                .map_err(|e| PlatformWalletError::AddressOperation(e.to_string()))?;
+            let key_source = KeySource::Public(account_xpub);
+            let input_addresses: Vec<DashAddress> =
+                utxos.iter().map(|u| u.address.clone()).collect();
+            let path_map = coinjoin_sweep_path_map(
+                &account_path,
+                &key_source,
+                network,
+                &input_addresses,
+                COINJOIN_SWEEP_MAX_INDEX,
+            )?;
 
             let fee_rate = FeeRate::normal();
             const BASE_SIZE_1_OUTPUT_NO_CHANGE: usize = 8 + 1 + 1 + 34;
@@ -305,9 +347,7 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
                 // `sign_tx` signs `tx.input[i]` using `chunk_utxos[i]`, so input
                 // order and the utxo vec must line up — both derive from `chunk`.
                 let signed = signer
-                    .sign_tx(unsigned, chunk_utxos, |addr| {
-                        managed_account.address_derivation_path(&addr)
-                    })
+                    .sign_tx(unsigned, chunk_utxos, |addr| path_map.get(&addr).cloned())
                     .await
                     .map_err(|e| PlatformWalletError::TransactionBuild(e.to_string()))?;
 
@@ -348,6 +388,89 @@ impl<B: TransactionBroadcaster + ?Sized> CoreWallet<B> {
     }
 }
 
+/// Build an `address → absolute derivation path` map covering every address in
+/// `needed_addrs` across BOTH CoinJoin chains — external (`/0/`) and internal
+/// (`/1/`) — derived from the account's public xpub. `account_path` is the
+/// hardened account path `m/9'/coin'/4'/account'`.
+///
+/// The SDK's CoinJoin account models only the external chain, but DashSync
+/// CoinJoin puts mixing *change* on the internal chain. A migrated wallet's
+/// internal-chain mixed coins are imported as spendable UTXOs yet have no
+/// derivation path in the account, so signing a sweep that includes them fails
+/// with "no derivation path for input address". This re-derives both chains
+/// (non-hardened, public-key-only) and returns each input's absolute path so the
+/// signer can sign every input regardless of chain.
+///
+/// Returns an error if any address can't be resolved within
+/// `COINJOIN_SWEEP_MAX_INDEX` on either chain — defensive, so a sweep never
+/// silently mis-signs or drops an input.
+/// Per-chain index ceiling for the sweep resolver. A heavy mixer's CoinJoin
+/// indices sit well under this; the cap only bounds the (never-hit-in-practice)
+/// unresolved case so the search terminates.
+const COINJOIN_SWEEP_MAX_INDEX: u32 = 20_000;
+
+fn coinjoin_sweep_path_map(
+    account_path: &DerivationPath,
+    key_source: &KeySource,
+    network: Network,
+    needed_addrs: &[DashAddress],
+    max_index: u32,
+) -> Result<std::collections::HashMap<DashAddress, DerivationPath>, PlatformWalletError> {
+    use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType};
+    use key_wallet::ChildNumber;
+    use std::collections::{HashMap, HashSet};
+
+    const BATCH: u32 = 500;
+
+    let mut needed: HashSet<DashAddress> = needed_addrs.iter().cloned().collect();
+    let mut path_map: HashMap<DashAddress, DerivationPath> = HashMap::new();
+
+    // chain 0 = external (receive / denominations), chain 1 = internal (change).
+    for (chain, pool_type) in [
+        (0u32, AddressPoolType::External),
+        (1u32, AddressPoolType::Internal),
+    ] {
+        if needed.is_empty() {
+            break;
+        }
+        let mut base = account_path.clone();
+        base.push(
+            ChildNumber::from_normal_idx(chain)
+                .map_err(|e| PlatformWalletError::AddressOperation(e.to_string()))?,
+        );
+        // Empty pool (NoKeySource skips generation); we generate below with the
+        // real public key source so each `AddressInfo` carries its full path.
+        let mut pool = AddressPool::new(base, pool_type, 0, network, &KeySource::NoKeySource)
+            .map_err(|e| PlatformWalletError::AddressOperation(e.to_string()))?;
+
+        let mut generated = 0u32;
+        while generated < max_index && !needed.is_empty() {
+            let batch = pool
+                .generate_addresses(BATCH, key_source, true)
+                .map_err(|e| PlatformWalletError::AddressOperation(e.to_string()))?;
+            for addr in &batch {
+                if needed.remove(addr) {
+                    if let Some(info) = pool.address_info(addr) {
+                        path_map.insert(addr.clone(), info.path.clone());
+                    }
+                }
+            }
+            generated += BATCH;
+        }
+    }
+
+    if !needed.is_empty() {
+        return Err(PlatformWalletError::TransactionBuild(format!(
+            "CoinJoin sweep: {} input address(es) have no derivation path on either \
+             CoinJoin chain (within {} indices)",
+            needed.len(),
+            max_index
+        )));
+    }
+
+    Ok(path_map)
+}
+
 #[cfg(test)]
 mod sweep_chunking_tests {
     use super::{sweep_chunk_size, MAX_INPUTS_PER_SWEEP};
@@ -379,5 +502,94 @@ mod sweep_chunking_tests {
                 "every chunk within [1, {MAX_INPUTS_PER_SWEEP}] for {total}: {sizes:?}"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod coinjoin_sweep_path_map_tests {
+    use super::coinjoin_sweep_path_map;
+    use dashcore::secp256k1::Secp256k1;
+    use key_wallet::account::account_type::AccountType;
+    use key_wallet::managed_account::address_pool::{AddressPool, AddressPoolType, KeySource};
+    use key_wallet::{ChildNumber, DerivationPath, ExtendedPrivKey, ExtendedPubKey, Network};
+
+    fn coinjoin_account(network: Network, seed_byte: u8) -> (ExtendedPubKey, DerivationPath) {
+        let secp = Secp256k1::new();
+        let master = ExtendedPrivKey::new_master(network, &[seed_byte; 32]).unwrap();
+        let account_path = AccountType::CoinJoin { index: 0 }
+            .derivation_path(network)
+            .unwrap();
+        let account_xpriv = master.derive_priv(&secp, &account_path).unwrap();
+        (ExtendedPubKey::from_priv(&secp, &account_xpriv), account_path)
+    }
+
+    /// Derive `<account_path>/<chain>/<index>` the way the resolver does, to get
+    /// a known target address to look up.
+    fn derive_addr(
+        xpub: &ExtendedPubKey,
+        account_path: &DerivationPath,
+        network: Network,
+        chain: u32,
+        index: u32,
+    ) -> dashcore::Address {
+        let pool_type = if chain == 0 {
+            AddressPoolType::External
+        } else {
+            AddressPoolType::Internal
+        };
+        let mut base = account_path.clone();
+        base.push(ChildNumber::from_normal_idx(chain).unwrap());
+        let mut pool =
+            AddressPool::new(base, pool_type, 0, network, &KeySource::NoKeySource).unwrap();
+        let addrs = pool
+            .generate_addresses(index + 1, &KeySource::Public(*xpub), true)
+            .unwrap();
+        addrs[index as usize].clone()
+    }
+
+    fn abs_path(account_path: &DerivationPath, chain: u32, index: u32) -> DerivationPath {
+        let mut p = account_path.clone();
+        p.push(ChildNumber::from_normal_idx(chain).unwrap());
+        p.push(ChildNumber::from_normal_idx(index).unwrap());
+        p
+    }
+
+    /// Both an external (/0/) and an internal (/1/) CoinJoin address resolve to
+    /// their correct absolute paths — the internal case is the bug this fixes.
+    #[test]
+    fn resolves_external_and_internal_chain_addresses() {
+        let network = Network::Testnet;
+        let (xpub, account_path) = coinjoin_account(network, 7);
+        let key_source = KeySource::Public(xpub);
+
+        let external = derive_addr(&xpub, &account_path, network, 0, 7);
+        let internal = derive_addr(&xpub, &account_path, network, 1, 42);
+
+        let map = coinjoin_sweep_path_map(
+            &account_path,
+            &key_source,
+            network,
+            &[external.clone(), internal.clone()],
+            200,
+        )
+        .unwrap();
+
+        assert_eq!(map.get(&external), Some(&abs_path(&account_path, 0, 7)));
+        assert_eq!(map.get(&internal), Some(&abs_path(&account_path, 1, 42)));
+    }
+
+    /// An address not derivable from this account xpub on either chain yields the
+    /// defensive error (here: a different wallet's CoinJoin address).
+    #[test]
+    fn errors_when_an_input_address_is_unresolvable() {
+        let network = Network::Testnet;
+        let (xpub, account_path) = coinjoin_account(network, 7);
+        let key_source = KeySource::Public(xpub);
+
+        let (other_xpub, other_path) = coinjoin_account(network, 9);
+        let foreign = derive_addr(&other_xpub, &other_path, network, 0, 3);
+
+        let result = coinjoin_sweep_path_map(&account_path, &key_source, network, &[foreign], 200);
+        assert!(result.is_err(), "foreign address must not resolve");
     }
 }
