@@ -362,10 +362,9 @@ struct CreateWalletView: View {
                             )
                             createdWallets.append((net, managed.walletId))
                         } catch {
-                            let message = error.localizedDescription
-                            // An "already exists" throw means the wallet
-                            // is already on this network — benign. We do
-                            // NOT resolve the existing scoped walletId to
+                            // A typed `walletAlreadyExists` throw means the
+                            // wallet is already on this network — benign. We
+                            // do NOT resolve the existing scoped walletId to
                             // re-store the mnemonic: a wallet that already
                             // exists on this network had its mnemonic +
                             // metadata stored under that scoped id at its
@@ -373,11 +372,12 @@ struct CreateWalletView: View {
                             // write. It is also not counted as a freshly-
                             // created wallet. Any other error is a genuine
                             // failure.
-                            if message.range(of: "already exists", options: .caseInsensitive) != nil {
+                            if case PlatformWalletError.walletAlreadyExists = error {
                                 SDKLogger.error(
                                     "Wallet already present on \(net.displayName); continuing"
                                 )
                             } else {
+                                let message = error.localizedDescription
                                 failures.append((net, message))
                                 SDKLogger.error(
                                     "Wallet creation failed for \(net.displayName): \(message)"

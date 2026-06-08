@@ -804,12 +804,13 @@ struct WalletInfoView: View {
                 )
             }
         } catch {
-            let description = error.localizedDescription
-            // An "already exists" throw means the wallet is already on
-            // this network — a genuine no-op, so fall through to refresh.
-            // Any other failure (SDK build error, Rust-side error, etc.)
-            // must surface to the user instead of silently doing nothing.
-            if description.range(of: "already exists", options: .caseInsensitive) == nil {
+            // A typed `walletAlreadyExists` throw means the wallet is
+            // already on this network — a genuine no-op, so fall through to
+            // refresh. Any other failure (SDK build error, Rust-side error,
+            // etc.) must surface to the user instead of silently doing
+            // nothing.
+            guard case PlatformWalletError.walletAlreadyExists = error else {
+                let description = error.localizedDescription
                 SDKLogger.error(
                     "enableNetwork(\(network.displayName)) failed: \(description)"
                 )
@@ -818,7 +819,7 @@ struct WalletInfoView: View {
                 return
             }
             SDKLogger.error(
-                "enableNetwork(\(network.displayName)) create returned: \(description)"
+                "enableNetwork(\(network.displayName)) create returned benign already-exists"
             )
         }
 
