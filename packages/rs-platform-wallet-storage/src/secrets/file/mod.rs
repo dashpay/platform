@@ -943,6 +943,8 @@ impl CredentialApi for EncryptedFileCredential {
     fn get_secret(&self) -> KeyringResult<Vec<u8>> {
         let _ = validated_label(&self.label).map_err(SecretStoreError::from)?;
         match self.store.get_bytes(&self.wallet_id, &self.label) {
+            // SPI contract forces a bare Vec; caller owns disposal —
+            // prefer SecretStore::get for a zeroizing SecretBytes.
             Ok(Some(v)) => Ok(v.expose_secret().to_vec()),
             Ok(None) => Err(KeyringError::NoEntry),
             Err(e) => Err(e.into()),

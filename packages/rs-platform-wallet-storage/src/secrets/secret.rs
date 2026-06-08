@@ -130,6 +130,14 @@ impl ConstantTimeEq for SecretString {
     }
 }
 
+impl Zeroize for SecretString {
+    /// Wipe the buffer in place on a live value. `Drop` runs the same
+    /// wipe automatically; this lets a holder zeroize early.
+    fn zeroize(&mut self) {
+        self.inner.zeroize();
+    }
+}
+
 impl From<String> for SecretString {
     fn from(s: String) -> Self {
         Self::new(s)
@@ -239,6 +247,14 @@ impl ConstantTimeEq for SecretBytes {
     }
 }
 
+impl Zeroize for SecretBytes {
+    /// Wipe the buffer in place on a live value. `Drop` runs the same
+    /// wipe automatically; this lets a holder zeroize early.
+    fn zeroize(&mut self) {
+        self.inner.zeroize();
+    }
+}
+
 impl fmt::Debug for SecretBytes {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "SecretBytes([REDACTED; {}])", self.inner.len())
@@ -336,53 +352,36 @@ mod tests {
         assert!(std::mem::needs_drop::<SecretBytes>());
     };
 
-    /// Best-effort runtime check that `Drop` wipes the full `SecretString`
-    /// capacity. Reads freed memory — UB in the strict sense, flaky under
-    /// parallelism; run single-threaded:
-    /// `cargo test --features secrets -- secret_string_drop_zeroes --ignored --test-threads=1`
+    /// Sound check that the zeroize machinery actually wipes the buffer.
+    /// Every read is on a STILL-LIVE value — no post-free pointer
+    /// dereference (that is UB and was the flaw in the old `#[ignore]`'d
+    /// canaries). For `SecretBytes` the in-place slice wipe also proves
+    /// the bytes themselves go to zero with the length preserved, not
+    /// merely that the length is cleared.
     #[test]
-    #[ignore]
-    fn secret_string_drop_zeroes_full_capacity() {
-        let ptr: *const u8;
-        let cap: usize;
-        {
-            let s = SecretString::new("sensitive_seed_material");
-            ptr = s.inner.as_ptr();
-            cap = s.inner.capacity();
-            // SAFETY: live allocation, read for `cap` bytes pre-drop.
-            #[allow(unsafe_code)]
-            let pre = unsafe { std::slice::from_raw_parts(ptr, cap) };
-            assert!(pre.iter().any(|&b| b != 0));
-        }
-        // SAFETY: best-effort post-free read; single-thread makes page
-        // reuse before this read unlikely.
-        #[allow(unsafe_code)]
-        let post = unsafe { std::slice::from_raw_parts(ptr, cap) };
-        assert!(post.iter().all(|&b| b == 0), "buffer not zeroed on drop");
-    }
+    fn manual_zeroize_wipes_live_buffer() {
+        // SecretBytes: wipe the exposed buffer in place; bytes go to zero
+        // while the length stays put.
+        let mut b = SecretBytes::from_slice(&[0xABu8; 64]);
+        assert!(b.expose_secret().iter().any(|&x| x != 0));
+        b.expose_secret_mut().zeroize();
+        assert_eq!(b.len(), 64, "in-place wipe must preserve length");
+        assert!(
+            b.expose_secret().iter().all(|&x| x == 0),
+            "SecretBytes buffer not zeroed by manual zeroize"
+        );
 
-    /// Best-effort runtime check that `Drop` wipes `SecretBytes`. Same
-    /// caveat as above; run single-threaded with `--ignored`. A
-    /// page-sized buffer is used so the allocator is unlikely to reuse
-    /// the freed page before the post-drop read (a tiny `Vec` would be
-    /// recycled immediately, making the check meaningless).
-    #[test]
-    #[ignore]
-    fn secret_bytes_drop_zeroes() {
-        let ptr: *const u8;
-        let cap: usize;
-        {
-            let b = SecretBytes::from_slice(&[0xAB; 4096]);
-            ptr = b.inner.as_ptr();
-            cap = b.inner.capacity();
-            // SAFETY: live allocation, read for `cap` bytes pre-drop.
-            #[allow(unsafe_code)]
-            let pre = unsafe { std::slice::from_raw_parts(ptr, cap) };
-            assert!(pre.iter().any(|&x| x != 0));
-        }
-        // SAFETY: best-effort post-free read; see note above.
-        #[allow(unsafe_code)]
-        let post = unsafe { std::slice::from_raw_parts(ptr, cap) };
-        assert!(post.iter().all(|&x| x == 0), "buffer not zeroed on drop");
+        // SecretBytes wrapper-level zeroize empties the buffer.
+        let mut b2 = SecretBytes::from_slice(&[0xCDu8; 32]);
+        b2.zeroize();
+        assert!(b2.is_empty(), "SecretBytes::zeroize must empty the buffer");
+
+        // SecretString wrapper-level zeroize empties the buffer; the
+        // exposed view holds no residual plaintext.
+        let mut s = SecretString::new("sensitive_seed_material");
+        assert!(!s.is_empty());
+        s.zeroize();
+        assert!(s.is_empty(), "SecretString::zeroize must empty the buffer");
+        assert_eq!(s.expose_secret(), "");
     }
 }
