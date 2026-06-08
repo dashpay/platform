@@ -662,4 +662,139 @@ mod tests {
             "error leaked input bytes: {rendered}"
         );
     }
+
+    /// A parse outcome on a mutated vault must always be either a clean
+    /// `Ok` (a mutation that happens to stay well-formed — e.g. flipping
+    /// a ciphertext hex digit) or one of the typed error variants. It
+    /// must NEVER panic / abort.
+    fn assert_deserialize_outcome_is_typed(bytes: &[u8]) {
+        let res = std::panic::catch_unwind(|| deserialize(bytes));
+        let parsed = res.expect("deserialize must never panic on hostile input");
+        match parsed {
+            Ok(_)
+            | Err(SecretStoreError::MalformedVault)
+            | Err(SecretStoreError::VersionUnsupported { .. })
+            | Err(SecretStoreError::InvalidLabel) => {}
+            Err(other) => panic!("unexpected error variant from parser: {other:?}"),
+        }
+    }
+
+    /// Deterministic byte-level fuzz: from a known-valid serialized vault,
+    /// flip bit ranges and truncate at every offset, asserting the parser
+    /// is always fail-closed and never panics (SEC-011). A fixed seed
+    /// keeps the run reproducible — no proptest dependency.
+    #[test]
+    fn parser_is_fuzz_resistant_to_byte_mutation() {
+        let mut entries = BTreeMap::new();
+        entries.insert(
+            "bip39_mnemonic".to_string(),
+            EntryBody {
+                nonce: [0x33; NONCE_LEN],
+                ciphertext: vec![0x44; AEAD_TAG_LEN + 16],
+            },
+        );
+        let mut wallets = BTreeMap::new();
+        wallets.insert(hex::encode([0xABu8; 32]), entries);
+        let valid = serialize(&test_vault(wallets));
+
+        // The pristine vault parses.
+        assert!(deserialize(&valid).is_ok());
+
+        // xorshift32 — deterministic, std-only.
+        let mut state: u32 = 0x1234_5678;
+        let mut next = || {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            state
+        };
+
+        for _ in 0..2_000 {
+            let mut buf = valid.clone();
+            // Flip 1..=4 random bytes.
+            let flips = 1 + (next() % 4) as usize;
+            for _ in 0..flips {
+                let idx = (next() as usize) % buf.len();
+                buf[idx] ^= (next() & 0xFF) as u8;
+            }
+            assert_deserialize_outcome_is_typed(&buf);
+        }
+
+        // Truncation at every offset — a short read must never panic.
+        for cut in 0..valid.len() {
+            assert_deserialize_outcome_is_typed(&valid[..cut]);
+        }
+    }
+
+    /// Structural fuzz: targeted hostile shapes a byte-flip rarely hits —
+    /// oversized KDF params, deep nesting, NUL / traversal / over-long
+    /// labels, wrong-width hex, oversized declared sizes. Every one must
+    /// be a typed error (or, for in-bounds-but-valid shapes, Ok) and
+    /// never panic. Inflated KDF params ride through the parser by design
+    /// (the bounds gate lives at `derive_key`), so they may parse Ok here.
+    #[test]
+    fn parser_is_fuzz_resistant_to_structural_mutation() {
+        let base: serde_json::Value =
+            serde_json::from_slice(&serialize(&test_vault(BTreeMap::new()))).unwrap();
+        let wid_owned = hex::encode([1u8; 32]);
+        let wid = wid_owned.as_str();
+        let good_nonce = "0".repeat(NONCE_LEN * 2);
+        let good_ct = "0".repeat((AEAD_TAG_LEN + 1) * 2);
+
+        let mut cases: Vec<serde_json::Value> = Vec::new();
+
+        // Oversized / absurd KDF params.
+        for (k, v) in [
+            ("m_kib", serde_json::json!(u32::MAX)),
+            ("t", serde_json::json!(u32::MAX)),
+            ("p", serde_json::json!(u32::MAX)),
+            ("id", serde_json::json!(255)),
+        ] {
+            let mut c = base.clone();
+            c["kdf"][k] = v;
+            cases.push(c);
+        }
+
+        // Deep nesting in the wallets map (well past the type's depth).
+        {
+            let mut nested = serde_json::json!(0);
+            for _ in 0..512 {
+                nested = serde_json::json!([nested]);
+            }
+            let mut c = base.clone();
+            c["wallets"] = nested;
+            cases.push(c);
+        }
+
+        // Hostile labels and key shapes.
+        for label in ["\0null", "../escape", &"a".repeat(65), "has space"] {
+            let mut c = base.clone();
+            c["wallets"] = serde_json::json!({ wid: { label: { "nonce": good_nonce.as_str(), "ciphertext": good_ct.as_str() } } });
+            cases.push(c);
+        }
+
+        // Wrong-width hex and oversized declared sizes.
+        for (nonce, ct) in [
+            ("00", good_ct.as_str()),                    // short nonce
+            (good_nonce.as_str(), "00"),                 // short ciphertext
+            (&"0".repeat(NONCE_LEN * 4), good_ct.as_str()), // over-wide nonce
+            ("zz", good_ct.as_str()),                    // non-hex nonce
+        ] {
+            let mut c = base.clone();
+            c["wallets"] = serde_json::json!({ wid: { "seed": { "nonce": nonce, "ciphertext": ct } } });
+            cases.push(c);
+        }
+
+        // Non-hex / wrong-length outer wallet-id key.
+        for bad_wid in ["not-hex", &"aa".repeat(8), &"AB".repeat(32)] {
+            let mut c = base.clone();
+            c["wallets"] = serde_json::json!({ bad_wid: { "seed": { "nonce": good_nonce.as_str(), "ciphertext": good_ct.as_str() } } });
+            cases.push(c);
+        }
+
+        for c in cases {
+            let bytes = serde_json::to_vec(&c).unwrap();
+            assert_deserialize_outcome_is_typed(&bytes);
+        }
+    }
 }

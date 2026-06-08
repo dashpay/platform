@@ -1968,6 +1968,29 @@ mod tests {
         assert!(matches!(err, SecretStoreError::WrongPassphrase), "got {err:?}");
     }
 
+    /// A flipped entry NONCE byte (verify-token intact) surfaces as
+    /// `Corruption`: the per-entry AEAD-open fails its tag under the
+    /// correct key, mirroring the ciphertext-flip route.
+    #[test]
+    fn flipped_entry_nonce_is_corruption() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = vault_path(dir.path());
+        let s = store_at(&path);
+        entry(&s, wid(1), "seed").set_secret(b"value").unwrap();
+        let mut vault = s.test_read_vault_from_disk().unwrap().unwrap();
+        vault
+            .wallets
+            .get_mut(&wid(1).to_hex())
+            .unwrap()
+            .get_mut("seed")
+            .unwrap()
+            .nonce[0] ^= 0x01;
+        s.test_write_vault_to_disk(&vault).unwrap();
+        s.test_reload_from_disk().unwrap();
+        let err = entry(&s, wid(1), "seed").get_secret().unwrap_err();
+        assert!(is_corruption(&err), "unexpected error: {err:?}");
+    }
+
     /// A secret exactly at the cap is accepted (boundary is inclusive).
     #[test]
     fn secret_exactly_at_cap_is_accepted() {
