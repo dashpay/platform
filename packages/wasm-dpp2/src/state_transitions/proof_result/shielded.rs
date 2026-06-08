@@ -469,11 +469,13 @@ impl VerifiedIdentityWithShieldedNullifiersWasm {
         let identity_val = js_sys::Reflect::get(&value, &"identity".into())
             .map_err(|_| WasmDppError::generic("Missing property: identity"))?;
         let identity: IdentityWasm = crate::serialization::conversions::from_object(identity_val)?;
-        let nullifiers_val = js_sys::Reflect::get(&value, &"nullifiers".into())
-            .map_err(|_| WasmDppError::generic("Missing property: nullifiers"))?;
+        // `toJSON` normalizes the `Map` to a plain object so it survives `JSON.stringify`; rebuild a
+        // real `Map` (accepting either form) so `nullifiers()` behaves like a Map after a
+        // `JSON.parse(JSON.stringify(...))` round-trip — same boundary the sibling wrappers handle.
+        let nullifiers = read_map_property(&value, "nullifiers")?;
         Ok(VerifiedIdentityWithShieldedNullifiersWasm {
             identity,
-            nullifiers: nullifiers_val.unchecked_into(),
+            nullifiers,
         })
     }
 
@@ -482,11 +484,13 @@ impl VerifiedIdentityWithShieldedNullifiersWasm {
         let identity_val = js_sys::Reflect::get(&value, &"identity".into())
             .map_err(|_| WasmDppError::generic("Missing property: identity"))?;
         let identity: IdentityWasm = crate::serialization::conversions::from_json(identity_val)?;
-        let nullifiers_val = js_sys::Reflect::get(&value, &"nullifiers".into())
-            .map_err(|_| WasmDppError::generic("Missing property: nullifiers"))?;
+        // `toJSON` normalizes the `Map` to a plain object so it survives `JSON.stringify`; rebuild a
+        // real `Map` (accepting either form) so `nullifiers()` behaves like a Map after a
+        // `JSON.parse(JSON.stringify(...))` round-trip — same boundary the sibling wrappers handle.
+        let nullifiers = read_map_property(&value, "nullifiers")?;
         Ok(VerifiedIdentityWithShieldedNullifiersWasm {
             identity,
-            nullifiers: nullifiers_val.unchecked_into(),
+            nullifiers,
         })
     }
 }
