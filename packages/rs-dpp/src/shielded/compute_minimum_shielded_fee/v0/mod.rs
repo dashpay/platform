@@ -1,6 +1,7 @@
 use crate::fee::Credits;
 use crate::shielded::{
-    SHIELDED_STORAGE_BYTES_PER_ACTION, SHIELDED_WITHDRAWAL_DOCUMENT_STORAGE_BYTES,
+    SHIELDED_STORAGE_BYTES_PER_ACTION, SHIELDED_UNSHIELD_ADDRESS_STORAGE_BYTES,
+    SHIELDED_WITHDRAWAL_DOCUMENT_STORAGE_BYTES,
 };
 use crate::ProtocolError;
 use platform_version::version::PlatformVersion;
@@ -139,6 +140,54 @@ pub fn compute_shielded_withdrawal_fee_v0(
         .ok_or(ProtocolError::Overflow("shielded withdrawal fee overflow"))
 }
 
+/// v0 of the shielded **unshield** fee formula:
+///
+///   `unshield_fee = compute_minimum_shielded_fee_v0(num_actions)
+///                   + SHIELDED_UNSHIELD_ADDRESS_STORAGE_BYTES × (disk + processing) credits/byte`
+///
+/// This is [`compute_minimum_shielded_fee_v0`] PLUS one flat storage component for the single
+/// `AddBalanceToAddress` write an `Unshield` performs, crediting the net
+/// (`unshielding_amount − fee`) to the output platform address. That address write has a real,
+/// GroveDB-metered cost of ≈6.24M credits that is FLAT regardless of action count and is NOT
+/// priced by `compute_minimum_shielded_fee_v0` (which only covers per-action note/nullifier storage
+/// and the per-bundle ZK compute). Pricing it as `SHIELDED_UNSHIELD_ADDRESS_STORAGE_BYTES`
+/// effective bytes at the SAME per-byte storage rate the per-action note storage uses keeps the
+/// address write covered (so `execute_event/v0`'s `storage = min(real_storage, fee)` booking split
+/// never zeroes the proposer's processing reward) and lets the component track the storage rate as
+/// it evolves.
+///
+/// This fee is used ONLY by `Unshield`. The other pool-paid transitions (ShieldedTransfer /
+/// ShieldedWithdrawal) and the entry transitions keep using their own formulas
+/// ([`compute_minimum_shielded_fee_v0`] / [`compute_shielded_withdrawal_fee_v0`] /
+/// [`compute_shielded_verification_fee_v0`]).
+///
+/// All arithmetic is checked: an overflow (only reachable via pathological fee constants)
+/// surfaces as `ProtocolError::Overflow` instead of silently wrapping. The `per_byte_rate` is
+/// computed exactly as in [`compute_minimum_shielded_fee_v0`].
+pub fn compute_shielded_unshield_fee_v0(
+    num_actions: usize,
+    platform_version: &PlatformVersion,
+) -> Result<Credits, ProtocolError> {
+    let storage = &platform_version.fee_version.storage;
+
+    let base_fee = compute_minimum_shielded_fee_v0(num_actions, platform_version)?;
+
+    let per_byte_rate = storage
+        .storage_disk_usage_credit_per_byte
+        .checked_add(storage.storage_processing_credit_per_byte)
+        .ok_or(ProtocolError::Overflow(
+            "shielded storage per-byte rate overflow",
+        ))?;
+    let address_storage_fee = SHIELDED_UNSHIELD_ADDRESS_STORAGE_BYTES
+        .checked_mul(per_byte_rate)
+        .ok_or(ProtocolError::Overflow(
+            "shielded unshield address storage fee overflow",
+        ))?;
+    base_fee
+        .checked_add(address_storage_fee)
+        .ok_or(ProtocolError::Overflow("shielded unshield fee overflow"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -215,6 +264,41 @@ mod tests {
                 withdrawal - base,
                 document_cost,
                 "the withdrawal-document component must be flat (independent of action count)"
+            );
+        }
+    }
+
+    /// Pin the exact relationship between the Unshield fee and the base shielded fee:
+    /// the unshield fee MUST be `compute_minimum_shielded_fee_v0(n)` plus exactly one flat
+    /// `SHIELDED_UNSHIELD_ADDRESS_STORAGE_BYTES × per_byte_rate` address-write component (the same
+    /// `per_byte_rate = disk + processing` the per-action note storage uses), independent of `n`.
+    /// This locks the address-write cost as a flat add-on so it cannot silently drift from the base
+    /// fee or accidentally scale with the action count.
+    #[test]
+    fn compute_shielded_unshield_fee_v0_equals_base_plus_flat_address_cost() {
+        let platform_version = PlatformVersion::latest();
+        let storage = &platform_version.fee_version.storage;
+        let per_byte_rate =
+            storage.storage_disk_usage_credit_per_byte + storage.storage_processing_credit_per_byte;
+        let address_cost = SHIELDED_UNSHIELD_ADDRESS_STORAGE_BYTES * per_byte_rate;
+
+        for num_actions in [0usize, 1, 2, 5, 16] {
+            let base = compute_minimum_shielded_fee_v0(num_actions, platform_version)
+                .expect("minimum shielded fee");
+            let unshield = compute_shielded_unshield_fee_v0(num_actions, platform_version)
+                .expect("unshield shielded fee");
+            assert_eq!(
+                unshield,
+                base + address_cost,
+                "unshield fee must equal the base minimum fee plus the flat \
+                 {SHIELDED_UNSHIELD_ADDRESS_STORAGE_BYTES}-byte address-write storage cost for \
+                 {num_actions} actions"
+            );
+            // The address-write component is flat: the delta over the base must not depend on n.
+            assert_eq!(
+                unshield - base,
+                address_cost,
+                "the unshield address-write component must be flat (independent of action count)"
             );
         }
     }

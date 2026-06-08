@@ -257,22 +257,26 @@ mod tests {
         assert!(result.is_err());
     }
 
-    /// Audit (I5): the flat `compute_minimum_shielded_fee` must cover the *actual* GroveDB write
+    /// Audit (I5): the flat `compute_shielded_unshield_fee` must cover the *actual* GroveDB write
     /// cost of an Unshield's operations, AND strictly exceed the metered storage so the pool-paid
     /// booking split never undercharges.
     ///
     /// Unshield is pool-paid: `execute_event/v0` carves the flat fee from the shielded pool and
     /// splits it as `storage_fee = min(real_metered_storage, flat_fee); processing_fee = flat_fee -
     /// storage_fee`. The `min()` only binds (zeroing the proposer's processing reward and
-    /// undercharging storage) if real metered storage EXCEEDS the flat fee. This test meters the
-    /// real cost in estimation mode (`apply = false`, production-sized 216-byte notes) and asserts
-    /// both `fee >= total cost` and `fee > storage` — the latter being exactly the condition that
-    /// keeps the `min()` a no-op. Mirrors the ShieldedTransfer metering test.
+    /// undercharging storage) if real metered storage EXCEEDS the flat fee. Unshield also writes the
+    /// net to the output platform address (`AddBalanceToAddress`), so its fee
+    /// (`compute_shielded_unshield_fee`) prices that write as a flat storage component on top of the
+    /// base shielded fee — which is exactly why the `fee > storage` margin below holds with room to
+    /// spare. This test meters the real cost in estimation mode (`apply = false`, production-sized
+    /// 216-byte notes) and asserts both `fee >= total cost` and `fee > storage` — the latter being
+    /// exactly the condition that keeps the `min()` a no-op. Mirrors the ShieldedTransfer metering
+    /// test.
     #[test]
     fn test_minimum_shielded_fee_covers_actual_grovedb_write_cost() {
         use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
         use dpp::block::block_info::BlockInfo;
-        use dpp::shielded::compute_minimum_shielded_fee;
+        use dpp::shielded::compute_shielded_unshield_fee;
 
         let drive = setup_drive_with_initial_state_structure(None);
         let platform_version = PlatformVersion::latest();
@@ -286,7 +290,7 @@ mod tests {
         };
 
         for num_actions in [1usize, 8, 16] {
-            let fee_amount = compute_minimum_shielded_fee(num_actions, platform_version)
+            let fee_amount = compute_shielded_unshield_fee(num_actions, platform_version)
                 .expect("fee computation should not overflow");
             let notes: Vec<_> = (0..num_actions as u8).map(realistic_note).collect();
             // `amount` (unshielding_amount) must cover the fee with a positive net to the output
@@ -320,7 +324,7 @@ mod tests {
 
             assert!(
                 fee_amount >= actual_cost,
-                "compute_minimum_shielded_fee({num_actions}) = {fee_amount} must cover the actual \
+                "compute_shielded_unshield_fee({num_actions}) = {fee_amount} must cover the actual \
                  Unshield GroveDB write cost {actual_cost} (storage {} + processing {})",
                 fee_result.storage_fee,
                 fee_result.processing_fee
@@ -331,7 +335,7 @@ mod tests {
             // never zeroed, storage never undercharged). See `execute_event/v0`.
             assert!(
                 fee_amount > fee_result.storage_fee,
-                "compute_minimum_shielded_fee({num_actions}) = {fee_amount} must strictly exceed the \
+                "compute_shielded_unshield_fee({num_actions}) = {fee_amount} must strictly exceed the \
                  real metered Unshield storage {} so the booking split's min(real_storage, flat_fee) \
                  never binds",
                 fee_result.storage_fee

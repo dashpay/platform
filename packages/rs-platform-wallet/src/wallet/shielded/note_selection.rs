@@ -7,22 +7,27 @@
 use super::store::ShieldedNote;
 use crate::error::PlatformWalletError;
 use dpp::fee::Credits;
-use dpp::shielded::{compute_minimum_shielded_fee, compute_shielded_withdrawal_fee};
+use dpp::shielded::{
+    compute_minimum_shielded_fee, compute_shielded_unshield_fee, compute_shielded_withdrawal_fee,
+};
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 
 /// Which consensus fee formula the wallet must reserve notes against for a spend.
 ///
-/// The flat shielded fee charged at execution time differs by transition: ShieldedTransfer and
-/// Unshield are carved with [`compute_minimum_shielded_fee`], while ShieldedWithdrawal is carved
-/// with [`compute_shielded_withdrawal_fee`] (the same base fee PLUS the flat Core
-/// withdrawal-document storage cost). Note selection must reserve against the SAME formula the
+/// The flat shielded fee charged at execution time differs by transition: ShieldedTransfer is
+/// carved with [`compute_minimum_shielded_fee`] (the base), Unshield with
+/// [`compute_shielded_unshield_fee`] (the base PLUS the flat `AddBalanceToAddress` output-write
+/// cost), and ShieldedWithdrawal with [`compute_shielded_withdrawal_fee`] (the base PLUS the flat
+/// Core withdrawal-document storage cost). Note selection must reserve against the SAME formula the
 /// builder/consensus will charge, otherwise it under-funds the spend (the builder then rejects
 /// it, or — in debug — the `fee_used == exact_fee` assertion fails).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ShieldedFeeKind {
-    /// `compute_minimum_shielded_fee` — ShieldedTransfer and Unshield.
+    /// `compute_minimum_shielded_fee` — ShieldedTransfer (the base).
     Base,
+    /// `compute_shielded_unshield_fee` — Unshield (adds the flat `AddBalanceToAddress` output-write cost).
+    Unshield,
     /// `compute_shielded_withdrawal_fee` — ShieldedWithdrawal (adds the flat withdrawal-document cost).
     Withdrawal,
 }
@@ -36,6 +41,9 @@ impl ShieldedFeeKind {
     ) -> Result<Credits, ProtocolError> {
         match self {
             ShieldedFeeKind::Base => compute_minimum_shielded_fee(num_actions, platform_version),
+            ShieldedFeeKind::Unshield => {
+                compute_shielded_unshield_fee(num_actions, platform_version)
+            }
             ShieldedFeeKind::Withdrawal => {
                 compute_shielded_withdrawal_fee(num_actions, platform_version)
             }
@@ -107,9 +115,10 @@ pub fn select_notes(
 ///
 /// `fee_kind` selects which consensus fee formula to reserve against: pass
 /// [`ShieldedFeeKind::Withdrawal`] for a ShieldedWithdrawal (so the flat Core
-/// withdrawal-document cost is reserved too) and [`ShieldedFeeKind::Base`] for
-/// ShieldedTransfer / Unshield. This MUST match the fee the builder/consensus will charge,
-/// otherwise the spend is under-funded.
+/// withdrawal-document cost is reserved too), [`ShieldedFeeKind::Unshield`] for an Unshield (so the
+/// flat `AddBalanceToAddress` output-write cost is reserved too), and [`ShieldedFeeKind::Base`] for
+/// ShieldedTransfer. This MUST match the fee the builder/consensus will charge, otherwise the spend
+/// is under-funded.
 ///
 /// Returns the selected notes, total input value, and the exact fee.
 pub fn select_notes_with_fee<'a>(
@@ -316,6 +325,43 @@ mod tests {
         assert_eq!(
             exact_fee, withdrawal_fee_2,
             "withdrawal note selection must reserve the withdrawal-inclusive fee"
+        );
+    }
+
+    #[test]
+    fn test_select_notes_with_fee_unshield_reserves_address_write_cost() {
+        // An Unshield must reserve against `compute_shielded_unshield_fee` (base + flat
+        // `AddBalanceToAddress` output-write cost), which is strictly larger than
+        // `compute_minimum_shielded_fee`. Reserving with `ShieldedFeeKind::Unshield` must therefore
+        // return the higher fee.
+        let platform_version = PlatformVersion::latest();
+        let base_fee_2 = compute_minimum_shielded_fee(2, platform_version)
+            .expect("fee computation should not overflow");
+        let unshield_fee_2 = compute_shielded_unshield_fee(2, platform_version)
+            .expect("fee computation should not overflow");
+        assert!(
+            unshield_fee_2 > base_fee_2,
+            "unshield fee must exceed the base shielded fee (it includes the address-write cost)"
+        );
+
+        let amount = 1_000_000u64;
+        // A single note that covers amount + the 2-action UNSHIELD fee exactly.
+        let notes = vec![test_note(amount + unshield_fee_2, 0)];
+
+        let (selected, total, exact_fee) = select_notes_with_fee(
+            &notes,
+            amount,
+            2,
+            ShieldedFeeKind::Unshield,
+            platform_version,
+        )
+        .expect("selection ok");
+
+        assert_eq!(selected.len(), 1);
+        assert_eq!(total, amount + unshield_fee_2);
+        assert_eq!(
+            exact_fee, unshield_fee_2,
+            "unshield note selection must reserve the unshield-inclusive fee"
         );
     }
 }

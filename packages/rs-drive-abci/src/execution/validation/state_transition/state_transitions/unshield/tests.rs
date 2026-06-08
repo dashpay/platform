@@ -57,10 +57,13 @@ mod tests {
         create_unshield_transition(
             create_output_address(),
             vec![create_dummy_serialized_action()],
-            130_549_800, // unshielding_amount: recipient amount + minimum fee for 1 action
-            [42u8; 32],  // non-zero anchor
+            // unshielding_amount: recipient amount + unshield fee for 1 action. The fee gate runs
+            // before proof verification, so this must clear `compute_shielded_unshield_fee(1)`
+            // (136,768,600) for these tests to reach the proof-verification stage they assert on.
+            136_769_600,
+            [42u8; 32],     // non-zero anchor
             vec![0u8; 100], // dummy proof bytes
-            [0u8; 64],   // dummy binding signature
+            [0u8; 64],      // dummy binding signature
         )
     }
 
@@ -458,7 +461,9 @@ mod tests {
             let transition = create_unshield_transition(
                 create_output_address(),
                 vec![bad_action],
-                130_549_800, // unshielding_amount: recipient amount + minimum fee for 1 action
+                // unshielding_amount is not load-bearing here: the bad 100-byte encrypted note
+                // fails basic structure validation, which runs before the fee gate.
+                136_769_600,
                 anchor,
                 vec![0u8; 100],
                 [0u8; 64],
@@ -667,7 +672,11 @@ mod tests {
             let transition = create_unshield_transition(
                 create_output_address(),
                 vec![action1, action2], // Both have nullifier [1u8; 32]
-                161_098_600, // unshielding_amount: recipient amount + minimum fee for 2 actions
+                // unshielding_amount: recipient amount + unshield fee for 2 actions. The fee gate
+                // runs before proof verification, so this must clear
+                // `compute_shielded_unshield_fee(2)` (167,317,400) for this test to reach the
+                // proof-verification stage it asserts on.
+                167_318_400,
                 anchor,
                 vec![0u8; 100],
                 [0u8; 64],

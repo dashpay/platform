@@ -13,7 +13,7 @@ use crate::withdrawal::Pooling;
 // Re-exported so the public path stays `dpp::shielded::compute_minimum_shielded_fee` (the
 // module and the function share a name but live in different namespaces).
 pub use compute_minimum_shielded_fee::{
-    compute_minimum_shielded_fee, compute_shielded_verification_fee,
+    compute_minimum_shielded_fee, compute_shielded_unshield_fee, compute_shielded_verification_fee,
     compute_shielded_withdrawal_fee,
 };
 
@@ -64,6 +64,27 @@ pub const SHIELDED_STORAGE_BYTES_PER_ACTION: u64 = 312;
 /// rate as it evolves, exactly like the per-action note storage does. See
 /// [`compute_minimum_shielded_fee::compute_shielded_withdrawal_fee`].
 pub const SHIELDED_WITHDRAWAL_DOCUMENT_STORAGE_BYTES: u64 = 4100;
+
+/// Calibrated effective storage-byte cost of the single `AddBalanceToAddress` write an `Unshield`
+/// performs, crediting the net (`unshielding_amount − fee`) to the output platform address.
+///
+/// Like the other pool-paid transitions, an `Unshield` writes its change notes and nullifiers — but
+/// it ALSO credits a transparent platform address with `AddBalanceToAddress`. In the new-address
+/// worst case that write touches the address subtree (the address path plus its balance/nonce
+/// entries), a real, GroveDB-metered cost of ≈6,239,100 credits (≈222 of those bytes are storage)
+/// that is FLAT regardless of the bundle's action count (the address write is the same size whether
+/// the unshield spends one note or sixteen).
+///
+/// `compute_minimum_shielded_fee` prices only the per-action note/nullifier storage and the
+/// per-bundle ZK compute, so it does NOT cover this address write. We therefore add the address
+/// cost to the Unshield fee as a flat BYTE-BASED component, sized at
+/// `SHIELDED_UNSHIELD_ADDRESS_STORAGE_BYTES` effective bytes priced at the SAME per-byte storage
+/// rate the per-action note storage uses (`disk + processing` credits/byte). The measured
+/// ≈6,239,100 cost corresponds to ≈227 effective bytes at that rate (≈228 at the live mainnet
+/// rate); 227 covers it and — because it is priced off the same rate — it tracks the storage rate
+/// as it evolves, exactly like the per-action note storage does. See
+/// [`compute_minimum_shielded_fee::compute_shielded_unshield_fee`].
+pub const SHIELDED_UNSHIELD_ADDRESS_STORAGE_BYTES: u64 = 227;
 
 /// Domain separator for Platform sighash computation.
 const SIGHASH_DOMAIN: &[u8] = b"DashPlatformSighash";

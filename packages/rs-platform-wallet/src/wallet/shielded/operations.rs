@@ -351,10 +351,13 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
     // Reserve against the 2-action floor: Orchard's BundleType::DEFAULT pads single-spend
     // bundles to 2 actions, and the builder prices the fee at spends.len().max(2). Reserving
     // for 1 would under-fee a single-note transition and the builder would reject it locally.
-    // Unshield is carved with the base `compute_minimum_shielded_fee` (it writes no Core
-    // withdrawal document), so reserve against `ShieldedFeeKind::Base`.
+    // Unshield is carved with `compute_shielded_unshield_fee` (the base fee PLUS the flat storage
+    // cost of the single `AddBalanceToAddress` write crediting the net to the output address), so
+    // reserve against `ShieldedFeeKind::Unshield` — reserving the base fee here would under-fund the
+    // address-write cost and the builder would reject the spend (and the `fee_used == exact_fee`
+    // debug assert below would fire).
     let (selected_notes, total_input, exact_fee) =
-        reserve_unspent_notes(sdk, store, id, amount, 2, ShieldedFeeKind::Base).await?;
+        reserve_unspent_notes(sdk, store, id, amount, 2, ShieldedFeeKind::Unshield).await?;
 
     info!(
         account,
@@ -386,10 +389,10 @@ pub async fn unshield<S: ShieldedStore, P: OrchardProver>(
         )
         .map_err(|e| PlatformWalletError::ShieldedBuildError(e.to_string()))?;
         // The builder's fee and the wallet's reserved `exact_fee` both come from
-        // compute_minimum_shielded_fee with the same action count; lock that they agree.
+        // compute_shielded_unshield_fee with the same action count; lock that they agree.
         debug_assert_eq!(
             fee_used, exact_fee,
-            "builder fee must match the reserved minimum fee"
+            "builder fee must match the reserved unshield fee"
         );
 
         trace!("Unshield: state transition built, broadcasting...");
