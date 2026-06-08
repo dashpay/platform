@@ -21,6 +21,23 @@
 //! ([`keyring_core::Error::NoDefaultStore`]), never degrades to
 //! plaintext.
 //!
+//! ### Metadata is enumerable plaintext
+//!
+//! On every OS arm the entry is keyed by `service = SERVICE_PREFIX +
+//! hex(wallet_id)` and `user = label`. Those two strings are stored as
+//! **plaintext, enumerable** keyring metadata: same-user list-only
+//! tooling can see *which wallet ids exist* and *which slot kinds*
+//! (labels) each has, without ever unlocking a secret. This is strictly
+//! weaker than — and dominated by — the already-accepted A2/A3 same-user
+//! residual (most OS keyrings hand the secret itself to any same-user
+//! process). The `keyring-core` 1.0.0 `build` modifiers are vendor-
+//! specific creation hints that do NOT replace the `(service, user)`
+//! identity, so they cannot hide this pair; there is no portable knob to
+//! redact it. Operators who want metadata hiding (or non-descriptive
+//! labels) should prefer the
+//! [`EncryptedFileStore`](super::EncryptedFileStore), whose `(wallet_id,
+//! label)` map lives only inside the AEAD-sealed vault.
+//!
 //! ### Per-OS reality
 //!
 //! - **Linux/FreeBSD:** Secret Service (gnome-keyring / KWallet) is the
@@ -52,6 +69,17 @@ use keyring_core::Error as KeyringError;
 /// The returned `Arc` may be passed straight to
 /// [`keyring_core::set_default_store`] or used directly to build
 /// entries.
+///
+/// # Error formatting (SPI-direct consumers)
+///
+/// A consumer driving the raw `keyring_core` SPI through this store holds
+/// upstream [`keyring_core::Error`] values. Always format them with
+/// `Display` (`{}`), **never** `Debug` (`{:?}`): the upstream
+/// `BadEncoding(Vec<u8>)` / `BadDataFormat(Vec<u8>, _)` variants embed
+/// raw bytes in their `Debug` output (CWE-209/CWE-532). This crate's own
+/// backends never construct those variants with secret bytes, and the
+/// typed [`SecretStore`](super::SecretStore) path avoids the SPI error
+/// entirely.
 pub fn default_credential_store() -> Result<Arc<dyn CredentialStoreApi + Send + Sync>, KeyringError>
 {
     platform_default_store()

@@ -986,6 +986,12 @@ impl CredentialStoreApi for EncryptedFileStore {
         STORE_ID.to_string()
     }
 
+    /// Build a credential for `(service, user)`.
+    ///
+    /// SPI-direct consumers: format the returned [`KeyringError`] with
+    /// `Display` (`{}`), never `Debug` (`{:?}`) — upstream byte-bearing
+    /// variants embed raw bytes in `Debug` (CWE-209/CWE-532). Prefer the
+    /// typed [`SecretStore`](crate::secrets::SecretStore) path.
     fn build(
         &self,
         service: &str,

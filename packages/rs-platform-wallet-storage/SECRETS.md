@@ -156,6 +156,18 @@ unwrapped copy is allocated.
   with `NoDefaultStore`. Callers that need durable storage on a
   headless host should pin `SecretStore::file(...)` (encrypted-file
   vault) instead of relying on the OS keyring.
+
+  **Enumerable metadata (OS arm).** Each entry is keyed by
+  `service = SERVICE_PREFIX + hex(wallet_id)` and `user = label`, stored
+  as **plaintext, enumerable** keyring metadata: same-user list-only
+  tooling can see which wallet ids exist and which slot kinds (labels)
+  each has, without unlocking any secret. This is dominated by the
+  already-accepted same-user (A2/A3) residual. The `keyring-core` 1.0.0
+  `build` modifiers are vendor-specific creation hints, not a replacement
+  for the `(service, user)` identity, so there is no portable knob to
+  redact the pair; operators who need metadata hiding should use the file
+  vault, whose `(wallet_id, label)` map lives only inside the sealed
+  vault. Prefer non-descriptive labels on the OS arm regardless.
 - **Tests** — integration tests construct a tempdir-backed
   `EncryptedFileStore` directly via
   `EncryptedFileStore::open(tempfile::tempdir()?.path().join("vault.pwsvault"), SecretString::new("..."))`,
