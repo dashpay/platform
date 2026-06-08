@@ -1,7 +1,8 @@
+use crate::address_funds::AddressFundsFeeStrategyStep;
 use crate::consensus::basic::state_transition::{
-    FeeStrategyDuplicateError, FeeStrategyEmptyError, FeeStrategyTooManyStepsError,
-    InputBelowMinimumError, InputWitnessCountMismatchError, ShieldedInvalidValueBalanceError,
-    TransitionNoInputsError,
+    FeeStrategyDuplicateError, FeeStrategyEmptyError, FeeStrategyIndexOutOfBoundsError,
+    FeeStrategyTooManyStepsError, InputBelowMinimumError, InputWitnessCountMismatchError,
+    ShieldedInvalidValueBalanceError, TransitionNoInputsError,
 };
 use crate::consensus::basic::BasicError;
 use crate::state_transition::shield_transition::v0::ShieldTransitionV0;
@@ -211,6 +212,38 @@ impl StateTransitionStructureValidation for ShieldTransitionV0 {
                     BasicError::FeeStrategyDuplicateError(FeeStrategyDuplicateError::new()).into(),
                 );
             }
+
+            // Reject structurally-unusable fee-strategy steps here — cheaply, before Orchard proof
+            // verification — rather than letting an out-of-range/no-op step slip through and only
+            // surface later as a generic `AddressesNotEnoughFundsError`. A `Shield` has transparent
+            // inputs but NO transparent outputs, so `DeductFromInput` must index a real input and
+            // `ReduceOutput` can never apply. Mirrors `AddressFundingFromAssetLock`'s validator.
+            match step {
+                AddressFundsFeeStrategyStep::DeductFromInput(index) => {
+                    if *index as usize >= self.inputs.len() {
+                        return SimpleConsensusValidationResult::new_with_error(
+                            BasicError::FeeStrategyIndexOutOfBoundsError(
+                                FeeStrategyIndexOutOfBoundsError::new(
+                                    "DeductFromInput",
+                                    *index,
+                                    self.inputs.len().min(u16::MAX as usize) as u16,
+                                ),
+                            )
+                            .into(),
+                        );
+                    }
+                }
+                AddressFundsFeeStrategyStep::ReduceOutput(index) => {
+                    // A Shield has no transparent outputs (count 0), so any `ReduceOutput` is out of
+                    // bounds.
+                    return SimpleConsensusValidationResult::new_with_error(
+                        BasicError::FeeStrategyIndexOutOfBoundsError(
+                            FeeStrategyIndexOutOfBoundsError::new("ReduceOutput", *index, 0),
+                        )
+                        .into(),
+                    );
+                }
+            }
         }
 
         SimpleConsensusValidationResult::new()
@@ -269,6 +302,36 @@ mod tests {
             result.is_valid(),
             "Expected valid result, got errors: {:?}",
             result.errors
+        );
+    }
+
+    #[test]
+    fn should_reject_deduct_from_input_index_out_of_bounds() {
+        let platform_version = PlatformVersion::latest();
+        let mut transition = valid_shield_transition();
+        // Only one input (index 0); index 1 is out of range and must be rejected structurally.
+        transition.fee_strategy = vec![AddressFundsFeeStrategyStep::DeductFromInput(1)];
+        let result = transition.validate_structure(platform_version);
+        assert_matches!(
+            result.errors.as_slice(),
+            [ConsensusError::BasicError(
+                BasicError::FeeStrategyIndexOutOfBoundsError(_)
+            )]
+        );
+    }
+
+    #[test]
+    fn should_reject_reduce_output_fee_strategy() {
+        let platform_version = PlatformVersion::latest();
+        let mut transition = valid_shield_transition();
+        // A Shield has no transparent outputs, so any ReduceOutput step is structurally invalid.
+        transition.fee_strategy = vec![AddressFundsFeeStrategyStep::ReduceOutput(0)];
+        let result = transition.validate_structure(platform_version);
+        assert_matches!(
+            result.errors.as_slice(),
+            [ConsensusError::BasicError(
+                BasicError::FeeStrategyIndexOutOfBoundsError(_)
+            )]
         );
     }
 
