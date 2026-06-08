@@ -1935,14 +1935,17 @@ mod tests {
         ));
     }
 
-    /// An in-bounds KDF-parameter shift on a correct-passphrase vault is
-    /// rejected at open: the verify-token AAD binds the KDF header, so a
-    /// downgrade that stays inside the accepted bounds (m_kib halved, t
-    /// lowered) still fails the token tag and surfaces as
-    /// `WrongPassphrase`. Without the SEC-012 binding the store would
-    /// silently re-derive under the attacker's weaker params.
+    /// Smoke test: an in-bounds KDF-parameter shift on a correct-passphrase
+    /// vault is rejected at open with `WrongPassphrase` (m_kib halved, t
+    /// lowered — still above the floor). This rejection happens because the
+    /// changed KDF params yield a different DERIVED KEY, which already fails
+    /// the verify-token tag; it is NOT a test of the header-AAD binding.
+    /// Salt and KDF params feed both the KDF and the verify-token AAD, so
+    /// binding them into the AAD adds attributable, structural
+    /// defence-in-depth, not a new detection path. The binding itself is
+    /// guarded by the unit test `verify_aad_binds_salt_and_kdf_params`.
     #[test]
-    fn in_bounds_kdf_param_shift_is_refused_at_open() {
+    fn header_tamper_kdf_shift_smoke_test() {
         let dir = tempfile::tempdir().unwrap();
         let path = vault_path(dir.path());
         {
@@ -1967,12 +1970,13 @@ mod tests {
         );
     }
 
-    /// A flipped salt byte on a correct-passphrase vault is rejected at
-    /// open: the derived key changes and the verify-token AAD (which now
-    /// binds the salt) no longer matches, so the token tag fails →
-    /// `WrongPassphrase`.
+    /// Smoke test: a flipped salt byte on a correct-passphrase vault is
+    /// rejected at open with `WrongPassphrase`. As with the KDF-shift case,
+    /// this rejection is driven by the changed DERIVED KEY (salt feeds the
+    /// KDF), not by the header-AAD binding — the binding adds attributable
+    /// defence-in-depth and is guarded by `verify_aad_binds_salt_and_kdf_params`.
     #[test]
-    fn flipped_salt_is_refused_at_open() {
+    fn header_tamper_flipped_salt_smoke_test() {
         let dir = tempfile::tempdir().unwrap();
         let path = vault_path(dir.path());
         {

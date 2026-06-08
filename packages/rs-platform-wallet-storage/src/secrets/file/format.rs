@@ -701,8 +701,8 @@ mod tests {
 
     /// Deterministic byte-level fuzz: from a known-valid serialized vault,
     /// flip bit ranges and truncate at every offset, asserting the parser
-    /// is always fail-closed and never panics (SEC-011). A fixed seed
-    /// keeps the run reproducible — no proptest dependency.
+    /// is always fail-closed and never panics. A fixed seed keeps the run
+    /// reproducible — no proptest dependency.
     #[test]
     fn parser_is_fuzz_resistant_to_byte_mutation() {
         let mut entries = BTreeMap::new();
@@ -811,6 +811,19 @@ mod tests {
             let mut c = base.clone();
             c["wallets"] = serde_json::json!({ bad_wid: { "seed": { "nonce": good_nonce.as_str(), "ciphertext": good_ct.as_str() } } });
             cases.push(c);
+        }
+
+        // Header verify-token fields: a regression localized to `salt` /
+        // `verify_nonce` / `verify_ct` (fixed-width or tag-floored) must
+        // still be a typed error, never a panic — empty / short / over-wide
+        // / non-hex each.
+        let over_wide = "0".repeat(SALT_LEN * 4);
+        for field in ["salt", "verify_nonce", "verify_ct"] {
+            for bad in ["", "00", over_wide.as_str(), "zz"] {
+                let mut c = base.clone();
+                c[field] = serde_json::json!(bad);
+                cases.push(c);
+            }
         }
 
         for c in cases {
