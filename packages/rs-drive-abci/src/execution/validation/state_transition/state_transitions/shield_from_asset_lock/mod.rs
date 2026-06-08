@@ -40,7 +40,7 @@ impl StateTransitionShieldFromAssetLockTransitionActionTransformer
         platform: &PlatformRef<C>,
         signable_bytes: Vec<u8>,
         validation_mode: ValidationMode,
-        block_info: &BlockInfo,
+        _block_info: &BlockInfo,
         execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
@@ -57,7 +57,6 @@ impl StateTransitionShieldFromAssetLockTransitionActionTransformer
                 platform,
                 signable_bytes,
                 validation_mode,
-                block_info,
                 execution_context,
                 tx,
             ),

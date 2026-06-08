@@ -45,6 +45,11 @@ pub struct DriveAbciValidationConstants {
     /// Per-action fee (in credits) for processing: RedPallas spend auth signature
     /// verification, nullifier duplicate check, and tree insertion.
     pub shielded_per_action_processing_fee: u64,
+    /// Maximum surplus (in credits) that a `ShieldFromAssetLock` may implicitly
+    /// donate to the fee pools when no `surplus_output` address is set. Above this
+    /// cap the transition is rejected so a client cannot accidentally forfeit a
+    /// large asset-lock remainder. 20,000,000,000 credits = 0.2 Dash.
+    pub shielded_implicit_fee_cap: u64,
 }
 
 #[derive(Clone, Debug, Default)]

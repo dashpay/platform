@@ -3,7 +3,7 @@ use grovedb_commitment_tree::{Anchor, FullViewingKey, SpendAuthorizingKey};
 use crate::address_funds::OrchardAddress;
 use crate::fee::Credits;
 use crate::identity::core_script::CoreScript;
-use crate::shielded::compute_minimum_shielded_fee;
+use crate::shielded::compute_shielded_withdrawal_fee;
 use crate::state_transition::shielded_withdrawal_transition::methods::ShieldedWithdrawalTransitionMethodsV0;
 use crate::state_transition::shielded_withdrawal_transition::ShieldedWithdrawalTransition;
 use crate::state_transition::StateTransition;
@@ -34,8 +34,9 @@ use super::{build_spend_bundle, serialize_authorized_bundle, OrchardProver, Spen
 /// - `platform_version` - Protocol version
 ///
 /// The fee is not a parameter: consensus always charges exactly
-/// `compute_minimum_shielded_fee` and ignores any surplus. Returns the built transition
-/// together with the fee (in credits) that was applied.
+/// `compute_shielded_withdrawal_fee` (the base shielded minimum fee PLUS the flat storage cost of
+/// the Core withdrawal document this transition inserts) and ignores any surplus. Returns the built
+/// transition together with the fee (in credits) that was applied.
 #[allow(clippy::too_many_arguments)]
 pub fn build_shielded_withdrawal_transition<P: OrchardProver>(
     spends: Vec<SpendableNote>,
@@ -68,10 +69,11 @@ pub fn build_shielded_withdrawal_transition<P: OrchardProver>(
     // rejects an honest single-spend withdrawal with InsufficientShieldedFeeError (or,
     // post-fee, WithdrawalBelowMinAmountError).
     let num_actions = spends.len().max(2);
-    // The fee is fixed at the minimum: consensus always carves exactly
-    // `compute_minimum_shielded_fee` from the pool, and the net (`withdrawal_amount`) goes to
-    // the Core withdrawal document.
-    let fee = compute_minimum_shielded_fee(num_actions, platform_version)?;
+    // The fee is fixed at the withdrawal minimum: consensus always carves exactly
+    // `compute_shielded_withdrawal_fee` from the pool — the base shielded minimum fee PLUS the
+    // flat storage cost of the Core withdrawal document this transition inserts — and the net
+    // (`withdrawal_amount`) goes to that Core withdrawal document.
+    let fee = compute_shielded_withdrawal_fee(num_actions, platform_version)?;
 
     let required = withdrawal_amount.checked_add(fee).ok_or_else(|| {
         ProtocolError::ShieldedBuildError("fee + withdrawal_amount overflows u64".to_string())

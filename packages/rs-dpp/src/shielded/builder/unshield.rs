@@ -2,7 +2,7 @@ use grovedb_commitment_tree::{Anchor, FullViewingKey, SpendAuthorizingKey};
 
 use crate::address_funds::{OrchardAddress, PlatformAddress};
 use crate::fee::Credits;
-use crate::shielded::compute_minimum_shielded_fee;
+use crate::shielded::compute_shielded_unshield_fee;
 use crate::state_transition::unshield_transition::methods::UnshieldTransitionMethodsV0;
 use crate::state_transition::unshield_transition::UnshieldTransition;
 use crate::state_transition::StateTransition;
@@ -30,8 +30,10 @@ use super::{build_spend_bundle, serialize_authorized_bundle, OrchardProver, Spen
 /// - `platform_version` - Protocol version
 ///
 /// The fee is not a parameter: consensus always charges exactly
-/// `compute_minimum_shielded_fee` and ignores any surplus. Returns the built transition
-/// together with the fee (in credits) that was applied.
+/// `compute_shielded_unshield_fee` (the base shielded minimum fee PLUS the flat storage cost of the
+/// single `AddBalanceToAddress` write this transition performs crediting the net to the output
+/// address) and ignores any surplus. Returns the built transition together with the fee (in
+/// credits) that was applied.
 #[allow(clippy::too_many_arguments)]
 pub fn build_unshield_transition<P: OrchardProver>(
     spends: Vec<SpendableNote>,
@@ -61,10 +63,11 @@ pub fn build_unshield_transition<P: OrchardProver>(
     // otherwise consensus recomputes min_fee from the on-wire actions.len() == 2 and
     // rejects an honest single-spend unshield with InsufficientShieldedFeeError.
     let num_actions = spends.len().max(2);
-    // The fee is fixed at the minimum: consensus always carves exactly
-    // `compute_minimum_shielded_fee` from the pool, and the net (`unshield_amount`) is credited
-    // to the output address.
-    let fee = compute_minimum_shielded_fee(num_actions, platform_version)?;
+    // The fee is fixed at the unshield minimum: consensus always carves exactly
+    // `compute_shielded_unshield_fee` from the pool — the base shielded minimum fee PLUS the flat
+    // storage cost of the single `AddBalanceToAddress` write this transition performs — and the net
+    // (`unshield_amount`) is credited to the output address.
+    let fee = compute_shielded_unshield_fee(num_actions, platform_version)?;
 
     let required = unshield_amount.checked_add(fee).ok_or_else(|| {
         ProtocolError::ShieldedBuildError("fee + unshield_amount overflows u64".to_string())
@@ -266,7 +269,7 @@ mod tests {
         let change_address = test_orchard_address();
         let output_address = PlatformAddress::P2pkh([1u8; 20]);
 
-        let min_fee = crate::shielded::compute_minimum_shielded_fee(2, platform_version)
+        let min_fee = crate::shielded::compute_shielded_unshield_fee(2, platform_version)
             .expect("fee computation should not overflow");
         let unshield_amount = 42u64;
         let note = test_spendable_note(unshield_amount + min_fee);

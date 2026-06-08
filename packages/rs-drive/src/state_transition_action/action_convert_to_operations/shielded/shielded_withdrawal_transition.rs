@@ -102,7 +102,7 @@ mod tests {
     use dpp::document::{Document, DocumentV0, DocumentV0Getters};
     use dpp::identity::core_script::CoreScript;
     use dpp::platform_value::Identifier;
-    use dpp::shielded::{compute_minimum_shielded_fee, SerializedAction};
+    use dpp::shielded::{compute_shielded_withdrawal_fee, SerializedAction};
     use dpp::state_transition::shielded_withdrawal_transition::ShieldedWithdrawalTransition;
     use dpp::state_transition::state_transitions::shielded::shielded_withdrawal_transition::v0::ShieldedWithdrawalTransitionV0;
     use dpp::version::PlatformVersion;
@@ -348,9 +348,9 @@ mod tests {
         // fixture — so the test fails if the fee is computed as zero or dropped on the way
         // into the action.
         let platform_version = PlatformVersion::latest();
-        let fee = compute_minimum_shielded_fee(1, platform_version)
+        let fee = compute_shielded_withdrawal_fee(1, platform_version)
             .expect("fee computation should not overflow");
-        assert!(fee > 0, "computed minimum shielded fee must be non-zero");
+        assert!(fee > 0, "computed shielded withdrawal fee must be non-zero");
 
         // Net (= unshielding_amount - fee) must clear the dust floor for the transform to
         // succeed; pad comfortably above it.
@@ -380,7 +380,7 @@ mod tests {
         // A gross amount that covers the fee but leaves a net below the Core dust floor must
         // be rejected by the transformer, not turned into a zero/dust withdrawal document.
         let platform_version = PlatformVersion::latest();
-        let fee = compute_minimum_shielded_fee(1, platform_version)
+        let fee = compute_shielded_withdrawal_fee(1, platform_version)
             .expect("fee computation should not overflow");
         let min_withdrawal = platform_version.system_limits.min_withdrawal_amount;
 
@@ -434,6 +434,151 @@ mod tests {
 
         assert_eq!(shielded_delta, -(amount as i128));
         assert_eq!(system_credit_delta, -((amount - fee) as i128));
+    }
+
+    /// Invariant: the flat `compute_shielded_withdrawal_fee` must cover the *actual* GroveDB write
+    /// cost of a ShieldedWithdrawal's operations, AND strictly exceed the metered storage so the
+    /// pool-paid booking split never undercharges.
+    ///
+    /// ShieldedWithdrawal is pool-paid: `execute_event/v0` carves the flat fee from the shielded
+    /// pool and splits it as `storage_fee = min(real_metered_storage, flat_fee); processing_fee =
+    /// flat_fee - storage_fee`. The `min()` only binds (zeroing the proposer's processing reward and
+    /// undercharging storage) if real metered storage EXCEEDS the flat fee. Withdrawal is the
+    /// heaviest pool-paid case because it ALSO writes a Core withdrawal document, so its metered
+    /// storage is the most likely to be non-trivial — which is exactly why the withdrawal fee
+    /// (`compute_shielded_withdrawal_fee`) prices that document insert as a flat storage component
+    /// on top of the base shielded fee. With that component the flat fee now exceeds the real
+    /// metered storage by a wide margin, so this `fee > storage` check passes comfortably.
+    ///
+    /// Unlike the ShieldedTransfer / Unshield metering tests (which use estimation mode,
+    /// `apply = false`), this test measures the **real apply cost** (`apply = true` against a
+    /// transaction). That is deliberate and is what makes this test faithful to the booking:
+    /// `execute_event/v0` books the split from `apply_drive_operations(.., true, ..)` — the REAL
+    /// metered cost — not from an estimate. For Withdrawal the two diverge sharply: estimation mode
+    /// charges worst-case tree-layer costs for the `AddWithdrawalDocument` insert into the
+    /// (near-empty) withdrawals contract document tree, over-counting storage well above the real
+    /// cost (measured: est storage 118M vs real 124.8M at n=1 looks close, but est *total* 152.9M
+    /// exceeds the flat fee while the real total 129.1M stays under it). Pinning the booking
+    /// invariant therefore requires the real cost. We build the action through the REAL transformer
+    /// (`try_from_transition`) so the `prepared_withdrawal_document` is schema-valid, insert the
+    /// withdrawals contract so the document tree exists, use production-sized 216-byte notes with
+    /// valid Pallas `cmx` elements, and assert both `fee >= real total` and `fee > real storage`.
+    #[test]
+    fn test_minimum_shielded_fee_covers_actual_grovedb_write_cost() {
+        use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
+        use dpp::block::block_info::BlockInfo;
+
+        let platform_version = PlatformVersion::latest();
+        let epoch = Epoch::new(0).unwrap();
+
+        // Production-sized serialized action: 216-byte encrypted note, distinct nullifier and a
+        // distinct, VALID Pallas-field-element `cmx` (small little-endian integer < modulus) so the
+        // REAL commitment-tree insert accepts each change note.
+        let realistic_action = |i: u8| {
+            let mut cmx = [0u8; 32];
+            cmx[0] = i.wrapping_add(1);
+            SerializedAction {
+                nullifier: [i.wrapping_add(1); 32],
+                rk: [0x33; 32],
+                cmx,
+                encrypted_note: vec![0x77; 216],
+                cv_net: [0x44; 32],
+                spend_auth_sig: [0x55; 64],
+            }
+        };
+
+        for num_actions in [1usize, 8, 16] {
+            // Fresh drive per iteration so each measurement is independent and the
+            // commitment/nullifier trees start empty (the production per-transition case).
+            let drive = setup_drive_with_initial_state_structure(None);
+            // Seed the global system-credit counter so the action's `RemoveFromSystemCredits` op
+            // (the NET amount leaving the platform to Core) does not underflow from zero.
+            drive
+                .add_to_system_credits(1_000_000_000_000, None, platform_version)
+                .expect("seed system credits");
+
+            let fee = compute_shielded_withdrawal_fee(num_actions, platform_version)
+                .expect("fee computation should not overflow");
+            // Net (= unshielding_amount - fee) must clear the dust floor for the transform to
+            // succeed; pad comfortably above it.
+            let unshielding_amount = fee + 1_000_000;
+
+            let actions: Vec<SerializedAction> =
+                (0..num_actions as u8).map(realistic_action).collect();
+            let transition = ShieldedWithdrawalTransition::V0(ShieldedWithdrawalTransitionV0 {
+                actions,
+                unshielding_amount,
+                anchor: [0xAA; 32],
+                proof: vec![],
+                binding_signature: [0u8; 64],
+                core_fee_per_byte: 1,
+                pooling: Pooling::Never,
+                output_script: CoreScript::from_bytes(vec![0x76, 0xA9]),
+            });
+
+            // Build the action via the REAL transformer so the withdrawal document is schema-valid.
+            let result = ShieldedWithdrawalTransitionAction::try_from_transition(
+                &transition,
+                unshielding_amount + 1_000_000, // current_total_balance
+                0,                              // creation_time_ms
+                fee,
+                platform_version,
+            );
+            let action = result.into_data().expect("transform should succeed");
+
+            // Insert the withdrawals contract so the `AddWithdrawalDocument` op has a real document
+            // tree to write into during the apply.
+            let tx = drive.grove.start_transaction();
+            let withdrawals = drive.cache.system_data_contracts.load_withdrawals();
+            drive
+                .apply_contract(
+                    &withdrawals,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    Some(&tx),
+                    platform_version,
+                )
+                .expect("apply withdrawals contract");
+
+            let ops = action
+                .into_high_level_drive_operations(&epoch, platform_version)
+                .expect("operations");
+
+            // apply = true → REAL cost, exactly what the booking in `execute_event/v0` measures.
+            let fee_result = drive
+                .apply_drive_operations(
+                    ops,
+                    true,
+                    &BlockInfo::default(),
+                    Some(&tx),
+                    platform_version,
+                    None,
+                )
+                .expect("apply write ops");
+            let actual_cost = fee_result.total_base_fee();
+
+            assert!(
+                fee >= actual_cost,
+                "compute_shielded_withdrawal_fee({num_actions}) = {fee} must cover the real \
+                 ShieldedWithdrawal GroveDB write cost {actual_cost} (storage {} + processing {})",
+                fee_result.storage_fee,
+                fee_result.processing_fee
+            );
+
+            // The booking-split invariant: flat fee must strictly exceed real metered storage so
+            // `storage_fee = min(real_storage, flat_fee)` never binds (proposer processing reward
+            // never zeroed, storage never undercharged). This is the heaviest pool-paid case (it
+            // also writes a Core withdrawal document), so it is the strongest guard. See
+            // `execute_event/v0`.
+            assert!(
+                fee > fee_result.storage_fee,
+                "compute_shielded_withdrawal_fee({num_actions}) = {fee} must strictly exceed the \
+                 real metered ShieldedWithdrawal storage {} (incl. the Core withdrawal document) so \
+                 the booking split's min(real_storage, flat_fee) never binds",
+                fee_result.storage_fee
+            );
+        }
     }
 
     #[test]
