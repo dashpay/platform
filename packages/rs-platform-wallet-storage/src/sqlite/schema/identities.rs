@@ -81,10 +81,16 @@ pub fn apply(
         }
     }
     if !cs.removed.is_empty() {
-        let mut stmt =
-            tx.prepare_cached("UPDATE identities SET tombstoned = 1 WHERE identity_id = ?1")?;
+        // Scope the tombstone to the flush wallet so wallet A's `removed`
+        // set can never tombstone wallet B's identity. NULL-safe `IS`
+        // matches the upsert path's parenting: the sentinel (all-zero)
+        // scope maps to NULL and tombstones only orphan rows.
+        let wallet_id_param = wallet_id_to_param(wallet_id);
+        let mut stmt = tx.prepare_cached(
+            "UPDATE identities SET tombstoned = 1 WHERE identity_id = ?1 AND wallet_id IS ?2",
+        )?;
         for id in &cs.removed {
-            stmt.execute(params![id.as_slice()])?;
+            stmt.execute(params![id.as_slice(), wallet_id_param])?;
         }
     }
     Ok(())

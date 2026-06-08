@@ -119,11 +119,7 @@ fn decode_row(
     let outpoint = blob::decode_outpoint(op_bytes)?;
     let entry: AssetLockEntry = blob::decode(blob_bytes)?;
     let account_index =
-        u32::try_from(account_index).map_err(|_| WalletStorageError::IntegerOverflow {
-            field: "asset_locks.account_index",
-            value: account_index as u64,
-            target: crate::sqlite::util::safe_cast::SafeCastTarget::U64,
-        })?;
+        crate::sqlite::util::safe_cast::i64_to_u32("asset_locks.account_index", account_index)?;
     // Typed-column vs blob cross-check, symmetric with
     // IdentityKeyEntryMismatch. A torn write / partial migration /
     // restored corruption that passes PRAGMA integrity_check would
@@ -152,13 +148,15 @@ fn decode_row(
 }
 
 /// Build the per-wallet asset-lock slice for `ClientStartState` from
-/// the `asset_locks` table, bucketed by account index. Every status
-/// variant the changeset writes is considered "active": consumed
-/// locks leave the table via [`AssetLockChangeSet::removed`], so a
-/// row present here is by definition still in play. Any row that
-/// fails to read or decode is a hard error — corruption is never
-/// silently dropped. Retained for this crate's integration tests until
-/// the rehydration path consumes it in `load()`.
+/// the `asset_locks` table, bucketed by account index — including
+/// terminal `Consumed` rows. Consumed locks are RETAINED permanently
+/// with `status='consumed'` (they are never deleted), so this reader
+/// returns the full history. The rehydration feed
+/// [`load_unconsumed`](Self::load_unconsumed) filters `Consumed` rows at
+/// the SQL layer so a spent lock is never resurrected into the live set.
+/// Any row that fails to read or decode is a hard error — corruption is
+/// never silently dropped. Retained as the full-history inspection
+/// reader for this crate's integration tests.
 #[cfg(any(test, feature = "__test-helpers"))]
 pub fn load_state(
     conn: &Connection,

@@ -1,5 +1,18 @@
 //! `dashpay_profiles` + `dashpay_payments_overlay` writers.
 //!
+//! # Write-only indexed overlay (NOT a rehydration source)
+//!
+//! These two tables are a **write-only indexed overlay**: the dedicated
+//! `dashpay_*` changeset slots are honored on write, but `load()` does
+//! NOT read them back. DashPay state is rehydrated from the identities
+//! `entry_blob` (each `IdentityEntry` carries its `dashpay_profile` /
+//! `dashpay_payments`), so the identities blob — not these tables — is
+//! the authoritative load source. The tables exist for future
+//! per-profile / per-payment indexed queries; until a reader is wired
+//! into `load()`, treat data written via the `dashpay_*` slots as
+//! reconstructable only through the owning identity. The round-trip is
+//! pinned by `tests/sqlite_dashpay_overlay_contract.rs`.
+//!
 //! # Precondition
 //!
 //! Every `identity_id` in the supplied profile / payment maps MUST
