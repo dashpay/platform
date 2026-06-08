@@ -3,7 +3,7 @@
 use super::common::{mock_data_contract, mock_document_type};
 use dash_sdk::{
     platform::{DocumentQuery, Fetch},
-    Sdk,
+    Sdk, SdkBuilder,
 };
 use dpp::{
     data_contract::{
@@ -90,7 +90,16 @@ async fn test_mock_fetch_identity_not_found() {
 /// Given some data contract, when I fetch it by ID, I get it.
 #[tokio::test]
 async fn test_mock_fetch_data_contract() {
-    let mut sdk = Sdk::new_mock();
+    // `mock_data_contract` builds V2 document types (v3.1+ semantics), so the
+    // SDK must decode the round-trip at a v3.1+ initial version (PV12) for the
+    // deserialized contract to match. An unpinned SDK defaults to the V0 floor
+    // and would downgrade the document type to V1.
+    let pv = PlatformVersion::get(dpp::version::v12::PROTOCOL_VERSION_12)
+        .expect("PROTOCOL_VERSION_12 is a known version");
+    let mut sdk = SdkBuilder::new_mock()
+        .with_initial_version(pv)
+        .build()
+        .expect("mock Sdk should be created");
 
     let document_type: DocumentType = mock_document_type();
     let expected = mock_data_contract(Some(&document_type));

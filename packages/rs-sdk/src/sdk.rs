@@ -58,6 +58,40 @@ pub const DEFAULT_QUORUM_PUBLIC_KEYS_CACHE_SIZE: usize = 100;
 /// (`maybe_update_protocol_version`) converges upward to the network's real version,
 /// and starting low keeps requests compatible with not-yet-upgraded nodes during an
 /// upgrade window. Bump this constant when the network's supported floor advances.
+///
+/// # v3.1+-only query surfaces
+///
+/// An unpinned SDK starts at this upgrade-safe floor (PV10, V0 documents wire).
+/// Under V0 the local query encoder rejects the v3.1+-only surfaces — `Count`
+/// (`SelectProjection::count_star`), `group_by`, and `having` — with an
+/// [`Error::Config`] *before* any network round-trip. To use them, either:
+///
+/// 1. Pin a higher initial version at build time via
+///    [`SdkBuilder::with_initial_version`], or
+/// 2. Issue one ratcheting query right after `build()`. Any normal query works
+///    at the floor and its response metadata ratchets the SDK's protocol version
+///    up to the network's actual version; subsequent `Count` / `group_by` /
+///    `having` queries then encode correctly.
+///
+/// Example of option 2 — a parameterless current-state fetch warms up the ratchet:
+///
+/// ```no_run
+/// # use dash_sdk::{Sdk, SdkBuilder};
+/// # use dash_sdk::platform::fetch_current_no_parameters::FetchCurrent;
+/// # use dpp::block::extended_epoch_info::ExtendedEpochInfo;
+/// # async fn warm_up() -> Result<(), dash_sdk::Error> {
+/// // Option 1 alternative: SdkBuilder::new_mainnet(addrs)
+/// //   .with_initial_version(dpp::version::PlatformVersion::latest()).build()?;
+/// let sdk: Sdk = SdkBuilder::new_mock().build()?;
+///
+/// // One ratcheting query: works at the floor, returns metadata, and lifts the
+/// // SDK's protocol version to the network's actual version.
+/// let _ = ExtendedEpochInfo::fetch_current(&sdk).await?;
+///
+/// // Count / group_by / having queries now encode at the ratcheted version.
+/// # Ok(())
+/// # }
+/// ```
 pub const DEFAULT_INITIAL_PROTOCOL_VERSION: u32 = dpp::version::v10::PROTOCOL_VERSION_10;
 /// The default metadata time tolerance for checkpoint queries in milliseconds
 const ADDRESS_STATE_TIME_TOLERANCE_MS: u64 = 31 * 60 * 1000;
@@ -1706,11 +1740,18 @@ mod test {
         let floor = super::DEFAULT_INITIAL_PROTOCOL_VERSION;
         assert_eq!(sdk.protocol_version_number(), floor);
 
-        // Ratchet up: a newer network version raises the floor.
-        sdk.maybe_update_protocol_version(floor + 2);
+        // Ratchet up to a known higher version (PV12). Using a fixed known
+        // target rather than `floor + N` keeps the test correct as the floor
+        // advances; `maybe_update_protocol_version` only accepts known versions.
+        let target = dpp::version::v12::PROTOCOL_VERSION_12;
+        assert!(
+            target > floor,
+            "ratchet test target must exceed the floor; bump it if the floor reaches v12"
+        );
+        sdk.maybe_update_protocol_version(target);
         assert_eq!(
             sdk.protocol_version_number(),
-            floor + 2,
+            target,
             "auto-detect must ratchet upward from the floor"
         );
 
@@ -1718,7 +1759,7 @@ mod test {
         sdk.maybe_update_protocol_version(floor - 1);
         assert_eq!(
             sdk.protocol_version_number(),
-            floor + 2,
+            target,
             "ratchet must never downgrade below the highest observed version"
         );
     }

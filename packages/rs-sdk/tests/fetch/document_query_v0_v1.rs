@@ -28,6 +28,7 @@ use std::sync::Arc;
 use super::common::{mock_data_contract, mock_document_type};
 use dapi_grpc::platform::v0::get_documents_request::Version as ReqVersion;
 use dapi_grpc::platform::v0::GetDocumentsRequest;
+use dash_sdk::sdk::DEFAULT_INITIAL_PROTOCOL_VERSION;
 use dash_sdk::{platform::documents::document_query::DocumentQuery, Error as SdkError, SdkBuilder};
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::platform_value::Value;
@@ -221,12 +222,13 @@ fn encoder_dispatches_v0_via_query_settings_without_sdk() {
 #[test]
 fn sdk_builder_with_initial_version_seeds_atomic_without_pinning() {
     // Auto-detect default: the atomic seeds to `self.version` (which
-    // defaults to `latest()`). `version()` therefore returns `latest()`
-    // until the first response ratchets the atomic upward.
+    // defaults to the upgrade-safe floor `DEFAULT_INITIAL_PROTOCOL_VERSION`).
+    // `version()` therefore returns the floor until the first response
+    // ratchets the atomic upward.
     let sdk_default = SdkBuilder::new_mock().build().expect("mock sdk");
     assert_eq!(
         sdk_default.version().protocol_version,
-        PlatformVersion::latest().protocol_version
+        DEFAULT_INITIAL_PROTOCOL_VERSION
     );
 
     // `with_initial_version` seeds the atomic to the requested PV's
