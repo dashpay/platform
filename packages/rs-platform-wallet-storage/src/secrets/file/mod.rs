@@ -557,7 +557,7 @@ fn build_fresh_vault(passphrase: &SecretString) -> Result<(Vault, SecretBytes), 
     crypto::random_bytes(&mut salt)?;
     let kdf = KdfParams::default_target();
     let key = crypto::derive_key(passphrase, &salt, kdf)?;
-    let v_aad = format::verify_aad(format::FORMAT_VERSION);
+    let v_aad = format::verify_aad(format::FORMAT_VERSION, &salt, &kdf);
     let (verify_nonce, verify_ct) = crypto::seal(&key, &v_aad, format::VERIFY_CONSTANT)?;
     Ok((
         Vault {
@@ -581,7 +581,7 @@ fn derive_and_verify(
     passphrase: &SecretString,
 ) -> Result<SecretBytes, SecretStoreError> {
     let key = crypto::derive_key(passphrase, &vault.salt, vault.kdf)?;
-    let v_aad = format::verify_aad(format::FORMAT_VERSION);
+    let v_aad = format::verify_aad(format::FORMAT_VERSION, &vault.salt, &vault.kdf);
     match crypto::open(&key, &vault.verify_nonce, &v_aad, &vault.verify_ct) {
         Ok(_) => Ok(key),
         Err(SecretStoreError::Decrypt) => Err(SecretStoreError::WrongPassphrase),
@@ -1885,6 +1885,52 @@ mod tests {
             entry(&s2, wid(1), "huge").get_secret(),
             Err(KeyringError::NoEntry)
         ));
+    }
+
+    /// An in-bounds KDF-parameter shift on a correct-passphrase vault is
+    /// rejected at open: the verify-token AAD binds the KDF header, so a
+    /// downgrade that stays inside the accepted bounds (m_kib halved, t
+    /// lowered) still fails the token tag and surfaces as
+    /// `WrongPassphrase`. Without the SEC-012 binding the store would
+    /// silently re-derive under the attacker's weaker params.
+    #[test]
+    fn in_bounds_kdf_param_shift_is_refused_at_open() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = vault_path(dir.path());
+        {
+            let s = store_at(&path);
+            entry(&s, wid(1), "seed").set_secret(b"value").unwrap();
+        }
+        let mut vault = read_vault_at(&path).unwrap().unwrap();
+        // Shift to still-valid-but-weaker params (defaults are 64 MiB/t=3;
+        // halving m_kib and dropping t stays above the 19 MiB / t=2 floor).
+        vault.kdf.m_kib /= 2;
+        vault.kdf.t -= 1;
+        assert!(vault.kdf.enforce_bounds().is_ok(), "shift must stay in bounds");
+        write_vault_at(&path, &vault).unwrap();
+        let err = EncryptedFileStore::open(&path, SecretString::new("pw-correct"))
+            .expect_err("KDF-param shift must fail the verify-token");
+        assert!(matches!(err, SecretStoreError::WrongPassphrase), "got {err:?}");
+    }
+
+    /// A flipped salt byte on a correct-passphrase vault is rejected at
+    /// open: the derived key changes and the verify-token AAD (which now
+    /// binds the salt) no longer matches, so the token tag fails →
+    /// `WrongPassphrase`.
+    #[test]
+    fn flipped_salt_is_refused_at_open() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = vault_path(dir.path());
+        {
+            let s = store_at(&path);
+            entry(&s, wid(1), "seed").set_secret(b"value").unwrap();
+        }
+        let mut vault = read_vault_at(&path).unwrap().unwrap();
+        vault.salt[0] ^= 0x01;
+        write_vault_at(&path, &vault).unwrap();
+        let err = EncryptedFileStore::open(&path, SecretString::new("pw-correct"))
+            .expect_err("flipped salt must fail open");
+        assert!(matches!(err, SecretStoreError::WrongPassphrase), "got {err:?}");
     }
 
     /// A secret exactly at the cap is accepted (boundary is inclusive).

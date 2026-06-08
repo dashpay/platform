@@ -135,14 +135,31 @@ pub(crate) fn aad(format_version: u32, wallet_id: &[u8; 32], label: &str) -> Vec
     v
 }
 
-/// AAD for the passphrase-verification token. Uses the same canonical
-/// construction as entry AAD but with a sentinel zero wallet id and
-/// [`VERIFY_LABEL`] (NUL-prefixed, disjoint from every allowlisted
-/// label) so the token is cryptographically tied to this
-/// `format_version` only and cannot be replayed into any real entry
-/// slot.
-pub(crate) fn verify_aad(format_version: u32) -> Vec<u8> {
-    aad(format_version, &VERIFY_WALLET_ID, VERIFY_LABEL)
+/// AAD for the passphrase-verification token. Starts from the same
+/// canonical construction as entry AAD (sentinel zero wallet id +
+/// [`VERIFY_LABEL`], NUL-prefixed and disjoint from every allowlisted
+/// label) so it cannot be replayed into a real entry slot, then binds the
+/// canonical KDF header: the `salt` bytes followed by a length-prefixed,
+/// little-endian encoding of (`id`, `m_kib`, `t`, `p`).
+///
+/// Folding the header in makes the verify-token authenticate the salt and
+/// KDF parameters it was derived under. A flipped salt or an in-bounds
+/// KDF-parameter shift (e.g. `m_kib` 65536→32768, `t` 3→2) on an
+/// otherwise-correct vault now fails the token's tag. Because a tampered
+/// header yields a different derived key, this still surfaces as
+/// [`SecretStoreError::WrongPassphrase`](crate::secrets::SecretStoreError::WrongPassphrase)
+/// rather than a distinct corruption signal; the genuine win is
+/// attributable, fail-closed detection of header tamper / KDF-param
+/// downgrade instead of silently deriving under the attacker's params.
+pub(crate) fn verify_aad(format_version: u32, salt: &[u8; SALT_LEN], kdf: &KdfParams) -> Vec<u8> {
+    let mut v = aad(format_version, &VERIFY_WALLET_ID, VERIFY_LABEL);
+    v.extend_from_slice(&(salt.len() as u32).to_le_bytes());
+    v.extend_from_slice(salt);
+    v.extend_from_slice(&[kdf.id]);
+    v.extend_from_slice(&kdf.m_kib.to_le_bytes());
+    v.extend_from_slice(&kdf.t.to_le_bytes());
+    v.extend_from_slice(&kdf.p.to_le_bytes());
+    v
 }
 
 /// Serde helpers encoding `Vec<u8>` as lowercase hex strings. Hex is
@@ -286,11 +303,38 @@ mod tests {
         // VERIFY_LABEL starts with NUL, which the allowlist forbids, so
         // no real entry's AAD can collide with the token's AAD — even
         // if a caller happens to register the all-zero wallet id.
-        let v = verify_aad(FORMAT_VERSION);
+        let salt = [7u8; SALT_LEN];
+        let kdf = KdfParams::default_target();
+        let v = verify_aad(FORMAT_VERSION, &salt, &kdf);
         // A real entry on the same sentinel wallet id can never match
         // because its label cannot contain NUL.
         assert_ne!(v, aad(FORMAT_VERSION, &VERIFY_WALLET_ID, "seed"));
         assert_ne!(v, aad(FORMAT_VERSION, &[1u8; 32], "seed"));
+    }
+
+    #[test]
+    fn verify_aad_binds_salt_and_kdf_params() {
+        // The verify-token AAD authenticates the salt + KDF header, so a
+        // flipped salt or an in-bounds KDF-param shift yields a different
+        // AAD (and hence a token-tag failure at verify).
+        let salt = [7u8; SALT_LEN];
+        let kdf = KdfParams::default_target();
+        let base = verify_aad(FORMAT_VERSION, &salt, &kdf);
+
+        let mut salt2 = salt;
+        salt2[0] ^= 0x01;
+        assert_ne!(base, verify_aad(FORMAT_VERSION, &salt2, &kdf));
+
+        assert_ne!(
+            base,
+            verify_aad(FORMAT_VERSION, &salt, &KdfParams { m_kib: kdf.m_kib / 2, ..kdf })
+        );
+        assert_ne!(
+            base,
+            verify_aad(FORMAT_VERSION, &salt, &KdfParams { t: kdf.t - 1, ..kdf })
+        );
+        // Identical inputs are deterministic.
+        assert_eq!(base, verify_aad(FORMAT_VERSION, &salt, &kdf));
     }
 
     fn test_vault(wallets: BTreeMap<String, BTreeMap<String, EntryBody>>) -> Vault {
