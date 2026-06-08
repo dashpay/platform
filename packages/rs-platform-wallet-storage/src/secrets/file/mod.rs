@@ -184,11 +184,11 @@ impl EncryptedFileStore {
         // consume — normalize the empty-string parent to ".".
         let parent = normalized_parent(&path);
         create_parent_dir(parent)?;
-        // Refuse a group/other-accessible parent: directory write access
-        // governs rename/unlink/create, so a loose parent lets another
+        // Refuse a group/other-WRITABLE parent: directory write access
+        // governs rename/unlink/create, so a writable parent lets another
         // local user replace the vault despite its own 0600 + O_NOFOLLOW
         // (the A1 guarantee this backend claims). The operator must own
-        // the parent directory at 0700 or tighter.
+        // the parent directory with no group/other write bits.
         check_parent_perms(parent)?;
 
         // Acquire the lock first — every subsequent step assumes
@@ -377,19 +377,20 @@ impl EncryptedFileStoreInner {
         };
 
         if let Err(e) = self.sync_to_disk() {
-            let entries = self
-                .vault
-                .wallets
-                .get_mut(&wallet_id.to_hex())
-                .expect("entry just inserted");
-            match prior {
-                Some(prev) => {
-                    entries.insert(label, prev);
-                }
-                None => {
-                    entries.remove(&label);
-                    if entries.is_empty() {
-                        self.vault.wallets.remove(&wallet_id.to_hex());
+            // Roll the in-memory entry back to match the unchanged disk
+            // state. A missing bucket here would mean the insert never
+            // landed (already rolled-back) — nothing to undo, so return
+            // the error rather than panicking.
+            if let Some(entries) = self.vault.wallets.get_mut(&wallet_id.to_hex()) {
+                match prior {
+                    Some(prev) => {
+                        entries.insert(label, prev);
+                    }
+                    None => {
+                        entries.remove(&label);
+                        if entries.is_empty() {
+                            self.vault.wallets.remove(&wallet_id.to_hex());
+                        }
                     }
                 }
             }
@@ -1076,16 +1077,21 @@ fn check_perms(_meta: &fs::Metadata) -> Result<(), SecretStoreError> {
 }
 
 /// Refuse a vault parent directory that any group/other principal can
-/// access. `DirBuilder::mode(0o700)` only hardens a directory this call
+/// WRITE to. `DirBuilder::mode(0o700)` only hardens a directory this call
 /// creates — a pre-existing loose directory (e.g. a deploy script's
-/// 0775) is left untouched, so stat it and reject `mode & 0o077 != 0`
-/// with the same rigor as the vault file's [`check_perms`].
+/// 0775) is left untouched, so stat it and reject `mode & 0o022 != 0`.
+///
+/// The threat is rename/unlink/replace of the vault, which POSIX gates on
+/// directory WRITE permission; a group/other-readable-but-not-writable
+/// parent (0o755) only leaks filenames, not vault contents (the file is
+/// 0600), and is the common operator-owned layout — so the check targets
+/// the write bits, not the broader `0o077` the vault file itself uses.
 #[cfg(unix)]
 fn check_parent_perms(parent: &Path) -> Result<(), SecretStoreError> {
     use std::os::unix::fs::MetadataExt;
     let meta = fs::metadata(parent).map_err(|e| SecretStoreError::io_at(parent, e))?;
     let mode = meta.mode() & 0o777;
-    if mode & 0o077 != 0 {
+    if mode & 0o022 != 0 {
         return Err(SecretStoreError::InsecureParentDir { mode });
     }
     Ok(())
@@ -1142,6 +1148,15 @@ mod tests {
     }
 
     fn vault_path(dir: &Path) -> PathBuf {
+        // The parent-dir perm check refuses a group/other-writable parent.
+        // A umask-0002 tempdir lands at 0o775, so tighten it to 0o700 for
+        // the canonical happy-path tests (the dedicated perm tests set
+        // their own modes on a subdirectory).
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs::set_permissions(dir, fs::Permissions::from_mode(0o700));
+        }
         dir.join("vault.pwsvault")
     }
 
@@ -1785,6 +1800,13 @@ mod tests {
         let _g = CWD_GUARD.lock().unwrap_or_else(|p| p.into_inner());
 
         let dir = tempfile::tempdir().unwrap();
+        // Tighten the cwd-parent so the parent-dir perm check passes (a
+        // umask-0002 tempdir is group-writable at 0o775).
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o700)).unwrap();
+        }
         let prior = std::env::current_dir().unwrap();
         std::env::set_current_dir(dir.path()).unwrap();
         // Tear-down guard so a panic still restores cwd.
@@ -1831,26 +1853,31 @@ mod tests {
         );
     }
 
-    /// A group/other-accessible parent directory must be refused at open:
+    /// A group/other-WRITABLE parent directory must be refused at open:
     /// directory write access governs rename/replace of the vault despite
-    /// its own 0600, so a loose parent undermines the A1 guarantee.
+    /// its own 0600, so a writable parent undermines the A1 guarantee. A
+    /// merely group-readable (0o750) parent is fine — it only leaks
+    /// filenames, never vault contents.
     #[cfg(unix)]
     #[test]
-    fn loose_parent_dir_is_refused() {
+    fn writable_parent_dir_is_refused() {
         use std::os::unix::fs::PermissionsExt;
         let dir = tempfile::tempdir().unwrap();
         let sub = dir.path().join("vaultdir");
         fs::create_dir(&sub).unwrap();
-        fs::set_permissions(&sub, fs::Permissions::from_mode(0o755)).unwrap();
-        let path = vault_path(&sub);
+        // Group-writable (0o770) trips the write-bit check. Build the path
+        // directly — `vault_path` would tighten the dir back to 0o700.
+        fs::set_permissions(&sub, fs::Permissions::from_mode(0o770)).unwrap();
+        let path = sub.join("vault.pwsvault");
         let err = EncryptedFileStore::open(&path, SecretString::new("pw-correct"))
-            .expect_err("loose parent dir must be refused");
+            .expect_err("writable parent dir must be refused");
         assert!(
-            matches!(err, SecretStoreError::InsecureParentDir { mode } if mode & 0o077 != 0),
+            matches!(err, SecretStoreError::InsecureParentDir { mode } if mode & 0o022 != 0),
             "got {err:?}"
         );
-        // Tightening the parent lets the open succeed.
-        fs::set_permissions(&sub, fs::Permissions::from_mode(0o700)).unwrap();
+        // Dropping the write bits (still group-readable at 0o750) lets the
+        // open succeed: read-only group access is not a rename threat.
+        fs::set_permissions(&sub, fs::Permissions::from_mode(0o750)).unwrap();
         let _s = store_at(&path);
     }
 

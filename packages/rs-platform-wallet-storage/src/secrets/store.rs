@@ -197,7 +197,19 @@ mod tests {
     use crate::secrets::SecretString;
 
     fn file_store(dir: &std::path::Path) -> SecretStore {
-        SecretStore::file(dir.join("vault.pwsvault"), SecretString::new("pw-correct")).unwrap()
+        SecretStore::file(secure_vault_path(dir), SecretString::new("pw-correct")).unwrap()
+    }
+
+    /// The parent-dir perm check refuses a group/other-writable parent; a
+    /// umask-0002 tempdir lands at 0o775, so tighten it to 0o700 before
+    /// returning the vault path inside it.
+    fn secure_vault_path(dir: &std::path::Path) -> std::path::PathBuf {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700));
+        }
+        dir.join("vault.pwsvault")
     }
 
     fn wid(b: u8) -> WalletId {
@@ -249,11 +261,8 @@ mod tests {
         file_store(dir.path())
             .set(&wid(1), "seed", &SecretBytes::from_slice(b"orig"))
             .unwrap();
-        let err = SecretStore::file(
-            dir.path().join("vault.pwsvault"),
-            SecretString::new("pw-wrong"),
-        )
-        .expect_err("wrong pass must fail open");
+        let err = SecretStore::file(secure_vault_path(dir.path()), SecretString::new("pw-wrong"))
+            .expect_err("wrong pass must fail open");
         assert!(
             matches!(err, SecretStoreError::WrongPassphrase),
             "expected WrongPassphrase, got {err:?}"
@@ -295,7 +304,7 @@ mod tests {
         // the first store is alive returns AlreadyLocked. The typed
         // distinction survives losslessly on the public path.
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("vault.pwsvault");
+        let path = secure_vault_path(dir.path());
         let _s1 = SecretStore::file(&path, SecretString::new("pw")).unwrap();
         let err = SecretStore::file(&path, SecretString::new("pw")).unwrap_err();
         assert!(

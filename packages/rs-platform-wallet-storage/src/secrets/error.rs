@@ -73,10 +73,12 @@ pub enum SecretStoreError {
         mode: u32,
     },
 
-    /// The vault file's parent directory had permissions looser than
-    /// `0700` (group/other access bits set). A writable parent lets
-    /// another local user rename/replace the vault despite the file's
-    /// own `0600`, so refuse rather than trust it.
+    /// The vault file's parent directory was group/other WRITABLE
+    /// (`mode & 0o022 != 0`). Directory write access governs
+    /// rename/unlink/replace, so a writable parent lets another local
+    /// user swap the vault despite the file's own `0600` — refuse rather
+    /// than trust it. (Read-only group access, e.g. `0o750`, is fine: it
+    /// leaks filenames, not the 0600-protected contents.)
     #[error("vault parent directory has insecure permissions")]
     InsecureParentDir {
         /// The offending POSIX mode bits on the parent directory (not

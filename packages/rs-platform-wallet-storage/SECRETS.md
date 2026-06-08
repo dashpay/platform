@@ -118,10 +118,12 @@ unwrapped copy is allocated.
   One file, one passphrase, one lock — a multi-wallet
   store cannot lock its other wallets out by construction. Errors
   surface as the typed `SecretStoreError` through `SecretStore`.
-  On Unix the vault's parent directory must be owned by the operator at
-  `0700` or tighter: directory write access governs rename/replace of the
-  vault, so a group/other-accessible parent is refused at `open` with
+  On Unix the vault's parent directory must not be group/other writable
+  (`mode & 0o022`): directory write access governs rename/replace of the
+  vault, so a writable parent is refused at `open` with
   `SecretStoreError::InsecureParentDir` (the A1 guarantee depends on it).
+  A read-only group-accessible parent (`0o750`) is accepted — it only
+  leaks filenames, never the 0600-protected vault contents.
   Each secret is capped at `MAX_SECRET_LEN` (64 KiB) at the write
   boundary — generously above any mnemonic/seed/xpriv — so a single
   oversized entry cannot inflate the shared document past the read-side
