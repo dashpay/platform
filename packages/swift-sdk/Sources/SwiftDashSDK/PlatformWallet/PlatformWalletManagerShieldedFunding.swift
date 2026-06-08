@@ -66,11 +66,21 @@ extension PlatformWalletManager {
     ///     empty or multi-recipient lists). Each recipient's
     ///     `credits` becomes the Orchard `value_balance` for that
     ///     output.
+    ///   - surplusOutput: Optional platform address (raw 21-byte
+    ///     `PlatformAddress` storage bytes: 1-byte variant tag +
+    ///     20-byte hash) to receive the asset-lock surplus
+    ///     (`lock_value − shield_amount − pool_fee`). Pass `nil` for
+    ///     none. In today's single-recipient "remainder" flow the
+    ///     surplus is structurally zero (the recipient receives
+    ///     `lock_value − pool_fee`), so `nil` is always valid; the
+    ///     parameter is exposed for parity with the Rust builder and
+    ///     forward-compatibility with multi-output bundles.
     public func shieldedFundFromAssetLock(
         walletId: Data,
         fundingAccountIndex: UInt32,
         amountDuffs: UInt64,
-        recipients: [ShieldedFundFromAssetLockRecipient]
+        recipients: [ShieldedFundFromAssetLockRecipient],
+        surplusOutput: Data? = nil
     ) async throws {
         try shieldedFundFromAssetLockPreflight(
             walletId: walletId,
@@ -106,17 +116,21 @@ extension PlatformWalletManager {
                             "recipient baseAddress is nil"
                         )
                     }
-                    let result = withExtendedLifetime(coreSigner) {
-                        platform_wallet_manager_shielded_fund_from_asset_lock(
-                            handle,
-                            widPtr,
-                            fundingAccountIndex,
-                            amountDuffs,
-                            recipientPtr,
-                            coreSigner.handle
-                        )
+                    try Self.withOptionalSurplusOutput(surplusOutput) { surplusPtr, surplusLen in
+                        let result = withExtendedLifetime(coreSigner) {
+                            platform_wallet_manager_shielded_fund_from_asset_lock(
+                                handle,
+                                widPtr,
+                                fundingAccountIndex,
+                                amountDuffs,
+                                recipientPtr,
+                                surplusPtr,
+                                surplusLen,
+                                coreSigner.handle
+                            )
+                        }
+                        try result.check()
                     }
-                    try result.check()
                 }
             }
         }.value
@@ -142,11 +156,18 @@ extension PlatformWalletManager {
     ///     locks built by this wallet, but kept for generality).
     ///   - recipients: Destination addresses (single-entry today;
     ///     same preflight as the fresh-build variant).
+    ///   - surplusOutput: Optional surplus-output platform address —
+    ///     see `shieldedFundFromAssetLock`. The surplus is structurally
+    ///     zero in this flow and the Rust side re-derives an identical
+    ///     `shield_amount` on every attempt, so a resume cannot desync
+    ///     the surplus destination regardless of this value; pass the
+    ///     same value used on the original attempt (typically `nil`).
     public func shieldedResumeFundFromAssetLock(
         walletId: Data,
         outPointTxid: Data,
         outPointVout: UInt32,
-        recipients: [ShieldedFundFromAssetLockRecipient]
+        recipients: [ShieldedFundFromAssetLockRecipient],
+        surplusOutput: Data? = nil
     ) async throws {
         guard outPointTxid.count == 32 else {
             throw PlatformWalletError.invalidParameter(
@@ -197,16 +218,20 @@ extension PlatformWalletManager {
                             "recipient baseAddress is nil"
                         )
                     }
-                    let result = withExtendedLifetime(coreSigner) {
-                        platform_wallet_manager_shielded_resume_fund_from_asset_lock(
-                            handle,
-                            widPtr,
-                            &outPoint,
-                            recipientPtr,
-                            coreSigner.handle
-                        )
+                    try Self.withOptionalSurplusOutput(surplusOutput) { surplusPtr, surplusLen in
+                        let result = withExtendedLifetime(coreSigner) {
+                            platform_wallet_manager_shielded_resume_fund_from_asset_lock(
+                                handle,
+                                widPtr,
+                                &outPoint,
+                                recipientPtr,
+                                surplusPtr,
+                                surplusLen,
+                                coreSigner.handle
+                            )
+                        }
+                        try result.check()
                     }
-                    try result.check()
                 }
             }
         }.value
@@ -263,6 +288,38 @@ extension PlatformWalletManager {
                         + "Explicit amounts will be honored when DPP grows multi-output bundles for Type 18."
                 )
             }
+        }
+    }
+
+    /// Run `body` with a `(pointer, length)` view of the optional
+    /// surplus-output address bytes.
+    ///
+    /// `nil` (or empty) yields `(nil, 0)`, which the FFI reads as "no
+    /// surplus output". A non-nil value is pinned for the call via
+    /// `withUnsafeBytes` so the pointer is valid for the duration of
+    /// `body`. The FFI expects raw `PlatformAddress` storage bytes
+    /// (1-byte variant tag + 20-byte hash); it validates the encoding
+    /// and returns an error for malformed input, so no length check is
+    /// duplicated here.
+    ///
+    /// `nonisolated` because `PlatformWalletManager` is
+    /// `@MainActor`-isolated by default and the call sites run inside
+    /// the synchronous, off-main-actor `Task.detached` bodies — this is
+    /// pure byte marshalling that reads no `PlatformWalletManager` state.
+    nonisolated private static func withOptionalSurplusOutput<R>(
+        _ surplusOutput: Data?,
+        _ body: (UnsafePointer<UInt8>?, UInt) throws -> R
+    ) throws -> R {
+        guard let surplusOutput, !surplusOutput.isEmpty else {
+            return try body(nil, 0)
+        }
+        return try surplusOutput.withUnsafeBytes { raw in
+            guard let ptr = raw.baseAddress?.assumingMemoryBound(to: UInt8.self) else {
+                throw PlatformWalletError.invalidParameter(
+                    "surplusOutput baseAddress is nil"
+                )
+            }
+            return try body(ptr, UInt(raw.count))
         }
     }
 }

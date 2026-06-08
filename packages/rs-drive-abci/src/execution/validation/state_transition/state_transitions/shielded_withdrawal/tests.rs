@@ -59,14 +59,23 @@ mod tests {
     /// Shorthand for creating a structurally valid (but cryptographically invalid) shielded
     /// withdrawal transition. Has a non-zero anchor, valid field sizes, positive unshielding_amount.
     fn create_default_shielded_withdrawal_transition() -> StateTransition {
+        // unshielding_amount = the 1-action ShieldedWithdrawal fee (base + flat withdrawal-document
+        // storage cost) + the min_withdrawal_amount floor for the net. Sizing it from the live fee
+        // function keeps the gross above the fee gate's minimum so these state-validation tests
+        // (anchor/nullifier/proof) reach the stage they intend to exercise instead of short-circuiting
+        // on InsufficientShieldedFeeError, and stays correct if the fee constants change.
+        let platform_version = PlatformVersion::latest();
+        let fee = dpp::shielded::compute_shielded_withdrawal_fee(1, platform_version)
+            .expect("fee computation should not overflow");
+        let unshielding_amount = fee + platform_version.system_limits.min_withdrawal_amount;
         create_shielded_withdrawal_transition(
             vec![create_dummy_serialized_action()],
-            111_549_800, // unshielding_amount: recipient amount + minimum fee for 1 action
-            [42u8; 32],  // non-zero anchor
-            vec![0u8; 100], // dummy proof bytes
-            [0u8; 64],   // dummy binding signature
-            1,           // core_fee_per_byte
-            Pooling::Never, // pooling strategy
+            unshielding_amount,
+            [42u8; 32],             // non-zero anchor
+            vec![0u8; 100],         // dummy proof bytes
+            [0u8; 64],              // dummy binding signature
+            1,                      // core_fee_per_byte
+            Pooling::Never,         // pooling strategy
             create_output_script(), // P2PKH output script
         )
     }
@@ -119,7 +128,7 @@ mod tests {
 
             let transition = ShieldedWithdrawalTransitionV0 {
                 actions,
-                unshielding_amount: 111_549_800,
+                unshielding_amount: 130_549_800,
                 anchor: [42u8; 32],
                 proof: vec![0u8; 100],
                 binding_signature: [0u8; 64],
@@ -352,7 +361,8 @@ mod tests {
             FullViewingKey, Note, NoteValue, Position, RandomSeed, Retention, Rho, Scope,
             SpendAuthorizingKey, SpendingKey,
         };
-        use rand::rngs::OsRng;
+        use rand::rngs::StdRng;
+        use rand::SeedableRng;
 
         #[test]
         fn test_invalid_proof_returns_shielded_proof_error() {
@@ -388,7 +398,7 @@ mod tests {
             let platform_version = PlatformVersion::latest();
             let platform = setup_platform();
             insert_dummy_encrypted_notes(&platform, 250);
-            let mut rng = OsRng;
+            let mut rng = StdRng::seed_from_u64(0);
             let pk = get_proving_key();
 
             // --- Create keys ---
@@ -428,8 +438,12 @@ mod tests {
             // Compute platform sighash binding transparent fields (output_script, unshielding_amount)
             let output_script = create_output_script();
             let unshielding_amount = 499_995_000u64; // value_balance as u64
-            let mut extra_sighash_data = output_script.as_bytes().to_vec();
-            extra_sighash_data.extend_from_slice(&unshielding_amount.to_le_bytes());
+            let extra_sighash_data = dpp::shielded::shielded_withdrawal_extra_sighash_data(
+                output_script.as_bytes(),
+                unshielding_amount,
+                1,
+                Pooling::Never,
+            );
             let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
             let sighash = compute_platform_sighash(&bundle_commitment, &extra_sighash_data);
 
@@ -490,7 +504,7 @@ mod tests {
 
             let transition = create_shielded_withdrawal_transition(
                 vec![bad_action],
-                111_549_800, // unshielding_amount: recipient amount + minimum fee for 1 action
+                130_549_800, // unshielding_amount: recipient amount + minimum fee for 1 action
                 anchor,
                 vec![0u8; 100],
                 [0u8; 64],
@@ -529,7 +543,8 @@ mod tests {
             FullViewingKey, Note, NoteValue, Position, RandomSeed, Retention, Rho, Scope,
             SpendAuthorizingKey, SpendingKey,
         };
-        use rand::rngs::OsRng;
+        use rand::rngs::StdRng;
+        use rand::SeedableRng;
 
         /// Build a valid Orchard bundle for shielded withdrawal tests (spend > output).
         /// The `output_script` and `unshielding_amount` are bound to the sighash so that
@@ -539,7 +554,7 @@ mod tests {
             output_script: &CoreScript,
             unshielding_amount: u64,
         ) -> (Vec<SerializedAction>, i64, [u8; 32], Vec<u8>, [u8; 64]) {
-            let mut rng = OsRng;
+            let mut rng = StdRng::seed_from_u64(0);
             let pk = get_proving_key();
 
             let sk = SpendingKey::from_bytes([0u8; 32]).unwrap();
@@ -574,8 +589,12 @@ mod tests {
             let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
 
             // Bind transparent fields (output_script, unshielding_amount) to the sighash
-            let mut extra_sighash_data = output_script.as_bytes().to_vec();
-            extra_sighash_data.extend_from_slice(&unshielding_amount.to_le_bytes());
+            let extra_sighash_data = dpp::shielded::shielded_withdrawal_extra_sighash_data(
+                output_script.as_bytes(),
+                unshielding_amount,
+                1,
+                Pooling::Never,
+            );
             let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
             let sighash = compute_platform_sighash(&bundle_commitment, &extra_sighash_data);
 
@@ -730,6 +749,57 @@ mod tests {
             );
         }
 
+        /// AUDIT REGRESSION: core_fee_per_byte is bound to the platform sighash.
+        ///
+        /// `core_fee_per_byte` is written verbatim by the transformer into the queued
+        /// Core withdrawal document (the asset-unlock TxOut fee rate). Structure
+        /// validation constrains it to the non-zero Fibonacci set, but that set spans
+        /// 1..=2,971,215,073 — so without sighash binding a relay or block proposer could
+        /// flip a user's `core_fee_per_byte = 1` to a much larger Fibonacci value,
+        /// redirecting the withdrawn amount into L1 miner fees while keeping the Orchard
+        /// proof valid (ShieldedWithdrawal has no identity-key signature). Binding it into
+        /// the sighash makes the binding signature authorize it, so any change is rejected.
+        #[test]
+        fn test_different_core_fee_per_byte_with_same_valid_bundle_is_rejected() {
+            let platform_version = PlatformVersion::latest();
+            let platform = setup_platform();
+            insert_dummy_encrypted_notes(&platform, 250);
+
+            // Bundle is signed for core_fee_per_byte = 1 (build_valid_shielded_withdrawal_bundle).
+            let output_script = create_output_script();
+            let unshielding_amount = 499_995_000u64;
+            let (actions, value_balance, anchor_bytes, proof_bytes, binding_sig) =
+                build_valid_shielded_withdrawal_bundle(&output_script, unshielding_amount);
+            assert_eq!(value_balance, 499_995_000);
+
+            set_pool_total_balance(&platform, 500_000_000);
+            insert_anchor_into_state(&platform, &anchor_bytes);
+
+            // ATTACK: bump core_fee_per_byte to a *different* Fibonacci value (2), so it still
+            // passes structure validation but no longer matches the signed sighash.
+            let transition = create_shielded_withdrawal_transition(
+                actions,
+                unshielding_amount,
+                anchor_bytes,
+                proof_bytes,
+                binding_sig,
+                2, // mutated core_fee_per_byte (bundle was signed with 1)
+                Pooling::Never,
+                output_script,
+            );
+
+            let processing_result = process_transition(&platform, transition, platform_version);
+
+            // FIXED: core_fee_per_byte is in the platform sighash, so the mutated value
+            // yields a different sighash than was signed and signature verification fails.
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::StateError(StateError::InvalidShieldedProofError(_))
+                )]
+            );
+        }
+
         /// AUDIT REGRESSION: Different unshielding_amount is caught by platform sighash.
         ///
         /// The unshielding_amount is bound to the Orchard bundle via sighash. Changing
@@ -794,9 +864,17 @@ mod tests {
             let mut action2 = create_dummy_serialized_action();
             action2.cmx = [99u8; 32]; // Different commitment but same nullifier
 
+            // unshielding_amount = the 2-action ShieldedWithdrawal fee (base + flat
+            // withdrawal-document storage cost) + the min_withdrawal_amount floor for the net, so the
+            // gross clears the fee gate and the flow reaches the (earlier) proof-verification stage
+            // this test exercises rather than short-circuiting on InsufficientShieldedFeeError.
+            let fee = dpp::shielded::compute_shielded_withdrawal_fee(2, platform_version)
+                .expect("fee computation should not overflow");
+            let unshielding_amount = fee + platform_version.system_limits.min_withdrawal_amount;
+
             let transition = create_shielded_withdrawal_transition(
                 vec![action1, action2], // Both have nullifier [1u8; 32]
-                123_098_600, // unshielding_amount: recipient amount + minimum fee for 2 actions
+                unshielding_amount,
                 anchor,
                 vec![0u8; 100],
                 [0u8; 64],
@@ -838,7 +916,8 @@ mod tests {
             FullViewingKey, Note, NoteValue, Position, RandomSeed, Retention, Rho, Scope,
             SpendAuthorizingKey, SpendingKey,
         };
-        use rand::rngs::OsRng;
+        use rand::rngs::StdRng;
+        use rand::SeedableRng;
         use std::collections::BTreeMap;
         use std::sync::Arc;
 
@@ -847,7 +926,7 @@ mod tests {
             let platform_version = PlatformVersion::latest();
             let platform = setup_platform();
             insert_dummy_encrypted_notes(&platform, 250);
-            let mut rng = OsRng;
+            let mut rng = StdRng::seed_from_u64(0);
             let pk = get_proving_key();
 
             // --- Create keys ---
@@ -887,8 +966,12 @@ mod tests {
             // Compute platform sighash binding transparent fields (output_script, unshielding_amount)
             let output_script = create_output_script();
             let unshielding_amount = 499_995_000u64; // value_balance as u64
-            let mut extra_sighash_data = output_script.as_bytes().to_vec();
-            extra_sighash_data.extend_from_slice(&unshielding_amount.to_le_bytes());
+            let extra_sighash_data = dpp::shielded::shielded_withdrawal_extra_sighash_data(
+                output_script.as_bytes(),
+                unshielding_amount,
+                1,
+                Pooling::Never,
+            );
             let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
             let sighash = compute_platform_sighash(&bundle_commitment, &extra_sighash_data);
 
@@ -1053,6 +1136,177 @@ mod tests {
             assert!(
                 maybe_doc.is_some(),
                 "withdrawal document should be present (not absent)"
+            );
+        }
+    }
+
+    mod credit_conservation {
+        use super::*;
+        use crate::execution::validation::state_transition::tests::process_state_transitions;
+        use dpp::block::block_info::BlockInfo;
+        use grovedb_commitment_tree::{
+            Builder, BundleType, ClientMemoryCommitmentTree, DashMemo, ExtractedNoteCommitment,
+            FullViewingKey, Note, NoteValue, Position, RandomSeed, Retention, Rho, Scope,
+            SpendAuthorizingKey, SpendingKey,
+        };
+        use rand::rngs::StdRng;
+        use rand::SeedableRng;
+
+        /// Block-level conservation test for shielded withdrawal. Spends a 500M note
+        /// and withdraws `value_balance` worth from the pool. Runs the FULL block
+        /// pipeline (execute + fee distribution + sum-tree validation) and asserts:
+        ///   - total platform credits stay conserved (the invariant whose failure
+        ///     halts the chain),
+        ///   - the shielded pool drops by exactly `unshielding_amount`, and
+        ///   - the system-credit counter drops by the NET (`unshielding_amount - fee`)
+        ///     — only the net leaves the platform to Core; the fee stays in the fee
+        ///     pools. This exercises the `RemoveFromSystemCredits(net)` accounting the
+        ///     conversion-level tests cannot fully validate end-to-end.
+        #[test]
+        fn test_shielded_withdrawal_conserves_credits() {
+            let platform_version = PlatformVersion::latest();
+            let platform = setup_platform();
+            insert_dummy_encrypted_notes(&platform, 250);
+            // Seeded RNG for deterministic, bisectable test randomness (repo convention).
+            let mut rng = StdRng::seed_from_u64(0);
+            let pk = get_proving_key();
+
+            let sk = SpendingKey::from_bytes([0u8; 32]).unwrap();
+            let fvk = FullViewingKey::from(&sk);
+            let recipient = fvk.address_at(0u32, Scope::External);
+            let ask = SpendAuthorizingKey::from(&sk);
+
+            let rho_bytes: [u8; 32] = {
+                let mut b = [0u8; 32];
+                b[0] = 1;
+                b
+            };
+            let rho = Rho::from_bytes(&rho_bytes).unwrap();
+            let rseed = RandomSeed::from_bytes([42u8; 32], &rho).unwrap();
+            let note =
+                Note::from_parts(recipient, NoteValue::from_raw(500_000_000), rho, rseed).unwrap();
+
+            let cmx = ExtractedNoteCommitment::from(note.commitment());
+            let mut tree = ClientMemoryCommitmentTree::new(100);
+            tree.append(cmx.to_bytes(), Retention::Marked).unwrap();
+            tree.checkpoint(0u32).unwrap();
+            let anchor = tree.anchor().unwrap();
+            let merkle_path = tree.witness(Position::from(0u64), 0).unwrap().unwrap();
+
+            let mut builder = Builder::<DashMemo>::new(BundleType::DEFAULT, anchor);
+            builder.add_spend(fvk.clone(), note, merkle_path).unwrap();
+            builder
+                .add_output(None, recipient, NoteValue::from_raw(5_000), [0u8; 36])
+                .unwrap();
+            let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
+
+            let output_script = create_output_script();
+            let unshielding_amount = 499_995_000u64;
+            let extra_sighash_data = dpp::shielded::shielded_withdrawal_extra_sighash_data(
+                output_script.as_bytes(),
+                unshielding_amount,
+                1,
+                Pooling::Never,
+            );
+            let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
+            let sighash = compute_platform_sighash(&bundle_commitment, &extra_sighash_data);
+            let proven = unauthorized.create_proof(pk, &mut rng).unwrap();
+            let bundle = proven.apply_signatures(rng, sighash, &[ask]).unwrap();
+
+            let (actions, value_balance, anchor_bytes, proof_bytes, binding_sig) =
+                serialize_authorized_bundle_i64(&bundle);
+            assert_eq!(value_balance, 499_995_000);
+            let num_actions = actions.len();
+
+            insert_anchor_into_state(&platform, &anchor_bytes);
+            set_pool_total_balance(&platform, 500_000_000);
+
+            // Capture a balanced starting state (set_pool_total_balance adds matching
+            // system credits, so the counter and the sum trees agree).
+            let credits_before = platform
+                .drive
+                .calculate_total_credits_balance(None, &platform_version.drive)
+                .expect("should calculate total credits before withdrawal");
+            assert!(
+                credits_before
+                    .ok()
+                    .expect("credit balance check should not overflow"),
+                "credits must be balanced before the withdrawal: {}",
+                credits_before
+            );
+
+            let transition = create_shielded_withdrawal_transition(
+                actions,
+                unshielding_amount,
+                anchor_bytes,
+                proof_bytes,
+                binding_sig,
+                1,
+                Pooling::Never,
+                output_script,
+            );
+
+            let platform_state = platform.state.load();
+            let (fee_results, _processed_block_fees) = process_state_transitions(
+                &platform,
+                &[transition],
+                BlockInfo::default(),
+                &platform_state,
+            );
+
+            // The shielded fee is split like every other transition: the (permanent) storage
+            // cost is routed to `storage_fee` (storage pool, epoch fee multiplier applied at
+            // payout), not booked entirely as processing. So a successful shielded withdrawal
+            // reports a non-zero storage_fee and a non-zero processing fee that together equal
+            // the carved minimum shielded fee.
+            let fee = &fee_results[0];
+            let expected_total =
+                dpp::shielded::compute_shielded_withdrawal_fee(num_actions, platform_version)
+                    .expect("fee computation should not overflow");
+            assert!(
+                fee.storage_fee > 0,
+                "shielded storage must be charged as storage_fee, got {}",
+                fee.storage_fee
+            );
+            assert!(
+                fee.processing_fee > 0,
+                "proof + processing must be charged as processing_fee, got {}",
+                fee.processing_fee
+            );
+            assert_eq!(
+                fee.storage_fee + fee.processing_fee,
+                expected_total,
+                "storage + processing must equal the carved minimum shielded fee"
+            );
+
+            let credits_after = platform
+                .drive
+                .calculate_total_credits_balance(None, &platform_version.drive)
+                .expect("should calculate total credits after withdrawal");
+            assert!(
+                credits_after
+                    .ok()
+                    .expect("credit balance check should not overflow"),
+                "credits must remain balanced after a shielded withdrawal: {}",
+                credits_after
+            );
+
+            // The shielded pool dropped by exactly the full unshielding_amount.
+            assert_eq!(
+                credits_before.total_in_shielded_balances
+                    - credits_after.total_in_shielded_balances,
+                unshielding_amount as i64,
+                "shielded pool must drop by the full unshielding amount"
+            );
+
+            // The system-credit counter dropped by the NET (unshielding_amount - fee):
+            // only the net leaves the platform to Core; the fee stays in the fee pools.
+            let fee = dpp::shielded::compute_shielded_withdrawal_fee(num_actions, platform_version)
+                .expect("fee computation should not overflow");
+            assert_eq!(
+                credits_before.total_credits_in_platform - credits_after.total_credits_in_platform,
+                unshielding_amount - fee,
+                "system credits must drop by exactly the net withdrawn to Core (amount - fee)"
             );
         }
     }

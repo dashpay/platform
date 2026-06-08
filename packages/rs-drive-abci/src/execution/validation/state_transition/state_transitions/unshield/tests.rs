@@ -57,10 +57,13 @@ mod tests {
         create_unshield_transition(
             create_output_address(),
             vec![create_dummy_serialized_action()],
-            111_549_800, // unshielding_amount: recipient amount + minimum fee for 1 action
-            [42u8; 32],  // non-zero anchor
+            // unshielding_amount: recipient amount + unshield fee for 1 action. The fee gate runs
+            // before proof verification, so this must clear `compute_shielded_unshield_fee(1)`
+            // (136,631,600) for these tests to reach the proof-verification stage they assert on.
+            136_632_600,
+            [42u8; 32],     // non-zero anchor
             vec![0u8; 100], // dummy proof bytes
-            [0u8; 64],   // dummy binding signature
+            [0u8; 64],      // dummy binding signature
         )
     }
 
@@ -111,7 +114,7 @@ mod tests {
             let transition = UnshieldTransitionV0 {
                 output_address: create_output_address(),
                 actions,
-                unshielding_amount: 111_549_800,
+                unshielding_amount: 130_549_800,
                 anchor: [42u8; 32],
                 proof: vec![0u8; 100],
                 binding_signature: [0u8; 64],
@@ -314,6 +317,80 @@ mod tests {
     }
 
     // ==========================================
+    // FEE VALIDATION TESTS (InsufficientShieldedFeeError)
+    // ==========================================
+    //
+    // The Unshield fee gate (`validate_minimum_shielded_fee`) enforces
+    // `unshielding_amount >= compute_shielded_unshield_fee(num_actions)`, NOT the base
+    // `compute_minimum_shielded_fee(num_actions)`. The unshield fee is the base PLUS the flat
+    // 222-byte `AddBalanceToAddress` output-write storage cost, so there is a non-empty half-open
+    // range `[compute_minimum_shielded_fee(n), compute_shielded_unshield_fee(n))` of amounts that
+    // cover the base but NOT the unshield fee. Any amount in that range must be rejected with
+    // `InsufficientShieldedFeeError` — this pins that the gate uses `compute_shielded_unshield_fee`.
+
+    mod fee_validation {
+        use super::*;
+
+        /// An `unshielding_amount` strictly inside `[base_fee, unshield_fee)` — enough for the BASE
+        /// shielded fee but NOT the Unshield fee (which adds the flat 222-byte address-write cost) —
+        /// must be rejected with `InsufficientShieldedFeeError`. This is the boundary that proves the
+        /// gate uses `compute_shielded_unshield_fee`, not `compute_minimum_shielded_fee`.
+        ///
+        /// Mirrors the equivalent ShieldedTransfer (Base) and ShieldedWithdrawal boundary tests.
+        #[test]
+        fn test_fee_meets_base_but_below_unshield_fee_returns_error() {
+            let platform_version = PlatformVersion::latest();
+            let platform = setup_platform();
+
+            // One action, matching `create_dummy_serialized_action()` below.
+            let num_actions = 1usize;
+            let base_fee =
+                dpp::shielded::compute_minimum_shielded_fee(num_actions, platform_version)
+                    .expect("base shielded fee should not overflow");
+            let unshield_fee =
+                dpp::shielded::compute_shielded_unshield_fee(num_actions, platform_version)
+                    .expect("unshield fee should not overflow");
+
+            // The unshield fee MUST strictly exceed the base (the flat 222-byte address-write cost),
+            // otherwise the half-open range this test exercises would be empty.
+            assert!(
+                unshield_fee > base_fee,
+                "unshield fee ({unshield_fee}) must exceed the base fee ({base_fee}) so the \
+                 [base, unshield) range is non-empty"
+            );
+
+            // Pick an amount strictly inside `[base_fee, unshield_fee)`: it clears the base fee but
+            // falls one credit short of the Unshield fee. If the gate (incorrectly) used the base
+            // fee, this would pass; because it uses `compute_shielded_unshield_fee`, it is rejected.
+            let unshielding_amount = unshield_fee - 1;
+            assert!(
+                unshielding_amount >= base_fee,
+                "the chosen amount must still cover the base fee"
+            );
+
+            let transition = create_unshield_transition(
+                create_output_address(),
+                vec![create_dummy_serialized_action()],
+                unshielding_amount,
+                [42u8; 32],     // non-zero anchor (structurally valid)
+                vec![0u8; 100], // dummy proof bytes (fee gate runs before proof verification)
+                [0u8; 64],
+            );
+
+            let processing_result = process_transition(&platform, transition, platform_version);
+
+            // The fee gate runs before proof verification, so the insufficient fee is caught here
+            // (not the dummy proof).
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::StateError(StateError::InsufficientShieldedFeeError(_))
+                )]
+            );
+        }
+    }
+
+    // ==========================================
     // ZK PROOF VERIFICATION TESTS (InvalidShieldedProofError)
     // ==========================================
 
@@ -324,7 +401,8 @@ mod tests {
             ExtractedNoteCommitment, FullViewingKey, MerklePath, Note, NoteValue, Position,
             RandomSeed, Retention, Rho, Scope, SpendAuthorizingKey, SpendingKey,
         };
-        use rand::rngs::OsRng;
+        use rand::rngs::StdRng;
+        use rand::SeedableRng;
 
         #[test]
         fn test_invalid_proof_returns_shielded_proof_error() {
@@ -357,7 +435,7 @@ mod tests {
             let platform_version = PlatformVersion::latest();
             let platform = setup_platform();
             insert_dummy_encrypted_notes(&platform, 250);
-            let mut rng = OsRng;
+            let mut rng = StdRng::seed_from_u64(0);
             let pk = get_proving_key();
 
             // --- Create keys ---
@@ -397,8 +475,10 @@ mod tests {
             // Compute platform sighash binding transparent fields (output_address, unshielding_amount)
             let output_address = create_output_address();
             let unshielding_amount = 499_995_000u64; // value_balance as u64
-            let mut extra_sighash_data = output_address.to_bytes();
-            extra_sighash_data.extend_from_slice(&unshielding_amount.to_le_bytes());
+            let extra_sighash_data = dpp::shielded::unshield_extra_sighash_data(
+                &output_address.to_bytes(),
+                unshielding_amount,
+            );
             let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
             let sighash = compute_platform_sighash(&bundle_commitment, &extra_sighash_data);
 
@@ -455,7 +535,9 @@ mod tests {
             let transition = create_unshield_transition(
                 create_output_address(),
                 vec![bad_action],
-                111_549_800, // unshielding_amount: recipient amount + minimum fee for 1 action
+                // unshielding_amount is not load-bearing here: the bad 100-byte encrypted note
+                // fails basic structure validation, which runs before the fee gate.
+                136_632_600,
                 anchor,
                 vec![0u8; 100],
                 [0u8; 64],
@@ -486,7 +568,8 @@ mod tests {
             ExtractedNoteCommitment, FullViewingKey, MerklePath, Note, NoteValue, Position,
             RandomSeed, Retention, Rho, Scope, SpendAuthorizingKey, SpendingKey,
         };
-        use rand::rngs::OsRng;
+        use rand::rngs::StdRng;
+        use rand::SeedableRng;
 
         /// Build a valid Orchard bundle for unshield tests (spend > output).
         /// The `output_address` and `unshielding_amount` are bound to the sighash so that
@@ -496,7 +579,7 @@ mod tests {
             output_address: &PlatformAddress,
             unshielding_amount: u64,
         ) -> (Vec<SerializedAction>, i64, [u8; 32], Vec<u8>, [u8; 64]) {
-            let mut rng = OsRng;
+            let mut rng = StdRng::seed_from_u64(0);
             let pk = get_proving_key();
 
             let sk = SpendingKey::from_bytes([0u8; 32]).unwrap();
@@ -531,8 +614,10 @@ mod tests {
             let (unauthorized, _) = builder.build::<i64>(&mut rng).unwrap().unwrap();
 
             // Bind transparent fields (output_address, unshielding_amount) to the sighash
-            let mut extra_sighash_data = output_address.to_bytes();
-            extra_sighash_data.extend_from_slice(&unshielding_amount.to_le_bytes());
+            let extra_sighash_data = dpp::shielded::unshield_extra_sighash_data(
+                &output_address.to_bytes(),
+                unshielding_amount,
+            );
             let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
             let sighash = compute_platform_sighash(&bundle_commitment, &extra_sighash_data);
 
@@ -661,7 +746,11 @@ mod tests {
             let transition = create_unshield_transition(
                 create_output_address(),
                 vec![action1, action2], // Both have nullifier [1u8; 32]
-                123_098_600, // unshielding_amount: recipient amount + minimum fee for 2 actions
+                // unshielding_amount: recipient amount + unshield fee for 2 actions. The fee gate
+                // runs before proof verification, so this must clear
+                // `compute_shielded_unshield_fee(2)` (167,180,400) for this test to reach the
+                // proof-verification stage it asserts on.
+                167_181_400,
                 anchor,
                 vec![0u8; 100],
                 [0u8; 64],
@@ -696,14 +785,15 @@ mod tests {
             FullViewingKey, Note, NoteValue, Position, RandomSeed, Retention, Rho, Scope,
             SpendAuthorizingKey, SpendingKey,
         };
-        use rand::rngs::OsRng;
+        use rand::rngs::StdRng;
+        use rand::SeedableRng;
 
         #[test]
         fn test_unshield_prove_and_verify_nullifiers_and_address() {
             let platform_version = PlatformVersion::latest();
             let platform = setup_platform();
             insert_dummy_encrypted_notes(&platform, 250);
-            let mut rng = OsRng;
+            let mut rng = StdRng::seed_from_u64(0);
             let pk = get_proving_key();
 
             let spend_amount = 500_000_000u64;
@@ -751,8 +841,10 @@ mod tests {
             // Compute platform sighash binding transparent fields (output_address, unshielding_amount)
             let output_address = create_output_address();
             let unshielding_amount = 499_995_000u64; // value_balance as u64
-            let mut extra_sighash_data = output_address.to_bytes();
-            extra_sighash_data.extend_from_slice(&unshielding_amount.to_le_bytes());
+            let extra_sighash_data = dpp::shielded::unshield_extra_sighash_data(
+                &output_address.to_bytes(),
+                unshielding_amount,
+            );
             let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
             let sighash = compute_platform_sighash(&bundle_commitment, &extra_sighash_data);
 
