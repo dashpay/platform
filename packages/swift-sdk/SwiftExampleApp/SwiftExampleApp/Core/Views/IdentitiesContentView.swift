@@ -271,6 +271,7 @@ struct IdentitiesContentView: View {
     private var resumableRegistrationsSection: some View {
         ResumableRegistrationsList(
             coordinator: walletManager.registrationCoordinator,
+            network: network,
             allAssetLocks: allAssetLocks,
             allWallets: allWallets,
             allIdentities: identities,
@@ -436,6 +437,10 @@ struct IdentitiesContentView: View {
 /// dismiss UX on `.failed` rows.
 private struct ResumableRegistrationsList: View {
     @ObservedObject var coordinator: RegistrationCoordinator
+    /// Active network. Scopes `allAssetLocks` to wallets on this
+    /// network before the anti-join so locks from another network
+    /// don't leak into the list after a network switch.
+    let network: Network
     let allAssetLocks: [PersistentAssetLock]
     let allWallets: [PersistentWallet]
     let allIdentities: [PersistentIdentity]
@@ -487,9 +492,25 @@ private struct ResumableRegistrationsList: View {
                 }
         )
         return IdentitiesContentView.crossWalletResumableLocks(
-            in: allAssetLocks,
+            in: networkScopedAssetLocks,
             usedSlots: identitySlots.union(activeSlots)
         )
+    }
+
+    /// `allAssetLocks` restricted to wallets on the active network.
+    /// `PersistentAssetLock` carries no `networkRaw` column itself;
+    /// the canonical join is through `walletId` to the parent
+    /// `PersistentWallet.networkRaw` — same pivot `CoreContentView`
+    /// uses. Without this, locks from another network would surface
+    /// as resumable rows after a network switch.
+    private var networkScopedAssetLocks: [PersistentAssetLock] {
+        let raw = network.rawValue
+        let walletIdsOnNetwork = Set(
+            allWallets.lazy
+                .filter { $0.networkRaw == raw }
+                .map(\.walletId)
+        )
+        return allAssetLocks.filter { walletIdsOnNetwork.contains($0.walletId) }
     }
 
     private func walletDisplayLabel(for walletId: Data) -> String {
