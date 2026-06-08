@@ -141,17 +141,31 @@ so one failed wallet does not hide its siblings.
 
 #### load() reconstruction
 
-`SqlitePersister::load()` returns the base `ClientStartState` (plain struct,
-two slots — no `#[non_exhaustive]`):
+`SqlitePersister::load()` returns a fully-rehydrated `ClientStartState`
+(plain struct — no `#[non_exhaustive]`). Both slots are populated:
 
 | Slot | Reader | Status |
 |---|---|---|
 | `platform_addresses` | `schema::platform_addrs::load_all` (a fixed set of grouped scans over `platform_address_sync`, `platform_addresses`, and `account_registrations`, driven by the `wallets::list_ids` wallet universe) | populated |
-| `wallets`            | — | empty pending upstream `Wallet::from_persisted` |
+| `wallets`            | per-wallet `schema::<area>` readers (see below) | populated |
 
-The `identities` / `contacts` / `asset_locks` per-area readers exist as
-hardened dormant helpers (`schema::<area>::load_state`) but are not wired
-into `load()` — `ClientStartState` carries no slot for them.
+Each `ClientStartState::wallets` entry is a **keyless** `ClientWalletStartState`
+reconstructed from these per-area readers:
+
+| Field | Reader |
+|---|---|
+| `network` / `birth_height` | `schema::wallets::fetch` |
+| `account_manifest` | `schema::accounts::load_state` |
+| `core_state` | `schema::core_state::load_state` |
+| `identity_manager` | `schema::identities::load_state` |
+| `unused_asset_locks` | `schema::asset_locks::load_unconsumed` (`Consumed`-filtered — spent locks stay on disk but are never resurrected) |
+| `contacts` | `schema::contacts::load_changeset` |
+| `identity_keys` | `schema::identity_keys::load_state` |
+
+The payload carries **no** `Wallet` and no key material — the manager
+rebuilds each wallet watch-only via `Wallet::new_watch_only` from the
+manifest and applies this state; signing keys are derived later on demand
+via the `sign_with_mnemonic_resolver` path.
 
 Loading is **fail-hard**: any row that fails to decode, or a stored
 `wallet_id` that is not exactly 32 bytes, aborts the whole call with a typed
@@ -161,9 +175,9 @@ corruption tolerance, no per-row skip, and no partial `Ok` — a corrupt
 database surfaces as an error rather than silently losing rows.
 
 The summary `tracing::info!` carries `wallets_seen`, `addresses_loaded`,
-`wallets_rehydrated`, and `wallets_pending_rehydration` (the count of
-wallets that *would* be rehydrated once upstream provides
-`Wallet::from_persisted`).
+`wallets_rehydrated` (the count actually rehydrated this call), and
+`wallets_pending_rehydration` (now always `0` — every seen wallet is
+rehydrated). The only deferred field is listed in `LOAD_UNIMPLEMENTED`.
 
 ### KV metadata API
 

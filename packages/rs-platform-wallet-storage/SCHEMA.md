@@ -125,11 +125,12 @@ erDiagram
 
 ## Diagram 2 — Identities + DashPay (Platform L2 identity tree)
 
-Platform identities, their public keys, token balances, and DashPay profiles/payments. Identity-owned tables have no direct `wallet_id` column; cascade flows `wallets → identities → child`.
+Platform identities, their public keys, token balances, and DashPay profiles/payments. Most identity-owned tables have no direct `wallet_id` column and cascade via `wallets → identities → child`; `identity_keys` is the exception — it carries its own `wallet_id` column and two `ON DELETE CASCADE` FKs (one to `wallets`, one to `identities`).
 
 ```mermaid
 erDiagram
     WALLETS ||--o{ IDENTITIES : "parents"
+    WALLETS ||--o{ IDENTITY_KEYS : "owns"
     IDENTITIES ||--o{ IDENTITY_KEYS : "has"
     IDENTITIES ||--o{ TOKEN_BALANCES : "holds"
     IDENTITIES ||--o| DASHPAY_PROFILES : "has"
@@ -150,10 +151,12 @@ erDiagram
     }
 
     IDENTITY_KEYS {
+        BLOB wallet_id PK "32-byte WalletId"
         BLOB identity_id PK
         INTEGER key_id PK "KeyID"
         BLOB public_key_blob "bincode-encoded IdentityKeyWire (public material only)"
         BLOB public_key_hash "20-byte HASH160 of the key"
+        BLOB derivation_blob "reserved typed projection; always NULL today"
     }
 
     TOKEN_BALANCES {
@@ -432,13 +435,14 @@ marks a logical delete; the row is retained for cascade integrity.
 Public identity keys only — no private material. The
 `public_key_blob` is a custom wire format (`IdentityKeyWire`) that
 pre-encodes the `IdentityPublicKey` via bincode 2 native `Encode/Decode`
-to work around a serde-tag incompatibility.
+to work around a serde-tag incompatibility. `derivation_blob` is a
+reserved column for a future typed projection and is always NULL today
+(derivation indices live inside `public_key_blob`).
 
-- PK: `(identity_id, key_id)`.
+- PK: `(wallet_id, identity_id, key_id)`.
+- FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE`.
 - FK: `identity_id → identities(identity_id) ON DELETE CASCADE`.
-- The `(identity_id, key_id)` primary-key index already serves
-  `identity_id`-prefix lookups and the FK cascade, so no separate
-  single-column index is defined.
+- Index: `idx_identity_keys_wallet_identity(wallet_id, identity_id)`.
 
 ### `contacts`
 
@@ -477,8 +481,13 @@ fields advance monotonically (new values are `max(current, incoming)`).
 
 Lifecycle tracking for asset-lock outpoints. `status` is a queryable
 text column; `lifecycle_blob` carries the full `AssetLockEntry`. Consumed
-locks are removed via `AssetLockChangeSet::removed`, not retained with a
-consumed status.
+locks are **retained permanently** with `status = 'consumed'` (an upsert,
+never a `DELETE` — they are not routed through `AssetLockChangeSet::removed`),
+so the full lifecycle history stays on disk and remains visible via the
+unfiltered inspection reader (`schema::asset_locks::list_active`). The
+rehydration feed reads through `schema::asset_locks::load_unconsumed`, which
+filters at the SQL level (`status NOT IN ('consumed')`), so a spent one-shot
+lock is never resurrected as actionable.
 
 - PK: `(wallet_id, outpoint)`.
 - FK: `wallet_id → wallets(wallet_id) ON DELETE CASCADE`.
@@ -641,9 +650,13 @@ having to grep this repo.
 - `identities.wallet_id` is the single nullable FK: NULL means orphan
   (no parent wallet registered yet). The orphan-to-parented promotion
   uses `COALESCE(identities.wallet_id, excluded.wallet_id)` on upsert.
-- Identity-owned tables (`identity_keys`, `token_balances`,
-  `dashpay_profiles`, `dashpay_payments_overlay`) have no `wallet_id`
-  column. Cascade reaches them via `identities(identity_id)`.
+- Identity-owned tables (`token_balances`, `dashpay_profiles`,
+  `dashpay_payments_overlay`) have no `wallet_id` column. Cascade reaches
+  them via `identities(identity_id)`.
+- `identity_keys` is the exception among identity-owned tables: it carries
+  a `wallet_id BLOB NOT NULL` column and two `ON DELETE CASCADE` FKs
+  (`wallet_id → wallets`, `identity_id → identities`), so a delete on
+  either parent cascades to it.
 - `core_utxos.spent_in_txid` is cleared by the `setnull_core_utxos_on_tx_delete`
   trigger rather than a native `ON DELETE SET NULL` FK, because SQLite would null
   every column of a composite FK on SET NULL — including the NOT NULL `wallet_id`.

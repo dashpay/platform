@@ -183,9 +183,15 @@ automatic fallback between backends.
 `SecretStore` returns the typed `SecretStoreError`. For the file arm this
 is **lossless**: `WrongPassphrase`, `Corruption`, `AlreadyLocked`,
 `KdfFailure`, `VersionUnsupported`, `MalformedVault`, `InsecurePermissions`,
-`VaultTooLarge`, and `InvalidLabel` are distinct typed variants
-(`VaultTooLarge` surfaces when the on-disk vault exceeds the 128 MiB
-ceiling). For the OS arm,
+`InsecureParentDir`, `SecretTooLarge`, `VaultTooLarge`, `Encrypt`, and
+`InvalidLabel` are distinct typed variants. `VaultTooLarge` surfaces when
+the on-disk vault exceeds the read-side ceiling; `SecretTooLarge` rejects an
+oversized secret at the write boundary before it can inflate the shared
+vault; `InsecureParentDir` refuses a vault whose parent directory is
+group/other-writable (a writable parent governs rename/replace despite the
+file's own `0600`); `Encrypt` is the (effectively unreachable) AEAD
+encrypt-side failure, kept typed so a write failure is never mislabeled a
+key-derivation error. For the OS arm,
 `keyring_core::Error` projects best-effort into
 `SecretStoreError::OsKeyring { kind: OsKeyringErrorKind }`, a payload-free
 discriminant — keyring variants carrying raw bytes (`BadEncoding`,
@@ -199,9 +205,11 @@ recoverable: they ride in `NoStorageAccess` with the typed
 them via `err.source().and_then(|s| s.downcast_ref::<SecretStoreError>())`.
 The `BadStoreFormat` group (`Corruption`, `KdfFailure`,
 `VersionUnsupported`, `MalformedVault`, `InsecurePermissions`,
-`VaultTooLarge`, `Decrypt`, `OsKeyring`) has no box slot and carries only a
-secret-free string; those remain fully typed on the `SecretStore` path
-(so `VaultTooLarge` is not losslessly recoverable through the SPI downcast).
+`InsecureParentDir`, `SecretTooLarge`, `VaultTooLarge`, `Decrypt`,
+`Encrypt`, `OsKeyring`) has no box slot and carries only a secret-free
+string; those remain fully typed on the `SecretStore` path (so e.g.
+`VaultTooLarge` / `SecretTooLarge` are not losslessly recoverable through
+the SPI downcast).
 
 `keyring_core::Error` is safe to `Display` (`{ }`-format), but
 `{:?}`-format embeds `BadEncoding(Vec<u8>)` / `BadDataFormat(Vec<u8>, _)`
