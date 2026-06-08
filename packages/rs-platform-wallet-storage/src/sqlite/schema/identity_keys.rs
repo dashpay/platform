@@ -14,10 +14,8 @@
 use rusqlite::{params, Connection, Transaction};
 use serde::{Deserialize, Serialize};
 
-use dpp::identity::KeyID;
-// Used only by the test-gated `into_entry` and the unit tests below.
-#[cfg(any(test, feature = "__test-helpers"))]
 use dpp::identity::IdentityPublicKey;
+use dpp::identity::KeyID;
 use dpp::prelude::Identifier;
 use platform_wallet::changeset::{
     IdentityKeyDerivationIndices, IdentityKeyEntry, IdentityKeysChangeSet,
@@ -54,7 +52,6 @@ impl IdentityKeyWire {
         })
     }
 
-    #[cfg(any(test, feature = "__test-helpers"))]
     fn into_entry(self) -> Result<IdentityKeyEntry, WalletStorageError> {
         let (public_key, consumed): (IdentityPublicKey, usize) =
             bincode::decode_from_slice(&self.public_key_bincode, bincode::config::standard())?;
@@ -143,7 +140,6 @@ pub fn apply(
 }
 
 /// Decode an `identity_keys.public_key_blob` cell back to the entry.
-#[cfg(any(test, feature = "__test-helpers"))]
 pub fn decode_entry(payload: &[u8]) -> Result<IdentityKeyEntry, WalletStorageError> {
     let wire: IdentityKeyWire = blob::decode(payload)?;
     wire.into_entry()

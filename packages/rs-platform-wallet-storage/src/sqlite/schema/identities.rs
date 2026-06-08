@@ -5,8 +5,6 @@ use rusqlite::{params, Transaction};
 use platform_wallet::changeset::IdentityChangeSet;
 use platform_wallet::wallet::platform_wallet::WalletId;
 
-// Imports used only by the test-gated readers below.
-#[cfg(any(test, feature = "__test-helpers"))]
 use {platform_wallet::changeset::IdentityEntry, rusqlite::Connection};
 
 use crate::sqlite::error::WalletStorageError;
@@ -141,10 +139,6 @@ pub fn fetch(
 /// rows with `IdentityEntry.identity_index = Some(_)` go into
 /// `wallet_identities[wallet_id]`; rows with `None` go into
 /// `out_of_wallet_identities`.
-///
-/// Retained for this crate's integration tests until the
-/// `Wallet::from_persisted` rehydration path consumes it in `load()`.
-#[cfg(any(test, feature = "__test-helpers"))]
 pub fn load_state(
     conn: &Connection,
     wallet_id: &WalletId,
@@ -189,7 +183,6 @@ pub fn load_state(
 /// using a freshly minted V0 [`Identity`] for `(id, balance, revision)`.
 /// Live runtime fields (contacts maps, public-key derivations) are
 /// recovered separately via the contacts / identity_keys readers.
-#[cfg(any(test, feature = "__test-helpers"))]
 fn managed_identity_from_entry(
     entry: &IdentityEntry,
     wallet_id: &WalletId,

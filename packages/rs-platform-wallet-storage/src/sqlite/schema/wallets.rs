@@ -58,7 +58,6 @@ pub fn list_ids(conn: &Connection) -> Result<Vec<WalletId>, WalletStorageError> 
 }
 
 /// Lookup `(network, birth_height)` for a wallet, if known.
-#[cfg(any(test, feature = "__test-helpers"))]
 pub fn fetch(
     conn: &Connection,
     wallet_id: &WalletId,
@@ -112,7 +111,6 @@ fn network_to_str(net: key_wallet::Network) -> &'static str {
 }
 
 /// Inverse of `network_to_str`.
-#[cfg(any(test, feature = "__test-helpers"))]
 pub fn parse_network(s: &str) -> Option<key_wallet::Network> {
     match s {
         "mainnet" => Some(key_wallet::Network::Mainnet),

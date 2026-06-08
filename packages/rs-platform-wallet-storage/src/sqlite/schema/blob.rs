@@ -76,7 +76,6 @@ pub fn encode_outpoint(op: &dashcore::OutPoint) -> Result<Vec<u8>, WalletStorage
 /// Decode an outpoint key produced by [`encode_outpoint`]. Rejects
 /// malformed or trailing bytes with a typed [`WalletStorageError`] via
 /// the shared [`decode`] path.
-#[cfg(any(test, feature = "__test-helpers"))]
 pub fn decode_outpoint(bytes: &[u8]) -> Result<dashcore::OutPoint, WalletStorageError> {
     decode(bytes)
 }

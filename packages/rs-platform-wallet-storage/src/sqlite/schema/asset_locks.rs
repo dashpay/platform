@@ -13,8 +13,6 @@ use platform_wallet::wallet::platform_wallet::WalletId;
 use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::schema::blob;
 
-// Imports used only by the test-gated readers below.
-#[cfg(any(test, feature = "__test-helpers"))]
 use {
     dashcore::OutPoint, platform_wallet::changeset::AssetLockEntry,
     platform_wallet::wallet::asset_lock::tracked::TrackedAssetLock, rusqlite::Connection,
@@ -99,7 +97,6 @@ fn status_str(s: &AssetLockStatus) -> &'static str {
 
 /// Per-wallet asset-lock slice as returned by the readers — outer-keyed
 /// by `account_index`, inner-keyed by outpoint.
-#[cfg(any(test, feature = "__test-helpers"))]
 pub type AssetLocksByAccount = BTreeMap<u32, BTreeMap<OutPoint, TrackedAssetLock>>;
 
 /// Decode one raw `(outpoint_bytes, account_index, lifecycle_blob)`
@@ -109,7 +106,6 @@ pub type AssetLocksByAccount = BTreeMap<u32, BTreeMap<OutPoint, TrackedAssetLock
 /// Hard-fail behaviour: a malformed outpoint, blob, or out-of-range
 /// account index returns a typed [`WalletStorageError`]. Every caller
 /// propagates that error — corruption is never silently skipped.
-#[cfg(any(test, feature = "__test-helpers"))]
 fn decode_row(
     op_bytes: &[u8],
     account_index: i64,
@@ -231,6 +227,7 @@ pub fn load_unconsumed(
 ///
 /// Hard-fail on the first decode error — like [`load_state`], a
 /// corrupt row aborts the read with a typed [`WalletStorageError`].
+#[cfg(any(test, feature = "__test-helpers"))]
 pub fn list_active(
     conn: &Connection,
     wallet_id: &WalletId,
