@@ -57,6 +57,7 @@ mod tests {
         ShieldedActionNote {
             nullifier: [0x33; 32],
             cmx: [0x44; 32],
+            cv_net: [0x22; 32],
             encrypted_note: vec![0x10, 0x20],
         }
     }

@@ -43,13 +43,16 @@ fn generate_filler_notes(count: usize, rng_seed: u64) -> Vec<ShieldedEncryptedNo
     for _ in 0..count {
         let mut cmx = vec![0u8; 32];
         let mut nullifier = vec![0u8; 32];
+        let mut cv_net = vec![0u8; 32];
         let mut encrypted_note = vec![0u8; ENCRYPTED_NOTE_WIRE_LEN];
         rng.fill_bytes(&mut cmx);
         rng.fill_bytes(&mut nullifier);
+        rng.fill_bytes(&mut cv_net);
         rng.fill_bytes(&mut encrypted_note);
         out.push(ShieldedEncryptedNote {
             cmx,
             nullifier,
+            cv_net,
             encrypted_note,
         });
     }

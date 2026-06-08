@@ -35,7 +35,7 @@ impl Drive {
         max_elements: u32,
         verify_subset_of_proof: bool,
         platform_version: &PlatformVersion,
-    ) -> Result<(RootHash, Vec<(Vec<u8>, Vec<u8>, Vec<u8>)>, u64), Error> {
+    ) -> Result<(RootHash, Vec<(Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>)>, u64), Error> {
         if max_elements == 0 {
             return Err(Error::Drive(DriveError::CorruptedElementType(
                 "max_elements must be greater than zero",
@@ -94,17 +94,18 @@ impl Drive {
         for (_, _key, maybe_element) in proved_key_values {
             match maybe_element {
                 Some(Element::Item(value, _)) => {
-                    // Value format: cmx (32) || nullifier (32) || encrypted_note (rest)
-                    if value.len() <= 64 {
+                    // Value format: cmx (32) || nullifier (32) || cv_net (32) || encrypted_note (rest)
+                    if value.len() <= 96 {
                         return Err(Error::Drive(DriveError::CorruptedElementType(
-                            "encrypted note value too short: expected more than 64 bytes (cmx + nullifier + encrypted_note)",
+                            "encrypted note value too short: expected more than 96 bytes (cmx + nullifier + cv_net + encrypted_note)",
                         )));
                     }
-                    // Return (cmx, nullifier, encrypted_note)
+                    // Return (cmx, nullifier, cv_net, encrypted_note)
                     notes.push((
                         value[..32].to_vec(),
                         value[32..64].to_vec(),
-                        value[64..].to_vec(),
+                        value[64..96].to_vec(),
+                        value[96..].to_vec(),
                     ));
                 }
                 Some(_) => {
@@ -178,6 +179,14 @@ mod tests {
     use crate::util::test_helpers::setup::setup_drive_with_initial_state_structure;
     use platform_version::version::PlatformVersion;
 
+    /// Deterministic cv_net for note `i`: distinct, non-zero, and different
+    /// from this note's cmx/nullifier so a round-trip mix-up is detectable.
+    fn cv_net_for(i: u64) -> [u8; 32] {
+        let mut cv_net = [0xEEu8; 32];
+        cv_net[..8].copy_from_slice(&i.to_be_bytes());
+        cv_net
+    }
+
     /// Insert `n` distinct notes into the shielded pool's CommitmentTree.
     fn insert_notes(drive: &Drive, n: u64, platform_version: &PlatformVersion) {
         for i in 0..n {
@@ -192,9 +201,14 @@ mod tests {
                 n
             };
 
-            let ops =
-                Drive::insert_note_op(nullifier, cmx, vec![(i % 256) as u8; 216], platform_version)
-                    .expect("build note op");
+            let ops = Drive::insert_note_op(
+                nullifier,
+                cmx,
+                cv_net_for(i),
+                vec![(i % 256) as u8; 216],
+                platform_version,
+            )
+            .expect("build note op");
             let grove_ops =
                 crate::fees::op::LowLevelDriveOperation::grovedb_operations_batch_consume(ops);
             drive
@@ -292,6 +306,24 @@ mod tests {
             total_count, N,
             "extracted total_count must equal the number of notes appended on-chain"
         );
+
+        // cv_net must round-trip end-to-end (insert → store → prove → verify).
+        // Notes come back in tree order, so note at output index `i` is the
+        // one inserted with `cv_net_for(i)`.
+        for (i, (cmx, _nullifier, cv_net, _encrypted_note)) in notes.iter().enumerate() {
+            let expected_cv_net = cv_net_for(i as u64);
+            assert_eq!(
+                cv_net.as_slice(),
+                expected_cv_net.as_slice(),
+                "cv_net for note {i} must round-trip through prove→verify"
+            );
+            // cv_net is a distinct field, not an alias of cmx.
+            assert_ne!(
+                cv_net.as_slice(),
+                cmx.as_slice(),
+                "cv_net must be a separate field from cmx"
+            );
+        }
     }
 
     /// Same extraction works when the verifier is run in subset mode (the

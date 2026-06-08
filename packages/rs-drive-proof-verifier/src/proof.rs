@@ -2622,11 +2622,14 @@ impl FromProof<platform::GetShieldedEncryptedNotesRequest> for ShieldedEncrypted
         let result = Some(ShieldedEncryptedNotes {
             notes: notes
                 .into_iter()
-                .map(|(cmx, nullifier, encrypted_note)| ShieldedEncryptedNote {
-                    cmx,
-                    nullifier,
-                    encrypted_note,
-                })
+                .map(
+                    |(cmx, nullifier, cv_net, encrypted_note)| ShieldedEncryptedNote {
+                        cmx,
+                        nullifier,
+                        cv_net,
+                        encrypted_note,
+                    },
+                )
                 .collect(),
             total_count,
         });

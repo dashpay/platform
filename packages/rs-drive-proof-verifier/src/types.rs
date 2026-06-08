@@ -833,6 +833,9 @@ pub struct ShieldedEncryptedNote {
     pub cmx: Vec<u8>,
     /// The nullifier (32 bytes), needed for Rho derivation in trial decryption
     pub nullifier: Vec<u8>,
+    /// The value commitment (cv_net), 32 bytes. Stored unencrypted so a wallet
+    /// can recover the value of an outgoing note via OVK decryption.
+    pub cv_net: Vec<u8>,
     /// The encrypted note data
     pub encrypted_note: Vec<u8>,
 }
