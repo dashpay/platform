@@ -145,6 +145,20 @@ fn samples() -> Vec<WalletStorageError> {
             limit_bytes: 16 * 1024 * 1024,
         },
         WalletStorageError::ForeignKeysNotEnforced,
+        WalletStorageError::JournalModeNotApplied {
+            requested: "WAL",
+            actual: "delete".into(),
+        },
+        WalletStorageError::SchemaHistoryMalformed {
+            reason: "bad applied_on",
+        },
+        WalletStorageError::NotAWalletDb {
+            expected: 0x504C_5754,
+            found: 0,
+        },
+        WalletStorageError::AlreadyOpen {
+            path: PathBuf::from("/x/w.db"),
+        },
         WalletStorageError::LockPoisoned,
         WalletStorageError::RestoreDestinationLocked,
         WalletStorageError::InvalidWalletIdHex {
@@ -248,6 +262,14 @@ fn tc_p2_005_is_transient_table() {
             WalletStorageError::BlobTooLarge { .. } => (false, "blob_too_large"),
             WalletStorageError::UtxoAddressNotDerived { .. } => (false, "utxo_address_not_derived"),
             WalletStorageError::ForeignKeysNotEnforced => (false, "foreign_keys_not_enforced"),
+            WalletStorageError::JournalModeNotApplied { .. } => {
+                (false, "journal_mode_not_applied")
+            }
+            WalletStorageError::SchemaHistoryMalformed { .. } => {
+                (false, "schema_history_malformed")
+            }
+            WalletStorageError::NotAWalletDb { .. } => (false, "not_a_wallet_db"),
+            WalletStorageError::AlreadyOpen { .. } => (false, "already_open"),
             WalletStorageError::IntegerOverflow { .. } => (false, "integer_overflow"),
         }
     }

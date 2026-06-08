@@ -18,6 +18,29 @@ use std::path::Path;
 
 use crate::sqlite::error::WalletStorageError;
 
+/// Magic stamped into the SQLite header `application_id` (offset 68) by
+/// `V001__initial`. ASCII `"PLWT"` (Platform Wallet) big-endian. A
+/// refinery-versioned DB whose `application_id` does not equal this is a
+/// foreign SQLite database, not a wallet-storage DB.
+pub(crate) const APPLICATION_ID: i32 = 0x504C_5754;
+
+/// Read the header `application_id` and assert it equals
+/// [`APPLICATION_ID`]. Returns [`WalletStorageError::NotAWalletDb`] on
+/// mismatch. The caller decides WHEN to run this — `open()` runs it
+/// pre-migration on a refinery-versioned DB; `restore_from` runs it on
+/// the staged copy. A brand-new (unmigrated) DB reports `0` and is the
+/// caller's responsibility to skip (V001 stamps the real value).
+pub(crate) fn assert_wallet_application_id(conn: &Connection) -> Result<(), WalletStorageError> {
+    let found: i32 = conn.pragma_query_value(None, "application_id", |row| row.get(0))?;
+    if found != APPLICATION_ID {
+        return Err(WalletStorageError::NotAWalletDb {
+            expected: APPLICATION_ID,
+            found,
+        });
+    }
+    Ok(())
+}
+
 /// How the opened connection will be used.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Access {

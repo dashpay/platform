@@ -57,8 +57,16 @@ pub fn migration() -> String {
     let contact_state_check =
         build_check_in(crate::sqlite::schema::contacts::CONTACT_STATE_LABELS);
 
+    // Stamp the header `application_id` so a foreign refinery-versioned
+    // SQLite DB can be told apart from a wallet-storage DB (asserted in
+    // `open()` pre-migration and in `restore_from`'s staged validation).
+    // Splice the constant in decimal — `PRAGMA` takes no bound params.
+    let application_id = crate::sqlite::conn::APPLICATION_ID;
+
     format!(
         "\
+PRAGMA application_id = {application_id};
+
 CREATE TABLE wallets (
     wallet_id BLOB NOT NULL PRIMARY KEY,
     network TEXT NOT NULL CHECK (network IN {network_check}),

@@ -69,6 +69,12 @@ pub(crate) fn has_schema_history(conn: &rusqlite::Connection) -> Result<bool, Wa
 /// MAX(version) exceeds [`max_supported_version`]. Returns
 /// [`WalletStorageError::SchemaVersionUnsupported`] in that case.
 ///
+/// Forward-only: this gate refuses a DB NEWER than this binary, but does
+/// NOT (and cannot) migrate a newer DB down to an older shape — SQLite
+/// migrations are one-directional. When V002+ ships, a down-migration
+/// (if ever needed) must be an explicit, separate path; this gate only
+/// guarantees an older binary never silently reads forward-schema bytes.
+///
 /// Quietly succeeds when the table is absent (caller decides whether a
 /// missing schema-history is itself an error — `restore_from` rejects
 /// it, `open` treats it as "brand-new DB about to be migrated").
@@ -92,6 +98,47 @@ pub fn assert_schema_version_supported(
             return Err(WalletStorageError::SchemaVersionUnsupported {
                 found: v,
                 max_supported,
+            });
+        }
+    }
+    Ok(())
+}
+
+/// Probe `refinery_schema_history` for well-formed rows BEFORE handing
+/// the connection to refinery. Refinery parses `applied_on` as RFC3339
+/// and `checksum` as `u64` with `unwrap()`, so a foreign or corrupted-
+/// but-integrity-valid DB carrying a malformed value would abort the
+/// process. Surface a typed [`WalletStorageError::SchemaHistoryMalformed`]
+/// instead.
+///
+/// Quietly succeeds when the table is absent (a brand-new DB about to be
+/// migrated has none).
+pub(crate) fn assert_schema_history_well_formed(
+    conn: &rusqlite::Connection,
+) -> Result<(), WalletStorageError> {
+    if !has_schema_history(conn)? {
+        return Ok(());
+    }
+    let mut stmt = conn.prepare("SELECT applied_on, checksum FROM refinery_schema_history")?;
+    let rows = stmt.query_map([], |row| {
+        let applied_on: String = row.get(0)?;
+        let checksum: String = row.get(1)?;
+        Ok((applied_on, checksum))
+    })?;
+    for row in rows {
+        let (applied_on, checksum) = row?;
+        // Refinery stores `applied_on` as an RFC3339 timestamp and
+        // `checksum` as a base-10 u64 string. Validate both the way
+        // refinery will parse them so a malformed value fails typed here
+        // rather than panicking inside the runner.
+        if chrono::DateTime::parse_from_rfc3339(&applied_on).is_err() {
+            return Err(WalletStorageError::SchemaHistoryMalformed {
+                reason: "applied_on is not a valid RFC3339 timestamp",
+            });
+        }
+        if checksum.parse::<u64>().is_err() {
+            return Err(WalletStorageError::SchemaHistoryMalformed {
+                reason: "checksum is not a valid u64",
             });
         }
     }

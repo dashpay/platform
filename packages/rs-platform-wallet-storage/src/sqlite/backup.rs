@@ -227,6 +227,12 @@ pub fn restore_from(dest_db_path: &Path, src_backup: &Path) -> Result<(), Wallet
         return Err(WalletStorageError::SchemaHistoryMissing);
     }
     crate::sqlite::migrations::assert_schema_version_supported(&src)?;
+    // A refinery-versioned source that isn't actually a wallet DB (foreign
+    // application_id) or carries a malformed schema_history is rejected
+    // here — cheap early-out before staging the whole file. The
+    // authoritative gate re-runs on the STAGED bytes (step 4).
+    crate::sqlite::conn::assert_wallet_application_id(&src)?;
+    crate::sqlite::migrations::assert_schema_history_well_formed(&src)?;
     drop(src);
 
     // 2. SQLite-native exclusion. `BEGIN EXCLUSIVE` against a short-
@@ -287,13 +293,17 @@ pub fn restore_from(dest_db_path: &Path, src_backup: &Path) -> Result<(), Wallet
         run_integrity_check(&staged, |report| WalletStorageError::IntegrityCheckFailed {
             report,
         })?;
-        // Schema-history presence + max-version gate, bound to the
+        // Schema-history presence + max-version gate + wallet-identity
+        // (application_id) + well-formed schema_history, bound to the
         // staged bytes (not the first source handle) so a swap during
-        // the restore window can't slip a forward-version DB through.
+        // the restore window can't slip a forward-version or foreign DB
+        // through.
         if !crate::sqlite::migrations::has_schema_history(&staged)? {
             return Err(WalletStorageError::SchemaHistoryMissing);
         }
         crate::sqlite::migrations::assert_schema_version_supported(&staged)?;
+        crate::sqlite::conn::assert_wallet_application_id(&staged)?;
+        crate::sqlite::migrations::assert_schema_history_well_formed(&staged)?;
     }
 
     // 5. chmod 600 on the temp BEFORE persist so the destination
@@ -458,6 +468,12 @@ pub fn prune(dir: &Path, policy: RetentionPolicy) -> Result<PruneReport, WalletS
     let mut failed_removals: Vec<(PathBuf, std::io::Error)> = Vec::new();
     let mut kept = 0;
     for (idx, (ts, path)) in files.into_iter().enumerate() {
+        // `keep_last_n` is a FLOOR: the N newest backups are always
+        // retained, even if `max_age` would evict them. This guarantees
+        // an age policy paired with `keep_last_n` can never delete every
+        // backup. `keep_last_n = None` provides no floor — an age-only
+        // policy may still prune everything older than `max_age`.
+        let within_floor = matches!(policy.keep_last_n, Some(n) if idx < n);
         let pass_count = match policy.keep_last_n {
             Some(n) => idx < n,
             None => true,
@@ -466,7 +482,7 @@ pub fn prune(dir: &Path, policy: RetentionPolicy) -> Result<PruneReport, WalletS
             Some(max) => now.duration_since(ts).map(|d| d <= max).unwrap_or(true),
             None => true,
         };
-        if pass_count && pass_age {
+        if within_floor || (pass_count && pass_age) {
             kept += 1;
         } else {
             match std::fs::remove_file(&path) {

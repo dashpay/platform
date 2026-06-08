@@ -244,6 +244,45 @@ pub enum WalletStorageError {
     #[error("SQLite foreign-key enforcement could not be enabled on this connection")]
     ForeignKeysNotEnforced,
 
+    /// `PRAGMA journal_mode = <requested>` was issued on open but the
+    /// read-back reported a different mode — SQLite silently fell back
+    /// (e.g. WAL→DELETE on some network/FUSE mounts). Combined with
+    /// `synchronous=NORMAL` this is a corruption-on-power-loss exposure,
+    /// so open hard-errors rather than running on a downgraded mode.
+    #[error("journal_mode {requested} could not be applied (SQLite reports {actual})")]
+    JournalModeNotApplied {
+        requested: &'static str,
+        actual: String,
+    },
+
+    /// A pre-existing / restored DB passed `integrity_check` but its
+    /// `refinery_schema_history` carries a malformed row (non-RFC3339
+    /// `applied_on` or non-numeric `checksum`). Probed BEFORE refinery
+    /// runs so a foreign or corrupted-but-integrity-valid input returns
+    /// a typed error instead of refinery panicking on the parse.
+    #[error("refinery_schema_history is malformed: {reason}")]
+    SchemaHistoryMalformed { reason: &'static str },
+
+    /// A restore source / opened DB carries a `refinery_schema_history`
+    /// (so it is refinery-versioned) but its `application_id` header does
+    /// not match the wallet-storage magic — it is a foreign SQLite DB,
+    /// not a wallet database. Rejected before it can be persisted over
+    /// the live wallet DB or migrated in place.
+    #[error(
+        "not a platform-wallet-storage database: application_id {found:#010x} != expected {expected:#010x}"
+    )]
+    NotAWalletDb { expected: i32, found: i32 },
+
+    /// A second [`SqlitePersister`](crate::SqlitePersister) `open()` was
+    /// attempted on a path already opened by a live persister in THIS
+    /// process. Two in-process handles each hold an independent
+    /// `Mutex<Connection>` and an independent write buffer, so a
+    /// `Manual`-mode buffered write on one is invisible to the other's
+    /// `load()` — silent state divergence. The registry refuses the
+    /// second open; release happens when the first persister drops.
+    #[error("a SqlitePersister is already open on {} in this process", path.display())]
+    AlreadyOpen { path: PathBuf },
+
     /// A value couldn't be cast to the database's native i64
     /// representation without losing magnitude.
     #[error("integer overflow casting `{field}` (value={value}) to {target}")]
@@ -362,6 +401,10 @@ impl WalletStorageError {
             | Self::ConsensusCodec { .. }
             | Self::BackupDestinationExists { .. }
             | Self::ForeignKeysNotEnforced
+            | Self::JournalModeNotApplied { .. }
+            | Self::SchemaHistoryMalformed { .. }
+            | Self::NotAWalletDb { .. }
+            | Self::AlreadyOpen { .. }
             | Self::IdentityKeyEntryMismatch
             | Self::IdentityEntryIdMismatch
             | Self::AssetLockEntryMismatch { .. }
@@ -442,6 +485,10 @@ impl WalletStorageError {
             Self::ConsensusCodec { .. } => "consensus_codec",
             Self::BackupDestinationExists { .. } => "backup_destination_exists",
             Self::ForeignKeysNotEnforced => "foreign_keys_not_enforced",
+            Self::JournalModeNotApplied { .. } => "journal_mode_not_applied",
+            Self::SchemaHistoryMalformed { .. } => "schema_history_malformed",
+            Self::NotAWalletDb { .. } => "not_a_wallet_db",
+            Self::AlreadyOpen { .. } => "already_open",
             Self::IdentityKeyEntryMismatch => "identity_key_entry_mismatch",
             Self::IdentityEntryIdMismatch => "identity_entry_id_mismatch",
             Self::AssetLockEntryMismatch { .. } => "asset_lock_entry_mismatch",
