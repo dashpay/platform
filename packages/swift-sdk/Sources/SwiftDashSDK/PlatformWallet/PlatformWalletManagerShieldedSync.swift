@@ -610,6 +610,101 @@ extension PlatformWalletManager {
         }.value
     }
 
+    /// Shielded → new identity (Type 20). Spends notes from
+    /// `walletId`'s shielded balance to fund a brand-new Platform
+    /// identity. The whole `denomination` (a member of the versioned
+    /// exit-denomination set, in credits) leaves the pool and the
+    /// metered fee is taken from it, so the new identity is created
+    /// holding `denomination - totalFee`; any excess re-enters the
+    /// pool as a change note.
+    ///
+    /// `identityPubkeys` is the new identity's key set (the first row
+    /// should be the MASTER key). `identitySigner` is the host-side
+    /// `KeychainSigner` whose `.handle` produces each key's
+    /// proof-of-possession signature; the Orchard spend authority is
+    /// the bound wallet's own key. Returns the 32-byte new identity id
+    /// (`double_sha256(sorted nullifiers)`).
+    ///
+    /// Heavy CPU work (Halo 2 proof + per-key signing) runs on a
+    /// detached task so the caller's actor isn't blocked.
+    public func shieldedIdentityCreateFromPool(
+        walletId: Data,
+        account: UInt32 = 0,
+        identityPubkeys: [ManagedPlatformWallet.IdentityPubkey],
+        denomination: UInt64,
+        identitySigner: KeychainSigner
+    ) async throws -> Data {
+        guard isConfigured, handle != NULL_HANDLE else {
+            throw PlatformWalletError.invalidHandle(
+                "PlatformWalletManager not configured"
+            )
+        }
+        guard walletId.count == 32 else {
+            throw PlatformWalletError.invalidParameter(
+                "walletId must be exactly 32 bytes"
+            )
+        }
+        guard !identityPubkeys.isEmpty else {
+            throw PlatformWalletError.invalidParameter(
+                "identityPubkeys is empty"
+            )
+        }
+
+        let handle = self.handle
+        let identitySignerHandle = identitySigner.handle
+
+        return try await Task.detached(priority: .userInitiated) { () -> Data in
+            // Keepalive — KeychainSigner uses `passUnretained`, so the
+            // Rust ctx pointer dangles unless the Swift owner stays
+            // alive across this detached work (see
+            // `registerIdentityFromAddresses`).
+            _ = identitySigner
+
+            var outIdentityId: (
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
+            ) = (
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0
+            )
+
+            // Pin every pubkey buffer simultaneously (and the
+            // wallet-id bytes), then hand the pinned
+            // `[IdentityPubkeyFFI]` rows + signer handle to the FFI.
+            // Reuses the same marshalling helper the address-funded
+            // registration path uses so the two can't drift.
+            let pubkeyBuffers: [Data] = identityPubkeys.map { $0.pubkeyBytes }
+            let result = try walletId.withUnsafeBytes { widRaw -> PlatformWalletFFIResult in
+                guard let widPtr = widRaw.baseAddress?.assumingMemoryBound(to: UInt8.self)
+                else {
+                    throw PlatformWalletError.invalidParameter("walletId baseAddress is nil")
+                }
+                return ManagedPlatformWallet.withPubkeyFFIArray(
+                    identityPubkeys,
+                    buffers: pubkeyBuffers
+                ) { ffiRowsPtr, ffiRowsCount in
+                    platform_wallet_manager_shielded_identity_create_from_pool(
+                        handle,
+                        widPtr,
+                        account,
+                        ffiRowsPtr,
+                        UInt(ffiRowsCount),
+                        denomination,
+                        identitySignerHandle,
+                        &outIdentityId
+                    )
+                }
+            }
+
+            try result.check()
+            return withUnsafeBytes(of: outIdentityId) { Data($0) }
+        }.value
+    }
+
     public func syncShieldedWalletNow(walletId: Data) async throws {
         guard isConfigured, handle != NULL_HANDLE else {
             throw PlatformWalletError.invalidHandle(

@@ -1,5 +1,6 @@
 //! FFI bindings for the shielded spend pipeline (transitions
-//! 15/16/17/19 — shield, transfer, unshield, withdraw).
+//! 15/16/17/19/20 — shield, transfer, unshield, withdraw,
+//! identity-create-from-pool).
 //!
 //! Transitions 16/17/19 sign with the bound shielded wallet's
 //! Orchard `SpendAuthorizingKey`, which lives on the
@@ -8,6 +9,14 @@
 //! only supplies the recipient + amount (+ core fee rate for
 //! withdrawal) and the resulting Halo 2 proof + state transition
 //! is built and broadcast on the Rust side.
+//!
+//! Transition 20 (`identity_create_from_pool` — Shielded→new
+//! identity) additionally takes the new identity's public keys plus
+//! a host-supplied `Signer<IdentityPublicKey>` for the per-key
+//! proofs-of-possession (mirroring address-funded identity
+//! registration). The Orchard spend authority is still the bound
+//! wallet's own `SpendAuthorizingKey`; only the new identity keys'
+//! PoP signatures come from the host signer.
 //!
 //! Transition 15 (`shield` — Platform→Shielded) additionally
 //! takes a host-supplied `Signer<PlatformAddress>` because the
@@ -35,6 +44,7 @@ use std::os::raw::c_char;
 
 use dashcore::hashes::Hash;
 use dpp::address_funds::{OrchardAddress, PlatformAddress};
+use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use platform_wallet::wallet::asset_lock::AssetLockFunding;
 use platform_wallet::wallet::shielded::CachedOrchardProver;
 use rs_sdk_ffi::{MnemonicResolverCoreSigner, MnemonicResolverHandle, SignerHandle, VTableSigner};
@@ -43,6 +53,7 @@ use crate::check_ptr;
 use crate::core_wallet_types::OutPointFFI;
 use crate::error::*;
 use crate::handle::*;
+use crate::identity_registration_with_signer::{decode_identity_pubkeys, IdentityPubkeyFFI};
 use crate::runtime::{block_on_worker, runtime};
 
 /// Parse an optional surplus-output platform address supplied as raw
@@ -287,6 +298,123 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_withdraw(
         );
     }
     PlatformWalletFFIResult::ok()
+}
+
+/// IdentityCreateFromShieldedPool (Type 20): spend `account`'s shielded notes to fund a brand-new
+/// Platform identity.
+///
+/// The host supplies the new identity's public keys (`identity_pubkeys` rows, same
+/// [`IdentityPubkeyFFI`] shape as address-funded registration) and a chosen `denomination` (a
+/// member of the versioned exit-denomination set, in credits). The whole denomination leaves the
+/// pool and the metered fee is taken from it, so the new identity is created holding
+/// `denomination - total_fee`; any spent value above the denomination re-enters the pool as a
+/// change note to `account`'s default Orchard address.
+///
+/// Authorization is 100% the Orchard proof + per-action spend-auth signatures (from the bound
+/// wallet's own `SpendAuthorizingKey`) + the binding signature (which commits the derived id +
+/// denomination + full key set) + a per-key proof-of-possession produced via
+/// `signer_identity_handle`. There is NO platform identity signature.
+///
+/// On success the 32-byte new identity id (`double_sha256(sorted nullifiers)`) is written to
+/// `out_identity_id`. The id is deterministic in the spent notes, so the host can also predict it
+/// independently if needed.
+///
+/// # Safety
+/// - `wallet_id_bytes` must point to 32 readable bytes.
+/// - `identity_pubkeys` must point to `identity_pubkeys_count` contiguous [`IdentityPubkeyFFI`]
+///   rows that outlive this call (each row's pointers per the [`IdentityPubkeyFFI`] contract).
+/// - `signer_identity_handle` must be a valid, non-destroyed `*const SignerHandle` (a
+///   `VTableSigner` with the callback variant) that outlives this call; the caller retains
+///   ownership.
+/// - `out_identity_id` must point to 32 writable bytes.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_pool(
+    handle: Handle,
+    wallet_id_bytes: *const u8,
+    account: u32,
+    identity_pubkeys: *const IdentityPubkeyFFI,
+    identity_pubkeys_count: usize,
+    denomination: u64,
+    signer_identity_handle: *const SignerHandle,
+    out_identity_id: *mut [u8; 32],
+) -> PlatformWalletFFIResult {
+    check_ptr!(wallet_id_bytes);
+    check_ptr!(identity_pubkeys);
+    check_ptr!(signer_identity_handle);
+    check_ptr!(out_identity_id);
+    if identity_pubkeys_count == 0 {
+        return PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorInvalidParameter,
+            "`identity_pubkeys_count` must be >= 1",
+        );
+    }
+
+    let mut wallet_id = [0u8; 32];
+    std::ptr::copy_nonoverlapping(wallet_id_bytes, wallet_id.as_mut_ptr(), 32);
+
+    // Decode the host-supplied identity keys into the
+    // `Vec<(IdentityPublicKey, IdentityPublicKeyInCreation)>` shape the wallet builder consumes.
+    // Reuses the shared registration decoder (key_type / purpose / security_level / contract-bounds
+    // validation) so this path can't drift from the address-funded registration path.
+    let keys_map = match decode_identity_pubkeys(identity_pubkeys, identity_pubkeys_count) {
+        Ok(m) => m,
+        Err(result) => return result,
+    };
+    let public_keys: Vec<(
+        dpp::identity::IdentityPublicKey,
+        IdentityPublicKeyInCreation,
+    )> = keys_map
+        .into_values()
+        .map(|k| {
+            let in_creation: IdentityPublicKeyInCreation = (&k).into();
+            (k, in_creation)
+        })
+        .collect();
+
+    let (wallet, coordinator) = match resolve_wallet_and_coordinator(handle, &wallet_id) {
+        Ok(p) => p,
+        Err(result) => return result,
+    };
+
+    // Round-trip the signer pointer through `usize` so the worker future captures only plain
+    // `Send + 'static` data and re-materializes the borrow INSIDE the task — never a fabricated
+    // `&'static` borrow of a host-owned vtable across the FFI boundary. The caller's contract is
+    // that the handle outlives this call, and `block_on_worker` blocks the calling frame until the
+    // task completes, so the borrow is valid for the task's whole lifetime.
+    let signer_identity_addr = signer_identity_handle as usize;
+
+    // Run the proof on a worker thread (8 MB stack). Halo 2 circuit synthesis recurses past the
+    // ~512 KB iOS dispatch-thread stack and crashes with EXC_BAD_ACCESS when polled on the calling
+    // thread.
+    let result = block_on_worker(async move {
+        // SAFETY: re-materialize the borrow under the caller's documented lifetime contract; valid
+        // for the duration of this synchronously-awaited task. `VTableSigner` impls
+        // `Signer<IdentityPublicKey>`.
+        let identity_signer: &VTableSigner = &*(signer_identity_addr as *const VTableSigner);
+        let prover = CachedOrchardProver::new();
+        wallet
+            .shielded_identity_create_from_pool(
+                &coordinator,
+                account,
+                public_keys,
+                denomination,
+                identity_signer,
+                &prover,
+            )
+            .await
+    });
+
+    match result {
+        Ok(identity_id) => {
+            *out_identity_id = identity_id.to_buffer();
+            PlatformWalletFFIResult::ok()
+        }
+        Err(e) => PlatformWalletFFIResult::err(
+            PlatformWalletFFIResultCode::ErrorWalletOperation,
+            format!("shielded identity-create-from-pool failed: {e}"),
+        ),
+    }
 }
 
 /// Shield: spend credits from a Platform Payment account into

@@ -701,6 +701,59 @@ impl PlatformWallet {
         .await
     }
 
+    /// Create a brand-new Platform identity funded directly from `account`'s shielded notes.
+    ///
+    /// Spends notes covering a fixed `denomination` (a member of the versioned exit-denomination
+    /// set); the whole denomination leaves the pool and the metered fee is taken from it, so the
+    /// new identity is created holding `denomination - total_fee`. Any excess re-enters the pool as
+    /// a change note to `account`'s default Orchard address.
+    ///
+    /// `public_keys` is the new identity's key set (each entry pairs the `IdentityPublicKey` with
+    /// its `IdentityPublicKeyInCreation` form); `identity_signer` produces each key's
+    /// proof-of-possession signature. The Orchard spend authority comes from the wallet's own
+    /// `OrchardKeySet` (the ASK never crosses to the coordinator). Returns the new identity's id.
+    #[cfg(feature = "shielded")]
+    #[allow(clippy::too_many_arguments)]
+    pub async fn shielded_identity_create_from_pool<P, IS>(
+        &self,
+        coordinator: &Arc<crate::wallet::shielded::NetworkShieldedCoordinator>,
+        account: u32,
+        public_keys: Vec<(
+            dpp::identity::IdentityPublicKey,
+            dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation,
+        )>,
+        denomination: u64,
+        identity_signer: &IS,
+        prover: P,
+    ) -> Result<dpp::prelude::Identifier, PlatformWalletError>
+    where
+        P: dpp::shielded::builder::OrchardProver,
+        IS: dpp::identity::signer::Signer<dpp::identity::IdentityPublicKey> + Send + Sync,
+    {
+        let guard = self.shielded_keys.read().await;
+        let keys = guard
+            .as_ref()
+            .ok_or(PlatformWalletError::ShieldedNotBound)?;
+        let keyset = keys.get(&account).ok_or_else(|| {
+            PlatformWalletError::ShieldedKeyDerivation(format!(
+                "shielded account {account} not bound"
+            ))
+        })?;
+        super::shielded::operations::identity_create_from_shielded_pool(
+            &self.sdk,
+            coordinator.store(),
+            Some(&self.persister),
+            self.wallet_id,
+            keyset,
+            account,
+            public_keys,
+            denomination,
+            identity_signer,
+            &prover,
+        )
+        .await
+    }
+
     /// Shield credits from a Platform Payment account into the
     /// wallet's shielded pool, with the resulting note assigned
     /// to `shielded_account`'s default Orchard address.
