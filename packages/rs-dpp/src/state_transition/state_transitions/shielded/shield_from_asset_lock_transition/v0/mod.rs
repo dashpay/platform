@@ -209,4 +209,67 @@ mod tests {
         transition.surplus_output = Some(crate::address_funds::PlatformAddress::P2pkh([0x44; 20]));
         test_round_trip(transition);
     }
+
+    #[test]
+    fn test_signable_bytes_commit_to_surplus_output() {
+        // The asset-lock ECDSA signature must commit to the surplus destination: redirecting the
+        // surplus to a different address (or toggling it on/off) MUST change the signable bytes, so a
+        // valid signature cannot be replayed against a different `surplus_output`.
+        //
+        // The `PlatformSignable` derive excludes fields by NAME (only `signature`, via
+        // `exclude_from_sig_hash`) — NOT by position. So the invariant under test is precisely
+        // "surplus_output is NOT excluded from the sighash", which we confirm by observing the
+        // signable bytes differ. The `signature` field itself is held constant across all variants
+        // below, so any difference is attributable solely to `surplus_output`.
+        use crate::serialization::Signable;
+
+        let addr_a = crate::address_funds::PlatformAddress::P2pkh([0x44; 20]);
+        let addr_b = crate::address_funds::PlatformAddress::P2pkh([0x55; 20]);
+
+        let mut none_variant = make_v0();
+        none_variant.surplus_output = None;
+
+        let mut some_a = make_v0();
+        some_a.surplus_output = Some(addr_a.clone());
+
+        let mut some_b = make_v0();
+        some_b.surplus_output = Some(addr_b);
+
+        let none_bytes = none_variant
+            .signable_bytes()
+            .expect("should compute signable bytes for None variant");
+        let some_a_bytes = some_a
+            .signable_bytes()
+            .expect("should compute signable bytes for Some(addr_a) variant");
+        let some_b_bytes = some_b
+            .signable_bytes()
+            .expect("should compute signable bytes for Some(addr_b) variant");
+
+        // None vs Some(addr): toggling the surplus output on changes the sighash.
+        assert_ne!(
+            none_bytes, some_a_bytes,
+            "signable bytes must differ between surplus_output None and Some(addr) \
+             (signature commits to the presence of a surplus destination)"
+        );
+
+        // Some(addrA) vs Some(addrB): redirecting to a different address changes the sighash.
+        assert_ne!(
+            some_a_bytes, some_b_bytes,
+            "signable bytes must differ between two distinct surplus_output addresses \
+             (signature commits to the surplus destination, not just its presence)"
+        );
+
+        // Sanity: an unrelated change to the excluded `signature` field must NOT change the signable
+        // bytes — this isolates the difference above to `surplus_output` rather than to incidental
+        // field churn, and pins that `signature` IS excluded from the sighash.
+        let mut some_a_other_sig = some_a.clone();
+        some_a_other_sig.signature = BinaryData::new(vec![0xEE; 65]);
+        assert_eq!(
+            some_a_bytes,
+            some_a_other_sig
+                .signable_bytes()
+                .expect("should compute signable bytes after mutating the excluded signature"),
+            "mutating the sig-excluded `signature` field must not change the signable bytes"
+        );
+    }
 }

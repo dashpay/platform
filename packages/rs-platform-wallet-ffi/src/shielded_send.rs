@@ -63,7 +63,6 @@ unsafe fn parse_optional_surplus_output(
     ptr: *const u8,
     len: usize,
 ) -> Result<Option<PlatformAddress>, PlatformWalletFFIResult> {
-    // A serialized PlatformAddress is exactly 21 bytes (1-byte variant tag + 20-byte hash).
     const PLATFORM_ADDRESS_LEN: usize = 21;
     if ptr.is_null() || len == 0 {
         return Ok(None);

@@ -454,6 +454,12 @@ mod tests {
     /// `ConsensusValidationResult` with NO errors. With empty `operations`
     /// and `execution_operations`, the required fee is zero so any
     /// non-negative `fees_to_add_to_pool` satisfies `>= required_fee`.
+    ///
+    /// It must ALSO advertise the authoritative pool fee for `gas_wanted`: the
+    /// arm books `fees_to_add_to_pool` regardless of the metered estimate, so the
+    /// advertised `FeeResult` (split storage/processing) must total exactly
+    /// `fees_to_add_to_pool`. Mirrors the `additional_fixed_fee_cost` advertisement
+    /// assertion in the `PaidFromAddressInputs` test above.
     #[test]
     fn validate_fees_of_event_v0_paid_from_asset_lock_to_pool_sufficient_fee_is_valid() {
         let platform = TestPlatformBuilder::new()
@@ -465,8 +471,9 @@ mod tests {
         let block_info = dpp::block::block_info::BlockInfo::default();
         let previous_fee_versions = Default::default();
 
+        let fees_to_add_to_pool = 1_000_000u64;
         let event = ExecutionEvent::PaidFromAssetLockToPool {
-            fees_to_add_to_pool: 1_000_000,
+            fees_to_add_to_pool,
             operations: vec![],
             execution_operations: vec![],
         };
@@ -485,6 +492,15 @@ mod tests {
         assert!(
             result.errors.is_empty(),
             "sufficient fees_to_add_to_pool must not produce consensus errors"
+        );
+        // The advertised fee must equal the authoritative pool fee (`fees_to_add_to_pool`),
+        // not the metered estimate (which is 0 here with empty operations). The arm splits
+        // the total into storage/processing, so assert on the total.
+        let fee = result.into_data().expect("fee result present");
+        assert_eq!(
+            fee.total_base_fee(),
+            fees_to_add_to_pool,
+            "advertised pool fee must equal fees_to_add_to_pool (gas_wanted parity)"
         );
     }
 

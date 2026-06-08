@@ -236,6 +236,44 @@ impl ShieldFromAssetLockStateTransitionTransformIntoActionValidationV0
             ));
         }
 
+        // Step 7b: Compute the surplus and reject an over-cap implicit donation BEFORE the expensive
+        // Orchard proof verification (Step 9). The surplus is fully derivable here — it depends only
+        // on the (now-validated) `remaining_credit_value`, the `shield_amount`, the flat `pool_fee`,
+        // and whether a `surplus_output` is set — none of which depend on the ZK proof or the pool
+        // read. Rejecting an over-cap transition here avoids ~100ms of Halo2 verification for a
+        // transition that can never succeed.
+        //
+        // Distribute the fully-consumed lock:
+        //   shield_amount -> shielded pool
+        //   pool_fee      -> fee pools
+        //   surplus       -> surplus_output address (when set), else folded into the fee pools.
+        // `surplus >= 0` is guaranteed by the Step 7 floor; `checked_sub` is a defensive guard.
+        let surplus = remaining_credit_value
+            .checked_sub(shield_amount)
+            .and_then(|v| v.checked_sub(pool_fee))
+            .ok_or(Error::Execution(ExecutionError::Overflow(
+                "asset lock value underflow computing shield_from_asset_lock surplus (should be guarded by the Step 7 funding floor)",
+            )))?;
+
+        let surplus_output = match self {
+            ShieldFromAssetLockTransition::V0(v0) => &v0.surplus_output,
+        };
+
+        // When no surplus_output is set, the surplus is donated to the fee pools — but only up to
+        // `shielded_implicit_fee_cap`, so a client cannot accidentally forfeit a large remainder.
+        if surplus_output.is_none() {
+            let implicit_fee_cap = platform_version
+                .drive_abci
+                .validation_and_processing
+                .event_constants
+                .shielded_implicit_fee_cap;
+            if surplus > implicit_fee_cap {
+                return Ok(ConsensusValidationResult::new_with_error(
+                    ShieldedImplicitFeeCapExceededError::new(surplus, implicit_fee_cap).into(),
+                ));
+            }
+        }
+
         // Step 8: Read current shielded pool total balance from GroveDB.
         //
         // ShieldFromAssetLock pays the flat `pool_fee` (computed in Step 3b) at the execution-event
@@ -327,39 +365,9 @@ impl ShieldFromAssetLockStateTransitionTransformIntoActionValidationV0
         let asset_lock_value_credits = asset_lock_value_to_be_consumed.remaining_credit_value();
         let signable_bytes_hash: [u8; 32] = signable_bytes_hasher.into_hashed_bytes().0;
 
-        // Distribute the fully-consumed lock:
-        //   shield_amount -> shielded pool
-        //   pool_fee      -> fee pools
-        //   surplus       -> surplus_output address (when set), else folded into the fee pools.
-        // `surplus >= 0` is guaranteed by the Step 7 floor; `checked_sub` is a defensive guard.
-        let surplus = asset_lock_value_credits
-            .checked_sub(shield_amount)
-            .and_then(|v| v.checked_sub(pool_fee))
-            .ok_or(Error::Execution(ExecutionError::Overflow(
-                "asset lock value underflow computing shield_from_asset_lock surplus (should be guarded by the Step 7 funding floor)",
-            )))?;
-
-        let surplus_output = match self {
-            ShieldFromAssetLockTransition::V0(v0) => &v0.surplus_output,
-        };
-
-        // When no surplus_output is set, the surplus is donated to the fee pools — but only up to
-        // `shielded_implicit_fee_cap`, so a client cannot accidentally forfeit a large remainder.
-        if surplus_output.is_none() {
-            let implicit_fee_cap = platform_version
-                .drive_abci
-                .validation_and_processing
-                .event_constants
-                .shielded_implicit_fee_cap;
-            if surplus > implicit_fee_cap {
-                return Ok(ConsensusValidationResult::new_with_error(
-                    ShieldedImplicitFeeCapExceededError::new(surplus, implicit_fee_cap).into(),
-                ));
-            }
-        }
-
         // The action routes `surplus_amount` to `surplus_output` (when set); otherwise 0 and the
-        // surplus folds into the fee pools at the execution event.
+        // surplus folds into the fee pools at the execution event. The surplus and the implicit-fee
+        // cap were already computed and enforced in Step 7b (before proof verification).
         let surplus_amount = if surplus_output.is_some() { surplus } else { 0 };
 
         let result = ShieldFromAssetLockTransitionAction::try_from_transition(

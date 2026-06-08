@@ -1114,13 +1114,15 @@ mod tests {
     // ==========================================
 
     /// Boundary tests for the pre-action implicit-fee-cap gate in `transform_into_action`
-    /// (Step 11). When no `surplus_output` is set, the asset-lock surplus is implicitly donated
+    /// (Step 7b). When no `surplus_output` is set, the asset-lock surplus is implicitly donated
     /// to the fee pools, but only up to `shielded_implicit_fee_cap`; above the cap the transition
     /// is rejected with `ShieldedImplicitFeeCapExceededError`, forcing the client to set an
     /// explicit `surplus_output`.
     ///
-    /// The cap check runs AFTER ZK proof verification, so these tests build a real (valid) Orchard
-    /// bundle and size the asset-lock funding so the surplus lands exactly on the boundary:
+    /// The cap check runs BEFORE ZK proof verification (so an over-cap transition is rejected
+    /// cheaply, without paying ~100ms of Halo2 verification). The accepted-case test still needs a
+    /// valid proof to succeed, so these tests build a real (valid) Orchard bundle and size the
+    /// asset-lock funding so the surplus lands exactly on the boundary:
     ///
     ///   surplus = lock_value_credits − shield_amount − pool_fee
     ///
@@ -1375,14 +1377,342 @@ mod tests {
 
             let processing_result = process_transition(&platform, transition, platform_version);
 
-            // The proof is valid, so the transition reaches the Step 11 cap check and is rejected
-            // there as an UnpaidConsensusError (the cap check precedes action construction, so no
-            // penalty is applied to the asset lock).
+            // The cap check now runs at Step 7b, BEFORE proof verification, so the over-cap
+            // transition is rejected there as an UnpaidConsensusError (the cap check precedes both
+            // the proof and action construction, so no penalty is applied to the asset lock — the
+            // proof is never even verified).
             assert_matches!(
                 processing_result.execution_results().as_slice(),
                 [StateTransitionExecutionResult::UnpaidConsensusError(
                     ConsensusError::BasicError(BasicError::ShieldedImplicitFeeCapExceededError(_))
                 )]
+            );
+        }
+    }
+
+    // ==========================================
+    // CREDIT CONSERVATION TESTS (block-level sum-tree balance)
+    // ==========================================
+
+    /// Block-level credit-conservation regression tests for the `ShieldFromAssetLock` SURPLUS path.
+    ///
+    /// The other surplus tests in this file drive the transition through `process_transition`, which
+    /// runs only `process_raw_state_transitions` — they never reach
+    /// `process_block_fees_and_validate_sum_trees`, the end-of-block credit-conservation check whose
+    /// `CorruptedCreditsNotBalanced` failure is the chain-halt this whole PR exists to prevent. These
+    /// tests instead run the FULL block pipeline via `process_state_transitions`, which calls
+    /// `process_block_fees_and_validate_sum_trees`; with `verify_sum_trees` enabled (the default),
+    /// the helper's `.expect("expected to process block fees")` panics if the consumed asset-lock
+    /// value, the shielded-pool credit, the surplus-address credit, and the fee-pool credit do not
+    /// sum-tree-balance — so a passing test is a genuine block-level proof of conservation.
+    ///
+    /// A `ShieldFromAssetLock` is NOT credit-neutral the way a transparent `Shield` is: it INJECTS
+    /// new system credits (the consumed asset-lock value) and distributes them across the shielded
+    /// pool (`shield_amount`), the surplus-output address (`surplus_amount`, when set), and the fee
+    /// pools (`pool_fee`, plus any surplus folded in when no `surplus_output` is set). The invariant
+    /// is therefore: `total_credits_in_platform` rises by exactly the consumed lock value, which must
+    /// equal `shield_amount + surplus_amount + pool_fee`, and the sum trees stay balanced.
+    mod credit_conservation {
+        use super::*;
+        use crate::execution::validation::state_transition::tests::process_state_transitions;
+        use dpp::balances::credits::CREDITS_PER_DUFF;
+        use dpp::block::block_info::BlockInfo;
+        use dpp::shielded::compute_minimum_shielded_fee;
+        use dpp::state_transition::shield_from_asset_lock_transition::ShieldFromAssetLockTransition as SfalTransition;
+        use dpp::state_transition::StateTransitionEstimatedFeeValidation;
+
+        /// The default `instant_asset_lock_proof_fixture` funds a single 1-DASH credit output.
+        const DEFAULT_FIXTURE_LOCK_DUFFS: u64 = 100_000_000;
+
+        /// Compute the flat `pool_fee` (`compute_minimum_shielded_fee(num_actions) + albc`) exactly
+        /// as `transform_into_action` does, so the conservation assertions use the production fee.
+        fn pool_fee_for_actions(num_actions: usize, platform_version: &PlatformVersion) -> u64 {
+            let shielded_fee = compute_minimum_shielded_fee(num_actions, platform_version)
+                .expect("should compute minimum shielded fee");
+            let albc = SfalTransition::V0(ShieldFromAssetLockTransitionV0 {
+                asset_lock_proof: instant_asset_lock_proof_fixture(None, None),
+                actions: vec![create_dummy_serialized_action()],
+                value_balance: 1,
+                anchor: [1u8; 32],
+                proof: vec![0u8; 1],
+                binding_signature: [0u8; 64],
+                surplus_output: None,
+                signature: Default::default(),
+            })
+            .calculate_min_required_fee(platform_version)
+            .expect("should compute asset-lock base cost");
+            shielded_fee.checked_add(albc).expect("pool fee overflow")
+        }
+
+        /// Build a real, valid single-output Orchard shield bundle of `shield_value` credits.
+        fn build_valid_shield_bundle(
+            shield_value: u64,
+        ) -> (Vec<SerializedAction>, u64, [u8; 32], Vec<u8>, [u8; 64]) {
+            let mut orchard_rng = OsRng;
+            let pk = get_proving_key();
+
+            let sk = SpendingKey::from_bytes([0u8; 32]).unwrap();
+            let fvk = FullViewingKey::from(&sk);
+            let recipient = fvk.address_at(0u32, Scope::External);
+
+            let mut builder = Builder::<DashMemo>::new(
+                BundleType::Transactional {
+                    flags: OrchardFlags::SPENDS_DISABLED,
+                    bundle_required: false,
+                },
+                Anchor::empty_tree(),
+            );
+            builder
+                .add_output(
+                    None,
+                    recipient,
+                    NoteValue::from_raw(shield_value),
+                    [0u8; 36],
+                )
+                .unwrap();
+
+            let (unauthorized, _) = builder.build::<i64>(&mut orchard_rng).unwrap().unwrap();
+            let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
+            let sighash = compute_platform_sighash(&bundle_commitment, &[]);
+            let proven = unauthorized.create_proof(pk, &mut orchard_rng).unwrap();
+            let bundle = proven.apply_signatures(orchard_rng, sighash, &[]).unwrap();
+
+            let (actions, _flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
+                serialize_authorized_bundle_with_flags(&bundle);
+            assert!(value_balance < 0, "shield value_balance must be negative");
+            let shield_amount = (-value_balance) as u64;
+            assert_eq!(
+                shield_amount, shield_value,
+                "the bundle must shield exactly the requested value"
+            );
+            (
+                actions,
+                shield_amount,
+                anchor_bytes,
+                proof_bytes,
+                binding_sig,
+            )
+        }
+
+        /// SURPLUS-TO-ADDRESS path: a `ShieldFromAssetLock` with `surplus_output: Some(addr)` and a
+        /// non-zero surplus must (a) keep all credits sum-tree balanced through the full block
+        /// pipeline, (b) raise the shielded pool by exactly `shield_amount`, (c) raise the surplus
+        /// address balance by exactly `surplus_amount`, and (d) raise `total_credits_in_platform` by
+        /// exactly the consumed asset-lock value (`= shield_amount + surplus_amount + pool_fee`).
+        #[tokio::test]
+        async fn test_shield_from_asset_lock_with_surplus_output_conserves_credits() {
+            let platform_version = PlatformVersion::latest();
+            let platform = setup_platform();
+
+            // Platform starts balanced; this is the production invariant the block-end check enforces.
+            let credits_before = platform
+                .drive
+                .calculate_total_credits_balance(None, &platform_version.drive)
+                .expect("should calculate total credits before");
+            assert!(
+                credits_before
+                    .ok()
+                    .expect("credit balance check should not overflow"),
+                "credits must be balanced before the shield_from_asset_lock: {credits_before}"
+            );
+
+            // Build a real valid bundle (shield 5000) over the default 1-DASH fixture lock. The
+            // surplus (≈1 DASH minus the small shield + fee) far exceeds the implicit-fee cap, so an
+            // explicit `surplus_output` is required — exactly what this builder sets.
+            let mut rng = StdRng::seed_from_u64(567);
+            let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
+
+            let shield_value = 5_000u64;
+            let (actions, shield_amount, anchor_bytes, proof_bytes, binding_sig) =
+                build_valid_shield_bundle(shield_value);
+
+            // Production fee + the consumed lock value, so we can pin the surplus exactly.
+            let pool_fee = pool_fee_for_actions(actions.len(), platform_version);
+            let consumed = DEFAULT_FIXTURE_LOCK_DUFFS * CREDITS_PER_DUFF;
+            let surplus_amount = consumed
+                .checked_sub(shield_amount)
+                .and_then(|v| v.checked_sub(pool_fee))
+                .expect("surplus must be non-negative");
+            assert!(
+                surplus_amount > 0,
+                "this test must exercise a non-zero surplus routed to the address"
+            );
+
+            let transition = create_signed_shield_from_asset_lock_transition(
+                asset_lock_proof,
+                &asset_lock_pk,
+                actions,
+                shield_amount,
+                anchor_bytes,
+                proof_bytes,
+                binding_sig,
+            );
+
+            // --- Run the FULL block pipeline (execute + distribute fees + validate sum trees).
+            //     `process_state_transitions` calls `process_block_fees_and_validate_sum_trees`; with
+            //     `verify_sum_trees` enabled (the default) its `.expect(...)` panics here on a
+            //     `CorruptedCreditsNotBalanced` — the block-level conservation assertion. ---
+            let platform_state = platform.state.load();
+            let (_fee_results, _processed_block_fees) = process_state_transitions(
+                &platform,
+                &[transition],
+                BlockInfo::default(),
+                &platform_state,
+            );
+
+            let credits_after = platform
+                .drive
+                .calculate_total_credits_balance(None, &platform_version.drive)
+                .expect("should calculate total credits after");
+
+            // (a) Credits remain sum-tree balanced (the invariant whose failure halts the chain).
+            assert!(
+                credits_after
+                    .ok()
+                    .expect("credit balance check should not overflow"),
+                "credits must remain balanced after shield_from_asset_lock with surplus output: \
+                 {credits_after}"
+            );
+
+            // (b) The shielded pool rose by exactly `shield_amount`.
+            assert_eq!(
+                credits_after.total_in_shielded_balances
+                    - credits_before.total_in_shielded_balances,
+                shield_amount as i64,
+                "shielded pool must gain exactly the shield amount"
+            );
+
+            // (c) The surplus-output address balance rose by exactly `surplus_amount`. The fresh
+            //     platform has no other addresses, so the address-tree delta equals the surplus
+            //     credited to the signed surplus-output address (`P2pkh([0x33; 20])`).
+            assert_eq!(
+                credits_after.total_in_addresses - credits_before.total_in_addresses,
+                surplus_amount as i64,
+                "the surplus_output address must gain exactly the surplus amount"
+            );
+
+            // (d) `total_credits_in_platform` rose by exactly the consumed asset-lock value, which
+            //     equals `shield_amount + surplus_amount + pool_fee`.
+            assert_eq!(
+                credits_after.total_credits_in_platform - credits_before.total_credits_in_platform,
+                consumed,
+                "platform total must rise by exactly the consumed asset-lock value"
+            );
+            assert_eq!(
+                consumed,
+                shield_amount + surplus_amount + pool_fee,
+                "consumed lock value must split exactly into shield + surplus + pool fee"
+            );
+        }
+
+        /// NO-SURPLUS-OUTPUT path: a `ShieldFromAssetLock` with `surplus_output: None` folds the
+        /// surplus into the fee pools (allowed only up to the implicit-fee cap). It must keep credits
+        /// sum-tree balanced through the full block pipeline, raise the shielded pool by exactly
+        /// `shield_amount`, create NO address balance, and raise `total_credits_in_platform` by
+        /// exactly the consumed asset-lock value.
+        #[tokio::test]
+        async fn test_shield_from_asset_lock_without_surplus_output_conserves_credits() {
+            let platform_version = PlatformVersion::latest();
+            let platform = setup_platform();
+
+            let credits_before = platform
+                .drive
+                .calculate_total_credits_balance(None, &platform_version.drive)
+                .expect("should calculate total credits before");
+            assert!(
+                credits_before
+                    .ok()
+                    .expect("credit balance check should not overflow"),
+                "credits must be balanced before the shield_from_asset_lock: {credits_before}"
+            );
+
+            // Size the lock so the surplus lands exactly on the implicit-fee cap — the largest
+            // surplus the no-`surplus_output` path accepts. Build the bundle, then derive the funding.
+            let cap = platform_version
+                .drive_abci
+                .validation_and_processing
+                .event_constants
+                .shielded_implicit_fee_cap;
+
+            // Probe to learn the action count → pool_fee, then choose `shield_value` so the required
+            // lock value is a whole number of duffs (the fixture quantises funding to duffs).
+            const SHIELD_VALUE_BASE: u64 = 1_000_000;
+            let (probe_actions, _, _, _, _) = build_valid_shield_bundle(SHIELD_VALUE_BASE);
+            let pool_fee = pool_fee_for_actions(probe_actions.len(), platform_version);
+            let correction = (CREDITS_PER_DUFF
+                - ((cap + SHIELD_VALUE_BASE + pool_fee) % CREDITS_PER_DUFF))
+                % CREDITS_PER_DUFF;
+            let shield_value = SHIELD_VALUE_BASE + correction;
+
+            let (actions, shield_amount, anchor_bytes, proof_bytes, binding_sig) =
+                build_valid_shield_bundle(shield_value);
+
+            let consumed = cap + shield_amount + pool_fee;
+            assert_eq!(
+                consumed % CREDITS_PER_DUFF,
+                0,
+                "lock value must be a whole number of duffs"
+            );
+            let lock_amount_duffs = consumed / CREDITS_PER_DUFF;
+            // The surplus the transform computes lands exactly on the cap by construction.
+            assert_eq!(consumed - shield_amount - pool_fee, cap);
+
+            let mut rng = StdRng::seed_from_u64(567);
+            let (asset_lock_proof, asset_lock_pk) =
+                create_asset_lock_proof_with_key_and_amount(&mut rng, lock_amount_duffs);
+
+            let transition = create_signed_shield_from_asset_lock_transition_no_surplus(
+                asset_lock_proof,
+                &asset_lock_pk,
+                actions,
+                shield_amount,
+                anchor_bytes,
+                proof_bytes,
+                binding_sig,
+            );
+
+            let platform_state = platform.state.load();
+            let (_fee_results, _processed_block_fees) = process_state_transitions(
+                &platform,
+                &[transition],
+                BlockInfo::default(),
+                &platform_state,
+            );
+
+            let credits_after = platform
+                .drive
+                .calculate_total_credits_balance(None, &platform_version.drive)
+                .expect("should calculate total credits after");
+
+            // Credits remain sum-tree balanced.
+            assert!(
+                credits_after
+                    .ok()
+                    .expect("credit balance check should not overflow"),
+                "credits must remain balanced after shield_from_asset_lock without surplus output: \
+                 {credits_after}"
+            );
+
+            // The shielded pool rose by exactly `shield_amount`.
+            assert_eq!(
+                credits_after.total_in_shielded_balances
+                    - credits_before.total_in_shielded_balances,
+                shield_amount as i64,
+                "shielded pool must gain exactly the shield amount"
+            );
+
+            // NO address balance was created for the (absent) surplus — it folded into the fee pools.
+            assert_eq!(
+                credits_after.total_in_addresses - credits_before.total_in_addresses,
+                0,
+                "no surplus_output means no address balance is created"
+            );
+
+            // `total_credits_in_platform` rose by exactly the consumed asset-lock value.
+            assert_eq!(
+                credits_after.total_credits_in_platform - credits_before.total_credits_in_platform,
+                consumed,
+                "platform total must rise by exactly the consumed asset-lock value"
             );
         }
     }
