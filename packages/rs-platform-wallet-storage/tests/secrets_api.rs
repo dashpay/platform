@@ -17,6 +17,13 @@ use platform_wallet_storage::secrets::{
 };
 
 fn vault_path(dir: &Path) -> PathBuf {
+    // `open` refuses a group/other-writable parent dir; a umask-0002
+    // tempdir lands at 0o775, so tighten it to 0o700 first.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700));
+    }
     dir.join("vault.pwsvault")
 }
 
