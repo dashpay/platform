@@ -49,14 +49,14 @@ members = [
 ]
 
 [workspace.dependencies]
-dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "eb889af13f667ed39c35e8e8a0830eeedf523476" }
-dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", rev = "eb889af13f667ed39c35e8e8a0830eeedf523476" }
-dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "eb889af13f667ed39c35e8e8a0830eeedf523476" }
-key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "eb889af13f667ed39c35e8e8a0830eeedf523476" }
-key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "eb889af13f667ed39c35e8e8a0830eeedf523476" }
-key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "eb889af13f667ed39c35e8e8a0830eeedf523476" }
-dash-network = { git = "https://github.com/dashpay/rust-dashcore", rev = "eb889af13f667ed39c35e8e8a0830eeedf523476" }
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "eb889af13f667ed39c35e8e8a0830eeedf523476" }
+dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "7ff6b246df72164adb351551e819e53d10057caa" }
+dash-network-seeds = { git = "https://github.com/dashpay/rust-dashcore", rev = "7ff6b246df72164adb351551e819e53d10057caa" }
+dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "7ff6b246df72164adb351551e819e53d10057caa" }
+key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "7ff6b246df72164adb351551e819e53d10057caa" }
+key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "7ff6b246df72164adb351551e819e53d10057caa" }
+key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "7ff6b246df72164adb351551e819e53d10057caa" }
+dash-network = { git = "https://github.com/dashpay/rust-dashcore", rev = "7ff6b246df72164adb351551e819e53d10057caa" }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "7ff6b246df72164adb351551e819e53d10057caa" }
 
 # Optimize heavy crypto crates even in dev/test builds so that
 # Halo 2 proof generation and verification run at near-release speed.
