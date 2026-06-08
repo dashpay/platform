@@ -59,19 +59,16 @@ fn wallets_rows_for(persister: &SqlitePersister, w: &[u8; 32]) -> i64 {
 
 /// PRE-FLUSH `BEGIN EXCLUSIVE` FAILURE under a real peer lock.
 ///
-/// Documented invariant (`delete_wallet_inner`): "On ANY pre-commit
-/// error, restore_buffer hands the changeset back." A peer holds a
-/// SQLite-native EXCLUSIVE on the same DB file, so the pre-flush's own
-/// `conn.transaction_with_behavior(Exclusive)?` fails with BUSY.
-///
-/// On that failure the buffered changeset MUST survive — either still
-/// in the buffer (restored) or already durable on disk. It must NOT
-/// vanish from both. The existing
+/// A peer holds a SQLite-native EXCLUSIVE on the same DB file, so the
+/// pre-flush's own `conn.transaction_with_behavior(Exclusive)?` fails
+/// with BUSY — the cascade is never reached. On that failure the buffered
+/// changeset MUST survive: either still in the buffer (restored) or
+/// already durable on disk. The existing
 /// `pre_flush_failure_preserves_buffer_and_skips_backup` test exercises
-/// only the test-injector branch, which restores the slot explicitly;
-/// this test drives the real `?`-propagation path.
+/// only the test-injector branch; this test drives the real
+/// `?`-propagation path.
 #[test]
-fn cascade_failure_after_preflush_leaves_consistent_state() {
+fn preflush_begin_exclusive_busy_preserves_buffer() {
     let tmp = tempfile::tempdir().unwrap();
     let path = tmp.path().join("w.db");
     // No auto_backup_dir + skip_backup keeps the test on the
