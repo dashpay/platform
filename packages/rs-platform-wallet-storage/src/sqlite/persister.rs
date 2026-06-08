@@ -441,8 +441,15 @@ impl SqlitePersister {
                     drained_slot.set(Some(cs));
                     return Err(primed);
                 }
-                let pre_flush_tx =
-                    conn.transaction_with_behavior(rusqlite::TransactionBehavior::Exclusive)?;
+                let pre_flush_tx = match conn
+                    .transaction_with_behavior(rusqlite::TransactionBehavior::Exclusive)
+                {
+                    Ok(tx) => tx,
+                    Err(e) => {
+                        drained_slot.set(Some(cs));
+                        return Err(WalletStorageError::Sqlite(e));
+                    }
+                };
                 if let Err(e) = apply_changeset_to_tx(&pre_flush_tx, &wallet_id, &cs) {
                     let _ = pre_flush_tx.rollback();
                     drained_slot.set(Some(cs));
