@@ -36,7 +36,8 @@ impl StateTransitionIsAllowedValidationV0 for StateTransition {
             | StateTransition::ShieldedTransfer(_)
             | StateTransition::Unshield(_)
             | StateTransition::ShieldFromAssetLock(_)
-            | StateTransition::ShieldedWithdrawal(_) => Ok(true),
+            | StateTransition::ShieldedWithdrawal(_)
+            | StateTransition::IdentityCreateFromShieldedPool(_) => Ok(true),
             StateTransition::DataContractCreate(_)
             | StateTransition::DataContractUpdate(_)
             | StateTransition::IdentityCreate(_)
@@ -78,7 +79,8 @@ impl StateTransitionIsAllowedValidationV0 for StateTransition {
             | StateTransition::ShieldedTransfer(_)
             | StateTransition::Unshield(_)
             | StateTransition::ShieldFromAssetLock(_)
-            | StateTransition::ShieldedWithdrawal(_) => {
+            | StateTransition::ShieldedWithdrawal(_)
+            | StateTransition::IdentityCreateFromShieldedPool(_) => {
                 if platform_version.protocol_version >= SHIELDED_POOL_INITIAL_PROTOCOL_VERSION {
                     Ok(ConsensusValidationResult::new())
                 } else {

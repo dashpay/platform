@@ -206,6 +206,11 @@ impl StateTransitionStateValidation for StateTransition {
                     "shielded withdrawal should not have state validation",
                 )))
             }
+            StateTransition::IdentityCreateFromShieldedPool(_) => {
+                Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "identity create from shielded pool should not have state validation",
+                )))
+            }
         }
     }
 
@@ -230,7 +235,8 @@ impl StateTransitionStateValidation for StateTransition {
             | StateTransition::ShieldedTransfer(_)
             | StateTransition::Unshield(_)
             | StateTransition::ShieldFromAssetLock(_)
-            | StateTransition::ShieldedWithdrawal(_) => false,
+            | StateTransition::ShieldedWithdrawal(_)
+            | StateTransition::IdentityCreateFromShieldedPool(_) => false,
         }
     }
 }

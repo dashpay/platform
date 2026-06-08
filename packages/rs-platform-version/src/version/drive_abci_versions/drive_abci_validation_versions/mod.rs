@@ -98,6 +98,8 @@ pub struct DriveAbciStateTransitionValidationVersions {
     pub unshield_state_transition: DriveAbciStateTransitionValidationVersion,
     pub shield_from_asset_lock_state_transition: DriveAbciStateTransitionValidationVersion,
     pub shielded_withdrawal_state_transition: DriveAbciStateTransitionValidationVersion,
+    pub identity_create_from_shielded_pool_state_transition:
+        DriveAbciStateTransitionValidationVersion,
 }
 
 #[derive(Clone, Debug, Default)]

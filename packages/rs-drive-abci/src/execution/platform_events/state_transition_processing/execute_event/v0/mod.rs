@@ -368,13 +368,16 @@ where
             ExecutionEvent::PaidFromAssetLock { .. }
             | ExecutionEvent::Paid { .. }
             | ExecutionEvent::PaidFromAddressInputs { .. }
-            | ExecutionEvent::PaidFromAssetLockToPool { .. } => Some(self.validate_fees_of_event(
-                &event,
-                block_info,
-                Some(transaction),
-                platform_version,
-                previous_fee_versions,
-            )?),
+            | ExecutionEvent::PaidFromAssetLockToPool { .. }
+            | ExecutionEvent::PaidFromShieldedPoolToNewIdentity { .. } => {
+                Some(self.validate_fees_of_event(
+                    &event,
+                    block_info,
+                    Some(transaction),
+                    platform_version,
+                    previous_fee_versions,
+                )?)
+            }
             ExecutionEvent::PaidFromAssetLockWithoutIdentity { .. }
             | ExecutionEvent::PaidFixedCost { .. }
             | ExecutionEvent::PaidFromShieldedPool { .. }
@@ -621,6 +624,36 @@ where
                 } else {
                     Ok(UnpaidConsensusExecutionError(all_errors))
                 }
+            }
+            ExecutionEvent::PaidFromShieldedPoolToNewIdentity {
+                identity,
+                operations,
+                execution_operations,
+                additional_fixed_fee_cost,
+                ..
+            } => {
+                // Reuse the create-then-deduct machinery: `paid_from_identity_function` applies the
+                // ops (which create the identity holding the full `denomination`, credit the system
+                // total, and debit the pool), then deducts the metered fee + the
+                // `additional_fixed_fee_cost` (the shielded compute fee) from the new identity's
+                // balance and books it to the fee pools — so the identity ends with
+                // `denomination - total_fee`. Conservation holds by the standard machinery, exactly
+                // as for `PaidFromAssetLock`. Shielded transitions have no fee bidding, so
+                // `user_fee_increase` is 0.
+                let fee_validation_result = maybe_fee_validation_result.unwrap();
+                self.paid_from_identity_function(
+                    fee_validation_result,
+                    identity,
+                    operations,
+                    execution_operations,
+                    0,
+                    additional_fixed_fee_cost,
+                    block_info,
+                    consensus_errors,
+                    transaction,
+                    platform_version,
+                    previous_fee_versions,
+                )
             }
             ExecutionEvent::Free { operations } => {
                 self.drive

@@ -122,6 +122,28 @@ pub(in crate::execution) enum ExecutionEvent<'a> {
         /// the execution operations that we must also pay for
         execution_operations: Vec<ValidationOperation>,
     },
+    /// A drive event for `IdentityCreateFromShieldedPool`: the new identity is created holding the
+    /// full `denomination` (debited from the shielded pool by the converter), then the metered
+    /// GroveDB write cost PLUS the flat shielded compute fee (`additional_fixed_fee_cost`) is MOVED
+    /// from the new identity's balance into the fee pools — so the identity ends with
+    /// `denomination - total_fee` and the credit supply is conserved. Mirrors `PaidFromAssetLock`
+    /// (create-then-deduct-from-the-new-identity) but funded from the shielded pool instead of an
+    /// asset lock. The metered write grows with the key count, which is why this transition meters
+    /// rather than carving a flat pool fee like the other pool-paid shielded transitions.
+    PaidFromShieldedPoolToNewIdentity {
+        /// The new identity (id derived from the spend nullifiers, balance = `denomination`).
+        identity: PartialIdentity,
+        /// the operations that should be performed
+        operations: Vec<DriveOperation<'a>>,
+        /// the execution operations that we must also pay for (per-key signature verifications)
+        execution_operations: Vec<ValidationOperation>,
+        /// The exit denomination = the new identity's initial balance = the affordability ceiling
+        /// the fee must not exceed.
+        denomination: Credits,
+        /// The flat shielded COMPUTE fee (Halo 2 proof verification + per-action processing) added
+        /// to the metered processing fee — GroveDB cannot meter the ZK work.
+        additional_fixed_fee_cost: Option<Credits>,
+    },
     /// A drive event that is free
     #[allow(dead_code)] // TODO investigate why `variant `Free` is never constructed`
     Free {
@@ -559,6 +581,37 @@ impl ExecutionEvent<'_> {
                 Ok(ExecutionEvent::PaidFromShieldedPool {
                     operations,
                     fees_to_add_to_pool: fee_amount,
+                })
+            }
+            StateTransitionAction::IdentityCreateFromShieldedPoolAction(ref action_ref) => {
+                use std::collections::{BTreeMap, BTreeSet};
+                // The new identity is created holding the full denomination; the fee is the metered
+                // GroveDB write cost (from `operations`) PLUS the flat shielded COMPUTE fee
+                // (proof verification + per-action processing) GroveDB cannot meter, added as
+                // `additional_fixed_fee_cost` — exactly the transparent `Shield` model. That total is
+                // then moved out of the new identity's balance into the fee pools at execution.
+                let denomination = action_ref.denomination();
+                let compute_fee = dpp::shielded::compute_shielded_verification_fee(
+                    action_ref.notes().len(),
+                    platform_version,
+                )?;
+                // Only `id` (for the fee balance-change) and `balance` (for the affordability gate)
+                // are needed; the keys themselves are written by the `AddNewIdentity` operation.
+                let partial_identity = PartialIdentity {
+                    id: action_ref.identity_id(),
+                    loaded_public_keys: BTreeMap::new(),
+                    balance: Some(denomination),
+                    revision: None,
+                    not_found_public_keys: BTreeSet::new(),
+                };
+                let operations =
+                    action.into_high_level_drive_operations(epoch, platform_version)?;
+                Ok(ExecutionEvent::PaidFromShieldedPoolToNewIdentity {
+                    identity: partial_identity,
+                    operations,
+                    execution_operations: execution_context.operations_consume(),
+                    denomination,
+                    additional_fixed_fee_cost: Some(compute_fee),
                 })
             }
             _ => {

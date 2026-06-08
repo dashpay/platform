@@ -246,6 +246,15 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V4: DriveAbciValidationVersions =
                 state: 0,
                 transform_into_action: 0,
             },
+            identity_create_from_shielded_pool_state_transition:
+                DriveAbciStateTransitionValidationVersion {
+                    basic_structure: None,
+                    advanced_structure: None,
+                    identity_signatures: None,
+                    nonce: None,
+                    state: 0,
+                    transform_into_action: 0,
+                },
         },
         has_nonce_validation: 1, // <---- changed this
         has_address_witness_validation: 0,

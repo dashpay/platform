@@ -52,6 +52,7 @@ impl StateTransitionHasShieldedProofValidationV0 for StateTransition {
                 | StateTransition::ShieldedTransfer(_)
                 | StateTransition::Unshield(_)
                 | StateTransition::ShieldedWithdrawal(_)
+                | StateTransition::IdentityCreateFromShieldedPool(_)
         )
     }
 
@@ -63,6 +64,7 @@ impl StateTransitionHasShieldedProofValidationV0 for StateTransition {
             StateTransition::ShieldedTransfer(_)
                 | StateTransition::Unshield(_)
                 | StateTransition::ShieldedWithdrawal(_)
+                | StateTransition::IdentityCreateFromShieldedPool(_)
         )
     }
 }
@@ -117,6 +119,10 @@ enum ShieldedMinFeeKind {
     Unshield,
     /// `compute_shielded_withdrawal_fee` — ShieldedWithdrawal (base + the flat withdrawal-document cost).
     Withdrawal,
+    /// `compute_shielded_identity_create_fee` — IdentityCreateFromShieldedPool (base + the VARIABLE
+    /// `AddNewIdentity` write whose cost grows with the key count). Carries `num_keys` because the
+    /// fee scales with it, unlike the other (fixed) per-transition components.
+    IdentityCreate { num_keys: usize },
 }
 
 impl StateTransitionShieldedMinimumFeeValidationV0 for StateTransition {
@@ -190,6 +196,25 @@ impl StateTransitionShieldedMinimumFeeValidationV0 for StateTransition {
                             )
                         }
                     },
+                    // IdentityCreateFromShieldedPool: `denomination` is the TOTAL leaving the pool
+                    // (new-identity balance + fee). We check it against `min_fee` so the net
+                    // (`denomination - compute_shielded_identity_create_fee`) the new identity keeps
+                    // at execution is non-negative. It is NOT pure fee (`>=` model); the exact
+                    // `value_balance == denomination` equality is enforced by the proof verifier
+                    // (which passes `value_balance = denomination`). The fee scales with the key
+                    // count, so the `IdentityCreate` flavor carries `num_keys`.
+                    StateTransition::IdentityCreateFromShieldedPool(st) => match st {
+                        dpp::state_transition::identity_create_from_shielded_pool_transition::IdentityCreateFromShieldedPoolTransition::V0(v0) => {
+                            (
+                                v0.denomination as i64,
+                                v0.actions.len(),
+                                0,
+                                u64::MAX,
+                                false,
+                                ShieldedMinFeeKind::IdentityCreate { num_keys: v0.public_keys.len() },
+                            )
+                        }
+                    },
                     // Other transitions don't go through shielded fee validation.
                     _ => return Ok(SimpleConsensusValidationResult::new()),
                 };
@@ -240,6 +265,13 @@ impl StateTransitionShieldedMinimumFeeValidationV0 for StateTransition {
                     ShieldedMinFeeKind::Withdrawal => {
                         dpp::shielded::compute_shielded_withdrawal_fee(
                             num_actions,
+                            platform_version,
+                        )?
+                    }
+                    ShieldedMinFeeKind::IdentityCreate { num_keys } => {
+                        dpp::shielded::compute_shielded_identity_create_fee(
+                            num_actions,
+                            num_keys,
                             platform_version,
                         )?
                     }
@@ -396,6 +428,36 @@ impl StateTransitionShieldedProofValidationV0 for StateTransition {
                                 &v0.actions,
                                 FLAGS_SPENDS_AND_OUTPUTS,
                                 v0.unshielding_amount as i64,
+                                &v0.anchor,
+                                v0.proof.as_slice(),
+                                &v0.binding_signature,
+                                &extra_sighash_data,
+                            )
+                        }
+                    },
+                    StateTransition::IdentityCreateFromShieldedPool(st) => match st {
+                        dpp::state_transition::identity_create_from_shielded_pool_transition::IdentityCreateFromShieldedPoolTransition::V0(v0) => {
+                            // Bind the new identity id + denomination + FULL public-key set into the
+                            // Orchard sighash so the bundle cannot be redirected to a different
+                            // identity/keys (the surplus_output binding analog). The id is re-derived
+                            // from the spend nullifiers — the canonical value — so the binding holds
+                            // regardless of any (separately-validated) wire `identity_id`.
+                            let identity_id =
+                                dpp::state_transition::identity_create_from_shielded_pool_transition::derive_identity_id_from_actions(&v0.actions)
+                                    .to_buffer();
+                            let extra_sighash_data =
+                                dpp::shielded::identity_create_from_shielded_extra_sighash_data(
+                                    &identity_id,
+                                    v0.denomination,
+                                    &v0.public_keys,
+                                );
+                            // value_balance = denomination EXACTLY (the ShieldedTransfer exact-equality
+                            // model): the binding signature proves the value commitments sum to exactly
+                            // the denomination leaving the pool.
+                            reconstruct_and_verify_bundle(
+                                &v0.actions,
+                                FLAGS_SPENDS_AND_OUTPUTS,
+                                v0.denomination as i64,
                                 &v0.anchor,
                                 v0.proof.as_slice(),
                                 &v0.binding_signature,

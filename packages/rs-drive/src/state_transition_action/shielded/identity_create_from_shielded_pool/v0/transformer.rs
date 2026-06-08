@@ -27,10 +27,12 @@ impl IdentityCreateFromShieldedPoolTransitionActionV0 {
             })
             .collect();
 
-        // The id was re-derived and checked against the spend nullifiers during validation, so it is
-        // authoritative here.
+        // Re-derive the id from the spend nullifiers (the canonical value). The wire `identity_id`
+        // is advisory; consensus always uses the derived value so a malformed/malicious wire id
+        // cannot redirect the created identity (the Orchard sighash also binds the derived id).
+        let identity_id = dpp::state_transition::state_transitions::shielded::identity_create_from_shielded_pool_transition::derive_identity_id_from_actions(&value.actions);
         let mut identity =
-            Identity::new_with_id_and_keys(value.identity_id, public_keys, platform_version)?;
+            Identity::new_with_id_and_keys(identity_id, public_keys, platform_version)?;
         // The identity is created holding the FULL denomination. The fee is moved out of this
         // balance into the fee pools at execution (so the credit supply is conserved).
         identity.set_balance(value.denomination);

@@ -81,7 +81,10 @@ impl StateTransitionIdentityBalanceValidationV0 for StateTransition {
             | StateTransition::ShieldedTransfer(_)
             | StateTransition::Unshield(_)
             | StateTransition::ShieldFromAssetLock(_)
-            | StateTransition::ShieldedWithdrawal(_) => Ok(SimpleConsensusValidationResult::new()),
+            | StateTransition::ShieldedWithdrawal(_)
+            | StateTransition::IdentityCreateFromShieldedPool(_) => {
+                Ok(SimpleConsensusValidationResult::new())
+            }
         }
     }
 
