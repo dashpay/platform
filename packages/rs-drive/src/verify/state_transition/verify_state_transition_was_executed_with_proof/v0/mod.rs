@@ -3037,6 +3037,64 @@ mod tests {
         );
     }
 
+    // --- IdentityCreateFromShieldedPool: empty proof returns error.
+    //
+    // Exercises the STRICT merged-query verify arm: an empty proof cannot satisfy
+    // `verify_query_with_absence_proof` over the merged {nullifier-tree, identity} query, so the
+    // verifier must reject (rather than silently accepting). The positive prove→verify roundtrip and
+    // the padded-proof (extra-branch) rejection are covered by the full-block integration suite.
+    #[test]
+    fn verify_identity_create_from_shielded_pool_empty_proof_returns_error() {
+        let platform_version = PlatformVersion::latest();
+        use dpp::shielded::SerializedAction;
+        use dpp::state_transition::state_transitions::shielded::identity_create_from_shielded_pool_transition::derive_identity_id_from_actions;
+        use dpp::state_transition::state_transitions::shielded::identity_create_from_shielded_pool_transition::v0::IdentityCreateFromShieldedPoolTransitionV0;
+        use dpp::state_transition::state_transitions::shielded::identity_create_from_shielded_pool_transition::IdentityCreateFromShieldedPoolTransition;
+
+        let actions = vec![SerializedAction {
+            nullifier: [0x11; 32],
+            rk: [0x22; 32],
+            cmx: [0x33; 32],
+            encrypted_note: vec![0x44; 216],
+            cv_net: [0x55; 32],
+            spend_auth_sig: [0x66; 64],
+        }];
+        let identity_id = derive_identity_id_from_actions(&actions);
+
+        let st = StateTransition::IdentityCreateFromShieldedPool(
+            IdentityCreateFromShieldedPoolTransition::V0(
+                IdentityCreateFromShieldedPoolTransitionV0 {
+                    public_keys: vec![],
+                    denomination: 10_000_000_000,
+                    actions,
+                    anchor: [0u8; 32],
+                    proof: vec![],
+                    binding_signature: [0u8; 64],
+                    identity_id,
+                },
+            ),
+        );
+
+        let known_contracts_provider_fn: &ContractLookupFn = &|_id| Ok(None);
+
+        let result = Drive::verify_state_transition_was_executed_with_proof(
+            &st,
+            &BlockInfo::default(),
+            &[],
+            known_contracts_provider_fn,
+            platform_version,
+        );
+
+        assert!(
+            matches!(
+                result,
+                Err(crate::error::Error::Proof(_)) | Err(crate::error::Error::GroveDB(_))
+            ),
+            "expected error for identity create from shielded pool with empty proof, got: {:?}",
+            result
+        );
+    }
+
     // --- IdentityCreditTransferToAddresses: empty proof returns error.
     #[test]
     fn verify_identity_credit_transfer_to_addresses_empty_proof_returns_error() {
