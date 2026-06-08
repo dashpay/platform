@@ -152,8 +152,7 @@ fn run(cli: Cli) -> Result<ExitCode, CliError> {
     // `prune` is a pure filesystem op against the backups directory —
     // `--db` is meaningless for it and must not be required. Handle the
     // subcommand BEFORE extracting `cli.db` so the operator can run
-    // `prune --backups-dir ... --keep-last N` without
-    // also passing a database path.
+    // `prune --in ... --keep-last N` without also passing a database path.
     if let Cmd::Prune(args) = &cli.cmd {
         return run_prune(args);
     }
@@ -237,10 +236,10 @@ fn peek_schema_version(db: &Path) -> Result<Option<i64>, rusqlite::Error> {
     if !db.exists() {
         return Ok(None);
     }
-    let conn = rusqlite::Connection::open_with_flags(
-        db,
-        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_URI,
-    )?;
+    // URI parsing stays off to match the crate's open-conn choke-point:
+    // a `--db` path must never smuggle `file:`-URI query parameters that
+    // could defeat the read-only intent.
+    let conn = rusqlite::Connection::open_with_flags(db, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
     // Pre-migration the history table may not exist yet — that is a
     // legitimate "no version" answer, not a failure.
     let has_history = conn
