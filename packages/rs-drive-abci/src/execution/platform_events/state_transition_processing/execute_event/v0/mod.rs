@@ -1,3 +1,4 @@
+use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::execution_event::ExecutionEvent;
 use crate::execution::types::execution_operation::ValidationOperation;
@@ -144,6 +145,16 @@ where
                     .saturating_add(additional_fixed_fee_cost);
             }
 
+            // Address-input events have no identity to attribute storage refunds to, so their
+            // metered ops must not free identity-attributed storage (`Shield` /
+            // `IdentityCreateFromAddresses` only insert or overwrite). A non-empty `fee_refunds`
+            // here would have no owner to refund at block fee distribution; assert it in debug/test
+            // builds so any future op that frees such storage is caught before it can misbook.
+            debug_assert!(
+                individual_fee_result.fee_refunds.0.is_empty(),
+                "PaidFromAddressInputs ops must not free identity-attributed storage (fee_refunds must be empty)"
+            );
+
             // The total fee to deduct is the metered base fee (storage + processing), where
             // processing already includes any `additional_fixed_fee_cost` added just above. For the
             // transparent `Shield` that fixed cost is the shielded COMPUTE fee
@@ -163,6 +174,20 @@ where
                 total_fee,
                 platform_version,
             )?;
+
+            // Defense in depth: the deduction min-caps each step, so an under-funded input set would
+            // remove < `total_fee` from the inputs while the full `total_fee` is still booked to the
+            // fee pools — minting the difference (`CorruptedCreditsNotBalanced` -> chain halt).
+            // `validate_fees_of_event` is re-run on this exact state immediately before execution and
+            // already rejects an under-funded transition, so this cannot trigger today. Guard anyway:
+            // if those two paths ever diverged, fail closed at the source with an actionable error
+            // rather than committing a mint that only surfaces as an opaque end-of-block sum-tree
+            // imbalance.
+            if !fee_deduction_result.fee_fully_covered {
+                return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "address-input fee not fully covered at execution; validate_fees_of_event should have rejected the under-funded transition",
+                )));
+            }
 
             let adjusted_inputs = fee_deduction_result.remaining_input_balances;
             let adjusted_outputs = fee_deduction_result.adjusted_outputs;
