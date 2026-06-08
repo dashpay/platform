@@ -245,6 +245,12 @@ pub(crate) fn serialize(vault: &Vault) -> Vec<u8> {
 /// are validated by `hex_array` at the serde seam; the AEAD-tag-length
 /// floor remains a post-parse check.
 pub(crate) fn deserialize(buf: &[u8]) -> Result<Vault, SecretStoreError> {
+    // INTENTIONAL: deliberate 2x parse (lax version probe + strict payload)
+    // over the already-128MiB-capped vault; one-shot, lock-gated, local
+    // file — the extra parse CPU is accepted for forward-version dispatch.
+    // INTENTIONAL: relies on serde_json's default recursion limit (128) for
+    // deep-nesting DoS safety; MUST NOT call disable_recursion_limit() or
+    // parse into a Value / from_reader in production.
     let probe: VersionProbe =
         serde_json::from_slice(buf).map_err(|_| SecretStoreError::MalformedVault)?;
     if probe.version != FORMAT_VERSION {
@@ -327,11 +333,25 @@ mod tests {
 
         assert_ne!(
             base,
-            verify_aad(FORMAT_VERSION, &salt, &KdfParams { m_kib: kdf.m_kib / 2, ..kdf })
+            verify_aad(
+                FORMAT_VERSION,
+                &salt,
+                &KdfParams {
+                    m_kib: kdf.m_kib / 2,
+                    ..kdf
+                }
+            )
         );
         assert_ne!(
             base,
-            verify_aad(FORMAT_VERSION, &salt, &KdfParams { t: kdf.t - 1, ..kdf })
+            verify_aad(
+                FORMAT_VERSION,
+                &salt,
+                &KdfParams {
+                    t: kdf.t - 1,
+                    ..kdf
+                }
+            )
         );
         // Identical inputs are deterministic.
         assert_eq!(base, verify_aad(FORMAT_VERSION, &salt, &kdf));
@@ -775,13 +795,14 @@ mod tests {
 
         // Wrong-width hex and oversized declared sizes.
         for (nonce, ct) in [
-            ("00", good_ct.as_str()),                    // short nonce
-            (good_nonce.as_str(), "00"),                 // short ciphertext
+            ("00", good_ct.as_str()),                       // short nonce
+            (good_nonce.as_str(), "00"),                    // short ciphertext
             (&"0".repeat(NONCE_LEN * 4), good_ct.as_str()), // over-wide nonce
-            ("zz", good_ct.as_str()),                    // non-hex nonce
+            ("zz", good_ct.as_str()),                       // non-hex nonce
         ] {
             let mut c = base.clone();
-            c["wallets"] = serde_json::json!({ wid: { "seed": { "nonce": nonce, "ciphertext": ct } } });
+            c["wallets"] =
+                serde_json::json!({ wid: { "seed": { "nonce": nonce, "ciphertext": ct } } });
             cases.push(c);
         }
 

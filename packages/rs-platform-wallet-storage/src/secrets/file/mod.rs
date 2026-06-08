@@ -741,7 +741,11 @@ fn create_parent_dir(parent: &Path) -> Result<(), SecretStoreError> {
 /// internals (exact-pinned in `Cargo.toml`); any bump must re-verify that
 /// dropping the guard releases the OS lock before the box is reclaimed.
 mod vault_lock {
-    #![allow(unsafe_code)]
+    // INTENTIONAL: this is the crate's only unsafe island; soundness rests
+    // on the drop-order argument above (guard out before box reclaim), not
+    // on a Miri test — the guard is the SAFETY comments plus the narrowed
+    // per-item `#[allow(unsafe_code)]` below. The crate-wide
+    // `#![deny(unsafe_code)]` therefore still applies to every other line.
 
     use std::fs;
     use std::path::Path;
@@ -759,7 +763,9 @@ mod vault_lock {
     // member is a `File`/`RawFd`, both `Send + Sync`). The raw pointer
     // points at the heap-pinned `RwLock` this struct owns; sending the
     // struct moves ownership of the box address with it.
+    #[allow(unsafe_code)]
     unsafe impl Send for VaultLock {}
+    #[allow(unsafe_code)]
     unsafe impl Sync for VaultLock {}
 
     impl VaultLock {
@@ -795,6 +801,7 @@ mod vault_lock {
             // at a valid `RwLock<File>`. No other reference exists
             // yet, so promoting it to `&'static mut` is sound for the
             // borrow we hand to `try_write`.
+            #[allow(unsafe_code)]
             let static_ref: &'static mut fd_lock::RwLock<fs::File> = unsafe { &mut *raw };
 
             let guard = match static_ref.try_write() {
@@ -804,7 +811,10 @@ mod vault_lock {
                     // no live borrow points at the box; reclaiming
                     // here is sound and avoids leaking on the error
                     // path.
-                    unsafe { drop(Box::from_raw(raw)) };
+                    #[allow(unsafe_code)]
+                    unsafe {
+                        drop(Box::from_raw(raw))
+                    };
                     return Err(match e.kind() {
                         std::io::ErrorKind::WouldBlock => SecretStoreError::AlreadyLocked,
                         _ => SecretStoreError::from(e),
@@ -828,7 +838,10 @@ mod vault_lock {
             // the guard has just been dropped (no live borrow), and we
             // are the only owner. Reclaiming the Box runs the
             // `RwLock`'s Drop, which closes the file fd.
-            unsafe { drop(Box::from_raw(self.rwlock)) };
+            #[allow(unsafe_code)]
+            unsafe {
+                drop(Box::from_raw(self.rwlock))
+            };
         }
     }
 }
@@ -1941,11 +1954,17 @@ mod tests {
         // halving m_kib and dropping t stays above the 19 MiB / t=2 floor).
         vault.kdf.m_kib /= 2;
         vault.kdf.t -= 1;
-        assert!(vault.kdf.enforce_bounds().is_ok(), "shift must stay in bounds");
+        assert!(
+            vault.kdf.enforce_bounds().is_ok(),
+            "shift must stay in bounds"
+        );
         write_vault_at(&path, &vault).unwrap();
         let err = EncryptedFileStore::open(&path, SecretString::new("pw-correct"))
             .expect_err("KDF-param shift must fail the verify-token");
-        assert!(matches!(err, SecretStoreError::WrongPassphrase), "got {err:?}");
+        assert!(
+            matches!(err, SecretStoreError::WrongPassphrase),
+            "got {err:?}"
+        );
     }
 
     /// A flipped salt byte on a correct-passphrase vault is rejected at
@@ -1965,7 +1984,10 @@ mod tests {
         write_vault_at(&path, &vault).unwrap();
         let err = EncryptedFileStore::open(&path, SecretString::new("pw-correct"))
             .expect_err("flipped salt must fail open");
-        assert!(matches!(err, SecretStoreError::WrongPassphrase), "got {err:?}");
+        assert!(
+            matches!(err, SecretStoreError::WrongPassphrase),
+            "got {err:?}"
+        );
     }
 
     /// A flipped entry NONCE byte (verify-token intact) surfaces as
