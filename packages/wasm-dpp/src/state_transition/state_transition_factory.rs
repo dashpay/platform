@@ -83,7 +83,8 @@ impl StateTransitionFactoryWasm {
                 | StateTransition::ShieldedTransfer(_)
                 | StateTransition::Unshield(_)
                 | StateTransition::ShieldFromAssetLock(_)
-                | StateTransition::ShieldedWithdrawal(_) => {
+                | StateTransition::ShieldedWithdrawal(_)
+                | StateTransition::IdentityCreateFromShieldedPool(_) => {
                     todo!("shielded transitions not yet implemented in state_transition_factory")
                 }
             },

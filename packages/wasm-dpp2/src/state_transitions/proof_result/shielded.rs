@@ -7,6 +7,7 @@ use super::helpers::js_obj;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_wasm_conversions_serde;
 use crate::impl_wasm_type_info;
+use crate::IdentityWasm;
 use crate::serialization::conversions::normalize_js_value_for_json;
 use js_sys::{BigInt, Map};
 use serde::{Deserialize, Serialize};
@@ -416,4 +417,53 @@ impl VerifiedShieldedNullifiersWithWithdrawalDocumentWasm {
 impl_wasm_type_info!(
     VerifiedShieldedNullifiersWithWithdrawalDocumentWasm,
     VerifiedShieldedNullifiersWithWithdrawalDocument
+);
+
+// --- VerifiedIdentityWithShieldedNullifiers ---
+
+/// Returned by `IdentityCreateFromShieldedPool`: the newly-created identity plus the presence of
+/// each spent funding nullifier, proven together in a single STRICT merged GroveDB proof.
+#[wasm_bindgen(js_name = "VerifiedIdentityWithShieldedNullifiers")]
+#[derive(Clone)]
+pub struct VerifiedIdentityWithShieldedNullifiersWasm {
+    #[wasm_bindgen(getter_with_clone)]
+    pub identity: IdentityWasm,
+    nullifiers: Map,
+}
+
+#[wasm_bindgen(js_class = VerifiedIdentityWithShieldedNullifiers)]
+impl VerifiedIdentityWithShieldedNullifiersWasm {
+    #[wasm_bindgen(getter)]
+    pub fn nullifiers(&self) -> Map {
+        self.nullifiers.clone()
+    }
+
+    #[wasm_bindgen(js_name = toObject)]
+    pub fn to_object(&self) -> JsValue {
+        js_obj(&[
+            ("identity", self.identity.clone().into()),
+            ("nullifiers", self.nullifiers.clone().into()),
+        ])
+    }
+
+    /// Returns a `JSON.stringify`-friendly form: the `Map` is normalised to a plain object so its
+    /// entries survive serialisation.
+    #[wasm_bindgen(js_name = toJSON)]
+    pub fn to_json(&self) -> WasmDppResult<JsValue> {
+        normalize_js_value_for_json(&self.to_object())
+    }
+}
+
+impl VerifiedIdentityWithShieldedNullifiersWasm {
+    pub fn new(identity: IdentityWasm, nullifiers: Map) -> Self {
+        Self {
+            identity,
+            nullifiers,
+        }
+    }
+}
+
+impl_wasm_type_info!(
+    VerifiedIdentityWithShieldedNullifiersWasm,
+    VerifiedIdentityWithShieldedNullifiers
 );
