@@ -91,6 +91,118 @@ impl VerifiedAssetLockConsumedWasm {
 impl_wasm_type_info!(VerifiedAssetLockConsumedWasm, VerifiedAssetLockConsumed);
 impl_wasm_conversions_serde!(VerifiedAssetLockConsumedWasm, VerifiedAssetLockConsumed);
 
+// --- VerifiedAssetLockConsumedWithAddressInfos ---
+
+#[wasm_bindgen(js_name = "VerifiedAssetLockConsumedWithAddressInfos")]
+#[derive(Clone)]
+pub struct VerifiedAssetLockConsumedWithAddressInfosWasm {
+    status: String,
+    initial_credit_value: Option<u64>,
+    remaining_credit_value: Option<u64>,
+    address_infos: Map,
+}
+
+#[wasm_bindgen(js_class = VerifiedAssetLockConsumedWithAddressInfos)]
+impl VerifiedAssetLockConsumedWithAddressInfosWasm {
+    #[wasm_bindgen(getter)]
+    pub fn status(&self) -> String {
+        self.status.clone()
+    }
+
+    #[wasm_bindgen(getter, js_name = "initialCreditValue")]
+    pub fn initial_credit_value(&self) -> JsValue {
+        match self.initial_credit_value {
+            Some(v) => BigInt::from(v).into(),
+            None => JsValue::undefined(),
+        }
+    }
+
+    #[wasm_bindgen(getter, js_name = "remainingCreditValue")]
+    pub fn remaining_credit_value(&self) -> JsValue {
+        match self.remaining_credit_value {
+            Some(v) => BigInt::from(v).into(),
+            None => JsValue::undefined(),
+        }
+    }
+
+    #[wasm_bindgen(getter = "addressInfos")]
+    pub fn address_infos(&self) -> Map {
+        self.address_infos.clone()
+    }
+
+    #[wasm_bindgen(js_name = toObject)]
+    pub fn to_object(&self) -> JsValue {
+        js_obj(&[
+            ("status", self.status.clone().into()),
+            ("initialCreditValue", self.initial_credit_value()),
+            ("remainingCreditValue", self.remaining_credit_value()),
+            ("addressInfos", self.address_infos.clone().into()),
+        ])
+    }
+
+    /// Returns a `JSON.stringify`-friendly form: the `Map` is normalised to a
+    /// plain object so its entries survive serialisation.
+    #[wasm_bindgen(js_name = toJSON)]
+    pub fn to_json(&self) -> WasmDppResult<JsValue> {
+        normalize_js_value_for_json(&self.to_object())
+    }
+
+    #[wasm_bindgen(js_name = fromObject)]
+    pub fn from_object(
+        value: JsValue,
+    ) -> WasmDppResult<VerifiedAssetLockConsumedWithAddressInfosWasm> {
+        let status = js_sys::Reflect::get(&value, &"status".into())
+            .ok()
+            .and_then(|v| v.as_string())
+            .ok_or_else(|| WasmDppError::generic("Missing property: status".to_string()))?;
+        let read_opt_u64 = |name: &str| -> Option<u64> {
+            js_sys::Reflect::get(&value, &name.into())
+                .ok()
+                .and_then(|v| {
+                    if v.is_undefined() || v.is_null() {
+                        None
+                    } else {
+                        v.try_into().ok()
+                    }
+                })
+        };
+        Ok(VerifiedAssetLockConsumedWithAddressInfosWasm {
+            status,
+            initial_credit_value: read_opt_u64("initialCreditValue"),
+            remaining_credit_value: read_opt_u64("remainingCreditValue"),
+            address_infos: read_map_property(&value, "addressInfos")?,
+        })
+    }
+
+    #[wasm_bindgen(js_name = fromJSON)]
+    pub fn from_json(
+        value: JsValue,
+    ) -> WasmDppResult<VerifiedAssetLockConsumedWithAddressInfosWasm> {
+        Self::from_object(value)
+    }
+}
+
+impl VerifiedAssetLockConsumedWithAddressInfosWasm {
+    pub fn new(
+        status: String,
+        initial_credit_value: Option<u64>,
+        remaining_credit_value: Option<u64>,
+        address_infos: Map,
+    ) -> Self {
+        Self {
+            status,
+            initial_credit_value,
+            remaining_credit_value,
+            address_infos,
+        }
+    }
+}
+
+impl_wasm_type_info!(
+    VerifiedAssetLockConsumedWithAddressInfosWasm,
+    VerifiedAssetLockConsumedWithAddressInfos
+);
+
 // --- VerifiedShieldedNullifiers ---
 
 #[wasm_bindgen(js_name = "VerifiedShieldedNullifiers")]

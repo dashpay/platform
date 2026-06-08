@@ -389,6 +389,7 @@ impl Drive {
             }
             StateTransition::ShieldFromAssetLock(st) => {
                 use dpp::identity::state_transition::AssetLockProved;
+                use dpp::state_transition::shield_from_asset_lock_transition::ShieldFromAssetLockTransition;
 
                 let outpoint = st.asset_lock_proof().out_point().ok_or_else(|| {
                     Error::Proof(ProofError::InvalidTransition(
@@ -400,10 +401,35 @@ impl Drive {
                 let mut query = grovedb::Query::new();
                 query.insert_key(outpoint_bytes.to_vec());
 
-                PathQuery::new(
+                let outpoint_pq = PathQuery::new(
                     vec![vec![RootTree::SpentAssetLockTransactions as u8]],
                     grovedb::SizedQuery::new(query, Some(1), None),
-                )
+                );
+
+                // No accessor trait exposes `surplus_output`, so read it directly off the V0 body.
+                let ShieldFromAssetLockTransition::V0(v0) = st;
+                match &v0.surplus_output {
+                    Some(surplus_address) => {
+                        // Mirror the Unshield arm: also prove the balance of the signed
+                        // surplus-output address so a light client can confirm the surplus
+                        // credit landed there. `PathQuery::merge` rejects sub-queries that carry
+                        // limits, so clear both before merging (the verifier reconstructs the
+                        // outpoint sub-query with its `Some(1)` limit independently).
+                        let mut outpoint_pq = outpoint_pq;
+                        outpoint_pq.query.limit = None;
+
+                        let mut address_pq = Drive::balances_for_clear_addresses_query(
+                            std::iter::once(surplus_address),
+                        );
+                        address_pq.query.limit = None;
+
+                        PathQuery::merge(
+                            vec![&outpoint_pq, &address_pq],
+                            &platform_version.drive.grove_version,
+                        )?
+                    }
+                    None => outpoint_pq,
+                }
             }
         };
 

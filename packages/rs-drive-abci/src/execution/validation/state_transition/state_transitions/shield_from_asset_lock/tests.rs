@@ -897,13 +897,210 @@ mod tests {
 
             assert_ne!(root_hash, [0u8; 32], "root hash should not be zeroed");
 
-            // --- Assert result is VerifiedAssetLockConsumed ---
-            let StateTransitionProofResult::VerifiedAssetLockConsumed(info) = proof_result else {
-                panic!("expected VerifiedAssetLockConsumed, got {:?}", proof_result);
+            // --- Assert result is VerifiedAssetLockConsumedWithAddressInfos ---
+            // The transition built by `create_signed_shield_from_asset_lock_transition` sets
+            // `surplus_output: Some(P2pkh([0x33; 20]))` (the fixture lock funds a surplus well above
+            // the implicit-fee cap, so an explicit surplus output is required). The verifier
+            // therefore proves BOTH the consumed asset-lock outpoint AND the surplus-output address
+            // balance, returning the combined variant.
+            let StateTransitionProofResult::VerifiedAssetLockConsumedWithAddressInfos(
+                info,
+                balances,
+            ) = proof_result
+            else {
+                panic!(
+                    "expected VerifiedAssetLockConsumedWithAddressInfos, got {:?}",
+                    proof_result
+                );
             };
 
             // ShieldFromAssetLock always fully consumes the asset lock
             // (remaining_credit_value is set to 0 in action-to-operations conversion).
+            assert!(
+                matches!(info, StoredAssetLockInfo::FullyConsumed),
+                "expected FullyConsumed, got {:?}",
+                info
+            );
+
+            // The surplus credit must be provably present at the signed surplus-output address.
+            let surplus_address = dpp::address_funds::PlatformAddress::P2pkh([0x33; 20]);
+            let surplus_balance = balances.get(&surplus_address).unwrap_or_else(|| {
+                panic!(
+                    "surplus address missing from proven balances: {:?}",
+                    balances
+                )
+            });
+            let (_nonce, credits) = surplus_balance
+                .unwrap_or_else(|| panic!("surplus address has no credited balance in the proof"));
+            assert!(
+                credits > 0,
+                "expected a positive surplus credit at the surplus-output address, got {}",
+                credits
+            );
+        }
+
+        /// Round-trip prove/verify for the `surplus_output: None` path. The surplus is implicitly
+        /// donated to the fee pools (sized to land exactly on the cap so it is accepted), so the
+        /// verifier proves ONLY the consumed asset-lock outpoint and returns the plain
+        /// `VerifiedAssetLockConsumed` variant — byte-for-byte the pre-change behavior.
+        #[test]
+        fn test_shield_from_asset_lock_no_surplus_prove_and_verify() {
+            use dpp::balances::credits::CREDITS_PER_DUFF;
+            use dpp::shielded::compute_minimum_shielded_fee;
+            use dpp::state_transition::shield_from_asset_lock_transition::ShieldFromAssetLockTransition as SfalTransition;
+            use dpp::state_transition::StateTransitionEstimatedFeeValidation;
+
+            let platform_version = PlatformVersion::latest();
+            let platform = setup_platform();
+
+            // Build a valid bundle and size the asset-lock funding so the surplus lands exactly on
+            // the implicit-fee cap (the largest surplus the no-`surplus_output` path accepts).
+            let cap = platform_version
+                .drive_abci
+                .validation_and_processing
+                .event_constants
+                .shielded_implicit_fee_cap;
+
+            // --- Build a valid single-output Orchard bundle ---
+            let mut orchard_rng = OsRng;
+            let pk = get_proving_key();
+            let sk = SpendingKey::from_bytes([0u8; 32]).unwrap();
+            let fvk = FullViewingKey::from(&sk);
+            let recipient = fvk.address_at(0u32, Scope::External);
+
+            // A round base shield value, corrected below so the required lock value is a whole
+            // number of duffs.
+            const SHIELD_VALUE_BASE: u64 = 1_000_000;
+
+            let mut build_bundle = |shield_value: u64| {
+                let mut builder = Builder::<DashMemo>::new(
+                    BundleType::Transactional {
+                        flags: OrchardFlags::SPENDS_DISABLED,
+                        bundle_required: false,
+                    },
+                    Anchor::empty_tree(),
+                );
+                builder
+                    .add_output(
+                        None,
+                        recipient,
+                        NoteValue::from_raw(shield_value),
+                        [0u8; 36],
+                    )
+                    .unwrap();
+                let (unauthorized, _) = builder.build::<i64>(&mut orchard_rng).unwrap().unwrap();
+                let bundle_commitment: [u8; 32] = unauthorized.commitment().into();
+                let sighash = compute_platform_sighash(&bundle_commitment, &[]);
+                let proven = unauthorized.create_proof(pk, &mut orchard_rng).unwrap();
+                let bundle = proven.apply_signatures(orchard_rng, sighash, &[]).unwrap();
+                serialize_authorized_bundle_with_flags(&bundle)
+            };
+
+            // Probe to learn the (value-independent) action count, then the pool fee.
+            let (probe_actions, _, _, _, _, _) = build_bundle(SHIELD_VALUE_BASE);
+            let num_actions = probe_actions.len();
+            let shielded_fee = compute_minimum_shielded_fee(num_actions, platform_version)
+                .expect("should compute minimum shielded fee");
+            let albc = SfalTransition::V0(ShieldFromAssetLockTransitionV0 {
+                asset_lock_proof: instant_asset_lock_proof_fixture(None, None),
+                actions: vec![create_dummy_serialized_action()],
+                value_balance: 1,
+                anchor: [1u8; 32],
+                proof: vec![0u8; 1],
+                binding_signature: [0u8; 64],
+                surplus_output: None,
+                signature: Default::default(),
+            })
+            .calculate_min_required_fee(platform_version)
+            .expect("should compute asset-lock base cost");
+            let pool_fee = shielded_fee.checked_add(albc).expect("pool fee overflow");
+
+            // Choose `shield_value` so `cap + shield_value + pool_fee` is a whole number of duffs.
+            let correction = (CREDITS_PER_DUFF
+                - ((cap + SHIELD_VALUE_BASE + pool_fee) % CREDITS_PER_DUFF))
+                % CREDITS_PER_DUFF;
+            let shield_value = SHIELD_VALUE_BASE + correction;
+
+            let (actions, _flags, value_balance, anchor_bytes, proof_bytes, binding_sig) =
+                build_bundle(shield_value);
+            assert!(value_balance < 0);
+            let shield_amount = (-value_balance) as u64;
+
+            let lock_credits = cap + shield_amount + pool_fee;
+            assert_eq!(lock_credits % CREDITS_PER_DUFF, 0);
+            let lock_amount_duffs = lock_credits / CREDITS_PER_DUFF;
+
+            let mut rng = StdRng::seed_from_u64(567);
+            let (asset_lock_proof, asset_lock_pk) =
+                create_asset_lock_proof_with_key_and_amount(&mut rng, lock_amount_duffs);
+
+            let transition = create_signed_shield_from_asset_lock_transition_no_surplus(
+                asset_lock_proof,
+                &asset_lock_pk,
+                actions,
+                shield_amount,
+                anchor_bytes,
+                proof_bytes,
+                binding_sig,
+            );
+
+            let transition_bytes = transition
+                .serialize_to_bytes()
+                .expect("should serialize transition");
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![transition_bytes],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution { .. }]
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit transaction");
+
+            let proof_result = platform
+                .drive
+                .prove_state_transition(&transition, None, platform_version)
+                .expect("expected to generate proof for shield_from_asset_lock");
+
+            let proof_bytes = proof_result
+                .into_data()
+                .expect("expected proof data, not an error");
+
+            let (root_hash, proof_result) = Drive::verify_state_transition_was_executed_with_proof(
+                &transition,
+                &BlockInfo::default(),
+                &proof_bytes,
+                &|_| Ok(None),
+                platform_version,
+            )
+            .expect("expected to verify shield_from_asset_lock proof");
+
+            assert_ne!(root_hash, [0u8; 32], "root hash should not be zeroed");
+
+            // --- No surplus output → plain VerifiedAssetLockConsumed (unchanged behavior) ---
+            let StateTransitionProofResult::VerifiedAssetLockConsumed(info) = proof_result else {
+                panic!("expected VerifiedAssetLockConsumed, got {:?}", proof_result);
+            };
+
             assert!(
                 matches!(info, StoredAssetLockInfo::FullyConsumed),
                 "expected FullyConsumed, got {:?}",

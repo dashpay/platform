@@ -1295,7 +1295,10 @@ impl Drive {
                 use dpp::asset_lock::StoredAssetLockInfo;
                 use dpp::identity::state_transition::AssetLockProved;
                 use dpp::serialization::PlatformDeserializable;
-                use dpp::state_transition::proof_result::StateTransitionProofResult::VerifiedAssetLockConsumed;
+                use dpp::state_transition::proof_result::StateTransitionProofResult::{
+                    VerifiedAssetLockConsumed, VerifiedAssetLockConsumedWithAddressInfos,
+                };
+                use dpp::state_transition::shield_from_asset_lock_transition::ShieldFromAssetLockTransition;
                 use grovedb::Element;
 
                 let outpoint = st.asset_lock_proof().out_point().ok_or_else(|| {
@@ -1305,6 +1308,10 @@ impl Drive {
                 })?;
                 let outpoint_bytes: [u8; 36] = outpoint.into();
 
+                // No accessor trait exposes `surplus_output`, so read it directly off the V0 body.
+                let ShieldFromAssetLockTransition::V0(v0) = st;
+                let surplus_output = &v0.surplus_output;
+
                 // Build the same PathQuery as the prove side
                 let mut query = grovedb::Query::new();
                 query.insert_key(outpoint_bytes.to_vec());
@@ -1313,12 +1320,24 @@ impl Drive {
                     grovedb::SizedQuery::new(query, Some(1), None),
                 );
 
-                let (root_hash, mut proved_key_values) =
+                // When a `surplus_output` is set the prove side merges the outpoint sub-query with
+                // the surplus-address balance sub-query into one multi-root proof, so the outpoint
+                // must be verified as a SUBSET of that proof (the strict verifier rejects the extra
+                // address layer). With no `surplus_output` the proof covers only the outpoint, so
+                // the strict verifier is used exactly as before — keeping that path unchanged.
+                let (root_hash, mut proved_key_values) = if surplus_output.is_some() {
+                    grovedb::GroveDb::verify_subset_query_with_absence_proof(
+                        proof,
+                        &path_query,
+                        &platform_version.drive.grove_version,
+                    )?
+                } else {
                     grovedb::GroveDb::verify_query_with_absence_proof(
                         proof,
                         &path_query,
                         &platform_version.drive.grove_version,
-                    )?;
+                    )?
+                };
 
                 if proved_key_values.len() > 1 {
                     return Err(Error::Proof(ProofError::TooManyElements(
@@ -1355,7 +1374,34 @@ impl Drive {
                     )));
                 };
 
-                Ok((root_hash, VerifiedAssetLockConsumed(info)))
+                match surplus_output {
+                    Some(surplus_address) => {
+                        // Mirror the Unshield arm: also verify the surplus-output address balance
+                        // from the same proof and bind the two sub-proofs by their shared root.
+                        let (root_hash_addr, balances): (
+                            RootHash,
+                            BTreeMap<PlatformAddress, Option<(AddressNonce, Credits)>>,
+                        ) = Drive::verify_addresses_infos(
+                            proof,
+                            std::iter::once(surplus_address),
+                            true,
+                            platform_version,
+                        )?;
+
+                        if root_hash != root_hash_addr {
+                            return Err(Error::Proof(ProofError::CorruptedProof(
+                                "shield from asset lock proof root hashes do not match between outpoint and surplus address"
+                                    .to_string(),
+                            )));
+                        }
+
+                        Ok((
+                            root_hash,
+                            VerifiedAssetLockConsumedWithAddressInfos(info, balances),
+                        ))
+                    }
+                    None => Ok((root_hash, VerifiedAssetLockConsumed(info))),
+                }
             }
         }
     }
