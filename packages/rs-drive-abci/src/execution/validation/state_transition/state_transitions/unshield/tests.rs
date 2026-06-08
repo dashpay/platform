@@ -57,10 +57,13 @@ mod tests {
         create_unshield_transition(
             create_output_address(),
             vec![create_dummy_serialized_action()],
-            130_549_800, // unshielding_amount: recipient amount + minimum fee for 1 action
-            [42u8; 32],  // non-zero anchor
+            // unshielding_amount: recipient amount + unshield fee for 1 action. The fee gate runs
+            // before proof verification, so this must clear `compute_shielded_unshield_fee(1)`
+            // (136,631,600) for these tests to reach the proof-verification stage they assert on.
+            136_632_600,
+            [42u8; 32],     // non-zero anchor
             vec![0u8; 100], // dummy proof bytes
-            [0u8; 64],   // dummy binding signature
+            [0u8; 64],      // dummy binding signature
         )
     }
 
@@ -314,6 +317,80 @@ mod tests {
     }
 
     // ==========================================
+    // FEE VALIDATION TESTS (InsufficientShieldedFeeError)
+    // ==========================================
+    //
+    // The Unshield fee gate (`validate_minimum_shielded_fee`) enforces
+    // `unshielding_amount >= compute_shielded_unshield_fee(num_actions)`, NOT the base
+    // `compute_minimum_shielded_fee(num_actions)`. The unshield fee is the base PLUS the flat
+    // 222-byte `AddBalanceToAddress` output-write storage cost, so there is a non-empty half-open
+    // range `[compute_minimum_shielded_fee(n), compute_shielded_unshield_fee(n))` of amounts that
+    // cover the base but NOT the unshield fee. Any amount in that range must be rejected with
+    // `InsufficientShieldedFeeError` — this pins that the gate uses `compute_shielded_unshield_fee`.
+
+    mod fee_validation {
+        use super::*;
+
+        /// An `unshielding_amount` strictly inside `[base_fee, unshield_fee)` — enough for the BASE
+        /// shielded fee but NOT the Unshield fee (which adds the flat 222-byte address-write cost) —
+        /// must be rejected with `InsufficientShieldedFeeError`. This is the boundary that proves the
+        /// gate uses `compute_shielded_unshield_fee`, not `compute_minimum_shielded_fee`.
+        ///
+        /// Mirrors the equivalent ShieldedTransfer (Base) and ShieldedWithdrawal boundary tests.
+        #[test]
+        fn test_fee_meets_base_but_below_unshield_fee_returns_error() {
+            let platform_version = PlatformVersion::latest();
+            let platform = setup_platform();
+
+            // One action, matching `create_dummy_serialized_action()` below.
+            let num_actions = 1usize;
+            let base_fee =
+                dpp::shielded::compute_minimum_shielded_fee(num_actions, platform_version)
+                    .expect("base shielded fee should not overflow");
+            let unshield_fee =
+                dpp::shielded::compute_shielded_unshield_fee(num_actions, platform_version)
+                    .expect("unshield fee should not overflow");
+
+            // The unshield fee MUST strictly exceed the base (the flat 222-byte address-write cost),
+            // otherwise the half-open range this test exercises would be empty.
+            assert!(
+                unshield_fee > base_fee,
+                "unshield fee ({unshield_fee}) must exceed the base fee ({base_fee}) so the \
+                 [base, unshield) range is non-empty"
+            );
+
+            // Pick an amount strictly inside `[base_fee, unshield_fee)`: it clears the base fee but
+            // falls one credit short of the Unshield fee. If the gate (incorrectly) used the base
+            // fee, this would pass; because it uses `compute_shielded_unshield_fee`, it is rejected.
+            let unshielding_amount = unshield_fee - 1;
+            assert!(
+                unshielding_amount >= base_fee,
+                "the chosen amount must still cover the base fee"
+            );
+
+            let transition = create_unshield_transition(
+                create_output_address(),
+                vec![create_dummy_serialized_action()],
+                unshielding_amount,
+                [42u8; 32],     // non-zero anchor (structurally valid)
+                vec![0u8; 100], // dummy proof bytes (fee gate runs before proof verification)
+                [0u8; 64],
+            );
+
+            let processing_result = process_transition(&platform, transition, platform_version);
+
+            // The fee gate runs before proof verification, so the insufficient fee is caught here
+            // (not the dummy proof).
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::StateError(StateError::InsufficientShieldedFeeError(_))
+                )]
+            );
+        }
+    }
+
+    // ==========================================
     // ZK PROOF VERIFICATION TESTS (InvalidShieldedProofError)
     // ==========================================
 
@@ -458,7 +535,9 @@ mod tests {
             let transition = create_unshield_transition(
                 create_output_address(),
                 vec![bad_action],
-                130_549_800, // unshielding_amount: recipient amount + minimum fee for 1 action
+                // unshielding_amount is not load-bearing here: the bad 100-byte encrypted note
+                // fails basic structure validation, which runs before the fee gate.
+                136_632_600,
                 anchor,
                 vec![0u8; 100],
                 [0u8; 64],
@@ -667,7 +746,11 @@ mod tests {
             let transition = create_unshield_transition(
                 create_output_address(),
                 vec![action1, action2], // Both have nullifier [1u8; 32]
-                161_098_600, // unshielding_amount: recipient amount + minimum fee for 2 actions
+                // unshielding_amount: recipient amount + unshield fee for 2 actions. The fee gate
+                // runs before proof verification, so this must clear
+                // `compute_shielded_unshield_fee(2)` (167,180,400) for this test to reach the
+                // proof-verification stage it asserts on.
+                167_181_400,
                 anchor,
                 vec![0u8; 100],
                 [0u8; 64],

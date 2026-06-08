@@ -770,9 +770,12 @@ impl PlatformWallet {
         //     unclaimed balance specifically on input 0 (the
         //     BTreeMap-smallest address).
         //
-        // Empty-mempool fees on Type 15 transitions land at ~20M
-        // credits (~0.0002 DASH). Reserve 1e9 credits (0.01 DASH) —
-        // 50× headroom, still trivial relative to typical balances.
+        // The flat shielded fee `F = compute_minimum_shielded_fee(2)`
+        // on a Type 15 transition lands at ~1.23e8 credits (~0.0012
+        // DASH); `operations::shield` loads exactly `F` onto input 0's
+        // claim from this reserved headroom. Reserve 1e9 credits
+        // (0.01 DASH) — ~8× headroom over `F`, still trivial relative
+        // to typical balances.
         const FEE_RESERVE_CREDITS: u64 = 1_000_000_000;
 
         // Build the inputs map under the wallet-manager read lock,

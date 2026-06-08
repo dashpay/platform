@@ -81,9 +81,12 @@ impl StateTransitionHasShieldedProofValidationV0 for StateTransition {
 ///   because their excess is the recipient/net amount.)
 /// - Unshield / ShieldedWithdrawal: `unshielding_amount` is the TOTAL value leaving the
 ///   shielded pool (recipient/net amount + fee). The fee actually charged at execution time
-///   is `compute_minimum_shielded_fee` (carved out of `unshielding_amount`), and the
-///   recipient/net receives `unshielding_amount - fee`. Requiring `unshielding_amount >= min_fee`
-///   guarantees that net amount is non-negative.
+///   is carved out of `unshielding_amount` — `compute_shielded_unshield_fee` (the base fee plus
+///   the flat `AddBalanceToAddress` output-write storage cost) for Unshield, and
+///   `compute_shielded_withdrawal_fee` (the base fee plus the flat Core withdrawal-document
+///   storage cost) for ShieldedWithdrawal — and the recipient/net receives
+///   `unshielding_amount - fee`. Requiring `unshielding_amount >= min_fee` guarantees that net
+///   amount is non-negative.
 /// - ShieldedWithdrawal additionally requires the net (`unshielding_amount - min_fee`) to
 ///   fall within `[min_withdrawal_amount, max_withdrawal_amount]` — the same two-sided range
 ///   the transparent withdrawal paths enforce — because that net becomes a Core `TxOut`: the
@@ -96,6 +99,24 @@ pub(crate) trait StateTransitionShieldedMinimumFeeValidationV0 {
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error>;
+}
+
+/// Which flat shielded fee formula this transition's minimum is computed with.
+///
+/// The three pool-paid transitions price the same per-action note/nullifier storage and per-bundle
+/// ZK compute, but two of them add one flat per-transition storage component on top: Unshield prices
+/// its single `AddBalanceToAddress` output write, and ShieldedWithdrawal prices its Core withdrawal
+/// document insert. The gate MUST use the SAME formula the SDK builder and the transformer use to
+/// carve the fee from the pool, otherwise the validation threshold would drift from the fee actually
+/// charged.
+#[derive(Clone, Copy)]
+enum ShieldedMinFeeKind {
+    /// `compute_minimum_shielded_fee` — ShieldedTransfer (the base; no extra write).
+    Base,
+    /// `compute_shielded_unshield_fee` — Unshield (base + the flat `AddBalanceToAddress` cost).
+    Unshield,
+    /// `compute_shielded_withdrawal_fee` — ShieldedWithdrawal (base + the flat withdrawal-document cost).
+    Withdrawal,
 }
 
 impl StateTransitionShieldedMinimumFeeValidationV0 for StateTransition {
@@ -122,31 +143,41 @@ impl StateTransitionShieldedMinimumFeeValidationV0 for StateTransition {
                 //   except ShieldedWithdrawal, whose net becomes a Core `TxOut` and must clear
                 //   the same `[min_withdrawal_amount, max_withdrawal_amount]` range the
                 //   transparent withdrawal paths enforce.
-                let (validated_amount, num_actions, min_net_amount, max_net_amount, amount_is_pure_fee): (i64, usize, u64, u64, bool) = match self {
+                // - `fee_kind`: which flat fee formula this transition's minimum uses. `Base` for
+                //   ShieldedTransfer, `Unshield` for Unshield (adds the `AddBalanceToAddress` output
+                //   write cost), `Withdrawal` for ShieldedWithdrawal (adds the Core withdrawal
+                //   document cost). MUST match what the builder/transformer carve from the pool.
+                let (validated_amount, num_actions, min_net_amount, max_net_amount, amount_is_pure_fee, fee_kind): (i64, usize, u64, u64, bool, ShieldedMinFeeKind) = match self {
                     // Shield: fee is paid from transparent address inputs, not from value_balance.
                     StateTransition::Shield(_) => {
                         return Ok(SimpleConsensusValidationResult::new())
                     }
-                    // ShieldedTransfer: value_balance (u64) IS the fee.
+                    // ShieldedTransfer: value_balance (u64) IS the fee. It writes no extra
+                    // per-transition output, so its fee is the `Base` shielded minimum.
                     StateTransition::ShieldedTransfer(st) => match st {
                         dpp::state_transition::shielded_transfer_transition::ShieldedTransferTransition::V0(v0) => {
-                            (v0.value_balance as i64, v0.actions.len(), 0, u64::MAX, true)
+                            (v0.value_balance as i64, v0.actions.len(), 0, u64::MAX, true, ShieldedMinFeeKind::Base)
                         }
                     },
                     // Unshield: `unshielding_amount` is the TOTAL leaving the pool
                     // (recipient/net + fee). We check it against `min_fee` so the net
-                    // (`unshielding_amount - compute_minimum_shielded_fee`) credited to
+                    // (`unshielding_amount - compute_shielded_unshield_fee`) credited to
                     // the recipient at execution time is non-negative. The net is credited
-                    // to a platform address (not Core), so no withdrawal range applies.
+                    // to a platform address (not Core), so no withdrawal range applies. It
+                    // writes a single `AddBalanceToAddress` output, so its fee is the `Unshield`
+                    // flavor (base + that write's flat storage cost).
                     StateTransition::Unshield(st) => match st {
                         dpp::state_transition::unshield_transition::UnshieldTransition::V0(
                             v0,
-                        ) => (v0.unshielding_amount as i64, v0.actions.len(), 0, u64::MAX, false),
+                        ) => (v0.unshielding_amount as i64, v0.actions.len(), 0, u64::MAX, false, ShieldedMinFeeKind::Unshield),
                     },
                     // ShieldedWithdrawal: the net (`unshielding_amount - min_fee`) becomes a
                     // Core `TxOut`, so it must fall within the same
                     // `[min_withdrawal_amount, max_withdrawal_amount]` range the transparent
                     // withdrawal paths enforce (dust floor and the per-transition policy cap).
+                    // It is the ONLY transition that also inserts a Core withdrawal document, so
+                    // its fee is the `Withdrawal` flavor: it must price that document write (via
+                    // `compute_shielded_withdrawal_fee`), not just the base shielded fee.
                     StateTransition::ShieldedWithdrawal(st) => match st {
                         dpp::state_transition::shielded_withdrawal_transition::ShieldedWithdrawalTransition::V0(v0) => {
                             (
@@ -155,6 +186,7 @@ impl StateTransitionShieldedMinimumFeeValidationV0 for StateTransition {
                                 platform_version.system_limits.min_withdrawal_amount,
                                 platform_version.system_limits.max_withdrawal_amount,
                                 false,
+                                ShieldedMinFeeKind::Withdrawal,
                             )
                         }
                     },
@@ -186,12 +218,32 @@ impl StateTransitionShieldedMinimumFeeValidationV0 for StateTransition {
                     .validation_and_processing
                     .event_constants;
 
-                // Single source of truth for the consensus fee formula. The SDK builders
-                // and the unshield/withdrawal transformers carve the fee with this exact
-                // checked computation, so the validation threshold here can never drift from
-                // the fee that is actually charged. See `dpp::shielded::compute_minimum_shielded_fee`.
-                let minimum_shielded_fee =
-                    dpp::shielded::compute_minimum_shielded_fee(num_actions, platform_version)?;
+                // Single source of truth for the consensus fee formula. Each pool-paid transition's
+                // SDK builder and transformer carve the fee with the SAME function this gate uses,
+                // so the validation threshold here can never drift from the fee actually charged:
+                // - ShieldedTransfer carves `compute_minimum_shielded_fee` (the base).
+                // - Unshield carves `compute_shielded_unshield_fee` (= the base PLUS the flat
+                //   `AddBalanceToAddress` output-write storage cost).
+                // - ShieldedWithdrawal carves `compute_shielded_withdrawal_fee` (= the base PLUS the
+                //   flat Core withdrawal-document storage cost).
+                // All three use the same checked computations the carving sites use. See
+                // `dpp::shielded::compute_minimum_shielded_fee` /
+                // `dpp::shielded::compute_shielded_unshield_fee` /
+                // `dpp::shielded::compute_shielded_withdrawal_fee`.
+                let minimum_shielded_fee = match fee_kind {
+                    ShieldedMinFeeKind::Base => {
+                        dpp::shielded::compute_minimum_shielded_fee(num_actions, platform_version)?
+                    }
+                    ShieldedMinFeeKind::Unshield => {
+                        dpp::shielded::compute_shielded_unshield_fee(num_actions, platform_version)?
+                    }
+                    ShieldedMinFeeKind::Withdrawal => {
+                        dpp::shielded::compute_shielded_withdrawal_fee(
+                            num_actions,
+                            platform_version,
+                        )?
+                    }
+                };
 
                 if (validated_amount as u64) < minimum_shielded_fee {
                     return Ok(SimpleConsensusValidationResult::new_with_error(
@@ -445,6 +497,7 @@ mod tests {
                 anchor: [0u8; 32],
                 proof: vec![],
                 binding_signature: [0u8; 64],
+                surplus_output: None,
                 signature: Default::default(),
             },
         ))
@@ -579,7 +632,11 @@ mod tests {
         #[test]
         fn should_reject_shielded_withdrawal_with_net_below_min_withdrawal_amount() {
             let platform_version = PlatformVersion::latest();
-            let min_fee = dpp::shielded::compute_minimum_shielded_fee(0, platform_version)
+            // ShieldedWithdrawal validation carves `compute_shielded_withdrawal_fee` (base +
+            // document cost), so the net the gate checks is `unshielding_amount - withdrawal_fee`.
+            // Use the SAME fee here so the constructed gross lands the net exactly at the
+            // withdrawal-range boundary under test.
+            let min_fee = dpp::shielded::compute_shielded_withdrawal_fee(0, platform_version)
                 .expect("fee computation should not overflow");
             let min_withdrawal = platform_version.system_limits.min_withdrawal_amount;
             // net = min_withdrawal_amount - 1 → just below the Core dust floor.
@@ -603,7 +660,11 @@ mod tests {
         #[test]
         fn should_accept_shielded_withdrawal_with_net_at_min_withdrawal_amount() {
             let platform_version = PlatformVersion::latest();
-            let min_fee = dpp::shielded::compute_minimum_shielded_fee(0, platform_version)
+            // ShieldedWithdrawal validation carves `compute_shielded_withdrawal_fee` (base +
+            // document cost), so the net the gate checks is `unshielding_amount - withdrawal_fee`.
+            // Use the SAME fee here so the constructed gross lands the net exactly at the
+            // withdrawal-range boundary under test.
+            let min_fee = dpp::shielded::compute_shielded_withdrawal_fee(0, platform_version)
                 .expect("fee computation should not overflow");
             let min_withdrawal = platform_version.system_limits.min_withdrawal_amount;
             // net = min_withdrawal_amount exactly → at the floor, accepted.
@@ -620,7 +681,11 @@ mod tests {
         #[test]
         fn should_reject_shielded_withdrawal_with_net_above_max_withdrawal_amount() {
             let platform_version = PlatformVersion::latest();
-            let min_fee = dpp::shielded::compute_minimum_shielded_fee(0, platform_version)
+            // ShieldedWithdrawal validation carves `compute_shielded_withdrawal_fee` (base +
+            // document cost), so the net the gate checks is `unshielding_amount - withdrawal_fee`.
+            // Use the SAME fee here so the constructed gross lands the net exactly at the
+            // withdrawal-range boundary under test.
+            let min_fee = dpp::shielded::compute_shielded_withdrawal_fee(0, platform_version)
                 .expect("fee computation should not overflow");
             let max = platform_version.system_limits.max_withdrawal_amount;
             // net = max_withdrawal_amount + 1 → just over the per-transition policy cap.
@@ -646,7 +711,11 @@ mod tests {
         #[test]
         fn should_accept_shielded_withdrawal_with_net_at_max_withdrawal_amount() {
             let platform_version = PlatformVersion::latest();
-            let min_fee = dpp::shielded::compute_minimum_shielded_fee(0, platform_version)
+            // ShieldedWithdrawal validation carves `compute_shielded_withdrawal_fee` (base +
+            // document cost), so the net the gate checks is `unshielding_amount - withdrawal_fee`.
+            // Use the SAME fee here so the constructed gross lands the net exactly at the
+            // withdrawal-range boundary under test.
+            let min_fee = dpp::shielded::compute_shielded_withdrawal_fee(0, platform_version)
                 .expect("fee computation should not overflow");
             let max = platform_version.system_limits.max_withdrawal_amount;
             // net = max_withdrawal_amount exactly → at the cap, accepted.

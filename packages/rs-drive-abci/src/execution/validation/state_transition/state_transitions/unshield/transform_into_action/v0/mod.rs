@@ -83,7 +83,7 @@ impl UnshieldStateTransitionTransformIntoActionValidationV0 for UnshieldTransiti
         }
 
         // Shielded transitions do NOT meter the GroveDB operation cost as a fee. They
-        // pay a flat, client-predictable fee (`compute_minimum_shielded_fee`, computed
+        // pay a flat, client-predictable fee (`compute_shielded_unshield_fee`, computed
         // below): the client must know the exact fee offline to build its proof and
         // cannot run `Drive::calculate_fee` (which needs server-side state). The flat fee
         // subsumes these validation reads, so the cost accumulated in `drive_operations`
@@ -109,12 +109,16 @@ impl UnshieldStateTransitionTransformIntoActionValidationV0 for UnshieldTransiti
             ));
         }
 
-        // The fee charged to the shielded pool is the minimum shielded fee computed
-        // from the same `num_actions` that `validate_minimum_shielded_fee` enforced
-        // `unshielding_amount >=` against. Because that check passed, the net recipient
-        // amount (`unshielding_amount - fee_amount`) is guaranteed to be non-negative.
+        // The fee charged to the shielded pool is the Unshield fee computed from the same
+        // `num_actions` that `validate_minimum_shielded_fee` enforced `unshielding_amount >=`
+        // against. Unlike the base `compute_minimum_shielded_fee`, this fee ALSO includes the flat
+        // storage cost of the single `AddBalanceToAddress` write this transition performs crediting
+        // the net to the output platform address, so the booking covers that write instead of
+        // diverting the proposer's processing reward to it. Because the validation gate passed using
+        // this same `compute_shielded_unshield_fee`, the net recipient amount
+        // (`unshielding_amount - fee_amount`) is guaranteed to be non-negative.
         let fee_amount =
-            dpp::shielded::compute_minimum_shielded_fee(num_actions, platform_version)?;
+            dpp::shielded::compute_shielded_unshield_fee(num_actions, platform_version)?;
 
         let result =
             UnshieldTransitionAction::try_from_transition(self, current_total_balance, fee_amount);

@@ -16,7 +16,9 @@ pub struct UnshieldTransitionActionV0 {
     /// The anchor used for verification
     pub anchor: [u8; 32],
     /// Shielded fee paid to proposers, carved out of `amount` (the recipient
-    /// receives `amount - fee_amount`). Equals `compute_minimum_shielded_fee`.
+    /// receives `amount - fee_amount`). Equals `compute_shielded_unshield_fee`
+    /// (the base shielded minimum fee plus the flat `AddBalanceToAddress`
+    /// output-write storage cost).
     pub fee_amount: Credits,
     /// Current total balance of the shielded pool
     pub current_total_balance: Credits,

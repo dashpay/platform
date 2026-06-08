@@ -110,22 +110,26 @@ impl ShieldedWithdrawalStateTransitionTransformIntoActionValidationV0
         }
 
         // Shielded transitions do NOT meter the GroveDB operation cost as a fee. They
-        // pay a flat, client-predictable fee (`compute_minimum_shielded_fee`, computed
+        // pay a flat, client-predictable fee (`compute_shielded_withdrawal_fee`, computed
         // below): the client must know the exact fee offline to build its proof and
         // cannot run `Drive::calculate_fee` (which needs server-side state). The flat fee
         // subsumes these validation reads, so the cost accumulated in `drive_operations`
         // is intentionally not charged — `PaidFromShieldedPool` carves the fee straight
         // from the pool and never consumes the execution context.
 
-        // The fee charged to the shielded pool is the minimum shielded fee computed from the
-        // same `num_actions` that `validate_minimum_shielded_fee` enforced the net range
-        // against. Because that check passed, the net amount withdrawn to Core
-        // (`unshielding_amount - fee_amount`) is guaranteed to fall within
-        // `[MIN_WITHDRAWAL_AMOUNT, max_withdrawal_amount]` for ShieldedWithdrawal; the action
-        // transformer re-checks that same range with `checked_sub` as defense in depth, so
-        // those rejection paths are unreachable for validated input.
+        // The fee charged to the shielded pool is the ShieldedWithdrawal fee computed from the
+        // same `num_actions` that `validate_minimum_shielded_fee` enforced the net range against.
+        // Unlike the base `compute_minimum_shielded_fee`, this fee ALSO includes the flat storage
+        // cost of the Core withdrawal document this transition inserts (`AddWithdrawalDocument` —
+        // a real document write into the withdrawals contract plus its index entries), so the
+        // booking covers that write instead of diverting the proposer's processing reward to it.
+        // Because the validation gate passed using this same `compute_shielded_withdrawal_fee`,
+        // the net amount withdrawn to Core (`unshielding_amount - fee_amount`) is guaranteed to
+        // fall within `[MIN_WITHDRAWAL_AMOUNT, max_withdrawal_amount]`; the action transformer
+        // re-checks that same range with `checked_sub` as defense in depth, so those rejection
+        // paths are unreachable for validated input.
         let fee_amount =
-            dpp::shielded::compute_minimum_shielded_fee(num_actions, platform_version)?;
+            dpp::shielded::compute_shielded_withdrawal_fee(num_actions, platform_version)?;
 
         // Build the action, which includes creating the withdrawal document
         let creation_time_ms = block_info.time_ms;
