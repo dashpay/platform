@@ -21,6 +21,12 @@ use platform_wallet::wallet::platform_wallet::WalletId;
 
 use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::schema::blob;
+use crate::sqlite::schema::blob::impl_persistable_blob;
+
+// PUBLIC material only: contact-request types + the accepted-account
+// index reaching the contacts `_blob` columns (contact requests carry
+// public keys/refs; accepted_accounts is a list of account indices).
+impl_persistable_blob!(ContactRequest, Vec<u32>);
 
 /// Single source of truth for the `contacts.state` TEXT-column domain.
 ///

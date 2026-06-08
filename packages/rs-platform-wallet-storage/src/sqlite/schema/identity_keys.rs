@@ -39,6 +39,10 @@ struct IdentityKeyWire {
     derivation_indices: Option<IdentityKeyDerivationIndices>,
 }
 
+// PUBLIC material only reaching `entry_blob`: the wire shape carries
+// bincode-encoded public keys + public-key hashes. No private bytes.
+crate::sqlite::schema::blob::impl_persistable_blob!(IdentityKeyWire);
+
 impl IdentityKeyWire {
     fn from_entry(entry: &IdentityKeyEntry) -> Result<Self, WalletStorageError> {
         let pk = bincode::encode_to_vec(&entry.public_key, bincode::config::standard())?;

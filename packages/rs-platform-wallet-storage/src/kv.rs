@@ -124,6 +124,15 @@ pub enum KvError {
 ///
 /// See the module-level docs for scoping and value semantics. Each
 /// [`ObjectId`] variant addresses a dedicated table.
+///
+/// # Security
+///
+/// Values are stored **PLAINTEXT** in the persister `.db` and in every
+/// backup copied from it. This API is the explicit, caller-policed
+/// plaintext exception to the crate's no-secrets-in-the-db boundary
+/// (see `SECRETS.md`). **NEVER store key or signing material here** —
+/// mnemonics, seeds, private keys, or anything that could move funds.
+/// Use [`SecretStore`](crate::secrets::SecretStore) for secret material.
 pub trait KvStore {
     /// Read the value bound to `(scope, key)`. Returns `Ok(None)` when
     /// the key is absent. Backends MUST reject values larger than
@@ -140,6 +149,12 @@ pub trait KvStore {
     /// Backends MUST reject a `value` larger than [`MAX_VALUE_LEN`] with
     /// [`KvError::ValueTooLarge`] before writing, so a `put` can never
     /// plant a row a later `get` would refuse to materialise.
+    ///
+    /// # Security
+    ///
+    /// `value` is stored **PLAINTEXT** in the `.db` and all backups.
+    /// NEVER store key/signing material here — use
+    /// [`SecretStore`](crate::secrets::SecretStore).
     fn put(&self, scope: &ObjectId, key: &str, value: &[u8]) -> Result<(), KvError>;
 
     /// Remove the row bound to `(scope, key)`. Idempotent — a missing

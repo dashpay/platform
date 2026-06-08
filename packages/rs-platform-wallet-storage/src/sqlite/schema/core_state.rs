@@ -12,6 +12,11 @@ use platform_wallet::wallet::platform_wallet::WalletId;
 
 use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::schema::blob;
+use crate::sqlite::schema::blob::impl_persistable_blob;
+
+// PUBLIC material only: core-chain state reaching `record_blob` /
+// `islock_blob` (transaction records + InstantLocks are public chain data).
+impl_persistable_blob!(TransactionRecord, dashcore::InstantLock);
 
 /// Apply a `CoreChangeSet` inside a transaction.
 pub fn apply(

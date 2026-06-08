@@ -10,12 +10,18 @@
 //! `mnemonic`, `seed`, `xpriv`, or `secret` breaks the test, forcing
 //! the author to rename or add an allow-list entry with rationale.
 //!
-//! Out of scope by design: files in `src/sqlite/` outside of
+//! Scope and what this guard does NOT cover: this is a column/comment
+//! NAMING scan, not a value-content scan — it cannot see the bytes a
+//! serialized value carries. Value-level safety is a separate guarantee:
+//! every type that reaches `blob::encode` is a public changeset/entry
+//! type, now enforced at the type level by the sealed `PersistableBlob`
+//! trait in `src/sqlite/schema/blob.rs` (a new secret-bearing type cannot
+//! be encoded without a reviewable `impl`). Files in `src/sqlite/` outside
 //! `schema/` (`persister.rs`, `backup.rs`, `buffer.rs`, `config.rs`,
-//! `error.rs`, `migrations.rs`, `util/`) are NOT scanned. They never
-//! define database columns and may legitimately reference the
-//! forbidden tokens in doc comments. The future `src/secrets/`
-//! submodule slot is exempt for the same reason.
+//! `error.rs`, `migrations.rs`, `util/`) are NOT scanned: they define no
+//! database columns, so a forbidden token there can only be a doc-comment
+//! mention. The `src/secrets/` submodule is exempt because it legitimately
+//! handles secret material; its own `tests/secrets_guard.rs` covers it.
 //!
 //! The check is intentionally string-level: it does not parse SQL or
 //! Rust. A column literally named `private_X` is the kind of mistake

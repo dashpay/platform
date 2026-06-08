@@ -30,6 +30,17 @@ The rest of this document is the technical detail behind that boundary: the
 `secrets` backends, the `SecretStore` API, the error surface, and the threat
 model.
 
+### Exception: the KV metadata API stores caller-supplied plaintext
+
+The boundary above is about the persister's own domain state. The
+separate `KvStore` API (`kv` feature) is a deliberate, explicit exception:
+it stores **arbitrary caller-supplied `Vec<u8>` values as PLAINTEXT** in
+`meta_*` BLOB columns of the same `.db` (and therefore in every backup).
+There is no encryption and no runtime content guard — the safety is
+**caller-policed**. Callers MUST NOT put key or signing material through
+`KvStore`; that is what `SecretStore` is for. The `KvStore` /
+`KvStore::put` rustdoc carries the same `# Security` warning.
+
 ## The `secrets` submodule
 
 `platform_wallet_storage::secrets` is part of the crate's default

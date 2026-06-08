@@ -16,6 +16,40 @@ use serde::Serialize;
 
 use crate::sqlite::error::WalletStorageError;
 
+/// Sealed-trait machinery enforcing the no-key-material-in-DB invariant
+/// at the type level: only types that explicitly opt in via
+/// [`impl_persistable_blob!`] can reach [`encode`]. A brand-new
+/// key-bearing type cannot be persisted without a reviewable `impl`,
+/// which the schema naming-scan guard would also flag by name.
+pub(crate) mod sealed {
+    /// Crate-internal supertrait of [`PersistableBlob`]. It is only
+    /// `pub(crate)`, so downstream crates cannot name it and therefore
+    /// cannot satisfy the `PersistableBlob` bound — the trait is sealed.
+    pub trait Sealed {}
+}
+
+/// Marker for changeset/entry types allowed into a `_blob` column.
+///
+/// Sealed via the `pub(crate)` [`sealed::Sealed`] supertrait: downstream
+/// cannot implement it. Every concrete type passed to [`encode`] carries
+/// a one-line `impl_persistable_blob!` in its schema module, so adding a
+/// new (potentially key-bearing) type to the persistence path is an
+/// explicit, reviewable change rather than a silent `T: Serialize` slip.
+pub trait PersistableBlob: Serialize + sealed::Sealed {}
+
+/// Seal-and-mark a type for [`blob::encode`](encode): implements both the
+/// crate-internal `Sealed` supertrait and the public `PersistableBlob`
+/// marker.
+macro_rules! impl_persistable_blob {
+    ($($t:ty),+ $(,)?) => {
+        $(
+            impl $crate::sqlite::schema::blob::sealed::Sealed for $t {}
+            impl $crate::sqlite::schema::blob::PersistableBlob for $t {}
+        )+
+    };
+}
+pub(crate) use impl_persistable_blob;
+
 /// Hard cap on bincode-serde decode allocations. 16 MiB is two orders
 /// of magnitude above any legitimate per-row payload we ship — a
 /// hostile or corrupted backup with an inflated length prefix is
@@ -31,8 +65,11 @@ fn bounded_config() -> bincode::config::Configuration<
     bincode::config::standard().with_limit::<BLOB_SIZE_LIMIT_BYTES>()
 }
 
-/// Encode a serde-derived value into a `BLOB` payload.
-pub fn encode<T: Serialize>(value: &T) -> Result<Vec<u8>, WalletStorageError> {
+/// Encode a [`PersistableBlob`] value into a `BLOB` payload. The sealed
+/// trait bound (instead of a bare `T: Serialize`) is the type-level guard
+/// that no unreviewed, possibly key-bearing type reaches a `_blob`
+/// column.
+pub fn encode<T: PersistableBlob>(value: &T) -> Result<Vec<u8>, WalletStorageError> {
     Ok(bincode::serde::encode_to_vec(value, bounded_config())?)
 }
 
@@ -66,6 +103,10 @@ pub fn decode<T: DeserializeOwned>(blob: &[u8]) -> Result<T, WalletStorageError>
     Ok(value)
 }
 
+// The outpoint PK key rides the same `encode` path, so seal it too. An
+// outpoint is a PUBLIC (txid, vout) reference — never key material.
+impl_persistable_blob!(dashcore::OutPoint);
+
 /// Encode a `dashcore::OutPoint` for an `outpoint` PRIMARY KEY column.
 /// Uses the same bincode-serde path as every other column — a stable
 /// (not fixed-length) key, which the exact-match PK lookups don't mind.
@@ -89,6 +130,7 @@ mod tests {
         a: u32,
         b: String,
     }
+    impl_persistable_blob!(Dummy);
 
     #[test]
     fn encode_decode_roundtrip() {

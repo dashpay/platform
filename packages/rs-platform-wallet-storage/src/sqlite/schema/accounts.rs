@@ -12,6 +12,11 @@ use platform_wallet::wallet::platform_wallet::WalletId;
 
 use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::schema::blob;
+use crate::sqlite::schema::blob::impl_persistable_blob;
+
+// PUBLIC material only: account-manifest types (account xpubs / pool
+// snapshots) reaching `_blob` columns.
+impl_persistable_blob!(AccountRegistrationEntry, AccountAddressPoolEntry);
 
 /// Decoded `platform_payment` account registration: the DIP-17 account
 /// index and its extended public key, recovered from the bincode-serde

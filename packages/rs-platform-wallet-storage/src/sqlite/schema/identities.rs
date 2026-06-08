@@ -9,6 +9,10 @@ use {platform_wallet::changeset::IdentityEntry, rusqlite::Connection};
 
 use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::schema::blob;
+use crate::sqlite::schema::blob::impl_persistable_blob;
+
+// PUBLIC material only: identity snapshot reaching the `entry_blob` column.
+impl_persistable_blob!(IdentityEntry);
 
 pub fn apply(
     tx: &Transaction<'_>,

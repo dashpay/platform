@@ -22,6 +22,10 @@ use platform_wallet::wallet::platform_wallet::WalletId;
 
 use crate::sqlite::error::WalletStorageError;
 use crate::sqlite::schema::blob;
+use crate::sqlite::schema::blob::impl_persistable_blob;
+
+// PUBLIC material only: DashPay overlay types reaching `_blob` columns.
+impl_persistable_blob!(DashPayProfile, PaymentEntry);
 
 /// Both dashpay tables are keyed by identity only; their FK targets
 /// `identities(identity_id)` so cascade flows through the

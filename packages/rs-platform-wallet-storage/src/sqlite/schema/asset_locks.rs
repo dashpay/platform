@@ -19,6 +19,11 @@ use {
     std::collections::BTreeMap,
 };
 
+use crate::sqlite::schema::blob::impl_persistable_blob;
+
+// PUBLIC material only: asset-lock lifecycle reaching `lifecycle_blob`.
+impl_persistable_blob!(AssetLockEntry);
+
 pub fn apply(
     tx: &Transaction<'_>,
     wallet_id: &WalletId,
