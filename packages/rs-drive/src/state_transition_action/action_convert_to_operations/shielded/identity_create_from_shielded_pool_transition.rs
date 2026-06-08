@@ -4,8 +4,8 @@ use crate::error::Error;
 use crate::state_transition_action::action_convert_to_operations::DriveHighLevelOperationConverter;
 use crate::state_transition_action::shielded::identity_create_from_shielded_pool::IdentityCreateFromShieldedPoolTransitionAction;
 use crate::util::batch::DriveOperation;
-use crate::util::batch::DriveOperation::{IdentityOperation, SystemOperation};
-use crate::util::batch::{IdentityOperationType, SystemOperationType};
+use crate::util::batch::DriveOperation::IdentityOperation;
+use crate::util::batch::IdentityOperationType;
 use dpp::block::epoch::Epoch;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::version::PlatformVersion;
@@ -45,32 +45,32 @@ impl DriveHighLevelOperationConverter for IdentityCreateFromShieldedPoolTransiti
                     //    prevention. These also serve as the id-derivation preimage.
                     insert_nullifiers(&mut ops, &v0.notes);
 
-                    // 2. Create the new identity holding the FULL denomination. The fee is moved out
-                    //    of this balance into the fee pools at execution, so the identity ends with
-                    //    `denomination - fee_amount` and credits are conserved.
+                    // 2. Create the new identity holding the FULL denomination, funded by the pool
+                    //    decrement in step 4. This is a move BETWEEN two right-hand-side terms of the
+                    //    credit-conservation equation (shielded-pool balance -> identity balance),
+                    //    exactly like Unshield (pool -> address): the credits already exist in the
+                    //    supply (the shielded pool is itself a counted balance tree), so the global
+                    //    system-credits scalar (the conservation equation's LHS) must NOT change.
+                    //    `AddToSystemCredits`/`RemoveFromSystemCredits` are correct ONLY when credits
+                    //    cross the platform boundary (asset-lock inflow: IdentityCreate /
+                    //    ShieldFromAssetLock; Core-withdrawal outflow: ShieldedWithdrawal) — NOT for
+                    //    this pool-internal move. Emitting one here would over-mint by `denomination`
+                    //    and halt the chain at the end-of-block sum-tree check. The fee is later moved
+                    //    from this balance into the fee pools at execution (also RHS-internal), so the
+                    //    identity ends with `denomination - fee_amount` and credits are conserved.
                     ops.push(IdentityOperation(IdentityOperationType::AddNewIdentity {
                         identity: v0.identity,
                         is_masternode_identity: false,
                     }));
 
-                    // 3. The credits backing the new identity come from the shielded pool, which is
-                    //    decremented in step 5. Because the identity is freshly created (it was not
-                    //    already in circulation, unlike an Unshield's transparent recipient), the
-                    //    system-credits total must be incremented by the SAME amount so the global
-                    //    credit supply is unchanged. This MUST equal `denomination`, NOT
-                    //    `denomination - fee_amount` (the fee never leaves the supply — it is moved
-                    //    from the identity balance into the fee pools). Getting this wrong mints or
-                    //    burns credits and halts the chain.
-                    ops.push(SystemOperation(SystemOperationType::AddToSystemCredits {
-                        amount: v0.denomination,
-                    }));
-
-                    // 4. Insert each action's output note into the CommitmentTree (change re-enters
+                    // 3. Insert each action's output note into the CommitmentTree (change re-enters
                     //    the pool as an ordinary, indistinguishable Orchard output).
                     insert_notes(&mut ops, &v0.notes);
 
-                    // 5. Decrement the shielded pool by exactly `denomination` (= the Orchard
-                    //    value_balance leaving the pool; change stays internal to the bundle).
+                    // 4. Decrement the shielded pool by exactly `denomination` (= the Orchard
+                    //    value_balance leaving the pool; change stays internal to the bundle). This
+                    //    RHS decrement exactly offsets the new identity's balance (step 2), so the
+                    //    converter is conservation-neutral with no change to the system-credits scalar.
                     let new_total_balance = v0
                         .current_total_balance
                         .checked_sub(v0.denomination)
@@ -102,6 +102,8 @@ mod tests {
     use crate::state_transition_action::shielded::identity_create_from_shielded_pool::v0::IdentityCreateFromShieldedPoolTransitionActionV0;
     use crate::state_transition_action::shielded::ShieldedActionNote;
     use crate::util::batch::drive_op_batch::ShieldedPoolOperationType;
+    use crate::util::batch::DriveOperation::SystemOperation;
+    use crate::util::batch::SystemOperationType;
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::Identity;
     use dpp::platform_value::Identifier;
@@ -154,34 +156,34 @@ mod tests {
         let ops = action
             .into_high_level_drive_operations(&epoch, platform_version)
             .expect("ops");
-        // InsertNullifiers + AddNewIdentity + AddToSystemCredits + InsertNote(1) + UpdateTotalBalance
-        assert_eq!(ops.len(), 5);
+        // InsertNullifiers + AddNewIdentity + InsertNote(1) + UpdateTotalBalance
+        assert_eq!(ops.len(), 4);
     }
 
     #[test]
-    fn test_add_to_system_credits_equals_denomination_not_net() {
-        // CRITICAL conservation invariant: AddToSystemCredits must equal the FULL denomination,
-        // not denomination - fee. The identity is created with the full denomination; the fee is
-        // moved from its balance into the fee pools at execution.
-        let denomination = 10_000_000_000u64;
-        let action = make_action(denomination, 500_000_000, 50_000_000_000);
+    fn test_does_not_touch_system_credits() {
+        // CRITICAL conservation invariant: this is a pool -> identity move BETWEEN two RHS balance
+        // trees (like Unshield), so it must NOT emit AddToSystemCredits / RemoveFromSystemCredits.
+        // The shielded-pool credits already exist in the supply; re-minting them on the LHS scalar
+        // over-counts by `denomination` and halts the chain at the end-of-block sum-tree check.
+        let action = make_action(10_000_000_000, 500_000_000, 50_000_000_000);
         let epoch = Epoch::new(0).unwrap();
         let platform_version = PlatformVersion::latest();
         let ops = action
             .into_high_level_drive_operations(&epoch, platform_version)
             .expect("ops");
 
-        let mut found = false;
-        for op in &ops {
-            if let SystemOperation(SystemOperationType::AddToSystemCredits { amount }) = op {
-                assert_eq!(
-                    *amount, denomination,
-                    "AddToSystemCredits must equal the full denomination"
-                );
-                found = true;
-            }
-        }
-        assert!(found, "expected an AddToSystemCredits op");
+        let touches_system_credits = ops.iter().any(|op| {
+            matches!(
+                op,
+                SystemOperation(SystemOperationType::AddToSystemCredits { .. })
+                    | SystemOperation(SystemOperationType::RemoveFromSystemCredits { .. })
+            )
+        });
+        assert!(
+            !touches_system_credits,
+            "a pool -> identity move must NOT mint/burn system credits (the LHS scalar)"
+        );
     }
 
     #[test]
@@ -218,12 +220,15 @@ mod tests {
         }
     }
 
-    /// Op-level conservation: the shielded pool loses `denomination` and the system-credits total
-    /// gains `denomination`, so the net credit-supply change from the converter ops is ZERO. (The
-    /// fee is later moved from the identity balance into the fee pools at execution — a transfer
-    /// within the supply, not a mint/burn.)
+    /// Op-level conservation modeling the REAL sum-tree equation
+    /// `total_credits_in_platform (LHS) == pools + identity_balances + specialized + addresses +
+    /// shielded_balances (RHS)`. This converter must leave the LHS scalar unchanged (no
+    /// AddToSystemCredits/RemoveFromSystemCredits) and offset the new identity's balance (an RHS
+    /// `Balances` credit) exactly against the shielded-pool decrement (an RHS `ShieldedBalances`
+    /// debit), so the net credit-supply change is ZERO. (The fee is later moved from the identity
+    /// balance into the fee pools at execution — an RHS-internal transfer, not a mint/burn.)
     #[test]
-    fn test_conservation_pool_debit_equals_system_credit() {
+    fn test_conservation_rhs_internal_no_lhs_change() {
         let denomination = 10_000_000_000u64;
         let pool = 50_000_000_000u64;
         let action = make_action(denomination, 500_000_000, pool);
@@ -233,12 +238,19 @@ mod tests {
             .into_high_level_drive_operations(&epoch, platform_version)
             .expect("ops");
 
-        let mut system_delta: i128 = 0;
-        let mut pool_delta: i128 = 0;
+        let mut lhs_delta: i128 = 0; // AddToSystemCredits / RemoveFromSystemCredits (the LHS scalar)
+        let mut identity_balance_delta: i128 = 0; // AddNewIdentity balance (RHS Balances)
+        let mut pool_delta: i128 = 0; // pool UpdateTotalBalance (RHS ShieldedBalances)
         for op in &ops {
             match op {
                 SystemOperation(SystemOperationType::AddToSystemCredits { amount }) => {
-                    system_delta += *amount as i128
+                    lhs_delta += *amount as i128
+                }
+                SystemOperation(SystemOperationType::RemoveFromSystemCredits { amount }) => {
+                    lhs_delta -= *amount as i128
+                }
+                IdentityOperation(IdentityOperationType::AddNewIdentity { identity, .. }) => {
+                    identity_balance_delta += identity.balance() as i128
                 }
                 DriveOperation::ShieldedPoolOperation(
                     ShieldedPoolOperationType::UpdateTotalBalance { new_total_balance },
@@ -246,12 +258,14 @@ mod tests {
                 _ => {}
             }
         }
-        assert_eq!(system_delta, denomination as i128);
-        assert_eq!(pool_delta, -(denomination as i128));
         assert_eq!(
-            system_delta + pool_delta,
+            lhs_delta, 0,
+            "a pool -> identity move must NOT change the system-credits scalar (LHS)"
+        );
+        assert_eq!(
+            identity_balance_delta + pool_delta,
             0,
-            "credit supply must be conserved"
+            "the new identity balance (RHS) must be exactly funded by the shielded-pool decrement (RHS)"
         );
     }
 

@@ -323,7 +323,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_withdraw(
 /// - `wallet_id_bytes` must point to 32 readable bytes.
 /// - `identity_pubkeys` must point to `identity_pubkeys_count` contiguous [`IdentityPubkeyFFI`]
 ///   rows that outlive this call (each row's pointers per the [`IdentityPubkeyFFI`] contract).
-/// - `signer_identity_handle` must be a valid, non-destroyed `*const SignerHandle` (a
+/// - `signer_identity_handle` must be a valid, non-destroyed `*mut SignerHandle` (a
 ///   `VTableSigner` with the callback variant) that outlives this call; the caller retains
 ///   ownership.
 /// - `out_identity_id` must point to 32 writable bytes.
@@ -336,7 +336,7 @@ pub unsafe extern "C" fn platform_wallet_manager_shielded_identity_create_from_p
     identity_pubkeys: *const IdentityPubkeyFFI,
     identity_pubkeys_count: usize,
     denomination: u64,
-    signer_identity_handle: *const SignerHandle,
+    signer_identity_handle: *mut SignerHandle,
     out_identity_id: *mut [u8; 32],
 ) -> PlatformWalletFFIResult {
     check_ptr!(wallet_id_bytes);

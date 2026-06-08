@@ -18,6 +18,7 @@ pub use compute_minimum_shielded_fee::{
     compute_shielded_withdrawal_fee,
 };
 
+use crate::identity::identity_public_key::contract_bounds::ContractBounds;
 use crate::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 
@@ -190,7 +191,9 @@ pub fn unshield_extra_sighash_data(output_address: &[u8], unshielding_amount: u6
 /// sighash, with the byte layout
 /// `identity_id (32) || denomination (u64 LE) || num_keys (u16 LE)
 ///   || for each key in supplied order: key_id (u32 LE) || purpose (u8) || security_level (u8)
-///   || key_type (u8) || key_data_len (u16 LE) || key_data`.
+///   || key_type (u8) || key_data_len (u16 LE) || key_data || read_only (u8)
+///   || contract_bounds (tag u8: 0=None, 1=SingleContract id(32), 2=SingleContractDocumentType
+///   id(32) name_len(u16 LE) name)`.
 ///
 /// `IdentityCreateFromShieldedPool` carries NO platform identity signature: authorization is 100%
 /// the Orchard proof + per-action spend-auth signatures + binding signature over this sighash. The
@@ -212,7 +215,7 @@ pub fn identity_create_from_shielded_extra_sighash_data(
     denomination: u64,
     public_keys: &[IdentityPublicKeyInCreation],
 ) -> Vec<u8> {
-    let mut data = Vec::with_capacity(32 + 8 + 2 + public_keys.len() * 41);
+    let mut data = Vec::with_capacity(32 + 8 + 2 + public_keys.len() * 44);
     data.extend_from_slice(identity_id);
     data.extend_from_slice(&denomination.to_le_bytes());
     data.extend_from_slice(&(public_keys.len() as u16).to_le_bytes());
@@ -224,6 +227,29 @@ pub fn identity_create_from_shielded_extra_sighash_data(
         let key_data = key.data().as_slice();
         data.extend_from_slice(&(key_data.len() as u16).to_le_bytes());
         data.extend_from_slice(key_data);
+        // Also bind `read_only` and `contract_bounds`. These are state-determining key fields that
+        // ARE in the transition's signable_bytes, but the per-key proof-of-possession does NOT bind
+        // them for hash-based key types (which accept an empty signature). Committing them into the
+        // Orchard binding sighash makes them un-malleable for EVERY key type, so a relayer/proposer
+        // cannot flip `read_only` or alter `contract_bounds` on an observed transition.
+        data.push(key.read_only() as u8);
+        match key.contract_bounds() {
+            None => data.push(0u8),
+            Some(ContractBounds::SingleContract { id }) => {
+                data.push(1u8);
+                data.extend_from_slice(id.as_bytes());
+            }
+            Some(ContractBounds::SingleContractDocumentType {
+                id,
+                document_type_name,
+            }) => {
+                data.push(2u8);
+                data.extend_from_slice(id.as_bytes());
+                let name = document_type_name.as_bytes();
+                data.extend_from_slice(&(name.len() as u16).to_le_bytes());
+                data.extend_from_slice(name);
+            }
+        }
     }
     data
 }
@@ -395,7 +421,8 @@ mod tests {
 
         #[test]
         fn layout_is_length_prefixed() {
-            // identity_id(32) || denomination(8) || num_keys(2) || [key_id(4)|purpose|sec|type|len(2)|data]
+            // identity_id(32) || denomination(8) || num_keys(2)
+            //   || [key_id(4)|purpose|sec|type|len(2)|data|read_only(1)|contract_bounds_tag(1)]
             let id = [0x11u8; 32];
             let keys = vec![mk_key(7, 0xAB)];
             let d = identity_create_from_shielded_extra_sighash_data(&id, 10_000_000_000, &keys);
@@ -408,7 +435,9 @@ mod tests {
             assert_eq!(d[48], KeyType::ECDSA_SECP256K1 as u8);
             assert_eq!(&d[49..51], &33u16.to_le_bytes());
             assert_eq!(&d[51..84], &[0xAB; 33]);
-            assert_eq!(d.len(), 32 + 8 + 2 + (4 + 1 + 1 + 1 + 2 + 33));
+            assert_eq!(d[84], 0u8, "read_only=false");
+            assert_eq!(d[85], 0u8, "contract_bounds=None tag");
+            assert_eq!(d.len(), 32 + 8 + 2 + (4 + 1 + 1 + 1 + 2 + 33 + 1 + 1));
         }
 
         #[test]
@@ -450,6 +479,38 @@ mod tests {
                     &[mk_key(0, 0xAA), mk_key(1, 0xCC)]
                 ),
                 "the full key set must be bound"
+            );
+        }
+
+        #[test]
+        fn binds_read_only_and_contract_bounds() {
+            use crate::identity::identity_public_key::contract_bounds::ContractBounds;
+            use crate::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters;
+            let id = [0x11u8; 32];
+            let base = identity_create_from_shielded_extra_sighash_data(
+                &id,
+                10_000_000_000,
+                &[mk_key(0, 0xAA)],
+            );
+
+            // Flipping read_only changes the preimage (un-malleable for every key type).
+            let mut ro_key = mk_key(0, 0xAA);
+            ro_key.set_read_only(true);
+            assert_ne!(
+                base,
+                identity_create_from_shielded_extra_sighash_data(&id, 10_000_000_000, &[ro_key]),
+                "read_only must be bound"
+            );
+
+            // Attaching contract_bounds changes the preimage.
+            let mut cb_key = mk_key(0, 0xAA);
+            cb_key.set_contract_bounds(Some(ContractBounds::SingleContract {
+                id: platform_value::Identifier::new([0x33; 32]),
+            }));
+            assert_ne!(
+                base,
+                identity_create_from_shielded_extra_sighash_data(&id, 10_000_000_000, &[cb_key]),
+                "contract_bounds must be bound"
             );
         }
     }

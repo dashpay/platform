@@ -439,18 +439,55 @@ impl VerifiedIdentityWithShieldedNullifiersWasm {
     }
 
     #[wasm_bindgen(js_name = toObject)]
-    pub fn to_object(&self) -> JsValue {
-        js_obj(&[
-            ("identity", self.identity.clone().into()),
-            ("nullifiers", self.nullifiers.clone().into()),
-        ])
+    pub fn to_object(&self) -> WasmDppResult<JsValue> {
+        // Use the identity's own `toObject` so consumers get a plain JS object (not the exported
+        // `IdentityWasm` class instance), matching the address-funded sibling wrapper.
+        let id = self.identity.to_object()?;
+        let nullifiers_js: JsValue = self.nullifiers.clone().into();
+        let obj = js_sys::Object::new();
+        js_sys::Reflect::set(&obj, &"identity".into(), &id.into()).unwrap();
+        js_sys::Reflect::set(&obj, &"nullifiers".into(), &nullifiers_js).unwrap();
+        Ok(obj.into())
     }
 
     /// Returns a `JSON.stringify`-friendly form: the `Map` is normalised to a plain object so its
     /// entries survive serialisation.
     #[wasm_bindgen(js_name = toJSON)]
     pub fn to_json(&self) -> WasmDppResult<JsValue> {
-        normalize_js_value_for_json(&self.to_object())
+        let id = self.identity.to_json()?;
+        let nullifiers_js: JsValue = self.nullifiers.clone().into();
+        let obj = js_sys::Object::new();
+        js_sys::Reflect::set(&obj, &"identity".into(), &id.into()).unwrap();
+        js_sys::Reflect::set(&obj, &"nullifiers".into(), &nullifiers_js).unwrap();
+        normalize_js_value_for_json(&obj.into())
+    }
+
+    #[wasm_bindgen(js_name = fromObject)]
+    pub fn from_object(
+        value: JsValue,
+    ) -> WasmDppResult<VerifiedIdentityWithShieldedNullifiersWasm> {
+        let identity_val = js_sys::Reflect::get(&value, &"identity".into())
+            .map_err(|_| WasmDppError::generic("Missing property: identity"))?;
+        let identity: IdentityWasm = crate::serialization::conversions::from_object(identity_val)?;
+        let nullifiers_val = js_sys::Reflect::get(&value, &"nullifiers".into())
+            .map_err(|_| WasmDppError::generic("Missing property: nullifiers"))?;
+        Ok(VerifiedIdentityWithShieldedNullifiersWasm {
+            identity,
+            nullifiers: nullifiers_val.unchecked_into(),
+        })
+    }
+
+    #[wasm_bindgen(js_name = fromJSON)]
+    pub fn from_json(value: JsValue) -> WasmDppResult<VerifiedIdentityWithShieldedNullifiersWasm> {
+        let identity_val = js_sys::Reflect::get(&value, &"identity".into())
+            .map_err(|_| WasmDppError::generic("Missing property: identity"))?;
+        let identity: IdentityWasm = crate::serialization::conversions::from_json(identity_val)?;
+        let nullifiers_val = js_sys::Reflect::get(&value, &"nullifiers".into())
+            .map_err(|_| WasmDppError::generic("Missing property: nullifiers"))?;
+        Ok(VerifiedIdentityWithShieldedNullifiersWasm {
+            identity,
+            nullifiers: nullifiers_val.unchecked_into(),
+        })
     }
 }
 

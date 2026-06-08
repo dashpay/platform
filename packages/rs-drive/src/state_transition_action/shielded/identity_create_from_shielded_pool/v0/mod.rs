@@ -17,7 +17,8 @@ pub struct IdentityCreateFromShieldedPoolTransitionActionV0 {
     /// The anchor used for verification.
     pub anchor: [u8; 32],
     /// The fixed exit denomination (in credits) leaving the shielded pool. Equals the new
-    /// identity's initial balance and the `AddToSystemCredits` amount.
+    /// identity's initial balance and the amount the shielded pool is decremented by (a move
+    /// between two balance trees — no change to the system-credit supply).
     pub denomination: Credits,
     /// Total fee (metered GroveDB write cost + flat shielded verification/compute fee) moved from
     /// the new identity's balance into the fee pools at execution. MUST be `< denomination`.
