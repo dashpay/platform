@@ -1517,12 +1517,12 @@ mod tests {
             let (fee_results, _processed_block_fees) =
                 process_state_transitions(&platform, &[st], BlockInfo::default(), &platform_state);
 
-            // --- Assert the new metered + compute fee model directly on the booked fee. ---
-            // The fee is `metered_storage + metered_processing + shielded_verification_fee`. A positive
-            // `storage_fee` proves the metered GroveDB storage of the note/nullifier writes IS
-            // captured (this directly addresses the reviewer's concern that the old flat-fee
-            // override discarded metered storage), and `processing_fee >= shielded_verification_fee`
-            // proves the ZK compute fee is added on top of the metered processing.
+            // --- Assert the metered + compute fee model directly on the booked fee. ---
+            // The Shield fee is `metered_storage + metered_processing + shielded_verification_fee`.
+            // A positive `storage_fee` proves the metered GroveDB storage of the note/nullifier
+            // writes is captured (it is not discarded in favor of a flat estimate), and
+            // `processing_fee >= shielded_verification_fee` proves the ZK compute fee is added on
+            // top of the metered processing.
             let shielded_verification_fee = dpp::shielded::compute_shielded_verification_fee(
                 num_actions_in_shield,
                 platform_version,

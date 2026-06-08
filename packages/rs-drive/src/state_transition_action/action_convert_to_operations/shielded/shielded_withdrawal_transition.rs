@@ -436,7 +436,7 @@ mod tests {
         assert_eq!(system_credit_delta, -((amount - fee) as i128));
     }
 
-    /// Audit (I5): the flat `compute_shielded_withdrawal_fee` must cover the *actual* GroveDB write
+    /// Invariant: the flat `compute_shielded_withdrawal_fee` must cover the *actual* GroveDB write
     /// cost of a ShieldedWithdrawal's operations, AND strictly exceed the metered storage so the
     /// pool-paid booking split never undercharges.
     ///

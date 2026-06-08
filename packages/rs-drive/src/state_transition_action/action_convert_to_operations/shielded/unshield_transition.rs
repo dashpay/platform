@@ -257,7 +257,7 @@ mod tests {
         assert!(result.is_err());
     }
 
-    /// Audit (I5): the flat `compute_shielded_unshield_fee` must cover the *actual* GroveDB write
+    /// Invariant: the flat `compute_shielded_unshield_fee` must cover the *actual* GroveDB write
     /// cost of an Unshield's operations, AND strictly exceed the metered storage so the pool-paid
     /// booking split never undercharges.
     ///

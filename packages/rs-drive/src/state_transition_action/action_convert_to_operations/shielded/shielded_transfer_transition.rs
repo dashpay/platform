@@ -151,7 +151,7 @@ mod tests {
         assert!(result.is_err());
     }
 
-    /// Audit: the flat `compute_minimum_shielded_fee` must cover the *actual* GroveDB write
+    /// Invariant: the flat `compute_minimum_shielded_fee` must cover the *actual* GroveDB write
     /// cost (`Drive::calculate_fee`) of a shielded transition's operations.
     ///
     /// A shielded transfer is the cleanest per-action case — insert nullifiers + notes +
