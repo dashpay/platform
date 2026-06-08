@@ -1,13 +1,19 @@
-//! Unit tests for the `IdentityCreateFromShieldedPool` transformer's identity-creation state
-//! checks. The structural checks are covered in the dpp `validate_structure` tests, the op/
-//! conservation invariants in the drive converter tests, and the full happy-path (real Orchard
-//! proof, credit conservation, prove/verify roundtrip) in the strategy-test / full-block suites.
+//! Drive-backed tests for the `IdentityCreateFromShieldedPool` transition. Structural checks are
+//! covered in the dpp `validate_structure` tests and op-level checks in the drive converter tests.
 //!
-//! These tests pin the two consensus-facing early-out branches added to `transform_into_action_v0`
-//! (mirroring `IdentityCreate::validate_state`): an identity already existing at the derived id, and
-//! a public-key hash already registered to another identity. Both convert what would otherwise be an
-//! internal Drive error during `AddNewIdentity` execution into a clean consensus rejection, so they
-//! get targeted coverage here.
+//! Covered here:
+//! - The two consensus-facing early-out branches in `transform_into_action_v0` (mirroring
+//!   `IdentityCreate::validate_state`): an identity already existing at the derived id, and a
+//!   public-key hash already registered to another identity — both convert what would otherwise be
+//!   an internal Drive error during `AddNewIdentity` execution into a clean consensus rejection.
+//! - Sum-tree credit conservation: the converter ops applied through a real Drive keep
+//!   `calculate_total_credits_balance().ok()` balanced (the end-of-block invariant that halts the
+//!   chain) — the regression guard for the `AddToSystemCredits` over-mint.
+//!
+//! The full build->prove->execute->prove/verify happy path (real Orchard proof + the strict merged
+//! nullifier+identity proof roundtrip) is deferred to the shared shielded-strategy harness, a
+//! pre-existing repo-wide TODO that is disabled for every shielded transition (the shielded
+//! `OperationType` build handlers are commented out in `strategy.rs`).
 
 use super::transform_into_action::v0::IdentityCreateFromShieldedPoolStateTransitionTransformIntoActionValidationV0;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
@@ -220,5 +226,87 @@ fn transform_rejects_when_a_public_key_hash_is_already_registered() {
         )],
         "got: {:?}",
         result.errors
+    );
+}
+
+/// Sum-tree credit-conservation regression for the pool->new-identity exit.
+///
+/// Applies the converter's high-level drive operations through a REAL Drive and asserts the
+/// end-of-block invariant `calculate_total_credits_balance().ok()` — the exact check that halts the
+/// chain — still balances. This is the regression guard for the `AddToSystemCredits` over-mint:
+/// with that op present the balance is off by `denomination` and `.ok()` is false. It needs no
+/// Orchard proof because credit conservation is independent of proof verification (the converter
+/// only books balances). The full build->prove->execute->prove/verify happy path additionally needs
+/// the shared shielded-strategy harness, which is a pre-existing repo-wide TODO disabled for every
+/// shielded transition (the `OperationType` build handlers are commented out in strategy.rs).
+#[test]
+fn converter_ops_preserve_sum_tree_credit_conservation() {
+    use dpp::block::epoch::Epoch;
+    use dpp::identity::accessors::IdentitySettersV0;
+    use dpp::platform_value::Identifier;
+    use drive::state_transition_action::action_convert_to_operations::DriveHighLevelOperationConverter;
+    use drive::state_transition_action::shielded::identity_create_from_shielded_pool::v0::IdentityCreateFromShieldedPoolTransitionActionV0;
+    use drive::state_transition_action::shielded::identity_create_from_shielded_pool::IdentityCreateFromShieldedPoolTransitionAction;
+    use drive::state_transition_action::shielded::ShieldedActionNote;
+    use std::collections::BTreeMap;
+
+    let platform_version = PlatformVersion::latest();
+    let platform = setup_platform();
+    let drive = &platform.drive;
+    let block_info = BlockInfo::default();
+    let seed = 50_000_000_000u64;
+
+    // Seed a BALANCED funded pool: `set_pool_total_balance` raises the shielded pool (an RHS balance
+    // tree) AND the system-credit scalar (the conservation equation's LHS) by `seed` together,
+    // mirroring a prior shield-in, so the starting state is balanced.
+    set_pool_total_balance(&platform, seed);
+    assert!(
+        drive
+            .calculate_total_credits_balance(None, &platform_version.drive)
+            .expect("calc")
+            .ok()
+            .expect("ok"),
+        "precondition: the seeded pool+system-credits state must be balanced"
+    );
+
+    // A new identity holding the full denomination, funded by the pool (no Orchard proof needed —
+    // the converter only books balances).
+    let mut identity = Identity::new_with_id_and_keys(
+        Identifier::from([0xCD; 32]),
+        BTreeMap::new(),
+        platform_version,
+    )
+    .expect("identity");
+    identity.set_balance(DENOMINATION);
+    let action = IdentityCreateFromShieldedPoolTransitionAction::V0(
+        IdentityCreateFromShieldedPoolTransitionActionV0 {
+            identity,
+            notes: vec![ShieldedActionNote {
+                nullifier: [0x10; 32],
+                cmx: [0x20; 32],
+                encrypted_note: vec![0x77; 216],
+            }],
+            anchor: [0x07; 32],
+            denomination: DENOMINATION,
+            fee_amount: 500_000_000,
+            current_total_balance: seed,
+        },
+    );
+
+    let ops = action
+        .into_high_level_drive_operations(&Epoch::new(0).unwrap(), platform_version)
+        .expect("converter ops");
+    drive
+        .apply_drive_operations(ops, true, &block_info, None, platform_version, None)
+        .expect("apply converter ops");
+
+    // The end-of-block conservation invariant must still hold — this FAILS (off by `denomination`)
+    // if the converter re-mints via AddToSystemCredits.
+    let balance = drive
+        .calculate_total_credits_balance(None, &platform_version.drive)
+        .expect("calc");
+    assert!(
+        balance.ok().expect("ok"),
+        "credit supply must be conserved after a pool->identity exit; got {balance}"
     );
 }
