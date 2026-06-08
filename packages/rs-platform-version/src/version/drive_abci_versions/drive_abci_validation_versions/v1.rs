@@ -268,5 +268,6 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V1: DriveAbciValidationVersions =
             shielded_proof_verification_fee: 100_000_000,
             shielded_per_action_processing_fee: 3_000_000,
             shielded_implicit_fee_cap: 20_000_000_000,
+            shielded_identity_create_denominations: &[],
         },
     };

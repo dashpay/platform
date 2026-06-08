@@ -13,9 +13,13 @@ use crate::withdrawal::Pooling;
 // Re-exported so the public path stays `dpp::shielded::compute_minimum_shielded_fee` (the
 // module and the function share a name but live in different namespaces).
 pub use compute_minimum_shielded_fee::{
-    compute_minimum_shielded_fee, compute_shielded_unshield_fee, compute_shielded_verification_fee,
+    compute_minimum_shielded_fee, compute_shielded_identity_create_fee,
+    compute_shielded_unshield_fee, compute_shielded_verification_fee,
     compute_shielded_withdrawal_fee,
 };
+
+use crate::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
+use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 
 /// Permanent storage bytes per shielded action: 312 bytes total.
 ///
@@ -91,6 +95,23 @@ pub const SHIELDED_WITHDRAWAL_DOCUMENT_STORAGE_BYTES: u64 = 4100;
 /// [`compute_minimum_shielded_fee::compute_shielded_unshield_fee`].
 pub const SHIELDED_UNSHIELD_ADDRESS_STORAGE_BYTES: u64 = 222;
 
+/// Calibrated effective storage-byte cost of the flat (key-independent) portion of the
+/// `AddNewIdentity` write an `IdentityCreateFromShieldedPool` performs: the identity record,
+/// balance, revision, and the empty key-tree scaffolding. Sized as a conservative upper bound on
+/// the metered storage so the client-side fee predictor never under-estimates the real cost (the
+/// authoritative consensus fee is metered by GroveDB at execution; this constant only feeds the
+/// offline predictor and the cheap `denomination >= min_fee` gate). The per-key component is added
+/// separately via [`SHIELDED_IDENTITY_CREATE_PER_KEY_STORAGE_BYTES`].
+pub const SHIELDED_IDENTITY_CREATE_BASE_STORAGE_BYTES: u64 = 1200;
+
+/// Calibrated effective storage-byte cost of EACH `IdentityPublicKey` the `AddNewIdentity` write
+/// inserts (the key entry in the identity key subtree plus its key-hash → key-id index entry and
+/// tree overhead). Because the metered identity write grows monotonically with the key count, the
+/// predictor scales this per-key term by the number of keys. Priced at the SAME per-byte storage
+/// rate as the per-action note storage, so it tracks the storage rate as it evolves. See
+/// [`compute_minimum_shielded_fee::compute_shielded_identity_create_fee`].
+pub const SHIELDED_IDENTITY_CREATE_PER_KEY_STORAGE_BYTES: u64 = 350;
+
 /// Domain separator for Platform sighash computation.
 const SIGHASH_DOMAIN: &[u8] = b"DashPlatformSighash";
 
@@ -162,6 +183,48 @@ pub fn unshield_extra_sighash_data(output_address: &[u8], unshielding_amount: u6
     let mut data = Vec::with_capacity(output_address.len() + 8);
     data.extend_from_slice(output_address);
     data.extend_from_slice(&unshielding_amount.to_le_bytes());
+    data
+}
+
+/// Builds the transparent `extra_data` bound into an `IdentityCreateFromShieldedPool`'s platform
+/// sighash, with the byte layout
+/// `identity_id (32) || denomination (u64 LE) || num_keys (u16 LE)
+///   || for each key in supplied order: key_id (u32 LE) || purpose (u8) || security_level (u8)
+///   || key_type (u8) || key_data_len (u16 LE) || key_data`.
+///
+/// `IdentityCreateFromShieldedPool` carries NO platform identity signature: authorization is 100%
+/// the Orchard proof + per-action spend-auth signatures + binding signature over this sighash. The
+/// transparent, state-determining fields — the new identity id, the exit denomination, and the
+/// FULL public-key set — must therefore be committed into the Orchard sighash, exactly as the
+/// `surplus_output` field is committed into `ShieldFromAssetLock`'s ECDSA signature. Without this
+/// binding a relay or block proposer could take a valid bundle exiting a denomination and re-point
+/// it at a DIFFERENT identity id, or swap in DIFFERENT keys they control, stealing the credited
+/// balance (the per-key proofs-of-possession alone do NOT prevent this — a relayer keeps valid PoP
+/// sigs for their own keys while swapping the bundle). Binding `(this spend → these exact keys →
+/// this id → this denomination)` here makes the redirection atomic-or-invalid.
+///
+/// The signing (client/builder) and verifying (consensus) sides MUST produce identical bytes, so
+/// both call this single function. Unlike the fixed-length withdrawal/unshield helpers, the
+/// variable-length key list is fully length-prefixed (both the key count and each key's data) so
+/// the preimage is unambiguous for any key set.
+pub fn identity_create_from_shielded_extra_sighash_data(
+    identity_id: &[u8; 32],
+    denomination: u64,
+    public_keys: &[IdentityPublicKeyInCreation],
+) -> Vec<u8> {
+    let mut data = Vec::with_capacity(32 + 8 + 2 + public_keys.len() * 41);
+    data.extend_from_slice(identity_id);
+    data.extend_from_slice(&denomination.to_le_bytes());
+    data.extend_from_slice(&(public_keys.len() as u16).to_le_bytes());
+    for key in public_keys {
+        data.extend_from_slice(&key.id().to_le_bytes());
+        data.push(key.purpose() as u8);
+        data.push(key.security_level() as u8);
+        data.push(key.key_type() as u8);
+        let key_data = key.data().as_slice();
+        data.extend_from_slice(&(key_data.len() as u16).to_le_bytes());
+        data.extend_from_slice(key_data);
+    }
     data
 }
 

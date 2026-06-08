@@ -1,5 +1,6 @@
 use crate::fee::Credits;
 use crate::shielded::{
+    SHIELDED_IDENTITY_CREATE_BASE_STORAGE_BYTES, SHIELDED_IDENTITY_CREATE_PER_KEY_STORAGE_BYTES,
     SHIELDED_STORAGE_BYTES_PER_ACTION, SHIELDED_UNSHIELD_ADDRESS_STORAGE_BYTES,
     SHIELDED_WITHDRAWAL_DOCUMENT_STORAGE_BYTES,
 };
@@ -186,6 +187,66 @@ pub fn compute_shielded_unshield_fee_v0(
     base_fee
         .checked_add(address_storage_fee)
         .ok_or(ProtocolError::Overflow("shielded unshield fee overflow"))
+}
+
+/// v0 of the shielded **identity-create** fee formula:
+///
+///   `identity_create_fee = compute_minimum_shielded_fee_v0(num_actions)
+///       + (SHIELDED_IDENTITY_CREATE_BASE_STORAGE_BYTES
+///          + num_keys × SHIELDED_IDENTITY_CREATE_PER_KEY_STORAGE_BYTES)
+///         × (disk + processing) credits/byte`
+///
+/// This is [`compute_minimum_shielded_fee_v0`] (the per-action note/nullifier storage estimate +
+/// the per-bundle ZK compute) PLUS one VARIABLE storage component for the `AddNewIdentity` write an
+/// `IdentityCreateFromShieldedPool` performs (the identity record + balance + revision + N key
+/// subtrees). Unlike the flat per-transition components of `Unshield`/`ShieldedWithdrawal`, this
+/// component grows monotonically with the key count, which is why the flat pool-paid model does not
+/// fit and the transition's execution meters its writes against the new identity's balance instead.
+///
+/// This function is NOT the authoritative consensus fee (execution meters the real GroveDB cost and
+/// adds only the compute fee on top). It is the **client-side predictor** — so a client can size its
+/// bundle and pick a denomination that comfortably covers the fee — and the **cheap floor** the
+/// `denomination >= min_fee` gate uses to reject obviously-underfunded denominations before metering.
+/// It is sized as a conservative upper bound on the real metered cost so it never under-predicts.
+///
+/// All arithmetic is checked: an overflow (only reachable via pathological fee constants or key
+/// counts) surfaces as `ProtocolError::Overflow` instead of silently wrapping.
+pub fn compute_shielded_identity_create_fee_v0(
+    num_actions: usize,
+    num_keys: usize,
+    platform_version: &PlatformVersion,
+) -> Result<Credits, ProtocolError> {
+    let storage = &platform_version.fee_version.storage;
+
+    let base_fee = compute_minimum_shielded_fee_v0(num_actions, platform_version)?;
+
+    let per_byte_rate = storage
+        .storage_disk_usage_credit_per_byte
+        .checked_add(storage.storage_processing_credit_per_byte)
+        .ok_or(ProtocolError::Overflow(
+            "shielded storage per-byte rate overflow",
+        ))?;
+    let per_key_bytes = (num_keys as u64)
+        .checked_mul(SHIELDED_IDENTITY_CREATE_PER_KEY_STORAGE_BYTES)
+        .ok_or(ProtocolError::Overflow(
+            "shielded identity create per-key bytes overflow",
+        ))?;
+    let identity_bytes = SHIELDED_IDENTITY_CREATE_BASE_STORAGE_BYTES
+        .checked_add(per_key_bytes)
+        .ok_or(ProtocolError::Overflow(
+            "shielded identity create bytes overflow",
+        ))?;
+    let identity_storage_fee =
+        identity_bytes
+            .checked_mul(per_byte_rate)
+            .ok_or(ProtocolError::Overflow(
+                "shielded identity create storage fee overflow",
+            ))?;
+    base_fee
+        .checked_add(identity_storage_fee)
+        .ok_or(ProtocolError::Overflow(
+            "shielded identity create fee overflow",
+        ))
 }
 
 #[cfg(test)]

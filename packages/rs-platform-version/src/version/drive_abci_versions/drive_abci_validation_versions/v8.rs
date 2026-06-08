@@ -326,5 +326,12 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V8: DriveAbciValidationVersions =
             // tracks the per-action cost and the margin stays uniform as actions grow.
             shielded_per_action_processing_fee: 22_000_000,
             shielded_implicit_fee_cap: 20_000_000_000,
+            // 0.1, 0.3, 0.5, 1.0 DASH in credits (1 DASH = 10^8 duffs, CREDITS_PER_DUFF = 1000).
+            shielded_identity_create_denominations: &[
+                10_000_000_000,
+                30_000_000_000,
+                50_000_000_000,
+                100_000_000_000,
+            ],
         },
     };

@@ -50,6 +50,13 @@ pub struct DriveAbciValidationConstants {
     /// cap the transition is rejected so a client cannot accidentally forfeit a
     /// large asset-lock remainder. 20,000,000,000 credits = 0.2 Dash.
     pub shielded_implicit_fee_cap: u64,
+    /// Allowed exit denominations (in credits) for `IdentityCreateFromShieldedPool`.
+    /// 0.1, 0.3, 0.5, 1.0 DASH = {10, 30, 50, 100} × 10^9 credits. The exit amount is
+    /// restricted to this small fixed set so every identity-creation exit of a given size
+    /// is indistinguishable on-chain, maximizing the anonymity set (mirroring the exact-fee
+    /// uniformity already enforced for `ShieldedTransfer`). Empty pre-v12 so the transition
+    /// is gated off until the shielded family activates.
+    pub shielded_identity_create_denominations: &'static [u64],
 }
 
 #[derive(Clone, Debug, Default)]
