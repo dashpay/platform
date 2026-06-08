@@ -332,12 +332,8 @@ pub async fn sync_address_balances<P: AddressProvider>(
         key_to_tag.insert(address.to_bytes(), (tag, address));
     }
     // Defensive fold of the `current_balances` invariant (see
-    // `AddressProvider::current_balances`): a well-behaved provider already
-    // lists every current-balance address in `pending_addresses`, but a
-    // bridge provider taking two independent caller arrays may not. Seeding
-    // these keys keeps their incremental deltas on the direct apply path
-    // instead of the buffer-and-drop unknown path. `entry` preserves the
-    // pending pairing on any overlap.
+    // `AddressProvider::current_balances`): seed any current-balance-only
+    // address so its delta stays on the direct apply path; pending wins.
     for (tag, address, _funds) in provider.current_balances() {
         key_to_tag
             .entry(address.to_bytes())
@@ -409,6 +405,13 @@ pub async fn sync_address_balances<P: AddressProvider>(
         result.new_sync_timestamp = block_time_ms / 1000;
         scan_height
     };
+
+    // Seed base balances the scan missed (invariant-violating bridge case).
+    // Runs after the authoritative scan inserts, so the scan wins on overlap;
+    // fills gaps so a later `AddToCredits` delta is `existing + X`, not `0 + X`.
+    for (tag, address, funds) in provider.current_balances() {
+        result.found.entry((tag, address)).or_insert(funds);
+    }
 
     // Incremental catch-up from catch_up_from to chain tip.
     // Queries recent first to get a proof, then checks if the boundary height
@@ -522,16 +525,10 @@ async fn incremental_catch_up<P: AddressProvider>(
                     "Recent address balance changes query failed (non-fatal): {}",
                     e
                 );
-                // TODO(address-sync): a *transient* recent-query failure is
-                // indistinguishable here from "server lacks incremental RPCs".
-                // We advance new_sync_height to the tip and leave
-                // last_known_recent_block/new_sync_timestamp at 0 in both
-                // cases. For a transient failure that over-advances the
-                // watermark, so blocks between start_height and the tip are
-                // never re-queried. Distinguishing transient (retryable,
-                // keep the cursor) from unsupported (advance) needs a typed
-                // error classification not currently surfaced by the fetch
-                // layer; left unchanged to avoid risking the hot path.
+                // TODO(address-sync): can't tell a transient failure (keep the
+                // cursor) from "server lacks incremental RPCs" (advance) without
+                // typed errors, so we advance the watermark in both — a transient
+                // failure then skips blocks until the next full rescan.
                 result.new_sync_height = current_height.max(observed_tip_height);
                 return Ok(());
             }
@@ -709,17 +706,10 @@ async fn incremental_catch_up<P: AddressProvider>(
     // flood on multi-wallet chains.
     refresh_and_replay_unknown(key_to_tag, pending_unknown, provider, result).await;
 
-    // TODO(address-sync): the watermark advances past every applied block
-    // unconditionally. If refresh_and_replay_unknown hits its livelock
-    // guard and drops a buffered delta for a wallet-owned address, that
-    // block's height is still committed here, so the next incremental
-    // RangeAfter sync starts past it and never re-reports the delta —
-    // recovery then requires a full rescan. Holding the watermark back to
-    // the lowest cap-dropped block would force re-query, but threading
-    // that signal out of refresh_and_replay_unknown risks perpetual
-    // re-querying / hot-path regression; left unchanged pending a deliberate
-    // sync-state design (the cap is set high enough that legitimate chains
-    // never hit it).
+    // TODO(address-sync): the watermark advances past every applied block, so a
+    // delta dropped by the replay livelock guard is never re-queried (full
+    // rescan only). Holding it back risks hot-path re-query storms; deferred —
+    // the guard is set high enough that legitimate chains never hit it.
     result.new_sync_height = current_height.max(observed_tip_height);
     // Store the highest block from the recent entries so the next sync can
     // use RangeAfter(this_height) for compaction detection.
@@ -820,26 +810,11 @@ async fn apply_block_changes<'a, P, I>(
             let new_balance = apply_op(change, current_balance, current_height);
 
             if new_balance != current_balance {
-                // INTENTIONAL — accepted risk, behavior deliberately kept.
-                // Incremental RPCs carry only balance deltas, never nonces,
-                // so an address first seen via catch-up records nonce=0 here.
-                // This synthesized 0 IS published on the public surface
-                // (AddressSyncResult / on_address_found) and IS durably
-                // persisted and round-tripped via the changeset entry
-                // (`PlatformAddressBalanceEntry`, defined in changeset.rs),
-                // yet it is non-authoritative: every spend re-fetches the
-                // on-chain nonce at build time (`fetch_inputs_with_nonce` +
-                // `nonce_inc`), so the on-chain value — not this field — lands
-                // in a transition. The managed-account reload keeps only the
-                // balance (`set_address_credit_balance` drops the nonce). A
-                // receive-only address genuinely has nonce 0; a spent-from
-                // address's true nonce is recovered by that build-time fetch.
-                // The only reader of the synthesized value is a
-                // self-documenting FFI display. CALLERS MUST NOT treat,
-                // display, or persist this as the authoritative nonce. Making
-                // it authoritative would mean modeling it as `Option<u32>` and
-                // fetching `AddressFunds` for catch-up-discovered addresses;
-                // that rework is deliberately not done.
+                // INTENTIONAL — accepted risk: incremental RPCs carry no nonce,
+                // so a catch-up-discovered address synthesizes nonce=0. It is
+                // published and persisted but NON-AUTHORITATIVE — every spend
+                // re-fetches the on-chain nonce. Callers MUST NOT treat this as
+                // the authoritative nonce. (Option<u32> rework deliberately skipped.)
                 let nonce = result.found.get(&result_key).map(|f| f.nonce).unwrap_or(0);
                 let funds = AddressFunds {
                     nonce,
@@ -987,11 +962,9 @@ async fn refresh_and_replay_unknown<P: AddressProvider>(
             let new_balance = apply_op(borrow_op(change), current_balance, *height);
 
             if new_balance != current_balance {
-                // INTENTIONAL — accepted risk, behavior deliberately kept.
-                // Same synthesized nonce=0 as the forward pass: published and
-                // persisted but non-authoritative; every spend re-fetches the
-                // on-chain nonce. See the full note in `apply_block_changes`.
-                // Callers MUST NOT treat this as the authoritative nonce.
+                // INTENTIONAL — same synthesized nonce=0 as the forward pass:
+                // non-authoritative, callers MUST NOT treat it as authoritative.
+                // See the note in `apply_block_changes`.
                 let nonce = result.found.get(&result_key).map(|f| f.nonce).unwrap_or(0);
                 let funds = AddressFunds {
                     nonce,
@@ -1034,27 +1007,9 @@ async fn refresh_and_replay_unknown<P: AddressProvider>(
         }
     }
 
-    if hit_iteration_cap {
-        // Hitting this guard is genuinely unusual: a well-behaved provider
-        // resolves every gap-extension address well within the cap. Truncating
-        // here drops the buffered balance deltas for any still-unresolved
-        // address, and — unlike plain address discovery — those deltas are NOT
-        // recovered by the next incremental sync: the next RangeAfter query
-        // starts past this block and never re-reports them. Recovering them
-        // requires a full tree rescan.
-        warn!(
-            "Address sync: refresh+replay hit the {}-iteration livelock guard; \
-             buffered balance change(s) for still-unresolved address(es) were \
-             dropped and will only be recovered by a full rescan",
-            REPLAY_REFRESH_MAX_ITERATIONS
-        );
-    }
-
-    // Split the still-unresolved tail into two populations with very different
-    // meaning: entries dropped because the cap truncated the loop (wallet-owned
-    // loss — the address kept resolving but we ran out of iterations) versus
-    // genuinely foreign addresses that never resolved at all. Only the former
-    // warrants a warning.
+    // Split the still-unresolved tail: cap-truncated entries are wallet-owned
+    // loss (the next RangeAfter sync skips the block, so only a full rescan
+    // recovers them); the rest are genuinely foreign addresses.
     let still_unknown = pending_unknown
         .iter()
         .filter(|(key, _, _)| !resolved_keys.contains(key))
@@ -2600,12 +2555,14 @@ mod tests {
 
     /// A provider that lists an address in `current_balances` but NOT in
     /// `pending_addresses` (the FFI two-array shape that violates the
-    /// trait invariant). The engine's defensive fold seeds the
-    /// current-balance key into the entry-time lookup, so an incremental
-    /// change for it applies on the direct path instead of being buffered
-    /// and dropped (Found-025 class).
+    /// trait invariant). On the full-scan path the tree scan never sees it,
+    /// so without the two defensive folds its delta would be buffered+dropped
+    /// (key fold) and, even if applied, computed on a 0 base (balance fold).
+    /// This pins both folds: the key fold keeps it off the drop path, and the
+    /// base-balance fold makes its `AddToCredits(X)` resolve to `existing + X`,
+    /// not `0 + X`.
     #[tokio::test]
-    async fn current_balances_fold_keeps_unpending_address_off_the_drop_path() {
+    async fn current_balances_fold_seeds_base_balance_on_full_scan() {
         use async_trait::async_trait;
 
         let seeded = p2pkh(0x51);
@@ -2652,10 +2609,13 @@ mod tests {
             }
         }
 
-        let provider = SplitArrayProvider { seeded };
+        let mut provider = SplitArrayProvider { seeded };
 
-        // Mirror the lookup-build seam from `sync_address_balances`:
-        // pending first, then the defensive current_balances fold.
+        // Mirror the full-scan seams from `sync_address_balances`: the
+        // key_to_tag fold (built before block processing) and the
+        // result.found base-balance gap-seed (after the empty scan). The tree
+        // scan is empty here, standing in for "never saw a current-balances
+        // address", so result.found starts empty — NOT pre-seeded by hand.
         let mut key_to_tag: HashMap<Vec<u8>, (u32, PlatformAddress)> = HashMap::new();
         for (tag, address) in provider.pending_addresses() {
             key_to_tag.insert(address.to_bytes(), (tag, address));
@@ -2666,20 +2626,21 @@ mod tests {
                 .or_insert((tag, address));
         }
 
+        let mut result: AddressSyncResult<u32, PlatformAddress> = AddressSyncResult::new();
+        for (tag, address, funds) in provider.current_balances() {
+            result.found.entry((tag, address)).or_insert(funds);
+        }
+
         assert!(
             key_to_tag.contains_key(&seeded.to_bytes()),
-            "defensive fold must seed the current-balance-only address into the lookup"
+            "key fold must seed the current-balance-only address into the lookup"
+        );
+        assert_eq!(
+            result.found.get(&(7u32, seeded)).map(|f| f.balance),
+            Some(5_000),
+            "base-balance fold must seed the on-record balance before deltas apply"
         );
 
-        let mut provider = provider;
-        let mut result: AddressSyncResult<u32, PlatformAddress> = AddressSyncResult::new();
-        result.found.insert(
-            (7u32, seeded),
-            AddressFunds {
-                nonce: 0,
-                balance: 5_000,
-            },
-        );
         let mut pending_unknown: Vec<PendingMiss> = Vec::new();
 
         let op = BlockAwareCreditOperation::AddToCreditsOperations(
@@ -2704,7 +2665,7 @@ mod tests {
         assert_eq!(
             result.found.get(&(7u32, seeded)).map(|f| f.balance),
             Some(6_500),
-            "incremental delta applies to the folded current-balance address"
+            "AddToCredits must compute existing + X (5000 + 1500), not 0 + X"
         );
     }
 }
