@@ -331,6 +331,18 @@ pub async fn sync_address_balances<P: AddressProvider>(
     for (tag, address) in provider.pending_addresses() {
         key_to_tag.insert(address.to_bytes(), (tag, address));
     }
+    // Defensive fold of the `current_balances` invariant (see
+    // `AddressProvider::current_balances`): a well-behaved provider already
+    // lists every current-balance address in `pending_addresses`, but a
+    // bridge provider taking two independent caller arrays may not. Seeding
+    // these keys keeps their incremental deltas on the direct apply path
+    // instead of the buffer-and-drop unknown path. `entry` preserves the
+    // pending pairing on any overlap.
+    for (tag, address, _funds) in provider.current_balances() {
+        key_to_tag
+            .entry(address.to_bytes())
+            .or_insert((tag, address));
+    }
 
     // Initialize result
     let mut result: AddressSyncResult<P::Tag, P::Address> = AddressSyncResult::new();
@@ -510,6 +522,16 @@ async fn incremental_catch_up<P: AddressProvider>(
                     "Recent address balance changes query failed (non-fatal): {}",
                     e
                 );
+                // TODO(address-sync): a *transient* recent-query failure is
+                // indistinguishable here from "server lacks incremental RPCs".
+                // We advance new_sync_height to the tip and leave
+                // last_known_recent_block/new_sync_timestamp at 0 in both
+                // cases. For a transient failure that over-advances the
+                // watermark, so blocks between start_height and the tip are
+                // never re-queried. Distinguishing transient (retryable,
+                // keep the cursor) from unsupported (advance) needs a typed
+                // error classification not currently surfaced by the fetch
+                // layer; left unchanged to avoid risking the hot path.
                 result.new_sync_height = current_height.max(observed_tip_height);
                 return Ok(());
             }
@@ -687,6 +709,17 @@ async fn incremental_catch_up<P: AddressProvider>(
     // flood on multi-wallet chains.
     refresh_and_replay_unknown(key_to_tag, pending_unknown, provider, result).await;
 
+    // TODO(address-sync): the watermark advances past every applied block
+    // unconditionally. If refresh_and_replay_unknown hits its livelock
+    // guard and drops a buffered delta for a wallet-owned address, that
+    // block's height is still committed here, so the next incremental
+    // RangeAfter sync starts past it and never re-reports the delta —
+    // recovery then requires a full rescan. Holding the watermark back to
+    // the lowest cap-dropped block would force re-query, but threading
+    // that signal out of refresh_and_replay_unknown risks perpetual
+    // re-querying / hot-path regression; left unchanged pending a deliberate
+    // sync-state design (the cap is set high enough that legitimate chains
+    // never hit it).
     result.new_sync_height = current_height.max(observed_tip_height);
     // Store the highest block from the recent entries so the next sync can
     // use RangeAfter(this_height) for compaction detection.
@@ -787,17 +820,26 @@ async fn apply_block_changes<'a, P, I>(
             let new_balance = apply_op(change, current_balance, current_height);
 
             if new_balance != current_balance {
+                // INTENTIONAL — accepted risk, behavior deliberately kept.
                 // Incremental RPCs carry only balance deltas, never nonces,
                 // so an address first seen via catch-up records nonce=0 here.
-                // That synthesized value is cosmetic: it is never broadcast.
-                // Every spend path re-fetches the authoritative nonce at
-                // build time (`fetch_inputs_with_nonce` + `nonce_inc`), so
-                // the on-chain nonce — not this field — is what lands in a
-                // transition. A receive-only address genuinely has nonce 0;
-                // a spent-from address's true nonce is recovered by that
-                // build-time fetch. If this field ever needs to be
-                // authoritative for display, model it as `Option<u32>` and
-                // fetch `AddressFunds` for catch-up-discovered addresses.
+                // This synthesized 0 IS published on the public surface
+                // (AddressSyncResult / on_address_found) and IS durably
+                // persisted and round-tripped via the changeset entry
+                // (`PlatformAddressBalanceEntry`, defined in changeset.rs),
+                // yet it is non-authoritative: every spend re-fetches the
+                // on-chain nonce at build time (`fetch_inputs_with_nonce` +
+                // `nonce_inc`), so the on-chain value — not this field — lands
+                // in a transition. The managed-account reload keeps only the
+                // balance (`set_address_credit_balance` drops the nonce). A
+                // receive-only address genuinely has nonce 0; a spent-from
+                // address's true nonce is recovered by that build-time fetch.
+                // The only reader of the synthesized value is a
+                // self-documenting FFI display. CALLERS MUST NOT treat,
+                // display, or persist this as the authoritative nonce. Making
+                // it authoritative would mean modeling it as `Option<u32>` and
+                // fetching `AddressFunds` for catch-up-discovered addresses;
+                // that rework is deliberately not done.
                 let nonce = result.found.get(&result_key).map(|f| f.nonce).unwrap_or(0);
                 let funds = AddressFunds {
                     nonce,
@@ -840,11 +882,16 @@ async fn apply_block_changes<'a, P, I>(
     }
 }
 
-/// Maximum number of refresh+replay rounds. The loop iterates so a
-/// `pending_addresses()` set that grows via `on_address_found`-triggered
-/// gap extension can be picked up in the same pass; the cap guards
-/// against any pathological livelock.
-const REPLAY_REFRESH_MAX_ITERATIONS: usize = 3;
+/// Livelock guard for the refresh+replay loop — NOT a functional limit
+/// on gap-extension depth. The loop iterates so a `pending_addresses()`
+/// set that grows via `on_address_found`-triggered gap extension is
+/// picked up in the same pass; each iteration must resolve at least one
+/// new address or the loop exits early, so a well-behaved provider never
+/// approaches this bound. The cap exists solely to bound a buggy or
+/// adversarial provider that keeps emitting ever-new pending addresses,
+/// turning the loop into a livelock. Set generously so legitimate deep
+/// chains complete in one pass.
+const REPLAY_REFRESH_MAX_ITERATIONS: usize = 32;
 
 /// End-of-pass recovery for addresses missing from the entry-time
 /// snapshot. Re-polls `pending_addresses()`, builds a small `extras` map
@@ -853,12 +900,13 @@ const REPLAY_REFRESH_MAX_ITERATIONS: usize = 3;
 /// out at the intersection check — no provider refresh storm, no log
 /// flood.
 ///
-/// The refresh+replay is wrapped in a bounded loop so that
-/// `on_address_found` callbacks fired during replay can trigger gap
-/// extension on the provider and surface follow-on addresses
-/// (e.g. address `A+1` that the provider only exposes after seeing `A`
-/// was used). Iteration stops as soon as no new addresses are resolved
-/// or the cap [`REPLAY_REFRESH_MAX_ITERATIONS`] is reached.
+/// The refresh+replay is wrapped in a loop so that `on_address_found`
+/// callbacks fired during replay can trigger gap extension on the
+/// provider and surface follow-on addresses (e.g. address `A+1` that the
+/// provider only exposes after seeing `A` was used). Iteration stops as
+/// soon as no new addresses are resolved; the
+/// [`REPLAY_REFRESH_MAX_ITERATIONS`] livelock guard only bounds a
+/// misbehaving provider and is not expected to be reached in practice.
 async fn refresh_and_replay_unknown<P: AddressProvider>(
     key_to_tag: &HashMap<Vec<u8>, (P::Tag, P::Address)>,
     pending_unknown: Vec<PendingMiss>,
@@ -939,8 +987,11 @@ async fn refresh_and_replay_unknown<P: AddressProvider>(
             let new_balance = apply_op(borrow_op(change), current_balance, *height);
 
             if new_balance != current_balance {
-                // Same synthesized nonce=0 as the forward pass — cosmetic,
-                // never broadcast (see the note in `apply_block_changes`).
+                // INTENTIONAL — accepted risk, behavior deliberately kept.
+                // Same synthesized nonce=0 as the forward pass: published and
+                // persisted but non-authoritative; every spend re-fetches the
+                // on-chain nonce. See the full note in `apply_block_changes`.
+                // Callers MUST NOT treat this as the authoritative nonce.
                 let nonce = result.found.get(&result_key).map(|f| f.nonce).unwrap_or(0);
                 let funds = AddressFunds {
                     nonce,
@@ -984,24 +1035,46 @@ async fn refresh_and_replay_unknown<P: AddressProvider>(
     }
 
     if hit_iteration_cap {
-        debug!(
-            "Address sync: refresh+replay reached the {}-iteration cap; \
-             any further gap-extension addresses will surface on the next sync",
+        // Hitting this guard is genuinely unusual: a well-behaved provider
+        // resolves every gap-extension address well within the cap. Truncating
+        // here drops the buffered balance deltas for any still-unresolved
+        // address, and — unlike plain address discovery — those deltas are NOT
+        // recovered by the next incremental sync: the next RangeAfter query
+        // starts past this block and never re-reports them. Recovering them
+        // requires a full tree rescan.
+        warn!(
+            "Address sync: refresh+replay hit the {}-iteration livelock guard; \
+             buffered balance change(s) for still-unresolved address(es) were \
+             dropped and will only be recovered by a full rescan",
             REPLAY_REFRESH_MAX_ITERATIONS
         );
     }
 
+    // Split the still-unresolved tail into two populations with very different
+    // meaning: entries dropped because the cap truncated the loop (wallet-owned
+    // loss — the address kept resolving but we ran out of iterations) versus
+    // genuinely foreign addresses that never resolved at all. Only the former
+    // warrants a warning.
     let still_unknown = pending_unknown
         .iter()
         .filter(|(key, _, _)| !resolved_keys.contains(key))
         .count();
     if still_unknown > 0 {
-        debug!(
-            "Address sync: {} platform-reported balance change(s) reference \
-             address(es) not tracked by this wallet (refresh recovered {} \
-             other(s)); ignoring the untracked entries",
-            still_unknown, total_replay_applied
-        );
+        if hit_iteration_cap {
+            warn!(
+                "Address sync: {} buffered balance change(s) remained unresolved \
+                 when the livelock guard truncated refresh+replay (recovered {} \
+                 other(s) first); these are dropped until a full rescan",
+                still_unknown, total_replay_applied
+            );
+        } else {
+            debug!(
+                "Address sync: {} platform-reported balance change(s) reference \
+                 address(es) not tracked by this wallet (refresh recovered {} \
+                 other(s)); ignoring the untracked entries",
+                still_unknown, total_replay_applied
+            );
+        }
     }
 }
 
@@ -2196,6 +2269,442 @@ mod tests {
                 .iter()
                 .any(|(t, addr, f)| *t == 11 && *addr == b && f.balance == 2_222),
             "on_address_found must fire for B in the follow-on iteration"
+        );
+    }
+
+    /// A gap-extension chain DEEPER than the old 3-iteration cap:
+    /// A → A+1 → A+2 → A+3 → A+4, where each address is only exposed by
+    /// `pending_addresses()` after its predecessor's `on_address_found`
+    /// fires. With the cap raised to 32 the whole chain resolves in a
+    /// single end-of-pass pass — the old cap of 3 would have stranded
+    /// A+3 and A+4. Guards against the cap regressing into a functional
+    /// depth limit.
+    #[tokio::test]
+    async fn refresh_resolves_gap_extension_chain_deeper_than_old_cap() {
+        use async_trait::async_trait;
+
+        const CHAIN: [(u32, u8, u64); 5] = [
+            (20, 0xA0, 1_000),
+            (21, 0xA1, 2_000),
+            (22, 0xA2, 3_000),
+            (23, 0xA3, 4_000),
+            (24, 0xA4, 5_000),
+        ];
+
+        struct ChainProvider {
+            addrs: Vec<PlatformAddress>,
+            // How many chain links the provider currently exposes. Starts
+            // at 1 (just the head); each `on_address_found` for the
+            // deepest exposed link extends the gap by one.
+            exposed: usize,
+            found: Vec<(u32, PlatformAddress, AddressFunds)>,
+        }
+
+        #[async_trait]
+        impl AddressProvider for ChainProvider {
+            type Tag = u32;
+            type Address = PlatformAddress;
+
+            fn gap_limit(&self) -> AddressIndex {
+                0
+            }
+
+            fn pending_addresses(&self) -> impl Iterator<Item = (Self::Tag, Self::Address)> + '_ {
+                (0..self.exposed).map(|i| (CHAIN[i].0, self.addrs[i]))
+            }
+
+            async fn on_address_found(
+                &mut self,
+                tag: Self::Tag,
+                address: &Self::Address,
+                funds: AddressFunds,
+            ) {
+                self.found.push((tag, *address, funds));
+                // Extend the gap one link deeper when the current deepest
+                // exposed address is the one that was just found.
+                if self.exposed < CHAIN.len() && *address == self.addrs[self.exposed - 1] {
+                    self.exposed += 1;
+                }
+            }
+
+            async fn on_address_absent(&mut self, _tag: Self::Tag, _address: &Self::Address) {}
+
+            fn current_balances(
+                &self,
+            ) -> impl Iterator<Item = (Self::Tag, Self::Address, AddressFunds)> + '_ {
+                std::iter::empty()
+            }
+        }
+
+        let addrs: Vec<PlatformAddress> = CHAIN.iter().map(|(_, b, _)| p2pkh(*b)).collect();
+
+        // Every link is post-snapshot — the entry-time lookup is empty,
+        // so all five changes are buffered and must be recovered by the
+        // looping replay.
+        let lookup: HashMap<Vec<u8>, (u32, PlatformAddress)> = HashMap::new();
+
+        let pending_unknown: Vec<PendingMiss> = CHAIN
+            .iter()
+            .enumerate()
+            .map(|(i, (_, _, credits))| {
+                (
+                    addrs[i].to_bytes(),
+                    OwnedBalanceOp::Compacted(BlockAwareCreditOperation::SetCredits(*credits)),
+                    0,
+                )
+            })
+            .collect();
+
+        let mut provider = ChainProvider {
+            addrs: addrs.clone(),
+            exposed: 1,
+            found: Vec::new(),
+        };
+        let mut result: AddressSyncResult<u32, PlatformAddress> = AddressSyncResult::new();
+
+        refresh_and_replay_unknown(&lookup, pending_unknown, &mut provider, &mut result).await;
+
+        // The chain depth (5) exceeds the old cap (3); all five must land
+        // in this single pass thanks to the raised livelock guard.
+        for (i, (tag, _, credits)) in CHAIN.iter().enumerate() {
+            assert_eq!(
+                result.found.get(&(*tag, addrs[i])).map(|f| f.balance),
+                Some(*credits),
+                "chain link {i} (depth {}) must resolve in one pass under the raised cap",
+                i + 1
+            );
+            assert!(
+                provider
+                    .found
+                    .iter()
+                    .any(|(t, a, f)| t == tag && *a == addrs[i] && f.balance == *credits),
+                "on_address_found must fire for chain link {i}"
+            );
+        }
+    }
+
+    /// The common ~15s incremental resync hot path drives `Recent` ops
+    /// through `apply_block_changes`. This pins the `Recent` arm — both
+    /// the direct-apply path for a known address and the buffer+replay
+    /// path for a post-snapshot one — which had zero coverage.
+    #[tokio::test]
+    async fn apply_block_changes_recent_op_direct_apply_and_buffer_replay() {
+        use async_trait::async_trait;
+
+        let known = p2pkh(0x31);
+        let late = p2pkh(0x32);
+
+        struct GrowingProvider {
+            late: PlatformAddress,
+            found: Vec<(u32, PlatformAddress, AddressFunds)>,
+        }
+
+        #[async_trait]
+        impl AddressProvider for GrowingProvider {
+            type Tag = u32;
+            type Address = PlatformAddress;
+
+            fn gap_limit(&self) -> AddressIndex {
+                0
+            }
+
+            fn pending_addresses(&self) -> impl Iterator<Item = (Self::Tag, Self::Address)> + '_ {
+                std::iter::once((2u32, self.late))
+            }
+
+            async fn on_address_found(
+                &mut self,
+                tag: Self::Tag,
+                address: &Self::Address,
+                funds: AddressFunds,
+            ) {
+                self.found.push((tag, *address, funds));
+            }
+
+            async fn on_address_absent(&mut self, _tag: Self::Tag, _address: &Self::Address) {}
+
+            fn current_balances(
+                &self,
+            ) -> impl Iterator<Item = (Self::Tag, Self::Address, AddressFunds)> + '_ {
+                std::iter::empty()
+            }
+        }
+
+        // `known` is in the entry-time snapshot with a seeded balance;
+        // `late` is post-snapshot and exercises the buffer+replay arm.
+        let mut lookup: HashMap<Vec<u8>, (u32, PlatformAddress)> = HashMap::new();
+        lookup.insert(known.to_bytes(), (1u32, known));
+
+        let mut result: AddressSyncResult<u32, PlatformAddress> = AddressSyncResult::new();
+        result.found.insert(
+            (1u32, known),
+            AddressFunds {
+                nonce: 0,
+                balance: 1_000,
+            },
+        );
+
+        let mut provider = GrowingProvider {
+            late,
+            found: Vec::new(),
+        };
+        let mut pending_unknown: Vec<PendingMiss> = Vec::new();
+
+        // Recent ops: AddToCredits accumulates on the known base, SetCredits
+        // establishes the late address's balance.
+        let known_op = CreditOperation::AddToCredits(250);
+        let late_op = CreditOperation::SetCredits(8_000);
+        let changes = [
+            (&known, BalanceOp::Recent(&known_op)),
+            (&late, BalanceOp::Recent(&late_op)),
+        ];
+
+        apply_block_changes(
+            &lookup,
+            changes.iter().map(|(a, c)| (*a, *c)),
+            0,
+            &mut provider,
+            &mut result,
+            &mut pending_unknown,
+        )
+        .await;
+
+        // Known Recent AddToCredits applied immediately on the direct path.
+        assert_eq!(
+            result.found.get(&(1u32, known)).map(|f| f.balance),
+            Some(1_250),
+            "known Recent AddToCredits applies on the direct path"
+        );
+        // Late address buffered as a Recent miss for end-of-pass replay.
+        assert_eq!(
+            pending_unknown.len(),
+            1,
+            "post-snapshot Recent change is buffered for replay"
+        );
+        assert!(
+            matches!(pending_unknown[0].1, OwnedBalanceOp::Recent(_)),
+            "buffered miss must preserve the Recent op shape"
+        );
+
+        refresh_and_replay_unknown(&lookup, pending_unknown, &mut provider, &mut result).await;
+
+        // Late Recent SetCredits recovered after the refresh.
+        assert_eq!(
+            result.found.get(&(2u32, late)).map(|f| f.balance),
+            Some(8_000),
+            "post-snapshot Recent SetCredits recovered after refresh"
+        );
+        assert!(
+            provider
+                .found
+                .iter()
+                .any(|(t, a, f)| *t == 2 && *a == late && f.balance == 8_000),
+            "on_address_found fires for the recovered Recent address"
+        );
+    }
+
+    /// The compacted `AddToCreditsOperations` height filter
+    /// (`apply_op`, `>= current_height`) must drop deltas at heights
+    /// below the catch-up cursor (already counted by the tree scan) while
+    /// summing deltas at or above it. A single op carrying entries on both
+    /// sides of a discriminating cursor pins the anti-double-count edge.
+    #[tokio::test]
+    async fn apply_block_changes_height_filter_drops_below_cursor() {
+        use async_trait::async_trait;
+
+        struct NoopProvider;
+
+        #[async_trait]
+        impl AddressProvider for NoopProvider {
+            type Tag = u32;
+            type Address = PlatformAddress;
+
+            fn gap_limit(&self) -> AddressIndex {
+                0
+            }
+
+            fn pending_addresses(&self) -> impl Iterator<Item = (Self::Tag, Self::Address)> + '_ {
+                std::iter::empty()
+            }
+
+            async fn on_address_found(
+                &mut self,
+                _tag: Self::Tag,
+                _address: &Self::Address,
+                _funds: AddressFunds,
+            ) {
+            }
+
+            async fn on_address_absent(&mut self, _tag: Self::Tag, _address: &Self::Address) {}
+
+            fn current_balances(
+                &self,
+            ) -> impl Iterator<Item = (Self::Tag, Self::Address, AddressFunds)> + '_ {
+                std::iter::empty()
+            }
+        }
+
+        let addr = p2pkh(0x41);
+        let mut lookup: HashMap<Vec<u8>, (u32, PlatformAddress)> = HashMap::new();
+        lookup.insert(addr.to_bytes(), (1u32, addr));
+
+        let mut result: AddressSyncResult<u32, PlatformAddress> = AddressSyncResult::new();
+        result.found.insert(
+            (1u32, addr),
+            AddressFunds {
+                nonce: 0,
+                balance: 10_000,
+            },
+        );
+
+        // Cursor at height 100: ops at 98 and 99 are below (already
+        // accounted for by the tree scan, must be filtered out as a
+        // double-count guard); ops at 100 and 101 are at/above (must
+        // apply). Below sum = 700, at/above sum = 30.
+        let current_height = 100u64;
+        let op = BlockAwareCreditOperation::AddToCreditsOperations(
+            [
+                (98u64, 300u64),
+                (99u64, 400u64),
+                (100u64, 10u64),
+                (101u64, 20u64),
+            ]
+            .into_iter()
+            .collect(),
+        );
+        let changes = [(&addr, BalanceOp::Compacted(&op))];
+
+        let mut pending_unknown: Vec<PendingMiss> = Vec::new();
+        apply_block_changes(
+            &lookup,
+            changes.iter().map(|(a, c)| (*a, *c)),
+            current_height,
+            &mut NoopProvider,
+            &mut result,
+            &mut pending_unknown,
+        )
+        .await;
+
+        // 10_000 base + only the at/above deltas (10 + 20) = 10_030. The
+        // below-cursor 300 + 400 must NOT be counted.
+        assert_eq!(
+            result.found.get(&(1u32, addr)).map(|f| f.balance),
+            Some(10_030),
+            "only deltas at heights >= current_height may apply (anti-double-count)"
+        );
+        assert!(
+            pending_unknown.is_empty(),
+            "no unknowns for a known address"
+        );
+    }
+
+    /// A provider that lists an address in `current_balances` but NOT in
+    /// `pending_addresses` (the FFI two-array shape that violates the
+    /// trait invariant). The engine's defensive fold seeds the
+    /// current-balance key into the entry-time lookup, so an incremental
+    /// change for it applies on the direct path instead of being buffered
+    /// and dropped (Found-025 class).
+    #[tokio::test]
+    async fn current_balances_fold_keeps_unpending_address_off_the_drop_path() {
+        use async_trait::async_trait;
+
+        let seeded = p2pkh(0x51);
+
+        struct SplitArrayProvider {
+            seeded: PlatformAddress,
+        }
+
+        #[async_trait]
+        impl AddressProvider for SplitArrayProvider {
+            type Tag = u32;
+            type Address = PlatformAddress;
+
+            fn gap_limit(&self) -> AddressIndex {
+                0
+            }
+
+            // Intentionally does NOT list `seeded` — violates the invariant.
+            fn pending_addresses(&self) -> impl Iterator<Item = (Self::Tag, Self::Address)> + '_ {
+                std::iter::empty()
+            }
+
+            async fn on_address_found(
+                &mut self,
+                _tag: Self::Tag,
+                _address: &Self::Address,
+                _funds: AddressFunds,
+            ) {
+            }
+
+            async fn on_address_absent(&mut self, _tag: Self::Tag, _address: &Self::Address) {}
+
+            fn current_balances(
+                &self,
+            ) -> impl Iterator<Item = (Self::Tag, Self::Address, AddressFunds)> + '_ {
+                std::iter::once((
+                    7u32,
+                    self.seeded,
+                    AddressFunds {
+                        nonce: 0,
+                        balance: 5_000,
+                    },
+                ))
+            }
+        }
+
+        let provider = SplitArrayProvider { seeded };
+
+        // Mirror the lookup-build seam from `sync_address_balances`:
+        // pending first, then the defensive current_balances fold.
+        let mut key_to_tag: HashMap<Vec<u8>, (u32, PlatformAddress)> = HashMap::new();
+        for (tag, address) in provider.pending_addresses() {
+            key_to_tag.insert(address.to_bytes(), (tag, address));
+        }
+        for (tag, address, _funds) in provider.current_balances() {
+            key_to_tag
+                .entry(address.to_bytes())
+                .or_insert((tag, address));
+        }
+
+        assert!(
+            key_to_tag.contains_key(&seeded.to_bytes()),
+            "defensive fold must seed the current-balance-only address into the lookup"
+        );
+
+        let mut provider = provider;
+        let mut result: AddressSyncResult<u32, PlatformAddress> = AddressSyncResult::new();
+        result.found.insert(
+            (7u32, seeded),
+            AddressFunds {
+                nonce: 0,
+                balance: 5_000,
+            },
+        );
+        let mut pending_unknown: Vec<PendingMiss> = Vec::new();
+
+        let op = BlockAwareCreditOperation::AddToCreditsOperations(
+            std::iter::once((0u64, 1_500u64)).collect(),
+        );
+        let changes = [(&seeded, BalanceOp::Compacted(&op))];
+
+        apply_block_changes(
+            &key_to_tag,
+            changes.iter().map(|(a, c)| (*a, *c)),
+            0,
+            &mut provider,
+            &mut result,
+            &mut pending_unknown,
+        )
+        .await;
+
+        assert!(
+            pending_unknown.is_empty(),
+            "folded address applies on the direct path — never buffered as unknown"
+        );
+        assert_eq!(
+            result.found.get(&(7u32, seeded)).map(|f| f.balance),
+            Some(6_500),
+            "incremental delta applies to the folded current-balance address"
         );
     }
 }
