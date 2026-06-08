@@ -4,10 +4,10 @@
 //! code in its own module.
 
 use super::helpers::js_obj;
+use crate::IdentityWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::impl_wasm_conversions_serde;
 use crate::impl_wasm_type_info;
-use crate::IdentityWasm;
 use crate::serialization::conversions::normalize_js_value_for_json;
 use js_sys::{BigInt, Map};
 use serde::{Deserialize, Serialize};

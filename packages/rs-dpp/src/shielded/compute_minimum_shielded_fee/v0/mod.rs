@@ -329,6 +329,46 @@ mod tests {
         }
     }
 
+    /// The identity-create fee MUST equal the base shielded fee plus the variable identity-write
+    /// component `(BASE + num_keys × PER_KEY) × per_byte_rate`, and it MUST grow strictly with the
+    /// key count (a larger key set is a larger `AddNewIdentity` write). This pins the formula so the
+    /// `denomination >= min_fee` gate and the client predictor stay aligned with the metered write.
+    #[test]
+    fn compute_shielded_identity_create_fee_v0_scales_with_keys() {
+        let platform_version = PlatformVersion::latest();
+        let storage = &platform_version.fee_version.storage;
+        let per_byte_rate =
+            storage.storage_disk_usage_credit_per_byte + storage.storage_processing_credit_per_byte;
+
+        for num_actions in [1usize, 2, 5] {
+            let base = compute_minimum_shielded_fee_v0(num_actions, platform_version)
+                .expect("minimum shielded fee");
+            let mut previous = None;
+            for num_keys in [1usize, 2, 5, 10] {
+                let fee = compute_shielded_identity_create_fee_v0(
+                    num_actions,
+                    num_keys,
+                    platform_version,
+                )
+                .expect("identity create fee");
+                let expected_identity_bytes = SHIELDED_IDENTITY_CREATE_BASE_STORAGE_BYTES
+                    + num_keys as u64 * SHIELDED_IDENTITY_CREATE_PER_KEY_STORAGE_BYTES;
+                assert_eq!(
+                    fee,
+                    base + expected_identity_bytes * per_byte_rate,
+                    "identity create fee must equal base + (BASE + num_keys×PER_KEY)×rate"
+                );
+                if let Some(prev) = previous {
+                    assert!(
+                        fee > prev,
+                        "identity create fee must grow strictly with the key count"
+                    );
+                }
+                previous = Some(fee);
+            }
+        }
+    }
+
     /// Pin the exact relationship between the Unshield fee and the base shielded fee:
     /// the unshield fee MUST be `compute_minimum_shielded_fee_v0(n)` plus exactly one flat
     /// `SHIELDED_UNSHIELD_ADDRESS_STORAGE_BYTES × per_byte_rate` address-write component (the same

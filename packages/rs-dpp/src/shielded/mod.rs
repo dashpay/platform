@@ -372,4 +372,85 @@ mod tests {
         assert_eq!(&d[0..3], &[0xAA, 0xBB, 0xCC]);
         assert_eq!(&d[3..11], &5u64.to_le_bytes());
     }
+
+    mod identity_create_sighash {
+        use super::*;
+        use crate::identity::{KeyType, Purpose, SecurityLevel};
+        use crate::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
+        use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+        use platform_value::BinaryData;
+
+        fn mk_key(id: u32, data_byte: u8) -> IdentityPublicKeyInCreation {
+            IdentityPublicKeyInCreation::V0(IdentityPublicKeyInCreationV0 {
+                id,
+                key_type: KeyType::ECDSA_SECP256K1,
+                purpose: Purpose::AUTHENTICATION,
+                security_level: SecurityLevel::MASTER,
+                contract_bounds: None,
+                read_only: false,
+                data: BinaryData::new(vec![data_byte; 33]),
+                signature: BinaryData::new(vec![]),
+            })
+        }
+
+        #[test]
+        fn layout_is_length_prefixed() {
+            // identity_id(32) || denomination(8) || num_keys(2) || [key_id(4)|purpose|sec|type|len(2)|data]
+            let id = [0x11u8; 32];
+            let keys = vec![mk_key(7, 0xAB)];
+            let d = identity_create_from_shielded_extra_sighash_data(&id, 10_000_000_000, &keys);
+            assert_eq!(&d[0..32], &id);
+            assert_eq!(&d[32..40], &10_000_000_000u64.to_le_bytes());
+            assert_eq!(&d[40..42], &1u16.to_le_bytes());
+            assert_eq!(&d[42..46], &7u32.to_le_bytes());
+            assert_eq!(d[46], Purpose::AUTHENTICATION as u8);
+            assert_eq!(d[47], SecurityLevel::MASTER as u8);
+            assert_eq!(d[48], KeyType::ECDSA_SECP256K1 as u8);
+            assert_eq!(&d[49..51], &33u16.to_le_bytes());
+            assert_eq!(&d[51..84], &[0xAB; 33]);
+            assert_eq!(d.len(), 32 + 8 + 2 + (4 + 1 + 1 + 1 + 2 + 33));
+        }
+
+        #[test]
+        fn binds_identity_id_denomination_and_keys() {
+            let id_a = [0x11u8; 32];
+            let id_b = [0x22u8; 32];
+            let keys = vec![mk_key(0, 0xAA)];
+            let base =
+                identity_create_from_shielded_extra_sighash_data(&id_a, 10_000_000_000, &keys);
+
+            // Changing the identity id changes the preimage (anti-redirection to a different id).
+            assert_ne!(
+                base,
+                identity_create_from_shielded_extra_sighash_data(&id_b, 10_000_000_000, &keys),
+                "identity id must be bound"
+            );
+            // Changing the denomination changes the preimage.
+            assert_ne!(
+                base,
+                identity_create_from_shielded_extra_sighash_data(&id_a, 30_000_000_000, &keys),
+                "denomination must be bound"
+            );
+            // Swapping in a different key changes the preimage (anti-key-swap).
+            assert_ne!(
+                base,
+                identity_create_from_shielded_extra_sighash_data(
+                    &id_a,
+                    10_000_000_000,
+                    &[mk_key(0, 0xBB)]
+                ),
+                "key data must be bound"
+            );
+            // Adding a key changes the preimage (the full set is bound, not just the count).
+            assert_ne!(
+                base,
+                identity_create_from_shielded_extra_sighash_data(
+                    &id_a,
+                    10_000_000_000,
+                    &[mk_key(0, 0xAA), mk_key(1, 0xCC)]
+                ),
+                "the full key set must be bound"
+            );
+        }
+    }
 }
