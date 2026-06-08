@@ -262,9 +262,7 @@ fn tc_p2_005_is_transient_table() {
             WalletStorageError::BlobTooLarge { .. } => (false, "blob_too_large"),
             WalletStorageError::UtxoAddressNotDerived { .. } => (false, "utxo_address_not_derived"),
             WalletStorageError::ForeignKeysNotEnforced => (false, "foreign_keys_not_enforced"),
-            WalletStorageError::JournalModeNotApplied { .. } => {
-                (false, "journal_mode_not_applied")
-            }
+            WalletStorageError::JournalModeNotApplied { .. } => (false, "journal_mode_not_applied"),
             WalletStorageError::SchemaHistoryMalformed { .. } => {
                 (false, "schema_history_malformed")
             }
