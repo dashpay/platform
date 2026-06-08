@@ -1209,6 +1209,15 @@ impl Drive {
                             })
                             .transpose()?;
 
+                        // Mirror ShieldedWithdrawal's singleton-subtree invariant: the
+                        // address sub-query targets exactly one key, so a second entry under
+                        // the clear-address pool is a malformed proof, not last-write-wins.
+                        if balances.contains_key(&address) {
+                            return Err(Error::Proof(ProofError::CorruptedProof(
+                                "unshield proof contained more than one output-address entry"
+                                    .to_string(),
+                            )));
+                        }
                         balances.insert(address, balance_info);
                     } else {
                         return Err(Error::Proof(ProofError::CorruptedProof(
