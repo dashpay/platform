@@ -4,14 +4,17 @@ use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
+use crate::execution::validation::state_transition::common::validate_unique_identity_public_key_hashes_in_state::validate_unique_identity_public_key_hashes_not_in_state;
 use crate::execution::validation::state_transition::state_transitions::shielded_common::{
     read_pool_total_balance, validate_anchor_exists, validate_minimum_pool_notes,
     validate_nullifiers,
 };
+use dpp::consensus::state::identity::IdentityAlreadyExistsError;
 use dpp::consensus::state::shielded::invalid_shielded_proof_error::InvalidShieldedProofError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
+use dpp::state_transition::state_transitions::shielded::identity_create_from_shielded_pool_transition::derive_identity_id_from_actions;
 use dpp::state_transition::state_transitions::shielded::identity_create_from_shielded_pool_transition::IdentityCreateFromShieldedPoolTransition;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
@@ -96,6 +99,40 @@ impl IdentityCreateFromShieldedPoolStateTransitionTransformIntoActionValidationV
                     current_total_balance, v0.denomination
                 )))
                 .into(),
+            ));
+        }
+
+        // Identity-creation state checks (mirroring `IdentityCreate`'s `validate_state`), so the
+        // `AddNewIdentity` write can't fail as an internal Drive error during execution:
+        //
+        // 1. The new identity must not already exist. The id is `double_sha256(sorted nullifiers)` —
+        //    collision-resistant and derived from single-use spend tags — so this is practically
+        //    unreachable, but check explicitly to return a clean consensus rejection. (No asset lock
+        //    here, so a failure is a plain rejection, not a partial-asset-lock penalty.)
+        let identity_id = derive_identity_id_from_actions(&v0.actions);
+        if drive
+            .fetch_identity_balance(identity_id.to_buffer(), transaction, platform_version)?
+            .is_some()
+        {
+            return Ok(ConsensusValidationResult::new_with_error(
+                IdentityAlreadyExistsError::new(identity_id).into(),
+            ));
+        }
+
+        // 2. None of the new identity's public-key hashes may already be registered to another
+        //    identity (platform enforces globally-unique key hashes for unique key types). Without
+        //    this, a duplicate unique key would fail inside the `AddNewIdentity` write at execution
+        //    as an internal Drive error instead of a clean consensus rejection.
+        let unique_keys_result = validate_unique_identity_public_key_hashes_not_in_state(
+            &v0.public_keys,
+            drive,
+            execution_context,
+            transaction,
+            platform_version,
+        )?;
+        if !unique_keys_result.is_valid() {
+            return Ok(ConsensusValidationResult::new_with_errors(
+                unique_keys_result.errors,
             ));
         }
 
