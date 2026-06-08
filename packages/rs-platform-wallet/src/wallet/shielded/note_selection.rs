@@ -97,7 +97,16 @@ pub fn select_notes(
         PlatformWalletError::ShieldedBuildError("amount + fee overflows u64".to_string())
     })?;
 
-    let total_available: u64 = unspent_only.iter().map(|n| n.value).sum();
+    // Checked accumulation: a corrupt/crafted store could otherwise overflow u64 (legitimate note
+    // values sum to at most the bounded credit supply, but never trust the store blindly).
+    let total_available = unspent_only
+        .iter()
+        .try_fold(0u64, |acc, n| acc.checked_add(n.value))
+        .ok_or_else(|| {
+            PlatformWalletError::ShieldedBuildError(
+                "shielded note values sum overflows u64".to_string(),
+            )
+        })?;
     if total_available < required {
         return Err(PlatformWalletError::ShieldedInsufficientBalance {
             available: total_available,
@@ -113,8 +122,13 @@ pub fn select_notes(
     let mut accumulated = 0u64;
 
     for note in sorted {
+        // Cannot overflow (the full-set sum above already succeeded), but stay checked for clarity.
+        accumulated = accumulated.checked_add(note.value).ok_or_else(|| {
+            PlatformWalletError::ShieldedBuildError(
+                "selected shielded note values sum overflows u64".to_string(),
+            )
+        })?;
         selected.push(note);
-        accumulated += note.value;
         if accumulated >= required {
             break;
         }

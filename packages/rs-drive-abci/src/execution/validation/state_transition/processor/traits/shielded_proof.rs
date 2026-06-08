@@ -615,6 +615,23 @@ mod tests {
             },
         ))
     }
+    fn make_identity_create_from_shielded_pool() -> StateTransition {
+        use dpp::state_transition::state_transitions::shielded::identity_create_from_shielded_pool_transition::v0::IdentityCreateFromShieldedPoolTransitionV0;
+        use dpp::state_transition::state_transitions::shielded::identity_create_from_shielded_pool_transition::IdentityCreateFromShieldedPoolTransition;
+        StateTransition::IdentityCreateFromShieldedPool(
+            IdentityCreateFromShieldedPoolTransition::V0(
+                IdentityCreateFromShieldedPoolTransitionV0 {
+                    public_keys: vec![],
+                    denomination: 0,
+                    actions: vec![],
+                    anchor: [0u8; 32],
+                    proof: vec![],
+                    binding_signature: [0u8; 64],
+                    identity_id: Default::default(),
+                },
+            ),
+        )
+    }
 
     mod has_shielded_proof_validation {
         use super::*;
@@ -626,6 +643,10 @@ mod tests {
                 ("ShieldedTransfer", make_shielded_transfer()),
                 ("Unshield", make_unshield()),
                 ("ShieldedWithdrawal", make_shielded_withdrawal()),
+                (
+                    "IdentityCreateFromShieldedPool",
+                    make_identity_create_from_shielded_pool(),
+                ),
             ];
             for (name, st) in transitions {
                 assert!(
@@ -671,6 +692,10 @@ mod tests {
                 ("ShieldedTransfer", make_shielded_transfer()),
                 ("Unshield", make_unshield()),
                 ("ShieldedWithdrawal", make_shielded_withdrawal()),
+                (
+                    "IdentityCreateFromShieldedPool",
+                    make_identity_create_from_shielded_pool(),
+                ),
             ];
             for (name, st) in transitions {
                 assert!(

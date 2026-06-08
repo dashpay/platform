@@ -1,4 +1,9 @@
 use crate::error::Error;
+use crate::execution::types::execution_operation::signature_verification_operation::SignatureVerificationOperation;
+use crate::execution::types::execution_operation::ValidationOperation;
+use crate::execution::types::state_transition_execution_context::{
+    StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
+};
 use crate::execution::validation::state_transition::state_transitions::shielded_common::{
     read_pool_total_balance, validate_anchor_exists, validate_minimum_pool_notes,
     validate_nullifiers,
@@ -6,6 +11,7 @@ use crate::execution::validation::state_transition::state_transitions::shielded_
 use dpp::consensus::state::shielded::invalid_shielded_proof_error::InvalidShieldedProofError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::prelude::ConsensusValidationResult;
+use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
 use dpp::state_transition::state_transitions::shielded::identity_create_from_shielded_pool_transition::IdentityCreateFromShieldedPoolTransition;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
@@ -18,6 +24,7 @@ pub(in crate::execution::validation::state_transition::state_transitions::identi
     fn transform_into_action_v0(
         &self,
         drive: &Drive,
+        execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
@@ -29,6 +36,7 @@ impl IdentityCreateFromShieldedPoolStateTransitionTransformIntoActionValidationV
     fn transform_into_action_v0(
         &self,
         drive: &Drive,
+        execution_context: &mut StateTransitionExecutionContext,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
@@ -41,7 +49,7 @@ impl IdentityCreateFromShieldedPoolStateTransitionTransformIntoActionValidationV
         // id re-derivation are all validated earlier — basic structure (`validate_structure`) and
         // `validate_shielded_proof` (the latter runs the PoP + key structure BEFORE Halo 2 so a
         // malformed PoP cannot make the node pay for proof verification). Here we only do the
-        // STATEFUL checks against the shielded pool.
+        // STATEFUL checks against the shielded pool, then account for the per-key PoP verifications.
 
         // Read the current shielded pool state (read-your-own-writes within the block transaction).
         let mut drive_operations = vec![];
@@ -88,6 +96,20 @@ impl IdentityCreateFromShieldedPoolStateTransitionTransformIntoActionValidationV
                     current_total_balance, v0.denomination
                 )))
                 .into(),
+            ));
+        }
+
+        // Account for the per-key proof-of-possession signature verifications on the SUCCESS path so
+        // the metered fee includes their CPU cost — exactly as `IdentityCreate`'s identity-and-
+        // signatures stage does. The signatures themselves are verified earlier (in
+        // `validate_shielded_proof`, ahead of Halo 2); this records one `SignatureVerification`
+        // operation per key WITHOUT re-verifying, so a Type 20 transition is charged for the same
+        // signature-verification work as a plain `IdentityCreate`. (Only reached once the bundle
+        // proof + PoP have passed, so no nullifier is consumed and no fee charged for a rejected
+        // transition.)
+        for key in v0.public_keys.iter() {
+            execution_context.add_operation(ValidationOperation::SignatureVerification(
+                SignatureVerificationOperation::new(key.key_type()),
             ));
         }
 
