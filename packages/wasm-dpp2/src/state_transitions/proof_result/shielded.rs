@@ -17,7 +17,26 @@ use wasm_bindgen::prelude::*;
 fn read_map_property(value: &JsValue, name: &str) -> WasmDppResult<Map> {
     let raw = js_sys::Reflect::get(value, &name.into())
         .map_err(|_| WasmDppError::generic(format!("Missing property: {}", name)))?;
-    Ok(raw.unchecked_into())
+    // `to_json` normalizes the `Map` to a plain object so it survives `JSON.stringify`. A value
+    // that round-tripped through `JSON.parse(JSON.stringify(...))` therefore arrives here as a
+    // plain object, not a `Map`. Accept both: use a real `Map` directly, otherwise rebuild one
+    // from the plain object's entries so `.size`/`.get()`/iteration behave as a `Map`.
+    if raw.is_instance_of::<Map>() {
+        Ok(raw.unchecked_into())
+    } else if raw.is_object() {
+        let entries = js_sys::Object::entries(raw.unchecked_ref());
+        let map = Map::new();
+        for entry in entries.iter() {
+            let pair: js_sys::Array = entry.unchecked_into();
+            map.set(&pair.get(0), &pair.get(1));
+        }
+        Ok(map)
+    } else {
+        Err(WasmDppError::generic(format!(
+            "Property {} must be a Map or plain object",
+            name
+        )))
+    }
 }
 
 // --- VerifiedShieldedPoolState ---
