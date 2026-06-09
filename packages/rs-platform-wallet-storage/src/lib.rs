@@ -29,10 +29,9 @@
 
 /// Shared 16 MiB ceiling for the two independent size caps in this crate:
 /// the KV value cap ([`kv::MAX_VALUE_LEN`]) and the bincode-serde BLOB
-/// decode cap (`sqlite::schema::blob::BLOB_SIZE_LIMIT_BYTES`). Defined at
-/// the crate root — always compiled — so the `kv` and `sqlite` features
-/// (which compile independently) share one source of truth instead of a
-/// hand-maintained "keep these in sync" comment.
+/// decode cap (`sqlite::schema::blob::BLOB_SIZE_LIMIT_BYTES`). At the crate
+/// root so the independently-compiled `kv` and `sqlite` features share one
+/// source of truth.
 pub const SIZE_LIMIT_BYTES: usize = 16 * 1024 * 1024;
 
 #[cfg(feature = "kv")]
@@ -43,10 +42,8 @@ pub mod sqlite;
 #[cfg(feature = "secrets")]
 pub mod secrets;
 
-// Convenience re-exports kept under the crate root so embedders don't
-// have to spell out the `::sqlite::` middle segment for the common
-// names. Adding to or trimming from this list does NOT count as a
-// breaking change of the submodule API.
+// Convenience re-exports so embedders can skip the `::sqlite::` segment
+// for common names.
 #[cfg(feature = "kv")]
 pub use kv::{KvError, KvStore, ObjectId};
 #[cfg(feature = "sqlite")]
@@ -56,9 +53,8 @@ pub use sqlite::{
     WalletStorageError,
 };
 
-// Compile-time assertions — `Send + Sync`, `PlatformWalletPersistence`
-// object-safety, and the no-boxed-trait-object error policy.
-// Lint-gated to the SQLite feature because they reference its types.
+// Compile-time assertions: `Send + Sync` and `PlatformWalletPersistence`
+// object-safety. Gated to `sqlite` because they reference its types.
 #[cfg(feature = "sqlite")]
 #[allow(dead_code)]
 const fn _send_sync_check<T: Send + Sync>() {}
@@ -75,9 +71,8 @@ fn _object_safety_check(persister: SqlitePersister) {
         std::sync::Arc::new(persister);
 }
 
-// The keyring SPI must be object-safe and its error `Send + Sync`, so
-// a backend can be held behind `Arc<dyn CredentialStoreApi + Send +
-// Sync>` and its errors crossed between threads / FFI.
+// The keyring SPI must be object-safe with `Send + Sync` errors so a
+// backend can live behind `Arc<dyn CredentialStoreApi + Send + Sync>`.
 #[cfg(feature = "secrets")]
 #[allow(dead_code)]
 const fn _secrets_send_sync_check<T: Send + Sync>() {}

@@ -10,19 +10,15 @@
 //! serialization (bincode, JSON, protobuf, raw bytes). Keys are
 //! bounded `TEXT` (1..=128 chars).
 //!
-//! Scoping: each [`ObjectId`] variant addresses a dedicated table. The
-//! [`ObjectId::Global`] slot has no parent and survives wallet deletion.
-//! Every other variant names a wallet object, but a write does NOT
-//! require that object to exist yet — metadata may be attached ahead of
-//! sync. When the object is later deleted, an `AFTER DELETE` trigger on
-//! its parent table removes the matching metadata. However, if the
-//! parent object is never created, or is removed via a path the trigger
-//! does not cover, the metadata row may persist as an orphan. This is an
-//! accepted limitation across all scopes; a future garbage-collection pass
-//! is expected to reap such orphans (no live parent, e.g. older than ~1
-//! week) — callers should not rely on orphan metadata persisting forever.
-//! The same key string under different scopes is independent — the scopes
-//! live in separate tables.
+//! Scoping: each [`ObjectId`] variant addresses a dedicated table, so the
+//! same key string under different scopes is independent.
+//! [`ObjectId::Global`] has no parent and survives wallet deletion. Other
+//! variants name a wallet object but a write does NOT require it to exist
+//! yet (metadata may be attached ahead of sync); an `AFTER DELETE` trigger
+//! reaps the metadata when the object is deleted. Rows whose parent is
+//! never created, or removed via a path the trigger misses, may persist as
+//! orphans — an accepted limitation; a future GC pass is expected to reap
+//! them, so callers must not rely on orphans living forever.
 //!
 //! This API is **independent of [`platform_wallet::changeset::PlatformWalletPersistence`]**:
 //! KV is for app metadata, not wallet domain state. Reads and writes go
@@ -33,16 +29,10 @@ use platform_wallet::wallet::platform_wallet::WalletId;
 
 /// Scope of a metadata entry — one variant per dedicated `meta_*` table.
 ///
-/// [`ObjectId::Global`] has no parent and survives wallet deletion. The
-/// other variants name a wallet object but carry no insert-time
-/// existence requirement: metadata may be written before its parent
-/// object is synced into its typed table. An `AFTER DELETE` trigger on
-/// each parent removes the matching metadata when the object is deleted.
-///
-/// **Orphan metadata:** if the parent object is never created, or is
-/// removed via a path the trigger does not cover, the metadata row may
-/// persist as an orphan. A future GC pass is expected to reap such
-/// rows; do not rely on them living forever.
+/// [`ObjectId::Global`] has no parent and survives wallet deletion. Other
+/// variants name a wallet object but may be written before it is synced;
+/// an `AFTER DELETE` trigger reaps the metadata when the object is deleted.
+/// See the module docs for the orphan-metadata limitation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ObjectId {
     /// Global app metadata; no parent (`meta_global`).
@@ -69,14 +59,10 @@ pub enum ObjectId {
     },
 }
 
-/// Maximum allowed key length, in **code points** (Unicode scalar
-/// values). Enforced identically on both sides: `validate_key` rejects on
-/// `key.chars().count()`, and the SQL CHECK on every `meta_*` table is
-/// `CHECK (length(key) BETWEEN 1 AND 128)`, where SQLite's `length()`
-/// counts code points. The two bounds use the SAME unit, so the set of
-/// keys the API accepts is exactly the set SQL accepts — no key the API
-/// writes can be hidden from it, and no validate_key-passing key can
-/// trip the CHECK.
+/// Maximum allowed key length, in **code points**. `validate_key` counts
+/// `chars().count()`; the SQL `CHECK (length(key) BETWEEN 1 AND 128)` uses
+/// the same unit (SQLite `length()` counts code points), so the two bounds
+/// accept exactly the same key set.
 pub const MAX_KEY_LEN: usize = 128;
 
 /// Hard cap on the size of a single KV value, in bytes, so a tampered or
@@ -101,9 +87,8 @@ pub enum KvError {
     KeyTooLong { len: usize },
 
     /// A value exceeded [`MAX_VALUE_LEN`]. Raised by `put` before the
-    /// INSERT and by `get` before the bytes are materialised, so an
-    /// oversize value never lands and a tampered row never OOMs the
-    /// process.
+    /// INSERT and by `get` before materialising, so a tampered row can't
+    /// OOM the process.
     #[error("kv value too large: {found} bytes (max {max})")]
     ValueTooLarge { found: usize, max: usize },
 
@@ -168,12 +153,8 @@ pub trait KvStore {
     fn list_keys(&self, scope: &ObjectId, prefix: Option<&str>) -> Result<Vec<String>, KvError>;
 }
 
-/// Validate a key against the length bounds. Used by [`KvStore`]
-/// implementations as a typed-error pre-check before reaching SQL.
-///
-/// Counts code points (`chars().count()`) to match the SQL
-/// `CHECK (length(key) BETWEEN 1 AND 128)` unit exactly, so the Rust
-/// pre-check and the column constraint accept the identical key set.
+/// Typed-error pre-check used by [`KvStore`] impls before reaching SQL.
+/// Counts code points to match the SQL CHECK unit (see [`MAX_KEY_LEN`]).
 pub(crate) fn validate_key(key: &str) -> Result<(), KvError> {
     if key.is_empty() {
         return Err(KvError::KeyEmpty);

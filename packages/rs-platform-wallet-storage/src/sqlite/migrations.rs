@@ -8,9 +8,8 @@ use rusqlite::OptionalExtension;
 
 use crate::sqlite::error::WalletStorageError;
 
-// `embed_migrations!` generates a `migrations` module with a `runner()`
-// function. The path is relative to the crate root (where `Cargo.toml`
-// lives).
+// Generates a `migrations` module with `runner()`; path is relative to
+// the crate root.
 refinery::embed_migrations!("./migrations");
 
 /// Apply every pending migration to `conn`.
@@ -20,10 +19,8 @@ pub fn run(conn: &mut rusqlite::Connection) -> Result<refinery::Report, refinery
 
 /// Apply migrations on behalf of [`crate::sqlite::persister::SqlitePersister::open`].
 ///
-/// Plain wrapper today — V001 ships the final identity-cascade shape so
-/// there is no FK-toggle dance or sentinel re-classification needed.
-/// Kept as a typed-error chokepoint so future migrations that DO need
-/// to re-classify a refinery error have a single entry point.
+/// A typed-error chokepoint: a single entry point for any future
+/// migration that needs to re-classify a refinery error.
 pub(crate) fn run_for_open(
     conn: &mut rusqlite::Connection,
 ) -> Result<refinery::Report, WalletStorageError> {
@@ -65,19 +62,15 @@ pub(crate) fn has_schema_history(conn: &rusqlite::Connection) -> Result<bool, Wa
     Ok(exists)
 }
 
-/// Refuse to operate on a database whose `refinery_schema_history`
-/// MAX(version) exceeds [`max_supported_version`]. Returns
-/// [`WalletStorageError::SchemaVersionUnsupported`] in that case.
+/// Refuse to operate on a DB whose `refinery_schema_history` MAX(version)
+/// exceeds [`max_supported_version`], returning
+/// [`WalletStorageError::SchemaVersionUnsupported`]. This is a forward-only
+/// gate — it refuses a newer DB but never migrates it down (SQLite
+/// migrations are one-directional).
 ///
-/// Forward-only: this gate refuses a DB NEWER than this binary, but does
-/// NOT (and cannot) migrate a newer DB down to an older shape — SQLite
-/// migrations are one-directional. When V002+ ships, a down-migration
-/// (if ever needed) must be an explicit, separate path; this gate only
-/// guarantees an older binary never silently reads forward-schema bytes.
-///
-/// Quietly succeeds when the table is absent (caller decides whether a
-/// missing schema-history is itself an error — `restore_from` rejects
-/// it, `open` treats it as "brand-new DB about to be migrated").
+/// Quietly succeeds when the table is absent; the caller decides what a
+/// missing schema-history means (`restore_from` rejects it, `open` treats
+/// it as a brand-new DB).
 pub fn assert_schema_version_supported(
     conn: &rusqlite::Connection,
 ) -> Result<(), WalletStorageError> {
@@ -104,15 +97,11 @@ pub fn assert_schema_version_supported(
     Ok(())
 }
 
-/// Probe `refinery_schema_history` for well-formed rows BEFORE handing
-/// the connection to refinery. Refinery parses `applied_on` as RFC3339
-/// and `checksum` as `u64` with `unwrap()`, so a foreign or corrupted-
-/// but-integrity-valid DB carrying a malformed value would abort the
-/// process. Surface a typed [`WalletStorageError::SchemaHistoryMalformed`]
-/// instead.
-///
-/// Quietly succeeds when the table is absent (a brand-new DB about to be
-/// migrated has none).
+/// Probe `refinery_schema_history` rows BEFORE handing the connection to
+/// refinery, which parses `applied_on` (RFC3339) and `checksum` (`u64`)
+/// with `unwrap()` — a malformed value would abort the process. Surfaces
+/// a typed [`WalletStorageError::SchemaHistoryMalformed`] instead.
+/// Quietly succeeds when the table is absent.
 pub(crate) fn assert_schema_history_well_formed(
     conn: &rusqlite::Connection,
 ) -> Result<(), WalletStorageError> {
@@ -127,10 +116,8 @@ pub(crate) fn assert_schema_history_well_formed(
     })?;
     for row in rows {
         let (applied_on, checksum) = row?;
-        // Refinery stores `applied_on` as an RFC3339 timestamp and
-        // `checksum` as a base-10 u64 string. Validate both the way
-        // refinery will parse them so a malformed value fails typed here
-        // rather than panicking inside the runner.
+        // Validate the way refinery will parse, so a malformed value fails
+        // typed here rather than panicking inside the runner.
         if chrono::DateTime::parse_from_rfc3339(&applied_on).is_err() {
             return Err(WalletStorageError::SchemaHistoryMalformed {
                 reason: "applied_on is not a valid RFC3339 timestamp",
@@ -156,12 +143,10 @@ pub fn embedded_migrations() -> Vec<(i32, String)> {
 }
 
 /// SHA-256 over `(version, name)` of every embedded migration in version
-/// order — deliberately content-blind: it hashes the migration set's
-/// identity, NOT the SQL bodies. So it detects an added, removed, or
-/// renamed migration file but, by design, ignores in-place edits to a
-/// migration's DDL. That keeps V001 freely editable while the crate is
-/// unreleased; a content-pinning guard belongs with the schema freeze at
-/// release.
+/// order. Deliberately content-blind: it hashes the migration set's
+/// identity, not the SQL bodies, so it catches an added/removed/renamed
+/// migration but ignores in-place DDL edits (a content-pinning guard
+/// belongs with the schema freeze at release).
 #[cfg(any(test, feature = "__test-helpers"))]
 pub fn embedded_migrations_fingerprint() -> [u8; 32] {
     use sha2::{Digest, Sha256};
